@@ -22,10 +22,13 @@ the Recorder under DEC-H3) and its shared trajectory drawing
     circles, fused cyan), ONE CALL PER VISIT so visits are never joined;
   - each pin and photo: a white dot (`tv-summary-pin` / `tv-summary-photo`)
     with a permanent label (`tv-summary-object-label`);
-  - each code: a dashed ring at the predicted error (`tv-summary-ring`), a
+  - each code: a solid ring at the stored pose's own predicted error
+    (`tv-summary-ring`, when a visit this device kept saved it), a dashed
+    ring at the estimate's (`tv-summary-estimate-ring`) where the estimate
+    is drawn or where nothing else rings the code (M3a/M3b review #2), a
     filled dot at the stored pose (`tv-summary-code`) with its facing line
-    (`tv-summary-facing`, weight 5) and the label "<code>: <verdict>"
-    (`tv-summary-code-label`); where the visits' estimate differs, a hollow
+    (`tv-summary-facing`, weight 5) and the label "<code>: <what visitors
+    get>" (`tv-summary-code-label`); where the visits' estimate differs, a hollow
     dot (`tv-summary-estimate`) and a dashed line
     (`tv-summary-estimate-facing`). A code the tour does not store yet is
     labelled on its estimate.
@@ -42,6 +45,12 @@ the Recorder under DEC-H3) and its shared trajectory drawing
 - **Labels are text, never markup**: each tooltip's content is an element
   whose `textContent` is set. A pin's label comes from a zip anyone can
   write, and Leaflet renders a string tooltip as HTML.
+- **The container declares `position: relative`** (`index.html`):
+  Leaflet's `_initLayout` sets an INLINE `position: relative` on a
+  container without one, and an inline style beats the page's
+  `#summary-map.summary-map-expanded { position: fixed }` - "Enlarge"
+  collapsed the map (M3a/M3b review #1; the e2e taps it and measures the
+  box).
 - No default marker icons (they would fetch images); every mark is a
   vector `circleMarker`, so the only network requests are tiles.
 - The code colour stands apart from the yellow and cyan of the shared
@@ -61,6 +70,8 @@ shell?.destroy();
 
 - `summary-map-view.test.ts` (Leaflet recorded by `vi.mock`): the stored
   code's dot, line, ring and label; the estimate only where it differs;
+  the estimate's ring where it is drawn or the stored pose's error is
+  unknown;
   a code only the visits know labelled on its estimate and a flat code
   without a line; labels as text; one track per visit.
 - `summary-map-lazy.test.ts`: nothing else on the page imports Leaflet or

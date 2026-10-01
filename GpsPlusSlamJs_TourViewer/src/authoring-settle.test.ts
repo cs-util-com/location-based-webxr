@@ -57,6 +57,7 @@ import {
 import type { SummaryModel } from "./summary-model.js";
 import type { SummaryPanel } from "./summary-panel.js";
 import { parseVisitLogEntry } from "./visit-log.js";
+import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 import { OUTCOME_HOLD_MS } from "./object-editing.js";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
@@ -2059,7 +2060,11 @@ describe(
       expect(model?.tracks).toHaveLength(2);
       expect(model?.codes).toHaveLength(1);
       expect(model?.codes[0]?.levelId).toBe(first?.id);
-      expect(model?.codes[0]?.verdict.numbers?.visitCount).toBe(2);
+      // What visitors get is graded by the visit that saved the stored
+      // pose (M3a/M3b review #2); what the visits suggest combines both.
+      expect(model?.codes[0]?.verdict.numbers?.visitCount).toBe(1);
+      expect(model?.codes[0]?.reference?.ringM).toBe(5);
+      expect(model?.codes[0]?.estimateVerdict?.numbers?.visitCount).toBe(2);
       expect(model?.objects.map((o) => o.label)).toEqual(["Gate"]);
     });
 
@@ -2093,6 +2098,103 @@ describe(
       expect(summary.shown.at(-1)?.codes[0]?.verdict.numbers?.visitCount).toBe(
         1,
       );
+      // The restored visit still says which pose it saved.
+      expect(summary.shown.at(-1)?.codes[0]?.reference?.ringM).not.toBeNull();
+    });
+
+    // Why this test matters (M3a/M3b review #5): a visit that only re-scans
+    // a hosted code leaves a draft with no object, no deletion and no new
+    // measurement - exactly what the spent rule deletes. The visit files
+    // went with it on the next reload, and with them the summary's only
+    // evidence for that code. Visits keep a draft alive until the author
+    // discards it (the zip never carries them).
+    it("keeps a draft that holds only AR visits across a reload, offers them, and drops them only on a discard", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = authoring({ store });
+      await openFinishableTour(a);
+      a.setup.presentDraftForTour(TOUR);
+      await flush();
+      a.setWalk(walk());
+      // A visit that only SEES the code: nothing measured, nothing placed.
+      a.seeTheCode();
+      await flush();
+      a.endVisit();
+      await flush();
+      const visitFiles = () =>
+        [...files.keys()].filter((k) => k.startsWith(visitKey("")));
+      expect(visitFiles()).toHaveLength(1);
+
+      // The page reloads: a new setup over the same draft files.
+      const b = authoring({ store });
+      await openFinishableTour(b);
+      b.setup.presentDraftForTour(TOUR);
+      await vi.waitFor(() => {
+        expect(b.dom.draftOfferText.textContent).toMatch(/1 AR visit/);
+      });
+      await flush();
+      expect(visitFiles()).toHaveLength(1);
+
+      b.dom.draftDiscard.click();
+      await vi.waitFor(() => {
+        expect(visitFiles()).toHaveLength(0);
+      });
+    });
+
+    // Why this test matters (M3a/M3b review #6): only the code in hand got
+    // a visit record, so every other stored code of the tour said "scan
+    // it again" forever, however often it was seen. A stable sighting of
+    // any stored code is that code's visit, through the visit's PLAIN
+    // alignment like every visit record - and it must not take the code in
+    // hand, which would change what the settle corrects through.
+    it("logs a stable sighting of the tour's other stored code as that code's visit, without taking it in hand", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = authoring({ store });
+      await openFinishableTour(a);
+      a.setup.presentDraftForTour(TOUR);
+      await flush();
+      a.setWalk(walk());
+      const alignment = yawAlignment(12, [6, 400, -3]);
+      a.setAlignment(alignment);
+      await a.mint();
+      const inHand = a.ctx.mintedLevel!;
+      const otherText = `${TEXT}&n=2`;
+      const otherId = await qrCodeId(otherText);
+      a.ctx.currentLevels = new Map([
+        [otherId, parseQrLevel(JSON.parse(inHand.json) as unknown)],
+      ]);
+      for (let i = 0; i < 8; i += 1) {
+        captured.configs.at(-1)?.onDetection?.({
+          ...detection(i),
+          text: otherText,
+        });
+      }
+      await vi.waitFor(() => {
+        expect(a.ctx.lastDetectedText).toBe(otherText);
+      });
+      // The setup derives the new text's level id with an async hash
+      // (`identify`) before it can log the sighting; one more hash of the
+      // same text, started after it, and a turn, outlast it.
+      await qrCodeId(otherText);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
+      expect(a.ctx.mintedLevel).toEqual(inHand);
+      a.endVisit();
+      await flush();
+
+      const key = [...files.keys()].find((k) => k.startsWith(visitKey("")))!;
+      const entry = parseVisitLogEntry(files.get(key) as string)!;
+      expect(entry.codes.map((c) => c.levelId).sort()).toEqual(
+        [inHand.id, otherId].sort(),
+      );
+      const other = entry.codes.find((c) => c.levelId === otherId)!;
+      const expected = codeThrough(alignment);
+      expect(other.geo.lat).toBeCloseTo(expected.lat, 7);
+      expect(other.geo.lon).toBeCloseTo(expected.lon, 7);
+      // The other code's record is a sighting, never the pose saved here.
+      expect(other.savedGeo).toBeUndefined();
+      expect(
+        entry.codes.find((c) => c.levelId === inHand.id)?.savedGeo,
+      ).toBeDefined();
     });
 
     it("drops the summary and the visits when the tour closes", async () => {

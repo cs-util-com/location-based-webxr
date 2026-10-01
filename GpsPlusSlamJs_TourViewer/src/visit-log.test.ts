@@ -213,16 +213,51 @@ describe("buildVisitLogEntry", () => {
     expect(entry.baselineM).toBe(0);
   });
 
-  it("records a code once even when it is named twice", () => {
+  // Why this test matters (M3a/M3b review #8): the measuring visit names
+  // its code twice - the measurement at the tap, then its latest stable
+  // sighting - and the M3a spike measured each visit by its LAST look,
+  // which is also the later, longer-settled pose. Keeping the first logged
+  // the tap-time pose instead.
+  it("records a code once, from its LAST look, when it is named twice", () => {
+    const later = { position: [1, 0, -2], rotation: [0, 0, 0, 1] } as const;
     const entry = buildVisitLogEntry(
       input({
         codes: [
           { levelId: "lvl", odomPose: CODE_POSE },
-          { levelId: "lvl", odomPose: CODE_POSE },
+          { levelId: "lvl", odomPose: later },
         ],
       }),
     );
+    const fromLater = buildVisitLogEntry(
+      input({ codes: [{ levelId: "lvl", odomPose: later }] }),
+    );
     expect(entry.codes).toHaveLength(1);
+    expect(entry.codes[0]?.geo).toEqual(fromLater.codes[0]?.geo);
+  });
+
+  // Why this test matters (M3a/M3b review #2): the summary grades the
+  // STORED pose - what visitors get - by the visit it came from. Only the
+  // settle knows which visit saved it, so the entry records the saved
+  // pose on that code, and the summary finds the visit by it.
+  it("marks the pose this visit's settle saved on that code only", () => {
+    const saved = { lat: 47.50001, lon: 8.70002, alt: 401, headingDeg: 30 };
+    const entry = buildVisitLogEntry(
+      input({
+        codes: [
+          { levelId: "lvl", odomPose: CODE_POSE },
+          { levelId: "other", odomPose: CODE_POSE },
+        ],
+        saved: { levelId: "lvl", geo: saved },
+      }),
+    );
+    expect(entry.codes.find((c) => c.levelId === "lvl")?.savedGeo).toEqual(
+      saved,
+    );
+    expect(
+      entry.codes.find((c) => c.levelId === "other")?.savedGeo,
+    ).toBeUndefined();
+    const back = parseVisitLogEntry(serializeVisitLogEntry(entry));
+    expect(back!.codes).toEqual(entry.codes);
   });
 });
 
@@ -368,6 +403,14 @@ describe("the draft file", () => {
     const back = parseVisitLogEntry(JSON.stringify(parsed));
     expect(back!.gps).toHaveLength(good.gps.length);
     expect(back!.codes).toEqual(good.codes);
+    // An unreadable saved pose costs that field, not the code.
+    const withBadSaved = JSON.parse(serializeVisitLogEntry(good)) as {
+      codes: Record<string, unknown>[];
+    };
+    withBadSaved.codes[0]!["savedGeo"] = { lat: "x" };
+    expect(parseVisitLogEntry(JSON.stringify(withBadSaved))!.codes).toEqual(
+      good.codes,
+    );
   });
 });
 

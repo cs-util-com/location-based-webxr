@@ -1279,7 +1279,11 @@ export function wireCreatorSetup(deps: {
     ctx.placementNote = restoredText(
       waiting.counts.placed,
       waiting.level !== null,
-      { changed: waiting.counts.changed, deleted: waiting.deleted.length },
+      {
+        changed: waiting.counts.changed,
+        deleted: waiting.deleted.length,
+        visits: waiting.visits.length,
+      },
     );
     renderAuthorReadout();
   });
@@ -1719,12 +1723,35 @@ export function wireCreatorSetup(deps: {
   const identifying = new Set<string>();
 
   /**
+   * The latest stable sighting in the running visit of EVERY code with a
+   * stored pose - the level in hand or any level of the open tour - by
+   * level id (M3a/M3b review #6). Only the visit log reads it: each becomes
+   * that code's visit record, through the visit's plain alignment, so the
+   * tour's other codes gather visits too. It never makes a code the one in
+   * hand, and never corrects anything. Tagged with its visit, so a visit
+   * that ended without a settle cannot leak into the next one's log.
+   */
+  const storedCodeSightings = new Map<
+    string,
+    { readonly visit: number; readonly sighting: CodeSighting }
+  >();
+
+  /** Whether `levelId` has a stored pose: in hand, or in the open tour. */
+  function hasStoredPose(levelId: string): boolean {
+    if (ctx.mintedLevel?.id === levelId) return true;
+    const level = ctx.currentLevels?.get(levelId);
+    return level?.qr.geo !== undefined;
+  }
+
+  /**
    * Keep the anchor code's latest STABLE pose in this visit (plan §3.2,
    * D10b; the entry hint §3.2a): the code whose level is in hand, or - with
    * none measured yet - any code, since that is the one about to be
    * measured. "Seen" is the fused pose's own `stable`, the gate the mint
    * uses: a merely detected code gives a single-frame pose whose yaw error
    * (several degrees) would swing every corrected note by a metre at 20 m.
+   * Any code with a stored pose is also kept for the visit log
+   * (`storedCodeSightings`), whichever code is in hand.
    */
   function noteSighting(
     text: string,
@@ -1736,8 +1763,15 @@ export function wireCreatorSetup(deps: {
       identify(text);
       return;
     }
+    const sighting = { text, levelId: id, odomPose: fused.pose };
+    if (hasStoredPose(id)) {
+      storedCodeSightings.set(id, {
+        visit: ctx.arSessionGeneration,
+        sighting,
+      });
+    }
     if (ctx.mintedLevel !== null && ctx.mintedLevel.id !== id) return;
-    ctx.visitCodeSighting = { text, levelId: id, odomPose: fused.pose };
+    ctx.visitCodeSighting = sighting;
     placeEarlierObjects();
   }
 
@@ -1811,7 +1845,12 @@ export function wireCreatorSetup(deps: {
       nowIso: new Date().toISOString(),
     };
     const choice = settleAlignment(input);
-    logVisit(visit, state, choice?.alignment ?? null);
+    // Pure, so planned before the log: the log marks the pose this settle
+    // saves for the code, which is how the summary grades what visitors
+    // get (M3a/M3b review #2).
+    const plan =
+      choice === null || zero === null ? null : planVisitSettle(input);
+    logVisit(visit, state, choice?.alignment ?? null, plan?.level ?? null);
     if (choice === null || zero === null) return;
     const record: VisitSettleRecord = {
       basis: choice.basis,
@@ -1824,7 +1863,6 @@ export function wireCreatorSetup(deps: {
       refused: choice.refused,
     };
     visitSettles.set(visit, record);
-    const plan = planVisitSettle(input);
     if (plan === null) return;
     for (const { index, object } of plan.objects) {
       const entry = ctx.placedObjects[index];
@@ -1852,12 +1890,15 @@ export function wireCreatorSetup(deps: {
    * alignment (`visit-log.ts`). The fused path goes through
    * `pathAlignment` - what the visit's objects settled through - so the
    * pins sit on it. A visit settled again (a failed Finish) replaces its
-   * entry.
+   * entry. `savedLevel` is the level this settle re-mints from the visit's
+   * measurement, if any: its pose is marked on the code, so the summary
+   * can grade the stored pose by the visit it came from.
    */
   function logVisit(
     visit: number,
     state: ReturnType<typeof arStore.getState>,
     pathAlignment: readonly number[] | null,
+    savedLevel: { id: string; json: string } | null,
   ): void {
     const codes: { levelId: string; odomPose: CodeSighting["odomPose"] }[] = [];
     const measurement = ctx.codeMeasurement;
@@ -1867,10 +1908,20 @@ export function wireCreatorSetup(deps: {
         odomPose: measurement.odomPose,
       });
     }
+    // The tour's other stored codes this visit saw (M3a/M3b review #6),
+    // then the code in hand last: the log keeps each code's LAST look.
+    for (const seen of storedCodeSightings.values()) {
+      if (seen.visit !== visit) continue;
+      codes.push({
+        levelId: seen.sighting.levelId,
+        odomPose: seen.sighting.odomPose,
+      });
+    }
     const sighting = ctx.visitCodeSighting;
     if (sighting !== null) {
       codes.push({ levelId: sighting.levelId, odomPose: sighting.odomPose });
     }
+    const savedGeo = savedLevel === null ? null : storedGeo(savedLevel.json);
     const entry = buildVisitLogEntry({
       visitId: newVisitId(pageId, visit),
       atMs: Date.now(),
@@ -1881,6 +1932,10 @@ export function wireCreatorSetup(deps: {
       zero: selectZeroReference(state),
       storeAccuracyM: authorAlignmentInfo().gpsAccuracyM ?? null,
       codes,
+      saved:
+        savedLevel === null || savedGeo === null
+          ? null
+          : { levelId: savedLevel.id, geo: savedGeo },
     });
     // A visit with no fix and no code has nothing to show or to combine.
     if (entry.gps.length === 0 && entry.codes.length === 0) return;
@@ -2489,6 +2544,7 @@ export function wireCreatorSetup(deps: {
       if (!creator) return;
       settleVisit("visit-end");
       ctx.visitCodeSighting = null;
+      storedCodeSightings.clear();
       liveRefusal = null;
       previewsWaitForZero = false;
       statusExpanded = false;
@@ -2618,10 +2674,19 @@ export function wireCreatorSetup(deps: {
             ? null
             : await hostedLevelJson(stored.draft.level.id);
         if (stale()) return;
-        if (draftIsSpent(stored.draft, ctx.tourManifest, hostedLevel)) {
-          // SPENT: the hosted zip carries every object AND the measurement.
-          // That is the only proof the content reached the file the world
-          // sees, and the only thing that deletes a draft.
+        if (
+          draftIsSpent(
+            stored.draft,
+            ctx.tourManifest,
+            hostedLevel,
+            stored.visits.length,
+          )
+        ) {
+          // SPENT: the hosted zip carries every object AND the measurement,
+          // and the draft holds no AR visit (the zip never carries those,
+          // M3a/M3b review #5). That is the only proof the content reached
+          // the file the world sees, and the only thing that deletes a
+          // draft.
           // No re-open. It existed only because `clear` used to remove the
           // namespace directory and invalidate this handle; the store now
           // empties in place and stays usable. Re-opening would carry the
@@ -2688,7 +2753,11 @@ export function wireCreatorSetup(deps: {
         dom.draftOfferText.textContent = restoreOfferText(
           counts.placed,
           hasLevel,
-          { changed: counts.changed, deleted: waitingDeletions.length },
+          {
+            changed: counts.changed,
+            deleted: waitingDeletions.length,
+            visits: stored.visits.length,
+          },
         );
         dom.draftOffer.hidden = false;
         // The offer is outside the AR overlay, so a creator whose scan

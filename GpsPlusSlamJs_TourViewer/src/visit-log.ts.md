@@ -57,8 +57,19 @@ entry and joined back in `codeVisitPoses`.
   pose, so its "measurement" of the code would just repeat the stored pose
   and fake agreement. Each visit is one independent GPS estimate only
   through its own alignment.
-- **Which pose**: the visit's measurement when it measured the code, else
-  its latest stable sighting (`creator-setup.ts` picks).
+- **Which pose**: the visit's LAST look at the code (M3a/M3b review #8):
+  `creator-setup.ts` hands the measurement first and then the latest
+  stable sightings, and a code named twice keeps the last one - the later,
+  longer-settled pose, and what the M3a spike measured each visit by.
+  Keeping the first logged the tap-time pose instead.
+- **Every stored code the visit saw**, not only the one in hand (M3a/M3b
+  review #6): `creator-setup.ts` hands each stored code's latest stable
+  sighting, so the tour's other codes gather visits too.
+- **`savedGeo`** (optional, per code): the pose THIS visit's settle saved
+  for the code (`input.saved`), when it saved one. The summary finds the
+  visit a stored pose came from by it, to grade what visitors get (M3a/M3b
+  review #2). Version 1 files without it read as before; an unreadable one
+  costs that field, not the code.
 
 ## Parameters and what they rest on
 
@@ -66,8 +77,11 @@ entry and joined back in `codeVisitPoses`.
   nothing below a metre that its noise does not drown; the fused path's
   sub-metre wiggles are under a pixel at the summary's framing (zoom 17-18,
   0.6-1.2 m per pixel at 47°N). A 20-minute walk keeps about 1,200 points per
-  path. Reverses for a summary that zooms in to inspect sub-metre detail
-  (then 0.25 m), which this screen does not offer.
+  path. Standing still thins the fused path to almost nothing but NOT the
+  raw track: GPS noise often moves a fix by more than a metre from one
+  second to the next, so most standing fixes can be kept, and the cap below
+  bounds a long stand. Reverses for a summary that zooms in to inspect
+  sub-metre detail (then 0.25 m), which this screen does not offer.
 - `VISIT_PATH_MAX_POINTS = 1000`: a cap on the draft file (about 30 kB per
   path), not a look; it bites only past about a kilometre in one visit.
 - **The baseline is measured on the thinned odometry**: a subset of the
@@ -114,10 +128,11 @@ combineCodeVisits(codeVisitPoses(log.entries(), levelId));
   left out; the code through the PLAIN alignment while the path goes
   through the corrected one; no alignment; a non-finite alignment; the
   accuracy fallback; unreadable fixes and unpaired odometry; one record per
-  code; `thinPath` (cases and a property); the draft file round trip (case
+  code from its last look; the saved pose on that code only, round-tripped,
+  an unreadable one costing only itself; `thinPath` (cases and a property); the draft file round trip (case
   and property) and its defensive read; the in-memory log; `codeVisitPoses`
   into `combineCodeVisits`.
 - `draft-persistence.test.ts`: a visit's file survives a reload, a corrupt
   one costs itself, a rejected one is swept.
 - `authoring-settle.test.ts`: the settle writes one entry per visit into the
-  log and the draft.
+  log and the draft; another stored code's sighting is logged as its visit.

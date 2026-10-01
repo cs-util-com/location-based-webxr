@@ -44,8 +44,12 @@ import { odomNueFromWebXr, throughAlignment } from "./visit-anchoring.js";
  * metre say nothing about where the creator walked that the GPS noise does
  * not drown, and the fused path's sub-metre wiggles are below a pixel at
  * the summary's framing (zoom 17-18 is 0.6-1.2 m per pixel at 47°N). A
- * 20-minute walk at 1 m/s keeps about 1,200 points per path; standing
- * still keeps almost none. What would reverse it: a summary that is
+ * 20-minute walk at 1 m/s keeps about 1,200 points per path. Standing
+ * still thins the fused path (odometry) to almost nothing, but NOT the raw
+ * track: GPS noise often moves a fix by more than a metre from one second
+ * to the next, so most standing fixes can be kept, and
+ * {@link VISIT_PATH_MAX_POINTS} is what bounds a long stand. What would
+ * reverse it: a summary that is
  * zoomed in to inspect the fused path around a corner at sub-metre
  * detail (then 0.25 m), which this screen does not offer.
  */
@@ -82,6 +86,11 @@ interface VisitCode {
   readonly levelId: string;
   /** Through the visit's own end-of-visit alignment, NOT code-corrected. */
   readonly geo: QrGeoPose;
+  /** The pose THIS visit's settle saved for the code (re-minted from its
+   *  measurement), when it saved one: how the summary finds the visit a
+   *  stored pose came from, to grade what visitors get (M3a/M3b review
+   *  #2). Absent for a visit that only saw the code. */
+  readonly savedGeo?: QrGeoPose;
 }
 
 /** One AR visit, as the summary needs it after the store forgot it. */
@@ -138,11 +147,14 @@ export interface VisitLogInput {
   readonly zero: LatLong | null;
   /** The store's accuracy median, used when no device fix reports one. */
   readonly storeAccuracyM?: number | null;
-  /** The codes the visit saw: raw WebXR poses of its odometry. */
+  /** The codes the visit saw: raw WebXR poses of its odometry, oldest
+   *  first - a code named twice keeps its LAST look. */
   readonly codes: readonly {
     readonly levelId: string;
     readonly odomPose: Pose;
   }[];
+  /** The pose the visit's settle saved for a code, when it saved one. */
+  readonly saved?: { readonly levelId: string; readonly geo: QrGeoPose } | null;
 }
 
 const isFiniteNumber = (v: unknown): v is number =>
@@ -319,10 +331,20 @@ export function buildVisitLogEntry(input: VisitLogInput): VisitLogEntry {
         }).map((p) => ({ lat: p.lat, lng: p.lng }));
   const codes: VisitCode[] = [];
   if (alignment !== null && zero !== null) {
-    for (const code of input.codes) {
-      if (codes.some((c) => c.levelId === code.levelId)) continue;
-      const geo = codeGeo(code.odomPose, alignment, zero);
-      if (geo !== null) codes.push({ levelId: code.levelId, geo });
+    // The LAST look per code (M3a/M3b review #8): the measuring visit names
+    // its code at the tap and again at its latest stable sighting, and the
+    // M3a spike measured each visit by its last look.
+    const last = new Map<string, Pose>();
+    for (const code of input.codes) last.set(code.levelId, code.odomPose);
+    for (const [levelId, odomPose] of last) {
+      const geo = codeGeo(odomPose, alignment, zero);
+      if (geo === null) continue;
+      const saved = input.saved;
+      codes.push(
+        saved != null && saved.levelId === levelId
+          ? { levelId, geo, savedGeo: saved.geo }
+          : { levelId, geo },
+      );
     }
   }
   return {
@@ -412,25 +434,34 @@ function readHeader(
   return { visitId, atMs, gpsAccuracyM: accuracy, baselineM };
 }
 
-/** A code record, its geo validated by the framework's one geo-pose
- *  parser (the level's and the manifest's), the way a draft object is
- *  validated by the manifest's own rules. */
-function readCode(value: unknown): VisitCode | null {
-  if (typeof value !== "object" || value === null) return null;
-  const record = value as Record<string, unknown>;
-  const levelId = record["levelId"];
-  if (typeof levelId !== "string" || levelId.length === 0) return null;
+/** A geo pose validated by the framework's one geo-pose parser (the
+ *  level's and the manifest's), or null. */
+function readGeo(value: unknown): QrGeoPose | null {
   try {
-    const geo = parseGeoPose(record["geo"], {
+    return parseGeoPose(value, {
       path: "geo",
       fail: (message) => {
         throw new Error(message);
       },
     });
-    return { levelId, geo };
   } catch {
     return null;
   }
+}
+
+/** A code record, validated the way a draft object is validated by the
+ *  manifest's own rules. An unreadable saved pose costs that field only:
+ *  the visit's measurement still counts. */
+function readCode(value: unknown): VisitCode | null {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  const levelId = record["levelId"];
+  if (typeof levelId !== "string" || levelId.length === 0) return null;
+  const geo = readGeo(record["geo"]);
+  if (geo === null) return null;
+  const savedGeo =
+    record["savedGeo"] === undefined ? null : readGeo(record["savedGeo"]);
+  return savedGeo === null ? { levelId, geo } : { levelId, geo, savedGeo };
 }
 
 /**

@@ -4,8 +4,10 @@
 
 The summary after Finish, on the page (authoring plan
 `2026-09-28-0953-tour-viewer-authoring-recording-anchoring-and-editing-plan.md`
-§1 item 5, §3.3, milestone M3b): one row per code with its verdict and the
-numbers behind it (folded away), the map, and the way back into AR. The
+§1 item 5, §3.3, milestone M3b): one row per code with its two verdicts -
+"What visitors get" (the stored pose, primary) and "What your visits now
+suggest" (the visits' estimate, secondary; M3a/M3b review #2) - and the
+numbers behind them (folded away), the map, and the way back into AR. The
 creator setup builds the model (`summary-model.ts`) at each successful
 Finish and hands it here.
 
@@ -19,18 +21,20 @@ Finish and hands it here.
   - `startAr`: the page's own Start AR setup (`main.ts` clicks `#enter-ar`).
   - `SummaryPanel`: `show(model)` replaces any earlier summary; `hide()`
     drops it and its map (a new AR visit, a closed tour).
-- `SUMMARY_MAP_TEXT`: the map's words per state (`loading`, `ready`,
-  `failed`, `empty`).
+- `SUMMARY_MAP_TEXT`: the map's words per state (`loading`, `failed`,
+  `error`, `empty`; `ready` hides the line).
 
 ## Invariants & assumptions
 
 - **The map loads on demand and says so** (CLAUDE.md, "UI feedback for
   async actions"): `data-state="loading"` with "Loading the map..." while
-  the import runs, then `ready` (the line hidden) or `failed` ("The map
-  could not load (offline?). The verdicts above still hold."), on the
-  status line and the map container. A map module that refuses to draw is
-  a failure too. With nothing to frame the map is not loaded at all
-  (`empty`).
+  the import runs, then `ready` (the line hidden), `failed` when the
+  import is refused ("The map could not load (offline?). The verdicts
+  above still hold." - a fetch, so offline is the likely cause), or
+  `error` when the module loaded but could not draw ("The map could not be
+  drawn on this page (the map library failed)..." - not offline, M3a/M3b
+  review #8), on the status line and the map container. With nothing to
+  frame the map is not loaded at all (`empty`).
 - **The verdicts never wait for the map**: the rows are written before the
   import starts and stay whatever it does.
 - **A late load never draws into another summary**: every `show` and
@@ -42,8 +46,11 @@ Finish and hands it here.
   so a session request still has its user activation.
 - Text is set with `textContent` only; labels and numbers are never
   markup.
-- Rows carry `data-testid="summary-code"` and `data-verdict` (the kind);
-  the verdict span `summary-verdict`, the numbers `summary-numbers`.
+- Rows carry `data-testid="summary-code"`, `data-verdict` (the stored
+  pose's kind) and `data-estimate-verdict` (the estimate's, `none`
+  without one); the spans `summary-verdict` ("What visitors get: ...")
+  and `summary-estimate` ("What your visits now suggest: ..."), the
+  numbers `summary-numbers`.
 
 ## Examples
 
@@ -60,9 +67,11 @@ summary.show(buildSummaryModel(input));
 ## Tests
 
 - `summary-panel.test.ts` (fake elements; this package's unit tests run
-  without a DOM): rows and numbers before the map, loading then ready,
-  failure on a rejected import and on a refused draw, no load with nothing
+  without a DOM): rows with both labelled verdicts and the numbers before
+  the map, loading then ready, `failed` on a rejected import and `error`
+  (never "offline") on a refused draw, no load with nothing
   to frame, late loads dropped and old maps destroyed, Start AR setup.
 - `playwright-tests/summary.spec.js`: the real page - a Finish shows the
-  code, its facing line, its verdict and the pin; a refused import says
-  so while the verdict stays; Start AR setup re-enters AR.
+  code, its facing line, its two verdicts (one expected value each) and
+  the pin; Enlarge fills the screen and closing shrinks it back; a refused
+  import says so while the verdict stays; Start AR setup re-enters AR.

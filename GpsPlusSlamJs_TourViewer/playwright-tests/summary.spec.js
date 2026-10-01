@@ -81,11 +81,21 @@ test("after Finish the page shows each code with its facing line and verdict, an
   await finish(page);
   const summary = page.getByTestId("summary");
   await expect(summary).toBeVisible();
-  // The code, with a plain verdict and the numbers behind it.
+  // The code, with its two plain verdicts and the numbers behind them.
+  // The fixture zip stores the code's pose, so this visit's measurement
+  // keeps it (D10b): what visitors get was measured before any visit this
+  // page kept, so it is not known here. The visit itself (5 m GPS, a walk
+  // 21 m across) predicts 13 degrees of heading, over the 12 allowed - so
+  // it asks for a longer walk. One expected verdict each, never "any of".
   const row = summary.getByTestId("summary-code");
   await expect(row).toHaveCount(1);
+  await expect(row).toHaveAttribute("data-verdict", "unknown");
+  await expect(row).toHaveAttribute("data-estimate-verdict", "walk-further");
   await expect(row.getByTestId("summary-verdict")).toHaveText(
-    /^(Good|Walk further from the code|Wait for better GPS|Scan it again in another AR visit)$/,
+    "What visitors get: Not known on this device",
+  );
+  await expect(row.getByTestId("summary-estimate")).toHaveText(
+    "What your visits now suggest: Walk further from the code",
   );
   await row.getByTestId("summary-numbers").locator("summary").click();
   await expect(row.getByTestId("summary-numbers")).toContainText(
@@ -102,6 +112,9 @@ test("after Finish the page shows each code with its facing line and verdict, an
   const map = page.getByTestId("summary-map");
   await expect(map.locator("path.tv-summary-code")).toHaveCount(1);
   await expect(map.locator("path.tv-summary-facing")).toHaveCount(1);
+  // The stored pose's own error is unknown here, so the visit's ring is
+  // what says how far off the code may be.
+  await expect(map.locator("path.tv-summary-estimate-ring")).toHaveCount(1);
   // The fixture tour's own pin and the one just placed: the summary shows
   // what the rebuilt zip carries.
   await expect(map.locator("path.tv-summary-pin")).toHaveCount(2);
@@ -133,6 +146,44 @@ test("after Finish the page shows each code with its facing line and verdict, an
       ),
     )
     .toBe(before + 1);
+});
+
+// Why this test matters (M3a/M3b review #1): Leaflet sets an INLINE
+// position: relative on a container without a declared position, and an
+// inline style beats the page's fullscreen rule - "Enlarge" collapsed the
+// map to a sliver. Only a real browser computes the box.
+test("Enlarge fills the screen with the map, and closing it shrinks it back", async ({
+  page,
+}) => {
+  await watchRequests(page);
+  await openFixtureTour(page);
+  await enterArAndMeasure(page);
+  await finish(page);
+  await expect(page.getByTestId("summary-map-status")).toHaveAttribute(
+    "data-state",
+    "ready",
+    { timeout: 15000 },
+  );
+  const map = page.getByTestId("summary-map");
+  const before = await map.boundingBox();
+  expect(before?.height ?? 0).toBeGreaterThan(100);
+  await map.getByTestId("btn-map-expand").click();
+  const viewport = page.viewportSize();
+  await expect
+    .poll(async () => {
+      const box = await map.boundingBox();
+      return box === null || viewport === null
+        ? false
+        : Math.abs(box.x) <= 1 &&
+            Math.abs(box.y) <= 1 &&
+            Math.abs(box.width - viewport.width) <= 1 &&
+            Math.abs(box.height - viewport.height) <= 1;
+    })
+    .toBe(true);
+  await map.getByTestId("btn-map-collapse").click();
+  await expect
+    .poll(async () => (await map.boundingBox())?.height ?? 0)
+    .toBeCloseTo(before?.height ?? -1, 0);
 });
 
 test("a map that cannot load says so, and the verdict stays", async ({

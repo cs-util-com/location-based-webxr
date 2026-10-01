@@ -6,9 +6,12 @@
  * and the list renders, so it is tested without a map.
  *
  * THE REFERENCE RULE IS NOT CHANGED HERE (D10b; re-estimating at Finish is
- * an open owner question, M3a Q4): the stored pose is the code's position.
- * The combined estimate of the visits (`combineCodeVisits`) is drawn next
- * to it, as information, only where the two differ.
+ * an open owner question, M3a Q4): the stored pose is the code's position
+ * and what visitors get, so ITS grade is the primary verdict - from the
+ * visit that saved it (M3a/M3b review #2). The combined estimate of the
+ * visits (`combineCodeVisits`) is graded apart, as what the visits now
+ * suggest, and drawn next to the stored pose only where the two differ by
+ * more than the estimate's own predicted error (review #7).
  *
  * @see summary-model.ts.md
  */
@@ -22,8 +25,16 @@ import {
   type LatLong,
 } from "gps-plus-slam-app-framework/core";
 
-import { combineCodeVisits } from "./code-visit-combine.js";
-import { codeVerdict, type CodeVerdict } from "./code-verdict.js";
+import {
+  combineCodeVisits,
+  type CodeVisitPose,
+  type CombinedCodePose,
+} from "./code-visit-combine.js";
+import {
+  codeVerdict,
+  verdictWithoutNumbers,
+  type CodeVerdict,
+} from "./code-verdict.js";
 import { rotationFromHeading } from "./content-placement.js";
 import { codeVisitPoses, type VisitLogEntry } from "./visit-log.js";
 
@@ -42,12 +53,24 @@ export const FACING_LINE_MAX_M = 40;
  * horizontal; a wall poster is far from it either way.
  */
 const FLAT_CODE_DEG = 15;
-/** The combined estimate is drawn beside the stored pose only when it is
- *  further away than this (m)... Below it the two marks overlap at the
- *  framed zoom (0.4-1.2 m per pixel). */
-export const DIFFERS_M = 0.5;
-/** ...or turned further than this (degrees). */
-const DIFFERS_DEG = 2;
+/**
+ * The combined estimate is drawn beside the stored pose only when it lies
+ * further away than its OWN predicted horizontal error (the ring) - a
+ * smaller difference is what two measurements of an unmoved code show on
+ * GPS noise alone (M3a/M3b review #7) - and never below this floor (m):
+ * below it the two marks overlap at the framed zoom (0.4-1.2 m per pixel).
+ * The sidecar says what would reverse the 1 x multiple.
+ */
+export const DIFFERS_FLOOR_M = 0.5;
+/** ...or turned further than its predicted heading error, and never below
+ *  this floor (degrees): a 2 degree turn moves the end of an 8-40 m facing
+ *  line by 0.3-1.4 m, about a pixel. */
+const DIFFERS_FLOOR_DEG = 2;
+/** Two geo poses are the same saved pose within this (degrees of lat/lon,
+ *  about 1 cm; m of altitude): the level file and the visit log hold the
+ *  same numbers, written by JSON at full precision. */
+const SAME_POSE_DEG = 1e-7;
+const SAME_POSE_ALT_M = 0.01;
 
 export interface MapPoint {
   readonly lat: number;
@@ -68,14 +91,20 @@ export interface SummaryCode {
   readonly label: string;
   /** The stored pose: what visitors get. Null for a code the tour does
    *  not store yet (only measured). */
-  readonly reference: CodeMark | null;
+  readonly reference:
+    | (CodeMark & {
+        /** Its own predicted horizontal error, from the visit that saved
+         *  it (m); null when no visit this device kept saved it. */
+        readonly ringM: number | null;
+      })
+    | null;
   /** The visits' combined estimate; null when no visit measured it. */
   readonly combined:
     | (CodeMark & {
         /** The predicted horizontal error: the ring's radius (m). */
         readonly ringM: number;
-        /** Drawn as a second mark (it differs from the reference, or there
-         *  is no reference). */
+        /** Drawn as a second mark (it differs from the reference by more
+         *  than its predicted error, or there is no reference). */
         readonly shown: boolean;
         /** Its distance (m) and turn (degrees) from the reference; null
          *  without a reference. */
@@ -83,8 +112,13 @@ export interface SummaryCode {
         readonly offsetDeg: number | null;
       })
     | null;
+  /** PRIMARY: what visitors get - the stored pose's grade ("unknown"
+   *  when no visit this device kept saved it, "not-saved" without one). */
   readonly verdict: CodeVerdict;
-  /** The numbers behind the verdict, one plain line each. */
+  /** SECONDARY: what the visits now suggest - the combined estimate's
+   *  grade; null when no visit measured the code. */
+  readonly estimateVerdict: CodeVerdict | null;
+  /** The numbers behind both verdicts, one plain line each. */
   readonly details: readonly string[];
 }
 
@@ -190,16 +224,52 @@ function codeLabel(index: number, count: number): string {
 const metres = (v: number): string => `${v.toFixed(1)} m`;
 const degrees = (v: number): string => `${v.toFixed(0)} degrees`;
 
-function detailLines(
-  verdict: CodeVerdict,
+function visitsLabel(n: NonNullable<CodeVerdict["numbers"]>): string {
+  const visits = `${String(n.visitCount)} ${n.visitCount === 1 ? "visit" : "visits"}`;
+  return n.positionVisitCount < n.visitCount
+    ? `${visits} (the best ${String(n.positionVisitCount)} for the position)`
+    : visits;
+}
+
+/** What visitors get: the stored pose's grade and why. */
+function storedLines(stored: CodeVerdict): string[] {
+  const lines = [`What visitors get: ${stored.text}.`];
+  const n = stored.numbers;
+  if (stored.kind === "unknown") {
+    lines.push(
+      "The saved position was measured before the visits this device kept, so its error is not known here.",
+    );
+  } else if (stored.kind === "not-saved") {
+    lines.push(
+      "The tour stores no position for this code, so visitors do not get it placed.",
+    );
+  } else if (n !== null) {
+    lines.push(
+      `The saved position came from 1 visit: expected within ${metres(n.predictedHorizontalM)} and ${degrees(n.predictedHeadingDeg)} (GPS ${metres(n.bestAccuracyM)}, walk ${metres(n.longestWalkM)}).`,
+    );
+    if (stored.kind !== "good") {
+      lines.push(
+        'Visitors keep this position until you replace it: measure the code again and tap "Replace the code\'s saved position".',
+      );
+    }
+  }
+  return lines;
+}
+
+/** What the visits now suggest: the combined estimate's grade and why. */
+function estimateLines(
+  estimate: CodeVerdict | null,
   combined: SummaryCode["combined"],
 ): string[] {
-  const n = verdict.numbers;
-  if (n === null) {
-    return ["No AR visit on this device measured this code yet."];
+  const n = estimate?.numbers ?? null;
+  if (estimate === null || n === null) {
+    return [
+      "What your visits now suggest: nothing yet - no AR visit on this device measured this code.",
+    ];
   }
   const lines = [
-    `${String(n.visitCount)} ${n.visitCount === 1 ? "visit" : "visits"}: expected within ${metres(n.predictedHorizontalM)} and ${degrees(n.predictedHeadingDeg)}.`,
+    `What your visits now suggest: ${estimate.text}.`,
+    `${visitsLabel(n)}: expected within ${metres(n.predictedHorizontalM)} and ${degrees(n.predictedHeadingDeg)}.`,
     `Best GPS ${metres(n.bestAccuracyM)}, longest walk ${metres(n.longestWalkM)}.`,
   ];
   if (n.visitCount > 1) {
@@ -207,9 +277,9 @@ function detailLines(
       `The visits disagree by up to ${metres(n.maxOffsetM)} and ${degrees(n.maxHeadingOffsetDeg)}.`,
     );
   }
-  if (verdict.walkM !== null) {
+  if (estimate.walkM !== null) {
     lines.push(
-      `Walk about ${verdict.walkM.toFixed(0)} m away from the code and back in one visit.`,
+      `Walk about ${estimate.walkM.toFixed(0)} m away from the code and back in one visit.`,
     );
   }
   if (combined?.offsetM != null) {
@@ -217,8 +287,19 @@ function detailLines(
       `The visits' estimate is ${metres(combined.offsetM)}${combined.offsetDeg === null ? "" : ` and ${degrees(combined.offsetDeg)}`} from the saved position; the saved position stays.`,
     );
   }
-  lines.push("These limits are provisional (tested on simulated walks only).");
   return lines;
+}
+
+function detailLines(
+  stored: CodeVerdict,
+  estimate: CodeVerdict | null,
+  combined: SummaryCode["combined"],
+): string[] {
+  return [
+    ...storedLines(stored),
+    ...estimateLines(estimate, combined),
+    "These limits are provisional (tested on simulated walks only).",
+  ];
 }
 
 /** The drawn area's diagonal (m) over `points`. */
@@ -299,9 +380,14 @@ export function buildSummaryModel(input: SummaryInput): SummaryModel {
   const codes = ids.map((levelId, index): SummaryCode => {
     const poses = codeVisitPoses(input.visits, levelId);
     const estimate = combineCodeVisits(poses);
-    const verdict = codeVerdict(poses, estimate);
-    const refGeo = references.get(levelId) ?? null;
-    const reference = refGeo === null ? null : mark(refGeo, lineM);
+    const estimateVerdict =
+      estimate === null ? null : codeVerdict(poses, estimate);
+    const { reference, verdict } = storedSide(
+      input.visits,
+      levelId,
+      references.get(levelId) ?? null,
+      lineM,
+    );
     const combined = combinedMark(estimate, reference, lineM);
     return {
       levelId,
@@ -309,20 +395,19 @@ export function buildSummaryModel(input: SummaryInput): SummaryModel {
       reference,
       combined,
       verdict,
-      details: detailLines(verdict, combined),
+      estimateVerdict,
+      details: detailLines(verdict, estimateVerdict, combined),
     };
   });
 
   const fitPoints: MapPoint[] = [...base];
+  const ring = (c: MapPoint, r: number): MapPoint[] =>
+    [0, 90, 180, 270].map((bearing) => along(c, bearing, r));
   for (const code of codes) {
     for (const m of [code.reference, code.combined]) {
       if (m === null) continue;
       fitPoints.push(m, ...(m.facingLine ?? []));
-    }
-    if (code.combined !== null) {
-      const c = code.combined;
-      fitPoints.push(along(c, 0, c.ringM), along(c, 90, c.ringM));
-      fitPoints.push(along(c, 180, c.ringM), along(c, 270, c.ringM));
+      if (m.ringM !== null) fitPoints.push(...ring(m, m.ringM));
     }
   }
   return {
@@ -350,8 +435,74 @@ function offsetFrom(
   };
 }
 
+/** The stored pose's mark, its own ring and its verdict - what visitors
+ *  get: "not-saved" without a readable stored pose, "unknown" when no kept
+ *  visit saved it. */
+function storedSide(
+  visits: readonly VisitLogEntry[],
+  levelId: string,
+  refGeo: QrGeoPose | null,
+  lineM: number,
+): { reference: SummaryCode["reference"]; verdict: CodeVerdict } {
+  const refMark = refGeo === null ? null : mark(refGeo, lineM);
+  if (refGeo === null || refMark === null) {
+    return { reference: null, verdict: verdictWithoutNumbers("not-saved") };
+  }
+  const stored = storedGrade(visits, levelId, refGeo);
+  return {
+    reference: { ...refMark, ringM: stored?.ringM ?? null },
+    verdict: stored?.verdict ?? verdictWithoutNumbers("unknown"),
+  };
+}
+
+/** Whether two geo poses are the same saved pose (see SAME_POSE_DEG). */
+function samePose(a: QrGeoPose, b: QrGeoPose): boolean {
+  return (
+    Math.abs(a.lat - b.lat) <= SAME_POSE_DEG &&
+    Math.abs(a.lon - b.lon) <= SAME_POSE_DEG &&
+    Math.abs(a.alt - b.alt) <= SAME_POSE_ALT_M
+  );
+}
+
+/**
+ * The stored pose's own grade (M3a/M3b review #2): from the LATEST visit
+ * whose settle saved exactly this pose, graded as one saved pose
+ * (`averaging: false`). Null when no visit this device kept saved it - a
+ * hosted pose, or one replaced elsewhere since.
+ */
+function storedGrade(
+  visits: readonly VisitLogEntry[],
+  levelId: string,
+  refGeo: QrGeoPose,
+): { verdict: CodeVerdict; ringM: number } | null {
+  for (let i = visits.length - 1; i >= 0; i -= 1) {
+    const entry = visits[i]!;
+    const saved = entry.codes.find(
+      (c) =>
+        c.levelId === levelId &&
+        c.savedGeo !== undefined &&
+        samePose(c.savedGeo, refGeo),
+    );
+    if (saved === undefined) continue;
+    const source: CodeVisitPose[] = [
+      {
+        geo: refGeo,
+        gpsAccuracyM: entry.gpsAccuracyM ?? Number.NaN,
+        baselineM: entry.baselineM,
+      },
+    ];
+    const graded: CombinedCodePose | null = combineCodeVisits(source);
+    if (graded === null) return null;
+    return {
+      verdict: codeVerdict(source, graded, { averaging: false }),
+      ringM: graded.predictedHorizontalM,
+    };
+  }
+  return null;
+}
+
 function combinedMark(
-  estimate: ReturnType<typeof combineCodeVisits>,
+  estimate: CombinedCodePose | null,
   reference: CodeMark | null,
   lineM: number,
 ): SummaryCode["combined"] {
@@ -361,8 +512,9 @@ function combinedMark(
   const { offsetM, offsetDeg } = offsetFrom(reference, m);
   const shown =
     reference === null ||
-    (offsetM ?? 0) > DIFFERS_M ||
-    (offsetDeg ?? 0) > DIFFERS_DEG;
+    (offsetM ?? 0) > Math.max(DIFFERS_FLOOR_M, estimate.predictedHorizontalM) ||
+    (offsetDeg ?? 0) >
+      Math.max(DIFFERS_FLOOR_DEG, estimate.predictedHeadingDeg);
   return {
     ...m,
     ringM: estimate.predictedHorizontalM,

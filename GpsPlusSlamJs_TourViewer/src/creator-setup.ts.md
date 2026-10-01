@@ -182,9 +182,20 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   copies the visit into `visit-log.ts`'s log: the device fixes and the
   odometry, the fused path through the alignment the visit's objects
   settled through, and each code the visit saw (its measurement in this
-  visit, else its latest sighting) through the visit's OWN plain alignment,
-  never the code-corrected one (that would repeat the stored pose and fake
-  agreement between visits). A visit with no fix and no code is not logged.
+  visit, then its latest sighting - the log keeps the LAST) through the
+  visit's OWN plain alignment, never the code-corrected one (that would
+  repeat the stored pose and fake agreement between visits). A visit with
+  no fix and no code is not logged.
+- **Every stored code, not only the one in hand** (M3a/M3b review #6):
+  `noteSighting` also keeps the latest stable sighting of ANY code with a
+  stored pose (the level in hand, or a level of the open tour with a geo)
+  in `storedCodeSightings`, tagged with its visit and cleared at the
+  visit's end. Only the visit log reads it: such a sighting never makes a
+  code the one in hand and never corrects anything.
+- **The saved pose is marked** (M3a/M3b review #2): `settleVisit` plans the
+  settle (pure) before logging, and hands the level it re-mints - if any -
+  to the log as `saved`, so the summary can grade the stored pose by the
+  visit it came from.
 - The id is `newVisitId(pageId, arSessionGeneration)` with a random page
   id, so it stays unique across reloads; a visit settled again (a failed
   Finish) replaces its entry.
@@ -192,9 +203,15 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   in the id's queue like a placement, fire-and-forget, `noteNoPersistence`
   on a refusal); entries made before the draft opened are written when it
   opens. A restored draft brings its visits back into the log; a dismissed
-  one does not. A visit's id is a stored id, so a discard or a spent draft
-  sweeps it with the objects; this page's own visit ids are never swept
-  (`notLive`).
+  one does not. A visit's id is a stored id, so a discard sweeps it with
+  the objects; this page's own visit ids are never swept (`notLive`).
+- **Visits keep a draft alive** (M3a/M3b review #5): the zip never carries
+  them, so `draftIsSpent` gets the read's visit count and a draft holding
+  one is never spent - it is offered ("N AR visits for the summary map")
+  until the author restores or discards it. Before, a draft holding only
+  re-scan visits of a hosted code counted as spent and the reload's sweep
+  deleted the visit files. The cost: such a draft is offered on every
+  reload of the tour until a discard.
 
 ## Invariants & assumptions
 

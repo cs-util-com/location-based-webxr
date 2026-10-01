@@ -276,6 +276,10 @@
         color: var(--accent-ink);
         font-weight: 600;
       }
+      /* What the visits now suggest: secondary to what visitors get. */
+      .summary-estimate {
+        font-size: var(--size-hint);
+      }
       .summary-numbers {
         font-size: var(--size-hint);
       }
@@ -286,6 +290,10 @@
         block-size: 18rem;
         border-radius: var(--radius);
         overflow: hidden;
+        /* Declared, so Leaflet's _initLayout does not set an INLINE
+           position: relative on the container - an inline style beats
+           the fullscreen rule below, and "Enlarge" collapsed the map. */
+        position: relative;
       }
       /* Fullscreen: the shell swaps this class in (summary-map-view.ts). */
       #summary-map.summary-map-expanded {

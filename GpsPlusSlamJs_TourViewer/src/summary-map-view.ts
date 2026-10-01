@@ -89,21 +89,45 @@ function codeMarkLayers(
   return layers;
 }
 
-function codeLayers(map: L.Map, code: SummaryCode, doc: Document): L.Layer[] {
-  const layers: L.Layer[] = [];
+/** An uncertainty ring: solid for the stored pose (what visitors get),
+ *  dashed for the visits' estimate. */
+function ring(
+  map: L.Map,
+  at: { lat: number; lng: number },
+  radiusM: number,
+  kind: "reference" | "estimate",
+): L.Layer {
+  return L.circle([at.lat, at.lng], {
+    radius: radiusM,
+    color: CODE_COLOR,
+    weight: 2,
+    fill: false,
+    ...(kind === "estimate" ? { dashArray: "4 6" } : {}),
+    className:
+      kind === "estimate" ? "tv-summary-estimate-ring" : "tv-summary-ring",
+  }).addTo(map);
+}
+
+/** The stored pose's own ring when known (M3a/M3b review #2); the
+ *  estimate's where the estimate is drawn, or where nothing else says how
+ *  far off the code may be. */
+function ringLayers(map: L.Map, code: SummaryCode): L.Layer[] {
   const c = code.combined;
-  if (c !== null) {
-    layers.push(
-      L.circle([c.lat, c.lng], {
-        radius: c.ringM,
-        color: CODE_COLOR,
-        weight: 2,
-        fill: false,
-        dashArray: "4 6",
-        className: "tv-summary-ring",
-      }).addTo(map),
-    );
+  const r = code.reference;
+  const storedRingM = r?.ringM ?? null;
+  const layers: L.Layer[] = [];
+  if (c !== null && (c.shown || storedRingM === null)) {
+    layers.push(ring(map, c, c.ringM, "estimate"));
   }
+  if (r !== null && storedRingM !== null) {
+    layers.push(ring(map, r, storedRingM, "reference"));
+  }
+  return layers;
+}
+
+function codeLayers(map: L.Map, code: SummaryCode, doc: Document): L.Layer[] {
+  const layers: L.Layer[] = ringLayers(map, code);
+  const c = code.combined;
   // The label goes on the stored pose, else on the estimate.
   const tag = label(doc, `${code.label}: ${code.verdict.text}`);
   if (c !== null && c.shown) {

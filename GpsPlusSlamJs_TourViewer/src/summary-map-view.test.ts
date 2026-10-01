@@ -72,6 +72,7 @@ function code(overrides: Partial<SummaryCode> = {}): SummaryCode {
       ...P(47.5, 8.7),
       facingDeg: 120,
       facingLine: [P(47.5, 8.7), P(47.49995, 8.7001)],
+      ringM: 4.5,
     },
     combined: {
       ...P(47.5, 8.7),
@@ -83,6 +84,7 @@ function code(overrides: Partial<SummaryCode> = {}): SummaryCode {
       offsetDeg: null,
     },
     verdict: { kind: "good", text: "Good", numbers: null, walkM: null },
+    estimateVerdict: null,
     details: [],
     ...overrides,
   };
@@ -138,6 +140,33 @@ describe("drawSummaryLayers", () => {
         (m) => m.options["className"] === "tv-summary-estimate",
       ),
     ).toBe(false);
+  });
+
+  // M3a/M3b review #2: the ring a visitor's position is judged by is the
+  // STORED pose's own; the estimate's ring joins it only where the
+  // estimate is drawn, or where the stored pose's error is not known.
+  it("rings the estimate too where it is drawn, or where the stored pose's own error is unknown", () => {
+    const c = code();
+    drawSummaryLayers(
+      {} as never,
+      model({
+        codes: [
+          { ...c, reference: { ...c.reference!, ringM: null } },
+          {
+            ...c,
+            combined: { ...c.combined!, ...P(47.50005, 8.7), shown: true },
+          },
+        ],
+      }),
+      doc as never,
+    );
+    expect(
+      calls.circles.map((x) => [x.options["className"], x.options["radius"]]),
+    ).toEqual([
+      ["tv-summary-estimate-ring", 4.5],
+      ["tv-summary-estimate-ring", 4.5],
+      ["tv-summary-ring", 4.5],
+    ]);
   });
 
   it("draws the visits' estimate as a second, hollow mark with a dashed line where it differs", () => {

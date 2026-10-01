@@ -59,13 +59,24 @@ function fakeEl(tag = "div"): FakeEl {
 
 const doc = { createElement: (tag: string) => fakeEl(tag) };
 
-function code(kind: SummaryCode["verdict"]["kind"]): SummaryCode {
+type Kind = SummaryCode["verdict"]["kind"];
+
+function code(kind: Kind, estimateKind: Kind | null = null): SummaryCode {
   return {
     levelId: "lvl",
     label: "The code",
     reference: null,
     combined: null,
     verdict: { kind, text: `text ${kind}`, numbers: null, walkM: null },
+    estimateVerdict:
+      estimateKind === null
+        ? null
+        : {
+            kind: estimateKind,
+            text: `text ${estimateKind}`,
+            numbers: null,
+            walkM: null,
+          },
     details: ["line one", "line two"],
   };
 }
@@ -128,19 +139,32 @@ const flush = async (): Promise<void> => {
 };
 
 describe("createSummaryPanel", () => {
-  it("lists every code with its verdict and its numbers before the map has loaded", () => {
+  // The two verdicts are labelled plainly (M3a/M3b review #2): visitors
+  // get the stored pose, so its grade leads; the visits' estimate follows
+  // as what they now suggest.
+  it("lists every code with what visitors get, what the visits now suggest, and the numbers, before the map has loaded", () => {
     const load = deferredLoad();
     const { p, dom } = panel(load.loadMap);
-    p.show({ ...MODEL, codes: [code("good"), code("walk-further")] });
+    p.show({
+      ...MODEL,
+      codes: [code("good"), code("unknown", "walk-further")],
+    });
     expect(dom.root.hidden).toBe(false);
     const rows = dom.codes.children;
-    expect(rows.map((r) => r.dataset["verdict"])).toEqual([
-      "good",
+    expect(rows.map((r) => r.dataset["verdict"])).toEqual(["good", "unknown"]);
+    expect(rows.map((r) => r.dataset["estimateVerdict"])).toEqual([
+      "none",
       "walk-further",
     ]);
-    const [title, verdict, numbers] = rows[1]!.children;
+    const [title, verdict, estimate, numbers] = rows[1]!.children;
     expect(title?.textContent).toBe("The code");
-    expect(verdict?.textContent).toBe("text walk-further");
+    expect(verdict?.textContent).toBe("What visitors get: text unknown");
+    expect(estimate?.textContent).toBe(
+      "What your visits now suggest: text walk-further",
+    );
+    expect(rows[0]!.children[2]?.textContent).toBe(
+      "What your visits now suggest: nothing yet",
+    );
     expect(numbers?.tag).toBe("details");
     expect(numbers?.children.map((c) => c.textContent)).toEqual([
       "The numbers",
@@ -174,13 +198,17 @@ describe("createSummaryPanel", () => {
     expect(dom.codes.children).toHaveLength(1);
   });
 
-  it("says the map failed when the map refuses to draw", async () => {
+  // M3a/M3b review #8: a module that loaded but could not draw is not
+  // "offline?" - the line says what actually happened.
+  it("says the map could not be drawn, not that it is offline, when the loaded map refuses to draw", async () => {
     const { p, dom } = panel(() =>
       Promise.resolve({ drawSummaryMap: () => null }),
     );
     p.show(MODEL);
     await flush();
-    expect(dom.mapStatus.dataset["state"]).toBe("failed");
+    expect(dom.mapStatus.dataset["state"]).toBe("error");
+    expect(dom.mapStatus.textContent).toBe(SUMMARY_MAP_TEXT.error);
+    expect(SUMMARY_MAP_TEXT.error).not.toMatch(/offline/);
   });
 
   it("does not load a map with nothing to frame", () => {

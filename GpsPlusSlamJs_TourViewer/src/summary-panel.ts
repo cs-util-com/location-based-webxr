@@ -47,28 +47,45 @@ export interface SummaryPanel {
   hide(): void;
 }
 
-/** The map's words, one per state. */
+/** The map's words, one per state. "failed" is the import refused (a
+ *  fetch: offline is the likely cause); "error" is a module that loaded
+ *  but could not draw (the map library failed on this page). */
 export const SUMMARY_MAP_TEXT = {
   loading: "Loading the map...",
   failed: "The map could not load (offline?). The verdicts above still hold.",
+  error:
+    "The map could not be drawn on this page (the map library failed). The verdicts above still hold.",
   empty: "Nothing to show on a map yet.",
 } as const;
 
-type SummaryMapState = "loading" | "ready" | "failed" | "empty";
+type SummaryMapState = "loading" | "ready" | "failed" | "error" | "empty";
 
-/** One code's row: its name, its verdict, and the numbers folded away. */
+/** The two verdicts' plain labels (M3a/M3b review #2). */
+const VISITORS_GET = "What visitors get";
+const VISITS_SUGGEST = "What your visits now suggest";
+
+/**
+ * One code's row: its name, what visitors get (the stored pose's verdict,
+ * primary), what the visits now suggest (the combined estimate's,
+ * secondary), and the numbers folded away.
+ */
 function codeRow(doc: Document, code: SummaryCode): HTMLElement {
   const li = doc.createElement("li");
   li.className = "summary-code";
   li.dataset["testid"] = "summary-code";
   li.dataset["verdict"] = code.verdict.kind;
+  li.dataset["estimateVerdict"] = code.estimateVerdict?.kind ?? "none";
   const title = doc.createElement("span");
   title.className = "summary-code-title";
   title.textContent = code.label;
   const verdict = doc.createElement("span");
   verdict.className = "summary-verdict";
   verdict.dataset["testid"] = "summary-verdict";
-  verdict.textContent = code.verdict.text;
+  verdict.textContent = `${VISITORS_GET}: ${code.verdict.text}`;
+  const estimate = doc.createElement("span");
+  estimate.className = "summary-estimate";
+  estimate.dataset["testid"] = "summary-estimate";
+  estimate.textContent = `${VISITS_SUGGEST}: ${code.estimateVerdict?.text ?? "nothing yet"}`;
   const numbers = doc.createElement("details");
   numbers.className = "summary-numbers";
   numbers.dataset["testid"] = "summary-numbers";
@@ -81,7 +98,7 @@ function codeRow(doc: Document, code: SummaryCode): HTMLElement {
     p.textContent = line;
     numbers.append(p);
   }
-  li.append(title, verdict, numbers);
+  li.append(title, verdict, estimate, numbers);
   return li;
 }
 
@@ -125,7 +142,7 @@ export function createSummaryPanel(deps: {
       .then((module) => {
         if (mine !== generation) return;
         map = module.drawSummaryMap(dom.map, model);
-        setMapState(map === null ? "failed" : "ready");
+        setMapState(map === null ? "error" : "ready");
       })
       .catch(() => {
         if (mine !== generation) return;
