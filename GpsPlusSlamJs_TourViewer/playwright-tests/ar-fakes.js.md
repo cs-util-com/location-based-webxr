@@ -15,6 +15,12 @@ camera, so `installTourViewerArFakes(page)` installs
   GPS fixes into the app store, so the mint gate and placement unlock.
   Shared by `ar-mode.spec.js`, `object-editing.spec.js` and
   `ar-layout.spec.js` (it was copied into the first two).
+- `openFixtureTour(page)` - opens the fixture tour on the creator's page
+  (`?nocache=1`, range streaming) and opens step 4; `enterArAndMeasure(page)`
+  enters AR, arms the fixture code, seeds the alignment and measures it, so
+  placement unlocks. Moved out of `object-editing.spec.js` when
+  `summary.spec.js` (authoring plan 2026-09-28-0953 M3b) needed the same
+  steps.
 - Control surface `window.__tourViewerTest`: `initARCalls` (records
   `hasCameraFrame` + the isolation flags), `captureCalls`,
   `alignmentCalls`, `alignmentStore` (the real app store the alignment

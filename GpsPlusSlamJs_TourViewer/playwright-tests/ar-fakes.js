@@ -1,4 +1,7 @@
 // @ts-check
+import { expect } from "@playwright/test";
+
+import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
 /**
  * Fake device seams for the AR e2e specs (the AnchorStarter/QrTrackingDemo
  * pattern): headless Chromium has no WebXR or camera, so the suite installs
@@ -409,6 +412,55 @@ export async function installTourViewerArFakes(page, options = {}) {
     },
     { shareRoute, printSizeM },
   );
+}
+
+/**
+ * Open the fixture tour on the creator's page (range streaming, no cache)
+ * and open step 4. Shared by the editing and the summary specs.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+export async function openFixtureTour(page) {
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(E2E_QR_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  const step = page.getByTestId("step-measure");
+  if (!(await step.evaluate((el) => /** @type {any} */ (el).open))) {
+    await step.locator("summary").click();
+  }
+}
+
+/**
+ * Enter AR and measure the fixture's code (it stores a pose, so the
+ * measurement keeps it - D10b); placement unlocks. Shared by the editing
+ * and the summary specs.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+export async function enterArAndMeasure(page) {
+  await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
+  await page.getByTestId("enter-ar").click();
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("setup-status").textContent();
+      },
+      { timeout: 15000 },
+    )
+    .toMatch(/waiting for GPS alignment/i);
+  await seedAlignment(page);
+  await expect(page.getByTestId("setup-mint")).toBeEnabled({ timeout: 10000 });
+  await page.getByTestId("setup-mint").click();
+  await expect(page.getByTestId("setup-pin")).toBeEnabled();
 }
 
 /**

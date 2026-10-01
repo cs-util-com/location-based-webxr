@@ -1,8 +1,11 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
-import { installTourViewerArFakes, seedAlignment } from "./ar-fakes.js";
-import { E2E_QR_TEXT } from "./qr-fixture.mjs";
+import {
+  enterArAndMeasure,
+  installTourViewerArFakes,
+  openFixtureTour as openTour,
+} from "./ar-fakes.js";
 import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
 
@@ -17,7 +20,6 @@ import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
  * text replacing the old one, a deleted photo gone WITH its jpg.
  */
 
-const RANGES_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
 /** The fixture tour's hosted pin (archive-server.mjs). */
 const FIXTURE_PIN = "fixturepin01";
 /** The fakes' control surface on `window` (ar-fakes.js). */
@@ -47,44 +49,6 @@ async function downloadedZip(page, index) {
   }
   await reader.close();
   return { names, manifest: parseTourManifest(JSON.parse(json["tour.json"])) };
-}
-
-async function openTour(page) {
-  await page.goto("/?nocache=1");
-  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
-  await page.getByTestId("open-button").click();
-  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
-    timeout: 15000,
-  });
-  const step = page.getByTestId("step-measure");
-  if (!(await step.evaluate((el) => /** @type {any} */ (el).open))) {
-    await step.locator("summary").click();
-  }
-}
-
-/** Enter AR and measure the fixture's code (it stores a pose, so the
- *  measurement keeps it - D10b); placement unlocks. */
-async function enterArAndMeasure(page) {
-  await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
-  await page.getByTestId("enter-ar").click();
-  await page.evaluate((text) => {
-    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
-  }, E2E_QR_TEXT);
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("setup-status").textContent();
-      },
-      { timeout: 15000 },
-    )
-    .toMatch(/waiting for GPS alignment/i);
-  await seedAlignment(page);
-  await expect(page.getByTestId("setup-mint")).toBeEnabled({ timeout: 10000 });
-  await page.getByTestId("setup-mint").click();
-  await expect(page.getByTestId("setup-pin")).toBeEnabled();
 }
 
 /**
