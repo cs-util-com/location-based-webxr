@@ -115,7 +115,10 @@ describe("combineCodeVisits properties", () => {
     );
   });
 
-  it("never predicts a larger error from one more visit's heading, nor beyond the worst visit", () => {
+  // The horizontal half is the M3a/M3b review's #3: with 1/accuracy
+  // weights over every visit, a much worse visit raised the prediction, and
+  // the summary's "scan it again" then made the code look worse.
+  it("never predicts a larger error from one more visit, horizontally or in heading, nor beyond the worst visit", () => {
     fc.assert(
       fc.property(visits, spec, centre, (specs, extra, c) => {
         const base = combineCodeVisits(specs.map((s) => toVisit(s, c)))!;
@@ -124,6 +127,9 @@ describe("combineCodeVisits properties", () => {
         )!;
         expect(more.predictedHeadingDeg).toBeLessThanOrEqual(
           base.predictedHeadingDeg + 1e-9,
+        );
+        expect(more.predictedHorizontalM).toBeLessThanOrEqual(
+          base.predictedHorizontalM + 1e-9,
         );
         const worst = Math.max(...specs.map((s) => Math.max(s.accuracyM, 1)));
         expect(base.predictedHorizontalM).toBeLessThanOrEqual(worst + 1e-9);

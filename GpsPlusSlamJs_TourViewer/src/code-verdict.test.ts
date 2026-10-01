@@ -7,7 +7,7 @@
  * rule with a realistic visit (the thresholds are provisional, the ORDER
  * of the reasons is the design), and the property pins what a verdict must
  * never do: call a code good past the thresholds, or turn a good code bad
- * because the author scanned it once more under the same conditions.
+ * because the author scanned it once more, under any conditions.
  */
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
@@ -20,6 +20,7 @@ import {
   VERDICT_GOOD_HEADING_DEG,
   VERDICT_GOOD_HORIZONTAL_M,
   VERDICT_TEXT,
+  verdictWithoutNumbers,
   walkNeededM,
 } from "./code-verdict.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
@@ -88,6 +89,35 @@ describe("codeVerdict", () => {
     expect(verdictOf([visit(6, 40), visit(6, 40, 1)]).kind).toBe("good");
   });
 
+  // Why this test matters (M3a/M3b review #2): the STORED pose is graded
+  // by the one visit that saved it, and visitors keep it whatever later
+  // visits do (D10b) - so "scan it again" would promise an improvement no
+  // further visit can bring. For it, a position short of Good with an
+  // honest heading is the GPS that measured it.
+  it("never asks to scan again when grading one saved pose: the GPS is what is left", () => {
+    const decent = [visit(6.5, 200)];
+    expect(verdictOf(decent).kind).toBe("scan-again");
+    expect(
+      codeVerdict(decent, combineCodeVisits(decent), { averaging: false }).kind,
+    ).toBe("wait-for-gps");
+    const short = [visit(5, 10)];
+    expect(
+      codeVerdict(short, combineCodeVisits(short), { averaging: false }).kind,
+    ).toBe("walk-further");
+  });
+
+  it("names a stored pose it cannot grade, and a code with none, without numbers", () => {
+    expect(verdictWithoutNumbers("unknown")).toEqual({
+      kind: "unknown",
+      text: "Not known on this device",
+      numbers: null,
+      walkM: null,
+    });
+    expect(verdictWithoutNumbers("not-saved").text).toBe(
+      "No saved position yet",
+    );
+  });
+
   it("says scan again, with no numbers, for a code no visit measured", () => {
     const v = codeVerdict([], null);
     expect(v).toEqual({
@@ -98,43 +128,47 @@ describe("codeVerdict", () => {
     });
   });
 
-  it("needs about 24 m of walk at 5 m GPS (the M3a results' example)", () => {
-    expect(walkNeededM(5)).toBeGreaterThan(23);
-    expect(walkNeededM(5)).toBeLessThan(25);
+  it("needs 4.77 x the accuracy of walk (24 m at 5 m GPS, the M3a results' example)", () => {
+    expect(walkNeededM(5)).toBeCloseTo(23.87, 2);
+    expect(walkNeededM(1)).toBeCloseTo(4.773, 3);
   });
 
-  it("can lose its Good to one more POOR visit: the adopted 1/accuracy weighting predicts it so", () => {
-    // Not a defect of the verdict, a property of the M3a weighting the
-    // owner may want to revisit (open question 1 of the results): with
-    // weights 1/a the predicted error is sqrt(k) / sum(1/a), which a visit
-    // much worse than the others RAISES. 1/a² weighting would not.
+  it("keeps its Good when one more POOR visit is added: the position combines only the visits that help", () => {
+    // The M3a/M3b review (#3): with 1/a weights over every visit the
+    // predicted error sqrt(k) / sum(1/a) ROSE when a much worse visit
+    // joined (3.7 m and 30 m: 4.66 m), so "scan it again" could turn a good
+    // code bad. The best-prefix rule leaves the 30 m visits out.
     const good = [visit(30, 60), visit(3.7, 60, 1)];
     expect(verdictOf(good).kind).toBe("good");
-    expect(verdictOf([...good, visit(30, 60, 2)]).kind).toBe("scan-again");
+    expect(verdictOf([...good, visit(30, 60, 2)]).kind).toBe("good");
   });
 
-  it("is never Good past the thresholds, and one more visit like the BEST never makes a Good code worse (property)", () => {
+  it("is never Good past the thresholds, and one more visit of ANY quality never makes a Good code worse (property)", () => {
     const visitArb = fc.record({
       gpsAccuracyM: fc.double({ min: 1, max: 20, noNaN: true }),
       baselineM: fc.double({ min: 1, max: 200, noNaN: true }),
       n: fc.double({ min: -10, max: 10, noNaN: true }),
     });
     fc.assert(
-      fc.property(fc.array(visitArb, { minLength: 1, maxLength: 5 }), (raw) => {
-        const visits = raw.map((r) => visit(r.gpsAccuracyM, r.baselineM, r.n));
-        const v = verdictOf(visits);
-        expect(Object.values(VERDICT_TEXT)).toContain(v.text);
-        const n = v.numbers!;
-        const within =
-          n.predictedHorizontalM <= VERDICT_GOOD_HORIZONTAL_M &&
-          n.predictedHeadingDeg <= VERDICT_GOOD_HEADING_DEG;
-        expect(v.kind === "good").toBe(within);
-        const best = visits.reduce((a, b) =>
-          b.gpsAccuracyM < a.gpsAccuracyM ? b : a,
-        );
-        const again = verdictOf([...visits, best]).kind;
-        expect(v.kind !== "good" || again === "good").toBe(true);
-      }),
+      fc.property(
+        fc.array(visitArb, { minLength: 1, maxLength: 5 }),
+        visitArb,
+        (raw, more) => {
+          const visits = raw.map((r) =>
+            visit(r.gpsAccuracyM, r.baselineM, r.n),
+          );
+          const extra = visit(more.gpsAccuracyM, more.baselineM, more.n);
+          const v = verdictOf(visits);
+          expect(Object.values(VERDICT_TEXT)).toContain(v.text);
+          const n = v.numbers!;
+          const within =
+            n.predictedHorizontalM <= VERDICT_GOOD_HORIZONTAL_M &&
+            n.predictedHeadingDeg <= VERDICT_GOOD_HEADING_DEG;
+          expect(v.kind === "good").toBe(within);
+          const again = verdictOf([...visits, extra]).kind;
+          expect(v.kind !== "good" || again === "good").toBe(true);
+        },
+      ),
     );
   });
 });

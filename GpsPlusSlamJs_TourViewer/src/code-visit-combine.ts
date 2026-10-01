@@ -7,11 +7,17 @@
  * those per-visit poses into one, the way the M3a spike measured best on
  * synthetic multi-visit fixtures (`code-estimate-across-visits.test.ts`):
  *
- * - **Position: weighted by 1/accuracy.** Fully trusting the reported
- *   accuracy (1/accuracy²) wins when the accuracy predicts a visit's GPS
- *   bias and loses when it does not; 1/accuracy was within 0.2-0.3 m of
- *   the better of the two in both cases. Field data decides which world
- *   the phones live in; the sidecar names the reversal.
+ * - **Position: weighted by 1/accuracy, over the best visits only.** The
+ *   visits are taken best accuracy first, as many as minimise the
+ *   predicted error `sqrt(k) / sum(1/a)`, so one more visit never raises
+ *   it (M3a/M3b review #3: over every visit, 3.7 m and 30 m predicted
+ *   4.66 m). Measured with five visits at 3 degrees of yaw noise (p50, the
+ *   spike's four bias arms): it ties plain 1/accuracy where the bias
+ *   tracks the accuracy (3.1 m against 2.9 for 1/accuracy² and 4.0 for the
+ *   mean), gains 0.4-0.5 m where the visits' biases share a direction, and
+ *   loses 0.3 m (1.0 m at p90) where the bias ignores the accuracy (4.3 m
+ *   against 4.0 for 1/accuracy and 3.8 for the mean). Field data decides
+ *   which world the phones live in; the sidecar names the reversal.
  * - **Heading: weighted by the heading model**, `1 / sigma²` with
  *   `sigma = hypot(code yaw noise, atan(accuracy / baseline))` (plan §3.3).
  *   A short walk cannot fix the alignment's yaw, and the page measures the
@@ -33,10 +39,16 @@ import { objectPoseNue } from "./content-placement.js";
 
 /**
  * The code's own pose-solve yaw error per visit (degrees, one sigma), the
- * floor of the heading model. The spike swept 1-5°; 2° is the middle of
- * what a stable fused pose of a 16 cm code at 1-3 m gives. It only sets how
- * much a long walk can outweigh a short one: at 5° the weights flatten, and
- * the spike's heading verdict held from 1° to 5°.
+ * floor of the heading model; an assumption for a stable fused pose of a
+ * 16 cm code at 1-3 m, not a measurement. Swept 1/2/3/5° in the M3a spike
+ * (M3a/M3b review #4; synthetic yaw noise 1/3/5°, two visit mixes, four
+ * bias arms, 5,000 codes per row): in the default mix the share of codes
+ * called Good moved by at most 1 point (41 % to 40 % at 5°), its precision
+ * by at most 2, and the combined heading by at most 0.1° p50 - the
+ * atan(accuracy / walk) term dominates; in the hurried mix (4-20 m GPS,
+ * 10-30 m walks) almost no code is Good at any sigma. What it does move is
+ * the "walk further" distance:
+ * 4.72 x the accuracy at 1°, 4.77 x at 2°, 4.86 x at 3°, 5.19 x at 5°.
  */
 export const CODE_YAW_NOISE_DEG = 2;
 
@@ -63,10 +75,16 @@ export interface CodeVisitPose {
 export interface CombinedCodePose {
   /** The combined pose, minted like any level (`mintQrGeoPose`). */
   readonly geo: QrGeoPose;
-  /** The visits actually combined (unusable ones are skipped). */
+  /** The visits actually combined (unusable ones are skipped); every one
+   *  has its say in the heading. */
   readonly visitCount: number;
-  /** `sqrt(k) / sum(1 / accuracy)`: the horizontal error expected if each
-   *  visit errs by about its accuracy, independently (m). */
+  /** How many of them the position combines: the best by accuracy, as
+   *  many as minimise `predictedHorizontalM`. */
+  readonly positionVisitCount: number;
+  /** `sqrt(k) / sum(1 / accuracy)` over the position's visits: the
+   *  horizontal error expected if each errs by about its accuracy,
+   *  independently (m). The ring's radius; never rises with another
+   *  visit. */
   readonly predictedHorizontalM: number;
   /** `1 / sqrt(sum(1 / sigma²))` of the heading model (degrees). An upper
    *  bound in the spike: the measured error sat at 0.1-0.4 of it at the
@@ -140,6 +158,46 @@ function yawFrom(reference: Quaternion, rotation: Quaternion): number | null {
 
 const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 
+/** `sqrt(k) / sum(1 / a)`: the horizontal error expected from `visits`
+ *  weighted by 1/accuracy if each errs by about its accuracy,
+ *  independently. */
+function predictedHorizontal(visits: readonly UsableVisit[]): number {
+  return (
+    Math.sqrt(visits.length) / visits.reduce((s, v) => s + 1 / v.accuracyM, 0)
+  );
+}
+
+/**
+ * The visits the position combines: the best ones by accuracy, as many as
+ * minimise {@link predictedHorizontal}. For each count k the k most
+ * accurate visits give the smallest prediction, so this is the best subset
+ * of any size - and one more visit can only add a candidate, never take
+ * one away, so the prediction never rises (M3a/M3b review #3). A tie keeps
+ * the larger subset: more visits, the same prediction. Equal accuracies are
+ * ordered by position, so the result never depends on the visits' order.
+ */
+function positionSubset(visits: readonly UsableVisit[]): UsableVisit[] {
+  const sorted = [...visits].sort(
+    (a, b) =>
+      a.accuracyM - b.accuracyM ||
+      a.position[0] - b.position[0] ||
+      a.position[2] - b.position[2] ||
+      a.position[1] - b.position[1],
+  );
+  let bestK = 1;
+  let best = Number.POSITIVE_INFINITY;
+  let inverse = 0;
+  sorted.forEach((v, i) => {
+    inverse += 1 / v.accuracyM;
+    const predicted = Math.sqrt(i + 1) / inverse;
+    if (predicted <= best) {
+      best = predicted;
+      bestK = i + 1;
+    }
+  });
+  return sorted.slice(0, bestK);
+}
+
 function weightedPosition(
   visits: readonly UsableVisit[],
 ): [number, number, number] {
@@ -192,7 +250,12 @@ export function combineCodeVisits(
   if (first === undefined) return null;
   const zero: LatLong = { lat: first.geo.lat, lon: first.geo.lon };
   const placed = valid.map((v) => usable(v, zero));
-  const position = weightedPosition(placed);
+  const subset = positionSubset(placed);
+  const position = weightedPosition(subset);
+  // The heading takes EVERY usable visit: its weights are the inverse
+  // variance of its own model, so under that model another visit only adds
+  // information and its prediction cannot rise; a poor-GPS visit with a
+  // long walk is a good heading witness.
   const { rotation, yawOffsets } = weightedRotation(placed);
   let geo: QrGeoPose;
   try {
@@ -204,7 +267,6 @@ export function combineCodeVisits(
   } catch {
     return null;
   }
-  const invAccuracy = placed.reduce((s, v) => s + 1 / v.accuracyM, 0);
   const headingInfo = placed.reduce(
     (s, v) => s + 1 / headingSigmaRad(v) ** 2,
     0,
@@ -212,7 +274,8 @@ export function combineCodeVisits(
   return {
     geo,
     visitCount: placed.length,
-    predictedHorizontalM: Math.sqrt(placed.length) / invAccuracy,
+    positionVisitCount: subset.length,
+    predictedHorizontalM: predictedHorizontal(subset),
     predictedHeadingDeg: 1 / Math.sqrt(headingInfo) / RAD,
     maxOffsetM: Math.max(
       ...placed.map((v) =>

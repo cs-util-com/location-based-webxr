@@ -10,16 +10,25 @@ make the code's estimate good enough - computed from what
 
 ## Public API
 
-- `codeVerdict(visits: readonly CodeVisitPose[], combined: CombinedCodePose | null): CodeVerdict`
+- `codeVerdict(visits, combined, { averaging? }): CodeVerdict`
   - `CodeVerdict`: `kind` (`"good" | "walk-further" | "wait-for-gps" |
-"scan-again"`), `text` (from `VERDICT_TEXT`), `numbers` (visit count,
-    predicted horizontal and heading error, best accuracy, longest walk,
-    how far the visits disagree; null when no visit measured the code),
-    `walkM` (for "walk further": the walk one visit at the best accuracy
-    needs; null otherwise).
+"scan-again" | "unknown" | "not-saved"`), `text` (from `VERDICT_TEXT`),
+    `numbers` (visit count, how many the position combines, predicted
+    horizontal and heading error, best accuracy, longest walk, how far the
+    visits disagree; null when no visit measured the code), `walkM` (for
+    "walk further": the walk one visit at the best accuracy needs; null
+    otherwise).
   - No usable visit (or `combined` null): "scan-again" with no numbers.
-- `walkNeededM(accuracyM)`: `a / tan(sqrt(12² - 2²) degrees)`, about
-  4.8 x the accuracy (24 m at 5 m).
+  - `averaging: false` grades ONE saved pose (what visitors get, M3a/M3b
+    review #2): visitors keep it whatever later visits do, so "scan it
+    again" cannot help it, and a position short of Good with an honest
+    heading reads "Wait for better GPS".
+- `verdictWithoutNumbers("unknown" | "not-saved")`: the stored pose's
+  verdict when no visit this device kept saved it ("Not known on this
+  device"), or when the tour stores none ("No saved position yet").
+- `walkNeededM(accuracyM)`: `a / tan(sqrt(12² - 2²) degrees)`, 4.77 x the
+  accuracy (24 m at 5 m); 4.72 x at a code yaw sigma of 1 degree, 4.86 x
+  at 3, 5.19 x at 5.
 - Constants: `VERDICT_GOOD_HORIZONTAL_M` (5), `VERDICT_GOOD_HEADING_DEG`
   (12), `VERDICT_TEXT`; module-private `VERDICT_POOR_GPS_M` (8).
 
@@ -37,23 +46,33 @@ make the code's estimate good enough - computed from what
 
 Measured on SYNTHETIC multi-visit replays only
 (`2026-10-01-0354-code-estimate-across-visits-results.md`; no owner field
-recording existed). With independent bias directions about 44 % of codes
-got "Good"; of those 69 % were within 5 m and 5 degrees and 95 % within 8 m
-and 8 degrees (47 % and 84 % if the bias ignores the reported accuracy).
+recording existed). Re-measured with the best-prefix position rule
+(M3a/M3b review #3 and #4; 5,000 codes of 1-5 visits per row, yaw noise
+3 degrees): with independent bias directions about 44 % of codes get
+"Good"; of those 71 % are within 5 m and 5 degrees and 96 % within 8 m and
+8 degrees (41 % and 78 % if the bias ignores the reported accuracy - 47 %
+and 84 % before the subset rule, its cost in that world).
 
+- **Swept** (M3a/M3b review #4): yaw noise 1/3/5 degrees moves that
+  precision to 75 / 65 / 52 % (bias tracking the accuracy, a second pool;
+  two pools of 320 visits differ by up to 6 points at the same setting);
+  the code yaw sigma 1-5 degrees moves the Good share by at most 1 point.
+  A hurried author (4-20 m GPS, 10-30 m walks) almost never gets "Good":
+  the heading model asks for a longer walk, even where the real heading
+  would pass (it is a conservative bound).
 - **What would reverse them**: GPS biases sharing a direction across
   visits (at a 90 degree spread the share of "Good" codes within 5 m and 5
-  degrees drops to 18 %). If field scatter between visits turns out small
+  degrees drops to 34 %, at 0 degrees to about 23 %). If field scatter between visits turns out small
   against their accuracy, the square-root-of-k gain in the prediction
   should not be credited and the best single visit's accuracy used instead.
 - The target the thresholds were chosen for (5 m and 5 degrees) is an open
   owner question (M3a results, question 2).
-- **A poorer extra visit can lower a verdict** (a test pins it): under the
-  adopted 1/accuracy weighting the predicted error `sqrt(k) / sum(1/a)`
-  RISES when a visit much worse than the others is added (30 m and 3.7 m
-  is Good, a second 30 m visit makes it "scan again"). One more visit like
-  the best one never lowers it (property test). 1/accuracy² weighting would
-  not have this; it is the M3a results' open question 1.
+- **No extra visit lowers a verdict** (M3a/M3b review #3; a property test
+  over visits of any quality): the position combines only the best prefix
+  of visits by accuracy (`combineCodeVisits`), so its prediction never
+  rises, and the heading's inverse-variance prediction never rises
+  either. Before, 30 m and 3.7 m was Good and a second 30 m visit made it
+  "scan again".
 
 ## Invariants & assumptions
 
@@ -73,6 +92,8 @@ verdict.walkM; // 24.0 (one visit at 5 m)
 ## Tests
 
 `code-verdict.test.ts`: one case per branch with realistic visits (and the
-order: a short walk under poor GPS asks for the walk first), no visit, the
-24 m example, the poorer-extra-visit case, and a property: never Good past
-the thresholds, and one more visit like the best never turns Good away.
+order: a short walk under poor GPS asks for the walk first), no visit, one
+saved pose never asked to scan again, the verdicts without numbers, the
+4.77 x walk, a poor extra visit keeping a Good, and a property: never Good
+past the thresholds, and one more visit of any quality never turns Good
+away.

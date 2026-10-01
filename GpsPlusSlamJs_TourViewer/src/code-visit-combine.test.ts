@@ -112,6 +112,45 @@ describe("combineCodeVisits", () => {
     expect(result!.maxOffsetM).toBeCloseTo(6, 2);
   });
 
+  // Why this test matters: with 1/accuracy weights, sqrt(k) / sum(1/a)
+  // RISES when a much worse visit joins (3.7 m alone 3.7 m, with a 30 m
+  // visit 4.66 m, with two 5.14 m), so the summary's "scan it again" would
+  // make the code worse on screen (M3a/M3b review #3). The position combines
+  // only the best visits by accuracy - the prefix that minimises the
+  // prediction - so the estimate, its ring and its verdict all describe
+  // the same subset, and a worse visit is simply not used.
+  it("combines the position from the best prefix of visits by accuracy, so a much worse visit is not used", () => {
+    const good = visit(0, 0, 180, 3.7, 30);
+    const poor = visit(20, 0, 180, 30, 30);
+    const poor2 = visit(0, 20, 180, 30, 30);
+    const one = combineCodeVisits([good])!;
+    const two = combineCodeVisits([poor, good])!;
+    const three = combineCodeVisits([poor, good, poor2])!;
+    for (const result of [two, three]) {
+      expect(result.predictedHorizontalM).toBeCloseTo(3.7, 6);
+      expect(result.positionVisitCount).toBe(1);
+      const pose = read(result.geo);
+      expect(pose.n).toBeCloseTo(0, 2);
+      expect(pose.e).toBeCloseTo(0, 2);
+    }
+    expect(one.positionVisitCount).toBe(1);
+    // Every usable visit still counts, and still has its say in the heading.
+    expect(three.visitCount).toBe(3);
+  });
+
+  // Why this test matters: the subset rule must still average visits that
+  // help: 4 m and 5 m together predict sqrt(2) / (1/4 + 1/5) = 3.14 m,
+  // better than the 4 m visit alone.
+  it("keeps a worse visit that still lowers the prediction", () => {
+    const result = combineCodeVisits([
+      visit(0, 0, 180, 4),
+      visit(9, 0, 180, 5),
+    ])!;
+    expect(result.positionVisitCount).toBe(2);
+    expect(result.predictedHorizontalM).toBeCloseTo(Math.SQRT2 / 0.45, 6);
+    expect(read(result.geo).n).toBeCloseTo((9 * 0.2) / 0.45, 2);
+  });
+
   // Why this test matters: the heading of a visit is as good as its walked
   // baseline lets the GPS alignment be (`atan(accuracy / baseline)`), so a
   // short visit must not drag a long one's facing. The spike measured this

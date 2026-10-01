@@ -40,29 +40,43 @@
  * opt-in: `CODE_ESTIMATE_SPIKE=1` (all), or `strategies`, `thresholds`,
  * `model`, `verdict`. Their tables are the M3a results doc's evidence.
  *
- * Measured result (2026-10-01, synthetic only; pool of 320 visits, 2,000
- * trials per cell):
- * - Combining: with five visits whose biases point in independent
- *   directions, the first visit alone errs 9.2 m p50, the mean 4.0 m,
- *   1/accuracy² 2.9 m and 1/accuracy 3.1 m when the bias follows the
- *   reported accuracy; 9.6 / 3.8 / 4.7 / 4.0 m when it does not. The
- *   heading weighted by `atan(accuracy / baseline)` wins in every arm
- *   (2.2° p50, 5.4° p90 against 5.0° / 19° for the first visit). With
- *   correlated bias directions (90°, 0°) averaging buys little.
- *   `combineCodeVisits` ships the robust middle (1/accuracy, heading model).
- * - The heading model is a conservative bound: measured/model 0.1-0.4 at
- *   p50, 0.3-0.8 at p90 (white-noise-only GPS up to 1.6). Per metre WALKED
- *   a line (out and back) beats a loop, because it reaches further; per
- *   metre of extent a long loop is slightly better (ratio 0.17-0.18 vs
- *   0.26-0.28 at 60-120 m). The extent is the lever, not the directions.
- * - The Recorder's per-visit mint (each sighting through the alignment of
- *   its moment) gets the heading badly wrong when a visit starts at the
- *   code (89° p50): the first look's alignment has no walk behind it, and
- *   the mint's rotation average is unweighted, so no half-life helps. The
- *   end-of-visit alignment (the Tour Viewer's settle) gives 5.0° p50.
- * - The 15° spread gate refuses 0 % of honest visits at 1-3° yaw noise
- *   (5 % at 5°) and catches a 20° re-hang 75-100 %; the 4 s gap and the
- *   60 s half-life change nothing in the Tour Viewer's flow.
+ * Measured result (synthetic only). Sample sizes per part, since they
+ * differ (the M3a/M3b review, #4, found the first header overstated them):
+ * - Combining (`strategies`; re-run 2026-10-01 with the shipped subset rule):
+ *   a pool of 320 visits, 2,000 trials per cell. Five visits at 3° of yaw
+ *   noise, horizontal p50: the first visit alone 9.2 m, the mean 4.0,
+ *   1/accuracy² 2.9, 1/accuracy 3.1 and the SHIPPED best-prefix 1/accuracy
+ *   3.1 m when the bias tracks the reported accuracy; 9.6 / 3.8 / 4.7 / 4.0
+ *   / 4.3 m (p90 8.1 against 7.1 for plain 1/accuracy) when it does not.
+ *   Where the bias tracks the accuracy but shares a direction across
+ *   visits, the subset gains 0.4-0.5 m (90°: 6.9 against 7.3; 0°: 7.3
+ *   against 7.8). The heading weighted by `atan(accuracy / baseline)` wins
+ *   in every arm (2.2° p50, 5.4° p90 against 5.0° / 19° for the first
+ *   visit); taking it over the position's subset only costs 0.1-0.2°, so it
+ *   keeps every visit.
+ * - The heading model (`model`; enlarged 2026-10-01): 200 visits per walk
+ *   length and shape, per GPS arm (it was 12). It is a conservative bound:
+ *   measured over model 0.09-0.40 at p50 and 0.21-1.11 at p90 (white-noise
+ *   only GPS 0.22-0.69 and up to 1.96); 0-12 % of visits exceed it (white
+ *   noise only: up to 33 %). Default arm, heading p50 / p90: line walks
+ *   12.8 / 37° at 15 m, 5.4 / 16° at 30 m, 3.2 / 9.4° at 60 m, 1.6 / 4.7°
+ *   at 120 m. Per metre walked a line beats a loop from 30 m on (at 15 m
+ *   the loop is slightly better). Drift of 1° per 100 m changed almost
+ *   nothing; 3° per 100 m adds up to 0.8° p50 at 120 m.
+ * - The verdict (`verdict`): 5,000 codes (1-5 visits) per row. The code's
+ *   yaw sigma (1-5°) moves the Good share by at most 1 point; the yaw
+ *   noise moves its precision (75 / 65 / 52 % within 5 m and 5° at 1 / 3 /
+ *   5° when the bias tracks the accuracy); a hurried mix (4-20 m GPS,
+ *   10-30 m walks) is almost never Good. Two pools of 320 differ by up to
+ *   6 points of precision at the same setting: read the table to +-5.
+ * - The Recorder's per-visit mint (`thresholds`, a pool of 160 visits) gets
+ *   the heading badly wrong when a visit starts at the code (89° p50): the
+ *   first look's alignment has no walk behind it, and the mint's rotation
+ *   average is unweighted, so no half-life helps. The end-of-visit
+ *   alignment (the Tour Viewer's settle) gives 5.0° p50.
+ * - The 15° spread gate (the same 160 visits) refuses 0 % of honest visits
+ *   at 1-3° yaw noise (5 % at 5°) and catches a 20° re-hang 75-100 %; the
+ *   4 s gap and the 60 s half-life change nothing in the Tour Viewer's flow.
  */
 
 import { describe, expect, it } from "vitest";
@@ -95,6 +109,10 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
 import { combineCodeVisits, type CodeVisitPose } from "./code-visit-combine.js";
+import {
+  VERDICT_GOOD_HEADING_DEG,
+  VERDICT_GOOD_HORIZONTAL_M,
+} from "./code-verdict.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import { odomNueFromWebXr, throughAlignment } from "./visit-anchoring.js";
 
@@ -802,23 +820,46 @@ const print = (line: string): void => {
 
 const WALKS_M = [15, 30, 60, 120] as const;
 
-/** A pool of independent visits: accuracy uniform in [3, 15] m, the walk
- *  lengths and shapes cycled so every cell is equally filled. */
+/** Which visits a pool holds: the reported accuracy's range and the walk
+ *  lengths (each walked as a line and as a loop). */
+interface PoolMix {
+  readonly name: string;
+  readonly accuracyM: readonly [number, number];
+  readonly walksM: readonly number[];
+}
+/** The spike's default: accuracy 3-15 m, walks of 15-120 m. */
+const MIX_DEFAULT: PoolMix = {
+  name: "accuracy 3-15 m, walks 15/30/60/120 m",
+  accuracyM: [3, 15],
+  walksM: WALKS_M,
+};
+/** A hurried author (M3a/M3b review #4): poorer GPS and short walks. */
+const MIX_HURRIED: PoolMix = {
+  name: "accuracy 4-20 m, walks 10/15/20/30 m",
+  accuracyM: [4, 20],
+  walksM: [10, 15, 20, 30],
+};
+
+/** A pool of independent visits: accuracy uniform in the mix's range, the
+ *  walk lengths and shapes cycled so every cell is equally filled. */
 function buildPool(
   size: number,
   gps: GpsModel = DEFAULT_GPS,
   drift: DriftModel = DEFAULT_DRIFT,
   seedBase = 1000,
+  mix: PoolMix = MIX_DEFAULT,
 ): VisitRun[] {
   const pool: VisitRun[] = [];
+  const [lo, hi] = mix.accuracyM;
+  const walks = mix.walksM;
   for (let i = 0; i < size; i += 1) {
     const rng = stream(seedBase + i, 9);
     pool.push(
       runVisit({
         seed: seedBase + i,
-        accuracyM: 3 + 12 * rng(),
-        walkM: WALKS_M[i % WALKS_M.length]!,
-        shape: Math.floor(i / WALKS_M.length) % 2 === 0 ? "loop" : "line",
+        accuracyM: lo + (hi - lo) * rng(),
+        walkM: walks[i % walks.length]!,
+        shape: Math.floor(i / walks.length) % 2 === 0 ? "loop" : "line",
         gps,
         drift,
       }),
@@ -883,6 +924,47 @@ function median(values: readonly number[]): number {
 const headingSigma = (v: VisitEstimate, codeSigmaDeg = 2): number =>
   Math.hypot(rad(codeSigmaDeg), Math.atan(v.accuracyM / v.baselineM));
 
+/** The most accurate visits, as many as minimise `sqrt(k) / sum(1/a)` -
+ *  `combineCodeVisits`' position subset (M3a/M3b review #3). */
+function bestPrefix(vs: readonly VisitEstimate[]): VisitEstimate[] {
+  const sorted = [...vs].sort((a, b) => a.accuracyM - b.accuracyM);
+  let bestK = 1;
+  let best = Number.POSITIVE_INFINITY;
+  let inverse = 0;
+  sorted.forEach((v, i) => {
+    inverse += 1 / v.accuracyM;
+    const p = Math.sqrt(i + 1) / inverse;
+    if (p <= best) {
+      best = p;
+      bestK = i + 1;
+    }
+  });
+  return sorted.slice(0, bestK);
+}
+
+/** What `combineCodeVisits` ships: position by 1/accuracy over the best
+ *  prefix, heading by the heading model over `headingVisits` (every visit
+ *  unless a variant says otherwise). */
+function subsetStrategy(
+  vs: readonly VisitEstimate[],
+  codeSigmaDeg = 2,
+  headingOverSubset = false,
+): Pose2 {
+  const subset = bestPrefix(vs);
+  const position = weightedMean(
+    subset,
+    subset.map((v) => 1 / v.accuracyM),
+    subset.map(() => 1),
+  );
+  const headingVisits = headingOverSubset ? subset : vs;
+  const heading = weightedMean(
+    headingVisits,
+    headingVisits.map(() => 1),
+    headingVisits.map((v) => 1 / headingSigma(v, codeSigmaDeg) ** 2),
+  );
+  return { n: position.n, e: position.e, normalDeg: heading.normalDeg };
+}
+
 const STRATEGIES: Record<string, Strategy> = {
   first: (vs) => vs[0]!,
   last: (vs) => vs[vs.length - 1]!,
@@ -916,6 +998,12 @@ const STRATEGIES: Record<string, Strategy> = {
       vs.map((v) => 1 / v.accuracyM),
       vs.map((v) => 1 / headingSigma(v) ** 2),
     ),
+  /** SHIPPED (M3a/M3b review #3): `hybrid` over the best prefix by
+   *  accuracy for the position, the heading over every visit. */
+  subset: (vs) => subsetStrategy(vs),
+  /** The same with the heading over the prefix too: measures what the
+   *  heading would lose by following the position's subset. */
+  subsetHead: (vs) => subsetStrategy(vs, 2, true),
   /** Coordinate-wise median, heading as the median offset from the mean. */
   median: (vs) => {
     const mean = circularMeanDeg(
@@ -1057,12 +1145,14 @@ function asCodeVisit(v: VisitEstimate): CodeVisitPose {
   };
 }
 
-describe("M3a: the production combiner is the spike's hybrid strategy", () => {
+describe("M3a: the production combiner is the spike's subset strategy", () => {
   // Why this test matters: the spike's tables measure the test-local
-  // `hybrid` strategy; `combineCodeVisits` is what M3b would ship. This
+  // `subset` strategy; `combineCodeVisits` is what the summary ships. This
   // pins that the two are the same computation, on real fixture visits
   // with biases added, so the tables stay evidence for the shipped code.
-  it("agrees with the hybrid strategy on biased fixture visits", () => {
+  // The accuracies (3, 6, 9, 12 m) make the best prefix two visits, so the
+  // subset path itself is compared, not only a plain weighted mean.
+  it("agrees with the subset strategy on biased fixture visits", () => {
     const estimates = [21, 22, 23, 24].map((seed, i) => {
       const run = runVisit({
         ...SHORT_SPEC,
@@ -1078,8 +1168,10 @@ describe("M3a: the production combiner is the spike's hybrid strategy", () => {
     const visits = estimates.map((v) =>
       withBias(v, [8 * gaussian(rng), 8 * gaussian(rng)]),
     );
-    const spike = STRATEGIES["hybrid"]!(visits);
+    const spike = STRATEGIES["subset"]!(visits);
     const combined = combineCodeVisits(visits.map(asCodeVisit))!;
+    expect(combined.positionVisitCount).toBe(2);
+    expect(bestPrefix(visits)).toHaveLength(2);
     const shipped = truthPose(combined.geo);
     expect(Math.hypot(shipped.n - spike.n, shipped.e - spike.e)).toBeLessThan(
       0.01,
@@ -1171,6 +1263,11 @@ const MODEL_ARMS: readonly ModelArm[] = [
   },
 ];
 
+/** The heading-model pool per GPS arm: 200 visits per walk length and
+ *  shape (4 x 2 cells). It was 96 (12 per cell) until the M3a/M3b review
+ *  (#4) - too few for a p90. About 2.3 minutes per arm, 19 in all. */
+const MODEL_POOL_SIZE = 1600;
+
 describe.runIf(runs("model"))(
   "M3a heading model: atan(GPS error / walked baseline)",
   () => {
@@ -1181,11 +1278,17 @@ describe.runIf(runs("model"))(
     // ratio to the model, for several GPS error structures. It also answers
     // "from more directions": a line and a loop of the same length.
     it("measures the alignment's heading error against the model", () => {
+      let defaultRatios: number[] = [];
       for (const arm of MODEL_ARMS) {
-        const pool = buildPool(96, arm.gps, arm.drift, 5000);
+        const pool = buildPool(MODEL_POOL_SIZE, arm.gps, arm.drift, 5000);
         const estimates = poolEstimates(pool, QUIET_LOOK);
+        if (arm === MODEL_ARMS[0]) {
+          defaultRatios = estimates.map(
+            (v) => errorOf(v).deg / modelHeadingDeg(v),
+          );
+        }
         print(
-          `\n### ${arm.name}: heading err p50 / p90 | ratio to model p50 / p90 | position err (no bias) p50 / p90 | share over model`,
+          `\n### ${arm.name}: heading err p50 / p90 | ratio to model p50 / p90 | position err (no bias) p50 / p90 | share over model (visits per row)`,
         );
         for (const walk of WALKS_M) {
           for (const shape of ["line", "loop"] as const) {
@@ -1199,18 +1302,15 @@ describe.runIf(runs("model"))(
             );
             const over = ratios.filter((r) => r > 1).length / ratios.length;
             print(
-              `${walk} m ${shape} (baseline ${fmt(rows[0]!.baselineM)} m) | ${cell(errs.map((e) => e.deg))}° | ${cell(ratios, 2)} | ${cell(errs.map((e) => e.m))} m | ${fmt(100 * over, 0)} %`,
+              `${walk} m ${shape} (baseline ${fmt(rows[0]!.baselineM)} m) | ${cell(errs.map((e) => e.deg))}° | ${cell(ratios, 2)} | ${cell(errs.map((e) => e.m))} m | ${fmt(100 * over, 0)} % (n ${String(rows.length)})`,
             );
           }
         }
       }
       // The pin: with the default GPS model the model is an upper bound
       // for most visits (the measured error sits below it at the median).
-      const pool = buildPool(96, DEFAULT_GPS, NO_DRIFT, 5000);
-      const ratios = poolEstimates(pool, QUIET_LOOK).map(
-        (v) => errorOf(v).deg / modelHeadingDeg(v),
-      );
-      expect(quantile(ratios, 0.5)).toBeLessThan(1);
+      expect(defaultRatios).toHaveLength(MODEL_POOL_SIZE);
+      expect(quantile(defaultRatios, 0.5)).toBeLessThan(1);
     }, 1_800_000);
   },
 );
@@ -1349,23 +1449,45 @@ describe.runIf(runs("thresholds"))(
 // ---------------------------------------------------------------------------
 
 /** What the summary screen can know about a combined code: the predicted
- *  horizontal and heading sigma from the visits' own quality. */
-function predicted(visits: readonly VisitEstimate[]): {
+ *  horizontal and heading sigma from the visits' own quality, as
+ *  `combineCodeVisits` computes them (the position over the best prefix,
+ *  the heading over every visit, with the code's yaw sigma
+ *  `codeSigmaDeg`). */
+function predicted(
+  visits: readonly VisitEstimate[],
+  codeSigmaDeg = 2,
+): {
   posM: number;
   headDeg: number;
 } {
-  // The hybrid weights 1/accuracy: if each visit errs by ~its accuracy,
-  // the combined sigma is sqrt(k) / sum(1/accuracy).
-  const inv = visits.reduce((sum, v) => sum + 1 / v.accuracyM, 0);
-  const headW = visits.reduce((sum, v) => sum + 1 / headingSigma(v) ** 2, 0);
+  const subset = bestPrefix(visits);
+  const inv = subset.reduce((sum, v) => sum + 1 / v.accuracyM, 0);
+  const headW = visits.reduce(
+    (sum, v) => sum + 1 / headingSigma(v, codeSigmaDeg) ** 2,
+    0,
+  );
   return {
-    posM: Math.sqrt(visits.length) / inv,
+    posM: Math.sqrt(subset.length) / inv,
     headDeg: deg(1 / Math.sqrt(headW)),
   };
 }
 
 const VERDICT_POS_M = [3, 4, 5, 6, 8] as const;
 const VERDICT_HEAD_DEG = [3, 5, 8, 12] as const;
+
+/** The bias arms the verdict is measured under: the results doc's four. */
+const VERDICT_BIAS_ARMS: readonly BiasModel[] = [
+  { coupling: "coupled", directionSpreadDeg: 360 },
+  { coupling: "independent", directionSpreadDeg: 360 },
+  { coupling: "coupled", directionSpreadDeg: 90 },
+  { coupling: "coupled", directionSpreadDeg: 0 },
+];
+
+/** `codeVerdict`'s walk factor at a code yaw sigma: the walk (x accuracy)
+ *  one visit needs for the heading model to meet the adopted limit. */
+const walkFactor = (codeSigmaDeg: number): number =>
+  1 /
+  Math.tan(rad(Math.sqrt(VERDICT_GOOD_HEADING_DEG ** 2 - codeSigmaDeg ** 2)));
 
 describe.runIf(runs("verdict"))(
   "M3a verdict: when is a combined code Good?",
@@ -1397,14 +1519,14 @@ describe.runIf(runs("verdict"))(
           );
           const rows = outcomes.map((o) => ({
             p: predicted(o.visits),
-            a: o.errors["hybrid"]!,
+            a: o.errors["subset"]!,
             k: o.visits.length,
           }));
           const meets = (r: (typeof rows)[number]): boolean =>
             r.a.m <= target.m && r.a.deg <= target.deg;
           const base = rows.filter(meets).length / rows.length;
           print(
-            `\n### target <= ${target.m} m and <= ${target.deg}°, ${model.coupling}, spread ${model.directionSpreadDeg}°: Good share / precision / recall (base rate ${fmt(100 * base, 0)} %)`,
+            `\n### target <= ${target.m} m and <= ${target.deg}°, ${model.coupling}, spread ${model.directionSpreadDeg}°: Good share / precision / recall (base rate ${fmt(100 * base, 0)} %, n ${String(rows.length)} codes)`,
           );
           print(
             `pos \\ head | ${VERDICT_HEAD_DEG.map((h) => `${h}°`).join(" | ")}`,
@@ -1423,6 +1545,67 @@ describe.runIf(runs("verdict"))(
         }
       }
       expect(estimates.length).toBe(POOL_SIZE);
+    }, 1_800_000);
+
+    // Why this test matters (M3a/M3b review #4): the adopted verdict
+    // (Good at a predicted 5 m and 12°) was measured at ONE yaw noise (3°),
+    // one visit mix and one code yaw sigma (2°, `CODE_YAW_NOISE_DEG`),
+    // while the heading prediction and the "walk further" distance both
+    // rest on that sigma. This reports the verdict at the adopted
+    // thresholds across yaw noise 1/3/5°, the two visit mixes, the sigma
+    // 1/2/3/5° and the four bias arms, so a reader sees which of them
+    // would reverse it.
+    it("holds the adopted verdict across yaw noise, the code's yaw sigma and two visit mixes", () => {
+      const tight = { m: 5, deg: 5 };
+      const loose = { m: 8, deg: 8 };
+      print(
+        `\n### adopted verdict (Good at predicted <= ${String(VERDICT_GOOD_HORIZONTAL_M)} m and <= ${String(VERDICT_GOOD_HEADING_DEG)}°): Good share | precision within 5 m & 5° | within 8 m & 8° | recall of 5 m & 5° | actual heading of Good codes p50 / p90 | of all codes p50 / p90 (n codes per row: 1-5 visits each, ${String(TRIALS / 2)} per visit count)`,
+      );
+      print(
+        `walk factor (x accuracy) at sigma 1/2/3/5°: ${[1, 2, 3, 5].map((s) => fmt(walkFactor(s), 2)).join(" / ")}`,
+      );
+      for (const [m, mix] of [MIX_DEFAULT, MIX_HURRIED].entries()) {
+        const pool = buildPool(
+          POOL_SIZE,
+          DEFAULT_GPS,
+          DEFAULT_DRIFT,
+          9000 + 1000 * m,
+          mix,
+        );
+        for (const yawNoiseDeg of [1, 3, 5]) {
+          const estimates = poolEstimates(pool, {
+            ...DEFAULT_LOOK,
+            yawNoiseDeg,
+          });
+          for (const model of VERDICT_BIAS_ARMS) {
+            const outcomes = [1, 2, 3, 4, 5].flatMap((k) =>
+              runTrials(estimates, k, model, TRIALS / 2, 900 + k),
+            );
+            for (const codeSigmaDeg of [1, 2, 3, 5]) {
+              const rows = outcomes.map((o) => ({
+                p: predicted(o.visits, codeSigmaDeg),
+                a: errorOf(subsetStrategy(o.visits, codeSigmaDeg)),
+              }));
+              const within = (
+                r: (typeof rows)[number],
+                t: { m: number; deg: number },
+              ): boolean => r.a.m <= t.m && r.a.deg <= t.deg;
+              const good = rows.filter(
+                (r) =>
+                  r.p.posM <= VERDICT_GOOD_HORIZONTAL_M &&
+                  r.p.headDeg <= VERDICT_GOOD_HEADING_DEG,
+              );
+              const pct = (a: number, b: number): string =>
+                `${fmt((100 * a) / Math.max(1, b), 0)} %`;
+              const goodTight = good.filter((r) => within(r, tight)).length;
+              print(
+                `${mix.name}, yaw ${String(yawNoiseDeg)}°, ${model.coupling} ${String(model.directionSpreadDeg)}°, sigma ${String(codeSigmaDeg)}° | ${pct(good.length, rows.length)} | ${pct(goodTight, good.length)} | ${pct(good.filter((r) => within(r, loose)).length, good.length)} | ${pct(goodTight, rows.filter((r) => within(r, tight)).length)} | ${cell(good.map((r) => r.a.deg))}° | ${cell(rows.map((r) => r.a.deg))}° (n ${String(rows.length)})`,
+              );
+            }
+          }
+        }
+        expect(pool).toHaveLength(POOL_SIZE);
+      }
     }, 1_800_000);
   },
 );
