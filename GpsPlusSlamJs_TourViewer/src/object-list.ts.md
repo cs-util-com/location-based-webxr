@@ -67,6 +67,9 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
   joins the selected row, the labels are short, the row's text is one
   line, and Done is gone: a tap on empty scene clears the selection.
   Before a selection the chooser keeps its own line (with the hint).
+  The compact row's buttons use tighter padding (`.object-row-compact`,
+  the tap minimum kept): with the sheet's padding the five measured wider
+  than a 360 px screen and "›" wrapped below the first screen.
 - **In AR every object can be reached without aiming** (M4 review #4): a
   tap selects through the tapped point with a tolerance
   (`object-pick.ts`), but a far, small or occluded object may still be

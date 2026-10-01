@@ -324,7 +324,9 @@ export function createObjectListView(
 
   function rowElement(row: ObjectRowModel): HTMLLIElement {
     const li = doc.createElement("li");
-    li.className = "object-row";
+    li.className = row.compact
+      ? "object-row object-row-compact"
+      : "object-row";
     li.dataset["testid"] = "object-row";
     li.dataset["objectId"] = row.id;
     if (row.selected) li.dataset["selected"] = "true";

@@ -198,11 +198,30 @@
         flex-wrap: wrap;
         gap: var(--space-2);
       }
+      /* In AR the selected row's five buttons (‹ Edit Move Delete ›) share
+         ONE line: with the sheet's padding they measured wider than a
+         360 px screen and "›" wrapped below the first screen
+         (ar-layout.spec.js). Tighter padding only - the tap minimum
+         (min-width / min-height) stays. */
+      .object-row-compact .btn {
+        padding: 0 var(--space-2);
+      }
       /* Empty until an action ends: no margin, so it costs no height over
          the camera meanwhile. */
       .object-list-note,
       .object-list-heading {
         margin: 0;
+      }
+      /* The live status in AR: two lines, the whole of it on a tap
+         (creator-setup.ts statusExpanded) - five joined sentences above
+         the controls pushed the last of them below a 360x640 screen. */
+      #setup-status[data-clamped="true"] {
+        -webkit-box-orient: vertical;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        overflow: hidden;
+        cursor: pointer;
       }
       /* The outcome and, after a delete, its Undo on one line: the Undo
          adds no row over the camera. The AR chooser (Previous, "2 of 5",

@@ -281,6 +281,7 @@ describe("the creator measures and mints with the fused pose", () => {
       disabled: false,
       value: "",
       open: false,
+      dataset: {} as Record<string, string>,
       addEventListener: (type: string, handler: () => void) =>
         handlers.set(type, handler),
       click: () => handlers.get("click")?.(),

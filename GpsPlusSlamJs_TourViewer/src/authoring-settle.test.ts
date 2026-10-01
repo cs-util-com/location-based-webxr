@@ -199,6 +199,7 @@ function el() {
     disabled: false,
     value: "",
     open: false,
+    dataset: {} as Record<string, string>,
     focus: () => undefined,
     addEventListener: (type: string, handler: (event?: unknown) => void) =>
       handlers.set(type, handler),
@@ -1279,6 +1280,40 @@ describe(
       await a.mint();
       expect(lastKept(a)).toBe("measurement");
       expect(a.ctx.mintedLevel!.json).not.toBe(firstJson);
+    });
+  },
+);
+
+describe(
+  "the status line in AR is clamped to two lines, the whole of it a tap away (360x640)",
+  { timeout: SLOW_MS },
+  () => {
+    // Why: the live readout joins up to five sentences (the code's status,
+    // the measuring readout, the setup hint, the tour, the zip size). In AR
+    // it sat above the controls and, on a 360x640 phone with the code's
+    // re-measure offered and an object selected, pushed the last of them
+    // below the first screen (ar-layout.spec.js). Clamped, it costs two
+    // lines; a tap on it shows all of it, and nothing is dropped from the
+    // text (screen readers and every assertion on it read the whole). The
+    // page, where nothing is over a camera, is unclamped.
+    it("clamps in AR, opens and closes on a tap, and is whole on the page", async () => {
+      const a = authoring();
+      await a.mint();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.status.dataset["clamped"]).toBe("true");
+      expect(a.dom.status.textContent).toMatch(/Measured|Saved|saved/);
+      a.dom.status.click();
+      expect(a.dom.status.dataset["clamped"]).toBe("false");
+      a.dom.status.click();
+      expect(a.dom.status.dataset["clamped"]).toBe("true");
+      a.dom.status.click();
+      // A new visit starts clamped again; the page is never clamped.
+      a.endVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.status.dataset["clamped"]).toBe("false");
+      a.beginVisit();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.status.dataset["clamped"]).toBe("true");
     });
   },
 );

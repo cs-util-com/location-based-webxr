@@ -761,6 +761,27 @@ export function wireCreatorSetup(deps: {
     );
   }
 
+  /**
+   * The AR status line opened to its full length by a tap (2026-10-01).
+   *
+   * The live readout joins up to five sentences - the code's status, the
+   * measuring readout, the setup hint, the tour and the zip size - and in
+   * AR it sits ABOVE the controls: on a 360x640 phone with the code's
+   * re-measure offered and an object selected it pushed the last control
+   * below the first screen (ar-layout.spec.js). Clamped to two lines
+   * (CSS, `data-clamped`) it costs two lines, the text itself unchanged -
+   * a screen reader and every check on it read the whole - and a tap on it
+   * (inside the panel, so no XR select) shows all of it. Choosing ONE
+   * sentence instead would decide what the author does not need to read,
+   * and the line's order already leads with what to act on. Each visit
+   * starts clamped; the page is never clamped.
+   */
+  let statusExpanded = false;
+  dom.status.addEventListener("click", () => {
+    statusExpanded = !statusExpanded;
+    renderAuthorReadout();
+  });
+
   /** Whether the explicit replace's confirm step is open. */
   let replaceConfirmOpen = false;
 
@@ -810,6 +831,10 @@ export function wireCreatorSetup(deps: {
   function renderAuthorReadout(): void {
     renderSizeOffer();
     if (!creator) return;
+    // In AR the line is clamped to two lines, the whole of it a tap away
+    // (see `statusExpanded`); on the page it is whole.
+    dom.status.dataset["clamped"] =
+      sessionLive() && !statusExpanded ? "true" : "false";
     renderPlacementButtons();
     renderReplaceCode();
     editing.render();
@@ -2323,6 +2348,7 @@ export function wireCreatorSetup(deps: {
       ctx.visitCodeSighting = null;
       liveRefusal = null;
       previewsWaitForZero = false;
+      statusExpanded = false;
       // The previews are disposed by the entry's teardown right after this
       // (`placedPreviews`); what they were made from goes now, so the next
       // visit renders everything again. The frame itself is this module's.

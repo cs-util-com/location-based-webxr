@@ -412,6 +412,16 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
   finish visibly instead of freezing the panel.
 - The measured level survives a session end on purpose (finishing ends
   the session); a new measurement replaces it.
+- **The AR status line is clamped to two lines** (2026-10-01,
+  `data-clamped`, `statusExpanded`), the whole of it a tap away; the page
+  is unclamped and each visit starts clamped. The live readout joins up to
+  five sentences ABOVE the controls, and on a 360x640 phone with the
+  code's re-measure offered and an object selected it pushed the last
+  control below the first screen (`ar-layout.spec.js`). The smallest
+  change: CSS clamps, the text is unchanged (screen readers and every
+  check read the whole), and nothing has to decide which sentence the
+  author can do without - the line already leads with what to act on.
+  Test: `authoring-settle.test.ts` "the status line in AR is clamped".
 - **Editing placed objects (authoring plan 2026-09-28-0953 §3.4, M4)**,
   through `object-editing.ts`:
   - **The hosted zip's objects are rendered in author mode**, keyed by id,

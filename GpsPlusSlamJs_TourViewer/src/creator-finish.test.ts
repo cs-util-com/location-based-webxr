@@ -57,6 +57,8 @@ interface FakeEl {
   disabled: boolean;
   value: string;
   open: boolean;
+  /** The status line's AR clamp flag (`data-clamped`). */
+  dataset: Record<string, string>;
   handlers: Map<string, () => void>;
   addEventListener: (type: string, handler: () => void) => void;
   click: () => void;
@@ -72,6 +74,7 @@ function el(): FakeEl {
     disabled: false,
     value: "",
     open: false,
+    dataset: {},
     handlers,
     addEventListener: (type, handler) => handlers.set(type, handler),
     click: () => handlers.get("click")?.(),
