@@ -154,9 +154,15 @@
   decimal from 1 km, metres below; written at most 4 times a second and
   only when the text changes; not a live region (`aria-live="off"`: an
   `<output>` is a polite live region by default). `state().readout` is
-  this frame's text, `readoutShown` what the line shows. On a phone it
-  stays clear of the pin, its status line, the device line and the
-  credits (`globe-readout.smoke.spec.mjs`).
+  this frame's text, `readoutShown` what the line shows.
+- The bottom lines are ONE stack in flow (`#globe-bottom`): a row with
+  the readout on the left and the pin with its status line on the right,
+  then the device line, then the credits. They were placed at fixed
+  offsets from the bottom until the r760 CI run, where a wider font
+  wrapped the credits into the device line and the readout; in flow, a
+  line that wraps pushes the ones above it up. Only the pin and the
+  credits take pointer events. No two of the five overlap at 360, 390 or
+  412 px wide (`globe-readout.smoke.spec.mjs`).
 - The device line (round-3 plan §4 F; terrain plan 2026-09-27-0605 §7):
   "This device filters float textures (OES_texture_float_linear): yes" or
   "NO", from the renderer's own context, bottom left above the credits, so

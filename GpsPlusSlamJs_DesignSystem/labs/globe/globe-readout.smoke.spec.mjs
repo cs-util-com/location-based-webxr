@@ -136,50 +136,69 @@ test("during a dive the readout follows the camera and names the distance to the
 });
 
 // WHY: on a phone the readout sits among the pin, its status line, the
-// device line and the credits; it must overlap none of them and stay at a
-// readable size.
-test.describe("on a phone-width screen", () => {
-  test.use({ viewport: { width: 412, height: 915 }, deviceScaleFactor: 2 });
-  test("the readout is readable and clear of the pin and the other lines", async ({
-    page,
-  }) => {
-    const errors = await boot(page, VIEW);
-    // A long status beside the pin, as while it locates.
-    await page.evaluate(() => {
-      document.getElementById("globe-pin-status").textContent =
-        "Finding you... - tap to cancel";
-    });
-    await page.waitForFunction(() =>
-      /^Altitude /.test(window.__globeLab.state().readoutShown),
-    );
-    const boxes = await page.evaluate(() => {
-      const box = (id) =>
-        document.getElementById(id).getBoundingClientRect().toJSON();
-      return {
-        readout: box("globe-readout"),
-        others: [
-          "globe-pin",
-          "globe-pin-status",
-          "globe-device",
-          "globe-credits",
-        ].map((id) => [id, box(id)]),
-        fontPx: parseFloat(
+// device line and the credits; it must overlap none of them, and none of
+// them another, and stay at a readable size. The lines wrap on a narrow
+// screen or with a wider font (the r760 CI run on Linux: "readout overlaps
+// globe-credits" at 412 px, while it passed here), so three phone widths,
+// each with a long status beside the pin.
+for (const width of [360, 390, 412]) {
+  test.describe(`on a ${width} px phone screen`, () => {
+    test.use({ viewport: { width, height: 800 }, deviceScaleFactor: 2 });
+    test("the readout and the bottom lines are readable and clear of each other", async ({
+      page,
+    }) => {
+      const errors = await boot(page, VIEW);
+      // A long status beside the pin, as while it locates.
+      await page.evaluate(() => {
+        document.getElementById("globe-pin-status").textContent =
+          "Finding you... - tap to cancel";
+      });
+      await page.waitForFunction(() =>
+        /^Altitude /.test(window.__globeLab.state().readoutShown),
+      );
+      const ids = [
+        "globe-readout",
+        "globe-pin",
+        "globe-pin-status",
+        "globe-device",
+        "globe-credits",
+      ];
+      const boxes = await page.evaluate(
+        (list) =>
+          list.map((id) => [
+            id,
+            document.getElementById(id).getBoundingClientRect().toJSON(),
+          ]),
+        ids,
+      );
+      const fontPx = await page.evaluate(() =>
+        parseFloat(
           getComputedStyle(document.getElementById("globe-readout")).fontSize,
         ),
-      };
-    });
-    const overlaps = (a, b) =>
-      a.left < b.right &&
-      b.left < a.right &&
-      a.top < b.bottom &&
-      b.top < a.bottom;
-    for (const [id, other] of boxes.others) {
-      expect(overlaps(boxes.readout, other), `readout overlaps ${id}`).toBe(
-        false,
       );
-    }
-    expect(boxes.readout.height).toBeGreaterThan(0);
-    expect(boxes.fontPx).toBeGreaterThanOrEqual(12);
-    expect(errors).toEqual([]);
+      const overlaps = (a, b) =>
+        a.left < b.right &&
+        b.left < a.right &&
+        a.top < b.bottom &&
+        b.top < a.bottom;
+      const clashes = [];
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          const [idA, a] = boxes[i];
+          const [idB, b] = boxes[j];
+          if (a.height > 0 && b.height > 0 && overlaps(a, b)) {
+            clashes.push(`${idA} overlaps ${idB}`);
+          }
+        }
+      }
+      console.log(
+        `${width} px: ${boxes.map(([id, b]) => `${id} ${Math.round(b.top)}-${Math.round(b.bottom)}`).join(", ")}`,
+      );
+      expect(clashes).toEqual([]);
+      for (const [, b] of boxes) expect(b.bottom).toBeLessThanOrEqual(800);
+      expect(boxes[0][1].height).toBeGreaterThan(0);
+      expect(fontPx).toBeGreaterThanOrEqual(12);
+      expect(errors).toEqual([]);
+    });
   });
-});
+}

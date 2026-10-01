@@ -72,27 +72,50 @@
         }
       }
 
-      #globe-credits {
+      /*
+       * The bottom lines in ONE stack, in flow (the r760 CI run: fixed
+       * offsets overlapped as soon as a line wrapped, with a wider font or
+       * a narrower phone): the readout (round-4 plan DEC-GL4-5) and the
+       * pin with its status line on one row, then the device line, then
+       * the credits. A line that wraps pushes the lines above it up. The
+       * stack lets taps through to the globe except on its controls.
+       */
+      #globe-bottom {
         position: fixed;
         left: 12px;
         right: 12px;
         bottom: 10px;
-        color: #c9d3e0;
-        font:
-          12px/1.4 system-ui,
-          sans-serif;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        pointer-events: none;
       }
 
-      /*
-       * The distance readout (round-4 plan DEC-GL4-5), above the device
-       * line, clear of the pin and its status line on the right. Tabular
-       * figures, so the numbers do not jitter sideways as they change.
-       */
+      .globe-bottom-row {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      /* The pin (round-2 plan M3g), bottom right as in OsmDemo, its status
+         line to its left saying what it is doing or why it failed. */
+      .globe-pin-group {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      #globe-pin,
+      #globe-credits {
+        pointer-events: auto;
+      }
+
+      /* Tabular figures, so the numbers do not jitter sideways. */
       #globe-readout {
-        position: fixed;
-        left: 12px;
-        bottom: 52px;
-        max-width: calc(100% - 96px);
+        flex: 0 1 auto;
         color: #e6edf5;
         font:
           13px/1.4 system-ui,
@@ -101,38 +124,24 @@
         text-shadow: 0 0 3px #000;
       }
 
-      /* The device line sits just above the credits line. */
-      #globe-device {
-        position: fixed;
-        left: 12px;
-        right: 12px;
-        bottom: 32px;
-        color: #c9d3e0;
-        font:
-          12px/1.4 system-ui,
-          sans-serif;
-      }
-
-      /*
-       * The pin (round-2 plan 2026-09-26-2055 M3g), bottom right as in
-       * OsmDemo, above the device and credits lines; its status line to its
-       * left says what it is doing or why it failed and how to fix it.
-       */
-      #globe-pin {
-        position: fixed;
-        right: 12px;
-        bottom: 64px;
-      }
-
       #globe-pin-status {
-        position: fixed;
-        right: 68px;
-        bottom: 70px;
         max-width: min(60vw, 420px);
         color: #c9d3e0;
         text-align: right;
         font:
           13px/1.4 system-ui,
+          sans-serif;
+      }
+
+      #globe-pin {
+        flex: none;
+      }
+
+      #globe-device,
+      #globe-credits {
+        color: #c9d3e0;
+        font:
+          12px/1.4 system-ui,
           sans-serif;
       }
 
@@ -576,33 +585,39 @@
         </details>
       </div>
     </aside>
-    <button
-      id="globe-pin"
-      type="button"
-      class="btn btn--icon btn--locate"
-      data-state="idle"
-      aria-label="Fly to my location"
-      title="Fly to my location"
-    >
-      <svg
-        viewBox="5 2 14 20"
-        width="18"
-        height="18"
-        aria-hidden="true"
-        focusable="false"
-      >
-        <path
-          fill="currentColor"
-          d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Z"
-        />
-        <circle cx="12" cy="9" r="2.6" fill="#171b26" />
-      </svg>
-    </button>
-    <output id="globe-pin-status" aria-live="polite"></output>
-    <!-- aria-live off: an output is a polite live region by default, and
-         4 updates a second would flood a screen reader. -->
-    <output id="globe-readout" aria-live="off"></output>
-    <output id="globe-device" aria-live="polite"></output>
-    <footer id="globe-credits"></footer>
+    <div id="globe-bottom">
+      <div class="globe-bottom-row">
+        <!-- aria-live off: an output is a polite live region by default, and
+           4 updates a second would flood a screen reader. -->
+        <output id="globe-readout" aria-live="off"></output>
+        <div class="globe-pin-group">
+          <output id="globe-pin-status" aria-live="polite"></output>
+          <button
+            id="globe-pin"
+            type="button"
+            class="btn btn--icon btn--locate"
+            data-state="idle"
+            aria-label="Fly to my location"
+            title="Fly to my location"
+          >
+            <svg
+              viewBox="5 2 14 20"
+              width="18"
+              height="18"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                fill="currentColor"
+                d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Z"
+              />
+              <circle cx="12" cy="9" r="2.6" fill="#171b26" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <output id="globe-device" aria-live="polite"></output>
+      <footer id="globe-credits"></footer>
+    </div>
   </body>
 </html>
