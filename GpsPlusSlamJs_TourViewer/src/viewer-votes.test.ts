@@ -579,8 +579,9 @@ function dispatchLog(v: ReturnType<typeof viewer>) {
 
 // Why (authoring plan 2026-09-28-0953 D18, M2e): every `recordGpsEvent`
 // re-solves over the whole history, so a lock's 16 votes as 16 dispatches
-// cost 16 solves, and a keep-alive tick 17. The core (1.26) stores a batch
-// exactly as one-by-one dispatches would and solves ONCE; the owner chose
+// cost 16 solves, and a keep-alive tick 17. The core (1.26) stores the same
+// events and solves ONCE; the compass memory steps once per batch (D18). The
+// owner chose
 // one batch per lock and one per keep-alive tick holding the DEVICE fix and
 // its ring. These pin that through the real wiring, without a clock: the
 // cost check is the number of store actions, never wall time.

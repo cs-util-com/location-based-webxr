@@ -10,9 +10,8 @@ both must hold for EVERY vote:
 
 - **One solve per voted lock and per keep-alive tick (D18).** A lock's ring
   is one `recordGpsEventBatch`; a device fix the keep-alive answers travels
-  with its ring as one batch, the fix first. Core 1.26 stores a batch exactly
-  as one-by-one dispatches would and solves once (the compass easing
-  compounded per stored event).
+  with its ring as one batch, the fix first. Core 1.26 stores the same events
+  and solves once; the compass memory steps once per batch (D18).
 - **The per-entry solver overrides** (the seam contract in
   `viewer-placement.ts.md`): clear at the entry's start, the soft trimming
   on right before the entry's first vote, and on until AR exit (a tour

@@ -7,9 +7,8 @@
  *   ring is ONE `recordGpsEventBatch`; a device fix that the keep-alive
  *   answers travels WITH its ring as one batch, the fix first. Every
  *   `recordGpsEvent` re-solves over the whole history, so 16 votes as 16
- *   dispatches cost 16 solves; the core (1.26) stores a batch exactly as
- *   one-by-one dispatches would and solves once, the compass easing
- *   compounded per stored event.
+ *   dispatches cost 16 solves; the core (1.26) stores the same events and
+ *   solves once; the compass memory steps once per batch (D18).
  * - **The soft trimming is a viewer-entry setting, never a global default.**
  *   The entry starts by clearing every override (`setAlignmentOverrides(null)`
  *   - `resetGpsSessionData` keeps them, so a previous entry's setting would
