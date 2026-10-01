@@ -1,5 +1,5 @@
 /**
- * The globe's fly-in (round-5 plan 2026-10-01-0945 §3.1, owner decisions
+ * The globe's fly-in (round-5 plan 2026-10-01-0945 §3.1, decisions
  * DEC-GL5-1..3): from far out on the sun side to the user, in one of four
  * ways of trading distance against field of view, all ending at one pose.
  * Pure: directions are unit [x, y, z] vectors (ECEF), distances km from
@@ -221,4 +221,58 @@ export function blendTarget(
   const b = unit(to, "the new target");
   if (!(blendMs > 0) || elapsedMs >= blendMs) return b;
   return slerp(a, b, ease(Math.max(0, elapsedMs) / blendMs));
+}
+
+/**
+ * Where the intro spins while it waits for a target (review 2026-10-01-2124
+ * Major 2): over the sub-solar point at first, turning about the polar
+ * axis at `degPerS` (negative: westwards), so the wait is on the day side
+ * the fly-in starts from. RangeError for a zero sun or a time or rate that
+ * is not finite.
+ */
+export function spinDirection(
+  sun: Vec3,
+  elapsedMs: number,
+  degPerS: number,
+): Vec3 {
+  const s = unit(sun, "the sun");
+  if (!Number.isFinite(elapsedMs) || !Number.isFinite(degPerS)) {
+    throw new RangeError(
+      `the spin's time and rate must be finite, got ${elapsedMs} ms at ${degPerS} deg/s`,
+    );
+  }
+  const a = ((degPerS * elapsedMs) / 1000) * DEG;
+  const c = Math.cos(a);
+  const n = Math.sin(a);
+  return [s[0] * c - s[1] * n, s[0] * n + s[1] * c, s[2]];
+}
+
+/**
+ * The fly-in's start, `sinceArrivalMs` after its target arrived (review
+ * 2026-10-01-2124 Major 2): from the spin's direction `spin` to the
+ * sun-side start of `target` (`introStartDirection`, at most `capDeg` from
+ * it), eased over `blendMs`. Recomputed every frame from the target as it
+ * is then, so a position that replaces the target keeps the cap too.
+ * RangeError for a negative or non-finite time or blend.
+ */
+export function flyInStart(input: {
+  spin: Vec3;
+  target: Vec3;
+  sun: Vec3;
+  capDeg: number;
+  sinceArrivalMs: number;
+  blendMs: number;
+}): Vec3 {
+  const { spin, target, sun, capDeg, sinceArrivalMs, blendMs } = input;
+  if (!(sinceArrivalMs >= 0 && Number.isFinite(sinceArrivalMs))) {
+    throw new RangeError(
+      `the time since the target arrived must be 0 or more, got ${sinceArrivalMs}`,
+    );
+  }
+  if (!(blendMs >= 0 && Number.isFinite(blendMs))) {
+    throw new RangeError(`the blend must be 0 ms or more, got ${blendMs}`);
+  }
+  const start = introStartDirection(target, sun, capDeg);
+  if (blendMs === 0 || sinceArrivalMs >= blendMs) return start;
+  return slerp(unit(spin, "the spin"), start, ease(sinceArrivalMs / blendMs));
 }

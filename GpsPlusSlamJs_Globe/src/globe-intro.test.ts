@@ -14,8 +14,10 @@ import {
   GLOBE_INTRO,
   INTRO_VARIANTS,
   blendTarget,
+  flyInStart,
   introCameraPose,
   introStartDirection,
+  spinDirection,
   type Vec3,
 } from "./globe-intro.js";
 
@@ -43,7 +45,7 @@ const fromLatLng = (lat: number, lng: number): Vec3 => [
 ];
 
 describe("GLOBE_INTRO", () => {
-  it("holds the owner's decisions", () => {
+  it("holds the decided values", () => {
     expect(GLOBE_INTRO.maxKm).toBe(50_000);
     expect(GLOBE_INTRO.endFovDeg).toBe(50);
     expect(GLOBE_INTRO.turnCapDeg).toBe(90);
@@ -166,5 +168,102 @@ describe("blendTarget", () => {
     expect(angleDeg(half, a)).toBeCloseTo(angleDeg(a, b) / 2, 6);
     expect(Math.hypot(...half)).toBeCloseTo(1, 12);
     expect(unit(half)).toEqual(half.map((v) => v / Math.hypot(...half)));
+  });
+});
+
+// Why (review 2026-10-01-2124 Major 2): the sun-side start and the 90
+// degree cap only ever applied to a target known on the very first frame;
+// a granted GPS fix, arriving seconds later, started from wherever the
+// spin was. Now the spin holds on the sub-solar side, and the fly-in's
+// start is computed from the target when it arrives, blending there from
+// the spin's direction, so a fix gets the same start as an `at=` link.
+describe("spinDirection", () => {
+  it("starts at the sub-solar point and turns about the polar axis", () => {
+    const sun = fromLatLng(10, 40);
+    expect(angleDeg(spinDirection(sun, 0, -3), sun)).toBeLessThan(1e-9);
+    const later = spinDirection(sun, 2000, -3);
+    // 6 degrees of longitude west, the latitude kept.
+    expect(later[2]).toBeCloseTo(unit(sun)[2], 12);
+    expect(angleDeg(later, fromLatLng(10, 34))).toBeLessThan(1e-9);
+  });
+
+  it("refuses a zero sun or a time or rate that is not finite", () => {
+    expect(() => spinDirection([0, 0, 0], 0, -3)).toThrow(RangeError);
+    expect(() => spinDirection([1, 0, 0], Number.NaN, -3)).toThrow(RangeError);
+    expect(() => spinDirection([1, 0, 0], 0, Infinity)).toThrow(RangeError);
+  });
+});
+
+describe("flyInStart", () => {
+  const sun = fromLatLng(0, 180);
+  const night = fromLatLng(50.94, 6.96);
+  const spin = spinDirection(sun, 3000, -3);
+
+  it("begins at the spin and ends at the capped sun-side start", () => {
+    const start = flyInStart({
+      spin,
+      target: night,
+      sun,
+      capDeg: 90,
+      sinceArrivalMs: 0,
+      blendMs: 1500,
+    });
+    expect(angleDeg(start, spin)).toBeLessThan(1e-9);
+    const settled = flyInStart({
+      spin,
+      target: night,
+      sun,
+      capDeg: 90,
+      sinceArrivalMs: 1500,
+      blendMs: 1500,
+    });
+    expect(angleDeg(settled, introStartDirection(night, sun, 90))).toBeLessThan(
+      1e-9,
+    );
+    // A night-side fix: at most the cap from it, towards the sun.
+    expect(angleDeg(settled, night)).toBeCloseTo(90, 9);
+    expect(angleDeg(settled, sun)).toBeLessThan(angleDeg(night, sun));
+  });
+
+  it("moves without a jump in between, and starts at once without a blend", () => {
+    let prev = spin;
+    for (let ms = 50; ms <= 1500; ms += 50) {
+      const d = flyInStart({
+        spin,
+        target: night,
+        sun,
+        capDeg: 90,
+        sinceArrivalMs: ms,
+        blendMs: 1500,
+      });
+      expect(angleDeg(d, prev)).toBeLessThan(10);
+      prev = d;
+    }
+    const now = flyInStart({
+      spin,
+      target: night,
+      sun,
+      capDeg: 90,
+      sinceArrivalMs: 0,
+      blendMs: 0,
+    });
+    expect(angleDeg(now, introStartDirection(night, sun, 90))).toBeLessThan(
+      1e-9,
+    );
+  });
+
+  it("refuses a negative time or blend", () => {
+    const ok = {
+      spin,
+      target: night,
+      sun,
+      capDeg: 90,
+      sinceArrivalMs: 0,
+      blendMs: 1500,
+    };
+    expect(() => flyInStart({ ...ok, sinceArrivalMs: -1 })).toThrow(RangeError);
+    expect(() => flyInStart({ ...ok, blendMs: Number.NaN })).toThrow(
+      RangeError,
+    );
   });
 });

@@ -1,6 +1,6 @@
 # globe-intro.ts - the globe's fly-in
 
-- Purpose: round-5 plan 2026-10-01-0945 §3.1 (owner decisions DEC-GL5-1..3):
+- Purpose: round-5 plan 2026-10-01-0945 §3.1 (decisions DEC-GL5-1..3):
   the intro starts far out on the sun side and flies in to the user, in
   one of four ways of trading distance against field of view, all ending
   at one pose and field of view so the lab can hand the camera over
@@ -32,6 +32,17 @@ endFovDeg })`: `{ direction, distanceKm, fovDeg }` at `t` (clamped to
   - `blendTarget(from, to, elapsedMs, blendMs)`: a late position becoming
     the target over `blendMs`, eased along the great circle; `to` once
     over (no jump in the intro's target).
+  - `spinDirection(sun, elapsedMs, degPerS)` (review 2026-10-01-2124
+    Major 2): where the intro spins while it waits, the sub-solar
+    direction turned about the polar axis. RangeError for a zero sun or a
+    time or rate that is not finite.
+  - `flyInStart({ spin, target, sun, capDeg, sinceArrivalMs, blendMs })`:
+    the fly-in's start, from the spin's direction to
+    `introStartDirection(target, sun, capDeg)`, eased over `blendMs`
+    (0: at once). Computed every frame from the target as it is then, so a
+    position that replaces the target keeps the cap; this is what makes a
+    GPS fix that arrives after the spin began start on the sun side too.
+    RangeError for a negative or non-finite time or blend.
 - Invariants & assumptions:
   - The ease is `t^2 (3 - 2t)`: zero slope at both ends, so the intro
     leaves and arrives without a jerk.
@@ -57,4 +68,7 @@ endFovDeg })`: `{ direction, distanceKm, fovDeg }` at `t` (clamped to
   distance and field of view, the late-fix blend, refusals);
   `globe-intro.property.test.ts` (any target, sun and cap: the start's
   angle and its great circle; any moment of any variant: between start
-  and end).
+  and end; any spin, target, sun and cap: the start begins at the spin
+  and settles within the cap, written after the code).
+  `spinDirection` and `flyInStart` are unit-tested in
+  `globe-intro.test.ts` (seen red first).
