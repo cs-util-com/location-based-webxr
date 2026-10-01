@@ -50,6 +50,7 @@ The module now includes:
 - **Request order (GPS last)**: `requestAllPermissions` prompts in a fixed order — WebXR/depth → Camera → Orientation → **Geolocation last** (D6 item 2, 2026-06-16 RecorderApp user feedback). The AR essentials are requested before Location so GPS doesn't interrupt the AR+camera flow. Locked by the `requests GPS last` test. Consumer apps that surface permission rows should mirror this order.
 - **File system state**: Unlike other permissions, file system status is tracked via `setFileSystemState()` called by file-system.ts after folder selection and write verification
 - **No prompts on check**: `check*` functions use Permissions API and never trigger browser prompts
+- **One query (DEC-H3)**: the geolocation and camera checks ask the browser through `permission-state.ts` (`geolocationPermissionState`, `queryPermissionState`), the import-free module the design system's labs load too; `prompt` and `unknown` both read as `granted: null`
 - **Prompts on request**: `request*` functions will trigger browser permission prompts
 - **Permission persistence**: Once the user grants depth-sensing, subsequent `requestSession()` calls won't re-prompt
 
