@@ -147,21 +147,48 @@ describe("code displacement (properties)", () => {
   });
 
   it("the residual estimator leaks at most 2 sin(theta/2) R of a heading error and turn", () => {
+    // Every run carries fixes inside the radius (offsets within 0.7 R per
+    // axis, so within R; a fix's pinned distance from the saved code equals
+    // its distance from the physical one), plus the wider walk: a run with
+    // no fix inside R has no estimate and proves nothing (§7l T3).
+    const near = fc.array(
+      fc.tuple(
+        fc.double({ min: -0.7, max: 0.7, noNaN: true }),
+        fc.double({ min: -0.7, max: 0.7, noNaN: true }),
+      ),
+      { minLength: 1, maxLength: 20 },
+    );
     fc.assert(
-      fc.property(world, fc.constantFrom(10, 20, 40), (w, radiusM) => {
-        const built = build(w);
-        if (built === null) return;
-        const est = estimateCodeDisplacement(built.samples, built.pin, {
-          kind: "residual",
-          radiusM,
-        });
-        if (est === null) return; // no fix within R
-        const turn = rad(w.turnDeg - w.headingErrDeg);
-        const leak = 2 * Math.abs(Math.sin(turn / 2)) * radiusM;
-        const dn = est.displacementM[0] - (w.move[0] + w.bias[0]);
-        const de = est.displacementM[1] - (w.move[1] + w.bias[1]);
-        expect(Math.hypot(dn, de)).toBeLessThanOrEqual(leak + 1e-6);
-      }),
+      fc.property(
+        world,
+        near,
+        fc.constantFrom(10, 20, 40),
+        (w0, nearUnit, radiusM) => {
+          const w: World = {
+            ...w0,
+            walk: [
+              ...nearUnit.map(([n, e]): [number, number] => [
+                n * radiusM,
+                e * radiusM,
+              ]),
+              ...w0.walk,
+            ],
+          };
+          const built = build(w);
+          fc.pre(built !== null);
+          const est = estimateCodeDisplacement(built.samples, built.pin, {
+            kind: "residual",
+            radiusM,
+          });
+          expect(est).not.toBeNull();
+          if (est === null) return;
+          const turn = rad(w.turnDeg - w.headingErrDeg);
+          const leak = 2 * Math.abs(Math.sin(turn / 2)) * radiusM;
+          const dn = est.displacementM[0] - (w.move[0] + w.bias[0]);
+          const de = est.displacementM[1] - (w.move[1] + w.bias[1]);
+          expect(Math.hypot(dn, de)).toBeLessThanOrEqual(leak + 1e-6);
+        },
+      ),
       { numRuns: 300 },
     );
   });

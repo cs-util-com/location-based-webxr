@@ -3185,9 +3185,14 @@ describe.runIf(SWEEP === "m5a-breakdown")(
         0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 32, 96, 28, 80, 132,
       ]);
       // The rigid fit does not see a saved heading error or a turned poster:
-      // detection is the same at every heading error and turn.
+      // detection is the same at every heading error. The keys must exist:
+      // two missing columns would compare equal (§7l T1). The turn columns
+      // are within a few points of each other (different cells), not pinned.
       for (const r of rowsMoved.filter((m) => m.rule === "rigid/60/2/30")) {
-        expect(r["headingErr=18"]).toBe(r["headingErr=0"]);
+        expect(r["headingErr=0"]).toBeDefined();
+        for (const h of [3, 12, 18]) {
+          expect(r[`headingErr=${String(h)}`]).toBe(r["headingErr=0"]);
+        }
       }
       expect(
         rowsMoved
