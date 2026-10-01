@@ -297,17 +297,19 @@ test("turns to any target and holds it at the centre", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-// WHY (globe plan §7.5, DEC-PRG-10): with no target in the URL and no GPS in
-// phase 1, the page must keep spinning while it waits, and only then fall
-// back to OsmDemo's opening frame. Falling back at once would hide the wait
-// the real page needs; never falling back would spin forever. The replay
-// button runs the same sequence again.
-test("waits for a fix, then falls back to Central Park; replay runs it again", async ({
+// WHY (globe plan §7.5, DEC-PRG-10; round-5 plan 2026-10-01-0945 §3.1):
+// with no target in the URL the page asks the permission state, never
+// prompting; without a granted permission no position can come, so it
+// falls back to OsmDemo's opening frame without waiting the spin out
+// (spinMs 5 s here), instead of spinning for nothing. (The wait for a
+// granted position, and a late one, are in globe-intro.smoke.spec.mjs.)
+// The replay button runs the same sequence again.
+test("without a granted position falls back to Central Park at once; replay runs it again", async ({
   page,
 }) => {
   // Two settled arrivals at a new view (see arriveAt).
   test.setTimeout(300_000);
-  const spinMs = 400;
+  const spinMs = 5000;
   // The atmosphere pass is off (`atmo=0`): this test is about the imagery
   // and the camera, and on the CPU rasteriser the pass doubles the frame
   // time, and the tiles stream about one a frame, so a cold settle took
@@ -324,7 +326,7 @@ test("waits for a fix, then falls back to Central Park; replay runs it again", a
     ["turning", "fallback"],
     ["arrived", "fallback"],
   ]);
-  expect(state.history[1].atMs).toBeGreaterThanOrEqual(spinMs);
+  expect(state.history[1].atMs).toBeLessThan(spinMs);
   expect(angleDeg(state.centreLatLon, centralPark)).toBeLessThan(
     CENTRE_TOLERANCE_DEG,
   );
@@ -612,6 +614,8 @@ test("every control on the plate writes the hash and applies", async ({
       "starGlow",
       "handOver",
       "handOverKm",
+      "intro",
+      "maxKm",
       "milkyWay",
       "nightGain",
       "pixelRatio",
@@ -624,6 +628,7 @@ test("every control on the plate writes the hash and applies", async ({
       "sunIntensity",
       "sunSize",
       "timeScale",
+      "turnCap",
       "turnMs",
       "waterRoughness",
     ].sort(),
@@ -671,8 +676,9 @@ test("every control on the plate writes the hash and applies", async ({
   expect(new URLSearchParams(state.appliedHash).get("pixelRatio")).toBe("1");
   // A wider field of view refits the camera closer.
   expect(state.distance).toBeLessThan(before.distance);
-  // Only the two timing sliders restarted the intro, once each.
-  expect(state.runs).toBe(runsBefore + 2);
+  // Only the intro's own keys restarted it, once each: the two timings,
+  // and since round 5 the variant, maxKm and turnCap.
+  expect(state.runs).toBe(runsBefore + 5);
   // Controls replace the history entry: ten changes, no back-button steps.
   expect(await page.evaluate(() => history.length)).toBe(before.historyLength);
   // The panel follows an edited hash (a pasted link): the slider and its

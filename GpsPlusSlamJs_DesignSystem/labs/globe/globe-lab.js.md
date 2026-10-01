@@ -35,7 +35,9 @@
   the error and loading lines move below the folded plate's header.
 - The look's defaults are the owner's tuned values (round-4 plan
   2026-09-28-2105 DEC-GL4-1): sun intensity 5, night lights 0.7, sun disc
-  1°, sun glow 0.95, stars to magnitude 7.5 at gain 4, Milky Way 0.03. They
+  1°, sun glow 0.95, stars to magnitude 7.5 at gain 4, Milky Way 0.03;
+  round 5 (plan 2026-10-01-0945 DEC-GL5-4) took the stars to 8.5 and
+  navy space to 0.1. They
   live in the globe package (`GLOBE_SURFACE.sunIntensity`,
   `GLOBE_SURFACE_TUNING.nightGain`, `GLOBE_SKY`), so whatever consumes
   the globe later starts from the same look; the lab reads them as its
@@ -52,8 +54,8 @@
   `sky` (0 turns the background pass off, default 1), `sunSize` (the disc's
   apparent diameter, 0.1-10°, default 1°, about twice the real 0.533°),
   `sunGlow` (0-4, default 0.95), `stars` (0 hides the procedural stars,
-  default 1), `starMag` (the faintest star drawn, 0.5-9, default 7.5:
-  15,811 stars; 88,914 at 9, DEC-GL4-2), `starGain` (0-10, default 4),
+  default 1), `starMag` (the faintest star drawn, 0.5-9, default 8.5,
+  DEC-GL5-4: about 50,000 stars; 15,811 at 7.5, 88,914 at 9, DEC-GL4-2), `starGain` (0-10, default 4),
   `milkyWay` (the band's
   linear radiance, 0-0.1, default 0.03; the sky pass is not tone mapped,
   so it shows), `sunIntensity` (0-8, default 5), `fovY` (20-80, default 50),
@@ -140,8 +142,9 @@
     orange city lights (`uTwilight`);
   - `space` (item 6): navy space, lighter towards the Earth's limb (the sky
     pass's `setSpace`, fed the Earth's direction and angular radius every
-    frame);
-  - `starGlow` (item 7): a soft glow round bright stars; with a low
+    frame); default 0.1 since round 5 (DEC-GL5-4), 0 is black;
+  - `starGlow` (item 7): a soft glow round the stars, wider the brighter
+    the star (by intensity, visible at the default limit); with a low
     `starMag` (fewer stars) and a high `starGain` it gives the
     reference's few bright stars as an alternative to the owner's dense
     field.
@@ -181,22 +184,49 @@
   `atmosphereCostText`). The button is disabled and reads "Measuring..."
   meanwhile; `state().atmosphereCost` and `costMeasuring` report it. On a
   phone this is the only real-GPU number; under SwiftShader it is relative.
-- The intro (M2, `/globe/globe-target.js`, `/globe/globe-camera.js`):
-  - `spin`: from 30°N 15°E, the view's longitude falling 3°/s, so the
-    surface moves west to east across the screen as the Earth turns;
-  - `turning`: once `chooseGlobeTarget` has a target, the turn from the
-    spin's pose to the target's, eased by `smoothstep` over `turnMs`;
+- The intro (M2, `/globe/globe-target.js`; round 5, plan 2026-10-01-0945
+  §3.1, DEC-GL5-1..3: `/globe/globe-intro.js`):
+  - `spin`: while it waits for a target, the camera turns from 30°N 15°E
+    (the longitude falling 3°/s) at `maxKm` from the centre, at the
+    variant's starting field of view;
+  - `turning` is the FLY-IN, over `turnMs`: from `maxKm` (50,000 km by
+    default, DEC-GL5-1) to the fitted distance, the direction turning to
+    the target from the sun side (the target turned towards the sub-solar
+    point by at most `turnCap`, 90° by default, DEC-GL5-3; from the
+    spin's direction if the spin was shown first), in the `intro=`
+    variant: `narrow` (the default, the owner's case: the field of view
+    narrows from 80°), `distance` (at 50°), `fov` (the field of view
+    narrows far out, then a short fly), `dolly` (widens from 50°: with an
+    end of 50° it is `distance`). Every variant ends at the target, the
+    fitted distance and `fovY`, which is 50° by default (DEC-GL5-2);
   - `arrived`: the target held at the centre, north up.
-  - fovY 50°, the disc filling 90 % of the narrower side
-    (`orbitDistanceToFit`, re-fitted whenever the width or the height
-    changes), the setting the z0-z3 imagery was sized for.
-  - `#at=<lat>,<lng>` is the target (absent or malformed means none),
-    `spinMs` the wait for a fix before the Central Park fallback (default
-    3000), `turnMs` the turn (default 5000). A change of any of them and
-    the "Replay the turn" button start the sequence again, from the spin's
-    start (a hash edit mid-turn therefore jumps back; fine for a lab).
+  - The fitted distance is computed at `fovY` (the disc filling 90 % of
+    the narrower side), not at the camera's field of view, which the
+    fly-in varies.
+  - The target: `#at=<lat>,<lng>` if given; else a position, but only
+    where the geolocation permission is ALREADY granted
+    (`geolocationPermissionState` from the framework's import-free
+    `sensors/permission-state.ts`, never a prompt at load; the pin asks):
+    then `locateOnce` and the spin waits up to `spinMs` for it; without a
+    granted permission it falls back to Central Park at once. A position
+    that arrives while the fallback is flown to or held becomes the target
+    over 1.5 s (no jump; the history then names `fix`).
+  - `maxKm` is also how far the controls zoom out (`limitGlobeZoomOut`,
+    overriding the library's private limit, about 27,400 km at 50° on
+    16:9). A change of `at`, `spinMs`, `turnMs`, `intro`, `maxKm` or
+    `turnCap`, and the "Replay the turn" button, start the sequence again.
   - `user`: the user has taken the camera (below); the intro stands still
-    until the replay button or a new `at`, `spinMs` or `turnMs` restarts it.
+    until the replay button or a new key above restarts it. A field of view
+    the fly-in left wider or narrower than `fovY` (a press during
+    `narrow`, say) eases back to it over 0.5 s (`FOV_RETURN_MS`); so it
+    does when the pin's dive interrupts the fly-in. The test hook
+    `__globeLab.fovReturnAt(fraction)` returns the last such ease
+    (`{ from, to, ms, fov }`, `fov` at `fraction` x `ms`), computed by the
+    same function the frame loop uses, so a smoke reads the ease by time
+    rather than by whichever frames landed.
+  - `state()` reports `intro`, `fixState` (`fix`, `none` or `waiting`),
+    `fovY` (the lab's) and `cameraFov` (the camera's, which the fly-in
+    varies).
 - Touch and mouse (round-2 plan 2026-09-26-2055 M3a, M3b; round-3 plan
   2026-09-27-0532 §4 E): the tile library's own `GlobeControls` on the
   canvas, damping on:

@@ -12,7 +12,7 @@ import { expect } from "@playwright/test";
  * has arrived at its target, and returns the list the page's console
  * errors collect into.
  */
-export async function bootGlobe(page, hash) {
+export async function bootGlobe(page, hash, { phase = "arrived" } = {}) {
   const errors = [];
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
@@ -26,8 +26,8 @@ export async function bootGlobe(page, hash) {
   );
   expect(await page.evaluate(() => window.__globeLab.error)).toBeNull();
   await page.waitForFunction(
-    () => window.__globeLab.state().phase === "arrived",
-    null,
+    (want) => window.__globeLab.state().phase === want,
+    phase,
     { timeout: 90_000 },
   );
   return errors;
@@ -90,7 +90,8 @@ export async function applyHash(page, hash) {
 /**
  * The look before round 4 (plan 2026-09-28-2105 DEC-GL4-1 made the owner's
  * tuned values the defaults: sun 5, night lights 0.7, disc 1°, glow 0.95,
- * stars to 7.5 at gain 4, Milky Way 0.03). Every pixel floor in the globe
+ * stars to 7.5 at gain 4, Milky Way 0.03; round 5 added stars to 8.5 and
+ * navy space 0.1). Every pixel floor in the globe
  * smokes was measured on this look, so a view that measures pixels pins it
  * rather than re-measuring against a brighter default.
  */
@@ -102,6 +103,7 @@ const PRE_ROUND4_LOOK = {
   starMag: "6.5",
   starGain: "1",
   milkyWay: "0.02",
+  space: "0",
   // No atmosphere pass (round 4 DEC-GL4-4 turned it on by default): the
   // floors were measured on the bare surface and sky.
   atmo: "0",

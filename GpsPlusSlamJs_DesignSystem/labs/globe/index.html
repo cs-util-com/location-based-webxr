@@ -475,6 +475,48 @@
             </label>
           </div>
         </details>
+        <details class="lookdev-section" data-section="globe-intro" open>
+          <summary>Fly-in</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint">Variant</span>
+              <select class="select" data-hash-key="intro">
+                <option value="narrow">Fly in, FOV narrowing from 80°</option>
+                <option value="distance">Fly in at 50°</option>
+                <option value="fov">Narrow the FOV far out, then fly</option>
+                <option value="dolly">Fly in, FOV widening (dolly)</option>
+              </select>
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Start and zoom-out limit (km from the centre)
+                <output data-for="maxKm"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="20000"
+                max="100000"
+                step="1000"
+                data-hash-key="maxKm"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Turn from the sun side, at most (°)
+                <output data-for="turnCap"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="0"
+                max="180"
+                step="5"
+                data-hash-key="turnCap"
+              />
+            </label>
+          </div>
+        </details>
         <details class="lookdev-section" data-section="globe-camera" open>
           <summary>Camera and turn</summary>
           <div class="lookdev-section-body col">

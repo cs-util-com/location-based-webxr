@@ -30,12 +30,13 @@ const DAY =
 const NIGHT =
   "at=48,10&spinMs=0&turnMs=0&time=2026-03-20T21:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0";
 /**
- * The sun behind the Earth: space dark around the disc, bright stars only,
- * the sun's glow off (it would light the frame around the disc, and before
- * the tiles cover it, the whole frame).
+ * The sun behind the Earth: space dark around the disc, the stars at the
+ * DEFAULT limit and gain (round-5 plan DEC-GL5-4: the glow must show at
+ * them), the sun's glow and navy space off (they would light the frame
+ * around the disc).
  */
 const STARS =
-  "at=0,-178.14&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&milkyWay=0&atmo=0&starMag=2&starGain=4&sunGlow=0";
+  "at=0,-178.14&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&milkyWay=0&atmo=0&sunGlow=0&space=0";
 
 const SWEEP = [0.5, 1, 2];
 /** "value vs floor: x0.5 ok x1 ok x2 NO" for a value that must exceed it. */
@@ -56,7 +57,7 @@ const loaded = (page) =>
     },
   );
 
-test("every look is off by default; the grade and the cloud shading move their pixels", async ({
+test("every look but navy space is off by default; the grade and the cloud shading move their pixels", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -66,7 +67,8 @@ test("every look is off by default; the grade and the cloud shading move their p
     grade: 0,
     cloudRelief: 0,
     twilight: 0,
-    space: 0,
+    // 0.1 by default since round 5 (plan 2026-10-01-0945 DEC-GL5-4).
+    space: 0.1,
     starGlow: 0,
   });
   const grid = gridAround([0.5, 0.5], 0.2, 9);
@@ -132,21 +134,32 @@ test("navy space: a corner of the frame is black off and navy on", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  const errors = await bootGlobe(page, DAY);
+  const errors = await bootGlobe(page, `${DAY}&space=0`);
   await loaded(page);
   const [cornerOff] = await read(page, [[0.03, 0.05]]);
+  await applyHash(page, DAY);
+  const [cornerDefault] = await read(page, [[0.03, 0.05]]);
   await applyHash(page, `${DAY}&space=1`);
   const [cornerOn] = await read(page, [[0.03, 0.05]]);
   console.log(
-    `looks: space corner ${cornerOff.slice(0, 3)} -> ${cornerOn.slice(0, 3)}; blue ${verdict(cornerOn[2], 15)}`,
+    `looks: space corner ${cornerOff.slice(0, 3)} -> ${cornerOn.slice(0, 3)} (the default 0.1: ${cornerDefault.slice(0, 3)}); blue ${verdict(cornerOn[2], 15)}`,
   );
   expect(cornerOff.slice(0, 3)).toEqual([0, 0, 0]);
+  // The default is navy too, darker than at 1 (DEC-GL5-4).
+  expect(cornerDefault[2]).toBeGreaterThan(cornerOff[2]);
+  expect(cornerDefault[2]).toBeLessThan(cornerOn[2]);
   expect(cornerOn[2]).toBeGreaterThan(cornerOn[0]);
   expect(cornerOn[2]).toBeGreaterThan(15);
   expect(errors).toEqual([]);
 });
 
-test("the star glow spreads the brightest stars' light", async ({ page }) => {
+// WHY (round-5 plan DEC-GL5-4): the glow scaled with intensity squared, so
+// at the default limit (8.5) it widened a few dozen stars and moved the
+// frame's light 1 %: invisible. It now scales with intensity. Shown at the
+// DEFAULT parameters, in space only, against the glow off; the limit is
+// swept over 6-9 (logged), and the floor is half the smallest gain of
+// that sweep's own measurement (see GLOW_GAIN_FLOOR).
+test("the star glow shows at the default star limit", async ({ page }) => {
   test.setTimeout(120_000);
   const errors = await bootGlobe(page, STARS);
   await loaded(page);
@@ -162,22 +175,47 @@ test("the star glow spreads the brightest stars' light", async ({ page }) => {
       Math.tan((st.fovY * Math.PI) / 360);
     return { cx: 0.5, cy: 0.5, rPx: rPx + 4 };
   });
-  const off = await page.evaluate(
-    ({ c }) => window.__globeLab.regionStats(c, 10),
-    { c: space },
-  );
-  await applyHash(page, `${STARS}&starGlow=1`);
-  const on = await page.evaluate(
-    ({ c }) => window.__globeLab.regionStats(c, 10),
-    { c: space },
-  );
-  const light = on.outsideSum / Math.max(1, off.outsideSum);
-  const spread = on.outsideBright / Math.max(1, off.outsideBright);
+  const stats = (hash) =>
+    applyHash(page, hash).then(() =>
+      page.evaluate(({ c }) => window.__globeLab.regionStats(c, 10), {
+        c: space,
+      }),
+    );
+  const gains = async (extra) => {
+    const off = await stats(`${STARS}${extra}`);
+    const on = await stats(`${STARS}${extra}&starGlow=1`);
+    return {
+      light: on.outsideSum / Math.max(1, off.outsideSum) - 1,
+      spread: on.outsideBright / Math.max(1, off.outsideBright) - 1,
+      off,
+    };
+  };
+  const sweep = [];
+  for (const mag of [6, 7, 8, 9]) {
+    sweep.push({ mag, ...(await gains(`&starMag=${mag}`)) });
+  }
+  const atDefault = await gains("");
   console.log(
-    `looks: star glow in space: light ${off.outsideSum.toFixed(0)} -> ${on.outsideSum.toFixed(0)} (gain over off ${verdict(light - 1, 0.1)}), pixels over 10 ${off.outsideBright} -> ${on.outsideBright} (gain over off ${verdict(spread - 1, 0.1)})`,
+    `looks: star glow gain over off, space only: ` +
+      sweep
+        .map(
+          (r) =>
+            `mag ${r.mag} light +${r.light.toFixed(2)} pixels +${r.spread.toFixed(2)}`,
+        )
+        .join(", ") +
+      `; at the default limit light ${verdict(atDefault.light, GLOW_GAIN_FLOOR)}, pixels over 10 ${verdict(atDefault.spread, GLOW_GAIN_FLOOR)}`,
   );
-  expect(off.outsideBright).toBeGreaterThan(0);
-  expect(light).toBeGreaterThan(1.1);
-  expect(spread).toBeGreaterThan(1.1);
+  expect(atDefault.off.outsideBright).toBeGreaterThan(0);
+  expect(atDefault.light).toBeGreaterThan(GLOW_GAIN_FLOOR);
+  expect(atDefault.spread).toBeGreaterThan(GLOW_GAIN_FLOOR);
   expect(errors).toEqual([]);
 });
+
+/**
+ * The glow's least gain over off at the default parameters, as a fraction
+ * (light in space and pixels over 10 levels): half the smallest gain the
+ * starMag 6-9 sweep measured (2026-10-01: pixels +0.18 at magnitude 9;
+ * light +0.31 to +0.89, pixels +0.18 to +1.66 over the sweep; at the
+ * default 8.5 light +0.36, pixels +0.25).
+ */
+const GLOW_GAIN_FLOOR = 0.09;
