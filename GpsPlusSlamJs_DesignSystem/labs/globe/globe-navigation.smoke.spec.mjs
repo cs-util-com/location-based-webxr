@@ -484,11 +484,16 @@ test("the dive lands on the fix at the hand-over altitude, and a touch stops a d
   await page.locator("#globe-replay").click();
   await arriveAt(page, { lat: 30, lng: 15 });
   await applyHashKeepingView(page, "diveMs=20000&handOver=1&handOverKm=50");
+  const startM = await page.evaluate(() => window.__globeLab.state().altitudeM);
   await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => window.__globeLab.state().pin.phase === "flying",
-  );
-  await frames(page, 30);
+  // The press lands once the dive is under way (below its start), not
+  // after a count of frames: the dive runs on the clock, so 30 frames of
+  // a slow CPU rasteriser outlasted the 20 s dive and the press found the
+  // camera already at 50 km (r760 CI, Linux, and a local gate).
+  await page.waitForFunction((start) => {
+    const s = window.__globeLab.state();
+    return s.pin.phase === "flying" && s.altitudeM < start * 0.99;
+  }, startM);
   const c = await canvasCentre(page);
   await page.mouse.move(c.x, c.y);
   await page.mouse.down();
@@ -498,9 +503,19 @@ test("the dive lands on the fix at the hand-over altitude, and a touch stops a d
   );
   const stopped = await page.evaluate(() => window.__globeLab.state());
   expect(stopped.cameraOwner).toBe("controls");
-  // Well above the hand-over: stopped early, and the page stays.
-  expect(stopped.altitudeM).toBeGreaterThan(50_000 * 2);
+  // Stopped: after more frames the camera is still where the press left
+  // it, far above the hand-over, and the page stays. (A dive that ran on
+  // would be lower by now, and would hand over at 50 km.)
   await frames(page, 30);
+  const later = await page.evaluate(() => window.__globeLab.state());
+  console.log(
+    `touch stop: start ${(startM / 1000).toFixed(0)} km, stopped at ${(stopped.altitudeM / 1000).toFixed(0)} km, 30 frames later ${(later.altitudeM / 1000).toFixed(0)} km`,
+  );
+  expect(later.altitudeM).toBeGreaterThan(50_000 * 2);
+  expect(Math.abs(later.altitudeM - stopped.altitudeM)).toBeLessThan(
+    0.01 * stopped.altitudeM,
+  );
+  expect(later.pin.phase).toBe("idle");
   expect(page.url()).toContain("/labs/globe/");
   expect(errors).toEqual([]);
 });
