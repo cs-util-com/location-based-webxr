@@ -156,8 +156,9 @@ test("globe-classes: the imagery picks the classes, the relief places them, the 
   console.log(
     `globe-classes alps: mean water share ${(water / texels.length).toFixed(4)}`,
   );
-  // The water mask: a lake is water in C2's grid, while the plain imagery
-  // read (a 2D-canvas decode) has lost the colour under the mask.
+  // The water mask: a lake is water in C2's grid; the plain imagery read
+  // keeps the colour under the mask (it read near black before the
+  // decode fix, terrain-review-fixes.smoke.spec.mjs).
   const lake = await page.evaluate(() => {
     const e = window.__terrainLab.toEnu(47.25, 8.65);
     return {

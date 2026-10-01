@@ -314,6 +314,66 @@ function renderCredits(withImagery) {
   creditsBox.replaceChildren(details);
 }
 
+/** The WebGL2 context the imagery is read back through (made on first use). */
+let decodeGl = null;
+
+/**
+ * An image's RGBA bytes, rows from the top, WITHOUT premultiplied alpha.
+ * The globe imagery's alpha is the globe's water mask (0 on water, the
+ * colour under it kept; `GpsPlusSlamJs_Globe/assets/PROVENANCE.md`). A 2D
+ * canvas stores premultiplied colour, so it returned every water pixel
+ * BLACK and the relief drew lakes near black (DEC-A3, found 2026-10-01).
+ * The globe hands the same tiles to the GPU with `premultiplyAlpha:
+ * "none"` (`globe-surface-material.ts.md`); this does the same and reads
+ * the texture back: decoded as the elevation decoder does (no colour
+ * management, so the bytes are the file's own), uploaded to an RGBA8
+ * texture (an ImageBitmap carries its own premultiply and flip choice, so
+ * the pixel-store flags do not apply) and read through a framebuffer,
+ * texture row 0 (the image's top row) first.
+ */
+async function decodeRgba(blob) {
+  const bitmap = await createImageBitmap(blob, {
+    colorSpaceConversion: "none",
+    premultiplyAlpha: "none",
+  });
+  decodeGl ??= new OffscreenCanvas(1, 1).getContext("webgl2");
+  const gl = decodeGl;
+  if (!gl) throw new Error("WebGL2 is unavailable to read the imagery");
+  const { width, height } = bitmap;
+  const texture = gl.createTexture();
+  const framebuffer = gl.createFramebuffer();
+  try {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA8,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      bitmap,
+    );
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      texture,
+      0,
+    );
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      throw new Error("the imagery could not be read back");
+    }
+    const data = new Uint8Array(width * height * 4);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    return { width, height, data };
+  } finally {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(framebuffer);
+    gl.deleteTexture(texture);
+    bitmap.close();
+  }
+}
+
 /**
  * Fetches every tile on the page's thread (plan §9 finding 4), each bounded
  * by a timeout; a failure is a gap (`bytes: null`), never a thrown batch.
@@ -605,22 +665,10 @@ function start() {
             signal: AbortSignal.timeout(TILE_TIMEOUT_MS),
           });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          // As the elevation decoder does: no colour management, so the
-          // bytes are the file's own.
-          const bitmap = await createImageBitmap(await response.blob(), {
-            colorSpaceConversion: "none",
-            premultiplyAlpha: "none",
-          });
-          const surface = new OffscreenCanvas(bitmap.width, bitmap.height);
-          const context = surface.getContext("2d");
-          context.drawImage(bitmap, 0, 0);
-          const { data } = context.getImageData(
-            0,
-            0,
-            bitmap.width,
-            bitmap.height,
+          const { width, height, data } = await decodeRgba(
+            await response.blob(),
           );
-          return { ...k, width: bitmap.width, height: bitmap.height, data };
+          return { ...k, width, height, data };
         }),
       );
       if (mine !== run.regionId) return;
@@ -1530,6 +1578,8 @@ function start() {
             y,
           )
         : null,
+    /** The page's imagery decode (`decodeRgba`), for the smoke's check. */
+    decodeRgba: (blob) => decodeRgba(blob),
     /** The decoded imagery itself at a position (sRGB 0-1), or null. */
     imageryAt: (lat, lng) =>
       far.tiles ? sampleImagery(far.tiles, lat, lng) : null,

@@ -132,10 +132,9 @@ export function sampleImagery(tiles, lat, lng) {
  * The imagery's LAND colour and its water share at a position (globe
  * round-5 §3.3, `globe-classes`): the tiles' alpha is the globe's water
  * mask (255 land, 0 water; `GpsPlusSlamJs_Globe/assets/PROVENANCE.md`).
- * Decoded through a 2D canvas, a water pixel's colour comes back black (its
- * alpha is 0 and the canvas stores premultiplied colour), so a plain
- * bilinear read darkens every shore. Here the four pixels are weighted by
- * their land share as well: `rgb` is the bilinear colour of the land alone
+ * A plain bilinear read mixes the water's dark colour into the land at
+ * every shore. Here the four pixels are weighted by their land share as
+ * well: `rgb` is the bilinear colour of the land alone
  * (null where all four pixels are water), `water` the bilinear water
  * share (0-1). Null where a contributing pixel is missing.
  */

@@ -58,9 +58,9 @@ export const GLOBE_CLASSES = Object.freeze({
     snow: Object.freeze([0.88, 0.9, 0.93]),
   }),
   /**
-   * The water's colour (sRGB): a dark lake under the globe's sun. The
-   * imagery keeps its own water colour, but a 2D canvas decode loses it
-   * (alpha 0), so the class carries one.
+   * The water's colour (sRGB): a dark lake. The land colour is read from
+   * the land pixels alone (`sampleImageryLand`), so the water's colour is
+   * the class's own, one for every lake.
    */
   water: Object.freeze([0.05, 0.09, 0.15]),
   /** The colour kernel's width, CIE76 ΔE (swept 6-24). */

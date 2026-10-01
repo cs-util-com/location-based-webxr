@@ -13,8 +13,8 @@
     every land weight vector (the shader's x, y, z, w).
   - `GLOBE_CLASSES`: the land prototypes (sRGB, read off the Alps'
     level-5 tile and checked by the smoke's per-class means), the water
-    colour (a dark lake: the 2D-canvas decode loses the imagery's own
-    colour under the mask), `widthDE` 12 (the colour kernel's width,
+    colour (a dark lake, one for every lake: the land colour is read from
+    land pixels alone), `widthDE` 12 (the colour kernel's width,
     CIE76), `floor` 0.05 (the least affinity), `waterFlatDeg` [1, 4] and
     `ratioRange` [0.4, 2.5].
   - `PROTOTYPE_LAB`, `PROTOTYPE_LINEAR`, `WATER_LINEAR`: the prototypes as
@@ -56,8 +56,8 @@ detail, shares }`: the footprint drift (CIE76 between the fine albedo's
     relief and imagery (the smoke logs it per threshold).
   - The water share comes from the tiles' alpha (the globe's MODIS water
     mask), the land colour from the land pixels alone
-    (`sampleImageryLand`): the lab's 2D-canvas decode returns black under
-    the mask, which would darken every shore.
+    (`sampleImageryLand`), so the water's dark colour does not bleed into
+    the land at a shore.
   - The detail has hue (unlike C1's luminance-only high-pass): snow is
     white and rock grey inside a pixel whose mean is a greyish green.
 - Examples:
