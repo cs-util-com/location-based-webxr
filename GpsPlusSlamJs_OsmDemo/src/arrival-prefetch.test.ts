@@ -16,7 +16,11 @@ import {
 } from "gps-plus-slam-osm";
 
 import { arrivalPlanFor } from "./arrival-plan.js";
-import { startArrivalPrefetch } from "./arrival-prefetch.js";
+import {
+  startArrivalPrefetch,
+  type ArrivalPrefetchOutcome,
+  type ArrivalPrefetchReport,
+} from "./arrival-prefetch.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
 const PLAN = arrivalPlanFor(COLOGNE);
@@ -65,9 +69,11 @@ describe("a cold cache", () => {
     const store = new MemoryBlobStore();
     const { fetchImpl, gets } = healthyNetwork();
     const prefetch = startArrivalPrefetch(COLOGNE, { store, fetchImpl });
-    const report = await prefetch.finished;
+    // Typed as the lab reads it: the report is the module's public result.
+    const report: ArrivalPrefetchReport = await prefetch.finished;
+    const settled: ArrivalPrefetchOutcome = "settled";
 
-    expect(report.outcome).toBe("settled");
+    expect(report.outcome).toBe(settled);
     const keys = new Set(await store.keys());
     for (const tile of PLAN.overpassTiles) expect(keys).toContain(osmKey(tile));
     for (const url of PLAN.demUrls) expect(keys).toContain(url);
