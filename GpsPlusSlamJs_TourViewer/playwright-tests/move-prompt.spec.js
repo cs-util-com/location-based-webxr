@@ -213,7 +213,18 @@ test("'It's a second copy' is remembered in the draft: after a reload the same s
             }
           }
         }
-        await walk(root);
+        // The page keeps writing and removing draft files while this walks
+        // (a write commits through a temporary file; a discard removes its
+        // entry), so an entry listed a moment ago can be gone when it is
+        // opened: that read is "not yet", and the poll asks again.
+        try {
+          await walk(root);
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "NotFoundError") {
+            return false;
+          }
+          throw error;
+        }
         return found.some((t) => t.includes('"second-copy"'));
       }),
     )
