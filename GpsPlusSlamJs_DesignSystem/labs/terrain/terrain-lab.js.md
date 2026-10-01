@@ -33,8 +33,13 @@
     (`decodeRgba`: uploaded as the globe uploads them and read back
     through a WebGL2 framebuffer, so the water mask's pixels keep their
     colour; a 2D canvas returned them black and the relief drew lakes near
-    black, DEC-A3 2026-10-01), and resampled onto the far-field grid
-    (`terrain-far-field.js`);
+    black until 2026-10-01), and resampled onto the far-field grid
+    (`terrain-far-field.js`). The decode NEEDS WebGL2, as the renderer
+    does (three 0.185 has no WebGL1 path): its context lives on an
+    unattached page canvas (Safari before 17 has no WebGL on an
+    OffscreenCanvas) and is made again whenever it is lost; a context lost
+    in the middle of one decode fails that load, said in the error line,
+    and the next load makes a new one;
   - each frame: the camera (a preset, the hash's pose, the fly-in, or
     OrbitControls), the smoothed altitude, E, the slope boost and the far
     field's weights into the shader's uniforms, and the readout;
@@ -112,7 +117,7 @@
   `project([x, y, z])`, `projectAll(points)` (one frame for many),
   `toEnu(lat, lng)`, `toLatLng(x, y)`,
   `fieldAt(x, y)` (the absolute height, gradient, small relief and relief spread the
-  shader reads), `farAt(x, y)` (the far-field grid), `albedoAt(x, y)` (the imagery styles' albedo grid), `bandSweep(widths, blockPx = 1)` (globe-bands' sweep over the region's samples, its folds in blocks), `classAt(x, y)` (globe-classes' land colour and water share, bilinear as the shader reads them), `classSweep(settings?)` (globe-classes' class-threshold sweep, `CLASS_SWEEP` by default), `decodeRgba(blob)` (the page's imagery decode), `imageryAt(lat, lng)`
+  shader reads), `farAt(x, y)` (the far-field grid), `albedoAt(x, y)` (the imagery styles' albedo grid), `bandSweep(widths, blockPx = 1)` (globe-bands' sweep over the region's samples, its folds in blocks), `classAt(x, y)` (globe-classes' land colour and water share, bilinear as the shader reads them), `classSweep(settings?)` (globe-classes' class-threshold sweep, `CLASS_SWEEP` by default), `decodeRgba(blob)` (the page's imagery decode), `loseImageryContext()` (loses the decode's WebGL context, for the smoke's check that the next decode makes a new one), `imageryAt(lat, lng)`
   (the decoded imagery), `readPixels(points)` and
   `silhouette(columns, tolerance?)` (the first non-background row per
   column), `capture()` (the whole drawing buffer, row 0 at the bottom) and

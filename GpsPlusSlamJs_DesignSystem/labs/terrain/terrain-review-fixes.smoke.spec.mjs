@@ -312,3 +312,48 @@ test("the imagery keeps the water's colour under the mask, held to an independen
   );
   expect(errors).toEqual([]);
 });
+
+// The decode reads the tiles back through a WebGL2 context it keeps. A GPU
+// reset, or the browser reclaiming contexts when a page holds many, LOSES
+// that context; every later decode through it then reads nothing, and the
+// next place's imagery fails to load. The decode makes a new context when
+// its own is lost.
+test("the imagery decode survives a lost WebGL context", async ({ page }) => {
+  test.setTimeout(180_000);
+  await routeAll(page, fixtureTile);
+  const errors = await boot(
+    page,
+    `place=alps&${VIEW}&style=globe-albedo&detail=0`,
+  );
+  await page.waitForFunction(
+    () => window.__terrainLab.state().farState === "ready",
+    null,
+    { timeout: 120_000 },
+  );
+  const result = await page.evaluate(async (url) => {
+    const blob = await (await fetch(url)).blob();
+    const before = await window.__terrainLab.decodeRgba(blob);
+    const lost = window.__terrainLab.loseImageryContext();
+    let after = null;
+    let error = null;
+    try {
+      after = await window.__terrainLab.decodeRgba(blob);
+    } catch (e) {
+      error = String(e?.message ?? e);
+    }
+    const differs = after
+      ? before.data.some((v, i) => v !== after.data[i])
+      : null;
+    return { lost, error, differs, length: after?.data.length ?? 0 };
+  }, TILE_URL);
+  console.log(
+    `imagery decode after a lost context: lost ${result.lost}, ` +
+      `error ${result.error}, bytes ${result.length}, differs ${result.differs}`,
+  );
+  // Non-vacuous: the context really was lost.
+  expect(result.lost).toBe(true);
+  expect(result.error).toBeNull();
+  expect(result.length).toBe(256 * 256 * 4);
+  expect(result.differs).toBe(false);
+  expect(errors).toEqual([]);
+});

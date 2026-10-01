@@ -314,8 +314,22 @@ function renderCredits(withImagery) {
   creditsBox.replaceChildren(details);
 }
 
-/** The WebGL2 context the imagery is read back through (made on first use). */
+/**
+ * The WebGL2 context the imagery is read back through: made on first use,
+ * and again whenever it is lost (a GPU reset, or the browser reclaiming
+ * contexts), since a lost context reads nothing. On an unattached page
+ * canvas, not an OffscreenCanvas: Safari before 17 has no WebGL on an
+ * OffscreenCanvas, and the page canvas needs exactly the WebGL2 the
+ * relief's renderer needs anyway.
+ */
 let decodeGl = null;
+
+function decodeContext() {
+  if (decodeGl === null || decodeGl.isContextLost()) {
+    decodeGl = document.createElement("canvas").getContext("webgl2");
+  }
+  return decodeGl;
+}
 
 /**
  * An image's RGBA bytes, rows from the top, WITHOUT premultiplied alpha.
@@ -336,9 +350,11 @@ async function decodeRgba(blob) {
     colorSpaceConversion: "none",
     premultiplyAlpha: "none",
   });
-  decodeGl ??= new OffscreenCanvas(1, 1).getContext("webgl2");
-  const gl = decodeGl;
-  if (!gl) throw new Error("WebGL2 is unavailable to read the imagery");
+  const gl = decodeContext();
+  if (!gl) {
+    bitmap.close();
+    throw new Error("WebGL2 is unavailable to read the imagery");
+  }
   const { width, height } = bitmap;
   const texture = gl.createTexture();
   const framebuffer = gl.createFramebuffer();
@@ -1580,6 +1596,16 @@ function start() {
         : null,
     /** The page's imagery decode (`decodeRgba`), for the smoke's check. */
     decodeRgba: (blob) => decodeRgba(blob),
+    /**
+     * Loses the imagery decode's WebGL context, as a GPU reset or the
+     * browser reclaiming contexts would: true when it is now lost, null
+     * before the first decode made one.
+     */
+    loseImageryContext: () => {
+      if (!decodeGl) return null;
+      decodeGl.getExtension("WEBGL_lose_context")?.loseContext();
+      return decodeGl.isContextLost();
+    },
     /** The decoded imagery itself at a position (sRGB 0-1), or null. */
     imageryAt: (lat, lng) =>
       far.tiles ? sampleImagery(far.tiles, lat, lng) : null,
