@@ -63,6 +63,21 @@ export const GLOBE_CLASSES = Object.freeze({
     snow: Object.freeze([0.88, 0.9, 0.93]),
   }),
   /**
+   * The Alps imagery's own mean land colour per class (sRGB 0-1): the mean
+   * over the albedo-grid texels each class wins at the default prototypes
+   * and width (the classes smoke's per-class log, 2026-10-01). Rock and
+   * snow sit about 12 and 18 ΔE from the hand-picked prototypes, about one
+   * kernel width, so the sweep reports C2 with these too (`CLASS_SWEEP`).
+   * Measured on one place: on another place they are a second guess, not
+   * its own means.
+   */
+  measuredPrototypes: Object.freeze({
+    forest: Object.freeze([0.145, 0.187, 0.074]),
+    grass: Object.freeze([0.289, 0.311, 0.198]),
+    rock: Object.freeze([0.503, 0.521, 0.435]),
+    snow: Object.freeze([0.757, 0.772, 0.708]),
+  }),
+  /**
    * The water's colour (sRGB): a dark lake. The land colour is read from
    * the land pixels alone (`sampleImageryLand`), so the water's colour is
    * the class's own, one for every lake.
@@ -78,29 +93,61 @@ export const GLOBE_CLASSES = Object.freeze({
   ratioRange: Object.freeze([0.4, 2.5]),
 });
 
-const PROTOTYPE_LIST = LAND_CLASSES.map((c) => GLOBE_CLASSES.prototypes[c]);
+/**
+ * A set of land prototypes (sRGB 0-1, keyed by `LAND_CLASSES`) as the
+ * weights and the albedo use them: in CIELAB and in linear light, in
+ * `LAND_CLASSES` order. RangeError when a class is missing or a channel is
+ * not a number in 0-1.
+ *
+ * @param {Record<string, readonly number[]>} prototypes
+ * @returns {{ lab: readonly number[][], linear: readonly number[][] }}
+ */
+export function classPalette(prototypes) {
+  const list = LAND_CLASSES.map((name) => {
+    const rgb = prototypes?.[name];
+    const valid =
+      Array.isArray(rgb) &&
+      rgb.length === 3 &&
+      rgb.every((v) => Number.isFinite(v) && v >= 0 && v <= 1);
+    if (!valid) {
+      throw new RangeError(
+        `prototype ${name} must be three numbers in 0-1, got ${rgb}`,
+      );
+    }
+    return rgb;
+  });
+  return Object.freeze({
+    lab: Object.freeze(list.map(srgbToLab)),
+    linear: Object.freeze(list.map((p) => p.map(srgbToLinear))),
+  });
+}
+
+const DEFAULT_PALETTE = classPalette(GLOBE_CLASSES.prototypes);
 
 /** The prototypes in CIELAB and in linear light, as the shader receives them. */
-export const PROTOTYPE_LAB = Object.freeze(PROTOTYPE_LIST.map(srgbToLab));
-export const PROTOTYPE_LINEAR = Object.freeze(
-  PROTOTYPE_LIST.map((p) => p.map(srgbToLinear)),
-);
+export const PROTOTYPE_LAB = DEFAULT_PALETTE.lab;
+export const PROTOTYPE_LINEAR = DEFAULT_PALETTE.linear;
 export const WATER_LINEAR = Object.freeze(
   GLOBE_CLASSES.water.map(srgbToLinear),
 );
 
 /**
  * The land classes' coarse weights for an imagery land colour (sRGB 0-1):
- * exp(-ΔE² / 2 widthDE²) per prototype, normalised to sum 1. A colour far
+ * exp(-ΔE² / 2 widthDE²) per prototype of `palette` (`classPalette`, the
+ * default prototypes unless given), normalised to sum 1. A colour far
  * from every prototype (every kernel under 1e-6 of the sum's scale) goes
  * wholly to the nearest. RangeError for a width that is not positive.
  */
-export function landClassWeights(landSrgb, widthDE = GLOBE_CLASSES.widthDE) {
+export function landClassWeights(
+  landSrgb,
+  widthDE = GLOBE_CLASSES.widthDE,
+  palette = DEFAULT_PALETTE,
+) {
   if (!(widthDE > 0)) {
     throw new RangeError(`widthDE must be positive, got ${widthDE}`);
   }
   const lab = srgbToLab(landSrgb);
-  const d2 = PROTOTYPE_LAB.map(
+  const d2 = palette.lab.map(
     (p) => (lab[0] - p[0]) ** 2 + (lab[1] - p[1]) ** 2 + (lab[2] - p[2]) ** 2,
   );
   const k = d2.map((d) => Math.exp(-d / (2 * widthDE * widthDE)));
@@ -150,25 +197,34 @@ export function classAffinities(p, o = {}) {
  * C2's albedo at a post (sRGB 0-1) from the imagery there (`land` its land
  * colour, null where all water; `water` the mask's share) and the post's
  * relief. Also returns the fine weights (land in `LAND_CLASSES` order,
- * then water), for the sweep.
+ * then water), for the sweep. `palette` (`classPalette`) is the default
+ * prototypes unless given; the shader knows only the defaults.
  *
  * @param {{ land: number[] | null, water: number, point: object,
- *   o?: object, widthDE?: number }} input
+ *   o?: object, widthDE?: number,
+ *   palette?: { lab: readonly number[][], linear: readonly number[][] } }} input
  * @returns {{ albedo: number[], land: number[], water: number }}
  */
-export function classAlbedo({ land, water, point, o = {}, widthDE }) {
+export function classAlbedo({
+  land,
+  water,
+  point,
+  o = {},
+  widthDE,
+  palette = DEFAULT_PALETTE,
+}) {
   const a = classAffinities(point, o);
   if (land === null) {
     return { albedo: [...GLOBE_CLASSES.water], land: [0, 0, 0, 0], water: 1 };
   }
-  const coarse = landClassWeights(land, widthDE);
+  const coarse = landClassWeights(land, widthDE, palette);
   const raw = coarse.map((v, i) => v * a.land[i]);
   const rawSum = raw.reduce((x, y) => x + y, 0);
   const fine = raw.map((v) => v / rawSum);
   const [lo, hi] = GLOBE_CLASSES.ratioRange;
   const mixOf = (weights) =>
     [0, 1, 2].map((c) =>
-      weights.reduce((s, wt, i) => s + wt * PROTOTYPE_LINEAR[i][c], 0),
+      weights.reduce((s, wt, i) => s + wt * palette.linear[i][c], 0),
     );
   const coarseMix = mixOf(coarse);
   const fineMix = mixOf(fine);
@@ -210,8 +266,9 @@ export function globeClassesColour(input, light, intensity) {
 
 /**
  * C2's class-threshold sweep over a region (the page's hook, on the drawn
- * relief and the loaded imagery): for each setting `{ label, o, widthDE }`,
- * the albedo at every land post, then
+ * relief and the loaded imagery): for each setting `{ label, o, widthDE,
+ * prototypes }` (`prototypes` the land prototypes to weigh with, the
+ * defaults unless given), the albedo at every land post, then
  *
  * - `drift`: the CIE76 difference between the fine albedo and the
  *   imagery's coarse colour (`coarseClassColour`), both averaged in
@@ -230,7 +287,8 @@ export function globeClassesColour(input, light, intensity) {
  *   latDeg: number, halfM: number, footprint: number[], coarseSide: number,
  *   imageryAt: (x: number, y: number) => { land: number[] | null,
  *   water: number } | null }} region
- * @param {{ label: string, o?: object, widthDE?: number }[]} settings
+ * @param {{ label: string, o?: object, widthDE?: number,
+ *   prototypes?: Record<string, readonly number[]> }[]} settings
  */
 export function classSweep(region, settings) {
   const { posts, datum, latDeg, halfM, footprint, coarseSide, imageryAt } =
@@ -260,7 +318,8 @@ export function classSweep(region, settings) {
     for (let ch = 0; ch < 3; ch++) coarseLin[ch][i] = srgbToLinear(c[ch]);
   }
   const coarseTables = coarseLin.map((values) => summedArea(values, side));
-  return settings.map(({ label, o = {}, widthDE }) => {
+  return settings.map(({ label, o = {}, widthDE, prototypes }) => {
+    const palette = prototypes ? classPalette(prototypes) : DEFAULT_PALETTE;
     const lin = [new Float64Array(n), new Float64Array(n), new Float64Array(n)];
     const count = new Float64Array(n);
     const shares = [0, 0, 0, 0, 0];
@@ -276,7 +335,7 @@ export function classSweep(region, settings) {
         smallM: posts.small[i],
         latDeg,
       };
-      const out = classAlbedo({ ...im, point, o, widthDE });
+      const out = classAlbedo({ ...im, point, o, widthDE, palette });
       for (let c = 0; c < 3; c++) lin[c][i] = srgbToLinear(out.albedo[c]);
       count[i] = 1;
       out.land.forEach((v, k) => (shares[k] += v));
@@ -330,7 +389,9 @@ export function classSweep(region, settings) {
 /**
  * The sweep's settings (the owner rule 2026-09-13: a verdict from one
  * value is provisional): one class threshold moved at a time around the
- * defaults, each over a plausible range.
+ * defaults, each over a plausible range; and the Alps' measured class
+ * means as the prototypes (`GLOBE_CLASSES.measuredPrototypes`) at every
+ * colour width, so the width verdict reads for both palettes.
  */
 export const CLASS_SWEEP = Object.freeze([
   { label: "defaults" },
@@ -348,4 +409,9 @@ export const CLASS_SWEEP = Object.freeze([
   })),
   ...[6, 18, 24].map((v) => ({ label: `colour width ${v}`, widthDE: v })),
   ...[0.02, 0.15].map((v) => ({ label: `floor ${v}`, o: { floor: v } })),
+  ...[6, 12, 18, 24].map((v) => ({
+    label: `measured prototypes, colour width ${v}`,
+    widthDE: v,
+    prototypes: GLOBE_CLASSES.measuredPrototypes,
+  })),
 ]);

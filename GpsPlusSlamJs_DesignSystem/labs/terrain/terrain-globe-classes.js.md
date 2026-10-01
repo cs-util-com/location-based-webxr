@@ -16,11 +16,18 @@
     colour (a dark lake, one for every lake: the land colour is read from
     land pixels alone), `widthDE` 12 (the colour kernel's width,
     CIE76), `floor` 0.05 (the least affinity), `waterFlatDeg` [1, 4] and
-    `ratioRange` [0.4, 2.5].
+    `ratioRange` [0.4, 2.5]; `measuredPrototypes`, the Alps imagery's own
+    mean land colour per class (the smoke's per-class log at the defaults;
+    rock and snow sit about 12 and 18 ΔE from the hand-picked ones), used
+    by the sweep only.
+  - `classPalette(prototypes)` -> `{ lab, linear }`: a prototype set in
+    CIELAB and linear light, in `LAND_CLASSES` order. RangeError for a
+    missing class or a channel that is not a number in 0-1.
   - `PROTOTYPE_LAB`, `PROTOTYPE_LINEAR`, `WATER_LINEAR`: the prototypes as
     the shader receives them.
-  - `landClassWeights(landSrgb, widthDE?)`: exp(-ΔE² / 2 widthDE²) per
-    prototype, normalised; wholly the nearest when every kernel vanishes.
+  - `landClassWeights(landSrgb, widthDE?, palette?)`: exp(-ΔE² / 2
+    widthDE²) per prototype of the palette (the defaults unless given),
+    normalised; wholly the nearest when every kernel vanishes.
     RangeError for a width that is not positive.
   - `classAffinities(point, o?)` -> `{ land, water }`: each class's
     affinity for a post, `floor` to 1, from style B's lines
@@ -29,15 +36,17 @@
     grass (1 - snow)(1 - rock slope), rock max(rock slope, scree, bare
     above the snow), snow, water 1 - smoothstep(1°, 4°, slope); at or
     below 0 m only water.
-  - `classAlbedo({ land, water, point, o?, widthDE? })` -> `{ albedo, land,
+  - `classAlbedo({ land, water, point, o?, widthDE?, palette? })` -> `{ albedo, land,
 water }`: the land colour scaled per channel (linear light) by the
     ratio of the fine to the coarse prototype mix (clamped), mixed toward
     the water colour by the fine water share; the fine weights returned.
+    The shader knows only the default prototypes.
   - `coarseClassColour(land, water)`: the imagery's land and water colour
     mixed in linear light by the mask: what a footprint should average to.
   - `globeClassesColour(input, light, intensity?)`: `sunLitColour` of the
     albedo.
-  - `classSweep(region, settings)` -> per setting `{ label, posts, drift,
+  - `classSweep(region, settings)` (each setting `{ label, o?, widthDE?,
+prototypes? }`) -> per setting `{ label, posts, drift,
 detail, shares }`: the footprint drift (CIE76 between the fine albedo's
     footprint mean and the coarse colour's, over the same posts), the detail (mean CIE76 of a
     post's albedo from the coarse colour) and the mean fine class shares.
@@ -47,7 +56,8 @@ detail, shares }`: the footprint drift (CIE76 between the fine albedo's
     one box mean in the lab).
   - `CLASS_SWEEP`: the sweep's settings, one threshold moved at a time:
     snow line ±300 / ±600 m, tree line ±400 m, rock slope 30-46°, colour
-    width 6-24, floor 0.02-0.15.
+    width 6-24, floor 0.02-0.15; and the measured prototypes at colour
+    widths 6, 12, 18 and 24.
 - Invariants & assumptions:
   - Where every affinity is equal (a floor of 1), the fine weights are the
     coarse ones and the albedo IS the imagery's colour (a property test):

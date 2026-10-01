@@ -22,8 +22,11 @@ import {
   CLASS_SWEEP,
   GLOBE_CLASSES,
   LAND_CLASSES,
+  PROTOTYPE_LAB,
+  PROTOTYPE_LINEAR,
   classAffinities,
   classAlbedo,
+  classPalette,
   classSweep,
   coarseClassColour,
   globeClassesColour,
@@ -92,6 +95,80 @@ describe("C2: the coarse weights follow the imagery's colour", () => {
 
   it("refuses a width that is not positive", () => {
     assert.throws(() => landClassWeights([0.3, 0.3, 0.3], 0), RangeError);
+  });
+});
+
+describe("C2: the prototypes as a palette (the sweep's measured setting)", () => {
+  // The default prototypes are hand-picked; the measured ones are the Alps
+  // imagery's own per-class means. The sweep compares the two, so a
+  // palette must be the same arithmetic as the defaults, only other
+  // colours.
+  it("is the shader's prototypes for the defaults", () => {
+    const p = classPalette(GLOBE_CLASSES.prototypes);
+    assert.deepEqual(p.lab, PROTOTYPE_LAB);
+    assert.deepEqual(p.linear, PROTOTYPE_LINEAR);
+  });
+
+  it("gives each measured mean to its own class", () => {
+    const palette = classPalette(GLOBE_CLASSES.measuredPrototypes);
+    LAND_CLASSES.forEach((name, i) => {
+      const w = landClassWeights(
+        GLOBE_CLASSES.measuredPrototypes[name],
+        GLOBE_CLASSES.widthDE,
+        palette,
+      );
+      assert.equal(w.indexOf(Math.max(...w)), i, name);
+    });
+  });
+
+  it("keeps the albedo the imagery's where the relief has no preference, for any palette (property)", () => {
+    const next = random(11);
+    const palette = classPalette(GLOBE_CLASSES.measuredPrototypes);
+    for (let k = 0; k < 200; k++) {
+      const land = [next(), next(), next()];
+      const out = classAlbedo({
+        land,
+        water: 0,
+        point: flat(next() * 4500),
+        o: { floor: 1 },
+        palette,
+      });
+      assert.ok(
+        deltaE76(out.albedo, coarseClassColour(land, 0)) < 0.05,
+        `case ${k}`,
+      );
+    }
+  });
+
+  it("moves a pixel's classes when the prototypes move", () => {
+    // Between the default rock (0.45, 0.42, 0.38) and the measured one
+    // (0.50, 0.52, 0.44): the two palettes split it differently.
+    const land = [0.48, 0.47, 0.41];
+    const point = steep(2500);
+    const byDefault = classAlbedo({ land, water: 0, point });
+    const measured = classAlbedo({
+      land,
+      water: 0,
+      point,
+      palette: classPalette(GLOBE_CLASSES.measuredPrototypes),
+    });
+    assert.notDeepEqual(byDefault.land, measured.land);
+  });
+
+  it("refuses a palette missing a class or with a colour outside 0-1", () => {
+    const { snow, ...noSnow } = GLOBE_CLASSES.prototypes;
+    assert.ok(snow);
+    assert.throws(() => classPalette(noSnow), RangeError);
+    assert.throws(
+      () =>
+        classPalette({ ...GLOBE_CLASSES.prototypes, rock: [0.4, 1.2, 0.3] }),
+      RangeError,
+    );
+    assert.throws(
+      () =>
+        classPalette({ ...GLOBE_CLASSES.prototypes, rock: [0.4, Number.NaN] }),
+      RangeError,
+    );
   });
 });
 
@@ -310,6 +387,26 @@ describe("C2: the class-threshold sweep", () => {
     // A lower snow line puts more of the region under snow.
     const share = (label) => rows.find((r) => r.label === label).shares.snow;
     assert.ok(share("snow line -600 m") > share("snow line +600 m"));
+  });
+
+  // The sweep reports the measured prototypes beside the defaults, at every
+  // colour width the defaults are swept at, so the width verdict can be
+  // read for both palettes.
+  it("sweeps the measured prototypes at every colour width", () => {
+    const measured = CLASS_SWEEP.filter((s) => s.prototypes);
+    assert.deepEqual(
+      measured.map((s) => s.widthDE ?? GLOBE_CLASSES.widthDE),
+      [6, 12, 18, 24],
+    );
+    for (const s of measured) {
+      assert.equal(s.prototypes, GLOBE_CLASSES.measuredPrototypes);
+    }
+    const reg = region([0.42, 0.44, 0.4]);
+    const [byDefault, byMeasured] = classSweep(reg, [
+      { label: "defaults" },
+      measured.find((s) => (s.widthDE ?? GLOBE_CLASSES.widthDE) === 12),
+    ]);
+    assert.notEqual(byDefault.drift.mean, byMeasured.drift.mean);
   });
 
   // Where the relief prefers nothing (a single class's colour), the fine

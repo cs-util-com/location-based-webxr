@@ -29,6 +29,7 @@ import {
   classAlbedo,
   landClassWeights,
 } from "./terrain-globe-classes.js";
+import { deltaE76 } from "./terrain-globe-colour.js";
 import { reliefNormal, sunLight, sunLitColour } from "./terrain-sun.js";
 
 const DAY = "2026-06-21T11:00:00Z";
@@ -143,13 +144,19 @@ test("globe-classes: the imagery picks the classes, the relief places them, the 
     sums[k].w += w[k];
     t.land.forEach((v, c) => (sums[k].rgb[c] += v));
   }
+  // The sweep's measured prototypes are these means as logged on
+  // 2026-10-01: the ΔE to them shows when the imagery or the class split
+  // has moved away from what they were measured on.
   LAND_CLASSES.forEach((name, k) => {
     const m = sums[k];
+    const mean = m.rgb.map((v) => v / m.n);
     console.log(
       `globe-classes alps: ${name} wins ${m.n} of ${texels.length} texels` +
         (m.n
-          ? `, their mean land colour ${m.rgb.map((v) => (v / m.n).toFixed(3)).join(", ")} ` +
-            `(prototype ${GLOBE_CLASSES.prototypes[name].join(", ")}), mean winning weight ${(m.w / m.n).toFixed(2)}`
+          ? `, their mean land colour ${mean.map((v) => v.toFixed(3)).join(", ")} ` +
+            `(prototype ${GLOBE_CLASSES.prototypes[name].join(", ")}, ΔE ${deltaE76(mean, GLOBE_CLASSES.prototypes[name]).toFixed(1)}; ` +
+            `measured prototype ΔE ${deltaE76(mean, GLOBE_CLASSES.measuredPrototypes[name]).toFixed(1)}), ` +
+            `mean winning weight ${(m.w / m.n).toFixed(2)}`
           : ""),
     );
   });
