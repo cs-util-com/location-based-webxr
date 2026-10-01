@@ -259,6 +259,66 @@ describe('extractActionTimestamp', () => {
     const bare = { type: 'gpsData/recordGpsEvent' };
     expect(extractActionTimestamp(bare)).toBeNull();
   });
+
+  // Why (core 1.26, Tour Viewer authoring plan 2026-09-28-0953 D18): a
+  // recording can carry its fixes in `recordGpsEventBatch` - a device fix
+  // with its keep-alive ring, a lock's votes. Unpaced, a batch reads as "no
+  // timestamp", which nulls the delay on BOTH sides of it, so a viewer
+  // recording made of batches replayed its whole walk with no pauses
+  // (M2e/M2f milestone review #5).
+  describe('a recordGpsEventBatch', () => {
+    const batch = (...events: unknown[]) => ({
+      type: 'gpsData/recordGpsEventBatch',
+      payload: { events },
+    });
+
+    it("is paced by its first event's timestamp - where the batch's span starts", () => {
+      const fix = makeGpsAction(1708300000000).payload;
+      const vote = makeGpsAction(1708300000400).payload;
+      expect(extractActionTimestamp(batch(fix, vote))).toBe(1708300000000);
+    });
+
+    it('skips an event without a usable timestamp - the core drops such an event alone', () => {
+      const corrupt = {
+        ...makeGpsAction(0).payload,
+        rawGpsPoint: { latitude: 50, longitude: 8, timestamp: Number.NaN },
+      };
+      const vote = makeGpsAction(1708300000400).payload;
+      expect(extractActionTimestamp(batch(corrupt, vote))).toBe(1708300000400);
+    });
+
+    it('reads the old gpsPoint field per event, like the single action', () => {
+      expect(
+        extractActionTimestamp(
+          batch(makeGpsActionOldFormat(1708300000000).payload)
+        )
+      ).toBe(1708300000000);
+    });
+
+    it('returns null for an empty or malformed batch', () => {
+      expect(extractActionTimestamp(batch())).toBeNull();
+      expect(
+        extractActionTimestamp({
+          type: 'gpsData/recordGpsEventBatch',
+          payload: { events: 'x' },
+        })
+      ).toBeNull();
+    });
+
+    it('paces a recording of batches like the same fixes dispatched one by one', () => {
+      // The delay between two ticks is the time between their fixes, as it
+      // is between the two single fixes they replace.
+      const a = batch(makeGpsAction(1708300000000).payload);
+      const b = batch(makeGpsAction(1708300001000).payload);
+      expect(
+        computeInterActionDelay(
+          extractActionTimestamp(a),
+          extractActionTimestamp(b),
+          1
+        )
+      ).toBe(1000);
+    });
+  });
 });
 
 // ===========================================================================

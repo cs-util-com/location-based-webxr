@@ -67,6 +67,13 @@ Creates a GPS callback function that dispatches combined events.
 - **Input:**
   - `config.store` - Redux store to dispatch to
   - `config.getArPose` - Function to get current AR pose
+  - `config.recordFix` (optional) - where the built fix goes instead of
+    `store.dispatch(recordGpsEvent(payload))`: called once per recorded fix,
+    after the session zero is set, with exactly the payload the default
+    dispatches. The Tour Viewer routes its device fixes through it so a fix
+    and its code keep-alive ring reach the store as ONE
+    `recordGpsEventBatch` (authoring plan 2026-09-28-0953, D18). The router
+    owns the dispatch and must record the fix, alone or in a batch.
 - **Output:** Callback function for `startGpsWatch()`
 
 ## Invariants & Assumptions
@@ -136,6 +143,8 @@ expect(store.getState().recorder.gpsEventCount).toBe(1);
   - GPS handler dispatching (recording mode checks)
   - AR pose unavailability handling
   - Multiple sequential events
+  - `recordFix`: the built fix is handed to the router (after the zero),
+    and the coordinator dispatches nothing for it itself
   - Device orientation caching
   - GPS field fidelity: heading, speed, altitudeAccuracy preserved (null→undefined)
   - legacy compassAbsolute / rawDeviceOrientation no longer populated

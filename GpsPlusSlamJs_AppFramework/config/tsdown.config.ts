@@ -285,6 +285,10 @@ const entryFiles = [
   // wildcard, like the above.
   'src/utils/locate-state.ts',
   'src/utils/toast-core.ts',
+  // Both GPS actions' payloads (core 1.26's recordGpsEventBatch beside
+  // recordGpsEvent) - deep-imported by the Tour Viewer's recording folders
+  // and the recorder's timing page, so per-file for the `./utils/*` wildcard.
+  'src/utils/gps-event-actions.ts',
   // QR launch payload codec — deep-imported by the TourViewer app: the decode
   // side (codec-dictionary) implements the ?qr= launch-handler dispatch, and
   // the encode side (qr-launch-url) is the authoring counterpart that builds

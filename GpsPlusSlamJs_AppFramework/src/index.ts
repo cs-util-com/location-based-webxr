@@ -33,6 +33,8 @@ export {
   recordWriteFailure,
   setZeroPos,
   recordGpsEvent,
+  recordGpsEventBatch,
+  type RecordGpsEventBatchPayload,
   add2dImage,
   calcRelativeCoordsInMeters,
   type RecordingCoordinatorConfig,

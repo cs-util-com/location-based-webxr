@@ -15,7 +15,10 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { vec3 as glVec3, quat as glQuat } from 'gl-matrix';
-import { quaternionMagnitude } from 'gps-plus-slam-js';
+import {
+  quaternionMagnitude,
+  type RecordGpsEventPayload,
+} from 'gps-plus-slam-js';
 import {
   extractOdomPosition,
   extractOdomRotation,
@@ -545,6 +548,52 @@ describe('Recording Coordinator', () => {
 
       const state = store.getState();
       expect(state.gpsData?.zero).toEqual({ lat: 48.8566, lon: 2.3522 });
+    });
+
+    /**
+     * Why this test matters (Tour Viewer authoring plan 2026-09-28-0953,
+     * D18): an app that sends other observations WITH a device fix in one
+     * solve - the viewer's keep-alive ring, as one `recordGpsEventBatch` -
+     * must receive the built fix instead of it being dispatched alone. The
+     * zero is still set first, so the app's router dispatches into a store
+     * that can take it; nothing else is dispatched for the fix.
+     */
+    it('hands the built fix to `recordFix` instead of dispatching it, after setting the zero', () => {
+      store.dispatch(
+        startSession({
+          scenarioName: 'Test',
+          sessionName: 'test-session',
+          startTime: Date.now(),
+        })
+      );
+      const routed: { payload: RecordGpsEventPayload; zeroSet: boolean }[] = [];
+      const handler = createGpsPositionHandler({
+        store,
+        getArPose: () => mockArPose,
+        recordFix: (payload) => {
+          routed.push({ payload, zeroSet: store.getState().gpsData !== null });
+        },
+      });
+
+      handler({
+        lat: 48.8566,
+        lon: 2.3522,
+        altitude: null,
+        accuracy: 5.0,
+        altitudeAccuracy: null,
+        heading: null,
+        speed: null,
+        timestamp: 1_700_000_000_000,
+      });
+
+      expect(routed).toHaveLength(1);
+      expect(routed[0]!.zeroSet).toBe(true);
+      expect(routed[0]!.payload.odomPosition).toEqual([1, 2, 3]);
+      expect(routed[0]!.payload.rawGpsPoint.timestamp).toBe(1_700_000_000_000);
+      // Not dispatched by the coordinator itself: the router owns it.
+      expect(store.getState().gpsData?.gpsEvents?.gpsPositions ?? []).toEqual(
+        []
+      );
     });
   });
 

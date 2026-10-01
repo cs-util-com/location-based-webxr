@@ -74,7 +74,7 @@ Maximum allowed uncompressed size (in bytes) for a single action or metadata JSO
 
 ### `loadGpsPathFromBlob(blob: Blob, maxFileSize?: number): Promise<GpsPathCoord[]>`
 
-Memory-efficient GPS coordinate extractor for the replay preview map. Uses `BlobReader` to read action JSON files from the zip, identifies `gpsData/recordGpsEvent` actions, and returns lightweight `{ lat, lng }` pairs — all other action data is discarded immediately. Supports both new (`rawGpsPoint`) and old (`gpsPoint`) payload formats for backward compatibility.
+Memory-efficient GPS coordinate extractor for the replay preview map. Uses `BlobReader` to read action JSON files from the zip, identifies the GPS actions - one point per `gpsData/recordGpsEvent`, one per event of a `gpsData/recordGpsEventBatch` (core 1.26; read through `utils/gps-event-actions.ts`, so a device fix sent with its keep-alive ring is never missing from the track) - and returns lightweight `{ lat, lng }` pairs — all other action data is discarded immediately. Each event is read the same way; one without numeric coordinates is skipped alone. Supports both new (`rawGpsPoint`) and old (`gpsPoint`) payload formats for backward compatibility.
 
 - **Input:** `Blob` or `File` containing ZIP data; optional `maxFileSize` (defaults to `MAX_ACTION_FILE_SIZE` = 1 MB)
 - **Output:** Array of `GpsPathCoord` in chronological order (sorted by action filename)

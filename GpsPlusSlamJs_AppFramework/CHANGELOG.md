@@ -73,6 +73,28 @@
 
 ### Added
 
+- **`recordGpsEventBatch` and its `RecordGpsEventBatchPayload` type are
+  re-exported** from `gps-plus-slam-app-framework/state` (and the package
+  root), beside `recordGpsEvent`: several GPS observations with ONE alignment
+  update (`gps-plus-slam-js` 1.26.0; the framework now requires `^1.26.0`).
+  The Tour Viewer sends its code votes and each device fix together with its
+  keep-alive ring this way.
+- **Every reader of a recording handles the batch**, so a fix inside one
+  never vanishes. Through the new `utils/gps-event-actions`
+  (`recordedGpsEventPayloads(action)`: the GPS payloads of either action, in
+  order; `GPS_EVENT_ACTION_TYPES`):
+  - replay pacing (`extractActionTimestamp`) paces a batch by its first
+    event with a finite time - unpaced, a recording of batches replayed with
+    no pauses;
+  - the track preview (`loadGpsPathFromBlob`) reads every event of a batch;
+  - the tracking-quality listener reacts to a batch like to one fix (one
+    solve, at most one snapshot), so a session fed by batches keeps its
+    report - and the placement trigger that reads it - moving.
+- **`createGpsPositionHandler({ recordFix })`**: an optional router for the
+  built fix, called after the session zero is set instead of
+  `store.dispatch(recordGpsEvent(payload))`, for an app that records other
+  observations with the fix in one solve.
+
 - **Session-spanning recordings: `persistWhile` and `continuousActionIndex`**
   on `createSlamAppStore` (passed through to `createPersistenceMiddleware`,
   which takes them too). `persistWhile: () => boolean` REPLACES the

@@ -701,6 +701,59 @@ describe('loadGpsPathFromBlob', () => {
       expect(c.accuracy).toBe(7.5);
     }
   });
+
+  it('reads every fix inside a recordGpsEventBatch, in order, between the single fixes around it', async () => {
+    // Why (core 1.26; Tour Viewer authoring plan 2026-09-28-0953 D18): a
+    // viewer recording carries a device fix together with its keep-alive
+    // ring as ONE batch action. A reader that knew only `recordGpsEvent`
+    // drew a track with every such fix missing (M2e/M2f milestone review
+    // #5). Each event is read as the single action is read - an event
+    // without coordinates is skipped alone, as a single one would be.
+    const fix = (lat: number, accuracy?: number) => ({
+      odomPosition: [0, 0, 0],
+      odomRotation: [0, 0, 0, 1],
+      rawGpsPoint: {
+        id: `gps-${String(lat)}`,
+        latitude: lat,
+        longitude: 8,
+        timestamp: 1_700_000_000_000,
+        ...(accuracy === undefined ? {} : { latLongAccuracy: accuracy }),
+      },
+    });
+    const { ZipWriter, Uint8ArrayWriter, TextReader } =
+      await import('@zip.js/zip.js');
+    const writer = new ZipWriter(new Uint8ArrayWriter());
+    const actions = [
+      { type: 'gpsData/recordGpsEvent', payload: fix(50.1, 3) },
+      {
+        type: 'gpsData/recordGpsEventBatch',
+        payload: {
+          events: [
+            fix(50.2, 4),
+            { ...fix(0), rawGpsPoint: { id: 'broken' } },
+            fix(50.3, 5),
+          ],
+        },
+      },
+      { type: 'gpsData/recordGpsEvent', payload: fix(50.4) },
+    ];
+    for (const [i, action] of actions.entries()) {
+      await writer.add(
+        `actions/${String(i + 1).padStart(8, '0')}.json`,
+        new TextReader(JSON.stringify(action))
+      );
+    }
+    const blob = new Blob([await writer.close()]);
+
+    const coords = await loadGpsPathFromBlob(blob);
+
+    expect(coords).toEqual([
+      { lat: 50.1, lng: 8, accuracy: 3 },
+      { lat: 50.2, lng: 8, accuracy: 4 },
+      { lat: 50.3, lng: 8, accuracy: 5 },
+      { lat: 50.4, lng: 8 },
+    ]);
+  });
 });
 
 describe('ZipSource lazy Reader input', () => {

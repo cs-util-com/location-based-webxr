@@ -10,15 +10,16 @@ Controls timed playback of recorded AR+GPS sessions by dispatching Redux actions
 
 Pure function that extracts an absolute epoch-ms timestamp from a Redux action.
 
-| Action type                  | Timestamp source                                                                       | Returns  |
-| ---------------------------- | -------------------------------------------------------------------------------------- | -------- |
-| `gpsData/recordGpsEvent`     | `payload.rawGpsPoint.timestamp` (new) or `payload.gpsPoint.timestamp` (old recordings) | epoch ms |
-| `recorder/startSession`      | `payload.startTime`                                                                    | epoch ms |
-| `gpsData/markReferencePoint` | `payload.timestamp`, fallback to `rawGpsPoint.timestamp` or `gpsPoint.timestamp`       | epoch ms |
-| `recorder/recordDepthSample` | _(ignored — uses performance.now)_                                                     | `null`   |
-| `diagnostics/note`           | `payload.atMs` (epoch ms by contract, see `diagnostics-action.ts`)                     | epoch ms |
-| `recorder/endSession`        | _(no timestamp)_                                                                       | `null`   |
-| All other types              | _(no known timestamp location)_                                                        | `null`   |
+| Action type                   | Timestamp source                                                                       | Returns  |
+| ----------------------------- | -------------------------------------------------------------------------------------- | -------- |
+| `gpsData/recordGpsEvent`      | `payload.rawGpsPoint.timestamp` (new) or `payload.gpsPoint.timestamp` (old recordings) | epoch ms |
+| `gpsData/recordGpsEventBatch` | the FIRST event with a finite time, read like the single action (core 1.26)            | epoch ms |
+| `recorder/startSession`       | `payload.startTime`                                                                    | epoch ms |
+| `gpsData/markReferencePoint`  | `payload.timestamp`, fallback to `rawGpsPoint.timestamp` or `gpsPoint.timestamp`       | epoch ms |
+| `recorder/recordDepthSample`  | _(ignored — uses performance.now)_                                                     | `null`   |
+| `diagnostics/note`            | `payload.atMs` (epoch ms by contract, see `diagnostics-action.ts`)                     | epoch ms |
+| `recorder/endSession`         | _(no timestamp)_                                                                       | `null`   |
+| All other types               | _(no known timestamp location)_                                                        | `null`   |
 
 **Critical invariant (Risk R4):** `depthSample` uses `performance.now()` (relative to page load), NOT epoch ms. Returning it would mix clock domains and produce garbage delays.
 
@@ -56,6 +57,12 @@ Async controller with state machine: `idle → playing → paused → playing �
 
 - Actions are dispatched in array order (same order as recorded).
 - Timestamps in `recordGpsEvent` and `startSession` are absolute epoch ms.
+- A `recordGpsEventBatch` (core 1.26: several fixes, one solve - the Tour
+  Viewer's votes and keep-alive ticks) is paced by its first event with a
+  finite time: where its span starts. The span folds into the delay after
+  it, so a walk replays at its recorded length; an event without a finite
+  time is skipped, as the core drops it alone. Unpaced, a recording made of
+  batches replayed with no pauses at all (both delays around a null are 0).
 - `depthSample` timestamps are **NOT** epoch ms and must be ignored.
 - At speed factors > 50x, inter-action delays approach 0 and dispatches become near-synchronous. `requestAnimationFrame` naturally coalesces visual updates.
 - Max delay clamp (30s) prevents hangs on recordings with large clock gaps.

@@ -16,6 +16,7 @@
 
 import type { ReducersMapObject } from '@reduxjs/toolkit';
 import type { SlamAppStore } from './create-slam-app-store';
+import { recordedGpsEventPayloads } from '../utils/gps-event-actions';
 
 /** Minimal store contract used by the replay engine: dispatches plain actions. */
 type RecorderStore = SlamAppStore<ReducersMapObject>;
@@ -50,6 +51,21 @@ export interface ReplayAction {
 // extractActionTimestamp
 // ---------------------------------------------------------------------------
 
+/** A GPS event payload's time: `rawGpsPoint.timestamp` (new format) or
+ *  `gpsPoint.timestamp` (old recordings); null when neither is a number. */
+function gpsEventTimestamp(payload: Record<string, unknown>): number | null {
+  const rawGpsPoint = payload.rawGpsPoint as
+    Record<string, unknown> | undefined;
+  if (rawGpsPoint && typeof rawGpsPoint.timestamp === 'number') {
+    return rawGpsPoint.timestamp;
+  }
+  const gpsPoint = payload.gpsPoint as Record<string, unknown> | undefined;
+  if (gpsPoint && typeof gpsPoint.timestamp === 'number') {
+    return gpsPoint.timestamp;
+  }
+  return null;
+}
+
 /**
  * Extract an absolute epoch-ms timestamp from a Redux action, or null
  * if the action type doesn't carry one.
@@ -72,16 +88,19 @@ export function extractActionTimestamp(action: ReplayAction): number | null {
   const payload = action.payload as Record<string, unknown>;
 
   switch (action.type) {
-    case 'gpsData/recordGpsEvent': {
-      // payload.rawGpsPoint.timestamp (new format) or payload.gpsPoint.timestamp (old recordings)
-      const rawGpsPoint = payload.rawGpsPoint as
-        Record<string, unknown> | undefined;
-      if (rawGpsPoint && typeof rawGpsPoint.timestamp === 'number') {
-        return rawGpsPoint.timestamp;
-      }
-      const gpsPoint = payload.gpsPoint as Record<string, unknown> | undefined;
-      if (gpsPoint && typeof gpsPoint.timestamp === 'number') {
-        return gpsPoint.timestamp;
+    case 'gpsData/recordGpsEvent':
+      return gpsEventTimestamp(payload);
+
+    case 'gpsData/recordGpsEventBatch': {
+      // Core 1.26: several fixes, one solve (a Tour Viewer device fix with
+      // its keep-alive ring, a lock's votes). Paced by its FIRST event with
+      // a finite time - where the batch's span starts; the span folds into
+      // the delay after it, so a walk keeps its total length. An event
+      // without one is skipped: the core drops such an event alone.
+      for (const event of recordedGpsEventPayloads(action)) {
+        if (typeof event !== 'object' || event === null) continue;
+        const ts = gpsEventTimestamp(event as Record<string, unknown>);
+        if (ts !== null && Number.isFinite(ts)) return ts;
       }
       return null;
     }
