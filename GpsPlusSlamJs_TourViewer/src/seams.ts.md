@@ -19,10 +19,14 @@ createLabel; schedule }`
   - `startHitTestReticle(arWorldGroup, onSelect?)` - `onSelect` hears
     every XR `select` the DOM overlay did not cancel (a tap in AR,
     authoring plan 2026-09-28-0953 M4), through the framework driver's own
-    `onSelect` option (the driver is unchanged).
-  - `pickObjectInView(targets)` - the object id under the screen centre:
-    `object-pick.ts`'s camera-ray raycast with the framework camera; null
-    without a camera. A seam because the e2e scene is a stub with no
+    `onSelect` option, with where the tap pointed: the driver's second
+    argument (`SelectTargetRay`, the target ray relative to the viewer),
+    or null (M4 review #4).
+  - `pickObjectInView(targets, tap)` - the object id under the tap:
+    `object-pick.ts`'s camera-ray raycast with the framework camera,
+    through `ndcOfTargetRay(camera, tap.targetRayInViewer)` - the screen
+    centre when `tap` is null or its ray has no screen point - with the
+    angular tolerance (`PICK_TOLERANCE_DEG`); null without a camera. A seam because the e2e scene is a stub with no
     geometry, so the fake names the id a spec scripts. - the placement layer (M4: the framework's hit-test
     reticle under the world group; the camera frame → JPEG encoder, which is
     the framework's `rgbaImageToJpegBlob` behind an opacity guard, async

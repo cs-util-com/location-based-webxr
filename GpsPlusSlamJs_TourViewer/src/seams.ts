@@ -27,6 +27,7 @@ import {
   stopDepthCapture,
   type EnableGpsArDeps,
   type HitTestReticleHandle,
+  type SelectTargetRay,
 } from "gps-plus-slam-app-framework/ar";
 import { createTextSprite } from "gps-plus-slam-app-framework/visualization/text-sprite";
 import {
@@ -66,7 +67,7 @@ import {
 import type { DepthSamplerConfig } from "gps-plus-slam-app-framework/ar/depth-sampler";
 import type { Object3D } from "three";
 
-import { pickObject } from "./object-pick.js";
+import { ndcOfTargetRay, pickObject } from "./object-pick.js";
 
 import type {
   LocationPermission,
@@ -161,12 +162,17 @@ export interface TourViewerSeams {
    *  M4) through the framework driver's own option. */
   startHitTestReticle(
     arWorldGroup: Object3D,
-    onSelect?: () => void,
+    onSelect?: (tap: SelectTargetRay | null) => void,
   ): HitTestReticleHandle;
-  /** The id of the object under the screen centre (a camera-ray raycast
-   *  against each object's rendered root, `object-pick.ts`), or null. A
-   *  seam because the e2e scene is a stub with no geometry to hit. */
-  pickObjectInView(targets: ReadonlyMap<string, Object3D>): string | null;
+  /** The id of the object under the tap - through the tap's target ray,
+   *  or the screen centre when `tap` is null - by a camera-ray raycast
+   *  against each object's rendered root with an angular tolerance
+   *  (`object-pick.ts`), or null. A seam because the e2e scene is a stub
+   *  with no geometry to hit. */
+  pickObjectInView(
+    targets: ReadonlyMap<string, Object3D>,
+    tap: SelectTargetRay | null,
+  ): string | null;
   /** Encode a camera frame (top-left RGBA) as a JPEG for a placed photo.
    *  Rejects when the frame is not opaque: the canvas would composite it
    *  over its ground and the JPEG would come out dark (plan review #15). */
@@ -234,14 +240,20 @@ export const realSeams: TourViewerSeams = {
         ? { arWorldGroup }
         : {
             arWorldGroup,
-            onSelect: () => {
-              onSelect();
+            // The driver's second argument is where the tap pointed
+            // (M4 review #4); its first, the reticle's surface point, is
+            // not what a selection is about.
+            onSelect: (_surface, tap) => {
+              onSelect(tap);
             },
           },
     ),
-  pickObjectInView: (targets) => {
+  pickObjectInView: (targets, tap) => {
     const camera = getCamera();
-    return camera ? pickObject(camera, targets) : null;
+    if (!camera) return null;
+    const ndc =
+      tap === null ? null : ndcOfTargetRay(camera, tap.targetRayInViewer);
+    return pickObject(camera, targets, ndc === null ? {} : { ndc });
   },
   schedule: (fn, ms) => {
     const handle = setTimeout(fn, ms);

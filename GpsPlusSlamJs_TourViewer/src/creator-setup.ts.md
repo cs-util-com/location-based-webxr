@@ -146,8 +146,8 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
     manifest, so it cannot be asked earlier), `beginAuthorVisit`,
     `endAuthorVisit`, and `selectInView` (M4: a tap in AR - an XR select
     the overlay did not cancel - selects the object the `pickObjectInView`
-    seam names among the rendered previews, or clears the selection on a
-    miss).
+    seam names among the rendered previews for the tap's target ray, or
+    the screen centre when it is null; or clears the selection on a miss).
   - `CreatorSetup.renderAuthorReadout()` - the measuring readout
     (`authorStatusLine`) joined with the setup hint once measured
     (`setupHint`); a persistent pipeline error (`ctx.authorErrorText`) has
@@ -441,8 +441,10 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
   - **Overlay taps are not scene taps**: `beforexrselect` is cancelled on
     the panel (the PhysicsDemo pattern), so a tap on Delete does not also
     select what stands behind the button. The framework's reticle driver
-    carries the `select` listener through its own `onSelect` option; the
-    driver is unchanged (MinimalExample's use stays as it is).
+    carries the `select` listener through its own `onSelect` option, and
+    since M4 review #4 hands the tap's target ray as a second argument
+    (backward compatible: MinimalExample's one-parameter handler is as it
+    was), so the pick goes through the tapped point.
   - **The explicit replace of a stored code** (M2c review #5): offered in
     AR while the level in hand is a stored pose, enabled with the mint gate
     for that code in view, behind a confirm step (`replaceCodeConfirmText`,

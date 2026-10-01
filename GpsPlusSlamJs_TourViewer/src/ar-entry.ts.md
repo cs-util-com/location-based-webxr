@@ -31,7 +31,9 @@ since the flows plan M6.
   - A creator's session requests the WebXR `hit-test` feature and starts
     the reticle under the world group once the runtime is up
     (`ctx.reticle`, disposed on session end), whose XR `select` - a tap in
-    AR that the overlay did not cancel - calls `hooks.selectInView()`
+    AR that the overlay did not cancel - calls `hooks.selectInView(tap)`
+    with where the tap pointed (the driver's target ray, or null; M4
+    review #4)
     (authoring plan 2026-09-28-0953 M4); every camera frame (a
     `CapturedCameraFrame`: pixels plus the pose and time of its capture) is
     kept as `ctx.latestFrame` for the photo capture (M4) and offered to the

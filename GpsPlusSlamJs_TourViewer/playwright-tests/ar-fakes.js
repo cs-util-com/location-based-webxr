@@ -135,7 +135,9 @@ export async function installTourViewerArFakes(page, options = {}) {
             target?.dispatchEvent(event);
             if (event.defaultPrevented) return false;
           }
-          test.xrSelect?.();
+          // No target ray: a screen-centre tap, as the driver hands one
+          // whose event carried no pose.
+          test.xrSelect?.(null);
           return true;
         },
         /** Photos "encoded" by the fake (a 3-byte stand-in per capture). */

@@ -31,7 +31,10 @@ import {
 import { objectPlaced } from "./tour-authoring-actions.js";
 import { codeLocked } from "./tour-viewing-actions.js";
 
-import type { HitTestReticleHandle } from "gps-plus-slam-app-framework/ar";
+import type {
+  HitTestReticleHandle,
+  SelectTargetRay,
+} from "gps-plus-slam-app-framework/ar";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
@@ -136,9 +139,10 @@ export interface TourViewerHooks {
    *  store teardown, which resets the alignment the settle reads. */
   endAuthorVisit(): void;
   /** A creator's tap in AR (an XR select the overlay did not cancel):
-   *  select the object under the ring (authoring plan 2026-09-28-0953
-   *  M4). */
-  selectInView(): void;
+   *  select the object under the tap - its target ray from the reticle
+   *  driver, or the ring's screen centre when null (authoring plan
+   *  2026-09-28-0953 M4; review #4). */
+  selectInView(tap: SelectTargetRay | null): void;
   /** No tour is open any more (one closed, or an open failed): the panels
    *  that show a tour's link go back to ASKING for one. Without this, the
    *  print step keeps showing the previous tour's link as immutable text

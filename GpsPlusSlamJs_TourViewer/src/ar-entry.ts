@@ -372,8 +372,8 @@ export function wireArEntry(deps: {
       // selects the object under it (authoring plan 2026-09-28-0953 M4;
       // taps on the panel are cancelled there, `beforexrselect`).
       if (authorMode) {
-        ctx.reticle = seams.startHitTestReticle(worldGroup, () => {
-          hooks.selectInView();
+        ctx.reticle = seams.startHitTestReticle(worldGroup, (tap) => {
+          hooks.selectInView(tap);
         });
       }
     }

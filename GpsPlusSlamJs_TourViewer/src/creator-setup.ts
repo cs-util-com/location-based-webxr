@@ -78,6 +78,7 @@ import { odomNueFromWebXr } from "./visit-anchoring.js";
 import { createKeyedChain } from "./keyed-chain.js";
 
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
+import type { SelectTargetRay } from "gps-plus-slam-app-framework/ar";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 
@@ -263,8 +264,9 @@ export interface CreatorSetup {
    *  either offer what is not already hosted or delete a spent one. */
   presentDraftForTour: (tourUrl: string) => void;
   /** A tap in AR (an XR `select` the overlay did not cancel): select the
-   *  object under the screen centre, or clear the selection on a miss. */
-  selectInView: () => void;
+   *  object under the tap (its target ray; the screen centre when null),
+   *  or clear the selection on a miss. */
+  selectInView: (tap: SelectTargetRay | null) => void;
 }
 
 export function wireCreatorSetup(deps: {
@@ -2528,12 +2530,12 @@ export function wireCreatorSetup(deps: {
         wizard.revealStep("measure");
       })();
     },
-    selectInView: () => {
+    selectInView: (tap) => {
       if (!creator || !sessionLive()) return;
       const targets = new Map(
         [...ctx.placedPreviews].map(([id, preview]) => [id, preview.root]),
       );
-      editing.select(seams.pickObjectInView(targets));
+      editing.select(seams.pickObjectInView(targets, tap));
     },
   };
 }

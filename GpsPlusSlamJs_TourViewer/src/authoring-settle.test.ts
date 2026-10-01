@@ -361,7 +361,10 @@ function authoring(options: { store?: DraftFileStore } = {}) {
   /** What a tap in AR picks (the raycast itself is `object-pick.test.ts`'s):
    *  handed the rendered roots by id, as production hands them. */
   const pick: {
-    fn: (targets: ReadonlyMap<string, Object3D>) => string | null;
+    fn: (
+      targets: ReadonlyMap<string, Object3D>,
+      tap: { targetRayInViewer: readonly number[] } | null,
+    ) => string | null;
   } = { fn: () => null };
   /** One-shot timers the setup armed (the `schedule` seam), fired by hand. */
   const timers: { fn: () => void; ms: number; cancelled: boolean }[] = [];
@@ -373,8 +376,10 @@ function authoring(options: { store?: DraftFileStore } = {}) {
         timer.cancelled = true;
       };
     },
-    pickObjectInView: (targets: ReadonlyMap<string, Object3D>) =>
-      pick.fn(targets),
+    pickObjectInView: (
+      targets: ReadonlyMap<string, Object3D>,
+      tap: { targetRayInViewer: readonly number[] } | null,
+    ) => pick.fn(targets, tap),
     canShareZip: () => false,
     createQrFrontEnd: () => ({
       kind: "barcode-detector",
@@ -1424,7 +1429,7 @@ describe(
       await release();
       // Selected in AR, so its row is the one shown.
       a.pick.fn = () => "h1";
-      a.setup.selectInView();
+      a.setup.selectInView(null);
       a.dom.objectList.listHandlers!.editText("h1", "First");
       await flush();
       const busy = a.dom.objectList.lastModel!.rows[0]!;
@@ -1522,19 +1527,27 @@ describe(
     it("selects what a tap in AR hits among the rendered objects, and clears the selection on a miss", async () => {
       const a = await withHostedTour([hostedPin("h1", "Gate")]);
       let seen: ReadonlyMap<string, Object3D> | null = null;
-      a.pick.fn = (targets) => {
+      let seenTap: unknown = "not called";
+      a.pick.fn = (targets, tap) => {
         seen = targets;
+        seenTap = tap;
         return targets.has("h1") ? "h1" : null;
       };
-      a.setup.selectInView();
+      // Where the tap pointed (M4 review #4), as the reticle driver hands
+      // it: the pick casts through the tapped point, not the screen centre.
+      const tap = {
+        targetRayInViewer: new Matrix4().makeRotationY(0.1).toArray(),
+      };
+      a.setup.selectInView(tap);
       // The ray is cast against each object's rendered root.
       expect(seen!.get("h1")).toBe(a.ctx.placedPreviews.get("h1")!.root);
+      expect(seenTap).toBe(tap);
       const model = a.dom.objectList.lastModel!;
       expect(model.rows.map((r) => [r.id, r.selected, r.canMove])).toEqual([
         ["h1", true, true],
       ]);
       a.pick.fn = () => null;
-      a.setup.selectInView();
+      a.setup.selectInView(null);
       expect(a.dom.objectList.lastModel!.rows).toEqual([]);
     });
 
@@ -1668,7 +1681,7 @@ describe(
       await slow.release();
       const list = a.dom.objectList;
       a.pick.fn = () => "h1";
-      a.setup.selectInView();
+      a.setup.selectInView(null);
       a.setReticle([4, 0, 2]);
       list.listHandlers!.move("h1");
       await flush();
@@ -1699,10 +1712,10 @@ describe(
       expect(list.lastModel?.note).toMatch(/Saved "The old mill"/);
       // The creator's next tap in AR selects something else at once.
       a.pick.fn = () => "h2";
-      a.setup.selectInView();
+      a.setup.selectInView(null);
       expect(list.lastModel?.note).toMatch(/Saved "The old mill"/);
       a.fireTimers();
-      a.setup.selectInView();
+      a.setup.selectInView(null);
       expect(list.lastModel?.note).toBe("");
     });
   },

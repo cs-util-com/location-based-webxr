@@ -42,7 +42,8 @@ camera, so `installTourViewerArFakes(page)` installs
   reticle and the JPEG encoder fakes; `createLabel` returns a bare object
   in place of the canvas sprite); a tap in AR (authoring plan
   2026-09-28-0953 M4): `startHitTestReticle` keeps the app's select
-  listener as `xrSelect`, `tapXr(selector?)` taps like the runtime does -
+  listener as `xrSelect`, `tapXr(selector?)` taps like the runtime does
+  (with a null target ray, a screen-centre tap) -
   `beforexrselect` dispatched at the overlay element first, and NO select
   when it was cancelled (it returns whether the select fired) - and
   `pickObjectInView` returns the scripted `pickId` only when the app
