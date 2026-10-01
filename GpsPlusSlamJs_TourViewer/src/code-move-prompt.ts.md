@@ -24,8 +24,9 @@ render and owns the DOM, the replace, the undo and the draft writes.
   `maxHorizontalM`, `fixes`, `seconds`) or null.
 - `isHorizontalRefusal(refusal)` - the refusal broke the horizontal bound
   (a yaw-only refusal is not).
-- `MOVE_PROMPT_RULE` - `{ minFixes: 20, minSeconds: 20, sameSpotM: 20 }`
-  (swept; see below). `MovePromptRule` is its type, so a test can pass
+- `MOVE_PROMPT_RULE` - `{ minFixes: 20, minSeconds: 20, sameSpotM: 20,
+floorM: MOVED_CODE_FLOOR_M }` (20 m, from `code-displacement.ts`; swept,
+  see below). `MovePromptRule` is its type, so a test can pass
   another.
 - `RememberedMoveAnswer` - `{ levelId, northM, eastM, answer }` with
   `answer` `"second-copy" | "not-now"`.
@@ -43,6 +44,13 @@ The prompt asks only when ALL of these hold:
 
 - the refusal is horizontal (`horizontalM > maxHorizontalM`) - never for a
   turn alone, which is a turned print or a bad heading (§7j #8);
+- the offset is beyond `floorM` too (M5b review #1). The refusal's bound
+  is `correctionBoundM` of the REPORTED accuracies, with no floor of its
+  own beyond 5 m: 13.5 m at 2 m on both sides, 17.7 m at 3 m. Reported
+  accuracy is not bias, so an unmoved code under an 8-15 m between-visit
+  bias difference is refused at those reports. The refusal itself stays
+  (the correction is still not applied); only the question waits for the
+  floor;
 - the mint gate is open (§7j #9);
 - the refusal has lasted, without a break and for the same level, at least
   `minFixes` new fixes AND `minSeconds` of the fixes' own time. Fixes alone
@@ -67,12 +75,14 @@ saved the code and this one by 0 / 8 / 15 m, the solver's translation
 error as the mean of all fixes or a recency-weighted mean (60 s) - two
 proxies, because the real solver sits between them - the saved pose's own
 error from an independent visit after 60 s, the shipped bound at 5 m
-accuracy (26.2 m), the gate at 3 fixes, 600 s sessions, 200 seeded
+reported accuracy (26.2 m) except in the floor arm, the gate at 3 fixes, 600 s sessions, 200 seeded
 sessions per cell.
 
 - **Persistence, swept 1 / 5 / 10 / 20 / 30 / 60 s (fixes = seconds).**
-  - With sigma <= 5 m and a shared bias no persistence ever prompted for an
-    unmoved code: the 26 m bound does the work.
+  - With sigma <= 5 m, a shared bias and a 5 m report no persistence ever
+    prompted for an unmoved code - the 26.2 m bound of a 5 m report does
+    that, and a phone reporting 2-3 m has a 13.5-17.7 m bound (the floor
+    arm below).
   - Where an unmoved code IS refused (sigma 10 m, or 15 m of bias
     difference), persistence helps little: 20 s cuts those prompts by
     8-40 % against 1 s (for example 48 -> 37 of 200 at tau 30 s, 80 -> 72
@@ -98,10 +108,37 @@ sessions per cell.
   - A re-ask costs one tap; a missed second move leaves the Replace
     button. 20 m is the smallest value with re-asks under 5 % at
     sigma <= 5 m and a shared bias (the assertion the sweep pins).
+- **The floor, swept 0 (none) / 15 / 20 / 25 m at a reported 2 / 3 / 5 m**
+  (the worst cell across tau and solver proxy, of 200; persistence 20 s).
+  The floor is the shared `MOVED_CODE_FLOOR_M` (coordinator decision
+  2026-10-01, provisional 20 m): the regression gate's corpus has a worst
+  cross-session disagreement of one reference point of about 14 m and a
+  robust p90 of about 6 m, both synthetic, until the recalibration on the
+  owner's recordings.
+  - No floor, 2 m report: unmoved codes prompted in 49 / 111 of 200 at
+    8 m of bias difference (sigma 3 / 5 m), 185 / 185 at 15 m, 188-195 at
+    sigma 10 m. This is the finding: "up to about half" understates it at
+    15 m.
+  - 20 m (2 or 3 m report): 2 / 30 at 8 m, 51 / 105 at 15 m, 123-168 at
+    sigma 10 m. 30 m moves prompted 163-200, 50 m moves 200 (sigma <= 5 m).
+  - 25 m: 0 / 8 at 8 m, 6 / 42 at 15 m, 87-123 at sigma 10 m; 30 m moves
+    prompted only 142-191.
+  - 15 m: helps only a 2 m report (25 / 83 at 8 m); it is under a 3 m
+    report's 17.7 m bound and changes nothing there.
+  - A 5 m report is unchanged by any floor up to 25 m (its bound is
+    26.2 m): 0 / 4 at 8 m, 2 / 29 at 15 m.
+  - Verdict across the range: 20 m removes most unmoved prompts while the
+    bias difference stays within the corpus's (8 m: 1-15 %), but NOT at
+    15 m of difference (25.5-52.5 %), which only 25 m would mostly remove,
+    at the price of about one 30 m move in ten more going unasked. 20 m
+    is kept because 15 m is beyond the corpus's worst and a prompt only
+    asks; sigma 10 m prompts at every floor swept.
 - **What would reverse them:** field recordings in which an unmoved
   code's refusal comes and goes over more than 20 s (raise the
   persistence), or in which an unmoved code's offset differs by more than
-  20 m between visits (raise `sameSpotM`).
+  20 m between visits (raise `sameSpotM`, and the floor), or in which
+  reported 2-3 m phones disagree between visits by 15 m or more (raise
+  the floor towards 25 m).
 
 ## Invariants & assumptions
 
@@ -133,17 +170,18 @@ if (prompt !== null) show(movePromptText(prompt.horizontalM));
 ## Tests
 
 - `code-move-prompt.test.ts` - persistence in fixes AND seconds, a yaw-only
-  refusal and a closed gate never asking, a break / another level / a
+  refusal, a refusal under the floor and a closed gate never asking, a break / another level / a
   restarted history starting again, timeless fixes, missing inputs; an
   answer covering its spot but not a markedly different one or another
   code; the answers' memory (same spot replaced, the cap, the defensive
   read); the text; the shipped rule.
 - `code-move-prompt.property.test.ts` - for any sequence of inputs, a
-  prompt only for a lasting horizontal refusal with the gate open at an
-  unanswered spot, its `fixes` counted from the current run, and never
+  prompt only for a lasting horizontal refusal beyond the floor with the
+  gate open at an unanswered spot, its `fixes` counted from the current run, and never
   before the rule's seconds.
 - `code-move-prompt.sweep.test.ts` - the sweep above (it prints its
-  tables, pins monotonicity in persistence, the chosen values' properties,
-  and that its run-length shortcut agrees with the tracker).
+  tables, pins monotonicity in persistence and in the floor, the chosen
+  values' properties, and that its run-length shortcut agrees with the
+  tracker at a 5 m and a 2 m bound).
 - `authoring-settle.test.ts` "the moved-code prompt" and
   `playwright-tests/move-prompt.spec.js` - the composed setup and page.

@@ -1,7 +1,8 @@
 /**
  * The sweep behind `MOVE_PROMPT_RULE` (authoring plan 2026-09-28-0953
  * §3.6, M5b; owner rule: a verdict from one parameter value is
- * provisional). Two thresholds are chosen here:
+ * provisional). Three thresholds are chosen here (the third, the floor,
+ * is the shared moved-code floor; its arm reports the choice made):
  *
  * - PERSISTENCE (`minFixes`, `minSeconds`): how long a horizontal refusal
  *   must last before the prompt asks. Too short, and an unmoved code whose
@@ -11,6 +12,9 @@
  *   from an answered one and still count as the same spot. Too small, and
  *   "Not now" is asked again after a reload on GPS noise alone; too large,
  *   and a code moved again is never asked about.
+ * - THE FLOOR (`floorM`): the refusal's bound shrinks with the reported
+ *   accuracy, so below a floor an unmoved code under a between-visit bias
+ *   difference is offered as moved; above it, real moves go unasked.
  *
  * MODEL (synthetic, like M5a's; no field recording exists): device fixes
  * at 1 Hz with a per-axis Gauss-Markov error (tau 30/100/300 s, sigma
@@ -19,9 +23,12 @@
  * mean of all the session's fixes or a recency-weighted mean (time
  * constant 60 s) - two proxies, because the real solver sits between them.
  * The saved pose's own error is an independent visit's after 60 s. The
- * bound is the shipped `correctionBoundM` at 5 m accuracy on both sides
- * (26.2 m); the gate opens at `MIN_ALIGNMENT_SAMPLES` (3) fixes; sessions
- * last 600 s; 200 seeded sessions per cell.
+ * persistence and same-spot arms use the shipped `correctionBoundM` at 5 m
+ * reported accuracy on both sides (26.2 m, above the 20 m floor); the
+ * floor arm varies the REPORTED accuracy (2/3/5 m) and the floor
+ * (`floorM`, 0/15/20/25 m) over the same noise cells. The gate opens at
+ * `MIN_ALIGNMENT_SAMPLES` (3) fixes; sessions last 600 s; 200 seeded
+ * sessions per cell.
  *
  * Why this test matters: it prints the trade-off across the whole range,
  * and pins the properties the chosen values were picked for, so a change
@@ -129,13 +136,18 @@ function session(cell: Cell, seed: number, moveM: number): [number, number][] {
   ).map(([n, e]) => [n - saved[0] + move[0]!, e - saved[1] + move[1]!]);
 }
 
-/** The first fix (s) at which a refusal has lasted `t` fixes/seconds since
+/** The first fix (s) at which an offset beyond `thresholdM` (the larger of
+ *  the refusal's bound and the floor) has lasted `t` fixes/seconds since
  *  the gate opened, or null: the tracker's rule at 1 Hz. */
-function firstPrompt(offsets: [number, number][], t: number): number | null {
+function firstPrompt(
+  offsets: [number, number][],
+  t: number,
+  thresholdM: number = Math.max(BOUND_M, MOVE_PROMPT_RULE.floorM),
+): number | null {
   let run = -1;
   for (let i = MIN_ALIGNMENT_SAMPLES - 1; i < offsets.length; i += 1) {
     const [n, e] = offsets[i]!;
-    if (Math.hypot(n, e) > BOUND_M) {
+    if (Math.hypot(n, e) > thresholdM) {
       run += 1;
       if (run >= t) return i;
     } else {
@@ -226,32 +238,158 @@ describe("the move prompt's persistence, swept", () => {
     }
   });
 
-  it("agrees with the tracker itself on one cell (the run-length shortcut is the rule)", () => {
+  it("agrees with the tracker itself on one cell, at the 5 m and the 2 m bound (the run-length shortcut is the rule)", () => {
     const cell: Cell = { tau: 30, sigma: 10, biasDiff: 15, proxy: "mean" };
-    for (let s = 0; s < 40; s += 1) {
-      const offsets = session(cell, 1000 + s, 0);
-      let onset: MovePromptOnset | null = null;
-      let first: number | null = null;
-      offsets.forEach(([n, e], i) => {
-        const h = Math.hypot(n, e);
-        const r = trackMovePrompt(onset, {
-          levelId: "lvl",
-          refusal: {
-            horizontalM: h,
-            yawDeg: 0,
-            maxHorizontalM: BOUND_M,
-            maxYawDeg: 120,
-          },
-          offset: { northM: n, eastM: e },
-          gateOpen: i + 1 >= MIN_ALIGNMENT_SAMPLES,
-          fixCount: i + 1,
-          lastFixMs: i * 1000,
-          answers: [],
+    for (const boundM of [BOUND_M, correctionBoundM(2, 2)]) {
+      for (let s = 0; s < 40; s += 1) {
+        const offsets = session(cell, 1000 + s, 0);
+        let onset: MovePromptOnset | null = null;
+        let first: number | null = null;
+        offsets.forEach(([n, e], i) => {
+          const h = Math.hypot(n, e);
+          // The setup feeds the tracker only refusals.
+          const r = trackMovePrompt(onset, {
+            levelId: "lvl",
+            refusal:
+              h > boundM
+                ? {
+                    horizontalM: h,
+                    yawDeg: 0,
+                    maxHorizontalM: boundM,
+                    maxYawDeg: 120,
+                  }
+                : null,
+            offset: { northM: n, eastM: e },
+            gateOpen: i + 1 >= MIN_ALIGNMENT_SAMPLES,
+            fixCount: i + 1,
+            lastFixMs: i * 1000,
+            answers: [],
+          });
+          onset = r.onset;
+          if (r.prompt !== null && first === null) first = i;
         });
-        onset = r.onset;
-        if (r.prompt !== null && first === null) first = i;
-      });
-      expect(first).toBe(firstPrompt(offsets, MOVE_PROMPT_RULE.minSeconds));
+        expect(first).toBe(
+          firstPrompt(
+            offsets,
+            MOVE_PROMPT_RULE.minSeconds,
+            Math.max(boundM, MOVE_PROMPT_RULE.floorM),
+          ),
+        );
+      }
+    }
+  });
+});
+
+describe("the floor under a small reported accuracy, swept (M5b review #1)", () => {
+  /**
+   * The refusal's bound follows the REPORTED accuracy (13.5 m at 2 m on
+   * both sides, 17.7 m at 3 m, 26.2 m at 5 m), while the noise cells keep
+   * their own sigma and bias difference: a phone that reports 2-3 m while
+   * the two visits disagree by 8-15 m is exactly the case the bound alone
+   * cannot see. The prompt asks beyond max(floor, bound); the arm prints,
+   * per reported accuracy and floor (0 = no floor, the behaviour before
+   * the review), the unmoved prompts and the 30 m / 50 m moves prompted at
+   * the chosen persistence, the worst cell across tau and solver proxy.
+   */
+  const ACCURACIES = [2, 3, 5] as const;
+  const FLOORS = [0, 15, 20, 25] as const;
+  const t = MOVE_PROMPT_RULE.minSeconds;
+  // [acc][floor] -> per (sigma, B) worst unmoved / fewest 30 m / fewest 50 m.
+  const worst = new Map<string, { fa: number; m30: number; m50: number }>();
+  const cellKey = (acc: number, floor: number, sigma: number, b: number) =>
+    `acc${String(acc)} floor${String(floor)} s${String(sigma)} B${String(b)}`;
+  for (const cell of cells()) {
+    const unmoved = Array.from({ length: SESSIONS }, (_, s) =>
+      session(cell, 1000 + s, 0),
+    );
+    const moved30 = Array.from({ length: SESSIONS }, (_, s) =>
+      session(cell, 9000 + s, 30),
+    );
+    const moved50 = Array.from({ length: SESSIONS }, (_, s) =>
+      session(cell, 5000 + s, 50),
+    );
+    for (const acc of ACCURACIES) {
+      const boundM = correctionBoundM(acc, acc);
+      for (const floor of FLOORS) {
+        const thresholdM = Math.max(boundM, floor);
+        const count = (list: [number, number][][]) =>
+          list.filter((o) => firstPrompt(o, t, thresholdM) !== null).length;
+        const k = cellKey(acc, floor, cell.sigma, cell.biasDiff);
+        const prev = worst.get(k) ?? { fa: 0, m30: SESSIONS, m50: SESSIONS };
+        worst.set(k, {
+          fa: Math.max(prev.fa, count(unmoved)),
+          m30: Math.min(prev.m30, count(moved30)),
+          m50: Math.min(prev.m50, count(moved50)),
+        });
+      }
+    }
+  }
+  const at = (acc: number, floor: number, sigma: number, b: number) =>
+    worst.get(cellKey(acc, floor, sigma, b))!;
+
+  it("prints, per reported accuracy and floor, the worst unmoved prompts / fewest 30 m / fewest 50 m moves prompted (of 200)", () => {
+    for (const acc of ACCURACIES) {
+      for (const floor of FLOORS) {
+        const row = Object.fromEntries(
+          SIGMAS.flatMap((sigma) =>
+            BIAS_DIFFS.map((b) => {
+              const w = at(acc, floor, sigma, b);
+              return [
+                `s${String(sigma)}B${String(b)}`,
+                `${String(w.fa)}/${String(w.m30)}/${String(w.m50)}`,
+              ];
+            }),
+          ),
+        );
+        process.stdout.write(
+          `MOVE-FLOOR acc${String(acc)} floor${String(floor)} ${JSON.stringify(row)}\n`,
+        );
+      }
+    }
+    expect(worst.size).toBe(
+      ACCURACIES.length * FLOORS.length * SIGMAS.length * BIAS_DIFFS.length,
+    );
+  });
+
+  it("without a floor a 2 m report prompts for unmoved codes the floor keeps quiet", () => {
+    // The finding itself: with no floor, sigma 3 m and 15 m of bias
+    // difference at a reported 2 m prompt for an unmoved code often.
+    expect(at(2, 0, 3, 15).fa).toBeGreaterThan(SESSIONS * 0.2);
+    expect(at(2, MOVE_PROMPT_RULE.floorM, 3, 15).fa).toBeLessThan(
+      at(2, 0, 3, 15).fa,
+    );
+  });
+
+  it("never prompts more for an unmoved code as the floor rises", () => {
+    for (const acc of ACCURACIES) {
+      for (const sigma of SIGMAS) {
+        for (const b of BIAS_DIFFS) {
+          for (let i = 1; i < FLOORS.length; i += 1) {
+            expect(at(acc, FLOORS[i]!, sigma, b).fa).toBeLessThanOrEqual(
+              at(acc, FLOORS[i - 1]!, sigma, b).fa,
+            );
+          }
+        }
+      }
+    }
+  });
+
+  it("at the chosen floor: at most 15 % unmoved prompts while sigma <= 5 m and the bias difference <= 8 m, and no 50 m move lost to the floor", () => {
+    const floor = MOVE_PROMPT_RULE.floorM;
+    for (const acc of ACCURACIES) {
+      for (const sigma of SIGMAS) {
+        if (sigma > 5) continue;
+        for (const b of BIAS_DIFFS) {
+          const k = cellKey(acc, floor, sigma, b);
+          // Beyond 8 m (the 15 m cells) no bound is pinned: the sidecar
+          // reports their 25.5-52.5 %.
+          const limit = b <= 8 ? SESSIONS * 0.15 : SESSIONS;
+          expect(at(acc, floor, sigma, b).fa, k).toBeLessThanOrEqual(limit);
+          expect(at(acc, floor, sigma, b).m50, k).toBe(
+            at(acc, 0, sigma, b).m50,
+          );
+        }
+      }
     }
   });
 });

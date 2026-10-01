@@ -14,6 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { MOVED_CODE_FLOOR_M } from "./code-displacement.js";
 import {
   isHorizontalRefusal,
   MOVE_ANSWERS_MAX,
@@ -27,7 +28,7 @@ import {
   type RememberedMoveAnswer,
 } from "./code-move-prompt.js";
 
-const RULE = { minFixes: 5, minSeconds: 10, sameSpotM: 15 };
+const RULE = { minFixes: 5, minSeconds: 10, sameSpotM: 15, floorM: 20 };
 
 /** A horizontal refusal: the code seen 40 m from its saved spot. */
 const MOVED = {
@@ -124,6 +125,33 @@ describe("trackMovePrompt: when the prompt asks", () => {
       run(60, {
         refusal: { ...MOVED, horizontalM: 12, yawDeg: 170 },
         offset: { northM: 12, eastM: 0 },
+      }).prompt,
+    ).toBeNull();
+  });
+
+  it("never asks for a refusal under the floor, however long it lasts (M5b review #1)", () => {
+    // At a reported 2 m on both sides the refusal's bound is 13.5 m, so a
+    // between-visit GPS bias difference of 15 m refuses an unmoved code.
+    // The refusal stands (the correction is still not applied); only the
+    // question "has it moved?" waits for the floor.
+    const small = { ...MOVED, maxHorizontalM: 13.5 };
+    expect(
+      run(60, {
+        refusal: { ...small, horizontalM: 19.9 },
+        offset: { northM: 19.9, eastM: 0 },
+      }).prompt,
+    ).toBeNull();
+    expect(
+      run(60, {
+        refusal: { ...small, horizontalM: 20.5 },
+        offset: { northM: 20.5, eastM: 0 },
+      }).prompt,
+    ).not.toBeNull();
+    // Above the floor the refusal's own bound still decides.
+    expect(
+      run(60, {
+        refusal: { ...MOVED, horizontalM: 26, maxHorizontalM: 26.2 },
+        offset: { northM: 26, eastM: 0 },
       }).prompt,
     ).toBeNull();
   });
@@ -279,6 +307,15 @@ describe("MOVE_PROMPT_RULE", () => {
       minFixes: 20,
       minSeconds: 20,
       sameSpotM: 20,
+      floorM: MOVED_CODE_FLOOR_M,
     });
+  });
+
+  // Why this test matters: the floor is ONE decision meant for both the
+  // prompt and the viewer's rule (coordinator, 2026-10-01; provisional
+  // until the owner's recordings), so the prompt reads it from the one
+  // constant instead of restating it.
+  it("asks only beyond the shared moved-code floor of 20 m", () => {
+    expect(MOVED_CODE_FLOOR_M).toBe(20);
   });
 });

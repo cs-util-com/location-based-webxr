@@ -342,6 +342,31 @@ export interface CodeMoveRule {
 }
 
 /**
+ * THE MOVED-CODE FLOOR (m): no offset at or under it is ever treated as a
+ * move of the code, however small the reported accuracies make the
+ * correction's bound. Reported accuracy is not bias (§7j #2): two visits
+ * reporting 2-3 m can still disagree by 8-15 m, while `correctionBoundM`
+ * is then only 13.5-17.7 m.
+ *
+ * One decision (coordinator, 2026-10-01, M5b review #1) meant for both the
+ * authoring prompt (`MOVE_PROMPT_RULE.floorM`, which uses it now) and the
+ * viewer's rule (`CODE_MOVE_RULE.floorM`, which keeps its measured 30 m
+ * until both are recalibrated on the owner's recordings). The prompt can
+ * afford the lower value because it only ASKS the author; the viewer acts
+ * on its own.
+ *
+ * SYNTHETIC AND PROVISIONAL. Parameters it rests on: the regression gate's
+ * corpus, whose worst cross-session disagreement of one reference point is
+ * about 14 m and whose robust p90 is about 6 m (both synthetic), and the
+ * prompt sweep's reported-accuracy arm (`code-move-prompt.sweep.test.ts`,
+ * floors 15/20/25 m; the numbers are in `code-move-prompt.ts.md`). What
+ * would reverse it: owner recordings in which an unmoved code's offset
+ * between two visits exceeds 20 m (raise it), or in which real moves of
+ * 20-30 m go unprompted often enough to matter (lower it).
+ */
+export const MOVED_CODE_FLOOR_M = 20;
+
+/**
  * The rule M5a measured (results:
  * `GpsPlusSlamJs_Docs/docs/2026-10-01-2040-moved-code-detection-results.md`;
  * sidecar). SYNTHETIC AND PROVISIONAL: every value rests on simulated GPS
@@ -359,6 +384,11 @@ export interface CodeMoveRule {
  * it: a lower floor (25 m: false alarms from sigma 5 m at B = 10 m), a
  * shorter span (0-30 s: the scan's first fixes decide alone), a GPS whose
  * error is larger than sigma 5 m without reporting it.
+ *
+ * `floorM` stays the 30 m M5a measured for now: the decision of 2026-10-01
+ * makes {@link MOVED_CODE_FLOOR_M} the one floor of the prompt and of this
+ * rule, to be met at the recalibration on the owner's recordings rather
+ * than by changing the viewer's numbers unmeasured.
  */
 export const CODE_MOVE_RULE: CodeMoveRule = Object.freeze({
   floorM: 30,

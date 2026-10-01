@@ -9,6 +9,11 @@
  * the plausibility bound is REFUSED. The prompt asks only when:
  * - the refusal is HORIZONTAL - a yaw-only refusal is a turned print or a
  *   bad heading, never a move (§7j #8);
+ * - the offset is beyond {@link MovePromptRule.floorM} as well as the
+ *   refusal's bound: the bound shrinks with the REPORTED accuracies (13.5 m
+ *   at 2 m on both sides) while two visits' GPS can still disagree by more,
+ *   so an unmoved code may be refused - the refusal stands - without being
+ *   offered as moved (M5b review #1);
  * - the mint gate is open (`MIN_ALIGNMENT_SAMPLES` of this session's fixes
  *   solved in) - before it the alignment is the first fix's (§7j #9);
  * - the refusal has PERSISTED, without a break, for at least
@@ -33,6 +38,7 @@
  * @see code-move-prompt.ts.md
  */
 
+import { MOVED_CODE_FLOOR_M } from "./code-displacement.js";
 import type { CorrectionRefusal } from "./visit-settle.js";
 
 /** The prompt's thresholds (swept in `code-move-prompt.sweep.test.ts`). */
@@ -43,6 +49,9 @@ export interface MovePromptRule {
   readonly minSeconds: number;
   /** An answer covers offsets within this distance (m) of its own. */
   readonly sameSpotM: number;
+  /** Never asks for an offset at or under this (m), whatever the
+   *  refusal's bound; a non-finite value never asks. */
+  readonly floorM: number;
 }
 
 /**
@@ -50,15 +59,27 @@ export interface MovePromptRule {
  * swept on simulated GPS (Gauss-Markov per axis, tau 30-300 s, sigma
  * 3-10 m, two models of the solver's averaging), no field recording.
  * Parameters it rests on and the verdict across the range: the sidecar,
- * "The sweep". In short: with sigma <= 5 m and a bias shared between
- * visits no persistence from 1 to 60 s ever prompted for an unmoved code
- * (the 26 m bound does the work); at sigma 10 m 20 s cuts those prompts by
- * 8-40 % only, and every second of it delays a moved code's prompt by a
- * second. 20 s is kept against what the model leaves out: the first fixes'
+ * "The sweep". In short: with sigma <= 5 m, a bias shared between visits
+ * AND a reported accuracy of 5 m, no persistence from 1 to 60 s ever
+ * prompted for an unmoved code - but that is the 26.2 m bound of a 5 m
+ * report, not the persistence; a phone reporting 2-3 m has a 13.5-17.7 m
+ * bound, which the floor below covers. At sigma 10 m 20 s cuts the unmoved
+ * prompts by 8-40 % only, and every second of it delays a moved code's
+ * prompt by a second. 20 s is kept against what the model leaves out: the first fixes'
  * short-baseline alignment. The same spot: 20 m asks an unmoved spot again
  * in at most 1.5 % of re-visits at sigma <= 5 m with a shared bias (15 %
  * with 8 m of bias difference) and misses about half of second moves of
  * 20 m (up to 5.5 % of 30 m); 15 m re-asks 7 % / 36 %, 25 m misses 80-96 % of 20 m.
+ * The floor ({@link MOVED_CODE_FLOOR_M}, 20 m): at a reported 2 m, with no
+ * floor, an unmoved code was prompted in 24.5 % (sigma 3 m) to 55.5 %
+ * (sigma 5 m) of sessions at 8 m of bias difference and 92.5 % at 15 m;
+ * with 20 m that falls to 1-15 % at 8 m and 25.5-52.5 % at 15 m, while
+ * 81.5-100 % of 30 m moves and every 50 m move are still prompted
+ * (sigma <= 5 m). 25 m gives 0-4 % / 3-21 % and prompts only 71-95.5 % of
+ * 30 m moves; 15 m is under a 3 m report's 17.7 m bound and changes
+ * nothing there. A bias difference
+ * of 15 m is beyond the corpus's worst (about 14 m), which is why 20 m is
+ * kept despite its rate there.
  * What would reverse them: field recordings in which an unmoved code's
  * refusal comes and goes over more than 20 s (raise both), or in which an
  * unmoved code's offset differs by more than 20 m between visits (raise
@@ -68,6 +89,7 @@ export const MOVE_PROMPT_RULE: MovePromptRule = Object.freeze({
   minFixes: 20,
   minSeconds: 20,
   sameSpotM: 20,
+  floorM: MOVED_CODE_FLOOR_M,
 });
 
 /** The most remembered answers the draft keeps (newest kept). */
@@ -168,6 +190,7 @@ export function trackMovePrompt(
     offset === null ||
     !input.gateOpen ||
     !isHorizontalRefusal(refusal) ||
+    !(refusal.horizontalM > rule.floorM) ||
     !finite(offset.northM) ||
     !finite(offset.eastM) ||
     !finite(fixCount) ||

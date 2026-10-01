@@ -6,7 +6,8 @@
  * store change, in whatever order sightings, fixes and gate changes happen
  * to arrive. For ANY such sequence:
  * - a prompt is only ever shown for a horizontal refusal with the mint gate
- *   open, for a spot no remembered answer covers (§7j #8, #9, #14);
+ *   open, beyond the floor, for a spot no remembered answer covers (§7j
+ *   #8, #9, #14; M5b review #1);
  * - a prompt means the refusal has lasted, without a break, for at least
  *   the rule's fixes and seconds - counted from the start of the CURRENT
  *   run of refusals, never from an earlier one.
@@ -22,11 +23,13 @@ import {
   type RememberedMoveAnswer,
 } from "./code-move-prompt.js";
 
-const RULE = { minFixes: 4, minSeconds: 6, sameSpotM: 20 };
+const RULE = { minFixes: 4, minSeconds: 6, sameSpotM: 20, floorM: 20 };
 
 const step = fc.record({
   levelId: fc.constantFrom("a", "b"),
   horizontalM: fc.double({ min: 0, max: 80, noNaN: true }),
+  // The refusal's bound: under the floor (small reported accuracies) or above.
+  boundM: fc.double({ min: 10, max: 40, noNaN: true }),
   yawDeg: fc.double({ min: 0, max: 180, noNaN: true }),
   northM: fc.double({ min: -80, max: 80, noNaN: true }),
   eastM: fc.double({ min: -80, max: 80, noNaN: true }),
@@ -62,7 +65,7 @@ describe("trackMovePrompt (properties)", () => {
             const refusal = {
               horizontalM: s.horizontalM,
               yawDeg: s.yawDeg,
-              maxHorizontalM: 26,
+              maxHorizontalM: s.boundM,
               maxYawDeg: 120,
             };
             const input: MovePromptInput = {
@@ -74,7 +77,10 @@ describe("trackMovePrompt (properties)", () => {
               lastFixMs: s.timed ? tMs : null,
               answers,
             };
-            const qualifies = s.gateOpen && isHorizontalRefusal(refusal);
+            const qualifies =
+              s.gateOpen &&
+              isHorizontalRefusal(refusal) &&
+              refusal.horizontalM > RULE.floorM;
             if (!qualifies) run = null;
             else if (run === null || run.levelId !== s.levelId) {
               run = { levelId: s.levelId, fixCount, tMs };
@@ -116,10 +122,13 @@ describe("trackMovePrompt (properties)", () => {
           const refusal = {
             horizontalM: s.horizontalM,
             yawDeg: s.yawDeg,
-            maxHorizontalM: 26,
+            maxHorizontalM: s.boundM,
             maxYawDeg: 120,
           };
-          const qualifies = s.gateOpen && isHorizontalRefusal(refusal);
+          const qualifies =
+            s.gateOpen &&
+            isHorizontalRefusal(refusal) &&
+            refusal.horizontalM > RULE.floorM;
           if (!qualifies) runStartMs = null;
           else if (runStartMs === null || runLevel !== s.levelId) {
             runStartMs = tMs;

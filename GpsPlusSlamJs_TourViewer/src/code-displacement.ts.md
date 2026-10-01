@@ -35,6 +35,17 @@ estimator, sample)`, `displacementEstimate(stats, estimator)` - the
 - `judgeCodeDisplacement(estimate, { deviceM, storedM }, rule)` -
   `{ verdict, boundM }`, with `CodeMoveRule` = `{ floorM, accuracyFactor,
 defaultAccuracyM, agreementM, minSpanS, minSpreadM }`.
+- `MOVED_CODE_FLOOR_M` (20 m) - the one moved-code floor (coordinator
+  decision 2026-10-01, M5b review #1): no offset at or under it is ever
+  treated as a move, however small the reported accuracies make
+  `correctionBoundM`. The authoring prompt uses it now
+  (`MOVE_PROMPT_RULE.floorM`, `code-move-prompt.ts`); `CODE_MOVE_RULE`
+  keeps its measured 30 m until both are recalibrated on the owner's
+  recordings. SYNTHETIC AND PROVISIONAL: it rests on the regression gate's
+  corpus (worst cross-session disagreement of one reference point about
+  14 m, robust p90 about 6 m) and the prompt sweep's floor arm (numbers in
+  `code-move-prompt.ts.md`); recordings with an unmoved code more than
+  20 m off between visits would raise it.
 - Errors: a residual radius that is not a positive finite number, or a
   rigid `minYawSpreadM` that is not a non-negative finite number, throws
   `RangeError` (a programming error); external data never throws.
