@@ -13,7 +13,7 @@ export type Vec3 = readonly [number, number, number];
 
 /** The four ways in (the lab's `intro=` select). */
 export const INTRO_VARIANTS = ["distance", "narrow", "fov", "dolly"] as const;
-export type IntroVariant = (typeof INTRO_VARIANTS)[number];
+type IntroVariant = (typeof INTRO_VARIANTS)[number];
 
 /**
  * The fly-in's numbers:
