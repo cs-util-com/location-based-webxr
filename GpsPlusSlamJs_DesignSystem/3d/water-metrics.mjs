@@ -80,17 +80,26 @@ export function bands(mask, width, n) {
   return out;
 }
 
-/** Mean and standard deviation of luminance over the mask. */
-export function stats(frame, mask) {
+/** The whole frame as a rectangle `{ x0, y0, x1, y1 }` (x1, y1 exclusive). */
+const whole = (frame) => ({ x0: 0, y0: 0, x1: frame.width, y1: frame.height });
+
+/**
+ * Mean and standard deviation of luminance over the mask, or over the
+ * mask's pixels inside `rect` only.
+ */
+export function stats(frame, mask, rect = whole(frame)) {
+  const w = frame.width;
   let n = 0;
   let sum = 0;
   let sum2 = 0;
-  for (let i = 0; i < mask.length; i++) {
-    if (!mask[i]) continue;
-    const l = luma(frame, i);
-    n += 1;
-    sum += l;
-    sum2 += l * l;
+  for (let y = rect.y0; y < rect.y1; y++) {
+    for (let i = y * w + rect.x0; i < y * w + rect.x1; i++) {
+      if (!mask[i]) continue;
+      const l = luma(frame, i);
+      n += 1;
+      sum += l;
+      sum2 += l * l;
+    }
   }
   if (n === 0) return { n, mean: 0, std: 0 };
   const mean = sum / n;
@@ -100,24 +109,27 @@ export function stats(frame, mask) {
 /**
  * Pixel-scale texture: the mean absolute 4-neighbour Laplacian of
  * luminance over the mask (0 for a smooth gradient; glitter and aliasing
- * drive it up). A pixel counts when its 4 neighbours are in the mask.
+ * drive it up). A pixel counts when it and its 4 neighbours are in the
+ * mask, and, with `rect`, inside the rectangle.
  */
-export function laplacian(frame, mask) {
+export function laplacian(frame, mask, rect = whole(frame)) {
   const w = frame.width;
   let n = 0;
   let sum = 0;
-  for (let i = 0; i < mask.length; i++) {
-    const x = i % w;
-    if (x === 0 || x === w - 1 || !mask[i] || !mask[i - 1]) continue;
-    if (!mask[i + 1] || !mask[i - w] || !mask[i + w]) continue;
-    const l =
-      4 * luma(frame, i) -
-      luma(frame, i - 1) -
-      luma(frame, i + 1) -
-      luma(frame, i - w) -
-      luma(frame, i + w);
-    sum += Math.abs(l);
-    n += 1;
+  for (let y = rect.y0 + 1; y < rect.y1 - 1; y++) {
+    for (let x = rect.x0 + 1; x < rect.x1 - 1; x++) {
+      const i = y * w + x;
+      if (!mask[i] || !mask[i - 1] || !mask[i + 1]) continue;
+      if (!mask[i - w] || !mask[i + w]) continue;
+      const l =
+        4 * luma(frame, i) -
+        luma(frame, i - 1) -
+        luma(frame, i + 1) -
+        luma(frame, i - w) -
+        luma(frame, i + w);
+      sum += Math.abs(l);
+      n += 1;
+    }
   }
   return n === 0 ? 0 : sum / n;
 }
@@ -164,22 +176,19 @@ export function patchiness(frame, mask, cell = 32, measure = "laplacian") {
   const w = frame.width;
   const h = frame.height;
   const values = [];
+  // Each square reads only its own pixels (no whole-frame mask per square).
   for (let y0 = 0; y0 + cell <= h; y0 += cell) {
     for (let x0 = 0; x0 + cell <= w; x0 += cell) {
-      const sub = new Uint8Array(mask.length);
+      const rect = { x0, y0, x1: x0 + cell, y1: y0 + cell };
       let inside = 0;
       for (let y = y0; y < y0 + cell; y++) {
-        for (let x = x0; x < x0 + cell; x++) {
-          const i = y * w + x;
-          if (mask[i]) {
-            sub[i] = 1;
-            inside += 1;
-          }
-        }
+        for (let x = x0; x < x0 + cell; x++) inside += mask[y * w + x];
       }
       if (inside * 2 >= cell * cell) {
         values.push(
-          measure === "std" ? stats(frame, sub).std : laplacian(frame, sub),
+          measure === "std"
+            ? stats(frame, mask, rect).std
+            : laplacian(frame, mask, rect),
         );
       }
     }

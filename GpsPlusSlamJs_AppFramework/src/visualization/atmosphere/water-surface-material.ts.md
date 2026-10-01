@@ -40,8 +40,8 @@ it like any other lit material.
     (see `water-polish.ts.md`);
   - `polish` (read back: every switch named) and `polishUniforms` (bound
     only while a switch is on); `configurePolish(values)` changes the
-    polish's constants without a recompile (RangeError for a bad value,
-    and then nothing changes);
+    polish's constants without a recompile (RangeError for a bad value or
+    for `values` that is not an object, and then nothing changes);
   - `material` (`MeshPhysicalMaterial`, named `water-surface`);
   - `uniforms.uWaterTime` (shared with every compiled program);
   - `update(seconds)` — advance the waves; `RangeError` for a negative or

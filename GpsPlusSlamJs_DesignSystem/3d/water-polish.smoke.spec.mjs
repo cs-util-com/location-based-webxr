@@ -303,9 +303,9 @@ const sweep = (flags, param, values) => ({
 });
 
 /**
- * The on-demand tests stay under 5 minutes each, so one never holds the
- * machine's single browser slot for long (the coordinator stopped a 36 min
- * run of an earlier all-in-one cost test, 2026-09-28).
+ * Each on-demand test stays under 5 minutes, so a slow or stuck one fails
+ * soon instead of holding the browser for the better part of an hour (an
+ * earlier all-in-one cost test ran for 36 min).
  */
 const ON_DEMAND_TIMEOUT_MS = 280_000;
 
@@ -319,12 +319,13 @@ const ON_DEMAND_TIMEOUT_MS = 280_000;
 // 1280 x 800, and the ratio of two shader variants does not depend on the
 // frame's size (both draw the same share of water pixels).
 test.describe("on demand: the water polish's cost", () => {
+  // Skipped at the group, so a default run creates no page for it.
+  test.skip(!process.env.WATER_COST, "on demand: WATER_COST=1");
   test.use({ viewport: { width: 640, height: 400 } });
   for (const tier of ["phone", "desktop"]) {
     test(`on demand: the water polish's frame-time cost on the ${tier} tier`, async ({
       page,
     }) => {
-      test.skip(!process.env.WATER_COST, "on demand: WATER_COST=1");
       test.setTimeout(ON_DEMAND_TIMEOUT_MS);
       const errors = await boot(page, `water=P50&tier=${tier}&${OFF_HASH}`, {
         pageDefaults: true,
@@ -505,21 +506,26 @@ const SWEEPS = {
 // above, in the plain scene (a frame there costs a fraction of the opening
 // state's). The record logs the numbers, the value picked and what would
 // reverse the verdict.
+const SWEEP_ONLY = String(process.env.WATER_SWEEP ?? "").split(",");
 for (const [trick, specs] of Object.entries(SWEEPS)) {
-  test(`on demand: the water polish's sweeps, trick ${trick}`, async ({
-    page,
-  }) => {
-    const only = String(process.env.WATER_SWEEP ?? "").split(",");
+  test.describe(`on demand: the water polish's sweeps, trick ${trick}`, () => {
+    // Skipped at the group, so a default run creates no page for it.
     test.skip(
-      !(only.includes("all") || only.includes(trick)),
+      !(SWEEP_ONLY.includes("all") || SWEEP_ONLY.includes(trick)),
       "on demand: WATER_SWEEP=all, or a list of tricks",
     );
-    test.setTimeout(ON_DEMAND_TIMEOUT_MS);
-    const errors = await bootPond(page, "golden");
-    for (const [label, spec] of specs()) {
-      const r = await probe(page, spec);
-      console.log(`water sweep ${trick} ${label}: ${JSON.stringify(round(r))}`);
-    }
-    expect(errors).toEqual([]);
+    test(`on demand: the water polish's sweeps, trick ${trick}`, async ({
+      page,
+    }) => {
+      test.setTimeout(ON_DEMAND_TIMEOUT_MS);
+      const errors = await bootPond(page, "golden");
+      for (const [label, spec] of specs()) {
+        const r = await probe(page, spec);
+        console.log(
+          `water sweep ${trick} ${label}: ${JSON.stringify(round(r))}`,
+        );
+      }
+      expect(errors).toEqual([]);
+    });
   });
 }

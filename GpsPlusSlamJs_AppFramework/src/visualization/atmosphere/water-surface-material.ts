@@ -336,8 +336,8 @@ export class WaterSurface {
 
   /**
    * Change the polish's constants (any subset of {@link WaterPolishParams});
-   * no recompile. RangeError for an unknown name or a value out of range,
-   * and then nothing changes.
+   * no recompile. RangeError for `values` that is not an object, an unknown
+   * name or a value out of range, and then nothing changes.
    */
   configurePolish(values: Partial<WaterPolishParams>): void {
     configureWaterPolishUniforms(this.polishUniforms, values);

@@ -135,7 +135,66 @@ describe("texture metrics", () => {
     assert.ok(patchiness(uniform, mask, 32, "std") < 0.1);
     assert.ok(patchiness(patchy, mask, 32, "std") > 0.5);
   });
+
+  // The cell scan reads only its own cell (it once allocated and scanned a
+  // whole-frame mask per cell, about 1 GB per call on a smoke frame). It
+  // must give EXACTLY what that scan gave, on a ragged mask and at every
+  // cell size and measure the smoke uses.
+  it("gives the whole-frame scan's patchiness, read cell by cell", () => {
+    const w = 150;
+    const h = 97;
+    const f = frame(
+      w,
+      h,
+      (x, y) => 60 + 120 * noise(x, y) * (x < 70 ? 1 : 0.3),
+    );
+    const mask = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const inside = (x - 70) ** 2 / 4900 + (y - 45) ** 2 / 2025 < 1;
+        mask[y * w + x] = inside ? 1 : 0;
+      }
+    }
+    for (const cell of [16, 32, 64]) {
+      for (const measure of ["laplacian", "std"]) {
+        assert.equal(
+          patchiness(f, mask, cell, measure),
+          wholeFramePatchiness(f, mask, cell, measure),
+          `cell ${cell} ${measure}`,
+        );
+      }
+    }
+  });
 });
+
+/** The first cut of `patchiness`: a whole-frame mask per cell (reference). */
+function wholeFramePatchiness(f, mask, cell, measure) {
+  const values = [];
+  for (let y0 = 0; y0 + cell <= f.height; y0 += cell) {
+    for (let x0 = 0; x0 + cell <= f.width; x0 += cell) {
+      const sub = new Uint8Array(mask.length);
+      let inside = 0;
+      for (let y = y0; y < y0 + cell; y++) {
+        for (let x = x0; x < x0 + cell; x++) {
+          const i = y * f.width + x;
+          if (mask[i]) {
+            sub[i] = 1;
+            inside += 1;
+          }
+        }
+      }
+      if (inside * 2 >= cell * cell) {
+        values.push(measure === "std" ? stats(f, sub).std : laplacian(f, sub));
+      }
+    }
+  }
+  if (values.length < 2) return 0;
+  const mean = values.reduce((s, v) => s + v, 0) / values.length;
+  if (mean === 0) return 0;
+  const variance =
+    values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length;
+  return Math.sqrt(variance) / mean;
+}
 
 describe("repetition", () => {
   // A pattern that repeats every 16 px reads close to 1; the same pattern

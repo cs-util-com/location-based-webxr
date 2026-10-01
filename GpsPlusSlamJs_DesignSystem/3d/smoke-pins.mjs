@@ -28,6 +28,9 @@ export const SMOKE_PINS = {
   // Off by default today; pinned so the owner flipping it on changes no
   // smoke (stream G).
   godRays: "0",
+  // The water polish's switches that open on (stream W): pinned off so the
+  // pond is P50 alone in every smoke but the water polish's own, which
+  // names each key.
   waterRough: "0",
   waterSun: "0",
   waterGusts: "0",

@@ -447,6 +447,10 @@ vec2 waterSlopeAt(vec2 p, float t) {
     expect(water.polishUniforms.uWaterPolishGustDepth.value).toBe(0.4);
     expect(water.material.version).toBe(version);
     expect(() => water.configurePolish({ gustDepth: 2 })).toThrow(RangeError);
+    // The documented error for a value that is not an object at all.
+    expect(() =>
+      water.configurePolish(null as unknown as { gustDepth: number })
+    ).toThrow(RangeError);
     expect(water.polishUniforms.uWaterPolishGustDepth.value).toBe(0.4);
   });
 });

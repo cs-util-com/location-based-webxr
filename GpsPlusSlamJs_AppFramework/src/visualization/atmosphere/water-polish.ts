@@ -366,13 +366,18 @@ function checkParam(name: string, value: unknown): void {
 /**
  * Write `values` (any subset of {@link WaterPolishParams}) into the
  * uniforms. Validates everything first, so a bad value changes nothing:
- * RangeError for an unknown name, a non-finite number or one outside its
- * range.
+ * RangeError for `values` that is not an object, an unknown name, a
+ * non-finite number or one outside its range.
  */
 export function configureWaterPolishUniforms(
   uniforms: WaterPolishUniforms,
   values: Partial<WaterPolishParams>
 ): void {
+  if (values === null || typeof values !== 'object') {
+    throw new RangeError(
+      `water polish parameters must be an object, got ${String(values)}`
+    );
+  }
   const entries = Object.entries(values);
   for (const [name, value] of entries) checkParam(name, value);
   for (const [name, value] of entries) {

@@ -171,6 +171,15 @@ describe('the polish uniforms', () => {
         gustDepth: number;
       })
     ).toThrow(RangeError);
+    // Not an object at all: the documented RangeError, not a TypeError from
+    // Object.entries, and not a silent no-op for a number (milestone review
+    // finding 7).
+    for (const bad of [null, undefined, 3, 'gustDepth', [0.2]]) {
+      expect(() =>
+        configureWaterPolishUniforms(u, bad as unknown as { gustDepth: number })
+      ).toThrow(RangeError);
+    }
+    expect(u.uWaterPolishGustDepth.value).toBe(WATER_POLISH.gustDepth);
     configureWaterPolishUniforms(u, { gustDepth: 0.2, sunSizeScale: 2 });
     expect(u.uWaterPolishGustDepth.value).toBe(0.2);
     expect(u.uWaterPolishSunAlpha2.value).toBeCloseTo(

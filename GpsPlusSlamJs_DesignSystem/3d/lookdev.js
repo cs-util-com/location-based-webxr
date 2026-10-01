@@ -240,9 +240,10 @@ const state = {
   // Defaults by measurement and the owner's "cheap" (the stream-W record):
   // ON where the measured effect is the label's and the cost is small (far
   // water to sheen, the sun's disc, gusts); OFF where it measured nothing
-  // (the Fresnel damp, which three's own environment term already does), or
-  // where it changes the look in a way only the owner can call better (the
-  // body, which flattens the water seen from above).
+  // (the Fresnel damp, which three's own environment term already does),
+  // where the effect is small for the largest cost of the six (anti-tiling),
+  // or where it changes the look in a way only the owner can call better
+  // (the body, which flattens the water seen from above).
   waterRough: true,
   waterSun: true,
   waterFresnel: false,

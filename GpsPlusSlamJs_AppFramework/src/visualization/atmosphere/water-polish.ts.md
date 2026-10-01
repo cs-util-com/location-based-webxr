@@ -57,8 +57,9 @@ water. `WaterSurface` (`water-surface-material.ts`) takes the switches as
   sweep's "back to default").
 - `createWaterPolishUniforms()`, `configureWaterPolishUniforms(uniforms,
 values)`: the uniforms at the defaults; a partial update that validates
-  the whole set first (RangeError for an unknown name, a non-finite value
-  or one outside its range, and then nothing changes).
+  the whole set first (RangeError for `values` that is not an object, an
+  unknown name, a non-finite value or one outside its range, and then
+  nothing changes).
 - `buildWaterPolish(flags?)` → `{ active, declarations, slope(glsl),
 beforeSlope, afterMaterial, afterLightingPars }`: the GLSL each anchor
   gains; all empty and `slope` the identity when no switch is on.
@@ -86,6 +87,15 @@ float phase, inout vec2 slope)` with one statement
   `getDirectionalLightInfo`) and the haze.
 - The tile branch (`k >= uWaterPolishTileMinK`) is uniform across a pixel
   quad (k is a per-call constant), so `fwidth` inside it is defined.
+- **`body` wraps only the direct light and the environment term.** Three's
+  indirect diffuse (`RE_IndirectDiffuse`: the ambient light, light probes
+  and hemisphere lights) still lights the body on the WAVE normal, with the
+  full tint and no (1 − Fresnel) weight. And the body's sky term reads the
+  IBL irradiance three hands `RE_IndirectSpecular`, which is zero without an
+  environment map, so with no `scene.environment` the body gets no sky
+  light at all. The look-dev page has no ambient light, probe or hemisphere
+  light and always has an environment, so neither shows there; wrapping
+  `RE_IndirectDiffuse` waits for a caller that has such a light.
 - The noise is an integer-hash value noise (WebGL2 `uint`), no texture.
 - `fresnelDamp` partly double-counts three's own split-sum environment
   term, which already lowers the reflection of rough water; the stream-W
