@@ -175,7 +175,13 @@ function createToggle(
   const onCollapse = (): void => {
     setExpanded(false);
   };
-  if (!container.style.position && !container.classList.contains('relative')) {
+  // Only a STATIC container gets the inline fallback (the buttons are
+  // absolutely placed inside it): an inline style beats every stylesheet
+  // rule, so writing it over a container the app positions made the app's
+  // fullscreen rule lose (the Tour Viewer's enlarged map collapsed to
+  // 0 px). The computed style also covers the Recorder's `relative` class.
+  const position = getComputedStyle(container).position;
+  if (!container.style.position && (position === '' || position === 'static')) {
     container.style.position = 'relative';
   }
   expand.addEventListener('click', onExpand);

@@ -46,11 +46,14 @@ the Recorder under DEC-H3) and its shared trajectory drawing
   whose `textContent` is set. A pin's label comes from a zip anyone can
   write, and Leaflet renders a string tooltip as HTML.
 - **The container declares `position: relative`** (`index.html`):
-  Leaflet's `_initLayout` sets an INLINE `position: relative` on a
-  container without one, and an inline style beats the page's
+  Leaflet's `_initLayout` and the framework shell's toggle both set an
+  INLINE `position: relative` on a container that is not positioned, and
+  an inline style beats the page's
   `#summary-map.summary-map-expanded { position: fixed }` - "Enlarge"
-  collapsed the map (M3a/M3b review #1; the e2e taps it and measures the
-  box).
+  collapsed the map to 0 x 416 px (M3a/M3b review #1). The CSS alone was
+  not enough: the shell checked only the inline style and the Recorder's
+  `relative` class, so it now checks the computed position too. The e2e
+  taps Enlarge and measures the box against the viewport.
 - No default marker icons (they would fetch images); every mark is a
   vector `circleMarker`, so the only network requests are tiles.
 - The code colour stands apart from the yellow and cyan of the shared

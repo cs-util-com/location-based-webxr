@@ -290,9 +290,10 @@
         block-size: 18rem;
         border-radius: var(--radius);
         overflow: hidden;
-        /* Declared, so Leaflet's _initLayout does not set an INLINE
-           position: relative on the container - an inline style beats
-           the fullscreen rule below, and "Enlarge" collapsed the map. */
+        /* Declared, so neither Leaflet's _initLayout nor the framework's
+           summary map shell sets an INLINE position: relative on the
+           container - an inline style beats the fullscreen rule below,
+           and "Enlarge" collapsed the map to 0 px. */
         position: relative;
       }
       /* Fullscreen: the shell swaps this class in (summary-map-view.ts). */

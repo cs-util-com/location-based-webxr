@@ -55,9 +55,15 @@ forked.
   listeners, every layer (tiles, trajectory, app layers) and the map, and
   cancels the pending resize timers (a timer must never resize a removed
   map). `expand()`/`collapse()` are idempotent and no-ops after destroy.
-- Container positioning: with a toggle, a container without a position is
-  given `position: relative` (inline style, framework-neutral) so the
-  absolutely placed buttons sit inside it.
+- Container positioning: with a toggle, a container whose COMPUTED
+  position is static is given `position: relative` (inline style,
+  framework-neutral) so the absolutely placed buttons sit inside it. A
+  container the app positions (a stylesheet rule, the Recorder's
+  `relative` class) is left alone: an inline style beats every rule, so
+  the app's fullscreen `position: fixed` lost and the Tour Viewer's
+  enlarged map collapsed to 0 px (Tour Viewer M3a/M3b review #1). Leaflet
+  makes the same computed check in `_initLayout`, so the app must declare
+  the position itself.
 - **Leaflet is a static import here**, so an app that must not ship it to
   every visitor imports this module dynamically (the Tour Viewer's
   `summary-map-view.ts`). Not re-exported from the `visualization` barrel

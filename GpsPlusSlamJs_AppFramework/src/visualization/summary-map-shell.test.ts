@@ -196,6 +196,33 @@ describe('createSummaryMapShell', () => {
     expect(lastMap().invalidateSize).not.toHaveBeenCalled();
   });
 
+  // Why this test matters (Tour Viewer M3a/M3b review #1): an INLINE
+  // position beats every stylesheet rule, so the shell writing
+  // `position: relative` onto a container the app had already positioned
+  // made the app's fullscreen rule (`position: fixed`) lose - the Tour
+  // Viewer's enlarged map collapsed to 0 px. Only a container that is
+  // still static (nothing positions it) gets the inline fallback.
+  it('leaves a container the app positions alone, so its fullscreen rule can win', () => {
+    const style = document.createElement('style');
+    style.textContent = '.positioned { position: relative; }';
+    document.head.appendChild(style);
+    try {
+      container.classList.add('positioned');
+      createSummaryMapShell(container, PATHS, { fullscreen: FULLSCREEN });
+      expect(container.style.position).toBe('');
+    } finally {
+      style.remove();
+    }
+    const plain = document.createElement('div');
+    document.body.appendChild(plain);
+    try {
+      createSummaryMapShell(plain, PATHS, { fullscreen: FULLSCREEN });
+      expect(plain.style.position).toBe('relative');
+    } finally {
+      plain.remove();
+    }
+  });
+
   it('adds no fullscreen buttons unless the app styles them', () => {
     createSummaryMapShell(container, PATHS);
     expect(container.querySelector('button')).toBeNull();
