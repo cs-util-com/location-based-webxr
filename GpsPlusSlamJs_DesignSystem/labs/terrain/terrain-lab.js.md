@@ -105,7 +105,9 @@
   shader reads), `farAt(x, y)` (the far-field grid), `albedoAt(x, y)` (the imagery styles' albedo grid), `bandSweep(widths)` (globe-bands' sweep over the region's samples), `imageryAt(lat, lng)`
   (the decoded imagery), `readPixels(points)` and
   `silhouette(columns, tolerance?)` (the first non-background row per
-  column).
+  column), `capture()` (the whole drawing buffer, row 0 at the bottom) and
+  `frameCost(frames?)` (mean ms per frame, each forced by a one-pixel read:
+  the comparison page's captures and cost).
 - Invariants & assumptions:
   - No tone mapping: the colours are the style's sRGB, as a printed map;
     only the far field is tone mapped, as the globe is.

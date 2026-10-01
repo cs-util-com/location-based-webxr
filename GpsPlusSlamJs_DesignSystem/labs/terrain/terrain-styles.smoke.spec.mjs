@@ -610,7 +610,7 @@ test("style C: imagery that cannot load is said, and the near style stays", asyn
   await expect(page.locator("#terrain-error")).toBeVisible();
 });
 
-test("the plate lists the five styles and shows each style's own controls", async ({
+test("the plate lists every style and shows each style's own controls", async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -619,12 +619,16 @@ test("the plate lists the five styles and shows each style's own controls", asyn
   const options = await page
     .locator('select[data-hash-key="style"] option')
     .allTextContents();
-  expect(options).toEqual([
+  // A-E, then the styles coloured from the globe imagery (globe round-5
+  // §3.3); prettier wraps the long labels, so the text is trimmed.
+  expect(options.map((o) => o.trim())).toEqual([
     "A: Pastel atlas",
     "B: Natural colour",
     "C: Globe blend",
     "D: Swiss classic",
     "E: Clay",
+    "C1: Globe albedo (Blue Marble under the sun)",
+    "C3: Globe bands (Blue Marble per height band)",
   ]);
   const natural = page.locator('[data-section="terrain-natural"]');
   await expect(natural).toBeHidden();

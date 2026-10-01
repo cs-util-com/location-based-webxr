@@ -990,6 +990,8 @@ function start() {
     // The imagery styles show style B until the new region's imagery is in.
     globeColour.coarseKey = null;
     globeColour.samplesKey = null;
+    globeColour.samples = null;
+    globeColour.ramp = null;
     globeColour.grid = null;
     if (material) {
       material.uniforms.uAlbedo.value = EMPTY_TEXTURE;
@@ -1320,6 +1322,28 @@ function start() {
     /** The decoded imagery itself at a position (sRGB 0-1), or null. */
     imageryAt: (lat, lng) =>
       far.tiles ? sampleImagery(far.tiles, lat, lng) : null,
+    /**
+     * The whole drawing buffer after one frame, RGBA bytes, row 0 at the
+     * BOTTOM (as WebGL reads it): the comparison page's captures.
+     */
+    capture: () => readBuffer(),
+    /**
+     * The mean milliseconds of `frames` frames, each forced to finish by a
+     * one-pixel read (the comparison's frame cost; relative only on a CPU
+     * rasteriser, so the page reports ratios within one load).
+     */
+    frameCost(frames = 5) {
+      const gl = renderer.getContext();
+      const one = new Uint8Array(4);
+      frameOnce();
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, one);
+      const started = performance.now();
+      for (let i = 0; i < frames; i++) {
+        frameOnce();
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, one);
+      }
+      return (performance.now() - started) / frames;
+    },
     /** RGBA bytes at normalised canvas points (0,0 top-left). */
     readPixels(points) {
       const { width, height, px } = readBuffer();

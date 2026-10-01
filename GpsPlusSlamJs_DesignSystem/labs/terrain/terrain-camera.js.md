@@ -14,6 +14,10 @@
     looking straight down).
   - `flyInPose(t)`: the pose at t in 0-1 (clamped), eased at both ends;
     altitude geometric, tilt linear, heading the short way round.
+  - `flyInPoseAtAltitude(altitudeM)`: the same path's pose where it passes
+    an altitude (progress log-even), beyond its ends the end's tilt and
+    heading at that altitude: the comparison page's captures (globe
+    round-5 §3.3). RangeError for a non-positive altitude.
   - `poseHashValues(pose)` -> `{ alt, tilt, head }`: the pose at the
     hash's resolution (whole metres, 0.01°; heading in [0, 360)).
   - `SETTLE` `{ angleDeg: 0.005, altitudeShare: 1e-4 }` and

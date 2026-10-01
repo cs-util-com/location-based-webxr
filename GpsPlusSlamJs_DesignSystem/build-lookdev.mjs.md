@@ -11,7 +11,8 @@
     workspace's `scripts/build-site.mjs`.
   - `discoverEntries(packageRoot)` → the deployable pages as URL paths:
     `/3d/index.html` first (when present), then every
-    `labs/<name>/index.html`, sorted.
+    `labs/<name>/index.html`, sorted, each followed by its lab's further
+    top-level pages (`*.html`, sorted: the terrain lab's `compare.html`).
 - How it works:
   - for every page from `discoverEntries` (the main page and the lab
     pages, programme plan 2026-09-26-0539 DEC-PRG-2): reads it and its

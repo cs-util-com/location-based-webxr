@@ -99,10 +99,30 @@ function lerpHeading(a, b, t) {
 export function flyInPose(t, fly = FLY_IN) {
   const s = smoothstep(0, 1, t);
   if (s >= 1) return { ...fly.to };
-  const { from, to } = fly;
+  return poseAlong(s, fly);
+}
+
+/** The path's pose at progress `s` in 0-1 (after the ease). */
+function poseAlong(s, { from, to }) {
   return {
     altitudeM: from.altitudeM * (to.altitudeM / from.altitudeM) ** s,
     tiltDeg: from.tiltDeg + (to.tiltDeg - from.tiltDeg) * s,
     headingDeg: lerpHeading(from.headingDeg, to.headingDeg, s),
   };
+}
+
+/**
+ * The fly-in's pose where it passes an altitude (globe round-5 §3.3: the
+ * comparison's captures): the same path, the progress from the altitude
+ * (log-even), and beyond the path's ends its end's tilt and heading at the
+ * altitude asked for. RangeError for a non-positive or non-finite altitude.
+ */
+export function flyInPoseAtAltitude(altitudeM, fly = FLY_IN) {
+  if (!(altitudeM > 0) || !Number.isFinite(altitudeM)) {
+    throw new RangeError(`altitude must be positive, got ${altitudeM}`);
+  }
+  const { from, to } = fly;
+  const s = Math.log(altitudeM / from.altitudeM) / Math.log(to.altitudeM / from.altitudeM);
+  const pose = poseAlong(Math.min(1, Math.max(0, s)), fly);
+  return { ...pose, altitudeM };
 }

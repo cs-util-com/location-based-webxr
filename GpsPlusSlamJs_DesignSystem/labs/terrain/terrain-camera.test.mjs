@@ -16,6 +16,7 @@ import {
   CAMERA_PRESETS,
   FLY_IN,
   flyInPose,
+  flyInPoseAtAltitude,
   orbitPosition,
   poseFromPosition,
   poseHashValues,
@@ -115,6 +116,33 @@ describe("flyInPose", () => {
   // ease), so the view does not spend the whole flight near the ground.
   it("interpolates the altitude geometrically", () => {
     close(flyInPose(0.5).altitudeM, Math.sqrt(600_000 * 20_000), 1, "midpoint");
+  });
+});
+
+// Globe round-5 §3.3: the comparison captures the fly-in at fixed
+// altitudes (300, 100, 30, 10 km), so it needs the fly-in's pose AT an
+// altitude, on the same path, and the path continued below its 20 km end.
+describe("flyInPoseAtAltitude", () => {
+  it("is the fly-in's own pose wherever the fly-in passes that altitude", () => {
+    for (const t of [0, 0.1, 0.3, 0.5, 0.8, 1]) {
+      const pose = flyInPose(t);
+      const at = flyInPoseAtAltitude(pose.altitudeM);
+      close(at.altitudeM, pose.altitudeM, 1e-6, `alt ${t}`);
+      close(at.tiltDeg, pose.tiltDeg, 1e-6, `tilt ${t}`);
+      close(at.headingDeg, pose.headingDeg, 1e-6, `heading ${t}`);
+    }
+  });
+  it("holds the end's tilt and heading below the end, and the start's above", () => {
+    const low = flyInPoseAtAltitude(10_000);
+    assert.equal(low.altitudeM, 10_000);
+    assert.equal(low.tiltDeg, FLY_IN.to.tiltDeg);
+    assert.equal(low.headingDeg, FLY_IN.to.headingDeg);
+    const high = flyInPoseAtAltitude(900_000);
+    assert.equal(high.tiltDeg, FLY_IN.from.tiltDeg);
+  });
+  it("refuses a non-positive altitude", () => {
+    assert.throws(() => flyInPoseAtAltitude(0), RangeError);
+    assert.throws(() => flyInPoseAtAltitude(Number.NaN), RangeError);
   });
 });
 

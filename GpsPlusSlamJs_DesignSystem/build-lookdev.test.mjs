@@ -57,6 +57,27 @@ describe("discoverEntries", () => {
     }
   });
 
+  // Globe round-5 §3.3: a lab can carry a second page (the terrain lab's
+  // colour comparison, compare.html) that must reach the preview too.
+  it("lists a lab's further pages after its index page, sorted", () => {
+    const root = fixture({
+      "labs/terrain/index.html": "<title>Terrain</title>",
+      "labs/terrain/compare.html": "<title>Compare</title>",
+      "labs/terrain/a-notes.md": "not a page",
+      "labs/water/index.html": "<title>Water</title>",
+      "labs/sketch/only.html": "<title>No index: not a lab</title>",
+    });
+    try {
+      assert.deepEqual(discoverEntries(root), [
+        "/labs/terrain/index.html",
+        "/labs/terrain/compare.html",
+        "/labs/water/index.html",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("works without any labs", () => {
     const root = fixture({ "3d/index.html": "<title>Main</title>" });
     try {

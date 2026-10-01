@@ -145,16 +145,19 @@ test("globe-bands: the imagery's colour per height band, and its band-width swee
   const record = await routeAll(page, fixtureTile);
   const errors = await boot(page, `${VIEW}&style=globe-bands`);
   expect(record.missing).toEqual([]);
-  const bandsReady = () =>
+  // The place too: a new region clears the old one's bands, and the wait
+  // must not pass on them.
+  const bandsReady = (place) =>
     page.waitForFunction(
-      () => {
+      (want) => {
         const s = window.__terrainLab.state();
+        if (s.place !== want) return false;
         return s.farState === "failed" || (s.globeColour.bands?.length ?? 0) > 0;
       },
-      null,
+      place,
       { timeout: 120_000 },
     );
-  await bandsReady();
+  await bandsReady("alps");
   const s = await state(page);
   expect(s.farState).toBe("ready");
   expect(s.shaderStyle).toBe(5);
@@ -200,7 +203,7 @@ test("globe-bands: the imagery's colour per height band, and its band-width swee
   for (const place of ["alps", "appalachians"]) {
     if (place !== "alps") {
       await applyHash(page, `${VIEW.replace("place=alps", `place=${place}`)}&style=globe-bands`);
-      await bandsReady();
+      await bandsReady(place);
     }
     const rows = await page.evaluate(
       (w) => window.__terrainLab.bandSweep(w),
