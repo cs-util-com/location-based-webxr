@@ -13,6 +13,8 @@
  */
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
 import {
@@ -31,6 +33,7 @@ import {
   sunEnuFromGlobe,
   sunLight,
   sunLitColour,
+  SUN_GLSL,
   sunDownNote,
   sunRelativeShade,
 } from "./terrain-sun.js";
@@ -372,18 +375,17 @@ describe("the cloud-shadow seat in the shader (review 2026-10-01-1650 m4)", () =
   // bare sun height may appear only in `sunLight`'s sky fill (deliberately
   // undimmed, see terrain-sun.js.md) and in the relative shade's floor.
   it("has no direct sun term outside the seat", () => {
+    // Read as text, by a joined path: a `new URL("./x.js", import.meta.url)`
+    // reads to knip as an import, which would pull the material's `three`
+    // into the package's dependency check.
     const material = readFileSync(
-      new URL("./terrain-material.js", import.meta.url),
+      join(dirname(fileURLToPath(import.meta.url)), "terrain-material.js"),
       "utf8",
     );
     const bare = (text) => text.match(/max\(0\.0, uSun\.z\)/g) ?? [];
     assert.deepEqual(bare(material), [], "terrain-material.js");
     // SUN_GLSL: exactly one, the sky fill in sunLight.
-    const sun = readFileSync(
-      new URL("./terrain-sun.js", import.meta.url),
-      "utf8",
-    );
-    const glsl = sun.slice(sun.indexOf("export const SUN_GLSL"));
+    const glsl = SUN_GLSL;
     assert.equal(bare(glsl).length, 1);
     assert.match(glsl, /\(1\.0 - shadow\) \* max\(0\.0, uSun\.z\) \* svf/);
   });
