@@ -25,8 +25,12 @@
        * The capture size is part of the measurement: the local contrast is
        * read from rendered pixels, and at 300 km a 320 x 200 frame put the
        * 10 km patch on about 7 pixels (spread 7.3 for globe-albedo at low
-       * sun against 22.1 at 1280 x 800). 800 x 500 resolves 1 km to about
-       * 3 pixels at 300 km.
+       * sun against 22.1 at 1280 x 800). The lab is pinned to pixel ratio 1
+       * (`dpr=1`), so this 800 x 500 frame is an 800 x 500 drawing buffer;
+       * at 300 km it puts 1 km on about 1.15 pixels across the view and
+       * 0.74 along it, so the contrast grid's step is widened per altitude
+       * to keep its posts 3 pixels apart (terrain-compare.js
+       * contrastStepM).
        */
       #compare-frame {
         width: 800px;
@@ -59,6 +63,15 @@
       .compare-numbers {
         min-width: 160px;
       }
+
+      .compare-captures {
+        display: flex;
+        gap: 4px;
+      }
+
+      figure {
+        margin: 0;
+      }
     </style>
     <script type="module" src="./compare.js"></script>
   </head>
@@ -66,9 +79,12 @@
     <h1>Terrain colour approaches, judged along the fly-in</h1>
     <p>
       The terrain lab's fly-in onto the Alps, captured at 300, 100, 30 and 10 km
-      at a day and a low sun, one row per colour approach (globe round-5 plan,
-      §3.3). The numbers are logged, not judged: the owner picks.
-      <code>globe-albedo</code> is the provisional default.
+      (style C, the far field itself, where its blend acts: 1500 to 300 km) at a
+      day and a low sun, one row per colour approach (globe round-5 plan, §3.3).
+      The numbers are logged, not judged: the owner picks.
+      <code>globe-albedo</code> is the provisional default. The globe's pixel is
+      modelled (its imagery under its sun, no veil or specular), which favours
+      the imagery styles: see compare.js.md.
     </p>
     <p id="compare-status" aria-live="polite">Starting...</p>
     <iframe id="compare-frame" title="The terrain lab being captured"></iframe>

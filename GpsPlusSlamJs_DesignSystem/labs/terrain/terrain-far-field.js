@@ -13,8 +13,9 @@
  *   the shader reads it by position, like every other texture of the lab.
  * - WHAT "MATCHES THE GLOBE" MEANS (finding 12): the imagery texel through
  *   the globe's tone mapping (three's Neutral, exposure 1) under the
- *   globe's sun (`GLOBE_SUN`, Lambert), which is what the globe draws for
- *   ground lit straight from above. `farColour` is that reference; the shader uses three's own
+ *   globe's sun (`GLOBE_SUN`, the diffuse term of its
+ *   MeshStandardMaterial; its small GGX specular is not modelled), which is
+ *   what the globe draws for ground lit straight from above. `farColour` is that reference; the shader uses three's own
  *   tone-mapping chunk and this file mirrors it for the tests.
  * - THE BLEND follows the (smoothed) camera altitude: the near style's
  *   weight rises from 0 at `highKm` to 1 at `lowKm`, and the far field's
@@ -233,15 +234,25 @@ export const GLOBE_SUN = Object.freeze({ intensity: 5 });
 
 /**
  * The far field's colour for an imagery texel (sRGB 0-1): what the globe
- * draws for it, three's Lambert under its sun (texel / π x intensity x
- * `light`, 1 for ground lit straight from above), through its tone
- * mapping.
+ * draws for it, the diffuse (Lambert) term of its MeshStandardMaterial
+ * under its sun (texel / π x `intensity` x `light`, `light` 1 for ground
+ * lit straight from above), through its tone mapping. `intensity` is the
+ * globe's sun (`GLOBE_SUN.intensity` unless a page's `sunIntensity` key
+ * sets another, as the globe lab's does).
  */
-export function farColour(srgb, light = 1) {
-  const k = (GLOBE_SUN.intensity * Math.max(0, light)) / Math.PI;
-  return neutralToneMap(srgb.map((v) => srgbToLinear(v) * k)).map((v) =>
+export function farColour(srgb, light = 1, intensity = GLOBE_SUN.intensity) {
+  return neutralToneMap(sunLitLinear(srgb, light, intensity)).map((v) =>
     Math.min(1, Math.max(0, linearToSrgb(Math.max(0, v)))),
   );
+}
+
+/**
+ * `farColour`'s light before the tone mapping: the decoded texel x
+ * `intensity` x `light` / π (linear, the globe's units).
+ */
+export function sunLitLinear(srgb, light = 1, intensity = GLOBE_SUN.intensity) {
+  const k = (intensity * Math.max(0, light)) / Math.PI;
+  return srgb.map((v) => srgbToLinear(v) * k);
 }
 
 /**

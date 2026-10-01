@@ -25,9 +25,12 @@
     as the shader does (bilinear, clamped).
   - `srgbToLinear`, `linearToSrgb` (three's sRGB transfer curves),
     `neutralToneMap(rgb, exposure?)` (three r185's Neutral, line for line)
-    and `farColour(srgb, light = 1)`: the texel as the globe draws ground
-    under its sun (`GLOBE_SUN.intensity`, Lambert; `light` 1 is lit straight
-    from above; decode, tone map, encode). `GLOBE_SUN`: the globe's sun
+    and `farColour(srgb, light = 1, intensity = GLOBE_SUN.intensity)`: the
+    texel as the globe draws ground under its sun (the diffuse, Lambert
+    term of its MeshStandardMaterial; `light` 1 is lit straight from above;
+    decode, tone map, encode; no specular, no atmosphere veil);
+    `sunLitLinear(srgb, light, intensity)` is its light before the tone
+    mapping. `GLOBE_SUN`: the globe's sun
     intensity, held to the globe's source by `terrain-sun.test.mjs`.
   - `farWeights(altitudeM, { on, highKm?, lowKm? })` -> `{ near, relief }`:
     the near style's weight (0 above `highKm`, 1 below `lowKm`) and the far

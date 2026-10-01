@@ -11,7 +11,7 @@ import {
   EXAGGERATION,
   SLOPE_BOOST,
 } from "./terrain-exaggeration.js";
-import { FAR_FIELD } from "./terrain-far-field.js";
+import { FAR_FIELD, GLOBE_SUN } from "./terrain-far-field.js";
 import { GLOBE_ALBEDO, GLOBE_BANDS } from "./terrain-globe-colour.js";
 import { PASTEL_ATLAS } from "./terrain-style.js";
 import { NATURAL, SWISS, TERRAIN_STYLES } from "./terrain-styles.js";
@@ -138,7 +138,11 @@ export const PARAMS = Object.freeze({
   shade: { fallback: LOOK_DEFAULTS.shade, min: 0, max: 3 },
   boostExp: { fallback: SLOPE_BOOST.exponent, min: 0.1, max: 0.6 },
   green: { fallback: PASTEL_ATLAS.greenAmount, min: 0, max: 1 },
-  /** The shading's strength; with no `shadow` key, the style's own. */
+  /**
+   * The shading's strength: the owner's 0.8 for every style (DEC-GL5-5;
+   * the per-style table it replaced held 0.8 for each, review
+   * 2026-10-01-1650 nit).
+   */
   shadow: { fallback: LOOK_DEFAULTS.shadow, min: 0, max: 1 },
   /** Style B: tree and snow line offsets (m), their aspect and rock slope. */
   tree: { fallback: 0, min: -1500, max: 1500 },
@@ -168,26 +172,24 @@ export const PARAMS = Object.freeze({
   detail: { fallback: GLOBE_ALBEDO.detail, min: 0, max: 1 },
   /** `globe-bands`' band width, metres (the plan's swept range). */
   band: { fallback: GLOBE_BANDS.widthM, min: 100, max: 800 },
+  /**
+   * The sun's intensity, the globe lab's own `sunIntensity` key and range
+   * (default the globe surface's 5), so a link tuned there lights the
+   * relief the same (review 2026-10-01-1650 nit).
+   */
+  sunIntensity: { fallback: GLOBE_SUN.intensity, min: 0, max: 8 },
+  /**
+   * The drawing buffer's pixel ratio: 0 follows the device (capped at 2),
+   * 1-3 pins it. The comparison page pins 1, because it reads its
+   * contrast from pixels (review 2026-10-01-1650 M1).
+   */
+  dpr: { fallback: 0, min: 0, max: 3 },
   /** Sky-view directions; 0 turns the term off (a reduced smoke setting). */
   svf: { fallback: 8, min: 0, max: 16 },
   flyMs: { fallback: 12_000, min: 0, max: 60_000 },
 });
 
 const PRESETS = new Set(["top", "oblique", "low", "fly"]);
-/**
- * Each style's own shading strength, used when the hash has no `shadow`:
- * the owner's 0.8 for every style since DEC-GL5-5 (before, each style's
- * reference value: A and C 0.45, B 0.65, D 0.6, E 0.55).
- */
-export const STYLE_SHADOW = Object.freeze({
-  pastel: LOOK_DEFAULTS.shadow,
-  natural: LOOK_DEFAULTS.shadow,
-  globe: LOOK_DEFAULTS.shadow,
-  swiss: LOOK_DEFAULTS.shadow,
-  clay: LOOK_DEFAULTS.shadow,
-  "globe-albedo": LOOK_DEFAULTS.shadow,
-  "globe-bands": LOOK_DEFAULTS.shadow,
-});
 
 /** Each style's own light (0 map lights, 1 the sun), when the hash has none. */
 export const STYLE_LIGHT = Object.freeze({
@@ -243,10 +245,6 @@ export function readTerrainParams(hash) {
       `Style "${style}" is not in this lab: showing Pastel atlas.`,
     );
   }
-  const shadowRange = { ...PARAMS.shadow, fallback: null };
-  if (readNumber(params, "shadow", shadowRange) === null) {
-    out.shadow = STYLE_SHADOW[out.style];
-  }
   if (
     readNumber(params, "light", { ...PARAMS.light, fallback: null }) === null
   ) {
@@ -286,4 +284,15 @@ export function readTerrainParams(hash) {
       ? null
       : { altitudeM, tiltDeg, headingDeg };
   return out;
+}
+
+/**
+ * The drawing buffer's pixel ratio for the `dpr` key: the key when it pins
+ * one (above 0), else the device's capped at 2 (a phone's 3 would more than
+ * double the fragment work for little gain). 1 for a device ratio that is
+ * not a positive number.
+ */
+export function pixelRatioFor(dpr, deviceRatio) {
+  if (dpr > 0) return dpr;
+  return deviceRatio > 0 ? Math.min(deviceRatio, 2) : 1;
 }

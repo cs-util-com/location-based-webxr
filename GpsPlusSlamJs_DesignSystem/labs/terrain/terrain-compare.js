@@ -13,10 +13,12 @@
  *   hand-over altitude, the local contrast at 1-10 km on the ground, and
  *   the frame cost as a ratio to style A within one page load.
  *
- * Dependency-free (pure data and arithmetic), so it runs under `node --test`.
+ * Dependency-free except the far field's colour curves (pure data and
+ * arithmetic), so it runs under `node --test`.
  *
  * @see terrain-compare.js.md
  */
+import { linearToSrgb, srgbToLinear } from "./terrain-far-field.js";
 
 /**
  * The rows: a label and the hash keys that make the variant (on top of the
@@ -25,7 +27,14 @@
 export const COMPARE_VARIANTS = [
   { id: "A", label: "A: Pastel atlas", hash: { style: "pastel" } },
   { id: "B", label: "B: Natural colour", hash: { style: "natural" } },
-  { id: "C", label: "C: Globe blend", hash: { style: "globe" } },
+  {
+    id: "C",
+    label: "C: Globe blend",
+    hash: { style: "globe" },
+    // C IS the far field: at 300 km and below it draws exactly A, so its
+    // captures sit where the blend acts (FAR_FIELD 1500 to 300 km).
+    altitudesKm: Object.freeze([1500, 900, 600, 300]),
+  },
   {
     id: "C1-d0",
     label: "C1: globe-albedo, detail 0",
@@ -52,21 +61,33 @@ export const COMPARE_PLAN = Object.freeze({
       time: "2026-06-21T18:00:00Z",
     }),
   ]),
-  /** The ground grid the local contrast is read on: 11 x 11 posts 1 km apart. */
+  /**
+   * The ground grid the local contrast is read on: 11 x 11 posts 1 km
+   * apart, the step widened per altitude until the posts are at least
+   * `minPostPx` drawing pixels apart along the view (`contrastStepM`).
+   */
   contrastStepM: 1000,
   contrastPosts: 11,
+  minPostPx: 3,
   /** The ground grid the hand-over difference is read on: 21 x 21, 4 km apart. */
   handOverStepM: 4000,
   handOverPosts: 21,
-  /** Frames timed per variant for the cost. */
-  costFrames: 5,
+  /**
+   * The footprint-averaged hand-over: the render read on n x n points over
+   * each imagery pixel's footprint and averaged in linear light.
+   */
+  footprintSamples: 5,
+  /** Frames timed per variant for the cost (mean and spread reported). */
+  costFrames: 10,
   /**
    * The keys every capture shares: a still camera, the sun, and the far
    * field on, so every row loads the globe's imagery for its hand-over
    * reference. At and below 300 km (`farLow`) the far field's weight is 0,
-   * so it changes no capture.
+   * so it changes no capture of a near style. `dpr` 1 pins the drawing
+   * buffer to the frame's CSS size: the contrast is read from pixels, so
+   * the pixel ratio is part of the measurement (review 2026-10-01-1650 M1).
    */
-  shared: Object.freeze({ light: 1, tau: 0, svf: 8, far: 1 }),
+  shared: Object.freeze({ light: 1, tau: 0, svf: 8, far: 1, dpr: 1 }),
 });
 
 /**
@@ -120,3 +141,86 @@ export function quantile(values, p) {
 
 /** True for a projected point on the canvas (normalised 0-1, both axes). */
 export const onCanvas = ([u, v]) => u >= 0 && u <= 1 && v >= 0 && v <= 1;
+
+/** A variant's capture altitudes: its own, or the plan's. */
+export const captureAltitudesKm = (variant, plan = COMPARE_PLAN) =>
+  variant.altitudesKm ?? plan.altitudesKm;
+
+/**
+ * How many drawing pixels one metre of ground at the camera's target spans
+ * for a pose `{ altitudeM, tiltDeg }`, a frame `heightPx` drawing pixels
+ * high and a vertical field of view: `across` the view (perpendicular to
+ * the heading) f / d, and `along` it f / d x cos(tilt), the foreshortening,
+ * with f = heightPx / (2 tan(fov / 2)) and d the distance to the target.
+ * RangeError for a frame or field of view that cannot project.
+ */
+export function groundPixelsPerM({ altitudeM, tiltDeg }, heightPx, fovDeg) {
+  if (!(heightPx > 0) || !(fovDeg > 0 && fovDeg < 180)) {
+    throw new RangeError(
+      `need heightPx > 0 and 0 < fovDeg < 180, got ${heightPx}, ${fovDeg}`,
+    );
+  }
+  const tilt = (tiltDeg * Math.PI) / 180;
+  const f = heightPx / (2 * Math.tan((fovDeg * Math.PI) / 360));
+  const distance = altitudeM / Math.cos(tilt);
+  const across = f / distance;
+  return { across, along: across * Math.cos(tilt) };
+}
+
+/**
+ * The contrast grid's step for a pose: the plan's step, widened (to a whole
+ * 100 m) until neighbouring posts are `minPostPx` drawing pixels apart
+ * along the view, the shorter direction (review 2026-10-01-1650 M1: at
+ * 300 km in an 800 x 500 frame 1 km is 0.74 px along the view, so 1 km
+ * posts read the same pixels and the spread measured the frame).
+ */
+export function contrastStepM(pose, heightPx, fovDeg, plan = COMPARE_PLAN) {
+  const { along } = groundPixelsPerM(pose, heightPx, fovDeg);
+  const needed = plan.minPostPx / along;
+  return Math.max(plan.contrastStepM, Math.ceil(needed / 100) * 100);
+}
+
+/**
+ * The centre of the EPSG:4326 imagery pixel (the globe's pyramid, `level`,
+ * `tileSize`) that holds a position: the globe draws that one pixel there.
+ */
+export function imageryPixelCentre(lat, lng, level, tileSize = 256) {
+  const deg = 180 / 2 ** level / tileSize;
+  return {
+    lat: 90 - (Math.floor((90 - lat) / deg) + 0.5) * deg,
+    lng: -180 + (Math.floor((lng + 180) / deg) + 0.5) * deg,
+  };
+}
+
+/**
+ * `n` x `n` points over a `wx` x `wy` box centred on ENU `x`, `y`: the
+ * cells' centres, row by row from the south-west. RangeError for n < 1.
+ */
+export function footprintPoints(x, y, wx, wy, n) {
+  if (!(Number.isInteger(n) && n >= 1)) {
+    throw new RangeError(`need a whole n >= 1, got ${n}`);
+  }
+  const out = [];
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      out.push({
+        x: x - wx / 2 + ((i + 0.5) * wx) / n,
+        y: y - wy / 2 + ((j + 0.5) * wy) / n,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The mean of sRGB colours (0-1) taken in linear light, as sRGB: a box
+ * average of a render is an average of light. Null for no colour.
+ */
+export function linearMeanSrgb(colours) {
+  if (colours.length === 0) return null;
+  const sum = [0, 0, 0];
+  for (const c of colours) {
+    for (let i = 0; i < 3; i++) sum[i] += srgbToLinear(c[i]);
+  }
+  return sum.map((v) => linearToSrgb(v / colours.length));
+}

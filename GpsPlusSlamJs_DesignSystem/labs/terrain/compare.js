@@ -4,7 +4,8 @@
  * hooks along its fly-in onto the Alps, captured at 300, 100, 30 and 10 km
  * at a day and a low sun, one row per colour approach, with the numbers the
  * owner picks by: the colour difference to the globe's pixel at the
- * hand-over altitude, the local contrast at 1-10 km and the frame cost.
+ * hand-over altitude (per ground point, and averaged over each imagery
+ * pixel's footprint), the local contrast on the ground and the frame cost.
  * The numbers are LOGGED (a table, the console, `window.__terrainCompare`),
  * never asserted.
  *
@@ -16,14 +17,21 @@
 import {
   COMPARE_PLAN,
   COMPARE_VARIANTS,
+  captureAltitudesKm,
   captureHash,
+  contrastStepM,
+  footprintPoints,
   groundGrid,
+  groundPixelsPerM,
+  imageryPixelCentre,
+  linearMeanSrgb,
   onCanvas,
   quantile,
   stats,
 } from "./terrain-compare.js";
 import { flyInPoseAtAltitude } from "./terrain-camera.js";
-import { deltaE76 } from "./terrain-globe-colour.js";
+import { FAR_FIELD } from "./terrain-far-field.js";
+import { deltaE76, footprintM } from "./terrain-globe-colour.js";
 import { sunLitColour } from "./terrain-sun.js";
 
 const frame = /** @type {HTMLIFrameElement} */ (
@@ -40,11 +48,19 @@ const variants = quick
   : wanted.length > 0
     ? COMPARE_VARIANTS.filter((v) => wanted.includes(v.id))
     : COMPARE_VARIANTS;
-const altitudesKm = quick ? [100] : [...COMPARE_PLAN.altitudesKm];
+/** A row's capture altitudes (C has its own); one for a quick run. */
+const altitudesFor = (variant) =>
+  quick ? [100] : [...captureAltitudesKm(variant)];
 const suns = quick ? [COMPARE_PLAN.suns[0]] : [...COMPARE_PLAN.suns];
 
 /** The page's results, for a reader and for the smoke. */
-const results = { done: false, error: null, rows: [] };
+const results = {
+  done: false,
+  error: null,
+  rows: [],
+  buffer: null,
+  pixelRatio: null,
+};
 window.__terrainCompare = results;
 
 const say = (text) => {
@@ -116,55 +132,120 @@ function lifted(points, s) {
 
 const luminance = (px) => 0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2];
 
-/** Local contrast: the luminance spread over the 11 x 11 km ground grid. */
-function localContrast(s) {
-  const ground = lifted(
-    groundGrid(COMPARE_PLAN.contrastPosts, COMPARE_PLAN.contrastStepM),
-    s,
-  );
-  const at = lab().projectAll(ground.map((p) => [p.x, p.lift, -p.y]));
-  const keep = at.map(onCanvas);
-  const px = lab().readPixels(at.filter((_, i) => keep[i]));
-  return stats(px.map(luminance));
+/**
+ * The median distance in drawing pixels between grid neighbours (the posts
+ * as projected, `posts` x `posts`, row by row), the smaller of the two
+ * directions: the measured post spacing beside the modelled one.
+ */
+function postSpacingPx(at, posts, buffer) {
+  const gaps = { x: [], y: [] };
+  for (let j = 0; j < posts; j++) {
+    for (let i = 0; i < posts; i++) {
+      const a = at[j * posts + i];
+      const d = (b) =>
+        Math.hypot((b[0] - a[0]) * buffer.width, (b[1] - a[1]) * buffer.height);
+      if (i + 1 < posts) gaps.x.push(d(at[j * posts + i + 1]));
+      if (j + 1 < posts) gaps.y.push(d(at[(j + 1) * posts + i]));
+    }
+  }
+  return Math.min(quantile(gaps.x, 0.5), quantile(gaps.y, 0.5));
 }
 
 /**
- * The colour difference to the globe's pixel at the hand-over: each ground
- * point's rendered colour against what the globe draws there (its imagery
- * under its sun, lit flat: `sunLitColour(imagery, max(0, sun.z))`).
+ * Local contrast: the luminance spread over an 11 x 11 ground grid around
+ * the place, its step widened per altitude until the posts are
+ * `minPostPx` drawing pixels apart along the view (review 2026-10-01-1650
+ * M1), with the pixel scale it rests on: the modelled px/km and the
+ * measured post spacing.
  */
-function handOverDifference(s) {
-  const ground = lifted(
-    groundGrid(COMPARE_PLAN.handOverPosts, COMPARE_PLAN.handOverStepM),
-    s,
-  );
+function localContrast(s, pose) {
+  const stepM = contrastStepM(pose, s.buffer.height, s.fovDeg);
+  const perM = groundPixelsPerM(pose, s.buffer.height, s.fovDeg);
+  const posts = COMPARE_PLAN.contrastPosts;
+  const grid = groundGrid(posts, stepM);
+  const ground = lifted(grid, s);
   const at = lab().projectAll(ground.map((p) => [p.x, p.lift, -p.y]));
-  const use = ground
-    .map((p, i) => ({ p, uv: at[i] }))
-    .filter(({ uv }) => onCanvas(uv));
-  const px = lab().readPixels(use.map(({ uv }) => uv));
-  const light = Math.max(0, s.sun.enu[2]);
-  const diffs = use
-    .map(({ p }, i) => {
-      const { lat, lng } = lab().toLatLng(p.x, p.y);
-      const imagery = lab().imageryAt(lat, lng);
-      if (!imagery) return Number.NaN;
-      const globe = sunLitColour(imagery, light);
-      return deltaE76(
-        globe,
-        px[i].slice(0, 3).map((v) => v / 255),
-      );
-    })
-    .filter(Number.isFinite);
+  const keep = at.map(onCanvas);
+  const px = lab().readPixels(at.filter((_, i) => keep[i]));
   return {
-    mean: stats(diffs).mean,
-    p95: quantile(diffs, 0.95),
-    n: diffs.length,
+    ...stats(px.map(luminance)),
+    stepM,
+    scaled: stepM > COMPARE_PLAN.contrastStepM,
+    pxPerKm: { across: perM.across * 1000, along: perM.along * 1000 },
+    postPx:
+      ground.length === grid.length
+        ? postSpacingPx(at, posts, s.buffer)
+        : Number.NaN,
   };
 }
 
-/** A capture as a small canvas (the buffer's rows flipped to the top). */
-function thumbnail() {
+/** Mean, 95th percentile and count of the finite differences. */
+const summary = (diffs) => {
+  const d = diffs.filter(Number.isFinite);
+  return { mean: stats(d).mean, p95: quantile(d, 0.95), n: d.length };
+};
+
+/**
+ * The colour difference to the globe's pixel at the hand-over, two ways
+ * (review 2026-10-01-1650 M2). The globe's pixel is modelled as the globe
+ * draws flat ground: its imagery under its sun, `sunLitColour(imagery,
+ * max(0, sun.z))` at the page's `sunIntensity`, with no atmosphere veil and
+ * no specular (compare.js.md says what that omits and whom it favours).
+ *
+ * - `point`: each ground point's rendered pixel against the bilinear
+ *   imagery there. Relief shading counts as colour error here.
+ * - `footprint`: the render box-averaged in linear light over each imagery
+ *   pixel's footprint (`footprintSamples`^2 points over the 2.45 km pixel)
+ *   against that one pixel's globe colour: what the globe shows at the
+ *   hand-over, where one imagery pixel is a few screen pixels. A footprint
+ *   with any point off the canvas or off the field is left out.
+ */
+function handOverDifference(s) {
+  const grid = groundGrid(
+    COMPARE_PLAN.handOverPosts,
+    COMPARE_PLAN.handOverStepM,
+  );
+  const ground = lifted(grid, s);
+  const light = Math.max(0, s.sun.enu[2]);
+  const globeAt = (lat, lng) => {
+    const imagery = lab().imageryAt(lat, lng);
+    return imagery ? sunLitColour(imagery, light, s.sunIntensity) : null;
+  };
+  // The footprints: each grid point's imagery pixel, sampled n x n.
+  const n = COMPARE_PLAN.footprintSamples;
+  const boxes = [];
+  for (const p of ground) {
+    const ll = lab().toLatLng(p.x, p.y);
+    const centre = imageryPixelCentre(ll.lat, ll.lng, FAR_FIELD.level);
+    const e = lab().toEnu(centre.lat, centre.lng);
+    const [wx, wy] = footprintM(FAR_FIELD.level, centre.lat);
+    const pts = lifted(footprintPoints(e.x, e.y, wx, wy, n), s);
+    if (pts.length === n * n) boxes.push({ centre, pts });
+  }
+  const all = [...ground, ...boxes.flatMap((b) => b.pts)];
+  const at = lab().projectAll(all.map((p) => [p.x, p.lift, -p.y]));
+  const on = at.map(onCanvas);
+  const px = lab().readPixels(at.map((uv, i) => (on[i] ? uv : [0, 0])));
+  const rgb = (i) => px[i].slice(0, 3).map((v) => v / 255);
+  const point = ground.map((p, i) => {
+    if (!on[i]) return Number.NaN;
+    const { lat, lng } = lab().toLatLng(p.x, p.y);
+    const globe = globeAt(lat, lng);
+    return globe ? deltaE76(globe, rgb(i)) : Number.NaN;
+  });
+  let next = ground.length;
+  const footprint = boxes.map((b) => {
+    const idx = b.pts.map((_, j) => next + j);
+    next += b.pts.length;
+    if (!idx.every((i) => on[i])) return Number.NaN;
+    const globe = globeAt(b.centre.lat, b.centre.lng);
+    return globe ? deltaE76(globe, linearMeanSrgb(idx.map(rgb))) : Number.NaN;
+  });
+  return { point: summary(point), footprint: summary(footprint) };
+}
+
+/** A capture as a small captioned canvas (the buffer's rows flipped). */
+function thumbnail(caption) {
   const { width, height, px } = lab().capture();
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -177,22 +258,24 @@ function thumbnail() {
   }
   context.putImageData(image, 0, 0);
   canvas.className = "compare-thumb";
-  return canvas;
+  const figure = document.createElement("figure");
+  const text = document.createElement("figcaption");
+  text.textContent = caption;
+  figure.append(canvas, text);
+  return figure;
 }
 
 const fmt = (v, digits = 1) => (Number.isFinite(v) ? v.toFixed(digits) : "-");
 
-/** The header: the captures' columns, then the numbers. */
-function header() {
+/** The header: one column of captures per sun, then the numbers. */
+function header(first) {
   const row = document.createElement("tr");
   const cells = ["Variant"];
-  for (const sun of suns) {
-    for (const km of altitudesKm) cells.push(`${sun.label}, ${km} km`);
-  }
+  for (const sun of suns) cells.push(`${sun.label}: captures along the fly-in`);
   cells.push(
-    `ΔE to the globe at ${COMPARE_PLAN.handOverKm} km (mean / p95)`,
-    "Local contrast 1-10 km (luminance sd / mean / sd over mean, per altitude)",
-    "Frame cost (x A)",
+    `ΔE to the globe at ${COMPARE_PLAN.handOverKm} km, mean / p95: per point; averaged over each imagery pixel`,
+    "Local contrast per altitude: luminance sd / mean / sd over mean, on posts [step] apart (* step widened to keep the posts 3 px apart)",
+    `Frame cost: x the first row (${first.label}), mean ± sd of ${COMPARE_PLAN.costFrames} frames`,
   );
   for (const text of cells) {
     const th = document.createElement("th");
@@ -203,16 +286,16 @@ function header() {
 }
 
 async function run() {
-  header();
+  header(variants[0]);
   const first = captureHash(
     variants[0],
     suns[0],
-    flyInPoseAtAltitude(altitudesKm[0] * 1000),
+    flyInPoseAtAltitude(altitudesFor(variants[0])[0] * 1000),
   );
   frame.src = `./index.html#${first}`;
   await until(() => lab()?.ready || lab()?.error, 120_000, "the lab");
   if (lab().error) throw new Error(lab().error);
-  let costA = null;
+  let costFirst = null;
   for (const variant of variants) {
     const row = document.createElement("tr");
     const name = document.createElement("th");
@@ -220,6 +303,7 @@ async function run() {
     row.append(name);
     table.append(row);
     const out = { id: variant.id, label: variant.label, suns: {} };
+    const altitudesKm = altitudesFor(variant);
     for (const sun of suns) {
       const perSun = { contrast: {}, handOver: null };
       out.suns[sun.id] = perSun;
@@ -228,54 +312,59 @@ async function run() {
         `${variant.label}: ${sun.label}, the hand-over at ${COMPARE_PLAN.handOverKm} km`,
       );
       let s = await show(captureHash(variant, sun, hand));
+      results.buffer ??= { ...s.buffer };
+      results.pixelRatio ??= s.pixelRatio;
       perSun.handOver = handOverDifference(s);
       perSun.sunElevationDeg = s.sun.elevationDeg;
+      const cell = document.createElement("td");
+      cell.className = "compare-captures";
       for (const km of altitudesKm) {
         say(`${variant.label}: ${sun.label}, ${km} km`);
-        s = await show(
-          captureHash(variant, sun, flyInPoseAtAltitude(km * 1000)),
-        );
-        perSun.contrast[km] = localContrast(s);
-        const cell = document.createElement("td");
-        cell.append(thumbnail());
-        row.append(cell);
+        const pose = flyInPoseAtAltitude(km * 1000);
+        s = await show(captureHash(variant, sun, pose));
+        perSun.contrast[km] = localContrast(s, pose);
+        cell.append(thumbnail(`${km} km`));
       }
+      row.append(cell);
     }
-    // The cost at the day sun, 30 km (or the one altitude of a quick run).
-    const costKm = altitudesKm.includes(30) ? 30 : altitudesKm[0];
+    // The cost at the day sun, 30 km (or the row's lowest altitude).
+    const costKm = altitudesKm.includes(30) ? 30 : altitudesKm.at(-1);
     await show(
       captureHash(variant, suns[0], flyInPoseAtAltitude(costKm * 1000)),
     );
-    const ms = lab().frameCost(COMPARE_PLAN.costFrames);
-    costA ??= ms;
-    out.frameMs = ms;
-    out.costRatio = ms / costA;
+    const cost = stats(lab().frameCost(COMPARE_PLAN.costFrames));
+    costFirst ??= cost.mean;
+    out.frame = { meanMs: cost.mean, sdMs: cost.std, atKm: costKm };
+    out.costRatio = cost.mean / costFirst;
+    const contrastText = (c, km) =>
+      `${km} km ${fmt(c.std)} / ${fmt(c.mean, 0)} / ${fmt(c.std / c.mean, 2)} ` +
+      `[${fmt(c.stepM / 1000, 1)} km${c.scaled ? "*" : ""}]`;
     const numbers = [
       suns
         .map((sun) => {
           const h = out.suns[sun.id].handOver;
-          return `${sun.label}: ${fmt(h.mean)} / ${fmt(h.p95)}`;
+          return (
+            `${sun.label}: ${fmt(h.point.mean)} / ${fmt(h.point.p95)}; ` +
+            `${fmt(h.footprint.mean)} / ${fmt(h.footprint.p95)}`
+          );
         })
-        .join("; "),
+        .join(" | "),
       suns
         .map(
           (sun) =>
             `${sun.label}: ` +
             altitudesKm
-              .map((km) => {
-                const c = out.suns[sun.id].contrast[km];
-                return `${km} km ${fmt(c.std)} / ${fmt(c.mean, 0)} / ${fmt(c.std / c.mean, 2)}`;
-              })
+              .map((km) => contrastText(out.suns[sun.id].contrast[km], km))
               .join(", "),
         )
-        .join("; "),
-      `${fmt(out.costRatio, 2)}`,
+        .join(" | "),
+      `x${fmt(out.costRatio, 2)} (${fmt(cost.mean, 0)} ± ${fmt(cost.std, 0)} ms at ${costKm} km)`,
     ];
     for (const text of numbers) {
-      const cell = document.createElement("td");
-      cell.className = "compare-numbers";
-      cell.textContent = text;
-      row.append(cell);
+      const td = document.createElement("td");
+      td.className = "compare-numbers";
+      td.textContent = text;
+      row.append(td);
     }
     results.rows.push(out);
     console.log(
@@ -285,21 +374,30 @@ async function run() {
             const p = out.suns[sun.id];
             return (
               `${sun.id} (sun ${fmt(p.sunElevationDeg)}°) ΔE@${COMPARE_PLAN.handOverKm}km ` +
-              `${fmt(p.handOver.mean, 2)}/${fmt(p.handOver.p95, 2)} (n ${p.handOver.n}), contrast ` +
+              `point ${fmt(p.handOver.point.mean, 2)}/${fmt(p.handOver.point.p95, 2)} (n ${p.handOver.point.n}) ` +
+              `footprint ${fmt(p.handOver.footprint.mean, 2)}/${fmt(p.handOver.footprint.p95, 2)} (n ${p.handOver.footprint.n}), contrast ` +
               altitudesKm
                 .map((km) => {
                   const c = p.contrast[km];
-                  return `${km}:sd ${fmt(c.std, 2)} mean ${fmt(c.mean, 1)} cv ${fmt(c.std / c.mean, 3)}`;
+                  return (
+                    `${km}:sd ${fmt(c.std, 2)} mean ${fmt(c.mean, 1)} cv ${fmt(c.std / c.mean, 3)} ` +
+                    `step ${c.stepM} m${c.scaled ? "*" : ""} posts ${fmt(c.postPx, 1)} px ` +
+                    `(model ${fmt(c.pxPerKm.along, 2)} along / ${fmt(c.pxPerKm.across, 2)} across px/km)`
+                  );
                 })
                 .join(" ")
             );
           })
           .join("; ") +
-        `; cost x${fmt(out.costRatio, 2)} (${fmt(ms, 0)} ms)`,
+        `; cost x${fmt(out.costRatio, 2)} (${fmt(cost.mean, 0)} ± ${fmt(cost.std, 0)} ms)`,
     );
   }
+  console.log(
+    `compare buffer ${results.buffer.width} x ${results.buffer.height} at pixel ratio ${results.pixelRatio}`,
+  );
   say(
-    `Done: ${variants.length} variants, ${suns.length} suns, ${altitudesKm.length} altitudes.`,
+    `Done: ${variants.length} variants, ${suns.length} suns; drawing buffer ` +
+      `${results.buffer.width} x ${results.buffer.height} (pixel ratio ${results.pixelRatio}).`,
   );
   results.done = true;
 }

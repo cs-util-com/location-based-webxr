@@ -146,10 +146,12 @@ uniform sampler2D uAlbedo;
 uniform sampler2D uCoarseLum;
 uniform float uAlbedoDetail;
 // globe-bands (terrain-globe-colour.js): the imagery's ramp by height band
-// over 0-uLutMaxM, and its sea (uBandSeaOn 0 when the region has none).
+// over 0-uLutMaxM, and its sea (uBandSeaOn 0 when the region has none);
+// uBandsOn 0 until the drawn region's ramp exists (style B meanwhile).
 uniform sampler2D uLutBands;
 uniform vec3 uBandSea;
 uniform float uBandSeaOn;
+uniform float uBandsOn;
 // The far field.
 uniform float uNearW;
 uniform float uFarReliefW;
@@ -295,8 +297,10 @@ vec3 globeAlbedo(float h, vec2 grad, float small, float svf, float vis) {
 }
 
 // terrain-globe-colour.js bandRampColour (through its LUT) under the sun
-// term, as the globe lights its pixels.
-vec3 globeBands(float h, vec2 grad, float svf, float vis) {
+// term, as the globe lights its pixels; style B until the drawn region's
+// ramp exists (no imagery yet, or it failed: review 2026-10-01-1650 m6).
+vec3 globeBands(float h, vec2 grad, float small, float svf, float vis) {
+  if (uBandsOn < 0.5) return natural(h, grad, small, svf, vis);
   vec3 base = h <= 0.0 && uBandSeaOn > 0.5
     ? uBandSea
     : texture2D(uLutBands, vec2(h / uLutMaxM, 0.5)).rgb;
@@ -329,7 +333,7 @@ void main() {
   } else if (uStyle == 4) {
     col = globeAlbedo(h, d.gb, small, a.b, vis);
   } else if (uStyle == 5) {
-    col = globeBands(h, d.gb, a.b, vis);
+    col = globeBands(h, d.gb, small, a.b, vis);
   } else {
     if (uStyle == 3) {
       col = h <= 0.0 ? uClaySea : uClay;
@@ -359,9 +363,11 @@ void main() {
     vec2 fuv = clamp((vEnu + uHalfM) / (2.0 * uHalfM), 0.0, 1.0);
     vec4 f = texture2D(uFar, fuv);
     if (f.a > 0.5) {
-      // Lit as the globe lights it (farColour): Lambert at its sun's
-      // intensity, straight from above, or by the sun itself with light 1.
-      float farLight = uLightMode == 1 ? max(0.0, uSun.z) : 1.0;
+      // Lit as the globe lights it (farColour): its diffuse term at its
+      // sun's intensity, straight from above, or by the sun itself with
+      // light 1, through the cloud-shadow seat as every direct term
+      // (review 2026-10-01-1650 m4).
+      float farLight = uLightMode == 1 ? sunDirect(vec3(0.0, 0.0, 1.0), vis) : 1.0;
       vec3 lin = sRGBTransferEOTF(vec4(f.rgb, 1.0)).rgb
         * uSunIntensity * farLight / 3.141592653589793;
       if (uFarReliefW > 0.0) {
@@ -562,6 +568,7 @@ export function createTerrainMaterial(textures, { side, extentM, datum }) {
       uLutBands: { value: textures.lut },
       uBandSea: { value: new THREE.Vector3(0.5, 0.5, 0.5) },
       uBandSeaOn: { value: 0 },
+      uBandsOn: { value: 0 },
       uNearW: { value: 1 },
       uFarReliefW: { value: 0 },
       uHalfM: { value: extentM },

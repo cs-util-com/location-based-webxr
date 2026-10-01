@@ -71,6 +71,15 @@ const sampleGround = (page) =>
  */
 const ALBEDO_MEAN_TOLERANCE = 4;
 
+/**
+ * How far the detail may move the region's mean luminance, as a share of
+ * the mean per-pixel change it makes (review 2026-10-01-1650 m5: the /3 was
+ * undeclared). A high-pass whose mean over a footprint is about 1 moves
+ * pixels much more than their mean; the clamp, the bilinear coarse grid
+ * and the tone curve keep it from 0. Swept over 1/2, 1/3, 1/6, 1/10.
+ */
+const MEAN_SHIFT_SHARE = 1 / 3;
+
 test("globe-albedo: the imagery under the sun term, and its detail a high-pass", async ({
   page,
 }) => {
@@ -128,8 +137,12 @@ test("globe-albedo: the imagery under the sun term, and its detail a high-pass",
   );
   // Non-vacuous: the detail does change pixels...
   expect(moved).toBeGreaterThan(2);
-  // ...but not the region's brightness as a whole (a third of the change).
-  expect(Math.abs(shift)).toBeLessThan(moved / 3);
+  // ...but not the region's brightness as a whole.
+  console.log(
+    `globe-albedo detail: |change of the mean| / mean change ${(Math.abs(shift) / moved).toFixed(3)} ` +
+      `(${sweepLine(Math.abs(shift) / moved, [1 / 2, 1 / 3, 1 / 6, 1 / 10], (t) => `1/${Math.round(1 / t)}`)})`,
+  );
+  expect(Math.abs(shift)).toBeLessThan(moved * MEAN_SHIFT_SHARE);
   expect(errors).toEqual([]);
 });
 
@@ -202,8 +215,20 @@ test("globe-bands: the imagery's colour per height band, and its band-width swee
   );
   expect(mean).toBeLessThanOrEqual(BANDS_MEAN_TOLERANCE);
 
-  // The band-width sweep (plan §3.3: 100-800 m), on two places: logged,
-  // not asserted, except that every width gives a ramp.
+  // How the top band clamps (review 2026-10-01-1650 m2): the ramp is
+  // fitted on footprint-mean heights and read at the posts' own, so every
+  // post above the top band's mean height takes its colour.
+  const clamp = (await state(page)).globeColour.clamp;
+  console.log(
+    `globe-bands top band at ${Math.round(clamp.topBandM)} m, highest post ${Math.round(clamp.highestPostM)} m: ` +
+      `${(100 * clamp.share).toFixed(1)} % of the land posts take the top band's colour`,
+  );
+  expect(clamp.highestPostM).toBeGreaterThan(clamp.topBandM);
+
+  // The band-width sweep (plan §3.3: 100-800 m), on two places, its
+  // cross-validation folds in blocks of 1, 4 and 16 imagery pixels (review
+  // 2026-10-01-1650 m2: one-pixel folds leak between alike neighbours):
+  // logged, not asserted, except that every width gives a ramp.
   for (const place of ["alps", "appalachians"]) {
     if (place !== "alps") {
       await applyHash(
@@ -212,22 +237,24 @@ test("globe-bands: the imagery's colour per height band, and its band-width swee
       );
       await bandsReady(place);
     }
-    const rows = await page.evaluate(
-      (w) => window.__terrainLab.bandSweep(w),
-      [100, 200, 300, 400, 600, 800],
-    );
-    for (const r of rows) {
-      console.log(
-        `band sweep ${place} ${r.widthM} m: ${r.bands} bands (least ${r.minCount} pixels), ` +
-          `in-sample ΔE ${r.fit.mean.toFixed(2)} (p95 ${r.fit.p95.toFixed(2)}), ` +
-          `cross-validated ΔE ${r.cv.mean.toFixed(2)} (p95 ${r.cv.p95.toFixed(2)})`,
+    for (const blockPx of [1, 4, 16]) {
+      const rows = await page.evaluate(
+        ([w, b]) => window.__terrainLab.bandSweep(w, b),
+        [[100, 200, 300, 400, 600, 800], blockPx],
       );
-      expect(r.bands).toBeGreaterThan(0);
+      for (const r of rows) {
+        console.log(
+          `band sweep ${place} blocks ${blockPx} px, ${r.widthM} m: ${r.bands} bands (least ${r.minCount} pixels), ` +
+            `in-sample ΔE ${r.fit.mean.toFixed(2)} (p95 ${r.fit.p95.toFixed(2)}), ` +
+            `cross-validated ΔE ${r.cv.mean.toFixed(2)} (p95 ${r.cv.p95.toFixed(2)})`,
+        );
+        expect(r.bands).toBeGreaterThan(0);
+      }
+      const best = rows.reduce((a, b) => (b.cv.mean < a.cv.mean ? b : a));
+      console.log(
+        `band sweep ${place} blocks ${blockPx} px: least cross-validated error at ${best.widthM} m`,
+      );
     }
-    const best = rows.reduce((a, b) => (b.cv.mean < a.cv.mean ? b : a));
-    console.log(
-      `band sweep ${place}: least cross-validated error at ${best.widthM} m`,
-    );
   }
   expect(errors).toEqual([]);
 });

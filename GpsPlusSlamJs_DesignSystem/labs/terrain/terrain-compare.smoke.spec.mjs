@@ -14,8 +14,11 @@
 import { expect, test } from "@playwright/test";
 
 import { fixtureTile, routeAll } from "./terrain-smoke-helpers.mjs";
+import { COMPARE_VARIANTS } from "./terrain-compare.js";
 
 const FULL = process.env.TERRAIN_COMPARE_FULL === "1";
+/** The full table's rows: every `COMPARE_VARIANTS` entry. */
+const ROWS = COMPARE_VARIANTS.length;
 
 test("the comparison page drives the lab's fly-in and logs every variant's numbers", async ({
   page,
@@ -37,19 +40,29 @@ test("the comparison page drives the lab's fly-in and logs every variant's numbe
   expect(results.error).toBeNull();
   expect(record.missing).toEqual([]);
   expect(record.external).toEqual([]);
-  expect(results.rows.length).toBe(FULL ? 6 : 2);
+  // Review 2026-10-01-1650 M1: the contrast is read from pixels, so the
+  // buffer must be the frame's 800 x 500 whatever the screen's ratio.
+  expect(results.pixelRatio).toBe(1);
+  expect(results.buffer).toEqual({ width: 800, height: 500 });
+  expect(results.rows.length).toBe(FULL ? ROWS : 2);
   for (const row of results.rows) {
     expect(Number.isFinite(row.costRatio), row.id).toBe(true);
     for (const sun of Object.values(row.suns)) {
-      expect(Number.isFinite(sun.handOver.mean), row.id).toBe(true);
-      expect(sun.handOver.n, row.id).toBeGreaterThan(50);
+      expect(Number.isFinite(sun.handOver.point.mean), row.id).toBe(true);
+      expect(sun.handOver.point.n, row.id).toBeGreaterThan(50);
+      // The footprint-averaged difference (M2) has its own footprints.
+      expect(Number.isFinite(sun.handOver.footprint.mean), row.id).toBe(true);
+      expect(sun.handOver.footprint.n, row.id).toBeGreaterThan(50);
       for (const c of Object.values(sun.contrast)) {
         expect(c.n, row.id).toBeGreaterThan(20);
+        // The measured post spacing honours the 3 px rule (a little under
+        // it where the relief's lift foreshortens a post pair).
+        expect(c.postPx, row.id).toBeGreaterThan(2);
       }
     }
   }
   // One thumbnail per row, sun and altitude.
   const thumbs = await page.locator(".compare-thumb").count();
-  expect(thumbs).toBe(FULL ? 6 * 2 * 4 : 2);
+  expect(thumbs).toBe(FULL ? ROWS * 2 * 4 : 2);
   expect(errors).toEqual([]);
 });

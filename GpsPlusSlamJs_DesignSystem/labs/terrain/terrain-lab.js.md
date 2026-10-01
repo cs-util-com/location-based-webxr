@@ -92,8 +92,10 @@
 - Test hooks, `window.__terrainLab`: `ready`, `error`, `background`,
   `state()` (the applied hash, the style and its shader branch, the far
   field's state and weights, the light and the sun (`enu`, `elevationDeg`,
-  `timeMs`, null with the map light), `imageryOn`, `detail` and
-  `globeColour` (`albedo`, `coarse`, `coarseMs`, `samples`, `samplesMs`,
+  `timeMs`, null with the map light), `sunIntensity`, the pixel ratio, the
+  drawing `buffer`'s size and the camera's `fovDeg` (the comparison's pixel
+  scale), `imageryOn`, `detail` and
+  `globeColour` (`albedo`, `coarse`, `coarseMs`, `samples`, `samplesMs`, `bandsOn` (globe-bands has its drawn region's ramp), `clamp` (the share of land posts above the top band),
   `bands` with globe-bands), `band`, the land range, B's lines, the credits text,
   the region's centre, whether the GPS place awaits a fix, the pin's
   phase, E and its parts, W, the boost, the pose, the flight's samples, the tiles,
@@ -102,12 +104,15 @@
   `project([x, y, z])`, `projectAll(points)` (one frame for many),
   `toEnu(lat, lng)`, `toLatLng(x, y)`,
   `fieldAt(x, y)` (the absolute height, gradient and small relief the
-  shader reads), `farAt(x, y)` (the far-field grid), `albedoAt(x, y)` (the imagery styles' albedo grid), `bandSweep(widths)` (globe-bands' sweep over the region's samples), `imageryAt(lat, lng)`
+  shader reads), `farAt(x, y)` (the far-field grid), `albedoAt(x, y)` (the imagery styles' albedo grid), `bandSweep(widths, blockPx = 1)` (globe-bands' sweep over the region's samples, its folds in blocks), `imageryAt(lat, lng)`
   (the decoded imagery), `readPixels(points)` and
   `silhouette(columns, tolerance?)` (the first non-background row per
   column), `capture()` (the whole drawing buffer, row 0 at the bottom) and
-  `frameCost(frames?)` (mean ms per frame, each forced by a one-pixel read:
-  the comparison page's captures and cost).
+  `frameCost(frames = 10)` (the ms of each frame after a warm-up, each
+  forced by a one-pixel read: the comparison page's captures and cost, its
+  mean and spread).
+- Pixel ratio: the device's, capped at 2, unless `dpr` pins one (applied
+  on load and on a hash change).
 - Invariants & assumptions:
   - No tone mapping: the colours are the style's sRGB, as a printed map;
     only the far field is tone mapped, as the globe is.

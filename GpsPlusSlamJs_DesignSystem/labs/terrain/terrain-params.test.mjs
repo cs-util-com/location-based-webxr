@@ -20,12 +20,13 @@ import {
   IMAGERY_STYLES,
   LOOK_DEFAULTS,
   STYLE_LIGHT,
-  STYLE_SHADOW,
   TERRAIN_PLACES,
   fieldSpec,
+  pixelRatioFor,
   placeFor,
   readTerrainParams,
 } from "./terrain-params.js";
+import { GLOBE_SUN } from "./terrain-far-field.js";
 import { TERRAIN_STYLES } from "./terrain-styles.js";
 
 describe("the Appalachians place", () => {
@@ -184,7 +185,7 @@ describe("readTerrainParams", () => {
       assert.equal(p.style, "pastel", `style=${name}`);
       assert.equal(p.notes.length, 2, `notes for ${name}`);
       assert.equal(placeFor(name, null), null, `placeFor(${name})`);
-      assert.equal(p.shadow, STYLE_SHADOW.pastel, `shadow for ${name}`);
+      assert.equal(p.shadow, LOOK_DEFAULTS.shadow, `shadow for ${name}`);
     }
   });
 
@@ -211,17 +212,42 @@ describe("readTerrainParams", () => {
     }
   });
 
-  // Each style has its own shading strength; a `shadow` key overrides it
-  // for any style, so a link the owner tuned keeps its value.
-  it("uses the style's own shadow unless the hash sets one", () => {
+  // A `shadow` key overrides the owner's default for any style, so a link
+  // the owner tuned keeps its value; out of range reads as the default.
+  it("uses the owner's shadow unless the hash sets one", () => {
     for (const id of Object.keys(TERRAIN_STYLES)) {
-      assert.equal(readTerrainParams(`style=${id}`).shadow, STYLE_SHADOW[id]);
       assert.equal(readTerrainParams(`style=${id}&shadow=0.3`).shadow, 0.3);
     }
     assert.equal(
       readTerrainParams("style=clay&shadow=7").shadow,
-      STYLE_SHADOW.clay,
+      LOOK_DEFAULTS.shadow,
     );
+  });
+
+  // Review 2026-10-01-1650 nit: the relief's sun follows the globe lab's
+  // `sunIntensity` key (same name, range and default), so a link tuned
+  // there lights both alike.
+  it("reads the globe lab's sunIntensity key, default the globe's 5", () => {
+    assert.equal(readTerrainParams("").sunIntensity, GLOBE_SUN.intensity);
+    assert.equal(readTerrainParams("sunIntensity=3.5").sunIntensity, 3.5);
+    assert.equal(
+      readTerrainParams("sunIntensity=9").sunIntensity,
+      GLOBE_SUN.intensity,
+    );
+  });
+
+  // Review 2026-10-01-1650 M1: a measurement read from pixels must not
+  // change with the viewer's screen, so `dpr` pins the drawing buffer's
+  // pixel ratio; with no key the device's applies, capped at 2.
+  it("pins the pixel ratio with dpr, else follows the device capped at 2", () => {
+    assert.equal(readTerrainParams("").dpr, 0);
+    assert.equal(readTerrainParams("dpr=1").dpr, 1);
+    assert.equal(pixelRatioFor(1, 3), 1);
+    assert.equal(pixelRatioFor(2, 1), 2);
+    assert.equal(pixelRatioFor(0, 1.5), 1.5);
+    assert.equal(pixelRatioFor(0, 3), 2);
+    assert.equal(pixelRatioFor(0, Number.NaN), 1);
+    assert.equal(pixelRatioFor(0, 0), 1);
   });
 
   // Globe round-5 §3.3: the sun is a choice beside the map lights. Each

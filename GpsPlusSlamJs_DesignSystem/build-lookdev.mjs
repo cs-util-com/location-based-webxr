@@ -23,9 +23,11 @@
  * `<outDir>/vendor/three/…`, plus an `index.html` that lists every page.
  *
  * LAB PAGES (programme plan 2026-09-26-0539, DEC-PRG-2): every
- * `labs/<name>/index.html` is a small prototype page, deployed exactly like
- * the main page. The builder DISCOVERS them from the folder, so workstreams
- * adding labs in parallel never edit a shared list.
+ * `labs/<name>/index.html` is a small prototype page, and every further
+ * top-level `.html` in its folder (the terrain lab's `compare.html`) is
+ * another, each deployed exactly like the main page. The builder DISCOVERS
+ * them from the folder, so workstreams adding labs in parallel never edit
+ * a shared list.
  *
  * Called by the workspace's `scripts/build-site.mjs`; returns the written
  * paths (relative to `outDir`).

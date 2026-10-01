@@ -27,8 +27,11 @@ import {
   boxMeanAt,
   deltaE76,
   detailRatio,
+  foldOf,
+  footprintLuminanceGrid,
   footprintM,
   globeAlbedoColour,
+  globeAlbedoLinear,
   linearLuminance,
   rampFitError,
   summedArea,
@@ -122,6 +125,30 @@ describe("C1 globe-albedo: the colour", () => {
     }
   });
 
+  // Review 2026-10-01-1650 m5: "luminance-only" in the light the globe
+  // draws, before its tone curve: the radiance's chromaticity is the
+  // albedo's own for any light, ramp and weight.
+  it("keeps the albedo's linear chromaticity whatever the detail (property)", () => {
+    const chroma = (rgb) => {
+      const sum = rgb[0] + rgb[1] + rgb[2];
+      return rgb.map((v) => v / sum);
+    };
+    for (let k = 0; k < 300; k++) {
+      const albedo = [0.05 + next(), 0.05 + next(), 0.05 + next()].map((v) =>
+        Math.min(1, v),
+      );
+      const lin = globeAlbedoLinear({
+        albedo,
+        light: 0.1 + next(),
+        fineLum: next() * 0.3,
+        coarseLum: 0.05 + next() * 0.3,
+        detail: next(),
+      });
+      const want = chroma(albedo.map(srgbToLinear));
+      chroma(lin).forEach((v, i) => close(v, want[i], 1e-12, `case ${k}`));
+    }
+  });
+
   it("brightens where the fine ramp is lighter than its footprint, darkens where darker", () => {
     const base = {
       albedo: [0.3, 0.35, 0.2],
@@ -188,6 +215,71 @@ describe("box means over a grid (the imagery pixel's footprint)", () => {
       if (n === 0) assert.equal(got, null, `case ${k}`);
       else close(got, sum / n, 1e-6, `case ${k}`);
     }
+  });
+});
+
+describe("C1's coarse luminance (review 2026-10-01-1650 m5)", () => {
+  // "Mean-preserving" is what makes the detail a high-pass: over the
+  // imagery pixel's footprint the light it adds and takes cancel, so the
+  // footprint keeps the imagery's (the globe's) brightness. At a texel
+  // centre this is exact for the UNCLAMPED ratio; the clamp and the
+  // shader's bilinear read make it approximate in between.
+  it("makes the footprint mean of the unclamped detail ratio 1 at every texel (property)", () => {
+    const next = random(29);
+    const grid = { side: 41, spacingM: 500, extentM: 10_000 };
+    const fineLum = Float64Array.from(
+      { length: 41 * 41 },
+      () => 0.02 + next() * 0.5,
+    );
+    const footprint = [1700, 2450];
+    const side = 8;
+    const halfM = 8000;
+    const coarse = footprintLuminanceGrid({
+      fineLum,
+      grid,
+      halfM,
+      side,
+      footprint,
+    });
+    assert.equal(coarse.length, side * side);
+    const step = (2 * halfM) / side;
+    for (let r = 0; r < side; r++) {
+      for (let c = 0; c < side; c++) {
+        const x = -halfM + (c + 0.5) * step;
+        const y = -halfM + (r + 0.5) * step;
+        const inside = [];
+        for (let j = 0; j < 41; j++) {
+          for (let i = 0; i < 41; i++) {
+            const px = -10_000 + i * 500;
+            const py = -10_000 + j * 500;
+            if (
+              Math.abs(px - x) <= footprint[0] / 2 &&
+              Math.abs(py - y) <= footprint[1] / 2
+            ) {
+              inside.push(fineLum[j * 41 + i]);
+            }
+          }
+        }
+        const cl = coarse[r * side + c];
+        for (const detail of [0.3, 1]) {
+          const ratios = inside.map((f) => 1 + detail * (f / cl - 1));
+          const mean = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+          close(mean, 1, 1e-6, `texel ${r},${c} detail ${detail}`);
+        }
+      }
+    }
+  });
+
+  it("is 0 where no post lies under the footprint", () => {
+    const grid = { side: 3, spacingM: 1000, extentM: 1000 };
+    const out = footprintLuminanceGrid({
+      fineLum: new Float64Array(9).fill(0.5),
+      grid,
+      halfM: 10_000,
+      side: 2,
+      footprint: [100, 100],
+    });
+    assert.deepEqual([...out], [0, 0, 0, 0]);
   });
 });
 
@@ -311,7 +403,8 @@ describe("C3 globe-bands: the band-width sweep", () => {
       return {
         heightM: h,
         rgb: truth(h).map((v) => Math.min(1, Math.max(0, v + noise()))),
-        fold: i % 2,
+        gx: i % 64,
+        gy: Math.floor(i / 64),
       };
     });
     const rows = bandSweep(samples, [50, 200, 800]);
@@ -333,8 +426,53 @@ describe("C3 globe-bands: the band-width sweep", () => {
   });
 
   it("needs both folds", () => {
-    const samples = [{ heightM: 100, rgb: [0.3, 0.3, 0.3], fold: 0 }];
+    const samples = [{ heightM: 100, rgb: [0.3, 0.3, 0.3], gx: 0, gy: 0 }];
     assert.throws(() => bandSweep(samples, [100]), RangeError);
+  });
+
+  // Review 2026-10-01-1650 m2: a one-pixel checkerboard puts every pixel's
+  // four neighbours in the other fold; blocks keep most of them together.
+  it("folds by checkerboard blocks of blockPx pixels", () => {
+    assert.equal(foldOf(0, 0), 0);
+    assert.equal(foldOf(1, 0), 1);
+    assert.equal(foldOf(3, 0, 4), 0);
+    assert.equal(foldOf(4, 0, 4), 1);
+    assert.equal(foldOf(4, 4, 4), 0);
+    const sameFold = (block) => {
+      let same = 0;
+      let all = 0;
+      for (let y = 0; y < 64; y++) {
+        for (let x = 0; x < 63; x++) {
+          all += 1;
+          if (foldOf(x, y, block) === foldOf(x + 1, y, block)) same += 1;
+        }
+      }
+      return same / all;
+    };
+    assert.equal(sameFold(1), 0);
+    close(sameFold(4), 48 / 63, 1e-12, "4 px blocks");
+    assert.ok(sameFold(16) > 0.9);
+  });
+
+  // Why the blocks matter: imagery whose colour follows the POSITION (as
+  // real land cover does) and has nothing to do with the height. A narrow
+  // band's pixels lie along a contour line, so with one-pixel folds each
+  // judged pixel has fitted neighbours on the same contour, and the
+  // cross-validated error flatters the height model; blocks remove that.
+  it("shows the one-pixel folds' leak on autocorrelated imagery", () => {
+    const samples = [];
+    for (let gy = 0; gy < 96; gy++) {
+      for (let gx = 0; gx < 96; gx++) {
+        const h = 2000 + 1400 * Math.sin(gx / 9) * Math.cos(gy / 11);
+        const g = 0.35 + 0.25 * Math.sin(gx / 6 + 1) * Math.sin(gy / 7 + 2);
+        samples.push({ heightM: h, rgb: [g * 0.8, g, g * 0.6], gx, gy });
+      }
+    }
+    const cv = (blockPx) => bandSweep(samples, [10], { blockPx })[0].cv.mean;
+    // Measured 12.72 against 12.16 (4 px blocks 12.36): small on this
+    // synthetic, where a 10 m band still holds about 30 pixels; the smoke
+    // measures it on the real imagery, where the top bands hold a handful.
+    assert.ok(cv(16) > cv(1) + 0.2, `blocks 16: ${cv(16)}, 1: ${cv(1)}`);
   });
 });
 

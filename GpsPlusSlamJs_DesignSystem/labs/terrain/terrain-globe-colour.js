@@ -29,7 +29,11 @@
  * @see terrain-globe-colour.js.md
  */
 import { LUT } from "./terrain-style.js";
-import { linearToSrgb, srgbToLinear } from "./terrain-far-field.js";
+import {
+  linearToSrgb,
+  srgbToLinear,
+  sunLitLinear,
+} from "./terrain-far-field.js";
 import { sunLitColour } from "./terrain-sun.js";
 
 /** C1's defaults. */
@@ -48,6 +52,12 @@ export const GLOBE_BANDS = Object.freeze({
   widthM: 300,
   /** The band widths the comparison sweeps, metres. */
   sweepM: Object.freeze([100, 200, 300, 400, 600, 800]),
+  /**
+   * The cross-validation's fold block sizes, imagery pixels (review
+   * 2026-10-01-1650 m2): neighbouring pixels are alike, so a one-pixel
+   * checkerboard leaks between its folds.
+   */
+  blocksPx: Object.freeze([1, 4, 16]),
   minWidthM: 10,
   maxWidthM: 5000,
 });
@@ -89,6 +99,51 @@ export function globeAlbedoColour({
   detail,
 }) {
   return sunLitColour(albedo, light * detailRatio(fineLum, coarseLum, detail));
+}
+
+/**
+ * C1's light before the tone mapping (linear, the globe's units):
+ * `globeAlbedoColour` is this through the Neutral curve and the sRGB
+ * encoding. Its chromaticity is the albedo's, whatever the detail.
+ */
+export function globeAlbedoLinear({
+  albedo,
+  light,
+  fineLum,
+  coarseLum,
+  detail,
+}) {
+  return sunLitLinear(albedo, light * detailRatio(fineLum, coarseLum, detail));
+}
+
+/**
+ * C1's coarse luminance: a `fineLum` post grid (`grid` `{ side, spacingM,
+ * extentM }`, row 0 south) averaged over an imagery pixel's footprint
+ * (`footprint` [east-west, north-south] metres) around each texel centre of
+ * a `side` x `side` grid over `±halfM` (the albedo grid's texels, as
+ * `farFieldGrid` places them). 0 where no post is inside. The shader
+ * divides the fine luminance by it (`detailRatio`), so at a texel centre
+ * the footprint's mean of the unclamped ratio is exactly 1.
+ */
+export function footprintLuminanceGrid({
+  fineLum,
+  grid,
+  halfM,
+  side,
+  footprint,
+}) {
+  const [wx, wy] = footprint;
+  const sat = summedArea(fineLum, grid.side);
+  const step = (2 * halfM) / side;
+  const out = new Float32Array(side * side);
+  for (let r = 0; r < side; r++) {
+    for (let c = 0; c < side; c++) {
+      const x = -halfM + (c + 0.5) * step;
+      const y = -halfM + (r + 0.5) * step;
+      out[r * side + c] = boxMeanAt(sat, grid, x, y, wx, wy) ?? 0;
+    }
+  }
+  return out;
 }
 
 /**
@@ -275,14 +330,28 @@ export function rampFitError(ramp, samples) {
 }
 
 /**
+ * A sample's cross-validation fold, 0 or 1: a checkerboard of
+ * `blockPx` x `blockPx` imagery pixels over the global pixel indices
+ * `gx`, `gy`. With 1 every pixel's four neighbours are in the other fold,
+ * and neighbouring imagery pixels are alike, so the folds leak; blocks
+ * keep most neighbours together (review 2026-10-01-1650 m2).
+ */
+export function foldOf(gx, gy, blockPx = 1) {
+  return (Math.floor(gx / blockPx) + Math.floor(gy / blockPx)) % 2;
+}
+
+/**
  * C3's band-width sweep: for each width, the ramp's band count and its
  * least populated band, its in-sample error (`rampFitError` on all
  * samples) and its two-fold cross-validated error (fitted on the samples
- * of one `fold`, 0 or 1, judged on the other, the two means averaged).
+ * of one fold, judged on the other, the two means averaged). The folds
+ * are `foldOf(gx, gy, blockPx)` of each sample's global imagery pixel.
  * RangeError when either fold is empty.
  */
-export function bandSweep(samples, widthsM) {
-  const folds = [0, 1].map((f) => samples.filter((s) => s.fold === f));
+export function bandSweep(samples, widthsM, { blockPx = 1 } = {}) {
+  const folds = [0, 1].map((f) =>
+    samples.filter((s) => foldOf(s.gx, s.gy, blockPx) === f),
+  );
   if (folds.some((f) => f.length === 0)) {
     throw new RangeError("the sweep needs samples in both folds");
   }
@@ -294,6 +363,7 @@ export function bandSweep(samples, widthsM) {
     );
     return {
       widthM,
+      blockPx,
       bands: ramp.bands.length,
       minCount: counts.length > 0 ? Math.min(...counts) : 0,
       fit: rampFitError(ramp, samples),

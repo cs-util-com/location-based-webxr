@@ -58,13 +58,14 @@ import {
   startGlobeClock,
 } from "/globe/globe-clock.js";
 import { solarPosition } from "/fw/geo/solar-position.js";
-import { MAP_KEY_LIGHT, sunEnuFromGlobe } from "./terrain-sun.js";
+import { MAP_KEY_LIGHT, sunDownNote, sunEnuFromGlobe } from "./terrain-sun.js";
 import {
   GLOBE_ALBEDO,
   bandRamp,
   bandRampLut,
   bandSweep,
   boxMeanAt,
+  footprintLuminanceGrid,
   footprintM,
   linearLuminance,
   summedArea,
@@ -83,6 +84,7 @@ import {
   IMAGERY_STYLES,
   PARAMS,
   fieldSpec,
+  pixelRatioFor,
   placeFor,
   readTerrainParams,
 } from "./terrain-params.js";
@@ -391,7 +393,6 @@ function bindPanel(getParams, apply) {
 
 function start() {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(BACKGROUND);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, 1, 10, 1e7);
@@ -404,6 +405,9 @@ function start() {
 
   let params = readTerrainParams(location.hash.slice(1));
   let appliedHash = location.hash.slice(1);
+  // The device's ratio (capped at 2) unless `dpr` pins one: the comparison
+  // page reads its contrast from pixels (review 2026-10-01-1650 M1).
+  renderer.setPixelRatio(pixelRatioFor(params.dpr, window.devicePixelRatio));
   /**
    * The scene's clock, the globe lab's own (`time=`, `timeScale=`), which
    * the sun reads with `light` 1 (globe round-5 plan §3.3).
@@ -460,9 +464,12 @@ function start() {
     error: null,
     regionId: 0,
   };
+  /** The sun-down note while the globe's sun lights the relief at night. */
+  let sunNote = null;
   const showErrors = () => {
     errorBox.textContent = [
       ...params.notes,
+      ...(sunNote ? [sunNote] : []),
       ...errors,
       ...(far.error && params.imageryOn ? [far.error] : []),
     ].join(" ");
@@ -512,6 +519,8 @@ function start() {
     }
   };
 
+  /** The canvas size the renderer was last fitted to ("" refits). */
+  let fittedSize = "";
   let mesh = null;
   let material = null;
   let textures = null;
@@ -536,6 +545,10 @@ function start() {
     }
     const moved = next.place !== params.place;
     const recompute = next.svf !== params.svf;
+    if (next.dpr !== params.dpr) {
+      renderer.setPixelRatio(pixelRatioFor(next.dpr, window.devicePixelRatio));
+      fittedSize = "";
+    }
     params = next;
     applyCamera();
     applyLive();
@@ -644,12 +657,14 @@ function start() {
     ramp: null,
     rampKey: null,
     lut: null,
+    /** globe-bands: the share of land posts above the top band, and both heights. */
+    clamp: null,
   };
   /**
    * globe-bands' samples: every imagery pixel whose footprint lies in the
    * drawn region, with the mean height (absolute) over that footprint and
-   * a fold (the pixel's checkerboard parity) for the sweep's
-   * cross-validation.
+   * its global pixel indices `gx`, `gy` (the sweep's cross-validation
+   * folds them in blocks, `foldOf`).
    */
   const bandSamples = () => {
     const f = run.fields;
@@ -684,12 +699,39 @@ function start() {
           out.push({
             heightM: h,
             rgb: [t.data[i] / 255, t.data[i + 1] / 255, t.data[i + 2] / 255],
-            fold: (t.x * size + px + t.y * size + py) % 2,
+            gx: t.x * size + px,
+            gy: t.y * size + py,
           });
         }
       }
     }
     return out;
+  };
+  /**
+   * How globe-bands' top band clamps (review 2026-10-01-1650 m2): the ramp
+   * is fitted on footprint-mean heights but read at the posts' own, and it
+   * holds its last band's colour above that band's mean height, so every
+   * post higher than it takes the top band's colour.
+   */
+  const topBandClamp = (ramp) => {
+    const top = ramp.bands.at(-1);
+    if (!top || !run.fields) return null;
+    const f = run.fields;
+    let land = 0;
+    let above = 0;
+    let highest = -Infinity;
+    for (let i = 0; i < f.height.length; i++) {
+      const h = f.height[i] + run.relief.datum;
+      if (!f.valid[i] || h <= 0) continue;
+      land += 1;
+      if (h > top.heightM) above += 1;
+      if (h > highest) highest = h;
+    }
+    return {
+      topBandM: top.heightM,
+      highestPostM: highest,
+      share: land > 0 ? above / land : 0,
+    };
   };
   const updateGlobeColour = () => {
     if (
@@ -733,9 +775,9 @@ function start() {
         aspectSnowM: params.aspect,
         rockSlopeDeg: params.rock,
       };
-      const lum = new Float64Array(f.height.length);
-      for (let i = 0; i < lum.length; i++) {
-        lum[i] = linearLuminance(
+      const fineLum = new Float64Array(f.height.length);
+      for (let i = 0; i < fineLum.length; i++) {
+        fineLum[i] = linearLuminance(
           naturalBaseColour(
             {
               heightM: f.height[i] + run.relief.datum,
@@ -750,25 +792,19 @@ function start() {
           ),
         );
       }
-      const sat = summedArea(lum, spec.side);
-      const grid = {
-        side: spec.side,
-        spacingM: spec.spacingM,
-        extentM: spec.extentM,
-      };
-      const [wx, wy] = footprintM(FAR_FIELD.level, lat);
-      const side = GLOBE_ALBEDO.side;
-      const step = (2 * spec.halfExtentM) / side;
-      const coarse = new Float32Array(side * side);
-      for (let r = 0; r < side; r++) {
-        for (let c = 0; c < side; c++) {
-          const x = -spec.halfExtentM + (c + 0.5) * step;
-          const y = -spec.halfExtentM + (r + 0.5) * step;
-          coarse[r * side + c] = boxMeanAt(sat, grid, x, y, wx, wy) ?? 0;
-        }
-      }
+      const coarse = footprintLuminanceGrid({
+        fineLum,
+        grid: {
+          side: spec.side,
+          spacingM: spec.spacingM,
+          extentM: spec.extentM,
+        },
+        halfM: spec.halfExtentM,
+        side: GLOBE_ALBEDO.side,
+        footprint: footprintM(FAR_FIELD.level, lat),
+      });
       globeColour.coarse?.dispose();
-      globeColour.coarse = createScalarTexture(coarse, side, (v) =>
+      globeColour.coarse = createScalarTexture(coarse, GLOBE_ALBEDO.side, (v) =>
         THREE.DataUtils.toHalfFloat(v),
       );
       globeColour.coarseKey = key;
@@ -792,8 +828,10 @@ function start() {
       globeColour.lut?.dispose();
       globeColour.lut = createLutTexture(bandRampLut(globeColour.ramp));
       globeColour.rampKey = rKey;
+      globeColour.clamp = topBandClamp(globeColour.ramp);
     }
     u.uLutBands.value = globeColour.lut;
+    u.uBandsOn.value = globeColour.ramp.bands.length > 0 ? 1 : 0;
     const sea = globeColour.ramp.sea;
     u.uBandSeaOn.value = sea === null ? 0 : 1;
     if (sea !== null) u.uBandSea.value.set(...sea);
@@ -997,10 +1035,15 @@ function start() {
     globeColour.samplesKey = null;
     globeColour.samples = null;
     globeColour.ramp = null;
+    globeColour.rampKey = null;
+    globeColour.clamp = null;
     globeColour.grid = null;
     if (material) {
       material.uniforms.uAlbedo.value = EMPTY_TEXTURE;
       material.uniforms.uCoarseLum.value = EMPTY_TEXTURE;
+      // globe-bands draws style B until this region's ramp exists, never
+      // the previous region's (review 2026-10-01-1650 m6).
+      material.uniforms.uBandsOn.value = 0;
     }
     errors.clear();
     hRange = [0, 4000];
@@ -1055,7 +1098,6 @@ function start() {
   panel.sync();
   showErrors();
 
-  let fittedSize = "";
   let lastFrame = performance.now();
   let smoothedAltitude = null;
   const live = {
@@ -1126,8 +1168,17 @@ function start() {
       sunState.timeMs = null;
       sunState.enu = [...MAP_KEY_LIGHT];
     }
+    const note =
+      params.light === 1 && place
+        ? sunDownNote(sunState.enu[2], sunState.timeMs)
+        : null;
+    if (note !== sunNote) {
+      sunNote = note;
+      showErrors();
+    }
     if (material) {
       material.uniforms.uSun.value.set(...sunState.enu);
+      material.uniforms.uSunIntensity.value = params.sunIntensity;
       material.uniforms.uLightMode.value = params.light;
       material.uniforms.uExag.value = live.effectiveE;
       material.uniforms.uGain.value = params.shade * live.boost;
@@ -1201,9 +1252,20 @@ function start() {
                   rgb: b.rgb.map((v) => Math.round(v * 255)),
                 }))
               : null,
+          bandsOn: material ? material.uniforms.uBandsOn.value === 1 : false,
+          clamp: globeColour.clamp ? { ...globeColour.clamp } : null,
         },
         band: params.band,
         light: params.light,
+        sunIntensity: params.sunIntensity,
+        // The drawing buffer the pixels are read from, and the camera's
+        // vertical field of view: the comparison's pixel scale.
+        pixelRatio: renderer.getPixelRatio(),
+        buffer: {
+          width: renderer.getContext().drawingBufferWidth,
+          height: renderer.getContext().drawingBufferHeight,
+        },
+        fovDeg: camera.fov,
         sun: {
           enu: sunState.enu.slice(),
           elevationDeg: (Math.asin(sunState.enu[2]) * 180) / Math.PI,
@@ -1315,10 +1377,13 @@ function start() {
         : null,
     /**
      * globe-bands' band-width sweep over the region's samples
-     * (`bandSweep`): null before the samples exist.
+     * (`bandSweep`, its folds in `blockPx` blocks): null before the
+     * samples exist.
      */
-    bandSweep: (widths) =>
-      globeColour.samples ? bandSweep(globeColour.samples, widths) : null,
+    bandSweep: (widths, blockPx = 1) =>
+      globeColour.samples
+        ? bandSweep(globeColour.samples, widths, { blockPx })
+        : null,
     /** The imagery styles' albedo grid at ENU metres (sRGB 0-1), or null. */
     albedoAt: (x, y) =>
       globeColour.grid && spec
@@ -1339,21 +1404,24 @@ function start() {
      */
     capture: () => readBuffer(),
     /**
-     * The mean milliseconds of `frames` frames, each forced to finish by a
-     * one-pixel read (the comparison's frame cost; relative only on a CPU
-     * rasteriser, so the page reports ratios within one load).
+     * The milliseconds of each of `frames` frames, each forced to finish by
+     * a one-pixel read, after one warm-up frame (the comparison's frame
+     * cost; relative only on a CPU rasteriser, so the page reports ratios
+     * within one load, with their spread).
      */
-    frameCost(frames = 5) {
+    frameCost(frames = 10) {
       const gl = renderer.getContext();
       const one = new Uint8Array(4);
       frameOnce();
       gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, one);
-      const started = performance.now();
+      const out = [];
       for (let i = 0; i < frames; i++) {
+        const started = performance.now();
         frameOnce();
         gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, one);
+        out.push(performance.now() - started);
       }
-      return (performance.now() - started) / frames;
+      return out;
     },
     /** RGBA bytes at normalised canvas points (0,0 top-left). */
     readPixels(points) {

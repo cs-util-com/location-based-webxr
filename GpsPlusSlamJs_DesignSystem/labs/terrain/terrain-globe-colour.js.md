@@ -9,14 +9,22 @@
   - `GLOBE_ALBEDO` `{ side: 256, detail: 0.5, ratioRange: [0.5, 1.6] }`:
     C1's albedo grid (1 km texels over the 256 km region), the detail
     weight a style opens with, and the high-pass ratio's clamp.
-  - `GLOBE_BANDS` `{ widthM: 300, sweepM, minWidthM, maxWidthM }`: C3's
-    band width and the widths the comparison sweeps.
+  - `GLOBE_BANDS` `{ widthM: 300, sweepM, blocksPx, minWidthM,
+maxWidthM }`: C3's band width, the widths the comparison sweeps and the
+    cross-validation's fold block sizes (1, 4, 16 imagery pixels).
   - `linearLuminance(srgb)`: Rec. 709 luminance in linear light.
   - `detailRatio(fineLum, coarseLum, detail)`: 1 + detail x (fine / coarse
     - 1), clamped; 1 for no detail, a black footprint or a non-finite
       fine value. RangeError for a weight outside 0-1.
   - `globeAlbedoColour({ albedo, light, fineLum, coarseLum, detail })`:
-    `sunLitColour(albedo, light x detailRatio(...))`.
+    `sunLitColour(albedo, light x detailRatio(...))`;
+    `globeAlbedoLinear(...)` the same light before the tone mapping
+    (`sunLitLinear`), whose chromaticity is the albedo's.
+  - `footprintLuminanceGrid({ fineLum, grid, halfM, side, footprint })` ->
+    `Float32Array`: C1's coarse luminance, the fine post grid's box mean
+    over an imagery pixel's footprint around each texel centre of the
+    albedo grid (0 where no post is inside). The page builds the shader's
+    `uCoarseLum` with it.
   - `footprintM(level, latDeg, tileSize = 256)` -> `[east-west, north-south]`
     metres of one EPSG:4326 imagery pixel (sphere of the WGS84 equatorial
     radius; 2.45 km north-south at level 5, 4.9 km at level 4).
@@ -27,11 +35,18 @@ extentM }, x, y, wx, wy)`: the mean of the lab's posts inside a box,
     from `{ heightM, rgb }` samples; `bandRampColour(ramp, h)` (null with no
     land band), `bandRampLut(ramp, LUT)`, `rampFitError(ramp, samples)` ->
     `{ mean, p95, n }` (CIE76). RangeError for a width outside 10-5000 m.
-  - `bandSweep(samples, widthsM)` -> per width `{ widthM, bands, minCount,
-fit, cv }`: the in-sample error and the two-fold cross-validated one
-    (fitted on the samples of one `fold`, judged on the other). RangeError
-    when a fold is empty. The cross-validated error is the honest number:
-    narrow bands always fit their own pixels better.
+  - `foldOf(gx, gy, blockPx = 1)`: a sample's fold, a checkerboard of
+    `blockPx`-pixel blocks over its global imagery pixel indices.
+  - `bandSweep(samples, widthsM, { blockPx = 1 })` -> per width `{ widthM,
+blockPx, bands, minCount, fit, cv }`: the in-sample error and the
+    two-fold cross-validated one (fitted on one fold, judged on the other;
+    samples carry `gx`, `gy`). RangeError when a fold is empty. The
+    cross-validated error is the honest number: narrow bands always fit
+    their own pixels better. One-pixel folds LEAK (review 2026-10-01-1650
+    m2): neighbouring imagery pixels are alike, and a narrow band's pixels
+    lie along a contour, so every judged pixel has fitted neighbours on the
+    same contour; blocks of 4 or 16 pixels keep most neighbours in one
+    fold (a unit test shows the leak on synthetic autocorrelated imagery).
   - `deltaE76(a, b)`: CIE76 difference of two sRGB colours (D65).
 - Invariants & assumptions:
   - C1's detail is a scalar on the light, so it is the same albedo lit more
@@ -49,6 +64,13 @@ fit, cv }`: the in-sample error and the two-fold cross-validated one
     the mean height over ITS footprint (what its colour integrates), so
     peaks are averaged down and the ramp's top bands hold the highest
     footprints, not the highest posts.
+  - HOW THE TOP BAND CLAMPS: the ramp is fitted on footprint-mean heights
+    but the shader reads it at the posts' own heights, and
+    `bandRampColour` holds the last band's colour above that band's mean
+    height. So every post higher than the highest footprint mean takes the
+    top band's colour: on the Alps the top band sits well below the
+    highest post, and the page reports the share of land posts above it
+    (`state().globeColour.clamp`, logged by the smoke).
   - The imagery level is the far field's `FAR_FIELD.level` (5, the
     globe's finest): footprints of about 2.45 km north-south.
 - Examples:
@@ -65,7 +87,11 @@ fit, cv }`: the in-sample error and the two-fold cross-validated one
   means against hand counts, edge clipping and brute force; the footprint
   sizes; C3's band means in linear light, interpolation, ends, sea, a
   ramp recovered from a height function at every width, the LUT; CIE76
-  against hand-computed L*; the sweep's two errors) and `terrain-globe-colour.smoke.spec.mjs` (C1
-  at real Alps pixels against its reference; the detail moves pixels but
-  not the region's mean; C3 against its reference, and the band-width
-  sweep on the Alps and the Blue Ridge, logged).
+  against hand-computed L*; the sweep's two errors, the block folds and
+  the one-pixel folds' leak; the footprint mean of the unclamped detail
+  ratio is 1 at every texel; C1's linear chromaticity is the albedo's) and
+  `terrain-globe-colour.smoke.spec.mjs` (C1 at real Alps pixels against
+  its reference; the detail moves pixels but not the region's mean, the
+  share declared and swept over 1/2-1/10; C3 against its reference, the
+  top band's clamp, and the band-width sweep on the Alps and the Blue
+  Ridge at fold blocks of 1, 4 and 16 pixels, logged).

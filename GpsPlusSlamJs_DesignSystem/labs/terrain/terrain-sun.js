@@ -9,9 +9,12 @@
  *   up frame into ECEF (`globe-sun.ts`); `sunEnuFromGlobe` takes that same
  *   input and turns it into the place's frame, so the page makes the
  *   globe's call and the relief cannot drift from the globe's sun.
- * - WHAT IS LIT HOW: the globe draws ground as three's Lambert under one
- *   directional light of intensity `GLOBE_SUN.intensity` with no sky light,
- *   tone mapped (Neutral). `sunLight` keeps that for open flat ground
+ * - WHAT IS LIT HOW: the globe draws ground with three's
+ *   MeshStandardMaterial (roughness 0.9) under one directional light of
+ *   intensity `GLOBE_SUN.intensity` with no sky light, tone mapped
+ *   (Neutral). Its diffuse term is Lambert's, albedo / π x intensity x
+ *   dot(N, L), and that is what is modelled here; its GGX specular (a
+ *   small share on dark ground) and the atmosphere's veil are not. `sunLight` keeps that for open flat ground
  *   (exactly dot(N, L)) and adds a sky fill only where the relief differs
  *   from flat: `shadow` is the direct light's share, the rest is the flat
  *   ground's light spread by the sky view. `sunLitColour` is then the
@@ -27,11 +30,13 @@
  *
  * `SUN_GLSL` is the shader's copy of these functions, line for line; this
  * file is the reference CI runs. Dependency-free except the far field's
- * colour curves (DEC-H3), so it runs under `node --test`.
+ * colour curves and style B's light (DEC-H3), so it runs under
+ * `node --test`.
  *
  * @see terrain-sun.js.md
  */
 import { GLOBE_SUN, farColour } from "./terrain-far-field.js";
+import { NATURAL } from "./terrain-styles.js";
 
 export { GLOBE_SUN };
 
@@ -57,10 +62,35 @@ export function sunEnu({ elevationRad, azimuthRad }) {
   ];
 }
 
-/** The classic map light (north-west, 45° up): styles B and D's own. */
+/**
+ * The classic map light, styles B and D's own (north-west, 45° up): derived
+ * from style B's light, so the map lights have one source (review
+ * 2026-10-01-1650 m7; a test holds style D's to the same).
+ */
 export const MAP_KEY_LIGHT = Object.freeze(
-  sunEnu({ elevationRad: 45 * DEG, azimuthRad: 315 * DEG }),
+  sunEnu({
+    elevationRad: NATURAL.lightAltitudeDeg * DEG,
+    azimuthRad: NATURAL.lightAzimuthDeg * DEG,
+  }),
 );
+
+/**
+ * The line the page shows while the relief is lit by the globe's sun and
+ * that sun is on or below the horizon (review 2026-10-01-1650 m3): the
+ * imagery styles open on the clock's present, so at night they open dark,
+ * and without a word that reads as a fault. Null while the sun is up.
+ * `timeMs` names the moment (UTC), when known.
+ */
+export function sunDownNote(sunZ, timeMs = null) {
+  if (!(sunZ <= 0)) return null;
+  const when = Number.isFinite(timeMs)
+    ? ` at ${new Date(timeMs).toISOString().slice(0, 16).replace("T", " ")} UTC`
+    : "";
+  return (
+    `The sun is below the horizon here${when}, so the relief lit by it is ` +
+    "dark. Set a daytime (#time=) or choose the map lights."
+  );
+}
 
 /**
  * The globe's sun (its elevation and azimuth as seen at 0°N 0°E, the
@@ -153,12 +183,18 @@ export function sunLight(n, sun, { shadow, svf = 1, visibility = 1 }) {
 
 /**
  * What the globe draws for an albedo (sRGB 0-1) under a light (`sunLight`'s
- * units): three's Lambert, albedo / π x `GLOBE_SUN.intensity` x light,
- * through the Neutral tone mapping, back to sRGB. The far field's
- * `farColour` is the one implementation (DEC-H3).
+ * units): the diffuse term of its MeshStandardMaterial, albedo / π x
+ * `intensity` x light, through the Neutral tone mapping, back to sRGB.
+ * `intensity` defaults to the globe's (`GLOBE_SUN.intensity`); a page's
+ * `sunIntensity` key passes its own. The far field's `farColour` is the
+ * one implementation (DEC-H3).
  */
-export function sunLitColour(albedoSrgb, light) {
-  return farColour(albedoSrgb, light);
+export function sunLitColour(
+  albedoSrgb,
+  light,
+  intensity = GLOBE_SUN.intensity,
+) {
+  return farColour(albedoSrgb, light, intensity);
 }
 
 /**
@@ -198,8 +234,9 @@ float sunLight(vec3 n, float shadow, float svf, float visibility) {
     + (1.0 - shadow) * max(0.0, uSun.z) * svf;
 }
 
-// terrain-sun.js sunLitColour: three's Lambert at the globe's intensity,
-// Neutral tone mapped, as the globe draws its ground.
+// terrain-sun.js sunLitColour: the diffuse term of the globe's
+// MeshStandardMaterial at its sun's intensity, Neutral tone mapped, as the
+// globe draws its ground.
 vec3 sunLitColour(vec3 albedoSrgb, float light) {
   vec3 lin = sRGBTransferEOTF(vec4(albedoSrgb, 1.0)).rgb
     * uSunIntensity * max(0.0, light) / 3.141592653589793;

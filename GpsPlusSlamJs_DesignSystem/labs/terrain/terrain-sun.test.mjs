@@ -21,7 +21,7 @@ import {
   neutralToneMap,
   srgbToLinear,
 } from "./terrain-far-field.js";
-import { singleLightShade } from "./terrain-styles.js";
+import { NATURAL, SWISS, singleLightShade } from "./terrain-styles.js";
 import {
   GLOBE_SUN,
   MAP_KEY_LIGHT,
@@ -31,6 +31,7 @@ import {
   sunEnuFromGlobe,
   sunLight,
   sunLitColour,
+  sunDownNote,
   sunRelativeShade,
 } from "./terrain-sun.js";
 
@@ -251,6 +252,19 @@ describe("the map styles under the sun", () => {
     MAP_KEY_LIGHT.forEach((v, i) => close(v, fixed[i], 1e-12, `[${i}]`));
   });
 
+  // Review 2026-10-01-1650 m7: the map key light had two sources (literals
+  // here, the azimuths in the styles). It is now style B's light, and style
+  // D, which the shader lights with the same uniform, must agree with it.
+  it("is style B's light, and style D's is the same", () => {
+    const b = sunEnu({
+      elevationRad: NATURAL.lightAltitudeDeg * DEG,
+      azimuthRad: NATURAL.lightAzimuthDeg * DEG,
+    });
+    assert.deepEqual([...MAP_KEY_LIGHT], b);
+    assert.equal(SWISS.lightAzimuthDeg, NATURAL.lightAzimuthDeg);
+    assert.equal(SWISS.lightAltitudeDeg, NATURAL.lightAltitudeDeg);
+  });
+
   it("stays finite with the sun on or below the horizon (no division by zero)", () => {
     for (const el of [0, -5, -90]) {
       const sun = sunEnu({ elevationRad: el * DEG, azimuthRad: 1 });
@@ -287,6 +301,22 @@ describe("the sun-lit colour (what the globe draws)", () => {
     assert.deepEqual(sunLitColour(albedo, 0.4), farColour(albedo, 0.4));
   });
 
+  // Review 2026-10-01-1650 nit: the relief follows the globe lab's
+  // `sunIntensity` key. The intensity and the light multiply, so a page at
+  // another intensity is the default page at a scaled light, and the
+  // default IS the globe's.
+  it("takes the sun's intensity, defaulting to the globe's", () => {
+    const albedo = [0.4, 0.3, 0.2];
+    assert.deepEqual(
+      sunLitColour(albedo, 0.6, GLOBE_SUN.intensity),
+      sunLitColour(albedo, 0.6),
+    );
+    const scaled = sunLitColour(albedo, (0.6 * 3) / GLOBE_SUN.intensity);
+    sunLitColour(albedo, 0.6, 3).forEach((v, i) =>
+      close(v, scaled[i], 1e-12, `[${i}]`),
+    );
+  });
+
   it("is black with no light and never lighter with less light (property)", () => {
     assert.deepEqual(sunLitColour([0.6, 0.6, 0.6], 0), [0, 0, 0]);
     const next = random(5);
@@ -315,5 +345,46 @@ describe("the globe's intensity", () => {
     const m = /sunIntensity:\s*([0-9.]+)/.exec(source);
     assert.ok(m, "globe-surface.ts declares sunIntensity");
     assert.equal(Number(m[1]), GLOBE_SUN.intensity);
+  });
+});
+
+describe("the sun-down note (review 2026-10-01-1650 m3)", () => {
+  // The imagery styles open under the globe's sun at the clock's present,
+  // so at night they open black. The page says why instead of looking
+  // broken; while the sun is up it says nothing.
+  it("speaks only with the sun on or below the horizon, naming the time", () => {
+    assert.equal(sunDownNote(0.2, 0), null);
+    assert.equal(sunDownNote(1e-9), null);
+    const t = Date.parse("2026-06-21T23:00:00Z");
+    const note = sunDownNote(-0.3, t);
+    assert.match(note, /below the horizon/);
+    assert.match(note, /2026-06-21 23:00 UTC/);
+    assert.match(note, /#time=/);
+    assert.match(sunDownNote(0), /below the horizon here,/);
+    assert.equal(sunDownNote(Number.NaN), null);
+  });
+});
+
+describe("the cloud-shadow seat in the shader (review 2026-10-01-1650 m4)", () => {
+  // Every direct sun term must go through `terrainSunVisibility`, so the
+  // cloud-shadow port dims all of them. The far field once lit its texels
+  // with the bare `max(0.0, uSun.z)`, bypassing the seat. In the shader the
+  // bare sun height may appear only in `sunLight`'s sky fill (deliberately
+  // undimmed, see terrain-sun.js.md) and in the relative shade's floor.
+  it("has no direct sun term outside the seat", () => {
+    const material = readFileSync(
+      new URL("./terrain-material.js", import.meta.url),
+      "utf8",
+    );
+    const bare = (text) => text.match(/max\(0\.0, uSun\.z\)/g) ?? [];
+    assert.deepEqual(bare(material), [], "terrain-material.js");
+    // SUN_GLSL: exactly one, the sky fill in sunLight.
+    const sun = readFileSync(
+      new URL("./terrain-sun.js", import.meta.url),
+      "utf8",
+    );
+    const glsl = sun.slice(sun.indexOf("export const SUN_GLSL"));
+    assert.equal(bare(glsl).length, 1);
+    assert.match(glsl, /\(1\.0 - shadow\) \* max\(0\.0, uSun\.z\) \* svf/);
   });
 });

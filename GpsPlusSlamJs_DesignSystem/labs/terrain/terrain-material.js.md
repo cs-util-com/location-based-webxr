@@ -40,7 +40,9 @@
     and tilted-plane checks still hold it to `landColour`.
   - The far field (`uNearW` < 1): the grid's sRGB texel decoded with
     three's `sRGBTransferEOTF`, lit as the globe lights it (`farColour`:
-    times `uSunIntensity` / π, and with `light` 1 times the sun's height),
+    times `uSunIntensity` / π, and with `light` 1 times the sun's direct
+    term on flat ground, `sunDirect(up, vis)`, through the cloud-shadow
+    seat like every other direct term: review 2026-10-01-1650 m4),
     its relief ratio faded in by `uFarReliefW`,
     tone mapped with three's own `NeutralToneMapping` (the chunk is
     included, since the lab renders with no tone mapping), encoded with
@@ -68,7 +70,11 @@
   - `globe-bands` (`uStyle` 5): the region's band ramp (`uLutBands`, 256 x
     1 over 0-`uLutMaxM`, `createLutTexture`) or its sea colour
     (`uBandSea`, when `uBandSeaOn`) under `sunLight`, as the globe lights
-    its pixels. Until the page builds the ramp it reads style A's LUT.
+    its pixels. `uBandsOn` is 0 until the page has built the DRAWN
+    region's ramp (no imagery yet, imagery that failed, or a new region
+    whose imagery is still loading; the page resets it on every region
+    change), and globe-bands then draws style B (review 2026-10-01-1650
+    m6: it drew style A's LUT or the previous region's ramp).
   - The snow mask (`uSnowMask` 1) draws B's snow weight as grey in any
     style, for the smoke and for judging the line by eye.
   - Half floats and bytes only (plan §9 finding 13): every texture is

@@ -42,15 +42,23 @@ side }`: `extentM` includes the padding; `side` counts both edges.
     - the light (globe round-5 plan §3.3): `light` (0 the map styles' own
       lights, 1 the globe's sun at the page's clock; with no key, the
       style's own, `STYLE_LIGHT`). The clock's `time`/`timeScale` are the
-      globe lab's keys, read on the page by `/globe/globe-clock.js`.
+      globe lab's keys, read on the page by `/globe/globe-clock.js`;
+      `sunIntensity` (0-8, the globe's 5) is the globe lab's key too, so a
+      link tuned there lights the relief alike;
+    - `dpr` (0-3, 0): the drawing buffer's pixel ratio, 0 the device's
+      capped at 2; the comparison page pins 1 (review 2026-10-01-1650 M1).
   - `LOOK_DEFAULTS` `{ shadow: 0.8, shade: 1.6, exag: 3 }`: the owner's look
     values (globe round-5 plan 2026-10-01-0945 DEC-GL5-5), every style's
     defaults. Before: exaggeration 2, slope gain 1, and each style's
     reference shadow (A and C 0.45, B 0.65, D 0.6, E 0.55), which the
     styles' reference constants (`PASTEL_ATLAS.shadow` and kin) still
     carry for their unit tests.
-  - `STYLE_SHADOW`: each style's own shading strength (all 0.8 since
-    DEC-GL5-5; the table stays so a style can differ again).
+  - The shadow is `LOOK_DEFAULTS.shadow` for every style (the per-style
+    `STYLE_SHADOW` table held 0.8 for each since DEC-GL5-5 and was
+    collapsed, review 2026-10-01-1650 nit).
+  - `pixelRatioFor(dpr, deviceRatio)`: the `dpr` key when above 0, else
+    the device's ratio capped at 2 (1 for a non-positive or non-numeric
+    device ratio).
   - `STYLE_LIGHT`: each style's own light (every map style 0, the imagery
     styles 1: they are the globe's colours under the globe's sun).
   - `detail` (0-1, 0.5): `globe-albedo`'s weight of style B's ramp as a
