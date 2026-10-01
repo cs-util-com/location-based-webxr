@@ -493,3 +493,55 @@ describe("codeVisitPoses", () => {
     expect(combineCodeVisits(poses)?.visitCount).toBe(1);
   });
 });
+
+describe("the move boundary (authoring plan 2026-09-28-0953 §3.6, M5b)", () => {
+  // Why these tests matter (§7j #12): once the author says a code moved
+  // ("Use the new spot"), the visits before describe the OLD spot. Combined
+  // with the visits after, the summary's estimate would sit between the two
+  // spots - a place the code never was. The visit that moved it marks the
+  // code, and the combiner reads only from the latest such mark on.
+  it("marks a code this visit moved, and only that code, and keeps the mark through the draft", () => {
+    const entry = buildVisitLogEntry(
+      input({
+        codes: [
+          { levelId: "lvl", odomPose: CODE_POSE },
+          { levelId: "other", odomPose: CODE_POSE },
+        ],
+        moved: ["lvl"],
+      }),
+    );
+    expect(entry.codes.find((c) => c.levelId === "lvl")?.moved).toBe(true);
+    expect(entry.codes.find((c) => c.levelId === "other")?.moved).toBe(
+      undefined,
+    );
+    expect(parseVisitLogEntry(serializeVisitLogEntry(entry))!.codes).toEqual(
+      entry.codes,
+    );
+    // Anything but `true` in a draft file is no mark.
+    const raw = JSON.parse(serializeVisitLogEntry(entry)) as {
+      codes: Record<string, unknown>[];
+    };
+    raw.codes[0]!["moved"] = "yes";
+    expect(
+      parseVisitLogEntry(JSON.stringify(raw))!.codes[0]!.moved,
+    ).toBeUndefined();
+  });
+
+  it("combines only the visits from the latest move of the code on", () => {
+    const before = buildVisitLogEntry(input({ visitId: "before", atMs: 1 }));
+    const moved = buildVisitLogEntry(
+      input({ visitId: "moved", atMs: 2, moved: ["lvl"] }),
+    );
+    const after = buildVisitLogEntry(input({ visitId: "after", atMs: 3 }));
+    expect(codeVisitPoses([before, moved, after], "lvl")).toHaveLength(2);
+    expect(codeVisitPoses([before, after], "lvl")).toHaveLength(2);
+    expect(codeVisitPoses([before, moved, after], "other")).toEqual([]);
+    // A second move: only from it on.
+    const again = buildVisitLogEntry(
+      input({ visitId: "again", atMs: 4, moved: ["lvl"] }),
+    );
+    expect(codeVisitPoses([before, moved, after, again], "lvl")).toHaveLength(
+      1,
+    );
+  });
+});

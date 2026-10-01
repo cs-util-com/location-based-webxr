@@ -28,7 +28,8 @@ one file per visit) so a reload keeps it.
   `pathAlignment`), `codes` (`levelId` + `geo`).
 - `codeVisitPoses(entries, levelId): CodeVisitPose[]` - the input of
   `combineCodeVisits` for one code (a visit without an accuracy hands NaN,
-  which the combiner skips).
+  which the combiner skips), from the code's latest move boundary on
+  (`entries` oldest first).
 - `serializeVisitLogEntry(entry): string` / `parseVisitLogEntry(text)` - the
   draft file: compact arrays, degrees rounded to 7 decimals (about 1 cm),
   accuracy to 0.1 m; read back defensively (null for a file that is not
@@ -77,6 +78,13 @@ entry and joined back in `codeVisitPoses`.
   visit a stored pose came from by it, to grade what visitors get (M3a/M3b
   review #2). Version 1 files without it read as before; an unreadable one
   costs that field, not the code.
+- **`moved`** (optional, per code, only ever `true`; authoring plan §3.6,
+  M5b, §7j #12): THIS visit moved the code to a new spot (the author
+  answered "Use the new spot"; `input.moved` lists the levels). Earlier
+  visits describe the old spot, so `codeVisitPoses` reads only from the
+  latest marked visit on, and the summary's estimate never sits between
+  two spots. An undo before Finish re-records the visit without it.
+  Anything but `true` in a file reads as no mark.
 
 ## Parameters and what they rest on
 
@@ -138,7 +146,8 @@ combineCodeVisits(codeVisitPoses(log.entries(), levelId));
   code from its last look; the saved pose on that code only, round-tripped,
   an unreadable one costing only itself; `thinPath` (cases and a property); the draft file round trip (case
   and property) and its defensive read; the in-memory log; `codeVisitPoses`
-  into `combineCodeVisits`; `deviceSamples` keeps device fixes with their
+  into `combineCodeVisits`; the move boundary (marked on the moved code
+  only, round-tripped, and combining only from the latest move on); `deviceSamples` keeps device fixes with their
   odometry and time and drops the votes.
 - `code-displacement.test.ts` and the M5a block of
   `viewer-vote-strength.test.ts` read the store's history (votes present)
