@@ -7,7 +7,7 @@
   - `COMPARE_VARIANTS`: the rows, `{ id, label, hash, altitudesKm? }`: A,
     B, C (with its own captures at 1500, 900, 600 and 300 km, where its
     far-field blend acts), `globe-albedo` at detail 0 and 0.5,
-    `globe-bands`. Another agent's styles join by appending a row (one line
+    `globe-bands`, `globe-classes` at colour width 12 and 24. Another agent's styles join by appending a row (one line
     each).
   - `COMPARE_PLAN`: the place (`alps`), the capture altitudes (300, 100, 30,
     10 km), the hand-over altitude (150 km, the globe's `handOverKm`), the

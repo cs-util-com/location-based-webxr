@@ -62,11 +62,13 @@ describe("the style registry", () => {
         "D:swiss",
         "E:clay",
         "C1:globe-albedo",
+        "C2:globe-classes",
         "C3:globe-bands",
       ],
     );
     assert.equal(SHADER_STYLE["globe-albedo"], 4);
     assert.equal(SHADER_STYLE["globe-bands"], 5);
+    assert.equal(SHADER_STYLE["globe-classes"], 6);
   });
   it("gives every style a shader branch; C draws as A", () => {
     for (const id of Object.keys(TERRAIN_STYLES)) {

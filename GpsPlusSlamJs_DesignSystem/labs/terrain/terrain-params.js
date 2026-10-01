@@ -13,6 +13,7 @@ import {
 } from "./terrain-exaggeration.js";
 import { FAR_FIELD, GLOBE_SUN } from "./terrain-far-field.js";
 import { GLOBE_ALBEDO, GLOBE_BANDS } from "./terrain-globe-colour.js";
+import { GLOBE_CLASSES } from "./terrain-globe-classes.js";
 import { PASTEL_ATLAS } from "./terrain-style.js";
 import { NATURAL, SWISS, TERRAIN_STYLES } from "./terrain-styles.js";
 
@@ -173,6 +174,11 @@ export const PARAMS = Object.freeze({
   /** `globe-bands`' band width, metres (the plan's swept range). */
   band: { fallback: GLOBE_BANDS.widthM, min: 100, max: 800 },
   /**
+   * `globe-classes`' colour kernel width, CIE76 ΔE: how sharply the
+   * imagery's colour picks one land class over its neighbours.
+   */
+  classWidth: { fallback: GLOBE_CLASSES.widthDE, min: 4, max: 40 },
+  /**
    * The sun's intensity, the globe lab's own `sunIntensity` key and range
    * (default the globe surface's 5), so a link tuned there lights the
    * relief the same (review 2026-10-01-1650 nit).
@@ -201,10 +207,15 @@ export const STYLE_LIGHT = Object.freeze({
   // The imagery styles are the globe's colours: under the globe's sun.
   "globe-albedo": 1,
   "globe-bands": 1,
+  "globe-classes": 1,
 });
 
 /** The styles coloured from the globe's imagery. */
-export const IMAGERY_STYLES = new Set(["globe-albedo", "globe-bands"]);
+export const IMAGERY_STYLES = new Set([
+  "globe-albedo",
+  "globe-bands",
+  "globe-classes",
+]);
 
 /** A number from the params within its range, or its fallback. */
 function readNumber(params, name, { fallback, min, max }) {

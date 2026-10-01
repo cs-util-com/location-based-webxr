@@ -268,6 +268,7 @@ describe("readTerrainParams", () => {
     // The imagery styles are the globe's colours, so the globe's sun.
     assert.equal(STYLE_LIGHT["globe-albedo"], 1);
     assert.equal(STYLE_LIGHT["globe-bands"], 1);
+    assert.equal(STYLE_LIGHT["globe-classes"], 1);
   });
 
   // Globe round-5 §3.3: the imagery is fetched for the far field and for
@@ -288,7 +289,16 @@ describe("readTerrainParams", () => {
     assert.equal(readTerrainParams("band=100").band, 100);
     assert.equal(readTerrainParams("band=800").band, 800);
     assert.equal(readTerrainParams("band=50").band, 300);
-    assert.deepEqual([...IMAGERY_STYLES], ["globe-albedo", "globe-bands"]);
+    assert.deepEqual(
+      [...IMAGERY_STYLES],
+      ["globe-albedo", "globe-bands", "globe-classes"],
+    );
+  });
+
+  it("reads globe-classes' colour width in 4-40 ΔE", () => {
+    assert.equal(readTerrainParams("").classWidth, 12);
+    assert.equal(readTerrainParams("classWidth=24").classWidth, 24);
+    assert.equal(readTerrainParams("classWidth=2").classWidth, 12);
   });
 
   it("reads globe-albedo's detail weight in 0-1", () => {

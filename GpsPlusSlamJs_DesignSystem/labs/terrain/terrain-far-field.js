@@ -129,6 +129,54 @@ export function sampleImagery(tiles, lat, lng) {
 }
 
 /**
+ * The imagery's LAND colour and its water share at a position (globe
+ * round-5 §3.3, `globe-classes`): the tiles' alpha is the globe's water
+ * mask (255 land, 0 water; `GpsPlusSlamJs_Globe/assets/PROVENANCE.md`).
+ * Decoded through a 2D canvas, a water pixel's colour comes back black (its
+ * alpha is 0 and the canvas stores premultiplied colour), so a plain
+ * bilinear read darkens every shore. Here the four pixels are weighted by
+ * their land share as well: `rgb` is the bilinear colour of the land alone
+ * (null where all four pixels are water), `water` the bilinear water
+ * share (0-1). Null where a contributing pixel is missing.
+ */
+export function sampleImageryLand(tiles, lat, lng) {
+  if (tiles.length === 0) return null;
+  const z = tiles[0].z;
+  const size = tiles[0].width;
+  const degPerPx = 180 / 2 ** z / size;
+  const byKey = new Map(tiles.map((t) => [`${t.x}/${t.y}`, t]));
+  const gx = (lng + 180) / degPerPx - 0.5;
+  const gy = (90 - lat) / degPerPx - 0.5;
+  const x0 = Math.floor(gx);
+  const y0 = Math.floor(gy);
+  const fx = gx - x0;
+  const fy = gy - y0;
+  const rgb = [0, 0, 0];
+  let land = 0;
+  let water = 0;
+  for (const [dx, dy, w] of [
+    [0, 0, (1 - fx) * (1 - fy)],
+    [1, 0, fx * (1 - fy)],
+    [0, 1, (1 - fx) * fy],
+    [1, 1, fx * fy],
+  ]) {
+    const px = x0 + dx;
+    const py = y0 + dy;
+    const t = byKey.get(`${Math.floor(px / size)}/${Math.floor(py / size)}`);
+    if (!t) return null;
+    const i = 4 * ((py - t.y * size) * size + (px - t.x * size));
+    const a = t.data[i + 3] / 255;
+    water += w * (1 - a);
+    land += w * a;
+    for (let c = 0; c < 3; c++) rgb[c] += (w * a * t.data[i + c]) / 255;
+  }
+  return {
+    rgb: land > 1e-9 ? rgb.map((v) => v / land) : null,
+    water: Math.min(1, Math.max(0, water)),
+  };
+}
+
+/**
  * The far field's grid: `side` x `side` RGBA bytes over `±halfM`, texel i
  * centred at `-halfM + (i + 0.5) x 2 halfM / side`, row 0 at the SOUTH edge
  * (the order of the lab's other grids). A texel the imagery cannot answer

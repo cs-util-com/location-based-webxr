@@ -8,8 +8,9 @@
 - Public API:
   - `TERRAIN_STYLES`: `pastel` (A), `natural` (B), `globe` (C), `swiss`
     (D), `clay` (E), then the styles coloured from the globe imagery
-    (globe round-5 §3.3, `terrain-globe-colour.js`): `globe-albedo` (C1)
-    and `globe-bands` (C3);
+    (globe round-5 §3.3, `terrain-globe-colour.js`): `globe-albedo` (C1),
+    `globe-classes` (C2, `terrain-globe-classes.js`) and `globe-bands`
+    (C3);
     each `{ id, letter, label }`, in the plate's order.
   - `SHADER_STYLE`: the shader's `uStyle` per style: A 0, B 1, D 2, E 3,
     C1 4, C3 5; C draws as A (0) with the far field on (`terrain-far-field.js`).

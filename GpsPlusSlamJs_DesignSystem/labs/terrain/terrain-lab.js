@@ -50,7 +50,13 @@ import {
   imageryTiles,
   regionBox,
   sampleImagery,
+  sampleImageryLand,
 } from "./terrain-far-field.js";
+import {
+  CLASS_SWEEP,
+  GLOBE_CLASSES,
+  classSweep,
+} from "./terrain-globe-classes.js";
 import { globeSource } from "/globe/globe-sources.js";
 import {
   readGlobeClockSetting,
@@ -659,6 +665,15 @@ function start() {
     lut: null,
     /** globe-bands: the share of land posts above the top band, and both heights. */
     clamp: null,
+    /**
+     * globe-classes: the imagery's land colour and its water share as 1 km
+     * grids over the region (`sampleImageryLand`), and their textures.
+     */
+    classRegion: 0,
+    classLand: null,
+    classWater: null,
+    classLandTexture: null,
+    classWaterTexture: null,
   };
   /**
    * globe-bands' samples: every imagery pixel whose footprint lies in the
@@ -733,6 +748,38 @@ function start() {
       share: land > 0 ? above / land : 0,
     };
   };
+  /**
+   * globe-classes' grids for the drawn region: the land colour (alpha 0
+   * where the imagery cannot answer; the water's colour where a texel is
+   * all water) and the water share (red), both on the albedo grid's texels.
+   */
+  const buildClassGrids = () => {
+    const side = GLOBE_ALBEDO.side;
+    const step = (2 * spec.halfExtentM) / side;
+    const land = new Uint8Array(side * side * 4);
+    const water = new Uint8Array(side * side * 4);
+    const byte = (v) => Math.round(Math.min(1, Math.max(0, v)) * 255);
+    for (let r = 0; r < side; r++) {
+      for (let c = 0; c < side; c++) {
+        const { lat, lng } = frame.toLatLng({
+          x: -spec.halfExtentM + (c + 0.5) * step,
+          y: -spec.halfExtentM + (r + 0.5) * step,
+        });
+        const s = sampleImageryLand(far.tiles, lat, lng);
+        if (s === null) continue;
+        const i = 4 * (r * side + c);
+        land.set([...(s.rgb ?? GLOBE_CLASSES.water).map(byte), 255], i);
+        water.set([byte(s.water), byte(s.water), byte(s.water), 255], i);
+      }
+    }
+    globeColour.classLandTexture?.dispose();
+    globeColour.classWaterTexture?.dispose();
+    globeColour.classLand = land;
+    globeColour.classWater = water;
+    globeColour.classLandTexture = createFarTexture(land, side);
+    globeColour.classWaterTexture = createFarTexture(water, side);
+    globeColour.classRegion = run.regionId;
+  };
   const updateGlobeColour = () => {
     if (
       !material ||
@@ -756,6 +803,12 @@ function start() {
       globeColour.albedoRegion = run.regionId;
     }
     u.uAlbedo.value = globeColour.albedo;
+    if (params.style === "globe-classes") {
+      if (globeColour.classRegion !== run.regionId) buildClassGrids();
+      u.uClassLand.value = globeColour.classLandTexture;
+      u.uClassWater.value = globeColour.classWaterTexture;
+      return;
+    }
     if (!run.fields || !run.relief) return;
     const key = JSON.stringify([
       run.regionId,
@@ -1044,6 +1097,9 @@ function start() {
       // globe-bands draws style B until this region's ramp exists, never
       // the previous region's (review 2026-10-01-1650 m6).
       material.uniforms.uBandsOn.value = 0;
+      // globe-classes likewise, until this region's grids exist.
+      material.uniforms.uClassLand.value = EMPTY_TEXTURE;
+      material.uniforms.uClassWater.value = EMPTY_TEXTURE;
     }
     errors.clear();
     hRange = [0, 4000];
@@ -1253,9 +1309,13 @@ function start() {
                 }))
               : null,
           bandsOn: material ? material.uniforms.uBandsOn.value === 1 : false,
+          classes:
+            globeColour.classRegion === run.regionId &&
+            globeColour.classLand !== null,
           clamp: globeColour.clamp ? { ...globeColour.clamp } : null,
         },
         band: params.band,
+        classWidth: params.classWidth,
         light: params.light,
         sunIntensity: params.sunIntensity,
         // The drawing buffer the pixels are read from, and the camera's
@@ -1384,6 +1444,78 @@ function start() {
       globeColour.samples
         ? bandSweep(globeColour.samples, widths, { blockPx })
         : null,
+    /**
+     * globe-classes' grids at ENU metres: the land colour (sRGB 0-1) and
+     * the water share, bilinear as the shader reads them; null before the
+     * grids or where the imagery cannot answer.
+     */
+    classAt: (x, y) => {
+      if (globeColour.classRegion !== run.regionId || !globeColour.classLand)
+        return null;
+      const side = GLOBE_ALBEDO.side;
+      const land = farFieldAt(
+        globeColour.classLand,
+        side,
+        spec.halfExtentM,
+        x,
+        y,
+      );
+      const water = farFieldAt(
+        globeColour.classWater,
+        side,
+        spec.halfExtentM,
+        x,
+        y,
+      );
+      return land && water ? { land, water: water[0] } : null;
+    },
+    /**
+     * globe-classes' class-threshold sweep over the drawn region
+     * (`classSweep`, settings `CLASS_SWEEP` unless given): null before the
+     * grids and the relief exist.
+     */
+    classSweep: (settings = CLASS_SWEEP) => {
+      if (!run.fields || !run.relief || !globeColour.classLand) return null;
+      const f = run.fields;
+      const side = GLOBE_ALBEDO.side;
+      return classSweep(
+        {
+          posts: {
+            side: spec.side,
+            spacingM: spec.spacingM,
+            extentM: spec.extentM,
+            height: f.height,
+            gx: f.gx,
+            gy: f.gy,
+            small: f.reliefSmall,
+            valid: f.valid,
+          },
+          datum: run.relief.datum,
+          latDeg: place.centre.lat,
+          halfM: spec.halfExtentM,
+          footprint: footprintM(FAR_FIELD.level, place.centre.lat),
+          coarseSide: 64,
+          imageryAt: (x, y) => {
+            const land = farFieldAt(
+              globeColour.classLand,
+              side,
+              spec.halfExtentM,
+              x,
+              y,
+            );
+            const water = farFieldAt(
+              globeColour.classWater,
+              side,
+              spec.halfExtentM,
+              x,
+              y,
+            );
+            return land && water ? { land, water: water[0] } : null;
+          },
+        },
+        settings,
+      );
+    },
     /** The imagery styles' albedo grid at ENU metres (sRGB 0-1), or null. */
     albedoAt: (x, y) =>
       globeColour.grid && spec

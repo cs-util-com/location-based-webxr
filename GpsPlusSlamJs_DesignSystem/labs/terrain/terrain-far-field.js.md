@@ -17,7 +17,14 @@
   - `regionBox(toLatLng, halfM, pixelDeg?)`: the box of the region's
     corners, widened by one imagery pixel.
   - `sampleImagery(tiles, lat, lng)`: bilinear sRGB 0-1, each pixel at its
-    centre, across tile edges; null where a pixel is missing.
+    centre, across tile edges; null where a pixel is missing. A water
+    pixel (alpha 0, the globe's water mask) reads BLACK here: the page's
+    2D-canvas decode stores premultiplied colour and loses the colour
+    under the mask.
+  - `sampleImageryLand(tiles, lat, lng)` -> `{ rgb, water }`: the
+    bilinear colour of the LAND pixels alone (weighted by their alpha; null
+    where all four are water) and the bilinear water share (1 - alpha);
+    null where a pixel is missing. `globe-classes`' imagery read.
   - `farFieldGrid({ side, halfM, toLatLng, sample })`: the grid's RGBA
     bytes, texel i centred at `-halfM + (i + 0.5) x 2 halfM / side`, row 0
     south; alpha 0 where the imagery has no answer (the shader keeps the

@@ -292,8 +292,11 @@ export function bandRampLut(ramp, { size, maxM } = LUT) {
   return out;
 }
 
-/** sRGB (0-1) to CIELAB (D65). */
-function lab(srgb) {
+/**
+ * sRGB (0-1) to CIELAB (D65): `deltaE76`'s space, and `globe-classes`'
+ * colour kernel's (the shader's `srgbToLab` mirrors it).
+ */
+export function srgbToLab(srgb) {
   const [r, g, b] = toLinear(srgb);
   const x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047;
   const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -306,8 +309,8 @@ function lab(srgb) {
 
 /** CIE76 colour difference of two sRGB colours (0-1): about 2.3 is just noticeable. */
 export function deltaE76(a, b) {
-  const [la, aa, ba] = lab(a);
-  const [lb, ab, bb] = lab(b);
+  const [la, aa, ba] = srgbToLab(a);
+  const [lb, ab, bb] = srgbToLab(b);
   return Math.hypot(la - lb, aa - ab, ba - bb);
 }
 

@@ -44,6 +44,12 @@ import {
 } from "./terrain-styles.js";
 import { GLOBE_SUN, MAP_KEY_LIGHT, SUN_GLSL } from "./terrain-sun.js";
 import { GLOBE_ALBEDO } from "./terrain-globe-colour.js";
+import {
+  GLOBE_CLASSES,
+  PROTOTYPE_LAB,
+  PROTOTYPE_LINEAR,
+  WATER_LINEAR,
+} from "./terrain-globe-classes.js";
 
 const DEG = Math.PI / 180;
 
@@ -152,6 +158,20 @@ uniform sampler2D uLutBands;
 uniform vec3 uBandSea;
 uniform float uBandSeaOn;
 uniform float uBandsOn;
+// globe-classes (terrain-globe-classes.js): the imagery's land colour and
+// its water share over the region (the 1 km grids), the land classes'
+// prototypes (CIELAB and linear: forest, grass, rock, snow), the water's
+// colour (linear), the colour kernel's width (ΔE), the affinity floor,
+// water's flat-slope range (°) and the ratio's clamp.
+uniform sampler2D uClassLand;
+uniform sampler2D uClassWater;
+uniform vec3 uClassLab[4];
+uniform vec3 uClassLin[4];
+uniform vec3 uClassWaterLin;
+uniform float uClassWidth;
+uniform float uClassFloor;
+uniform vec2 uClassWaterDeg;
+uniform vec2 uClassRatio;
 // The far field.
 uniform float uNearW;
 uniform float uFarReliefW;
@@ -307,6 +327,89 @@ vec3 globeBands(float h, vec2 grad, float small, float svf, float vis) {
   return sunLitColour(base, sunLight(reliefNormal(grad, uGain), uShadow, svf, vis));
 }
 
+// terrain-globe-colour.js srgbToLab (D65); the cube root's argument is
+// kept positive, since mix() evaluates both branches.
+vec3 srgbToLab(vec3 srgb) {
+  vec3 c = sRGBTransferEOTF(vec4(srgb, 1.0)).rgb;
+  vec3 xyz = vec3(
+    dot(c, vec3(0.4124, 0.3576, 0.1805)) / 0.95047,
+    dot(c, vec3(0.2126, 0.7152, 0.0722)),
+    dot(c, vec3(0.0193, 0.1192, 0.9505)) / 1.08883);
+  vec3 low = ((24389.0 / 27.0) * xyz + 16.0) / 116.0;
+  vec3 cube = pow(max(xyz, vec3(1e-6)), vec3(1.0 / 3.0));
+  vec3 f = mix(low, cube, step(vec3(216.0 / 24389.0), xyz));
+  return vec3(116.0 * f.y - 16.0, 500.0 * (f.x - f.y), 200.0 * (f.y - f.z));
+}
+
+float classDistance2(vec3 lab, vec3 proto) {
+  vec3 d = lab - proto;
+  return dot(d, d);
+}
+
+// terrain-globe-classes.js landClassWeights: x forest, y grass, z rock,
+// w snow; wholly the nearest when every kernel vanishes.
+vec4 landClassWeights(vec3 landSrgb) {
+  vec3 lab = srgbToLab(landSrgb);
+  vec4 d2 = vec4(
+    classDistance2(lab, uClassLab[0]), classDistance2(lab, uClassLab[1]),
+    classDistance2(lab, uClassLab[2]), classDistance2(lab, uClassLab[3]));
+  vec4 k = exp(-d2 / (2.0 * uClassWidth * uClassWidth));
+  float sum = dot(k, vec4(1.0));
+  if (sum >= 1e-6) return k / sum;
+  float m = min(min(d2.x, d2.y), min(d2.z, d2.w));
+  vec4 nearest = vec4(equal(d2, vec4(m)));
+  return nearest / dot(nearest, vec4(1.0));
+}
+
+// terrain-globe-classes.js classAffinities: the land classes' (x forest,
+// y grass, z rock, w snow) and, in water, the water's.
+vec4 classAffinities(float h, vec2 grad, float small, out float water) {
+  if (h <= 0.0) {
+    water = 1.0;
+    return vec4(uClassFloor);
+  }
+  vec4 c = naturalCover(h, grad, small);
+  vec2 sn = naturalSnow(h, grad, small);
+  float slopeDeg = degrees(atan(length(grad)));
+  vec4 a = vec4(
+    (1.0 - c.y) * (1.0 - c.w),
+    (1.0 - sn.x) * (1.0 - c.w),
+    max(max(c.w, c.z), sn.y),
+    sn.x);
+  water = uClassFloor + (1.0 - uClassFloor)
+    * (1.0 - smoothstep(uClassWaterDeg.x, uClassWaterDeg.y, slopeDeg));
+  return uClassFloor + (1.0 - uClassFloor) * a;
+}
+
+vec3 classMix(vec4 w) {
+  return w.x * uClassLin[0] + w.y * uClassLin[1]
+    + w.z * uClassLin[2] + w.w * uClassLin[3];
+}
+
+// terrain-globe-classes.js classAlbedo under the sun term, as the globe
+// lights its pixels; style B where the imagery has no texel.
+vec3 globeClasses(float h, vec2 grad, float small, float svf, float vis) {
+  vec2 uv = regionUv();
+  vec4 land = texture2D(uClassLand, uv);
+  if (land.a < 0.5) return natural(h, grad, small, svf, vis);
+  float water = texture2D(uClassWater, uv).r;
+  float waterA;
+  vec4 a = classAffinities(h, grad, small, waterA);
+  vec4 coarse = landClassWeights(land.rgb);
+  vec4 raw = coarse * a;
+  float rawSum = dot(raw, vec4(1.0));
+  vec3 ratio = clamp(
+    classMix(raw / rawSum) / max(classMix(coarse), vec3(1e-4)),
+    uClassRatio.x, uClassRatio.y);
+  vec3 landLin = sRGBTransferEOTF(vec4(land.rgb, 1.0)).rgb * ratio;
+  float landShare = (1.0 - water) * rawSum;
+  float waterShare = water * waterA;
+  float wf = waterShare / max(landShare + waterShare, 1e-6);
+  vec3 lin = clamp(mix(landLin, uClassWaterLin, wf), 0.0, 1.0);
+  vec3 albedo = sRGBTransferOETF(vec4(lin, 1.0)).rgb;
+  return sunLitColour(albedo, sunLight(reliefNormal(grad, uGain), uShadow, svf, vis));
+}
+
 void main() {
   vec4 d = texture2D(uData, vUv);
   vec4 a = texture2D(uAux, vUv);
@@ -334,6 +437,8 @@ void main() {
     col = globeAlbedo(h, d.gb, small, a.b, vis);
   } else if (uStyle == 5) {
     col = globeBands(h, d.gb, small, a.b, vis);
+  } else if (uStyle == 6) {
+    col = globeClasses(h, d.gb, small, a.b, vis);
   } else {
     if (uStyle == 3) {
       col = h <= 0.0 ? uClaySea : uClay;
@@ -569,6 +674,19 @@ export function createTerrainMaterial(textures, { side, extentM, datum }) {
       uBandSea: { value: new THREE.Vector3(0.5, 0.5, 0.5) },
       uBandSeaOn: { value: 0 },
       uBandsOn: { value: 0 },
+      uClassLand: { value: EMPTY_FAR },
+      uClassWater: { value: EMPTY_FAR },
+      uClassLab: { value: PROTOTYPE_LAB.map((p) => new THREE.Vector3(...p)) },
+      uClassLin: {
+        value: PROTOTYPE_LINEAR.map((p) => new THREE.Vector3(...p)),
+      },
+      uClassWaterLin: { value: new THREE.Vector3(...WATER_LINEAR) },
+      uClassWidth: { value: GLOBE_CLASSES.widthDE },
+      uClassFloor: { value: GLOBE_CLASSES.floor },
+      uClassWaterDeg: {
+        value: new THREE.Vector2(...GLOBE_CLASSES.waterFlatDeg),
+      },
+      uClassRatio: { value: new THREE.Vector2(...GLOBE_CLASSES.ratioRange) },
       uNearW: { value: 1 },
       uFarReliefW: { value: 0 },
       uHalfM: { value: extentM },
@@ -614,6 +732,7 @@ export function applyStyle(material, params, { shaderStyle, latDeg, hRange }) {
   u.uHRange.value.set(hRange[0], hRange[1]);
   u.uSnowMask.value = params.snowMask;
   u.uAlbedoDetail.value = params.detail;
+  u.uClassWidth.value = params.classWidth;
 }
 
 /**

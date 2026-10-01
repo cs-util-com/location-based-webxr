@@ -52,6 +52,11 @@ export const TERRAIN_STYLES = Object.freeze({
     letter: "C1",
     label: "Globe albedo (Blue Marble under the sun)",
   }),
+  "globe-classes": Object.freeze({
+    id: "globe-classes",
+    letter: "C2",
+    label: "Globe classes (Blue Marble cover, placed by relief)",
+  }),
   "globe-bands": Object.freeze({
     id: "globe-bands",
     letter: "C3",
@@ -68,6 +73,7 @@ export const SHADER_STYLE = Object.freeze({
   clay: 3,
   "globe-albedo": 4,
   "globe-bands": 5,
+  "globe-classes": 6,
 });
 
 /**

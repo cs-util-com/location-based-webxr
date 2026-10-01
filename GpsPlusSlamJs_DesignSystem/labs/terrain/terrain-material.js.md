@@ -75,6 +75,20 @@
     whose imagery is still loading; the page resets it on every region
     change), and globe-bands then draws style B (review 2026-10-01-1650
     m6: it drew style A's LUT or the previous region's ramp).
+  - `globe-classes` (`uStyle` 6, `terrain-globe-classes.js`):
+    `uClassLand` and `uClassWater` (the imagery's land colour and water
+    share, 1 km grids at `regionUv`) give the land classes' coarse
+    weights (`landClassWeights`, a Gaussian kernel on the CIELAB distance
+    to `uClassLab`, width `uClassWidth`) and the water share; each is
+    weighed by the class's affinity for the fragment (`classAffinities`,
+    from style B's `naturalCover` and `naturalSnow`, floored at
+    `uClassFloor`, water on slopes under `uClassWaterDeg`); the land
+    colour is scaled by the ratio of the fine to the coarse prototype mix
+    (`uClassLin`, clamped to `uClassRatio`) and mixed toward
+    `uClassWaterLin` by the fine water share, then lit by `sunLight`.
+    Style B where the land grid has no texel. `srgbToLab` mirrors
+    `terrain-globe-colour.js` (the cube root's argument kept positive,
+    since `mix` evaluates both branches).
   - The snow mask (`uSnowMask` 1) draws B's snow weight as grey in any
     style, for the smoke and for judging the line by eye.
   - Half floats and bytes only (plan §9 finding 13): every texture is

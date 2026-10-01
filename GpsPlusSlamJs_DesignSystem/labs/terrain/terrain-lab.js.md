@@ -42,8 +42,12 @@
     `boxMeanAt`), rebuilt with the relief or style B's lines; a new region
     resets both to `EMPTY_TEXTURE` (style B shows meanwhile); for
     `globe-bands` every imagery pixel whose footprint lies in the region,
-    paired with the mean height over that footprint (with a checkerboard
-    fold), once per relief, and the band ramp's LUT per `band`;
+    paired with the mean height over that footprint (with its global
+    pixel indices for the sweep's block folds), once per relief, and the
+    band ramp's LUT per `band`; for `globe-classes` the imagery's land
+    colour and water share (`sampleImageryLand`) on the albedo texels, as
+    two RGBA8 grids once per region (reset to `EMPTY_TEXTURE` by a new
+    region, so style B shows meanwhile);
   - the key light each frame (globe round-5 plan §3.3): with `light` 1 the
     globe's sun, made by the globe lab's own call
     (`solarPosition(clock time, 0, 0)` from `/fw/geo/solar-position.js`)
@@ -95,7 +99,7 @@
   `timeMs`, null with the map light), `sunIntensity`, the pixel ratio, the
   drawing `buffer`'s size and the camera's `fovDeg` (the comparison's pixel
   scale), `imageryOn`, `detail` and
-  `globeColour` (`albedo`, `coarse`, `coarseMs`, `samples`, `samplesMs`, `bandsOn` (globe-bands has its drawn region's ramp), `clamp` (the share of land posts above the top band),
+  `globeColour` (`albedo`, `coarse`, `coarseMs`, `samples`, `samplesMs`, `classes` (globe-classes has its drawn region's grids), `bandsOn` (globe-bands has its drawn region's ramp), `clamp` (the share of land posts above the top band),
   `bands` with globe-bands), `band`, the land range, B's lines, the credits text,
   the region's centre, whether the GPS place awaits a fix, the pin's
   phase, E and its parts, W, the boost, the pose, the flight's samples, the tiles,
@@ -104,7 +108,7 @@
   `project([x, y, z])`, `projectAll(points)` (one frame for many),
   `toEnu(lat, lng)`, `toLatLng(x, y)`,
   `fieldAt(x, y)` (the absolute height, gradient and small relief the
-  shader reads), `farAt(x, y)` (the far-field grid), `albedoAt(x, y)` (the imagery styles' albedo grid), `bandSweep(widths, blockPx = 1)` (globe-bands' sweep over the region's samples, its folds in blocks), `imageryAt(lat, lng)`
+  shader reads), `farAt(x, y)` (the far-field grid), `albedoAt(x, y)` (the imagery styles' albedo grid), `bandSweep(widths, blockPx = 1)` (globe-bands' sweep over the region's samples, its folds in blocks), `classAt(x, y)` (globe-classes' land colour and water share, bilinear as the shader reads them), `classSweep(settings?)` (globe-classes' class-threshold sweep, `CLASS_SWEEP` by default), `imageryAt(lat, lng)`
   (the decoded imagery), `readPixels(points)` and
   `silhouette(columns, tolerance?)` (the first non-background row per
   column), `capture()` (the whole drawing buffer, row 0 at the bottom) and

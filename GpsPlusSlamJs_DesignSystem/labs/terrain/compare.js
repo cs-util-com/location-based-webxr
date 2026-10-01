@@ -107,6 +107,9 @@ async function show(hash) {
       if (s.style === "globe-bands" && s.farState === "ready") {
         if (!s.globeColour.bands) return false;
       }
+      if (s.style === "globe-classes" && s.farState === "ready") {
+        if (!s.globeColour.classes) return false;
+      }
       return s.svfDone || !s.loadingVisible;
     },
     180_000,

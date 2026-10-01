@@ -154,6 +154,9 @@
                 <option value="globe-albedo">
                   C1: Globe albedo (Blue Marble under the sun)
                 </option>
+                <option value="globe-classes">
+                  C2: Globe classes (Blue Marble cover, placed by relief)
+                </option>
                 <option value="globe-bands">
                   C3: Globe bands (Blue Marble per height band)
                 </option>
@@ -245,10 +248,10 @@
         <details
           class="lookdev-section"
           data-section="terrain-natural"
-          data-styles="natural"
+          data-styles="natural globe-classes"
           open
         >
-          <summary>B: Natural colour</summary>
+          <summary>B: Natural colour (its lines place C2's classes)</summary>
           <div class="lookdev-section-body col">
             <label class="lookdev-field">
               <span class="hint"
@@ -332,6 +335,27 @@
                 type="range"
                 step="0.05"
                 data-hash-key="detail"
+              />
+            </label>
+          </div>
+        </details>
+        <details
+          class="lookdev-section"
+          data-section="terrain-globe-classes"
+          data-styles="globe-classes"
+          open
+        >
+          <summary>C2: Globe classes</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint"
+                >Colour width (ΔE) <output data-for="classWidth"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="1"
+                data-hash-key="classWidth"
               />
             </label>
           </div>

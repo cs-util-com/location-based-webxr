@@ -628,6 +628,7 @@ test("the plate lists every style and shows each style's own controls", async ({
     "D: Swiss classic",
     "E: Clay",
     "C1: Globe albedo (Blue Marble under the sun)",
+    "C2: Globe classes (Blue Marble cover, placed by relief)",
     "C3: Globe bands (Blue Marble per height band)",
   ]);
   const natural = page.locator('[data-section="terrain-natural"]');

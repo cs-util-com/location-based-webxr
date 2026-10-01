@@ -63,7 +63,7 @@ describe("the comparison's rows and plan", () => {
   it("has the rows §3.3 names, each a style the lab reads", () => {
     assert.deepEqual(
       COMPARE_VARIANTS.map((v) => v.id),
-      ["A", "B", "C", "C1-d0", "C1-d0.5", "C3"],
+      ["A", "B", "C", "C1-d0", "C1-d0.5", "C3", "C2", "C2-w24"],
     );
     for (const v of COMPARE_VARIANTS) {
       const p = readTerrainParams(new URLSearchParams(v.hash).toString());

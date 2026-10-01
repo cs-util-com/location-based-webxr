@@ -46,6 +46,16 @@ export const COMPARE_VARIANTS = [
     hash: { style: "globe-albedo", detail: 0.5 },
   },
   { id: "C3", label: "C3: globe-bands", hash: { style: "globe-bands" } },
+  {
+    id: "C2",
+    label: "C2: globe-classes",
+    hash: { style: "globe-classes" },
+  },
+  {
+    id: "C2-w24",
+    label: "C2: globe-classes, colour width 24",
+    hash: { style: "globe-classes", classWidth: 24 },
+  },
 ];
 
 /** The capture plan (plan §3.3) and the hand-over (the globe's `handOverKm`). */
