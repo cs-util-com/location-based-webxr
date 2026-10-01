@@ -39,11 +39,34 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   "hold steady" - moving the camera is what resolves the tilt (§61 #11). The copy is the creator
   setup's guidance since the guided-setup plan M3 ("Hold the phone on the
   printed code…", "Measured and stable - save the position.").
-- `setupHint({ measured, tourOpen, hadLevel })` - what the panel says once
-  measured: "Position saved." when no tour is open (`codeTourLine` then
-  says what is happening to the code's tour; scan-to-open plan §9 #9), that
-  the measurement replaces a code the tour already carried, else place
-  content or finish.
+- `entryHint({ tourOpen, codeSeen })` - the AR visit's first hint (authoring
+  plan 2026-09-28-0953 §3.2a, decision D5): "First, point the camera at the
+  code you scanned to open this tour." while a tour is open and the code in
+  hand has not been seen stable in this visit; empty otherwise. It blocks
+  nothing: a later visit's notes are corrected through the code only when
+  the code was seen (D10b), and the owner chose a hint over a rule.
+- `correctionRefusedLine({ horizontalM, yawDeg, maxHorizontalM })` - the one
+  line that says a code correction was refused (M2c review #2): "Code seen
+  N m from its saved position" (or "turned N°" when only the yaw broke the
+  bound) "- a second print or a moved poster? Not used; this visit follows
+  GPS".
+- `replaceCodeConfirmText(size | null)` (M4 review #3) - the explicit
+  replace's confirm question. It says what a visitor will see, not only what
+  is stored: the code moves for everyone ("it moves about 3.4 m and turns
+  4°"), notes already placed keep their saved positions, so the ones placed
+  against the old position will appear shifted by about that much - more
+  the further from the code when it also turns. One decimal below 10 m,
+  whole metres above; a turn under 1° is left out (under 0.35 m at 20 m).
+  `null` (no sighting of the code in hand) keeps the words without a
+  number. Moving the earlier notes along with the code is an OPEN owner
+  decision and not offered.
+- `setupHint({ measured, tourOpen, hadLevel, keptStored? })` - what the
+  panel says once measured: "Position saved." when no tour is open
+  (`codeTourLine` then says what is happening to the code's tour;
+  scan-to-open plan §9 #9); "Saved position kept." when the level in hand
+  is a stored pose this visit did not measure (D10b: a new measurement only
+  corrects the visit, M2c review #5); that the measurement replaces a code
+  the tour already carried; else place content or finish.
 - `codeTourLine(status: CodeTourStatus): string` - the scan-to-open status
   of the code in view (`scan-open.ts`) in plain words: opening, does not
   point to a tour, could not open (a short cause, and either "keep the

@@ -52,6 +52,17 @@ export interface RecordingCoordinatorConfig {
   store: SlamAppStore<ReducersMapObject>;
   /** Function to get current AR pose (from WebXR module) */
   getArPose: () => ARPose | null;
+  /**
+   * Where the built fix goes, instead of `store.dispatch(recordGpsEvent(payload))`
+   * (the default). Called once per recorded fix, after the session zero is
+   * set, with the payload exactly as the default would dispatch it. For an
+   * app that sends other observations WITH the fix in one solve: the Tour
+   * Viewer's code keep-alive dispatches the fix and its ring as one
+   * `recordGpsEventBatch` (authoring plan 2026-09-28-0953, D18). The router
+   * owns the dispatch: it must record the fix (alone or in a batch), or the
+   * fix is lost.
+   */
+  recordFix?: (payload: RecordGpsEventPayload) => void;
 }
 
 // Device-orientation cache moved to `sensors/device-orientation-cache.ts`
@@ -187,6 +198,11 @@ export function createGpsPositionHandler(
   config: RecordingCoordinatorConfig
 ): (position: GpsPosition) => void {
   const { store, getArPose } = config;
+  const recordFix =
+    config.recordFix ??
+    ((payload: RecordGpsEventPayload) => {
+      store.dispatch(recordGpsEvent(payload));
+    });
 
   return (position: GpsPosition): void => {
     // Check if we're recording
@@ -229,7 +245,7 @@ export function createGpsPositionHandler(
       getLastDeviceOrientation(),
       getLatestAbsoluteOrientation()
     );
-    store.dispatch(recordGpsEvent(payload));
+    recordFix(payload);
 
     // Read state AFTER dispatch to get accurate count (Issue 6: was using stale pre-dispatch state)
     const postDispatchState = store.getState();

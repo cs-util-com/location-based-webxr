@@ -49,7 +49,11 @@ import {
 } from '../storage/external-file-storage';
 import { exportScenarioSessionAsZip } from '../storage/scenario-zip-export';
 import { buildSessionSummary } from './build-session-summary';
-import { writeSessionMetadata } from './session-metadata-record';
+import {
+  sanitizedPageUrl,
+  writeSessionMetadata,
+} from 'gps-plus-slam-app-framework/storage/session-metadata-record';
+import { getBuildInfo } from 'gps-plus-slam-app-framework/utils/build-info';
 import { buildZipContributors } from './zip-contributors';
 import type { ZipContributorDeps } from './zip-contributors';
 import { FALLBACK_SCENARIO, type SessionRuntime } from './session-runtime';
@@ -76,32 +80,6 @@ export interface StopRecordingDeps extends ZipContributorDeps {
     label: string,
     errors: string[]
   ) => void;
-}
-
-function getSanitizedPageUrl(): string | undefined {
-  const href = globalThis.location?.href;
-
-  if (!href) {
-    return undefined;
-  }
-
-  try {
-    const url = new URL(href);
-    // Clearing search/hash and using toString() (rather than origin+pathname)
-    // preserves the scheme correctly for URLs with opaque origins
-    // (e.g. file:// where url.origin is the literal string "null").
-    url.search = '';
-    url.hash = '';
-    return url.toString();
-  } catch {
-    const queryIndex = href.indexOf('?');
-    const hashIndex = href.indexOf('#');
-    const cutIndex = [queryIndex, hashIndex]
-      .filter((index) => index >= 0)
-      .sort((left, right) => left - right)[0];
-
-    return cutIndex === undefined ? href : href.slice(0, cutIndex);
-  }
 }
 
 /**
@@ -208,7 +186,8 @@ export async function performStop(
   // WRITTEN BY ITS OWN MODULE since 2026-09-22. This was forty-five lines
   // here, and it is the one part of the stop pipeline whose inputs are all
   // values - everything around it closes over mutable state of this factory,
-  // which is why it moved first. See `session-metadata-record.ts`.
+  // which is why it moved first. See `session-metadata-record.ts`, in the
+  // framework since the Tour Viewer's recording writes the same record.
   await writeSessionMetadata((record) => store.writeSessionMetadata(record), {
     endTime,
     startTime: sessionMetadata?.startTime,
@@ -216,7 +195,8 @@ export async function performStop(
     gpsPositions,
     frameCount: imageCount,
     userAgent: navigator.userAgent,
-    pageUrl: getSanitizedPageUrl(),
+    pageUrl: sanitizedPageUrl(globalThis.location?.href),
+    getBuildInfo,
   });
   // Final sync before stopping. Capture the manager into a local and claim
   // ownership (null the shared field) *before* the await, so any concurrent

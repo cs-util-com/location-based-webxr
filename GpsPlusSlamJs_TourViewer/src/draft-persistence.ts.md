@@ -16,12 +16,32 @@ are the framework's.
 - `writeDraftObject(store, object, blob?)` - one placement. Returns false
   if either file failed, so a half-written photo is reported rather than
   believed.
-- `removeDraftObject(store, id)` - deletes one placement AND its photo,
-  because an object is two files and a caller rejecting a list of ids
-  should not have to know which of them ever reached disk. Neither half
-  missing is a failure: a pin has no photo.
-- `StoredDraft.storedIds` - EVERY object id the read saw on disk, not
-  just the ones that parsed.
+- `removeDraftObject(store, id)` - deletes every file of one id: the
+  record, its photo AND a tombstone (and, for a visit id, the visit's log), because a caller rejecting a list of
+  ids should not have to know which of them ever reached disk. None
+  missing is a failure: a pin has no photo, a placement no tombstone.
+- `writeDraftDeletion(store, id) -> Promise<boolean>` (authoring plan
+  2026-09-28-0953 §3.4, M4) - records that `id` was deleted (a tombstone,
+  `deleted:<id>`), THEN removes its record and bytes. The tombstone is the
+  commit point: `readDraft` lets it outrank a record a crash left behind.
+  A refused tombstone returns false and leaves the record alone.
+- `removeDraftDeletion(store, id) -> Promise<true>` (M4 review #5) - takes
+  a deletion back (an Undo): removes the tombstone. A record written for
+  the id BEFORE it (an edited object's) counts again; until then the
+  tombstone outranks it, so an Undo cut short leaves the object deleted.
+- `writeDraftVisit(store, entry) -> Promise<boolean>` (authoring plan
+  2026-09-28-0953 M3b) - one AR visit's log (`visit-log.ts`: the visit's
+  walk and the codes it measured, for the summary after Finish), one file
+  per visit (`visit:<visitId>`), written at the visit's settle; a visit
+  settled again replaces its file.
+- `StoredDraft.visits` (M3b) - the visits' logs, oldest first, read back
+  through `parseVisitLogEntry` (a corrupt file costs that visit only).
+  NOT part of `draft`: a visit is nothing to offer and nothing for the zip.
+  A visit id the meta rejects is skipped like an object's; its file is in
+  `storedIds`, so a discard or a spent draft sweeps it with the objects,
+  through the same commit point.
+- `StoredDraft.storedIds` - EVERY id the read saw on disk (objects,
+  photos, tombstones and visits), not just the ones that parsed.
   - **It exists because cleanup must cover what the reader refused.** A
     record written by an older version, or a photo whose bytes never landed
     (`writeDraftObject` returns false when the photo write hits a quota
@@ -34,7 +54,7 @@ are the framework's.
     session's work.
   - **Cleanup is now PREFIX-SCOPED, where `clear` was not.** `clear` removed
     every file in the namespace whatever its name; this list covers only
-    `object:` and `photo:`. Any other key that ever lands in a draft
+    `object:`, `photo:`, `deleted:` and `visit:`. Any other key that ever lands in a draft
     namespace - a future file kind, a stray write - therefore has no
     collector at all. There is no such key today, which is why this is a
     note rather than a fix (PR #455 review); a new kind of draft file must
@@ -56,7 +76,17 @@ are the framework's.
   `{ draft, photos, rejectedIds, storedIds }`, or `undefined` when there
   is no meta file. Objects the meta rejects are absent from `draft.objects`
   and `photos` whether or not their files are still on disk.
-- `parseDraftObject(text)`, `objectKey(id)`, `photoKey(id)`.
+- `readDraft` also returns `draft.deleted` - the tombstoned ids (sorted),
+  minus rejected ones; a tombstoned id's record and bytes are skipped.
+  `storedIds` includes tombstone ids, so a discard or a spent draft sweeps
+  them too.
+- `parseDraftObject(text)`, `objectKey(id)`, `photoKey(id)`,
+  `deletedKey(id)`, `visitKey(visitId)`.
+- **Why a deletion is a FILE and not a list in the meta**: the meta is
+  rewritten from memory on every mint and finish, so a list kept there
+  would be dropped by any meta write that happens before the creator
+  restores the draft that held it - and the deleted object would come
+  back. One file per deletion, for the reason there is one per object.
 
 ## Invariants & assumptions
 
@@ -134,7 +164,19 @@ a property that the order is stable and is the order things were placed in.
 Plus the rejection set: an object the meta rejects is refused though its
 file is on disk, its photo bytes with it, the list is pruned to ids that
 still have files, and a missing or malformed `rejected` reads as no
-rejection.
+rejection. And the tombstones: a deletion hides the record and bytes
+though they were on disk, the tombstone is written before they are
+removed, a tombstone is a stored id and `removeDraftObject` takes it, a
+refused tombstone write keeps the record, and the claim protocol from
+both sides: a tombstone written after the meta stopped rejecting its id
+counts, one whose id a LATER meta write rejects does not. Which of the
+two was written last is the writer's job (`creator-setup.ts`
+`writeForObject`, M4 review #1); a test that expected a tombstone written
+after a rejection to be ignored pinned the defect it caused.
+And the visits (M3b): they come back on a new read (a reload), a corrupt
+visit file costs itself and stays a stored id, a rejected visit is hidden
+and `removeDraftObject` takes its file, and an object id never reads as a
+visit.
 
 `removeDraftObject` and `storedIds` are exercised from
 `creator-setup.test.ts`, not from here - the contract they carry is

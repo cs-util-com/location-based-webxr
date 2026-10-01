@@ -1018,6 +1018,9 @@ function matricesNearlyEqual(
  */
 const TRACKING_QUALITY_INPUT_ACTIONS = {
   gpsRecorded: 'gpsData/recordGpsEvent',
+  // Several fixes, one solve (core 1.26; the Tour Viewer's votes and
+  // keep-alive ticks): one alignment change, like one `recordGpsEvent`.
+  gpsBatchRecorded: 'gpsData/recordGpsEventBatch',
   setZeroPos: 'gpsData/setZeroPos',
   poseReceived: 'tracking/poseReceived',
   poseLost: 'tracking/poseLost',
@@ -1031,6 +1034,7 @@ interface InputActionMatcher {
 function inputActionPredicate(action: Action): action is InputActionMatcher {
   switch (action.type) {
     case TRACKING_QUALITY_INPUT_ACTIONS.gpsRecorded:
+    case TRACKING_QUALITY_INPUT_ACTIONS.gpsBatchRecorded:
     case TRACKING_QUALITY_INPUT_ACTIONS.setZeroPos:
     case TRACKING_QUALITY_INPUT_ACTIONS.poseReceived:
     case TRACKING_QUALITY_INPUT_ACTIONS.poseLost:
@@ -1047,7 +1051,9 @@ function inputActionPredicate(action: Action): action is InputActionMatcher {
  * slice. Register the returned middleware in `createSlamAppStore`.
  *
  * Behaviour:
- *  - On `gpsData/recordGpsEvent` and `gpsData/setZeroPos`: if the
+ *  - On `gpsData/recordGpsEvent`, `gpsData/recordGpsEventBatch` (one
+ *    solve for all its fixes, so at most one snapshot) and
+ *    `gpsData/setZeroPos`: if the
  *    alignment matrix changed, dispatch `snapshotPushed` +
  *    `snapshotsTrimmed`. Then recompute the report and dispatch
  *    `reportUpdated` if it changed.
@@ -1119,6 +1125,7 @@ export function createTrackingQualityListenerMiddleware(
       // Buffer maintenance on alignment-affecting actions.
       if (
         action.type === TRACKING_QUALITY_INPUT_ACTIONS.gpsRecorded ||
+        action.type === TRACKING_QUALITY_INPUT_ACTIONS.gpsBatchRecorded ||
         action.type === TRACKING_QUALITY_INPUT_ACTIONS.setZeroPos
       ) {
         const alignment = selectAlignmentMatrix(state);

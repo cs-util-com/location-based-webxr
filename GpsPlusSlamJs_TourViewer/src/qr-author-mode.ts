@@ -247,16 +247,95 @@ export function codeTourLine(status: CodeTourStatus): string {
   }
 }
 
+/**
+ * The first thing the panel says in an AR visit (authoring plan
+ * 2026-09-28-0953 §3.2a, decision D5): look at the tour's code first, until
+ * this visit has seen it. A later visit's notes are corrected through the
+ * code only when the code was seen in that visit (D10b); the owner chose a
+ * hint over a rule, so nothing is blocked while it shows. Empty with no
+ * tour open - there is no "code of this tour" yet.
+ */
+export function entryHint(state: {
+  tourOpen: boolean;
+  codeSeen: boolean;
+}): string {
+  if (!state.tourOpen || state.codeSeen) return "";
+  return "First, point the camera at the code you scanned to open this tour.";
+}
+
+/**
+ * The one line that says a code correction was refused (M2c review #2):
+ * the code seen here is further from its saved position, or turned
+ * further, than two visits' GPS plausibly disagree - a second print or a
+ * moved poster, not GPS - so this visit's notes follow GPS instead.
+ */
+export function correctionRefusedLine(refusal: {
+  horizontalM: number;
+  yawDeg: number;
+  maxHorizontalM: number;
+}): string {
+  const where =
+    refusal.horizontalM > refusal.maxHorizontalM
+      ? `${String(Math.round(refusal.horizontalM))} m`
+      : `turned ${String(Math.round(refusal.yawDeg))}°`;
+  return `Code seen ${where} from its saved position - a second print or a moved poster? Not used; this visit follows GPS`;
+}
+
+/**
+ * The explicit replace's confirm question (authoring plan 2026-09-28-0953
+ * §3.4, M4; M4 review #3), with the replace's size when this visit's
+ * sighting of the code gives one (`sightedCodeOffset`).
+ *
+ * WHAT IT MUST SAY: the notes' STORED positions do not change, but every
+ * visitor is lined up with the code - so notes placed against the old code
+ * position will appear shifted, by about the distance the code moves (and
+ * by more the further they stand from it, when it also turns).
+ *
+ * Rounding: one decimal below 10 m (a 0.4 m replace is not "0 m"), whole
+ * metres above, where GPS-level error makes decimals noise; a turn below
+ * 1° is left out - a note 20 m away moves under 0.35 m for it.
+ *
+ * Whether the replace should also move the earlier notes along with the
+ * code is an OPEN owner decision; until it is made this only says what
+ * happens, and offers no such option (see the confirm handler in
+ * `creator-setup.ts`).
+ */
+export function replaceCodeConfirmText(
+  size: { horizontalM: number; yawDeg: number } | null,
+): string {
+  const question =
+    "Replace the code's saved position with this new measurement? Everyone who opens the tour is lined up with the code, so it moves for them too";
+  const notes =
+    "Notes already placed keep their saved positions, so to visitors the ones placed against the old position will appear shifted";
+  if (size === null) return `${question}. ${notes}.`;
+  const metres =
+    size.horizontalM < 10
+      ? (Math.round(size.horizontalM * 10) / 10).toFixed(1)
+      : String(Math.round(size.horizontalM));
+  const turn =
+    size.yawDeg >= 1 ? ` and turns ${String(Math.round(size.yawDeg))}°` : "";
+  const further =
+    turn === "" ? "" : ", and more the further they are from the code";
+  return `${question}: it moves about ${metres} m${turn}. ${notes} by about that much${further}.`;
+}
+
 /** What the setup panel says once the code is measured: the next move. */
 export function setupHint(state: {
   measured: boolean;
   tourOpen: boolean;
   hadLevel: boolean;
+  /** The level in hand is a stored pose this visit did not measure (a
+   *  hosted or draft level, or an earlier visit's): it is kept, never
+   *  replaced by a new measurement (D10b). */
+  keptStored?: boolean;
 }): string {
   if (!state.measured) return "";
   // With no tour open, `codeTourLine` says what is happening to the tour
   // the code names (scan-to-open plan §9 #9).
   if (!state.tourOpen) return "Position saved.";
+  if (state.keptStored === true) {
+    return "Saved position kept. Place content, or tap Finish to rebuild the zip.";
+  }
   return (
     (state.hadLevel
       ? "Position saved - it replaces the code this tour already carried. "

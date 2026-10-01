@@ -112,6 +112,10 @@ export {
   // session-end teardown action (core 1.20; the re-entry blend fix).
   resetGpsSessionData,
   recordGpsEvent,
+  // Several observations, ONE solve (core 1.26): the Tour Viewer's code votes
+  // and its keep-alive ticks (authoring plan 2026-09-28-0953 D18). Every
+  // reader of a recording handles it through `utils/gps-event-actions`.
+  recordGpsEventBatch,
   add2dImage,
   calcRelativeCoordsInMeters,
   // The compass-influence setters, re-exported for the same reason as the rest
@@ -167,6 +171,7 @@ export type {
   RawGpsPoint,
   RawDeviceOrientation,
   RecordGpsEventPayload,
+  RecordGpsEventBatchPayload,
   Add2dImagePayload,
 } from 'gps-plus-slam-js';
 export type { DepthPoint, DepthSample } from '../types/ar-types.js';

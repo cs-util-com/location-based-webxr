@@ -43,7 +43,7 @@ const { mockGetBuildInfo } = vi.hoisted(() => ({
 }));
 
 // Mock getBuildInfo so settings-modal can populate the version label
-vi.mock('../utils/build-info', () => ({
+vi.mock('gps-plus-slam-app-framework/utils/build-info', () => ({
   getBuildInfo: mockGetBuildInfo,
 }));
 

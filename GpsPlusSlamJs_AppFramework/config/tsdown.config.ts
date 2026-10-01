@@ -195,6 +195,9 @@ const entryFiles = [
   // coverage-backfill). The `./storage/*` exports wildcard advertises this
   // subpath, so it must be built per-file.
   'src/storage/write-file-or-abort.ts',
+  // The `session.json` builder the Recorder and the Tour Viewer's
+  // troubleshooting recording share (deep-imported, 2026-09-28).
+  'src/storage/session-metadata-record.ts',
 
   // test-utils/ (advertised in `exports`; consumed by RecorderApp tests)
   'src/test-utils/browser-mocks.ts',
@@ -220,6 +223,9 @@ const entryFiles = [
 
   // utils/
   'src/utils/index.ts',
+  // The build-stamp reader, deep-imported by the RecorderApp and the Tour
+  // Viewer (moved from the RecorderApp 2026-09-28, DEC-H3).
+  'src/utils/build-info.ts',
   'src/utils/concurrency.ts',
   // The apps' ?debug=1 reader, deep-imported by the RecorderApp and the
   // TourViewer (QR near-frontal pose plan §67 #3).
@@ -279,6 +285,10 @@ const entryFiles = [
   // wildcard, like the above.
   'src/utils/locate-state.ts',
   'src/utils/toast-core.ts',
+  // Both GPS actions' payloads (core 1.26's recordGpsEventBatch beside
+  // recordGpsEvent) - deep-imported by the Tour Viewer's recording folders
+  // and the recorder's timing page, so per-file for the `./utils/*` wildcard.
+  'src/utils/gps-event-actions.ts',
   // QR launch payload codec — deep-imported by the TourViewer app: the decode
   // side (codec-dictionary) implements the ?qr= launch-handler dispatch, and
   // the encode side (qr-launch-url) is the authoring counterpart that builds
@@ -368,6 +378,11 @@ const entryFiles = [
   'src/visualization/lerp-utils.ts',
   'src/visualization/map-data.ts',
   'src/visualization/map-overlay-draw.ts',
+  // The summary map's shell and the OSM basemap layer (moved from the
+  // RecorderApp 2026-10-01, DEC-H3) - deep-imported by the Recorder and,
+  // dynamically, by the Tour Viewer's summary via `./visualization/*`.
+  'src/visualization/osm-tile-layer.ts',
+  'src/visualization/summary-map-shell.ts',
   // Engine-free desktop pointer raycast helper (2026-07-15 replay-harness Part B)
   // — deep-imported by consumer apps (PhysicsDemo) via `./visualization/*`.
   'src/visualization/pointer-picking.ts',

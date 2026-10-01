@@ -10,6 +10,7 @@
 
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
+import { createQrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import {
   recordGpsEvent,
@@ -18,6 +19,7 @@ import {
   selectQrFusedEntries,
   selectTrackingQuality,
   selectZeroReference,
+  type RecordGpsEventPayload,
 } from "gps-plus-slam-app-framework/state";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
@@ -43,8 +45,11 @@ import {
 } from "./scan-gate.js";
 import {
   buildViewerControllerConfig,
+  createViewerKeepAlive,
   imagePlaneRingNue,
+  MAX_VOTED_LOCKS_PER_CODE,
 } from "./qr-viewer-mode.js";
+import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { TourViewerSeams } from "./seams.js";
 import { isPlacementReady } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
@@ -54,6 +59,8 @@ import type {
   TourViewerSession,
   TourViewerStore,
 } from "./tour-viewer-session.js";
+import { startEntryVoteSink } from "./viewer-vote-sink.js";
+import type { ViewingLog } from "./viewing-log.js";
 
 /** The display downscale for capture planes — the framework decoder's
  *  documented OOM mitigation (the recorder defaults to 2 for the same
@@ -69,6 +76,10 @@ export interface ViewerPlacement {
   /** Creates the viewer tracking controller for THIS AR entry; false when
    *  there is no detector (the session is plain AR - still placing photos). */
   startViewerPipeline: () => boolean;
+  /** Where the page's device GPS fixes go (`createGpsPositionHandler`'s
+   *  `recordFix`): with the code keep-alive holding, the fix and its ring
+   *  as ONE batch (D18); otherwise the plain `recordGpsEvent`. */
+  recordDeviceFix: (fix: RecordGpsEventPayload) => void;
   /** The ready-triggered placement; cheap enough to run on every dispatch. */
   tryPlaceTour: () => void;
   /** The session reached running, or a tour opened into a running
@@ -95,6 +106,14 @@ export function createViewerPlacement(deps: {
   /** The gate's escape button (inside the overlay). */
   escapeButton: HTMLButtonElement;
   hooks: TourViewerHooks;
+  /** The `?debug=1` viewer recording's `tourViewing/*` log (M1b); silent
+   *  while no recording runs. Absent: nothing is logged. */
+  viewingLog?: ViewingLog;
+  /** The page clock: the QR controller's detection times and the moment a
+   *  GPS fix ARRIVES, the one clock the keep-alive's hold runs on (M2b
+   *  review #4). Absent: `Date.now` - the controller's own default and
+   *  what the status line reads the hold with. */
+  now?: () => number;
 }): ViewerPlacement {
   const {
     ctx,
@@ -107,6 +126,7 @@ export function createViewerPlacement(deps: {
     hooks,
   } = deps;
   const authorMode = mode === "creator";
+  const now = deps.now ?? Date.now;
   /** Whether this session has a detector (set by startViewerPipeline). */
   let hasDetector = false;
 
@@ -178,6 +198,11 @@ export function createViewerPlacement(deps: {
   /** Levels are only useful with an open tour; the viewer pipeline reads
    *  them live so a tour opened AFTER entering AR still resolves. */
   function startViewerPipeline(): boolean {
+    // FIRST, before the plain-AR return below (the seam contract, rule 1):
+    // the entry clears every solver override, so no entry keeps a previous
+    // one's soft trimming - a plain-AR entry casts no vote that would.
+    const sink = startEntryVoteSink(arStore);
+    ctx.viewerVoteSink = sink;
     const frontEnd = seams.createQrFrontEnd();
     hasDetector = frontEnd !== null;
     if (frontEnd === null) {
@@ -217,15 +242,30 @@ export function createViewerPlacement(deps: {
     // level lookup runs its callbacks inside the fetch the controller awaits,
     // before the controller's dispose guard (milestone review of b4b #3).
     const live = (): boolean => ctx.fusedPose === fusedPose;
+    // Every viewer vote - a lock's ring here, the keep-alive's rings in
+    // `recordDeviceFix` - goes through the entry's sink: one batch each, the
+    // soft trimming on before the first (`viewer-vote-sink.ts`).
+    const keepAlive = startKeepAlive();
+    // Per AR entry like the keep-alive, reset per TOUR by the tour switch
+    // (`endTourCodeVotes`, M2b review #6).
+    const voteBudget = createQrVoteBudget(MAX_VOTED_LOCKS_PER_CODE);
+    ctx.viewerVoteBudget = voteBudget;
     ctx.qrController = createQrTrackingController(
       buildViewerControllerConfig({
         frontEnd,
+        now,
         solvePose: (input) => seams.solveQrPose(input),
         getIntrinsics: (image) => seams.getIntrinsics(image),
         getLevels: () => ctx.currentLevels,
-        dispatchVote: (payload) => {
-          arStore.dispatch(recordGpsEvent(payload));
+        // Only a lock's votes join the viewing log's per-lock batch; the
+        // keep-alive's are recorded as stamped GPS events, never mislabelled
+        // as the next lock's.
+        dispatchVotes: (payloads) => {
+          sink.castLockVotes(payloads);
+          for (const payload of payloads) deps.viewingLog?.vote(payload);
         },
+        keepAlive,
+        voteBudget,
         // recordGpsEvent silently no-ops until the session ZERO exists -
         // the budget must not be charged for dropped votes (M4 review #2).
         //
@@ -248,6 +288,9 @@ export function createViewerPlacement(deps: {
           ctx.latestReprojectionPx = event.reprojectionErrorPx;
           arStore.dispatch(recordQrDetection(event));
           const level = ctx.levelByText.get(event.text) ?? null;
+          // The status is still the previous frame's here (the controller
+          // reports tracking after this frame's votes).
+          deps.viewingLog?.detection(event, level, ctx.viewerQrStatus);
           ctx.qrDebugView?.update(
             event.qrPoseWorld,
             level?.qr.physicalSizeM ?? null,
@@ -257,10 +300,14 @@ export function createViewerPlacement(deps: {
           if (!live()) return;
           ctx.levelByText.set(text, level);
         },
-        onLocked: (level) => {
-          // The gate passes on the LOCK against a lockable level, not on a
-          // vote (M5; plan review #1).
-          if (isLockableLevel(level)) passGate("code");
+        onLocked: (level, hasVoted) => {
+          // The gate passes on the LOCK of a lockable level (M5; plan review
+          // #1) whose code has cast votes: a lock before the store takes
+          // votes, or while the pose converges, corrected nothing, and
+          // passing on it placed the content through GPS alone while the
+          // line said the code had worked (authoring plan 2026-09-28-0953
+          // §2.2 B3). The escape button still passes a gate no vote reaches.
+          if (hasVoted && isLockableLevel(level)) passGate("code");
         },
         onError: (message) => {
           errorBox.textContent = `QR tracking failed: ${message}`;
@@ -280,6 +327,7 @@ export function createViewerPlacement(deps: {
           hooks.renderArStatus();
         },
         onVotedLock: (text, votedLocks) => {
+          deps.viewingLog?.votedLock(text, votedLocks);
           ctx.viewerLockedText = text;
           ctx.viewerVotedLocks = votedLocks;
           ctx.viewerReprojectionPx = ctx.latestReprojectionPx;
@@ -315,6 +363,69 @@ export function createViewerPlacement(deps: {
       }),
     );
     return true;
+  }
+
+  /**
+   * This AR entry's code keep-alive (authoring plan 2026-09-28-0953 §3.2,
+   * M2b), and the one store subscription that stops it when the odometry
+   * frame changes: a frame change (`qrDetected.frameEpoch`: an odometry
+   * restart or loop closure) leaves the kept pose naming a place in the old
+   * frame, so the hold ends there (M2b review #1); the code's next scan
+   * votes afresh in the new one. The subscription ends itself once the
+   * entry's keep-alive is no longer the session's (`endQrPipeline` at AR
+   * exit, or the next entry's pipeline). Its votes are cast per device fix
+   * by {@link recordDeviceFix}.
+   */
+  function startKeepAlive(): QrVoteKeepAlive {
+    ctx.viewerKeepAlive?.stop();
+    // Its state changes go to the viewing log (M1b review #5).
+    const created = createViewerKeepAlive();
+    const keepAlive = deps.viewingLog?.keepAlive(created) ?? created;
+    ctx.viewerKeepAlive = keepAlive;
+    const frameEpoch = (): number =>
+      arStore.getState().qrDetected.frameEpoch ?? 0;
+    let keptFrameEpoch = frameEpoch();
+    const unsubscribe = arStore.subscribe(() => {
+      if (ctx.viewerKeepAlive !== keepAlive) {
+        unsubscribe();
+        return;
+      }
+      const epoch = frameEpoch();
+      if (epoch !== keptFrameEpoch) {
+        keptFrameEpoch = epoch;
+        keepAlive.stop();
+      }
+    });
+    return keepAlive;
+  }
+
+  /**
+   * A device GPS fix, as the coordinator built it (main.ts hands this to
+   * `createGpsPositionHandler` as `recordFix`): the keep-alive's trigger
+   * (M2b) and, with D18, the fix's way into the store. The cadence is the one
+   * M0b/M0c measured - one ring with each device fix - and nothing but a
+   * device fix triggers it, so the keep-alive never answers a vote (its own
+   * or a lock's). A fix is scheduled by when it ARRIVED, on the clock the
+   * locks are timed on; its Geolocation time only stamps the votes (M2b
+   * review #4). While the keep-alive casts a ring for it, the fix and the
+   * ring are ONE batch, the fix first: one solve per tick, the compass
+   * easing compounded per stored event (core 1.26). Otherwise - no viewer
+   * entry (author mode, outside AR), no kept code, the fade owing less than
+   * a ring, a fix whose time is not finite - it is the plain
+   * `recordGpsEvent` it always was.
+   */
+  function recordDeviceFix(fix: RecordGpsEventPayload): void {
+    const sink = ctx.viewerVoteSink;
+    if (sink === null) {
+      arStore.dispatch(recordGpsEvent(fix));
+      return;
+    }
+    const ring =
+      ctx.viewerKeepAlive?.votesForFix({
+        atMs: now(),
+        stampMs: fix.rawGpsPoint.timestamp,
+      }) ?? [];
+    sink.recordFix(fix, ring);
   }
 
   /**
@@ -404,6 +515,13 @@ export function createViewerPlacement(deps: {
           return;
         }
         ctx.contentRendered = rendered;
+        deps.viewingLog?.placed({
+          what: "content",
+          basis: "geo",
+          count: rendered.count,
+          zero,
+          skipped: rendered.skipped,
+        });
         hooks.renderArStatus();
       },
       (err: unknown) => {
@@ -488,11 +606,17 @@ export function createViewerPlacement(deps: {
           geo.alt,
           0,
         );
-        await placeDecodedPlanes(current, scene, [
-          centerNue[0],
-          centerNue[1],
-          centerNue[2],
-        ]);
+        const ringCenter = [centerNue[0], centerNue[1], centerNue[2]] as const;
+        const ringed = await placeDecodedPlanes(current, scene, ringCenter);
+        if (ringed > 0 && lockedText !== null) {
+          deps.viewingLog?.placed({
+            what: "ring",
+            basis: "code",
+            count: ringed,
+            zero,
+            code: { text: lockedText, geo, centerNue: ringCenter },
+          });
+        }
       }
     } finally {
       // Only the run that still owns the latch may clear it — a stale run's
@@ -605,6 +729,16 @@ export function createViewerPlacement(deps: {
       fixes: verdict.quality.pairCount,
       gpsAccuracyMedianM: verdict.quality.gpsAccuracyMedianM,
     };
+    deps.viewingLog?.placed({
+      what: "capture-spots",
+      basis: "geo",
+      count: ctx.imagePlanes.count,
+      zero: viewerZero,
+      join: {
+        fixes: verdict.quality.pairCount,
+        gpsAccuracyMedianM: verdict.quality.gpsAccuracyMedianM,
+      },
+    });
     hooks.renderArStatus();
     return true;
   }
@@ -670,11 +804,13 @@ export function createViewerPlacement(deps: {
     return paired;
   }
 
+  /** The ring around a code; resolves how many planes it placed (0: none,
+   *  its textures freed). */
   async function placeDecodedPlanes(
     current: TourSession,
     scene: Scene,
     centerNue: readonly [number, number, number],
-  ): Promise<void> {
+  ): Promise<number> {
     const textures = await decodeTourTextures(current);
     // Re-checked AFTER the awaits: the tour may have closed, the AR session
     // may have ended, or a sibling run may have won — every bail path must
@@ -686,7 +822,7 @@ export function createViewerPlacement(deps: {
       !sessionLive()
     ) {
       for (const texture of textures) texture.dispose();
-      return;
+      return 0;
     }
     ctx.imagePlanes = placeImagePlanes({
       scene,
@@ -703,6 +839,7 @@ export function createViewerPlacement(deps: {
       count: ctx.imagePlanes.count,
     };
     hooks.renderArStatus();
+    return ctx.imagePlanes.count;
   }
 
   /** First three streamed images → upright textures; a broken image just
@@ -726,6 +863,7 @@ export function createViewerPlacement(deps: {
 
   return {
     startViewerPipeline,
+    recordDeviceFix,
     tryPlaceTour,
     startScanGate,
     resetScanGate,

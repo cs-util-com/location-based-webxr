@@ -1,19 +1,20 @@
 /**
- * The session-metadata record a finished recording leaves behind.
+ * The session-metadata record (`session.json`) a finished recording leaves
+ * behind.
  *
- * WHY IT IS ITS OWN MODULE. It was forty-five lines inside `performStop`, which
- * is one function inside `createRecordingSessionHandlers` - 717 lines carrying
- * eight distinct concerns, from prior-ref-point loading to Android back-gesture
- * handling. This is the piece of that pipeline whose inputs are all VALUES:
- * unlike the sync, the ZIP export and the teardown around it, it closes over no
- * mutable state of the enclosing factory, so it can move out without threading
- * anything.
+ * WHY IT IS ITS OWN MODULE. It was forty-five lines inside the Recorder's
+ * `performStop`, which is one function inside `createRecordingSessionHandlers`
+ * - 717 lines carrying eight distinct concerns. This is the piece of that
+ * pipeline whose inputs are all VALUES: it closes over no mutable state of the
+ * enclosing factory, so it could move out without threading anything.
  *
- * That is also why it moved FIRST. The rest of the stop pipeline shares roughly
- * ten pieces of mutable factory state - the sync manager it claims ownership of
- * before awaiting, the store subscription, the last sync result, the
- * re-entrancy flags - and moving those is a design change rather than a
- * relocation.
+ * WHY IT IS IN THE FRAMEWORK (2026-09-28). A second app writes recordings
+ * now: the Tour Viewer's troubleshooting recording, which must replay in the
+ * Recorder's desktop replay. The replay decides whether to migrate a
+ * recording from `odomCoordVersion`, so two writers of this record must agree
+ * on it - which is shared behaviour, and shared behaviour has one
+ * implementation (DEC-H3). The build info, which each app stamps at its own
+ * build, is injected rather than read here.
  *
  * WHAT IT DOES NOT DO: decide anything. It is a record builder plus the one
  * write, so what a finished session claims about itself can be asserted
@@ -22,14 +23,15 @@
  * @see session-metadata-record.ts.md
  */
 
-import {
-  gpsPathToCoverageCells,
-  H3_RESOLUTION,
-} from 'gps-plus-slam-app-framework/geo';
-import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
-import { getBuildInfo, type BuildInfo } from '../utils/build-info';
+import { GPS_POINT_SOURCE_DEVICE, gpsPointSourceOf } from 'gps-plus-slam-js';
+import { gpsPathToCoverageCells, H3_RESOLUTION } from '../geo/h3-proximity';
+import { createLogger } from '../utils/logger';
+import type { SessionMetadata } from './opfs-storage';
 
 const log = createLogger('session-metadata');
+
+/** Build/environment info, as the persisted shape declares it. */
+type SessionBuildInfo = NonNullable<SessionMetadata['build']>;
 
 /**
  * A GPS sample, reduced to what the coverage index needs.
@@ -41,18 +43,27 @@ const log = createLogger('session-metadata');
 interface MetadataGpsPoint {
   readonly latitude: number;
   readonly longitude: number;
+  /** The reading's provenance stamp (core `RawGpsPoint.source`); absent
+   *  means a device fix. Only device fixes count as coverage. */
+  readonly source?: string;
 }
 
 export interface SessionMetadataInput {
   /** Epoch ms captured the moment recording stopped, before any slow I/O. */
   readonly endTime: number;
-  /** `sessionMetadata.startTime` from the store, when it is there. */
+  /** When the recording started (the first `startSession`), when known. */
   readonly startTime: number | undefined;
   readonly contextTag: string;
   readonly gpsPositions: readonly MetadataGpsPoint[];
   readonly frameCount: number;
   readonly userAgent: string;
   readonly pageUrl: string | undefined;
+  /**
+   * The app's build stamp. A getter, because reading it may THROW where the
+   * build constants were never injected (a dev server) - and that must cost
+   * the record its `build` field, not the record. Absent: no `build` field.
+   */
+  readonly getBuildInfo?: () => SessionBuildInfo;
 }
 
 /** The shape the store's writer accepts. Kept structural on purpose. */
@@ -70,8 +81,13 @@ export interface SessionMetadataRecord {
    * loose type here only moves the mismatch to the call site - which is where
    * the gate found it, one stage after a narrower typecheck had passed.
    */
-  readonly build?: BuildInfo;
-  readonly pageUrl: string | undefined;
+  readonly build?: SessionBuildInfo;
+  /**
+   * Absent, not `undefined`, when there is no url: the persisted shape
+   * declares it optional, and under `exactOptionalPropertyTypes` an explicit
+   * `undefined` does not fit it. The written JSON is the same either way.
+   */
+  readonly pageUrl?: string;
   /**
    * MUTABLE, matching the store's writer rather than this module's taste.
    * A `readonly` array is the better default and is not assignable to the
@@ -95,9 +111,9 @@ export interface SessionMetadataRecord {
 export function buildSessionMetadataRecord(
   input: SessionMetadataInput
 ): SessionMetadataRecord {
-  let build: BuildInfo | undefined;
+  let build: SessionBuildInfo | undefined;
   try {
-    build = getBuildInfo();
+    build = input.getBuildInfo?.();
   } catch (error) {
     // Build metadata is stamped at deploy time and simply absent in a dev
     // server. Its absence must not cost the session its metadata.
@@ -106,9 +122,13 @@ export function buildSessionMetadataRecord(
 
   // Per-tour H3 coverage index (Step 2 / D1): deduped res-11 cells the GPS path
   // crossed, so the map-centric browser can place this tour without unzipping
-  // its GPS data. Computed at stop, while the path is still in state.
+  // its GPS data. Device fixes only: a scanned code's synthetic votes sit up to
+  // 30 m along its face, where nobody walked (and an unknown stamp is never
+  // rounded to device). `actionCount` below still counts every sample.
   const h3Cells = gpsPathToCoverageCells(
-    input.gpsPositions.map((p) => ({ lat: p.latitude, lng: p.longitude }))
+    input.gpsPositions
+      .filter((p) => gpsPointSourceOf(p) === GPS_POINT_SOURCE_DEVICE)
+      .map((p) => ({ lat: p.latitude, lng: p.longitude }))
   );
 
   return {
@@ -121,10 +141,39 @@ export function buildSessionMetadataRecord(
     frameCount: input.frameCount,
     userAgent: input.userAgent,
     ...(build ? { build } : {}),
-    pageUrl: input.pageUrl,
+    ...(input.pageUrl === undefined ? {} : { pageUrl: input.pageUrl }),
     h3Cells,
     h3Resolution: H3_RESOLUTION,
   };
+}
+
+/**
+ * The page url without its query and hash, for a record that leaves the
+ * device: a query can carry a private link (the Tour Viewer's `?qr=`).
+ * `undefined` without a url.
+ */
+export function sanitizedPageUrl(href: string | undefined): string | undefined {
+  if (!href) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(href);
+    // Clearing search/hash and using toString() (rather than origin+pathname)
+    // preserves the scheme correctly for URLs with opaque origins
+    // (e.g. file:// where url.origin is the literal string "null").
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    const queryIndex = href.indexOf('?');
+    const hashIndex = href.indexOf('#');
+    const cutIndex = [queryIndex, hashIndex]
+      .filter((index) => index >= 0)
+      .sort((left, right) => left - right)[0];
+
+    return cutIndex === undefined ? href : href.slice(0, cutIndex);
+  }
 }
 
 /**

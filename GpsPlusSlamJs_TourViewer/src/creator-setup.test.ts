@@ -20,10 +20,12 @@
  * convention.
  */
 import { describe, expect, it } from "vitest";
-import { Matrix4 } from "three";
-import type { Vector3 } from "three";
+import { Group, Matrix4, Vector3 } from "three";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
-import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
+import {
+  AUTHOR_DEFAULT_SIZE_M,
+  MIN_ALIGNMENT_SAMPLES,
+} from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { wireCreatorSetup } from "./creator-setup.js";
 import type { CreatorSetupDom } from "./creator-setup.js";
 import {
@@ -31,12 +33,14 @@ import {
   createTourViewerStore,
 } from "./tour-viewer-session.js";
 import {
+  deletedKey,
   META_KEY,
   objectKey,
   photoKey,
   readDraft,
 } from "./draft-persistence.js";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { ObjectListHandlers } from "./object-list.js";
 
 /** One fake element: the properties this module writes, and a click it can
  *  be told to fire. Not a DOM stand-in - only what `creator-setup` uses. */
@@ -46,9 +50,16 @@ interface FakeEl {
   disabled: boolean;
   value: string;
   open: boolean;
+  /** The status line's AR clamp flag (`data-clamped`). */
+  dataset: Record<string, string>;
   handlers: Map<string, () => void>;
   addEventListener: (type: string, handler: () => void) => void;
   click: () => void;
+  bind: (bound: ObjectListHandlers) => void;
+  render: () => void;
+  /** What the setup bound to the object list (M4), so a test can drive an
+   *  edit or a delete the way the list's buttons do. */
+  listHandlers: ObjectListHandlers | null;
 }
 
 function el(): FakeEl {
@@ -59,9 +70,17 @@ function el(): FakeEl {
     disabled: false,
     value: "",
     open: false,
+    dataset: {},
     handlers,
     addEventListener: (type, handler) => handlers.set(type, handler),
     click: () => handlers.get("click")?.(),
+    // The object list's view (authoring plan M4): a stand-in - its model
+    // is tested in object-list.test.ts, its DOM by the Playwright suite.
+    listHandlers: null,
+    bind(bound: ObjectListHandlers) {
+      this.listHandlers = bound;
+    },
+    render: () => undefined,
   };
 }
 
@@ -94,6 +113,12 @@ const DOM_KEYS = [
   "sizeOfferText",
   "sizeOfferUse",
   "sizeOfferKeep",
+  "objectList",
+  "replaceCodeButton",
+  "replaceCodeConfirm",
+  "replaceCodeConfirmText",
+  "replaceCodeYes",
+  "replaceCodeNo",
 ] as const;
 
 function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {
@@ -111,6 +136,10 @@ function memoryStore(
     removeNeverSettles?: boolean;
     putFails?: boolean;
     holdFirstPut?: boolean;
+    /** Hold every put whose key this names, until `releaseHeldKeys`. */
+    holdKeys?: (key: string) => boolean;
+    /** Refuse this many removes (they leave the file), then work. */
+    refuseRemoves?: number;
   } = {},
 ): {
   store: DraftFileStore;
@@ -118,12 +147,15 @@ function memoryStore(
   putKeys: string[];
   metaPuts: string[];
   releaseHeldPut: () => void;
+  releaseHeldKeys: () => void;
 } {
   const files = new Map<string, unknown>(Object.entries(seed));
   const putKeys: string[] = [];
   const metaPuts: string[] = [];
   let held: (() => void) | null = null;
   let released = false;
+  const heldByKey: (() => void)[] = [];
+  let refusedRemoves = 0;
   const store: DraftFileStore = {
     put: (key: string, data: unknown) => {
       putKeys.push(key);
@@ -131,6 +163,14 @@ function memoryStore(
       // A store that REFUSES, as the real one does on a quota wall or a
       // revoked directory handle: `put` reports false rather than throwing.
       if (options.putFails === true) return Promise.resolve(false);
+      if (options.holdKeys?.(key) === true) {
+        return new Promise<boolean>((resolve) => {
+          heldByKey.push(() => {
+            files.set(key, data);
+            resolve(true);
+          });
+        });
+      }
       // A store that is SLOW on its first write, so a test can decide when
       // that write lands relative to later ones.
       if (options.holdFirstPut === true && held === null && !released) {
@@ -156,6 +196,10 @@ function memoryStore(
       // on disk, which is what the meta has to outrank.
       if (options.removeNeverSettles === true)
         return new Promise<void>(() => {});
+      if (refusedRemoves < (options.refuseRemoves ?? 0)) {
+        refusedRemoves += 1;
+        return Promise.resolve();
+      }
       files.delete(key);
       return Promise.resolve();
     },
@@ -175,6 +219,9 @@ function memoryStore(
       released = true;
       held?.();
       held = null;
+    },
+    releaseHeldKeys: () => {
+      for (const land of heldByKey.splice(0)) land();
     },
   };
 }
@@ -214,7 +261,15 @@ function alignedArStore(): unknown {
       },
     },
   };
-  return { getState: () => state, subscribe: () => () => undefined };
+  // `dispatch` records what the setup logs into the troubleshooting
+  // recording (`tourAuthoring/*`); nothing reads it back into state.
+  const dispatched: unknown[] = [];
+  return {
+    getState: () => state,
+    subscribe: () => () => undefined,
+    dispatch: (action: unknown) => dispatched.push(action),
+    dispatched,
+  };
 }
 
 /** A reticle that always has a surface under it, at the origin. */
@@ -227,9 +282,20 @@ function fakeReticle(): unknown {
 
 function wire(
   store: DraftFileStore,
-  options: { firstOpenFails?: boolean; placeable?: boolean } = {},
+  options: {
+    firstOpenFails?: boolean;
+    placeable?: boolean;
+    /** Turn the world group about +Y (up) by this many degrees. */
+    worldGroupYawDeg?: number;
+  } = {},
 ) {
   let opens = 0;
+  // The AR world group, one metre east of the odometry origin: the pin's
+  // world position minus this offset is its position in odometry.
+  const worldGroup = new Group();
+  worldGroup.position.set(1, 0, 0);
+  worldGroup.rotation.y = ((options.worldGroupYawDeg ?? 0) * Math.PI) / 180;
+  worldGroup.updateMatrixWorld();
   const dom = fakeDom();
   const ctx = createTourViewerSession();
   // Everything a placement needs beyond the store: a measured level, a
@@ -238,12 +304,13 @@ function wire(
     ctx.mintedLevel = { id: "lvl", json: "{}" };
     ctx.reticle = fakeReticle() as never;
   }
+  const arStore = (
+    options.placeable === true ? alignedArStore() : createTourViewerStore()
+  ) as { dispatched?: unknown[] };
   const setup = wireCreatorSetup({
     ctx,
     mode: "creator",
-    arStore: (options.placeable === true
-      ? alignedArStore()
-      : createTourViewerStore()) as never,
+    arStore: arStore as never,
     arController: {
       getState: () => ({
         status: options.placeable === true ? "running" : "idle",
@@ -253,7 +320,14 @@ function wire(
     // `getScene` yields null, so `previewObject` returns before touching
     // three.js: these tests are about what reaches DISK, and a placement
     // must be provable without a renderer.
-    seams: { canShareZip: () => false, getScene: () => null } as never,
+    seams: {
+      // The object list's outcome hold and Undo window (M4 review #5):
+      // never fired here - these tests are about what reaches disk.
+      schedule: () => () => undefined,
+      canShareZip: () => false,
+      getScene: () => null,
+      getArWorldGroup: () => worldGroup,
+    } as never,
     wizard: { openStep: () => undefined, revealStep: () => undefined } as never,
     dom: dom as unknown as CreatorSetupDom,
     openDraftStore: () => {
@@ -267,12 +341,19 @@ function wire(
       return Promise.resolve(store);
     },
   });
-  return { dom, ctx, setup };
+  return { dom, ctx, setup, dispatched: arStore.dispatched ?? [] };
 }
 
-/** Let every already-resolved microtask in the chain run. */
+/**
+ * Let every already-resolved microtask in the chain run: a macrotask
+ * boundary drains the whole microtask queue, however deep the chain of
+ * awaits (the per-id write queue added several, M4 review #7). A held
+ * write stays held - only `releaseHeld*` lands it.
+ */
 async function settle(): Promise<void> {
-  for (let i = 0; i < 12; i += 1) await Promise.resolve();
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 const TOUR = "https://example.test/tour.zip";
@@ -1096,5 +1177,378 @@ describe("a closed tour's replace steps", () => {
     setup.resetFinishStep();
     expect(dom.replaceHelpDrive.hidden).toBe(true);
     expect(dom.replaceHelpGeneric.hidden).toBe(false);
+  });
+});
+
+describe("the troubleshooting recording's log of a placement", () => {
+  it("records a placed pin with the reticle in odometry, the alignment and the matrix it was read through", async () => {
+    // Why this test matters (authoring recording plan 2026-09-28-0953, M1a):
+    // the pin's record carries only geo, so a recording that logged just
+    // the record could never say WHY a note landed where it did - the
+    // drift hypotheses (plan §2.1) are told apart by the reticle's
+    // odometry position and the two matrices, target and rendered.
+    const { store } = memoryStore();
+    const { dom, dispatched } = wire(store, { placeable: true });
+
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+
+    const logged = dispatched.filter(
+      (a) => (a as { type: string }).type === "tourAuthoring/objectPlaced",
+    ) as {
+      payload: {
+        object: TourObject;
+        reticleOdomNue: number[];
+        alignmentMatrix: unknown;
+        arWorldGroupMatrix: number[];
+        cameraOdomPose: unknown;
+        arVisitIndex: number;
+        codeSizeM: number;
+      };
+    }[];
+    expect(logged).toHaveLength(1);
+    const payload = logged[0]!.payload;
+    expect(payload.object.kind).toBe("pin");
+    // The fake reticle sits at world (1, 0, -2); the group is shifted 1 m.
+    expect(payload.reticleOdomNue).toEqual([0, 0, -2]);
+    expect(payload.arWorldGroupMatrix[12]).toBe(1);
+    expect(payload.alignmentMatrix).not.toBeNull();
+    expect(payload.cameraOdomPose).toBeNull();
+    expect(payload.arVisitIndex).toBe(0);
+    // The anchor code's printed size (M1a review finding 8): a code's
+    // solved pose scales with it, so a placement read against a code
+    // cannot be re-derived without it.
+    expect(payload.codeSizeM).toBe(AUTHOR_DEFAULT_SIZE_M);
+    // JSON-safe: it is written to a file as it is.
+    expect(JSON.parse(JSON.stringify(payload))).toEqual(payload);
+  });
+
+  it("with the world group yawed 90 degrees, records the reticle in the group's frame, not the world's", async () => {
+    // Why this test matters (M1a review finding 6): the test above uses a
+    // translation only, and the e2e fake's `worldToLocal` is the identity,
+    // so a rotated frame was never exercised - and a 90-degree frame mix-up
+    // is a class of bug this code base has had. With the group turned
+    // +90 degrees about up and shifted 1 m east, the reticle at world
+    // (1, 0, -2) is group-local (2, 0, 0): the world position would read
+    // (1, 0, -2), and the opposite rotation (-2, 0, 0).
+    const { store } = memoryStore();
+    const { dom, dispatched } = wire(store, {
+      placeable: true,
+      worldGroupYawDeg: 90,
+    });
+
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+
+    const logged = dispatched.filter(
+      (a) => (a as { type: string }).type === "tourAuthoring/objectPlaced",
+    ) as {
+      payload: { reticleOdomNue: number[]; arWorldGroupMatrix: number[] };
+    }[];
+    expect(logged).toHaveLength(1);
+    const { reticleOdomNue, arWorldGroupMatrix } = logged[0]!.payload;
+    const [x, y, z] = reticleOdomNue;
+    expect(x).toBeCloseTo(2, 9);
+    expect(y).toBeCloseTo(0, 9);
+    expect(z).toBeCloseTo(0, 9);
+    // The two logged fields agree: the logged matrix takes the logged
+    // local position back onto the reticle, so a replay can rebuild either
+    // from the other.
+    const world = new Vector3(x, y, z).applyMatrix4(
+      new Matrix4().fromArray(arWorldGroupMatrix),
+    );
+    expect(world.x).toBeCloseTo(1, 9);
+    expect(world.y).toBeCloseTo(0, 9);
+    expect(world.z).toBeCloseTo(-2, 9);
+  });
+});
+
+describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §3.4, M4)", () => {
+  // Why these tests matter: before M4 the draft compared IDS with the
+  // hosted zip, so an edit of a hosted object (same id, new content) was
+  // "already in the zip": never offered, and deleted as spent - the edit
+  // lost across a crash with nothing on screen saying so. A deletion had
+  // no representation at all, so a crash brought the object back.
+  const HOSTED = pin("hosted");
+  const EDITED: TourObject = { ...pin("hosted"), label: "the new text" };
+
+  it("offers an edit of a hosted object as a change, and restores it in place of the hosted one", async () => {
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(EDITED),
+    });
+    const { ctx, dom, setup } = wire(store);
+    ctx.tourManifest = { version: 1, objects: [HOSTED] } as never;
+    dom.draftOffer.hidden = true;
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(dom.draftOffer.hidden, "an edit is unsaved work").toBe(false);
+    expect(dom.draftOfferText.textContent).toContain("1 change");
+    expect(files.has(objectKey("hosted")), "and it is not swept").toBe(true);
+    dom.draftRestore.click();
+    expect(ctx.placedObjects.map((p) => p.object)).toEqual([EDITED]);
+  });
+
+  it("offers a deletion the hosted zip has not seen, and restores it as a tombstone", async () => {
+    const { store } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [deletedKey("hosted")]: "1",
+    });
+    const { ctx, dom, setup } = wire(store);
+    ctx.tourManifest = { version: 1, objects: [HOSTED] } as never;
+    dom.draftOffer.hidden = true;
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(dom.draftOfferText.textContent).toContain("1 deletion");
+    dom.draftRestore.click();
+    expect(ctx.deletedObjectIds).toEqual(["hosted"]);
+    expect(ctx.placedObjects).toEqual([]);
+    expect(ctx.placementNote).toContain("1 deletion restored");
+  });
+
+  it("treats a deletion the hosted zip no longer carries as spent", async () => {
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [deletedKey("gone")]: "1",
+    });
+    const { ctx, dom, setup } = wire(store);
+    ctx.tourManifest = { version: 1, objects: [HOSTED] } as never;
+    dom.draftOffer.hidden = true;
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(dom.draftOffer.hidden).toBe(true);
+    expect(files.has(deletedKey("gone"))).toBe(false);
+  });
+
+  it("does not sweep a hosted object's file the creator edited while the draft was being read", async () => {
+    // A spent draft deletes what the read returned. A new placement can
+    // never be in that list (its id is fresh) - but an edit keeps its id,
+    // so the sweep would take the live edit's file with it.
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(HOSTED),
+    });
+    const { ctx, setup } = wire(store);
+    ctx.tourManifest = { version: 1, objects: [HOSTED] } as never;
+    ctx.placedObjects = [{ object: EDITED }];
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(files.has(objectKey("hosted"))).toBe(true);
+    // The live edit's content, not the spent draft's (M4 review #2).
+    expect(JSON.parse(String(files.get(objectKey("hosted"))))).toEqual(EDITED);
+    const meta = JSON.parse(String(files.get(META_KEY))) as {
+      rejected?: string[];
+    };
+    expect(meta.rejected ?? []).not.toContain("hosted");
+  });
+});
+
+describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
+  // Why these tests matter: each is a way the draft could hold something
+  // OLDER than what the creator last did, and a crash then brings the old
+  // state back with nothing on screen saying so - the failure the draft
+  // exists to prevent.
+  // - #1: the meta's rejected list outranks an object's file. An id the
+  //   meta rejects (a published tour reopened, its draft swept as spent; or
+  //   "Delete it") that the creator then edits or deletes kept its rejection,
+  //   so the next read hid the change and the next open swept it.
+  // - #2: work done while the draft was opening was written only when the
+  //   draft held NO file for its id, so an older edit on disk won.
+  // - #7: nothing ordered the writes to one id, so a placement's slow write
+  //   could land after a quick delete of it.
+  const HOSTED = pin("hosted");
+  const NEW_TEXT = "the new text";
+  const EDITED: TourObject = { ...HOSTED, label: NEW_TEXT };
+  const OLDER: TourObject = { ...HOSTED, label: "an older edit" };
+  const PUBLISHED = { version: 1, objects: [HOSTED] };
+
+  /** Open the tour on `store` in a fresh page (a reopen after the tab
+   *  died), with the hosted zip carrying `HOSTED`. */
+  async function reopen(store: DraftFileStore) {
+    const page = wire(store);
+    page.ctx.tourManifest = PUBLISHED as never;
+    page.dom.draftOffer.hidden = true;
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+    return page;
+  }
+
+  /** The text of the object file the draft holds for `id`. */
+  function onDisk(files: Map<string, unknown>, id: string): unknown {
+    const text = files.get(objectKey(id));
+    return typeof text === "string" ? JSON.parse(text) : undefined;
+  }
+
+  it("keeps an edit of an object a spent draft had rejected, across a crash", async () => {
+    // A published tour reopened: the draft equals the zip, so it is spent
+    // and its ids are rejected. Then the creator edits the hosted pin.
+    const { store } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(HOSTED),
+    });
+    const first = await reopen(store);
+    first.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
+    await settle();
+
+    const later = await reopen(store);
+    expect(later.dom.draftOffer.hidden, "the edit is offered").toBe(false);
+    later.dom.draftRestore.click();
+    expect(later.ctx.placedObjects.map((p) => p.object)).toEqual([EDITED]);
+  });
+
+  it("keeps a deletion of an object a spent draft had rejected, across a crash", async () => {
+    const { store } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(HOSTED),
+    });
+    const first = await reopen(store);
+    first.dom.objectList.listHandlers!.remove("hosted");
+    await settle();
+
+    const later = await reopen(store);
+    expect(later.dom.draftOfferText.textContent).toContain("1 deletion");
+    later.dom.draftRestore.click();
+    expect(later.ctx.deletedObjectIds).toEqual(["hosted"]);
+  });
+
+  it("keeps an edit made after 'Delete it' rejected the same object", async () => {
+    const { store } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(OLDER),
+    });
+    const first = await reopen(store);
+    expect(first.dom.draftOffer.hidden, "the older edit is offered").toBe(
+      false,
+    );
+    first.dom.draftDiscard.click();
+    await settle();
+    first.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
+    await settle();
+
+    const later = await reopen(store);
+    later.dom.draftRestore.click();
+    expect(later.ctx.placedObjects.map((p) => p.object)).toEqual([EDITED]);
+  });
+
+  it("keeps an edit made in the same moment as 'Delete it', before its sweep ran", async () => {
+    // The sweep is queued behind the meta write the discard commits, so an
+    // edit tapped right after it claims the id FIRST. The sweep must then
+    // see the id is no longer rejected, or it deletes the new edit.
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(OLDER),
+    });
+    const first = await reopen(store);
+    first.dom.draftDiscard.click();
+    first.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
+    await settle();
+
+    expect(onDisk(files, "hosted")).toEqual(EDITED);
+    expect(rejectedOf(String(files.get(META_KEY)))).not.toContain("hosted");
+  });
+
+  it("does not bring back a rejected file the sweep could not remove, when a crash follows the claim", async () => {
+    // The claim's FIRST step. "Delete it" rejected an older edit, and the
+    // sweep's removes were refused, so its file is still on disk. The
+    // creator edits the pin; the meta stops rejecting the id; the tab dies
+    // before the new record lands. Had the claim not removed the stale
+    // file first, the rejected older edit would be offered again.
+    const { store } = memoryStore(
+      {
+        [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+        [objectKey("hosted")]: JSON.stringify(OLDER),
+      },
+      {
+        // The sweep's three removes (record, bytes, tombstone).
+        refuseRemoves: 3,
+        holdKeys: (key) => key === objectKey("hosted"),
+      },
+    );
+    const first = await reopen(store);
+    first.dom.draftDiscard.click();
+    await settle();
+    first.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
+    await settle();
+
+    const later = await reopen(store);
+    expect(
+      later.dom.draftOffer.hidden,
+      "the rejected older edit must not be offered",
+    ).toBe(true);
+  });
+
+  it("still refuses an object rejected after it was written", async () => {
+    // The other direction of the same rule: the claim takes an id out of
+    // the rejected list only for a change made AFTER the rejection. "Delete
+    // it" on a draft holding an edit rejects that edit for good.
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(OLDER),
+    });
+    const first = await reopen(store);
+    first.dom.draftDiscard.click();
+    await settle();
+    expect(rejectedOf(String(files.get(META_KEY)))).toContain("hosted");
+    const later = await reopen(store);
+    expect(later.dom.draftOffer.hidden).toBe(true);
+  });
+
+  it("writes an edit made while the draft opened over the older edit the draft held", async () => {
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(OLDER),
+    });
+    const { ctx, setup } = wire(store);
+    ctx.tourManifest = PUBLISHED as never;
+    // Made before the draft namespace opened: nothing to write it to yet.
+    ctx.placedObjects = [{ object: EDITED }];
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(onDisk(files, "hosted")).toEqual(EDITED);
+  });
+
+  it("writes a deletion made while the draft opened over the older edit the draft held", async () => {
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(OLDER),
+    });
+    const { ctx, setup } = wire(store);
+    ctx.tourManifest = PUBLISHED as never;
+    ctx.deletedObjectIds = ["hosted"];
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(files.has(deletedKey("hosted"))).toBe(true);
+    expect(files.has(objectKey("hosted"))).toBe(false);
+  });
+
+  it("lands a quick delete after the slow write of the placement it deletes", async () => {
+    const { store, files, releaseHeldKeys } = memoryStore(
+      {},
+      { holdKeys: (key) => key.startsWith("object:") },
+    );
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    const id = String(ctx.placedObjects[0]?.object.id);
+    // Deleted before its write has landed.
+    dom.objectList.listHandlers!.remove(id);
+    await settle();
+    releaseHeldKeys();
+    await settle();
+
+    expect(
+      files.has(objectKey(id)),
+      "the delete must land after the write it follows",
+    ).toBe(false);
   });
 });

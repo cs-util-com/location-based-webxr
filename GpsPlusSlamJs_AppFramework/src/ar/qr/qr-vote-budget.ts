@@ -48,6 +48,13 @@ export interface QrVoteBudget {
   isSpent(text: string): boolean;
   /** Forget every code (store swap, session end). */
   reset(): void;
+  /**
+   * Forget one code: its next lock may vote again, the others keep their
+   * spend. For a consumer that re-arms a code whose last vote is too old to
+   * trust (the Tour Viewer's keep-alive, authoring plan 2026-09-28-0953
+   * M2b). A code never charged is a no-op.
+   */
+  forget(text: string): void;
 }
 
 export function createQrVoteBudget(
@@ -65,6 +72,9 @@ export function createQrVoteBudget(
     isSpent: (text) => (spent.get(text) ?? 0) >= maxLocksPerCode,
     reset: () => {
       spent.clear();
+    },
+    forget: (text) => {
+      spent.delete(text);
     },
   };
 }

@@ -64,4 +64,23 @@ describe('createQrVoteBudget', () => {
     budget.reset();
     expect(budget.isSpent('code-a')).toBe(false);
   });
+
+  // Why (Tour Viewer authoring plan 2026-09-28-0953, M2b review): the
+  // viewer's keep-alive re-votes a spent code from the pose its last voted
+  // lock used. A re-scan long after that pose was taken must earn fresh
+  // votes from a fresh pose, for THAT code only - resetting every code would
+  // make a second code, still held from a fresh pose, vote its burst again.
+  it('forget re-arms one code and leaves the others spent', () => {
+    const budget = createQrVoteBudget(1);
+    budget.tryConsume('code-a');
+    budget.tryConsume('code-b');
+    budget.forget('code-a');
+    expect(budget.spentFor('code-a')).toBe(0);
+    expect(budget.isSpent('code-a')).toBe(false);
+    expect(budget.tryConsume('code-a')).toBe(true);
+    expect(budget.isSpent('code-b')).toBe(true);
+    expect(budget.tryConsume('code-b')).toBe(false);
+    budget.forget('never-seen'); // a no-op, never a throw
+    expect(budget.spentFor('never-seen')).toBe(0);
+  });
 });

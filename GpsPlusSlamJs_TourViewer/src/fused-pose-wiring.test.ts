@@ -266,6 +266,12 @@ describe("the creator measures and mints with the fused pose", () => {
     "sizeOfferText",
     "sizeOfferUse",
     "sizeOfferKeep",
+    "objectList",
+    "replaceCodeButton",
+    "replaceCodeConfirm",
+    "replaceCodeConfirmText",
+    "replaceCodeYes",
+    "replaceCodeNo",
   ] as const;
   function el() {
     const handlers = new Map<string, () => void>();
@@ -275,9 +281,13 @@ describe("the creator measures and mints with the fused pose", () => {
       disabled: false,
       value: "",
       open: false,
+      dataset: {} as Record<string, string>,
       addEventListener: (type: string, handler: () => void) =>
         handlers.set(type, handler),
       click: () => handlers.get("click")?.(),
+      // The object list's view (authoring plan M4): a stand-in.
+      bind: () => undefined,
+      render: () => undefined,
     };
   }
   /** The real store, with a solved GPS alignment laid over its state: the

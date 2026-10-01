@@ -117,7 +117,11 @@ export interface QrTrackingControllerConfig {
   solvePose: (input: QrSolvePoseInput) => QrPoseSolution | null;
   /** Fetch + validate a level file from the decoded URL (cached by the controller). */
   fetchLevel: (url: string) => Promise<QrLevel>;
-  /** Dispatch the synthetic GPS votes (production: `recordGpsEvent` per payload). */
+  /**
+   * Dispatch the synthetic GPS votes (production: the Recorder dispatches
+   * `recordGpsEvent` per payload, the Tour Viewer one `recordGpsEventBatch`
+   * per lock).
+   */
   dispatchVotes: (votes: RecordGpsEventPayload[]) => void;
   /**
    * Emitted on every lock, independent of the vote (Note 3). Apps wire this to

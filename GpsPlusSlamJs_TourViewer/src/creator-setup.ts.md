@@ -90,6 +90,26 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   structural: a tour
   whose write stalls blocks only itself, and the ordering survives any
   interleaving of opens.
+- **So are an object's writes, PER ID** (M4 review #7; the M2c review's
+  filed #7). A placement's write is unawaited, so a quick delete of it
+  could land first and the object come back on the next open. Every write
+  and removal for one id - record, bytes, tombstone, a sweep - runs in that
+  id's queue (`keyed-chain.ts`, keys per tour namespace and id), so they
+  land in call order.
+- **A change to an id the meta rejects CLAIMS the id first** (M4 review
+  #1, `writeForObject`). The meta's rejected list outranks an object's
+  files, so an edit or delete of an object a spent draft or "Delete it" had
+  rejected was hidden by the next read and swept by the next open - the
+  edit lost, or the deleted object back. In the id's queue, each step
+  awaited: remove the rejected files, rewrite the meta without the id,
+  then write the change. A crash between steps leaves the rejection or
+  nothing for the id, never the rejected version. A sweep (discard, spent,
+  an unfinished earlier sweep) removes an id's files only if it is STILL
+  rejected when its turn comes, so a claim made meanwhile survives it.
+- **Work done before the draft opened is written after the read, ALL of
+  it** (M4 review #2): an edit or a deletion keeps its id, so the draft
+  may hold an older change of the same id, and writing only ids the draft
+  lacked left that older change for a crash to bring back.
 - **A draft is deleted only on PROOF**: a re-opened tour whose `tour.json`
   already carries its ids. Not on the download tap - on Android that
   resolves true the moment a download starts, and the creator still has to
@@ -101,11 +121,17 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
 
 ## Public API
 
-- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom, openDraftStore? }): CreatorSetup`
+- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom, openDraftStore?, codeTour?, summary? }): CreatorSetup`
   - `openDraftStore(key)` resolves this tour's draft namespace, or
     `undefined` where there is no persistence. Injected so the unit tests
     and the e2e can supply one without OPFS.
-  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard }`
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; replaceCodeButton; replaceCodeConfirm; replaceCodeConfirmText; replaceCodeYes; replaceCodeNo }`
+    - `objectList` (authoring plan 2026-09-28-0953 §3.4, M4) - the
+      `object-list.ts` view (`bind`, `render`); `main.ts` builds it over
+      `#object-list` inside the panel.
+    - `replaceCode*` - the explicit "Replace the code's saved
+      position" (a re-measure; its label was shortened to one line for the
+      360x640 overlay, 2026-10-01) and its confirm step, inside `#setup-controls`.
   - `arSessionLive(status)` - whether the controller's status means a
     session is up (`starting` / `running` / `stopping`). Exported because
     `main.ts` hands the same predicate to the wizard, which must not
@@ -116,9 +142,13 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
       OUTSIDE `#ar-root` - the download is tapped after the session ends,
       so putting it over the camera would promise otherwise.
   - `CreatorSetup` members: `renderAuthorReadout`, `startAuthorPipeline`,
-    `resetFinishStep` (a tour closed) and `presentDraftForTour` (a tour
+    `resetFinishStep` (a tour closed), `presentDraftForTour` (a tour
     opened AND its manifest settled - "spent" is a question about that
-    manifest, so it cannot be asked earlier).
+    manifest, so it cannot be asked earlier), `beginAuthorVisit`,
+    `endAuthorVisit`, and `selectInView` (M4: a tap in AR - an XR select
+    the overlay did not cancel - selects the object the `pickObjectInView`
+    seam names among the rendered previews for the tap's target ray, or
+    the screen centre when it is null; or clears the selection on a miss).
   - `CreatorSetup.renderAuthorReadout()` - the measuring readout
     (`authorStatusLine`) joined with the setup hint once measured
     (`setupHint`); a persistent pipeline error (`ctx.authorErrorText`) has
@@ -137,7 +167,159 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   the offer itself cannot be seen. Without it, a no-op that
   is always quiet.
 
+- `deps.summary` (optional; `summary-panel.ts`'s `show`/`hide`, authoring
+  plan 2026-09-28-0953 §3.3, M3b) - the summary after Finish. Each
+  successful Finish shows `buildSummaryModel` over the page-side visit log,
+  the codes' stored poses (the level in hand, then the tour's other levels)
+  and the objects the written manifest carries; a model that cannot be built
+  hides the summary rather than failing the Finish. A new AR visit hides it
+  (it is stale), and a closed tour hides it and empties the log.
+
+## The page-side visit log (authoring plan 2026-09-28-0953 §3.3 and §7 #4, M3b)
+
+- The store's walk and alignment are wiped at every AR exit, so the settle
+  (`settleVisit`, which already runs while the store holds the visit) also
+  copies the visit into `visit-log.ts`'s log: the device fixes and the
+  odometry, the fused path through the alignment the visit's objects
+  settled through, and each code the visit saw (its measurement in this
+  visit, then its latest sighting - the log keeps the LAST) through the
+  visit's OWN plain alignment, never the code-corrected one (that would
+  repeat the stored pose and fake agreement between visits). A visit with
+  no fix and no code is not logged.
+- **Every stored code, not only the one in hand** (M3a/M3b review #6):
+  `noteSighting` also keeps the latest stable sighting of ANY code with a
+  stored pose (the level in hand, or a level of the open tour with a geo)
+  in `storedCodeSightings`, tagged with its visit and cleared at the
+  visit's end. Only the visit log reads it: such a sighting never makes a
+  code the one in hand and never corrects anything.
+- **The saved pose is marked** (M3a/M3b review #2): `settleVisit` plans the
+  settle (pure) before logging, and hands the level it re-mints - if any -
+  to the log as `saved`, so the summary can grade the stored pose by the
+  visit it came from.
+- The id is `newVisitId(pageId, arSessionGeneration)` with a random page
+  id, so it stays unique across reloads; a visit settled again (a failed
+  Finish) replaces its entry.
+- Each entry is written to the draft as its own file (`writeDraftVisit`,
+  in the id's queue like a placement, fire-and-forget, `noteNoPersistence`
+  on a refusal); entries made before the draft opened are written when it
+  opens. A restored draft brings its visits back into the log; a dismissed
+  one does not. A visit's id is a stored id, so a discard sweeps it with
+  the objects; this page's own visit ids are never swept (`notLive`).
+- **Visits keep a draft alive** (M3a/M3b review #5): the zip never carries
+  them, so `draftIsSpent` gets the read's visit count and a draft holding
+  one is never spent - it is offered ("N AR visits for the summary map")
+  until the author restores or discards it. Before, a draft holding only
+  re-scan visits of a hosted code counted as spent and the reload's sweep
+  deleted the visit files. The cost: such a draft is offered on every
+  reload of the tour until a discard.
+
 ## Invariants & assumptions
+
+- **The troubleshooting recording's log** (authoring recording plan
+  2026-09-28-0953, M1a; `tour-authoring-actions.ts`): a placed pin or photo
+  dispatches `tourAuthoring/objectPlaced` (the record, the reticle in the
+  world group's local frame for a pin via `worldToLocal`, the frame's capture
+  pose for a photo, the store's alignment, the group's rendered matrix for a
+  pin, the code last in view as its last fused evaluation stood - read with
+  `last`, never `evaluate`, which would feed the motion detector - and the
+  code's printed size, `ctx.activeSizeM`); a mint
+  whose identity hash landed dispatches `tourAuthoring/codeMeasured` (inputs
+  captured at the tap); a finish whose rebuild succeeded dispatches
+  `tourAuthoring/finished` with the manifest written, before the session is
+  ended; each settle dispatches `tourAuthoring/settled` (below). All are top-level dispatches (a handler, a promise continuation),
+  never inside another dispatch. They change no state; without a recording
+  the store writes nothing.
+
+- **The settle** (authoring plan 2026-09-28-0953 §3.2, M2c; D2, D10b):
+  `endAuthorVisit` (called by `ar-entry.ts` FIRST in the session end, before
+  the store teardown resets the alignment) and a Finish tapped while the
+  session is live run `settleVisit`: `planVisitSettle` (`visit-settle.ts`)
+  recomputes the geo of the code measured in this visit and of every object
+  placed in it through one alignment; the records replace the tap-time ones
+  in `ctx.placedObjects` and `ctx.mintedLevel`, each settled object's draft
+  record and the meta are REWRITTEN (the per-object file design already
+  keys by id; no format change - so a page reload keeps the settled geo,
+  while a killed tab keeps the tap-time geo, accepted in the plan), and
+  `tourAuthoring/settled` is logged.
+  - **Each visit settles once, keyed by the visit the settle ran for**
+    (`visitSettles`, M2c review #1): the record holds the basis, the
+    alignment used, the store's alignment, the zero and the sighting. A
+    Finish tapped during a visit settles it at the tap, so the session end
+    the Finish causes finds the record and does not re-mint the code a
+    moment later (the draft's level would then differ from the one just
+    written, and the draft would be offered again after the upload). A
+    Finish that wrote no zip forgets the record while its visit still runs,
+    so the session end settles everything of the visit again, including
+    what was placed after the failure. A Finish tapped on the page settles
+    nothing and records nothing: `arSessionGeneration` is bumped at the
+    session END, so between visits it already names the NEXT visit, and
+    marking that number is what once kept the next visit from settling.
+  - **Late arrivals join their visit's settle** (M2c review #6): the record
+    is kept even for a visit with nothing to settle yet. A photo whose
+    encode lands after its visit settled (the session ended, or a Finish
+    ran) is minted through the record's alignment and zero - which IS the
+    settle - and logged as `tourAuthoring/settled` with trigger
+    `late-arrival`. Minting it through the store instead would use an
+    alignment that belongs to no visit (the teardown resets it).
+  - **A Finish removes from the list only what its zip carries** (the ids
+    of the manifest it wrote): a photo that landed during the rebuild is in
+    neither and waits, settled, for the next Finish.
+  - The mint records `ctx.codeMeasurement` (its raw inputs and visit) with
+    the level, and clears it whenever the level is cleared (a new tap, an
+    adopted print size, a tour close in `archive-open.ts`).
+  - A photo's visit is taken at the tap, before its async encode (its
+    odometry belongs to that visit); see "Late arrivals" above.
+  - **Later visits, corrected through the code (D10b).** Every detection's
+    fused evaluation goes through `noteSighting`: a STABLE pose of the code
+    whose level is in hand (or of any code while none is measured) becomes
+    `ctx.visitCodeSighting`, the latest one of this visit. A text's level id
+    is a hash (`qrCodeId`, async), so it is derived once per text
+    (`codeIds`) and the sighting waits for it. When the level's pose was
+    stored in an EARLIER visit (or came from a draft) and this visit saw the
+    code, the visit settles through the corrected alignment
+    (`visit-settle.ts`); without a sighting, through its plain alignment.
+  - **Earlier visits' objects on re-entry.** `beginAuthorVisit` (called by
+    `ar-entry.ts` once the runtime runs) renders every earlier object into
+    one frame at the scene root, placed from geo like the viewer's content;
+    each sighting re-places that frame (`placeEarlierObjects`): once the
+    basis is `code-corrected` it moves under the world group with the
+    corrected alignment's inverse as its matrix, which puts each object at
+    the odometry spot the code says - rigid in AR, since the corrected
+    alignment does not depend on the visit's GPS alignment
+    (`visit-anchoring.ts` property test). `endAuthorVisit` removes the frame;
+    the previews inside are disposed with `placedPreviews`. Objects already
+    written to the zip by a Finish (the manifest's) are not shown - showing
+    hosted objects in author mode is M4.
+  - **A preview from geo waits for the zero** (M2c review #4): on the
+    first visit of a page load (a restored draft) the zero arrives with the
+    first GPS fix, after `beginAuthorVisit` ran. `previewObject` records the
+    object's id instead of returning silently, and the store subscription
+    renders what waited once the zero is there (once each; the set is
+    emptied at the visit's end, since the next visit renders everything).
+  - **"Seen" is the fused pose's `stable`, no new threshold.** The same gate
+    the mint uses (the fused-pose source's own fit, motion and spread
+    checks). Considered over the plausible range of "seen": at one end a
+    single detection, whose single-frame pose is not gated at all (the fused
+    source exists because single frames scatter; its tests use +-6 degrees),
+    and every 3 degrees of yaw error moves a corrected note 20 m away by
+    about 1 m; at the other end an average over several stable evaluations,
+    which costs the author a longer look for an improvement nobody has
+    measured. `stable` is the middle and already exists. What would change
+    the choice: a field recording in which the stable poses of a re-sighted
+    code disagree with its stored pose by more than the 0.3 m / 2 degree
+    acceptance (plan §3.2) - then an averaged hold is the next step.
+  - **A refused correction is said, in one line** (M2c review #2): each
+    sighting re-evaluates the settle choice (`placeEarlierObjects`, with
+    this visit's median GPS accuracy); when the plausibility bound
+    (`visit-settle.ts`) refuses the correction, the live line starts with
+    `correctionRefusedLine` ("Code seen 60 m from its saved position - a
+    second print or a moved poster? Not used; this visit follows GPS")
+    until the visit ends or a sighting is accepted, and the visit's
+    `tourAuthoring/settled` carries `refusedCorrection`.
+  - **The entry hint** (§3.2a, D5): the live status line starts with
+    `entryHint` while a tour is open and `ctx.visitCodeSighting` holds no
+    sighting of the code in hand (any code while none is measured); it goes
+    the moment this visit has one, and never locks a control.
 
 - **A Drive tour's finish SAVES and shows the Drive steps** (Drive replace
   plan §2 decisions 1 and 4): the route is `finishRoute({canShare,
@@ -160,6 +342,19 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
   `qrCodeId` of the exact printed text, guarded by `ctx.mintGeneration` so
   a stale hash cannot install an older level. Until it lands the finish
   button stays off.
+  - **A stored pose stays the reference** (D10b, M2c review #5): the level
+    in hand before the tap is captured, and once the id lands
+    `measurementRole` (`visit-settle.ts`) decides - with the hosted zip's
+    `qr/<id>.json` read through `hostedLevelJson` when nothing of this code
+    is in hand (ignored if another tour was opened meanwhile). A kept
+    reference stays `mintedLevel` (so Finish writes the hosted file back
+    byte for byte), the measurement becomes this visit's sighting, the
+    line says "Code seen - its saved position stays, and this visit is
+    lined up with it", and `setupHint` says "Saved position kept" rather
+    than "replaces". `tourAuthoring/codeMeasured` logs which happened
+    (`kept`). A failed identity hash restores the level in hand. A hosted
+    level whose file cannot be read, or carries no geo, is not a
+    reference: the measurement is, as before.
 - **Finish** (`finishReadiness`): needs a measured level, an open tour AND
   a settled manifest load (pending or broken refuses, with the reason:
   finishing would overwrite a placement it could not read, M3 review #5);
@@ -241,10 +436,16 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
   same moment; the pose used to be read at tap time (QR perf plan 2026-09-23
   M4). A frame older than `PHOTO_FRAME_MAX_AGE_MS` (1 s) is refused -
   `photo-frame.ts`, because frames stop during a tracking loss while
-  `latestFrame` keeps the last one. Each placement renders its own preview (`renderTourObjects`
-  at the scene root; `ctx.placedPreviews`, one handle per object, so two
-  placements cannot race each other's disposal and a photo is decoded
-  once). The outcome of a placement is `ctx.placementNote`, shown until
+  `latestFrame` keeps the last one. Each placement renders its own preview (`renderTourObjects`;
+  `ctx.placedPreviews`, one handle per object, so two placements cannot
+  race each other's disposal and a photo is decoded once). A preview of an
+  object placed in the RUNNING visit is rigid (decision D2, plan §3.2, M2c):
+  it goes under the AR world group at its odometry pose, kept in
+  `placedObjects[i].placement` (`{ visit, local }`; a pin's reticle through
+  `worldToLocal`, a photo's capture pose through `odomNueFromWebXr`), so a
+  GPS re-solve moves it together with the camera instead of sliding it
+  against the world (symptom A). Anything else - a restored draft object,
+  an earlier visit's - has only its geo and is placed from it. The outcome of a placement is `ctx.placementNote`, shown until
   the next tap AHEAD of the live readout, never instead of it: it gates no
   control (it used to replace the readout and lock Save, which on a device
   without OPFS - the backup notice fires at tour open - left Save locked
@@ -257,6 +458,64 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
   finish visibly instead of freezing the panel.
 - The measured level survives a session end on purpose (finishing ends
   the session); a new measurement replaces it.
+- **The AR status line is clamped to two lines** (2026-10-01,
+  `data-clamped`, `statusExpanded`), the whole of it a tap away; the page
+  is unclamped and each visit starts clamped. The live readout joins up to
+  five sentences ABOVE the controls, and on a 360x640 phone with the
+  code's re-measure offered and an object selected it pushed the last
+  control below the first screen (`ar-layout.spec.js`). The smallest
+  change: CSS clamps, the text is unchanged (screen readers and every
+  check read the whole), and nothing has to decide which sentence the
+  author can do without - the line already leads with what to act on.
+  Test: `authoring-settle.test.ts` "the status line in AR is clamped".
+- **Editing placed objects (authoring plan 2026-09-28-0953 §3.4, M4)**,
+  through `object-editing.ts`:
+  - **The hosted zip's objects are rendered in author mode**, keyed by id,
+    through the same path as the earlier visits' objects: from geo in the
+    earlier-visits frame, which moves under the world group once the code
+    is seen (D10b). Before M4 they were invisible to an author reopening a
+    tour. `syncPreviews` keeps `ctx.placedPreviews` (a map by id) in line
+    with `authoringObjects`: a preview whose object changed look or pose
+    (`previewKey`) is replaced, one whose object is gone is disposed, the
+    rest are left alone. Each visit starts with a fresh render into its
+    frames. A hosted photo's bytes come from the zip
+    (`session.loadContentEntry`); a photo a Finish took out of
+    `placedObjects` keeps its bytes in `finishedPhotoBlobs` until the tour
+    closes, since the hosted zip lacks them until the upload.
+  - **The Finish replaces and filters** (`applyObjectChanges`), removes
+    each deleted photo's content file (`contentEntriesToRemove` into the
+    rebuild's `remove`), and afterwards drops from `placedObjects` only
+    what the zip carries WITH THE SAME CONTENT, and clears the applied
+    deletions. The draft's tombstones stay until the hosted zip lacks the
+    ids, the same proof the objects wait for.
+  - **Draft**: an edit is a record under the same id; a delete of a
+    hosted object is `writeDraftDeletion`; the offer names changes and
+    deletions (`restoreOfferText`); a restore replaces by id and brings
+    deletions back as tombstones, with live work on the same id winning.
+    The spent sweep and the discard skip ids changed live since the read
+    (`notLive`): an edit keeps its id, so unlike a new placement its file
+    can be in the read's list.
+  - **Overlay taps are not scene taps**: `beforexrselect` is cancelled on
+    the panel (the PhysicsDemo pattern), so a tap on Delete does not also
+    select what stands behind the button. The framework's reticle driver
+    carries the `select` listener through its own `onSelect` option, and
+    since M4 review #4 hands the tap's target ray as a second argument
+    (backward compatible: MinimalExample's one-parameter handler is as it
+    was), so the pick goes through the tapped point.
+  - **The explicit replace of a stored code** (M2c review #5): offered in
+    AR while the level in hand is a stored pose, enabled with the mint gate
+    for that code in view, behind a confirm step (`replaceCodeConfirmText`,
+    M4 review #3) that says the code moves for every visitor - by how much,
+    from this visit's sighting (`sightedCodeOffset`), kept current while
+    the confirm is open - and that notes placed against the old position
+    keep their stored geo and so will appear shifted by about that much.
+    Confirmed, the measurement becomes the reference (`kept:
+"measurement"`, logged with `replaced`); without it a new measurement
+    of a stored code stays a correction sighting. Whether a replace should
+    also move the earlier notes along is an OPEN owner decision; the
+    confirm handler marks where such an option would go.
+  - The readout's "N objects placed" counts only objects the zip does not
+    carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,
   `authorErrorText`, `mintedLevel`, `mintGeneration`, `finishing`,
   `rebuiltZip`, `placedObjects`, `placedPreviews`, `placementNote`; reads
@@ -297,6 +556,15 @@ hooks.startAuthorPipeline = setup.startAuthorPipeline;
 
 ## Tests
 
+The summary after Finish (M3b): `authoring-settle.test.ts` ("the summary
+after Finish") walks two visits through the composed setup - each settle
+writes its own visit file, the second visit's code through its PLAIN
+alignment although its settle was code-corrected, both survive a new read,
+and the Finish hands the summary both visits, the code and the pin; a
+restored draft brings its visit back after a reload; a closed tour drops
+the summary and the visits. `playwright-tests/summary.spec.js` drives the
+real page.
+
 `playwright-tests/ar-mode.spec.js` - "the creator measures the code,
 finishes, and downloads a rebuilt zip that carries the level and
 tour.json" drives the composed flow under the fakes (the real controller,
@@ -312,4 +580,28 @@ detection withdraws the pose instead of minting the old frame's (plan
 pure pieces are unit-tested in
 `qr-author-mode.test.ts` (`authorStatusLine`, `setupHint`,
 `finishReadiness`) and `tour-session.test.ts` (`archiveFileName`,
-`readWholeArchive`, `loadTourManifest`).
+`readWholeArchive`, `loadTourManifest`). The recording's log:
+`creator-setup.test.ts` (a pin's `objectPlaced`, its odometry position and
+matrices, the code's size, and the reticle with the world group yawed 90
+degrees) and `creator-finish.test.ts` (the finish's manifest). Anchoring (M2c):
+`authoring-settle.test.ts` (rigid previews, the settle through the real
+setup, its log and draft rewrite; each visit settling once - a page-side
+Finish does not stop the next visit, a failed Finish leaves the visit to
+settle at its end - and late photos joining their visit's settle, including
+one landing during a live Finish; a restored object shown once the zero
+arrives), `creator-finish.test.ts` (the settle at
+Finish, once). Editing (M4): `authoring-settle.test.ts` (hosted objects
+rendered and listed, edit, delete, move through the code correction, the
+async states, tap-select, the overlay guard, the explicit replace),
+`creator-finish.test.ts` (an edit replaces in place; a deletion filters
+the object and takes a deleted photo's jpg out of the archive),
+`creator-setup.test.ts` (a draft's edit and deletion offered and
+restored, a spent deletion swept, a live edit's file not swept; "the
+order of the draft's writes": an edit or deletion of a rejected id kept
+across a crash after a spent sweep and after "Delete it", one made in the
+same moment as "Delete it" surviving its sweep, a rejected file the sweep
+could not remove not coming back after a claim, a rejection after the
+change still holding, a change made while the draft opened written over
+an older one, and a quick delete landing after a slow placement write),
+`keyed-chain.test.ts`, and
+`playwright-tests/object-editing.spec.js`.

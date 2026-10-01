@@ -49,6 +49,11 @@ const testGpsDataSlice = createSlice({
     setZeroPos(_state, action: PayloadAction<{ lat: number; lon: number }>) {
       return { zero: action.payload };
     },
+    // Stands in for the library's per-AR-entry reset, which a teardown
+    // dispatches AFTER `endSession` (ar-session-teardown.ts).
+    resetGpsSessionData(state) {
+      return state;
+    },
   },
 });
 
@@ -807,5 +812,138 @@ describe('flushPendingWrites', () => {
 
     await expect(middleware.flushPendingWrites()).resolves.toBeUndefined();
     errSpy.mockRestore();
+  });
+});
+
+describe('session-spanning recordings (persistWhile, continuousActionIndex)', () => {
+  // Why these tests matter: an app that dispatches `startSession` on EVERY AR
+  // entry and `endSession` + `resetGpsSessionData` on every exit (the Tour
+  // Viewer) cannot record one troubleshooting session across several AR
+  // entries under the default rules - the reset comes after `endSession` so
+  // it is never written, an action dispatched on the page outside AR is
+  // never written, and each entry restarts the numbering at 000001 and
+  // overwrites the entries before it. A replay then mixes two entries'
+  // alignments. The two options make such a recording possible; the
+  // defaults must stay exactly as they were, because the Recorder relies
+  // on them (plan 2026-09-28-0953 §2.3, review findings 1 and 2).
+  function backend() {
+    return {
+      createSession: vi.fn().mockResolvedValue({ sessionName: 'test' }),
+      listSessions: vi.fn().mockResolvedValue([]),
+      writeAction: vi.fn().mockResolvedValue(undefined),
+      writeFrame: vi.fn().mockResolvedValue(undefined),
+      writeSessionMetadata: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  /** Two AR entries as the Tour Viewer dispatches them, with a page-side
+   *  action between them. */
+  function twoVisits(store: ReturnType<typeof createTestStore>): void {
+    const { startSession, endSession } = testRecorderSlice.actions;
+    const { setZeroPos, resetGpsSessionData } = testGpsDataSlice.actions;
+    store.dispatch(startSession());
+    store.dispatch(setZeroPos({ lat: 1, lon: 1 }));
+    store.dispatch(endSession());
+    store.dispatch(resetGpsSessionData());
+    store.dispatch(setZeroPos({ lat: 9, lon: 9 })); // on the page, outside AR
+    store.dispatch(startSession());
+    store.dispatch(setZeroPos({ lat: 2, lon: 2 }));
+    store.dispatch(endSession());
+    store.dispatch(resetGpsSessionData());
+  }
+
+  /** Every queued write, past the 3-write concurrency cap, has started. */
+  async function drained(): Promise<void> {
+    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+  }
+
+  function written(b: ReturnType<typeof backend>): [string, number][] {
+    return b.writeAction.mock.calls.map(([action, index]) => [
+      (action as { type: string }).type,
+      index as number,
+    ]);
+  }
+
+  it('with persistWhile and a continuous index, two AR entries record every action, numbered without restarting', async () => {
+    const b = backend();
+    const store = createTestStore({
+      storageBackend: b,
+      persistWhile: () => true,
+      continuousActionIndex: true,
+    });
+
+    twoVisits(store);
+    await drained();
+
+    expect(written(b)).toEqual([
+      ['recording/startSession', 1],
+      ['gpsData/setZeroPos', 2],
+      ['recording/endSession', 3],
+      // The reset a replay needs to give each entry its own alignment.
+      ['gpsData/resetGpsSessionData', 4],
+      // Dispatched on the page between the entries.
+      ['gpsData/setZeroPos', 5],
+      // NOT 1 again: a restart would overwrite 000001.json.
+      ['recording/startSession', 6],
+      ['gpsData/setZeroPos', 7],
+      ['recording/endSession', 8],
+      ['gpsData/resetGpsSessionData', 9],
+    ]);
+  });
+
+  it('persistWhile REPLACES the recording gate: false writes nothing, even inside a session', async () => {
+    // The predicate is the whole gate when given - an app that has not
+    // opted in must write nothing, whatever its sessions do.
+    const b = backend();
+    let on = false;
+    const store = createTestStore({
+      storageBackend: b,
+      persistWhile: () => on,
+      continuousActionIndex: true,
+    });
+
+    store.dispatch(testRecorderSlice.actions.startSession());
+    store.dispatch(testGpsDataSlice.actions.setZeroPos({ lat: 1, lon: 1 }));
+    await drained();
+    expect(b.writeAction).not.toHaveBeenCalled();
+
+    on = true;
+    store.dispatch(testGpsDataSlice.actions.setZeroPos({ lat: 2, lon: 2 }));
+    await drained();
+    expect(written(b)).toEqual([['gpsData/setZeroPos', 1]]);
+  });
+
+  it('persistWhile alone still restarts the numbering at each startSession (the flags are independent)', async () => {
+    const b = backend();
+    const store = createTestStore({
+      storageBackend: b,
+      persistWhile: () => true,
+    });
+
+    twoVisits(store);
+    await drained();
+
+    expect(written(b).map(([, index]) => index)).toEqual([
+      1, 2, 3, 4, 5, 1, 2, 3, 4,
+    ]);
+  });
+
+  it('the defaults are unchanged: the reset after endSession and the page-side action are NOT written, and each session restarts at 1', async () => {
+    // The Recorder's contract. If this ever changes, every Recorder
+    // recording changes shape with it.
+    const b = backend();
+    const store = createTestStore({ storageBackend: b });
+
+    twoVisits(store);
+    await drained();
+
+    expect(written(b)).toEqual([
+      ['recording/startSession', 1],
+      ['gpsData/setZeroPos', 2],
+      ['recording/endSession', 3],
+      ['recording/startSession', 1],
+      ['gpsData/setZeroPos', 2],
+      ['recording/endSession', 3],
+    ]);
   });
 });

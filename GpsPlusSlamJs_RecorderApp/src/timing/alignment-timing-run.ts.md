@@ -22,9 +22,15 @@ executes, and builds the `createPass` function the loop drives.
 
 - **The timed unit is one dispatch of a recorded `gpsData/recordGpsEvent`** -
   the same call the live recorder makes per GPS fix, and the one inside which
-  the alignment solve runs. Recorded actions are dispatched as recorded; nothing
+  the alignment solve runs - **or of a `gpsData/recordGpsEventBatch`** (core
+  1.26: several observations, ONE solve; the Tour Viewer records a device fix
+  with the code keep-alive's ring this way), timed as one unit because it is
+  one solve. Its span time is its first event with a finite timestamp
+  (`utils/gps-event-actions` reads either shape). Before, a recording of
+  batches timed only its lone fixes - the dearest solves silently missing. Recorded actions are dispatched as recorded; nothing
   is rebuilt, so there is no second code path to drift.
-- **Only `gpsData/setZeroPos` and `gpsData/recordGpsEvent` are replayed.**
+- **Only `gpsData/setZeroPos` and the GPS actions (`recordGpsEvent`,
+  `recordGpsEventBatch`) are replayed.**
   Everything else a recording carries (compass opt-ins, frame captures, depth
   samples, ref points, session lifecycle) is dropped, so the RECORDING cannot
   reconfigure the solve and make the arms incomparable. The configuration comes

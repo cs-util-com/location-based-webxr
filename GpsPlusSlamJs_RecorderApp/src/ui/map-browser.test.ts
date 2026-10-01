@@ -51,8 +51,12 @@ vi.mock('leaflet', () => {
 });
 
 vi.mock('./map-osm-base', () => ({
-  addOsmTileLayer: vi.fn(),
   FIT_BOUNDS_PADDING: [20, 20] as [number, number],
+}));
+// The basemap layer moved to the framework (2026-10-01, with the summary
+// map's shell); stubbed here as before.
+vi.mock('gps-plus-slam-app-framework/visualization/osm-tile-layer', () => ({
+  addOsmTileLayer: vi.fn(),
 }));
 
 import { createMapBrowser } from './map-browser.js';

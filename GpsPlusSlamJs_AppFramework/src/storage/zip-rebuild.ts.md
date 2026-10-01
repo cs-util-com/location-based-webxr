@@ -19,9 +19,17 @@ DEC-H3).
     new path is unsafe or duplicated, or when writing fails. It NEVER
     returns the input: a caller about to upload the result must not be
     handed the old archive as if it were new.
-- `interface RebuildZipOptions { onProgress?(done, total) }` - called after
-  each carried-over entry is read and once more at `total/total` after the
-  write.
+- `interface RebuildZipOptions { onProgress?(done, total); remove?: readonly string[] }`
+  - `remove` (Tour Viewer authoring plan 2026-09-28-0953, M4): archive
+    paths left OUT of the output - a deleted photo's `content/<id>.jpg`.
+    Matched under the archive's `./` convention like a replacement (either
+    spelling names the same file); a path the archive does not carry is
+    ignored; a path that is also among the new entries throws
+    `ZipPackagingError` ("both removed and written"). Removed entries count
+    out of the progress `total`.
+  - `onProgress` - called after
+    each carried-over entry is read and once more at `total/total` after the
+    write.
 
 ## Invariants & assumptions
 
@@ -95,7 +103,10 @@ call refused as the duplicate they are.
 (including a multi-chunk entry); replaces an existing path exactly once;
 STORE mode for carried and new entries (hand-rolled central-directory
 reader); zero-entry input; an input with a `./` name and a duplicate name
-is re-emitted; progress as entries read over the output count; throws on
+is re-emitted; progress as entries read over the output count; the
+removal list (drops named entries, matches under `./`, ignores an absent
+path, refuses a path both removed and written, counts removals out of the
+progress total); throws on
 an unsafe path, an unwritable payload and a non-zip input.
 `zip-coverage-embed-failure.test.ts` pins the wrapper's return-the-input
 contract when this module throws.

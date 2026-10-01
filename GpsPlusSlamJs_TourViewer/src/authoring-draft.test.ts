@@ -24,7 +24,9 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import {
-  appendWithoutDuplicateIds,
+  applyObjectChanges,
+  contentEntriesToRemove,
+  draftDeletionsNotYetHosted,
   draftHasUnhostedLevel,
   draftIsSpent,
   draftKeyForTour,
@@ -44,13 +46,34 @@ function pin(id: string): TourObject {
   };
 }
 
-function draftOf(objects: readonly TourObject[]): AuthoringDraft {
+function draftOf(
+  objects: readonly TourObject[],
+  deleted: readonly string[] = [],
+): AuthoringDraft {
   return {
     tourUrl: "https://h/t.zip",
     sizeM: 0.16,
     level: { id: "abc", json: "{}" },
     objects,
+    deleted,
   };
+}
+
+function photo(id: string): TourObject {
+  return {
+    id,
+    kind: "photo",
+    image: `content/${id}.jpg`,
+    imageWidth: 4,
+    imageHeight: 3,
+    createdAtIso: "2026-09-09T00:00:00.000Z",
+    geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+  };
+}
+
+/** A pin with the same id and a new text: an edit. */
+function edited(object: TourObject, label: string): TourObject {
+  return object.kind === "pin" ? { ...object, label } : object;
 }
 
 function manifestOf(objects: readonly TourObject[]): TourManifest {
@@ -69,6 +92,42 @@ describe("draftObjectsNotYetHosted", () => {
       "b",
       "c",
     ]);
+  });
+
+  it("counts an EDIT of a hosted object as not yet hosted - content, not ids (plan §3.4)", () => {
+    // Why this test matters: comparing ids made an edit to a hosted pin
+    // look "already in the zip", so the restore dropped it and the spent
+    // rule deleted the draft that held it - the edit was lost silently
+    // (cold review #8).
+    const hosted = manifestOf([pin("a"), pin("b")]);
+    const draft = draftOf([edited(pin("a"), "the new text"), pin("b")]);
+    expect(draftObjectsNotYetHosted(draft, hosted).map((o) => o.id)).toEqual([
+      "a",
+    ]);
+    // ...and it is hosted once the zip carries THAT content.
+    expect(
+      draftObjectsNotYetHosted(
+        draft,
+        manifestOf([edited(pin("a"), "the new text"), pin("b")]),
+      ),
+    ).toEqual([]);
+  });
+
+  it("judges content regardless of the order the fields were written in", () => {
+    // A record read back from disk and one minted in memory carry their
+    // fields in different orders; the same pin must still be the same pin.
+    const reordered = JSON.parse(
+      JSON.stringify({
+        label: "a",
+        geo: { headingDeg: 0, alt: 400, lon: 8.7, lat: 47.5 },
+        createdAtIso: "2026-09-09T00:00:00.000Z",
+        kind: "pin",
+        id: "a",
+      }),
+    ) as TourObject;
+    expect(
+      draftObjectsNotYetHosted(draftOf([pin("a")]), manifestOf([reordered])),
+    ).toEqual([]);
   });
 
   it("adds everything when the tour has no manifest yet", () => {
@@ -102,6 +161,24 @@ describe("draftObjectsNotYetHosted", () => {
         },
       ),
     );
+  });
+});
+
+describe("deletions (tombstones, plan §3.4)", () => {
+  it("keeps a deletion pending while the hosted zip still carries the object", () => {
+    const draft = draftOf([], ["a", "gone"]);
+    expect(draftDeletionsNotYetHosted(draft, manifestOf([pin("a")]))).toEqual([
+      "a",
+    ]);
+    expect(draftDeletionsNotYetHosted(draft, null)).toEqual([]);
+  });
+
+  it("is not spent while a deletion has not reached the hosted zip", () => {
+    // A draft holding only a deletion is real work: deleting it as spent
+    // would bring the deleted object back on the next Finish.
+    const draft = { ...draftOf([], ["a"]), level: null };
+    expect(draftIsSpent(draft, manifestOf([pin("a")]))).toBe(false);
+    expect(draftIsSpent(draft, manifestOf([pin("b")]))).toBe(true);
   });
 });
 
@@ -147,6 +224,18 @@ describe("draftIsSpent", () => {
     expect(draftIsSpent(empty, null)).toBe(true);
   });
 
+  it("a draft holding AR visits is NOT spent: the zip never carries them (M3a/M3b review #5)", () => {
+    // A visit that only re-scanned a hosted code leaves nothing else, and
+    // the sweep that follows "spent" deleted its file - the summary's only
+    // evidence for that code. Only a discard drops visits.
+    const empty = { ...draftOf([]), level: null };
+    expect(draftIsSpent(empty, null, null, 1)).toBe(false);
+    expect(
+      draftIsSpent(draftOf([pin("a")]), manifestOf([pin("a")]), "{}", 2),
+    ).toBe(false);
+    expect(draftIsSpent(empty, null, null, 0)).toBe(true);
+  });
+
   it("draftHasUnhostedLevel says when a measurement is worth offering", () => {
     expect(draftHasUnhostedLevel(draftOf([]), null)).toBe(true);
     expect(draftHasUnhostedLevel(draftOf([]), "{}")).toBe(false);
@@ -156,39 +245,73 @@ describe("draftIsSpent", () => {
   });
 });
 
-describe("appendWithoutDuplicateIds", () => {
-  it("keeps the existing objects and adds only new ids", () => {
-    const result = appendWithoutDuplicateIds(
-      [pin("a"), pin("b")],
-      [pin("b"), pin("c")],
+describe("applyObjectChanges (the Finish: replace and filter, plan §3.4)", () => {
+  it("replaces an edited object in place, appends new ones and drops deleted ones", () => {
+    // Why this test matters: the finish used to APPEND, skipping ids the
+    // manifest had - so an edit to a hosted pin was silently dropped at
+    // Finish, and a delete had no way to be written at all.
+    const result = applyObjectChanges(
+      [pin("a"), pin("b"), photo("c")],
+      [edited(pin("a"), "moved text"), pin("d")],
+      ["c"],
     );
-    expect(result.map((o) => o.id)).toEqual(["a", "b", "c"]);
+    expect(result.map((o) => o.id)).toEqual(["a", "b", "d"]);
+    expect(result[0]).toEqual(edited(pin("a"), "moved text"));
   });
 
-  it("produces no duplicate ids whatever it is given (property)", () => {
+  it("never resurrects a deleted id and never duplicates one, whatever it is given (property)", () => {
     // The finish serialises through `parseTourManifest`, which REJECTS
-    // duplicate ids - so this function's output is the difference between
-    // a finish that works and one that throws every time it is retried.
+    // duplicate ids - so a duplicate here is a finish that throws on every
+    // retry; and a deleted id coming back is the delete silently undone.
+    const ids = fc.constantFrom<string>("a", "b", "c", "d", "e", "f");
     fc.assert(
       fc.property(
-        fc.array(fc.string({ minLength: 1 }), { maxLength: 10 }),
-        fc.array(fc.string({ minLength: 1 }), { maxLength: 10 }),
-        (existingIds, additionIds) => {
-          const out = appendWithoutDuplicateIds(
-            // The existing list can itself repeat only if the manifest was
-            // already broken; dedupe the input so the property is about
-            // THIS function.
-            [...new Set(existingIds)].map(pin),
-            additionIds.map(pin),
+        fc.uniqueArray(ids, { maxLength: 6 }),
+        fc.array(fc.tuple(ids, fc.string({ minLength: 1 })), {
+          maxLength: 10,
+        }),
+        fc.array(ids, { maxLength: 6 }),
+        (existingIds, changeSpecs, deleted) => {
+          const changes = changeSpecs.map(([id, label]) =>
+            edited(pin(id), label),
           );
-          expect(new Set(out.map((o) => o.id)).size).toBe(out.length);
-          // Order is stable: existing first, then new ones as given.
-          expect(
-            out.slice(0, new Set(existingIds).size).map((o) => o.id),
-          ).toEqual([...new Set(existingIds)]);
+          const out = applyObjectChanges(
+            existingIds.map(pin),
+            changes,
+            deleted,
+          );
+          const outIds = out.map((o) => o.id);
+          expect(new Set(outIds).size).toBe(outIds.length);
+          for (const id of deleted) expect(outIds).not.toContain(id);
+          const gone = new Set<string>(deleted);
+          // Every surviving id is there, carrying its LAST change.
+          const expected = new Set(
+            [...existingIds, ...changes.map((c) => c.id)].filter(
+              (id) => !gone.has(id),
+            ),
+          );
+          expect(new Set(outIds)).toEqual(expected);
+          const lastChange = new Map(changes.map((c) => [c.id, c]));
+          expect(out).toEqual(out.map((o) => lastChange.get(o.id) ?? o));
+          // Hosted order is kept: the existing survivors come first.
+          const survivors = existingIds.filter((id) => !gone.has(id));
+          expect(outIds.slice(0, survivors.length)).toEqual(survivors);
         },
       ),
     );
+  });
+});
+
+describe("contentEntriesToRemove (a deleted photo takes its jpg with it)", () => {
+  it("names each deleted photo's content entry under the zip's wrap, and nothing else", () => {
+    expect(
+      contentEntriesToRemove(
+        [photo("p1"), photo("p2"), pin("a")],
+        ["p1", "a", "absent"],
+        "mytour/",
+      ),
+    ).toEqual(["mytour/content/p1.jpg"]);
+    expect(contentEntriesToRemove([photo("p1")], [], "")).toEqual([]);
   });
 });
 
@@ -217,6 +340,35 @@ describe("the words the creator reads", () => {
     expect(restoreOfferText(3)).toContain("3 things");
     expect(restoredText(1)).toContain("1 placed object");
     expect(restoredText(2)).toContain("2 placed objects");
+  });
+
+  it("names changes and deletions next to what was placed", () => {
+    // A restore that brings back a deletion must say so: "Add it back?"
+    // over a bare count would read as bringing the object back.
+    expect(restoreOfferText(1, false, { changed: 1, deleted: 2 })).toContain(
+      "1 thing you placed, 1 change and 2 deletions",
+    );
+    expect(restoreOfferText(0, false, { changed: 0, deleted: 1 })).toContain(
+      "1 deletion",
+    );
+    expect(restoredText(0, false, { changed: 2, deleted: 0 })).toContain(
+      "2 changes",
+    );
+  });
+
+  it("names AR visits apart, and never says they go into the zip", () => {
+    expect(restoreOfferText(0, false, { visits: 2 })).toBe(
+      "Unsaved work from this tour is still on this device: 2 AR visits for the summary map. Add them back?",
+    );
+    expect(restoreOfferText(1, true, { visits: 1 })).toContain(
+      "1 thing you placed, 1 AR visit for the summary map and the code's measured position",
+    );
+    expect(restoredText(0, false, { visits: 1 })).toBe(
+      "1 AR visit restored - the summary after the next Finish shows it.",
+    );
+    expect(restoredText(2, false, { visits: 3 })).toBe(
+      "2 placed objects restored - they go into the zip on the next Finish. 3 AR visits came back for the summary too.",
+    );
   });
 
   it("always names the count and never reads as a command (property)", () => {

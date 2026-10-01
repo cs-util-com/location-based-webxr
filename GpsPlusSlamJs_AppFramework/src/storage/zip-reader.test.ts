@@ -701,6 +701,112 @@ describe('loadGpsPathFromBlob', () => {
       expect(c.accuracy).toBe(7.5);
     }
   });
+
+  it('reads every fix inside a recordGpsEventBatch, in order, between the single fixes around it', async () => {
+    // Why (core 1.26; Tour Viewer authoring plan 2026-09-28-0953 D18): a
+    // viewer recording carries a device fix together with its keep-alive
+    // ring as ONE batch action. A reader that knew only `recordGpsEvent`
+    // drew a track with every such fix missing (M2e/M2f milestone review
+    // #5). Each event is read as the single action is read - an event
+    // without coordinates is skipped alone, as a single one would be.
+    const fix = (lat: number, accuracy?: number) => ({
+      odomPosition: [0, 0, 0],
+      odomRotation: [0, 0, 0, 1],
+      rawGpsPoint: {
+        id: `gps-${String(lat)}`,
+        latitude: lat,
+        longitude: 8,
+        timestamp: 1_700_000_000_000,
+        ...(accuracy === undefined ? {} : { latLongAccuracy: accuracy }),
+      },
+    });
+    const { ZipWriter, Uint8ArrayWriter, TextReader } =
+      await import('@zip.js/zip.js');
+    const writer = new ZipWriter(new Uint8ArrayWriter());
+    const actions = [
+      { type: 'gpsData/recordGpsEvent', payload: fix(50.1, 3) },
+      {
+        type: 'gpsData/recordGpsEventBatch',
+        payload: {
+          events: [
+            fix(50.2, 4),
+            { ...fix(0), rawGpsPoint: { id: 'broken' } },
+            fix(50.3, 5),
+          ],
+        },
+      },
+      { type: 'gpsData/recordGpsEvent', payload: fix(50.4) },
+    ];
+    for (const [i, action] of actions.entries()) {
+      await writer.add(
+        `actions/${String(i + 1).padStart(8, '0')}.json`,
+        new TextReader(JSON.stringify(action))
+      );
+    }
+    const blob = new Blob([await writer.close()]);
+
+    const coords = await loadGpsPathFromBlob(blob);
+
+    expect(coords).toEqual([
+      { lat: 50.1, lng: 8, accuracy: 3 },
+      { lat: 50.2, lng: 8, accuracy: 4 },
+      { lat: 50.3, lng: 8, accuracy: 5 },
+      { lat: 50.4, lng: 8 },
+    ]);
+  });
+
+  it('draws only device fixes: synthetic QR votes and readings of an unknown source are left out', async () => {
+    // Why (Tour Viewer authoring plan 2026-09-28-0953, M2e milestone review
+    // #8): a code's votes are recorded as GPS events at points up to 30 m
+    // along the code's face, where nobody walked - in the Tour Viewer inside
+    // a batch, in the Recorder one `recordGpsEvent` each. This path is the
+    // replay preview's track AND the Recorder's coverage backfill, so a vote
+    // here draws a walk that never happened and marks cells nobody visited.
+    // An unrecognised stamp is not rounded to "device" either (the core's
+    // `gpsPointSourceOf` contract); an absent one is a device fix.
+    const point = (lat: number, source?: unknown) => ({
+      odomPosition: [0, 0, 0],
+      odomRotation: [0, 0, 0, 1],
+      rawGpsPoint: {
+        id: `p-${String(lat)}`,
+        latitude: lat,
+        longitude: 8,
+        timestamp: 1_700_000_000_000,
+        ...(source === undefined ? {} : { source }),
+      },
+    });
+    const { ZipWriter, Uint8ArrayWriter, TextReader } =
+      await import('@zip.js/zip.js');
+    const writer = new ZipWriter(new Uint8ArrayWriter());
+    const actions = [
+      { type: 'gpsData/recordGpsEvent', payload: point(50.1) },
+      { type: 'gpsData/recordGpsEvent', payload: point(50.11, 'synthetic-qr') },
+      {
+        type: 'gpsData/recordGpsEventBatch',
+        payload: {
+          events: [
+            point(50.2, 'device'),
+            point(50.21, 'synthetic-qr'),
+            point(50.22, 'synthetic-qr'),
+          ],
+        },
+      },
+      { type: 'gpsData/recordGpsEvent', payload: point(50.3, 'future-beacon') },
+      { type: 'gpsData/recordGpsEvent', payload: point(50.4, 7) },
+      { type: 'gpsData/recordGpsEvent', payload: point(50.5) },
+    ];
+    for (const [i, action] of actions.entries()) {
+      await writer.add(
+        `actions/${String(i + 1).padStart(8, '0')}.json`,
+        new TextReader(JSON.stringify(action))
+      );
+    }
+    const blob = new Blob([await writer.close()]);
+
+    const coords = await loadGpsPathFromBlob(blob);
+
+    expect(coords.map((c) => c.lat)).toEqual([50.1, 50.2, 50.5]);
+  });
 });
 
 describe('ZipSource lazy Reader input', () => {

@@ -52,6 +52,14 @@ startCameraFrameCapture, now }` (seam-injected).
   both (v1 authoring takes the printed size as input). These are the
   opposite of MinimalExample/AnchorStarter, which avoid the camera path's
   Chromium crash surface; this app needs it.
+  - **The one exception: an entry the troubleshooting recording records**
+    (authoring recording plan 2026-09-28-0953, decision D4). Its hooks carry
+    `onDepthSample`, which sets `enableDepthSensingFeature: true` and passes
+    `callbacks.depth` (the framework builds its depth sampler at initAR from
+    that; `startDepthCapture` starts it once the session runs). Depth is an
+    OPTIONAL session feature, and `requestDepth` (the controller's permission
+    probe, which fails the whole entry on a denial) stays unset - a phone
+    without depth starts AR all the same and records none.
 - **`callbacks.cameraFrame` must ride into `initAR`** — the framework
   constructs the frame source there; `startCameraFrameCapture` without it
   warns-and-no-ops. It cannot be added after session start.
@@ -85,8 +93,9 @@ if (result.ok) {
 
 ## Tests
 
-`ar-mode.test.ts` — the isolation-flag pin, camera-frame wiring at
-initAR-callback level, the real-recording-slice `startSession` proof, the
+`ar-mode.test.ts` — the isolation-flag pin (and depth ON only with
+`onDepthSample`, its samples reaching the hook, no permission probe),
+camera-frame wiring at initAR-callback level, the real-recording-slice `startSession` proof, the
 alignment/capture arguments, the loud world-group failure, and the full
 button-view table. The composed boot is proven by
 `playwright-tests/ar-mode.spec.js`.

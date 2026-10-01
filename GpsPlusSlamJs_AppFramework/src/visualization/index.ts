@@ -174,6 +174,10 @@ export {
   drawMapData,
 } from './map-overlay-draw.js';
 
+// summary-map-shell and osm-tile-layer are deliberately NOT re-exported
+// here either: their consumers deep-import them, and the Tour Viewer imports
+// the shell DYNAMICALLY so its visitors never download Leaflet.
+
 // --- text-sprite ---
 export {
   type TextSprite,

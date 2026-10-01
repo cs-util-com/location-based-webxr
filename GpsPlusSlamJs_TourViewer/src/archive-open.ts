@@ -28,9 +28,10 @@ import {
   tourLabel,
   type TourSession,
 } from "./tour-session.js";
-import type {
-  TourViewerHooks,
-  TourViewerSession,
+import {
+  endTourCodeVotes,
+  type TourViewerHooks,
+  type TourViewerSession,
 } from "./tour-viewer-session.js";
 
 /** The label on every button that opens a tour. "Open" until the second
@@ -103,6 +104,7 @@ export function wireArchiveOpen(deps: {
     // into its zip (M5 review #9). The generation bump makes any mint hash
     // still in flight land on nothing.
     ctx.mintedLevel = null;
+    ctx.codeMeasurement = null;
     ctx.mintGeneration += 1;
     // A failed finish is the closing tour's too: it keeps Save off, and only
     // a finish - which needs a measured level - clears it (scan-to-open
@@ -119,6 +121,10 @@ export function wireArchiveOpen(deps: {
     // review #8).
     ctx.qrController?.reset();
     ctx.levelByText.clear();
+    // The code keep-alive holds a closing tour's code for up to ~4 min,
+    // and the vote budget remembers which codes voted; the pipeline
+    // outlives the switch, so both end with the tour here (M2b; review #6).
+    endTourCodeVotes(ctx);
     ctx.imagePlanes?.dispose();
     ctx.imagePlanes = null;
     ctx.contentRendered?.dispose();
@@ -133,8 +139,11 @@ export function wireArchiveOpen(deps: {
     // and into the same tour re-opened after a finish they would duplicate
     // their own ids and break every later finish.
     ctx.placedObjects = [];
-    for (const preview of ctx.placedPreviews) preview.dispose();
-    ctx.placedPreviews = [];
+    // ...and so do its deletions (authoring plan 2026-09-28-0953 §3.4):
+    // an id deleted from one tour means nothing in another.
+    ctx.deletedObjectIds = [];
+    for (const preview of ctx.placedPreviews.values()) preview.dispose();
+    ctx.placedPreviews.clear();
     ctx.placementNote = null;
     // Clear the latch HERE too (PR #367 review): the stale run's finally is
     // generation-guarded and cannot clear it any more, and a latched

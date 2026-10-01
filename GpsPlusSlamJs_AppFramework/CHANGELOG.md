@@ -55,6 +55,14 @@
 
 ### Fixed
 
+- **A recording's track and coverage count device fixes only.**
+  `loadGpsPathFromBlob` (the replay preview's track, the Recorder's legacy
+  coverage backfill) and `buildSessionMetadataRecord`'s `h3Cells` leave out
+  synthetic QR votes and readings with an unknown source stamp (the core's
+  `gpsPointSourceOf`). A scanned code's votes sit up to 30 m along its face,
+  where nobody walked, so they drew a walk that never happened and put the
+  tour on map cells it never touched. `actionCount` still counts every GPS
+  sample.
 - **`OcclusionMesh` keeps vertex normals on the shared geometry while a
   shadow receiver is attached, in every debug style.** A receiver compiled
   while normals were present drew no shadow after a remesh under the
@@ -112,6 +120,57 @@
   `cloudColumnTransmittanceToward`; the slab's `cloudSlabCumulativeM`,
   `cloudSlabThresholdThicknessM` and `cloudSlabThicknessM` moved there and
   are re-exported from `cloud-slab.js`).
+- **`recordGpsEventBatch` and its `RecordGpsEventBatchPayload` type are
+  re-exported** from `gps-plus-slam-app-framework/state` (and the package
+  root), beside `recordGpsEvent`: several GPS observations with ONE alignment
+  update (`gps-plus-slam-js` 1.26.0; the framework now requires `^1.26.0`).
+  The Tour Viewer sends its code votes and each device fix together with its
+  keep-alive ring this way.
+- **Every reader of a recording handles the batch**, so a fix inside one
+  never vanishes. Through the new `utils/gps-event-actions`
+  (`recordedGpsEventPayloads(action)`: the GPS payloads of either action, in
+  order; `GPS_EVENT_ACTION_TYPES`):
+  - replay pacing (`extractActionTimestamp`) paces a batch by its first
+    event with a finite time - unpaced, a recording of batches replayed with
+    no pauses;
+  - the track preview (`loadGpsPathFromBlob`) reads every event of a batch;
+  - the tracking-quality listener reacts to a batch like to one fix (one
+    solve, at most one snapshot), so a session fed by batches keeps its
+    report - and the placement trigger that reads it - moving.
+- **`createGpsPositionHandler({ recordFix })`**: an optional router for the
+  built fix, called after the session zero is set instead of
+  `store.dispatch(recordGpsEvent(payload))`, for an app that records other
+  observations with the fix in one solve.
+
+- **Session-spanning recordings: `persistWhile` and `continuousActionIndex`**
+  on `createSlamAppStore` (passed through to `createPersistenceMiddleware`,
+  which takes them too). `persistWhile: () => boolean` REPLACES the
+  `isRecording` gate: an action is persisted exactly when the predicate is
+  true after the reducer ran, so the reset dispatched after `endSession` and
+  anything dispatched outside a session are written as well.
+  `continuousActionIndex: true` stops the action numbering from restarting at
+  `startSession`, so a second session no longer overwrites the first one's
+  files. Both are optional and off by default; without them the store behaves
+  exactly as before. For a recording that outlives the app's sessions (the
+  Tour Viewer's troubleshooting recording, one session per AR entry).
+- **`createSessionInDirectory(parent, timestamp)`** on
+  **`storage/opfs-storage`** (deep import): `createSession`'s folder layout
+  (`actions/`, `images/`) and same-second name probe in a parent directory
+  the caller owns, instead of the Recorder's `sessions/`. `createSession()` is
+  now that call on `sessions/`, unchanged in behaviour. Both apps share one
+  origin, so a second app's recordings need a folder of their own.
+- **`storage/session-metadata-record`** (deep import, a new subpath):
+  `buildSessionMetadataRecord`, `writeSessionMetadata` and `sanitizedPageUrl`,
+  the builder of a recording's `session.json` (`odomCoordVersion: 5`, the H3
+  coverage, the build stamp), moved here from the RecorderApp so a second
+  writer agrees with it on the coordinate era (DEC-H3). The build info is
+  injected (`getBuildInfo`, which may throw: that drops only the `build`
+  field), and `pageUrl` is left out rather than `undefined` when absent.
+- **`utils/build-info`** (deep import): `getBuildInfo()` and `BuildInfo`, the
+  reader of the five build constants a Vite `define` block injects, moved
+  here from the RecorderApp. The block itself is built by the framework's
+  node-only `scripts/build-metadata-define.mjs`, which the RecorderApp and
+  the Tour Viewer import from their Vite configs (it is not published).
 - **`utils/locate-state`** (deep import, not on the root export surface):
   the behaviour every "my location" button shares, moved here from the OSM
   demo so the globe lab's pin uses the same contract. `LocateState`,
@@ -364,6 +423,18 @@ source }` instead of the corners alone (unreleased API).
   - **Migration:** replace per-slider calls with one
     `guardSlidersIn(document)` in the page's entry; keeping a per-slider
     call under a page-wide install double-guards that slider.
+- **QR votes carry their provenance** (Tour Viewer authoring plan
+  2026-09-28-0953, M2b). Every payload `buildQrGpsVotes` builds is stamped
+  `rawGpsPoint.source: GPS_POINT_SOURCE_SYNTHETIC_QR`, the core's provenance
+  field (`gps-plus-slam-js` 1.25.0), which the reducer keeps on the stored
+  point. Recordings written from now on can tell a vote from a device fix
+  (`gpsPointSourceOf`); older recordings read as device, as before. The
+  core does not weigh or trim by the stamp. `core` re-exports
+  `gpsPointSourceOf`, `GPS_POINT_SOURCE_DEVICE` and
+  `GPS_POINT_SOURCE_SYNTHETIC_QR`. The module and its page no longer call
+  the votes "very-high-weight": a vote weighs about one GPS fix
+  (`1/max(acc, 1 m)^0.1`).
+
 - **The cloud slab reads its thickness at step boundaries and lights each
   step exactly** (clouds-from-above plan 2026-09-26-0549, M1). The layered
   "slices" seen from above at low step counts came from one thickness read

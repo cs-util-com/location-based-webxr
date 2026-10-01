@@ -41,9 +41,14 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   summary "Other settings" - something you normally do not open, F9).
 - Shared: `#error`, `#ar-root` (the DOM-overlay root: hint, status line,
   button, the setup panel `#setup-panel` with `setup-status` and, inside
-  `#setup-controls`, `setup-mint`, the placement controls `setup-pin` /
-  `pin-label` / `pin-save` / `pin-cancel` / `setup-photo`, and
-  `setup-finish`; the visitor's `scan-escape`), `#stats`, `#gallery`.
+  `#setup-controls`, `setup-mint`, the explicit replace `replace-code`
+  with its confirm `replace-code-confirm` (authoring plan 2026-09-28-0953
+  M4), the placement controls `setup-pin` / `pin-label` / `pin-save` /
+  `pin-cancel` / `setup-photo`; then `setup-finish`, and LAST, outside
+  the controls because it works on the page too, the object list
+  `#object-list` (drawn by `object-list.ts`, M4; last so that in AR it
+  never pushes Finish off the first screen); the visitor's
+  `scan-escape`), `#stats`, `#gallery`.
 
 Behaviour lives in the wiring modules composed by `src/main.ts` (see
 `main.ts.md`); the page carries only structure and its inline CSS
@@ -61,13 +66,49 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `draft-offer`,
 `draft-offer-text`, `draft-restore`, `draft-dismiss`, `draft-discard`,
 `finish-block`,
-`finish-status`, `finish-download`, `replace-help` (owns
+`finish-status`, `finish-download`, `summary` (the summary after Finish,
+authoring plan 2026-09-28-0953 M3b: owns `summary-codes`, `summary-map`,
+`summary-map-status`, `summary-start-ar`; written by `summary-panel.ts`,
+its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns
 `replace-help-generic`, `replace-help-drive`, `replace-help-share`)), `visitor-screen`,
 `stats`, `error`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`,
 `setup-panel`, `setup-status`, `size-offer`, `size-offer-text`,
 `size-offer-use`, `size-offer-keep`, `setup-controls`, `setup-mint`,
+`replace-code`, `replace-code-confirm` (owns `replace-code-confirm-text`,
+`replace-code-yes`, `replace-code-no`), `object-list` (its rows carry
+`object-row`, `object-title`, `object-detail`, `object-edit`,
+`object-move`, `object-delete`, `object-edit-input`,
+`object-edit-save`, `object-edit-cancel`, `object-busy`, and the list
+`setup-status` carries `data-clamped` (two lines in AR, whole on a tap;
+whole on the page), `object-list-heading`, `object-list-hint`, `object-list-note` and,
+beside it after a delete, `object-undo`; in AR the chooser
+`object-chooser` with `object-previous`, `object-position`,
+`object-next`),
 `setup-pin`, `pin-label`, `pin-save`, `pin-cancel`, `setup-photo`,
-`setup-finish`, `scan-escape`.
+`setup-finish`, `scan-escape`, `recording-block` (owns `recording-offer`
+with `recording-offer-text`, `recording-offer-save`,
+`recording-offer-dismiss`, `recording-offer-discard`; `record-session`,
+`recording-privacy`, `recording-notice`, `recording-save`,
+`recording-status`), `recording-marker`.
+`#recording-offer` (M1b, `recording-offer.ts`) offers a recording a killed
+tab left unsaved - the draft offer's three answers and its CSS rule, but its
+own element (it appears at page open, not when a tour opens). The block
+carries `data-housekeeping="done"` once the page-open check of the recording
+folders finished, found something or not (the e2e waits for it before it
+asserts that nothing is offered).
+`recording-privacy` is a static line saying the recording holds the tour
+link and the GPS track (M1a review finding 5); `recording-notice` carries
+"Reload the page to record." once an unrecorded AR session has run, or the
+low-storage warning after the box is ticked (`recording-panel.ts`).
+The troubleshooting recording (authoring recording plan 2026-09-28-0953,
+M1a): `#recording-block` sits in step 4 BEFORE `#ar-root` - its switch
+arms the recording before AR starts and Save is a page action, so neither
+belongs over the camera. It is NOT `.creator-only` since M1b: `main.ts` shows
+it for a creator, and for a visitor only with `?debug=1` (the viewer
+recording, contextTag `tour-viewing`). `#recording-marker` is
+inside `#ar-root`, so the marker is composited over the camera for the
+whole recorded session and shows on the page too; `ar-layout.spec.js`
+measures the overlay with it visible.
 The framework's AR canvas (window-sized, `#ar-root`'s first child after
 `initAR`) is taken out of the flow (`#ar-root > canvas { position: absolute }`,
 the RecorderApp's rule): in the flow it pushed the whole panel a screen

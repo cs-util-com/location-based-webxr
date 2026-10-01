@@ -358,7 +358,7 @@ vi.mock('gps-plus-slam-app-framework/core', () => ({
   magneticHeadingFromEnuQuat: vi.fn().mockReturnValue(0),
 }));
 
-vi.mock('../utils/build-info', () => ({
+vi.mock('gps-plus-slam-app-framework/utils/build-info', () => ({
   getBuildInfo: mockGetBuildInfo,
 }));
 

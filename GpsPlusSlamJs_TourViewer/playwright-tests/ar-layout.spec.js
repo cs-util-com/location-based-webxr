@@ -1,7 +1,7 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
-import { installTourViewerArFakes } from "./ar-fakes.js";
+import { installTourViewerArFakes, seedAlignment } from "./ar-fakes.js";
 import { E2E_QR_TEXT } from "./qr-fixture.mjs";
 
 /**
@@ -63,8 +63,13 @@ for (const viewport of PHONES) {
     if (!(await step.evaluate((el) => /** @type {any} */ (el).open))) {
       await step.locator("summary").click();
     }
+    // The troubleshooting recording's marker is one more line inside the
+    // overlay (authoring recording plan 2026-09-28-0953, M1a) - part of the
+    // tallest state the panel reaches.
+    await page.getByTestId("record-session").check();
     await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
     await page.getByTestId("enter-ar").click();
+    await expect(page.getByTestId("recording-marker")).toBeVisible();
     await page.evaluate((text) => {
       /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
     }, E2E_QR_TEXT);
@@ -122,6 +127,64 @@ for (const viewport of PHONES) {
         { timeout: 20000 },
       )
       .toMatch(/in view to try again/);
+
+    expect(await controlsBelowTheFold(page)).toEqual([]);
+  });
+}
+
+for (const viewport of PHONES) {
+  test(`every AR panel control fits a ${viewport.width}x${viewport.height} screen, with an object selected through the chooser and the code's re-measure offered`, async ({
+    page,
+  }) => {
+    // The editing state (authoring plan 2026-09-28-0953 M4; review #4): a
+    // hosted tour reopened, its stored code measured again (so "Re-measure
+    // the code" is offered), and the hosted pin selected with the AR
+    // chooser - the selected row's Edit / Move / Delete / Done, the
+    // chooser's own line, the placement controls and the recording marker
+    // together. The previous layout test never reached this state.
+    await page.setViewportSize(viewport);
+    await installTourViewerArFakes(page);
+    await page.goto("/?debug=1");
+    await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+    await page.getByTestId("open-button").click();
+    await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+      timeout: 15000,
+    });
+    const step = page.getByTestId("step-measure");
+    if (!(await step.evaluate((el) => /** @type {any} */ (el).open))) {
+      await step.locator("summary").click();
+    }
+    await page.getByTestId("record-session").check();
+    await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
+    await page.getByTestId("enter-ar").click();
+    await page.evaluate((text) => {
+      /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+    }, E2E_QR_TEXT);
+    await expect
+      .poll(
+        async () => {
+          await page.evaluate(() => {
+            /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+          });
+          return page.getByTestId("setup-status").textContent();
+        },
+        { timeout: 20000 },
+      )
+      .toMatch(/waiting for GPS alignment/i);
+    await seedAlignment(page);
+    await expect(page.getByTestId("setup-mint")).toBeEnabled({
+      timeout: 10000,
+    });
+    await page.getByTestId("setup-mint").click();
+    await expect(page.getByTestId("setup-pin")).toBeEnabled();
+    await expect(page.getByTestId("replace-code")).toBeVisible();
+
+    await page.getByTestId("object-next").click();
+    const selected = page.locator(
+      '[data-testid="object-row"][data-selected="true"]',
+    );
+    await expect(selected.getByTestId("object-move")).toBeVisible();
+    await expect(page.getByTestId("object-position")).toHaveText(/^1 of \d+$/);
 
     expect(await controlsBelowTheFold(page)).toEqual([]);
   });

@@ -17,13 +17,19 @@ import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import {
+  deletedKey,
   objectKey,
+  visitKey,
+  writeDraftVisit,
   parseDraftObject,
   photoKey,
   readDraft,
+  removeDraftObject,
+  writeDraftDeletion,
   writeDraftMeta,
   writeDraftObject,
 } from "./draft-persistence.js";
+import type { VisitLogEntry } from "./visit-log.js";
 
 /** An in-memory store with the same contract as the OPFS one. */
 function memoryStore(): DraftFileStore & { files: Map<string, Blob | string> } {
@@ -355,5 +361,167 @@ describe("a rejection recorded in the meta is the commit point", () => {
 
     const read = await readDraft(store);
     expect(read?.draft.objects.map((o) => o.id)).toEqual(["kept"]);
+  });
+});
+
+describe("a deletion is its own file (a tombstone, authoring plan 2026-09-28-0953 §3.4)", () => {
+  /**
+   * Why these tests matter. Deleting an object the hosted zip carries is
+   * work the draft must survive a crash with - the delete has to reach the
+   * next Finish - and it cannot live in the meta, which is rewritten on
+   * every mint and finish from memory: a meta written before the creator
+   * restores a draft would drop the deletions it held, and the deleted
+   * object would come back. One file per deletion, like one per object.
+   */
+
+  it("records the deletion and hides the object's record and bytes, though they were on disk", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftObject(store, photo("shot"), new Blob(["x"]));
+    await writeDraftObject(store, pin("kept"));
+    expect(await writeDraftDeletion(store, "shot")).toBe(true);
+    // A crash between the tombstone and the record's removal leaves both;
+    // the tombstone outranks the record.
+    await store.put(objectKey("shot"), JSON.stringify(photo("shot")));
+
+    const read = await readDraft(store);
+    expect(read?.draft.deleted).toEqual(["shot"]);
+    expect(read?.draft.objects.map((o) => o.id)).toEqual(["kept"]);
+    expect(read?.photos.get("shot")).toBeUndefined();
+  });
+
+  it("removes the object's own files once the tombstone is written", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftObject(store, photo("shot"), new Blob(["x"]));
+    await writeDraftDeletion(store, "shot");
+    expect(store.files.has(objectKey("shot"))).toBe(false);
+    expect(store.files.has(photoKey("shot"))).toBe(false);
+    expect(store.files.has(deletedKey("shot"))).toBe(true);
+  });
+
+  it("lists a tombstone among the stored ids, so a discard or a spent draft sweeps it", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftDeletion(store, "gone");
+    const read = await readDraft(store);
+    expect(read?.storedIds).toEqual(["gone"]);
+    await removeDraftObject(store, "gone");
+    expect(store.files.has(deletedKey("gone"))).toBe(false);
+  });
+
+  // The meta's rejected list outranks every file of an id, tombstones
+  // included, so WHICH of the two was written last decides - and that
+  // order is the writer's job (`creator-setup.ts` `writeForObject`, M4
+  // review #1). A test that wrote the rejection first and the tombstone
+  // after, and expected the tombstone ignored, pinned the defect: a
+  // deletion made after a rejection was lost at the next open. These two
+  // pin the protocol instead, from both sides; the crash paths through the
+  // real writer are in `creator-setup.test.ts` ("the order of the draft's
+  // writes").
+  it("counts a tombstone written after the meta stopped rejecting its id", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, { ...META, rejected: ["gone"] });
+    // The claim: the meta stops rejecting the id, then the deletion lands.
+    await writeDraftMeta(store, { ...META, rejected: [] });
+    await writeDraftDeletion(store, "gone");
+    expect((await readDraft(store))?.draft.deleted).toEqual(["gone"]);
+  });
+
+  it("refuses a tombstone whose id a later meta write rejects", async () => {
+    // "Delete it" on a draft holding a deletion throws the deletion away.
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftDeletion(store, "gone");
+    await writeDraftMeta(store, { ...META, rejected: ["gone"] });
+    const read = await readDraft(store);
+    expect(read?.draft.deleted).toEqual([]);
+    expect(read?.rejectedIds, "and the next open sweeps it").toEqual(["gone"]);
+  });
+
+  it("reports a refused tombstone write, and then keeps the object's files", async () => {
+    // A tombstone that did not land must not be followed by the removal of
+    // the record: that would be a delete that is neither on disk as a
+    // deletion nor recoverable as an object.
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftObject(store, pin("a"));
+    const refusing: typeof store = {
+      ...store,
+      put: () => Promise.resolve(false),
+    };
+    expect(await writeDraftDeletion(refusing, "a")).toBe(false);
+    expect(store.files.has(objectKey("a"))).toBe(true);
+  });
+});
+
+describe("an AR visit's log is its own file (authoring plan 2026-09-28-0953 M3b)", () => {
+  // Why these tests matter: the summary after Finish judges each code from
+  // every visit that measured it, and the store forgets a visit at every AR
+  // exit. A reload must therefore bring each visit back from the draft -
+  // and a draft the creator throws away, or one the hosted zip already
+  // carries, must take its visits with it, through the same commit point
+  // as its objects.
+  const visit = (visitId: string): VisitLogEntry => ({
+    visitId,
+    atMs: 5,
+    gpsAccuracyM: 4,
+    baselineM: 30,
+    gps: [{ lat: 47.5, lng: 8.7, accuracy: 4 }],
+    fused: [{ lat: 47.5001, lng: 8.7 }],
+    codes: [
+      {
+        levelId: "lvl",
+        geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 10 },
+      },
+    ],
+  });
+
+  it("comes back after a reload, one file per visit", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    expect(await writeDraftVisit(store, visit("page1-0"))).toBe(true);
+    expect(await writeDraftVisit(store, visit("page1-1"))).toBe(true);
+    expect(store.files.has(visitKey("page1-0"))).toBe(true);
+    // A new read of the same files: what a reload does.
+    const read = await readDraft(store);
+    expect(read?.visits.map((v) => v.visitId)).toEqual(["page1-0", "page1-1"]);
+    expect(read?.visits[0]?.codes[0]?.levelId).toBe("lvl");
+    expect(read?.visits[0]?.gps).toEqual([
+      { lat: 47.5, lng: 8.7, accuracy: 4 },
+    ]);
+    // A visit is not an object: nothing to offer, nothing in the zip.
+    expect(read?.draft.objects).toEqual([]);
+  });
+
+  it("costs a corrupt visit file only itself", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftVisit(store, visit("good"));
+    await store.put(visitKey("broken"), "{ not json");
+    const read = await readDraft(store);
+    expect(read?.visits.map((v) => v.visitId)).toEqual(["good"]);
+    // Still a stored id, so a discard or a spent draft sweeps the file.
+    expect(read?.storedIds).toContain("broken");
+  });
+
+  it("is swept with a rejected draft: hidden by the meta, removed with its id", async () => {
+    const store = memoryStore();
+    await writeDraftVisit(store, visit("old-0"));
+    await writeDraftMeta(store, { ...META, rejected: ["old-0"] });
+    const read = await readDraft(store);
+    expect(read?.visits).toEqual([]);
+    // Still on disk, so carried forward until the sweep removes it.
+    expect(read?.rejectedIds).toEqual(["old-0"]);
+    await removeDraftObject(store, "old-0");
+    expect(store.files.has(visitKey("old-0"))).toBe(false);
+  });
+
+  it("names its file apart from an object's, so an object id never reads as a visit", async () => {
+    expect(visitKey("a")).not.toBe(objectKey("a"));
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftObject(store, pin("a"));
+    expect((await readDraft(store))?.visits).toEqual([]);
   });
 });

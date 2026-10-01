@@ -16,6 +16,23 @@
  */
 
 import { usablePhotoFrame } from "./photo-frame.js";
+import {
+  authoringFinished,
+  codeMeasured,
+  objectPlaced,
+  visitSettled,
+} from "./tour-authoring-actions.js";
+import {
+  measurementRole,
+  planVisitSettle,
+  storedGeo,
+  settleAlignment,
+  sightedCodeOffset,
+  type CodeMeasurement,
+  type CodeSighting,
+  type CorrectionRefusal,
+  type SettleBasis,
+} from "./visit-settle.js";
 import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
@@ -41,38 +58,66 @@ import {
   recordQrDetection,
   selectAlignmentMatrix,
   selectGpsPositions,
+  selectOdometryPositions,
   selectQrFusedEntries,
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
 import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
-import { Vector3 } from "three";
+import { Group, Vector3, type Object3D } from "three";
+import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
 
 import {
   mintPhoto,
   mintPin,
   newObjectId,
   renderTourObjects,
+  type TourObjectRendererDeps,
 } from "./content-placement.js";
+import { odomNueFromWebXr } from "./visit-anchoring.js";
+import { createKeyedChain } from "./keyed-chain.js";
 
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
+import type { SelectTargetRay } from "gps-plus-slam-app-framework/ar";
+import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
+import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 
 import {
-  appendWithoutDuplicateIds,
+  applyObjectChanges,
+  contentEntriesToRemove,
+  draftDeletionsNotYetHosted,
   draftHasUnhostedLevel,
   draftIsSpent,
   draftKeyForTour,
   draftObjectsNotYetHosted,
+  objectContentKey,
   restoredText,
   restoreOfferText,
 } from "./authoring-draft.js";
 import {
   readDraft,
+  removeDraftDeletion,
   removeDraftObject,
+  writeDraftDeletion,
   writeDraftMeta,
   writeDraftObject,
+  writeDraftVisit,
 } from "./draft-persistence.js";
+import { buildSummaryModel } from "./summary-model.js";
+import type { SummaryPanel } from "./summary-panel.js";
+import {
+  buildVisitLogEntry,
+  createVisitLog,
+  newVisitId,
+  type VisitLogEntry,
+} from "./visit-log.js";
+import {
+  upsertPlaced,
+  wireObjectEditing,
+  type AuthoringObject,
+} from "./object-editing.js";
+import type { ObjectListView } from "./object-list.js";
 import type { ViewerMode } from "./mode.js";
 import {
   archiveSizeNote,
@@ -88,7 +133,10 @@ import {
   MISSING_SIZE_MESSAGE,
   adoptedSizeNote,
   codeTourLine,
+  correctionRefusedLine,
+  replaceCodeConfirmText,
   driveReplaceSteps,
+  entryHint,
   finishRoute,
   setupHint,
   type FinishRoute,
@@ -111,6 +159,28 @@ import {
   type TourViewerStore,
 } from "./tour-viewer-session.js";
 import type { Wizard } from "./wizard.js";
+
+/** Said when a new measurement kept the code's stored pose (D10b). */
+const STORED_POSITION_KEPT =
+  "Code seen - its saved position stays, and this visit is lined up with it";
+
+/** What a visit settled through (`visitSettles` in `wireCreatorSetup`). */
+interface VisitSettleRecord {
+  readonly basis: SettleBasis;
+  readonly alignment: number[];
+  /** The store's alignment when the settle ran. */
+  readonly visitAlignment: ReturnType<typeof selectAlignmentMatrix>;
+  readonly zero: LatLong;
+  /** The sighting a code correction used; null otherwise. */
+  readonly sighting: CodeSighting | null;
+  /** The level in hand when the settle ran, before any re-mint. */
+  readonly referenceLevel: {
+    readonly id: string;
+    readonly json: string;
+  } | null;
+  /** A code correction the plausibility bound refused; null otherwise. */
+  readonly refused: CorrectionRefusal | null;
+}
 
 /**
  * Whether an AR session is live, from the controller's status.
@@ -175,6 +245,17 @@ export interface CreatorSetupDom {
   sizeOfferText: HTMLElement;
   sizeOfferUse: HTMLButtonElement;
   sizeOfferKeep: HTMLButtonElement;
+  /** The placed objects' list with Edit text, Move and Delete (authoring
+   *  plan 2026-09-28-0953 §3.4, M4): `object-list.ts`'s view. */
+  objectList: ObjectListView;
+  /** The explicit "Replace the code's saved position"
+   *  (M4; M2c review #5), shown in AR while the level in hand is a stored
+   *  pose, and its confirm step. */
+  replaceCodeButton: HTMLButtonElement;
+  replaceCodeConfirm: HTMLElement;
+  replaceCodeConfirmText: HTMLElement;
+  replaceCodeYes: HTMLButtonElement;
+  replaceCodeNo: HTMLButtonElement;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -185,9 +266,17 @@ export interface CreatorSetup {
   startAuthorPipeline: () => boolean;
   /** A tour closed: step 5's download and status are stale (M3 review #6). */
   resetFinishStep: () => void;
+  /** A creator's AR visit runs: show the earlier visits' objects. */
+  beginAuthorVisit: () => void;
+  /** A creator's AR visit ends: settle it (before the store teardown). */
+  endAuthorVisit: () => void;
   /** A tour opened and its manifest settled: load any draft for it, and
    *  either offer what is not already hosted or delete a spent one. */
   presentDraftForTour: (tourUrl: string) => void;
+  /** A tap in AR (an XR `select` the overlay did not cancel): select the
+   *  object under the tap (its target ray; the screen centre when null),
+   *  or clear the selection on a miss. */
+  selectInView: (tap: SelectTargetRay | null) => void;
 }
 
 export function wireCreatorSetup(deps: {
@@ -204,6 +293,9 @@ export function wireCreatorSetup(deps: {
   /** Step 4's scan-to-open (`scan-open.ts`, owned by `archive-open`):
    *  fed every detection, asked what to say about the code in view. */
   codeTour?: Pick<ScanOpen, "onDetection" | "status" | "tourOf">;
+  /** The summary after Finish (authoring plan 2026-09-28-0953 M3b,
+   *  `summary-panel.ts`); none in the node tests that do not need it. */
+  summary?: Pick<SummaryPanel, "show" | "hide">;
 }): CreatorSetup {
   const { ctx, mode, arStore, arController, seams, wizard, dom } = deps;
   const codeTour: Pick<ScanOpen, "onDetection" | "status" | "tourOf"> =
@@ -229,13 +321,22 @@ export function wireCreatorSetup(deps: {
    */
   let draftRejected: readonly string[] = [];
   /**
-   * The last meta write per tour, so the next one for that tour queues
-   * behind it.
+   * The draft's writes, queued so that each lands after the ones issued
+   * before it: one queue per tour's META, one per OBJECT ID within a tour
+   * (an id's record, photo and tombstone move together). Keys from
+   * {@link metaChainKey} and {@link objectChainKey}.
    *
-   * Every write for a tour targets one key in one directory, and the mint
-   * and finish ones are unawaited - so an earlier write landing later would
-   * overwrite a newer one, including a rejection or a measured level
-   * (PR #456 review).
+   * The meta: every write for a tour targets one key in one directory, and
+   * the mint and finish ones are unawaited - so an earlier write landing
+   * later would overwrite a newer one, including a rejection or a measured
+   * level (PR #456 review).
+   *
+   * An object: a placement's write is unawaited too, so without the queue a
+   * quick delete of it could land first and the placement come back on the
+   * next open (M4 review #7; the M2c review's filed #7). Queued per id, an
+   * operation that takes several steps - a claim of a rejected id, then
+   * the write (see `writeForObject`) - is also never interleaved with
+   * another operation on the same id.
    *
    * KEYED BY THE NAMESPACE KEY, not by the raw url - `draftKeyForTour`
    * trims, so two urls differing only in surrounding whitespace share one
@@ -251,10 +352,30 @@ export function wireCreatorSetup(deps: {
    * last tour seen" lost the ordering for A after B was opened in between
    * (PR #457 and #459 reviews).
    *
-   * One entry per tour opened in this page's life: a handful of short-lived
-   * promises, dropped with the page.
+   * A key is dropped once its queue drains, so this holds only work in
+   * flight.
    */
-  const metaWrites = new Map<string, Promise<boolean>>();
+  const draftWrites = createKeyedChain();
+  /**
+   * The creator's AR visits, page-side (authoring plan 2026-09-28-0953 §3.3
+   * and §7 #4, M3b): the store forgets a visit's walk and alignment at its
+   * end, and the summary after Finish needs every visit. Filled at each
+   * settle, written to the draft one file per visit, restored with a
+   * restored draft, emptied when the tour closes.
+   */
+  const visitLog = createVisitLog();
+  /** This page load's id: a visit id is this plus the visit's generation,
+   *  which restarts at 0 on every load (`newVisitId`). */
+  const pageId = newObjectId();
+  function metaChainKey(tourUrl: string): string {
+    return JSON.stringify(["meta", draftKeyForTour(tourUrl)]);
+  }
+  function objectChainKey(tourUrl: string, id: string): string {
+    return JSON.stringify(["object", draftKeyForTour(tourUrl), id]);
+  }
+  /** Each decoded code text's level id (`qrCodeId`, a hash - async), so a
+   *  detection can be matched to the level in hand synchronously. */
+  const codeIds = new Map<string, string>();
   /** The creator-facing url of the open tour, for later draft writes. */
   let draftTourUrl: string | null = null;
   /** What a draft is offering, until the creator answers. */
@@ -272,6 +393,14 @@ export function wireCreatorSetup(deps: {
      *  half of a lost walk, and what makes Finish reachable again. */
     level: { id: string; json: string } | null;
     sizeM: number;
+    /** The deletions the hosted zip still carries (tombstones, plan
+     *  §3.4, M4). */
+    deleted: readonly string[];
+    /** How `objects` splits into new placements and changes of objects
+     *  the hosted zip carries - the offer's and the restore's words. */
+    counts: { placed: number; changed: number };
+    /** The draft's AR visits (M3b), for the summary after Finish. */
+    visits: readonly VisitLogEntry[];
   } | null = null;
   /** Said once, not per placement: a creator mid-walk cannot act on it. */
   let warnedAboutPersistence = false;
@@ -294,7 +423,8 @@ export function wireCreatorSetup(deps: {
 
   function recordPlacement(object: TourObject, blob?: Blob): void {
     const store = draftStore;
-    if (store === undefined) {
+    const tourUrl = draftTourUrl;
+    if (store === undefined || tourUrl === null) {
       // No draft namespace YET - no tour open, or its draft still opening -
       // is not a storage failure: the draft writes these when it opens
       // (scan-to-open plan §9 #5). Only an opened namespace without a store
@@ -302,9 +432,138 @@ export function wireCreatorSetup(deps: {
       if (draftTourUrl !== null) noteNoPersistence();
       return;
     }
-    void writeDraftObject(store, object, blob).then((ok) => {
+    void writeForObject(store, tourUrl, object.id, (s) =>
+      writeDraftObject(s, object, blob),
+    ).then((ok) => {
       if (!ok) noteNoPersistence();
     });
+  }
+
+  /**
+   * Record one AR visit's log (M3b) in memory and in the draft, the way a
+   * placement is recorded: fire-and-forget, in the id's queue, and before
+   * the tour's draft is open it is written when it opens.
+   */
+  function recordVisit(entry: VisitLogEntry): void {
+    visitLog.record(entry);
+    const store = draftStore;
+    const tourUrl = draftTourUrl;
+    if (store === undefined || tourUrl === null) {
+      if (draftTourUrl !== null) noteNoPersistence();
+      return;
+    }
+    writeVisit(store, tourUrl, entry);
+  }
+
+  function writeVisit(
+    store: DraftFileStore,
+    tourUrl: string,
+    entry: VisitLogEntry,
+  ): void {
+    void writeForObject(store, tourUrl, entry.visitId, (s) =>
+      writeDraftVisit(s, entry),
+    ).then((ok) => {
+      if (!ok) noteNoPersistence();
+    });
+  }
+
+  /**
+   * Write something FOR object `id` - its record and bytes, or its
+   * tombstone - in that id's queue, and only once the meta no longer
+   * rejects the id (M4 review #1).
+   *
+   * THE META OUTRANKS AN OBJECT'S FILES (`readDraft`), so a change to an
+   * id the meta rejects - a published tour reopened and its spent draft
+   * swept, or "Delete it" - was hidden by the next read and swept by the
+   * next open: the edit lost, or the deleted object back at the next
+   * Finish. A change made now is newer than that rejection, so the id is
+   * CLAIMED first, in this order, each step awaited:
+   *   1. the rejected files are removed - once the meta stops rejecting
+   *      the id, a stale file of the rejected draft must not be there to
+   *      come back if the tab dies before step 3;
+   *   2. the meta is rewritten without the id;
+   *   3. the change is written.
+   * A crash between any two steps leaves either the rejection or nothing
+   * for the id, never the rejected draft's version. A refused meta write
+   * still lets the change be written - it is newer than anything on disk -
+   * and reports false, so the creator hears it is not backed up.
+   *
+   * Only while `store` is still the open tour's: `draftRejected` is that
+   * tour's list.
+   */
+  function writeForObject(
+    store: DraftFileStore,
+    tourUrl: string,
+    id: string,
+    write: (store: DraftFileStore) => Promise<boolean>,
+  ): Promise<boolean> {
+    return draftWrites.run(objectChainKey(tourUrl, id), async () => {
+      let claimed = true;
+      if (draftStore === store && draftRejected.includes(id)) {
+        await removeDraftObject(store, id);
+        draftRejected = draftRejected.filter((rejected) => rejected !== id);
+        claimed = await recordMeta(tourUrl);
+      }
+      const wrote = await write(store);
+      return claimed && wrote;
+    });
+  }
+
+  /**
+   * Remove a rejected id's files (a discard, a spent draft, an unfinished
+   * earlier sweep) in that id's queue - and only if it is STILL rejected
+   * when its turn comes: a change made since claimed it, and the file on
+   * disk is that change now (`writeForObject`). Skipped too once another
+   * tour is open: the next open of this one sweeps what the meta rejects.
+   */
+  function sweepRejected(
+    store: DraftFileStore,
+    tourUrl: string,
+    id: string,
+  ): void {
+    void draftWrites.run(objectChainKey(tourUrl, id), async () => {
+      if (draftStore === store && draftRejected.includes(id)) {
+        await removeDraftObject(store, id);
+      }
+    });
+  }
+
+  /**
+   * `ids` minus those the creator changed or deleted in this page (M4):
+   * an edit of a hosted object keeps its id, so its file on disk is the
+   * live change's now, and a sweep of an older draft must not take it.
+   */
+  function notLive(ids: readonly string[]): string[] {
+    const live = new Set([
+      ...ctx.placedObjects.map((p) => p.object.id),
+      ...ctx.deletedObjectIds,
+      // This page's visits (M3b): a read racing their first write may list
+      // them, and they are this page's work, never the old draft's.
+      ...visitLog.ids(),
+    ]);
+    return ids.filter((id) => !live.has(id));
+  }
+
+  /**
+   * One draft write for the object list's actions (authoring plan
+   * 2026-09-28-0953 §3.4, M4), AWAITED: the row shows its in-progress state
+   * until this settles and then says whether the change reached the draft.
+   * Before the tour's draft namespace exists there is nothing to write yet
+   * and nothing failed - `presentDraftForTour` writes what was made
+   * meanwhile - so that reads as landed.
+   */
+  function draftWrite(
+    id: string,
+    write: (store: DraftFileStore) => Promise<boolean>,
+  ): Promise<boolean> {
+    const store = draftStore;
+    const tourUrl = draftTourUrl;
+    if (tourUrl === null) return Promise.resolve(true);
+    if (store === undefined) {
+      noteNoPersistence();
+      return Promise.resolve(false);
+    }
+    return writeForObject(store, tourUrl, id, write).catch(() => false);
   }
 
   /**
@@ -360,17 +619,22 @@ export function wireCreatorSetup(deps: {
       // file only and never reaches here; PR #456 review.)
       rejected: draftRejected,
     };
-    // Values captured NOW, write ordered by call within this tour.
-    // `catch` keeps one refused write from breaking the chain behind it.
-    const namespace = draftKeyForTour(tourUrl);
-    const next = (metaWrites.get(namespace) ?? Promise.resolve(true))
-      .catch(() => false)
-      .then(() => writeDraftMeta(store, meta));
-    metaWrites.set(namespace, next);
-    return next;
+    // Values captured NOW, write ordered by call within this tour. The
+    // chain keeps one refused write from breaking the queue behind it.
+    return draftWrites.run(metaChainKey(tourUrl), () =>
+      writeDraftMeta(store, meta),
+    );
   }
 
   dom.panel.hidden = !creator;
+  // ONE TAP, ONE EVENT (the PhysicsDemo pattern, `ar-mode.ts`): a tap on
+  // the DOM overlay fires a DOM click AND an XR select, and a select picks
+  // the object under the ring (M4) - so a tap on Delete would also select
+  // whatever stands behind the button. Cancelling `beforexrselect` on the
+  // panel suppresses only the XR half, and only for taps on the panel.
+  dom.panel.addEventListener("beforexrselect", (event) => {
+    event.preventDefault();
+  });
   dom.sizeInput.value = String(AUTHOR_DEFAULT_SIZE_M);
 
   // The print-size check (QR size consensus plan S3a): measures the printed
@@ -389,10 +653,77 @@ export function wireCreatorSetup(deps: {
   function sessionLive(): boolean {
     return arSessionLive(arController.getState().status);
   }
+  /** A preview sync found no zero yet (see `syncPreviews`): the store
+   *  subscription runs it again once the zero lands. */
+  let previewsWaitForZero = false;
+
+  /** The object list and its actions (authoring plan 2026-09-28-0953
+   *  §3.4, M4): edit, move and delete over the same in-memory state the
+   *  placement fills, and the selection a tap in AR makes. */
+  const editing = wireObjectEditing({
+    ctx,
+    arStore,
+    view: dom.objectList,
+    getArWorldGroup: () => seams.getArWorldGroup(),
+    sessionLive,
+    placementAllowed,
+    settleInputs: () => ({
+      mintedLevel: ctx.mintedLevel,
+      measurement: ctx.codeMeasurement,
+      sighting: ctx.visitCodeSighting,
+      gpsAccuracyM: authorAlignmentInfo().gpsAccuracyM,
+    }),
+    codes: storedCodes,
+    saveDraftObject: (object, blob) =>
+      draftWrite(object.id, (store) => writeDraftObject(store, object, blob)),
+    saveDraftDeletion: (id) =>
+      draftWrite(id, (store) => writeDraftDeletion(store, id)),
+    forgetDraftDeletion: (id) =>
+      draftWrite(id, (store) => removeDraftDeletion(store, id)),
+    schedule: (fn, ms) => seams.schedule(fn, ms),
+    forgetDraftObject: (id) => {
+      const store = draftStore;
+      const tourUrl = draftTourUrl;
+      if (store === undefined || tourUrl === null) return Promise.resolve();
+      // In the id's queue: a placement's write still in flight lands first,
+      // and this removal after it (M4 review #7).
+      return draftWrites.run(objectChainKey(tourUrl, id), () =>
+        removeDraftObject(store, id),
+      );
+    },
+    syncPreviews: () => {
+      syncPreviews();
+    },
+    renderAuthorReadout: () => {
+      renderAuthorReadout();
+    },
+  });
+
+  /** The stored codes' geo (the level in hand, then the open tour's other
+   *  levels), for the list's "4 m from the code". */
+  function storedCodes(): QrGeoPose[] {
+    const out: QrGeoPose[] = [];
+    const inHand = ctx.mintedLevel;
+    const inHandGeo = inHand === null ? null : storedGeo(inHand.json);
+    if (inHandGeo !== null) out.push(inHandGeo);
+    for (const [id, level] of ctx.currentLevels ?? []) {
+      if (id === inHand?.id || level.qr.geo === undefined) continue;
+      out.push(level.qr.geo);
+    }
+    return out;
+  }
+
   if (creator) {
     // Alignment arrives via GPS dispatches, not via controller state - the
     // readout must follow the store, or "waiting for GPS alignment" sticks.
+    // So does the zero, which the previews from geo wait for.
     arStore.subscribe(() => {
+      if (
+        previewsWaitForZero &&
+        selectZeroReference(arStore.getState()) !== null
+      ) {
+        syncPreviews();
+      }
       renderAuthorReadout();
     });
   }
@@ -460,10 +791,110 @@ export function wireCreatorSetup(deps: {
     dom.sizeOfferText.textContent = adoptedNote ?? "";
   }
 
+  /** The entry hint (§3.2a, D5) as the line's first part, until this
+   *  visit has seen the code in hand (or any code, with none measured). */
+  function entryLead(): string {
+    const sighting = ctx.visitCodeSighting;
+    const hint = entryHint({
+      tourOpen: ctx.session !== null,
+      codeSeen:
+        sighting !== null &&
+        (ctx.mintedLevel === null || sighting.levelId === ctx.mintedLevel.id),
+    });
+    return hint === "" ? "" : `${hint} · `;
+  }
+
+  /** Whether the level in hand is a stored pose THIS visit did not measure
+   *  (hosted, draft, or an earlier visit's): what a new measurement keeps. */
+  function levelInHandIsStored(): boolean {
+    const level = ctx.mintedLevel;
+    const measurement = ctx.codeMeasurement;
+    return (
+      level !== null &&
+      !(
+        measurement?.levelId === level.id &&
+        measurement.visit === ctx.arSessionGeneration
+      )
+    );
+  }
+
+  /**
+   * The AR status line opened to its full length by a tap (2026-10-01).
+   *
+   * The live readout joins up to five sentences - the code's status, the
+   * measuring readout, the setup hint, the tour and the zip size - and in
+   * AR it sits ABOVE the controls: on a 360x640 phone with the code's
+   * re-measure offered and an object selected it pushed the last control
+   * below the first screen (ar-layout.spec.js). Clamped to two lines
+   * (CSS, `data-clamped`) it costs two lines, the text itself unchanged -
+   * a screen reader and every check on it read the whole - and a tap on it
+   * (inside the panel, so no XR select) shows all of it. Choosing ONE
+   * sentence instead would decide what the author does not need to read,
+   * and the line's order already leads with what to act on. Each visit
+   * starts clamped; the page is never clamped.
+   */
+  let statusExpanded = false;
+  dom.status.addEventListener("click", () => {
+    statusExpanded = !statusExpanded;
+    renderAuthorReadout();
+  });
+
+  /** Whether the explicit replace's confirm step is open. */
+  let replaceConfirmOpen = false;
+
+  /**
+   * The explicit "Replace the code's saved position"
+   * (authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5): offered in AR
+   * while the level in hand is a STORED pose - the only case in which a
+   * measurement does not replace it by itself. Enabled with the mint gate
+   * (see the live readout), and only for that code in view.
+   */
+  function renderReplaceCode(): void {
+    const shown = sessionLive() && levelInHandIsStored();
+    if (!shown) replaceConfirmOpen = false;
+    dom.replaceCodeButton.hidden = !shown || replaceConfirmOpen;
+    dom.replaceCodeConfirm.hidden = !(shown && replaceConfirmOpen);
+    // The question states what the replace does to visitors, with its size
+    // as this visit sees the code now (M4 review #3) - kept current while
+    // the confirm is open, since the sighting refines.
+    if (shown && replaceConfirmOpen) {
+      const state = arStore.getState();
+      dom.replaceCodeConfirmText.textContent = replaceCodeConfirmText(
+        sightedCodeOffset({
+          visit: ctx.arSessionGeneration,
+          alignment: selectAlignmentMatrix(state),
+          zero: selectZeroReference(state),
+          mintedLevel: ctx.mintedLevel,
+          measurement: ctx.codeMeasurement,
+          sighting: ctx.visitCodeSighting,
+        }),
+      );
+    }
+    // Re-enabled by the live readout when the gate is open.
+    dom.replaceCodeButton.disabled = true;
+    dom.replaceCodeYes.disabled = true;
+  }
+
+  /** The code in view is the one whose level is in hand. */
+  function codeInViewIsLevelInHand(): boolean {
+    const text = ctx.lastDetectedText;
+    return (
+      text !== null &&
+      ctx.mintedLevel !== null &&
+      codeIds.get(text) === ctx.mintedLevel.id
+    );
+  }
+
   function renderAuthorReadout(): void {
     renderSizeOffer();
     if (!creator) return;
+    // In AR the line is clamped to two lines, the whole of it a tap away
+    // (see `statusExpanded`); on the page it is whole.
+    dom.status.dataset["clamped"] =
+      sessionLive() && !statusExpanded ? "true" : "false";
     renderPlacementButtons();
+    renderReplaceCode();
+    editing.render();
     // F11: the AR controls belong to the AR session. On the setup page they
     // were a row of greyed-out buttons under "AR not supported", which is
     // what the owner reported. The STATUS line stays either way - it is
@@ -527,7 +958,10 @@ export function wireCreatorSetup(deps: {
     // place it also locked Save, and on a device without OPFS the backup
     // notice fires at tour open, before any measuring - so Save never
     // unlocked (scan-to-open plan §5 #13).
-    const lead = ctx.placementNote === null ? "" : `${ctx.placementNote} · `;
+    const lead =
+      entryLead() +
+      refusalLead() +
+      (ctx.placementNote === null ? "" : `${ctx.placementNote} · `);
     // evaluate, not last: a cache hit unless the detections changed - and
     // after a tracking restart the old frame's result must not stand
     // (milestone review of b4b #1).
@@ -549,11 +983,9 @@ export function wireCreatorSetup(deps: {
       measured: ctx.mintedLevel !== null,
       tourOpen: ctx.session !== null,
       hadLevel: (ctx.currentLevels?.size ?? 0) > 0,
+      keptStored: levelInHandIsStored(),
     });
-    const count =
-      ctx.placedObjects.length > 0
-        ? ` · ${placed(ctx.placedObjects.length)}`
-        : "";
+    const count = newlyPlaced() > 0 ? ` · ${placed(newlyPlaced())}` : "";
     // What is happening to the tour the code names (plan §9 #9), and which
     // tour is open (§9 #10) - derived each render, never a one-off note.
     const codeStatus = codeTour.status(ctx.lastDetectedText);
@@ -567,6 +999,10 @@ export function wireCreatorSetup(deps: {
       tour;
     // No status locks Save: in authoring there is no wrong code (plan §13).
     dom.mintButton.disabled = !readout.canMint;
+    // The explicit replace takes the same gate, for the stored code only.
+    const canReplace = readout.canMint && codeInViewIsLevelInHand();
+    dom.replaceCodeButton.disabled = !canReplace;
+    dom.replaceCodeYes.disabled = !canReplace;
     const blocked = finishBlockedHint(readiness);
     if (blocked !== "") dom.status.textContent += ` · ${blocked}`;
     if (readiness === "ready" && ctx.session !== null) {
@@ -574,31 +1010,157 @@ export function wireCreatorSetup(deps: {
     }
   }
 
-  /** Render ONE newly placed object into the live preview (incremental:
-   *  each placement decodes only its own photo, and two placements cannot
-   *  race each other's disposal - M4 review #7). */
-  function previewObject(placedIndex: number): void {
-    const entry = ctx.placedObjects[placedIndex];
+  /**
+   * Where a preview goes. An object placed in THIS visit is RIGID in AR
+   * (decision D2): under the world group at its odometry pose, where GPS
+   * re-solves move it together with the camera. Anything else has only its
+   * geo and is placed from it in `fromGeo` - the earlier visits' frame, or
+   * the scene root outside a visit (plan §3.2).
+   */
+  function previewFrame(
+    placement: (typeof ctx.placedObjects)[number]["placement"],
+    fromGeo: Object3D,
+  ): Pick<TourObjectRendererDeps, "scene" | "poseOf"> {
+    const group = seams.getArWorldGroup();
+    if (
+      placement === undefined ||
+      placement.visit !== ctx.arSessionGeneration ||
+      group === null
+    ) {
+      return { scene: fromGeo };
+    }
+    const { position, rotation } = placement.local;
+    return {
+      scene: group,
+      poseOf: () => ({ positionNue: position, rotationNue: rotation }),
+    };
+  }
+
+  /**
+   * What each preview was rendered from, by object id (authoring plan
+   * 2026-09-28-0953 §3.4, M4): its look and where its pose comes from. A
+   * preview whose key no longer matches is replaced; one whose object is
+   * gone (deleted, or its tour closed) is disposed. Emptied with the
+   * previews at each visit's end - the next visit renders everything again.
+   */
+  const previewKeys = new Map<string, string>();
+  /**
+   * The bytes of photos a Finish took out of `placedObjects`: the hosted
+   * zip does not carry them until the creator uploads the rebuilt one, so
+   * their preview reads them from here. Emptied when the tour closes.
+   */
+  const finishedPhotoBlobs = new Map<string, Blob>();
+
+  function previewKey(entry: AuthoringObject): string {
+    const { object } = entry;
+    const placement = entry.placed?.placement;
+    const rigid =
+      placement !== undefined && placement.visit === ctx.arSessionGeneration;
+    return JSON.stringify([
+      object.kind,
+      object.kind === "pin" ? object.label : object.image,
+      rigid ? placement.local : object.geo,
+    ]);
+  }
+
+  /** Dispose every preview and forget what they were made from. */
+  function clearPreviews(): void {
+    previewKeys.clear();
+    for (const preview of ctx.placedPreviews.values()) preview.dispose();
+    ctx.placedPreviews.clear();
+  }
+
+  /**
+   * Bring the previews in line with the tour's objects now - this device's
+   * AND the hosted zip's (M4: an author reopening a tour used to see none
+   * of what was already there), keyed by id. Incremental: an object whose
+   * preview still matches is left alone, so each placement decodes only
+   * its own photo and two placements cannot race each other's disposal
+   * (M4 review #7 of the guided-setup plan).
+   */
+  function syncPreviews(): void {
     const scene = seams.getScene();
+    if (!creator || scene === null) return;
+    const desired = new Map(
+      editing.objects().map((entry) => [entry.object.id, entry]),
+    );
+    dropStalePreviews(desired);
     const zero = selectZeroReference(arStore.getState());
-    if (entry === undefined || scene === null || zero === null) return;
+    // Placed from geo, which needs the zero - and on the first visit of a
+    // page load (a restored draft) the zero comes with the first GPS fix,
+    // after the visit began. Rendered when it lands (M2c review #4).
+    previewsWaitForZero = zero === null;
+    if (zero === null) return;
+    for (const entry of desired.values()) {
+      if (!previewKeys.has(entry.object.id)) {
+        renderPreview(entry, zero, earlierFrame ?? scene);
+      }
+    }
+  }
+
+  /** Dispose each preview whose object is gone or no longer looks or sits
+   *  as it was rendered. */
+  function dropStalePreviews(
+    desired: ReadonlyMap<string, AuthoringObject>,
+  ): void {
+    for (const [id, key] of previewKeys) {
+      const entry = desired.get(id);
+      if (entry !== undefined && previewKey(entry) === key) continue;
+      previewKeys.delete(id);
+      ctx.placedPreviews.get(id)?.dispose();
+      ctx.placedPreviews.delete(id);
+    }
+  }
+
+  function renderPreview(
+    entry: AuthoringObject,
+    zero: LatLong,
+    fromGeo: Object3D,
+  ): void {
+    const id = entry.object.id;
+    const key = previewKey(entry);
+    previewKeys.set(id, key);
     const generation = ctx.arSessionGeneration;
+    const blob = entry.placed?.blob ?? finishedPhotoBlobs.get(id);
+    const session = ctx.session;
     void renderTourObjects([entry.object], {
-      scene,
+      ...previewFrame(entry.placed?.placement, fromGeo),
       zero,
       makeLabel: (text) => seams.createLabel(text),
-      loadPhotoTexture: () =>
-        entry.blob === undefined
-          ? Promise.resolve(null)
-          : decodeFrameTexture(entry.blob, 2),
-    }).then((rendered) => {
-      // The session may have ended while the photo decoded.
-      if (generation !== ctx.arSessionGeneration) {
-        rendered.dispose();
-        return;
-      }
-      ctx.placedPreviews.push(rendered);
-    });
+      loadPhotoTexture: async (image) => {
+        // This device's bytes first; a hosted photo's come from the zip,
+        // through the session (it knows the folder the manifest sits in).
+        if (blob !== undefined) return decodeFrameTexture(blob, 2);
+        if (session === null) return null;
+        return decodeFrameTexture(await session.loadContentEntry(image), 2);
+      },
+    }).then(
+      (rendered) => {
+        // The session may have ended while the photo decoded, or the
+        // object changed or went away meanwhile.
+        if (
+          generation !== ctx.arSessionGeneration ||
+          previewKeys.get(id) !== key
+        ) {
+          rendered.dispose();
+          return;
+        }
+        ctx.placedPreviews.get(id)?.dispose();
+        ctx.placedPreviews.set(id, rendered);
+      },
+      () => {
+        // A throwing label or plane: forget it, so a later sync may retry.
+        if (previewKeys.get(id) === key) previewKeys.delete(id);
+      },
+    );
+  }
+
+  /** Objects placed on this device that the zip does not carry yet - an
+   *  edit or a move of a hosted object is in `placedObjects` too (M4),
+   *  but it was not "placed". */
+  function newlyPlaced(): number {
+    const hosted = new Set((ctx.tourManifest?.objects ?? []).map((o) => o.id));
+    return ctx.placedObjects.filter((p) => !hosted.has(p.object.id)).length;
   }
 
   function placed(count: number): string {
@@ -610,20 +1172,92 @@ export function wireCreatorSetup(deps: {
     renderAuthorReadout();
   }
 
+  /** The code in view as its last fused evaluation stood - read, never
+   *  re-evaluated (an evaluation feeds the motion detector). */
+  function codeInView() {
+    const text = ctx.lastDetectedText;
+    const fused = text === null ? null : (ctx.fusedPose?.last(text) ?? null);
+    return text === null || fused === null
+      ? null
+      : { text, status: fused.status, pose: fused.pose };
+  }
+
+  /**
+   * Record a placement into the troubleshooting recording, with the raw
+   * inputs it was computed from (authoring recording plan 2026-09-28-0953,
+   * M1a). Dispatched from the tap's own handler, never from inside another
+   * dispatch, so its recorded position follows what it depends on. Without
+   * a recording the store writes nothing, and no slice reads it.
+   */
+  function logPlacement(
+    object: TourObject,
+    raw: {
+      reticleWorld?: Vector3;
+      cameraOdomPose?: CapturedCameraFrame["cameraPose"];
+    },
+  ): void {
+    const group = seams.getArWorldGroup();
+    const reticleOdom =
+      raw.reticleWorld === undefined || group === null
+        ? null
+        : group.worldToLocal(raw.reticleWorld.clone());
+    arStore.dispatch(
+      objectPlaced({
+        object,
+        arVisitIndex: ctx.arSessionGeneration,
+        atMs: Date.now(),
+        reticleOdomNue:
+          reticleOdom === null
+            ? null
+            : [reticleOdom.x, reticleOdom.y, reticleOdom.z],
+        cameraOdomPose: raw.cameraOdomPose ?? null,
+        alignmentMatrix: selectAlignmentMatrix(arStore.getState()),
+        arWorldGroupMatrix:
+          raw.reticleWorld === undefined || group === null
+            ? null
+            : group.matrixWorld.toArray(),
+        code: codeInView(),
+        codeSizeM: ctx.activeSizeM,
+      }),
+    );
+  }
+
+  /** Put a restored draft's objects and deletions back into the lists
+   *  a live placement fills (see the restore below). */
+  function restoreWork(waiting: NonNullable<typeof offered>): void {
+    // Live work on the same id is newer than the draft's, and wins.
+    const live = new Set([
+      ...ctx.placedObjects.map((p) => p.object.id),
+      ...ctx.deletedObjectIds,
+    ]);
+    for (const object of waiting.objects) {
+      if (live.has(object.id)) continue;
+      const blob = waiting.photos.get(object.id);
+      ctx.placedObjects = upsertPlaced(
+        ctx.placedObjects,
+        blob === undefined ? { object } : { object, blob },
+      );
+    }
+    // The deletions come back as the tombstones they are (plan §3.4).
+    for (const id of waiting.deleted) {
+      if (!live.has(id)) ctx.deletedObjectIds = [...ctx.deletedObjectIds, id];
+    }
+  }
+
   dom.draftRestore.addEventListener("click", () => {
     const waiting = offered;
     dom.draftOffer.hidden = true;
     offered = null;
     if (waiting === null) return;
     // Into the SAME list a live placement fills, so the finish needs no
-    // second path: it appends these to the manifest exactly as it appends
-    // anything else, and writes the photo bytes as content entries.
-    for (const object of waiting.objects) {
-      const blob = waiting.photos.get(object.id);
-      ctx.placedObjects.push(
-        blob === undefined ? { object } : { object, blob },
-      );
-    }
+    // second path: it writes these into the manifest exactly as it writes
+    // anything else (an edit of a hosted object replaces it by id), and
+    // the photo bytes as content entries. Live work on the same id is
+    // newer than the draft's, and wins.
+    restoreWork(waiting);
+    // And the visits it measured (M3b): the summary after Finish combines
+    // them with this page's.
+    visitLog.restore(waiting.visits);
     // The measured level comes back too, and it is what unlocks Finish
     // without walking to the poster again. Only when the session has not
     // already measured one: a live measurement is newer than a draft.
@@ -639,18 +1273,17 @@ export function wireCreatorSetup(deps: {
     }
     // Render them, or the readout says "5 objects placed" over an empty
     // scene and the creator places them again - new ids, real duplicates
-    // at the same spot in the published zip. previewObject already guards
-    // against a dead scene, so this is safe outside a session too.
-    for (
-      let i = ctx.placedObjects.length - waiting.objects.length;
-      i < ctx.placedObjects.length;
-      i += 1
-    ) {
-      previewObject(i);
-    }
+    // at the same spot in the published zip. The sync guards against a
+    // dead scene, so this is safe outside a session too.
+    syncPreviews();
     ctx.placementNote = restoredText(
-      waiting.objects.length,
+      waiting.counts.placed,
       waiting.level !== null,
+      {
+        changed: waiting.counts.changed,
+        deleted: waiting.deleted.length,
+        visits: waiting.visits.length,
+      },
     );
     renderAuthorReadout();
   });
@@ -666,7 +1299,8 @@ export function wireCreatorSetup(deps: {
     dom.draftOffer.hidden = true;
     // Captured BEFORE the offer is dropped: this is the list of what the
     // creator is rejecting, and it is the only thing that gets deleted.
-    const rejectedIds = offered?.storedIds ?? [];
+    // Minus the ids changed live since (`notLive`, M4).
+    const rejectedIds = notLive(offered?.storedIds ?? []);
     offered = null;
     const store = draftStore;
     if (store === undefined) return;
@@ -753,7 +1387,7 @@ export function wireCreatorSetup(deps: {
         renderAuthorReadout();
         return;
       }
-      for (const id of rejectedIds) void removeDraftObject(store, id);
+      for (const id of rejectedIds) sweepRejected(store, tourUrl, id);
     })();
   });
 
@@ -806,6 +1440,10 @@ export function wireCreatorSetup(deps: {
       return;
     }
     const position = reticle.getWorldPosition(new Vector3());
+    // The reticle's place in the world group's own frame (odometry-NUE):
+    // what the rigid preview and the settle work from (plan §3.2, M2c).
+    const group = seams.getArWorldGroup();
+    const local = group === null ? null : group.worldToLocal(position.clone());
     const pin = mintPin({
       id: newObjectId(),
       label,
@@ -817,12 +1455,26 @@ export function wireCreatorSetup(deps: {
       note("No GPS fix yet - the pin cannot be placed.");
       return;
     }
-    ctx.placedObjects.push({ object: pin });
+    ctx.placedObjects.push(
+      local === null
+        ? { object: pin }
+        : {
+            object: pin,
+            placement: {
+              visit: ctx.arSessionGeneration,
+              local: {
+                position: [local.x, local.y, local.z],
+                rotation: [0, 0, 0, 1],
+              },
+            },
+          },
+    );
     recordPlacement(pin);
+    logPlacement(pin, { reticleWorld: position });
     dom.pinLabel.value = "";
     hideLabelInput();
-    previewObject(ctx.placedObjects.length - 1);
-    note(`Pin "${label}" placed · ${placed(ctx.placedObjects.length)}.`);
+    syncPreviews();
+    note(`Pin "${label}" placed · ${placed(newlyPlaced())}.`);
   });
 
   dom.photoButton.addEventListener("click", () => {
@@ -840,13 +1492,25 @@ export function wireCreatorSetup(deps: {
     // The pose of the frame being encoded, not the pose at tap time; the
     // frame is at most PHOTO_FRAME_MAX_AGE_MS old (QR perf plan M4).
     const { cameraPose } = frame;
+    // The visit the frame's odometry belongs to, taken at the tap: the
+    // encode is async and the session may end meanwhile.
+    const visit = ctx.arSessionGeneration;
     seams.encodeFrameJpeg(frame.image).then(
       (jpeg) => {
+        // A visit that settled while this encoded (its session ended, or a
+        // Finish ran) has its alignment on record: minted through that, the
+        // photo IS settled - and the store's alignment may already belong
+        // to no visit at all (the teardown resets it).
+        const settled = visitSettles.get(visit);
         const photo = mintPhoto({
           id: newObjectId(),
           cameraPose,
-          alignmentMatrix: selectAlignmentMatrix(arStore.getState()),
-          zero: selectZeroReference(arStore.getState()),
+          alignmentMatrix:
+            settled === undefined
+              ? selectAlignmentMatrix(arStore.getState())
+              : // 16 finite numbers: `settleAlignment` checked them.
+                (settled.alignment as unknown as Matrix4),
+          zero: settled?.zero ?? selectZeroReference(arStore.getState()),
           imageWidth: jpeg.width,
           imageHeight: jpeg.height,
           nowIso: new Date().toISOString(),
@@ -855,13 +1519,23 @@ export function wireCreatorSetup(deps: {
           note("No usable GPS alignment yet - the photo cannot be placed.");
           return;
         }
-        ctx.placedObjects.push({ object: photo, blob: jpeg.blob });
+        ctx.placedObjects.push({
+          object: photo,
+          blob: jpeg.blob,
+          // The capture pose is RAW WebXR: through the one conversion into
+          // the world group's frame, never composed by hand (plan §3.2).
+          placement: { visit, local: odomNueFromWebXr(cameraPose) },
+        });
         recordPlacement(photo, jpeg.blob);
-        previewObject(ctx.placedObjects.length - 1);
+        logPlacement(photo, { cameraOdomPose: cameraPose });
+        if (settled !== undefined) {
+          logSettle(visit, "late-arrival", settled, [photo], null);
+        }
+        syncPreviews();
         // The plane sits at the capture spot, facing back at it: the
         // creator is standing on it and sees it once they step back.
         note(
-          `Photo placed - step back a metre to see it · ${placed(ctx.placedObjects.length)}.`,
+          `Photo placed - step back a metre to see it · ${placed(newlyPlaced())}.`,
         );
       },
       (err: unknown) => {
@@ -929,6 +1603,7 @@ export function wireCreatorSetup(deps: {
           // this result.
           fusedPose.evaluate(event.text);
           const fused = fusedPose.last(event.text);
+          noteSighting(event.text, fused);
           ctx.printSizeCheck?.onDetection(event.text, fused, ctx.activeSizeM);
           if (fused?.status === "stable") adoptedNote = null;
           ctx.qrDebugView?.update(event.qrPoseWorld, ctx.activeSizeM);
@@ -958,6 +1633,7 @@ export function wireCreatorSetup(deps: {
     dom.sizeInput.value = String(sizeM);
     ctx.mintGeneration += 1;
     ctx.mintedLevel = null;
+    ctx.codeMeasurement = null;
     endQrPipeline(ctx);
     arStore.dispatch(clearQrMarker({ text: offer.text }));
     startAuthorPipeline();
@@ -973,7 +1649,422 @@ export function wireCreatorSetup(deps: {
     renderAuthorReadout();
   });
 
-  dom.mintButton.addEventListener("click", () => {
+  /**
+   * The frame the earlier visits' objects are shown in during this AR visit
+   * (plan §3.2 "Earlier visits' objects on re-entry"): at the scene root
+   * with the identity while they can only be placed from geo, under the AR
+   * world group with the corrected alignment's inverse once the code has
+   * been seen - which puts each where the code says, rigid in AR, because
+   * the corrected alignment does not depend on the visit's GPS alignment
+   * (`visit-anchoring.ts`). Null outside a visit.
+   */
+  let earlierFrame: Group | null = null;
+  /** The code correction this visit's latest sighting would make, when
+   *  the plausibility bound refused it (M2c review #2): the panel says so
+   *  until the visit ends or a sighting is accepted. */
+  let liveRefusal: CorrectionRefusal | null = null;
+  /** Where `earlierFrame` is attached. Tracked, not read from `parent`:
+   *  the e2e fakes' scene nodes do not set it. */
+  let earlierFrameUnderGroup = false;
+
+  /** A refused correction's line, as the live line's lead. */
+  function refusalLead(): string {
+    return liveRefusal === null
+      ? ""
+      : `${correctionRefusedLine(liveRefusal)} · `;
+  }
+
+  function refusalOf(
+    choice: ReturnType<typeof settleAlignment>,
+  ): CorrectionRefusal | null {
+    return choice === null ? null : choice.refused;
+  }
+
+  /** Move the earlier visits' frame to where this visit's knowledge of the
+   *  code puts it (see `earlierFrame`). Cheap: one matrix. */
+  function placeEarlierObjects(): void {
+    // Nothing to place outside a visit - and nothing to read either.
+    const frame = earlierFrame;
+    if (frame === null) return;
+    const scene = seams.getScene();
+    const group = seams.getArWorldGroup();
+    if (scene === null) return;
+    const state = arStore.getState();
+    const choice = settleAlignment({
+      visit: ctx.arSessionGeneration,
+      alignment: selectAlignmentMatrix(state),
+      zero: selectZeroReference(state),
+      mintedLevel: ctx.mintedLevel,
+      measurement: ctx.codeMeasurement,
+      sighting: ctx.visitCodeSighting,
+      gpsAccuracyM: authorAlignmentInfo().gpsAccuracyM,
+    });
+    liveRefusal = refusalOf(choice);
+    if (choice?.basis === "code-corrected" && group !== null) {
+      frame.matrix.fromArray(choice.alignment).invert();
+      frame.matrixWorldNeedsUpdate = true;
+      if (!earlierFrameUnderGroup) {
+        scene.remove(frame);
+        group.add(frame);
+        earlierFrameUnderGroup = true;
+      }
+      return;
+    }
+    frame.matrix.identity();
+    frame.matrixWorldNeedsUpdate = true;
+    if (earlierFrameUnderGroup) {
+      group?.remove(frame);
+      scene.add(frame);
+      earlierFrameUnderGroup = false;
+    }
+  }
+
+  /** Texts whose level id is being derived (`qrCodeId` is async). */
+  const identifying = new Set<string>();
+
+  /**
+   * The latest stable sighting in the running visit of EVERY code with a
+   * stored pose - the level in hand or any level of the open tour - by
+   * level id (M3a/M3b review #6). Only the visit log reads it: each becomes
+   * that code's visit record, through the visit's plain alignment, so the
+   * tour's other codes gather visits too. It never makes a code the one in
+   * hand, and never corrects anything. Tagged with its visit, so a visit
+   * that ended without a settle cannot leak into the next one's log.
+   */
+  const storedCodeSightings = new Map<
+    string,
+    { readonly visit: number; readonly sighting: CodeSighting }
+  >();
+
+  /** Whether `levelId` has a stored pose: in hand, or in the open tour. */
+  function hasStoredPose(levelId: string): boolean {
+    if (ctx.mintedLevel?.id === levelId) return true;
+    const level = ctx.currentLevels?.get(levelId);
+    return level?.qr.geo !== undefined;
+  }
+
+  /**
+   * Keep the anchor code's latest STABLE pose in this visit (plan §3.2,
+   * D10b; the entry hint §3.2a): the code whose level is in hand, or - with
+   * none measured yet - any code, since that is the one about to be
+   * measured. "Seen" is the fused pose's own `stable`, the gate the mint
+   * uses: a merely detected code gives a single-frame pose whose yaw error
+   * (several degrees) would swing every corrected note by a metre at 20 m.
+   * Any code with a stored pose is also kept for the visit log
+   * (`storedCodeSightings`), whichever code is in hand.
+   */
+  function noteSighting(
+    text: string,
+    fused: ReturnType<NonNullable<typeof ctx.fusedPose>["last"]>,
+  ): void {
+    if (fused?.status !== "stable" || fused.pose === null) return;
+    const id = codeIds.get(text);
+    if (id === undefined) {
+      identify(text);
+      return;
+    }
+    const sighting = { text, levelId: id, odomPose: fused.pose };
+    if (hasStoredPose(id)) {
+      storedCodeSightings.set(id, {
+        visit: ctx.arSessionGeneration,
+        sighting,
+      });
+    }
+    if (ctx.mintedLevel !== null && ctx.mintedLevel.id !== id) return;
+    ctx.visitCodeSighting = sighting;
+    placeEarlierObjects();
+  }
+
+  /** Derive a text's level id once, then take the sighting it waited for. */
+  function identify(text: string): void {
+    if (identifying.has(text)) return;
+    identifying.add(text);
+    const visit = ctx.arSessionGeneration;
+    qrCodeId(text).then(
+      (id) => {
+        identifying.delete(text);
+        codeIds.set(text, id);
+        if (visit !== ctx.arSessionGeneration) return;
+        noteSighting(text, ctx.fusedPose?.last(text) ?? null);
+        renderAuthorReadout();
+      },
+      () => {
+        // No Web Crypto (an insecure context): no sighting, no correction -
+        // the plain visit alignment, as without a code in view.
+        identifying.delete(text);
+      },
+    );
+  }
+
+  /**
+   * What each settled visit settled through, by `arSessionGeneration`
+   * (authoring plan 2026-09-28-0953 §3.2; M2c review #1 and #6). Two jobs:
+   *
+   * - A visit settles ONCE. A Finish tapped during a visit settles it at
+   *   the tap, and the session end the Finish then causes finds it here and
+   *   does nothing - a second settle would re-mint the code a moment after
+   *   the zip was written. Keyed by the visit a settle actually RAN for:
+   *   the generation read at any other moment is not that visit, because
+   *   between visits it already names the NEXT one (a page-side Finish once
+   *   marked the next visit settled that way, so it never settled).
+   * - A photo of the visit that lands AFTER its settle (the encode is
+   *   async) is minted through the same record when it lands, so every
+   *   object of a visit goes through one alignment.
+   *
+   * Recorded even for a visit with nothing to settle yet, for that photo.
+   */
+  const visitSettles = new Map<number, VisitSettleRecord>();
+
+  /**
+   * Settle the running AR visit (authoring plan 2026-09-28-0953 §3.2, M2c):
+   * the code measured in it and every object placed in it get their geo
+   * recomputed through ONE alignment (`visit-settle.ts` decides which), the
+   * draft is rewritten so a reload keeps it, and the troubleshooting
+   * recording gets a `tourAuthoring/settled` action.
+   *
+   * READS THE STORE, SO IT MUST RUN BEFORE THE SESSION'S TEARDOWN:
+   * `teardownArSessionState` resets the alignment (`ar-entry.ts` calls
+   * `endAuthorVisit` first; a test pins the order).
+   */
+  function settleVisit(trigger: "visit-end" | "finish"): void {
+    const visit = ctx.arSessionGeneration;
+    if (visitSettles.has(visit)) return;
+    const state = arStore.getState();
+    const visitAlignment = selectAlignmentMatrix(state);
+    const zero = selectZeroReference(state);
+    const input = {
+      visit,
+      placed: ctx.placedObjects,
+      alignment: visitAlignment,
+      zero,
+      mintedLevel: ctx.mintedLevel,
+      measurement: ctx.codeMeasurement,
+      sighting: ctx.visitCodeSighting,
+      alignmentInfo: authorAlignmentInfo(),
+      gpsAccuracyM: authorAlignmentInfo().gpsAccuracyM,
+      nowIso: new Date().toISOString(),
+    };
+    const choice = settleAlignment(input);
+    // Pure, so planned before the log: the log marks the pose this settle
+    // saves for the code, which is how the summary grades what visitors
+    // get (M3a/M3b review #2).
+    const plan =
+      choice === null || zero === null ? null : planVisitSettle(input);
+    logVisit(visit, state, choice?.alignment ?? null, plan?.level ?? null);
+    if (choice === null || zero === null) return;
+    const record: VisitSettleRecord = {
+      basis: choice.basis,
+      alignment: choice.alignment,
+      visitAlignment,
+      zero,
+      sighting:
+        choice.basis === "code-corrected" ? ctx.visitCodeSighting : null,
+      referenceLevel: ctx.mintedLevel,
+      refused: choice.refused,
+    };
+    visitSettles.set(visit, record);
+    if (plan === null) return;
+    for (const { index, object } of plan.objects) {
+      const entry = ctx.placedObjects[index];
+      if (entry === undefined) continue;
+      ctx.placedObjects[index] = { ...entry, object };
+      // The record only: a photo's bytes did not change.
+      recordPlacement(object);
+    }
+    if (plan.level !== null) {
+      ctx.mintedLevel = plan.level;
+      if (draftTourUrl !== null) void recordMeta(draftTourUrl);
+    }
+    logSettle(
+      visit,
+      trigger,
+      record,
+      plan.objects.map(({ object }) => object),
+      plan.level,
+    );
+  }
+
+  /**
+   * Copy the settling visit into the page-side log (M3b) while the store
+   * still holds it: its walk, and each code it saw through ITS OWN
+   * alignment (`visit-log.ts`). The fused path goes through
+   * `pathAlignment` - what the visit's objects settled through - so the
+   * pins sit on it. A visit settled again (a failed Finish) replaces its
+   * entry. `savedLevel` is the level this settle re-mints from the visit's
+   * measurement, if any: its pose is marked on the code, so the summary
+   * can grade the stored pose by the visit it came from.
+   */
+  function logVisit(
+    visit: number,
+    state: ReturnType<typeof arStore.getState>,
+    pathAlignment: readonly number[] | null,
+    savedLevel: { id: string; json: string } | null,
+  ): void {
+    const codes: { levelId: string; odomPose: CodeSighting["odomPose"] }[] = [];
+    const measurement = ctx.codeMeasurement;
+    if (measurement !== null && measurement.visit === visit) {
+      codes.push({
+        levelId: measurement.levelId,
+        odomPose: measurement.odomPose,
+      });
+    }
+    // The tour's other stored codes this visit saw (M3a/M3b review #6),
+    // then the code in hand last: the log keeps each code's LAST look.
+    for (const seen of storedCodeSightings.values()) {
+      if (seen.visit !== visit) continue;
+      codes.push({
+        levelId: seen.sighting.levelId,
+        odomPose: seen.sighting.odomPose,
+      });
+    }
+    const sighting = ctx.visitCodeSighting;
+    if (sighting !== null) {
+      codes.push({ levelId: sighting.levelId, odomPose: sighting.odomPose });
+    }
+    const savedGeo = savedLevel === null ? null : storedGeo(savedLevel.json);
+    const entry = buildVisitLogEntry({
+      visitId: newVisitId(pageId, visit),
+      atMs: Date.now(),
+      gpsPositions: selectGpsPositions(state),
+      odometryPositions: selectOdometryPositions(state),
+      alignment: selectAlignmentMatrix(state),
+      pathAlignment,
+      zero: selectZeroReference(state),
+      storeAccuracyM: authorAlignmentInfo().gpsAccuracyM ?? null,
+      codes,
+      saved:
+        savedLevel === null || savedGeo === null
+          ? null
+          : { levelId: savedLevel.id, geo: savedGeo },
+    });
+    // A visit with no fix and no code has nothing to show or to combine.
+    if (entry.gps.length === 0 && entry.codes.length === 0) return;
+    recordVisit(entry);
+  }
+
+  /**
+   * The summary after Finish (M3b): every visit of this tour in the log,
+   * each code's stored pose (the level in hand, then the tour's others),
+   * and the objects the zip now carries. A summary that cannot be built
+   * hides rather than failing the Finish that already succeeded.
+   */
+  function showSummary(): void {
+    const summary = deps.summary;
+    if (summary === undefined) return;
+    try {
+      summary.show(
+        buildSummaryModel({
+          visits: visitLog.entries(),
+          references: codeReferences(),
+          objects: ctx.tourManifest?.objects ?? [],
+        }),
+      );
+    } catch {
+      summary.hide();
+    }
+  }
+
+  /** Each code's stored pose: the level in hand, then the tour's others. */
+  function codeReferences(): { levelId: string; geo: QrGeoPose | null }[] {
+    const inHand = ctx.mintedLevel;
+    const references: { levelId: string; geo: QrGeoPose | null }[] =
+      inHand === null
+        ? []
+        : [{ levelId: inHand.id, geo: storedGeo(inHand.json) }];
+    for (const [id, level] of ctx.currentLevels ?? []) {
+      if (id === inHand?.id) continue;
+      references.push({ levelId: id, geo: level.qr.geo ?? null });
+    }
+    return references;
+  }
+
+  /** Forget the settle of `visit` if it is still the running visit, so
+   *  its session end settles it again (with everything placed since). */
+  function unsettleRunningVisit(visit: number | null): void {
+    if (visit !== null && visit === ctx.arSessionGeneration) {
+      visitSettles.delete(visit);
+    }
+  }
+
+  /**
+   * Log a settle into the troubleshooting recording: the visit's own, or
+   * a late arrival's through its visit's record - so a replay finds every
+   * settled geo, whenever it was settled.
+   */
+  function logSettle(
+    visit: number,
+    trigger: "visit-end" | "finish" | "late-arrival",
+    record: VisitSettleRecord,
+    objects: readonly TourObject[],
+    level: { id: string; json: string } | null,
+  ): void {
+    arStore.dispatch(
+      visitSettled({
+        arVisitIndex: visit,
+        atMs: Date.now(),
+        trigger,
+        basis: record.basis,
+        visitAlignment: record.visitAlignment,
+        usedAlignment: record.alignment,
+        sighting: record.sighting,
+        objects: objects.map((object) => ({ id: object.id, geo: object.geo })),
+        level,
+        referenceLevel: record.referenceLevel,
+        zero: record.zero,
+        refusedCorrection: record.refused,
+      }),
+    );
+  }
+
+  /**
+   * The hosted zip's level file for `levelId`, when nothing of this code
+   * is in hand (then the hand's level is the candidate); null too when
+   * another tour was opened since the tap - that is not the tour the code
+   * was read from.
+   */
+  async function hostedCandidate(
+    levelId: string,
+    inHand: { id: string } | null,
+    openAtTap: number,
+  ): Promise<string | null> {
+    if (inHand?.id === levelId) return null;
+    const json = await hostedLevelJson(levelId);
+    return ctx.openGeneration === openAtTap ? json : null;
+  }
+
+  /**
+   * Install what a measurement became (`measurementRole`, D10b): the new
+   * level with its raw inputs, or the stored reference kept - the
+   * measurement is then only this visit's sighting, and the panel says so.
+   */
+  function adoptMeasurement(
+    role: ReturnType<typeof measurementRole>,
+    priorMeasurement: CodeMeasurement | null,
+    fresh: {
+      level: { id: string; json: string };
+      measurement: CodeMeasurement;
+    },
+  ): void {
+    if (role.kept === "measurement") {
+      ctx.mintedLevel = fresh.level;
+      ctx.codeMeasurement = fresh.measurement;
+      return;
+    }
+    ctx.mintedLevel = role.reference;
+    ctx.codeMeasurement =
+      priorMeasurement?.levelId === fresh.level.id ? priorMeasurement : null;
+    ctx.placementNote = STORED_POSITION_KEPT;
+  }
+
+  /**
+   * Measure the code in view ("Save the measured position"), or - with
+   * `replace` - deliberately replace the stored pose in hand with the new
+   * measurement ("Replace the code's saved position",
+   * authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5). Without
+   * `replace`, a measurement of a code whose pose is already stored is a
+   * correction sighting for this visit (`measurementRole`, D10b).
+   */
+  function measureCode(replace: boolean): void {
     if (ctx.lastDetectedText === null) return;
     const state = arStore.getState();
     // The readout's result, re-read so a tracking restart since then counts
@@ -1004,39 +2095,143 @@ export function wireCreatorSetup(deps: {
     // superseded by the newest.
     const mintedText = ctx.lastDetectedText;
     const mintGeneration = ++ctx.mintGeneration;
+    // The raw inputs, captured at the tap: the level's id lands later.
+    const measured = {
+      text: mintedText,
+      fusedOdomPose: stablePose,
+      sizeM: ctx.activeSizeM,
+      alignmentMatrix: selectAlignmentMatrix(state),
+      alignment: authorAlignmentInfo(),
+      levelJson: result.json,
+      arVisitIndex: ctx.arSessionGeneration,
+      atMs: Date.now(),
+    };
+    // The level in hand before this tap. When it - or the open tour's zip
+    // - already stores THIS code's pose, that pose stays the reference and
+    // the new measurement only corrects this visit (D10b, M2c review #5).
+    const prior = { level: ctx.mintedLevel, measurement: ctx.codeMeasurement };
+    const openAtTap = ctx.openGeneration;
     ctx.mintedLevel = null;
+    ctx.codeMeasurement = null;
     dom.status.textContent = "Saving the measured position…";
     dom.finishButton.disabled = true;
-    qrCodeId(mintedText).then(
-      (id) => {
+    void (async () => {
+      let id: string;
+      try {
+        id = await qrCodeId(mintedText);
+      } catch {
         if (mintGeneration !== ctx.mintGeneration) return;
-        ctx.mintedLevel = { id, json: result.json };
-        ctx.mintedLevelTour = {
-          levelId: id,
-          tourUrl: codeTour.tourOf(mintedText),
-        };
-        if (draftTourUrl !== null) void recordMeta(draftTourUrl);
-        renderAuthorReadout();
-      },
-      () => {
-        if (mintGeneration !== ctx.mintGeneration) return;
+        // A failed identity must not lose the reference in hand.
+        ctx.mintedLevel = prior.level;
+        ctx.codeMeasurement = prior.measurement;
         dom.status.textContent =
           "Could not derive the code's identity - tap the button again.";
-      },
-    );
+        return;
+      }
+      if (mintGeneration !== ctx.mintGeneration) return;
+      // The explicit replace applies to the stored pose in hand, and only
+      // when the code measured IS that code.
+      const replaced = replace && prior.level?.id === id ? prior.level : null;
+      const hostedJson =
+        replaced === null
+          ? await hostedCandidate(id, prior.level, openAtTap)
+          : null;
+      if (mintGeneration !== ctx.mintGeneration) return;
+      const role =
+        replaced === null
+          ? measurementRole({
+              levelId: id,
+              visit: measured.arVisitIndex,
+              inHand: prior.level,
+              inHandMeasurement: prior.measurement,
+              hostedJson,
+            })
+          : { kept: "measurement" as const };
+      adoptMeasurement(role, prior.measurement, {
+        level: { id, json: result.json },
+        // What the settle re-mints the code from at the visit's end, and
+        // a sighting of it in this visit (plan §3.2, M2c).
+        measurement: {
+          levelId: id,
+          text: mintedText,
+          odomPose: stablePose,
+          sizeM: measured.sizeM,
+          visit: measured.arVisitIndex,
+        },
+      });
+      codeIds.set(mintedText, id);
+      if (measured.arVisitIndex === ctx.arSessionGeneration) {
+        ctx.visitCodeSighting = {
+          text: mintedText,
+          levelId: id,
+          odomPose: stablePose,
+        };
+        placeEarlierObjects();
+      }
+      ctx.mintedLevelTour = {
+        levelId: id,
+        tourUrl: codeTour.tourOf(mintedText),
+      };
+      arStore.dispatch(
+        codeMeasured({
+          levelId: id,
+          ...measured,
+          kept: role.kept,
+          ...(replaced === null ? {} : { replaced }),
+        }),
+      );
+      if (replaced !== null) {
+        ctx.placementNote =
+          "The code's saved position was replaced with this measurement.";
+      }
+      if (draftTourUrl !== null) void recordMeta(draftTourUrl);
+      renderAuthorReadout();
+    })();
+  }
+
+  dom.mintButton.addEventListener("click", () => {
+    measureCode(false);
+  });
+
+  // The explicit replace: a confirm step first, because it moves the code
+  // for everyone who opens the tour (M4).
+  dom.replaceCodeButton.addEventListener("click", () => {
+    replaceConfirmOpen = true;
+    renderAuthorReadout();
+  });
+  dom.replaceCodeNo.addEventListener("click", () => {
+    replaceConfirmOpen = false;
+    renderAuthorReadout();
+  });
+  dom.replaceCodeYes.addEventListener("click", () => {
+    replaceConfirmOpen = false;
+    // Hidden directly: a re-render would overwrite the "Saving…" line the
+    // measurement puts up; its own end re-renders the panel.
+    dom.replaceCodeConfirm.hidden = true;
+    // OPEN OWNER DECISION (M4 review #3): whether a replace should also move
+    // the notes placed against the old position along with the code. Not
+    // offered until decided; the confirm says they will appear shifted. An
+    // option would be a second confirm button whose handler moves those
+    // notes by the same correction before this replace.
+    measureCode(true);
   });
 
   dom.finishButton.addEventListener("click", () => {
     const current = ctx.session;
-    const minted = ctx.mintedLevel;
     if (
       current === null ||
-      minted === null ||
+      ctx.mintedLevel === null ||
       ctx.finishing ||
       ctx.tourManifestStatus !== "settled"
     ) {
       return;
     }
+    // The visit still running is settled BEFORE anything is read for the
+    // zip (plan §3.2): its objects and its code are written as settled, not
+    // as tapped. A visit already over was settled at its end.
+    const settledAtTap = sessionLive() ? ctx.arSessionGeneration : null;
+    if (settledAtTap !== null) settleVisit("finish");
+    const minted = ctx.mintedLevel;
     // Both guards for the continuation: the tour may be re-opened and the
     // AR session may end (and a new one start) while the rebuild runs; the
     // result must not land in a session or a tour it was not made for
@@ -1047,6 +2242,7 @@ export function wireCreatorSetup(deps: {
     ctx.placementNote = null;
     ctx.finishProgress = FINISH_LABELS.reading(current.archive.size);
     renderAuthorReadout();
+    let wroteZip = false;
     void (async () => {
       try {
         // Assembled INSIDE the try (M4 review #1): a manifest the reader
@@ -1065,20 +2261,26 @@ export function wireCreatorSetup(deps: {
         // apart in the first place (PR #435 review).
         const wrap = current.manifestWrap;
         const manifestPath = `${wrap}${TOUR_MANIFEST_ENTRY}`;
-        // The manifest: what the zip carried plus what this session placed;
-        // the photos' bytes become content entries next to it.
+        // The manifest: what the zip carried, with this device's records
+        // REPLACING theirs by id (an edit or a move of a hosted object),
+        // the new ones appended and the deleted ones filtered out (plan
+        // §3.4, M4); the photos' bytes become content entries next to it.
         const manifest = ctx.tourManifest ?? createEmptyTourManifest();
+        const deleted = [...ctx.deletedObjectIds];
         const written: TourManifest = {
           ...manifest,
-          // De-duplicating by id, and not for tidiness: the serializer
-          // REJECTS duplicates, so one restored object that is already in
-          // the manifest would make every finish throw - for as long as the
+          // Never an id twice, and not for tidiness: the serializer REJECTS
+          // duplicates, so one restored object that is already in the
+          // manifest would make every finish throw - for as long as the
           // draft is restored, with no escape inside the app (M5 review #4).
-          objects: appendWithoutDuplicateIds(
+          objects: applyObjectChanges(
             manifest.objects,
             ctx.placedObjects.map((p) => p.object),
+            deleted,
           ),
         };
+        // A deleted photo takes its content file with it.
+        const removed = contentEntriesToRemove(manifest.objects, deleted, wrap);
         const entries = [
           {
             path: existingLevelPath ?? qrLevelEntryName(minted.id),
@@ -1102,6 +2304,7 @@ export function wireCreatorSetup(deps: {
           ctx.rebuiltZip?.blob ?? (await current.readWholeArchive());
         if (ctx.session !== current) return; // re-opened meanwhile
         const blob = await rebuildZipWithEntries(input, entries, {
+          remove: removed,
           onProgress: (done, total) => {
             ctx.finishProgress = FINISH_LABELS.rebuilding(done, total);
             renderAuthorReadout();
@@ -1134,7 +2337,38 @@ export function wireCreatorSetup(deps: {
         // pre-finish manifest and silently drop this batch (PR #435
         // review). `tourManifest` is otherwise only written at tour open.
         ctx.tourManifest = written;
-        ctx.placedObjects = [];
+        // Only what this zip carries leaves the list - by CONTENT, not id:
+        // a photo that landed while the zip was rebuilt is in neither, and
+        // waits for the next Finish (M2c review #6). A photo that leaves
+        // keeps its bytes here for its preview: the hosted zip does not
+        // have them until the creator uploads this one.
+        const inZip = new Map(
+          written.objects.map((o) => [o.id, objectContentKey(o)]),
+        );
+        const kept: typeof ctx.placedObjects = [];
+        for (const p of ctx.placedObjects) {
+          if (inZip.get(p.object.id) !== objectContentKey(p.object)) {
+            kept.push(p);
+          } else if (p.blob !== undefined) {
+            finishedPhotoBlobs.set(p.object.id, p.blob);
+          }
+        }
+        ctx.placedObjects = kept;
+        // The deletions are applied: the manifest no longer carries them.
+        // (Their tombstones stay in the draft until the hosted zip lacks
+        // them too - the same proof the objects wait for.)
+        ctx.deletedObjectIds = ctx.deletedObjectIds.filter(
+          (id) => !deleted.includes(id),
+        );
+        syncPreviews();
+        wroteZip = true;
+        arStore.dispatch(
+          authoringFinished({
+            levelId: minted.id,
+            manifest: written,
+            atMs: Date.now(),
+          }),
+        );
         // NOT cleared here, and not on the download tap either: the zip is
         // only in the creator's hands, not yet in the file the world sees.
         // It is cleared when a re-opened tour turns out to carry these ids
@@ -1157,6 +2391,8 @@ export function wireCreatorSetup(deps: {
         // a session that is still compositing.
         wizard.openStep("measure");
         dom.finishBlock.hidden = false;
+        // The summary of every visit (M3b), on the page with the download.
+        showSummary();
       } catch (err) {
         if (ctx.session === current) {
           ctx.finishError = FINISH_LABELS.failed(
@@ -1164,6 +2400,11 @@ export function wireCreatorSetup(deps: {
           );
         }
       } finally {
+        // A Finish that wrote no zip leaves its visit unsettled again while
+        // it still runs: what the creator places after a failure must
+        // settle with the rest of the visit at its end, through one
+        // alignment - the tap's settle is redone then.
+        if (!wroteZip) unsettleRunningVisit(settledAtTap);
         ctx.finishing = false;
         ctx.finishProgress = "";
         renderAuthorReadout();
@@ -1276,6 +2517,46 @@ export function wireCreatorSetup(deps: {
   return {
     renderAuthorReadout,
     startAuthorPipeline,
+    beginAuthorVisit: () => {
+      if (!creator) return;
+      const scene = seams.getScene();
+      if (scene === null) return;
+      // Earlier visits' objects (plan §3.2): each keeps only its geo in this
+      // visit, so they go into one frame that starts at the scene root -
+      // placed from geo, like the viewer's content - and moves under the
+      // world group once the code is seen (`placeEarlierObjects`).
+      earlierFrame = new Group();
+      earlierFrame.name = "earlier-visits";
+      earlierFrame.matrixAutoUpdate = false;
+      earlierFrameUnderGroup = false;
+      scene.add(earlierFrame);
+      // Everything is rendered afresh into this visit's frames - the
+      // hosted zip's objects too (M4) - keyed by id.
+      clearPreviews();
+      syncPreviews();
+      placeEarlierObjects();
+      editing.render();
+      // The summary describes the visits up to the last Finish; this visit
+      // makes it stale, and the next Finish shows it again (M3b).
+      deps.summary?.hide();
+    },
+    endAuthorVisit: () => {
+      if (!creator) return;
+      settleVisit("visit-end");
+      ctx.visitCodeSighting = null;
+      storedCodeSightings.clear();
+      liveRefusal = null;
+      previewsWaitForZero = false;
+      statusExpanded = false;
+      // The previews are disposed by the entry's teardown right after this
+      // (`placedPreviews`); what they were made from goes now, so the next
+      // visit renders everything again. The frame itself is this module's.
+      previewKeys.clear();
+      earlierFrame?.removeFromParent();
+      earlierFrame = null;
+      // An AR selection means nothing on the page.
+      editing.reset();
+    },
     resetFinishStep: () => {
       dom.downloadButton.disabled = true;
       // The LABEL too, because the hand-off continuation is generation-
@@ -1300,6 +2581,14 @@ export function wireCreatorSetup(deps: {
       draftStore = undefined;
       draftTourUrl = null;
       draftRejected = [];
+      // The closing tour's previews, photo bytes and list (M4).
+      clearPreviews();
+      finishedPhotoBlobs.clear();
+      replaceConfirmOpen = false;
+      editing.reset();
+      // The summary and the visits belonged to the closing tour (M3b).
+      deps.summary?.hide();
+      visitLog.clear();
     },
     presentDraftForTour: (tourUrl) => {
       if (!creator) return; // a visitor authors nothing
@@ -1311,6 +2600,10 @@ export function wireCreatorSetup(deps: {
       // open path already guards every other continuation this way.
       const generation = ctx.openGeneration;
       const stale = (): boolean => generation !== ctx.openGeneration;
+      // The manifest just settled: its objects join the previews and the
+      // list (M4 - an author reopening a tour sees what is already there).
+      syncPreviews();
+      editing.render();
       void (async () => {
         const store = await openDraftStore(draftKeyForTour(tourUrl));
         if (stale()) return;
@@ -1333,17 +2626,33 @@ export function wireCreatorSetup(deps: {
         // the ids the meta rejects whose files are still on disk, so this
         // is the only thing that reclaims them - and it is safe to repeat,
         // because removing a key that is not there is not a failure.
-        for (const id of draftRejected) void removeDraftObject(store, id);
+        for (const id of draftRejected) sweepRejected(store, tourUrl, id);
         // Work made before this draft opened - with no tour open, or while
         // the manifest settled - was never written (scan-to-open plan §9
         // #5). AFTER the read on purpose: every branch below deletes only
         // what the read returned, so these cannot be swept as a spent or
         // rejected draft's.
-        const storedIds = new Set(stored?.storedIds ?? []);
+        //
+        // ALL of it, not only ids the draft has no file for: an edit or a
+        // deletion of a hosted object keeps its id, so the draft may hold an
+        // OLDER change of it, and skipping the id left that older change on
+        // disk for a crash to bring back (M4 review #2). The live change is
+        // newer than anything the read saw, and each write is queued behind
+        // the sweep above for its id and claims it from the rejected list
+        // first (`writeForObject`).
         for (const entry of ctx.placedObjects) {
-          if (!storedIds.has(entry.object.id)) {
-            recordPlacement(entry.object, entry.blob);
-          }
+          recordPlacement(entry.object, entry.blob);
+        }
+        // And this page's visits (M3b), for the same reason.
+        for (const entry of visitLog.entries()) {
+          writeVisit(store, tourUrl, entry);
+        }
+        for (const id of ctx.deletedObjectIds) {
+          void writeForObject(store, tourUrl, id, (s) =>
+            writeDraftDeletion(s, id),
+          ).then((ok) => {
+            if (!ok) noteNoPersistence();
+          });
         }
         if (stored === undefined) {
           // No draft yet, but there will be: record what is already known,
@@ -1356,15 +2665,28 @@ export function wireCreatorSetup(deps: {
           stored.draft,
           ctx.tourManifest,
         );
+        const waitingDeletions = draftDeletionsNotYetHosted(
+          stored.draft,
+          ctx.tourManifest,
+        );
         const hostedLevel =
           stored.draft.level === null
             ? null
             : await hostedLevelJson(stored.draft.level.id);
         if (stale()) return;
-        if (draftIsSpent(stored.draft, ctx.tourManifest, hostedLevel)) {
-          // SPENT: the hosted zip carries every object AND the measurement.
-          // That is the only proof the content reached the file the world
-          // sees, and the only thing that deletes a draft.
+        if (
+          draftIsSpent(
+            stored.draft,
+            ctx.tourManifest,
+            hostedLevel,
+            stored.visits.length,
+          )
+        ) {
+          // SPENT: the hosted zip carries every object AND the measurement,
+          // and the draft holds no AR visit (the zip never carries those,
+          // M3a/M3b review #5). That is the only proof the content reached
+          // the file the world sees, and the only thing that deletes a
+          // draft.
           // No re-open. It existed only because `clear` used to remove the
           // namespace directory and invalidate this handle; the store now
           // empties in place and stays usable. Re-opening would carry the
@@ -1384,7 +2706,12 @@ export function wireCreatorSetup(deps: {
           // `storedIds`, not `draft.objects`: the latter is what parsed,
           // and a record this read refused still has files. Nothing
           // reclaims those since `clear` lost its last caller.
-          draftRejected = stored.storedIds;
+          // Minus what the creator changed or deleted during the awaits
+          // above (M4): an edit of a hosted object keeps its id, so unlike a
+          // new placement it CAN be in this list, and its file is now the
+          // live change's.
+          const sweep = notLive(stored.storedIds);
+          draftRejected = sweep;
           // Same commit point as the discard, for the same reason: an
           // interrupted sweep must not bring a spent draft back - and the
           // same notice when it does not land.
@@ -1393,10 +2720,16 @@ export function wireCreatorSetup(deps: {
             return;
           }
           if (stale()) return;
-          for (const id of stored.storedIds) void removeDraftObject(store, id);
+          for (const id of sweep) sweepRejected(store, tourUrl, id);
           return;
         }
         const hasLevel = draftHasUnhostedLevel(stored.draft, hostedLevel);
+        // New placements, and changes of objects the hosted zip carries.
+        const hostedIds = new Set(
+          (ctx.tourManifest?.objects ?? []).map((o) => o.id),
+        );
+        const changed = waiting.filter((o) => hostedIds.has(o.id)).length;
+        const counts = { placed: waiting.length - changed, changed };
         // A level measured before this open is newer than the offered
         // draft's and would otherwise live only in memory; a mint after the
         // open would write it the same way.
@@ -1413,10 +2746,18 @@ export function wireCreatorSetup(deps: {
           // as spent.
           level: stored.draft.level,
           sizeM: stored.draft.sizeM,
+          deleted: waitingDeletions,
+          counts,
+          visits: stored.visits,
         };
         dom.draftOfferText.textContent = restoreOfferText(
-          waiting.length,
+          counts.placed,
           hasLevel,
+          {
+            changed: counts.changed,
+            deleted: waitingDeletions.length,
+            visits: stored.visits.length,
+          },
         );
         dom.draftOffer.hidden = false;
         // The offer is outside the AR overlay, so a creator whose scan
@@ -1434,6 +2775,13 @@ export function wireCreatorSetup(deps: {
         // whatever the creator was reading.
         wizard.revealStep("measure");
       })();
+    },
+    selectInView: (tap) => {
+      if (!creator || !sessionLive()) return;
+      const targets = new Map(
+        [...ctx.placedPreviews].map(([id, preview]) => [id, preview.root]),
+      );
+      editing.select(seams.pickObjectInView(targets, tap));
     },
   };
 }

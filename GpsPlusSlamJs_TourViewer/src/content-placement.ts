@@ -22,7 +22,10 @@
  *
  * Rendering places everything at the SCENE ROOT in the session's NUE
  * (`calcRelativeCoordsInMeters(zero, geo, alt, 0)`), the photo planes'
- * parenting rule.
+ * parenting rule - unless the caller hands its own parent and a pose per
+ * object in that parent's frame (`poseOf`): the creator's previews of
+ * THIS visit sit under the AR world group at their odometry pose, so they
+ * stay rigid while GPS re-solves (authoring plan 2026-09-28-0953 §3.2, M2c).
  */
 
 import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
@@ -137,14 +140,14 @@ export function mintPhoto(input: {
   }
 }
 
-/** An object's pose in a session's NUE frame. */
-export function objectPoseNue(
-  geo: QrGeoPose,
-  zero: LatLong,
-): {
+/** An object's pose in one NUE frame: the renderer's input shape. */
+interface ObjectPoseNue {
   positionNue: readonly [number, number, number];
   rotationNue: readonly [number, number, number, number];
-} {
+}
+
+/** An object's pose in a session's NUE frame. */
+export function objectPoseNue(geo: QrGeoPose, zero: LatLong): ObjectPoseNue {
   const nue = calcRelativeCoordsInMeters(
     zero,
     { lat: geo.lat, lon: geo.lon },
@@ -165,8 +168,16 @@ export function objectPoseNue(
  *  framework's text sprite in production, a stub under test - node has no
  *  canvas) and a photo texture per photo entry name. */
 export interface TourObjectRendererDeps {
+  /** The parent the objects are added to (the scene root, unless
+   *  `poseOf` says otherwise). */
   scene: Object3D;
   zero: LatLong;
+  /**
+   * An object's pose in `scene`'s own frame, overriding the geo-derived
+   * one (`objectPoseNue`, which is right for the scene root only). The
+   * creator's rigid previews pass the world-group-local odometry pose.
+   */
+  poseOf?: (object: TourObject) => ObjectPoseNue;
   makeLabel(text: string): { object: Object3D; dispose(): void };
   loadPhotoTexture(entryName: string): Promise<Texture | null>;
 }
@@ -176,6 +187,10 @@ export interface RenderedTourObjects {
   count: number;
   /** Ids of objects that could not be rendered, for the status line. */
   skipped: string[];
+  /** The one group every rendered object hangs under: what a tap in AR
+   *  is cast against to name the object (`object-pick.ts`, authoring plan
+   *  2026-09-28-0953 M4). */
+  root: Object3D;
   dispose(): void;
 }
 
@@ -189,7 +204,7 @@ export async function renderTourObjects(
   deps: TourObjectRendererDeps,
 ): Promise<RenderedTourObjects> {
   const labels: { object: Object3D; dispose(): void }[] = [];
-  const photoPoses: ReturnType<typeof objectPoseNue>[] = [];
+  const photoPoses: ObjectPoseNue[] = [];
   const textures: Texture[] = [];
   const skipped: string[] = [];
   // One group, added to the scene only once everything decoded (M5 review
@@ -199,7 +214,7 @@ export async function renderTourObjects(
   // GPU-memory hazard, and decoding them all at once doubles the peak.
   const group = new Group();
   for (const object of objects) {
-    const pose = objectPoseNue(object.geo, deps.zero);
+    const pose = deps.poseOf?.(object) ?? objectPoseNue(object.geo, deps.zero);
     if (object.kind === "pin") {
       const label = deps.makeLabel(object.label);
       label.object.position.set(...pose.positionNue);
@@ -225,6 +240,7 @@ export async function renderTourObjects(
   deps.scene.add(group);
   return {
     count: labels.length + planes.count,
+    root: group,
     skipped,
     dispose: () => {
       deps.scene.remove(group);

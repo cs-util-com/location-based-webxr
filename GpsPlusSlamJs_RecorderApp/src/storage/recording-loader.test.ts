@@ -27,6 +27,9 @@ import {
   type LoadedRecording,
 } from './recording-loader';
 import type { RecordedAction } from 'gps-plus-slam-app-framework/storage/zip-reader';
+import { buildSessionMetadataRecord } from 'gps-plus-slam-app-framework/storage/session-metadata-record';
+import { NullStorageBackend } from 'gps-plus-slam-app-framework/storage/null-storage-backend';
+import { createRecorderStore } from '../state/recorder-store';
 
 const RECORDINGS_DIR = path.resolve(__dirname, '../../../../TestDataJs');
 const OLD_ZIP = path.join(RECORDINGS_DIR, '2026-03-05_06-47-31utc.zip');
@@ -504,5 +507,455 @@ describe('loadRecording — lazy ZipSource Reader input', () => {
     } finally {
       fs.closeSync(fd);
     }
+  });
+});
+
+/**
+ * A Tour Viewer authoring recording in the Recorder's loader.
+ *
+ * Why this test matters: the owner's troubleshooting loop is "record the
+ * authoring in the Tour Viewer, hand over the zip, replay it in the
+ * Recorder's desktop replay" (plan 2026-09-28-0953, decision D6). The Tour
+ * Viewer writes that zip with the SAME framework pieces the Recorder uses
+ * (`session.json` from the shared `buildSessionMetadataRecord`, flat
+ * `actions/NNNNNN.json`), but its content differs from anything the Recorder
+ * records: several AR entries in one stream, each closed by the QR markers'
+ * clear, `endSession` and `resetGpsSessionData`, QR locks, 1 Hz depth, and
+ * `tourAuthoring/*` actions no Recorder slice knows. This pins that the
+ * loader takes it as era 5 (no migration), keeps every action and payload,
+ * and that a replay rebuilds each kind of state from it.
+ *
+ * THE FIXTURE FOLLOWS THE ORDER THE TOUR VIEWER WRITES, and does not guess
+ * it (M1a review finding 7: an earlier fixture put `setZeroPos` before
+ * `startSession` and carried no QR, depth or placement payloads, so it
+ * proved the loader against a stream that never exists). The sequence is
+ * the one the Tour Viewer's `authoring-recording.test.ts` ("the order the
+ * page writes") pins by driving the page's own entry, GPS handler and exit:
+ * the recording opens with `startSession` because it starts before the
+ * session; the zero comes with the first fix; the cold-start flag is a
+ * listener effect of the zero, so it lands after that fix. The loader
+ * cannot be imported from the Tour Viewer's tests (no package imports
+ * another app), which is why the zip is built here to that sequence.
+ */
+describe('loadRecording — a Tour Viewer authoring recording', () => {
+  const T0 = Date.UTC(2026, 8, 28, 10, 0, 0);
+  const CODE = 'https://example.test/t?c=1';
+
+  function gpsEvent(
+    i: number,
+    odom: [number, number, number],
+    lat: number,
+    lon: number
+  ): RecordedAction {
+    return {
+      type: 'gpsData/recordGpsEvent',
+      payload: {
+        odomPosition: odom,
+        odomRotation: [0, 0, 0, 1],
+        rawGpsPoint: {
+          id: `tv-${i}`,
+          latitude: lat,
+          longitude: lon,
+          altitude: 400,
+          latLongAccuracy: 5,
+          timestamp: T0 + i * 1000,
+        },
+      },
+    };
+  }
+
+  function startSession(atMs: number): RecordedAction {
+    return {
+      type: 'recording/startSession',
+      payload: {
+        contextTag: 'tour-viewer',
+        sessionName: 'live',
+        startTime: atMs,
+      },
+    };
+  }
+
+  /** The exit, as the Tour Viewer's AR entry sequences it. */
+  const EXIT: RecordedAction[] = [
+    { type: 'qrDetected/clearAllQrMarkers' },
+    { type: 'recording/endSession' },
+    { type: 'gpsData/resetGpsSessionData' },
+  ];
+
+  const QR_LOCK: RecordedAction = {
+    type: 'qrDetected/recordQrDetection',
+    payload: {
+      text: CODE,
+      timestamp: T0 + 1500,
+      qrPoseWorld: { position: [0, 1, -2], rotation: [0, 0, 0, 1] },
+      qrPoseInCamera: { position: [0, 0, -1], rotation: [0, 0, 0, 1] },
+      reprojectionErrorPx: 0.4,
+    },
+  };
+
+  /** A 16 x 16 grid without colour, as the recording samples it. */
+  const DEPTH: RecordedAction = {
+    type: 'recording/recordDepthSample',
+    payload: {
+      timestamp: T0 + 1600,
+      cameraPos: [0, 1.4, 0],
+      cameraRot: [0, 0, 0, 1],
+      points: Array.from({ length: 256 }, (_, i) => ({
+        screenX: ((i % 16) + 1) / 17,
+        screenY: (Math.floor(i / 16) + 1) / 17,
+        depthM: 1 + (i % 7) * 0.5,
+      })),
+    },
+  };
+
+  const MEASURED: RecordedAction = {
+    type: 'tourAuthoring/codeMeasured',
+    payload: {
+      levelId: 'lvl',
+      text: CODE,
+      fusedOdomPose: { position: [0, 1, -2], rotation: [0, 0, 0, 1] },
+      sizeM: 0.16,
+      alignmentMatrix: null,
+      alignment: {},
+      levelJson: '{}',
+      arVisitIndex: 0,
+      atMs: T0 + 2000,
+    },
+  };
+
+  const PLACED: RecordedAction = {
+    type: 'tourAuthoring/objectPlaced',
+    payload: {
+      object: {
+        id: 'p1',
+        kind: 'pin',
+        label: 'Gate',
+        createdAtIso: '2026-09-28T10:00:03.000Z',
+        geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
+      },
+      arVisitIndex: 0,
+      atMs: T0 + 3000,
+      reticleOdomNue: [0, 0, -2],
+      cameraOdomPose: null,
+      alignmentMatrix: null,
+      arWorldGroupMatrix: null,
+      code: null,
+      codeSizeM: 0.16,
+    },
+  };
+
+  const FINISHED: RecordedAction = {
+    type: 'tourAuthoring/finished',
+    payload: {
+      levelId: 'lvl',
+      manifest: { version: 1, objects: [] },
+      atMs: T0 + 4000,
+    },
+  };
+
+  const ACTIONS: RecordedAction[] = [
+    startSession(T0),
+    { type: 'gpsData/setZeroPos', payload: { lat: 47.5, lon: 8.7 } },
+    gpsEvent(0, [0, 0, 0], 47.5, 8.7),
+    { type: 'gpsData/setColdStartOverrideEnabled', payload: true },
+    gpsEvent(1, [0, 0, -15], 47.500135, 8.7),
+    QR_LOCK,
+    DEPTH,
+    MEASURED,
+    gpsEvent(2, [15, 0, 0], 47.5, 8.7002),
+    PLACED,
+    FINISHED,
+    ...EXIT,
+    startSession(T0 + 10_000),
+    gpsEvent(10, [0, 0, 0], 47.5, 8.7),
+    ...EXIT,
+  ];
+
+  async function tourViewerZip(withSessionJson: boolean): Promise<Uint8Array> {
+    const zipWriter = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 0,
+    });
+    if (withSessionJson) {
+      await zipWriter.add(
+        'session.json',
+        new TextReader(
+          JSON.stringify(
+            buildSessionMetadataRecord({
+              endTime: T0 + 60_000,
+              startTime: T0,
+              contextTag: 'tour-authoring',
+              gpsPositions: [{ latitude: 47.5, longitude: 8.7 }],
+              frameCount: 0,
+              userAgent: 'test',
+              pageUrl: undefined,
+            })
+          )
+        )
+      );
+    }
+    for (let i = 0; i < ACTIONS.length; i++) {
+      await zipWriter.add(
+        `actions/${String(i + 1).padStart(6, '0')}.json`,
+        // Pretty-printed, as the Tour Viewer writes each action file.
+        new TextReader(JSON.stringify(ACTIONS[i], null, 2))
+      );
+    }
+    const blob = await zipWriter.close();
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+
+  it('is read as era 5: no migration, every action and payload kept in order', async () => {
+    const loaded = await loadRecording(await tourViewerZip(true));
+
+    expect(loaded.capabilities.hasSessionMeta).toBe(true);
+    expect(loaded.meta?.['contextTag']).toBe('tour-authoring');
+    expect(loaded.capabilities.migrationApplied).toBe(false);
+    // Deep, not just the types: era 5 means no coordinate is rewritten, so
+    // the QR lock, the depth grid and the log actions come back as written.
+    expect(loaded.actions.map((e) => e.action)).toEqual(ACTIONS);
+  });
+
+  it('replays each kind of state: the fixes, the QR lock and the depth sample inside the visit, and the zero across both', async () => {
+    const loaded = await loadRecording(await tourViewerZip(true));
+    const actions = loaded.actions.map((e) => e.action);
+
+    // Stepped as the desktop replay steps: up to the first exit, the
+    // visit's state is all there.
+    const store = createRecorderStore({
+      storageBackend: new NullStorageBackend(),
+      enableDevChecks: false,
+    });
+    const firstExit = actions.findIndex(
+      (a) => a.type === 'qrDetected/clearAllQrMarkers'
+    );
+    for (const action of actions.slice(0, firstExit)) store.dispatch(action);
+    const inVisit = store.getState();
+    expect(inVisit.gpsData?.gpsEvents.gpsPositions).toHaveLength(3);
+    expect(inVisit.qrDetected.markers[CODE]?.detections).toHaveLength(1);
+    expect(inVisit.recording.latestDepthSample?.points).toHaveLength(256);
+
+    // The whole stream: the recorder store ignores `tourAuthoring/*` (it has
+    // no slice for them), the exits clear the visit's state, and the zero
+    // survives them.
+    const final = loaded.getFinalState();
+    expect(final.gpsData?.zero).toMatchObject({ lat: 47.5, lon: 8.7 });
+    expect(final.qrDetected.markers[CODE]).toBeUndefined();
+  });
+
+  it('without session.json the same zip is taken for era 1 and run through the migration - the reason the Tour Viewer writes one', async () => {
+    const loaded = await loadRecording(await tourViewerZip(false));
+
+    expect(loaded.capabilities.migrationApplied).toBe(true);
+  });
+});
+
+/**
+ * A Tour Viewer VIEWING recording (the visitor's `?debug=1` recording) in the
+ * Recorder's loader.
+ *
+ * Why this test matters (authoring recording plan 2026-09-28-0953, M1b): a
+ * viewer session that placed a tour wrongly is replayed here, like an
+ * authoring one. Its stream differs from the creator's: synthetic QR votes
+ * after each lock, as ONE `gpsData/recordGpsEventBatch` per lock (core
+ * 1.26; authoring plan 2026-09-28-0953 D18) at the viewer's accuracy, the
+ * `tourViewing/*` log actions no Recorder slice knows, and - when it was
+ * saved once, recorded on, and saved again (or saved from the next page's
+ * orphan offer) - the Tour Viewer's saved marker `saved.blob` at the zip's
+ * root. This pins that the loader takes it as era 5 with its tag, keeps
+ * every action in order, ignores the marker, and that a replay holds the
+ * votes as fixes inside the visit.
+ *
+ * THE FIXTURE FOLLOWS THE ORDER THE TOUR VIEWER WRITES (as the authoring
+ * fixture above): the viewer pipeline records the detection, then logs the
+ * lock, then dispatches the lock's votes as one `recordGpsEventBatch`, then
+ * logs them (`GpsPlusSlamJs_TourViewer/src/viewer-placement-viewing-log.test.ts`
+ * drives that order through the real controller config). The Recorder's own
+ * store has no batch-specific code: the core reducer stores every event.
+ */
+describe('loadRecording - a Tour Viewer viewing recording', () => {
+  const T0 = Date.UTC(2026, 8, 30, 10, 0, 0);
+  const CODE = 'https://example.test/t?c=1';
+
+  function fix(id: string, i: number, lat: number, lon: number, acc: number) {
+    return {
+      type: 'gpsData/recordGpsEvent',
+      payload: {
+        odomPosition: [i, 0, -2],
+        odomRotation: [0, 0, 0, 1],
+        rawGpsPoint: {
+          id,
+          latitude: lat,
+          longitude: lon,
+          altitude: 400,
+          latLongAccuracy: acc,
+          timestamp: T0 + i * 1000,
+        },
+      },
+    } satisfies RecordedAction;
+  }
+
+  const MATRIX = null;
+  const ACTIONS: RecordedAction[] = [
+    {
+      type: 'recording/startSession',
+      payload: {
+        contextTag: 'tour-viewer',
+        sessionName: 'live',
+        startTime: T0,
+      },
+    },
+    { type: 'gpsData/setZeroPos', payload: { lat: 47.5, lon: 8.7 } },
+    fix('tv-0', 0, 47.5, 8.7, 5),
+    { type: 'gpsData/setColdStartOverrideEnabled', payload: true },
+    fix('tv-1', 1, 47.500135, 8.7, 5),
+    {
+      type: 'qrDetected/recordQrDetection',
+      payload: {
+        text: CODE,
+        timestamp: T0 + 1500,
+        qrPoseWorld: { position: [0, 1, -2], rotation: [0, 0, 0, 1] },
+        qrPoseInCamera: { position: [0, 0, -1], rotation: [0, 0, 0, 1] },
+        reprojectionErrorPx: 0.4,
+      },
+    },
+    {
+      type: 'tourViewing/codeLocked',
+      payload: {
+        text: CODE,
+        level: {
+          physicalSizeM: 0.16,
+          geo: { lat: 47.50002, lon: 8.7, alt: 401, headingDeg: 90 },
+        },
+        qrPoseWorld: { position: [0, 1, -2], rotation: [0, 0, 0, 1] },
+        reprojectionErrorPx: 0.4,
+        scanGate: 'scanning',
+        alignmentMatrix: MATRIX,
+        arVisitIndex: 0,
+        atMs: T0 + 1500,
+      },
+    },
+    {
+      type: 'gpsData/recordGpsEventBatch',
+      payload: {
+        events: [
+          fix('qr-vote-0', 2, 47.50002, 8.70001, 5).payload,
+          fix('qr-vote-1', 3, 47.50002, 8.69999, 5).payload,
+        ],
+      },
+    },
+    {
+      type: 'tourViewing/votesCast',
+      payload: {
+        text: CODE,
+        votedLocks: 1,
+        votes: [
+          {
+            latitude: 47.50002,
+            longitude: 8.70001,
+            altitude: 400,
+            accuracyM: 5,
+            odomPosition: [2, 0, -2],
+          },
+          {
+            latitude: 47.50002,
+            longitude: 8.69999,
+            altitude: 400,
+            accuracyM: 5,
+            odomPosition: [3, 0, -2],
+          },
+        ],
+        alignmentMatrix: MATRIX,
+        arVisitIndex: 0,
+        atMs: T0 + 1500,
+      },
+    },
+    {
+      type: 'tourViewing/placed',
+      payload: {
+        what: 'ring',
+        basis: 'code',
+        count: 3,
+        zero: { lat: 47.5, lon: 8.7 },
+        code: {
+          text: CODE,
+          geo: { lat: 47.50002, lon: 8.7, alt: 401, headingDeg: 90 },
+          centerNue: [2.2, 1, 0],
+        },
+        alignmentMatrix: MATRIX,
+        arVisitIndex: 0,
+        atMs: T0 + 1600,
+      },
+    },
+    { type: 'qrDetected/clearAllQrMarkers' },
+    { type: 'recording/endSession' },
+    { type: 'gpsData/resetGpsSessionData' },
+  ];
+
+  async function viewingZip(): Promise<Uint8Array> {
+    const zipWriter = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 0,
+    });
+    await zipWriter.add(
+      'session.json',
+      new TextReader(
+        JSON.stringify(
+          buildSessionMetadataRecord({
+            endTime: T0 + 60_000,
+            startTime: T0,
+            contextTag: 'tour-viewing',
+            gpsPositions: [{ latitude: 47.5, longitude: 8.7 }],
+            frameCount: 0,
+            userAgent: 'test',
+            pageUrl: undefined,
+          })
+        )
+      )
+    );
+    // An earlier save's marker, as a re-saved folder carries it.
+    await zipWriter.add(
+      'saved.blob',
+      new TextReader(JSON.stringify({ savedAtMs: T0, actionFiles: 3 }))
+    );
+    for (let i = 0; i < ACTIONS.length; i++) {
+      await zipWriter.add(
+        `actions/${String(i + 1).padStart(6, '0')}.json`,
+        new TextReader(JSON.stringify(ACTIONS[i], null, 2))
+      );
+    }
+    const blob = await zipWriter.close();
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+
+  it('is read as era 5 with its tag, every action kept in order, the saved marker ignored', async () => {
+    const loaded = await loadRecording(await viewingZip());
+
+    expect(loaded.capabilities.hasSessionMeta).toBe(true);
+    expect(loaded.meta?.['contextTag']).toBe('tour-viewing');
+    expect(loaded.capabilities.migrationApplied).toBe(false);
+    expect(loaded.actions.map((e) => e.action)).toEqual(ACTIONS);
+  });
+
+  it('replays the votes as fixes inside the visit, and the exit clears it', async () => {
+    const loaded = await loadRecording(await viewingZip());
+    const actions = loaded.actions.map((e) => e.action);
+    const store = createRecorderStore({
+      storageBackend: new NullStorageBackend(),
+      enableDevChecks: false,
+    });
+    const exit = actions.findIndex(
+      (a) => a.type === 'qrDetected/clearAllQrMarkers'
+    );
+    for (const action of actions.slice(0, exit)) store.dispatch(action);
+    // Two fixes and the lock's two votes, which came as ONE batch action.
+    expect(
+      actions.filter((a) => a.type === 'gpsData/recordGpsEventBatch')
+    ).toHaveLength(1);
+    expect(store.getState().gpsData?.gpsEvents.gpsPositions).toHaveLength(4);
+    expect(store.getState().qrDetected.markers[CODE]?.detections).toHaveLength(
+      1
+    );
+    const final = loaded.getFinalState();
+    expect(final.gpsData?.zero).toMatchObject({ lat: 47.5, lon: 8.7 });
+    expect(final.qrDetected.markers[CODE]).toBeUndefined();
   });
 });

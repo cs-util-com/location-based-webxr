@@ -9,14 +9,28 @@ asked. Pure - the OPFS mechanics are the framework's
 
 ## Public API
 
-- `AuthoringDraft` - `{ tourUrl, sizeM, level, objects }`.
+- `AuthoringDraft` - `{ tourUrl, sizeM, level, objects, deleted }`;
+  `deleted` holds the ids deleted on this device (tombstones, authoring
+  plan 2026-09-28-0953 §3.4, M4).
 - `draftKeyForTour(tourUrl) -> string`.
 - `draftObjectsNotYetHosted(draft, manifest) -> readonly TourObject[]` -
-  the whole state machine in one function; see the invariants.
-- `draftIsSpent(draft, manifest) -> boolean`.
-- `appendWithoutDuplicateIds(existing, additions) -> TourObject[]` - what
-  the finish uses to merge a restored draft.
-- `restoreOfferText(count)`, `restoredText(count)` - the creator's words.
+  the whole state machine in one function; see the invariants. Compares
+  CONTENT (`objectContentKey`), not ids.
+- `draftDeletionsNotYetHosted(draft, manifest) -> readonly string[]` - the
+  tombstones whose id the hosted manifest still carries.
+- `objectContentKey(object) -> string` - an object's JSON with every key
+  sorted: one comparable string whatever order its fields were written in.
+- `draftIsSpent(draft, manifest, hostedLevelJson, visitCount = 0) -> boolean`
+  - never spent while it holds an AR visit's log (`visitCount > 0`).
+- `applyObjectChanges(existing, changes, deleted) -> TourObject[]` - what
+  the Finish writes: `existing` with each change REPLACING the record with
+  its id, the rest of `changes` appended, every deleted id filtered out.
+- `contentEntriesToRemove(existing, deleted, wrap) -> string[]` - the zip
+  paths of deleted photos' content files, for the rebuild's removal list.
+- `restoreOfferText(count, hasLevel, { changed, deleted, visits })`,
+  `restoredText(count, hasLevel, { changed, deleted, visits })` - the
+  creator's words; changes, deletions and AR visits are named apart from
+  new placements, and visits are never said to go into the zip.
 
 ## Invariants & assumptions
 
@@ -29,11 +43,31 @@ asked. Pure - the OPFS mechanics are the framework's
   download, while the finish rebuilds from the hosted zip, which never had
   the earlier ones - two downloads, each missing the other's content, and
   nothing on screen saying so.
-- **Nothing already in the manifest is ever restored.**
-  `serializeTourManifest` rejects duplicate ids, so re-appending one does
-  not corrupt `tour.json`: it makes every finish THROW, for as long as the
-  draft is restored, and the app's only escape would be clearing the site's
-  storage. `appendWithoutDuplicateIds` is the second line of that defence.
+- **Nothing the manifest already carries - with the same content - is ever
+  restored.** `serializeTourManifest` rejects duplicate ids, so
+  re-appending one does not corrupt `tour.json`: it makes every finish
+  THROW, for as long as the draft is restored, and the app's only escape
+  would be clearing the site's storage. `applyObjectChanges` is the second
+  line of that defence: it replaces by id and never writes an id twice.
+- **Content, not ids** (plan §3.4, cold review #8): an edit or a move of a
+  hosted object keeps its id, so an id comparison called it "already in
+  the zip" - never offered, and deleted as spent. `objectContentKey` sorts
+  keys because a record read from disk and one minted in memory carry
+  their fields in different orders.
+- **A deletion is work until the hosted zip lacks the id**: a draft holding
+  only a pending deletion is not spent, and restoring it brings back the
+  tombstone, never the object.
+- **An AR visit's log keeps a draft alive until a discard** (M3a/M3b
+  review #5): the zip never carries visits, so no hosted zip can prove them
+  published. A visit that only re-scanned a hosted code leaves nothing
+  else, and judging that draft spent deleted the summary's only evidence
+  for that code. The cost is an offer on every reload of the tour until
+  the author restores or discards it. Reverses if the visits ever go into
+  the zip (M3a results, open question 4): then "the zip carries them" is
+  the proof, as for objects.
+- **The Finish replaces and filters** (`applyObjectChanges`): hosted order
+  is kept, a deleted id never comes back whatever the changes hold, and no
+  id is written twice (property tests).
 - **"Spent" is the only staleness this design acts on**: the hosted
   manifest already carries every object the draft holds. That is proof the
   content reached the file the world sees. A download tap is NOT proof - on
@@ -41,6 +75,15 @@ asked. Pure - the OPFS mechanics are the framework's
   creator still has to upload it by hand afterwards.
   - A draft made against a hosted zip that changed underneath is a real
     hazard this does not detect. Carried knowingly rather than guessed at.
+- **The settle rewrites records in place, and changes no shape**
+  (authoring plan 2026-09-28-0953 §3.2, M2c): at a visit's end (and at
+  Finish for a running visit) `creator-setup.ts` writes each settled object's
+  record again under its id and the meta with the re-minted level. The same
+  ids, the same fields - only the geo is newer - so neither the spent rule
+  nor `applyObjectChanges` sees anything new, and a page reload
+  restores the SETTLED geo. A tab killed before the settle keeps the
+  tap-time geo (accepted in the plan); the odometry pose behind it is not
+  stored, because another visit's odometry is meaningless.
 - **`sizeM` is part of the draft** because a crash loses it:
   `creator-setup.ts` rewrites the printed-size field from the framework
   default on every load, so a creator who printed at 20 cm would re-enter
@@ -55,6 +98,9 @@ asked. Pure - the OPFS mechanics are the framework's
 
 `authoring-draft.test.ts`. The property that carries it is "never returns
 anything the manifest already has", because that failure is permanent and
-silent. Plus: an absent manifest restoring everything, the spent rule, the
-dedupe's no-duplicate property with stable order, the key's identity, and
-the counts in the copy.
+silent. Plus: an absent manifest restoring everything, an edit of a hosted
+object counted as not hosted and field order ignored, pending deletions
+and the spent rule, `applyObjectChanges` (replace, append, filter) with a
+property that no deleted id comes back and no id is written twice,
+`contentEntriesToRemove`, the key's identity, and the counts in the copy
+(changes and deletions named).

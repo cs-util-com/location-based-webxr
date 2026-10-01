@@ -1,4 +1,7 @@
 // @ts-check
+import { expect } from "@playwright/test";
+
+import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
 /**
  * Fake device seams for the AR e2e specs (the AnchorStarter/QrTrackingDemo
  * pattern): headless Chromium has no WebXR or camera, so the suite installs
@@ -33,6 +36,21 @@ export async function installTourViewerArFakes(page, options = {}) {
         alignmentCalls: [],
         stopCaptureCalls: 0,
         endARSessionCalls: 0,
+        /** The depth sampler of a recorded entry (authoring recording plan
+         *  2026-09-28-0953, D4): the configs it was started with, how often
+         *  it was stopped, and the initAR depth callback a spec feeds. */
+        depthCaptureCalls: /** @type {unknown[]} */ ([]),
+        stopDepthCalls: 0,
+        depthCallback: /** @type {any} */ (null),
+        /** Deliver one fake depth sample through the initAR depth callback. */
+        emitDepthSample() {
+          test.depthCallback?.({
+            timestamp: Date.now(),
+            cameraPos: [0, 1.5, 0],
+            cameraRot: [0, 0, 0, 1],
+            points: [{ screenX: 0.5, screenY: 0.5, depthM: 1.5 }],
+          });
+        },
         /** The store the alignment binding received — lets specs assert the
          *  recording slice actually started (the silent-drop trap). */
         alignmentStore: /** @type {any} */ (null),
@@ -98,6 +116,33 @@ export async function installTourViewerArFakes(page, options = {}) {
         reticleVisible: true,
         reticlePosition: [3, 400.5, -2],
         reticleDisposals: 0,
+        /** A tap in AR (authoring plan 2026-09-28-0953 M4): the XR select
+         *  listener the app handed the reticle, what the fake camera ray
+         *  "hits" (an object id, or null), and the ids it was offered. */
+        xrSelect: /** @type {null | (() => void)} */ (null),
+        pickId: /** @type {string | null} */ (null),
+        pickTargets: /** @type {string[]} */ ([]),
+        /**
+         * Tap the screen in AR, as the runtime does: a tap on a DOM-overlay
+         * element first dispatches `beforexrselect` there, and a cancelled
+         * one fires NO select. Returns whether the select fired.
+         * @param {string} [selector] the overlay element tapped, if any
+         */
+        tapXr(selector) {
+          if (selector !== undefined) {
+            const target = document.querySelector(selector);
+            const event = new Event("beforexrselect", {
+              bubbles: true,
+              cancelable: true,
+            });
+            target?.dispatchEvent(event);
+            if (event.defaultPrevented) return false;
+          }
+          // No target ray: a screen-centre tap, as the driver hands one
+          // whose event carried no pose.
+          test.xrSelect?.(null);
+          return true;
+        },
         /** Photos "encoded" by the fake (a 3-byte stand-in per capture). */
         encodedFrames: 0,
         /** The scan gate's escape clock (M5): armed timers the spec fires. */
@@ -115,9 +160,49 @@ export async function installTourViewerArFakes(page, options = {}) {
       };
       /** @type {any} */ (window).__tourViewerTest = test;
 
+      /** Keep a recorded entry's depth callback for `emitDepthSample`;
+       *  whether the entry asked for depth at all. */
+      function keepDepthCallback(callbacks) {
+        test.depthCallback = callbacks?.depth?.onCaptured ?? null;
+        return test.depthCallback !== null;
+      }
+
+      /**
+       * The store's alignment right now (16 numbers, column-major), or the
+       * identity before there is one. The real world group's matrix IS the
+       * alignment (lerped toward it), and since the authoring settle
+       * (authoring plan 2026-09-28-0953 M2c) recomputes geo as
+       * `alignment · local`, a group that pretended to be the identity
+       * under a real alignment would move every settled pin by it.
+       */
+      function currentAlignment() {
+        const m =
+          test.alignmentStore?.getState?.().gpsData?.gpsEvents?.alignmentMatrix;
+        return m != null && m.length === 16
+          ? Array.from(m)
+          : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+      }
       const worldGroup = {
         name: "fake-world-group",
         children: /** @type {unknown[]} */ ([]),
+        // The alignment, as far as the creator's placement reads the group
+        // (its odometry position, the matrix it used, the settle).
+        matrixWorld: {
+          toArray: () => currentAlignment(),
+        },
+        /** World to the group's frame: the rigid inverse of the alignment,
+         *  `R^T (v - t)`, in place like three's. */
+        worldToLocal(v) {
+          const m = currentAlignment();
+          const d = [v.x - m[12], v.y - m[13], v.z - m[14]];
+          const x = m[0] * d[0] + m[1] * d[1] + m[2] * d[2];
+          const y = m[4] * d[0] + m[5] * d[1] + m[6] * d[2];
+          const z = m[8] * d[0] + m[9] * d[1] + m[10] * d[2];
+          v.x = x;
+          v.y = y;
+          v.z = z;
+          return v;
+        },
         add(object) {
           this.children.push(object);
         },
@@ -165,6 +250,7 @@ export async function installTourViewerArFakes(page, options = {}) {
             container?.insertBefore(canvas, container.firstChild);
             test.initARCalls.push({
               hasCameraFrame: Boolean(callbacks?.cameraFrame),
+              hasDepth: keepDepthCallback(callbacks),
               requestHitTest: Boolean(features?.requestHitTest),
               isolationOptions,
             });
@@ -268,17 +354,29 @@ export async function installTourViewerArFakes(page, options = {}) {
             test.releasePdfSave = () => resolve(test.saveOutcome);
           });
         },
-        startHitTestReticle: () => ({
-          isVisible: () => test.reticleVisible,
-          getWorldPosition: (out) => {
-            const [x, y, z] = test.reticlePosition;
-            out.set(x, y, z);
-            return out;
-          },
-          dispose: () => {
-            test.reticleDisposals += 1;
-          },
-        }),
+        startHitTestReticle: (_group, onSelect) => {
+          test.xrSelect = onSelect ?? null;
+          return {
+            isVisible: () => test.reticleVisible,
+            getWorldPosition: (out) => {
+              const [x, y, z] = test.reticlePosition;
+              out.set(x, y, z);
+              return out;
+            },
+            dispose: () => {
+              test.reticleDisposals += 1;
+            },
+          };
+        },
+        // The camera ray, scripted: the stub scene has no geometry (the
+        // real raycast is object-pick.test.ts's). Only an id the app
+        // actually rendered can be hit.
+        pickObjectInView: (targets) => {
+          test.pickTargets = [...targets.keys()];
+          return test.pickId !== null && targets.has(test.pickId)
+            ? test.pickId
+            : null;
+        },
         encodeFrameJpeg: (image) => {
           test.encodedFrames += 1;
           return Promise.resolve({
@@ -304,8 +402,102 @@ export async function installTourViewerArFakes(page, options = {}) {
         stopCameraFrameCapture: () => {
           test.stopCaptureCalls += 1;
         },
+        startDepthCapture: (config) => {
+          test.depthCaptureCalls.push(config);
+        },
+        stopDepthCapture: () => {
+          test.stopDepthCalls += 1;
+        },
       };
     },
     { shareRoute, printSizeM },
   );
+}
+
+/**
+ * Open the fixture tour on the creator's page (range streaming, no cache)
+ * and open step 4. Shared by the editing and the summary specs.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+export async function openFixtureTour(page) {
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(E2E_QR_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  const step = page.getByTestId("step-measure");
+  if (!(await step.evaluate((el) => /** @type {any} */ (el).open))) {
+    await step.locator("summary").click();
+  }
+}
+
+/**
+ * Enter AR and measure the fixture's code (it stores a pose, so the
+ * measurement keeps it - D10b); placement unlocks. Shared by the editing
+ * and the summary specs.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+export async function enterArAndMeasure(page) {
+  await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
+  await page.getByTestId("enter-ar").click();
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("setup-status").textContent();
+      },
+      { timeout: 15000 },
+    )
+    .toMatch(/waiting for GPS alignment/i);
+  await seedAlignment(page);
+  await expect(page.getByTestId("setup-mint")).toBeEnabled({ timeout: 10000 });
+  await page.getByTestId("setup-mint").click();
+  await expect(page.getByTestId("setup-pin")).toBeEnabled();
+}
+
+/**
+ * The session zero plus three consistent fixes - the alignment a placement
+ * is expressed against (and that the votes refine). Shared by the specs
+ * that place, edit or lay out the AR panel; it was copied into two of them.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+export async function seedAlignment(page) {
+  await page.evaluate(() => {
+    const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
+    store.dispatch({
+      type: "gpsData/setZeroPos",
+      payload: { lat: 47.5, lon: 8.7 },
+    });
+    const pairs = [
+      { odom: [0, 0, 0], lat: 47.5, lon: 8.7 },
+      { odom: [0, 0, -15], lat: 47.500135, lon: 8.7 },
+      { odom: [15, 0, 0], lat: 47.5, lon: 8.7002 },
+    ];
+    for (const [i, p] of pairs.entries()) {
+      store.dispatch({
+        type: "gpsData/recordGpsEvent",
+        payload: {
+          odomPosition: p.odom,
+          odomRotation: [0, 0, 0, 1],
+          rawGpsPoint: {
+            id: `seed-${String(i)}`,
+            latitude: p.lat,
+            longitude: p.lon,
+            altitude: 400,
+            latLongAccuracy: 5,
+            timestamp: 1756150000000 + i * 1000,
+          },
+        },
+      });
+    }
+  });
 }

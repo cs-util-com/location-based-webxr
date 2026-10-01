@@ -32,6 +32,9 @@ import {
   type AlignmentSnapshot,
 } from './tracking-quality';
 import { trackingReducer, poseReceived, poseLost } from './tracking-slice';
+import { createSlamAppStore } from './create-slam-app-store';
+import { recordGpsEvent, recordGpsEventBatch, setZeroPos } from './index';
+import { NullStorageBackend } from '../storage/null-storage-backend';
 import type { DeviceOrientation } from './tracking-slice';
 import type { ARPose } from '../types/ar-types';
 
@@ -1382,6 +1385,76 @@ describe('§4.8 hysteresis (degradedHoldoff)', () => {
       }
     ).trackingQuality;
     expect(tqAfter.degradedConsecutiveCount).toBe(0);
+  });
+});
+
+// Why (core 1.26; Tour Viewer authoring plan 2026-09-28-0953 D18): the
+// viewer sends its code votes, and each device fix together with its
+// keep-alive ring, as ONE `recordGpsEventBatch` - one solve. The listener
+// knew only `recordGpsEvent`, so a session fed by batches never pushed an
+// alignment snapshot nor recomputed the report on them: the tracking phase a
+// visitor's placement waits for (`isPlacementReady`) would freeze at whatever
+// the last single fix left (M2e/M2f milestone review #5). Driven through the
+// REAL store and the batch action as the framework re-exports it.
+describe('the listener on a recordGpsEventBatch (core 1.26)', () => {
+  const fixAt = (i: number) => ({
+    odomPosition: [i * 2, 0, -i] as Vector3,
+    odomRotation: [0, 0, 0, 1] as [number, number, number, number],
+    rawGpsPoint: {
+      id: `g${String(i)}`,
+      latitude: ZERO_REF.lat + i / 111_320,
+      longitude: ZERO_REF.lon + (i * 2) / 70_000,
+      latLongAccuracy: 3,
+      timestamp: 1_700_000_000_000 + i * 1000,
+    },
+  });
+
+  function realStore() {
+    const store = createSlamAppStore({
+      storageBackend: new NullStorageBackend(),
+      enableDevChecks: false,
+    });
+    store.dispatch(
+      poseReceived({
+        pose: DEFAULT_POSE,
+        sensorOrientation: DEFAULT_ORIENTATION,
+      })
+    );
+    store.dispatch(setZeroPos(ZERO_REF));
+    return store;
+  }
+
+  it('pushes the batch solve as one snapshot and counts every fix in the report', () => {
+    const store = realStore();
+    const before = selectRecentAlignments(store.getState()).length;
+    store.dispatch(recordGpsEventBatch({ events: [0, 1, 2, 3, 4].map(fixAt) }));
+    const after = selectRecentAlignments(store.getState());
+    expect(after).toHaveLength(before + 1);
+    expect(after.at(-1)!.observationIndex).toBe(5);
+    expect(
+      selectTrackingQuality(store.getState())?.diagnostics.observationsSeen
+    ).toBe(5);
+  });
+
+  it('reports from the history what the same fixes dispatched one by one report at their end', () => {
+    // Equivalence on the history-derived inputs: the stored history is
+    // identical (no compass here), so every sub-score computed from it
+    // matches the last single dispatch's. Convergence is NOT compared: it
+    // reads the snapshot buffer, which holds one solve here and five there.
+    const events = [0, 1, 2, 3, 4].map(fixAt);
+    const batched = realStore();
+    batched.dispatch(recordGpsEventBatch({ events }));
+    const single = realStore();
+    for (const event of events) single.dispatch(recordGpsEvent(event));
+    const a = selectTrackingQuality(batched.getState());
+    const b = selectTrackingQuality(single.getState());
+    expect(a?.diagnostics.observationsSeen).toBe(5);
+    expect(a?.diagnostics.observationsSeen).toBe(
+      b?.diagnostics.observationsSeen
+    );
+    expect(a?.subScores.gpsAccuracy).toBe(b?.subScores.gpsAccuracy);
+    expect(a?.subScores.coverage).toBe(b?.subScores.coverage);
+    expect(a?.subScores.residualConsensus).toBe(b?.subScores.residualConsensus);
   });
 });
 

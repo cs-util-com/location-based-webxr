@@ -278,7 +278,24 @@ export async function createSession(
       'OPFS storage not initialized. Call initOpfsStorage first.'
     );
   }
+  return createSessionInDirectory(sessionsDir, timestamp);
+}
 
+/**
+ * {@link createSession}'s layout, collision probe and handle hand-off, in a
+ * parent directory the CALLER owns - so an app whose recordings must not
+ * land in the Recorder's `sessions/` folder (the Tour Viewer's, which shares
+ * the origin) reuses the write functions below without re-implementing the
+ * probe. Needs no {@link initOpfsStorage}; the subsequent `writeAction` /
+ * `writeFrame` / `writeSessionMetadata` calls target the new session.
+ *
+ * @param parent - The directory the `recording-{timestamp}` folder goes in.
+ * @param timestamp - Session start time (used for folder naming)
+ */
+export async function createSessionInDirectory(
+  parent: FileSystemDirectoryHandle,
+  timestamp: Date
+): Promise<CreateSessionResult> {
   // `formatTimestamp` resolves to whole UTC seconds, so two recordings started
   // within the same second collide on `recording-<ts>/`. Because the handle is
   // opened with `{ create: true }`, a colliding name silently REUSES the
@@ -288,21 +305,20 @@ export async function createSession(
   const baseName = `recording-${formatTimestamp(timestamp)}`;
   let sessionName = baseName;
   let suffix = 1;
-  while (await sessionDirExists(sessionsDir, sessionName)) {
+  while (await sessionDirExists(parent, sessionName)) {
     suffix += 1;
     sessionName = `${baseName}-${suffix}`;
   }
-  currentSessionHandle = await sessionsDir.getDirectoryHandle(sessionName, {
+  const session = await parent.getDirectoryHandle(sessionName, {
     create: true,
   });
-
-  actionsHandle = await currentSessionHandle.getDirectoryHandle('actions', {
+  const actions = await session.getDirectoryHandle('actions', {
     create: true,
   });
-  framesHandle = await currentSessionHandle.getDirectoryHandle(
-    SESSION_IMAGES_DIR,
-    { create: true }
-  );
+  const frames = await session.getDirectoryHandle(SESSION_IMAGES_DIR, {
+    create: true,
+  });
+  setSessionHandles(session, actions, frames);
 
   log.info('Session created:', sessionName);
 

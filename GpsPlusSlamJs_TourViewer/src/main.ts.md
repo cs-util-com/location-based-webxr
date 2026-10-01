@@ -20,7 +20,10 @@ listed in `index.html.md`. The concerns and their modules:
 - `visitor-screen.ts` - the visitor's consent screen and the location
   gate (`wireVisitorScreen`).
 - `creator-setup.ts` - the creator's AR setup panel: measuring, finish
-  (the zip rebuild), the download (`wireCreatorSetup`).
+  (the zip rebuild), the download (`wireCreatorSetup`); `main.ts` builds
+  the object list's DOM view (`createObjectListView` over `#object-list`,
+  authoring plan 2026-09-28-0953 M4) and hands it in, and binds
+  `hooks.selectInView`.
 - `viewer-placement.ts` - the viewer pipeline and the photo placement
   (`createViewerPlacement`).
 - `ar-entry.ts` - the AR entry, the runtime start/end, the status line
@@ -31,6 +34,43 @@ listed in `index.html.md`. The concerns and their modules:
   wired before the open path).
 - `tour-viewer-session.ts` - the session object, the store factory and
   the hooks contract they share.
+- `authoring-recording.ts` / `recording-panel.ts` - the troubleshooting
+  recording (authoring recording plan 2026-09-28-0953, M1a; a visitor's with
+  `?debug=1` since M1b, tagged `tour-viewing`, its `tourViewing/*` log from
+  `createViewingLog` handed to the viewer placement only where the panel is
+  wired): `?debug=1` is read once, before the recording is created;
+  the recording is created BEFORE the store, which is built with its backend
+  and gate; the panel (a creator's, or a `?debug=1` visitor's; `main.ts`
+  unhides `#recording-block` for exactly those) is wired before the AR entry, which
+  asks it at each entry, and is re-rendered on every controller state change
+  and store dispatch (failed writes are counted as they happen). Save flushes
+  the store's write queue and hands the zip to `seams.shareOrDownloadZip`, as
+  the tour zip does; the page url goes into `session.json` without its query,
+  and the framework's `getBuildInfo` stamps it. The panel's `arHasRun` is
+  `ctx.arSessionGeneration > 0` or a live controller status (the switch locks
+  once an unrecorded session has run), and its `estimateStorage` is
+  `navigator.storage.estimate` where the browser has one.
+- `recording-folders.ts` / `recording-housekeeping.ts` /
+  `recording-offer.ts` - the recordings across page lives (M1b): the
+  recording takes its folder's Web Lock
+  (`holdRecordingFolder(navigator.locks, …)`) before the folder exists and
+  holds it for the page's life; where the panel is wired, the page calls
+  `wireRecordingHousekeeping` (`recording-housekeeping.ts`) once at boot -
+  it lists the folders, leaves the held ones alone, deletes what the cleanup
+  bound names, and offers the unsaved ones (`wizard.revealStep("measure")`
+  makes the offer visible), then marks `#recording-block`
+  `data-housekeeping="done"`. The orphan's `session.json` is stamped like a
+  live save's (query-free page url, `getBuildInfo`) and falls back to the
+  page's own tag (`recordingTag`: `tour-viewing` on a visitor's page, M1b
+  review #7); its hand-off goes through `seams.shareOrDownloadZip`, and one
+  `createSaveGuard()` is shared by "Save the recording" and the offer.
+
+- `summary-panel.ts` (authoring plan 2026-09-28-0953 M3b) - the summary
+  after Finish over `#summary`, handed to the creator setup as `summary`.
+  Its map is `() => import("./summary-map-view.js")`: the ONLY way the
+  page reaches Leaflet, so a visitor never downloads it
+  (`summary-map-lazy.test.ts`). Its "Start AR setup" clicks `#enter-ar`,
+  inside the creator's own tap.
 
 ## Invariants & assumptions
 

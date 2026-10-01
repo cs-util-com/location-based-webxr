@@ -33,7 +33,10 @@ flow that persists, packages and summarises what it produced.
 5. **Drain the persistence write queue** before anything reads this session's
    `actions/`. An action dispatched moments before Stop could otherwise land
    after the export enumerated the directory and silently miss the zip.
-6. Write the session metadata (`session-metadata-record.ts`).
+6. Write the session metadata (the framework's
+   `storage/session-metadata-record.ts`, shared with the Tour Viewer's
+   recording since 2026-09-28; this flow injects the build info and the
+   query-free page url).
 7. Final external sync, then stop the sync manager.
 8. Unsubscribe the store, collect tracker errors, hide the map overlay, and
    export a ZIP from OPFS **only when there is no external save location**.
@@ -65,7 +68,7 @@ flow that persists, packages and summarises what it produced.
   on. The recorded `startedAt` is then wrong (≈ `endedAt`) — a known lie,
   preferred to losing the recording's only self-description over a field that is
   missing precisely when something else has already gone wrong. See
-  `session-metadata-record.ts.md`.
+  the framework's `storage/session-metadata-record.ts.md`.
 - **Narrow deps interface** — six of `RecordingSessionDeps`'s sixteen members,
   for the reasons in `zip-contributors.ts.md`: it documents the real dependency,
   and it avoids importing the module that imports this one.

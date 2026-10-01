@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { Object3D, Texture, Vector3 } from "three";
+import { Object3D, Quaternion, Texture, Vector3 } from "three";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
@@ -270,5 +270,58 @@ describe("renderTourObjects", () => {
     rendered.dispose();
     expect(children).toHaveLength(0);
     expect(disposed).toEqual(["Gate"]);
+  });
+
+  it("places pins and photos at the caller's pose in the caller's frame when it passes one", async () => {
+    // Why this test matters (authoring plan 2026-09-28-0953, M2c): the
+    // creator's previews of the running visit go under the AR world group
+    // at their ODOMETRY pose, so they stay rigid while GPS re-solves. The
+    // geo-derived pose is right for the scene root only; handed to a child
+    // of the world group it would apply the alignment twice.
+    const { scene, children } = fakeScene();
+    const pin = mintPin({
+      id: "p",
+      label: "Gate",
+      worldNuePosition: { x: 5, y: 400, z: 0 },
+      zero: ZERO,
+      nowIso: NOW,
+    })!;
+    const photo = mintPhoto({
+      id: "g",
+      cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      alignmentMatrix: IDENTITY,
+      zero: ZERO,
+      imageWidth: 4,
+      imageHeight: 3,
+      nowIso: NOW,
+    })!;
+    const turned: [number, number, number, number] = [
+      0,
+      Math.SQRT1_2,
+      0,
+      Math.SQRT1_2,
+    ];
+    await renderTourObjects([pin, photo], {
+      scene,
+      zero: ZERO,
+      poseOf: (object) =>
+        object.kind === "pin"
+          ? { positionNue: [2, 0, -1], rotationNue: [0, 0, 0, 1] }
+          : { positionNue: [0.5, 1.4, 3], rotationNue: turned },
+      makeLabel: (text) => {
+        const object = new Object3D();
+        object.name = `label:${text}`;
+        return { object, dispose: () => undefined };
+      },
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+    });
+    const group = children[0];
+    const label = group?.children.find((c) => c.name === "label:Gate");
+    expect(label?.position.toArray()).toEqual([2, 0, -1]);
+    const plane = group?.children.find((c) => c !== label);
+    expect(plane?.position.toArray()).toEqual([0.5, 1.4, 3]);
+    expect(plane?.quaternion.angleTo(new Quaternion(...turned))).toBeLessThan(
+      1e-9,
+    );
   });
 });

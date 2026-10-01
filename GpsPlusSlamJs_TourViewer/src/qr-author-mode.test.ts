@@ -12,6 +12,7 @@ import {
   finishBlockedHint,
   finishReadiness,
   setupHint,
+  entryHint,
   codeIndexFromInput,
   buildAuthorControllerConfig,
   syntheticAuthorLevel,
@@ -26,6 +27,8 @@ import {
   sizeOfferView,
   adoptedSizeNote,
   codeTourLine,
+  correctionRefusedLine,
+  replaceCodeConfirmText,
   type AuthorPipelineDeps,
 } from "./qr-author-mode";
 
@@ -245,6 +248,21 @@ describe("authorStatusLine", () => {
   });
 });
 
+describe("entryHint (authoring plan 2026-09-28-0953 §3.2a, decision D5)", () => {
+  it("asks for the code first while a tour is open and the code was not seen in this AR visit", () => {
+    // Why this matters: a later visit's notes are only corrected through
+    // the code when the code was seen in THAT visit (D10b). The owner chose
+    // a hint over a rule: nothing blocks placing, so the hint is all that
+    // tells the author what to do first.
+    expect(entryHint({ tourOpen: true, codeSeen: false })).toBe(
+      "First, point the camera at the code you scanned to open this tour.",
+    );
+    expect(entryHint({ tourOpen: true, codeSeen: true })).toBe("");
+    // No tour open: there is no "code of this tour" to point at yet.
+    expect(entryHint({ tourOpen: false, codeSeen: false })).toBe("");
+  });
+});
+
 describe("setupHint / finishReadiness", () => {
   it("names the next move once measured, and refuses to finish without a tour open", () => {
     // Why this matters: the measured position is only useful inside the
@@ -265,6 +283,19 @@ describe("setupHint / finishReadiness", () => {
     expect(
       setupHint({ measured: true, tourOpen: true, hadLevel: false }),
     ).toMatch(/Finish/);
+    // A stored pose in hand (the hosted zip's, a draft's, an earlier
+    // visit's kept through a new measurement) is NOT replaced (D10b, M2c
+    // review #5): saying "replaces" there would contradict what the zip
+    // gets.
+    const kept = setupHint({
+      measured: true,
+      tourOpen: true,
+      hadLevel: true,
+      keptStored: true,
+    });
+    expect(kept).not.toMatch(/replaces/);
+    expect(kept).toMatch(/Saved position kept/);
+    expect(kept).toMatch(/Finish/);
     const settled = "settled" as const;
     expect(
       finishReadiness({ measured: false, tourOpen: true, manifest: settled }),
@@ -710,5 +741,57 @@ describe("the finish on a Drive-hosted tour (Drive replace plan §2, §5)", () =
     expect(finishHandoffStatus(outcome, "My tour.zip")).toBe(
       FINISH_LABELS.saved("My tour.zip"),
     );
+  });
+});
+
+describe("correctionRefusedLine (M2c review #2)", () => {
+  it("names the distance, or the turn when only the yaw broke the bound, and says the visit follows GPS", () => {
+    // Why this matters: a refused correction changes where this visit's
+    // notes go; the author must see why in one line, in plain words.
+    const far = correctionRefusedLine({
+      horizontalM: 61.4,
+      yawDeg: 3,
+      maxHorizontalM: 26,
+    });
+    expect(far).toMatch(/^Code seen 61 m from its saved position/);
+    expect(far).toMatch(/this visit follows GPS/);
+    expect(
+      correctionRefusedLine({
+        horizontalM: 2,
+        yawDeg: 150.2,
+        maxHorizontalM: 26,
+      }),
+    ).toMatch(/^Code seen turned 150° from its saved position/);
+  });
+});
+
+describe("replaceCodeConfirmText (M4 review #3)", () => {
+  // Why this matters: the explicit replace moves the code for every
+  // visitor, and visitors are lined up with the code - so notes placed
+  // against the OLD position keep their stored geo but appear shifted by
+  // about the replace's size. "Objects already placed keep their own
+  // positions" was true of the stored numbers and misleading about what a
+  // visitor sees; the creator has to know the size before confirming.
+  it("says how far the code moves and turns, and that earlier notes will appear shifted by about that much", () => {
+    const text = replaceCodeConfirmText({ horizontalM: 3.44, yawDeg: 4.2 });
+    expect(text).toMatch(/Everyone who opens the tour/);
+    expect(text).toMatch(/about 3\.4 m/);
+    expect(text).toMatch(/4°/);
+    expect(text).toMatch(/keep their saved positions/);
+    expect(text).toMatch(/appear shifted by about that much/);
+    expect(text).not.toMatch(/keep their own positions\.$/);
+  });
+
+  it("rounds a large move to whole metres and leaves out a negligible turn", () => {
+    const text = replaceCodeConfirmText({ horizontalM: 23.6, yawDeg: 0.2 });
+    expect(text).toMatch(/about 24 m/);
+    expect(text).not.toMatch(/°/);
+  });
+
+  it("still says what happens to earlier notes when the size is unknown", () => {
+    const text = replaceCodeConfirmText(null);
+    expect(text).toMatch(/Everyone who opens the tour/);
+    expect(text).toMatch(/appear shifted/);
+    expect(text).not.toMatch(/ m /);
   });
 });

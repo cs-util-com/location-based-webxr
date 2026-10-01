@@ -23,6 +23,8 @@ import {
   type FileEntry,
   type Reader,
 } from '@zip.js/zip.js';
+import { GPS_POINT_SOURCE_DEVICE, gpsPointSourceOf } from 'gps-plus-slam-js';
+import { recordedGpsEventPayloads } from '../utils/gps-event-actions';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('ZipReader');
@@ -299,11 +301,57 @@ export interface GpsPathCoord {
   readonly accuracy?: number;
 }
 
+type RecordedPoint = {
+  latitude?: unknown;
+  longitude?: unknown;
+  latLongAccuracy?: unknown;
+  source?: unknown;
+};
+
+function isDeviceFixWithCoords(
+  gps: RecordedPoint | null | undefined
+): gps is RecordedPoint & { latitude: number; longitude: number } {
+  return (
+    !!gps &&
+    typeof gps.latitude === 'number' &&
+    typeof gps.longitude === 'number' &&
+    // Any value is safe here: a stamp that is not a known source reads as
+    // 'unknown' at runtime, whatever its type.
+    gpsPointSourceOf(gps as { source?: string }) === GPS_POINT_SOURCE_DEVICE
+  );
+}
+
+/** One recorded GPS event payload's track point, or null when it has no
+ *  numeric coordinates or is not a device fix. Reads both the old
+ *  (`gpsPoint`) and the new (`rawGpsPoint`) payload format. A synthetic QR
+ *  vote sits up to 30 m along its code's face, where nobody walked, so it is
+ *  no track point (and no coverage); neither is a reading whose source stamp
+ *  is unknown - the core's `gpsPointSourceOf` never rounds that to device. */
+function gpsPathCoordOf(event: unknown): GpsPathCoord | null {
+  if (typeof event !== 'object' || event === null) return null;
+  const payload = event as {
+    rawGpsPoint?: RecordedPoint;
+    gpsPoint?: RecordedPoint;
+  };
+  const gps = payload.rawGpsPoint ?? payload.gpsPoint;
+  if (!isDeviceFixWithCoords(gps)) return null;
+  const accuracy =
+    typeof gps.latLongAccuracy === 'number' && gps.latLongAccuracy > 0
+      ? gps.latLongAccuracy
+      : undefined;
+  return {
+    lat: gps.latitude,
+    lng: gps.longitude,
+    ...(accuracy !== undefined ? { accuracy } : {}),
+  };
+}
+
 /**
  * Extract GPS coordinates from a recording zip provided as a Blob.
  *
  * Uses BlobReader for memory-efficient reading. Reads all action JSON files,
- * identifies `gpsData/recordGpsEvent` actions, and returns only the lightweight
+ * identifies the GPS actions (`gpsData/recordGpsEvent`, and every event of a
+ * `gpsData/recordGpsEventBatch`), and returns only the lightweight
  * `{ lat, lng }` pairs — all other action data is discarded immediately.
  *
  * Returns coordinates in chronological order (sorted by action filename).
@@ -338,44 +386,19 @@ export async function loadGpsPathFromBlob(
       }
 
       const text = await entry.getData(new TextWriter());
-      let action: {
-        type?: string;
-        payload?: {
-          gpsPoint?: {
-            latitude?: number;
-            longitude?: number;
-            latLongAccuracy?: number;
-          };
-          rawGpsPoint?: {
-            latitude?: number;
-            longitude?: number;
-            latLongAccuracy?: number;
-          };
-        };
-      };
+      let action: unknown;
       try {
-        action = JSON.parse(text) as typeof action;
+        action = JSON.parse(text);
       } catch {
         continue;
       }
 
-      // Support both old (gpsPoint) and new (rawGpsPoint) payload formats
-      const gps = action.payload?.rawGpsPoint ?? action.payload?.gpsPoint;
-      if (
-        action.type === 'gpsData/recordGpsEvent' &&
-        gps &&
-        typeof gps.latitude === 'number' &&
-        typeof gps.longitude === 'number'
-      ) {
-        const accuracy =
-          typeof gps.latLongAccuracy === 'number' && gps.latLongAccuracy > 0
-            ? gps.latLongAccuracy
-            : undefined;
-        coords.push({
-          lat: gps.latitude,
-          lng: gps.longitude,
-          ...(accuracy !== undefined ? { accuracy } : {}),
-        });
+      // One fix per `recordGpsEvent`, every fix of a `recordGpsEventBatch`
+      // (core 1.26; the Tour Viewer's device fix with its ring), each read
+      // the same way.
+      for (const event of recordedGpsEventPayloads(action)) {
+        const coord = gpsPathCoordOf(event);
+        if (coord !== null) coords.push(coord);
       }
     }
 

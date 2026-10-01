@@ -55,6 +55,13 @@ export {
 
   // License activation (used by app tests that exercise licensed math)
   validateLicenseKey,
+
+  // GPS point provenance: which stored points are device fixes and which are
+  // synthetic QR votes (the Tour Viewer's keep-alive re-votes on device
+  // fixes only)
+  gpsPointSourceOf,
+  GPS_POINT_SOURCE_DEVICE,
+  GPS_POINT_SOURCE_SYNTHETIC_QR,
 } from 'gps-plus-slam-js';
 
 export type {

@@ -13,25 +13,41 @@ import type {
   QrTrackingStatus,
 } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import type { QrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
 import type { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import {
   createSlamAppStore,
   qrDetectedReducer,
+  recordQrDetection,
+  slicePrefixOf,
 } from "gps-plus-slam-app-framework/state";
-import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
+import {
+  NullStorageBackend,
+  type StorageBackend,
+} from "gps-plus-slam-app-framework/storage";
 
-import type { HitTestReticleHandle } from "gps-plus-slam-app-framework/ar";
+import { objectPlaced } from "./tour-authoring-actions.js";
+import { codeLocked } from "./tour-viewing-actions.js";
+
+import type {
+  HitTestReticleHandle,
+  SelectTargetRay,
+} from "gps-plus-slam-app-framework/ar";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import type { RenderedTourObjects } from "./content-placement.js";
 import type { FusedTallies, LastEvaluation } from "./qr-debug-readout.js";
 import type { PrintSizeCheck } from "./print-size-check.js";
+import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
+import type { ViewerVoteSink } from "./viewer-vote-sink.js";
 import type { ScanGate } from "./scan-gate.js";
 import type { PlacedImagePlanes } from "./image-planes.js";
 import type { TourViewerSeams } from "./seams.js";
+import type { NuePose } from "./visit-anchoring.js";
+import type { CodeMeasurement, CodeSighting } from "./visit-settle.js";
 import type { PlacementState } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
 
@@ -41,14 +57,53 @@ type QrController = ReturnType<typeof createQrTrackingController>;
 type FusedPoseSource = ReturnType<typeof createFusedQrPoseSource>;
 type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
 
-/** The page's store: the framework store with the opt-in `qrDetected` slice
- *  both modes need (author: stability gate for minting; viewer: the
- *  relocalization votes read the same window). One factory so every module
- *  types the store the same way. */
-export function createTourViewerStore() {
+/**
+ * Where an object was placed in AR, kept for the settle (authoring plan
+ * 2026-09-28-0953 §3.2, M2c): its pose in the world group's frame
+ * (odometry-NUE, `visit-anchoring.ts`) and the AR visit that frame belongs
+ * to - odometry from another visit is meaningless. Absent for an object
+ * that came back from a draft: it has only its geo.
+ */
+interface VisitPlacement {
+  /** `arSessionGeneration` at the tap. */
+  readonly visit: number;
+  readonly local: NuePose;
+}
+
+/**
+ * The page's store: the framework store with the opt-in `qrDetected` slice
+ * both modes need (author: stability gate for minting; viewer: the
+ * relocalization votes read the same window). One factory so every module
+ * types the store the same way.
+ *
+ * `recording` is the creator's troubleshooting recording
+ * (`authoring-recording.ts`): its backend, and its gate REPLACING the
+ * `isRecording` one - this app starts and ends a session on every AR entry
+ * and exit, so under the default gate the per-exit reset and everything
+ * done on the page outside AR would never be written. The numbering runs
+ * across those sessions for the same reason. Without it (tests) the store
+ * writes into a `NullStorageBackend` as before.
+ */
+export function createTourViewerStore(recording?: {
+  storageBackend: StorageBackend;
+  persistWhile: () => boolean;
+}) {
   return createSlamAppStore({
-    storageBackend: new NullStorageBackend(),
+    storageBackend: recording?.storageBackend ?? new NullStorageBackend(),
+    ...(recording === undefined
+      ? {}
+      : { persistWhile: recording.persistWhile, continuousActionIndex: true }),
     extraReducers: { qrDetected: qrDetectedReducer },
+    // Beyond the framework's built-ins (GPS with its paired poses, the
+    // recording lifecycle, diagnostics): the QR detections the votes and
+    // the mint were computed from, the creator's own log actions, and a
+    // debugging visitor's (M1b).
+    persistedExtraPrefixes: [
+      slicePrefixOf(recordQrDetection.type),
+      // Every `tourAuthoring/*` action: placed, measured, settled, finished.
+      slicePrefixOf(objectPlaced.type),
+      slicePrefixOf(codeLocked.type),
+    ],
   });
 }
 export type TourViewerStore = ReturnType<typeof createTourViewerStore>;
@@ -78,6 +133,17 @@ export interface TourViewerHooks {
   presentTourForPrint(url: string, origin?: "host-step" | "measure-step"): void;
   /** A tour closed: the finish step's page-side state is stale. */
   resetFinishStep(): void;
+  /** A creator's AR visit is running (its world group exists): show the
+   *  earlier visits' objects (authoring plan 2026-09-28-0953 §3.2, M2c). */
+  beginAuthorVisit(): void;
+  /** A creator's AR visit ends: settle it. Called BEFORE the session's
+   *  store teardown, which resets the alignment the settle reads. */
+  endAuthorVisit(): void;
+  /** A creator's tap in AR (an XR select the overlay did not cancel):
+   *  select the object under the tap - its target ray from the reticle
+   *  driver, or the ring's screen centre when null (authoring plan
+   *  2026-09-28-0953 M4; review #4). */
+  selectInView(tap: SelectTargetRay | null): void;
   /** No tour is open any more (one closed, or an open failed): the panels
    *  that show a tour's link go back to ASKING for one. Without this, the
    *  print step keeps showing the previous tour's link as immutable text
@@ -111,6 +177,9 @@ export function createUnwiredHooks(): TourViewerHooks {
     startViewerPipeline: () => false,
     presentTourForPrint: () => undefined,
     resetFinishStep: () => undefined,
+    beginAuthorVisit: () => undefined,
+    endAuthorVisit: () => undefined,
+    selectInView: () => undefined,
     presentNoTour: () => undefined,
     presentDraftForTour: () => undefined,
     startScanGate: () => undefined,
@@ -194,6 +263,20 @@ export interface TourViewerSession {
   /** Bumped per mint so a stale identity hash cannot install an older
    *  level over a newer one. */
   mintGeneration: number;
+  /**
+   * The raw inputs of the mint behind `mintedLevel` when it was made in
+   * this page (the fused pose, the size, the AR visit): what the settle
+   * re-mints the code from (authoring plan 2026-09-28-0953 §3.2, M2c).
+   * Null for a level restored from a draft, and cleared with the level.
+   */
+  codeMeasurement: CodeMeasurement | null;
+  /**
+   * The anchor code as the RUNNING AR visit last saw it, stable (the
+   * latest stable fused pose): what a later visit is corrected through
+   * (D10b) and what hides the entry hint (§3.2a). Cleared at each visit's
+   * end - odometry does not carry over.
+   */
+  visitCodeSighting: CodeSighting | null;
   /** The finish step is running (one at a time); the panel shows its
    *  progress with priority over the measuring readout. */
   finishing: boolean;
@@ -209,16 +292,30 @@ export interface TourViewerSession {
   /** Content placed in THIS setup session (M4): the records the finish
    *  step appends to `tour.json`, with the photo bytes that become
    *  `content/<id>.jpg`. Survives a session end like the level does. */
-  placedObjects: { object: TourObject; blob?: Blob }[];
+  placedObjects: {
+    object: TourObject;
+    blob?: Blob;
+    placement?: VisitPlacement;
+  }[];
   /** The creator's hit-test reticle for the running session. */
   reticle: HitTestReticleHandle | null;
   /** The most recent camera frame - what "Capture a photo" encodes, with
    *  the pose it was captured at (the photo is placed with THAT pose). */
   latestFrame: CapturedCameraFrame | null;
-  /** The live previews, one per placed object (rendered as each lands;
-   *  re-rendering everything per placement raced itself and re-decoded
-   *  every photo, M4 review #7). */
-  placedPreviews: RenderedTourObjects[];
+  /**
+   * Ids of objects the open tour's manifest carries that the creator
+   * deleted (tombstones, authoring plan 2026-09-28-0953 §3.4): the Finish
+   * filters them out and removes a deleted photo's content file. Emptied by
+   * a Finish (the manifest no longer carries them) and when the tour
+   * closes.
+   */
+  deletedObjectIds: string[];
+  /** The live previews in the running AR visit, one per object id - this
+   *  device's and the hosted zip's (rendered as each lands; re-rendering
+   *  everything per placement raced itself and re-decoded every photo, M4
+   *  review #7). Keyed by id so an edit, a move or a delete finds its
+   *  object, and a tap in AR names what it hit. */
+  placedPreviews: Map<string, RenderedTourObjects>;
   /** The last placement's outcome (or a draft notice), shown ahead of the
    *  live readout until the next tap; it gates no control (store
    *  dispatches re-render the readout at the frame cadence and erased it
@@ -240,6 +337,21 @@ export interface TourViewerSession {
   viewerLastEvaluation: LastEvaluation | null;
   /** Last detection's RMS reprojection error — the on-device quality number. */
   latestReprojectionPx: number | null;
+  /** The viewer pipeline's code keep-alive (authoring plan M2b): created
+   *  per AR entry with the pipeline, stopped at AR exit (`endQrPipeline`)
+   *  and when its tour closes; the status line reads its phase. */
+  viewerKeepAlive: QrVoteKeepAlive | null;
+  /** The viewer pipeline's per-code vote budget: created per AR entry with
+   *  the pipeline, dropped at AR exit, and reset when its tour closes
+   *  ({@link endTourCodeVotes}) - the pipeline outlives a tour switch. */
+  viewerVoteBudget: QrVoteBudget | null;
+  /** This visitor AR entry's vote sink (`viewer-vote-sink.ts`, authoring
+   *  plan M2e): created at the entry's start (which clears the solver
+   *  overrides), the way every vote and every keep-alive tick reaches the
+   *  store, kept across a tour switch and dropped at AR exit (the next
+   *  entry's start clears the overrides). Null outside a visitor entry: device fixes then
+   *  take the plain `recordGpsEvent`. */
+  viewerVoteSink: ViewerVoteSink | null;
 
   // --- placement (viewer-placement.ts) ------------------------------------
   /** What the photo placement did — rendered by tour-flow. */
@@ -290,6 +402,28 @@ export function endQrPipeline(ctx: TourViewerSession): void {
   ctx.qrController?.dispose();
   ctx.qrController = null;
   ctx.fusedPose = null;
+  // The code's keep-alive ends with the AR entry (authoring plan M2b): its
+  // pose is in this session's odometry frame, which the next entry resets.
+  ctx.viewerKeepAlive?.stop();
+  ctx.viewerKeepAlive = null;
+  ctx.viewerVoteBudget = null;
+  ctx.viewerVoteSink = null;
+}
+
+/**
+ * A tour closed while the AR entry goes on (`archive-open.ts`): its codes'
+ * votes end with it. The keep-alive stops holding the closing tour's code,
+ * and every code's vote budget starts again - the budget lives in the
+ * pipeline, which outlives the switch, and a reopened tour used to find its
+ * code already "voted": its gate passed on a lock that cast nothing, and a
+ * spent code never voted again (authoring plan 2026-09-28-0953, M2b
+ * review #6). The soft trimming stays on (M2e milestone review #1; the seam
+ * contract, rule 3): the closed tour's votes stay in the GPS history until
+ * AR exit, and the hard trim back on them would jump the alignment.
+ */
+export function endTourCodeVotes(ctx: TourViewerSession): void {
+  ctx.viewerKeepAlive?.stop();
+  ctx.viewerVoteBudget?.reset();
 }
 
 export function createTourViewerSession(): TourViewerSession {
@@ -314,6 +448,8 @@ export function createTourViewerSession(): TourViewerSession {
     mintedLevel: null,
     mintedLevelTour: null,
     mintGeneration: 0,
+    codeMeasurement: null,
+    visitCodeSighting: null,
     finishing: false,
     finishProgress: "",
     finishError: null,
@@ -323,7 +459,8 @@ export function createTourViewerSession(): TourViewerSession {
     placedObjects: [],
     reticle: null,
     latestFrame: null,
-    placedPreviews: [],
+    deletedObjectIds: [],
+    placedPreviews: new Map(),
     placementNote: null,
     viewerQrStatus: null,
     viewerUnknownCode: null,
@@ -333,6 +470,9 @@ export function createTourViewerSession(): TourViewerSession {
     viewerReprojectionPx: null,
     viewerLastEvaluation: null,
     latestReprojectionPx: null,
+    viewerKeepAlive: null,
+    viewerVoteBudget: null,
+    viewerVoteSink: null,
     placement: { kind: "idle" },
     viewerPlanesError: null,
     contentError: null,

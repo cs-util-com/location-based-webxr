@@ -20,6 +20,16 @@
     `null` when not. Surface-less taps are reported so GPS gating /
     "point at the floor" hints stay app-side decisions. When omitted, no
     `select` listener is registered.
+  - its second argument, `targetRay: SelectTargetRay | null` (2026-10-01,
+    Tour Viewer authoring plan M4 review #4) - where the tap POINTED:
+    `{ targetRayInViewer }`, the input source's target ray as a column-major
+    4x4 pose relative to the session's `'viewer'` space (the camera's own
+    frame; the ray runs along -Z), read inside the event with
+    `frame.getPose(inputSource.targetRaySpace, viewerSpace)` - the only
+    moment WebXR offers it. `null` when the event has no frame or input
+    source, the pose is null, or the frame refuses. Backward compatible: a
+    one-parameter handler (MinimalExample) behaves as before.
+- `SelectTargetRay` - `{ targetRayInViewer: readonly number[] }`.
 - `HitTestReticleHandle` — `isVisible()`, `getWorldPosition(out)` (only
   meaningful while visible), `dispose()` (idempotent: cancels the live
   source, removes the session listeners and the mesh, unregisters the frame
@@ -49,6 +59,14 @@
   outside that flow (tests, custom loops).
 - **Older runtimes:** when `session.requestHitTestSource` is absent the
   reticle simply stays hidden; nothing throws.
+- **The 'viewer' space is kept per session** (requested before the
+  hit-test source, dropped at `'end'`): it is the hit-test's space and the
+  frame a tap's target ray is read in. It is the driver's OWN request, not
+  the frame loop's `referenceSpace`, so the frame-loop contract (nothing
+  of `ctx` retained) holds. Assumes the handheld single view equals the
+  viewer pose, so the ray is in the three.js camera's local frame. A
+  viewer space that resolves after `dispose()` or after its session ended
+  is dropped without requesting a source.
 - The reticle mesh/pose math (WebXR→NUE basis change, `matrixAutoUpdate`
   handling) lives entirely in `visualization/hit-test-reticle.ts`.
 
@@ -75,7 +93,8 @@ handle.dispose();
   lifecycle (listeners once per session, cross-session re-registration,
   dispose semantics), the three in-flight-request races, reticle driving
   through the real view-model (NUE pose check), and `onSelect` nullable-tap
-  semantics. The XR frame loop is mocked to hand the tests the raw callback;
+  semantics, including the tap's target ray read against the viewer space
+  and `null` for an event without a usable pose. The XR frame loop is mocked to hand the tests the raw callback;
   three.js objects are real.
 - [hit-test-reticle-driver.property.test.ts](hit-test-reticle-driver.property.test.ts)
   — fast-check property driving arbitrary interleavings of ticks, request

@@ -80,6 +80,25 @@ describe('planTimingReplay', () => {
     expect(plan.fixCount).toBe(0);
     expect(plan.groups).toEqual([]);
   });
+
+  // Why this test matters (core 1.26; Tour Viewer authoring plan
+  // 2026-09-28-0953 D18): a Tour Viewer recording carries its device fixes
+  // together with the code keep-alive's ring as ONE `recordGpsEventBatch`,
+  // and that dispatch IS the solve the timing page exists to measure.
+  // Dropped as "not a fix", such a recording timed only its lone fixes and
+  // its span ended early - the dearest solves silently missing.
+  it('times a recordGpsEventBatch as one unit - one dispatch, one solve - in recorded order', () => {
+    const batch: RecordedAction = {
+      type: 'gpsData/recordGpsEventBatch',
+      payload: {
+        events: [fix(2000, 'b').payload, fix(2000, 'ring').payload],
+      },
+    };
+    const plan = planTimingReplay([zero, fix(1000, 'a'), batch, fix(3000)]);
+    expect(plan.fixCount).toBe(3);
+    expect(plan.groups).toEqual([[fix(1000, 'a')], [batch], [fix(3000)]]);
+    expect(planTimingReplay([zero, fix(1000), batch]).durationSeconds).toBe(1);
+  });
 });
 
 describe('createPassFactory', () => {
