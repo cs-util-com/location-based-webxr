@@ -43,6 +43,7 @@ import {
   treeLineM,
 } from "./terrain-styles.js";
 import { GLOBE_SUN, MAP_KEY_LIGHT, SUN_GLSL } from "./terrain-sun.js";
+import { GLOBE_ALBEDO } from "./terrain-globe-colour.js";
 
 const DEG = Math.PI / 180;
 
@@ -139,6 +140,11 @@ uniform vec2 uHRange;
 // Style E.
 uniform vec3 uClay;
 uniform vec3 uClaySea;
+// globe-albedo (terrain-globe-colour.js): the imagery over the region, the
+// ramp's luminance averaged over each imagery pixel's footprint, the weight.
+uniform sampler2D uAlbedo;
+uniform sampler2D uCoarseLum;
+uniform float uAlbedoDetail;
 // The far field.
 uniform float uNearW;
 uniform float uFarReliefW;
@@ -197,23 +203,26 @@ vec2 naturalSnow(float h, vec2 grad, float small) {
   return vec2(above * sticks, above * (1.0 - sticks));
 }
 
+// terrain-styles.js naturalBaseColour: the cover before any light or lift.
+vec3 naturalBase(float h, vec2 grad, float small, float s) {
+  if (h <= 0.0) {
+    return mix(uNatSea, uNatSeaDeep, clamp(-h / uNatSeaDeepM, 0.0, 1.0));
+  }
+  vec4 c = naturalCover(h, grad, small);
+  vec2 snow = naturalSnow(h, grad, small);
+  vec3 col = mix(uNatLowland, uNatForest, c.x);
+  col = mix(col, uNatMeadow, c.y);
+  col = mix(col, uNatScree, c.z);
+  col = mix(col, uNatRock, c.w);
+  col = mix(col, uNatLightRock, snow.y);
+  vec3 snowCol = mix(uNatSnow, uNatSnowShade, clamp(1.0 - s, 0.0, 1.0));
+  return mix(col, snowCol, snow.x);
+}
+
 // terrain-styles.js naturalColour.
 vec3 natural(float h, vec2 grad, float small, float svf, float vis) {
   float s = sunShade(grad, vis);
-  vec3 col;
-  if (h <= 0.0) {
-    col = mix(uNatSea, uNatSeaDeep, clamp(-h / uNatSeaDeepM, 0.0, 1.0));
-  } else {
-    vec4 c = naturalCover(h, grad, small);
-    vec2 snow = naturalSnow(h, grad, small);
-    col = mix(uNatLowland, uNatForest, c.x);
-    col = mix(col, uNatMeadow, c.y);
-    col = mix(col, uNatScree, c.z);
-    col = mix(col, uNatRock, c.w);
-    col = mix(col, uNatLightRock, snow.y);
-    vec3 snowCol = mix(uNatSnow, uNatSnowShade, clamp(1.0 - s, 0.0, 1.0));
-    col = mix(col, snowCol, snow.x);
-  }
+  vec3 col = naturalBase(h, grad, small, s);
   float light = clamp(uShadow * s + (1.0 - uShadow) * svf, 0.0, uMaxLight);
   col *= light;
   return min(mix(col, vec3(1.0), uLift), vec3(1.0));
@@ -251,6 +260,35 @@ vec3 swiss(float h, vec2 grad, float svf, float vis) {
   return clamp(col, 0.0, 1.0);
 }
 
+// terrain-globe-colour.js linearLuminance.
+float linearLuminance(vec3 srgb) {
+  return dot(sRGBTransferEOTF(vec4(srgb, 1.0)).rgb, vec3(0.2126, 0.7152, 0.0722));
+}
+
+// terrain-globe-colour.js detailRatio.
+float detailRatio(float fineLum, float coarseLum, float detail) {
+  if (detail <= 0.0 || coarseLum <= 0.0) return 1.0;
+  return clamp(1.0 + detail * (fineLum / coarseLum - 1.0),
+    ${GLOBE_ALBEDO.ratioRange[0].toFixed(4)}, ${GLOBE_ALBEDO.ratioRange[1].toFixed(4)});
+}
+
+// The region's texture coordinate (the far field's and the albedo's grids).
+vec2 regionUv() {
+  return clamp((vEnu + uHalfM) / (2.0 * uHalfM), 0.0, 1.0);
+}
+
+// terrain-globe-colour.js globeAlbedoColour; style B where the imagery has
+// no texel (not loaded yet, or a tile failed).
+vec3 globeAlbedo(float h, vec2 grad, float small, float svf, float vis) {
+  vec2 uv = regionUv();
+  vec4 albedo = texture2D(uAlbedo, uv);
+  if (albedo.a < 0.5) return natural(h, grad, small, svf, vis);
+  float light = sunLight(reliefNormal(grad, uGain), uShadow, svf, vis);
+  float fine = linearLuminance(naturalBase(h, grad, small, 1.0));
+  float coarse = texture2D(uCoarseLum, uv).r;
+  return sunLitColour(albedo.rgb, light * detailRatio(fine, coarse, uAlbedoDetail));
+}
+
 void main() {
   vec4 d = texture2D(uData, vUv);
   vec4 a = texture2D(uAux, vUv);
@@ -274,6 +312,8 @@ void main() {
     col = natural(h, d.gb, small, a.b, vis);
   } else if (uStyle == 2) {
     col = swiss(h, d.gb, a.b, vis);
+  } else if (uStyle == 4) {
+    col = globeAlbedo(h, d.gb, small, a.b, vis);
   } else {
     if (uStyle == 3) {
       col = h <= 0.0 ? uClaySea : uClay;
@@ -363,6 +403,20 @@ function dataTexture(array, width, height, type) {
   return texture;
 }
 
+/**
+ * A scalar grid (row 0 south) as an RGBA16F texture, the value in red:
+ * `globe-albedo`'s footprint luminance. `toHalf` is three's
+ * `DataUtils.toHalfFloat` (the page passes it, as for the data texture).
+ */
+export function createScalarTexture(values, side, toHalf) {
+  const out = new Uint16Array(side * side * 4);
+  for (let i = 0; i < side * side; i++) {
+    out[i * 4] = toHalf(values[i]);
+    out[i * 4 + 3] = toHalf(1);
+  }
+  return dataTexture(out, side, side, THREE.HalfFloatType);
+}
+
 /** The far field's grid (`terrain-far-field.js`), RGBA bytes, row 0 south. */
 export function createFarTexture(grid, side) {
   return dataTexture(grid, side, side, THREE.UnsignedByteType);
@@ -383,8 +437,17 @@ export function createTerrainTextures({ rgba16, rgba8, side, lut, lutSwiss }) {
   };
 }
 
-/** One transparent texel: the far field before its imagery has loaded. */
-const EMPTY_FAR = dataTexture(new Uint8Array(4), 1, 1, THREE.UnsignedByteType);
+/**
+ * One transparent texel: the far field and the imagery styles' grids before
+ * their imagery has loaded (alpha 0 keeps the near style, or style B).
+ */
+export const EMPTY_TEXTURE = dataTexture(
+  new Uint8Array(4),
+  1,
+  1,
+  THREE.UnsignedByteType,
+);
+const EMPTY_FAR = EMPTY_TEXTURE;
 
 /**
  * The material; `uniforms` are updated in place by the page, the style's
@@ -472,6 +535,9 @@ export function createTerrainMaterial(textures, { side, extentM, datum }) {
       uHRange: { value: new THREE.Vector2(0, 4000) },
       uClay: { value: rgb(CLAY.land) },
       uClaySea: { value: rgb(CLAY.sea) },
+      uAlbedo: { value: EMPTY_FAR },
+      uCoarseLum: { value: EMPTY_FAR },
+      uAlbedoDetail: { value: GLOBE_ALBEDO.detail },
       uNearW: { value: 1 },
       uFarReliefW: { value: 0 },
       uHalfM: { value: extentM },
@@ -516,6 +582,7 @@ export function applyStyle(material, params, { shaderStyle, latDeg, hRange }) {
   u.uLowContrast.value = params.contrast;
   u.uHRange.value.set(hRange[0], hRange[1]);
   u.uSnowMask.value = params.snowMask;
+  u.uAlbedoDetail.value = params.detail;
 }
 
 /**

@@ -45,6 +45,13 @@ export const TERRAIN_STYLES = Object.freeze({
   }),
   swiss: Object.freeze({ id: "swiss", letter: "D", label: "Swiss classic" }),
   clay: Object.freeze({ id: "clay", letter: "E", label: "Clay" }),
+  // Globe round-5 plan 2026-10-01-0945 §3.3: the relief coloured from the
+  // globe's imagery (`terrain-globe-colour.js`), lit by the sun term.
+  "globe-albedo": Object.freeze({
+    id: "globe-albedo",
+    letter: "C1",
+    label: "Globe albedo (Blue Marble under the sun)",
+  }),
 });
 
 /** The shader's style switch (`uStyle`). C draws as A, plus the far field. */
@@ -54,6 +61,7 @@ export const SHADER_STYLE = Object.freeze({
   globe: 0,
   swiss: 2,
   clay: 3,
+  "globe-albedo": 4,
 });
 
 /**
@@ -210,6 +218,32 @@ export function naturalWeights(p, o = {}, style = NATURAL) {
 }
 
 /**
+ * Style B's cover colour at one point, before any light or lift: the sea
+ * by depth, or the lowland, forest, meadow, scree, rock and snow by
+ * `naturalWeights`. `s` (the light's shade, 1 on open flat ground) only
+ * cools the snow in shade. `globe-albedo`'s detail reads it at s 1.
+ */
+export function naturalBaseColour(p, o = {}, style = NATURAL, s = 1) {
+  const c = (hex) => hexToRgb(hex);
+  if (p.heightM <= 0) {
+    const t = Math.min(1, Math.max(0, -p.heightM / style.seaDeepM));
+    return mix(c(style.sea), c(style.seaDeep), t);
+  }
+  const w = naturalWeights(p, o, style);
+  let col = mix(c(style.lowland), c(style.forest), w.forest);
+  col = mix(col, c(style.meadow), w.meadow);
+  col = mix(col, c(style.scree), w.scree);
+  col = mix(col, c(style.rock), w.rock);
+  col = mix(col, c(style.lightRock), w.bareAboveSnow);
+  const snow = mix(
+    c(style.snow),
+    c(style.snowShade),
+    Math.min(1, Math.max(0, 1 - s)),
+  );
+  return mix(col, snow, w.snow);
+}
+
+/**
  * Style B's colour at one point, shading and lift included.
  *
  * @param {{ heightM: number, gx: number, gy: number, smallM: number,
@@ -218,7 +252,6 @@ export function naturalWeights(p, o = {}, style = NATURAL) {
  *   rockSlopeDeg?: number, gain?: number, shadow?: number, lift?: number }} [o]
  */
 export function naturalColour(p, o = {}, style = NATURAL) {
-  const c = (hex) => hexToRgb(hex);
   const svf = p.svf ?? 1;
   const shadow = o.shadow ?? style.shadow;
   const lift = o.lift ?? style.lift;
@@ -229,24 +262,7 @@ export function naturalColour(p, o = {}, style = NATURAL) {
     style.lightAzimuthDeg,
     style.lightAltitudeDeg,
   );
-  let col;
-  if (p.heightM <= 0) {
-    const t = Math.min(1, Math.max(0, -p.heightM / style.seaDeepM));
-    col = mix(c(style.sea), c(style.seaDeep), t);
-  } else {
-    const w = naturalWeights(p, o, style);
-    col = mix(c(style.lowland), c(style.forest), w.forest);
-    col = mix(col, c(style.meadow), w.meadow);
-    col = mix(col, c(style.scree), w.scree);
-    col = mix(col, c(style.rock), w.rock);
-    col = mix(col, c(style.lightRock), w.bareAboveSnow);
-    const snow = mix(
-      c(style.snow),
-      c(style.snowShade),
-      Math.min(1, Math.max(0, 1 - s)),
-    );
-    col = mix(col, snow, w.snow);
-  }
+  let col = naturalBaseColour(p, o, style, s);
   const light = Math.min(
     style.maxLight,
     Math.max(0, shadow * s + (1 - shadow) * svf),

@@ -56,6 +56,15 @@
     once per fragment and passed to every direct term: the cloud-shadow
     port replaces its body and nothing else. A sun straight overhead has
     no azimuth, so D's exposure colour is then flat.
+  - `globe-albedo` (`uStyle` 4, `terrain-globe-colour.js`): `uAlbedo` (the
+    imagery's 1 km grid over the region, read at the far field's
+    `regionUv`) under `sunLight`, the light scaled by `detailRatio` of
+    style B's cover luminance (`naturalBase`, the cover half of `natural`)
+    to `uCoarseLum` (its footprint mean, RGBA16F); `uAlbedoDetail` the
+    weight. Where the albedo texel is empty (not loaded, a failed tile) it
+    draws style B. `createScalarTexture(values, side, toHalf)` builds the
+    footprint texture; `EMPTY_TEXTURE` is the transparent texel both grids
+    start from.
   - The snow mask (`uSnowMask` 1) draws B's snow weight as grey in any
     style, for the smoke and for judging the line by eye.
   - Half floats and bytes only (plan §9 finding 13): every texture is

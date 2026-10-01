@@ -36,7 +36,12 @@ import {
   viewWidthM,
 } from "./terrain-exaggeration.js";
 import { PASTEL_ATLAS, hexToRgb, rampLut } from "./terrain-style.js";
-import { SHADER_STYLE, SWISS } from "./terrain-styles.js";
+import {
+  NATURAL,
+  SHADER_STYLE,
+  SWISS,
+  naturalBaseColour,
+} from "./terrain-styles.js";
 import {
   FAR_FIELD,
   farFieldAt,
@@ -55,6 +60,13 @@ import {
 import { solarPosition } from "/fw/geo/solar-position.js";
 import { MAP_KEY_LIGHT, sunEnuFromGlobe } from "./terrain-sun.js";
 import {
+  GLOBE_ALBEDO,
+  boxMeanAt,
+  footprintM,
+  linearLuminance,
+  summedArea,
+} from "./terrain-globe-colour.js";
+import {
   CAMERA_PRESETS,
   flyInPose,
   orbitPosition,
@@ -65,6 +77,7 @@ import {
 import {
   FIELD,
   GPS_PLACE,
+  IMAGERY_STYLES,
   PARAMS,
   fieldSpec,
   placeFor,
@@ -79,6 +92,8 @@ import {
 import {
   applyStyle,
   createFarTexture,
+  EMPTY_TEXTURE,
+  createScalarTexture,
   createTerrainGeometry,
   createTerrainMaterial,
   createTerrainTextures,
@@ -411,7 +426,7 @@ function start() {
   let frame = null;
   let tiles = [];
   const loading = loadingView();
-  let creditsWithImagery = params.farOn;
+  let creditsWithImagery = params.imageryOn;
   renderCredits(creditsWithImagery);
   /** The region's lowest and highest land, for style D's contrast. */
   let hRange = [0, 4000];
@@ -445,7 +460,7 @@ function start() {
     errorBox.textContent = [
       ...params.notes,
       ...errors,
-      ...(far.error && params.farOn ? [far.error] : []),
+      ...(far.error && params.imageryOn ? [far.error] : []),
     ].join(" ");
   };
 
@@ -527,9 +542,9 @@ function start() {
     else if (recompute && run.fetched) build(run.fetched);
   };
   const applyLive = () => {
-    if (params.farOn && far.state === "idle") loadFarField();
-    if (params.farOn !== creditsWithImagery) {
-      creditsWithImagery = params.farOn;
+    if (params.imageryOn && far.state === "idle") loadFarField();
+    if (params.imageryOn !== creditsWithImagery) {
+      creditsWithImagery = params.imageryOn;
       renderCredits(creditsWithImagery);
     }
     if (!material || !place) return;
@@ -538,6 +553,7 @@ function start() {
       latDeg: place.centre.lat,
       hRange,
     });
+    updateGlobeColour();
     const u = material.uniforms;
     const lat = place.centre.lat;
     linesLabel.textContent =
@@ -594,6 +610,7 @@ function start() {
       far.texture = createFarTexture(far.grid, FAR_FIELD.side);
       if (material) material.uniforms.uFar.value = far.texture;
       far.state = "ready";
+      updateGlobeColour();
     } catch (e) {
       if (mine !== run.regionId) return;
       far.state = "failed";
@@ -601,6 +618,101 @@ function start() {
       showErrors();
     }
     if (loadingLabel.textContent === imageryLoading) loading.show("");
+  };
+  /**
+   * The imagery styles' textures (globe round-5 §3.3,
+   * `terrain-globe-colour.js`): the imagery as a 1 km albedo grid once it
+   * has loaded, and for `globe-albedo`'s detail style B's ramp luminance
+   * averaged over each imagery pixel's footprint, rebuilt when the relief
+   * or style B's lines change. Built only while an imagery style is drawn.
+   */
+  const globeColour = {
+    albedo: null,
+    grid: null,
+    albedoRegion: 0,
+    coarse: null,
+    coarseKey: null,
+    coarseMs: null,
+  };
+  const updateGlobeColour = () => {
+    if (!material || !spec || far.state !== "ready" || !IMAGERY_STYLES.has(params.style)) {
+      return;
+    }
+    const u = material.uniforms;
+    if (globeColour.albedoRegion !== run.regionId) {
+      globeColour.albedo?.dispose();
+      const grid = farFieldGrid({
+        side: GLOBE_ALBEDO.side,
+        halfM: spec.halfExtentM,
+        toLatLng: (p) => frame.toLatLng(p),
+        sample: (lat, lng) => sampleImagery(far.tiles, lat, lng),
+      });
+      globeColour.albedo = createFarTexture(grid, GLOBE_ALBEDO.side);
+      globeColour.grid = grid;
+      globeColour.albedoRegion = run.regionId;
+    }
+    u.uAlbedo.value = globeColour.albedo;
+    if (!run.fields || !run.relief) return;
+    const key = JSON.stringify([
+      run.regionId,
+      run.buildId,
+      params.tree,
+      params.snow,
+      params.aspect,
+      params.rock,
+    ]);
+    if (key !== globeColour.coarseKey) {
+      const started = performance.now();
+      const f = run.fields;
+      const lat = place.centre.lat;
+      const o = {
+        treeOffsetM: params.tree,
+        snowOffsetM: params.snow,
+        aspectSnowM: params.aspect,
+        rockSlopeDeg: params.rock,
+      };
+      const lum = new Float64Array(f.height.length);
+      for (let i = 0; i < lum.length; i++) {
+        lum[i] = linearLuminance(
+          naturalBaseColour(
+            {
+              heightM: f.height[i] + run.relief.datum,
+              gx: f.gx[i],
+              gy: f.gy[i],
+              smallM: f.reliefSmall[i],
+              latDeg: lat,
+            },
+            o,
+            NATURAL,
+            1,
+          ),
+        );
+      }
+      const sat = summedArea(lum, spec.side);
+      const grid = {
+        side: spec.side,
+        spacingM: spec.spacingM,
+        extentM: spec.extentM,
+      };
+      const [wx, wy] = footprintM(FAR_FIELD.level, lat);
+      const side = GLOBE_ALBEDO.side;
+      const step = (2 * spec.halfExtentM) / side;
+      const coarse = new Float32Array(side * side);
+      for (let r = 0; r < side; r++) {
+        for (let c = 0; c < side; c++) {
+          const x = -spec.halfExtentM + (c + 0.5) * step;
+          const y = -spec.halfExtentM + (r + 0.5) * step;
+          coarse[r * side + c] = boxMeanAt(sat, grid, x, y, wx, wy) ?? 0;
+        }
+      }
+      globeColour.coarse?.dispose();
+      globeColour.coarse = createScalarTexture(coarse, side, (v) =>
+        THREE.DataUtils.toHalfFloat(v),
+      );
+      globeColour.coarseKey = key;
+      globeColour.coarseMs = performance.now() - started;
+    }
+    u.uCoarseLum.value = globeColour.coarse;
   };
   window.addEventListener("hashchange", onHash);
   // A drag or a wheel writes the pose into the hash, so the link still
@@ -744,6 +856,8 @@ function start() {
       if (far.texture) u.uFar.value = far.texture;
       mesh.visible = true;
       run.aux = packed.rgba8;
+      // The relief is new: its footprint luminance is rebuilt.
+      globeColour.coarseKey = null;
       applyLive();
       loading.show(params.svf > 0 && m.hasData ? "Computing sky view..." : "");
       if (place?.id === GPS_PLACE) {
@@ -794,6 +908,13 @@ function start() {
       texture: null,
       error: null,
     });
+    // The imagery styles show style B until the new region's imagery is in.
+    globeColour.coarseKey = null;
+    globeColour.grid = null;
+    if (material) {
+      material.uniforms.uAlbedo.value = EMPTY_TEXTURE;
+      material.uniforms.uCoarseLum.value = EMPTY_TEXTURE;
+    }
     errors.clear();
     hRange = [0, 4000];
     if (mesh) mesh.visible = false;
@@ -977,6 +1098,13 @@ function start() {
         farOn: params.farOn,
         farState: far.state,
         farWeights: { ...live.far },
+        imageryOn: params.imageryOn,
+        detail: params.detail,
+        globeColour: {
+          albedo: globeColour.albedo !== null,
+          coarse: globeColour.coarse !== null,
+          coarseMs: globeColour.coarseMs,
+        },
         light: params.light,
         sun: {
           enu: sunState.enu.slice(),
@@ -1086,6 +1214,11 @@ function start() {
     farAt: (x, y) =>
       far.grid && spec
         ? farFieldAt(far.grid, FAR_FIELD.side, spec.halfExtentM, x, y)
+        : null,
+    /** The imagery styles' albedo grid at ENU metres (sRGB 0-1), or null. */
+    albedoAt: (x, y) =>
+      globeColour.grid && spec
+        ? farFieldAt(globeColour.grid, GLOBE_ALBEDO.side, spec.halfExtentM, x, y)
         : null,
     /** The decoded imagery itself at a position (sRGB 0-1), or null. */
     imageryAt: (lat, lng) =>

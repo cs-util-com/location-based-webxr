@@ -23,6 +23,7 @@ import {
   TERRAIN_STYLES,
   clayColour,
   exposureColour,
+  naturalBaseColour,
   naturalColour,
   naturalWeights,
   saturation,
@@ -49,17 +50,47 @@ function random(seed) {
 
 describe("the style registry", () => {
   // DEC-TR-2 and DEC-TR-6: five styles with the plan's letters A-E.
-  it("lists A-E in the plan's order", () => {
+  // Globe round-5 §3.3 adds the styles coloured from the globe imagery
+  // (C1 globe-albedo), each with its own shader branch.
+  it("lists A-E in the plan's order, then the imagery styles", () => {
     assert.deepEqual(
       Object.values(TERRAIN_STYLES).map((s) => `${s.letter}:${s.id}`),
-      ["A:pastel", "B:natural", "C:globe", "D:swiss", "E:clay"],
+      ["A:pastel", "B:natural", "C:globe", "D:swiss", "E:clay", "C1:globe-albedo"],
     );
+    assert.equal(SHADER_STYLE["globe-albedo"], 4);
   });
   it("gives every style a shader branch; C draws as A", () => {
     for (const id of Object.keys(TERRAIN_STYLES)) {
       assert.ok(Number.isInteger(SHADER_STYLE[id]), id);
     }
     assert.equal(SHADER_STYLE.globe, SHADER_STYLE.pastel);
+  });
+});
+
+describe("style B's cover colour", () => {
+  // globe-albedo's detail reads style B's ramp before any light: the
+  // refactor must leave style B itself exactly as it was.
+  it("is what naturalColour lights and lifts (property)", () => {
+    const next = random(77);
+    for (let k = 0; k < 300; k++) {
+      const p = {
+        heightM: -300 + 4500 * next(),
+        gx: 2 * (next() - 0.5),
+        gy: 2 * (next() - 0.5),
+        smallM: 400 * (next() - 0.5),
+        latDeg: 46.56,
+        svf: 0.6 + 0.4 * next(),
+      };
+      const s = singleLightShade(p.gx, p.gy, 1, 315, 45);
+      const light = Math.min(
+        NATURAL.maxLight,
+        NATURAL.shadow * s + (1 - NATURAL.shadow) * p.svf,
+      );
+      const want = naturalBaseColour(p, {}, NATURAL, s)
+        .map((v) => v * light)
+        .map((v) => Math.min(1, v + (1 - v) * NATURAL.lift));
+      closeRgb(naturalColour(p), want, 1e-12, `case ${k}`);
+    }
   });
 });
 

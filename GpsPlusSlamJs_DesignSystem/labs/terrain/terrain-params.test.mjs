@@ -17,6 +17,7 @@ import {
   FIELD,
   GPS_PLACE,
   PARAMS,
+  IMAGERY_STYLES,
   LOOK_DEFAULTS,
   STYLE_LIGHT,
   STYLE_SHADOW,
@@ -238,6 +239,28 @@ describe("readTerrainParams", () => {
       );
     }
     assert.equal(STYLE_LIGHT.pastel, 0);
+    // The imagery styles are the globe's colours, so the globe's sun.
+    assert.equal(STYLE_LIGHT["globe-albedo"], 1);
+  });
+
+  // Globe round-5 §3.3: the imagery is fetched for the far field and for
+  // every style coloured from it, and for nothing else.
+  it("loads the globe's imagery for the far field and the imagery styles only", () => {
+    assert.equal(readTerrainParams("").imageryOn, false);
+    assert.equal(readTerrainParams("style=natural").imageryOn, false);
+    assert.equal(readTerrainParams("style=globe").imageryOn, true);
+    assert.equal(readTerrainParams("style=natural&far=1").imageryOn, true);
+    for (const id of IMAGERY_STYLES) {
+      assert.equal(readTerrainParams(`style=${id}`).imageryOn, true, id);
+      assert.equal(readTerrainParams(`style=${id}`).farOn, false, id);
+    }
+  });
+
+  it("reads globe-albedo's detail weight in 0-1", () => {
+    assert.equal(readTerrainParams("").detail, 0.5);
+    assert.equal(readTerrainParams("detail=0").detail, 0);
+    assert.equal(readTerrainParams("detail=1").detail, 1);
+    assert.equal(readTerrainParams("detail=1.5").detail, 0.5);
   });
 
   // Plan §9 finding 11: the far field is off by default (style A matches

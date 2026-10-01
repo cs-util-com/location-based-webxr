@@ -7,9 +7,11 @@
   mirrors line for line, plus the list of all five styles.
 - Public API:
   - `TERRAIN_STYLES`: `pastel` (A), `natural` (B), `globe` (C), `swiss`
-    (D), `clay` (E), each `{ id, letter, label }`, in the plate's order.
-  - `SHADER_STYLE`: the shader's `uStyle` per style: A 0, B 1, D 2, E 3;
-    C draws as A (0) with the far field on (`terrain-far-field.js`).
+    (D), `clay` (E), then the styles coloured from the globe imagery
+    (globe round-5 §3.3, `terrain-globe-colour.js`): `globe-albedo` (C1);
+    each `{ id, letter, label }`, in the plate's order.
+  - `SHADER_STYLE`: the shader's `uStyle` per style: A 0, B 1, D 2, E 3,
+    C1 4; C draws as A (0) with the far field on (`terrain-far-field.js`).
   - `treeLineM(lat)`, `snowLineM(lat)`: the research's latitude rules
     (tree line 3750 m below 30°, +130 m a degree from 50° to 30°, +75 m a
     degree from 70° to 50°; snow line 5000 m below 30°, 3000 m at 46°, 0 at
@@ -24,6 +26,9 @@
     lift toward white 0.2).
   - `naturalWeights(point, offsets?)` -> the lines and the cover weights
     (`forest`, `meadow`, `scree`, `rock`, `bareAboveSnow`, `snow`);
+    `naturalBaseColour(point, offsets?, style?, s = 1)` -> B's cover colour
+    before any light or lift (`s` only cools snow in shade; C1's detail
+    reads it at 1);
     `naturalColour(point, options?)` -> sRGB 0-1. A point is `{ heightM,
 gx, gy, smallM, latDeg, svf? }`; the options are the hash's `tree`,
     `snow`, `aspect`, `rock`, `lift`, `shadow` and the view's `gain`.

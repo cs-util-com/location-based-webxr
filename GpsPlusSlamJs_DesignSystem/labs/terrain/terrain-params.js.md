@@ -51,7 +51,13 @@ side }`: `extentM` includes the padding; `side` counts both edges.
     carry for their unit tests.
   - `STYLE_SHADOW`: each style's own shading strength (all 0.8 since
     DEC-GL5-5; the table stays so a style can differ again).
-  - `STYLE_LIGHT`: each style's own light (every map style 0).
+  - `STYLE_LIGHT`: each style's own light (every map style 0, the imagery
+    styles 1: they are the globe's colours under the globe's sun).
+  - `detail` (0-1, 0.5): `globe-albedo`'s weight of style B's ramp as a
+    luminance high-pass (`terrain-globe-colour.js`).
+  - `IMAGERY_STYLES`: the styles coloured from the globe imagery;
+    `readTerrainParams` sets `imageryOn` for them and for the far field
+    (`farOn`), and the page loads the imagery then.
   - `readTerrainParams(hash)`: every PARAMS value, `place`, `style` (one of
     `terrain-styles.js`'s `TERRAIN_STYLES`), `farOn` (style C, or `far=1`),
     `preset` (`top`, `oblique`, `low`, `fly` or null), `camera` (from
