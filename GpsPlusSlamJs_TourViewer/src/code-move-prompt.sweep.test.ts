@@ -263,6 +263,7 @@ describe("the move prompt's persistence, swept", () => {
             gateOpen: i + 1 >= MIN_ALIGNMENT_SAMPLES,
             fixCount: i + 1,
             lastFixMs: i * 1000,
+            savedKey: "k",
             answers: [],
           });
           onset = r.onset;

@@ -29,6 +29,7 @@ import {
   MOVE_PROMPT_LABELS,
   movePromptText,
   rememberMoveAnswer,
+  savedPoseKey,
   trackMovePrompt,
   type MoveAnswer,
   type MovePrompt,
@@ -962,6 +963,7 @@ export function wireCreatorSetup(deps: {
         alignment.hasMatrix && alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES,
       fixCount: clock.count,
       lastFixMs: clock.lastMs,
+      savedKey: level === null ? null : savedPoseKey(level.json),
       answers: moveAnswers,
     });
     moveOnset = tracked.onset;
@@ -1041,6 +1043,7 @@ export function wireCreatorSetup(deps: {
       northM: prompt.northM,
       eastM: prompt.eastM,
       answer,
+      savedKey: prompt.savedKey,
     });
     if (draftTourUrl === null) return;
     void recordMeta(draftTourUrl).then((ok) => {
@@ -1127,6 +1130,8 @@ export function wireCreatorSetup(deps: {
         northM: u.prompt.northM,
         eastM: u.prompt.eastM,
         answer: "not-now",
+        // The restored pose's: the prompt was asked against it.
+        savedKey: u.prompt.savedKey,
       });
     }
     arStore.dispatch(

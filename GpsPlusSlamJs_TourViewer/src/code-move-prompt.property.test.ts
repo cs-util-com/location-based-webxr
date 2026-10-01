@@ -37,6 +37,7 @@ const step = fc.record({
   newFixes: fc.integer({ min: 0, max: 3 }),
   dtS: fc.integer({ min: 0, max: 4 }),
   timed: fc.boolean(),
+  savedKey: fc.constantFrom("k1", "k2"),
 });
 
 const answer: fc.Arbitrary<RememberedMoveAnswer> = fc.record({
@@ -44,6 +45,7 @@ const answer: fc.Arbitrary<RememberedMoveAnswer> = fc.record({
   northM: fc.double({ min: -80, max: 80, noNaN: true }),
   eastM: fc.double({ min: -80, max: 80, noNaN: true }),
   answer: fc.constantFrom("second-copy" as const, "not-now" as const),
+  savedKey: fc.constantFrom("k1", "k2"),
 });
 
 describe("trackMovePrompt (properties)", () => {
@@ -75,6 +77,7 @@ describe("trackMovePrompt (properties)", () => {
               gateOpen: s.gateOpen,
               fixCount,
               lastFixMs: s.timed ? tMs : null,
+              savedKey: s.savedKey,
               answers,
             };
             const qualifies =
@@ -93,6 +96,7 @@ describe("trackMovePrompt (properties)", () => {
               answers.some(
                 (a) =>
                   a.levelId === s.levelId &&
+                  a.savedKey === s.savedKey &&
                   Math.hypot(a.northM - s.northM, a.eastM - s.eastM) <= 20,
               ),
             ).toBe(false);
@@ -143,6 +147,7 @@ describe("trackMovePrompt (properties)", () => {
               gateOpen: s.gateOpen,
               fixCount,
               lastFixMs: tMs,
+              savedKey: s.savedKey,
               answers: [],
             },
             RULE,

@@ -22,6 +22,7 @@ import {
   movePromptText,
   parseMoveAnswers,
   rememberMoveAnswer,
+  savedPoseKey,
   trackMovePrompt,
   type MovePromptInput,
   type MovePromptOnset,
@@ -46,6 +47,7 @@ function input(overrides: Partial<MovePromptInput> = {}): MovePromptInput {
     gateOpen: true,
     fixCount: 10,
     lastFixMs: 1_000_000,
+    savedKey: "k1",
     answers: [],
     ...overrides,
   };
@@ -106,6 +108,7 @@ describe("trackMovePrompt: when the prompt asks", () => {
       maxHorizontalM: 26.2,
       fixes: 10,
       seconds: 10,
+      savedKey: "k1",
     });
   });
 
@@ -226,7 +229,8 @@ describe("trackMovePrompt: an answer is not asked again for the same spot (§7j 
     answer: RememberedMoveAnswer["answer"],
     northM: number,
     levelId = "lvl",
-  ): RememberedMoveAnswer => ({ levelId, northM, eastM: 0, answer });
+    savedKey = "k1",
+  ): RememberedMoveAnswer => ({ levelId, northM, eastM: 0, answer, savedKey });
 
   it("stays quiet for a spot within the same-spot distance of an answer", () => {
     for (const answer of ["second-copy", "not-now"] as const) {
@@ -244,16 +248,44 @@ describe("trackMovePrompt: an answer is not asked again for the same spot (§7j 
       run(30, { answers: [answered("second-copy", 40, "other")] }).prompt,
     ).not.toBeNull();
   });
+
+  it("asks again once the saved position changed: an answer counts only against the saved pose it was given for (M5b review #2)", () => {
+    // An answer is an offset FROM the saved position at the time; after a
+    // replace the same offset names another place. Undo brings the old
+    // pose - and its key - back, so its answers count again.
+    const old = answered("second-copy", 40, "lvl", "old-pose");
+    expect(
+      run(30, { answers: [old], savedKey: "new-pose" }).prompt,
+    ).not.toBeNull();
+    expect(run(30, { answers: [old], savedKey: "old-pose" }).prompt).toBeNull();
+    // Without a saved pose's key there is nothing an answer could be kept
+    // against: no prompt (the setup always has one with a level in hand).
+    expect(run(30, { answers: [], savedKey: null }).prompt).toBeNull();
+  });
+});
+
+describe("savedPoseKey", () => {
+  it("is the same for the same pose json and differs for another", () => {
+    const json = '{"lat":52.5,"lon":13.4,"rot":[0,0,0,1]}';
+    expect(savedPoseKey(json)).toBe(savedPoseKey(json));
+    expect(savedPoseKey(json)).not.toBe(
+      savedPoseKey('{"lat":52.5,"lon":13.41,"rot":[0,0,0,1]}'),
+    );
+    expect(savedPoseKey(json)).toMatch(/^[0-9a-f]{8}$/);
+  });
 });
 
 describe("the remembered answers (kept in the draft's meta)", () => {
   const a = (northM: number, answer: "second-copy" | "not-now" = "not-now") =>
-    ({ levelId: "lvl", northM, eastM: 0, answer }) as const;
+    ({ levelId: "lvl", northM, eastM: 0, answer, savedKey: "k1" }) as const;
 
   it("replaces an answer for the same spot instead of piling them up", () => {
     const list = rememberMoveAnswer([a(40)], a(45, "second-copy"));
     expect(list).toEqual([a(45, "second-copy")]);
     expect(rememberMoveAnswer([a(40)], a(80))).toEqual([a(40), a(80)]);
+    // Another saved pose's answer for the same offset is another place: kept.
+    const other = { ...a(40), savedKey: "k2" };
+    expect(rememberMoveAnswer([a(40)], other)).toEqual([a(40), other]);
   });
 
   it("keeps at most the newest MOVE_ANSWERS_MAX", () => {
@@ -273,7 +305,12 @@ describe("the remembered answers (kept in the draft's meta)", () => {
         { levelId: "", northM: 1, eastM: 1, answer: "not-now" },
         { levelId: "x", northM: "1", eastM: 1, answer: "not-now" },
         { levelId: "x", northM: 1, eastM: Number.NaN, answer: "not-now" },
-        { levelId: "x", northM: 1, eastM: 1, answer: "yes" },
+        { levelId: "x", northM: 1, eastM: 1, answer: "yes", savedKey: "k1" },
+        // An answer written before the saved-pose key existed (or with an
+        // unreadable one) is dropped, never trusted for any pose.
+        { levelId: "x", northM: 1, eastM: 1, answer: "not-now" },
+        { levelId: "x", northM: 1, eastM: 1, answer: "not-now", savedKey: "" },
+        { levelId: "x", northM: 1, eastM: 1, answer: "not-now", savedKey: 7 },
         null,
         7,
         a(90, "second-copy"),

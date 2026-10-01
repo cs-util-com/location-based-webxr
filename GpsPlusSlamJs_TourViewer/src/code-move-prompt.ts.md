@@ -19,22 +19,29 @@ render and owns the DOM, the replace, the undo and the draft writes.
   (`{ northM, eastM }`, `sightedCodeOffset`), `gateOpen` (the mint gate's
   alignment half: a matrix and `MIN_ALIGNMENT_SAMPLES` of this session's
   fixes), `fixCount` and `lastFixMs` (the store's GPS fix count and the
-  latest fix's own time), `answers`. `prompt` is a `MovePrompt`
+  latest fix's own time), `savedKey` (`savedPoseKey` of the level in
+  hand's json, null without one), `answers`. `prompt` is a `MovePrompt`
   (`levelId`, `horizontalM`, `northM`, `eastM`, `yawDeg`,
-  `maxHorizontalM`, `fixes`, `seconds`) or null.
+  `maxHorizontalM`, `fixes`, `seconds`, `savedKey`) or null.
 - `isHorizontalRefusal(refusal)` - the refusal broke the horizontal bound
   (a yaw-only refusal is not).
 - `MOVE_PROMPT_RULE` - `{ minFixes: 20, minSeconds: 20, sameSpotM: 20,
 floorM: MOVED_CODE_FLOOR_M }` (20 m, from `code-displacement.ts`; swept,
   see below). `MovePromptRule` is its type, so a test can pass
   another.
-- `RememberedMoveAnswer` - `{ levelId, northM, eastM, answer }` with
-  `answer` `"second-copy" | "not-now"`.
+- `RememberedMoveAnswer` - `{ levelId, northM, eastM, answer, savedKey }`
+  with `answer` `"second-copy" | "not-now"` and `savedKey` the saved
+  pose the offset was taken from.
+- `savedPoseKey(json)` - a short key (FNV-1a, 32 bits, 8 hex digits) of a
+  saved level's pose json. Not a security hash: a collision costs one
+  prompt not asked.
 - `rememberMoveAnswer(answers, entry, sameSpotM?)` - adds an answer,
-  replacing one for the same level and spot, keeping the newest
+  replacing one for the same level, saved pose and spot, keeping the newest
   `MOVE_ANSWERS_MAX` (32).
 - `parseMoveAnswers(value)` - the answers in a meta value (external data):
-  well-formed entries only, at most `MOVE_ANSWERS_MAX`.
+  well-formed entries only, at most `MOVE_ANSWERS_MAX`. An entry without a
+  `savedKey` (a draft written before M5b review #2) is dropped, not
+  trusted: the pose its offset was taken from is unknown.
 - `movePromptText(horizontalM)` and `MOVE_PROMPT_LABELS` - the words.
 - No input throws: an unreadable input yields no prompt.
 
@@ -58,8 +65,11 @@ The prompt asks only when ALL of these hold:
   stall in which nothing new was learned. Fixes without a readable time
   leave the fix count to decide alone. Any break, another level, or a fix
   count that went down (a new session's store) starts the count again;
-- no remembered answer for that level lies within `sameSpotM` of the
-  offset. A distance rather than bands: a band edge would ask again for a
+- no remembered answer for that level AND that saved pose lies within
+  `sameSpotM` of the offset (M5b review #2). An offset is FROM the saved
+  position of the time: after a replace the same offset names another
+  place, so answers given against the old pose stop counting; an Undo
+  restores the old pose, its key, and so its answers. A distance rather than bands: a band edge would ask again for a
   spot that GPS noise moved across it.
 
 What the tracker does NOT decide: "Use the new spot" counts as answered

@@ -374,6 +374,7 @@ describe("the move prompt's remembered answers (authoring plan 2026-09-28-0953 Â
     northM: 40,
     eastM: -3,
     answer: "second-copy",
+    savedKey: "0badf00d",
   } as const;
 
   it("round-trips the answers through the meta", async () => {

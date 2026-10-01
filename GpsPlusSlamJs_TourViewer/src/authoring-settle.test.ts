@@ -60,7 +60,7 @@ import { parseVisitLogEntry } from "./visit-log.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 import { OUTCOME_HOLD_MS } from "./object-editing.js";
-import { MOVE_PROMPT_RULE } from "./code-move-prompt.js";
+import { MOVE_PROMPT_RULE, savedPoseKey } from "./code-move-prompt.js";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 import {
   correctedAlignment,
@@ -2396,7 +2396,12 @@ describe(
           moveAnswers: { answer: string; levelId: string }[];
         };
         expect(meta.moveAnswers).toEqual([
-          expect.objectContaining({ answer, levelId: stored.id }),
+          expect.objectContaining({
+            answer,
+            levelId: stored.id,
+            // Against the saved pose it was given for (M5b review #2).
+            savedKey: savedPoseKey(stored.json),
+          }),
         ]);
 
         // The reload: a new setup over the same draft, the same spot.

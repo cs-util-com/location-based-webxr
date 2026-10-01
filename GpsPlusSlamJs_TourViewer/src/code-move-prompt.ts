@@ -30,7 +30,11 @@
  * the same spot; an offset more than {@link MovePromptRule.sameSpotM} from
  * every remembered one for that level asks again (the code may have moved
  * once more). A distance, not fixed bands: a band edge would re-ask for a
- * spot that only GPS noise moved across it.
+ * spot that only GPS noise moved across it. An offset is FROM the saved
+ * position of the time, so each answer also keeps that saved pose's key
+ * ({@link savedPoseKey}) and counts only while the level in hand carries the
+ * same pose: a replace makes the old answers name other places (they stop
+ * counting), and an Undo brings the old pose back (they count again).
  *
  * Pure: the creator setup feeds it on every store change and owns the DOM,
  * the replace and the draft writes.
@@ -104,6 +108,22 @@ export interface RememberedMoveAnswer {
   readonly northM: number;
   readonly eastM: number;
   readonly answer: MoveAnswer;
+  /** {@link savedPoseKey} of the saved level the offset was taken from. */
+  readonly savedKey: string;
+}
+
+/**
+ * A short key for a saved level's pose json (FNV-1a, 32 bits, hex): what a
+ * remembered answer was given against. Not a security hash; a collision
+ * costs one prompt not asked for a spot answered against another pose.
+ */
+export function savedPoseKey(json: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < json.length; i += 1) {
+    h ^= json.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
 }
 
 /** Where a running refusal began. */
@@ -127,6 +147,8 @@ export interface MovePrompt {
   readonly fixes: number;
   /** Seconds of fix time since it began; null without readable times. */
   readonly seconds: number | null;
+  /** The saved pose's key, for the answer to this prompt. */
+  readonly savedKey: string;
 }
 
 export interface MovePromptInput {
@@ -142,6 +164,8 @@ export interface MovePromptInput {
   readonly fixCount: number;
   /** The latest fix's own time (epoch ms), or null. */
   readonly lastFixMs: number | null;
+  /** {@link savedPoseKey} of the level in hand; null without one. */
+  readonly savedKey: string | null;
   readonly answers: readonly RememberedMoveAnswer[];
 }
 
@@ -160,16 +184,19 @@ export function isHorizontalRefusal(
   );
 }
 
-/** Whether an answer for `levelId` covers `offset`. */
+/** Whether an answer for `levelId`, given against the saved pose
+ *  `savedKey`, covers `offset`. */
 function answered(
   answers: readonly RememberedMoveAnswer[],
   levelId: string,
+  savedKey: string,
   offset: { northM: number; eastM: number },
   sameSpotM: number,
 ): boolean {
   return answers.some(
     (a) =>
       a.levelId === levelId &&
+      a.savedKey === savedKey &&
       Math.hypot(a.northM - offset.northM, a.eastM - offset.eastM) <= sameSpotM,
   );
 }
@@ -212,7 +239,12 @@ export function trackMovePrompt(
       : (lastFixMs - start.tMs) / 1000;
   const persisted =
     fixes >= rule.minFixes && (seconds === null || seconds >= rule.minSeconds);
-  if (!persisted || answered(input.answers, levelId, offset, rule.sameSpotM)) {
+  const { savedKey } = input;
+  if (
+    !persisted ||
+    savedKey === null ||
+    answered(input.answers, levelId, savedKey, offset, rule.sameSpotM)
+  ) {
     return { onset: start, prompt: null };
   }
   return {
@@ -226,13 +258,14 @@ export function trackMovePrompt(
       maxHorizontalM: refusal.maxHorizontalM,
       fixes,
       seconds,
+      savedKey,
     },
   };
 }
 
 /**
- * `answers` with `entry` added: an answer for the same level and spot is
- * replaced (the newest answer for a spot is the one that counts), and only
+ * `answers` with `entry` added: an answer for the same level, saved pose
+ * and spot is replaced (the newest answer for a spot is the one that counts), and only
  * the newest {@link MOVE_ANSWERS_MAX} are kept, so the meta file stays
  * bounded.
  */
@@ -242,25 +275,28 @@ export function rememberMoveAnswer(
   sameSpotM: number = MOVE_PROMPT_RULE.sameSpotM,
 ): RememberedMoveAnswer[] {
   const kept = answers.filter(
-    (a) => !answered([a], entry.levelId, entry, sameSpotM),
+    (a) => !answered([a], entry.levelId, entry.savedKey, entry, sameSpotM),
   );
   return [...kept, entry].slice(-MOVE_ANSWERS_MAX);
 }
 
 /** The remembered answers in a meta value (external data): well-formed
  *  entries only, the newest {@link MOVE_ANSWERS_MAX}. Anything else reads
- *  as no answer - the cost is one prompt asked again. */
+ *  as no answer - the cost is one prompt asked again. An answer without
+ *  a saved-pose key (written before it existed) is dropped too: what pose
+ *  its offset was taken from is unknown, so it is never trusted. */
 export function parseMoveAnswers(value: unknown): RememberedMoveAnswer[] {
   if (!Array.isArray(value)) return [];
   return value
     .flatMap((v): RememberedMoveAnswer[] => {
       if (typeof v !== "object" || v === null) return [];
       const r = v as Record<string, unknown>;
-      const { levelId, northM, eastM, answer } = r;
+      const { levelId, northM, eastM, answer, savedKey } = r;
       if (typeof levelId !== "string" || levelId.length === 0) return [];
       if (!finite(northM) || !finite(eastM)) return [];
       if (answer !== "second-copy" && answer !== "not-now") return [];
-      return [{ levelId, northM, eastM, answer }];
+      if (typeof savedKey !== "string" || savedKey.length === 0) return [];
+      return [{ levelId, northM, eastM, answer, savedKey }];
     })
     .slice(-MOVE_ANSWERS_MAX);
 }
