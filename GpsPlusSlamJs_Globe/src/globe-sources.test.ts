@@ -91,32 +91,43 @@ describe("the committed imagery", () => {
   // (libwebp's `exact`), because the glint and the shading read the sea's
   // own colour there. A lossy or blended alpha would put a glint fringe on
   // every coast; a zeroed colour would turn the sea black. Decoded, not
-  // read from headers: every 8th level-4 tile with water (the level the
-  // coast check looks at; one encoder run wrote them all).
-  it("keeps the level-4 tiles' alpha at 0 or 255 and the sea's colour under it", async () => {
-    const tiles = globeSource("blue-marble");
-    const levelDir = onDisk(tiles.path.split("{z}")[0] + "4");
-    const withWater = readdirSync(levelDir)
-      .flatMap((x) =>
-        readdirSync(join(levelDir, x)).map((y) => join(levelDir, x, y)),
-      )
-      .filter((file) => {
-        const info = imageInfo(readFileSync(file));
-        return info?.type === "webp" && info.alpha;
-      })
-      .filter((_, i) => i % 8 === 0);
-    let waterPixels = 0;
-    let waterRgbSum = 0;
-    for (const file of withWater) {
-      const water = await decodeWater(file);
-      waterPixels += water.pixels;
-      waterRgbSum += water.rgbSum;
-    }
-    expect(waterPixels).toBeGreaterThan(0);
-    // Blue Marble's open sea is dark navy (brightest channel about 20), not
-    // black: a mean channel sum under 3 would mean the colour was dropped.
-    expect(waterRgbSum / waterPixels).toBeGreaterThan(10);
-  }, 120_000);
+  // read from headers.
+  // Level 5 too (review 2026-10-01, m6): its 2,048 tiles came from the
+  // same encoder run, but nothing decoded any of them. Every 8th tile with
+  // water at level 4, every 32nd at level 5 (about 55 and 50 tiles).
+  it.each([
+    [4, 8],
+    [5, 32],
+  ])(
+    "keeps the level-%i tiles' alpha at 0 or 255 and the sea's colour under it",
+    async (level, every) => {
+      const tiles = globeSource("blue-marble");
+      const levelDir = onDisk(tiles.path.split("{z}")[0] + String(level));
+      const withWater = readdirSync(levelDir)
+        .flatMap((x) =>
+          readdirSync(join(levelDir, x)).map((y) => join(levelDir, x, y)),
+        )
+        .filter((file) => {
+          const info = imageInfo(readFileSync(file));
+          return info?.type === "webp" && info.alpha;
+        })
+        .filter((_, i) => i % every === 0);
+      expect(withWater.length).toBeGreaterThan(20);
+      let waterPixels = 0;
+      let waterRgbSum = 0;
+      for (const file of withWater) {
+        const water = await decodeWater(file);
+        waterPixels += water.pixels;
+        waterRgbSum += water.rgbSum;
+      }
+      expect(waterPixels).toBeGreaterThan(0);
+      // Blue Marble's open sea is dark navy (brightest channel about 20),
+      // not black: a mean channel sum under 3 would mean the colour was
+      // dropped.
+      expect(waterRgbSum / waterPixels).toBeGreaterThan(10);
+    },
+    120_000,
+  );
 
   it("has every global map as a 2048x1024 WebP, under the repo's 2 MiB file ceiling", () => {
     for (const s of GLOBE_SOURCES.filter((u) => u.kind === "equirect")) {
@@ -170,7 +181,7 @@ function filesUnder(dir: string): { path: string; bytes: number }[] {
 /**
  * The committed assets' budget: 10 MB, decimal, as the owner stated it
  * (round-4 plan 2026-09-28-2105 DEC-GL4-9, 2026-09-28: level 5 of the
- * imagery committed as WebP; measured 8.99 MB with levels 0-5 at WebP
+ * imagery committed as WebP; 8,847,906 bytes with levels 0-5 at WebP
  * quality 75, DEC-GL4-3/10). It was 4.5 MB (round-2 plan 2026-09-26-2055
  * M3c, DEC-FB2-4: the z4 level). Every page load of the globe may fetch
  * from here and the deploy copies it whole, so growth past it is a decision, not a

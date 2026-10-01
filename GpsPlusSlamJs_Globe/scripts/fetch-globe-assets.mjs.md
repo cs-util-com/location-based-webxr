@@ -2,7 +2,8 @@
 
 - Purpose: globe plan 2026-09-26-0539 §7.4, owner decision DEC-PRG-12:
   about 2 MB of NASA imagery committed under `assets/`, regenerable; level 4
-  added by DEC-FB2-4 (round-2 plan 2026-09-26-2055 M3c).
+  added by DEC-FB2-4 (round-2 plan 2026-09-26-2055 M3c), level 5 by round
+  4's DEC-GL4-3 (`MAX_LEVEL` 5).
 - Use: `node scripts/fetch-globe-assets.mjs [--force]` from the package, by
   hand, never in CI. Node 26 runs it as is (it imports `../src/*.ts` through
   Node's own type stripping).
@@ -32,8 +33,9 @@
   Measured 2026-09-26: 173 files, 1.94
   MiB (levels 0-3); 2026-09-27 with level 4: 685 files, 4,451,405 bytes
   (level 4 alone 512 files, 2.42 MB, above the plan's 1.9 MiB estimate from
-  48 sampled tiles). `globe-sources.test.ts` holds the total under 10 MB (4.5 MB until
-  round-4 DEC-GL4-9). GIBS's WMS reports no
+  48 sampled tiles); 2026-09-30 with level 5, as WebP: 2,734 files,
+  8,847,906 bytes (levels 0-5 2,730 tiles, 8,234 KiB). `globe-sources.test.ts`
+  holds the total under 10 MB (4.5 MB until round-4 DEC-GL4-9). GIBS's WMS reports no
   `layer-time-actual`, so the Blue Marble month is recorded as not reported.
 - Tests: the pieces it imports are unit-tested (`image-header.ts`,
   `tile-pyramid.ts`, `provenance-date.ts`); `globe-sources.test.ts` checks what it committed.

@@ -26,7 +26,13 @@
     the mixed sea-and-sand pixel (luminance 100, the sea 8-20) as water, so
     a whole 4.5 km texel of sand glinted: 41 levels 5 km inland in the coast
     smoke at 50 km up, after the 2048 px global mask was already gone.
-  - The limit barely matters: over levels 3-5 of the cached sources the
+  - The limit changes little in the share of water it drops (below), and
+    the coast smoke's verdict is identical at 40, 55 and 90; but that coast
+    is insensitive to it (1 of 220 probed mask-water pixels lies between 40
+    and 90: review 2026-10-01 m5), so the browser sweep does not exercise
+    the limit. A shallow, bright sea (the Bahamas, Florida Bay) would; that
+    probe is filed, not built (round-4 results record).
+  - Over levels 3-5 of the cached sources the
     rule turns 3.40 % (at 90), 3.46 % (70), 3.56 % (55) and 3.88 % (40) of
     the mask's water to land. At level 4, beyond 55° latitude 5.98 % (sea
     ice, bright; ice should not glint as water either), elsewhere 0.48 %

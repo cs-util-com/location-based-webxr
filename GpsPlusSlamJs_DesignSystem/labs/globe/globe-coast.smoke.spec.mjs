@@ -202,11 +202,19 @@ for (const altKm of [150, 50]) {
           )
           .join("; "),
     );
+    // Review 2026-10-01 m6: at 50 km the view needs level 5 (2.4 km a
+    // pixel against 4.9 at level 4), so its tiles are requested; logged at
+    // 150 km too.
+    console.log(
+      `coast ${altKm} km up: tiles per level ${state.tileRequestsByLevel.join("/")}`,
+    );
+    if (altKm === 50) expect(state.tileRequestsByLevel[5]).toBeGreaterThan(0);
     // The view must show a glint at all, or the check could not fail.
     expect(verdicts[1].seaMean).toBeGreaterThan(3 * LAND_GLINT_MAX);
     expect(verdicts[1].landMax).toBeLessThanOrEqual(LAND_GLINT_MAX);
     // From 150 km the half-texel ramp is under a sample: no land glint
-    // beyond 2.5 km either (measured 1.1 levels; review B6).
+    // beyond 2.5 km either (measured 1.1 levels with level 4, 0.0 with
+    // level 5; review B6).
     if (altKm === 150) {
       expect(verdicts[0].landMax).toBeLessThanOrEqual(LAND_GLINT_MAX);
     }

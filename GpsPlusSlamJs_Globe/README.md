@@ -26,8 +26,9 @@ is the one recorded exception, contained in this private package:
 ## The imagery
 
 `assets/` holds the imagery, committed (DEC-PRG-12; level 4 added by
-DEC-FB2-4; WebP since round 4, DEC-GL4-10, the budget held by
-`globe-sources.test.ts`): the Blue Marble tile pyramid (EPSG:4326, WebP,
+DEC-FB2-4, level 5 by round 4's DEC-GL4-3, about 2.4 km a pixel; WebP
+since round 4, DEC-GL4-10; 8.85 MB against the 10 MB budget DEC-GL4-9
+that `globe-sources.test.ts` holds): the Blue Marble tile pyramid (EPSG:4326, WebP,
 the water mask in each tile's alpha, DEC-GL4-6) and two global maps (night
 lights, clouds), all NASA, public domain.
 `scripts/fetch-globe-assets.mjs` regenerates them by hand (never in CI) and

@@ -4,12 +4,12 @@
  * a blue grade, shaded clouds, a soft blue-grey night with warm lights,
  * navy space and a glow round bright stars, each behind its own switch.
  *
- * Why this file matters: each look is judged by the owner against its own
+ * Why this file matters: each look is judged by eye against its own
  * OFF, so each must (a) do nothing at 0, the default (the look before, as
  * every other smoke measures it), and (b) move the pixels it is about, in
  * the direction the reference shows, when on. The floors are loose (the
- * owner tunes the strength by eye) and each is reported at x0.5, x1 and
- * x2 (owner rule 2026-09-13). The atmosphere pass is off in every view
+ * strength is tuned by eye) and each is reported at x0.5, x1 and x2 (the
+ * parameter-sweep rule of 2026-09-13). The atmosphere pass is off in every view
  * (`atmo=0`): it would add its own blue and cost frames, and none of
  * these looks is about it.
  */
@@ -174,7 +174,7 @@ test("the star glow spreads the brightest stars' light", async ({ page }) => {
   const light = on.outsideSum / Math.max(1, off.outsideSum);
   const spread = on.outsideBright / Math.max(1, off.outsideBright);
   console.log(
-    `looks: star glow in space: light ${off.outsideSum.toFixed(0)} -> ${on.outsideSum.toFixed(0)} (ratio ${verdict(light, 1.1)}), pixels over 10 ${off.outsideBright} -> ${on.outsideBright} (ratio ${verdict(spread, 1.1)})`,
+    `looks: star glow in space: light ${off.outsideSum.toFixed(0)} -> ${on.outsideSum.toFixed(0)} (gain over off ${verdict(light - 1, 0.1)}), pixels over 10 ${off.outsideBright} -> ${on.outsideBright} (gain over off ${verdict(spread - 1, 0.1)})`,
   );
   expect(off.outsideBright).toBeGreaterThan(0);
   expect(light).toBeGreaterThan(1.1);
