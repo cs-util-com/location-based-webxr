@@ -47,10 +47,11 @@ export const GLOBE_SKY = {
   glow: 0.95,
   glowWidthRad: 1.5 * (Math.PI / 180),
   /**
-   * The faintest stars drawn by default: 7.5, a magnitude past the
-   * naked-eye limit, the owner's look (DEC-GL4-1; 6.5 before).
+   * The faintest stars drawn by default: 8.5, two magnitudes past the
+   * naked-eye limit (round-5 DEC-GL5-4; the owner's 7.5 of DEC-GL4-1
+   * before, 6.5 before that).
    */
-  starMagLimit: 7.5,
+  starMagLimit: 8.5,
   /**
    * The stars' brightness: a star of magnitude m has the linear radiance
    * gain x 10^(-0.2 (m + 1)), so magnitude -1 reads 1 and magnitude 6.5
@@ -277,9 +278,11 @@ void main() {
   float intensity = uStarGain * pow( 10.0, -0.2 * ( aMag + 1.0 ) );
   vColor = aColor * intensity;
   float core = 1.2 + 1.8 * clamp( intensity, 0.0, 1.0 );
-  // The glow widens the sprite for bright stars only (intensity squared);
-  // vCore is the core's share of it, so the core keeps its size.
-  float size = core + uStarGlow * 12.0 * clamp( intensity * intensity, 0.0, 1.0 );
+  // The glow widens the sprite in proportion to the star's intensity
+  // (its square left the faint majority untouched, so the switch showed
+  // nothing at the default limit); vCore is the core's share of it, so the
+  // core keeps its size.
+  float size = core + uStarGlow * 12.0 * clamp( intensity, 0.0, 1.0 );
   vCore = core / size;
   gl_PointSize = uPixelRatio * size;
   gl_Position = projectionMatrix * modelViewMatrix * vec4( starPosition, 1.0 );

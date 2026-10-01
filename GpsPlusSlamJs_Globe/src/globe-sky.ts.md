@@ -8,7 +8,8 @@
 - Defaults (round-4 plan 2026-09-28-2105 DEC-GL4-1): the disc, the
   glow, the star limit and gain and the Milky Way default to the values
   the owner tuned by eye on his phone (disc 1°, glow 0.95, stars to 7.5
-  at gain 4, Milky Way 0.03; before: 0.533°, 1, 6.5, 1, 0.02). The globe
+  at gain 4, Milky Way 0.03; before: 0.533°, 1, 6.5, 1, 0.02); round 5
+  (plan 2026-10-01-0945 DEC-GL5-4) took the stars to 8.5. The globe
   smokes pin the old values where their pixel floors were measured on
   them (`withPreRound4Look` in `labs/globe/globe-smoke-helpers.mjs`).
 - Public API:
@@ -18,7 +19,7 @@
     `sunRadiance` (40, far above 1: the shader clamps the disc to white),
     `glow` (0.95, the glow's strength at the disc's edge) and `glowWidthRad`
     (1.5°, where the glow has fallen to 1/e). The glow is a look: space has
-    no air to scatter light; a lens and an eye do. `starMagLimit` (7.5),
+    no air to scatter light; a lens and an eye do. `starMagLimit` (8.5),
     `starGain` (4: a star's linear radiance is `10^(-0.2 (m + 1))` x gain,
     the eye's compressed response; at gain 1 magnitude 6.5 reads about
     0.03, about 49/255 on screen), `milkyWay` (0.03, the band's peak
@@ -62,10 +63,12 @@ view), dispose() }`.
       Earth's direction from the camera and its angular radius every frame.
       0 (the default) is black. RangeError for a negative strength, a zero
       direction or a radius outside 0 to π/2.
-    - `setStarGlow(glow)` (item 7): widens the sprite of bright stars (by
-      their intensity squared) and adds a soft halo round the core, which
-      keeps its size; 0 (the default) draws exactly as before. RangeError
-      when negative or not finite.
+    - `setStarGlow(glow)` (item 7): widens each star's sprite by up to
+      12 px x glow in proportion to its intensity (clamped at 1; round 5
+      DEC-GL5-4 replaced the intensity SQUARED, which at the default limit
+      widened only a few dozen stars) and adds a soft halo round the core,
+      which keeps its size; 0 (the default) draws exactly as before.
+      RangeError when negative or not finite.
     - `render(renderer, view)`: syncs, then draws the sky. The caller
       clears first (with `autoClear` off) and draws its scene after.
   - `uniforms`: `uSunDirection` (unit), `uSunRadius` (radians),

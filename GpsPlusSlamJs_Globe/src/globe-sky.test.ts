@@ -115,19 +115,20 @@ describe("createGlobeSky", () => {
 
   // Why: the owner tuned the look by eye on his phone (round-4 plan
   // 2026-09-28-2105 DEC-GL4-1) and asked for exactly these values as the
-  // defaults, so a link without them shows what he chose. The real sun's
+  // defaults, so a link without them shows what he chose; round 5
+  // (2026-10-01-0945 DEC-GL5-4) took the stars to 8.5. The real sun's
   // 0.533° stays named beside the look's 1°, which is about twice it.
-  it("defaults to the owner's look (DEC-GL4-1): disc 1°, glow 0.95, stars to 7.5 at gain 4, Milky Way 0.03", () => {
+  it("defaults to the owner's look (DEC-GL4-1, DEC-GL5-4): disc 1°, glow 0.95, stars to 8.5 at gain 4, Milky Way 0.03", () => {
     expect(GLOBE_SKY.realSunDiameterDeg).toBeCloseTo(0.533, 3);
     expect(GLOBE_SKY.sunDiameterDeg).toBe(1);
     expect(GLOBE_SKY.glow).toBe(0.95);
-    expect(GLOBE_SKY.starMagLimit).toBe(7.5);
+    expect(GLOBE_SKY.starMagLimit).toBe(8.5);
     expect(GLOBE_SKY.starGain).toBe(4);
     expect(GLOBE_SKY.milkyWay).toBe(0.03);
     const sky = createGlobeSky();
     expect(sky.uniforms.uGlow.value).toBe(0.95);
     expect(sky.uniforms.uMilkyWay.value).toBe(0.03);
-    expect(sky.starUniforms.uMagLimit.value).toBe(7.5);
+    expect(sky.starUniforms.uMagLimit.value).toBe(8.5);
     expect(sky.starUniforms.uStarGain.value).toBe(4);
     sky.dispose();
   });
@@ -192,6 +193,22 @@ describe("createGlobeSky", () => {
     const star = sky.stars.material as THREE.ShaderMaterial;
     expect(star.vertexShader).toContain("uStarGlow");
     expect(star.fragmentShader).toContain("uStarGlow");
+    sky.dispose();
+  });
+
+  // Why (round-5 plan 2026-10-01-0945 DEC-GL5-4): the glow widened a star
+  // by its intensity SQUARED, so at gain 4 only stars brighter than about
+  // magnitude 4.7 grew by a pixel or more and the switch changed nothing
+  // visible at the default limit. Scaled by the intensity itself, a
+  // magnitude-6 star still gains about 2 px. The pixel proof is the lab's
+  // "star glow shows at the default star limit" smoke; this pins the term.
+  it("widens a star by its glow in proportion to its intensity, not its square", () => {
+    const sky = createGlobeSky();
+    const star = sky.stars.material as THREE.ShaderMaterial;
+    expect(star.vertexShader).not.toContain("intensity * intensity");
+    expect(star.vertexShader).toMatch(
+      /uStarGlow \* [0-9.]+ \* clamp\( intensity, 0\.0, 1\.0 \)/,
+    );
     sky.dispose();
   });
 
