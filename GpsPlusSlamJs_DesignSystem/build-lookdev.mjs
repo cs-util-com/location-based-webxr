@@ -67,6 +67,17 @@ const WORKER_BY_STRING = /new\s+(?:Shared)?Worker\s*\(\s*["']([^"']+)["']/g;
 /** Any other `new URL("x", import.meta.url)`: a module or a fetched asset. */
 const META_URL =
   /new\s+URL\s*\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*\)/g;
+/**
+ * A dynamic `import("x")` with a literal specifier: a module loaded later
+ * (the globe's arrival prefetch at the pin press, round-5 plan
+ * 2026-10-01-0945 §3.6). Shipped like a static import, resolved with the
+ * same import map; left out when `followDynamic` is false, which is how a
+ * test reads a page's BOOT graph. Only OUR sources' dynamic imports are
+ * followed, never a vendored library's: 3d-tiles-renderer's chunks import
+ * optional packages it never loads here (`@mapbox/vector-tile`), which
+ * no route serves.
+ */
+const DYNAMIC_IMPORT = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
 /** What the crawl follows as a module rather than copying as an asset. */
 const MODULE_FILE = /\.m?js$/;
 
@@ -180,9 +191,12 @@ function walk(dir, rel = "") {
 
 /**
  * @param {{ outDir: string, base: string, packageRoot?: string,
- *   routes?: import("./serve-routes.mjs").Route[] }} options
+ *   routes?: import("./serve-routes.mjs").Route[], entries?: string[],
+ *   followDynamic?: boolean }} options
  *   `packageRoot` defaults to this package and `routes` to the dev server's
- *   table (tests pass fixtures).
+ *   table (tests pass fixtures). `entries` defaults to every page
+ *   (`discoverEntries`); `followDynamic` (default true) follows literal
+ *   dynamic `import("x")`s, false gives the static boot graph only.
  * @returns {string[]} written paths, relative to `outDir`
  */
 export function buildLookdev({
@@ -190,6 +204,8 @@ export function buildLookdev({
   base,
   packageRoot = here,
   routes = defaultRoutes(repo),
+  entries = discoverEntries(packageRoot),
+  followDynamic = true,
 }) {
   if (!base.startsWith("/") || !base.endsWith("/")) {
     throw new Error(`base must start and end with "/", got ${base}`);
@@ -228,7 +244,7 @@ export function buildLookdev({
   // pages (three, the framework, design.css) is written once.
   const seen = new Set();
   const pages = [];
-  for (const entry of discoverEntries(packageRoot)) {
+  for (const entry of entries) {
     const html = load(entry);
     sources.push(html);
     const imports = readImportMap(html);
@@ -259,6 +275,11 @@ export function buildLookdev({
       const scope = worker ? null : imports;
       for (const match of text.matchAll(SPECIFIER)) {
         queue.push({ url: resolveSpecifier(match[1], url, scope), worker });
+      }
+      if (followDynamic && !url.startsWith("/vendor/")) {
+        for (const match of text.matchAll(DYNAMIC_IMPORT)) {
+          queue.push({ url: resolveSpecifier(match[1], url, scope), worker });
+        }
       }
       // WORKERS AND import.meta.url REFERENCES (terrain plan §9, finding 3):
       // not imports, so the specifier scan above cannot see them.

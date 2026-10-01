@@ -516,3 +516,169 @@ describe("buildLookdev with the real terrain lab", () => {
     assert.ok(!files.some((f) => f.startsWith("labs/terrain/fixtures/")));
   });
 });
+
+// WHY (round-5 plan 2026-10-01-0945 §3.6): the globe's arrival prefetch is
+// OsmDemo's TypeScript (`/osm/arrival-prefetch.js`) with the Osm library,
+// the framework's OPFS store and H3 underneath it, imported by a lab that
+// is not wired yet. This probe page carries the import map the wiring
+// note asks the globe lab to add, and the build must close its graph: an
+// extensionless import, a parameter property the type stripper refuses, or
+// an unmapped bare name each fail here, instead of as a globe lab whose
+// module graph never loads (the 2026-10-01 lab-import follow-up). The
+// framework logger (and with it Sentry) must stay out of the graph.
+describe("buildLookdev with the arrival prefetch's import map", () => {
+  const IMPORT_MAP = {
+    imports: {
+      "h3-js": "/vendor/h3-js/dist/browser/h3-js.es.js",
+      "gps-plus-slam-osm": "/osm-lib/index.js",
+      "gps-plus-slam-app-framework/osm-bridge": "/fw/osm-bridge/index.js",
+    },
+  };
+  let root;
+  let out;
+  let files;
+  before(() => {
+    root = fixture({
+      "labs/probe/index.html": [
+        "<!doctype html><title>Probe</title>",
+        `<script type="importmap">${JSON.stringify(IMPORT_MAP)}</script>`,
+        '<script type="module" src="./probe.js"></script>',
+      ].join("\n"),
+      "labs/probe/probe.js": [
+        'import { startArrivalPrefetch } from "/osm/arrival-prefetch.js";',
+        'import { startPace, stepPace } from "/globe/flight-pace.js";',
+        "export { startArrivalPrefetch, startPace, stepPace };",
+      ].join("\n"),
+    });
+    out = mkdtempSync(join(tmpdir(), "lookdev-prefetch-"));
+    files = buildLookdev({ outDir: out, base: "/lookdev/", packageRoot: root });
+  });
+  after(() => {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  });
+
+  it("closes the graph: OsmDemo, the Osm library, the store, H3, the pace", () => {
+    for (const rel of [
+      "osm/arrival-prefetch.js",
+      "osm/arrival-plan.js",
+      "osm/arrival-progress.js",
+      "osm/osm-tile-cache.js",
+      "osm/dem-provider.js",
+      "osm/terrain-field.js",
+      "osm-lib/index.js",
+      "osm-lib/source/caching-source.js",
+      "osm-lib/source/overpass-source.js",
+      "osm-lib/elevation/caching-tile-fetch.js",
+      "fw/osm-bridge/index.js",
+      "fw/osm-bridge/opfs-osm-blob-store.js",
+      "fw/storage/write-file-or-abort.js",
+      "vendor/h3-js/dist/browser/h3-js.es.js",
+      "vendor/h3-js/LICENSE",
+      "globe/flight-pace.js",
+    ]) {
+      assert.ok(files.includes(rel), rel);
+    }
+  });
+
+  it("keeps the framework logger, and Sentry with it, out of the graph", () => {
+    assert.ok(!files.includes("fw/utils/logger.js"));
+    assert.ok(!files.some((f) => f.includes("sentry")));
+  });
+});
+
+// WHY (round-5 plan 2026-10-01-0945 §3.6, the coordinator's review): the
+// arrival prefetch's graph (the Osm library, about 1.1 MB of source, and
+// h3-js, 0.55 MB) must load at the pin press, not at the globe's boot. So
+// the lab loads it with a dynamic `import("...")`, which the deploy must
+// still ship (followed like a static import), and which the boot graph,
+// the static imports alone, must never include.
+describe("buildLookdev and dynamic imports", () => {
+  let root;
+  let out;
+  before(() => {
+    root = fixture({
+      "labs/lazy/index.html": [
+        "<!doctype html><title>Lazy</title>",
+        '<script type="module" src="./lazy.js"></script>',
+      ].join("\n"),
+      "labs/lazy/lazy.js": [
+        'import { now } from "./eager.js";',
+        "export async function later() {",
+        '  return (await import("./deferred.js")).value + now;',
+        "}",
+      ].join("\n"),
+      "labs/lazy/eager.js": "export const now = 1;",
+      "labs/lazy/deferred.js":
+        'import { more } from "./deferred-dep.js";\nexport const value = more;',
+      "labs/lazy/deferred-dep.js": "export const more = 2;",
+    });
+    out = mkdtempSync(join(tmpdir(), "lookdev-lazy-"));
+  });
+  after(() => {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
+  });
+
+  it("ships a dynamically imported module and its graph", () => {
+    const files = buildLookdev({
+      outDir: join(out, "all"),
+      base: "/lookdev/",
+      packageRoot: root,
+    });
+    for (const rel of [
+      "labs/lazy/eager.js",
+      "labs/lazy/deferred.js",
+      "labs/lazy/deferred-dep.js",
+    ]) {
+      assert.ok(files.includes(rel), rel);
+    }
+  });
+
+  it("leaves it out of the boot graph when dynamic imports are not followed", () => {
+    const files = buildLookdev({
+      outDir: join(out, "boot"),
+      base: "/lookdev/",
+      packageRoot: root,
+      followDynamic: false,
+    });
+    assert.ok(files.includes("labs/lazy/eager.js"));
+    assert.ok(!files.includes("labs/lazy/deferred.js"));
+    assert.ok(!files.includes("labs/lazy/deferred-dep.js"));
+  });
+});
+
+// WHY: the globe lab's BOOT graph (its static imports) must not pull in the
+// arrival prefetch's dependencies. A later edit that imports
+// `/osm/arrival-prefetch.js` statically, or anything else that reaches the
+// Osm library or H3, makes every globe load pay about 1.7 MB of modules
+// before the first frame, and nothing else would report it.
+describe("the globe lab's boot graph", () => {
+  let out;
+  let files;
+  before(() => {
+    out = mkdtempSync(join(tmpdir(), "lookdev-globe-boot-"));
+    files = buildLookdev({
+      outDir: out,
+      base: "/lookdev/",
+      entries: ["/labs/globe/index.html"],
+      followDynamic: false,
+    });
+  });
+  after(() => rmSync(out, { recursive: true, force: true }));
+
+  it("is the globe lab's own graph (the probe is not vacuous)", () => {
+    assert.ok(files.includes("labs/globe/globe-lab.js"));
+    assert.ok(files.includes("globe/globe-surface.js"));
+  });
+
+  it("includes neither the Osm library nor h3-js nor the prefetch", () => {
+    const offenders = files.filter(
+      (f) =>
+        f.startsWith("osm-lib/") ||
+        f.startsWith("vendor/h3-js/") ||
+        f.startsWith("osm/arrival-"),
+    );
+    assert.deepEqual(offenders, []);
+  });
+});

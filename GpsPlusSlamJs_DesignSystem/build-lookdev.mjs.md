@@ -4,11 +4,14 @@
   so a PR preview (`https://<branch>-gps-plus-slam.csutil.workers.dev/lookdev/`)
   can be opened on a phone (plan 2026-09-23-0048, DEC-SKY-2).
 - Public API:
-  - `buildLookdev({ outDir, base, packageRoot?, routes? })` → the written
-    paths relative to `outDir`. `base` must start and end with `/` (e.g.
-    `/lookdev/`). `packageRoot` defaults to this package and `routes` to
-    `serve-routes.mjs`'s table (tests pass fixtures). Called by the
-    workspace's `scripts/build-site.mjs`.
+  - `buildLookdev({ outDir, base, packageRoot?, routes?, entries?,
+followDynamic? })` → the written paths relative to `outDir`. `base`
+    must start and end with `/` (e.g. `/lookdev/`). `packageRoot` defaults
+    to this package and `routes` to `serve-routes.mjs`'s table (tests pass
+    fixtures). `entries` defaults to `discoverEntries(packageRoot)` (a test
+    builds one page). `followDynamic` (default true) follows literal dynamic
+    `import("x")`s; false gives a page's static BOOT graph only. Called by
+    the workspace's `scripts/build-site.mjs`.
   - `discoverEntries(packageRoot)` → the deployable pages as URL paths:
     `/3d/index.html` first (when present), then every
     `labs/<name>/index.html`, sorted, each followed by its lab's further
@@ -31,6 +34,11 @@
     there fails the build with that reason instead of 404ing on a phone.
     Any other `new URL("x", import.meta.url)` is crawled when it names a
     `.js`/`.mjs` module and copied byte for byte otherwise;
+  - follows literal dynamic `import("x")`s in our own sources (not under
+    `/vendor/`: 3d-tiles-renderer's chunks import optional packages no
+    route serves), resolved with the page's import map, so a module a lab
+    loads lazily is shipped (the globe's arrival prefetch at the pin press,
+    round-5 plan 2026-10-01-0945 §3.6). On today's pages it adds no file;
   - rewrites the page's absolute route prefixes to sit under `base`; the
     prefixes come from the route table (each route's first path segment),
     so a new route needs no second list (W7 globe plan M0);
@@ -72,6 +80,11 @@
   every page by title instead of redirecting. The real terrain lab builds as
   a closed graph: its worker, the Osm library under `osm-lib/` and OsmDemo's
   heightfield under `osm/`, stripped and rebased, its fixtures not shipped.
+  A dynamic import is shipped with its graph and left out when
+  `followDynamic` is false; the globe lab's static boot graph contains
+  neither the Osm library, nor h3-js, nor the arrival prefetch; and a probe
+  page with the prefetch's import map closes its graph (OsmDemo, the Osm
+  library, the framework's OPFS store without its logger, H3, the pace).
   A one-off check on
   2026-09-23 also served the built tree statically and booted it in
   headless Chromium: no page or console error.
