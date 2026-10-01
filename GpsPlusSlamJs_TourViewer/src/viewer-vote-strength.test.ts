@@ -416,6 +416,9 @@ interface Measured {
   at300Deg: number;
   scanEndVerticalM: number;
   votesDispatched: number;
+  /** GPS positions the store holds at the end of the run: what was actually
+   *  STORED, where `votesDispatched` counts before the sink is called. */
+  storedPositions: number;
   /** Error after every post-scan fix; `s` = seconds since the last vote. */
   trace: { s: number; m: number; deg: number }[];
   /** Horizontal error of the point 20 m in front of the code's face. */
@@ -784,6 +787,8 @@ function runScenario(p: VoteParams): Measured {
     at300Deg,
     scanEndVerticalM: scanEnd.vertical,
     votesDispatched,
+    storedPositions:
+      store.getState().gpsData?.gpsEvents?.gpsPositions.length ?? 0,
     trace,
     scanEndP20M: scanEnd.p20M,
     max120P20M,
@@ -1405,13 +1410,17 @@ describe("the shipped wiring through the harness (M2e)", () => {
   it("drives the viewer's sink: the soft keys on at the end, the same votes as the per-vote path", () => {
     // Why this matters: the opt-in pins below measure what visitors get only
     // if the harness takes the viewer's own sink - the soft keys really on,
-    // and every vote and ring dispatched (batching may not drop any).
+    // and every vote and ring STORED (batching may not drop any). The stored
+    // count, not `votesDispatched`: that one is counted before the sink is
+    // called, so a partly dropped batch would still pass on it.
     const short = { biasM: 8, postScanS: 20 };
     const wired = runScenario({ ...SHIPPED_WIRING, ...short });
     const perVote = runScenario({ ...SHIPPED, ...short });
     expect(wired.overrides).toEqual(VIEWER_SOFT_TRIM);
     expect(perVote.overrides).toBeNull();
     expect(wired.votesDispatched).toBe(perVote.votesDispatched);
+    expect(wired.storedPositions).toBe(perVote.storedPositions);
+    expect(wired.storedPositions).toBeGreaterThan(wired.votesDispatched);
     expect(meetsRule(wired)).toBe(true);
   }, 120_000);
 });
