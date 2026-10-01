@@ -34,12 +34,18 @@ extentM }, x, y, wx, wy)`: the mean of the lab's posts inside a box,
   - `bandRamp(samples, { widthM })` -> `{ widthM, bands, sea }`: C3's ramp
     from `{ heightM, rgb }` samples; `bandRampColour(ramp, h)` (null with no
     land band), `bandRampLut(ramp, LUT)`, `rampFitError(ramp, samples)` ->
-    `{ mean, p95, n }` (CIE76). RangeError for a width outside 10-5000 m.
+    `{ mean, p95, n, skipped }` (CIE76): a land sample the ramp cannot
+    colour (no land band: a ramp fitted on sea alone) is SKIPPED and
+    counted, never judged (it passed `null` to `deltaE76`, a TypeError, on a
+    sea-only fold; PR #531 review); with none judged, mean and p95 are
+    NaN. RangeError for a width outside 10-5000 m.
   - `foldOf(gx, gy, blockPx = 1)`: a sample's fold, a checkerboard of
     `blockPx`-pixel blocks over its global imagery pixel indices.
   - `bandSweep(samples, widthsM, { blockPx = 1 })` -> per width `{ widthM,
 blockPx, bands, minCount, fit, cv }`: the in-sample error and the
     two-fold cross-validated one (fitted on one fold, judged on the other;
+    the folds that could be judged averaged, `cv.skipped` the land samples
+    a fold's ramp could not colour;
     samples carry `gx`, `gy`). RangeError when a fold is empty. The
     cross-validated error is the honest number: narrow bands always fit
     their own pixels better. One-pixel folds LEAK (review 2026-10-01-1650

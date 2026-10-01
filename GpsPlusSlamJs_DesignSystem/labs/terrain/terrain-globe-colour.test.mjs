@@ -425,6 +425,51 @@ describe("C3 globe-bands: the band-width sweep", () => {
     assert.ok(rows[0].fit.mean <= rows[2].fit.mean + 1e-9);
   });
 
+  // PR #531 review: a ramp fitted on sea-only samples has no land band, so
+  // `bandRampColour` returns its documented null, and the error measure
+  // passed that null to deltaE76 (a TypeError). Low ground whose one fold
+  // is all sea does exactly this. A ramp that cannot colour a land sample
+  // has no error for it: the sample is skipped and counted.
+  it("skips the land samples a ramp cannot colour, and counts them", () => {
+    const sea = [0.05, 0.1, 0.3];
+    const seaOnly = bandRamp([{ heightM: -10, rgb: sea }], { widthM: 300 });
+    const land = [
+      { heightM: 120, rgb: [0.3, 0.4, 0.2] },
+      { heightM: 900, rgb: [0.4, 0.4, 0.3] },
+    ];
+    const err = rampFitError(seaOnly, land);
+    assert.equal(err.n, 0);
+    assert.equal(err.skipped, 2);
+    assert.ok(Number.isNaN(err.mean));
+    // A ramp with land bands (an empty band between them interpolated)
+    // colours every land sample and skips none.
+    const ramp = bandRamp(land, { widthM: 100 });
+    assert.equal(rampFitError(ramp, land).skipped, 0);
+    assert.equal(rampFitError(ramp, land).n, 2);
+  });
+
+  it("averages the cross-validated error over the folds that could be judged", () => {
+    // Fold 0 (even gx + gy) is all sea, so its ramp colours no land sample
+    // of fold 1; fold 1's ramp judges fold 0's land samples (none) too.
+    const samples = [
+      { heightM: -5, rgb: [0.05, 0.1, 0.3], gx: 0, gy: 0 },
+      { heightM: -8, rgb: [0.05, 0.1, 0.3], gx: 1, gy: 1 },
+      { heightM: 150, rgb: [0.3, 0.4, 0.2], gx: 1, gy: 0 },
+      { heightM: 260, rgb: [0.32, 0.41, 0.22], gx: 0, gy: 1 },
+    ];
+    const [row] = bandSweep(samples, [100]);
+    assert.ok(Number.isNaN(row.cv.mean));
+    assert.equal(row.cv.skipped, 2);
+    // With land in both folds, the folds' errors are averaged as before.
+    const both = [
+      ...samples,
+      { heightM: 140, rgb: [0.31, 0.4, 0.21], gx: 2, gy: 0 },
+      { heightM: 270, rgb: [0.3, 0.42, 0.2], gx: 3, gy: 0 },
+    ];
+    const [r2] = bandSweep(both, [100]);
+    assert.ok(Number.isFinite(r2.cv.mean), `${r2.cv.mean}`);
+  });
+
   it("needs both folds", () => {
     const samples = [{ heightM: 100, rgb: [0.3, 0.3, 0.3], gx: 0, gy: 0 }];
     assert.throws(() => bandSweep(samples, [100]), RangeError);

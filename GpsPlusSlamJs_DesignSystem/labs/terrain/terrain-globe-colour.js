@@ -317,18 +317,33 @@ export function deltaE76(a, b) {
 /**
  * How well a ramp explains samples: the mean and the 95th percentile of
  * the CIE76 difference between each sample's colour and the ramp's at its
- * height (land samples only).
+ * height (land samples only), and their count `n`. A land sample the ramp
+ * cannot colour (a ramp with no land band, fitted on sea alone) is skipped
+ * and counted in `skipped`; with none judged, mean and p95 are NaN.
  */
 export function rampFitError(ramp, samples) {
-  const errors = samples
-    .filter((s) => s.heightM > 0 && Number.isFinite(s.heightM))
-    .map((s) => deltaE76(s.rgb, bandRampColour(ramp, s.heightM)))
-    .sort((a, b) => a - b);
-  if (errors.length === 0) return { mean: Number.NaN, p95: Number.NaN, n: 0 };
+  const errors = [];
+  let skipped = 0;
+  for (const s of samples) {
+    if (!(s.heightM > 0 && Number.isFinite(s.heightM))) continue;
+    const colour = bandRampColour(ramp, s.heightM);
+    // A ramp with no land band (fitted on sea alone) colours no land
+    // sample: it has no error for it, so the sample is counted, not judged.
+    if (colour === null) {
+      skipped += 1;
+      continue;
+    }
+    errors.push(deltaE76(s.rgb, colour));
+  }
+  errors.sort((a, b) => a - b);
+  if (errors.length === 0) {
+    return { mean: Number.NaN, p95: Number.NaN, n: 0, skipped };
+  }
   return {
     mean: errors.reduce((sum, e) => sum + e, 0) / errors.length,
     p95: errors[Math.min(errors.length - 1, Math.floor(0.95 * errors.length))],
     n: errors.length,
+    skipped,
   };
 }
 
@@ -347,11 +362,21 @@ export function foldOf(gx, gy, blockPx = 1) {
  * C3's band-width sweep: for each width, the ramp's band count and its
  * least populated band, its in-sample error (`rampFitError` on all
  * samples) and its two-fold cross-validated error (fitted on the samples
- * of one fold, judged on the other, the two means averaged). The folds
+ * of one fold, judged on the other; the folds that could be judged
+ * averaged, NaN when neither could, `cv.skipped` the land samples a
+ * fold's ramp could not colour). The folds
  * are `foldOf(gx, gy, blockPx)` of each sample's global imagery pixel.
  * RangeError when either fold is empty.
  */
 export function bandSweep(samples, widthsM, { blockPx = 1 } = {}) {
+  // The folds that could be judged (a fold whose ramp coloured nothing is
+  // NaN): their mean, NaN when neither could.
+  const foldMean = (values) => {
+    const judged = values.filter(Number.isFinite);
+    return judged.length === 0
+      ? Number.NaN
+      : judged.reduce((a, b) => a + b, 0) / judged.length;
+  };
   const folds = [0, 1].map((f) =>
     samples.filter((s) => foldOf(s.gx, s.gy, blockPx) === f),
   );
@@ -371,8 +396,9 @@ export function bandSweep(samples, widthsM, { blockPx = 1 } = {}) {
       minCount: counts.length > 0 ? Math.min(...counts) : 0,
       fit: rampFitError(ramp, samples),
       cv: {
-        mean: (cross[0].mean + cross[1].mean) / 2,
-        p95: (cross[0].p95 + cross[1].p95) / 2,
+        mean: foldMean(cross.map((c) => c.mean)),
+        p95: foldMean(cross.map((c) => c.p95)),
+        skipped: cross[0].skipped + cross[1].skipped,
       },
     };
   });
