@@ -64,8 +64,9 @@ outlierFalloffExponent: 1, outlierRejectionEnabled: false }`.
 - Before a session zero the core stores neither overrides nor votes; the
   sink then turns nothing on and tries again at the next vote (the viewer
   casts none before the zero anyway: `canAcceptVotes`).
-- Batch size: a lock is 16 events, a tick 17 - far under the core's
-  `MAX_GPS_EVENT_BATCH_SIZE` (256).
+- Batch size: a lock is 16 events, a tick up to 19 (a re-lock during the
+  fade with leftover keep-alive credit under 3 gives up to 18 votes, plus
+  the fix) - far under the core's `MAX_GPS_EVENT_BATCH_SIZE` (256).
 
 ## Examples
 

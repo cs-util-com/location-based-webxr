@@ -210,7 +210,8 @@ export function createQrVoteKeepAlive(
         });
       } catch {
         // A code that cannot build a vote can never cast one: drop it
-        // rather than throw into the store listener that called this.
+        // rather than throw into the GPS callback that called this
+        // (viewer-placement's `recordDeviceFix`).
         kept = null;
         credit = 0;
         return [];

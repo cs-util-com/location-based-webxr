@@ -756,7 +756,8 @@ describe('loadRecording — a Tour Viewer authoring recording', () => {
  * Why this test matters (authoring recording plan 2026-09-28-0953, M1b): a
  * viewer session that placed a tour wrongly is replayed here, like an
  * authoring one. Its stream differs from the creator's: synthetic QR votes
- * (`gpsData/recordGpsEvent` at the viewer's accuracy) after each lock, the
+ * after each lock, as ONE `gpsData/recordGpsEventBatch` per lock (core
+ * 1.26; authoring plan 2026-09-28-0953 D18) at the viewer's accuracy, the
  * `tourViewing/*` log actions no Recorder slice knows, and - when it was
  * saved once, recorded on, and saved again (or saved from the next page's
  * orphan offer) - the Tour Viewer's saved marker `saved.blob` at the zip's
@@ -766,9 +767,10 @@ describe('loadRecording — a Tour Viewer authoring recording', () => {
  *
  * THE FIXTURE FOLLOWS THE ORDER THE TOUR VIEWER WRITES (as the authoring
  * fixture above): the viewer pipeline records the detection, then logs the
- * lock, then dispatches the lock's votes one by one, then logs them as one
- * batch (`GpsPlusSlamJs_TourViewer/src/viewer-placement-viewing-log.test.ts`
- * drives that order through the real controller config).
+ * lock, then dispatches the lock's votes as one `recordGpsEventBatch`, then
+ * logs them (`GpsPlusSlamJs_TourViewer/src/viewer-placement-viewing-log.test.ts`
+ * drives that order through the real controller config). The Recorder's own
+ * store has no batch-specific code: the core reducer stores every event.
  */
 describe('loadRecording - a Tour Viewer viewing recording', () => {
   const T0 = Date.UTC(2026, 8, 30, 10, 0, 0);
@@ -832,8 +834,15 @@ describe('loadRecording - a Tour Viewer viewing recording', () => {
         atMs: T0 + 1500,
       },
     },
-    fix('qr-vote-0', 2, 47.50002, 8.70001, 5),
-    fix('qr-vote-1', 3, 47.50002, 8.69999, 5),
+    {
+      type: 'gpsData/recordGpsEventBatch',
+      payload: {
+        events: [
+          fix('qr-vote-0', 2, 47.50002, 8.70001, 5).payload,
+          fix('qr-vote-1', 3, 47.50002, 8.69999, 5).payload,
+        ],
+      },
+    },
     {
       type: 'tourViewing/votesCast',
       payload: {
@@ -937,7 +946,10 @@ describe('loadRecording - a Tour Viewer viewing recording', () => {
       (a) => a.type === 'qrDetected/clearAllQrMarkers'
     );
     for (const action of actions.slice(0, exit)) store.dispatch(action);
-    // Two fixes and the lock's two votes.
+    // Two fixes and the lock's two votes, which came as ONE batch action.
+    expect(
+      actions.filter((a) => a.type === 'gpsData/recordGpsEventBatch')
+    ).toHaveLength(1);
     expect(store.getState().gpsData?.gpsEvents.gpsPositions).toHaveLength(4);
     expect(store.getState().qrDetected.markers[CODE]?.detections).toHaveLength(
       1
