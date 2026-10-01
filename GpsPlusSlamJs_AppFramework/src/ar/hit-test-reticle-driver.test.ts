@@ -472,7 +472,7 @@ describe('startHitTestReticle — onSelect (tap) handling', () => {
       },
       inputSource: { targetRaySpace: {} },
     });
-    expect(onSelect.mock.calls.map((call) => call[1])).toEqual([
+    expect(onSelect.mock.calls.map((call): unknown => call[1])).toEqual([
       null,
       null,
       null,
