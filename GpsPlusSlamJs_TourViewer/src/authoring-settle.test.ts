@@ -2523,5 +2523,44 @@ describe(
       await flush();
       expect(a.dom.moveUndo.hidden).toBe(true);
     });
+
+    /** The newest visit-log entry the draft holds. */
+    function lastVisitFile(files: Map<string, unknown>) {
+      return [...files.entries()]
+        .filter(([k]) => k.startsWith(visitKey("")))
+        .map(([, v]) => parseVisitLogEntry(v as string)!)
+        .sort((x, y) => x.atMs - y.atMs)
+        .at(-1)!;
+    }
+
+    /** "Replace the code's saved position" through its confirm. */
+    async function replaceWithTheButton(
+      a: ReturnType<typeof authoring>,
+      stored: { json: string },
+    ): Promise<void> {
+      a.setup.renderAuthorReadout();
+      a.dom.replaceCodeButton.click();
+      a.dom.replaceCodeYes.click();
+      await vi.waitFor(() => {
+        expect(a.ctx.mintedLevel).not.toBeNull();
+        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      });
+      await flush();
+    }
+
+    it("marks the visit's move boundary for a Replace-button replace too, not only for the prompt's (M5b review #3)", async () => {
+      // Why: the boundary tells the summary which of the code's visits
+      // came before the move. A replace moves the code whichever button
+      // made it, so a visit replaced through the Replace button that
+      // carried no mark was combined with the visits before the move.
+      const { store, files } = memoryDraftStore();
+      const { a, stored } = await secondVisitFarFromTheCode(store);
+      await replaceWithTheButton(a, stored);
+      a.endVisit();
+      await flush();
+      expect(
+        lastVisitFile(files).codes.find((c) => c.levelId === stored.id)?.moved,
+      ).toBe(true);
+    });
   },
 );

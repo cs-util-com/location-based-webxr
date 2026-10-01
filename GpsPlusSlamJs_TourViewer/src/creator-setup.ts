@@ -897,14 +897,17 @@ export function wireCreatorSetup(deps: {
   /** The store's fix count at the last refusal re-evaluation: a new fix
    *  re-judges the latest sighting through the new alignment. */
   let moveFixCount = -1;
-  /** Codes moved to a new spot ("Use the new spot"), by the visit that
-   *  moved them: the visit log's move boundary (§7j #12). */
+  /** Codes moved to a new spot - by "Use the new spot" or the Replace
+   *  button, any replace (M5b review #3) - by the visit that moved them:
+   *  the visit log's move boundary (§7j #12). */
   const movedInVisit = new Map<string, number>();
   /**
    * The latest replace of the code's saved position - the prompt's or the
    * Replace button's - undoable until Finish: the level it replaced (as
    * `codeMeasured` logs it in `replaced`) and the measurement in hand with
    * it. `prompt`: the ask it answered, when it came from the prompt.
+   * `boundary`: whether THIS replace set the visit's move boundary (the
+   * visit may already have had one), so an Undo drops only its own.
    */
   let undoable: {
     levelId: string;
@@ -912,6 +915,7 @@ export function wireCreatorSetup(deps: {
     priorMeasurement: CodeMeasurement | null;
     visit: number;
     prompt: MovePrompt | null;
+    boundary: boolean;
   } | null = null;
   let undoBusy = false;
 
@@ -1075,8 +1079,8 @@ export function wireCreatorSetup(deps: {
             : outcome.kind,
       );
       if (replaced) {
-        // Counted as asked only now (§7j #10); the visit log marks the move.
-        movedInVisit.set(prompt.levelId, ctx.arSessionGeneration);
+        // Counted as asked only now (§7j #10). The replace itself marked
+        // the visit's move boundary (`measureCode`).
         if (undoable !== null) undoable = { ...undoable, prompt };
         moveOnset = null;
         ctx.placementNote = MOVE_PROMPT_LABELS.used;
@@ -1120,7 +1124,9 @@ export function wireCreatorSetup(deps: {
     ctx.mintGeneration += 1;
     ctx.mintedLevel = u.replaced;
     ctx.codeMeasurement = u.priorMeasurement;
-    if (movedInVisit.get(u.levelId) === u.visit) {
+    // Only a boundary this replace set: one the visit had before it
+    // (an earlier replace that stays) is not this undo's to drop.
+    if (u.boundary && movedInVisit.get(u.levelId) === u.visit) {
       movedInVisit.delete(u.levelId);
       unmarkLoggedMove(u.visit, u.levelId);
     }
@@ -2535,6 +2541,10 @@ export function wireCreatorSetup(deps: {
       if (replaced !== null) {
         ctx.placementNote =
           "The code's saved position was replaced with this measurement.";
+        // Any replace moves the code, so any replace marks the visit's
+        // move boundary (M5b review #3), whichever button made it.
+        const boundary = movedInVisit.get(id) !== measured.arVisitIndex;
+        movedInVisit.set(id, measured.arVisitIndex);
         // Undoable until Finish (M5b): the level it replaced, and the
         // measurement that was in hand with it.
         undoable = {
@@ -2543,6 +2553,7 @@ export function wireCreatorSetup(deps: {
           priorMeasurement: prior.measurement,
           visit: measured.arVisitIndex,
           prompt: null,
+          boundary,
         };
       }
       if (draftTourUrl !== null) void recordMeta(draftTourUrl);

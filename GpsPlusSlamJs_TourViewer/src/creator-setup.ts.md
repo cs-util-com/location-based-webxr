@@ -531,9 +531,8 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
       button reads "Using the new spot…" and the other two are disabled
       until it resolves; `measureCode` resolves with its outcome
       (`replaced`, `measured`, `kept`, `failed` with a reason,
-      `superseded`). Only `replaced` counts as answered: the visit is
-      recorded as the code's move boundary and the status line says the
-      saved position is the new spot. Anything else says "Could not use the
+      `superseded`). Only `replaced` counts as answered, and the status
+      line says the saved position is the new spot. Anything else says "Could not use the
       new spot..." in the status line (the AR session's error channel) and
       the prompt comes back while the refusal stands. Logged as
       `tourAuthoring/codeMoveAnswered` with `replaced` and `error`.
@@ -542,12 +541,17 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
       (`moveAnswers`, re-stated by every `recordMeta`, read at tour open
       whether or not the draft is restored and merged with answers given
       before it opened); a refused meta write is the backup notice.
+    - **The move boundary**: ANY replace - the prompt's or the Replace
+      button's - records its visit as the code's move boundary
+      (`movedInVisit`, set in `measureCode`; M5b review #3), because
+      either moves the code for everyone.
     - **Undo until Finish**: any replace (prompt or Replace button) keeps
       the level it replaced (`codeMeasured`'s `replaced`) and the
       measurement that was in hand; Undo puts both back, bumps
       `mintGeneration` (an in-flight measurement must not land over it),
-      drops the visit's move boundary (re-recording an already logged
-      visit without the mark), counts a prompt's spot as "Not now", logs
+      drops the visit's move boundary when THIS replace set it (an earlier
+      replace's boundary in the same visit stays), re-recording an already
+      logged visit without the mark, counts a prompt's spot as "Not now", logs
       `tourAuthoring/codeReplaceUndone`, and reads "Undoing…" until the
       meta write lands, then "back where it was" or that the device could
       not save it. A Finish that wrote the zip, a tour close, or another
@@ -634,7 +638,8 @@ async states, tap-select, the overlay guard, the explicit replace). The
 moved-code prompt (M5b): `authoring-settle.test.ts` "the moved-code
 prompt" (asked only after the rule's fixes and seconds, logged once; not
 with the gate closed; "Use the new spot" in progress, replaced, logged,
-undoable, and its failure surfaced with the prompt coming back; the other
+undoable, and its failure surfaced with the prompt coming back; a
+Replace-button replace marking the move boundary too; the other
 two answers remembered in the draft across a reload; Undo in progress,
 restoring the level and dropping the visit's move boundary, its refused
 write surfaced, ended by a Finish), plus the pure `code-move-prompt*`
