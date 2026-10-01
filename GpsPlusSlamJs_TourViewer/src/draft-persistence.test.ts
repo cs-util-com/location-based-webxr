@@ -407,11 +407,33 @@ describe("a deletion is its own file (a tombstone, authoring plan 2026-09-28-095
     expect(store.files.has(deletedKey("gone"))).toBe(false);
   });
 
-  it("ignores a tombstone the meta rejects, like any rejected file", async () => {
+  // The meta's rejected list outranks every file of an id, tombstones
+  // included, so WHICH of the two was written last decides - and that
+  // order is the writer's job (`creator-setup.ts` `writeForObject`, M4
+  // review #1). A test that wrote the rejection first and the tombstone
+  // after, and expected the tombstone ignored, pinned the defect: a
+  // deletion made after a rejection was lost at the next open. These two
+  // pin the protocol instead, from both sides; the crash paths through the
+  // real writer are in `creator-setup.test.ts` ("the order of the draft's
+  // writes").
+  it("counts a tombstone written after the meta stopped rejecting its id", async () => {
     const store = memoryStore();
     await writeDraftMeta(store, { ...META, rejected: ["gone"] });
+    // The claim: the meta stops rejecting the id, then the deletion lands.
+    await writeDraftMeta(store, { ...META, rejected: [] });
     await writeDraftDeletion(store, "gone");
-    expect((await readDraft(store))?.draft.deleted).toEqual([]);
+    expect((await readDraft(store))?.draft.deleted).toEqual(["gone"]);
+  });
+
+  it("refuses a tombstone whose id a later meta write rejects", async () => {
+    // "Delete it" on a draft holding a deletion throws the deletion away.
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftDeletion(store, "gone");
+    await writeDraftMeta(store, { ...META, rejected: ["gone"] });
+    const read = await readDraft(store);
+    expect(read?.draft.deleted).toEqual([]);
+    expect(read?.rejectedIds, "and the next open sweeps it").toEqual(["gone"]);
   });
 
   it("reports a refused tombstone write, and then keeps the object's files", async () => {

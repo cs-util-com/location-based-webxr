@@ -40,6 +40,7 @@ import {
   readDraft,
 } from "./draft-persistence.js";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type { ObjectListHandlers } from "./object-list.js";
 
 /** One fake element: the properties this module writes, and a click it can
  *  be told to fire. Not a DOM stand-in - only what `creator-setup` uses. */
@@ -52,8 +53,11 @@ interface FakeEl {
   handlers: Map<string, () => void>;
   addEventListener: (type: string, handler: () => void) => void;
   click: () => void;
-  bind: () => void;
+  bind: (bound: ObjectListHandlers) => void;
   render: () => void;
+  /** What the setup bound to the object list (M4), so a test can drive an
+   *  edit or a delete the way the list's buttons do. */
+  listHandlers: ObjectListHandlers | null;
 }
 
 function el(): FakeEl {
@@ -69,7 +73,10 @@ function el(): FakeEl {
     click: () => handlers.get("click")?.(),
     // The object list's view (authoring plan M4): a stand-in - its model
     // is tested in object-list.test.ts, its DOM by the Playwright suite.
-    bind: () => undefined,
+    listHandlers: null,
+    bind(bound: ObjectListHandlers) {
+      this.listHandlers = bound;
+    },
     render: () => undefined,
   };
 }
@@ -126,6 +133,10 @@ function memoryStore(
     removeNeverSettles?: boolean;
     putFails?: boolean;
     holdFirstPut?: boolean;
+    /** Hold every put whose key this names, until `releaseHeldKeys`. */
+    holdKeys?: (key: string) => boolean;
+    /** Refuse this many removes (they leave the file), then work. */
+    refuseRemoves?: number;
   } = {},
 ): {
   store: DraftFileStore;
@@ -133,12 +144,15 @@ function memoryStore(
   putKeys: string[];
   metaPuts: string[];
   releaseHeldPut: () => void;
+  releaseHeldKeys: () => void;
 } {
   const files = new Map<string, unknown>(Object.entries(seed));
   const putKeys: string[] = [];
   const metaPuts: string[] = [];
   let held: (() => void) | null = null;
   let released = false;
+  const heldByKey: (() => void)[] = [];
+  let refusedRemoves = 0;
   const store: DraftFileStore = {
     put: (key: string, data: unknown) => {
       putKeys.push(key);
@@ -146,6 +160,14 @@ function memoryStore(
       // A store that REFUSES, as the real one does on a quota wall or a
       // revoked directory handle: `put` reports false rather than throwing.
       if (options.putFails === true) return Promise.resolve(false);
+      if (options.holdKeys?.(key) === true) {
+        return new Promise<boolean>((resolve) => {
+          heldByKey.push(() => {
+            files.set(key, data);
+            resolve(true);
+          });
+        });
+      }
       // A store that is SLOW on its first write, so a test can decide when
       // that write lands relative to later ones.
       if (options.holdFirstPut === true && held === null && !released) {
@@ -171,6 +193,10 @@ function memoryStore(
       // on disk, which is what the meta has to outrank.
       if (options.removeNeverSettles === true)
         return new Promise<void>(() => {});
+      if (refusedRemoves < (options.refuseRemoves ?? 0)) {
+        refusedRemoves += 1;
+        return Promise.resolve();
+      }
       files.delete(key);
       return Promise.resolve();
     },
@@ -190,6 +216,9 @@ function memoryStore(
       released = true;
       held?.();
       held = null;
+    },
+    releaseHeldKeys: () => {
+      for (const land of heldByKey.splice(0)) land();
     },
   };
 }
@@ -309,9 +338,16 @@ function wire(
   return { dom, ctx, setup, dispatched: arStore.dispatched ?? [] };
 }
 
-/** Let every already-resolved microtask in the chain run. */
+/**
+ * Let every already-resolved microtask in the chain run: a macrotask
+ * boundary drains the whole microtask queue, however deep the chain of
+ * awaits (the per-id write queue added several, M4 review #7). A held
+ * write stays held - only `releaseHeld*` lands it.
+ */
 async function settle(): Promise<void> {
-  for (let i = 0; i < 12; i += 1) await Promise.resolve();
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 const TOUR = "https://example.test/tour.zip";
@@ -1298,9 +1334,215 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     await settle();
 
     expect(files.has(objectKey("hosted"))).toBe(true);
+    // The live edit's content, not the spent draft's (M4 review #2).
+    expect(JSON.parse(String(files.get(objectKey("hosted"))))).toEqual(EDITED);
     const meta = JSON.parse(String(files.get(META_KEY))) as {
       rejected?: string[];
     };
     expect(meta.rejected ?? []).not.toContain("hosted");
+  });
+});
+
+describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
+  // Why these tests matter: each is a way the draft could hold something
+  // OLDER than what the creator last did, and a crash then brings the old
+  // state back with nothing on screen saying so - the failure the draft
+  // exists to prevent.
+  // - #1: the meta's rejected list outranks an object's file. An id the
+  //   meta rejects (a published tour reopened, its draft swept as spent; or
+  //   "Delete it") that the creator then edits or deletes kept its rejection,
+  //   so the next read hid the change and the next open swept it.
+  // - #2: work done while the draft was opening was written only when the
+  //   draft held NO file for its id, so an older edit on disk won.
+  // - #7: nothing ordered the writes to one id, so a placement's slow write
+  //   could land after a quick delete of it.
+  const HOSTED = pin("hosted");
+  const NEW_TEXT = "the new text";
+  const EDITED: TourObject = { ...HOSTED, label: NEW_TEXT };
+  const OLDER: TourObject = { ...HOSTED, label: "an older edit" };
+  const PUBLISHED = { version: 1, objects: [HOSTED] };
+
+  /** Open the tour on `store` in a fresh page (a reopen after the tab
+   *  died), with the hosted zip carrying `HOSTED`. */
+  async function reopen(store: DraftFileStore) {
+    const page = wire(store);
+    page.ctx.tourManifest = PUBLISHED as never;
+    page.dom.draftOffer.hidden = true;
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+    return page;
+  }
+
+  /** The text of the object file the draft holds for `id`. */
+  function onDisk(files: Map<string, unknown>, id: string): unknown {
+    const text = files.get(objectKey(id));
+    return typeof text === "string" ? JSON.parse(text) : undefined;
+  }
+
+  it("keeps an edit of an object a spent draft had rejected, across a crash", async () => {
+    // A published tour reopened: the draft equals the zip, so it is spent
+    // and its ids are rejected. Then the creator edits the hosted pin.
+    const { store } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(HOSTED),
+    });
+    const first = await reopen(store);
+    first.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
+    await settle();
+
+    const later = await reopen(store);
+    expect(later.dom.draftOffer.hidden, "the edit is offered").toBe(false);
+    later.dom.draftRestore.click();
+    expect(later.ctx.placedObjects.map((p) => p.object)).toEqual([EDITED]);
+  });
+
+  it("keeps a deletion of an object a spent draft had rejected, across a crash", async () => {
+    const { store } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(HOSTED),
+    });
+    const first = await reopen(store);
+    first.dom.objectList.listHandlers!.remove("hosted");
+    await settle();
+
+    const later = await reopen(store);
+    expect(later.dom.draftOfferText.textContent).toContain("1 deletion");
+    later.dom.draftRestore.click();
+    expect(later.ctx.deletedObjectIds).toEqual(["hosted"]);
+  });
+
+  it("keeps an edit made after 'Delete it' rejected the same object", async () => {
+    const { store } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(OLDER),
+    });
+    const first = await reopen(store);
+    expect(first.dom.draftOffer.hidden, "the older edit is offered").toBe(
+      false,
+    );
+    first.dom.draftDiscard.click();
+    await settle();
+    first.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
+    await settle();
+
+    const later = await reopen(store);
+    later.dom.draftRestore.click();
+    expect(later.ctx.placedObjects.map((p) => p.object)).toEqual([EDITED]);
+  });
+
+  it("keeps an edit made in the same moment as 'Delete it', before its sweep ran", async () => {
+    // The sweep is queued behind the meta write the discard commits, so an
+    // edit tapped right after it claims the id FIRST. The sweep must then
+    // see the id is no longer rejected, or it deletes the new edit.
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(OLDER),
+    });
+    const first = await reopen(store);
+    first.dom.draftDiscard.click();
+    first.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
+    await settle();
+
+    expect(onDisk(files, "hosted")).toEqual(EDITED);
+    expect(rejectedOf(String(files.get(META_KEY)))).not.toContain("hosted");
+  });
+
+  it("does not bring back a rejected file the sweep could not remove, when a crash follows the claim", async () => {
+    // The claim's FIRST step. "Delete it" rejected an older edit, and the
+    // sweep's removes were refused, so its file is still on disk. The
+    // creator edits the pin; the meta stops rejecting the id; the tab dies
+    // before the new record lands. Had the claim not removed the stale
+    // file first, the rejected older edit would be offered again.
+    const { store } = memoryStore(
+      {
+        [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+        [objectKey("hosted")]: JSON.stringify(OLDER),
+      },
+      {
+        // The sweep's three removes (record, bytes, tombstone).
+        refuseRemoves: 3,
+        holdKeys: (key) => key === objectKey("hosted"),
+      },
+    );
+    const first = await reopen(store);
+    first.dom.draftDiscard.click();
+    await settle();
+    first.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
+    await settle();
+
+    const later = await reopen(store);
+    expect(
+      later.dom.draftOffer.hidden,
+      "the rejected older edit must not be offered",
+    ).toBe(true);
+  });
+
+  it("still refuses an object rejected after it was written", async () => {
+    // The other direction of the same rule: the claim takes an id out of
+    // the rejected list only for a change made AFTER the rejection. "Delete
+    // it" on a draft holding an edit rejects that edit for good.
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(OLDER),
+    });
+    const first = await reopen(store);
+    first.dom.draftDiscard.click();
+    await settle();
+    expect(rejectedOf(String(files.get(META_KEY)))).toContain("hosted");
+    const later = await reopen(store);
+    expect(later.dom.draftOffer.hidden).toBe(true);
+  });
+
+  it("writes an edit made while the draft opened over the older edit the draft held", async () => {
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(OLDER),
+    });
+    const { ctx, setup } = wire(store);
+    ctx.tourManifest = PUBLISHED as never;
+    // Made before the draft namespace opened: nothing to write it to yet.
+    ctx.placedObjects = [{ object: EDITED }];
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(onDisk(files, "hosted")).toEqual(EDITED);
+  });
+
+  it("writes a deletion made while the draft opened over the older edit the draft held", async () => {
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: JSON.stringify(OLDER),
+    });
+    const { ctx, setup } = wire(store);
+    ctx.tourManifest = PUBLISHED as never;
+    ctx.deletedObjectIds = ["hosted"];
+    setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(files.has(deletedKey("hosted"))).toBe(true);
+    expect(files.has(objectKey("hosted"))).toBe(false);
+  });
+
+  it("lands a quick delete after the slow write of the placement it deletes", async () => {
+    const { store, files, releaseHeldKeys } = memoryStore(
+      {},
+      { holdKeys: (key) => key.startsWith("object:") },
+    );
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    const id = String(ctx.placedObjects[0]?.object.id);
+    // Deleted before its write has landed.
+    dom.objectList.listHandlers!.remove(id);
+    await settle();
+    releaseHeldKeys();
+    await settle();
+
+    expect(
+      files.has(objectKey(id)),
+      "the delete must land after the write it follows",
+    ).toBe(false);
   });
 });

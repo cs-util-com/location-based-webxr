@@ -152,8 +152,12 @@ still have files, and a missing or malformed `rejected` reads as no
 rejection. And the tombstones: a deletion hides the record and bytes
 though they were on disk, the tombstone is written before they are
 removed, a tombstone is a stored id and `removeDraftObject` takes it, a
-rejected tombstone is ignored, and a refused tombstone write keeps the
-record.
+refused tombstone write keeps the record, and the claim protocol from
+both sides: a tombstone written after the meta stopped rejecting its id
+counts, one whose id a LATER meta write rejects does not. Which of the
+two was written last is the writer's job (`creator-setup.ts`
+`writeForObject`, M4 review #1); a test that expected a tombstone written
+after a rejection to be ignored pinned the defect it caused.
 
 `removeDraftObject` and `storedIds` are exercised from
 `creator-setup.test.ts`, not from here - the contract they carry is

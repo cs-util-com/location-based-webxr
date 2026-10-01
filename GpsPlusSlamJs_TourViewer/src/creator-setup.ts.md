@@ -90,6 +90,26 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   structural: a tour
   whose write stalls blocks only itself, and the ordering survives any
   interleaving of opens.
+- **So are an object's writes, PER ID** (M4 review #7; the M2c review's
+  filed #7). A placement's write is unawaited, so a quick delete of it
+  could land first and the object come back on the next open. Every write
+  and removal for one id - record, bytes, tombstone, a sweep - runs in that
+  id's queue (`keyed-chain.ts`, keys per tour namespace and id), so they
+  land in call order.
+- **A change to an id the meta rejects CLAIMS the id first** (M4 review
+  #1, `writeForObject`). The meta's rejected list outranks an object's
+  files, so an edit or delete of an object a spent draft or "Delete it" had
+  rejected was hidden by the next read and swept by the next open - the
+  edit lost, or the deleted object back. In the id's queue, each step
+  awaited: remove the rejected files, rewrite the meta without the id,
+  then write the change. A crash between steps leaves the rejection or
+  nothing for the id, never the rejected version. A sweep (discard, spent,
+  an unfinished earlier sweep) removes an id's files only if it is STILL
+  rejected when its turn comes, so a claim made meanwhile survives it.
+- **Work done before the draft opened is written after the read, ALL of
+  it** (M4 review #2): an edit or a deletion keeps its id, so the draft
+  may hold an older change of the same id, and writing only ids the draft
+  lacked left that older change for a crash to bring back.
 - **A draft is deleted only on PROOF**: a re-opened tour whose `tour.json`
   already carries its ids. Not on the download tap - on Android that
   resolves true the moment a download starts, and the creator still has to
@@ -503,5 +523,12 @@ async states, tap-select, the overlay guard, the explicit replace),
 `creator-finish.test.ts` (an edit replaces in place; a deletion filters
 the object and takes a deleted photo's jpg out of the archive),
 `creator-setup.test.ts` (a draft's edit and deletion offered and
-restored, a spent deletion swept, a live edit's file not swept), and
+restored, a spent deletion swept, a live edit's file not swept; "the
+order of the draft's writes": an edit or deletion of a rejected id kept
+across a crash after a spent sweep and after "Delete it", one made in the
+same moment as "Delete it" surviving its sweep, a rejected file the sweep
+could not remove not coming back after a claim, a rejection after the
+change still holding, a change made while the draft opened written over
+an older one, and a quick delete landing after a slow placement write),
+`keyed-chain.test.ts`, and
 `playwright-tests/object-editing.spec.js`.
