@@ -55,6 +55,14 @@
 
 ### Fixed
 
+- **A recording's track and coverage count device fixes only.**
+  `loadGpsPathFromBlob` (the replay preview's track, the Recorder's legacy
+  coverage backfill) and `buildSessionMetadataRecord`'s `h3Cells` leave out
+  synthetic QR votes and readings with an unknown source stamp (the core's
+  `gpsPointSourceOf`). A scanned code's votes sit up to 30 m along its face,
+  where nobody walked, so they drew a walk that never happened and put the
+  tour on map cells it never touched. `actionCount` still counts every GPS
+  sample.
 - **`OcclusionMesh` keeps vertex normals on the shared geometry while a
   shadow receiver is attached, in every debug style.** A receiver compiled
   while normals were present drew no shadow after a remesh under the

@@ -51,7 +51,14 @@ injected instead of read from the Recorder's `utils/build-info`. Plan:
   is optional and may throw (the constants are stamped at deploy time and absent
   in a dev server); either way the record simply has no `build` field. The
   Recorder passes its `utils/build-info` reader; the Tour Viewer passes none.
-- **`actionCount` is the GPS sample count**, which is what it has always been.
+- **Coverage (`h3Cells`) counts device fixes only.** A sample stamped
+  `synthetic-qr` (a scanned code's vote, up to 30 m along the code's face,
+  where nobody walked) or with any stamp the core's `gpsPointSourceOf` does not
+  know is left out; no stamp means a device fix. Both apps store votes as GPS
+  samples (Tour Viewer authoring plan 2026-09-28-0953, M2e milestone review
+  #8), so without this a tour landed on map cells it never touched.
+- **`actionCount` is the GPS sample count**, which is what it has always been
+  (votes included).
   The name suggests the action log; it does not mean that, and a test pins it so
   nobody "corrects" it. The Tour Viewer counts the GPS actions its recording
   wrote, because its store's GPS data is wiped at every AR exit.
@@ -85,7 +92,8 @@ await writeSessionMetadata((record) => store.writeSessionMetadata(record), {
 
 `session-metadata-record.test.ts` - what the record SAYS: the times and counts
 it reports, the era, a de-duplicated coverage index, an empty index for a walk
-with no fixes, the known-lie fallback, the injected build info and its
+with no fixes, coverage from device fixes only while `actionCount` counts
+every sample, the known-lie fallback, the injected build info and its
 omission (absent or throwing), a missing page url left out of the record, the page url's query and hash stripped
 (including an opaque-origin url and an unparseable string), and a write
 failure that does not propagate. The Recorder's stop-flow tests

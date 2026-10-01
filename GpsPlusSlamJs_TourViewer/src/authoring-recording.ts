@@ -194,7 +194,7 @@ export function createAuthoringRecording(deps: {
   let failedWrites = 0;
   /** The fixes this recording wrote: `session.json`'s coverage comes from
    *  here, because the store's GPS data is wiped at every AR exit. */
-  const fixes: { latitude: number; longitude: number }[] = [];
+  const fixes: ReturnType<typeof recordedFixes> = [];
 
   async function makeFolder(at: Date): Promise<FileSystemDirectoryHandle> {
     const parent = await openRecordingsDir(await deps.openRoot(), true);

@@ -23,6 +23,7 @@ import {
   installOPFSMocks,
   type MockOPFSDirectoryHandle,
 } from "gps-plus-slam-app-framework/test-utils/browser-mocks";
+import { gpsPathToCoverageCells } from "gps-plus-slam-app-framework/geo";
 import { BlobReader, ZipReader } from "@zip.js/zip.js";
 
 import {
@@ -688,6 +689,48 @@ describe("saving an orphan - a folder whose page was killed", () => {
       new Uint8Array(await packed.blob.arrayBuffer()),
     );
     expect(meta).toMatchObject({ actionCount: 3 });
+  });
+
+  it("leaves a code's synthetic votes out of a killed page's coverage, while actionCount still counts them", async () => {
+    // Why (authoring plan 2026-09-28-0953, M2e milestone review #8): a
+    // viewer recording stores each lock's ring and every keep-alive ring as
+    // GPS events at points up to 30 m along the code's face, where nobody
+    // walked. Counted as coverage they put the tour on map cells it never
+    // touched; the shared record counts device fixes only, so the rebuilt
+    // session.json has to hand it each fix's source stamp.
+    const dir = await recordingsDir();
+    const vote = (i: number) => {
+      const fix = gpsAction(i, 47.51, 8.7).payload;
+      return {
+        ...fix,
+        rawGpsPoint: { ...fix.rawGpsPoint, source: "synthetic-qr" },
+      };
+    };
+    await makeFolder("recording-2026-09-28_10-00-00utc", [
+      gpsAction(0, 47.5, 8.7),
+      {
+        type: "gpsData/recordGpsEventBatch",
+        payload: {
+          events: [gpsAction(1, 47.5001, 8.7).payload, vote(2), vote(3)],
+        },
+      },
+    ]);
+    const packed = await packOrphanRecording(
+      dir,
+      "recording-2026-09-28_10-00-00utc",
+      ENV,
+      AUTHORING_CONTEXT_TAG,
+    );
+    const meta = await loadSessionMetadataFromZip(
+      new Uint8Array(await packed.blob.arrayBuffer()),
+    );
+    expect(meta).toMatchObject({
+      actionCount: 4,
+      h3Cells: gpsPathToCoverageCells([
+        { lat: 47.5, lng: 8.7 },
+        { lat: 47.5001, lng: 8.7 },
+      ]),
+    });
   });
 
   it("keeps the tag an earlier save wrote, and falls back to the saving page's own when nothing says", async () => {

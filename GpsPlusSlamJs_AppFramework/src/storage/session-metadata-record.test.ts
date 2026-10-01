@@ -89,6 +89,34 @@ describe('buildSessionMetadataRecord', () => {
     expect(record.actionCount).toBe(0);
   });
 
+  it('counts only device fixes as coverage, while actionCount still counts every GPS sample', () => {
+    // Why (Tour Viewer authoring plan 2026-09-28-0953, M2e milestone review
+    // #8): a scanned code's synthetic votes sit up to 30 m along the code's
+    // face, where nobody walked, and both apps store them as GPS samples. As
+    // coverage they put the tour on map tiles it never touched. A reading
+    // with an unknown source stamp is not counted as a device fix either
+    // (the core's `gpsPointSourceOf` contract); no stamp means device.
+    const far = { latitude: 50.9281, longitude: 6.9445 }; // ~550 m north
+    const deviceOnly = buildSessionMetadataRecord(BASE);
+    const record = buildSessionMetadataRecord({
+      ...BASE,
+      gpsPositions: [
+        ...BASE.gpsPositions,
+        { ...far, source: 'synthetic-qr' },
+        { ...far, longitude: 6.95, source: 'future-beacon' },
+        { ...far, longitude: 6.96, source: 'device' },
+      ],
+    });
+
+    const withDeviceFar = buildSessionMetadataRecord({
+      ...BASE,
+      gpsPositions: [...BASE.gpsPositions, { ...far, longitude: 6.96 }],
+    });
+    expect(record.h3Cells).toEqual(withDeviceFar.h3Cells);
+    expect(record.h3Cells.length).toBe(deviceOnly.h3Cells.length + 1);
+    expect(record.actionCount).toBe(5);
+  });
+
   it('falls back to the end time when the start was never recorded, which is a KNOWN lie', () => {
     // Not a sensible default: it reports a duration of about zero. It is the
     // lesser of two evils - refusing to write would lose the recording's only

@@ -23,6 +23,7 @@
  * @see session-metadata-record.ts.md
  */
 
+import { GPS_POINT_SOURCE_DEVICE, gpsPointSourceOf } from 'gps-plus-slam-js';
 import { gpsPathToCoverageCells, H3_RESOLUTION } from '../geo/h3-proximity';
 import { createLogger } from '../utils/logger';
 import type { SessionMetadata } from './opfs-storage';
@@ -42,6 +43,9 @@ type SessionBuildInfo = NonNullable<SessionMetadata['build']>;
 interface MetadataGpsPoint {
   readonly latitude: number;
   readonly longitude: number;
+  /** The reading's provenance stamp (core `RawGpsPoint.source`); absent
+   *  means a device fix. Only device fixes count as coverage. */
+  readonly source?: string;
 }
 
 export interface SessionMetadataInput {
@@ -118,9 +122,13 @@ export function buildSessionMetadataRecord(
 
   // Per-tour H3 coverage index (Step 2 / D1): deduped res-11 cells the GPS path
   // crossed, so the map-centric browser can place this tour without unzipping
-  // its GPS data.
+  // its GPS data. Device fixes only: a scanned code's synthetic votes sit up to
+  // 30 m along its face, where nobody walked (and an unknown stamp is never
+  // rounded to device). `actionCount` below still counts every sample.
   const h3Cells = gpsPathToCoverageCells(
-    input.gpsPositions.map((p) => ({ lat: p.latitude, lng: p.longitude }))
+    input.gpsPositions
+      .filter((p) => gpsPointSourceOf(p) === GPS_POINT_SOURCE_DEVICE)
+      .map((p) => ({ lat: p.latitude, lng: p.longitude }))
   );
 
   return {

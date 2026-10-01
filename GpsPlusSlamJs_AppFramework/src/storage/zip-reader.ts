@@ -23,6 +23,7 @@ import {
   type FileEntry,
   type Reader,
 } from '@zip.js/zip.js';
+import { GPS_POINT_SOURCE_DEVICE, gpsPointSourceOf } from 'gps-plus-slam-js';
 import { recordedGpsEventPayloads } from '../utils/gps-event-actions';
 import { createLogger } from '../utils/logger';
 
@@ -300,25 +301,40 @@ export interface GpsPathCoord {
   readonly accuracy?: number;
 }
 
+type RecordedPoint = {
+  latitude?: unknown;
+  longitude?: unknown;
+  latLongAccuracy?: unknown;
+  source?: unknown;
+};
+
+function isDeviceFixWithCoords(
+  gps: RecordedPoint | null | undefined
+): gps is RecordedPoint & { latitude: number; longitude: number } {
+  return (
+    !!gps &&
+    typeof gps.latitude === 'number' &&
+    typeof gps.longitude === 'number' &&
+    // Any value is safe here: a stamp that is not a known source reads as
+    // 'unknown' at runtime, whatever its type.
+    gpsPointSourceOf(gps as { source?: string }) === GPS_POINT_SOURCE_DEVICE
+  );
+}
+
 /** One recorded GPS event payload's track point, or null when it has no
- *  numeric coordinates. Reads both the old (`gpsPoint`) and the new
- *  (`rawGpsPoint`) payload format. */
+ *  numeric coordinates or is not a device fix. Reads both the old
+ *  (`gpsPoint`) and the new (`rawGpsPoint`) payload format. A synthetic QR
+ *  vote sits up to 30 m along its code's face, where nobody walked, so it is
+ *  no track point (and no coverage); neither is a reading whose source stamp
+ *  is unknown - the core's `gpsPointSourceOf` never rounds that to device. */
 function gpsPathCoordOf(event: unknown): GpsPathCoord | null {
   if (typeof event !== 'object' || event === null) return null;
-  type Point = {
-    latitude?: unknown;
-    longitude?: unknown;
-    latLongAccuracy?: unknown;
+  const payload = event as {
+    rawGpsPoint?: RecordedPoint;
+    gpsPoint?: RecordedPoint;
   };
-  const payload = event as { rawGpsPoint?: Point; gpsPoint?: Point };
   const gps = payload.rawGpsPoint ?? payload.gpsPoint;
-  if (
-    !gps ||
-    typeof gps.latitude !== 'number' ||
-    typeof gps.longitude !== 'number'
-  ) {
-    return null;
-  }
+  if (!isDeviceFixWithCoords(gps)) return null;
   const accuracy =
     typeof gps.latLongAccuracy === 'number' && gps.latLongAccuracy > 0
       ? gps.latLongAccuracy

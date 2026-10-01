@@ -545,22 +545,38 @@ function finiteOrNull(value: unknown): number | null {
 /** A recorded GPS action's fixes, in order: one for a `recordGpsEvent`,
  *  every event of a `recordGpsEventBatch` (core 1.26; the viewer's device
  *  fix with its keep-alive ring), none for anything else. A fix without
- *  finite coordinates is skipped alone. */
+ *  finite coordinates is skipped alone. Each keeps its source stamp, so the
+ *  session record counts every sample (`actionCount`) but only device fixes
+ *  as coverage - a code's votes sit where nobody walked. */
 export function recordedFixes(
   action: unknown,
-): { latitude: number; longitude: number }[] {
-  const fixes: { latitude: number; longitude: number }[] = [];
+): { latitude: number; longitude: number; source?: string }[] {
+  const fixes: { latitude: number; longitude: number; source?: string }[] = [];
   for (const event of recordedGpsEventPayloads(action)) {
     const point = (
       event as {
-        rawGpsPoint?: { latitude?: unknown; longitude?: unknown };
+        rawGpsPoint?: {
+          latitude?: unknown;
+          longitude?: unknown;
+          source?: unknown;
+        };
       } | null
     )?.rawGpsPoint;
     const latitude = finiteOrNull(point?.latitude);
     const longitude = finiteOrNull(point?.longitude);
-    if (latitude !== null && longitude !== null) {
-      fixes.push({ latitude, longitude });
-    }
+    if (latitude === null || longitude === null) continue;
+    const source = point?.source;
+    // A stamp that is not a string cannot be a known source: it becomes
+    // 'unknown' (as the core reads it), never dropped - absent reads device.
+    fixes.push(
+      source === undefined
+        ? { latitude, longitude }
+        : {
+            latitude,
+            longitude,
+            source: typeof source === "string" ? source : "unknown",
+          },
+    );
   }
   return fixes;
 }
