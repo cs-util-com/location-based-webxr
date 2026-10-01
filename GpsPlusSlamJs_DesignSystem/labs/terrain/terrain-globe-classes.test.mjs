@@ -102,6 +102,20 @@ describe("C2: the affinities follow the relief", () => {
     assert.ok(high > 0.9 && low < 0.1, `${high} ${low}`);
   });
 
+  // Grass gives way to snow: above the snow line, on ground flat enough
+  // for snow to stick and no rock slope, the grass affinity is the floor.
+  // Without the (1 - snow) term grass would stay full there and share
+  // every snowfield with the snow.
+  it("drop grass to the floor above the snow line", () => {
+    for (const above of [400, 600, 1000]) {
+      const a = classAffinities(flat(SNOW + above)).land;
+      close(a[1], GLOBE_CLASSES.floor, 1e-12, `grass ${above} m above`);
+      assert.ok(a[3] > 0.99, `snow ${above} m above: ${a[3]}`);
+    }
+    // Below the snow line grass is welcome again.
+    assert.ok(classAffinities(flat(SNOW - 600)).land[1] > 0.9);
+  });
+
   it("put rock on steep ground and keep forest and grass off it", () => {
     const s = classAffinities(steep(1000)).land;
     const f = classAffinities(flat(1000)).land;
