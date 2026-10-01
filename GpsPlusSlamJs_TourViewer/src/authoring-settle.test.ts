@@ -47,7 +47,17 @@ import {
   endQrPipeline,
 } from "./tour-viewer-session.js";
 import { mintPin, objectPoseNue } from "./content-placement.js";
-import { deletedKey, META_KEY, objectKey } from "./draft-persistence.js";
+import {
+  deletedKey,
+  META_KEY,
+  objectKey,
+  readDraft,
+  visitKey,
+} from "./draft-persistence.js";
+import type { SummaryModel } from "./summary-model.js";
+import type { SummaryPanel } from "./summary-panel.js";
+import { parseVisitLogEntry } from "./visit-log.js";
+import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 import { OUTCOME_HOLD_MS } from "./object-editing.js";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 import {
@@ -299,7 +309,12 @@ function slowDraftStore() {
   };
 }
 
-function authoring(options: { store?: DraftFileStore } = {}) {
+function authoring(
+  options: {
+    store?: DraftFileStore;
+    summary?: Pick<SummaryPanel, "show" | "hide">;
+  } = {},
+) {
   /** Whether the AR session is up, as the controller reports it. */
   const device = { live: true };
   /** Photo encodes held until the test lets them land (`hold`). */
@@ -318,7 +333,9 @@ function authoring(options: { store?: DraftFileStore } = {}) {
   const gps: {
     alignment: number[];
     zero: { lat: number; lon: number } | null;
-  } = { alignment: yawAlignment(0, [0, 400, 0]), zero: ZERO };
+    /** The visit's device fixes and odometry, when a test walks. */
+    walk: { fixes: unknown[]; odometry: number[][] } | null;
+  } = { alignment: yawAlignment(0, [0, 400, 0]), zero: ZERO, walk: null };
   const dispatched: { type: string; payload?: unknown }[] = [];
   const arStore = {
     ...real,
@@ -329,10 +346,13 @@ function authoring(options: { store?: DraftFileStore } = {}) {
           zero: gps.zero,
           gpsEvents: {
             alignmentMatrix: gps.alignment,
-            gpsPositions: Array.from({ length: MIN_ALIGNMENT_SAMPLES }, () => ({
-              lat: ZERO.lat,
-              lon: ZERO.lon,
-            })),
+            gpsPositions:
+              gps.walk?.fixes ??
+              Array.from({ length: MIN_ALIGNMENT_SAMPLES }, () => ({
+                lat: ZERO.lat,
+                lon: ZERO.lon,
+              })),
+            odometryPositions: gps.walk?.odometry ?? [],
           },
         },
       }) as never,
@@ -430,6 +450,7 @@ function authoring(options: { store?: DraftFileStore } = {}) {
     } as never,
     dom: dom as unknown as CreatorSetupDom,
     openDraftStore: () => Promise.resolve(options.store),
+    ...(options.summary === undefined ? {} : { summary: options.summary }),
   });
   expect(setup.startAuthorPipeline()).toBe(true);
 
@@ -549,6 +570,11 @@ function authoring(options: { store?: DraftFileStore } = {}) {
     /** Put the reticle at `local` (odometry-NUE). */
     setReticle: (local: [number, number, number]): void => {
       reticleLocal.set(...local);
+    },
+    /** The visit's device fixes and their odometry, as the store holds
+     *  them (cleared by the next `setWalk(null)`). */
+    setWalk: (walk: { fixes: unknown[]; odometry: number[][] } | null) => {
+      gps.walk = walk;
     },
   };
 }
@@ -818,7 +844,6 @@ describe(
       await a.placePin("Later", [...spot2]);
       a.endVisit();
 
-      expect(a.settledLogs().at(-1)?.payload.basis).toBe("code-corrected");
       const later = a.ctx.placedObjects[1]!.object;
       const offset = worldOf(later.geo).sub(
         codeWorldOf(a.ctx.mintedLevel!.json),
@@ -1913,6 +1938,177 @@ describe(
       await a.mint();
       a.setup.renderAuthorReadout();
       expect(a.dom.replaceCodeButton.hidden).toBe(true);
+    });
+  },
+);
+
+describe(
+  "the summary after Finish: every visit kept page-side and in the draft (authoring plan 2026-09-28-0953 M3b)",
+  { timeout: SLOW_MS },
+  () => {
+    // Why these tests matter: the store wipes a visit's walk and alignment
+    // at its end, so unless the settle copies them out the summary after
+    // Finish has nothing to judge - and the owner's question ("should I go
+    // back and scan more?") is answered from ONE visit at best. The code
+    // must reach the log through each visit's OWN alignment: the settle's
+    // code-corrected one would just repeat the stored pose and fake an
+    // agreement between visits.
+    const TOUR = "https://example.test/tour.zip";
+
+    /** A walk 30 m North and back, one device fix per metre, 3-7 m GPS. */
+    function walk(): { fixes: unknown[]; odometry: number[][] } {
+      const fixes: unknown[] = [];
+      const odometry: number[][] = [];
+      for (let i = 0; i <= 60; i += 1) {
+        const n = i <= 30 ? i : 60 - i;
+        fixes.push({
+          latitude: ZERO.lat + (n / 6_371_000) * (180 / Math.PI),
+          longitude: ZERO.lon,
+          latLongAccuracy: 3 + (i % 5),
+        });
+        odometry.push([n, 0, 0]);
+      }
+      return { fixes, odometry };
+    }
+
+    function summaryFake() {
+      const shown: SummaryModel[] = [];
+      let hidden = 0;
+      return {
+        shown,
+        hidden: () => hidden,
+        show: (model: SummaryModel) => {
+          shown.push(model);
+        },
+        hide: () => {
+          hidden += 1;
+        },
+      };
+    }
+
+    /** The code's geo through `alignment`, as a visit's log must hold it. */
+    function codeThrough(alignment: number[], origin?: Matrix4) {
+      const world = throughAlignment(
+        odomNueFromWebXr(inOrigin(TRUE_CODE, origin)),
+        alignment,
+      )!;
+      return mintQrGeoPose({
+        worldNuePosition: {
+          x: world.position[0],
+          y: world.position[1],
+          z: world.position[2],
+        },
+        worldNueRotation: [...world.rotation],
+        zero: ZERO,
+      });
+    }
+
+    it("logs each visit at its settle, through its own alignment, into the draft, and the Finish summarises both", async () => {
+      const { store, files } = memoryDraftStore();
+      const summary = summaryFake();
+      const a = authoring({ store, summary });
+      await openFinishableTour(a);
+      a.setup.presentDraftForTour(TOUR);
+      await flush();
+      a.setWalk(walk());
+
+      // Visit 1 measures the code and places a pin.
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      const first = a.ctx.mintedLevel;
+      a.endVisit();
+      await flush();
+
+      // Visit 2: its own odometry origin and another GPS alignment; it
+      // only SEES the code, so its settle is code-corrected - but its log
+      // must hold the code through its PLAIN alignment.
+      const origin = new Matrix4().makeRotationY(0.4).setPosition(5, 0, 2);
+      const second = yawAlignment(12, [6, 400, -3]);
+      a.setAlignment(second);
+      a.beginVisit();
+      expect(summary.hidden()).toBeGreaterThan(0);
+      for (let i = 0; i < 8; i += 1) {
+        captured.configs.at(-1)?.onDetection?.(detection(i, origin));
+      }
+      await flush();
+      a.endVisit();
+      await flush();
+
+      const keys = [...files.keys()].filter((k) => k.startsWith(visitKey("")));
+      expect(keys).toHaveLength(2);
+      const entries = keys
+        .map((k) => parseVisitLogEntry(files.get(k) as string)!)
+        .sort((x, y) => x.atMs - y.atMs || x.visitId.localeCompare(y.visitId));
+      expect(entries.map((e) => e.codes[0]?.levelId)).toEqual([
+        first?.id,
+        first?.id,
+      ]);
+      expect(entries[0]?.gpsAccuracyM).toBe(5);
+      expect(entries[0]?.baselineM).toBeGreaterThan(27);
+      const expected = codeThrough(second, origin);
+      expect(entries[1]?.codes[0]?.geo.lat).toBeCloseTo(expected.lat, 7);
+      expect(entries[1]?.codes[0]?.geo.lon).toBeCloseTo(expected.lon, 7);
+
+      // A reload: a new read of the same files brings both back.
+      expect((await readDraft(store))?.visits).toHaveLength(2);
+
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).toBeNull();
+      const model = summary.shown.at(-1);
+      expect(model?.tracks).toHaveLength(2);
+      expect(model?.codes).toHaveLength(1);
+      expect(model?.codes[0]?.levelId).toBe(first?.id);
+      expect(model?.codes[0]?.verdict.numbers?.visitCount).toBe(2);
+      expect(model?.objects.map((o) => o.label)).toEqual(["Gate"]);
+    });
+
+    it("brings a restored draft's visits back into the summary after a reload", async () => {
+      const { store } = memoryDraftStore();
+      const a = authoring({ store });
+      await openFinishableTour(a);
+      a.setup.presentDraftForTour(TOUR);
+      await flush();
+      a.setWalk(walk());
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      a.endVisit();
+      await flush();
+
+      // The page reloads: a new setup over the same draft files.
+      const summary = summaryFake();
+      const b = authoring({ store, summary });
+      await openFinishableTour(b);
+      b.setup.presentDraftForTour(TOUR);
+      await vi.waitFor(() => {
+        // The fake elements start visible: wait for the offer's words.
+        expect(b.dom.draftOfferText.textContent).not.toBe("");
+      });
+      b.dom.draftRestore.click();
+      b.device.live = false;
+      b.dom.finishButton.click();
+      await finished(b.ctx);
+      expect(b.ctx.finishError).toBeNull();
+      expect(summary.shown.at(-1)?.tracks).toHaveLength(1);
+      expect(summary.shown.at(-1)?.codes[0]?.verdict.numbers?.visitCount).toBe(
+        1,
+      );
+    });
+
+    it("drops the summary and the visits when the tour closes", async () => {
+      const summary = summaryFake();
+      const a = authoring({ summary });
+      a.setWalk(walk());
+      await a.mint();
+      a.endVisit();
+      a.setup.resetFinishStep();
+      expect(summary.hidden()).toBeGreaterThan(0);
+      await openFinishableTour(a);
+      a.ctx.mintedLevel = { id: "lvl", json: "{}" };
+      a.device.live = false;
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(summary.shown.at(-1)?.tracks).toEqual([]);
     });
   },
 );

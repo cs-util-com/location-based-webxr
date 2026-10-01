@@ -121,7 +121,7 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
 
 ## Public API
 
-- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom, openDraftStore? }): CreatorSetup`
+- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom, openDraftStore?, codeTour?, summary? }): CreatorSetup`
   - `openDraftStore(key)` resolves this tour's draft namespace, or
     `undefined` where there is no persistence. Injected so the unit tests
     and the e2e can supply one without OPFS.
@@ -166,6 +166,35 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   offered while a session runs also puts a note inside the overlay, where
   the offer itself cannot be seen. Without it, a no-op that
   is always quiet.
+
+- `deps.summary` (optional; `summary-panel.ts`'s `show`/`hide`, authoring
+  plan 2026-09-28-0953 §3.3, M3b) - the summary after Finish. Each
+  successful Finish shows `buildSummaryModel` over the page-side visit log,
+  the codes' stored poses (the level in hand, then the tour's other levels)
+  and the objects the written manifest carries; a model that cannot be built
+  hides the summary rather than failing the Finish. A new AR visit hides it
+  (it is stale), and a closed tour hides it and empties the log.
+
+## The page-side visit log (authoring plan 2026-09-28-0953 §3.3 and §7 #4, M3b)
+
+- The store's walk and alignment are wiped at every AR exit, so the settle
+  (`settleVisit`, which already runs while the store holds the visit) also
+  copies the visit into `visit-log.ts`'s log: the device fixes and the
+  odometry, the fused path through the alignment the visit's objects
+  settled through, and each code the visit saw (its measurement in this
+  visit, else its latest sighting) through the visit's OWN plain alignment,
+  never the code-corrected one (that would repeat the stored pose and fake
+  agreement between visits). A visit with no fix and no code is not logged.
+- The id is `newVisitId(pageId, arSessionGeneration)` with a random page
+  id, so it stays unique across reloads; a visit settled again (a failed
+  Finish) replaces its entry.
+- Each entry is written to the draft as its own file (`writeDraftVisit`,
+  in the id's queue like a placement, fire-and-forget, `noteNoPersistence`
+  on a refusal); entries made before the draft opened are written when it
+  opens. A restored draft brings its visits back into the log; a dismissed
+  one does not. A visit's id is a stored id, so a discard or a spent draft
+  sweeps it with the objects; this page's own visit ids are never swept
+  (`notLive`).
 
 ## Invariants & assumptions
 
@@ -509,6 +538,15 @@ hooks.startAuthorPipeline = setup.startAuthorPipeline;
   sideways step (the mint is not held).
 
 ## Tests
+
+The summary after Finish (M3b): `authoring-settle.test.ts` ("the summary
+after Finish") walks two visits through the composed setup - each settle
+writes its own visit file, the second visit's code through its PLAIN
+alignment although its settle was code-corrected, both survive a new read,
+and the Finish hands the summary both visits, the code and the pin; a
+restored draft brings its visit back after a reload; a closed tour drops
+the summary and the visits. `playwright-tests/summary.spec.js` drives the
+real page.
 
 `playwright-tests/ar-mode.spec.js` - "the creator measures the code,
 finishes, and downloads a rebuilt zip that carries the level and

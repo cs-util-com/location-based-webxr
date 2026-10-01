@@ -48,6 +48,7 @@ import {
 } from "./recording-folders.js";
 import { wireRecordingHousekeeping as wireHousekeeping } from "./recording-housekeeping.js";
 import { createSaveGuard, wireRecordingPanel } from "./recording-panel.js";
+import { createSummaryPanel } from "./summary-panel.js";
 import { getSeams } from "./seams.js";
 import {
   createTourViewerSession,
@@ -250,6 +251,24 @@ const visitor = wireVisitorScreen({
 // Step 4's scan-to-open lives in archive-open, which is wired below the
 // setup panel that feeds it; bound once both exist.
 let scanOpen: ScanOpen | null = null;
+// The summary after Finish (authoring plan 2026-09-28-0953 M3b). Its map is
+// a DYNAMIC import - the only way the page reaches Leaflet - so a visitor's
+// page never downloads it (summary-map-lazy.test.ts). Its way back into AR
+// is the page's own Start AR setup, tapped for the creator.
+const summary = createSummaryPanel({
+  dom: {
+    root: element("summary"),
+    codes: element("summary-codes"),
+    map: element("summary-map"),
+    mapStatus: element("summary-map-status"),
+    startAr: element("summary-start-ar"),
+  },
+  doc: document,
+  loadMap: () => import("./summary-map-view.js"),
+  startAr: () => {
+    element("enter-ar").click();
+  },
+});
 const setup = wireCreatorSetup({
   ctx,
   mode,
@@ -264,6 +283,7 @@ const setup = wireCreatorSetup({
   arController,
   seams,
   wizard,
+  summary,
   dom: {
     panel: element("setup-panel"),
     controls: element("setup-controls"),

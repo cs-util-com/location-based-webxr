@@ -250,6 +250,65 @@
       #replace-help-drive {
         white-space: pre-line;
       }
+      /* The summary after Finish (authoring plan 2026-09-28-0953 M3b):
+         one row per code, its verdict, the numbers folded away, then the
+         map. Written by summary-panel.ts; the map's layers are Leaflet's
+         (loaded only here, on demand). */
+      #summary {
+        display: grid;
+        gap: var(--space-2);
+      }
+      .summary-codes {
+        display: grid;
+        gap: var(--space-2);
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .summary-code {
+        display: grid;
+        gap: var(--space-1);
+      }
+      .summary-code-title {
+        font-weight: 600;
+      }
+      .summary-code[data-verdict="good"] .summary-verdict {
+        color: var(--accent-ink);
+        font-weight: 600;
+      }
+      .summary-numbers {
+        font-size: var(--size-hint);
+      }
+      .summary-line {
+        margin: var(--space-1) 0 0;
+      }
+      #summary-map {
+        block-size: 18rem;
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      /* Fullscreen: the shell swaps this class in (summary-map-view.ts). */
+      #summary-map.summary-map-expanded {
+        border-radius: 0;
+        block-size: auto;
+        inset: 0;
+        position: fixed;
+        z-index: 60;
+      }
+      /* Above Leaflet's panes and controls. */
+      .summary-map-toggle {
+        position: absolute;
+        right: var(--space-2);
+        top: var(--space-2);
+        z-index: 1000;
+      }
+      .summary-map-toggle-hidden {
+        display: none;
+      }
+      #summary-map-status {
+        font-size: var(--size-hint);
+        margin: 0;
+      }
       #ar-root {
         margin: var(--space-4) 0;
         position: relative;
@@ -1101,6 +1160,39 @@
           >
             Download the rebuilt zip
           </button>
+          <!-- The summary after Finish (authoring plan 2026-09-28-0953 §3.3,
+               M3b): each code's verdict, then a map of the visits, the
+               codes with their facing lines, and the pins and photos -
+               so the creator can judge whether to scan more before
+               uploading. Written by summary-panel.ts. -->
+          <section id="summary" data-testid="summary" hidden>
+            <p class="step-copy">
+              Where your codes are, and whether to scan more before you upload:
+            </p>
+            <ul
+              id="summary-codes"
+              class="summary-codes"
+              data-testid="summary-codes"
+            ></ul>
+            <div id="summary-map" data-testid="summary-map"></div>
+            <p
+              id="summary-map-status"
+              class="hint--dim"
+              data-testid="summary-map-status"
+              aria-live="polite"
+            ></p>
+            <p class="step-copy hint--dim">
+              To scan more, go back into AR, then Finish again.
+            </p>
+            <button
+              type="button"
+              id="summary-start-ar"
+              class="btn btn--prose"
+              data-testid="summary-start-ar"
+            >
+              Start AR setup
+            </button>
+          </section>
           <div id="replace-help" data-testid="replace-help" hidden>
             <p
               id="replace-help-generic"

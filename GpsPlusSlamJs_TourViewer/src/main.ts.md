@@ -65,6 +65,13 @@ listed in `index.html.md`. The concerns and their modules:
   review #7); its hand-off goes through `seams.shareOrDownloadZip`, and one
   `createSaveGuard()` is shared by "Save the recording" and the offer.
 
+- `summary-panel.ts` (authoring plan 2026-09-28-0953 M3b) - the summary
+  after Finish over `#summary`, handed to the creator setup as `summary`.
+  Its map is `() => import("./summary-map-view.js")`: the ONLY way the
+  page reaches Leaflet, so a visitor never downloads it
+  (`summary-map-lazy.test.ts`). Its "Start AR setup" clicks `#enter-ar`,
+  inside the creator's own tap.
+
 ## Invariants & assumptions
 
 - **The page must boot without `localStorage`.** The wizard's step store is

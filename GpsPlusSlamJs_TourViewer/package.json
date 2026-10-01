@@ -33,6 +33,7 @@
   "dependencies": {
     "@zip.js/zip.js": "^2.11.2",
     "gps-plus-slam-app-framework": "workspace:*",
+    "leaflet": "^1.9.4",
     "qrcode": "^1.5.4",
     "three": "^0.185.1"
   },
@@ -40,6 +41,7 @@
     "@carlosjeurissen/stylelint-csstree-validator": "^3.3.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
+    "@types/leaflet": "^1.9.22",
     "@types/node": "^25.9.5",
     "@types/qrcode": "^1.5.6",
     "@types/three": "^0.185.4",

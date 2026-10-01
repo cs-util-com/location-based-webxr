@@ -58,6 +58,7 @@ import {
   recordQrDetection,
   selectAlignmentMatrix,
   selectGpsPositions,
+  selectOdometryPositions,
   selectQrFusedEntries,
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
@@ -101,7 +102,16 @@ import {
   writeDraftDeletion,
   writeDraftMeta,
   writeDraftObject,
+  writeDraftVisit,
 } from "./draft-persistence.js";
+import { buildSummaryModel } from "./summary-model.js";
+import type { SummaryPanel } from "./summary-panel.js";
+import {
+  buildVisitLogEntry,
+  createVisitLog,
+  newVisitId,
+  type VisitLogEntry,
+} from "./visit-log.js";
 import {
   upsertPlaced,
   wireObjectEditing,
@@ -283,6 +293,9 @@ export function wireCreatorSetup(deps: {
   /** Step 4's scan-to-open (`scan-open.ts`, owned by `archive-open`):
    *  fed every detection, asked what to say about the code in view. */
   codeTour?: Pick<ScanOpen, "onDetection" | "status" | "tourOf">;
+  /** The summary after Finish (authoring plan 2026-09-28-0953 M3b,
+   *  `summary-panel.ts`); none in the node tests that do not need it. */
+  summary?: Pick<SummaryPanel, "show" | "hide">;
 }): CreatorSetup {
   const { ctx, mode, arStore, arController, seams, wizard, dom } = deps;
   const codeTour: Pick<ScanOpen, "onDetection" | "status" | "tourOf"> =
@@ -343,6 +356,17 @@ export function wireCreatorSetup(deps: {
    * flight.
    */
   const draftWrites = createKeyedChain();
+  /**
+   * The creator's AR visits, page-side (authoring plan 2026-09-28-0953 §3.3
+   * and §7 #4, M3b): the store forgets a visit's walk and alignment at its
+   * end, and the summary after Finish needs every visit. Filled at each
+   * settle, written to the draft one file per visit, restored with a
+   * restored draft, emptied when the tour closes.
+   */
+  const visitLog = createVisitLog();
+  /** This page load's id: a visit id is this plus the visit's generation,
+   *  which restarts at 0 on every load (`newVisitId`). */
+  const pageId = newObjectId();
   function metaChainKey(tourUrl: string): string {
     return JSON.stringify(["meta", draftKeyForTour(tourUrl)]);
   }
@@ -375,6 +399,8 @@ export function wireCreatorSetup(deps: {
     /** How `objects` splits into new placements and changes of objects
      *  the hosted zip carries - the offer's and the restore's words. */
     counts: { placed: number; changed: number };
+    /** The draft's AR visits (M3b), for the summary after Finish. */
+    visits: readonly VisitLogEntry[];
   } | null = null;
   /** Said once, not per placement: a creator mid-walk cannot act on it. */
   let warnedAboutPersistence = false;
@@ -408,6 +434,34 @@ export function wireCreatorSetup(deps: {
     }
     void writeForObject(store, tourUrl, object.id, (s) =>
       writeDraftObject(s, object, blob),
+    ).then((ok) => {
+      if (!ok) noteNoPersistence();
+    });
+  }
+
+  /**
+   * Record one AR visit's log (M3b) in memory and in the draft, the way a
+   * placement is recorded: fire-and-forget, in the id's queue, and before
+   * the tour's draft is open it is written when it opens.
+   */
+  function recordVisit(entry: VisitLogEntry): void {
+    visitLog.record(entry);
+    const store = draftStore;
+    const tourUrl = draftTourUrl;
+    if (store === undefined || tourUrl === null) {
+      if (draftTourUrl !== null) noteNoPersistence();
+      return;
+    }
+    writeVisit(store, tourUrl, entry);
+  }
+
+  function writeVisit(
+    store: DraftFileStore,
+    tourUrl: string,
+    entry: VisitLogEntry,
+  ): void {
+    void writeForObject(store, tourUrl, entry.visitId, (s) =>
+      writeDraftVisit(s, entry),
     ).then((ok) => {
       if (!ok) noteNoPersistence();
     });
@@ -483,6 +537,9 @@ export function wireCreatorSetup(deps: {
     const live = new Set([
       ...ctx.placedObjects.map((p) => p.object.id),
       ...ctx.deletedObjectIds,
+      // This page's visits (M3b): a read racing their first write may list
+      // them, and they are this page's work, never the old draft's.
+      ...visitLog.ids(),
     ]);
     return ids.filter((id) => !live.has(id));
   }
@@ -1198,6 +1255,9 @@ export function wireCreatorSetup(deps: {
     // the photo bytes as content entries. Live work on the same id is
     // newer than the draft's, and wins.
     restoreWork(waiting);
+    // And the visits it measured (M3b): the summary after Finish combines
+    // them with this page's.
+    visitLog.restore(waiting.visits);
     // The measured level comes back too, and it is what unlocks Finish
     // without walking to the poster again. Only when the session has not
     // already measured one: a live measurement is newer than a draft.
@@ -1751,6 +1811,7 @@ export function wireCreatorSetup(deps: {
       nowIso: new Date().toISOString(),
     };
     const choice = settleAlignment(input);
+    logVisit(visit, state, choice?.alignment ?? null);
     if (choice === null || zero === null) return;
     const record: VisitSettleRecord = {
       basis: choice.basis,
@@ -1783,6 +1844,83 @@ export function wireCreatorSetup(deps: {
       plan.objects.map(({ object }) => object),
       plan.level,
     );
+  }
+
+  /**
+   * Copy the settling visit into the page-side log (M3b) while the store
+   * still holds it: its walk, and each code it saw through ITS OWN
+   * alignment (`visit-log.ts`). The fused path goes through
+   * `pathAlignment` - what the visit's objects settled through - so the
+   * pins sit on it. A visit settled again (a failed Finish) replaces its
+   * entry.
+   */
+  function logVisit(
+    visit: number,
+    state: ReturnType<typeof arStore.getState>,
+    pathAlignment: readonly number[] | null,
+  ): void {
+    const codes: { levelId: string; odomPose: CodeSighting["odomPose"] }[] = [];
+    const measurement = ctx.codeMeasurement;
+    if (measurement !== null && measurement.visit === visit) {
+      codes.push({
+        levelId: measurement.levelId,
+        odomPose: measurement.odomPose,
+      });
+    }
+    const sighting = ctx.visitCodeSighting;
+    if (sighting !== null) {
+      codes.push({ levelId: sighting.levelId, odomPose: sighting.odomPose });
+    }
+    const entry = buildVisitLogEntry({
+      visitId: newVisitId(pageId, visit),
+      atMs: Date.now(),
+      gpsPositions: selectGpsPositions(state),
+      odometryPositions: selectOdometryPositions(state),
+      alignment: selectAlignmentMatrix(state),
+      pathAlignment,
+      zero: selectZeroReference(state),
+      storeAccuracyM: authorAlignmentInfo().gpsAccuracyM ?? null,
+      codes,
+    });
+    // A visit with no fix and no code has nothing to show or to combine.
+    if (entry.gps.length === 0 && entry.codes.length === 0) return;
+    recordVisit(entry);
+  }
+
+  /**
+   * The summary after Finish (M3b): every visit of this tour in the log,
+   * each code's stored pose (the level in hand, then the tour's others),
+   * and the objects the zip now carries. A summary that cannot be built
+   * hides rather than failing the Finish that already succeeded.
+   */
+  function showSummary(): void {
+    const summary = deps.summary;
+    if (summary === undefined) return;
+    try {
+      summary.show(
+        buildSummaryModel({
+          visits: visitLog.entries(),
+          references: codeReferences(),
+          objects: ctx.tourManifest?.objects ?? [],
+        }),
+      );
+    } catch {
+      summary.hide();
+    }
+  }
+
+  /** Each code's stored pose: the level in hand, then the tour's others. */
+  function codeReferences(): { levelId: string; geo: QrGeoPose | null }[] {
+    const inHand = ctx.mintedLevel;
+    const references: { levelId: string; geo: QrGeoPose | null }[] =
+      inHand === null
+        ? []
+        : [{ levelId: inHand.id, geo: storedGeo(inHand.json) }];
+    for (const [id, level] of ctx.currentLevels ?? []) {
+      if (id === inHand?.id) continue;
+      references.push({ levelId: id, geo: level.qr.geo ?? null });
+    }
+    return references;
   }
 
   /** Forget the settle of `visit` if it is still the running visit, so
@@ -2198,6 +2336,8 @@ export function wireCreatorSetup(deps: {
         // a session that is still compositing.
         wizard.openStep("measure");
         dom.finishBlock.hidden = false;
+        // The summary of every visit (M3b), on the page with the download.
+        showSummary();
       } catch (err) {
         if (ctx.session === current) {
           ctx.finishError = FINISH_LABELS.failed(
@@ -2341,6 +2481,9 @@ export function wireCreatorSetup(deps: {
       syncPreviews();
       placeEarlierObjects();
       editing.render();
+      // The summary describes the visits up to the last Finish; this visit
+      // makes it stale, and the next Finish shows it again (M3b).
+      deps.summary?.hide();
     },
     endAuthorVisit: () => {
       if (!creator) return;
@@ -2387,6 +2530,9 @@ export function wireCreatorSetup(deps: {
       finishedPhotoBlobs.clear();
       replaceConfirmOpen = false;
       editing.reset();
+      // The summary and the visits belonged to the closing tour (M3b).
+      deps.summary?.hide();
+      visitLog.clear();
     },
     presentDraftForTour: (tourUrl) => {
       if (!creator) return; // a visitor authors nothing
@@ -2440,6 +2586,10 @@ export function wireCreatorSetup(deps: {
         // first (`writeForObject`).
         for (const entry of ctx.placedObjects) {
           recordPlacement(entry.object, entry.blob);
+        }
+        // And this page's visits (M3b), for the same reason.
+        for (const entry of visitLog.entries()) {
+          writeVisit(store, tourUrl, entry);
         }
         for (const id of ctx.deletedObjectIds) {
           void writeForObject(store, tourUrl, id, (s) =>
@@ -2533,6 +2683,7 @@ export function wireCreatorSetup(deps: {
           sizeM: stored.draft.sizeM,
           deleted: waitingDeletions,
           counts,
+          visits: stored.visits,
         };
         dom.draftOfferText.textContent = restoreOfferText(
           counts.placed,
