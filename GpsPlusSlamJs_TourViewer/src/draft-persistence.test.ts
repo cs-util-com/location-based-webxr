@@ -19,6 +19,8 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   deletedKey,
   objectKey,
+  visitKey,
+  writeDraftVisit,
   parseDraftObject,
   photoKey,
   readDraft,
@@ -27,6 +29,7 @@ import {
   writeDraftMeta,
   writeDraftObject,
 } from "./draft-persistence.js";
+import type { VisitLogEntry } from "./visit-log.js";
 
 /** An in-memory store with the same contract as the OPFS one. */
 function memoryStore(): DraftFileStore & { files: Map<string, Blob | string> } {
@@ -449,5 +452,76 @@ describe("a deletion is its own file (a tombstone, authoring plan 2026-09-28-095
     };
     expect(await writeDraftDeletion(refusing, "a")).toBe(false);
     expect(store.files.has(objectKey("a"))).toBe(true);
+  });
+});
+
+describe("an AR visit's log is its own file (authoring plan 2026-09-28-0953 M3b)", () => {
+  // Why these tests matter: the summary after Finish judges each code from
+  // every visit that measured it, and the store forgets a visit at every AR
+  // exit. A reload must therefore bring each visit back from the draft -
+  // and a draft the creator throws away, or one the hosted zip already
+  // carries, must take its visits with it, through the same commit point
+  // as its objects.
+  const visit = (visitId: string): VisitLogEntry => ({
+    visitId,
+    atMs: 5,
+    gpsAccuracyM: 4,
+    baselineM: 30,
+    gps: [{ lat: 47.5, lng: 8.7, accuracy: 4 }],
+    fused: [{ lat: 47.5001, lng: 8.7 }],
+    codes: [
+      {
+        levelId: "lvl",
+        geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 10 },
+      },
+    ],
+  });
+
+  it("comes back after a reload, one file per visit", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    expect(await writeDraftVisit(store, visit("page1-0"))).toBe(true);
+    expect(await writeDraftVisit(store, visit("page1-1"))).toBe(true);
+    expect(store.files.has(visitKey("page1-0"))).toBe(true);
+    // A new read of the same files: what a reload does.
+    const read = await readDraft(store);
+    expect(read?.visits.map((v) => v.visitId)).toEqual(["page1-0", "page1-1"]);
+    expect(read?.visits[0]?.codes[0]?.levelId).toBe("lvl");
+    expect(read?.visits[0]?.gps).toEqual([
+      { lat: 47.5, lng: 8.7, accuracy: 4 },
+    ]);
+    // A visit is not an object: nothing to offer, nothing in the zip.
+    expect(read?.draft.objects).toEqual([]);
+  });
+
+  it("costs a corrupt visit file only itself", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftVisit(store, visit("good"));
+    await store.put(visitKey("broken"), "{ not json");
+    const read = await readDraft(store);
+    expect(read?.visits.map((v) => v.visitId)).toEqual(["good"]);
+    // Still a stored id, so a discard or a spent draft sweeps the file.
+    expect(read?.storedIds).toContain("broken");
+  });
+
+  it("is swept with a rejected draft: hidden by the meta, removed with its id", async () => {
+    const store = memoryStore();
+    await writeDraftVisit(store, visit("old-0"));
+    await writeDraftMeta(store, { ...META, rejected: ["old-0"] });
+    const read = await readDraft(store);
+    expect(read?.visits).toEqual([]);
+    // Still on disk, so carried forward until the sweep removes it.
+    expect(read?.rejectedIds).toEqual(["old-0"]);
+    await removeDraftObject(store, "old-0");
+    expect(store.files.has(visitKey("old-0"))).toBe(false);
+  });
+
+  it("names its file apart from an object's, so an object id never reads as a visit", async () => {
+    expect(visitKey("a")).not.toBe(objectKey("a"));
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftObject(store, pin("a"));
+    expect((await readDraft(store))?.visits).toEqual([]);
   });
 });

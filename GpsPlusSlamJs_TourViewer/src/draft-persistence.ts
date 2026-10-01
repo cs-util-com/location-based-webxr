@@ -26,6 +26,11 @@ import { isWritableQrLevelId } from "gps-plus-slam-app-framework/ar/qr/qr-level-
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 
 import type { AuthoringDraft } from "./authoring-draft.js";
+import {
+  parseVisitLogEntry,
+  serializeVisitLogEntry,
+  type VisitLogEntry,
+} from "./visit-log.js";
 
 /** The draft's one non-object file: the tour it belongs to, the printed
  *  size, and the measured level. */
@@ -67,6 +72,7 @@ export const META_KEY = "meta";
 const OBJECT_PREFIX = "object:";
 const PHOTO_PREFIX = "photo:";
 const DELETED_PREFIX = "deleted:";
+const VISIT_PREFIX = "visit:";
 
 /** A placed object's file key. */
 export function objectKey(id: string): string {
@@ -88,7 +94,20 @@ export function deletedKey(id: string): string {
 }
 
 /**
- * Delete every file of one id: the record, the bytes and a tombstone.
+ * One AR visit's log (`visit-log.ts`, authoring plan 2026-09-28-0953 M3b):
+ * its walk and the codes it measured, for the summary after Finish. Its
+ * own file per visit, written at the visit's settle, for the reason each
+ * object has one: a visit settled again rewrites only itself, and a file
+ * that reads back corrupt costs that visit, not the others. Its id is the
+ * visit id, which never collides with an object id (`newVisitId`).
+ */
+export function visitKey(visitId: string): string {
+  return `${VISIT_PREFIX}${visitId}`;
+}
+
+/**
+ * Delete every file of one id: the record, the bytes and a tombstone -
+ * or, for a visit id, the visit's log.
  *
  * Callers reject a LIST of ids, and an id is up to three files. None is a
  * failure when it is not there: a pin has no photo, a placement has no
@@ -101,6 +120,7 @@ export async function removeDraftObject(
   await store.remove(objectKey(id));
   await store.remove(photoKey(id));
   await store.remove(deletedKey(id));
+  await store.remove(visitKey(id));
 }
 
 /**
@@ -208,6 +228,15 @@ export async function writeDraftObject(
   return wroteObject && wrotePhoto;
 }
 
+/** Record one AR visit's log (one file per visit; a visit settled again
+ *  replaces its file). */
+export async function writeDraftVisit(
+  store: DraftFileStore,
+  entry: VisitLogEntry,
+): Promise<boolean> {
+  return store.put(visitKey(entry.visitId), serializeVisitLogEntry(entry));
+}
+
 /** What a read gives back: the draft's rules-facing shape, plus the photo
  *  bytes keyed by object id so the finish can write them as content. */
 export interface StoredDraft {
@@ -223,6 +252,14 @@ export interface StoredDraft {
    *   `clear` lost its last caller nothing else would ever reclaim them.
    */
   rejectedIds: readonly string[];
+  /**
+   * The AR visits' logs (M3b), oldest first: what the summary after Finish
+   * needs from visits of an earlier page load. Not part of `draft`: a visit
+   * is nothing to offer or to write into the zip. A visit id the meta
+   * rejects is skipped like an object's, and its file is among
+   * `storedIds`, so a discard or a spent draft sweeps it with the rest.
+   */
+  visits: readonly VisitLogEntry[];
   /**
    * EVERY object id this read saw on disk, including the ones it refused
    * and the ones the meta rejects.
@@ -290,7 +327,12 @@ export async function readDraft(
   const storedIds = [
     ...new Set(
       keys.flatMap((key) => {
-        for (const prefix of [OBJECT_PREFIX, PHOTO_PREFIX, DELETED_PREFIX]) {
+        for (const prefix of [
+          OBJECT_PREFIX,
+          PHOTO_PREFIX,
+          DELETED_PREFIX,
+          VISIT_PREFIX,
+        ]) {
           if (key.startsWith(prefix)) return [key.slice(prefix.length)];
         }
         return [];
@@ -339,6 +381,7 @@ export async function readDraft(
     (a, b) =>
       a.createdAtIso.localeCompare(b.createdAtIso) || a.id.localeCompare(b.id),
   );
+  const visits = await readVisits(store, keys, rejected);
   const onDisk = new Set(storedIds);
   return {
     draft: {
@@ -350,8 +393,29 @@ export async function readDraft(
     },
     photos,
     rejectedIds: [...rejected].filter((id) => onDisk.has(id)),
+    visits,
     storedIds,
   };
+}
+
+/** The visits' logs among `keys`, minus rejected ids, oldest first. A
+ *  corrupt visit file costs itself, like an object. */
+async function readVisits(
+  store: DraftFileStore,
+  keys: readonly string[],
+  rejected: ReadonlySet<string>,
+): Promise<VisitLogEntry[]> {
+  const visits: VisitLogEntry[] = [];
+  for (const key of keys) {
+    if (!key.startsWith(VISIT_PREFIX)) continue;
+    if (rejected.has(key.slice(VISIT_PREFIX.length))) continue;
+    const text = await store.getText(key);
+    const entry = text === undefined ? null : parseVisitLogEntry(text);
+    if (entry !== null) visits.push(entry);
+  }
+  return visits.sort(
+    (a, b) => a.atMs - b.atMs || a.visitId.localeCompare(b.visitId),
+  );
 }
 
 function isMeta(value: unknown): value is DraftMeta {
