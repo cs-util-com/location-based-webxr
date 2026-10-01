@@ -148,6 +148,7 @@ export {
 export {
   type HitTestReticleHandle,
   type HitTestReticleArgs,
+  type SelectTargetRay,
   startHitTestReticle,
 } from './hit-test-reticle-driver.js';
 

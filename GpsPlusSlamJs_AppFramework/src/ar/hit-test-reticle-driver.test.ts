@@ -54,25 +54,29 @@ interface FakeSession {
   addEventListener: ReturnType<typeof vi.fn>;
   removeEventListener: ReturnType<typeof vi.fn>;
   /** Fire all listeners of a type that were added to this fake session. */
-  emit(type: string): void;
+  emit(type: string, event?: unknown): void;
 }
 
 /** Build a minimal `XRSession` fake exposing only what the driver calls. */
 function makeSession(
   requestHitTestSource?: ReturnType<typeof vi.fn>
 ): FakeSession {
-  const listeners = new Map<string, Array<() => void>>();
+  const listeners = new Map<string, Array<(event?: unknown) => void>>();
   return {
-    requestReferenceSpace: vi.fn(() => Promise.resolve({})),
+    requestReferenceSpace: vi.fn((type: string) =>
+      Promise.resolve({ space: type })
+    ),
     requestHitTestSource,
-    addEventListener: vi.fn((type: string, handler: () => void) => {
-      const list = listeners.get(type) ?? [];
-      list.push(handler);
-      listeners.set(type, list);
-    }),
+    addEventListener: vi.fn(
+      (type: string, handler: (event?: unknown) => void) => {
+        const list = listeners.get(type) ?? [];
+        list.push(handler);
+        listeners.set(type, list);
+      }
+    ),
     removeEventListener: vi.fn(),
-    emit: (type: string) => {
-      for (const handler of listeners.get(type) ?? []) handler();
+    emit: (type: string, event?: unknown) => {
+      for (const handler of listeners.get(type) ?? []) handler(event);
     },
   };
 }
@@ -429,6 +433,50 @@ describe('startHitTestReticle — onSelect (tap) handling', () => {
 
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect.mock.calls[0]?.[0]).toBeNull();
+  });
+
+  it("hands the tap's target ray, relative to the viewer, as a second argument (backward compatible)", async () => {
+    // Why this matters: the reticle sits at the screen centre, but a tap
+    // can be anywhere on the screen. An app selecting what was TAPPED (the
+    // Tour Viewer's object pick, authoring plan 2026-09-28-0953 M4 review
+    // #4) needs the tap's own ray. WebXR gives it only inside the select
+    // event (`frame.getPose(inputSource.targetRaySpace, space)`), so the
+    // driver reads it there, against the 'viewer' space it already
+    // requested for the hit-test - the camera's own frame. A one-argument
+    // handler (MinimalExample's) is unaffected.
+    const { onSelect, session } = await startWithSelect();
+    const ray = new Matrix4().makeRotationY(0.2).toArray();
+    const getPose = vi.fn(() => ({ transform: { matrix: ray } }));
+    const targetRaySpace = { kind: 'target-ray' };
+    session.emit('select', {
+      frame: { getPose },
+      inputSource: { targetRaySpace },
+    });
+
+    expect(getPose).toHaveBeenCalledWith(targetRaySpace, { space: 'viewer' });
+    expect(onSelect.mock.calls[0]?.[1]).toEqual({ targetRayInViewer: ray });
+  });
+
+  it('hands null for the ray when the event carries no usable pose', async () => {
+    const { onSelect, session } = await startWithSelect();
+    session.emit('select'); // no event at all
+    session.emit('select', {
+      frame: { getPose: () => null },
+      inputSource: { targetRaySpace: {} },
+    });
+    session.emit('select', {
+      frame: {
+        getPose: () => {
+          throw new Error('frame no longer active');
+        },
+      },
+      inputSource: { targetRaySpace: {} },
+    });
+    expect(onSelect.mock.calls.map((call) => call[1])).toEqual([
+      null,
+      null,
+      null,
+    ]);
   });
 
   it("registers the 'select' listener exactly once across request retries", async () => {
