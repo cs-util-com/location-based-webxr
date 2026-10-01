@@ -448,9 +448,13 @@ describe("C3 globe-bands: the band-width sweep", () => {
     assert.equal(rampFitError(ramp, land).n, 2);
   });
 
-  it("averages the cross-validated error over the folds that could be judged", () => {
+  // The two folds fail together: a fold with no land fits a sea-only ramp
+  // that colours none of the other fold's land, AND gives the other fold's
+  // ramp no land to be judged on. So the cross-validated error is NaN when
+  // either fold has no land, and otherwise the plain average of both.
+  it("is NaN when either fold has no land, and the folds' plain average otherwise", () => {
     // Fold 0 (even gx + gy) is all sea, so its ramp colours no land sample
-    // of fold 1; fold 1's ramp judges fold 0's land samples (none) too.
+    // of fold 1, and fold 1's ramp has no land of fold 0 to be judged on.
     const samples = [
       { heightM: -5, rgb: [0.05, 0.1, 0.3], gx: 0, gy: 0 },
       { heightM: -8, rgb: [0.05, 0.1, 0.3], gx: 1, gy: 1 },
@@ -467,7 +471,15 @@ describe("C3 globe-bands: the band-width sweep", () => {
       { heightM: 270, rgb: [0.3, 0.42, 0.2], gx: 3, gy: 0 },
     ];
     const [r2] = bandSweep(both, [100]);
-    assert.ok(Number.isFinite(r2.cv.mean), `${r2.cv.mean}`);
+    const folds = [0, 1].map((f) =>
+      both.filter((s) => foldOf(s.gx, s.gy) === f),
+    );
+    const cross = [0, 1].map((f) =>
+      rampFitError(bandRamp(folds[f], { widthM: 100 }), folds[1 - f]),
+    );
+    assert.ok(cross.every((c) => Number.isFinite(c.mean)));
+    close(r2.cv.mean, (cross[0].mean + cross[1].mean) / 2, 1e-12, "cv mean");
+    close(r2.cv.p95, (cross[0].p95 + cross[1].p95) / 2, 1e-12, "cv p95");
   });
 
   it("needs both folds", () => {

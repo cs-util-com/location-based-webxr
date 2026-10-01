@@ -43,10 +43,12 @@ extentM }, x, y, wx, wy)`: the mean of the lab's posts inside a box,
     `blockPx`-pixel blocks over its global imagery pixel indices.
   - `bandSweep(samples, widthsM, { blockPx = 1 })` -> per width `{ widthM,
 blockPx, bands, minCount, fit, cv }`: the in-sample error and the
-    two-fold cross-validated one (fitted on one fold, judged on the other;
-    the folds that could be judged averaged, `cv.skipped` the land samples
-    a fold's ramp could not colour;
-    samples carry `gx`, `gy`). RangeError when a fold is empty. The
+    two-fold cross-validated one (fitted on one fold, judged on the other,
+    the two averaged; `cv.skipped` the land samples a fold's ramp could not
+    colour; samples carry `gx`, `gy`). The cross-validated error is NaN
+    when either fold has no land: the two folds fail together (a sea-only
+    fold's ramp colours none of the other's land, and the other's ramp has
+    no land of it to be judged on). RangeError when a fold is empty. The
     cross-validated error is the honest number: narrow bands always fit
     their own pixels better. One-pixel folds LEAK (review 2026-10-01-1650
     m2): neighbouring imagery pixels are alike, and a narrow band's pixels

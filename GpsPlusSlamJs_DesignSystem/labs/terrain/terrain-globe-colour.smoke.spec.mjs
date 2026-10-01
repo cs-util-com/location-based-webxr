@@ -246,13 +246,22 @@ test("globe-bands: the imagery's colour per height band, and its band-width swee
         console.log(
           `band sweep ${place} blocks ${blockPx} px, ${r.widthM} m: ${r.bands} bands (least ${r.minCount} pixels), ` +
             `in-sample ΔE ${r.fit.mean.toFixed(2)} (p95 ${r.fit.p95.toFixed(2)}), ` +
-            `cross-validated ΔE ${r.cv.mean.toFixed(2)} (p95 ${r.cv.p95.toFixed(2)})`,
+            `cross-validated ΔE ${r.cv.mean.toFixed(2)} (p95 ${r.cv.p95.toFixed(2)}), ` +
+            `${r.cv.skipped} land pixels a fold's ramp could not colour`,
         );
         expect(r.bands).toBeGreaterThan(0);
       }
-      const best = rows.reduce((a, b) => (b.cv.mean < a.cv.mean ? b : a));
+      // A width whose cross-validation is NaN (a fold with no land) cannot
+      // win: with none judged, there is no winner to name.
+      let best = null;
+      for (const r of rows) {
+        if (!Number.isFinite(r.cv.mean)) continue;
+        if (best === null || r.cv.mean < best.cv.mean) best = r;
+      }
       console.log(
-        `band sweep ${place} blocks ${blockPx} px: least cross-validated error at ${best.widthM} m`,
+        best
+          ? `band sweep ${place} blocks ${blockPx} px: least cross-validated error at ${best.widthM} m`
+          : `band sweep ${place} blocks ${blockPx} px: no cross-validation (a fold has no land at every width)`,
       );
     }
   }

@@ -362,21 +362,15 @@ export function foldOf(gx, gy, blockPx = 1) {
  * C3's band-width sweep: for each width, the ramp's band count and its
  * least populated band, its in-sample error (`rampFitError` on all
  * samples) and its two-fold cross-validated error (fitted on the samples
- * of one fold, judged on the other; the folds that could be judged
- * averaged, NaN when neither could, `cv.skipped` the land samples a
- * fold's ramp could not colour). The folds
- * are `foldOf(gx, gy, blockPx)` of each sample's global imagery pixel.
+ * of one fold, judged on the other, the two averaged; `cv.skipped` the
+ * land samples a fold's ramp could not colour). The cross-validated error
+ * is NaN when either fold has no land: that fold's sea-only ramp colours
+ * none of the other's land, and the other's ramp has no land of it to be
+ * judged on, so both folds fail together. The folds are
+ * `foldOf(gx, gy, blockPx)` of each sample's global imagery pixel.
  * RangeError when either fold is empty.
  */
 export function bandSweep(samples, widthsM, { blockPx = 1 } = {}) {
-  // The folds that could be judged (a fold whose ramp coloured nothing is
-  // NaN): their mean, NaN when neither could.
-  const foldMean = (values) => {
-    const judged = values.filter(Number.isFinite);
-    return judged.length === 0
-      ? Number.NaN
-      : judged.reduce((a, b) => a + b, 0) / judged.length;
-  };
   const folds = [0, 1].map((f) =>
     samples.filter((s) => foldOf(s.gx, s.gy, blockPx) === f),
   );
@@ -396,8 +390,8 @@ export function bandSweep(samples, widthsM, { blockPx = 1 } = {}) {
       minCount: counts.length > 0 ? Math.min(...counts) : 0,
       fit: rampFitError(ramp, samples),
       cv: {
-        mean: foldMean(cross.map((c) => c.mean)),
-        p95: foldMean(cross.map((c) => c.p95)),
+        mean: (cross[0].mean + cross[1].mean) / 2,
+        p95: (cross[0].p95 + cross[1].p95) / 2,
         skipped: cross[0].skipped + cross[1].skipped,
       },
     };
