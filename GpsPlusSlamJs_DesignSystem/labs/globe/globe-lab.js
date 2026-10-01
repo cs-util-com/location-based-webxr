@@ -874,6 +874,8 @@ function start() {
   const flight = introFlight(globe.tiles.ellipsoid);
   // Set once the pin exists (below); a touch before that has no flight.
   let pin = null;
+  /** A view held by the `pitchView` test hook: the controls do not run. */
+  let heldView = false;
   const controls = cameraControls(scene, camera, globe, () => {
     flight.yieldToUser(performance.now());
     pin?.cameraTaken();
@@ -1052,7 +1054,7 @@ function start() {
       }
       camera.updateMatrixWorld();
       controls.followIntro();
-    } else {
+    } else if (!heldView) {
       controls.update();
     }
     pin.frame();
@@ -1279,6 +1281,23 @@ function start() {
       return [(p.x + 1) / 2, (1 - p.y) / 2];
     },
     regionStats,
+    /**
+     * A test hook (review 2026-10-01, M1): takes the camera from the flight
+     * and the controls, as a press would, and pitches it up by `deg` about
+     * its own right axis, so a view from inside the air shows the sky above
+     * the horizon (the dive itself always looks straight down). The view is
+     * then held, without the controls, until the page reloads.
+     */
+    pitchView(deg) {
+      if (!Number.isFinite(deg))
+        throw new RangeError(`pitch must be finite, got ${deg}`);
+      flight.yieldToUser(performance.now());
+      pin?.cameraTaken();
+      heldView = true;
+      camera.rotateX(deg * DEG);
+      camera.updateMatrixWorld();
+      frame();
+    },
     /**
      * The cost probe (round-4 plan DEC-GL4-2/4): `n` frames drawn back to
      * back, then one pixel read so the GPU has finished them; the wall

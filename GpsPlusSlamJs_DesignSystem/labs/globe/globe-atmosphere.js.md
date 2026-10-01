@@ -42,9 +42,14 @@
     and measured, the halo's chromaticity moved 0.09-0.11 between k = 1,
     6 and 10). So each ray's steps are also weighted by
     `grazingCompensation` (`globe-atmosphere-frame.js`): Chapman's
-    function at the two scale heights, sqrt(k) at the limb, 1 at k = 1
-    and within 6-12 % of 1 for a steep ray, taken at the ray's lowest
-    point (its ground hit, or the limb). Measured across k = 1, 6, 10 at
+    function at the two scale heights, normalised to 1 straight down
+    (review m3), about sqrt(k) at the limb, Rayleigh and Mie each with its
+    own scale height, taken at the ray's LOWEST point in the air: the
+    limb's tangent point, the ground hit, or, from inside the shell, the
+    camera when the ray climbs (review M1, `lowestPointMu`). Measured from
+    inside: the sky from 150 km in the k = 6 shell matches the real air's
+    from 25 km (k = 1) within 0.98-1.02 at 5-35 degrees above the level,
+    against 1.41-1.72 with the limb's weight on climbing rays. Measured across k = 1, 6, 10 at
     the same fractions of the rim's width: the halo's chromaticity moves
     0.017-0.026 with it against 0.030-0.112 without (inside the disc
     0.015-0.034 either way, the ground behind differing). It also moves the

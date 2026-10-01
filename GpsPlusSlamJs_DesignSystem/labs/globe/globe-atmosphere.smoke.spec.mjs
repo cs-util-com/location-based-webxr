@@ -492,3 +492,103 @@ for (const [tier, use, cap] of /** @type {const} */ ([
     });
   });
 }
+
+/** The page's origin, for the geolocation grant the pin's dive needs. */
+const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
+/** The equator under the equinox noon sun: the dive's target. */
+const UNDER_THE_SUN = { latitude: 0, longitude: 1.86 };
+
+/**
+ * Held after the pin's dive at `altKm` over the sub-solar point, with the
+ * camera pitched 110 degrees up from straight down (`pitchView`), so the
+ * screen's centre looks 20 degrees above the level towards the north and
+ * the upper half shows the sky. The rim's light is amplified (strength 4)
+ * and the sun's disc, the stars and the clouds are off, so the pixels are
+ * the air's own.
+ */
+async function skyFromInside(page, context, altKm, thickness) {
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation(UNDER_THE_SUN);
+  const errors = await bootGlobe(
+    page,
+    `at=0,1.86&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&cloudOpacity=0&stars=0&milkyWay=0&sky=0&atmoStrength=4&atmoThickness=${thickness}&diveMs=1000&handOver=0&handOverKm=${altKm}`,
+  );
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return s.phase === "landed" && s.pin.phase === "idle";
+    },
+    null,
+    { timeout: 60_000 },
+  );
+  await page.evaluate(() => window.__globeLab.pitchView(110));
+  const fovY = await page.evaluate(() => window.__globeLab.state().fovY);
+  // Screen rows at elevations 5-35 degrees above the level (the centre
+  // looks at 20), each averaged over three columns.
+  const elevations = [5, 15, 25, 35];
+  const rowOf = (e) =>
+    0.5 -
+    Math.tan(((e - 20) * Math.PI) / 180) / Math.tan((fovY * Math.PI) / 360) / 2;
+  const points = elevations.flatMap((e) =>
+    [0.3, 0.5, 0.7].map((u) => [u, rowOf(e)]),
+  );
+  const px = await page.evaluate(
+    (p) => window.__globeLab.readPixels(p),
+    points,
+  );
+  const rows = elevations.map((e, i) => {
+    const three = px.slice(3 * i, 3 * i + 3);
+    return {
+      e,
+      lum: meanOf(three.map(luminance)),
+      rgb: [0, 1, 2].map((c) => meanOf(three.map((p) => p[c]))),
+    };
+  });
+  const state = await page.evaluate(() => window.__globeLab.state());
+  return { errors, rows, altitudeKm: state.altitudeM / 1000 };
+}
+
+// WHY (review 2026-10-01, M1): the drawn shell is k times thicker than the
+// real air, and from INSIDE it (the dive's last 150 km, the one-scene
+// flight) a ray that climbs has its lowest point at the camera. A view
+// from 150 km inside the k = 6 shell reads the air at 150 / 6 = 25 km, so
+// its sky must look like the real air's from 25 km (k = 1): the same
+// optical depth along every climbing ray. With the limb's weight (sqrt k)
+// given to those rays too, the sky got about 2.45 times the optical depth.
+test.describe.serial("the sky from inside the drawn shell", () => {
+  /** @type {{ e: number, lum: number, rgb: number[] }[]} */
+  let thick = [];
+  test("from 150 km inside the k = 6 shell", async ({ page, context }) => {
+    test.setTimeout(120_000);
+    const r = await skyFromInside(page, context, 150, 6);
+    thick = r.rows;
+    console.log(
+      `sky from ${r.altitudeKm.toFixed(0)} km at k = 6: ${thick.map((row) => `${row.e} deg ${row.lum.toFixed(1)} (${row.rgb.map((v) => v.toFixed(0)).join("/")})`).join(", ")}`,
+    );
+    expect(r.errors).toEqual([]);
+  });
+
+  test("matches the real air from 25 km (k = 1)", async ({ page, context }) => {
+    test.setTimeout(120_000);
+    const r = await skyFromInside(page, context, 25, 1);
+    const ratios = r.rows.map(
+      (row, i) => (thick[i]?.lum ?? 0) / Math.max(1, row.lum),
+    );
+    console.log(
+      `sky from ${r.altitudeKm.toFixed(0)} km at k = 1: ${r.rows.map((row) => `${row.e} deg ${row.lum.toFixed(1)} (${row.rgb.map((v) => v.toFixed(0)).join("/")})`).join(", ")}; k6/k1 ${ratios.map((v) => v.toFixed(2)).join(" ")}`,
+    );
+    // Measured 2026-10-01: 0.98-1.02 with the lowest-point rule, 1.41-1.72
+    // with the limb's weight on climbing rays (the review's 2.45 times the
+    // optical depth). Bound 15 %, reported at x0.5, x1, x2.
+    const SKY_MATCH = 0.15;
+    const worst = Math.max(...ratios.map((v) => Math.abs(v - 1)));
+    console.log(
+      `sky match: worst ${worst.toFixed(3)} (bound ${SKY_MATCH}: ${SWEEP.map((k) => `x${k} ${worst < SKY_MATCH * k ? "ok" : "NO"}`).join(" ")})`,
+    );
+    expect(thick.length).toBe(r.rows.length);
+    for (const row of r.rows) expect(row.lum).toBeGreaterThan(2);
+    expect(worst).toBeLessThan(SKY_MATCH);
+    expect(r.errors).toEqual([]);
+  });
+});

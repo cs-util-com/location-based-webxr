@@ -14,12 +14,22 @@
     the primary pointer is coarse (a touch screen), `steps` (12) otherwise
     (review B5: the march cost x3.9 against x4.6 at the phone tier's pixel
     ratio 2, with no ring measured from 6 samples up).
-  - `chapman(x, mu)`, `grazingCompensation(k, mu, x)`, `CHAPMAN_GLSL` -
+  - `chapman(x, mu)`, `grazingCompensation(k, mu, x)` -
     Chapman's grazing function (1 / (mu + 1 / sqrt(pi x / 2))) and the
     factor a ray's steps need in a k times thicker shell to keep the real
-    air's optical depth (review B2): sqrt(k) at the limb, 1 at k = 1, at
-    most 1.06 straight down and 1.12 at 60 degrees for k up to 10; the
-    GLSL twin is what the pass's march includes.
+    air's optical depth (review B2), normalised by its value straight down
+    (review m3: the approximation itself is 1-3 % off for a vertical ray,
+    which read as a 1.04-1.06 weight): exactly 1 at k = 1 and straight
+    down, about sqrt(k) at the limb (2.36 at k = 6), monotonic between;
+    Rayleigh and Mie each use their own x (R over their scale height).
+  - `lowestPointMu(o, dir, tEnter, tEnd)` - the ray's unsigned zenith
+    cosine where it is lowest in its span (review M1): the limb's tangent
+    point (0), the ground hit (its slant), or, from inside the shell, the
+    camera when the ray climbs (1 straight up). Before, every ray that
+    missed the ground got the limb's weight, so from inside the shell the
+    sky held about 2.45 times its optical depth at k = 6.
+  - `CHAPMAN_GLSL` - the GLSL twins of the three, which the pass's march
+    includes.
   - `atmosphereLook(input)` - `{ steps, strength, thickness }`, each from
     `input` or the default, the steps rounded; RangeError outside steps
     2-64, strength 0-4, thickness 1-10 or for a non-finite value.

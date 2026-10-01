@@ -20,6 +20,7 @@ import {
   defaultAtmosphereSteps,
   ellipsoidToModel,
   grazingCompensation,
+  lowestPointMu,
 } from "./globe-atmosphere-frame.js";
 
 const WGS84 = [6378137, 6378137, 6356752.314245];
@@ -94,6 +95,7 @@ describe("defaultAtmosphereSteps", () => {
 // limb, 1 for a steep ray and for k = 1, so only the width changes.
 describe("grazingCompensation", () => {
   const X = 6360 / 8; // the ground radius over the Rayleigh scale height
+  const XM = 6360 / 1.2; // and over the Mie scale height
 
   it("is exactly 1 at the physical thickness, for every ray", () => {
     for (const mu of [0, 0.01, 0.1, 0.5, 1]) {
@@ -101,25 +103,22 @@ describe("grazingCompensation", () => {
     }
   });
 
-  it("is sqrt(k) for a ray that grazes the limb", () => {
-    for (const k of [2, 6, 10]) {
-      const f = grazingCompensation(k, 0, X);
-      assert.ok(Math.abs(f - Math.sqrt(k)) < 1e-9, `k ${k}: ${f}`);
+  // Review m3 (2026-10-01): Chapman's approximation is itself 1-3 % off
+  // for a vertical ray, which read as a 1.04-1.06 "curvature" weight; the
+  // weight is normalised by its value straight down, so a vertical ray
+  // keeps the real air's optical depth exactly.
+  it("is exactly 1 straight down, for every thickness", () => {
+    for (const k of [1, 2, 6, 10]) {
+      for (const x of [X, XM]) {
+        assert.ok(Math.abs(grazingCompensation(k, 1, x) - 1) < 1e-12, `k ${k}`);
+      }
     }
   });
 
-  // The bounds are Chapman's own numbers for a shell up to 10 times
-  // thicker: 1.01-1.06 straight down, 1.02-1.12 at 60 degrees from the
-  // zenith (a thicker shell's curvature still shortens a slanted path).
-  it("stays near 1 for a steep ray: under 1.06 straight down, 1.12 at 60 degrees", () => {
+  it("is sqrt(k) at the limb, less the vertical normalisation (within 6 %)", () => {
     for (const k of [2, 6, 10]) {
-      for (const [mu, bound] of [
-        [1, 1.06],
-        [0.5, 1.12],
-      ]) {
-        const f = grazingCompensation(k, mu, X);
-        assert.ok(f >= 1 && f < bound, `k ${k}, mu ${mu}: ${f}`);
-      }
+      const f = grazingCompensation(k, 0, X);
+      assert.ok(f < Math.sqrt(k) && f > Math.sqrt(k) / 1.06, `k ${k}: ${f}`);
     }
   });
 
@@ -130,6 +129,46 @@ describe("grazingCompensation", () => {
       assert.ok(f <= previous + 1e-12, `mu ${mu}: ${f} after ${previous}`);
       previous = f;
     }
+  });
+});
+
+// Why (review M1, 2026-10-01): the weight belongs to a ray's LOWEST point
+// in the air. From space that is the limb's tangent point (mu 0) or the
+// ground hit; but from INSIDE the shell (the dive's last 150 km, and the
+// one-scene flight) a ray going up has its lowest point at the camera,
+// where it climbs steeply: with the tangent-point rule it got sqrt(k),
+// about 2.45 times the intended optical depth at k = 6.
+describe("lowestPointMu", () => {
+  const G = 6360;
+  const up = [0, 0, 1];
+
+  it("is 0 at the tangent point of a ray from space that passes the ground", () => {
+    const o = [-20000, 0, G + 30];
+    const dir = [1, 0, 0];
+    assert.ok(Math.abs(lowestPointMu(o, dir, 0, 40000)) < 1e-9);
+  });
+
+  it("is the ray's slant at the ground where it hits the ground", () => {
+    const o = [0, 0, G + 1000];
+    const dir = [0, 0, -1];
+    assert.ok(Math.abs(lowestPointMu(o, dir, 0, 1000) - 1) < 1e-9);
+  });
+
+  it("is the ray's climb at the camera when the camera is its lowest point", () => {
+    const o = [0, 0, G + 150];
+    for (const [dir, mu] of [
+      [up, 1],
+      [[Math.SQRT1_2, 0, Math.SQRT1_2], Math.SQRT1_2],
+    ]) {
+      const got = lowestPointMu(o, dir, 0, 500);
+      assert.ok(Math.abs(got - mu) < 1e-9, `${dir}: ${got}`);
+    }
+  });
+
+  it("is 0 for a level ray from inside (its lowest point is the camera, grazing)", () => {
+    assert.ok(
+      Math.abs(lowestPointMu([0, 0, G + 150], [1, 0, 0], 0, 5000)) < 1e-9,
+    );
   });
 });
 

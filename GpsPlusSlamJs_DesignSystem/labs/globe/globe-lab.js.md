@@ -115,6 +115,11 @@
   (`supported` false where float render targets are missing: no pass).
   Every smoke that measures pixels on the look before round 4 pins
   `atmo=0` (`withPreRound4Look`, and the coast and stars specs).
+- The held view (review 2026-10-01 M1): `__globeLab.pitchView(deg)` takes
+  the camera from the flight and the controls as a press would, pitches it
+  up by `deg` about its own right axis and HOLDS it there (the controls
+  stop running until a reload), so a smoke can look at the sky from inside
+  the air; the dive itself always looks straight down.
 - The cost probe (round-4 plan DEC-GL4-2/4): `__globeLab.timeFrames(n)`
   draws n frames back to back, reads one pixel so the GPU has finished,
   and returns the wall time in ms. Under SwiftShader it is relative only:

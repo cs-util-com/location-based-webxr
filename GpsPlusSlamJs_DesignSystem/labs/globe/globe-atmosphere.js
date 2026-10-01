@@ -66,10 +66,14 @@ void main() {
  * Chapman's function Ch(x, mu) about sqrt(pi x / 2) at mu = 0 and 1 / mu
  * for a steep ray, so at the limb a k times thicker shell holds only
  * 1 / sqrt(k) of it (review B2). Each ray's steps are therefore weighted
- * by Ch(R / H, mu) / Ch(R / (k H), mu), mu being the ray's zenith cosine
- * where it meets the ground, or 0 for a ray that passes the limb: 1 for
- * k = 1 and for a steep ray, sqrt(k) at the limb, so the limb's colour
- * does not change with k (DEC-GL4-11), only its width.
+ * by `grazingCompensation` (the frame module): Ch(R / H, mu) /
+ * Ch(R / (k H), mu), normalised to 1 straight down, with mu the ray's
+ * zenith cosine at its LOWEST point in the air (the limb's tangent point,
+ * the ground hit, or, from inside the shell, the camera when the ray
+ * climbs: review M1). Rayleigh and Mie are weighted each with its own
+ * scale height (review m3). About sqrt(k) at the limb, 1 for a vertical
+ * ray and at k = 1, so the limb's colour does not change with k
+ * (DEC-GL4-11), only its width.
  */
 const FRAGMENT = /* glsl */ `
 ${ATMOSPHERE_COMMON_GLSL}
@@ -81,10 +85,14 @@ uniform float uRadiance;
 uniform float uThickness;
 varying vec3 vDirection;
 
-// Chapman's grazing-incidence function (chapman in the frame module).
+// Chapman's grazing-incidence function and the compensation (the frame
+// module's chapman, grazingCompensation and lowestPointMu).
 ${CHAPMAN_GLSL}
 
+// One step of the march. wR and wM weight the Rayleigh (with ozone) and
+// the Mie parts of the air: 1 / k times each one's grazing compensation.
 void atmSpaceSample( vec3 p, float dt, float phaseR, float phaseM,
+                     float wR, float wM,
                      inout vec3 radiance, inout vec3 throughput ) {
   float pr = length( p );
   float h = max( 0.0, pr - ATM_GROUND_RADIUS ) / uThickness;
@@ -94,9 +102,12 @@ void atmSpaceSample( vec3 p, float dt, float phaseR, float phaseM,
   atmMedium( h, rs, ms, extinction );
   vec3 sunT = atmSampleTransmittance( atmTransmittanceLut, r, sunCos );
   vec3 multi = atmSampleMultiScattering( atmMultiScatteringLut, r, sunCos );
-  vec3 single = ATM_RADIANCE_SCALE * sunT * ( rs * phaseR + vec3( ms * phaseM ) );
-  vec3 source = single + multi * ( rs + vec3( ms ) );
-  vec3 sigma = max( extinction, vec3( 1e-9 ) );
+  float mieExt = ms / ATM_MIE_ALBEDO;
+  vec3 rsW = rs * wR;
+  float msW = ms * wM;
+  vec3 single = ATM_RADIANCE_SCALE * sunT * ( rsW * phaseR + vec3( msW * phaseM ) );
+  vec3 source = single + multi * ( rsW + vec3( msW ) );
+  vec3 sigma = max( ( extinction - vec3( mieExt ) ) * wR + vec3( mieExt * wM ), vec3( 1e-9 ) );
   vec3 stepT = exp( -sigma * dt );
   radiance += throughput * ( source - source * stepT ) / sigma;
   throughput *= stepT;
@@ -119,11 +130,10 @@ void main() {
   float tEnd = hitsGround ? tGround : tExit;
   if ( tEnd <= tEnter ) discard;
   float tMid = clamp( -b, tEnter, tEnd );
-  // The grazing compensation (see above): the step weight 1 / k times
-  // Ch(R / H, mu) / Ch(R / (k H), mu), with the Rayleigh scale height.
-  float muRay = hitsGround ? max( 0.0, -dot( dir, normalize( o + dir * tGround ) ) ) : 0.0;
-  float xR = ATM_GROUND_RADIUS / ATM_RAYLEIGH_SCALE_HEIGHT;
-  float weight = atmChapman( xR, muRay ) / atmChapman( xR / uThickness, muRay ) / uThickness;
+  // The grazing compensation (see above), at the ray's lowest point.
+  float muRay = atmLowestPointMu( o, dir, tEnter, tEnd );
+  float wR = atmGrazingCompensation( uThickness, muRay, ATM_GROUND_RADIUS / ATM_RAYLEIGH_SCALE_HEIGHT ) / uThickness;
+  float wM = atmGrazingCompensation( uThickness, muRay, ATM_GROUND_RADIUS / ATM_MIE_SCALE_HEIGHT ) / uThickness;
   float cosTheta = dot( dir, uSun );
   float phaseR = atmRayleighPhase( cosTheta );
   float phaseM = atmMiePhase( cosTheta );
@@ -137,7 +147,7 @@ void main() {
     float u1 = 1.0 - float( k + 1 ) / float( NEAR );
     float um = 1.0 - ( float( k ) + 0.5 ) / float( NEAR );
     atmSpaceSample( o + dir * ( tMid - um * um * lenA ),
-                    ( u0 * u0 - u1 * u1 ) * lenA * weight, phaseR, phaseM, radiance, throughput );
+                    ( u0 * u0 - u1 * u1 ) * lenA, phaseR, phaseM, wR, wM, radiance, throughput );
   }
   float lenB = tEnd - tMid;
   for ( int k = 0; k < FAR; k++ ) {
@@ -145,7 +155,7 @@ void main() {
     float u1 = float( k + 1 ) / float( FAR );
     float um = ( float( k ) + 0.5 ) / float( FAR );
     atmSpaceSample( o + dir * ( tMid + um * um * lenB ),
-                    ( u1 * u1 - u0 * u0 ) * lenB * weight, phaseR, phaseM, radiance, throughput );
+                    ( u1 * u1 - u0 * u0 ) * lenB, phaseR, phaseM, wR, wM, radiance, throughput );
   }
   // The in-scattered light, and the share of the ground behind it that
   // comes through: one grey value, the mean over R, G, B (a per-channel
