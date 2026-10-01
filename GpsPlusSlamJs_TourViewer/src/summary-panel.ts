@@ -54,7 +54,7 @@ export const SUMMARY_MAP_TEXT = {
   empty: "Nothing to show on a map yet.",
 } as const;
 
-export type SummaryMapState = "loading" | "ready" | "failed" | "empty";
+type SummaryMapState = "loading" | "ready" | "failed" | "empty";
 
 /** One code's row: its name, its verdict, and the numbers folded away. */
 function codeRow(doc: Document, code: SummaryCode): HTMLElement {

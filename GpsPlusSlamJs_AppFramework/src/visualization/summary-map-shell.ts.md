@@ -34,7 +34,7 @@ forked.
   - `SummaryMapShell`: `destroy()`, `expand()`, `collapse()`,
     `isExpanded()`.
 - Constants: `SUMMARY_MAP_INITIAL_ZOOM` (15), `SUMMARY_MAP_FIT_PADDING`
-  (`[20, 20]`), `SUMMARY_MAP_FIT_MAX_ZOOM` (18).
+  (`[20, 20]`); module-private `SUMMARY_MAP_FIT_MAX_ZOOM` (18).
 
 ## Invariants & assumptions
 

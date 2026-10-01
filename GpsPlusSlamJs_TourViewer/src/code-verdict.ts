@@ -37,7 +37,7 @@ export const VERDICT_GOOD_HORIZONTAL_M = 5;
 export const VERDICT_GOOD_HEADING_DEG = 12;
 /** A best visit reporting worse than this (m) asks for better GPS.
  *  Provisional. */
-export const VERDICT_POOR_GPS_M = 8;
+const VERDICT_POOR_GPS_M = 8;
 
 export type CodeVerdictKind =
   "good" | "walk-further" | "wait-for-gps" | "scan-again";

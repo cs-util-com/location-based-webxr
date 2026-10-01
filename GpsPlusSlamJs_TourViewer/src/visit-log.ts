@@ -61,10 +61,10 @@ export const VISIT_PATH_SPACING_M = 1;
 export const VISIT_PATH_MAX_POINTS = 1000;
 
 /** The stored shape's version; a file of another version is skipped. */
-export const VISIT_LOG_VERSION = 1;
+const VISIT_LOG_VERSION = 1;
 
 /** One point of a visit's raw GPS track. */
-export interface VisitGpsPoint {
+interface VisitGpsPoint {
   readonly lat: number;
   readonly lng: number;
   /** The fix's reported horizontal accuracy (m), when it had one. */
@@ -72,13 +72,13 @@ export interface VisitGpsPoint {
 }
 
 /** One point of a visit's fused path. */
-export interface VisitPathPoint {
+interface VisitPathPoint {
   readonly lat: number;
   readonly lng: number;
 }
 
 /** A code as one visit measured it. */
-export interface VisitCode {
+interface VisitCode {
   readonly levelId: string;
   /** Through the visit's own end-of-visit alignment, NOT code-corrected. */
   readonly geo: QrGeoPose;
@@ -115,7 +115,7 @@ export function newVisitId(pageId: string, generation: number): string {
 // ---------------------------------------------------------------------------
 
 /** The store's GPS point, as far as this module reads it. */
-export interface VisitGpsFix {
+interface VisitGpsFix {
   readonly latitude?: unknown;
   readonly longitude?: unknown;
   readonly latLongAccuracy?: unknown;

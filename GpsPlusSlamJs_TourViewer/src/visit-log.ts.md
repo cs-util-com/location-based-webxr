@@ -38,8 +38,8 @@ one file per visit) so a reload keeps it.
   kept), `entries` (oldest first), `ids`, `clear`.
 - `newVisitId(pageId, generation)`, `thinPath(points, distanceM, spacingM?,
 maxPoints?)`, `maxHorizontalExtentM(positions)`.
-- Constants: `VISIT_PATH_SPACING_M` (1), `VISIT_PATH_MAX_POINTS` (1,000),
-  `VISIT_LOG_VERSION` (1).
+- Constants: `VISIT_PATH_SPACING_M` (1), `VISIT_PATH_MAX_POINTS` (1,000);
+  module-private `VISIT_LOG_VERSION` (1).
 
 ## What a visit stores for a code (the M3a record)
 

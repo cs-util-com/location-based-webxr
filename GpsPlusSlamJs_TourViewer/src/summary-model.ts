@@ -30,7 +30,7 @@ import { codeVisitPoses, type VisitLogEntry } from "./visit-log.js";
 /** A facing line is a quarter of the drawn area's diagonal: at the framed
  *  zoom the map is about that wide, so the line reads at a glance without
  *  crossing half the walk. */
-export const FACING_LINE_SHARE = 0.25;
+const FACING_LINE_SHARE = 0.25;
 /** ...but never shorter than this (m): 20 px at zoom 18 at 47°N. */
 export const FACING_LINE_MIN_M = 8;
 /** ...nor longer (m), so a long walk does not draw a street-long line. */
@@ -41,13 +41,13 @@ export const FACING_LINE_MAX_M = 40;
  * mostly pose noise. 15 degrees leaves about a quarter of the face normal
  * horizontal; a wall poster is far from it either way.
  */
-export const FLAT_CODE_DEG = 15;
+const FLAT_CODE_DEG = 15;
 /** The combined estimate is drawn beside the stored pose only when it is
  *  further away than this (m)... Below it the two marks overlap at the
  *  framed zoom (0.4-1.2 m per pixel). */
 export const DIFFERS_M = 0.5;
 /** ...or turned further than this (degrees). */
-export const DIFFERS_DEG = 2;
+const DIFFERS_DEG = 2;
 
 export interface MapPoint {
   readonly lat: number;
@@ -88,13 +88,13 @@ export interface SummaryCode {
   readonly details: readonly string[];
 }
 
-export interface SummaryTrack {
+interface SummaryTrack {
   readonly visitId: string;
   readonly gps: readonly (MapPoint & { readonly accuracy?: number })[];
   readonly fused: readonly MapPoint[];
 }
 
-export interface SummaryObject extends MapPoint {
+interface SummaryObject extends MapPoint {
   readonly id: string;
   readonly kind: "pin" | "photo";
   readonly label: string;

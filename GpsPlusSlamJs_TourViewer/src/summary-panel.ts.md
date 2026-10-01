@@ -19,8 +19,8 @@ Finish and hands it here.
   - `startAr`: the page's own Start AR setup (`main.ts` clicks `#enter-ar`).
   - `SummaryPanel`: `show(model)` replaces any earlier summary; `hide()`
     drops it and its map (a new AR visit, a closed tour).
-- `SUMMARY_MAP_TEXT`: the map's words per state; `SummaryMapState`:
-  `"loading" | "ready" | "failed" | "empty"`.
+- `SUMMARY_MAP_TEXT`: the map's words per state (`loading`, `ready`,
+  `failed`, `empty`).
 
 ## Invariants & assumptions
 

@@ -46,7 +46,7 @@ export const SUMMARY_MAP_FIT_PADDING: L.PointTuple = [20, 20];
  * would otherwise open at the tiles' ceiling, where the basemap says
  * nothing about where the place is. 18 shows about 150 m across a phone.
  */
-export const SUMMARY_MAP_FIT_MAX_ZOOM = 18;
+const SUMMARY_MAP_FIT_MAX_ZOOM = 18;
 
 /** Delay (ms) before the first `invalidateSize`, for a container that was
  *  not laid out yet when the map was created. */

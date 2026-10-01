@@ -21,7 +21,7 @@ make the code's estimate good enough - computed from what
 - `walkNeededM(accuracyM)`: `a / tan(sqrt(12² - 2²) degrees)`, about
   4.8 x the accuracy (24 m at 5 m).
 - Constants: `VERDICT_GOOD_HORIZONTAL_M` (5), `VERDICT_GOOD_HEADING_DEG`
-  (12), `VERDICT_POOR_GPS_M` (8), `VERDICT_TEXT`.
+  (12), `VERDICT_TEXT`; module-private `VERDICT_POOR_GPS_M` (8).
 
 ## The rule (M3a results, Q3)
 

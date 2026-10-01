@@ -27,9 +27,9 @@ map.
   - `CodeMark`: `lat`, `lng`, `facingDeg` (null for a code lying nearly
     flat), `facingLine` (from the mark along the facing; null without one).
 - `facingBearingDeg(geo)`: the bearing the printed face looks toward.
-- Constants: `FACING_LINE_SHARE` (0.25), `FACING_LINE_MIN_M` (8),
-  `FACING_LINE_MAX_M` (40), `FLAT_CODE_DEG` (15), `DIFFERS_M` (0.5),
-  `DIFFERS_DEG` (2).
+- Constants: `FACING_LINE_MIN_M` (8), `FACING_LINE_MAX_M` (40),
+  `DIFFERS_M` (0.5); module-private `FACING_LINE_SHARE` (0.25),
+  `FLAT_CODE_DEG` (15), `DIFFERS_DEG` (2).
 
 ## Invariants & assumptions
 
