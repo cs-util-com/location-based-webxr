@@ -23,7 +23,9 @@ both must hold for EVERY vote:
   `{ outlierFalloffEnabled: true, outlierFalloffRadiusMeters: 1,
 outlierFalloffExponent: 1, outlierRejectionEnabled: false }`.
 - (module-private) `RETRACT_BATCH_SIZE` (256) - the core's per-batch
-  limit, the re-feed's batch size.
+  limit, the re-feed's batch size. The framework does not re-export the core's
+  `MAX_GPS_EVENT_BATCH_SIZE`; a test reads it from the core the framework
+  resolves and pins it to 256 (M5c review L5).
 - `startEntryVoteSink(store): ViewerVoteSink` - dispatches
   `setAlignmentOverrides(null)` at once (the entry's FIRST store action from
   the viewer, before any fix or vote, on every entry - a plain-AR one too),

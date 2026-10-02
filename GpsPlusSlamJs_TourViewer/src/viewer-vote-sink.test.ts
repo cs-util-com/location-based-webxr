@@ -13,6 +13,9 @@
  * solving). And every vote and keep-alive tick must be ONE solve (D18): a
  * lock's ring as one batch, a device fix and its ring as one batch.
  */
+import { createRequire } from "node:module";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildQrGpsVotes } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import {
@@ -297,6 +300,25 @@ describe(
       for (const p of stored) {
         expect(gpsPointSourceOf(p)).toBe(GPS_POINT_SOURCE_DEVICE);
       }
+    });
+
+    // Why (M5c review L5): the re-feed's batch size (module-private
+    // `RETRACT_BATCH_SIZE`, 256 - the sizes the test above pins) is the
+    // core's per-batch limit, which the framework does not re-export. A core
+    // that lowered it would refuse every full batch of a re-feed; this reads
+    // the limit from the core the framework actually resolves, so the two
+    // cannot drift apart silently.
+    it("re-feeds in batches of the installed core's MAX_GPS_EVENT_BATCH_SIZE (256)", async () => {
+      const frameworkPkg = path.resolve(
+        import.meta.dirname,
+        "../node_modules/gps-plus-slam-app-framework/package.json",
+      );
+      const corePath = createRequire(frameworkPkg).resolve("gps-plus-slam-js");
+      const core = (await import(pathToFileURL(corePath).href)) as Record<
+        string,
+        unknown
+      >;
+      expect(core["MAX_GPS_EVENT_BATCH_SIZE"]).toBe(256);
     });
 
     // Why: after the retraction the history holds no vote, so the hard trim
