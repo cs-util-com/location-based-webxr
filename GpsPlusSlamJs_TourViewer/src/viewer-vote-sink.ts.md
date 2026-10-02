@@ -22,8 +22,8 @@ both must hold for EVERY vote:
 - `VIEWER_SOFT_TRIM` - the frozen override set M0c adopted:
   `{ outlierFalloffEnabled: true, outlierFalloffRadiusMeters: 1,
 outlierFalloffExponent: 1, outlierRejectionEnabled: false }`.
-- `RETRACT_BATCH_SIZE` (256) - the core's per-batch limit, the re-feed's
-  batch size.
+- (module-private) `RETRACT_BATCH_SIZE` (256) - the core's per-batch
+  limit, the re-feed's batch size.
 - `startEntryVoteSink(store): ViewerVoteSink` - dispatches
   `setAlignmentOverrides(null)` at once (the entry's FIRST store action from
   the viewer, before any fix or vote, on every entry - a plain-AR one too),

@@ -61,7 +61,7 @@ export const VIEWER_SOFT_TRIM: Readonly<AlignmentOverrides> = Object.freeze({
 
 /** The re-feed's batch size: the core's limit per `recordGpsEventBatch`
  *  (`MAX_GPS_EVENT_BATCH_SIZE`, core 1.26), so each batch is one solve. */
-export const RETRACT_BATCH_SIZE = 256;
+const RETRACT_BATCH_SIZE = 256;
 
 /** The store surface the sink needs: dispatch, and the current overrides. */
 interface VoteSinkStore {
