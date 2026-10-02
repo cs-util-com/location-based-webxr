@@ -96,6 +96,12 @@ export interface GlobeSurface {
   /** The uniforms every tile's shader reads (the maps, the tuning). */
   readonly surfaceUniforms: GlobeSurfaceUniforms;
   /**
+   * The patched material every tile's lit copy is made from, for another
+   * carrier of the same surface (round-5 F1a: the relief's terrain tiles
+   * wear the same look and read the same uniforms).
+   */
+  readonly template: THREE.MeshStandardMaterial;
+  /**
    * Points the light AND the shader at the sun, a direction in ECEF (any
    * length). RangeError for a zero or non-finite vector.
    */
@@ -326,6 +332,7 @@ export function createGlobeSurface(
     options,
     sun,
     surfaceUniforms,
+    template,
     setSun,
     update(camera, renderer) {
       if (cameraSet !== camera) {

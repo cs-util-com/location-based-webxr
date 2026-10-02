@@ -16,11 +16,15 @@
     the library's default floor (0.3 GB) left a full cache over the cap
     whenever nothing was pending.
   - `createGlobeSurface(loader?)` returns `{ tiles, group, plugin, overlay,
-options, sun, surfaceUniforms, setSun(directionEcef), update(camera,
+options, sun, surfaceUniforms, template, setSun(directionEcef), update(camera,
 renderer), state(), celestialToWorld(siderealAngleRad, target?),
 activeSources(), dispose() }`.
     - The caller adds `group` to its scene, points the sun with `setSun`
       and calls `update` every frame before rendering.
+    - `template`: the patched `MeshStandardMaterial` every tile's lit copy
+      is made from; the relief carrier (`globe-terrain.ts`, round-5 F1a)
+      makes its tiles' copies from it, so both read the same uniforms and
+      the same sun.
     - `group` holds `tiles.group`, `sun` (a `DirectionalLight`,
       intensity `GLOBE_SURFACE.sunIntensity`: 5, the owner's look, round-4
       plan 2026-09-28-2105 DEC-GL4-1; π before) and the sun's target at

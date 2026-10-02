@@ -149,6 +149,19 @@ describe("createGlobeSurface", () => {
 
   // The loading label and the tests wait on these: a map still downloading
   // must not read as "loaded", and a failed one must reach the error box.
+  // Why (round-5 F1a, DEC-GL5-9): the relief carrier's tiles must wear the
+  // SAME look and read the SAME uniforms as the globe's own (one sun, one
+  // set of maps), so the globe hands out the template it patched.
+  it("hands out the patched template its tiles are lit copies of", () => {
+    const globe = createGlobeSurface(stubLoader());
+    expect(globe.template).toBeInstanceOf(THREE.MeshStandardMaterial);
+    expect(globe.template.roughness).toBe(0.9);
+    expect(globe.template.customProgramCacheKey()).not.toBe(
+      new THREE.MeshStandardMaterial().customProgramCacheKey(),
+    );
+    globe.dispose();
+  });
+
   it("counts the global maps as they load and as they fail", () => {
     const loader = stubLoader();
     const globe = createGlobeSurface(loader);
