@@ -18,6 +18,7 @@ import * as THREE from "three";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
 import { orbitPose } from "./globe-camera.js";
+import { pitchAtDeg } from "./globe-flight.js";
 import {
   GLOBE_DIVE,
   diveAt,
@@ -220,24 +221,49 @@ describe("planDive and diveStep", () => {
     expect(diveStep(dive, 15_000).altitudeM).toBe(150_000);
   });
 
-  it("keeps an untilted start looking at the Earth's centre all the way", () => {
+  // Why (round-5 plan §3.5, F1): the dive is now an OBLIQUE approach. Far
+  // out it looks at the Earth's centre (continuous with the intro's end);
+  // below 1,000 km the view looks down at the pitch law's 45 degrees
+  // (pitchAtDeg), always at the ground point under the path, so the
+  // target stays at the frame's centre while the ground ahead comes into
+  // view.
+  it("looks at the centre far out and at the target's ground at the pitch law's angle low down", () => {
     const start = orbitCamera(48, -120, 20_000_000);
     const dive = planDive(ell, start, equator, {
       durationMs: 15_000,
       toAltitudeM: 150_000,
     });
+    // The least alignment with the centre among the steps above 5,000 km.
+    let farAlignment = Infinity;
+    let farSteps = 0;
     for (let i = 0; i <= 100; i++) {
       const step = diveStep(dive, (15_000 * i) / 100);
       const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
         step.quaternion,
       );
-      const toCentre = step.position.clone().negate().normalize();
-      expect(forward.dot(toCentre)).toBeGreaterThan(1 - 1e-12);
+      const down = step.position.clone().negate().normalize();
+      const depressionDeg =
+        (Math.asin(Math.min(1, forward.dot(down))) * 180) / Math.PI;
+      expect(depressionDeg).toBeCloseTo(pitchAtDeg(step.altitudeM), 4);
+      if (step.altitudeM >= 5_000_000) {
+        farAlignment = Math.min(farAlignment, forward.dot(down));
+        farSteps++;
+      }
     }
+    expect(farSteps).toBeGreaterThan(10);
+    expect(farAlignment).toBeGreaterThan(1 - 1e-12);
+    // At the end the forward ray meets the target's ground point.
+    const end = diveStep(dive, 15_000);
+    const ground = equator.direction
+      .clone()
+      .multiplyScalar(surfaceRadiusAlong(ell, equator.direction));
+    const toGround = ground.clone().sub(end.position).normalize();
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(end.quaternion);
+    expect(forward.dot(toGround)).toBeGreaterThan(1 - 1e-9);
   });
 
   it("starts at a tilted camera's own rotation and fades it out over the first fifth", () => {
-    const start = orbitCamera(10, 30, 3_000_000);
+    const start = orbitCamera(10, 30, 30_000_000);
     const tilt = new THREE.Quaternion().setFromAxisAngle(
       new THREE.Vector3(1, 0, 0),
       0.6,
@@ -253,14 +279,16 @@ describe("planDive and diveStep", () => {
     expect(angle(diveStep(dive, 0).quaternion, tilted.quaternion)).toBeLessThan(
       1e-7,
     );
+    // After the first fifth the tilt is gone: the same rotation as an
+    // untilted start's dive.
+    const plain = planDive(ell, start, equator, {
+      durationMs: 15_000,
+      toAltitudeM: 150_000,
+    });
     for (const ms of [3_000, 8_000, 15_000]) {
-      const step = diveStep(dive, ms);
-      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
-        step.quaternion,
-      );
       expect(
-        forward.dot(step.position.clone().negate().normalize()),
-      ).toBeGreaterThan(1 - 1e-12);
+        angle(diveStep(dive, ms).quaternion, diveStep(plain, ms).quaternion),
+      ).toBeLessThan(1e-7);
     }
   });
 });

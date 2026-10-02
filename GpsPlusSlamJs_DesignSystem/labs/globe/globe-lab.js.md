@@ -150,6 +150,12 @@
     `starMag` (fewer stars) and a high `starGain` it gives the
     reference's few bright stars as an alternative to the owner's dense
     field.
+  - `sky` (F1, DEC-GL5-11; not a reference-look switch): the sky
+    fill's floor, the terrain lab's `sky` key, default `SKY_FILL.floor`
+    (0.5) from the Globe package's one sky level (`sky-level.ts`). A low
+    sun's ground keeps that much of a zenith sun's light from the sky, as
+    the terrain lab's relief does, so relief and globe agree at dusk; 0 is
+    the look before the fill (`withPreRound4Look` pins it).
   - Item 5 (a dark sea without a bright glint) needs no new switch:
     `waterRoughness=0.9` makes the water as rough as the land. Item 4
     (relief from elevation) needs a height map (data), not done.
@@ -251,6 +257,32 @@
     fly-in `flyInStart` (its start now, null before a target), `firstTurn`
     (the camera's direction on its first frame), `flyInBlendMs` (0 when no
     spin was shown) and `flyInSettled`.
+- The relief and the oblique flight (round-5 plan 2026-10-01-0945 §3.5,
+  F1; DEC-GL5-9):
+  - `relief=1` (read once, at load; 0 by default until the atmosphere
+    hand-over, F2) draws the library's terrain tiles
+    (`/globe/globe-terrain.js`) as the surface in place of the generated
+    globe tiles: the globe's group holds them, its template and uniforms
+    light them, its sun still turns with the tile group; the centre
+    raycast hits them. `reliefHeights=synthetic` serves heights generated
+    in the page (`../globe-terrain/synthetic-heights.js`; the smokes),
+    otherwise the live Terrarium tiles, credited in the credits line.
+  - Every frame the relief's exaggeration is `exaggerationAt` of the
+    camera's altitude (`/globe/globe-flight.js`: 1 at globe scale, the
+    near value `reliefNear` (default 3, DEC-GL5-5) from 20 km down, 2.2 at
+    the 150 km hold), in steps of 0.1.
+  - The pin's dive is the oblique approach (`planDive`'s pitch law; the
+    `pitchLow` key, 30-90, default 45; 90 flies the old straight-down
+    dive), ending at the hand-over altitude or the clearance rule's floor
+    over the target (`minimumAltitudeM` of the ground under it, read by a
+    ray onto the drawn relief, at the hold's exaggeration), whichever is
+    higher. `handOver` stays default 1 (DEC-GL5-8).
+  - `state()` adds `relief` (`{ heightScale, litTiles, visibleTiles,
+heights }` or null) and `cameraDepressionDeg`.
+  - Not in F1 (recorded for F2/F3): the cloud slab's depth input and style
+    C's neighbourhood terms on the library tiles; the re-oriented frame and
+    the sky level's move into the Globe package are in the record's F1
+    section with their state.
 - Touch and mouse (round-2 plan 2026-09-26-2055 M3a, M3b; round-3 plan
   2026-09-27-0532 §4 E): the tile library's own `GlobeControls` on the
   canvas, damping on:

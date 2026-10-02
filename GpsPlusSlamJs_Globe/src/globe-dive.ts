@@ -12,6 +12,7 @@ import * as THREE from "three";
 import type { Ellipsoid } from "3d-tiles-renderer";
 
 import { smoothstep, turnPose, type OrbitPose } from "./globe-camera.js";
+import { GLOBE_FLIGHT, pitchAtDeg } from "./globe-flight.js";
 
 export const GLOBE_DIVE = {
   /** The whole dive, turn and descent (the owner's "about 15 s"). */
@@ -132,6 +133,8 @@ export interface Dive {
   readonly durationMs: number;
   readonly fromAltitudeM: number;
   readonly toAltitudeM: number;
+  /** The pitch law's low pitch (round-5 plan §3.5; 90 flies the old nadir dive). */
+  readonly pitchLowDeg: number;
 }
 
 /** The share of the dive over which a tilted start turns to the orbit view. */
@@ -148,7 +151,11 @@ export function planDive(
   ellipsoid: Ellipsoid,
   start: DiveStart,
   target: OrbitPose,
-  options: { readonly durationMs: number; readonly toAltitudeM: number },
+  options: {
+    readonly durationMs: number;
+    readonly toAltitudeM: number;
+    readonly pitchLowDeg?: number;
+  },
 ): Dive {
   const startOrbit = orbitQuaternion(start.pose, new THREE.Quaternion());
   const dive: Dive = {
@@ -162,8 +169,10 @@ export function planDive(
       start.distanceM - surfaceRadiusAlong(ellipsoid, start.pose.direction),
     ),
     toAltitudeM: options.toAltitudeM,
+    pitchLowDeg: options.pitchLowDeg ?? GLOBE_FLIGHT.pitchLowDeg,
   };
   diveAt(0, dive); // validates the numbers
+  pitchAtDeg(0, { pitchLowDeg: dive.pitchLowDeg }); // and the pitch
   return dive;
 }
 
@@ -185,15 +194,54 @@ export function diveStep(
 } {
   const frame = diveAt(elapsedMs, dive);
   const pose = turnPose(dive.from, dive.to, frame.turnT);
-  const distance =
-    surfaceRadiusAlong(dive.ellipsoid, pose.direction) + frame.altitudeM;
   const weight =
     1 - smoothstep(elapsedMs / (OFFSET_FADE_SHARE * dive.durationMs));
   const offset = new THREE.Quaternion().slerp(dive.startOffset, weight);
+  // The pitch law, eased in over the same first fifth, so a start low
+  // enough to be below 90 degrees still begins exactly where the camera is.
+  const law = pitchAtDeg(frame.altitudeM, { pitchLowDeg: dive.pitchLowDeg });
+  const pitch = 90 + (law - 90) * (1 - weight);
+  const camera = obliqueCamera(dive.ellipsoid, pose, frame.altitudeM, pitch);
   return {
-    position: pose.direction.clone().multiplyScalar(distance),
-    quaternion: orbitQuaternion(pose, new THREE.Quaternion()).multiply(offset),
+    position: camera.position,
+    quaternion: camera.quaternion.multiply(offset),
     altitudeM: frame.altitudeM,
     done: frame.done,
+  };
+}
+
+/**
+ * A camera `altitudeM` above the ground point under `pose` (its surface
+ * radius plus the altitude, from the centre), looking at that ground point
+ * with a depression of `pitchDeg` below its local horizontal, from the
+ * south (round-5 plan §3.5): 90 degrees is the orbit view straight down;
+ * lower pitches move the camera back along the meridian by the angle the
+ * triangle centre-camera-ground gives. The screen's up is the pose's north.
+ */
+function obliqueCamera(
+  ellipsoid: Ellipsoid,
+  pose: OrbitPose,
+  altitudeM: number,
+  pitchDeg: number,
+): { position: THREE.Vector3; quaternion: THREE.Quaternion } {
+  const d = pose.direction.clone().normalize();
+  const rs = surfaceRadiusAlong(ellipsoid, d);
+  const ground = d.clone().multiplyScalar(rs);
+  const gamma = ((90 - pitchDeg) * Math.PI) / 180;
+  const theta =
+    gamma > 1e-12
+      ? Math.asin(Math.min(1, ((rs + altitudeM) / rs) * Math.sin(gamma))) -
+        gamma
+      : 0;
+  const position = d
+    .clone()
+    .multiplyScalar(Math.cos(theta))
+    .addScaledVector(pose.up, -Math.sin(theta))
+    .normalize()
+    .multiplyScalar(rs + altitudeM);
+  lookAtMatrix.lookAt(position, ground, pose.up);
+  return {
+    position,
+    quaternion: new THREE.Quaternion().setFromRotationMatrix(lookAtMatrix),
   };
 }

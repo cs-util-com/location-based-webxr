@@ -61,6 +61,17 @@ import {
   globeZoomOutLimitM,
   limitGlobeZoomOut,
 } from "/globe/globe-zoom-limit.js";
+import { createGlobeTerrain } from "/globe/globe-terrain.js";
+import { SKY_FILL } from "/globe/sky-level.js";
+import {
+  GLOBE_FLIGHT,
+  exaggerationAt,
+  minimumAltitudeM,
+} from "/globe/globe-flight.js";
+import {
+  SYNTHETIC_HEIGHTS_URL,
+  installSyntheticHeights,
+} from "../globe-terrain/synthetic-heights.js";
 import { geolocationPermissionState } from "/fw/sensors/permission-state.js";
 import { createGlobeAtmosphere } from "./globe-atmosphere.js";
 import {
@@ -166,10 +177,10 @@ function statusView() {
  * full texts, links and GIBS's acknowledgement in a <details>. Built with
  * textContent only: the texts come from the registry, never from markup.
  */
-function renderCredits(credits) {
+function renderCredits(credits, heightsCredit = null) {
   const details = document.createElement("details");
   const summary = document.createElement("summary");
-  summary.textContent = `Imagery: ${credits.map((c) => c.short).join(" · ")}. ${PROCEDURAL_STARS}`;
+  summary.textContent = `Imagery: ${credits.map((c) => c.short).join(" · ")}. ${PROCEDURAL_STARS}${heightsCredit ? ` ${heightsCredit}` : ""}`;
   details.append(summary);
   const list = document.createElement("ul");
   for (const c of credits) {
@@ -235,6 +246,16 @@ const PARAMS = {
   // and whether it then opens the city (0 holds at the hand-over altitude,
   // to look at it).
   diveMs: { fallback: GLOBE_DIVE.durationMs, min: 1000, max: 60_000 },
+  // The oblique flight (round-5 plan §3.5, F1): the low pitch of the pitch
+  // law (degrees below the horizontal from 1,000 km down; 90 flies the old
+  // straight-down dive).
+  pitchLow: { fallback: GLOBE_FLIGHT.pitchLowDeg, min: 30, max: 90 },
+  // The relief (F1, DEC-GL5-9): 1 draws the library's terrain tiles as the
+  // surface, exaggerated by altitude (`exaggerationAt`), in place of the
+  // generated globe tiles; 0 (the default until F2) keeps the globe as it
+  // was. `reliefNear` is the near-ground exaggeration (3, DEC-GL5-5).
+  relief: { fallback: 0, min: 0, max: 1 },
+  reliefNear: { fallback: GLOBE_FLIGHT.exaggerationNear, min: 1, max: 5 },
   handOverKm: {
     fallback: GLOBE_DIVE.handOverAltitudeM / 1000,
     min: 1,
@@ -295,6 +316,10 @@ const PARAMS = {
   grade: { fallback: 0, min: 0, max: 1 },
   cloudRelief: { fallback: 0, min: 0, max: 1 },
   twilight: { fallback: 0, min: 0, max: 1 },
+  // The sky fill's floor (DEC-GL5-11; the terrain lab's `sky` key, the
+  // Globe package's one sky level): what a low sun's ground keeps from the
+  // sky. 0 is the look before the fill.
+  sky: { fallback: SKY_FILL.floor, min: 0, max: 1 },
   // 0.1 by default (round-5 plan DEC-GL5-4: navy space).
   space: { fallback: 0.1, min: 0, max: 1 },
   starGlow: { fallback: 0, min: 0, max: 1 },
@@ -339,6 +364,10 @@ function readHashParams() {
   const clock = readGlobeClockSetting(params);
   return {
     ...values,
+    // Where the relief's heights come from: the live Terrarium tiles, or
+    // `synthetic` (generated in the page, for the smokes: no network).
+    reliefHeights:
+      params.get("reliefHeights") === "synthetic" ? "synthetic" : "terrarium",
     url: parseLatLngText(params.get("at")),
     // The fly-in's variant (round-5 plan §3.1): one of INTRO_VARIANTS,
     // `narrow` (the default case) when absent or unknown.
@@ -609,6 +638,7 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
       dive = planDive(ellipsoid, start, orbitPose(ellipsoid, target), {
         durationMs,
         toAltitudeM,
+        pitchLowDeg: params.pitchLow,
       });
       diveStartedAt = now;
       diveClock = clock ?? ((elapsedMs) => elapsedMs);
@@ -777,7 +807,15 @@ function currentPose(camera) {
  * pin (`#globe-arrival-status`) shows the tiles warmed of the total, cold
  * or warm, then how it ended (`arrivalStatusText`).
  */
-function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
+function bindPin({
+  flight,
+  controls,
+  camera,
+  getParams,
+  sceneMs,
+  navigate,
+  diveFloorM = () => 0,
+}) {
   let phase = "idle";
   let message = "";
   let lastUrl = null;
@@ -947,7 +985,9 @@ function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
       },
       {
         durationMs: params.diveMs,
-        toAltitudeM: params.handOverKm * 1000,
+        // The clearance rule (one-scene plan §3.4): never closer to the
+        // exaggerated ground under the target than the clearance.
+        toAltitudeM: Math.max(params.handOverKm * 1000, diveFloorM(located)),
         clock,
       },
     );
@@ -1163,7 +1203,7 @@ function tileRequestsByLevel() {
   return levels;
 }
 
-function start() {
+async function start() {
   // The default log keeps 250 entries: fewer than the committed pyramid
   // (2,730 tiles with level 5).
   performance.setResourceTimingBufferSize(4000);
@@ -1192,6 +1232,8 @@ function start() {
   let fittedSize = "";
   /** When the frame loop last ran (performance.now()), for the smokes. */
   let frameAt = 0;
+  const terrainResolution = new THREE.Vector2();
+  const floorRay = new THREE.Raycaster();
   const globe = createGlobeSurface();
   useSurfaceDefaults(globe);
   const { radius: radii } = globe.tiles.ellipsoid;
@@ -1201,8 +1243,45 @@ function start() {
     radii.z,
   ]);
   scene.add(globe.group);
+  // The relief (F1): the library's terrain tiles wearing the globe's look,
+  // in the globe's group, in place of the generated tiles. Created once, on
+  // the page's first relief=1; its heights are exaggerated by altitude.
+  const startParams = readHashParams();
+  if (startParams.relief === 1 && startParams.reliefHeights === "synthetic") {
+    installSyntheticHeights();
+  }
+  // The real heights' source is loaded only for the relief: the boot graph
+  // stays free of the Osm library (build-lookdev.test.mjs).
+  const terrarium =
+    startParams.relief === 1 && startParams.reliefHeights !== "synthetic"
+      ? await import("/osm-lib/elevation/terrarium.js")
+      : null;
+  const terrain =
+    startParams.relief === 1
+      ? createGlobeTerrain({
+          url: terrarium
+            ? terrarium.TERRARIUM_URL_TEMPLATE
+            : SYNTHETIC_HEIGHTS_URL,
+          imagery: globe.overlay,
+          template: globe.template,
+          heightScale: 1,
+        })
+      : null;
+  if (terrain) {
+    globe.tiles.group.visible = false;
+    globe.group.add(terrain.tiles.group);
+  }
+  /** The tiles the surface is drawn with: the relief's or the globe's. */
+  const surfaceTiles = terrain ? terrain.tiles : globe.tiles;
   const credits = creditsFor(globe.activeSources());
-  renderCredits(credits);
+  renderCredits(
+    credits,
+    !terrain
+      ? null
+      : terrarium
+        ? terrarium.TERRARIUM_ATTRIBUTION
+        : "Heights: synthetic, generated in the page.",
+  );
   const status = statusView();
   const flight = introFlight(globe.tiles.ellipsoid, {
     sunEcef: () => globe.surfaceUniforms.uSunEcef.value,
@@ -1298,6 +1377,7 @@ function start() {
     u.uGrade.value = params.grade;
     u.uCloudRelief.value = params.cloudRelief;
     u.uTwilight.value = params.twilight;
+    u.uSkyFloor.value = params.sky;
     sky.setStarGlow(params.starGlow);
     globe.sun.intensity = params.sunIntensity;
     sky.setLook({ sunDiameterDeg: params.sunSize, glow: params.sunGlow });
@@ -1427,7 +1507,44 @@ function start() {
   window.addEventListener("pageshow", (event) => {
     if (event.persisted) pin?.returned();
   });
+  /**
+   * The least altitude over `target` (the clearance rule, F1): its ground
+   * from a ray down onto the drawn relief, exaggerated as at the hand-over
+   * altitude, plus the clearance; 0 without the relief or a loaded tile.
+   */
+  const diveFloorM = (target) => {
+    if (!terrain) return 0;
+    const ell = globe.tiles.ellipsoid;
+    const lat = target.lat * DEG;
+    const lon = target.lng * DEG;
+    const above = ell.getCartographicToPosition(
+      lat,
+      lon,
+      100_000,
+      new THREE.Vector3(),
+    );
+    const ground = ell.getCartographicToPosition(
+      lat,
+      lon,
+      0,
+      new THREE.Vector3(),
+    );
+    const local = terrain.tiles.group;
+    local.updateMatrixWorld(true);
+    const from = above.applyMatrix4(local.matrixWorld);
+    const to = ground.applyMatrix4(local.matrixWorld);
+    floorRay.set(from, to.sub(from).normalize());
+    const hit = floorRay.intersectObject(local, true)[0];
+    if (!hit) return 0;
+    const heightM =
+      (100_000 - hit.distance) / Math.max(terrain.plugin.heightScale, 1);
+    const e = exaggerationAt(params.handOverKm * 1000, {
+      near: params.reliefNear,
+    });
+    return minimumAltitudeM(heightM, e, GLOBE_FLIGHT.clearanceM);
+  };
   pin = bindPin({
+    diveFloorM,
     flight,
     controls,
     camera,
@@ -1480,7 +1597,29 @@ function start() {
       if (!heldView) controls.update();
     }
     pin.frame();
-    globe.update(camera, renderer);
+    if (terrain) {
+      // The globe's own tiles are not drawn: only its sun and uniforms.
+      terrain.tiles.setCamera(camera);
+      renderer.getDrawingBufferSize(terrainResolution);
+      terrain.tiles.setResolution(
+        camera,
+        terrainResolution.x,
+        terrainResolution.y,
+      );
+      camera.updateMatrixWorld();
+      const altitudeM = Math.max(
+        0,
+        globe.tiles.ellipsoid.getPositionElevation(
+          globe.tiles.group.worldToLocal(camera.position.clone()),
+        ),
+      );
+      terrain.plugin.heightScale = exaggerationAt(altitudeM, {
+        near: params.reliefNear,
+      });
+      terrain.tiles.update();
+    } else {
+      globe.update(camera, renderer);
+    }
     status.update(globe.state());
     readoutText = readoutNow();
     readout.offer(readoutText, performance.now());
@@ -1600,7 +1739,7 @@ function start() {
    */
   const centreLatLon = () => {
     raycaster.setFromCamera(centre, camera);
-    const hit = raycaster.intersectObject(globe.tiles.group, true)[0];
+    const hit = raycaster.intersectObject(surfaceTiles.group, true)[0];
     // A hit beyond the Earth's centre is on the far side: the ray slipped
     // past the near surface, so there is no answer, not a wrong one.
     if (!hit || hit.distance > camera.position.length()) return null;
@@ -1683,6 +1822,8 @@ function start() {
         grade: globe.surfaceUniforms.uGrade.value,
         cloudRelief: globe.surfaceUniforms.uCloudRelief.value,
         twilight: globe.surfaceUniforms.uTwilight.value,
+        sky: globe.surfaceUniforms.uSkyFloor.value,
+        skyShare: globe.surfaceUniforms.uSkyShare.value,
         space: sky.uniforms.uSpace.value,
         starGlow: sky.starUniforms.uStarGlow.value,
       },
@@ -1697,6 +1838,19 @@ function start() {
       cameraOwner: flight.drives ? "intro" : "controls",
       cameraDistanceM: camera.position.length(),
       cameraDirection: asArray(camera.position.clone().normalize()),
+      // The view's depression below the local horizontal (the oblique
+      // flight's pitch, round-5 plan §3.5), degrees.
+      cameraDepressionDeg:
+        (Math.asin(
+          Math.min(
+            1,
+            new THREE.Vector3(0, 0, -1)
+              .applyQuaternion(camera.quaternion)
+              .dot(camera.position.clone().negate().normalize()),
+          ),
+        ) *
+          180) /
+        Math.PI,
       frameAt,
       // The readout's text as of the last frame, and what the line shows
       // (the line is throttled, so it may lag by up to 250 ms).
@@ -1732,6 +1886,14 @@ function start() {
       },
       fovY: params.fovY,
       cameraFov: camera.fov,
+      relief: terrain
+        ? {
+            heightScale: terrain.plugin.heightScale,
+            litTiles: terrain.litTiles(),
+            visibleTiles: terrain.tiles.visibleTiles.size,
+            heights: startParams.reliefHeights,
+          }
+        : null,
       zoomOutLimitM: zoomOutM(),
       pixelRatio: renderer.getPixelRatio(),
       errorTarget: globe.tiles.errorTarget,
@@ -1858,10 +2020,8 @@ function start() {
   };
 }
 
-try {
-  start();
-} catch (e) {
+start().catch((e) => {
   window.__globeLab = { ready: false, error: String(e?.stack ?? e) };
   errorBox.textContent = String(e);
   throw e;
-}
+});

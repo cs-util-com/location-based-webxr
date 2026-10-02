@@ -30,16 +30,26 @@
     point, the one `orbitPose` centres).
   - `orbitQuaternion(pose, target)` - the rotation of a camera on an orbit
     pose looking at the centre (what `applyOrbitPose` sets).
-  - `planDive(ellipsoid, start, target, { durationMs, toAltitudeM })` ->
+  - `planDive(ellipsoid, start, target, { durationMs, toAltitudeM,
+pitchLowDeg? })` ->
     `Dive`: `start` is `{ pose, distanceM, quaternion }` (the camera as it
     is), `target` an orbit pose. The start's altitude is its own height
     above the surface along its own direction, at least 1 m; its tilt is
     kept as its offset from its own orbit view.
   - `diveStep(dive, elapsedMs)` -> `{ position, quaternion, altitudeM,
-done }`: the pose turned by `turnPose`, at `surfaceRadiusAlong` of the
-    CURRENT direction plus the dive's altitude, looking at the centre, times
-    the start's offset slerped from itself to identity over the first
-    fifth (`1 - smoothstep(t / 0.2)`).
+done }`: since round-5 F1 the OBLIQUE approach (plan §3.5): the pose
+    turned by `turnPose`, the camera `obliqueCamera` at the dive's
+    altitude over the ground point under it, looking at that point with
+    the pitch law's depression (`pitchAtDeg` in `globe-flight.ts`, the
+    dive's `pitchLowDeg`, 45 by default; 90 is the old straight-down dive),
+    eased in from 90 over the first fifth so a start below 5,000 km begins
+    exactly where the camera is; times the start's offset slerped from
+    itself to identity over the same fifth (`1 - smoothstep(t / 0.2)`).
+  - Internal: `obliqueCamera(ellipsoid, pose, altitudeM, pitchDeg)` -> `{ position,
+quaternion }`: the camera at the ground point's surface radius plus the
+    altitude from the centre, moved back along the meridian (south) by the
+    angle the triangle centre-camera-ground gives for the depression, and
+    looking at the ground point with the pose's north as the screen's up.
 - Invariants & assumptions: the altitude is the height above the surface
   along the camera's own geocentric ray (not the geodetic normal; the
   difference is a fraction of a metre at these heights).
