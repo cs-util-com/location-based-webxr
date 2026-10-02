@@ -2586,5 +2586,42 @@ describe(
         lastVisitFile(files).codes.find((c) => c.levelId === stored.id)?.moved,
       ).toBe(true);
     });
+
+    it("undoes a Replace-button replace as not from the prompt, leaves the remembered answers alone, and the prompt can return (M5b review #6)", async () => {
+      // Why: Undo serves any replace (M5b review #3), but only a prompt's
+      // replace answered a prompt. Logged as `fromPrompt: true`, or
+      // remembered as a "Not now" for the spot, a Replace-button undo would
+      // misreport the creator's answer and silence a prompt nobody was
+      // ever shown for that spot.
+      const { store, files } = memoryDraftStore();
+      const { a, stored, fix } = await secondVisitFarFromTheCode(store);
+      await replaceWithTheButton(a, stored);
+      expect(a.dom.moveUndo.hidden).toBe(false);
+      a.dom.moveUndoButton.click();
+      await vi.waitFor(() => {
+        expect(a.dom.status.textContent).toContain(
+          "The code's saved position is back where it was",
+        );
+      });
+      expect(a.ctx.mintedLevel).toEqual(stored);
+      expect(logs(a, "codeReplaceUndone")).toEqual([
+        expect.objectContaining({
+          levelId: stored.id,
+          restored: stored,
+          fromPrompt: false,
+        }),
+      ]);
+      const meta = JSON.parse(files.get(META_KEY) as string) as {
+        level: { json: string };
+        moveAnswers: unknown[];
+      };
+      expect(meta.level.json).toBe(stored.json);
+      expect(meta.moveAnswers).toEqual([]);
+      // The refusal stands again against the restored pose: once it has
+      // lasted, the prompt asks.
+      fix(MOVE_PROMPT_RULE.minFixes);
+      expect(a.dom.movePrompt.hidden).toBe(false);
+      expect(logs(a, "codeMovePrompted")).toHaveLength(1);
+    });
   },
 );
