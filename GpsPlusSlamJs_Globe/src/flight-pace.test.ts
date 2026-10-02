@@ -1,8 +1,8 @@
 /**
  * Why these tests matter: the fly-in's clock is paced by the OSM prefetch
- * (round-5 plan 2026-10-01-0945 §3.6, DEC-GL5-6). The owner's words: slow
- * while the data loads, quick when it is already stored, and never longer
- * than the 30 s cap. Every failure here is one the owner would SEE: a speed
+ * (round-5 plan 2026-10-01-0945 §3.6, DEC-GL5-6): slow while the data
+ * loads, quick when it is already stored, and never longer than the 30 s
+ * cap. Every failure here is one a viewer would SEE: a speed
  * jump the moment a tile lands, a flight that never ends on a dead network,
  * a "warm" flight that still crawls. These are the worked examples; the
  * invariants over random inputs are in `flight-pace.property.test.ts`.

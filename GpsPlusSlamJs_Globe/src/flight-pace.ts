@@ -1,7 +1,7 @@
 /**
  * The fly-in's clock, paced by the OSM prefetch (round-5 plan
- * 2026-10-01-0945 §3.6, DEC-GL5-6). The owner: slow while the data loads,
- * quick when it is already stored, and never longer than the cap. Pure:
+ * 2026-10-01-0945 §3.6, DEC-GL5-6): slow while the data loads, quick when
+ * it is already stored, and never longer than the cap. Pure:
  * the previous state, the prefetch's progress and the elapsed time in; the
  * path fraction `s` (0 to 1) and its rate out. The flight's own pose
  * function maps `s` to the camera, eases its ends, and owns the path.

@@ -165,6 +165,37 @@ describe("the flight clock, over random networks and frame rates", () => {
     );
   });
 
+  it("stays within one coarse frame of a finer clock when signals land between frames", () => {
+    // A signal acts from the frame after the one that reports it, so a
+    // coarser frame delays each rise of the target by at most one coarse
+    // frame. The ratcheted target rises by at most (warm - cold) in all, so
+    // the two clocks can differ in s by at most (warm - cold) x 48 ms.
+    fc.assert(
+      fc.property(
+        params,
+        fc.array(
+          fc.record({
+            atMs: fc.integer({ min: 1, max: 40_000 }),
+            value: fc.double({ min: 0, max: 1, noNaN: true }),
+          }),
+          { maxLength: 5 },
+        ),
+        (p, steps) => {
+          const fine = run(p, steps, [16]);
+          const coarse = run(p, steps, [48]);
+          const byTime = new Map(fine.map((s) => [s.elapsedMs, s.s]));
+          const bound = (1 / p.minMs - 1 / p.capMs) * 48 + 1e-9;
+          for (const state of coarse) {
+            const other = byTime.get(state.elapsedMs);
+            if (other === undefined) continue;
+            expect(Math.abs(other - state.s)).toBeLessThanOrEqual(bound);
+          }
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
   it("flies the rest at about the warm pace once the data is done", () => {
     fc.assert(
       fc.property(
