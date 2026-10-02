@@ -4,8 +4,8 @@
  * a lab's pure module can import another package's source by its page path
  * and still run under node's own test runner. Node strips the types.
  *
- * `test:unit` passes `--import ./test-route-loader.mjs`; registering is the
- * import's side effect.
+ * `test:unit` passes `--import ./test-route-loader.mjs` and the Playwright
+ * config imports it; registering is the import's side effect.
  *
  * @see test-route-loader.mjs.md
  */

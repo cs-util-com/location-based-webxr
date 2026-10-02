@@ -2,6 +2,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
 import { browserLaunchArgs } from "../../scripts/e2e/browser-launch.mjs";
+// The lab specs import lab modules that import another package's source by
+// its page path (`/globe/sky-level.js`); the runner and its workers load this
+// config, so the hook resolves those paths as `test:unit` does.
+import "../test-route-loader.mjs";
 
 /**
  * The 3D look-dev page's smoke test and the lab pages' specs (the design

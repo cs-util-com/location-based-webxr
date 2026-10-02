@@ -26,7 +26,9 @@ float floorLevel )`, the twilight's sine baked from `SKY_FILL` to 8
   - Never falls as the sun rises (a property test).
   - Dependency-free and type-erasable, so node's own runner loads the
     TypeScript source directly (the design system's `test-route-loader.mjs`
-    maps `/globe/sky-level.js` to it).
+    maps `/globe/sky-level.js` to it). That is also why it keeps its own
+    one-line smoothstep instead of `globe-camera.ts`'s: node would not
+    resolve a sibling import (it does not rewrite `.js` to `.ts`).
 - Examples:
   - `skyLevel(Math.sin(11.2 * Math.PI / 180))` is 0.5 (the floor);
     `skyLevel(1)` is 1; `skyLevel(-Math.sin(6 * Math.PI / 180))` is 0.

@@ -13,6 +13,8 @@
     `--import ./test-route-loader.mjs` (in
     `scripts/test-timing/projects.mjs`), which node forwards to every test
     file's process.
+    `3d/playwright.config.mjs` imports it too: the lab specs import lab
+    modules in Node (the runner and its workers load the config first).
   - `routeUrl(specifier, routes)` - the file URL a page path maps to under
     a route with `typescript: true`, or null for anything else: relative,
     bare and protocol-relative specifiers, a path no route claims, a route

@@ -196,6 +196,11 @@ const JUSTIFIED = [
     file: "GpsPlusSlamJs_Globe/src/globe-readout.ts",
     why: "the Globe package depends only on 3d-tiles-renderer, not on the framework, and its readout wants a different contract (thousands grouping at orbit, 'unknown' for a non-finite value) that the framework's options do not express",
   },
+  {
+    name: "smoothstep",
+    file: "GpsPlusSlamJs_Globe/src/sky-level.ts",
+    why: "the design system's node tests load this file as TypeScript source through a resolve hook, and node does not rewrite a sibling import's .js to .ts, so the one sky level must stay dependency-free; the package's own copy is globe-camera.ts",
+  },
   // No smoothstep entry, deliberately. The framework's one copy
   // (utils/smoothstep.ts, the three-argument GLSL form) and OsmDemo's and
   // Landing's one-argument easing curves are one per package, which the
