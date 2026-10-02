@@ -345,11 +345,11 @@ export interface CodeMoveRule {
  * reporting 2-3 m can still disagree by 8-15 m, while `correctionBoundM`
  * is then only 13.5-17.7 m.
  *
- * One decision (coordinator, 2026-10-01, M5b review #1) for both the
- * authoring prompt (`MOVE_PROMPT_RULE.floorM`) and the viewer's rule
- * (`CODE_MOVE_RULE.floorM`, judged against it ALONE since the owner's
- * decision of 2026-10-02). The prompt only ASKS the author; the viewer acts
- * on its own.
+ * The VIEWER's floor (`CODE_MOVE_RULE.floorM`, judged against it ALONE since
+ * the owner's decision of 2026-10-02). Until D26 the authoring prompt
+ * shared it; since D26 (2026-10-02) the prompt has its own 15 m trigger
+ * (`MOVE_PROMPT_FLOOR_M`, `code-move-prompt.ts`): the prompt only ASKS the
+ * author, the viewer acts on its own.
  *
  * Parameters it rests on (the viewer's half, real recordings, results doc
  * "Recalibrated on real recordings"): 6,166 cross-day pairs of 42 reference
@@ -360,8 +360,7 @@ export interface CodeMoveRule {
  * within 120 s. At 15 m: 10 of 2,380 within 120 s (4 of 37 points). What
  * would reverse it: another walk like the church one (27 m off at a
  * reported 6 m) in more than about 1 in 50 walks, drift in tours much longer
- * than 5 minutes, indoor use (10 walks measured). The prompt's half:
- * `code-move-prompt.ts.md`.
+ * than 5 minutes, indoor use (10 walks measured).
  */
 export const MOVED_CODE_FLOOR_M = 20;
 

@@ -203,8 +203,9 @@ interface VisitSettledLog {
 
 /**
  * The move prompt (authoring plan 2026-09-28-0953 §3.6, M5b; §7j #15):
- * asked, because a horizontal refusal of the code in hand lasted. The
- * refusal and how long it lasted, as the tracker saw them.
+ * asked, because the code in hand was seen beyond the prompt's trigger
+ * (D26: 15 m, its own, independent of the settle's refusal) long enough.
+ * The offset and how long it lasted, as the tracker saw them.
  */
 interface CodeMovePromptedLog {
   readonly levelId: string;
@@ -215,7 +216,8 @@ interface CodeMovePromptedLog {
   readonly northM: number;
   readonly eastM: number;
   readonly yawDeg: number;
-  /** The plausibility bound the refusal broke (m). */
+  /** The bound the offset crossed (m): the prompt's own trigger since D26
+   *  (`MOVE_PROMPT_FLOOR_M`); before D26 the settle's refusal bound. */
   readonly maxHorizontalM: number;
   /** New fixes, and seconds of fix time (null: unreadable), it lasted. */
   readonly fixes: number;

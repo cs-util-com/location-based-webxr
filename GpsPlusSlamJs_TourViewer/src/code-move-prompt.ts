@@ -4,22 +4,24 @@
  * creator setup asks "This code seems to have moved about N m. Use the new
  * spot?", and which answers it remembers so it does not ask again.
  *
- * THE TRIGGER. While authoring, a sighting of the code in hand is judged
- * through the visit's alignment (`visit-settle.ts`); a correction beyond
- * the plausibility bound is REFUSED. The prompt asks only when:
- * - the refusal is HORIZONTAL - a yaw-only refusal is a turned print or a
- *   bad heading, never a move (§7j #8);
- * - the offset is beyond {@link MovePromptRule.floorM} as well as the
- *   refusal's bound: the bound shrinks with the REPORTED accuracies (13.5 m
- *   at 2 m on both sides) while two visits' GPS can still disagree by more,
- *   so an unmoved code may be refused - the refusal stands - without being
- *   offered as moved (M5b review #1);
+ * THE TRIGGER (owner decision D26, 2026-10-02: its own 15 m trigger). While
+ * authoring, a sighting of the code in hand is mapped through the visit's
+ * GPS alignment and compared with the code's saved position
+ * (`visit-settle.ts` `sightedCodeOffset`). The prompt asks only when:
+ * - that HORIZONTAL offset is beyond {@link MovePromptRule.floorM} - a turn
+ *   alone is a turned print or a bad heading, never a move (§7j #8);
+ * - INDEPENDENT of the settle's refusal: the settle still refuses a
+ *   correction only beyond its plausibility bound (about 26 m at the default
+ *   accuracies, as shipped), so between the floor and that bound the visit
+ *   still follows the code while the prompt asks, until the author answers
+ *   (before D26 the prompt asked only on a refusal, so a code moved 15-26 m
+ *   silently shifted the visit's notes);
  * - the mint gate is open (`MIN_ALIGNMENT_SAMPLES` of this session's fixes
  *   solved in) - before it the alignment is the first fix's (§7j #9);
- * - the refusal has PERSISTED, without a break, for at least
+ * - the offset has PERSISTED beyond the floor, without a break, for at least
  *   {@link MovePromptRule.minFixes} new fixes AND
  *   {@link MovePromptRule.minSeconds} of the fixes' own time: an immature
- *   alignment's early refusal comes and goes, a moved code's stays. Fixes
+ *   alignment's early offset comes and goes, a moved code's stays. Fixes
  *   AND seconds: fixes alone pass a burst of fixes in a second, time alone
  *   passes a GPS stall during which nothing new was learned. Fixes without
  *   a readable time leave the fix count to decide alone.
@@ -42,9 +44,6 @@
  * @see code-move-prompt.ts.md
  */
 
-import { MOVED_CODE_FLOOR_M } from "./code-displacement.js";
-import type { CorrectionRefusal } from "./visit-settle.js";
-
 /** The prompt's thresholds (swept in `code-move-prompt.sweep.test.ts`). */
 export interface MovePromptRule {
   /** New fixes the refusal must last for. */
@@ -53,10 +52,31 @@ export interface MovePromptRule {
   readonly minSeconds: number;
   /** An answer covers offsets within this distance (m) of its own. */
   readonly sameSpotM: number;
-  /** Never asks for an offset at or under this (m), whatever the
-   *  refusal's bound; a non-finite value never asks. */
+  /** The trigger (m): asks for a horizontal offset beyond this, whether or
+   *  not the settle refuses the correction; a non-finite value never asks. */
   readonly floorM: number;
 }
+
+/**
+ * THE PROMPT'S TRIGGER (m), owner decision D26 (2026-10-02): its own offset
+ * trigger, independent of the settle's refusal bound and of the viewer's
+ * floor (`MOVED_CODE_FLOOR_M`, 20 m, in `code-displacement.ts`).
+ *
+ * Parameters it rests on (results doc
+ * `GpsPlusSlamJs_Docs/docs/2026-10-01-2040-moved-code-detection-results.md`,
+ * "Recalibrated on real recordings", "Authoring prompt at 15 m"): 6,166
+ * cross-day pairs of 42 reference points (209 walks, median 2.7 min), the
+ * offset held over the prompt's 20 s persistence. At 15 m: 44 of 6,166
+ * unmoved pairs prompted (0.7 %, upper bound 0.9 %; 2 of 42 points), 62.6 %
+ * of 15 m moves and 98.3 % of 20 m moves asked about. At 12 m: 1.1 % unmoved,
+ * 93.5 % of 15 m moves. At 20 m (the floor before D26, and then only on a
+ * refusal of about 26 m): a code moved 15-26 m was never asked about.
+ * Valid for short visits (D27: the owner records 10 minute walks in the
+ * field test). What reverses it: another walk like the church one (27 m off
+ * at a reported 6 m) in more than about 1 in 50 walks, or unmoved offsets
+ * beyond 15 m common in longer walks.
+ */
+export const MOVE_PROMPT_FLOOR_M = 15;
 
 /**
  * The shipped thresholds. SYNTHETIC AND PROVISIONAL, like the M5a rule:
@@ -75,7 +95,7 @@ export interface MovePromptRule {
  * with an 8 m bias per later visit in its own direction, so the two
  * differ by 0-16 m, about 10 m on average) and misses about half of second moves of
  * 20 m (up to 5.5 % of 30 m); 15 m re-asks 7 % / 36 %, 25 m misses 80-96 % of 20 m.
- * The floor ({@link MOVED_CODE_FLOOR_M}, 20 m): at a reported 2 m, with no
+ * The floor before D26 (20 m, shared with the viewer): at a reported 2 m, with no
  * floor, an unmoved code was prompted in 24.5 % (sigma 3 m) to 55.5 %
  * (sigma 5 m) of sessions at 8 m of bias difference and 92.5 % at 15 m;
  * with 20 m that falls to 1-15 % at 8 m and 25.5-52.5 % at 15 m, while
@@ -94,7 +114,7 @@ export const MOVE_PROMPT_RULE: MovePromptRule = Object.freeze({
   minFixes: 20,
   minSeconds: 20,
   sameSpotM: 20,
-  floorM: MOVED_CODE_FLOOR_M,
+  floorM: MOVE_PROMPT_FLOOR_M,
 });
 
 /** The most remembered answers the draft keeps (newest kept). */
@@ -127,7 +147,7 @@ export function savedPoseKey(json: string): string {
   return h.toString(16).padStart(8, "0");
 }
 
-/** Where a running refusal began. */
+/** Where a running offset beyond the trigger began. */
 export interface MovePromptOnset {
   readonly levelId: string;
   /** The store's fix count when it began. */
@@ -136,14 +156,16 @@ export interface MovePromptOnset {
   readonly tMs: number | null;
 }
 
-/** The prompt to show: the refusal, its offset, and how long it lasted. */
+/** The prompt to show: the offset, the trigger it crossed, and how long
+ *  it lasted. */
 export interface MovePrompt {
   readonly levelId: string;
   readonly horizontalM: number;
   readonly northM: number;
   readonly eastM: number;
   readonly yawDeg: number;
-  readonly maxHorizontalM: number;
+  /** The trigger the offset crossed (m): the rule's `floorM`. */
+  readonly triggerM: number;
   /** New fixes since the refusal began. */
   readonly fixes: number;
   /** Seconds of fix time since it began; null without readable times. */
@@ -155,10 +177,15 @@ export interface MovePrompt {
 export interface MovePromptInput {
   /** The level in hand; null with none. */
   readonly levelId: string | null;
-  /** The refusal of this visit's latest sighting of that level. */
-  readonly refusal: CorrectionRefusal | null;
-  /** That sighting's offset from the saved position (m). */
-  readonly offset: { readonly northM: number; readonly eastM: number } | null;
+  /** This visit's latest sighting of that level, through the visit's GPS
+   *  alignment, minus its saved position (`sightedCodeOffset`): horizontal
+   *  size, north and east (m), and turn (degrees); null with none. */
+  readonly offset: {
+    readonly horizontalM: number;
+    readonly northM: number;
+    readonly eastM: number;
+    readonly yawDeg: number;
+  } | null;
   /** The mint gate's alignment half: a matrix and enough session fixes. */
   readonly gateOpen: boolean;
   /** The store's GPS fix count. */
@@ -172,18 +199,6 @@ export interface MovePromptInput {
 
 const finite = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
-
-/** A refusal that broke the HORIZONTAL bound (not only the yaw one). */
-export function isHorizontalRefusal(
-  refusal: Pick<CorrectionRefusal, "horizontalM" | "maxHorizontalM"> | null,
-): boolean {
-  return (
-    refusal !== null &&
-    finite(refusal.horizontalM) &&
-    finite(refusal.maxHorizontalM) &&
-    refusal.horizontalM > refusal.maxHorizontalM
-  );
-}
 
 /** Whether an answer for `levelId`, given against the saved pose
  *  `savedKey`, covers `offset`. */
@@ -239,14 +254,13 @@ export function trackMovePrompt(
   input: MovePromptInput,
   rule: MovePromptRule = MOVE_PROMPT_RULE,
 ): { onset: MovePromptOnset | null; prompt: MovePrompt | null } {
-  const { levelId, refusal, offset, fixCount } = input;
+  const { levelId, offset, fixCount } = input;
   if (
     levelId === null ||
-    refusal === null ||
     offset === null ||
     !input.gateOpen ||
-    !isHorizontalRefusal(refusal) ||
-    !(refusal.horizontalM > rule.floorM) ||
+    !finite(offset.horizontalM) ||
+    !(offset.horizontalM > rule.floorM) ||
     !finite(offset.northM) ||
     !finite(offset.eastM) ||
     !finite(fixCount) ||
@@ -280,11 +294,11 @@ export function trackMovePrompt(
     onset: start,
     prompt: {
       levelId,
-      horizontalM: refusal.horizontalM,
+      horizontalM: offset.horizontalM,
       northM: offset.northM,
       eastM: offset.eastM,
-      yawDeg: refusal.yawDeg,
-      maxHorizontalM: refusal.maxHorizontalM,
+      yawDeg: finite(offset.yawDeg) ? offset.yawDeg : 0,
+      triggerM: rule.floorM,
       fixes,
       seconds,
       savedKey,
@@ -330,8 +344,8 @@ export function parseMoveAnswers(value: unknown): RememberedMoveAnswer[] {
     .slice(-MOVE_ANSWERS_MAX);
 }
 
-/** The prompt's question. Whole metres: the offset is beyond an 18 m+
- *  bound, where GPS-level error makes decimals noise. */
+/** The prompt's question. Whole metres: the offset is beyond the 15 m
+ *  trigger, where GPS-level error makes decimals noise. */
 export function movePromptText(horizontalM: number): string {
   return `This code seems to have moved about ${String(Math.round(horizontalM))} m. Use the new spot?`;
 }

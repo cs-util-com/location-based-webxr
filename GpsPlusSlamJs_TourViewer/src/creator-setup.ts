@@ -890,7 +890,8 @@ export function wireCreatorSetup(deps: {
   // asks is `code-move-prompt.ts`'s; this is the state and the DOM.
   // -------------------------------------------------------------------------
 
-  /** Where the running horizontal refusal began (the tracker's state). */
+  /** Where the running offset beyond the prompt's trigger began (the
+   *  tracker's state). */
   let moveOnset: MovePromptOnset | null = null;
   /** The prompt on screen; kept while "Use the new spot" runs. */
   let movePrompt: MovePrompt | null = null;
@@ -939,8 +940,9 @@ export function wireCreatorSetup(deps: {
   }
 
   /**
-   * Re-run the tracker on the current refusal (re-judged when a fix landed
-   * since the last look), and log a new ask once.
+   * Re-run the tracker on the latest sighting's offset (its own trigger,
+   * D26), re-judge the refusal for the panel line when a fix landed since
+   * the last look, and log a new ask once.
    */
   function updateMovePrompt(): void {
     if (moveBusy) return;
@@ -951,9 +953,10 @@ export function wireCreatorSetup(deps: {
       judgeRefusal();
     }
     const live = sessionLive() && !ctx.finishing && levelInHandIsStored();
-    const refusal = live ? liveRefusal : null;
+    // Its own trigger (D26): the sighting's offset, whether or not the
+    // settle refuses the correction.
     const offset =
-      refusal === null || level === null
+      !live || level === null
         ? null
         : (() => {
             const state = arStore.getState();
@@ -969,7 +972,6 @@ export function wireCreatorSetup(deps: {
     const alignment = authorAlignmentInfo();
     const tracked = trackMovePrompt(moveOnset, {
       levelId: level?.id ?? null,
-      refusal,
       offset,
       gateOpen:
         alignment.hasMatrix && alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES,
@@ -991,7 +993,7 @@ export function wireCreatorSetup(deps: {
           northM: movePrompt.northM,
           eastM: movePrompt.eastM,
           yawDeg: movePrompt.yawDeg,
-          maxHorizontalM: movePrompt.maxHorizontalM,
+          maxHorizontalM: movePrompt.triggerM,
           fixes: movePrompt.fixes,
           seconds: movePrompt.seconds,
         }),
@@ -1109,7 +1111,7 @@ export function wireCreatorSetup(deps: {
           : MOVE_PROMPT_LABELS.usedNotBackedUp;
       } else if (outcome.kind !== "superseded") {
         // Through the status line, the AR session's error channel; the
-        // refusal still stands, so the prompt comes back.
+        // offset still stands, so the prompt comes back.
         ctx.placementNote = MOVE_PROMPT_LABELS.useFailed;
       }
       renderAuthorReadout();
@@ -1133,7 +1135,7 @@ export function wireCreatorSetup(deps: {
   /**
    * Undo the latest replace (until Finish): the level it replaced is back
    * in hand with its measurement, the visit loses its move boundary, a
-   * prompt's spot counts as "Not now" (or the refusal it answered would ask
+   * prompt's spot counts as "Not now" (or the offset it answered would ask
    * again at once), and the undo waits for the draft's meta - the durable
    * end state - before saying it is done.
    */

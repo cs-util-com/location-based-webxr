@@ -296,10 +296,10 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
     hosted objects in author mode is M4.
     - **The frame moves only on a sighting or an explicit action, never
       on a fix** (owner's drift complaint, plan §1 / §2.1; §7m #8). The
-      move prompt needs the refusal current, so each render that finds a
+      panel line needs the refusal current, so each render that finds a
       new fix in the store re-judges the LATEST sighting through the
       CURRENT alignment (`judgeRefusal`) - but that updates the refusal
-      (`liveRefusal`: the prompt and the panel line) only. The objects'
+      (`liveRefusal`: the panel line) only. The objects'
       frame is re-chosen only by `placeEarlierObjects`: a stable sighting
       of the code in hand, and the explicit paths (a measurement of the
       code - a mint or a replace -, a replace's Undo, the visit's start). So
@@ -540,13 +540,16 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
     the code (owner decision D19).
   - **The moved-code prompt** (authoring plan §3.6 "Authoring (D20 ask
     once)", M5b; `code-move-prompt.ts` decides WHEN): on every readout
-    render the tracker is fed the latest sighting's refusal (re-judged
-    through the current alignment whenever a fix landed since the last
-    look, `judgeRefusal`, which never moves the earlier objects), its offset (`sightedCodeOffset`), the
+    render the tracker is fed the latest sighting's offset through the
+    current GPS alignment (`sightedCodeOffset`; its own 15 m trigger since
+    D26, whether or not the settle refuses the correction, so between 15 m
+    and the refusal bound the visit follows the code while the prompt
+    asks; the refusal itself is still re-judged whenever a fix landed,
+    `judgeRefusal`, for the panel line, never moving the earlier objects), the
     mint gate's alignment half, the store's fix count and the latest
     fix's time, and the remembered answers. It asks only for a stored
     level in hand, in a live session, outside a Finish. A new ask logs
-    `tourAuthoring/codeMovePrompted` once per refusal run.
+    `tourAuthoring/codeMovePrompted` once per run beyond the trigger.
     - "Use the new spot" runs the Replace button's `measureCode(true)`
       behind the same gate (`canMint && codeInViewIsLevelInHand`): the
       button reads "Using the new spot…" and the other two are disabled
@@ -559,7 +562,7 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
       refused write, that it is the new spot here but not saved on this
       device (the backup notice is spent with it). Anything else says "Could not use the
       new spot..." in the status line (the AR session's error channel) and
-      the prompt comes back while the refusal stands. Logged as
+      the prompt comes back while the offset stays beyond the trigger. Logged as
       `tourAuthoring/codeMoveAnswered` with `replaced` and `error`.
     - "It's a second copy" / "Not now": remembered per level and spot
       (`rememberMoveAnswer`), in memory and in the draft's meta
