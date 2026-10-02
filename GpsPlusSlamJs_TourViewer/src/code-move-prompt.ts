@@ -72,7 +72,8 @@ export interface MovePromptRule {
  * prompt by a second. 20 s is kept against what the model leaves out: the first fixes'
  * short-baseline alignment. The same spot: 20 m asks an unmoved spot again
  * in at most 1.5 % of re-visits at sigma <= 5 m with a shared bias (15 %
- * with 8 m of bias difference) and misses about half of second moves of
+ * with an 8 m bias per later visit in its own direction, so the two
+ * differ by 0-16 m, about 10 m on average) and misses about half of second moves of
  * 20 m (up to 5.5 % of 30 m); 15 m re-asks 7 % / 36 %, 25 m misses 80-96 % of 20 m.
  * The floor ({@link MOVED_CODE_FLOOR_M}, 20 m): at a reported 2 m, with no
  * floor, an unmoved code was prompted in 24.5 % (sigma 3 m) to 55.5 %

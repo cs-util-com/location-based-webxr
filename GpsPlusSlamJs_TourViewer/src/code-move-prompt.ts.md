@@ -108,12 +108,17 @@ sessions per cell.
     is" holds across the whole range.
 - **The same spot, swept 5 / 10 / 15 / 20 / 25 / 30 m.** Two later visits
   of the same unmoved code (they share its saved pose, so only their own
-  errors differ), and a second move of 20 or 30 m:
+  errors differ), and a second move of 20 or 30 m. In this arm the cell's
+  bias B is EACH later visit's own, in a direction drawn per visit, so the
+  two visits' biases differ from each other by 0 to 2B, about 1.27B
+  (4B/pi) on average, not by B: the "8 m" cells below are two visits
+  whose biases differ by 0-16 m, about 10 m on average.
   - 20 m asks again for an unmoved spot in at most 3 of 200 re-visits at
-    sigma <= 5 m with a shared bias, up to 30 of 200 with 8 m of bias
-    difference, and misses about half of second 20 m moves (up to 11 of
-    200 second 30 m moves with a shared bias, 33 with 8 m of difference).
-  - 15 m: up to 14 of 200 (shared bias) and 72 of 200 (8 m) asked again.
+    sigma <= 5 m with a shared bias, up to 30 of 200 at B = 8 m, and
+    misses about half of second 20 m moves (up to 11 of 200 second 30 m
+    moves with a shared bias, 33 at B = 8 m).
+  - 15 m: up to 14 of 200 (shared bias) and 72 of 200 (B = 8 m) asked
+    again.
   - 25 m: misses 158-193 of 200 second 20 m moves.
   - A re-ask costs one tap; a missed second move leaves the Replace
     button. 20 m is the smallest value with re-asks under 5 % at

@@ -22,7 +22,10 @@
  * and this one by 0/8/15 m; the solver's translation error is either the
  * mean of all the session's fixes or a recency-weighted mean (time
  * constant 60 s) - two proxies, because the real solver sits between them.
- * The saved pose's own error is an independent visit's after 60 s. The
+ * The saved pose's own error is an independent visit's after 60 s. In the
+ * same-spot arm two LATER visits each carry their own bias of that length
+ * B in a direction of their own, so they differ from each other by 0..2B
+ * (about 1.27B on average), not by B. The
  * persistence and same-spot arms use the shipped `correctionBoundM` at 5 m
  * reported accuracy on both sides (26.2 m, above the 20 m floor); the
  * floor arm varies the REPORTED accuracy (2/3/5 m) and the floor
@@ -397,10 +400,15 @@ describe("the floor under a small reported accuracy, swept (M5b review #1)", () 
 
 describe("the same-spot distance of a remembered answer, swept", () => {
   /**
-   * A later visit's alignment error at 120 s, with its own bias (the cell's
-   * bias difference, in a random direction). Two later visits of the same
-   * code share its saved pose, so the saved pose's error cancels between
-   * their offsets: what differs is only their own errors.
+   * A later visit's alignment error at 120 s, with its own bias: the
+   * cell's bias difference B in a direction this visit draws for itself.
+   * Two later visits of the same code share its saved pose, so the saved
+   * pose's error cancels between their offsets: what differs is only their
+   * own errors. Each visit's bias has length B, but the two directions are
+   * independent, so the bias difference BETWEEN the two later visits is
+   * 2B sin(delta/2) for a uniform angle delta between them: anywhere from
+   * 0 to 2B, about 1.27B (4B/pi) on average - not B. A B8 row is therefore
+   * two visits whose biases differ by 0-16 m (mean about 10 m).
    */
   function visitError(cell: Cell, seed: number): [number, number] {
     const r = rng(seed);
@@ -414,8 +422,6 @@ describe("the same-spot distance of a remembered answer, swept", () => {
       cell.proxy,
     ).at(-1)!;
   }
-  const offsetAt = (cell: Cell, seed: number, _moveM: number) =>
-    visitError(cell, seed);
 
   it("prints, per noise, how often an answer is asked again for the same spot, and how often a second 20/30 m move is missed (of 200)", () => {
     const rows: string[] = [];
@@ -425,10 +431,11 @@ describe("the same-spot distance of a remembered answer, swept", () => {
       const miss20: number[] = SAME_SPOTS.map(() => 0);
       const miss30: number[] = SAME_SPOTS.map(() => 0);
       for (let s = 0; s < SESSIONS; s += 1) {
-        // Two later visits of the same spot: the bias differs between them
-        // too, by the cell's bias difference.
-        const a = offsetAt(cell, 20_000 + s, 0);
-        const b = offsetAt(cell, 40_000 + s, 0);
+        // Two later visits of the same spot, each with its own bias of the
+        // cell's length B: between them the bias differs by 0..2B
+        // (`visitError`).
+        const a = visitError(cell, 20_000 + s);
+        const b = visitError(cell, 40_000 + s);
         const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
         const r = rng(60_000 + s);
         const dir = 2 * Math.PI * r();
