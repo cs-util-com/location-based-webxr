@@ -176,6 +176,40 @@ describe("arrivalPlanFor", () => {
     );
   });
 
+  it("plans for the position in the globe's REAL hand-over URL", async () => {
+    // The contract lives in two packages: the globe writes the URL
+    // (`handOverUrl`), OsmDemo parses it. Loaded by file URL rather than by
+    // a static import, because OsmDemo's TypeScript project does not include
+    // the globe package; vitest transforms it like any source file. A change
+    // of decimals or format on the globe's side fails here.
+    const { handOverUrl } = (await import(
+      new URL(
+        "../../GpsPlusSlamJs_Globe/src/globe-handover.ts",
+        import.meta.url,
+      ).href
+    )) as {
+      handOverUrl: (input: {
+        pageHref: string;
+        target: { lat: number; lng: number };
+      }) => string;
+    };
+    for (const target of [
+      { lat: 50.941_349_7, lng: -0.000_000_2 },
+      { lat: -33.868_804_9, lng: 151.209_295_1 },
+      { lat: 0.000_004_9, lng: -179.999_995 },
+    ]) {
+      const url = new URL(
+        handOverUrl({
+          pageHref: "https://example.test/lookdev/labs/globe/",
+          target,
+        }),
+      );
+      expect(arrivalPlanFor(target).position).toEqual(
+        parseStartPosition(url.search),
+      );
+    }
+  });
+
   it("plans one to three Overpass tiles and a few DEM tiles per source", () => {
     const plan = arrivalPlanFor({ lat: 50.9413, lng: 6.9583 });
     expect(plan.overpassTiles.length).toBeGreaterThanOrEqual(1);
