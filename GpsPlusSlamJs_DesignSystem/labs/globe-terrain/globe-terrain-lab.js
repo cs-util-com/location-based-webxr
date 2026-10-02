@@ -6,7 +6,11 @@
 import * as THREE from "three";
 
 import { createGlobeSurface } from "/globe/globe-surface.js";
-import { createGlobeTerrain } from "/globe/globe-terrain.js";
+import { GLOBE_TERRAIN, createGlobeTerrain } from "/globe/globe-terrain.js";
+import {
+  SYNTHETIC_HEIGHTS_URL,
+  installSyntheticHeights,
+} from "./synthetic-heights.js";
 import {
   TERRARIUM_ATTRIBUTION,
   TERRARIUM_URL_TEMPLATE,
@@ -18,13 +22,19 @@ const DEG = Math.PI / 180;
  * The page's parameters (hash): `carrier` terrain | globe; `alt` km above
  * the target, the camera looking north and down at 45 degrees; `time` an
  * hour UTC on the 2026 March equinox (the sub-solar longitude from it);
- * `heightScale`; `errorTarget` (the library's; 1 is its recommended
- * setting); `heights` synthetic (generated in the page, no network) |
+ * `heightScale`; `errorTarget` (the carrier's, `GLOBE_TERRAIN.errorTarget`,
+ * 2, by default; 1 is the library's); `heights` synthetic (generated in the page, no network) |
  * terrarium (the live AWS tiles); `hideFloatLinear` 1 hides
  * OES_texture_float_linear from the page, as on a device without it;
  * `debug` height (each pixel the tile's height, for the seam scan);
  * `nadir` 1 looks straight down (no ridge hides another: every step in
- * the height grey is then a seam).
+ * the height grey is then a seam); `lat`, `lng` the target (default
+ * 46.5, 9.0); `seamControl` 1 offsets every tile's heights by its own
+ * random amount (up to 50 m either way), the seam scan's positive control;
+ * `heightFormat` r32f keeps the library's 32-bit heights (the half-float
+ * patch undone, for the R16F-against-R32F shading comparison); `sea` m
+ * lowers the synthetic heights by that much (a coast, for the bathymetry
+ * check).
  */
 const params = new URLSearchParams(location.hash.slice(1));
 const num = (key, fallback) => {
@@ -36,14 +46,16 @@ const LOOK = Object.freeze({
   altKm: num("alt", 150),
   hourUtc: num("time", 11.4),
   heightScale: num("heightScale", 1),
-  errorTarget: num("errorTarget", 1),
+  errorTarget: num("errorTarget", GLOBE_TERRAIN.errorTarget),
   heights: params.get("heights") === "terrarium" ? "terrarium" : "synthetic",
   hideFloatLinear: params.get("hideFloatLinear") === "1",
   debug: params.get("debug") === "height" ? "height" : null,
   nadir: params.get("nadir") === "1",
+  seamControl: params.get("seamControl") === "1",
+  heightFormat: params.get("heightFormat") === "r32f" ? "r32f" : "r16f",
+  seaM: num("sea", 0),
 });
-const TARGET = { lat: 46.5, lng: 9.0 };
-const SYNTHETIC_URL = "/globe-terrain-synthetic/{z}/{x}/{y}.png";
+const TARGET = { lat: num("lat", 46.5), lng: num("lng", 9.0) };
 
 if (LOOK.hideFloatLinear) {
   const getContext = HTMLCanvasElement.prototype.getContext;
@@ -62,61 +74,8 @@ if (LOOK.hideFloatLinear) {
   };
 }
 
-/**
- * A synthetic Terrarium tile: a 1 km plateau with ridges of about 5-50 km
- * (0-2,200 m), so the smokes run without network. Encoded as Terrarium:
- * h + 32768 = r * 256 + g + b / 256.
- */
-async function syntheticTile(z, x, y) {
-  const size = 256;
-  const canvas = new OffscreenCanvas(size, size);
-  const ctx = canvas.getContext("2d");
-  const img = ctx.createImageData(size, size);
-  const n = 2 ** z;
-  for (let py = 0; py < size; py++) {
-    const merc = Math.PI * (1 - (2 * (y + (py + 0.5) / size)) / n);
-    const lat = Math.atan(Math.sinh(merc)) / DEG;
-    for (let px = 0; px < size; px++) {
-      const lng = ((x + (px + 0.5) / size) / n) * 360 - 180;
-      const h = Math.max(
-        0,
-        1000 +
-          900 *
-            Math.sin((2 * Math.PI * lng) / 0.5) *
-            Math.sin((2 * Math.PI * lat) / 0.4) +
-          300 *
-            Math.sin((2 * Math.PI * lng) / 0.07) *
-            Math.cos((2 * Math.PI * lat) / 0.06),
-      );
-      const v = h + 32768;
-      const i = 4 * (py * size + px);
-      img.data[i] = Math.floor(v / 256);
-      img.data[i + 1] = Math.floor(v) % 256;
-      img.data[i + 2] = Math.floor((v - Math.floor(v)) * 256);
-      img.data[i + 3] = 255;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  return canvas.convertToBlob({ type: "image/png" });
-}
-
-/** Every height tile the page asked for, `z/x/y`, and the synthetic bytes. */
-const heightRequests = [];
-let syntheticBytes = 0;
-const fetchOwn = window.fetch.bind(window);
-window.fetch = async (input, init) => {
-  const url = typeof input === "string" ? input : input.url;
-  const synthetic = url.match(
-    /\/globe-terrain-synthetic\/(\d+)\/(\d+)\/(\d+)\.png/,
-  );
-  const live = url.match(/\/terrarium\/(\d+)\/(\d+)\/(\d+)\.png/);
-  const m = synthetic ?? live;
-  if (m) heightRequests.push(`${m[1]}/${m[2]}/${m[3]}`);
-  if (!synthetic) return fetchOwn(input, init);
-  const blob = await syntheticTile(...synthetic.slice(1).map(Number));
-  syntheticBytes += blob.size;
-  return new Response(blob, { headers: { "Content-Type": "image/png" } });
-};
+/** Every height tile asked for, and the synthetic PNGs' bytes. */
+const heightRecord = installSyntheticHeights({ seaM: LOOK.seaM });
 
 /** The sub-solar direction (ECEF) at an hour UTC on the equinox. */
 const sunEcefAt = (hours) => {
@@ -124,7 +83,11 @@ const sunEcefAt = (hours) => {
   return new THREE.Vector3(Math.cos(lng), Math.sin(lng), 0);
 };
 
-/** Shows each tile's height as grey (0-3,000 m), for the seam scan. */
+/**
+ * Shows each tile's displaced height in two channels (F1a review major 1):
+ * v = (h + 1,000 m) x 8, red its high byte, green its low byte, so a step
+ * of 0.125 m reads from -1,000 to 7,191 m (the Alps fit). Blue is 0.
+ */
 function heightDebug(material) {
   const hook = material.onBeforeCompile;
   material.onBeforeCompile = (shader, renderer) => {
@@ -135,8 +98,8 @@ function heightDebug(material) {
         "#include <common>\nvarying float vTerrainH;",
       )
       .replace(
-        "#include <displacementmap_vertex>",
-        "#include <displacementmap_vertex>\n#ifdef USE_DISPLACEMENTMAP\nvTerrainH = texture2D( displacementMap, vDisplacementMapUv ).x;\n#else\nvTerrainH = 0.0;\n#endif",
+        "#include <project_vertex>",
+        "#ifdef USE_DISPLACEMENTMAP\nvTerrainH = max( texture2D( displacementMap, vDisplacementMapUv ).x, 0.0 ) * displacementScale + displacementBias;\n#else\nvTerrainH = 0.0;\n#endif\n#include <project_vertex>",
       );
     shader.fragmentShader = shader.fragmentShader
       .replace(
@@ -145,10 +108,12 @@ function heightDebug(material) {
       )
       .replace(
         "#include <dithering_fragment>",
-        "#include <dithering_fragment>\ngl_FragColor = vec4( vec3( clamp( vTerrainH / 3000.0, 0.0, 1.0 ) ), 1.0 );",
+        "#include <dithering_fragment>\nfloat v = clamp( floor( ( vTerrainH + 1000.0 ) * 8.0 + 0.5 ), 0.0, 65535.0 );\ngl_FragColor = vec4( floor( v / 256.0 ) / 255.0, mod( v, 256.0 ) / 255.0, 0.0, 1.0 );",
       );
   };
   material.customProgramCacheKey = () => "globe-terrain-height-debug";
+  // Draw as is: no tone mapping or colour encoding on the code.
+  material.toneMapped = false;
 }
 
 function start() {
@@ -174,19 +139,28 @@ function start() {
     globe.tiles.group.visible = false;
     terrain = createGlobeTerrain({
       url:
-        LOOK.heights === "terrarium" ? TERRARIUM_URL_TEMPLATE : SYNTHETIC_URL,
+        LOOK.heights === "terrarium"
+          ? TERRARIUM_URL_TEMPLATE
+          : SYNTHETIC_HEIGHTS_URL,
       imagery: globe.overlay,
       template: globe.template,
       heightScale: LOOK.heightScale,
     });
     terrain.tiles.errorTarget = LOOK.errorTarget;
-    if (LOOK.debug === "height") {
-      terrain.tiles.addEventListener("load-model", ({ scene: model }) => {
-        model.traverse((o) => {
-          if (o.isMesh) heightDebug(o.material);
-        });
+    terrain.tiles.addEventListener("load-model", ({ scene: model }) => {
+      model.traverse((o) => {
+        if (!o.isMesh) return;
+        const map = o.material.displacementMap;
+        if (LOOK.heightFormat === "r32f" && map) {
+          map.internalFormat = null;
+          map.needsUpdate = true;
+        }
+        // The positive control: a seam of up to 50 m at every tile edge.
+        if (LOOK.seamControl)
+          o.material.displacementBias = (Math.random() - 0.5) * 100;
+        if (LOOK.debug === "height") heightDebug(o.material);
       });
-    }
+    });
     scene.add(terrain.tiles.group);
     terrain.tiles.setCamera(camera);
     terrain.tiles.setResolutionFromRenderer(camera, renderer);
@@ -256,19 +230,20 @@ function start() {
       return (performance.now() - t0) / frames;
     },
     state() {
-      const byDepth = {};
+      // The library's depth counts its root: a tile's level is depth - 1.
+      const byLevel = {};
       for (const t of tiles.visibleTiles) {
-        const d = t.internal?.depth ?? -1;
-        byDepth[d] = (byDepth[d] ?? 0) + 1;
+        const d = (t.internal?.depth ?? 0) - 1;
+        byLevel[d] = (byLevel[d] ?? 0) + 1;
       }
       return {
         carrier: LOOK.carrier,
         altKm,
         visibleTiles: tiles.visibleTiles.size,
-        visibleByDepth: byDepth,
+        visibleByLevel: byLevel,
         triangles: renderer.info.render.triangles,
-        heightRequests: heightRequests.slice(),
-        syntheticBytes,
+        heightRequests: heightRecord.requests.slice(),
+        syntheticBytes: heightRecord.bytes(),
         litTiles: terrain ? terrain.litTiles() : null,
         floatLinear: renderer.extensions.has("OES_texture_float_linear"),
         drawingBuffer: [gl.drawingBufferWidth, gl.drawingBufferHeight],
@@ -337,46 +312,60 @@ function start() {
       });
     },
     /**
-     * The seam scan over the lower part of the frame (from `fromY`, 0 at
-     * the top), every pixel: how many are the background (cracks) and how
-     * many steps between horizontal neighbours exceed each threshold (in
-     * levels of the height grey).
+     * The seam scan of a `debug=height` frame below `fromY` (0 at the
+     * top), every pixel: how many are the background (cracks), the drawn
+     * height range, and how many steps to the right and lower neighbour
+     * exceed each threshold (metres, from the two-channel height).
      */
-    seamScan(fromY = 0.45, thresholds = [3, 6, 12]) {
+    seamScan(fromY = 0, thresholdsM = [10, 30, 100]) {
       frame();
       const w = gl.drawingBufferWidth;
       const h = gl.drawingBufferHeight;
       const px = new Uint8Array(w * h * 4);
       gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      const rows = Math.floor(h * (1 - fromY));
+      const heightAt = (r, c) => {
+        const i = 4 * (r * w + c);
+        const hole = px[i] === 255 && px[i + 1] === 0 && px[i + 2] === 255;
+        return hole ? null : (px[i] * 256 + px[i + 1]) / 8 - 1000;
+      };
       let pixels = 0;
       let holes = 0;
-      let lowest = 255;
-      let highest = 0;
-      const steps = thresholds.map(() => 0);
-      const rows = Math.floor(h * (1 - fromY));
+      let lowest = Infinity;
+      let highest = -Infinity;
+      const steps = thresholdsM.map(() => 0);
       for (let r = 0; r < rows; r++) {
-        let prev = null;
         for (let c = 0; c < w; c++) {
-          const i = 4 * (r * w + c);
-          const hole = px[i] === 255 && px[i + 1] === 0 && px[i + 2] === 255;
+          const here = heightAt(r, c);
           pixels += 1;
-          if (hole) {
+          if (here === null) {
             holes += 1;
-            prev = null;
             continue;
           }
-          lowest = Math.min(lowest, px[i]);
-          highest = Math.max(highest, px[i]);
-          if (prev !== null) {
-            const d = Math.abs(px[i] - prev);
-            thresholds.forEach((t, k) => {
+          lowest = Math.min(lowest, here);
+          highest = Math.max(highest, here);
+          // Both axes: the right and the lower neighbour.
+          for (const [rr, cc] of [
+            [r, c + 1],
+            [r + 1, c],
+          ]) {
+            if (rr >= rows || cc >= w) continue;
+            const there = heightAt(rr, cc);
+            if (there === null) continue;
+            const d = Math.abs(here - there);
+            thresholdsM.forEach((t, k) => {
               if (d > t) steps[k] += 1;
             });
           }
-          prev = px[i];
         }
       }
-      return { pixels, holes, steps, thresholds, greyRange: [lowest, highest] };
+      return {
+        pixels,
+        holes,
+        steps,
+        thresholdsM,
+        heightRangeM: [lowest, highest],
+      };
     },
   };
 }

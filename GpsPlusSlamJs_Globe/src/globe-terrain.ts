@@ -21,9 +21,18 @@ import * as THREE from "three";
 import { TilesRenderer } from "3d-tiles-renderer";
 import * as plugins from "3d-tiles-renderer/plugins";
 
+import { litCopy, tileMeshes } from "./globe-surface.js";
+
 export const GLOBE_TERRAIN = Object.freeze({
   /** The program key shared by every terrain tile's lit material. */
   programKey: "globe-terrain-lit",
+  /**
+   * The tiles' error target, picked by the look on real heights over the
+   * Alps (F1a review major 4): 2 draws what the library's default 1 draws
+   * (mean 0.12 levels, 95th percentile 0 at 30 km) for 9.9 MiB of heights
+   * a phone descent against 11.5; 4 (7.7 MiB) differs by 42 levels.
+   */
+  errorTarget: 2,
   /** One half-float step at `heightM` (10 mantissa bits). */
   halfFloatStepM: (heightM: number): number =>
     heightM === 0 ? 0 : 2 ** (Math.floor(Math.log2(Math.abs(heightM))) - 10),
@@ -76,6 +85,18 @@ export interface TerrainImagery {
  * terrain tile's level, up to 14, against the imagery's 0-5).
  */
 export function geographicOverlay(imagery: TerrainImagery): TerrainImagery {
+  // The projection is known once the imagery has initialised (the library
+  // reports "none" before), so it is checked there.
+  const checkProjection = () => {
+    const scheme = (
+      imagery.tiling as { projection?: { scheme?: string } } | null
+    )?.projection?.scheme;
+    if (scheme !== undefined && !GEOGRAPHIC_SCHEMES.has(scheme)) {
+      throw new RangeError(
+        `the terrain's imagery must be plate carree (EPSG:4326), got ${scheme}`,
+      );
+    }
+  };
   const convert = (range: number[]) => {
     const g = mercatorToGeographicRange(range);
     const tiling = imagery.tiling as { maxLevel?: number } | null;
@@ -88,7 +109,10 @@ export function geographicOverlay(imagery: TerrainImagery): TerrainImagery {
     get tiling() {
       return imagery.tiling;
     },
-    init: () => imagery.init(),
+    init: async () => {
+      await imagery.init();
+      checkProjection();
+    },
     hasContent(range) {
       const { g, level } = convert(range);
       return imagery.hasContent(g, level);
@@ -122,6 +146,15 @@ export function useHalfFloatHeights(texture: THREE.Texture): void {
   texture.internalFormat = "R16F";
   texture.needsUpdate = true;
 }
+
+/** The projections the range conversion targets (plate carree). */
+const GEOGRAPHIC_SCHEMES: ReadonlySet<string> = new Set([
+  "EPSG:4326",
+  "CRS:84",
+]);
+
+/** The Web Mercator latitude limit, radians (85.0511 degrees). */
+const MERCATOR_LIMIT = 2 * Math.atan(Math.exp(Math.PI)) - Math.PI / 2;
 
 /** A tile's box in radians, from its geodetic normals. */
 export interface GeographicBounds {
@@ -159,7 +192,14 @@ export function tileGeographicBounds(
     south = Math.min(south, lat);
     north = Math.max(north, lat);
   }
-  return { west, south, east, north };
+  // The library snaps its pole rows to 90 degrees; the imagery it asked
+  // for ends at the Web Mercator limit (F1a review minor 5).
+  return {
+    west,
+    south: Math.max(south, -MERCATOR_LIMIT),
+    east,
+    north: Math.min(north, MERCATOR_LIMIT),
+  };
 }
 
 /**
@@ -174,11 +214,21 @@ const GEO_UV_VERTEX = /* glsl */ `
   vec3 gn = normalize( normal );
   float lat = asin( clamp( gn.z, -1.0, 1.0 ) );
   float lon = atan( gn.y, gn.x );
-  vMapUv = vec2(
+  vMapUv = clamp( vec2(
     ( lon - uTerrainGeoBounds.x ) / max( uTerrainGeoBounds.z - uTerrainGeoBounds.x, 1e-9 ),
     ( lat - uTerrainGeoBounds.y ) / max( uTerrainGeoBounds.w - uTerrainGeoBounds.y, 1e-9 )
-  );
+  ), 0.0, 1.0 );
 }
+#endif`;
+
+/**
+ * The displacement with heights below 0 drawn as 0 (F1a review major 3;
+ * one-scene plan §5): exaggerated sea floors would sink 10-15 km under the
+ * water's imagery at E 3, so the sea keeps the globe's surface and colour.
+ */
+const SEA_CLAMPED_DISPLACEMENT = /* glsl */ `
+#ifdef USE_DISPLACEMENTMAP
+transformed += normalize( objectNormal ) * ( max( texture2D( displacementMap, vDisplacementMapUv ).x, 0.0 ) * displacementScale + displacementBias );
 #endif`;
 
 /**
@@ -198,7 +248,7 @@ export function litTerrainMaterial(
   },
   bounds: GeographicBounds,
 ): THREE.MeshStandardMaterial {
-  const lit = template.clone();
+  const lit = litCopy(template);
   const geoBounds = {
     value: new THREE.Vector4(
       bounds.west,
@@ -207,11 +257,10 @@ export function litTerrainMaterial(
       bounds.north,
     ),
   };
-  // Material.copy does not carry the compile hooks; neither uses `this`.
   // eslint-disable-next-line @typescript-eslint/unbound-method
   const terrainHook = own.onBeforeCompile;
   // eslint-disable-next-line @typescript-eslint/unbound-method
-  const globeHook = template.onBeforeCompile;
+  const globeHook = lit.onBeforeCompile;
   lit.onBeforeCompile = (shader, renderer) => {
     terrainHook.call(own, shader, renderer);
     globeHook.call(template, shader, renderer);
@@ -221,7 +270,13 @@ export function litTerrainMaterial(
         "#include <common>",
         "#include <common>\nuniform vec4 uTerrainGeoBounds;",
       )
-      .replace("#include <uv_vertex>", `#include <uv_vertex>${GEO_UV_VERTEX}`);
+      .replace("#include <uv_vertex>", `#include <uv_vertex>${GEO_UV_VERTEX}`)
+      .replace("#include <displacementmap_vertex>", SEA_CLAMPED_DISPLACEMENT);
+    // The bump chunk reads heights too: below 0 they shade as 0.
+    shader.fragmentShader = shader.fragmentShader.replace(
+      /texture2D\( bumpMap, ([^)]*) \)\.x/g,
+      "max( texture2D( bumpMap, $1 ).x, 0.0 )",
+    );
   };
   lit.customProgramCacheKey = () => GLOBE_TERRAIN.programKey;
   lit.map = own.map ?? null;
@@ -233,7 +288,7 @@ export function litTerrainMaterial(
 }
 
 /** What this module uses of the library's TerrariumMeshPlugin (untyped in 0.5.3). */
-export interface TerrariumMeshPluginInstance {
+interface TerrariumMeshPluginInstance {
   heightScale: number;
 }
 
@@ -299,16 +354,11 @@ export function createGlobeTerrain(options: {
   });
   const tiles = new TilesRenderer();
   tiles.registerPlugin(plugin);
+  // After the plugin: its init (TerrainRGBMeshPlugin) sets 1.
+  tiles.errorTarget = GLOBE_TERRAIN.errorTarget;
   const owned = new Set<THREE.Material>();
-  const meshesOf = (root: THREE.Object3D) => {
-    const out: THREE.Mesh[] = [];
-    root.traverse((o) => {
-      if (o instanceof THREE.Mesh) out.push(o as THREE.Mesh);
-    });
-    return out;
-  };
   tiles.addEventListener("load-model", ({ scene }) => {
-    for (const mesh of meshesOf(scene)) {
+    for (const mesh of tileMeshes(scene)) {
       const own = mesh.material as THREE.MeshLambertMaterial;
       if (own.displacementMap) useHalfFloatHeights(own.displacementMap);
       const lit = litTerrainMaterial(
@@ -321,8 +371,8 @@ export function createGlobeTerrain(options: {
     }
   });
   tiles.addEventListener("dispose-model", ({ scene }) => {
-    for (const mesh of meshesOf(scene)) {
-      const lit = mesh.material as THREE.Material;
+    for (const mesh of tileMeshes(scene)) {
+      const lit = mesh.material;
       if (owned.delete(lit)) lit.dispose();
     }
   });

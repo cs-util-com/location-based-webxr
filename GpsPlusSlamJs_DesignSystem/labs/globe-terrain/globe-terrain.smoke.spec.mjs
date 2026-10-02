@@ -94,145 +94,311 @@ const denseGrid = () => {
 };
 const lum = (p) => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
 
-// WHY (F0b): the carrier must look like the globe where it has no relief
-// to add: at noon, dusk and night, flat (height scale 0), against the
-// globe's own surface at 150 km (imagery level 5). Before the range fix
-// the noon imagery came from 20 degrees south (mean 45.9 levels apart).
-// Bounds: mean 4 levels, 95th percentile 16 (texture filtering and tile
-// levels differ between the two carriers).
-test("the carrier wears the globe's look at noon, dusk and night", async ({
+/** Mean and 95th percentile of the per-point colour difference of two reads. */
+const compare = (a, b) => {
+  const diffs = a
+    .map((p, i) => {
+      const q = b[i];
+      return (
+        (Math.abs(p[0] - q[0]) +
+          Math.abs(p[1] - q[1]) +
+          Math.abs(p[2] - q[2])) /
+        3
+      );
+    })
+    .sort((x, y) => x - y);
+  return {
+    mean: diffs.reduce((s, d) => s + d, 0) / diffs.length,
+    p95: diffs[Math.floor(diffs.length * 0.95)] ?? 0,
+  };
+};
+const meanLum = (px) => px.reduce((s, p) => s + lum(p), 0) / px.length;
+const readGrid = (grid) => async (page) => ({
+  px: await page.evaluate((g) => window.__terrainCarrier.readPixels(g), grid),
+  levels: (await page.evaluate(() => window.__terrainCarrier.state()))
+    .visibleByLevel,
+});
+
+// WHY (F0b; F1a review minor 6): the carrier must look like the globe
+// where it has no relief to add, flat (height scale 0), against the
+// globe's own surface: at noon, dusk and night at 150 km (imagery level
+// 5), at noon from 1,000 and 5,000 km, and at noon at 70 N. Before the
+// range fix the noon imagery came from 20 degrees south (mean 45.9 levels
+// apart). Bounds: mean 4 levels, 95th percentile 16 (texture filtering
+// and tile levels differ between the two carriers). And the relief must
+// show: at E 3 the frame differs from the flat one.
+test("the carrier wears the globe's look by day, dusk and night, near and far, and at 70 N", async ({
   browser,
 }) => {
-  test.setTimeout(1_200_000);
+  test.setTimeout(2_400_000);
   const grid = denseGrid();
   const MEAN = 4;
   const P95 = 16;
-  for (const [label, hour] of [
-    ["noon", 11.4],
-    ["dusk", 17.4],
-    ["night", 23.4],
+  for (const [label, view] of [
+    ["noon, 150 km", "alt=150&time=11.4"],
+    ["dusk, 150 km", "alt=150&time=17.4"],
+    ["night, 150 km", "alt=150&time=23.4"],
+    ["noon, 1,000 km", "alt=1000&time=11.4"],
+    ["noon, 5,000 km", "alt=5000&time=11.4"],
+    ["noon, 150 km at 70 N", "alt=150&time=11.4&lat=70&lng=20"],
   ]) {
-    const read = async (page) => ({
-      px: await page.evaluate(
-        (g) => window.__terrainCarrier.readPixels(g),
-        grid,
-      ),
-    });
     const globe = await measured(
       browser,
-      `carrier=globe&alt=150&time=${hour}`,
-      read,
+      `carrier=globe&${view}`,
+      readGrid(grid),
     );
     const flat = await measured(
       browser,
-      `carrier=terrain&alt=150&time=${hour}&heightScale=0`,
-      read,
+      `carrier=terrain&${view}&heightScale=0`,
+      readGrid(grid),
     );
-    const diffs = globe.px
-      .map((p, i) => {
-        const q = flat.px[i];
-        return (
-          (Math.abs(p[0] - q[0]) +
-            Math.abs(p[1] - q[1]) +
-            Math.abs(p[2] - q[2])) /
-          3
-        );
-      })
-      .sort((a, b) => a - b);
-    const mean = diffs.reduce((s, d) => s + d, 0) / diffs.length;
-    const p95 = diffs[Math.floor(diffs.length * 0.95)] ?? 0;
-    const meanLum = (px) => px.reduce((s, p) => s + lum(p), 0) / px.length;
+    const c = compare(globe.px, flat.px);
     console.log(
-      `look at ${label} (${hour} h UTC), 150 km, ${grid.length} points: mean |difference| ${below(mean, MEAN)}, 95th percentile ${below(p95, P95)}; mean luminance globe ${meanLum(globe.px).toFixed(1)}, carrier ${meanLum(flat.px).toFixed(1)}`,
+      `look at ${label}, ${grid.length} points: mean |difference| ${below(c.mean, MEAN)}, 95th percentile ${below(c.p95, P95)}; mean luminance globe ${meanLum(globe.px).toFixed(1)}, carrier ${meanLum(flat.px).toFixed(1)}; tiles by level globe ${JSON.stringify(globe.levels)}, carrier ${JSON.stringify(flat.levels)}`,
     );
     expect([...globe.errors, ...flat.errors]).toEqual([]);
-    expect(mean).toBeLessThanOrEqual(MEAN);
-    expect(p95).toBeLessThanOrEqual(P95);
+    expect(c.mean).toBeLessThanOrEqual(MEAN);
+    expect(c.p95).toBeLessThanOrEqual(P95);
   }
+  const flat = await measured(
+    browser,
+    "carrier=terrain&alt=150&time=11.4&heightScale=0",
+    readGrid(grid),
+  );
+  const relief = await measured(
+    browser,
+    "carrier=terrain&alt=150&time=11.4&heightScale=3",
+    readGrid(grid),
+  );
+  const r = compare(flat.px, relief.px);
+  console.log(
+    `relief at E 3 against flat, 150 km noon: mean |difference| ${r.mean.toFixed(2)} levels (must exceed 1)`,
+  );
+  expect(r.mean).toBeGreaterThan(1);
 });
 
-// WHY (F0b, the data budget on a phone): how many height tiles one descent
-// asks for, at the library's recommended error target (1) and two coarser
-// ones, on a 390 x 844 phone at pixel ratio 2. The requests are written
-// out so their real Terrarium sizes can be summed (synthetic PNGs are not
-// representative); the count is logged here.
-test("the data one descent asks for, at three error targets, on a phone", async ({
-  browser,
-}) => {
-  test.setTimeout(1_800_000);
-  mkdirSync("test-results/globe-terrain", { recursive: true });
-  for (const errorTarget of [1, 2, 4]) {
-    const context = await browser.newContext({
-      viewport: { width: 390, height: 844 },
-      deviceScaleFactor: 2,
-    });
-    const page = await context.newPage();
-    await bootCarrier(
-      page,
-      `carrier=terrain&alt=1000&errorTarget=${errorTarget}`,
-    );
-    const views = [];
-    for (const alt of [1000, 150, 30, 5]) {
-      await page.evaluate((a) => window.__terrainCarrier.setAlt(a), alt);
-      await settle(page);
-      const s = await page.evaluate(() => window.__terrainCarrier.state());
-      views.push({
-        alt,
-        requests: s.heightRequests.length,
-        visible: s.visibleTiles,
-      });
-    }
-    const s = await page.evaluate(() => window.__terrainCarrier.state());
-    const byLevel = {};
-    for (const r of s.heightRequests) {
-      const z = r.split("/")[0];
-      byLevel[z] = (byLevel[z] ?? 0) + 1;
-    }
-    writeFileSync(
-      `test-results/globe-terrain/requests-et${errorTarget}.json`,
-      JSON.stringify(s.heightRequests),
-    );
-    console.log(
-      `descent at error target ${errorTarget} (drawing buffer ${s.drawingBuffer.join("x")}): ${s.heightRequests.length} height tiles ${JSON.stringify(byLevel)}; cumulative per view ${views.map((v) => `${v.alt} km ${v.requests} (${v.visible} visible)`).join(", ")}`,
-    );
-    expect(s.heightRequests.length).toBeGreaterThan(0);
-    await context.close();
-  }
+/** Shares of `scan.pixels` with a neighbour step over each threshold. */
+const shares = (scan) => scan.steps.map((n) => n / scan.pixels);
+const readScan = async (page) => ({
+  scan: await page.evaluate(() => window.__terrainCarrier.seamScan(0)),
+  state: await page.evaluate(() => window.__terrainCarrier.state()),
 });
 
-// WHY (F0b, a dense seam scan): looking straight down, no ridge hides
-// another, so every step in the height grey between neighbouring pixels
-// beyond what the terrain's own slope gives (under 1.5 levels a pixel for
-// these synthetic ridges) is a seam; the background (magenta) showing
-// through is a crack. Bounds: no cracks; steps over 6 levels (about 70 m)
-// on at most 1e-4 of the pixels; reported at 3, 6 and 12 levels.
-test("no cracks and no seams between the relief's tiles", async ({
+// WHY (F1a review major 1): looking straight down, no ridge hides another,
+// so a step between neighbouring pixels (both axes) beyond the terrain's
+// own slope is a seam, and the background (magenta) showing through is a
+// crack. Heights are read in two channels (0.125 m a step). Bounds: no
+// cracks; steps over 30 m on at most 1e-4 of the pixels (reported at 10,
+// 30 and 100 m); the frame must span at least 200 m of relief. The scan
+// must also FIRE on a positive control (every tile's heights offset by up
+// to 50 m: at least 1e-3 of the pixels over 30 m), or it proves nothing.
+test("no cracks and no seams between the relief's tiles, and the scan fires on a planted seam", async ({
   browser,
 }) => {
-  test.setTimeout(900_000);
+  test.setTimeout(1_200_000);
   const STEP_SHARE = 1e-4;
   for (const alt of [30, 5]) {
     const r = await measured(
       browser,
       `carrier=terrain&alt=${alt}&nadir=1&debug=height`,
-      async (page) => ({
-        scan: await page.evaluate(() =>
-          window.__terrainCarrier.seamScan(0, [3, 6, 12]),
-        ),
-        state: await page.evaluate(() => window.__terrainCarrier.state()),
-      }),
+      readScan,
     );
-    const share = r.scan.steps.map((n) => n / r.scan.pixels);
+    const s = shares(r.scan);
     console.log(
-      `seam scan straight down at ${alt} km: ${r.scan.pixels} pixels, ${r.state.visibleTiles} tiles ${JSON.stringify(r.state.visibleByDepth)}; grey ${r.scan.greyRange.join("-")} levels; cracks ${r.scan.holes}; steps over 3/6/12 levels ${r.scan.steps.join("/")} (share over 6: ${below(share[1] ?? 0, STEP_SHARE)})`,
+      `seam scan straight down at ${alt} km (synthetic heights): ${r.scan.pixels} pixels, ${r.state.visibleTiles} tiles at levels ${JSON.stringify(r.state.visibleByLevel)}; heights ${r.scan.heightRangeM.map((v) => v.toFixed(0)).join("-")} m; cracks ${r.scan.holes}; steps over 10/30/100 m ${r.scan.steps.join("/")} (share over 30 m: ${below(s[1] ?? 0, STEP_SHARE)})`,
     );
     expect(r.errors).toEqual([]);
-    // Not vacuous: the frame shows relief (a grey range of at least 20
-    // levels, about 235 m), so a step would have something to break.
-    expect(r.scan.greyRange[1] - r.scan.greyRange[0]).toBeGreaterThanOrEqual(
-      20,
-    );
+    expect(
+      r.scan.heightRangeM[1] - r.scan.heightRangeM[0],
+    ).toBeGreaterThanOrEqual(200);
     expect(r.scan.holes).toBe(0);
-    expect(share[1]).toBeLessThanOrEqual(STEP_SHARE);
+    expect(s[1]).toBeLessThanOrEqual(STEP_SHARE);
   }
+  const control = await measured(
+    browser,
+    "carrier=terrain&alt=30&nadir=1&debug=height&seamControl=1",
+    readScan,
+  );
+  const c = shares(control.scan);
+  console.log(
+    `seam scan, POSITIVE CONTROL (tiles offset by up to 50 m): steps over 10/30/100 m ${control.scan.steps.join("/")} (share over 30 m ${(c[1] ?? 0).toExponential(2)}, must reach 1e-3)`,
+  );
+  expect(c[1]).toBeGreaterThanOrEqual(1e-3);
+});
+
+// WHY (F1a review major 3; one-scene plan §5): exaggerated sea floors sank
+// 10-15 km under the water's imagery at E 3. With the synthetic heights
+// lowered 1,500 m (a coast: valleys below 0), the drawn heights never go
+// below 0, and over the sea the frame at E 3 matches the flat one (the
+// sea keeps the globe's surface and colour), while over land it does not.
+// Bounds: sea mean 1 level; land must differ by more.
+test("the sea stays on the globe's surface at E 3: a coast", async ({
+  browser,
+}) => {
+  test.setTimeout(900_000);
+  const view = "carrier=terrain&alt=30&nadir=1&time=11.4&sea=1500";
+  const heights = await measured(
+    browser,
+    `${view}&heightScale=3&debug=height`,
+    readScan,
+  );
+  const grid = [];
+  for (let y = 0.02; y <= 0.98; y += 0.02)
+    for (let x = 0.02; x <= 0.98; x += 0.02) grid.push([x, y]);
+  const height = await measured(
+    browser,
+    `${view}&heightScale=3&debug=height`,
+    readGrid(grid),
+  );
+  const lit3 = await measured(browser, `${view}&heightScale=3`, readGrid(grid));
+  const lit0 = await measured(browser, `${view}&heightScale=0`, readGrid(grid));
+  const drawn = height.px.map((p) => (p[0] * 256 + p[1]) / 8 - 1000);
+  const sea = drawn.map((h) => Math.abs(h) < 0.2);
+  const pick = (px, want) => px.filter((_, i) => sea[i] === want);
+  const seaDiff = compare(pick(lit0.px, true), pick(lit3.px, true));
+  const landDiff = compare(pick(lit0.px, false), pick(lit3.px, false));
+  console.log(
+    `coast at E 3, 30 km straight down: drawn heights ${heights.scan.heightRangeM.map((v) => v.toFixed(1)).join(" to ")} m; ${sea.filter(Boolean).length} of ${grid.length} points sea; E 3 against flat: sea mean ${below(seaDiff.mean, 1)}, land mean ${landDiff.mean.toFixed(2)}`,
+  );
+  expect(heights.scan.heightRangeM[0]).toBeGreaterThanOrEqual(-0.2);
+  expect(sea.filter(Boolean).length).toBeGreaterThan(grid.length * 0.05);
+  expect(seaDiff.mean).toBeLessThanOrEqual(1);
+  expect(landDiff.mean).toBeGreaterThan(seaDiff.mean);
+});
+
+// WHY (F0b, the data budget on a phone): how many height tiles one descent
+// asks for, at the library's recommended error target (1) and two coarser
+// ones, on a 390 x 844 phone at pixel ratio 2. The requests are written
+// out; `terrarium-bytes.mjs` sums their real Terrarium sizes. Synthetic
+// heights here; the real-height run is the live suite below.
+async function descent(browser, heights, errorTarget) {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 2,
+  });
+  const page = await context.newPage();
+  await bootCarrier(
+    page,
+    `carrier=terrain&alt=1000&errorTarget=${errorTarget}&heights=${heights}`,
+  );
+  const views = [];
+  for (const alt of [1000, 150, 30, 5]) {
+    await page.evaluate((a) => window.__terrainCarrier.setAlt(a), alt);
+    await settle(page, 600_000);
+    const s = await page.evaluate(() => window.__terrainCarrier.state());
+    views.push({
+      alt,
+      requests: s.heightRequests.length,
+      visible: s.visibleTiles,
+    });
+  }
+  const s = await page.evaluate(() => window.__terrainCarrier.state());
+  await context.close();
+  const byLevel = {};
+  for (const r of s.heightRequests) {
+    const z = r.split("/")[0];
+    byLevel[z] = (byLevel[z] ?? 0) + 1;
+  }
+  mkdirSync("test-results/globe-terrain", { recursive: true });
+  writeFileSync(
+    `test-results/globe-terrain/requests-${heights}-et${errorTarget}.json`,
+    JSON.stringify(s.heightRequests),
+  );
+  console.log(
+    `descent on ${heights} heights at error target ${errorTarget} (drawing buffer ${s.drawingBuffer.join("x")}): ${s.heightRequests.length} height tiles ${JSON.stringify(byLevel)}; cumulative per view ${views.map((v) => `${v.alt} km ${v.requests} (${v.visible} visible)`).join(", ")}`,
+  );
+  return s.heightRequests.length;
+}
+
+test("the data one descent asks for, at three error targets, on a phone", async ({
+  browser,
+}) => {
+  test.setTimeout(1_800_000);
+  for (const errorTarget of [1, 2, 4]) {
+    expect(await descent(browser, "synthetic", errorTarget)).toBeGreaterThan(0);
+  }
+});
+
+// ---- Live: the real Terrarium tiles (network, opt-in) ----
+// GLOBE_TERRAIN_LIVE=1 runs these (F1a review majors 1, 2 and 4); they
+// fetch from AWS, so the default gate skips them.
+const live = process.env.GLOBE_TERRAIN_LIVE === "1";
+
+test.describe("on the real Terrarium heights (GLOBE_TERRAIN_LIVE=1)", () => {
+  test.skip(!live, "network: set GLOBE_TERRAIN_LIVE=1");
+
+  test("the seam scan on real tiles over the Alps", async ({ browser }) => {
+    test.setTimeout(1_800_000);
+    for (const alt of [30, 5]) {
+      const r = await measured(
+        browser,
+        `carrier=terrain&alt=${alt}&nadir=1&debug=height&heights=terrarium&lat=45.9&lng=7.0`,
+        readScan,
+      );
+      const s = shares(r.scan);
+      console.log(
+        `seam scan straight down at ${alt} km (REAL heights, 45.9 N 7.0 E): ${r.scan.pixels} pixels, ${r.state.visibleTiles} tiles at levels ${JSON.stringify(r.state.visibleByLevel)}; heights ${r.scan.heightRangeM.map((v) => v.toFixed(0)).join("-")} m; cracks ${r.scan.holes}; steps over 10/30/100 m ${r.scan.steps.join("/")} (share over 30 m: ${below(s[1] ?? 0, 1e-4)})`,
+      );
+      expect(r.scan.holes).toBe(0);
+    }
+  });
+
+  // F1a review major 2: half-float steps (2-4 m above 2,048 m) against a
+  // 26 m texel at E 3 could band the bump shading at a low sun. Measured
+  // over Mont Blanc (45.83 N 6.86 E, above 3,000 m), the sun 10 degrees up
+  // (16.6 h UTC on the equinox), E 3: R16F against R32F (the extension is
+  // there in this browser). Switch to R32F with NEAREST and a manual
+  // bilinear (DEC-FL-1) only if the 95th percentile exceeds 6 levels.
+  test("half-float against 32-bit heights in the shading at a low sun, above 3,000 m", async ({
+    browser,
+  }) => {
+    test.setTimeout(1_800_000);
+    const grid = denseGrid();
+    for (const alt of [30, 5]) {
+      const view = `carrier=terrain&alt=${alt}&heights=terrarium&lat=45.83&lng=6.86&time=16.6&heightScale=3`;
+      const r16 = await measured(browser, view, readGrid(grid));
+      const r32 = await measured(
+        browser,
+        `${view}&heightFormat=r32f`,
+        readGrid(grid),
+      );
+      const c = compare(r16.px, r32.px);
+      console.log(
+        `R16F against R32F at ${alt} km, sun 10 degrees up, E 3, over Mont Blanc: mean |difference| ${c.mean.toFixed(2)}, 95th percentile ${below(c.p95, 6)}`,
+      );
+    }
+  });
+
+  // F1a review major 4: the descent on real heights (sizes summed by
+  // terrarium-bytes.mjs), and the error target picked by the look: at E 3,
+  // 30 and 5 km, error targets 2 and 4 against 1; the coarsest whose 95th
+  // percentile stays within 8 levels.
+  test("the descent on real heights, and the error target by the look", async ({
+    browser,
+  }) => {
+    test.setTimeout(3_600_000);
+    for (const errorTarget of [1, 2, 4]) {
+      await descent(browser, "terrarium", errorTarget);
+    }
+    const grid = denseGrid();
+    for (const alt of [30, 5]) {
+      const base = `carrier=terrain&alt=${alt}&heights=terrarium&lat=45.9&lng=7.0&heightScale=3`;
+      const ref = await measured(
+        browser,
+        `${base}&errorTarget=1`,
+        readGrid(grid),
+      );
+      for (const et of [2, 4]) {
+        const other = await measured(
+          browser,
+          `${base}&errorTarget=${et}`,
+          readGrid(grid),
+        );
+        const c = compare(ref.px, other.px);
+        console.log(
+          `error target ${et} against 1 at ${alt} km, E 3, real heights: mean |difference| ${c.mean.toFixed(2)}, 95th percentile ${below(c.p95, 8)}`,
+        );
+      }
+    }
+  });
 });

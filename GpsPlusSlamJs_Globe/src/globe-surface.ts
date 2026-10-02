@@ -140,8 +140,11 @@ export interface GlobeSurface {
   dispose(): void;
 }
 
-/** Every mesh under `root`, with its material typed. */
-function tileMeshes(
+/**
+ * Every mesh under `root`, with its material typed (shared with the relief
+ * carrier, `globe-terrain.ts`).
+ */
+export function tileMeshes(
   root: THREE.Object3D,
 ): THREE.Mesh<THREE.BufferGeometry, THREE.Material>[] {
   const out: THREE.Mesh<THREE.BufferGeometry, THREE.Material>[] = [];
@@ -167,18 +170,29 @@ export function useLitMaterial(
 ): void {
   for (const mesh of tileMeshes(model)) {
     const unlit = mesh.material as THREE.MeshBasicMaterial;
-    const lit = template.clone();
-    // Material.copy does not carry the compile hooks: the patch would be
-    // lost without an error. Neither hook uses `this` (applyGlobeSurface
-    // assigns arrow functions; three's defaults ignore it).
-    // eslint-disable-next-line @typescript-eslint/unbound-method
-    lit.onBeforeCompile = template.onBeforeCompile;
-    // eslint-disable-next-line @typescript-eslint/unbound-method
-    lit.customProgramCacheKey = template.customProgramCacheKey;
+    const lit = litCopy(template);
     lit.map = unlit.map ?? null;
     owned.add(lit);
     mesh.material = lit;
   }
+}
+
+/**
+ * A clone of the patched `template` that keeps its compile hooks and
+ * program key: Material.copy does not carry them, and the patch would be
+ * lost without an error. Neither hook uses `this` (applyGlobeSurface
+ * assigns arrow functions; three's defaults ignore it). Shared with the
+ * relief carrier (`globe-terrain.ts`).
+ */
+export function litCopy(
+  template: THREE.MeshStandardMaterial,
+): THREE.MeshStandardMaterial {
+  const lit = template.clone();
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  lit.onBeforeCompile = template.onBeforeCompile;
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  lit.customProgramCacheKey = template.customProgramCacheKey;
+  return lit;
 }
 
 /** Free the lit copies `useLitMaterial` made under `model`, not their maps. */

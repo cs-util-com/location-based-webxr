@@ -60,6 +60,10 @@ onError)`) fetches the two global maps (night lights, clouds; the water mask is 
     `owned`.
   - `disposeLitMaterials(model, owned)` - frees those clones, never their
     maps.
+  - `tileMeshes(root)` (every mesh under a tile model) and
+    `litCopy(template)` (a clone keeping the compile hooks and program key)
+    are exported for the relief carrier (`globe-terrain.ts`), so both
+    carriers share one implementation (DEC-H3).
 - Invariants & assumptions:
   - A tile that fails to load leaves its parent drawn over that area
     (owner decision DEC-PRG-14), through the recorded pnpm patch

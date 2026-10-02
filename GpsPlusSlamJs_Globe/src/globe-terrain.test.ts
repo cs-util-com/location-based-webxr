@@ -131,6 +131,39 @@ describe("geographicOverlay", () => {
   });
 });
 
+describe("geographicOverlay, the imagery's projection", () => {
+  // Why (F1a review minor 7): the conversion assumes plate-carree
+  // imagery; a Web Mercator imagery source would be converted wrongly
+  // without a word, so it is refused. The overlay's projection is only
+  // known once it has initialised (before, the library reports "none":
+  // the first lab run refused every overlay at construction), so the
+  // check runs in init.
+  it("refuses imagery that is not plate carree, once it has initialised", async () => {
+    const imagery = (scheme: string) => {
+      const tiling = { maxLevel: 5, projection: { scheme: "none" } };
+      return {
+        tiling,
+        init: () => {
+          tiling.projection.scheme = scheme;
+          return Promise.resolve();
+        },
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      };
+    };
+    const mercator = geographicOverlay(imagery("EPSG:3857"));
+    await expect(mercator.init()).rejects.toThrow(RangeError);
+    await expect(
+      geographicOverlay(imagery("EPSG:4326")).init(),
+    ).resolves.toBeUndefined();
+    await expect(
+      geographicOverlay(imagery("CRS:84")).init(),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe("useHalfFloatHeights", () => {
   // Why (F0b, measured): R32F with linear filtering is incomplete without
   // OES_texture_float_linear and reads 0 m; R16F filters linearly in
@@ -190,6 +223,22 @@ describe("tileGeographicBounds", () => {
     expect(b.north / DEG).toBeCloseTo(42, 4);
   });
 
+  // Why (F1a review minor 5): the library snaps its pole rows to 90
+  // degrees while the imagery it was asked for ends at the Web Mercator
+  // limit (85.0511 degrees); the box must end there too, or a pole tile's
+  // imagery is stretched over the cap.
+  it("ends a pole tile's box at the Web Mercator limit", () => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute(
+      "normal",
+      new THREE.Float32BufferAttribute(
+        [0, 0, 1, 0.1, 0, 0.995, 0, 0.1, 0.995],
+        3,
+      ),
+    );
+    expect(tileGeographicBounds(g).north / DEG).toBeCloseTo(85.0511, 4);
+  });
+
   it("refuses a geometry without normals", () => {
     expect(() => tileGeographicBounds(new THREE.BufferGeometry())).toThrow(
       RangeError,
@@ -240,6 +289,55 @@ describe("litTerrainMaterial", () => {
       (shader.uniforms.uTerrainGeoBounds?.value as THREE.Vector4).toArray(),
     ).toEqual([0.1, 0.7, 0.2, 0.8]);
     expect(lit.customProgramCacheKey()).toBe(GLOBE_TERRAIN.programKey);
+    // The imagery UV is clamped to the tile's texture (pole rows).
+    expect(shader.vertexShader).toContain("vMapUv = clamp(");
+  });
+});
+
+describe("bathymetry clamped at the surface", () => {
+  // Why (F1a review major 3; one-scene plan §5): exaggerated sea floors
+  // sank 10-15 km under the water's imagery at E 3. Heights below 0 are
+  // drawn and shaded as 0, so the sea keeps the globe's surface and colour.
+  it("displaces and shades with heights clamped at 0", () => {
+    const template = new THREE.MeshStandardMaterial();
+    const own = new THREE.MeshLambertMaterial();
+    own.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <bumpmap_pars_fragment>",
+        "float a = texture2D( bumpMap, vBumpMapUv + dx ).x - texture2D( bumpMap, vBumpMapUv - dx ).x;",
+      );
+    };
+    const lit = litTerrainMaterial(template, own, {
+      west: 0,
+      south: 0,
+      east: 0.1,
+      north: 0.1,
+    });
+    const shader = {
+      vertexShader: [
+        "#include <common>",
+        "#include <uv_vertex>",
+        "#include <displacementmap_vertex>",
+      ].join("\n"),
+      fragmentShader: "#include <bumpmap_pars_fragment>",
+      uniforms: {} as Record<string, THREE.IUniform>,
+    } as unknown as THREE.WebGLProgramParametersWithUniforms;
+    lit.onBeforeCompile(shader, {} as THREE.WebGLRenderer);
+    expect(shader.vertexShader).not.toContain(
+      "#include <displacementmap_vertex>",
+    );
+    expect(shader.vertexShader).toContain(
+      "max( texture2D( displacementMap, vDisplacementMapUv ).x, 0.0 )",
+    );
+    // Every read of the bump map's height is clamped, none left bare.
+    const reads = shader.fragmentShader.split("texture2D( bumpMap,").length - 1;
+    const clamped =
+      shader.fragmentShader.split("max( texture2D( bumpMap,").length - 1;
+    expect(reads).toBe(2);
+    expect(clamped).toBe(reads);
+    expect(shader.fragmentShader).toContain(
+      "max( texture2D( bumpMap, vBumpMapUv + dx ).x, 0.0 )",
+    );
   });
 });
 
@@ -307,6 +405,11 @@ describe("createGlobeTerrain", () => {
       heightScale: 2,
     });
     expect(terrain.plugin.heightScale).toBe(2);
+    // The error target picked by the look (F1a review major 4): 2 draws
+    // the real Alps as 1 does (mean 0.12 levels, 95th percentile 0 at
+    // 30 km) for 9.9 MiB a descent against 11.5; 4 differs by 42 levels.
+    expect(GLOBE_TERRAIN.errorTarget).toBe(2);
+    expect(terrain.tiles.errorTarget).toBe(GLOBE_TERRAIN.errorTarget);
     const n = (lat: number, lng: number) => [
       Math.cos(lat * DEG) * Math.cos(lng * DEG),
       Math.cos(lat * DEG) * Math.sin(lng * DEG),

@@ -21,6 +21,8 @@ import {
   GLOBE_SURFACE,
   createGlobeSurface,
   disposeLitMaterials,
+  litCopy,
+  tileMeshes,
   useLitMaterial,
 } from "./globe-surface.js";
 import {
@@ -147,8 +149,6 @@ describe("createGlobeSurface", () => {
     globe.dispose();
   });
 
-  // The loading label and the tests wait on these: a map still downloading
-  // must not read as "loaded", and a failed one must reach the error box.
   // Why (round-5 F1a, DEC-GL5-9): the relief carrier's tiles must wear the
   // SAME look and read the SAME uniforms as the globe's own (one sun, one
   // set of maps), so the globe hands out the template it patched.
@@ -162,6 +162,8 @@ describe("createGlobeSurface", () => {
     globe.dispose();
   });
 
+  // The loading label and the tests wait on these: a map still downloading
+  // must not read as "loaded", and a failed one must reach the error box.
   it("counts the global maps as they load and as they fail", () => {
     const loader = stubLoader();
     const globe = createGlobeSurface(loader);
@@ -336,6 +338,33 @@ const meshes = (root: THREE.Object3D): THREE.Mesh[] => {
   });
   return out;
 };
+
+describe("litCopy and tileMeshes (shared with the relief carrier)", () => {
+  // Why (F1a review minor 8, DEC-H3): the globe's tiles and the relief's
+  // both need "a clone of the template with its compile hooks" and "every
+  // mesh under a tile model"; one implementation each, used by both.
+  it("clones the template with its compile hooks and program key", () => {
+    const template = new THREE.MeshStandardMaterial({ roughness: 0.7 });
+    const hook = () => {};
+    template.onBeforeCompile = hook;
+    template.customProgramCacheKey = () => "k";
+    const lit = litCopy(template);
+    expect(lit).not.toBe(template);
+    expect(lit.roughness).toBe(0.7);
+    expect(lit.onBeforeCompile).toBe(hook);
+    expect(lit.customProgramCacheKey()).toBe("k");
+  });
+
+  it("finds every mesh under a model", () => {
+    const root = new THREE.Group();
+    const a = new THREE.Mesh();
+    const b = new THREE.Mesh();
+    const inner = new THREE.Group();
+    inner.add(b);
+    root.add(a, inner, new THREE.Object3D());
+    expect(tileMeshes(root)).toEqual([a, b]);
+  });
+});
 
 describe("useLitMaterial", () => {
   it("gives every mesh a lit copy that keeps its own texture", () => {
