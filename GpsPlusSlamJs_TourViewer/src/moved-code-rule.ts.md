@@ -63,6 +63,19 @@ so 120 fixes is about the 60 s the measurement called settled at the median
 rate; a 1 Hz phone needs 2 minutes (conservative: its codes are then judged
 by position only).
 
+**Checked: no tool counts its own votes** (M5c review L6, 2026-10-02). The
+Recorder reads the count from the store's whole GPS history
+(`GpsPlusSlamJs_RecorderApp` `wire-ar-scene.ts` `readAlignment`), which
+holds the session's own synthetic votes once a code has voted; but
+`wire-qr-recording.ts` wraps that reader and subtracts every vote it cast
+(`syntheticVotes`, clamped at 0) before the count reaches the mint. The
+clamp can only UNDERstate the count (a store swap empties the list while the
+counter stays), which reads a save as unsettled: the safe side. The Tour
+Viewer's author mode never votes (`qr-author-mode.ts`) and counts only this
+session's fixes. So the proxy needs no Tour Viewer correction today; if the
+Recorder ever stopped subtracting, a level re-minted after its code voted
+would read settled up to 16 fixes per voted lock early.
+
 ## Measured (M5c sweep, `code-displacement.recordings.test.ts`, "M5c shipped rule", re-run 2026-10-02 without the compass)
 
 Per-fix FIRST crossings, which is what the viewer acts on. Two
