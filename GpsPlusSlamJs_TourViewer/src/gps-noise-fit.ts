@@ -15,14 +15,26 @@
  *   the M5a model's per-axis sigma (its horizontal RMS is about 1.4 sigma);
  * - the autocorrelation rho(lag) over every pair of samples of one series
  *   at most `maxLagS` apart, binned by `binS`, both axes pooled; for an
- *   irregular fix stream this needs no resampling;
+ *   irregular fix stream this needs no resampling. Each bin is normalised by
+ *   its OWN pairs' energies, rho = sum(x_i . x_j) / sqrt(sum |x_i|^2 *
+ *   sum |x_j|^2), a cosine of two vectors, so |rho| <= 1 however thin the
+ *   bin and however unequal the pooled series (one global variance read
+ *   -1.02 at 300 s on the real corpus, where only the longest walks reach);
  * - tau: the first lag at which rho falls below 1/e, interpolated linearly
  *   between bins (for a Gauss-Markov process rho = exp(-lag / tau), so that
  *   lag is tau). Null, with `censored`, when rho never falls that far within
  *   `maxLagS`: the time constant is then longer than the window can show.
  *
  * Several series are pooled into one fit (each demeaned on its own), so a
- * corpus fit weights every PAIR equally, not every session.
+ * corpus fit weights every PAIR equally, not every session, and its
+ * long-lag bins come from the longest series only.
+ *
+ * THE LIMIT. Demeaning removes the part of the error slower than the series
+ * is long, so sigma and tau are biased LOW, more so as tau grows against
+ * the length (measured in the unit test: a 170 s series of sigma 10 m /
+ * tau 300 s reads about 3.6 m / 25 s). A walk of a few minutes cannot see a
+ * tau above about a minute, and a tau that is not censored is no evidence
+ * that the true tau is short.
  *
  * Inputs are external data (a replayed recording): non-finite samples are
  * skipped, never repaired; a series must be in time order (the pair window
@@ -46,9 +58,10 @@ export interface GaussMarkovFit {
   readonly tauS: number | null;
   /** True when `tauS` is null because the window was too short. */
   readonly censored: boolean;
-  /** rho per lag bin (bin k covers lags around k * binS); NaN for an empty
-   *  bin. Bin 0 holds the zero-lag pairs (and any closer than half a bin),
-   *  so it is 1 when fixes are at least half a bin apart. */
+  /** rho per lag bin (bin k covers lags around k * binS), within [-1, 1];
+   *  NaN for an empty bin or one whose pairs carry no error. Bin 0 holds
+   *  the zero-lag pairs (and any closer than half a bin), so it is 1 when
+   *  fixes are at least half a bin apart. */
   readonly rho: readonly number[];
   /** Samples used (finite), over all series. */
   readonly samples: number;
@@ -62,6 +75,10 @@ export interface GaussMarkovFitOptions {
 }
 
 const INV_E = Math.exp(-1);
+/** Below this share of the variance per pair, a bin is numerically empty
+ *  (rounding, not correlation). Any value from 1e-12 to 1e-6 serves: real
+ *  residuals sit nowhere near it. */
+const EMPTY_BIN_ENERGY = 1e-9;
 
 function finiteSamples(series: readonly ResidualSample[]): ResidualSample[] {
   const out: ResidualSample[] = [];
@@ -109,12 +126,15 @@ function oneOverELag(rho: readonly number[], binS: number): number | null {
   return null;
 }
 
-/** Running sums of lagged products over every pair at most `bins - 1`
- *  bins apart, of one demeaned series. */
+/** Running sums of lagged products, and of each side's energy, over every
+ *  pair at most `bins - 1` bins apart, of one demeaned series. */
 function accumulatePairs(
   series: readonly ResidualSample[],
   acc: {
     sum: Float64Array;
+    /** Energy of the earlier / later sample of each pair, per bin. */
+    early: Float64Array;
+    late: Float64Array;
     count: Float64Array;
     sumSq: number;
     samples: number;
@@ -140,7 +160,9 @@ function accumulatePairs(
       if (lagS > maxLagS) break;
       const k = Math.round(lagS / binS);
       acc.sum[k]! += n[i]! * n[j]! + e[i]! * e[j]!;
-      acc.count[k]! += 2;
+      acc.early[k]! += n[i]! * n[i]! + e[i]! * e[i]!;
+      acc.late[k]! += n[j]! * n[j]! + e[j]! * e[j]!;
+      acc.count[k]! += 1;
     }
   }
 }
@@ -162,6 +184,8 @@ export function fitGaussMarkov(
   const bins = Math.floor(maxLagS / binS) + 1;
   const acc = {
     sum: new Float64Array(bins),
+    early: new Float64Array(bins),
+    late: new Float64Array(bins),
     count: new Float64Array(bins),
     sumSq: 0,
     samples: 0,
@@ -172,9 +196,15 @@ export function fitGaussMarkov(
   }
   if (acc.samples < 2 || !(acc.sumSq > 0)) return null;
   const variance = acc.sumSq / (2 * acc.samples);
-  const rho = Array.from(acc.sum, (s, k) =>
-    acc.count[k]! > 0 ? s / acc.count[k]! / variance : Number.NaN,
-  );
+  // A bin whose pairs carry next to none of the error (all at the series
+  // mean) is numerically empty: its sum is rounding noise, and dividing it
+  // by a tiny energy would report noise anywhere in [-1, 1].
+  const rho = Array.from(acc.sum, (s, k) => {
+    const energy = Math.sqrt(acc.early[k]! * acc.late[k]!);
+    return energy > EMPTY_BIN_ENERGY * variance * acc.count[k]!
+      ? s / energy
+      : Number.NaN;
+  });
   const tauS = oneOverELag(rho, binS);
   return {
     sigmaM: Math.sqrt(variance),

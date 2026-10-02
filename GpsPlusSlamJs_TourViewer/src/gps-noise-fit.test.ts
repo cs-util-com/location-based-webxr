@@ -99,6 +99,51 @@ describe("fitGaussMarkov", () => {
     expect(fit.censored).toBe(true);
   });
 
+  // Why this test matters: this is the fit's LIMIT on a real walk, measured
+  // rather than asserted away. The corpus' median walk is 2.8 minutes (about
+  // 170 fixes at 1 Hz). Demeaning a short stretch of a slow process removes
+  // most of its error, so a 170 s walk of a sigma 10 m / tau 300 s process
+  // (M5a's pessimistic cell) reads a sigma and tau that look like the
+  // corpus' own numbers. A short real walk can therefore neither confirm nor
+  // exclude a tau above about a minute, and a per-walk tau that is never
+  // censored is NOT evidence of a short tau (the demeaned curve is forced
+  // through zero within the walk). If this test starts reading the true
+  // values, the estimator changed and the sidecar's limit must be
+  // re-measured. A fast process is read well at the same length: the bias
+  // is a property of tau against the walk's length.
+  it("reads a slow process on a 170 s walk far too fast and too quiet (measured bias)", () => {
+    const fitsAt = (sigmaM: number, tauS: number) =>
+      Array.from({ length: 200 }, (_, k) =>
+        fitGaussMarkov(
+          [gaussMarkov({ sigmaM, tauS, n: 170, seed: 7 * k + 1 })],
+          { maxLagS: 120 },
+        )!,
+      );
+    const median = (v: readonly number[]) => {
+      const s = [...v].sort((a, b) => a - b);
+      return s[s.length >> 1]!;
+    };
+    const slow = fitsAt(10, 300);
+    const t60 = median(fitsAt(5, 60).map((f) => f.tauS ?? Number.NaN));
+    const t120 = median(fitsAt(5, 120).map((f) => f.tauS ?? Number.NaN));
+    const fast = fitsAt(3, 10);
+    // Measured 2026-10-02 (200 seeds each): sigma 3.56 m, tau 25.5 s;
+    // tau 60 reads 21 s and tau 120 reads 23 s; sigma 3 / tau 10 reads
+    // 2.78 m / 7.8 s. The bounds leave room for the seeds, not for a change
+    // of estimator.
+    expect(slow.filter((f) => f.censored)).toHaveLength(0);
+    const slowSigma = median(slow.map((f) => f.sigmaM));
+    const slowTau = median(slow.map((f) => f.tauS!));
+    expect(slowSigma).toBeGreaterThan(3);
+    expect(slowSigma).toBeLessThan(4.2);
+    expect(slowTau).toBeGreaterThan(20);
+    expect(slowTau).toBeLessThan(31);
+    expect(t120 / t60).toBeLessThan(1.25);
+    expect(median(fast.map((f) => f.sigmaM)) / 3).toBeGreaterThan(0.85);
+    expect(median(fast.map((f) => f.tauS!)) / 10).toBeGreaterThan(0.7);
+    // 800 fits: under a loaded gate this can outlast the default 5 s.
+  }, 30_000);
+
   // Why this test matters: a constant per-session bias is a different
   // quantity (the cross-session pairs measure it); the fit demeans each
   // series so a bias does not inflate sigma or stretch tau.

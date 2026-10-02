@@ -3,7 +3,8 @@ import fc from "fast-check";
 
 import { fitGaussMarkov, type ResidualSample } from "./gps-noise-fit.js";
 
-/** An irregular residual series: increasing times, bounded values. */
+/** An irregular residual series: increasing times, bounded values, not
+ *  constant (a constant series has no error to fit: the fit is null). */
 const seriesArb = fc
   .array(
     fc.record({
@@ -19,7 +20,21 @@ const seriesArb = fc
       t += s.dtS * 1000;
       return { tMs: t, n: s.n, e: s.e };
     });
-  });
+  })
+  .filter((series) =>
+    series.some(
+      (r) =>
+        Math.abs(r.n - series[0]!.n) > 1e-6 ||
+        Math.abs(r.e - series[0]!.e) > 1e-6,
+    ),
+  );
+
+/** Rounding allowance for two rho arrays that are equal in exact maths.
+ *  Bins whose pairs sit at the series mean are reported empty (NaN), so a
+ *  reported bin divides by at least 1e-9 of the variance per pair and its
+ *  rounding stays far below this; a real slip (an axis, a scale, a clock)
+ *  moves rho by O(1). */
+const RHO_TOLERANCE = 1e-5;
 
 /** Largest difference of two rho arrays; Infinity when one has a value
  *  (or an empty bin) where the other has not. */
@@ -56,11 +71,11 @@ describe("fitGaussMarkov properties", () => {
             n: c * r.n - s * r.e,
             e: s * r.n + c * r.e,
           }));
-          // Bounded random residuals are never all zero: both fits exist.
+          // A non-constant series has error to fit: both fits exist.
           const a = fitGaussMarkov([series], { maxLagS: 30 })!;
           const b = fitGaussMarkov([turned], { maxLagS: 30 })!;
           expect(b.sigmaM).toBeCloseTo(a.sigmaM, 6);
-          expect(rhoDiff(a.rho, b.rho)).toBeLessThan(1e-6);
+          expect(rhoDiff(a.rho, b.rho)).toBeLessThan(RHO_TOLERANCE);
         },
       ),
       { numRuns: 40 },
@@ -85,7 +100,7 @@ describe("fitGaussMarkov properties", () => {
           const a = fitGaussMarkov([series], { maxLagS: 30 })!;
           const b = fitGaussMarkov([scaled], { maxLagS: 30 })!;
           expect(b.sigmaM / a.sigmaM).toBeCloseTo(k, 6);
-          expect(rhoDiff(a.rho, b.rho)).toBeLessThan(1e-6);
+          expect(rhoDiff(a.rho, b.rho)).toBeLessThan(RHO_TOLERANCE);
           expect(b.tauS ?? -1).toBeCloseTo(a.tauS ?? -1, 4);
         },
       ),
@@ -93,19 +108,51 @@ describe("fitGaussMarkov properties", () => {
     );
   });
 
-  // Why this test matters: rho is a correlation; outside [-1, 1] (beyond
-  // rounding) it would mean the pair sums and the variance disagree.
-  it("keeps the zero-lag rho at 1 and every rho finite or NaN", () => {
+  // Why this test matters: rho is a correlation. Normalised by the whole
+  // series' variance, a thin long-lag bin (a few pairs of large residuals)
+  // read beyond -1 or 1, and the 1/e crossing was then read off a curve that
+  // is not a correlation at all. Each bin is normalised by its own pairs'
+  // energies (a cosine of two vectors), which bounds it for a single
+  // series and for any pool of them.
+  it("keeps the zero-lag rho at 1 and every rho within [-1, 1]", () => {
     fc.assert(
       fc.property(seriesArb, (series) => {
         const fit = fitGaussMarkov([series], { maxLagS: 20 })!;
         expect(fit.rho[0]).toBeCloseTo(1, 9);
         expect(
-          fit.rho.every((r) => Number.isNaN(r) || Number.isFinite(r)),
+          fit.rho.every((r) => Number.isNaN(r) || Math.abs(r) <= 1 + 1e-9),
         ).toBe(true);
         expect(fit.sigmaM).toBeGreaterThan(0);
       }),
       { numRuns: 40 },
+    );
+  });
+
+  // Why this test matters: the corpus fit pools walks of very different
+  // length and noise. With one pooled variance, the long-lag bins (reached
+  // only by the longest walks) were divided by every walk's variance, and
+  // the real corpus read rho(300 s) = -1.02.
+  it("keeps every pooled rho within [-1, 1]", () => {
+    fc.assert(
+      fc.property(
+        seriesArb,
+        seriesArb,
+        fc.double({ min: 0.01, max: 100, noNaN: true }),
+        (a, b, k) => {
+          const louder = b.map((r) => ({
+            tMs: r.tMs,
+            n: k * r.n,
+            e: k * r.e,
+          }));
+          const fit = fitGaussMarkov([a, louder], { maxLagS: 60 });
+          // All-zero residuals carry no correlation to bound.
+          if (fit === null) return;
+          expect(
+            fit.rho.every((r) => Number.isNaN(r) || Math.abs(r) <= 1 + 1e-9),
+          ).toBe(true);
+        },
+      ),
+      { numRuns: 60 },
     );
   });
 });

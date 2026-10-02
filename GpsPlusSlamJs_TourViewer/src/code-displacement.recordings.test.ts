@@ -403,7 +403,6 @@ describe.runIf(MODE === "replay")("D20 real walks: replay to cache", () => {
       for (const z of zips) {
         const out = cachePath(z.key);
         if (fs.existsSync(out)) continue;
-        const t0 = performance.now();
         let walk: Walk;
         try {
           walk = await replayWalk(z);
@@ -417,7 +416,7 @@ describe.runIf(MODE === "replay")("D20 real walks: replay to cache", () => {
         }
         fs.writeFileSync(out, JSON.stringify(walk));
         process.stdout.write(
-          `D20R-REPLAY ${z.key} era=${String(walk.era)} fixes=${walk.fixes?.length ?? 0} marks=${walk.marks?.length ?? 0} ${walk.skipped ?? ""} ${Math.round(performance.now() - t0)}ms\n`,
+          `D20R-REPLAY ${z.key} era=${String(walk.era)} fixes=${walk.fixes?.length ?? 0} marks=${walk.marks?.length ?? 0} ${walk.skipped ?? ""}\n`,
         );
       }
       expect(zips.length).toBeGreaterThan(0);
