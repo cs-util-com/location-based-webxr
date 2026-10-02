@@ -29,7 +29,13 @@ camera, so `installTourViewerArFakes(page)` installs
   `emitFrames(n)` (delivers fake frames - RGBA plus an identity capture pose
   and `capturedAtMs`, the framework's `CapturedCameraFrame` shape - through
   the initAR camera callback; there is no `getCameraPose` seam to fake), `sessionEndCallback` + `endXrSession()` (simulate a system
-  session end), and `armQrDetection(text, position?)` + `nextDetection` /
+  session end), `emitGps({ lat, lon, accuracy?, timestamp, arPosition })`
+  (delivers one device fix through the GPS watch the session started -
+  `gpsCallback`, kept by the fake `startGpsWatch` - paired with `arPose`,
+  which the `getArPose` seam returns: the page's own path, coordinator,
+  `recordDeviceFix` and the vote sink; the moved-code e2e, D20 M5c, needs
+  it because the veto re-feeds the fixes the sink stored), and
+  `armQrDetection(text, position?)` + `nextDetection` /
   `nextSolution` — scripted device-level QR results for the author
   pipeline; the REAL controller, slice, stability gate and mint run over
   them — plus `fakeScene` (a scene-root stub the image planes land in);

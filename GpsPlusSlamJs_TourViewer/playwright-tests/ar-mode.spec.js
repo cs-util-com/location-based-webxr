@@ -2893,3 +2893,138 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
   expect(ring.payload.code.text).toBe(E2E_QR_TEXT);
   expect(types).toContain("gpsData/resetGpsSessionData");
 });
+
+test("a code hung far from its saved spot is ignored after a minute of walking: the gate passes, the line says so, the tour follows GPS (D20, M5c)", async ({
+  page,
+}) => {
+  // Why this matters (authoring plan 2026-09-28-0953 §3.6, §7j #4; owner
+  // decision 2026-10-02): a poster re-hung 40 m from its saved spot pins the
+  // whole tour 40 m off while its votes hold. The viewer must notice it on
+  // the visitor's own GPS, take the votes back so the tour follows GPS, and
+  // tell the visitor in one plain sentence - never "Relocalized", never
+  // "point the phone at the code" for a code it ignores. The fixes travel
+  // the page's real GPS path (coordinator, device-fix routing, vote sink).
+  //
+  // The fixture's code is saved at (47.5001, 8.7001), about 11 m north and
+  // 7.5 m east of the zero; it now hangs at 11 m north, 50 m east - 42.5 m
+  // away. The odometry is the world frame (north = -z, east = x).
+  const degPerMLat = 8.9832e-6;
+  const degPerMLon = 1.32966e-5; // at lat 47.5
+  const CODE = { n: 11, e: 50 };
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  await enterAr(page);
+  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  const t0 = Date.now();
+  /** A device fix at second `s`, on an 8 m circle around the poster. */
+  const fix = (s) =>
+    page.evaluate(
+      ({ s, t0, CODE, degPerMLat, degPerMLon }) => {
+        const a = (2 * Math.PI * s) / 30;
+        const n = CODE.n + 8 * Math.cos(a);
+        const e = CODE.e + 8 * Math.sin(a);
+        /** @type {any} */ (window).__tourViewerTest.emitGps({
+          lat: 47.5 + n * degPerMLat,
+          lon: 8.7 + e * degPerMLon,
+          timestamp: t0 + s * 1000,
+          arPosition: [e, 1.4, -n],
+        });
+      },
+      { s, t0, CODE, degPerMLat, degPerMLon },
+    );
+  /** How far the store's alignment puts the device's latest odometry
+   *  position from its GPS position (m): the tour follows GPS when ~0. */
+  const offFromGps = (s) =>
+    page.evaluate(
+      ({ s, CODE, degPerMLat, degPerMLon }) => {
+        const store = /** @type {any} */ (window).__tourViewerTest
+          .alignmentStore;
+        const { zero, gpsEvents } = store.getState().gpsData;
+        const m = gpsEvents.alignmentMatrix;
+        const a = (2 * Math.PI * s) / 30;
+        const n = CODE.n + 8 * Math.cos(a);
+        const e = CODE.e + 8 * Math.sin(a);
+        // Odometry-NUE (n, 1.4, e) through the column-major alignment...
+        const wn = m[0] * n + m[4] * 1.4 + m[8] * e + m[12];
+        const we = m[2] * n + m[6] * 1.4 + m[10] * e + m[14];
+        // ...against the fix in the session NUE, whose zero is the FIRST
+        // fix (the handler sets it), not (47.5, 8.7).
+        const gn = (47.5 + n * degPerMLat - zero.lat) / degPerMLat;
+        const ge = (8.7 + e * degPerMLon - zero.lon) / degPerMLon;
+        return Math.hypot(wn - gn, we - ge);
+      },
+      { s, CODE, degPerMLat, degPerMLon },
+    );
+  const votesStored = () =>
+    page.evaluate(
+      () =>
+        /** @type {any} */ (window).__tourViewerTest.alignmentStore
+          .getState()
+          .gpsData.gpsEvents.gpsPositions.filter(
+            (p) => p.source === "synthetic-qr",
+          ).length,
+    );
+
+  // The session zero, then the scan: the code votes and the gate passes.
+  await fix(0);
+  await page.evaluate(
+    ({ text, CODE }) => {
+      /** @type {any} */ (window).__tourViewerTest.armQrDetection(text, [
+        CODE.e,
+        1.5,
+        -CODE.n,
+      ]);
+    },
+    { text: E2E_QR_TEXT, CODE },
+  );
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").textContent();
+      },
+      { timeout: 20000 },
+    )
+    .toMatch(/the code holds the placement/i);
+  await expect(page.getByTestId("ar-status")).toContainText("Code recognised");
+  expect(await votesStored()).toBeGreaterThan(0);
+  // The detection stops; the visitor walks for a minute.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.nextDetection = null;
+  });
+  for (let s = 1; s <= 55; s += 1) await fix(s);
+  // Still held by the code's votes: the tour sits near the saved spot.
+  expect(await offFromGps(55)).toBeGreaterThan(20);
+  await expect(page.getByTestId("ar-status")).not.toContainText(
+    "seems to have been moved",
+  );
+  for (let s = 56; s <= 75; s += 1) await fix(s);
+
+  const status = page.getByTestId("ar-status");
+  await expect(status).toContainText(
+    "This code seems to have been moved, so its position is not used. Showing the tour by GPS.",
+  );
+  await expect(status).not.toContainText("Relocaliz");
+  await expect(status).not.toContainText("Point the phone");
+  await expect(status).not.toContainText("Scan the code again");
+  await expect(status).toContainText("1 placed object");
+  // The votes are gone and the tour follows GPS.
+  expect(await votesStored()).toBe(0);
+  expect(await offFromGps(75)).toBeLessThan(2);
+  // A later lock of the same code changes nothing: no vote.
+  await page.evaluate(
+    ({ text, CODE }) => {
+      /** @type {any} */ (window).__tourViewerTest.armQrDetection(text, [
+        CODE.e,
+        1.5,
+        -CODE.n,
+      ]);
+      /** @type {any} */ (window).__tourViewerTest.emitFrames(12);
+    },
+    { text: E2E_QR_TEXT, CODE },
+  );
+  await fix(76);
+  expect(await votesStored()).toBe(0);
+  await expect(status).toContainText("seems to have been moved");
+});

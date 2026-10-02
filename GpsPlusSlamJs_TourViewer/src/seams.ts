@@ -18,6 +18,7 @@
 import {
   getArWorldGroup,
   getCamera,
+  getCurrentArPose,
   getScene,
   rgbaImageToJpegBlob,
   startCameraFrameCapture,
@@ -118,6 +119,11 @@ export interface TourViewerSeams {
    *  (the framework's parenting rule; `arWorldGroup` children would need
    *  alignment-inverse coordinates instead). */
   getScene(): Object3D | null;
+  /** The latest AR pose - what each device GPS fix is paired with
+   *  (`createGpsPositionHandler`'s `getArPose`). A seam so the e2e, which
+   *  has no XR frames, can deliver GPS fixes through the page's own path
+   *  (Tour Viewer authoring plan 2026-09-28-0953 D20, M5c). */
+  getArPose(): ReturnType<typeof getCurrentArPose>;
   /** The geolocation permission state, "unknown" without the Permissions
    *  API - the visitor screen's location gate reads it once at boot. */
   queryGeolocationPermission(): Promise<LocationPermission>;
@@ -229,6 +235,7 @@ export const realSeams: TourViewerSeams = {
   },
   createQrDebugView,
   getScene,
+  getArPose: getCurrentArPose,
   shareOrDownloadZip: (blob, filename) =>
     shareOrDownloadBlob(blob, filename, ZIP_FILE_TYPE),
   downloadZip: (blob, filename) => downloadBlob(blob, filename, ZIP_FILE_TYPE),
