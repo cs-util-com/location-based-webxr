@@ -10,10 +10,12 @@ consumer to inject.
 - `class OpfsOsmBlobStore implements OsmBlobStore` — `get`, `put`, `delete`,
   `keys`, plus `stats` (`gets`, `hits`, `puts`, `deletes`, `errors`).
   Constructed with `{ directory, warn? }`.
-- `type OsmBlobStoreWarn = (message, details) => void` — where a failed write
+- `type OsmBlobStoreWarn = (message, details) => void` - where a failed write
   or listing is reported; defaults to `console.warn` with an
   `[OsmBlobStore]` prefix.
 - `interface OsmBlobStore` — declared structurally, see below
+- `openOsmStoreDirectory(root, name?): Promise<FileSystemDirectoryHandle>`
+- `fileNameFor(key)`, `keyForFileName(name)`, `OSM_STORE_DIR`
 
 ## Why it imports no logger (2026-10-01)
 
@@ -30,9 +32,6 @@ Sentry Issue, so every existing production construction site passes
 (`GpsPlusSlamJs_OsmDemo/src/worker/osm-store-warn.ts`, pinned by its
 test). A page that cannot load the logger (the globe lab's arrival
 prefetch) keeps the `console.warn` default.
-
-- `openOsmStoreDirectory(root, name?): Promise<FileSystemDirectoryHandle>`
-- `fileNameFor(key)`, `keyForFileName(name)`, `OSM_STORE_DIR`
 
 ## Invariants & assumptions
 

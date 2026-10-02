@@ -408,6 +408,16 @@ source }` instead of the corners alone (unreleased API).
 
 ### Changed
 
+- **`OpfsOsmBlobStore` reports failures through an injected `warn` and no
+  longer imports the framework logger** (`osm-bridge`). The constructor
+  takes an optional `warn(message, details)`; the new type
+  `OsmBlobStoreWarn` describes it. Without it, a failed write or listing
+  goes to `console.warn` with an `[OsmBlobStore]` prefix, where it used to
+  go to the logger (log buffer and a Sentry Issue). Pass
+  `warn: (m, d) => log.warn(m, d)` to keep the old behaviour, as OsmDemo's
+  worker does. Why: the module now loads in no-build pages (its graph no
+  longer reaches `@sentry/browser`), which lets the design system's globe
+  lab warm OsmDemo's tile cache during its fly-in.
 - **The slider guard holds a cancelled swipe until the finger lifts.** It
   used to stop at `pointercancel` (the browser taking the swipe over for
   scrolling). Blink's source can keep writing the value on later
