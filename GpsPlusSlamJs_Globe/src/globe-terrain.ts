@@ -18,7 +18,12 @@
  * @see globe-terrain.ts.md
  */
 import * as THREE from "three";
-import { TilesRenderer } from "3d-tiles-renderer";
+import {
+  DownloadPriorityQueue,
+  LRUCache,
+  PriorityQueue,
+  TilesRenderer,
+} from "3d-tiles-renderer";
 import * as plugins from "3d-tiles-renderer/plugins";
 
 import {
@@ -41,6 +46,15 @@ export const GLOBE_TERRAIN = Object.freeze({
    * a phone descent against 11.5; 4 (7.7 MiB) differs by 42 levels.
    */
   errorTarget: 2,
+  /**
+   * The relief's own tile cache, the globe's phone budget (cap and the
+   * floor the library evicts down to). Its own: the library shares one
+   * cache between renderers by default, the globe caps that at 64 MB, and
+   * in the altitude band the two carriers filled it and it refused every
+   * request (F1). In the band both are resident: up to twice this.
+   */
+  cacheBytes: 64 * 1024 * 1024,
+  cacheFloorBytes: 48 * 1024 * 1024,
   /** One half-float step at `heightM` (10 mantissa bits). */
   halfFloatStepM: (heightM: number): number =>
     heightM === 0 ? 0 : 2 ** (Math.floor(Math.log2(Math.abs(heightM))) - 10),
@@ -392,6 +406,27 @@ export function createGlobeTerrain(options: {
     heightScale,
   });
   const tiles = new TilesRenderer();
+  const cache = new LRUCache();
+  // The library's unload order (least recently used, deepest first).
+  cache.unloadPriorityCallback = tiles.lruCache.unloadPriorityCallback;
+  cache.maxBytesSize = GLOBE_TERRAIN.cacheBytes;
+  cache.minBytesSize = GLOBE_TERRAIN.cacheFloorBytes;
+  tiles.lruCache = cache;
+  // Its own queues too, with the library's limits and order: the shared
+  // ones held a relief not updated outside the band in front of the
+  // globe's tiles (F1).
+  const download = new DownloadPriorityQueue();
+  download.maxJobsPerOrigin = tiles.downloadQueue.maxJobsPerOrigin;
+  download.priorityCallback = tiles.downloadQueue.priorityCallback;
+  const parse = new PriorityQueue();
+  parse.maxJobs = tiles.parseQueue.maxJobs;
+  parse.priorityCallback = tiles.parseQueue.priorityCallback;
+  const nodes = new PriorityQueue();
+  nodes.maxJobs = tiles.processNodeQueue.maxJobs;
+  nodes.priorityCallback = tiles.processNodeQueue.priorityCallback;
+  tiles.downloadQueue = download;
+  tiles.parseQueue = parse;
+  tiles.processNodeQueue = nodes;
   tiles.registerPlugin(plugin);
   // After the plugin: its init (TerrainRGBMeshPlugin) sets 1.
   tiles.errorTarget = GLOBE_TERRAIN.errorTarget;

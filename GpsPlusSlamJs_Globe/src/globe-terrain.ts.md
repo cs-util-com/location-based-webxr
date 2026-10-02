@@ -26,6 +26,19 @@
     over the Alps: 2 draws what 1 draws, mean 0.12 levels and 95th
     percentile 0 at 30 km, for 9.9 MiB of heights a phone descent against
     11.5; 4, at 7.7 MiB, differs by 42 levels).
+    `cacheBytes` 64 MB and `cacheFloorBytes` 48 MB: the relief's own tile
+    cache (`createGlobeTerrain` gives its renderer a new `LRUCache` with
+    the library's unload order). The library shares one cache between
+    renderers by default and the globe caps it at 64 MB; in the altitude
+    band both carriers loaded into it, it filled and refused every request
+    (at 1,900 km the relief never settled, the globe's loaded tiles fell
+    from 178 to 70). In the band both caches are resident: up to 128 MB.
+    Its own download, parse and node queues too, with the library's limits
+    and order: with the shared ones a relief not updated outside the band
+    kept jobs in the parse queue ahead of the globe's tiles (at 1,900 km
+    the globe drew 2 tiles with 370 pending; with its own queues, 157
+    loaded). `settled` in the globe lab's state then means the relief's own
+    loading.
   - `mercatorToGeographicRange([w, s, e, n])`: a range normalised in Web
     Mercator (0 south, 1 north) as the same box normalised in plate
     carree; RangeError unless four finite numbers in order.

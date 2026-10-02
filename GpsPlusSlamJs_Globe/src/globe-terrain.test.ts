@@ -18,6 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import * as THREE from "three";
+import { TilesRenderer } from "3d-tiles-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -538,6 +539,60 @@ describe("createGlobeTerrain", () => {
       tile: {},
     } as never);
     expect(terrain.litTiles()).toBe(0);
+    terrain.dispose();
+  });
+
+  // Why (F1, the altitude band): the library gives every renderer ONE
+  // shared tile cache by default, and the globe caps it at its 64 MB. In
+  // the band both carriers load into it, the cache filled and refused
+  // every request: at 1,900 km the relief never settled and the globe's
+  // loaded tiles fell from 178 to 70. The relief has a cache of its own,
+  // with the globe's budget and the library's unload order.
+  it("keeps the relief's tiles in a cache and queues of its own", () => {
+    const defaults = new TilesRenderer();
+    const shared = defaults.lruCache;
+    const terrain = createGlobeTerrain({
+      url: "/heights/{z}/{x}/{y}.png",
+      imagery: {
+        tiling: { maxLevel: 5 },
+        init: () => Promise.resolve(),
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      },
+      template: new THREE.MeshStandardMaterial(),
+      heightScale: 1,
+    });
+    const own = terrain.tiles.lruCache;
+    expect(own).not.toBe(shared);
+    expect(own.maxBytesSize).toBe(GLOBE_TERRAIN.cacheBytes);
+    expect(own.minBytesSize).toBe(GLOBE_TERRAIN.cacheFloorBytes);
+    expect(GLOBE_TERRAIN.cacheBytes).toBe(64 * 1024 * 1024);
+    expect(GLOBE_TERRAIN.cacheFloorBytes).toBe(48 * 1024 * 1024);
+    expect(own.unloadPriorityCallback).toBe(shared.unloadPriorityCallback);
+    expect(own.unloadPriorityCallback).toBeTypeOf("function");
+    // The queues too (F1): a relief not updated outside the band left its
+    // jobs in the shared parse queue, and the globe's 370 tiles waited
+    // behind them (2 drawn at 1,900 km). Same limits and order, its own.
+    const t = terrain.tiles;
+    expect(t.downloadQueue).not.toBe(defaults.downloadQueue);
+    expect(t.parseQueue).not.toBe(defaults.parseQueue);
+    expect(t.processNodeQueue).not.toBe(defaults.processNodeQueue);
+    expect(t.downloadQueue.maxJobsPerOrigin).toBe(
+      defaults.downloadQueue.maxJobsPerOrigin,
+    );
+    expect(t.downloadQueue.priorityCallback).toBe(
+      defaults.downloadQueue.priorityCallback,
+    );
+    expect(t.parseQueue.maxJobs).toBe(defaults.parseQueue.maxJobs);
+    expect(t.parseQueue.priorityCallback).toBe(
+      defaults.parseQueue.priorityCallback,
+    );
+    expect(t.processNodeQueue.maxJobs).toBe(defaults.processNodeQueue.maxJobs);
+    expect(t.processNodeQueue.priorityCallback).toBe(
+      defaults.processNodeQueue.priorityCallback,
+    );
     terrain.dispose();
   });
 
