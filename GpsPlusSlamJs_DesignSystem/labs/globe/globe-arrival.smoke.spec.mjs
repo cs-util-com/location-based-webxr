@@ -141,6 +141,14 @@ test("a second flight to the same place is warm, says so, and is quick", async (
 
   const started = Date.now();
   await page.locator("#globe-pin").click();
+  // The FIRST flight's settled arrival stays in the state until the new fix
+  // starts the second one: wait for the new flight, or a slow locate reads
+  // the old line.
+  await page.waitForFunction(
+    () => window.__globeLab.state().pin.phase === "flying",
+    null,
+    { timeout: 60_000 },
+  );
   await page.waitForFunction(
     () => window.__globeLab.state().pin.arrival?.outcome === "settled",
     null,
