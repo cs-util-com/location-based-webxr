@@ -558,6 +558,36 @@ describe(
       expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
     });
 
+    // Why (M5c review M2): the veto takes EVERY vote back - another code's
+    // too. Code B, scanned after A and spent, is the code the keep-alive
+    // holds; without a budget reset its next lock casts nothing (its hold is
+    // fresh, so the stale-code re-arm does not apply) and the tour leans on
+    // GPS alone until the next device fix's ring. Its next lock must vote at
+    // once; the vetoed code stays ignored.
+    it("lets another code vote again by lock right after the veto, while the vetoed one stays ignored", () => {
+      const v = viewer(LEVEL, true);
+      v.walk(0, 0);
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + 500 + i * 10);
+      }
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + 700 + i * 10, "B");
+      }
+      let s = 1;
+      while (!v.ctx.ignoredCodes.has(LEVEL_ID) && s <= 90) {
+        v.walk(s, s);
+        s += 1;
+      }
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
+      expect(v.votesStored()).toBe(0);
+      // The next lock of B, before any further device fix.
+      v.lock(T0 + s * 1000, "B");
+      const afterB = v.votesStored();
+      expect(afterB).toBeGreaterThan(0);
+      v.lock(T0 + s * 1000 + 100);
+      expect(v.votesStored()).toBe(afterB);
+    });
+
     it("never vetoes a code that hangs where it was saved", () => {
       captured.stablePose = null;
       const v = viewer();

@@ -578,6 +578,11 @@ export function createViewerPlacement(deps: {
       refedFixes: 0,
       batches: 0,
     };
+    // Every code's votes are gone, so every code may vote again by lock
+    // (M5c review M2): a spent code the keep-alive holds would otherwise
+    // cast nothing on its next lock. The vetoed code stays blocked by
+    // `isIgnored`, which the budget never reaches.
+    ctx.viewerVoteBudget?.reset();
     deps.viewingLog?.codeIgnored({
       text: verdict.text,
       levelId: verdict.levelId,
