@@ -521,6 +521,86 @@ describe('mintQrAnchorFromSightings - which alignment places the code', () => {
     expect(result.level.level.qr.mintQuality?.alignmentSampleCount).toBe(60);
   });
 
+  it('places the code against the session GPS zero, not the sighting one', () => {
+    // Why this test matters: the zero is half of the frame. A matrix from
+    // the session with the zero from a sighting would place the code against
+    // a reference the matrix was never solved for; the two only coincide
+    // while nothing re-zeroes the session, which is why they differ here.
+    const sessionZero = { lat: 48.001, lon: 11.002 };
+    const result = mintQrAnchorFromSightings({
+      sightings: [sighting({ zero: ZERO })],
+      spansFrameChange: false,
+      nowIso: NOW,
+      currentAlignment: {
+        alignmentMatrix: IDENTITY,
+        zero: sessionZero,
+        alignmentSampleCount: 60,
+        segment: 0,
+      },
+    });
+    if (!result.ok || !result.level.ok) throw new Error('mint failed');
+    const geo = result.level.level.qr.geo!;
+    expect(geo.lat).toBeCloseTo(sessionZero.lat, 9);
+    expect(geo.lon).toBeCloseTo(sessionZero.lon, 9);
+  });
+
+  it('mints a code seen before the first GPS fix through the session alignment', () => {
+    // Why this test matters: a code scanned the moment the recording starts
+    // can be seen before any fix, so its sightings carry no matrix and no
+    // zero. That code was refused before 2026-10-02; the alignment at mint
+    // time places it like any other.
+    const result = mintQrAnchorFromSightings({
+      sightings: [
+        sighting({
+          alignmentMatrix: null,
+          zero: null,
+          alignmentSampleCount: 0,
+        }),
+      ],
+      spansFrameChange: false,
+      nowIso: NOW,
+      currentAlignment: {
+        alignmentMatrix: shifted(5, -3),
+        zero: ZERO,
+        alignmentSampleCount: 40,
+        segment: 0,
+      },
+    });
+    if (!result.ok || !result.level.ok) throw new Error('mint failed');
+    const geo = result.level.level.qr.geo!;
+    const back = calcRelativeCoordsInMeters(
+      ZERO,
+      { lat: geo.lat, lon: geo.lon },
+      geo.alt,
+      0
+    );
+    expect(back[0]).toBeCloseTo(5, 2);
+    expect(back[2]).toBeCloseTo(-3, 2);
+    expect(result.level.level.qr.mintQuality?.alignmentSampleCount).toBe(40);
+  });
+
+  it('stamps the GPS accuracy of the alignment it minted through', () => {
+    // Why this test matters: the stamped accuracy describes the alignment
+    // the code was placed through, so it comes from the same place as the
+    // matrix. (The Recorder's live alignment reader supplies no accuracy
+    // today, so production levels carry none; this pins the contract for
+    // the reader that does.)
+    const result = mintQrAnchorFromSightings({
+      sightings: [sighting({ gpsAccuracyM: 9 })],
+      spansFrameChange: false,
+      nowIso: NOW,
+      currentAlignment: {
+        alignmentMatrix: IDENTITY,
+        zero: ZERO,
+        alignmentSampleCount: 60,
+        gpsAccuracyM: 4.2,
+        segment: 0,
+      },
+    });
+    if (!result.ok || !result.level.ok) throw new Error('mint failed');
+    expect(result.level.level.qr.mintQuality?.gpsAccuracyM).toBe(4.2);
+  });
+
   it('composes every POSITION through the newest sighting alignment without a session one', () => {
     // Why this test matters: the fallback is one alignment too, never a mix
     // of the sightings' own.
