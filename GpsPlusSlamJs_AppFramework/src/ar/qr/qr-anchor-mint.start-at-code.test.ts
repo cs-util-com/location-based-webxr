@@ -36,8 +36,24 @@
  * (`GpsPlusSlamJs_TourViewer/src/code-estimate-across-visits.test.ts`), whose
  * code-pose formula a sanity test below re-proves in this package.
  *
- * Default run: the sanity pin and the reproduction. The measured sweep of the
- * fix candidates is opt-in: `QR_MINT_START_AT_CODE_SWEEP=1`.
+ * Default run: the sanity pin, the reproduction and the left-behind pin, all
+ * through the SHIPPED path (`shippedMintAlignment`: the real
+ * `createQrMintAlignmentTracker` fed the way the Recorder's feeder feeds it).
+ * The measured sweep of the fix candidates is opt-in:
+ * `QR_MINT_START_AT_CODE_SWEEP=1`.
+ *
+ * WHAT SHIPS (owner decision D28, revised 2026-10-02): (a3) at 80 m - the
+ * first alignment at or after the code's last sighting whose session GPS
+ * extent reaches 80 m, else the alignment at save. The sweeps carry it as
+ * the `a3-80 shipped` column, and it matches the simulated `a3 ext>=80m`
+ * column in every cell. Re-run 2026-10-02 on the shipped path:
+ * - start-at-code (`start`): identical to (a2) wherever the walks never
+ *   reach 80 m (15-60 m walks): 8.2-10.0 / 13-17 degrees and 1.3 m at 15 m,
+ *   2.1-4.9 / 4-10 degrees and 1.3 m from 30 m up; at 120 m within 0.2
+ *   degrees of it (0.9-4.4 / 2-10 degrees, 1.3 m). Refusals unchanged (5-10
+ *   % at 5 degrees of look yaw noise, the fixedness gate).
+ * - start-only refusals (`refusals`): 0 of 480 (12 for (a1)).
+ * - left behind (`left`): see THE CODE LEFT BEHIND below.
  *
  * Measured result (2026-10-02; 40 recordings per cell, walks 15/30/60/120 m,
  * 1-3 looks, yaw noise 1/3/5 degrees; heading p50 / p90, horizontal p50):
@@ -46,8 +62,9 @@
  *   length and yaw noise; with 3 looks 0.7-11 p50 but p90 up to 146 at
  *   15 m. Position 2.9 m for a code seen only at the start, 1.4-1.7 m with
  *   2 looks at walks of 30 m or less, 1.3 m otherwise.
- * - (a2) every sighting through the alignment at mint time (SHIPPED, the
- *   owner retiring DEC-3): 1.0-4.9 / 3-10 degrees from 30 m walks up, 7-10
+ * - (a2) every sighting through the alignment at save (shipped first when
+ *   the owner retired DEC-3, replaced the same day by (a3) at 80 m, which
+ *   falls back to it): 1.0-4.9 / 3-10 degrees from 30 m walks up, 7-10
  *   / 12-17 at 15 m, for 1, 2 or 3 looks; position 1.3-1.4 m in every cell.
  *   Its cost: with 3 looks the heading p50 is up to 0.6 degrees worse at
  *   60 m and 2.7 at 15 m (one final alignment instead of an average over
@@ -82,7 +99,7 @@
  * once or twice after two 60 m out-and-back walks matured the alignment,
  * and the author then walks 100/200/300/500 m away (straight, or 50 m legs
  * turning up to 60 degrees) or out and back to the code before Stop.
- * - (a2), the shipped rule, inherits all drift after the sighting: position
+ * - (a2), the alignment at save, inherits all drift after the sighting: position
  *   p50 / p90 at 500 m away 2.9 / 4.3 m (0.5 deg, 0.5 %), 8.6 / 11.6 m
  *   (1, 1 %), 19.0 / 21.5 m (2, 2 %); heading 3.5 and 7 degrees p50 at 1 and
  *   2 degrees per 100 m. At 300 m and 1 %, 1 degree: 2.2 / 3.7 m. Walking
@@ -138,6 +155,8 @@ import {
   mintQrAnchorFromSightings,
   type QrMintAlignmentNow,
 } from './qr-anchor-mint.js';
+import { createQrMintAlignmentTracker } from './qr-mint-alignment-tracker.js';
+import { createGpsExtentTracker } from '../../state/gps-extent-tracker.js';
 import { qrWorldPoseFromOdom } from './qr-mint-level.js';
 import { averageRotation } from './qr-pose-aggregation.js';
 import { mintQrGeoPose } from './qr-geo-pose-minting.js';
@@ -266,8 +285,12 @@ interface FixSnapshot {
   readonly tS: number;
   readonly alignment: AlignmentMatrix | null;
   readonly sampleCount: number;
-  /** Largest horizontal distance between two GPS fixes so far (m). */
+  /** Largest horizontal distance between two GPS fixes so far (m), from
+   *  the measured positions this fixture generated. */
   readonly gpsExtentM: number;
+  /** The same, as the shipped `createGpsExtentTracker` reads it from the
+   *  store's GPS list (what the Recorder's feeder hands the mint). */
+  readonly storeExtentM: number;
 }
 
 interface Recording {
@@ -519,6 +542,7 @@ function runRecording(spec: RecordingSpec): Recording {
   const fixes: FixSnapshot[] = [];
   const measuredSoFar: NE[] = [];
   let extent = 0;
+  const extentTracker = createGpsExtentTracker();
   let zero: LatLong | null = null;
   errors.forEach((err, i) => {
     const pos = phoneAt(waypoints, i).at;
@@ -557,6 +581,7 @@ function runRecording(spec: RecordingSpec): Recording {
       alignment: a,
       sampleCount: selectGpsPositions(store.getState()).length,
       gpsExtentM: extent,
+      storeExtentM: extentTracker.update(selectGpsPositions(store.getState())),
     });
   });
   if (zero === null) throw new Error('a recording needs at least one fix');
@@ -629,10 +654,16 @@ function recordedSightings(
   noise: LookNoise,
   noiseSeed: number,
   firstLook = 0
-): { sightings: QrSighting[]; extentAt: Map<number, number> } {
+): {
+  sightings: QrSighting[];
+  extentAt: Map<number, number>;
+  /** When each kept detection happened (s), in order. */
+  detectionTimesS: number[];
+} {
   const rng = stream(rec.spec.seed * 31 + noiseSeed, 4);
   const acc = createQrSightingAccumulator();
   const extentAt = new Map<number, number>();
+  const detectionTimesS: number[] = [];
   for (let look = 0; look < rec.looks.length; look += 1) {
     const detections = lookDetections(rec, look, noise, rng);
     if (look < firstLook || look >= looks) continue;
@@ -640,10 +671,66 @@ function recordedSightings(
       const seen = observationAt(rec, tS, pose);
       extentAt.set(seen.observation.timestamp, seen.gpsExtentM);
       acc.observe(seen.observation);
+      detectionTimesS.push(tS);
     }
   }
-  return { sightings: [...acc.sightingsIncludingOpen(CODE_TEXT)], extentAt };
+  return {
+    sightings: [...acc.sightingsIncludingOpen(CODE_TEXT)],
+    extentAt,
+    detectionTimesS,
+  };
 }
+
+/**
+ * The alignment the SHIPPED path mints this code through (D28 revised,
+ * a3 at 80 m): the Recorder's feeder reports every detection and every
+ * alignment change to `createQrMintAlignmentTracker`, in time order, and
+ * the save asks it with the alignment at save as the live one. Each fix is
+ * reported before a detection at the same instant, because a detection
+ * reads the newest fix at or before it (`fixAt`).
+ */
+function shippedMintAlignment(
+  rec: Recording,
+  detectionTimesS: readonly number[]
+): QrMintAlignmentNow {
+  const tracker = createQrMintAlignmentTracker();
+  let d = 0;
+  const sightUntil = (beforeS: number): void => {
+    while (d < detectionTimesS.length && detectionTimesS[d]! < beforeS) {
+      const fix = fixAt(rec, detectionTimesS[d]!);
+      tracker.noteSighting(
+        CODE_TEXT,
+        fix === null ? NO_ALIGNMENT : asCurrent(rec, fix)
+      );
+      d += 1;
+    }
+  };
+  for (const fix of rec.fixes) {
+    sightUntil(fix.tS);
+    tracker.noteAlignment(asCurrent(rec, fix));
+  }
+  sightUntil(Infinity);
+  return tracker.alignmentFor(CODE_TEXT, asCurrent(rec, endAlignment(rec)));
+}
+
+/** The shipped mint's heading error and the GPS extent of the alignment it
+ *  was composed through, for the uncertain-heading marker shares. */
+function shippedExtentSample(
+  rec: Recording,
+  sightings: readonly QrSighting[],
+  detectionTimesS: readonly number[]
+): ExtentSample {
+  const used = shippedMintAlignment(rec, detectionTimesS);
+  const err = mintError(sightings, { currentAlignment: used });
+  return { extentM: used.gpsExtentM ?? 0, headingDeg: err?.headingDeg ?? null };
+}
+
+const NO_ALIGNMENT: QrMintAlignmentNow = {
+  alignmentMatrix: null,
+  zero: null,
+  alignmentSampleCount: 0,
+  segment: 0,
+};
 
 /** One detection as the Recorder's feeder folds it: the alignment as it
  *  stood at that moment (the last fix at or before it). */
@@ -908,21 +995,20 @@ describe('the Recorder mint when a recording starts at the code', () => {
   // it, so its yaw is arbitrary. The minted heading must still be right,
   // because a later visitor relocalizes against it.
   const SEEDS = Array.from({ length: 12 }, (_, i) => i + 1);
-  /** The shipped mint (the alignment at the end of the recording passed as
-   *  `currentAlignment`) on each seed's 30 m recording. */
+  /** The shipped mint (the alignment `shippedMintAlignment` picks passed as
+   *  `currentAlignment`) on each seed's 30 m recording. Two 30 m walks never
+   *  reach the 80 m floor, so this is the save-time fallback. */
   const shippedErrors = (looks: number): MintError[] =>
     SEEDS.map((seed) => {
       const rec = runRecording({ seed, walkM: 30 });
-      const end = endAlignment(rec);
-      const { sightings } = recordedSightings(rec, looks, DEFAULT_NOISE, 1);
+      const { sightings, detectionTimesS } = recordedSightings(
+        rec,
+        looks,
+        DEFAULT_NOISE,
+        1
+      );
       const err = mintError(sightings, {
-        currentAlignment: {
-          alignmentMatrix: end.alignment!,
-          zero: rec.zero,
-          alignmentSampleCount: end.sampleCount,
-          gpsAccuracyM: ACCURACY_M,
-          segment: 0,
-        },
+        currentAlignment: shippedMintAlignment(rec, detectionTimesS),
       });
       expect(err).not.toBeNull();
       return err!;
@@ -945,6 +1031,61 @@ describe('the Recorder mint when a recording starts at the code', () => {
   });
 });
 
+describe('the Recorder mint for a code left behind (D28 revised)', () => {
+  // Why this test matters: it is the milestone review's H1 regression,
+  // pinned where the decision acts. Through the alignment at save (a2) a
+  // code seen mid-recording and then walked 500 m away from, at 1 % and
+  // 1 degree per 100 m of SLAM drift, inherits all of that drift (8.6 m
+  // p50 on the `left` sweep). The shipped rule (the first alignment at or
+  // after the last sighting whose GPS extent reaches 80 m) stops at the
+  // sighting, as the per-sighting rule did (1.1-1.7 m). The a2 arm on the
+  // same recordings shows the test can tell the two apart.
+  it('keeps a code left 500 m behind at 1 % / 1 degree near 1.4 m, not 8.6 m', () => {
+    const seeds = Array.from({ length: 6 }, (_, i) => i + 201);
+    const shipped: number[] = [];
+    const atSave: number[] = [];
+    for (const seed of seeds) {
+      const rec = runRecording({
+        seed,
+        walkM: 60,
+        drift: UNIT_DRIFT,
+        leave: { distanceM: 500, endBack: false, path: 'straight' },
+      });
+      const { sightings, detectionTimesS } = recordedSightings(
+        rec,
+        3,
+        DEFAULT_NOISE,
+        7,
+        2
+      );
+      const a3 = mintError(sightings, {
+        currentAlignment: shippedMintAlignment(rec, detectionTimesS),
+      });
+      const a2 = mintError(sightings, {
+        currentAlignment: asCurrent(rec, endAlignment(rec)),
+      });
+      expect(a3).not.toBeNull();
+      expect(a2).not.toBeNull();
+      shipped.push(a3!.horizontalM);
+      atSave.push(a2!.horizontalM);
+    }
+    expect(quantile(shipped, 0.5)).toBeLessThan(2.5);
+    expect(quantile(atSave, 0.5)).toBeGreaterThan(5);
+  }, 120_000);
+
+  // Why this test matters: the maturity floor reads the extent the shipped
+  // `createGpsExtentTracker` computes from the store's GPS list, while the
+  // sweeps' extent bins use the fixture's own measured positions. They must
+  // be the same number, or a bin and the floor would describe different
+  // walks.
+  it('reads the same GPS extent from the store as the fixture generated', () => {
+    const rec = runRecording({ seed: 4, walkM: 40 });
+    for (const fix of rec.fixes) {
+      expect(fix.storeExtentM).toBeCloseTo(fix.gpsExtentM, 2);
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Opt-in: the measured spike of the fix candidates.
 // ---------------------------------------------------------------------------
@@ -956,7 +1097,8 @@ type CandidateError = MintError | number | null;
 function candidateErrors(
   rec: Recording,
   sightings: readonly QrSighting[],
-  extentAt: ReadonlyMap<number, number>
+  extentAt: ReadonlyMap<number, number>,
+  detectionTimesS: readonly number[]
 ): [string, CandidateError][] {
   const end = endAlignment(rec);
   const current = {
@@ -976,8 +1118,16 @@ function candidateErrors(
     ['pre-fix', preFixError(rec, sightings)],
     // (a1) = production without `currentAlignment`: the newest sighting's.
     ['a1 no current', mintError(sightings)],
-    // (a2) = what shipped: the alignment at the end of the recording.
-    ['a2 shipped', mintError(sightings, { currentAlignment: current })],
+    // (a2) = shipped for one day: the alignment at the end of the recording.
+    ['a2 at save', mintError(sightings, { currentAlignment: current })],
+    // What ships since D28 was revised: (a3) at 80 m through the real
+    // tracker (`shippedMintAlignment`).
+    [
+      'a3-80 shipped',
+      mintError(sightings, {
+        currentAlignment: shippedMintAlignment(rec, detectionTimesS),
+      }),
+    ],
     // The same with the recency weighting made inert, to see whether the
     // part of DEC-3 that is left does anything.
     [
@@ -1050,6 +1200,7 @@ function asCurrent(rec: Recording, fix: FixSnapshot): QrMintAlignmentNow {
     alignmentMatrix: fix.alignment,
     zero: rec.zero,
     alignmentSampleCount: fix.sampleCount,
+    gpsExtentM: fix.storeExtentM,
     segment: 0,
   };
 }
@@ -1106,14 +1257,26 @@ function formatColumns(cols: ReadonlyMap<string, Column>, n: number): string {
 function sweepCell(
   recs: readonly Recording[],
   looks: number,
-  yawNoiseDeg: number
+  yawNoiseDeg: number,
+  marks: ExtentSample[] = []
 ): Map<string, Column> {
   const noise: LookNoise = { ...DEFAULT_NOISE, yawNoiseDeg };
   const cols = new Map<string, Column>();
   for (const rec of recs) {
-    const { sightings, extentAt } = recordedSightings(rec, looks, noise, 7);
-    for (const [name, e] of candidateErrors(rec, sightings, extentAt))
+    const { sightings, extentAt, detectionTimesS } = recordedSightings(
+      rec,
+      looks,
+      noise,
+      7
+    );
+    for (const [name, e] of candidateErrors(
+      rec,
+      sightings,
+      extentAt,
+      detectionTimesS
+    ))
       addTo(cols, name, e);
+    marks.push(shippedExtentSample(rec, sightings, detectionTimesS));
   }
   return cols;
 }
@@ -1146,20 +1309,25 @@ describe.skipIf(!SWEEPS.has('start'))(
       () => {
         const seeds = Array.from({ length: 40 }, (_, i) => i + 101);
         const rows: string[] = [];
+        const markRows: string[] = [];
         for (const walkM of [15, 30, 60, 120]) {
           const recs = seeds.map((seed) => runRecording({ seed, walkM }));
+          const marks: ExtentSample[] = [];
           for (const looks of [1, 2, 3]) {
             for (const yawNoiseDeg of [1, 3, 5]) {
-              const cols = sweepCell(recs, looks, yawNoiseDeg);
+              const cols = sweepCell(recs, looks, yawNoiseDeg, marks);
               rows.push(
                 `walk ${String(walkM)} m, looks ${String(looks)}, yaw ${String(yawNoiseDeg)}: ${formatColumns(cols, recs.length)}`
               );
             }
           }
+          for (const row of markedShareRows(marks))
+            markRows.push(`walk ${String(walkM)} m, ${row}`);
         }
         emitTable([
           'heading p50/p90, horizontal p50/p90, refused share',
           ...rows,
+          ...markRows,
         ]);
         expect(rows.length).toBe(36);
       },
@@ -1175,7 +1343,8 @@ describe.skipIf(!SWEEPS.has('start'))(
 /** The candidates that survive into a design choice, on one recording. */
 function leftCandidates(
   rec: Recording,
-  sightings: readonly QrSighting[]
+  sightings: readonly QrSighting[],
+  detectionTimesS: readonly number[]
 ): [string, CandidateError][] {
   return [
     ['pre-fix', preFixError(rec, sightings)],
@@ -1184,6 +1353,12 @@ function leftCandidates(
       'a2',
       mintError(sightings, {
         currentAlignment: asCurrent(rec, endAlignment(rec)),
+      }),
+    ],
+    [
+      'a3-80 shipped',
+      mintError(sightings, {
+        currentAlignment: shippedMintAlignment(rec, detectionTimesS),
       }),
     ],
     ...a3Candidates(rec, sightings),
@@ -1294,6 +1469,7 @@ describe.skipIf(!SWEEPS.has('left'))(
         const seedCount = Number(process.env['QR_MINT_LEFT_SEEDS'] ?? '30');
         const seeds = Array.from({ length: seedCount }, (_, i) => i + 201);
         const rows: string[] = [];
+        const marks: ExtentSample[] = [];
         for (const cell of leftCells()) {
           const recs = seeds.map((seed) =>
             runRecording({ seed, ...cell.spec })
@@ -1301,15 +1477,20 @@ describe.skipIf(!SWEEPS.has('left'))(
           for (const firstLook of cell.firstLooks) {
             const cols = new Map<string, Column>();
             for (const rec of recs) {
-              const { sightings } = recordedSightings(
+              const { sightings, detectionTimesS } = recordedSightings(
                 rec,
                 looksFor(firstLook),
                 DEFAULT_NOISE,
                 7,
                 firstLook
               );
-              for (const [name, e] of leftCandidates(rec, sightings))
+              for (const [name, e] of leftCandidates(
+                rec,
+                sightings,
+                detectionTimesS
+              ))
                 addTo(cols, name, e);
+              marks.push(shippedExtentSample(rec, sightings, detectionTimesS));
             }
             rows.push(
               `${cell.label}, ${LOOK_NAMES[firstLook] ?? ''}: ${formatColumns(cols, recs.length)}`
@@ -1320,6 +1501,7 @@ describe.skipIf(!SWEEPS.has('left'))(
           [
             `left behind (${String(seedCount)} recordings per cell, look yaw noise 2 deg): heading p50/p90, horizontal p50/p90, refused share`,
             ...rows,
+            ...markedShareRows(marks).map((row) => `every cell, ${row}`),
           ],
           '.left-behind.txt'
         );
@@ -1335,6 +1517,38 @@ describe.skipIf(!SWEEPS.has('left'))(
 // (milestone review M2: nothing checks the alignment can observe yaw).
 // ---------------------------------------------------------------------------
 
+/** One shipped mint: the GPS extent of the alignment it was composed
+ *  through, and its heading error (`null` = refused). */
+interface ExtentSample {
+  readonly extentM: number;
+  readonly headingDeg: number | null;
+}
+
+/**
+ * The uncertain-heading marker (owner decision of 2026-10-02: save, and
+ * mark the level when its alignment's GPS extent is under a threshold) at
+ * 5, 10 and 15 m: the share of minted codes it would mark, and the heading
+ * of the marked and the unmarked ones.
+ */
+function markedShareRows(samples: readonly ExtentSample[]): string[] {
+  const minted = samples.filter((s) => s.headingDeg !== null);
+  const fmt = (h: number[]): string =>
+    h.length === 0
+      ? 'none'
+      : `${quantile(h, 0.5).toFixed(1)}/${quantile(h, 0.9).toFixed(0)}deg`;
+  return [5, 10, 15].map((thresholdM) => {
+    const marked = minted
+      .filter((s) => s.extentM < thresholdM)
+      .map((s) => s.headingDeg!);
+    const clear = minted
+      .filter((s) => s.extentM >= thresholdM)
+      .map((s) => s.headingDeg!);
+    const share =
+      minted.length === 0 ? 0 : (100 * marked.length) / minted.length;
+    return `marker under ${String(thresholdM)} m: marks ${share.toFixed(0)}% of ${String(minted.length)} minted codes, marked heading p50/p90 ${fmt(marked)}, unmarked ${fmt(clear)}`;
+  });
+}
+
 describe.skipIf(!SWEEPS.has('extent'))(
   'spike: mint heading against the GPS extent at mint time',
   () => {
@@ -1343,17 +1557,22 @@ describe.skipIf(!SWEEPS.has('extent'))(
       () => {
         const seeds = Array.from({ length: 40 }, (_, i) => i + 301);
         const walks = [0, 2, 4, 6, 8, 10, 15, 20, 30];
-        const samples: { extentM: number; headingDeg: number | null }[] = [];
+        const samples: ExtentSample[] = [];
         for (const walkM of walks) {
           for (const seed of seeds) {
             const rec = runRecording({ seed, walkM });
-            const end = endAlignment(rec);
-            const { sightings } = recordedSightings(rec, 3, DEFAULT_NOISE, 7);
-            const err = mintError(sightings, {
-              currentAlignment: asCurrent(rec, end),
-            });
+            const { sightings, detectionTimesS } = recordedSightings(
+              rec,
+              3,
+              DEFAULT_NOISE,
+              7
+            );
+            // The shipped path (a3 at 80 m); walks this short never mature,
+            // so it is the alignment at save.
+            const used = shippedMintAlignment(rec, detectionTimesS);
+            const err = mintError(sightings, { currentAlignment: used });
             samples.push({
-              extentM: end.gpsExtentM,
+              extentM: used.gpsExtentM ?? 0,
               headingDeg: err?.headingDeg ?? null,
             });
           }
@@ -1380,6 +1599,7 @@ describe.skipIf(!SWEEPS.has('extent'))(
             `floor ${String(floorM)} m: refuses ${((100 * (samples.length - kept.length)) / samples.length).toFixed(0)}% of these recordings, kept heading p50/p90 ${quantile(h, 0.5).toFixed(1)}/${quantile(h, 0.9).toFixed(0)}deg`
           );
         }
+        rows.push(...markedShareRows(samples));
         emitTable(
           [
             'start-at-code, 3 looks, out-and-back walks 0-30 m, 40 seeds each: shipped mint heading by GPS extent at mint time',
@@ -1422,13 +1642,23 @@ describe.skipIf(!SWEEPS.has('refusals'))(
         const seeds = Array.from({ length: 40 }, (_, i) => i + 101);
         const rows: string[] = [];
         let total = 0;
+        let shippedRefused = 0;
         for (const walkM of [15, 30, 60, 120]) {
           const recs = seeds.map((seed) => runRecording({ seed, walkM }));
           for (const yawNoiseDeg of [1, 3, 5]) {
             const noise: LookNoise = { ...DEFAULT_NOISE, yawNoiseDeg };
             for (const rec of recs) {
-              const { sightings } = recordedSightings(rec, 1, noise, 7);
+              const { sightings, detectionTimesS } = recordedSightings(
+                rec,
+                1,
+                noise,
+                7
+              );
               total += 1;
+              const shipped = mintError(sightings, {
+                currentAlignment: shippedMintAlignment(rec, detectionTimesS),
+              });
+              if (shipped === null) shippedRefused += 1;
               const why = refusalOf(sightings);
               if (why !== null)
                 rows.push(
@@ -1439,7 +1669,7 @@ describe.skipIf(!SWEEPS.has('refusals'))(
         }
         emitTable(
           [
-            `a1 refusals of start-only codes: ${String(rows.length)} of ${String(total)}`,
+            `a1 refusals of start-only codes: ${String(rows.length)} of ${String(total)}; a3-80 shipped: ${String(shippedRefused)}`,
             ...rows,
           ],
           '.refusals.txt'

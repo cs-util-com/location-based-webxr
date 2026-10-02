@@ -160,6 +160,8 @@ const entryFiles = [
   'src/state/replay-occupancy-subscriber.ts',
   'src/state/store-subscribers.ts',
   'src/state/subscribe-to-selector.ts',
+  // The session GPS extent the Recorder's QR mint reads (D28 revised).
+  'src/state/gps-extent-tracker.ts',
 
   // storage/
   'src/storage/index.ts',
@@ -323,6 +325,8 @@ const entryFiles = [
   'src/ar/qr/qr-mint-level.ts',
   'src/ar/qr/qr-sighting-accumulator.ts',
   'src/ar/qr/qr-anchor-mint.ts',
+  // Which alignment the Recorder mints a code through (D28 revised).
+  'src/ar/qr/qr-mint-alignment-tracker.ts',
   'src/ar/qr/qr-gps-vote.ts',
   // Shared per-code vote budget: both the TourViewer and the RecorderApp
   // gate their dispatchVotes on it (DEC-H3), so it must be deep-importable.
