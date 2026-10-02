@@ -367,6 +367,10 @@ export interface TourViewerSession {
   /** The ignored code the status line names in this AR entry (vetoed, or
    *  seen again); null when none. */
   viewerIgnoredText: string | null;
+  /** The code whose voted lock passed the scan gate (`passed` via
+   *  `code`); null otherwise. A veto flips the gate to `ignored` only for
+   *  THIS code (M5c review M1). */
+  scanGateCodeText: string | null;
 
   // --- placement (viewer-placement.ts) ------------------------------------
   /** What the photo placement did — rendered by tour-flow. */
@@ -501,6 +505,7 @@ export function createTourViewerSession(): TourViewerSession {
     movedCodeChecks: null,
     ignoredCodes: new Map(),
     viewerIgnoredText: null,
+    scanGateCodeText: null,
     placement: { kind: "idle" },
     viewerPlanesError: null,
     contentError: null,

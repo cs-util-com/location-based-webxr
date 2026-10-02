@@ -111,7 +111,10 @@ lives here.
   for the rest of the page session for this tour, across AR entries;
   cleared only by `endTourCodeVotes` (a tour switch).
 - `viewerIgnoredText` - the ignored code the status line names in this AR
-  entry; cleared at AR exit and at a tour switch.
+  entry; cleared at AR exit and at a tour switch, and by another code's voted lock
+  (M5c review M1).
+- `scanGateCodeText` - the code whose voted lock passed the scan gate; a
+  veto flips the gate to `ignored` only for this code (M5c review M1).
 
 ## Invariants & assumptions
 

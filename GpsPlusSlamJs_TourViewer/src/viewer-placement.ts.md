@@ -123,6 +123,12 @@ recording. Its own module since the flows plan M6.
   no vote, no keep-alive; `onIgnoredLock` sets the line and the gate. The
   next entry's gate starts from `ignoredLevelIds` (all lockable codes
   ignored: passed at once).
+- **Two codes** (M5c review M1): the gate records which code passed it
+  (`ctx.scanGateCodeText`); a veto flips it to `ignored` only for that
+  code. Another code's voted lock clears `viewerIgnoredText` (the line no
+  longer names the vetoed code) and turns an `ignored` gate back to `code`
+  for itself. The lock's text is the latest detection's, which the
+  controller reports before the lock.
 - **No lock-time veto** (M5d dropped): a sighting is never judged through an
   alignment that converged before it.
 

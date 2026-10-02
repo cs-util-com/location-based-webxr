@@ -58,6 +58,8 @@ import { createViewingLog } from "./viewing-log.js";
 const captured = vi.hoisted(() => ({
   configs: [] as QrTrackingControllerConfig[],
   stablePose: null as Pose | null,
+  /** A stable pose per code text (a second code); else `stablePose`. */
+  poses: new Map<string, Pose>(),
   /** How often the fused pose was asked for (the veto must come first). */
   resolves: 0,
 }));
@@ -75,9 +77,9 @@ vi.mock("gps-plus-slam-app-framework/ar/qr/qr-tracking-controller", () => ({
 }));
 vi.mock("gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source", () => ({
   createFusedQrPoseSource: () => ({
-    resolve: () => {
+    resolve: (text: string) => {
       captured.resolves += 1;
-      return captured.stablePose;
+      return captured.poses.get(text) ?? captured.stablePose;
     },
     evaluate: () => null,
     last: () => null,
@@ -135,8 +137,27 @@ const CODE_POSE = raw(
   new Quaternion(...SAVED.rotationNue),
 );
 
-function viewer(level: QrLevel = LEVEL) {
+/** A second code, 30 m north and 30 m west of the zero, hung exactly where
+ *  it was saved, facing north: a code that works. */
+const TEXT_B = "https://gps.csutil.com/tour/?qr=m5c&n=2";
+const LEVEL_ID_B = "m5c-b";
+const SAVED_GEO_B = (() => {
+  const g = calcGpsCoords(ZERO, [30, 400, -30]);
+  return { lat: g.lat, lon: g.lon, alt: 400, headingDeg: 0 };
+})();
+const LEVEL_B: QrLevel = {
+  version: 1,
+  qr: {
+    physicalSizeM: 0.2,
+    geo: SAVED_GEO_B,
+    mintQuality: { alignmentSampleCount: 300, gpsAccuracyM: 3 },
+  },
+};
+const SAVED_B = objectPoseNue(SAVED_GEO_B, ZERO);
+
+function viewer(level: QrLevel = LEVEL, withCodeB = false) {
   captured.configs.length = 0;
+  captured.poses.clear();
   captured.stablePose = CODE_POSE;
   captured.resolves = 0;
   const clock = { nowMs: T0 };
@@ -179,30 +200,50 @@ function viewer(level: QrLevel = LEVEL) {
     now: () => clock.nowMs,
   });
   const enter = (): void => {
-    ctx.currentLevels = new Map([[LEVEL_ID, level]]);
+    ctx.currentLevels = new Map([
+      [LEVEL_ID, level],
+      ...(withCodeB ? ([[LEVEL_ID_B, LEVEL_B]] as const) : []),
+    ]);
     ctx.levelByText.set(TEXT, level);
     ctx.levelIdByText.set(TEXT, LEVEL_ID);
+    if (withCodeB) {
+      ctx.levelByText.set(TEXT_B, LEVEL_B);
+      ctx.levelIdByText.set(TEXT_B, LEVEL_ID_B);
+      captured.poses.set(
+        TEXT_B,
+        raw(
+          [
+            SAVED_B.positionNue[0],
+            SAVED_B.positionNue[1],
+            SAVED_B.positionNue[2],
+          ],
+          new Quaternion(...SAVED_B.rotationNue),
+        ),
+      );
+    }
     placement.startViewerPipeline();
     placement.startScanGate();
   };
   enter();
   const config = () => captured.configs.at(-1)!;
-  const lock = (atMs: number): void => {
+  /** One frame of a lock of code A, or of code B with `which`. */
+  const lock = (atMs: number, which: "A" | "B" = "A"): void => {
     clock.nowMs = Math.max(clock.nowMs, atMs);
     const c = config();
+    const text = which === "A" ? TEXT : TEXT_B;
     c.onDetection?.({
-      text: TEXT,
+      text,
       timestamp: atMs,
-      qrPoseWorld: CODE_POSE,
+      qrPoseWorld: which === "A" ? CODE_POSE : captured.poses.get(TEXT_B)!,
       reprojectionErrorPx: 0.5,
     } as QrDetectionEvent);
-    const pose = c.resolveStablePose?.(TEXT) ?? null;
+    const pose = c.resolveStablePose?.(text) ?? null;
     if (pose !== null) {
       c.dispatchVotes(
         buildQrGpsVotes({
           qrPoseWorld: pose,
           sizeM: 0.2,
-          qrGeo: SAVED_GEO,
+          qrGeo: which === "A" ? SAVED_GEO : SAVED_GEO_B,
           syntheticAccuracyM: c.syntheticAccuracyM,
           ...(c.voteBaselineM !== undefined
             ? { baselineM: c.voteBaselineM }
@@ -212,7 +253,7 @@ function viewer(level: QrLevel = LEVEL) {
         }),
       );
     }
-    c.onLocked?.({} as never, level);
+    c.onLocked?.({} as never, which === "A" ? level : LEVEL_B);
   };
   let fixes = 0;
   /** A device fix at world [n, e] at page second `s` (GPS exact), with
@@ -435,11 +476,13 @@ describe(
           ),
         ),
       );
-      // Eight device orientations (turns about two axes): under the retired
-      // compass channel several of them read this code as turned past 60
-      // degrees and vetoed it at the first fix after the scan.
-      for (const axis of [new Vector3(0, 0, 1), new Vector3(0, 1, 0)]) {
-        for (const headingDeg of [0, 90, 180, 270]) {
+      // Two device orientations (a quarter turn about the device's y axis,
+      // and none): under the retired compass channel the first read this
+      // code as turned 120 degrees and vetoed it at the first fix after the
+      // scan (the second gave no bearing). One viewer run per orientation -
+      // each fix is a full solve.
+      for (const axis of [new Vector3(0, 1, 0)]) {
+        for (const headingDeg of [90, 0]) {
           const q = new Quaternion().setFromAxisAngle(
             axis,
             (headingDeg * Math.PI) / 180,
@@ -473,6 +516,46 @@ describe(
           ).toBe(false);
         }
       }
+    });
+
+    // Why (M5c review M1): a tour can have two codes. The veto of a moved
+    // one must not overrule another that works: once code B casts votes,
+    // the line stops saying "this code seems to have been moved", and the
+    // gate says the code was recognised again.
+    it("after a veto, another code's voted lock clears the ignored line and the gate", () => {
+      const v = viewer(LEVEL, true);
+      v.walk(0, 0);
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + 1000 + i * 100);
+      }
+      v.walk(1, 75);
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
+      expect(v.statusLine()).toContain(IGNORED_CODE_LINE);
+      expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "ignored" });
+      v.lock(T0 + 76_000, "B");
+      expect(v.ctx.viewerIgnoredText).toBeNull();
+      expect(v.statusLine()).not.toContain(IGNORED_CODE_LINE);
+      expect(v.statusLine()).toMatch(/Relocalizing/);
+      expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
+    });
+
+    // Why (M5c review M1): the gate records which code passed it. Code B
+    // passed it; code A, scanned later and found moved, must not flip B's
+    // pass to "Code ignored".
+    it("leaves the gate with the code that passed it when another code is vetoed", () => {
+      const v = viewer(LEVEL, true);
+      v.walk(0, 0);
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + 500 + i * 10, "B");
+      }
+      expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
+      for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+        v.lock(T0 + 1000 + i * 100);
+      }
+      v.walk(1, 75);
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID_B)).toBe(false);
+      expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
     });
 
     it("never vetoes a code that hangs where it was saved", () => {

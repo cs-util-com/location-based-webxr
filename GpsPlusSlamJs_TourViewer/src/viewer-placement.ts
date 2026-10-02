@@ -144,12 +144,17 @@ export function createViewerPlacement(deps: {
   /** Whether this session has a detector (set by startViewerPipeline). */
   let hasDetector = false;
 
-  function passGate(via: "code" | "skipped" | "ignored"): void {
+  /** Pass a scanning gate; `text`: the code whose voted lock passed it. */
+  function passGate(
+    via: "code" | "skipped" | "ignored",
+    text: string | null = null,
+  ): void {
     if (ctx.scanGate.kind !== "scanning") return;
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
     escapeButton.hidden = true;
     ctx.scanGate = { kind: "passed", via };
+    ctx.scanGateCodeText = via === "code" ? text : null;
     // Place first, render after: the line describes the placement state
     // the pass produced, not the one before it (M5 review #7).
     tryPlaceTour();
@@ -157,17 +162,27 @@ export function createViewerPlacement(deps: {
   }
 
   /** A code the moved-code check ignores: a scanning gate passes as
-   *  `ignored`, and a gate the code itself passed says it no longer
-   *  counts (§7j #4). An escape or a waived gate stays as it is. */
-  function markGateIgnored(): void {
+   *  `ignored`, and a gate THIS code passed says it no longer counts
+   *  (§7j #4); a gate another code passed stays with that code (M5c review
+   *  M1). An escape or a waived gate stays as it is. */
+  function markGateIgnored(text: string): void {
     if (ctx.scanGate.kind === "scanning") {
       passGate("ignored");
       return;
     }
-    if (ctx.scanGate.kind === "passed" && ctx.scanGate.via === "code") {
+    if (
+      ctx.scanGate.kind === "passed" &&
+      ctx.scanGate.via === "code" &&
+      ctx.scanGateCodeText === text
+    ) {
       ctx.scanGate = { kind: "passed", via: "ignored" };
+      ctx.scanGateCodeText = null;
     }
   }
+
+  /** The text of the latest detection: the code a lock reports on (the
+   *  controller reports a frame's detection before its lock). */
+  let lastDetectedText: string | null = null;
 
   const ignoredLevelIds = (): ReadonlySet<string> =>
     new Set(ctx.ignoredCodes.keys());
@@ -177,6 +192,7 @@ export function createViewerPlacement(deps: {
     ctx.cancelEscapeClock = null;
     escapeButton.hidden = true;
     ctx.scanGate = { kind: "idle" };
+    ctx.scanGateCodeText = null;
     hooks.renderArStatus();
   }
 
@@ -189,6 +205,7 @@ export function createViewerPlacement(deps: {
     }
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
+    ctx.scanGateCodeText = null;
     ctx.scanGate = scanGateAtSessionStart({
       mode,
       hasDetector,
@@ -309,7 +326,7 @@ export function createViewerPlacement(deps: {
         onIgnoredLock: (text) => {
           if (!live()) return;
           ctx.viewerIgnoredText = text;
-          markGateIgnored();
+          markGateIgnored(text);
           hooks.renderArStatus();
         },
         // The check pins a code on the pose its first voted lock used.
@@ -341,6 +358,7 @@ export function createViewerPlacement(deps: {
         // controller skips the vote — budget untouched — while null.
         resolveStablePose: (text) => fusedPose.resolve(text),
         recordDetection: (event) => {
+          lastDetectedText = event.text;
           ctx.viewerUnknownCode = null; // a level-carrying detection supersedes it
           ctx.viewerUnusableCode = null;
           ctx.latestReprojectionPx = event.reprojectionErrorPx;
@@ -368,7 +386,23 @@ export function createViewerPlacement(deps: {
           // passing on it placed the content through GPS alone while the
           // line said the code had worked (authoring plan 2026-09-28-0953
           // §2.2 B3). The escape button still passes a gate no vote reaches.
-          if (hasVoted && isLockableLevel(level)) passGate("code");
+          if (!hasVoted || !isLockableLevel(level)) return;
+          if (ctx.scanGate.kind === "scanning") {
+            passGate("code", lastDetectedText);
+            return;
+          }
+          // A working code after a veto (M5c review M1): the gate that said
+          // "code ignored" names this code again.
+          if (
+            ctx.scanGate.kind === "passed" &&
+            ctx.scanGate.via === "ignored" &&
+            lastDetectedText !== null &&
+            !isIgnored(lastDetectedText)
+          ) {
+            ctx.scanGate = { kind: "passed", via: "code" };
+            ctx.scanGateCodeText = lastDetectedText;
+            hooks.renderArStatus();
+          }
         },
         onError: (message) => {
           errorBox.textContent = `QR tracking failed: ${message}`;
@@ -389,6 +423,14 @@ export function createViewerPlacement(deps: {
         },
         onVotedLock: (text, votedLocks) => {
           deps.viewingLog?.votedLock(text, votedLocks);
+          // Another code voted: the line about an ignored one no longer
+          // describes what places the tour (M5c review M1).
+          if (
+            ctx.viewerIgnoredText !== null &&
+            ctx.viewerIgnoredText !== text
+          ) {
+            ctx.viewerIgnoredText = null;
+          }
           ctx.viewerLockedText = text;
           ctx.viewerVotedLocks = votedLocks;
           ctx.viewerReprojectionPx = ctx.latestReprojectionPx;
@@ -543,7 +585,7 @@ export function createViewerPlacement(deps: {
       recovery,
     });
     ctx.viewerIgnoredText = verdict.text;
-    markGateIgnored();
+    markGateIgnored(verdict.text);
     hooks.renderArStatus();
   }
 
