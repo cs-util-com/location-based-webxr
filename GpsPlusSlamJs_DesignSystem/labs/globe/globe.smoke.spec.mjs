@@ -240,10 +240,9 @@ const CENTRE_SWEEP_DEG = [0.01, 0.1, 0.25, 0.5];
 // centre of the screen. The unit tests prove the camera math; this proves
 // it through the library's own frame (a ray against the drawn tiles,
 // converted by the tiles' ellipsoid), for the awkward places too: the
-// antimeridian, the Arctic, and the start's antipode, the longest turn.
-// (Not the exact-antipode branch: the spin has moved a fraction of a degree
-// by the first frame, so the turn follows the great circle that offset
-// picks; the branch itself is unit-tested.)
+// antimeridian, the Arctic, and (-30, -165) far to the south-west (once
+// the spin start's antipode; since round 5 the fly-in starts on the sun
+// side, at most turnCap from the target).
 test("turns to any target and holds it at the centre", async ({ page }) => {
   // Five settled views of up to 120 s each (see arriveAt).
   test.setTimeout(600_000);
@@ -257,7 +256,7 @@ test("turns to any target and holds it at the centre", async ({ page }) => {
     ["Tokyo", { lat: 35.68, lng: 139.77 }],
     ["the antimeridian", { lat: 0, lng: 179.9 }],
     ["the Arctic", { lat: 80, lng: -40 }],
-    ["the spin start's antipode", { lat: -30, lng: -165 }],
+    ["the far south-west", { lat: -30, lng: -165 }],
   ];
   // The atmosphere pass is off (`atmo=0`): this test is about the imagery
   // and the camera, and on the CPU rasteriser the pass doubles the frame

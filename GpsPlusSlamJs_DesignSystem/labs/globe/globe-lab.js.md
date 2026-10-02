@@ -186,15 +186,19 @@
   phone this is the only real-GPU number; under SwiftShader it is relative.
 - The intro (M2, `/globe/globe-target.js`; round 5, plan 2026-10-01-0945
   §3.1, DEC-GL5-1..3: `/globe/globe-intro.js`):
-  - `spin`: while it waits for a target, the camera turns from 30°N 15°E
-    (the longitude falling 3°/s) at `maxKm` from the centre, at the
-    variant's starting field of view;
-  - `turning` is the FLY-IN, over `turnMs`: from `maxKm` (50,000 km by
-    default, DEC-GL5-1) to the fitted distance, the direction turning to
-    the target from the sun side (the target turned towards the sub-solar
-    point by at most `turnCap`, 90° by default, DEC-GL5-3; from the
-    spin's direction if the spin was shown first), in the `intro=`
-    variant: `narrow` (the default, the owner's case: the field of view
+  - `spin`: while it waits for a target, the camera turns from over the
+    sub-solar point (the longitude falling 3°/s; `spinDirection`) at the
+    zoom-out limit, at the variant's starting field of view;
+  - `turning` is the FLY-IN, over `turnMs`: from the zoom-out limit (below)
+    to the fitted distance, the direction turning to the target from the
+    sun side (the target turned towards the sub-solar point by at most
+    `turnCap`, 90° by default, DEC-GL5-3). The start is computed when the
+    target arrives and follows it (`flyInStart`); if the spin was shown
+    it blends there from the spin's direction over 1.5 s. So a GPS fix
+    that arrives after the spin began starts on the sun side within the
+    cap, as a link does (review 2026-10-01-2124 Major 2: before, it started
+    wherever the spin was). In the `intro=`
+    variant: `narrow` (the default: the field of view
     narrows from 80°), `distance` (at 50°), `fov` (the field of view
     narrows far out, then a short fly), `dolly` (widens from 50°: with an
     end of 50° it is `distance`). Every variant ends at the target, the
@@ -211,22 +215,40 @@
     granted permission it falls back to Central Park at once. A position
     that arrives while the fallback is flown to or held becomes the target
     over 1.5 s (no jump; the history then names `fix`).
-  - `maxKm` is also how far the controls zoom out (`limitGlobeZoomOut`,
-    overriding the library's private limit, about 27,400 km at 50° on
-    16:9). A change of `at`, `spinMs`, `turnMs`, `intro`, `maxKm` or
-    `turnCap`, and the "Replay the turn" button, start the sequence again.
+  - The zoom-out limit, where the fly-in also starts (review 2026-10-01-2124
+    Major 1): the largest of `maxKm` (50,000 km by default, DEC-GL5-1), the
+    library's own limit at `fovY` and twice the fit (`globeZoomOutLimitM`,
+    installed as a getter by `limitGlobeZoomOut`, so a resize or a new
+    `fovY` re-applies it). At fovY 50: 16:9 keeps 50,000 km (library
+    27,400, fit 16,482); a 390x844 portrait gets 67,004 km (library 59,201,
+    fit 33,502; a fixed 50,000 km had cut the library's own limit there);
+    at fovY 20 on that portrait, 174,423 km. A change of `at`, `spinMs`,
+    `turnMs`, `intro`, `maxKm` or `turnCap`, and the "Replay the turn"
+    button, start the sequence again.
+  - To check on a phone (review 2026-10-01-2124 Minor 8): far out, the
+    library nudges the camera to centre the Earth and turn north up, in
+    proportion to where it sits between its transition distance (half its
+    own limit) and the zoom-out limit. The larger limit weakens both: on
+    16:9 at fovY 50, about 2.7x weaker at 20,000 km (0.17 of full strength
+    against 0.46) and 1.4x at 40,000 km; on a 390x844 portrait, about 1.3x
+    at 40,000-55,000 km (nothing nearer than 29,600 km either way). Check
+    that a far-out drag still settles centred and north up.
   - `user`: the user has taken the camera (below); the intro stands still
     until the replay button or a new key above restarts it. A field of view
     the fly-in left wider or narrower than `fovY` (a press during
     `narrow`, say) eases back to it over 0.5 s (`FOV_RETURN_MS`); so it
     does when the pin's dive interrupts the fly-in. The test hook
     `__globeLab.fovReturnAt(fraction)` returns the last such ease
-    (`{ from, to, ms, fov }`, `fov` at `fraction` x `ms`), computed by the
-    same function the frame loop uses, so a smoke reads the ease by time
-    rather than by whichever frames landed.
+    (`{ from, to, ms, at, lastFrameAt, fov }`, `fov` at `fraction` x `ms`),
+    computed by the same function the frame loop uses, so a smoke reads
+    the ease by time, and checks each drawn frame's field of view against
+    it at `lastFrameAt` (review 2026-10-01-2124 Minor 5).
   - `state()` reports `intro`, `fixState` (`fix`, `none` or `waiting`),
     `fovY` (the lab's) and `cameraFov` (the camera's, which the fly-in
-    varies).
+    varies), `zoomOutLimitM`, `cameraDirection` (unit, ECEF), and for the
+    fly-in `flyInStart` (its start now, null before a target), `firstTurn`
+    (the camera's direction on its first frame), `flyInBlendMs` (0 when no
+    spin was shown) and `flyInSettled`.
 - Touch and mouse (round-2 plan 2026-09-26-2055 M3a, M3b; round-3 plan
   2026-09-27-0532 §4 E): the tile library's own `GlobeControls` on the
   canvas, damping on:
@@ -314,7 +336,7 @@
     chosen only while spinning, so a fix arriving after the fallback would
     be ignored; phase 6 (the real locate timeout) has to decide that.
 
-- Test API, `window.__globeLab`: `ready`, `error`, `spinStart`, `state()`
+- Test API, `window.__globeLab`: `ready`, `error`, `state()`
   (`{ models, tileErrors, cachedBytes, pendingTiles, loadedTiles, phase,
 target, source, history, runs, spinMs, turnMs, centreLatLon, timeMs, clock,
 cloudDrift, cloudLonOffsetRad, sky, device, deviceLine,
@@ -372,11 +394,12 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     error but the library's own per-tile lines;
   - the centre within 0.01° of the target after arriving (the visual
     requirement is 0.25°; 0.01° also catches a geodetic-normal camera), for
-    Cologne, Tokyo, (0, 179.9), (80, -40) and the spin start's antipode (the
-    longest turn; not the exact-antipode branch, which the unit tests
-    cover), reported across {0.01, 0.1, 0.25, 0.5}°;
-  - with no `#at`: `waiting`, then `fallback` no earlier than `spinMs`,
-    arriving at Central Park; the replay button runs it again;
+    Cologne, Tokyo, (0, 179.9), (80, -40) and (-30, -165) (once the spin
+    start's antipode; the spin now starts over the sub-solar point),
+    reported across {0.01, 0.1, 0.25, 0.5}°;
+  - with no `#at` and no granted permission: `waiting`, then `fallback`
+    at once (before `spinMs`), arriving at Central Park; the replay button
+    runs it again;
   - (M3, equinox noon) the day side lit at the subsolar point (dark at
     midnight), night lights over Tokyo (none with `nightGain=0`), and the
     glint at the specular point with the clouds off (gone with

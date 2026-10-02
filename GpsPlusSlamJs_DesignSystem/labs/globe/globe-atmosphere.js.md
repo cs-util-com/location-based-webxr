@@ -44,7 +44,10 @@
     `grazingCompensation` (`globe-atmosphere-frame.js`): Chapman's
     function at the two scale heights, normalised to 1 straight down
     (review m3), about sqrt(k) at the limb, Rayleigh and Mie each with its
-    own scale height, taken at the ray's LOWEST point in the air: the
+    own scale height (the ozone absorption rides on Rayleigh's weight,
+    although its profile is a layer about 25 km up, not an exponential
+    one, so its compensation is approximate), taken at the ray's LOWEST
+    point in the air: the
     limb's tangent point, the ground hit, or, from inside the shell, the
     camera when the ray climbs (review M1, `lowestPointMu`). Measured from
     inside: the sky from 150 km in the k = 6 shell matches the real air's

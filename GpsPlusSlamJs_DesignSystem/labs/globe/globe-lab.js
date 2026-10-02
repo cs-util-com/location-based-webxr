@@ -51,10 +51,14 @@ import {
   GLOBE_INTRO,
   INTRO_VARIANTS,
   blendTarget,
+  flyInStart,
   introCameraPose,
-  introStartDirection,
+  spinDirection,
 } from "/globe/globe-intro.js";
-import { limitGlobeZoomOut } from "/globe/globe-zoom-limit.js";
+import {
+  globeZoomOutLimitM,
+  limitGlobeZoomOut,
+} from "/globe/globe-zoom-limit.js";
 import { geolocationPermissionState } from "/fw/sensors/permission-state.js";
 import { createGlobeAtmosphere } from "./globe-atmosphere.js";
 import {
@@ -190,12 +194,11 @@ const PROCEDURAL_STARS = "Stars: procedural, not a star catalogue.";
 
 /** The camera's fit: the disc fills 90 % of the narrower side (§7.6). */
 const FIT_MARGIN = 0.1;
-/** Where the spin starts: North Africa and Europe. */
-const SPIN_START = { lat: 30, lng: 15 };
 /**
- * The spin while the page waits for a target, in degrees per second. The
- * view's longitude falls, so the surface moves west to east across the
- * screen, the way the Earth turns.
+ * The spin while the page waits for a target, in degrees per second. It
+ * starts over the sub-solar point (the day side the fly-in starts from,
+ * review 2026-10-01-2124 Major 2); the view's longitude falls, so the
+ * surface moves west to east across the screen, the way the Earth turns.
  */
 const SPIN_DEG_PER_S = -3;
 const DEG = Math.PI / 180;
@@ -330,7 +333,7 @@ function readHashParams() {
     ...values,
     url: parseLatLngText(params.get("at")),
     // The fly-in's variant (round-5 plan §3.1): one of INTRO_VARIANTS,
-    // `narrow` (the owner's own case) when absent or unknown.
+    // `narrow` (the default case) when absent or unknown.
     intro: INTRO_VARIANTS.includes(params.get("intro"))
       ? params.get("intro")
       : "narrow",
@@ -372,9 +375,6 @@ function poseToward([x, y, z]) {
 
 const asArray = (v) => [v.x, v.y, v.z];
 
-/** A longitude wrapped into [-180, 180). */
-const wrapLng = (lng) => ((((lng + 180) % 360) + 360) % 360) - 180;
-
 /**
  * The intro's states (globe plan §7.6): `spin` until a target is chosen,
  * `turning` towards it, then `arrived`, holding it; `user` once the user
@@ -388,17 +388,23 @@ const wrapLng = (lng) => ((((lng + 180) % 360) + 360) % 360) - 180;
  * a test reads the sequence instead of racing it.
  *
  * Round 5 (plan 2026-10-01-0945 §3.1): `turning` is the FLY-IN
- * (`/globe/globe-intro.js`): from `maxKm` out on the sun side (the target
- * turned towards the sub-solar point by at most `turnCap`, when the target
- * is known at once; else from the spin's direction) to the target at the
- * fitted distance, over `turnMs`, in the `intro` variant; it ends at the
- * lab's `fovY` (50 by default, DEC-GL5-2). While it waits for a target it
- * spins out at `maxKm`. A position that arrives while the fallback is
+ * (`/globe/globe-intro.js`): from the zoom-out limit (`zoomOutM`: at least
+ * `maxKm`, the library's own limit and twice the fit) on the sun side (the
+ * target turned towards the sub-solar point by at most `turnCap`) to the
+ * target at the fitted distance, over `turnMs`, in the `intro` variant; it
+ * ends at the lab's `fovY` (50 by default, DEC-GL5-2). While it waits for a
+ * target it spins out there, over the sub-solar side; when a target
+ * arrives (a link, a position, the fallback) the start is computed from it
+ * and, if the spin was shown, blended to from the spin's direction over
+ * 1.5 s (review 2026-10-01-2124 Major 2: before, a position arriving after
+ * the first frame started from wherever the spin was, without the sun
+ * side or the cap). The start follows the target as it is then, so a
+ * position that replaces the fallback keeps the cap. A position that arrives while the fallback is
  * flown to or held becomes the target over 1.5 s (`setFix`); without a
  * granted permission none will come (`noFixComing`), so it does not wait.
  * `pose(now)` adds `distanceM` (null: the fitted distance) and `fovDeg`.
  */
-function introFlight(ellipsoid, { sunEcef, fitDistance }) {
+function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
   let params;
   let startedAt;
   let phase;
@@ -410,9 +416,14 @@ function introFlight(ellipsoid, { sunEcef, fitDistance }) {
   /** The dive in progress (`planDive`) and when it began. */
   let dive = null;
   let diveStartedAt = 0;
-  /** The fly-in's start direction, and whether nothing has been drawn yet. */
-  let flyStart = null;
-  let firstLook = true;
+  /**
+   * The target's arrival: when, the spin's direction then, and how long the
+   * start blends from it (0 when no spin frame was drawn).
+   */
+  let arrival = null;
+  let spinShown = false;
+  /** The camera's direction on the fly-in's first frame, for the smokes. */
+  let firstTurn = null;
   /** A position from the permission rule, and whether none will come. */
   let fix = null;
   let noFix = false;
@@ -433,8 +444,9 @@ function introFlight(ellipsoid, { sunEcef, fitDistance }) {
     history = [];
     runs += 1;
     dive = null;
-    flyStart = null;
-    firstLook = true;
+    arrival = null;
+    spinShown = false;
+    firstTurn = null;
     blend = null;
     note(now);
   };
@@ -444,8 +456,8 @@ function introFlight(ellipsoid, { sunEcef, fitDistance }) {
       variant: params.intro,
       start: [1, 0, 0],
       target: [1, 0, 0],
-      startKm: params.maxKm,
-      endKm: params.maxKm,
+      startKm: zoomOutM() / 1000,
+      endKm: zoomOutM() / 1000,
       endFovDeg: params.fovY,
     }).fovDeg;
   /** The target's direction now, a late fix blending in. */
@@ -461,11 +473,18 @@ function introFlight(ellipsoid, { sunEcef, fitDistance }) {
     return d;
   };
   const spinPose = (now) =>
-    orbitPose(ellipsoid, {
-      lat: SPIN_START.lat,
-      lng: wrapLng(
-        SPIN_START.lng + (SPIN_DEG_PER_S * (now - startedAt)) / 1000,
-      ),
+    poseToward(
+      spinDirection(asArray(sunEcef()), now - startedAt, SPIN_DEG_PER_S),
+    );
+  /** The fly-in's start now: from the spin to the target's sun side. */
+  const startDirection = (now) =>
+    flyInStart({
+      spin: arrival.spin,
+      target: targetDirection(now),
+      sun: asArray(sunEcef()),
+      capDeg: params.turnCap,
+      sinceArrivalMs: Math.max(0, now - arrival.at),
+      blendMs: arrival.blendMs,
     });
   /** The spin, the turn and the hold. */
   const introPose = (now) => {
@@ -480,23 +499,21 @@ function introFlight(ellipsoid, { sunEcef, fitDistance }) {
         choice = next;
         if (next.target) {
           to = orbitPose(ellipsoid, next.target);
-          flyStart = firstLook
-            ? introStartDirection(
-                asArray(to.direction),
-                asArray(sunEcef()),
-                params.turnCap,
-              )
-            : asArray(spinPose(now).direction);
+          arrival = {
+            at: now,
+            spin: asArray(spinPose(now).direction),
+            blendMs: spinShown ? GLOBE_INTRO.lateFixBlendMs : 0,
+          };
           turnStartedAt = now;
           phase = "turning";
         }
         note(now);
       }
-      firstLook = false;
       if (phase === "spin") {
+        spinShown = true;
         return {
           pose: spinPose(now),
-          distanceM: params.maxKm * 1000,
+          distanceM: zoomOutM(),
           fovDeg: startFov(),
         };
       }
@@ -506,12 +523,13 @@ function introFlight(ellipsoid, { sunEcef, fitDistance }) {
       if (t < 1) {
         const p = introCameraPose(t, {
           variant: params.intro,
-          start: flyStart,
+          start: startDirection(now),
           target: targetDirection(now),
-          startKm: params.maxKm,
+          startKm: zoomOutM() / 1000,
           endKm: fitDistance() / 1000,
           endFovDeg: params.fovY,
         });
+        firstTurn ??= [...p.direction];
         return {
           pose: poseToward(p.direction),
           distanceM: p.distanceKm * 1000,
@@ -606,6 +624,19 @@ function introFlight(ellipsoid, { sunEcef, fitDistance }) {
       turnMs: params.turnMs,
       intro: params.intro,
       fixState: fix ? "fix" : noFix ? "none" : "waiting",
+      // The fly-in's start as it is now (unit vector, ECEF), and the sun's
+      // direction, for the smokes; null before a target arrived.
+      flyInStart:
+        arrival && phase !== "diving" && phase !== "landed"
+          ? startDirection(performance.now())
+          : null,
+      firstTurn,
+      // How long the start blends from the spin (0: no spin was shown),
+      // and whether that blend is over.
+      flyInBlendMs: arrival?.blendMs ?? null,
+      flyInSettled: arrival
+        ? performance.now() - arrival.at >= arrival.blendMs
+        : false,
     }),
   };
 }
@@ -661,9 +692,9 @@ function cameraControls(scene, camera, globe, onTake) {
     update() {
       controls.update();
     },
-    /** The farthest the controls zoom out, metres from the centre. */
-    limit(maxM) {
-      limitGlobeZoomOut(controls, maxM);
+    /** The farthest the controls zoom out: a getter, metres from the centre. */
+    limit(limitM) {
+      limitGlobeZoomOut(controls, limitM);
     },
     release() {
       // Toggling `enabled` is the library's own reset: it ends any drag,
@@ -1021,6 +1052,8 @@ function start() {
   );
   let distance = radius * 3;
   let fittedSize = "";
+  /** When the frame loop last ran (performance.now()), for the smokes. */
+  let frameAt = 0;
   const globe = createGlobeSurface();
   useSurfaceDefaults(globe);
   const { radius: radii } = globe.tiles.ellipsoid;
@@ -1036,6 +1069,7 @@ function start() {
   const flight = introFlight(globe.tiles.ellipsoid, {
     sunEcef: () => globe.surfaceUniforms.uSunEcef.value,
     fitDistance: () => distance,
+    zoomOutM: () => zoomOutM(),
   });
   // Set once the pin exists (below); a touch before that has no flight.
   let pin = null;
@@ -1071,6 +1105,7 @@ function start() {
     }
     fovReturn.to = params.fovY;
     camera.fov = fovAt(fovReturn, now - fovReturn.at);
+    fovReturn.lastFrameAt = now;
     camera.updateProjectionMatrix();
     if (camera.fov === params.fovY) fovReturn = null;
   };
@@ -1078,6 +1113,22 @@ function start() {
     flight.yieldToUser(performance.now());
     pin?.cameraTaken();
   });
+  /**
+   * How far the controls zoom out and where the fly-in starts (review
+   * 2026-10-01-2124 Major 1): the largest of `maxKm`, the library's own
+   * limit at fovY and twice the fit, so a portrait phone never gets less
+   * than the library allows. Asked on every call, so a resize or a new
+   * fovY re-applies it.
+   */
+  const zoomOutM = () =>
+    globeZoomOutLimitM({
+      maxM: params.maxKm * 1000,
+      radiusM: radius,
+      fovYDeg: params.fovY,
+      aspect: camera.aspect,
+      fitM: distance,
+    });
+  controls.limit(zoomOutM);
   /** The replay button or a new target or timing: the intro again. */
   const giveBackToIntro = () => {
     flight.restart(performance.now(), params);
@@ -1113,7 +1164,6 @@ function start() {
     globe.sun.intensity = params.sunIntensity;
     sky.setLook({ sunDiameterDeg: params.sunSize, glow: params.sunGlow });
     globe.tiles.errorTarget = params.errorTarget;
-    controls.limit(params.maxKm * 1000);
     globe.tiles.lruCache.maxBytesSize = params.cacheMiB * 2 ** 20;
     globe.tiles.lruCache.minBytesSize =
       params.cacheMiB * CACHE_FLOOR_RATIO * 2 ** 20;
@@ -1268,6 +1318,7 @@ function start() {
     }
     sunNow();
     const now = performance.now();
+    frameAt = now;
     if (flight.drives) {
       const step = flight.pose(now);
       if (step.pose) {
@@ -1476,7 +1527,6 @@ function start() {
 
   window.__globeLab = {
     ready: true,
-    spinStart: SPIN_START,
     error: null,
     state: () => ({
       ...globe.state(),
@@ -1508,6 +1558,8 @@ function start() {
       // Who moves the camera, and where it is (round-2 plan M3a, M3b).
       cameraOwner: flight.drives ? "intro" : "controls",
       cameraDistanceM: camera.position.length(),
+      cameraDirection: asArray(camera.position.clone().normalize()),
+      frameAt,
       // The readout's text as of the last frame, and what the line shows
       // (the line is throttled, so it may lag by up to 250 ms).
       readout: readoutText,
@@ -1542,6 +1594,7 @@ function start() {
       },
       fovY: params.fovY,
       cameraFov: camera.fov,
+      zoomOutLimitM: zoomOutM(),
       pixelRatio: renderer.getPixelRatio(),
       errorTarget: globe.tiles.errorTarget,
       bytesDownloaded: globeBytesDownloaded(),
@@ -1590,15 +1643,25 @@ function start() {
     /**
      * A test hook (round-5 M1): the last ease of the field of view back to
      * fovY, read by TIME rather than by the frames that happened to land:
-     * `{ from, to, ms, fov }`, `fov` being what the frame loop sets
-     * `fraction` x `ms` after the ease began; null before any ease.
+     * `{ from, to, ms, at, lastFrameAt, fov }`, `fov` being what the frame
+     * loop sets `fraction` x `ms` after the ease began (at `at`,
+     * performance.now()); `lastFrameAt` is when a frame last applied it, so
+     * a test can check the camera holds exactly that frame's value (review
+     * 2026-10-01-2124 Minor 5). Null before any ease.
      */
     fovReturnAt(fraction) {
       if (!Number.isFinite(fraction))
         throw new RangeError(`fraction must be finite, got ${fraction}`);
       if (!lastFovReturn) return null;
-      const { from, to, ms } = lastFovReturn;
-      return { from, to, ms, fov: fovAt(lastFovReturn, fraction * ms) };
+      const { from, to, ms, at, lastFrameAt } = lastFovReturn;
+      return {
+        from,
+        to,
+        ms,
+        at,
+        lastFrameAt,
+        fov: fovAt(lastFovReturn, fraction * ms),
+      };
     },
     /**
      * The cost probe (round-4 plan DEC-GL4-2/4): `n` frames drawn back to

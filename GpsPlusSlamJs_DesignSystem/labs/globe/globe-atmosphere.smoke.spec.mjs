@@ -174,8 +174,13 @@ test("the rim glows on the lit limb only, and veils the day side blue", async ({
  * from there. Reported at x0.5, x1, x2.
  */
 const PEAK_FRACTION = 0.3;
-/** Levels below the maximum that end the saturated plateau. */
+/**
+ * Levels below the maximum that end the saturated plateau; 4 and 16 are
+ * read from the same profile and reported (review 2026-10-01-2124 Minor
+ * 7), the bound asserted at 8.
+ */
 const PLATEAU_DROP = 8;
+const PLATEAU_DROPS = [4, PLATEAU_DROP, 16];
 
 // WHY: the owner judges the halo's width by eye (DEC-GL4-11: as wide as
 // the reference by default, the thickness slider back down to the physical
@@ -214,16 +219,19 @@ test("the rim's profile at both ends of the thickness slider", async ({
     const lum = px.map(luminance);
     const out = lum.slice(inside.length);
     const top = Math.max(...out);
-    const endAt = Math.max(
-      0,
-      out.findIndex((v) => v < top - PLATEAU_DROP),
-    );
+    const endAtFor = (drop) =>
+      Math.max(
+        0,
+        out.findIndex((v) => v < top - drop),
+      );
+    const endAt = endAtFor(PLATEAU_DROP);
     rows.push({
       thickness,
       lum,
       out,
       endAt,
       endKm: outside[endAt] ?? 0,
+      endKmByDrop: PLATEAU_DROPS.map((d) => outside[endAtFor(d)] ?? 0),
       brightest: px[lum.indexOf(Math.max(...lum))] ?? [0, 0, 0, 0],
     });
   }
@@ -239,7 +247,7 @@ test("the rim's profile at both ends of the thickness slider", async ({
                   `x${k} ${row.endKm <= PEAK_FRACTION * 100 * row.thickness * k ? "ok" : "NO"}`,
               )
               .join(" ") +
-            `); brightest RGB ${row.brightest.slice(0, 3).join("/")}`,
+            `); by drop ${PLATEAU_DROPS.map((d, i) => `${d}: ${row.endKmByDrop[i]} km ${row.endKmByDrop[i] <= PEAK_FRACTION * 100 * row.thickness ? "ok" : "NO"}`).join(", ")}; brightest RGB ${row.brightest.slice(0, 3).join("/")}`,
         )
         .join("; "),
   );
@@ -610,45 +618,64 @@ async function skyFromInside(page, context, altKm, thickness) {
 // its sky must look like the real air's from 25 km (k = 1): the same
 // optical depth along every climbing ray. With the limb's weight (sqrt k)
 // given to those rays too, the sky got about 2.45 times the optical depth.
-test.describe.serial("the sky from inside the drawn shell", () => {
-  /** @type {{ e: number, lum: number, rgb: number[] }[]} */
-  let thick = [];
-  test("from 150 km inside the k = 6 shell", async ({ page, context }) => {
-    test.setTimeout(120_000);
-    const r = await skyFromInside(page, context, 150, 6);
-    thick = r.rows;
-    console.log(
-      `sky from ${r.altitudeKm.toFixed(0)} km at k = 6: ${thick.map((row) => `${row.e} deg ${row.lum.toFixed(1)} (${row.rgb.map((v) => v.toFixed(0)).join("/")})`).join(", ")}`,
-    );
-    expect(r.errors).toEqual([]);
-  });
+/**
+ * Views from inside the k-thick shell and the real air they must match:
+ * a camera h km up inside it reads the air at h / k, so its sky must look
+ * like the real air's from h / k (k = 1). Three pairs (review
+ * 2026-10-01-2124 Minor 7: one pair was one point).
+ */
+const SKY_PAIRS = [
+  { insideKm: 150, k: 6 },
+  { insideKm: 60, k: 6 },
+  { insideKm: 300, k: 10 },
+];
+for (const { insideKm, k } of SKY_PAIRS) {
+  const realKm = insideKm / k;
+  test.describe
+    .serial(`the sky from ${insideKm} km inside the k = ${k} shell`, () => {
+    /** @type {{ e: number, lum: number, rgb: number[] }[]} */
+    let thick = [];
+    test(`from ${insideKm} km at k = ${k}`, async ({ page, context }) => {
+      test.setTimeout(120_000);
+      const r = await skyFromInside(page, context, insideKm, k);
+      thick = r.rows;
+      console.log(
+        `sky from ${r.altitudeKm.toFixed(0)} km at k = ${k}: ${thick.map((row) => `${row.e} deg ${row.lum.toFixed(1)} (${row.rgb.map((v) => v.toFixed(0)).join("/")})`).join(", ")}`,
+      );
+      expect(r.errors).toEqual([]);
+    });
 
-  test("matches the real air from 25 km (k = 1)", async ({ page, context }) => {
-    test.setTimeout(120_000);
-    const r = await skyFromInside(page, context, 25, 1);
-    const ratios = r.rows.map(
-      (row, i) => (thick[i]?.lum ?? 0) / Math.max(1, row.lum),
-    );
-    console.log(
-      `sky from ${r.altitudeKm.toFixed(0)} km at k = 1: ${r.rows.map((row) => `${row.e} deg ${row.lum.toFixed(1)} (${row.rgb.map((v) => v.toFixed(0)).join("/")})`).join(", ")}; k6/k1 ${ratios.map((v) => v.toFixed(2)).join(" ")}`,
-    );
-    // Measured 2026-10-01: 0.98-1.02 with the lowest-point rule, 1.41-1.72
-    // with the limb's weight on climbing rays (the review's 2.45 times the
-    // optical depth). Bound 15 %, reported at x0.5, x1, x2.
-    const SKY_MATCH = 0.15;
-    const worst = Math.max(...ratios.map((v) => Math.abs(v - 1)));
-    console.log(
-      `sky match: worst ${worst.toFixed(3)} (bound ${SKY_MATCH}: ${SWEEP.map((k) => `x${k} ${worst < SKY_MATCH * k ? "ok" : "NO"}`).join(" ")})`,
-    );
-    expect(thick.length).toBe(r.rows.length);
-    for (const row of r.rows) expect(row.lum).toBeGreaterThan(2);
-    expect(worst).toBeLessThan(SKY_MATCH);
-    expect(r.errors).toEqual([]);
+    test(`matches the real air from ${realKm} km (k = 1)`, async ({
+      page,
+      context,
+    }) => {
+      test.setTimeout(120_000);
+      const r = await skyFromInside(page, context, realKm, 1);
+      const ratios = r.rows.map(
+        (row, i) => (thick[i]?.lum ?? 0) / Math.max(1, row.lum),
+      );
+      console.log(
+        `sky from ${r.altitudeKm.toFixed(0)} km at k = 1: ${r.rows.map((row) => `${row.e} deg ${row.lum.toFixed(1)} (${row.rgb.map((v) => v.toFixed(0)).join("/")})`).join(", ")}; k${k}/k1 ${ratios.map((v) => v.toFixed(2)).join(" ")}`,
+      );
+      // Measured 2026-10-01 for 150 km at k = 6: 0.98-1.02 with the
+      // lowest-point rule, 1.41-1.72 with the limb's weight on climbing
+      // rays (the review's 2.45 times the optical depth). Bound 15 %,
+      // reported at x0.5, x1, x2.
+      const SKY_MATCH = 0.15;
+      const worst = Math.max(...ratios.map((v) => Math.abs(v - 1)));
+      console.log(
+        `sky match ${insideKm} km at k = ${k} vs ${realKm} km: worst ${worst.toFixed(3)} (bound ${SKY_MATCH}: ${SWEEP.map((x) => `x${x} ${worst < SKY_MATCH * x ? "ok" : "NO"}`).join(" ")})`,
+      );
+      expect(thick.length).toBe(r.rows.length);
+      for (const row of r.rows) expect(row.lum).toBeGreaterThan(2);
+      expect(worst).toBeLessThan(SKY_MATCH);
+      expect(r.errors).toEqual([]);
+    });
   });
-});
+}
 
 // WHY (review 2026-10-01, M2): the march's cost is only known on the CPU
-// rasteriser; the owner reads it on the phone from the plate. The button
+// rasteriser; it is read on the phone from the plate. The button
 // must show that it is working (disabled, "Measuring...") and then give
 // the device line both medians, and come back.
 test("the plate measures the atmosphere's cost and shows it in the device line", async ({
