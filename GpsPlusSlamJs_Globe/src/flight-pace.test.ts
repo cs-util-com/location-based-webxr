@@ -75,6 +75,40 @@ describe("the target rate", () => {
   });
 });
 
+describe("data that is there from the start (the property's shrunk case)", () => {
+  // Why: fast-check found this case (landedMs 0, smoothing near its floor)
+  // against a property that measured the warm finish from the START state.
+  // That state never saw the data: the first report of progress 1 comes at
+  // the end of the first frame and acts from the next one (the causal rule
+  // above). Measured from the first state that HOLDS progress 1, as the
+  // contract says, the flight keeps its promise; this pins both readings.
+  const shrunk: FlightPaceParams = {
+    minMs: 2_000,
+    capMs: 20_286,
+    smoothingMs: 55,
+  };
+
+  it("lands within the contract's bound, from the first state holding progress 1", () => {
+    const states = [startPace(shrunk)];
+    for (let t = 16; !states.at(-1)!.done; t += 16) {
+      states.push(stepPace(states.at(-1)!, 1, t, shrunk));
+    }
+    const holding = states.find((s) => s.progress >= 1)!;
+    expect(holding.elapsedMs).toBe(16);
+    const bound =
+      holding.elapsedMs +
+      (1 - holding.s) * shrunk.minMs +
+      shrunk.smoothingMs +
+      16;
+    const landed = states.at(-1)!.elapsedMs;
+    expect(landed).toBe(2_080);
+    expect(landed).toBeLessThanOrEqual(bound);
+    // Measured from t = 0 instead, the bound would be 2,071: one frame
+    // short, because the first frame is flown before the signal is known.
+    expect(landed).toBeGreaterThan(shrunk.minMs + shrunk.smoothingMs + 16);
+  });
+});
+
 describe("whole flights", () => {
   it("a cold flight on a dead network ends exactly at the cap", () => {
     const { endedAtMs, state } = fly(P, () => 0);

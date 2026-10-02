@@ -205,7 +205,14 @@ describe("the flight clock, over random networks and frame rates", () => {
           const frame = 16;
           const states = run(p, [{ atMs: landedMs, value: 1 }], [frame]);
           const last = states.at(-1)!;
-          const atLanding = states.find((s) => s.elapsedMs >= landedMs);
+          // Anchored where the contract says: the first state that HOLDS
+          // progress 1. A signal acts from the frame after the one that
+          // reports it, so for data present from t = 0 that is the state at
+          // the end of the first frame, not the start state (which never saw
+          // it). Anchoring at the start state was one frame short, a test
+          // error, not a looser bound (the shrunk case is pinned in
+          // flight-pace.test.ts).
+          const atLanding = states.find((s) => s.progress >= 1);
           if (atLanding === undefined || atLanding.done) return;
           const promise =
             atLanding.elapsedMs +
