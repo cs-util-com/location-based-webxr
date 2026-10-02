@@ -1,6 +1,6 @@
 # globe-terrain.ts - the globe's relief carrier, prepared
 
-- Purpose: round-5 plan 2026-10-01-0945 §8 DEC-GL5-9 (the owner's choice:
+- Purpose: round-5 plan 2026-10-01-0945 §8 DEC-GL5-9 (decided:
   the tile library's own terrain tiles carry the relief from F1 on), F1a:
   the carrier made usable before it enters the flight. It fixes the three
   defects the F0 spike measured

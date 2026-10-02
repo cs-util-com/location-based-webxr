@@ -1,6 +1,6 @@
 # globe-terrain-lab.js - the relief carrier, side by side with the globe
 
-- Purpose: round-5 plan 2026-10-01-0945 §8 DEC-GL5-9, F1a (the owner's
+- Purpose: round-5 plan 2026-10-01-0945 §8 DEC-GL5-9, F1a (the decided
   choice of the tile library's terrain tiles as the relief): the carrier
   from `/globe/globe-terrain.js` drawn with the globe's own look and sun,
   or the globe's own surface at the same view, so the smokes hold the
