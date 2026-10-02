@@ -376,7 +376,7 @@ describe("the viewer's tourViewing log of an ignored code (D20, M5c)", () => {
   const EVIDENCE = {
     ruleVersion: "test-version",
     decidedBy: "position" as const,
-    turnChannel: "settled-yaw" as const,
+    turnChecked: true,
     boundM: 20,
     displacementM: [31.5, -4.25] as const,
     magnitudeM: 31.79,
@@ -388,8 +388,6 @@ describe("the viewer's tourViewing log of an ignored code (D20, M5c)", () => {
     storedAccuracyM: null,
     alignmentSampleCount: 300,
     settled: true,
-    outdoor: true,
-    compassTurnDeg: null,
     sinceScanS: 64,
   };
 

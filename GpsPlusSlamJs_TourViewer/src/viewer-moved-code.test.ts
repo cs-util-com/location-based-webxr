@@ -135,7 +135,7 @@ const CODE_POSE = raw(
   new Quaternion(...SAVED.rotationNue),
 );
 
-function viewer() {
+function viewer(level: QrLevel = LEVEL) {
   captured.configs.length = 0;
   captured.stablePose = CODE_POSE;
   captured.resolves = 0;
@@ -179,8 +179,8 @@ function viewer() {
     now: () => clock.nowMs,
   });
   const enter = (): void => {
-    ctx.currentLevels = new Map([[LEVEL_ID, LEVEL]]);
-    ctx.levelByText.set(TEXT, LEVEL);
+    ctx.currentLevels = new Map([[LEVEL_ID, level]]);
+    ctx.levelByText.set(TEXT, level);
     ctx.levelIdByText.set(TEXT, LEVEL_ID);
     placement.startViewerPipeline();
     placement.startScanGate();
@@ -212,11 +212,17 @@ function viewer() {
         }),
       );
     }
-    c.onLocked?.({} as never, LEVEL);
+    c.onLocked?.({} as never, level);
   };
   let fixes = 0;
-  /** A device fix at world [n, e] at page second `s` (GPS exact). */
-  const fixAt = (s: number, n: number, e: number): void => {
+  /** A device fix at world [n, e] at page second `s` (GPS exact), with
+   *  any extra payload fields (a compass reading). */
+  const fixAt = (
+    s: number,
+    n: number,
+    e: number,
+    extra: Partial<RecordGpsEventPayload> = {},
+  ): void => {
     clock.nowMs = T0 + s * 1000;
     if (fixes === 0) arStore.dispatch(setZeroPos(ZERO));
     fixes += 1;
@@ -232,6 +238,7 @@ function viewer() {
         latLongAccuracy: 4,
         timestamp: T0 + s * 1000,
       },
+      ...extra,
     };
     placement.recordDeviceFix(payload);
   };
@@ -377,7 +384,7 @@ describe(
       expect(payload.evidence).toMatchObject({
         decidedBy: "position",
         settled: true,
-        outdoor: true,
+        turnChecked: true,
         deviceAccuracyMedianM: 4,
       });
       expect(payload.evidence.magnitudeM).toBeGreaterThan(35);
@@ -402,6 +409,70 @@ describe(
       v.lock(T0 + 201_000);
       expect(captured.resolves).toBe(resolves + 1);
       expect(v.votesStored()).toBeGreaterThan(0);
+    });
+
+    // Why (owner, 2026-10-02): "the global rotation of the QR code should
+    // only ever come from the global pose in the GPS world space". A code
+    // saved early (30 solved fixes) and re-hung turned in place, seen by a
+    // visitor whose phone reports an absolute orientation with every fix:
+    // whatever the compass says, the viewer must not judge the code by it.
+    // The visitor stays near the code (under the 2 m spread), so the GPS
+    // path decides nothing either.
+    it("uses no compass reading: a turned code of an early save is never vetoed, whatever the device's compass reads", () => {
+      const early: QrLevel = {
+        ...LEVEL,
+        qr: {
+          ...LEVEL.qr,
+          mintQuality: { alignmentSampleCount: 30, gpsAccuracyM: 3 },
+        },
+      };
+      const turned = raw(
+        [SAVED.positionNue[0], SAVED.positionNue[1], SAVED.positionNue[2]],
+        new Quaternion(...SAVED.rotationNue).premultiply(
+          new Quaternion().setFromAxisAngle(
+            new Vector3(0, 1, 0),
+            Math.PI * (150 / 180),
+          ),
+        ),
+      );
+      // Eight device orientations (turns about two axes): under the retired
+      // compass channel several of them read this code as turned past 60
+      // degrees and vetoed it at the first fix after the scan.
+      for (const axis of [new Vector3(0, 0, 1), new Vector3(0, 1, 0)]) {
+        for (const headingDeg of [0, 90, 180, 270]) {
+          const q = new Quaternion().setFromAxisAngle(
+            axis,
+            (headingDeg * Math.PI) / 180,
+          );
+          const compass: Partial<RecordGpsEventPayload> = {
+            rawAbsoluteOrientation: {
+              quaternion: [q.x, q.y, q.z, q.w],
+              referenceFrame: "device",
+              screenAngleDeg: 0,
+              sampleTimestamp: 0,
+            },
+          };
+          const v = viewer(early);
+          captured.stablePose = turned;
+          v.fixAt(0, SAVED.positionNue[0], SAVED.positionNue[2], compass);
+          for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+            v.lock(T0 + 1000 + i * 100);
+          }
+          for (let s = 1; s <= 90; s += 1) {
+            const a = (2 * Math.PI * s) / 30;
+            v.fixAt(
+              s,
+              SAVED.positionNue[0] + 1.2 * Math.cos(a),
+              SAVED.positionNue[2] + 1.2 * Math.sin(a),
+              compass,
+            );
+          }
+          expect(v.ctx.ignoredCodes.size).toBe(0);
+          expect(
+            v.logged.some((a) => a.type === "tourViewing/codeIgnored"),
+          ).toBe(false);
+        }
+      }
     });
 
     it("never vetoes a code that hangs where it was saved", () => {

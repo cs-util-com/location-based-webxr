@@ -22,9 +22,7 @@ east]`, odometry-NUE), their own time and reported accuracy. A fix without
   the odometry: `codeCorrection` of the code's odometry-NUE pose (the stable
   fused pose through `odomNueFromWebXr`) onto its saved GPS-world NUE pose
   (`objectPoseNue` of the level's geo), horizontal part only, plus the
-  saved position, and the whole correction (`alignment`, 16 numbers), whose
-  bearing of the odometry's north the compass turn check reads. Null where
-  `codeCorrection` is null.
+  saved position. Null where `codeCorrection` is null.
 - `type DisplacementEstimator` - `{ kind: "residual", radiusM }` or
   `{ kind: "rigid", minYawSpreadM? }`.
 - `EMPTY_DISPLACEMENT_STATS`, `addDisplacementSample(stats, pin,

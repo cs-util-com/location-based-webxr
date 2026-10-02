@@ -30,7 +30,6 @@ import {
 } from "gps-plus-slam-app-framework/state";
 
 import { objectPoseNue } from "./content-placement.js";
-import { alignmentNorthBearingDeg } from "./gps-noise-fit.js";
 import { createMovedCodeChecks } from "./moved-code-check.js";
 import { MOVED_CODE_RULE_VERSION } from "./moved-code-rule.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
@@ -257,46 +256,33 @@ describe("createMovedCodeChecks", { timeout: 60_000 }, () => {
     const h = harness();
     h.pin(codeSeen([0, 0], 90), 0);
     const verdicts = h.feed(circle(0, 120, [20, 10], 10));
-    expect(verdicts).toEqual([
-      expect.objectContaining({ decidedBy: "settled-yaw" }),
-    ]);
+    expect(verdicts).toEqual([expect.objectContaining({ decidedBy: "turn" })]);
   });
 
-  // Why: an early save (under 120 fixes) with an outdoor compass decides by
-  // the compass at the first reading after the scan, with no walk at all.
-  it("reads a turned poster of an early save by the compass at the scan, outdoors", () => {
+  // Why (owner, 2026-10-02): an early save's heading is not trustworthy, so
+  // the turn check does not run for it - not even for a half turn after a
+  // long, wide walk. Only a move by position can veto such a code.
+  it("never judges a turn for an unsettled save, however far the visitor walks", () => {
     const h = harness();
-    h.feed(circle(0, 5, [20, 12], 1, { acc: 4 }));
-    h.pin(codeSeen([0, 0], 90), 6, level(30));
-    h.checks.compass(
-      alignmentNorthBearingDeg(ODOM_TO_WORLD.toArray()),
-      T0 + 6000,
-    );
-    const verdicts = h.feed(circle(6, 8, [20, 12], 1, { acc: 4 }));
-    expect(verdicts).toEqual([
-      expect.objectContaining({ s: 6, decidedBy: "compass" }),
-    ]);
+    h.pin(codeSeen([0, 0], 150), 0, level(30));
+    expect(h.feed(circle(0, 200, [20, 10], 15))).toEqual([]);
+    expect(h.checks.snapshot()[0]).toMatchObject({
+      turnChecked: false,
+      verdict: "consistent",
+    });
+    expect(Math.abs(h.checks.snapshot()[0]!.yawDeg)).toBeGreaterThan(140);
   });
 
-  it("does not read the compass indoors, nor a reading taken before the scan", () => {
-    const indoor = harness();
-    indoor.feed(circle(0, 5, [20, 12], 1, { acc: 12 }));
-    indoor.pin(codeSeen([0, 0], 90), 6, level(30));
-    indoor.checks.compass(
-      alignmentNorthBearingDeg(ODOM_TO_WORLD.toArray()),
-      T0 + 6000,
-    );
-    expect(indoor.feed(circle(6, 20, [20, 12], 1, { acc: 12 }))).toEqual([]);
-    expect(indoor.checks.snapshot()[0]).toMatchObject({
-      turnChannel: "fallback-yaw",
-    });
-    const before = harness();
-    before.checks.compass(
-      alignmentNorthBearingDeg(ODOM_TO_WORLD.toArray()),
-      T0,
-    );
-    before.pin(codeSeen([0, 0], 90), 6, level(30));
-    expect(before.checks.snapshot()[0]?.compassTurnDeg).toBeNull();
+  // Why (owner, 2026-10-02): the code's rotation comes only from its pose in
+  // GPS world space. The check offers no way in for a compass reading.
+  it("takes no compass reading", () => {
+    expect(Object.keys(createMovedCodeChecks()).sort()).toEqual([
+      "clear",
+      "frameChanged",
+      "pin",
+      "snapshot",
+      "update",
+    ]);
   });
 
   // Why: after an odometry restart the pin names a place in a dead frame.
@@ -344,15 +330,13 @@ describe("createMovedCodeChecks", { timeout: 60_000 }, () => {
     expect(v!.evidence).toMatchObject({
       ruleVersion: MOVED_CODE_RULE_VERSION,
       decidedBy: "position",
-      turnChannel: "settled-yaw",
+      turnChecked: true,
       boundM: 20,
       settled: true,
       alignmentSampleCount: 300,
       storedAccuracyM: 3.5,
       deviceAccuracyMedianM: 3,
       deviceFixes: 71,
-      outdoor: true,
-      compassTurnDeg: null,
       sinceScanS: 70,
     });
     expect(v!.evidence.magnitudeM).toBeGreaterThan(35);

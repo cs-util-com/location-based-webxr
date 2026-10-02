@@ -108,9 +108,8 @@ recording. Its own module since the flows plan M6.
   array changed, `checks.update(history, now())` folds the new device fixes
   and judges; an odometry frame change (`qrDetected.frameEpoch`) ends every
   pin (`frameChanged`). The recovery's own dispatches are not judged again.
-  `recordDeviceFix` hands the fix's compass reading (portrait
-  `rawAbsoluteOrientation`, `arNorthBearingDeg`) to the checks before the
-  fix is stored.
+  No compass reading reaches the checks (owner, 2026-10-02): a code's turn
+  comes from its pose in GPS world space only.
 - **Veto** (`vetoMovedCode`), once per level id: the id joins
   `ignoredCodes` (the rest of the page session for this tour); the
   keep-alive stops if it holds this code; `viewerVoteSink.retractVotes()`

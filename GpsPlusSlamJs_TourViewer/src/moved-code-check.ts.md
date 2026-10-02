@@ -8,8 +8,8 @@ pinned at its first voted lock and judged on every new device fix of the
 store's GPS history with `moved-code-rule.ts` `judgeCodeMove`, until it
 reads `moved` (reported once, with the detector's inputs) or its horizon
 (`MOVED_CODE_HORIZON_S`, 300 s) passes. Pure of the page: the caller
-(`viewer-placement.ts`) hands in the history, the page clock and the compass
-readings, and acts on a verdict (the veto).
+(`viewer-placement.ts`) hands in the history and the page clock, and acts on
+a verdict (the veto). No compass reading is taken (owner, 2026-10-02).
 
 ## Public API
 
@@ -24,8 +24,6 @@ readings, and acts on a verdict (the veto).
   history's new device fixes into every live check and judge it; returns
   the codes that read `moved` now (`{ text, levelId, evidence }`), each
   once: its check ends. A check past its horizon ends silently.
-- `compass(arNorthDeg, atMs)` - a compass reading; the first one at or after
-  a code's pin is kept as its compass turn (`compassTurnDeg`).
 - `frameChanged(storedCount)` - the odometry frame changed: every check
   ends, and later pins fold only the history from `storedCount` on.
 - `clear()` - end every check (a tour switch).
@@ -33,10 +31,10 @@ readings, and acts on a verdict (the veto).
   readout and tests.
 
 `MovedCodeEvidence` (the `tourViewing/codeIgnored` payload's `evidence`):
-`ruleVersion`, `decidedBy`, `turnChannel`, `boundM`, `displacementM`,
+`ruleVersion`, `decidedBy` (`position` or `turn`), `turnChecked`, `boundM`, `displacementM`,
 `magnitudeM`, `yawDeg`, `spanS`, `spreadM`, `deviceFixes`,
 `deviceAccuracyMedianM`, `storedAccuracyM`, `alignmentSampleCount`,
-`settled`, `outdoor`, `compassTurnDeg`, `sinceScanS`.
+`settled`, `sinceScanS`.
 
 ## Invariants
 
@@ -51,7 +49,8 @@ readings, and acts on a verdict (the veto).
   start, so no fix counts twice.
 - **The whole history, as measured**: the real-walk pairs fit every device
   fix of the visit, those before the scan too; only a frame change cuts it.
-- **The compass at the scan**: a reading before the pin is never used.
+- **No compass**: a code's turn is its rigid-fit yaw in GPS world space,
+  read only for a settled save (`moved-code-rule.ts`).
 - Accuracies are the folded device fixes' reported ones (median by sorted
   insert); the saved level's are read from `mintQuality`.
 
@@ -73,7 +72,7 @@ for (const v of checks.update(
 
 `moved-code-check.test.ts` (a 40 m move read once after 60 s; an unmoved
 code never; the horizon; votes in the history change nothing; the settled
-yaw; the compass at the scan, not indoors and not before the pin; a frame
+yaw; no turn check for an unsettled save; no compass input; a frame
 change; a reset; the evidence; one pin per code; `clear()`),
 `moved-code-check.property.test.ts` (slicing and vote-interleaving
 invariance). The wired veto: `viewer-moved-code.test.ts`.

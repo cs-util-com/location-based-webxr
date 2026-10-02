@@ -104,9 +104,6 @@ export interface CodePin {
   readonly t: readonly [number, number];
   /** The saved code, GPS-world NUE: [north, east]. */
   readonly code: readonly [number, number];
-  /** The whole correction (column-major 4x4, odometry-NUE to GPS-world
-   *  NUE): the alignment the code alone implies, read for its heading. */
-  readonly alignment: readonly number[];
 }
 
 /**
@@ -129,7 +126,6 @@ export function pinCode(
     m: [a[0]!, a[8]!, a[2]!, a[10]!],
     t: [a[12]!, a[14]!],
     code: [storedNue.position[0], storedNue.position[2]],
-    alignment: a,
   };
 }
 

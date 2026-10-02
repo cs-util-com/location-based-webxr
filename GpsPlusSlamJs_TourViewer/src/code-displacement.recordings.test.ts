@@ -2432,25 +2432,36 @@ function sweepYawChannel(
 // ---------------------------------------------------------------------------
 // M5c: the viewer rule AS SHIPPED (`moved-code-rule.ts` `judgeCodeMove`,
 // called per fix exactly as the viewer's check calls it), first crossing.
+// Since the owner's decision of 2026-10-02 the rule has ONE turn check: the
+// rigid fit's yaw (the code's heading in GPS world space) beyond
+// `settledYawDeg`, only for a save whose alignment had solved
+// `settledAlignmentSamples` fixes, and only past the position rule's
+// evidence gate; no compass, no fallback.
 //
 // Parameters (declared; swept where marked):
-// - the position channel on the cross-day pairs: the check's horizon after
-//   the scan (120 / 300 / 600 s / the whole visit, swept), the shipped
-//   floor and gate;
-// - the turn channels on the outdoor virtual codes, the saved heading drawn
-//   from ANOTHER walk's published alignment (as `sweepYawChannel`), split by
-//   the fix count its alignment had solved (`settledAlignmentSamples`
-//   60 / 120 / 180, swept): settled-yaw with T 30 / 45 / 60; fallback-yaw
-//   (early save, no compass) with T 45 / 60 / 90 and its spread 2 / 5 / 10 /
-//   20 m; per-fix FIRST crossing within 120 / 300 s, which is what the
-//   viewer acts on (the earlier yaw tables read the last reading only);
-// - the outdoor proxy: the walks' median reported accuracy at 6 / 6.5 / 7 /
-//   8 m (indoor walks passing, outdoor walks lost).
+// - the position half on the cross-day pairs: the check's horizon after the
+//   scan (120 / 300 / 600 s / the whole visit, swept), the shipped floor and
+//   gate. Two denominators: every pair (a visit that ends early simply stops
+//   being checked), and only the pairs whose visit lasts the horizon. The
+//   pairs carry NO heading truth - a reference mark's rotation is the phone's
+//   pose when it was marked, not a printed code's facing, so two days' marks
+//   of one spot differ by however the phone was held (a first run that
+//   applied the turn check to them read 1,694 of 6,166 pairs "turned"). The
+//   turn check is therefore measured on the virtual codes below, and the
+//   whole rule's false alarms are at most the sum of the two halves;
+// - the turn check alone on the outdoor virtual codes, the saved heading
+//   drawn from ANOTHER walk's published alignment (as `sweepYawChannel`),
+//   split by the fix count its alignment had solved
+//   (`settledAlignmentSamples` 60 / 120 / 180, swept) with T 30 / 45 / 60
+//   (swept); an early save runs no turn check (shown: 0 by construction);
+//   per-fix FIRST crossing within 120 / 300 s, which is what the viewer acts
+//   on; the same two denominators (every code with a draw, and the codes
+//   whose walk lasts the window).
 // ---------------------------------------------------------------------------
 
 const SHIPPED_HORIZONS_S = [120, 300, 600, Number.POSITIVE_INFINITY] as const;
 const SETTLED_SAMPLES_SWEEP = [60, 120, 180] as const;
-const OUTDOOR_ACC_SWEEP_M = [6, 6.5, 7, 8] as const;
+const SETTLED_YAW_SWEEP_DEG = [30, 45, 60] as const;
 
 /** A trace's estimate at fix `k`, a move and a heading offset added (the
  *  rigid fit: a move adds exactly, a turn reaches the yaw only). */
@@ -2472,28 +2483,29 @@ function estimateAt(
   };
 }
 
-/** Seconds after the scan of the shipped rule's first `moved` within `h`
- *  (Infinity: never). */
+/** The shipped rule's first `moved` within `h` seconds of the scan, and
+ *  what decided it; null: never. */
 function firstShipped(
   tr: Trace,
   h: number,
-  input: { settled: boolean; compassTurnDeg: number | null; outdoor: boolean },
+  settled: boolean,
   rules: { move: CodeMoveRule; turn: CodeTurnRule },
   move: readonly [number, number] = [0, 0],
   yawDeltaDeg = 0,
-): number {
+): { tS: number; by: "position" | "turn" } | null {
   for (let k = 0; k < tr.tS.length && tr.tS[k]! <= h; k += 1) {
     const j = judgeCodeMove(
-      { ...input, estimate: estimateAt(tr, k, move, yawDeltaDeg) },
+      { settled, estimate: estimateAt(tr, k, move, yawDeltaDeg) },
       rules,
     );
-    if (j.verdict === "moved") return tr.tS[k]!;
+    if (j.verdict === "moved" && j.decidedBy !== null)
+      return { tS: tr.tS[k]!, by: j.decidedBy };
   }
-  return Number.POSITIVE_INFINITY;
+  return null;
 }
 
 const SHIPPED = { move: CODE_MOVE_RULE, turn: CODE_TURN_RULE } as const;
-/** The turn channels alone: a floor no position reaches. */
+/** The turn check alone: a floor no position reaches. */
 const turnOnly = (turn: CodeTurnRule) => ({
   move: { ...CODE_MOVE_RULE, floorM: Number.POSITIVE_INFINITY },
   turn,
@@ -2505,34 +2517,34 @@ function sweepShippedRule(
   outdoorCases: readonly Case[],
   turnSign: number,
 ): void {
-  // Position channel on the cross-day pairs, by the check's horizon. A
-  // compass reading of 0 outdoors keeps the turn channel silent, so only
-  // the position decides.
-  const posOnly = { settled: false, compassTurnDeg: 0, outdoor: true };
+  // Position only: the marks carry no code heading (see above).
+  const settled = false; // no turn check: position only
   emit(
-    "M5c shipped rule, position channel on cross-day pairs: unmoved pairs read moved within the check's horizon h (all pairs, whether or not the visit lasts h), and 20 / 30 m moves caught (4 bearings)",
+    `M5c shipped rule, position half on cross-day pairs: unmoved pairs read moved within the check's horizon h, and 20 / 30 m moves caught (4 bearings). "all": every pair; "covered": pairs whose visit lasts h`,
     SHIPPED_HORIZONS_S.map((h) => {
-      const fa = cross.map((p) =>
-        pairOutcome(
-          p,
-          Number.isFinite(firstShipped(p.all, h, posOnly, SHIPPED)),
-        ),
+      const covered = cross.filter(
+        (p) => !Number.isFinite(h) || covers(p.all, h),
       );
-      const det = (moveM: number) =>
+      const faOf = (ps: readonly PairResult[]) => {
+        const f = ps.map((p) => firstShipped(p.all, h, settled, SHIPPED));
+        return rate(
+          ps.map((p, i) => pairOutcome(p, f[i] !== null)),
+          "points",
+        );
+      };
+      const det = (ps: readonly PairResult[], moveM: number) =>
         rate(
-          cross.flatMap((p) =>
+          ps.flatMap((p) =>
             MOVE_BEARINGS_DEG.map((b) =>
               pairOutcome(
                 p,
-                Number.isFinite(
-                  firstShipped(
-                    p.all,
-                    h,
-                    posOnly,
-                    SHIPPED,
-                    bearingMove(moveM, b),
-                  ),
-                ),
+                firstShipped(
+                  p.all,
+                  h,
+                  settled,
+                  SHIPPED,
+                  bearingMove(moveM, b),
+                ) !== null,
               ),
             ),
           ),
@@ -2541,14 +2553,18 @@ function sweepShippedRule(
         );
       return {
         horizonS: Number.isFinite(h) ? h : "whole visit",
-        fa: rate(fa, "points"),
-        det20: det(20),
-        det30: det(30),
+        pairs: `${String(covered.length)} covered of ${String(cross.length)}`,
+        faAll: faOf(cross),
+        faCovered: faOf(covered),
+        det20All: det(cross, 20),
+        det20Covered: det(covered, 20),
+        det30All: det(cross, 30),
+        det30Covered: det(covered, 30),
       };
     }),
   );
 
-  // Turn channels on the outdoor virtual codes.
+  // The turn check alone on the outdoor virtual codes.
   const errsOf = new Map(
     walks
       .filter((w) => w.place === "outdoor")
@@ -2586,97 +2602,76 @@ function sweepShippedRule(
         }
         return Number.NaN;
       });
-      const variants: {
-        label: string;
-        turn: CodeTurnRule;
-        settled: boolean;
-      }[] =
+      const variants =
         kind === "settled"
-          ? [30, 45, 60].map((T) => ({
-              label: `settled-yaw T=${String(T)}`,
-              turn: { ...CODE_TURN_RULE, settledYawDeg: T },
+          ? SETTLED_YAW_SWEEP_DEG.map((T) => ({
+              label: `turn check T=${String(T)}`,
+              turn: {
+                ...CODE_TURN_RULE,
+                settledYawDeg: T,
+                settledAlignmentSamples: nSettled,
+              },
               settled: true,
             }))
-          : [45, 60, 90].flatMap((T) =>
-              [2, 5, 10, 20].map((s) => ({
-                label: `fallback-yaw T=${String(T)} spread>=${String(s)}`,
-                turn: {
-                  ...CODE_TURN_RULE,
-                  fallbackYawDeg: T,
-                  fallbackMinSpreadM: s,
-                },
+          : [
+              {
+                label: "early save: no turn check (shipped)",
+                turn: CODE_TURN_RULE,
                 settled: false,
-              })),
-            );
+              },
+            ];
+      const drawn = outdoorCases
+        .map((c, i) => ({ c, d: draws[i]! }))
+        .filter((x) => Number.isFinite(x.d));
       for (const h of [120, 300]) {
-        const cov = outdoorCases
-          .map((c, i) => ({ c, d: draws[i]! }))
-          .filter((x) => covers(x.c.rigid, h) && Number.isFinite(x.d));
+        const cov = drawn.filter((x) => covers(x.c.rigid, h));
         for (const v of variants) {
-          const input = {
-            settled: v.settled,
-            compassTurnDeg: null,
-            outdoor: true,
-          };
-          const hitAt = (x: (typeof cov)[number], extra: number) =>
-            Number.isFinite(
-              firstShipped(
-                x.c.rigid,
-                h,
-                input,
-                turnOnly(v.turn),
-                [0, 0],
-                x.d + extra,
-              ),
-            );
-          const det = cov.flatMap((x) => [hitAt(x, 90), hitAt(x, -90)]);
-          const half = cov.map((x) => hitAt(x, 180));
-          rows.push({
-            settledSamples: nSettled,
-            savedFrom: kind,
-            withinS: h,
-            rule: v.label,
-            codes: cov.length,
-            fa: rate(
-              cov.map((x) => ({
+          const hitAt = (x: (typeof drawn)[number], extra: number) =>
+            firstShipped(
+              x.c.rigid,
+              h,
+              v.settled,
+              turnOnly(v.turn),
+              [0, 0],
+              x.d + extra,
+            ) !== null;
+          const fa = (xs: typeof drawn) =>
+            rate(
+              xs.map((x) => ({
                 hit: hitAt(x, 0),
                 unit: x.c.walk,
                 walks: [x.c.walk],
               })),
               "walks",
-            ),
-            det90: kOfN(det.filter(Boolean).length, det.length),
-            det180: kOfN(half.filter(Boolean).length, half.length),
+            );
+          const det = (xs: typeof drawn, turn: number) => {
+            const hits = xs.flatMap((x) =>
+              turn === 180
+                ? [hitAt(x, 180)]
+                : [hitAt(x, turn), hitAt(x, -turn)],
+            );
+            return kOfN(hits.filter(Boolean).length, hits.length);
+          };
+          rows.push({
+            settledSamples: nSettled,
+            savedFrom: kind,
+            withinS: h,
+            rule: v.label,
+            codes: `${String(cov.length)} covered of ${String(drawn.length)}`,
+            faAll: fa(drawn),
+            faCovered: fa(cov),
+            det90All: det(drawn, 90),
+            det90Covered: det(cov, 90),
+            det180All: det(drawn, 180),
+            det180Covered: det(cov, 180),
           });
         }
       }
     }
   }
   emit(
-    "M5c shipped rule, turn channels on outdoor virtual codes (saved heading from ANOTHER walk; settled = that alignment had solved >= N fixes): first crossing within h, turn channel alone",
+    "M5c shipped rule (no compass), the turn check alone on outdoor virtual codes (saved heading from ANOTHER walk; settled = that alignment had solved >= N fixes): first crossing within h; all = every code with a draw, covered = codes whose walk lasts h",
     rows,
-  );
-
-  // The outdoor proxy: a walk's median reported accuracy.
-  const medAcc = (w: Walk): number =>
-    quantile(
-      (w.fixes ?? []).map((f) => f.acc ?? Number.NaN),
-      0.5,
-    );
-  const place = (p: Place) => walks.filter((w) => w.place === p);
-  emit(
-    "M5c outdoor proxy: walks whose median reported accuracy is at or under the cutoff (indoor ones passing would use the compass; outdoor ones not passing lose it)",
-    OUTDOOR_ACC_SWEEP_M.map((cut) => ({
-      cutoffM: cut,
-      indoorPassing: kOfN(
-        place("indoor").filter((w) => medAcc(w) <= cut).length,
-        place("indoor").length,
-      ),
-      outdoorLost: kOfN(
-        place("outdoor").filter((w) => !(medAcc(w) <= cut)).length,
-        place("outdoor").length,
-      ),
-    })),
   );
 }
 

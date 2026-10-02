@@ -80,13 +80,11 @@ export function debugReadoutLines(input: {
   }
   if (lines.length === 1) lines.push("no code evaluated yet");
   for (const c of input.movedCodeChecks ?? []) {
-    const compass =
-      c.compassTurnDeg === null ? "-" : `${c.compassTurnDeg.toFixed(0)}°`;
     lines.push(
       `moved-code check ${codeLabel(c.text)}: |D| ${c.magnitudeM.toFixed(1)} m, ` +
         `yaw ${c.yawDeg.toFixed(1)}°, ${c.spanS.toFixed(0)} s, ` +
         `spread ${c.spreadM.toFixed(1)} m, ${String(c.samples)} fixes, ` +
-        `${c.turnChannel}, compass ${compass}, ${c.verdict}`,
+        `turn check ${c.turnChecked ? "on" : "off"}, ${c.verdict}`,
     );
   }
   for (const text of input.ignoredCodes ?? []) {

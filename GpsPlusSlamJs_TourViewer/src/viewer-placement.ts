@@ -18,10 +18,7 @@
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import { createQrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
-import {
-  arNorthBearingDeg,
-  calcRelativeCoordsInMeters,
-} from "gps-plus-slam-app-framework/core";
+import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import {
   recordGpsEvent,
   recordQrDetection,
@@ -566,18 +563,6 @@ export function createViewerPlacement(deps: {
    * `recordGpsEvent` it always was.
    */
   function recordDeviceFix(fix: RecordGpsEventPayload): void {
-    // The compass at the scan, for the moved-code check's turn channel: the
-    // framework's absolute orientation when the device reports it, portrait
-    // only (a landscape reading's frame differs by the screen angle, which
-    // the measurement did not reconstruct either). Read before the fix is
-    // stored, so the judgement its arrival triggers can use it.
-    const ao = fix.rawAbsoluteOrientation;
-    if (ao !== undefined && ao.screenAngleDeg === 0) {
-      ctx.movedCodeChecks?.compass(
-        arNorthBearingDeg(ao.quaternion, fix.odomRotation),
-        now(),
-      );
-    }
     const sink = ctx.viewerVoteSink;
     if (sink === null) {
       arStore.dispatch(recordGpsEvent(fix));

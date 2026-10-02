@@ -17,9 +17,8 @@
  *   frame change cuts it: the checks end there ({@link
  *   MovedCodeChecks.frameChanged}) and a later pin folds only the fixes
  *   stored after the change.
- * - THE COMPASS AT THE SCAN: the first reading at or after a code's pin is
- *   kept as its compass turn; the rule reads it only for an unsettled save,
- *   outdoors.
+ * - NO COMPASS (owner, 2026-10-02): a code's turn is read from its pose in
+ *   GPS world space only (the rigid fit's yaw), and only for a settled save.
  *
  * Pure of the page: the caller hands in the store's history, the page clock
  * and the readings; the veto that follows a verdict is the caller's
@@ -44,14 +43,11 @@ import {
 } from "./code-displacement.js";
 import { objectPoseNue } from "./content-placement.js";
 import {
-  compassTurnDeg,
-  isOutdoorByAccuracy,
   isSettledSave,
   judgeCodeMove,
   MOVED_CODE_HORIZON_S,
   MOVED_CODE_RULE_VERSION,
   type CodeMoveJudgement,
-  type TurnChannel,
 } from "./moved-code-rule.js";
 import { odomNueFromWebXr } from "./visit-anchoring.js";
 import type { VisitLogInput } from "./visit-log.js";
@@ -61,7 +57,8 @@ import type { VisitLogInput } from "./visit-log.js";
 export interface MovedCodeEvidence {
   readonly ruleVersion: string;
   readonly decidedBy: NonNullable<CodeMoveJudgement["decidedBy"]>;
-  readonly turnChannel: TurnChannel;
+  /** Whether the turn check ran (the save was settled). */
+  readonly turnChecked: boolean;
   /** The position bound (m). */
   readonly boundM: number;
   /** Where GPS puts the code minus where its saved pose says: [n, e] m. */
@@ -80,9 +77,6 @@ export interface MovedCodeEvidence {
   /** The saved level's alignment fix count, when it carries one. */
   readonly alignmentSampleCount: number | null;
   readonly settled: boolean;
-  readonly outdoor: boolean;
-  /** The compass turn at the scan (degrees); null without a reading. */
-  readonly compassTurnDeg: number | null;
   /** Page-clock seconds from the pin to this judgement. */
   readonly sinceScanS: number;
 }
@@ -102,8 +96,8 @@ export interface MovedCodeCheckView {
   readonly spanS: number;
   readonly spreadM: number;
   readonly samples: number;
-  readonly turnChannel: TurnChannel;
-  readonly compassTurnDeg: number | null;
+  /** Whether the turn check runs for this code (a settled save). */
+  readonly turnChecked: boolean;
   readonly verdict: CodeMoveJudgement["verdict"];
 }
 
@@ -128,10 +122,6 @@ export interface MovedCodeChecks {
     },
     nowMs: number,
   ): MovedCodeVerdict[];
-  /** A compass reading (the compass's bearing of the AR frame's north,
-   *  degrees) at page time `atMs`: the first one at or after a code's pin is
-   *  its compass at the scan. Null or non-finite: ignored. */
-  compass(arNorthDeg: number | null, atMs: number): void;
   /** The odometry frame changed with `storedCount` GPS events in the
    *  history: every check ends, and later pins fold only what follows. */
   frameChanged(storedCount: number): void;
@@ -154,7 +144,6 @@ interface Check {
   accuracies: number[];
   /** History entries folded so far (an index into the store's arrays). */
   folded: number;
-  compassTurnDeg: number | null;
   last: CodeMoveJudgement | null;
 }
 
@@ -213,15 +202,9 @@ export function createMovedCodeChecks(): MovedCodeChecks {
       check.accuracies.length === 0
         ? null
         : check.accuracies[check.accuracies.length >> 1]!;
-    const outdoor = isOutdoorByAccuracy(accuracyMedianM);
-    const judgement = judgeCodeMove({
-      estimate,
-      settled: check.settled,
-      compassTurnDeg: check.compassTurnDeg,
-      outdoor,
-    });
+    const judgement = judgeCodeMove({ estimate, settled: check.settled });
     check.last = judgement;
-    return { estimate, accuracyMedianM, outdoor, judgement };
+    return { estimate, accuracyMedianM, judgement };
   }
 
   return {
@@ -255,7 +238,6 @@ export function createMovedCodeChecks(): MovedCodeChecks {
         stats: EMPTY_DISPLACEMENT_STATS,
         accuracies: [],
         folded: frameStart,
-        compassTurnDeg: null,
         last: null,
       });
     },
@@ -269,7 +251,7 @@ export function createMovedCodeChecks(): MovedCodeChecks {
           continue;
         }
         fold(check, history);
-        const { estimate, accuracyMedianM, outdoor, judgement } = judge(check);
+        const { estimate, accuracyMedianM, judgement } = judge(check);
         if (judgement.verdict !== "moved" || judgement.decidedBy === null) {
           continue;
         }
@@ -280,7 +262,7 @@ export function createMovedCodeChecks(): MovedCodeChecks {
           evidence: {
             ruleVersion: MOVED_CODE_RULE_VERSION,
             decidedBy: judgement.decidedBy,
-            turnChannel: judgement.turnChannel,
+            turnChecked: judgement.turnChecked,
             boundM: judgement.boundM,
             displacementM: estimate?.displacementM ?? [0, 0],
             magnitudeM: estimate?.magnitudeM ?? 0,
@@ -292,20 +274,11 @@ export function createMovedCodeChecks(): MovedCodeChecks {
             storedAccuracyM: check.storedAccuracyM,
             alignmentSampleCount: check.alignmentSampleCount,
             settled: check.settled,
-            outdoor,
-            compassTurnDeg: check.compassTurnDeg,
             sinceScanS,
           },
         });
       }
       return verdicts;
-    },
-    compass(arNorthDeg, atMs) {
-      if (arNorthDeg === null || !Number.isFinite(arNorthDeg)) return;
-      for (const check of checks.values()) {
-        if (check.compassTurnDeg !== null || atMs < check.atMs) continue;
-        check.compassTurnDeg = compassTurnDeg(arNorthDeg, check.pin);
-      }
     },
     frameChanged(storedCount) {
       checks.clear();
@@ -325,8 +298,7 @@ export function createMovedCodeChecks(): MovedCodeChecks {
           spanS: estimate?.spanS ?? 0,
           spreadM: estimate?.spreadM ?? 0,
           samples: estimate?.samples ?? 0,
-          turnChannel: check.last?.turnChannel ?? "fallback-yaw",
-          compassTurnDeg: check.compassTurnDeg,
+          turnChecked: check.settled,
           verdict: check.last?.verdict ?? "undecided",
         };
       });

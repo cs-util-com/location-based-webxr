@@ -166,7 +166,7 @@ describe("visitorFusedHint", () => {
 describe("debugReadoutLines - the moved-code checks (D20, M5c)", () => {
   // Why: in a field test the only way to see why a code is (not yet)
   // ignored is the check's live numbers: the fitted offset and turn, the
-  // evidence behind them, the turn channel in use and the verdict so far,
+  // evidence behind them, whether the turn check runs and the verdict so far,
   // plus which codes are already ignored.
   it("adds one line per live check and one per ignored code", () => {
     expect(
@@ -184,8 +184,7 @@ describe("debugReadoutLines - the moved-code checks (D20, M5c)", () => {
             spanS: 45.6,
             spreadM: 4.04,
             samples: 90,
-            turnChannel: "settled-yaw",
-            compassTurnDeg: null,
+            turnChecked: true,
             verdict: "undecided",
           },
         ],
@@ -194,7 +193,7 @@ describe("debugReadoutLines - the moved-code checks (D20, M5c)", () => {
     ).toEqual([
       "qr: tracking",
       "no code evaluated yet",
-      "moved-code check …abcdefgh&n=1: |D| 12.3 m, yaw -3.2°, 46 s, spread 4.0 m, 90 fixes, settled-yaw, compass -, undecided",
+      "moved-code check …abcdefgh&n=1: |D| 12.3 m, yaw -3.2°, 46 s, spread 4.0 m, 90 fixes, turn check on, undecided",
       "ignored (moved): …abcdefgh&n=2",
     ]);
   });

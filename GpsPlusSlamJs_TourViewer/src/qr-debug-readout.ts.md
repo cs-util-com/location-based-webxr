@@ -24,7 +24,8 @@ so a field session where "the tour did not place" needs to say why:
 - `debugReadoutLines({ status, unknownCode, unusableCode, tallies,
 movedCodeChecks?, ignoredCodes? })` - since D20 M5c also one line per live
   moved-code check (`moved-code check <code>: |D| x m, yaw y°, s s,
-spread m, n fixes, <turn channel>, compass c|-, <verdict>`) and one per
+spread m, n fixes, turn check on|off, <verdict>`; the turn check runs
+  for a settled save only) and one per
   ignored code (`ignored (moved): <code>`). The rest of this entry: - the
   block: `qr: <controller status>` (the running controller's own status,
   so the creator's reads right too; milestone review of b4c #2) (with `no level: <id>` / `no size: <id>`),
