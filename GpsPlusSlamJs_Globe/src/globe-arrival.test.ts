@@ -17,11 +17,17 @@ import { describe, expect, it } from "vitest";
 import {
   arrivalStatusText,
   createDiveClock,
+  type ArrivalJobs,
   type ArrivalSnapshot,
 } from "./globe-arrival.js";
 import { FLIGHT_PACE_DEFAULTS } from "./flight-pace.js";
 
-const jobs = (total: number, warm = 0, fetched = 0, failed = 0) => ({
+const jobs = (
+  total: number,
+  warm = 0,
+  fetched = 0,
+  failed = 0,
+): ArrivalJobs => ({
   total,
   warm,
   fetched,
