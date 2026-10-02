@@ -45,6 +45,14 @@ outlierFalloffExponent: 1, outlierRejectionEnabled: false }`.
   the soft keys off the result IS the GPS answer; aged-out votes held the
   alignment 5-8 m off after 10 minutes, soft keys off without the reset
   jumped 7.2 m in one fix (results doc "Recovery after a veto").
+- **Its cost** (M5c review L1): `ceil(N / 256)` full solves, N being the
+  device fixes this sink stored since the entry began (each batch is one
+  solve over the whole re-fed history so far). Measured on the desktop
+  (2026-10-02, the machine loaded by other sessions' suites, one run each,
+  a synthetic 40 m walk): N = 600 in 3 batches 82 ms, N = 1,800 in 8
+  batches 193 ms, N = 3,600 (an hour at 1 Hz) in 15 batches 525 ms. It runs
+  once per veto, synchronously in the store subscription that judged the
+  code; on a phone expect several times that (not measured).
 - The soft trimming is marked off, so the next vote (another code's) turns
   it on again before it is stored.
 - What the re-feed cannot carry: a device fix stored before this sink
