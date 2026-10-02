@@ -78,6 +78,13 @@ const META_URL =
  * no route serves.
  */
 const DYNAMIC_IMPORT = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
+/**
+ * Block comments, and line comments that start at a line's beginning or
+ * after whitespace or a semicolon (so `https://` in a string survives):
+ * removed before the dynamic-import scan, because a JSDoc type such as
+ * `{import("./x.js").T}` or a comment naming an import is not an import.
+ */
+const COMMENTS = /\/\*[\s\S]*?\*\/|(^|[\s;])\/\/[^\n]*/gm;
 /** What the crawl follows as a module rather than copying as an asset. */
 const MODULE_FILE = /\.m?js$/;
 
@@ -277,7 +284,8 @@ export function buildLookdev({
         queue.push({ url: resolveSpecifier(match[1], url, scope), worker });
       }
       if (followDynamic && !url.startsWith("/vendor/")) {
-        for (const match of text.matchAll(DYNAMIC_IMPORT)) {
+        const code = text.replace(COMMENTS, "$1");
+        for (const match of code.matchAll(DYNAMIC_IMPORT)) {
           queue.push({ url: resolveSpecifier(match[1], url, scope), worker });
         }
       }

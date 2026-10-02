@@ -34,7 +34,8 @@ followDynamic? })` → the written paths relative to `outDir`. `base`
     there fails the build with that reason instead of 404ing on a phone.
     Any other `new URL("x", import.meta.url)` is crawled when it names a
     `.js`/`.mjs` module and copied byte for byte otherwise;
-  - follows literal dynamic `import("x")`s in our own sources (not under
+  - follows literal dynamic `import("x")`s in our own sources, outside
+    comments (a JSDoc `{import("x").T}` is a type, not an import; not under
     `/vendor/`: 3d-tiles-renderer's chunks import optional packages no
     route serves), resolved with the page's import map, so a module a lab
     loads lazily is shipped (the globe's arrival prefetch at the pin press,

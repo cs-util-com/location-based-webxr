@@ -587,7 +587,7 @@ describe("buildLookdev with the arrival prefetch's import map", () => {
   });
 });
 
-// WHY (round-5 plan 2026-10-01-0945 §3.6, the coordinator's review): the
+// WHY (round-5 plan 2026-10-01-0945 §3.6, its milestone review): the
 // arrival prefetch's graph (the Osm library, about 1.1 MB of source, and
 // h3-js, 0.55 MB) must load at the pin press, not at the globe's boot. So
 // the lab loads it with a dynamic `import("...")`, which the deploy must
@@ -604,8 +604,11 @@ describe("buildLookdev and dynamic imports", () => {
       ].join("\n"),
       "labs/lazy/lazy.js": [
         'import { now } from "./eager.js";',
+        '// A comment naming import("./not-shipped.js") is not an import,',
+        '/** nor is a JSDoc type: @type {import("./types-only.js").T} */',
+        'const url = "https://example.test/"; // and a URL is not a comment',
         "export async function later() {",
-        '  return (await import("./deferred.js")).value + now;',
+        '  return (await import("./deferred.js")).value + now + url;',
         "}",
       ].join("\n"),
       "labs/lazy/eager.js": "export const now = 1;",
@@ -633,6 +636,18 @@ describe("buildLookdev and dynamic imports", () => {
     ]) {
       assert.ok(files.includes(rel), rel);
     }
+  });
+
+  // A commented `import("x")` is not an import: the files named above do
+  // not exist, so following them would fail the build.
+  it("ignores an import() inside a comment", () => {
+    const files = buildLookdev({
+      outDir: join(out, "comments"),
+      base: "/lookdev/",
+      packageRoot: root,
+    });
+    assert.ok(!files.some((f) => f.includes("not-shipped")));
+    assert.ok(!files.some((f) => f.includes("types-only")));
   });
 
   it("leaves it out of the boot graph when dynamic imports are not followed", () => {
