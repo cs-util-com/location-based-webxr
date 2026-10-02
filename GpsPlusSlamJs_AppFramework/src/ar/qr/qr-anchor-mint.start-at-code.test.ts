@@ -40,25 +40,30 @@
  * fix candidates is opt-in: `QR_MINT_START_AT_CODE_SWEEP=1`.
  *
  * Measured result (2026-10-02; 40 recordings per cell, walks 15/30/60/120 m,
- * 1-3 looks, yaw noise 1/3/5 degrees; heading p50 / p90):
- * - pre-fix (each rotation through its own alignment): 72 / 158-161 degrees
- *   whenever the code was seen in only 1 or 2 looks, at every walk length
- *   and yaw noise; with 3 looks 0.7-11 p50 but p90 up to 146 at 15 m.
- * - (a) rotation through the mint-time alignment (shipped): 1.0-4.9 / 3-10
- *   from 30 m walks up, 7-10 / 12-17 at 15 m, for 1, 2 or 3 looks. Its cost:
- *   with 3 looks p50 is up to 0.6 degrees worse at 60 m and 2.7 at 15 m
- *   (one final alignment instead of an average over three), against a p90
- *   tail that drops from 121-146 to 12-14 at 15 m. Composing the position
- *   through it as well (left to the owner, DEC-3) cuts a start-only code's
- *   position error from 3.0 to 1.3 m p50.
- * - (a1) the newest sighting's alignment: fixes 2-3 looks, 72 degrees with 1.
+ * 1-3 looks, yaw noise 1/3/5 degrees; heading p50 / p90, horizontal p50):
+ * - pre-fix (each sighting through its own alignment, DEC-3): 72 / 158-161
+ *   degrees whenever the code was seen in only 1 or 2 looks, at every walk
+ *   length and yaw noise; with 3 looks 0.7-11 p50 but p90 up to 146 at
+ *   15 m. Position 2.9 m for a code seen only at the start, 1.4-1.7 m with
+ *   2 looks at walks of 30 m or less, 1.3 m otherwise.
+ * - (a2) every sighting through the alignment at mint time (SHIPPED, the
+ *   owner retiring DEC-3): 1.0-4.9 / 3-10 degrees from 30 m walks up, 7-10
+ *   / 12-17 at 15 m, for 1, 2 or 3 looks; position 1.3-1.4 m in every cell.
+ *   Its cost: with 3 looks the heading p50 is up to 0.6 degrees worse at
+ *   60 m and 2.7 at 15 m (one final alignment instead of an average over
+ *   three), against a p90 that drops from 121-146 to 12-14 at 15 m. The
+ *   recency weighting left from DEC-3 changes nothing here: with a 1e9 s
+ *   half-life every cell is the same to 0.1 m and 0.1 degrees.
+ * - (a1) the newest sighting's alignment (the mint without
+ *   `currentAlignment`): fixes 2-3 looks; 72 degrees and 3.0 m with 1.
  * - (b) dropping sightings with an immature alignment (10 or 30 samples, or
  *   10 or 20 m of GPS extent): refuses 100 % of start-only codes; otherwise
  *   about (a1).
  * - (c) weighting the rotation by sample count: 5-15 p50 with 2 looks, 72
  *   with 1; by recency (60 s half-life): 19-37 with 2 looks.
- * - Refusals are unchanged by the fix: 3 % of start-only codes (cause not
- *   traced) and 5-10 % at 5 degrees of yaw noise (the fixedness gate).
+ * - Refusals: 5-10 % at 5 degrees of yaw noise (the fixedness gate) for
+ *   every candidate; 3 % of start-only codes for (a1) and the pre-fix mint
+ *   (cause not traced), 0 % for (a2).
  */
 
 import { writeFileSync } from 'node:fs';
@@ -84,6 +89,8 @@ import {
 import { mintQrAnchorFromSightings } from './qr-anchor-mint.js';
 import { qrWorldPoseFromOdom } from './qr-mint-level.js';
 import { averageRotation } from './qr-pose-aggregation.js';
+import { mintQrGeoPose } from './qr-geo-pose-minting.js';
+import { weightedMedian } from '../../utils/median.js';
 import {
   createQrSightingAccumulator,
   type QrSighting,
@@ -533,20 +540,6 @@ function endAlignment(rec: Recording): FixSnapshot {
 // Fix candidates, evaluated on the SAME sightings.
 // ---------------------------------------------------------------------------
 
-/** (a) every sighting composed through ONE alignment, keeping everything
- *  else of the production mint (gate, recency weighting, MIN samples). */
-function throughOneAlignment(
-  sightings: readonly QrSighting[],
-  alignment: AlignmentMatrix,
-  sampleCount: number
-): QrSighting[] {
-  return sightings.map((s) => ({
-    ...s,
-    alignmentMatrix: alignment,
-    alignmentSampleCount: sampleCount,
-  }));
-}
-
 /** Weighted quaternion mean (sign-aligned to the heaviest, normalised). */
 function weightedQuatMean(
   qs: readonly Quaternion[],
@@ -568,16 +561,39 @@ function weightedQuatMean(
   return [sum[0]! / n, sum[1]! / n, sum[2]! / n, sum[3]! / n];
 }
 
-/** The pre-fix mint's heading: own alignments, `averageRotation`. */
-function preFixHeadingDeg(sightings: readonly QrSighting[]): number | null {
-  const rotations = sightings.flatMap((s) =>
-    s.alignmentMatrix === null || s.zero === null
-      ? []
-      : [qrWorldPoseFromOdom(s.odomPose, s.alignmentMatrix).rotation]
+/** The pre-fix mint, re-stated so it stays measurable after the fix: each
+ *  sighting through its OWN alignment (DEC-3), the position a median
+ *  weighted by recency (60 s half-life), the rotation `averageRotation`. */
+function preFixError(
+  rec: Recording,
+  sightings: readonly QrSighting[]
+): MintError | null {
+  const placed = sightings.filter(
+    (s) => s.alignmentMatrix !== null && s.zero !== null
   );
-  const q = averageRotation(rotations)?.quat ?? rotations.at(-1);
-  if (q === undefined) return null;
-  return Math.abs(wrapDeg(normalBearingDeg(q) - CODE_NORMAL_DEG));
+  const worlds = placed.map((s) =>
+    qrWorldPoseFromOdom(s.odomPose, s.alignmentMatrix!)
+  );
+  const lastAt = placed.at(-1)?.lastTimestamp ?? 0;
+  const weights = placed.map(
+    (s) => 1 / (1 + (lastAt - s.lastTimestamp) / 1000 / 60)
+  );
+  const rotation =
+    averageRotation(worlds.map((w) => w.rotation))?.quat ??
+    worlds.at(-1)?.rotation;
+  if (rotation === undefined) return null;
+  const median = (key: 'x' | 'y' | 'z'): number =>
+    weightedMedian(
+      worlds.map((w) => w.position[key]),
+      weights
+    );
+  return errorOfGeo(
+    mintQrGeoPose({
+      worldNuePosition: { x: median('x'), y: median('y'), z: median('z') },
+      worldNueRotation: rotation,
+      zero: rec.zero,
+    })
+  );
 }
 
 /** (c) each sighting through its OWN alignment (DEC-3), the rotation
@@ -652,28 +668,41 @@ describe('the Recorder mint when a recording starts at the code', () => {
   // it, so its yaw is arbitrary. The minted heading must still be right,
   // because a later visitor relocalizes against it.
   const SEEDS = Array.from({ length: 12 }, (_, i) => i + 1);
+  /** The shipped mint (the alignment at the end of the recording passed as
+   *  `currentAlignment`) on each seed's 30 m recording. */
+  const shippedErrors = (looks: number): MintError[] =>
+    SEEDS.map((seed) => {
+      const rec = runRecording({ seed, walkM: 30 });
+      const end = endAlignment(rec);
+      const { sightings } = recordedSightings(rec, looks, DEFAULT_NOISE, 1);
+      const err = mintError(sightings, {
+        currentAlignment: {
+          alignmentMatrix: end.alignment!,
+          zero: rec.zero,
+          alignmentSampleCount: end.sampleCount,
+          gpsAccuracyM: ACCURACY_M,
+          segment: 0,
+        },
+      });
+      expect(err).not.toBeNull();
+      return err!;
+    });
   for (const looks of [2, 1]) {
     it(`mints a heading within 10 degrees p50 (${String(looks)} look(s), 30 m walks)`, () => {
-      const errors: number[] = [];
-      for (const seed of SEEDS) {
-        const rec = runRecording({ seed, walkM: 30 });
-        const end = endAlignment(rec);
-        const { sightings } = recordedSightings(rec, looks, DEFAULT_NOISE, 1);
-        const err = mintError(sightings, {
-          currentAlignment: {
-            alignmentMatrix: end.alignment!,
-            zero: rec.zero,
-            alignmentSampleCount: end.sampleCount,
-            gpsAccuracyM: ACCURACY_M,
-            segment: 0,
-          },
-        });
-        expect(err).not.toBeNull();
-        errors.push(err!.headingDeg);
-      }
+      const errors = shippedErrors(looks).map((e) => e.headingDeg);
       expect(quantile(errors, 0.5)).toBeLessThan(10);
     });
   }
+
+  // Why this test matters: the same defect, in metres. A code seen only as
+  // the recording started was placed through an alignment fitted to a few
+  // fixes taken standing still (2.9 m p50 on the sweep); through the
+  // alignment at mint time it is 1.3 m. The owner retired DEC-3's
+  // per-sighting composition for this on 2026-10-02.
+  it('places a code seen only at the start within 2 m p50 (30 m walks)', () => {
+    const errors = shippedErrors(1).map((e) => e.horizontalM);
+    expect(quantile(errors, 0.5)).toBeLessThan(2);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -690,48 +719,32 @@ function candidateErrors(
   extentAt: ReadonlyMap<number, number>
 ): [string, CandidateError][] {
   const end = endAlignment(rec);
-  const endMatrix = end.alignment!;
-  const newest = [...sightings]
-    .reverse()
-    .find((s) => s.alignmentMatrix !== null);
+  const current = {
+    alignmentMatrix: end.alignment!,
+    zero: rec.zero,
+    alignmentSampleCount: end.sampleCount,
+    segment: 0,
+  };
   const kept = (keep: (s: QrSighting) => boolean): CandidateError => {
     const rest = sightings.filter(keep);
     return rest.length === 0 ? null : mintError(rest);
   };
   const lastAt = sightings.at(-1)?.lastTimestamp ?? 0;
   return [
-    // The rotation the mint produced before the fix: every placeable
-    // sighting turned through its OWN alignment, robust unweighted average.
-    ['pre-fix', preFixHeadingDeg(sightings)],
-    // Production without `currentAlignment`: the newest sighting's alignment.
-    ['no current', mintError(sightings)],
+    // The mint before the fix: every sighting through its OWN alignment
+    // (DEC-3), recency-weighted median position, robust rotation average.
+    ['pre-fix', preFixError(rec, sightings)],
+    // (a1) = production without `currentAlignment`: the newest sighting's.
+    ['a1 no current', mintError(sightings)],
+    // (a2) = what shipped: the alignment at the end of the recording.
+    ['a2 shipped', mintError(sightings, { currentAlignment: current })],
+    // The same with the recency weighting made inert, to see whether the
+    // part of DEC-3 that is left does anything.
     [
-      'a1 newest',
-      newest?.alignmentMatrix == null
-        ? null
-        : mintError(
-            throughOneAlignment(
-              sightings,
-              newest.alignmentMatrix,
-              newest.alignmentSampleCount
-            )
-          ),
-    ],
-    [
-      'a2 mint-time',
-      mintError(throughOneAlignment(sightings, endMatrix, end.sampleCount)),
-    ],
-    // What shipped: the rotation through the mint-time alignment, the
-    // position still on each sighting's own (DEC-3).
-    [
-      'shipped',
+      'a2 flat',
       mintError(sightings, {
-        currentAlignment: {
-          alignmentMatrix: endMatrix,
-          zero: rec.zero,
-          alignmentSampleCount: end.sampleCount,
-          segment: 0,
-        },
+        currentAlignment: current,
+        recencyHalfLifeS: 1e9,
       }),
     ],
     ['b n>=10', kept((s) => s.alignmentSampleCount >= 10)],

@@ -62,8 +62,11 @@ Decision record:
   the mint run repeatedly (every crash-safety sync) without changing the
   answer.
 - **Per-burst state carries the burst's LAST alignment, zero, sample count and
-  GPS accuracy**, because the mint uses each sighting's contemporaneous
-  alignment and the end of a burst is the moment the session knew most.
+  GPS accuracy**, because the mint falls back to the newest snapshot when
+  the session's alignment at mint time describes another odometry segment,
+  and the end of a burst is the moment the session knew most. (Until
+  2026-10-02 the mint composed every sighting through its own snapshot,
+  plan DEC-3; the owner superseded that.)
 - **Poses per burst are capped** (`maxPosesPerSighting`, default 32) and the
   most RECENT are kept: a visitor standing at a poster produces detections
   indefinitely, and later frames in a burst come from more viewpoints with a

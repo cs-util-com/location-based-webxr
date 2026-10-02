@@ -54,7 +54,8 @@ export interface QrSightingObservation {
   readonly odomPose: Pose;
   /** The derived physical side length (m) at this moment. */
   readonly sizeM: number;
-  /** The alignment TARGET matrix as it stands NOW (DEC-3). */
+  /** The alignment TARGET matrix as it stands NOW - the mint's fallback
+   *  when the session alignment at mint time is in another segment. */
   readonly alignmentMatrix: AlignmentMatrix | null;
   /** The session's GPS zero as it stands now. */
   readonly zero: LatLong | null;
@@ -79,7 +80,8 @@ export interface QrSighting {
   readonly rotationSpreadDeg: number;
   readonly sizeM: number;
   readonly sizeSpreadM: number;
-  /** Contemporaneous state, as of the burst's LAST detection (DEC-3). */
+  /** Contemporaneous state, as of the burst's LAST detection (the mint's
+   *  fallback alignment, see above). */
   readonly alignmentMatrix: AlignmentMatrix | null;
   readonly zero: LatLong | null;
   readonly alignmentSampleCount: number;

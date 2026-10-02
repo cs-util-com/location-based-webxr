@@ -55,22 +55,32 @@
 
 ### Fixed
 
-- **`mintQrAnchorFromSightings` no longer mints an arbitrary heading when a
-  recording starts at the code.** Each sighting's rotation used to go
-  through the alignment as it stood at that sighting, and right after Start
-  Recording that alignment has no walk behind it, so its yaw is arbitrary:
-  69-74 degrees heading error p50 on a synthetic sweep against the real
-  solver (M3a measured 89). The rotation now goes through the most informed
-  alignment that still describes the sightings' odometry frame: the new
-  optional `currentAlignment` (the session's at mint time, with its
-  `segment`) when it is in their segment, else the newest sighting's own.
-  The position is unchanged (each sighting's own alignment, DEC-3). Same
-  sweep: 1.0-4.9 degrees p50 from 30 m walks up.
+- **`mintQrAnchorFromSightings` no longer mints an arbitrary heading, or a
+  poor position, when a recording starts at the code.** Each sighting used
+  to be composed through the alignment as it stood at that sighting (plan
+  DEC-3), and right after Start Recording that alignment has no walk behind
+  it, so its yaw is arbitrary: 72 degrees heading error p50 and, for a code
+  seen only at the start, 2.9 m, on a synthetic sweep against the real
+  solver (M3a measured 89 degrees). Every sighting is now placed through ONE
+  alignment, the most informed one that still describes the sightings'
+  odometry frame: the new optional `currentAlignment` (the session's at
+  mint time, with its `segment`) when it is in their segment, else the
+  newest sighting's own snapshot. Same sweep: 1.0-4.9 degrees p50 from
+  30 m walks up (7-10 at 15 m) and 1.3 m. The owner superseded DEC-3 for
+  this on 2026-10-02.
+  - **Behaviour changes beyond the numbers:** the level's
+    `alignmentSampleCount`, zero and GPS accuracy come from that alignment,
+    so a code seen only before the third GPS fix is minted when the
+    session's alignment has matured instead of being refused; every
+    sighting counts as placed (`sightingCount` equals `sightingsSeen`).
+    The position's recency weighting is unchanged; with one alignment it
+    no longer has DEC-3's reason, and in the sweep it changes nothing
+    measurable.
   - **Added for it:** `QrMintAlignmentNow` and
     `QrSightingAccumulator.currentSegment()`.
   - **Migration:** none required; a caller that passes no
-    `currentAlignment` gets the newest sighting's alignment for the
-    rotation. A caller with a live session should pass it (the Recorder
+    `currentAlignment` gets the newest sighting's snapshot for every
+    sighting. A caller with a live session should pass it (the Recorder
     does).
 - **A recording's track and coverage count device fixes only.**
   `loadGpsPathFromBlob` (the replay preview's track, the Recorder's legacy

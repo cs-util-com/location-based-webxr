@@ -23,6 +23,12 @@ function shifted(north: number, east: number): AlignmentMatrix {
   return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, north, 0, east, 1];
 }
 
+/** An odometry pose `n` metres north of the origin (WebXR -Z is north
+ *  after the basis change), facing the default way. */
+function north(n: number): QrSighting['odomPose'] {
+  return { position: [0, 0, -n], rotation: [0, 0, 0, 1] };
+}
+
 /** A rotation of `deg` about WebXR +Y (yaw), as a quaternion. */
 function yaw(deg: number): [number, number, number, number] {
   const q = new ThreeQuaternion().setFromAxisAngle(
@@ -195,13 +201,15 @@ describe('mintQrAnchorFromSightings — combining', () => {
   });
 
   it('leans toward the LATER sighting when they disagree', () => {
-    // Why this test matters: this IS the owner's decision (DEC-3). An
-    // implementation that ignored the weights would place the anchor midway,
-    // and every other test here would still pass.
+    // Why this test matters: the recency weighting is the one part of the
+    // old DEC-3 that is still in force (the per-sighting alignment was
+    // retired on 2026-10-02). An implementation that ignored the weights
+    // would place the anchor midway, and every other test here would still
+    // pass.
     const result = mintQrAnchorFromSightings({
       sightings: [
-        sighting({ alignmentMatrix: shifted(0, 0), lastTimestamp: 0 }),
-        sighting({ alignmentMatrix: shifted(100, 0), lastTimestamp: 600_000 }),
+        sighting({ odomPose: north(0), lastTimestamp: 0 }),
+        sighting({ odomPose: north(100), lastTimestamp: 600_000 }),
       ],
       spansFrameChange: false,
       nowIso: NOW,
@@ -228,8 +236,8 @@ describe('mintQrAnchorFromSightings — combining', () => {
     // decision is doing anything.
     const result = mintQrAnchorFromSightings({
       sightings: [
-        sighting({ alignmentMatrix: shifted(0, 0), lastTimestamp: 0 }),
-        sighting({ alignmentMatrix: shifted(100, 0), lastTimestamp: 600_000 }),
+        sighting({ odomPose: north(0), lastTimestamp: 0 }),
+        sighting({ odomPose: north(100), lastTimestamp: 600_000 }),
       ],
       spansFrameChange: false,
       nowIso: NOW,
@@ -294,9 +302,9 @@ describe('mintQrAnchorFromSightings — the unweighted comparison', () => {
     // is doing real work. An odd count has a stable middle.
     const result = mintQrAnchorFromSightings({
       sightings: [
-        sighting({ alignmentMatrix: shifted(0, 0), lastTimestamp: 0 }),
-        sighting({ alignmentMatrix: shifted(50, 0), lastTimestamp: 500 }),
-        sighting({ alignmentMatrix: shifted(100, 0), lastTimestamp: 1000 }),
+        sighting({ odomPose: north(0), lastTimestamp: 0 }),
+        sighting({ odomPose: north(50), lastTimestamp: 500 }),
+        sighting({ odomPose: north(100), lastTimestamp: 1000 }),
       ],
       spansFrameChange: false,
       nowIso: NOW,
@@ -317,9 +325,9 @@ describe('mintQrAnchorFromSightings — the unweighted comparison', () => {
   it('still differs when the half-life is short enough to bite', () => {
     const result = mintQrAnchorFromSightings({
       sightings: [
-        sighting({ alignmentMatrix: shifted(0, 0), lastTimestamp: 0 }),
-        sighting({ alignmentMatrix: shifted(50, 0), lastTimestamp: 300_000 }),
-        sighting({ alignmentMatrix: shifted(100, 0), lastTimestamp: 600_000 }),
+        sighting({ odomPose: north(0), lastTimestamp: 0 }),
+        sighting({ odomPose: north(50), lastTimestamp: 300_000 }),
+        sighting({ odomPose: north(100), lastTimestamp: 600_000 }),
       ],
       spansFrameChange: false,
       nowIso: NOW,
@@ -358,8 +366,8 @@ describe('mintQrAnchorFromSightings — recencyHalfLifeS validation', () => {
    * the unweighted-comparison test above already does.
    */
   const twoSightings = [
-    sighting({ alignmentMatrix: shifted(0, 0), lastTimestamp: 0 }),
-    sighting({ alignmentMatrix: shifted(100, 0), lastTimestamp: 600_000 }),
+    sighting({ odomPose: north(0), lastTimestamp: 0 }),
+    sighting({ odomPose: north(100), lastTimestamp: 600_000 }),
   ];
 
   for (const bad of [0, -1, -60, Number.NaN, Infinity, -Infinity]) {
@@ -415,7 +423,7 @@ describe('mintQrAnchorFromSightings — recencyHalfLifeS validation', () => {
 
 // Added for the start-at-code heading defect (M3a results, open question 5;
 // reproduced in `qr-anchor-mint.start-at-code.test.ts`).
-describe('mintQrAnchorFromSightings - which alignment turns the rotation', () => {
+describe('mintQrAnchorFromSightings - which alignment places the code', () => {
   /** An alignment turned by `deg` about Up, translated to (north, east). */
   function turned(deg: number, north = 0, east = 0): AlignmentMatrix {
     return new Matrix4()
@@ -463,11 +471,13 @@ describe('mintQrAnchorFromSightings - which alignment turns the rotation', () =>
     expect(rotationErrorDeg(result, throughMature)).toBeLessThan(1e-3);
   });
 
-  it('keeps the POSITION on each sighting own alignment (DEC-3)', () => {
-    // Why this test matters: only the rotation moved to the mint-time
-    // alignment. Where the position is composed is the owner's DEC-3 and is
-    // left for the owner (the start-at-code sweep's position numbers are in
-    // the sidecar); this pins that the heading fix did not decide it.
+  it('composes the POSITION through the session alignment at mint time too', () => {
+    // Why this test matters: the owner retired DEC-3's per-sighting
+    // composition on 2026-10-02. A code seen only as the recording started
+    // was placed through an alignment fitted to a few fixes taken standing
+    // still: 2.9 m p50 on the start-at-code sweep, against 1.3 m through the
+    // alignment at mint time. Here the sighting's own alignment would put it
+    // at (10, 25); the mint-time one puts it at (-40, 70).
     const result = mintQrAnchorFromSightings({
       sightings: [sighting({ odomPose, alignmentMatrix: turned(90, 10, 25) })],
       spansFrameChange: false,
@@ -487,8 +497,56 @@ describe('mintQrAnchorFromSightings - which alignment turns the rotation', () =>
       geo.alt,
       0
     );
-    expect(back[0]).toBeCloseTo(10, 2);
-    expect(back[2]).toBeCloseTo(25, 2);
+    expect(back[0]).toBeCloseTo(-40, 2);
+    expect(back[2]).toBeCloseTo(70, 2);
+  });
+
+  it('stamps the session alignment sample count, and mints when the sighting own was too young', () => {
+    // Why this test matters: the level records the alignment it was minted
+    // through. A sighting seen after one GPS fix was refused before (the
+    // MIN_ALIGNMENT_SAMPLES floor read the sighting's own count), although
+    // the session's alignment at mint time had sixty.
+    const result = mintQrAnchorFromSightings({
+      sightings: [sighting({ alignmentSampleCount: 1 })],
+      spansFrameChange: false,
+      nowIso: NOW,
+      currentAlignment: {
+        alignmentMatrix: IDENTITY,
+        zero: ZERO,
+        alignmentSampleCount: 60,
+        segment: 0,
+      },
+    });
+    if (!result.ok || !result.level.ok) throw new Error('mint failed');
+    expect(result.level.level.qr.mintQuality?.alignmentSampleCount).toBe(60);
+  });
+
+  it('composes every POSITION through the newest sighting alignment without a session one', () => {
+    // Why this test matters: the fallback is one alignment too, never a mix
+    // of the sightings' own.
+    const result = mintQrAnchorFromSightings({
+      sightings: [
+        sighting({ alignmentMatrix: shifted(0, 0), lastTimestamp: 0 }),
+        sighting({ alignmentMatrix: shifted(100, 0), lastTimestamp: 1000 }),
+      ],
+      spansFrameChange: false,
+      nowIso: NOW,
+      recencyHalfLifeS: 1e9,
+    });
+    if (!result.ok || !result.level.ok) throw new Error('mint failed');
+    const geo = result.level.level.qr.geo!;
+    const back = calcRelativeCoordsInMeters(
+      ZERO,
+      { lat: geo.lat, lon: geo.lon },
+      geo.alt,
+      0
+    );
+    // Through each own alignment two equally weighted sightings disagree by
+    // 100 m and the median picks one of them; through the newest alignment
+    // they agree, weighted or not.
+    expect(back[0]).toBeCloseTo(100, 2);
+    expect(result.quality.translationSpreadM).toBe(0);
+    expect(result.quality.unweighted?.lat).toBeCloseTo(geo.lat, 9);
   });
 
   it('uses the newest sighting alignment when the session moved to another odometry frame', () => {

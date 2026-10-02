@@ -180,8 +180,9 @@ describe('createQrSightingAccumulator — what a sighting carries', () => {
   });
 
   it('takes the median size and the LAST alignment of the burst', () => {
-    // Why the last (DEC-3): the mint uses each sighting's contemporaneous
-    // alignment, and the end of a burst is the moment the session knew most.
+    // Why the last: when the session's alignment at mint time describes
+    // another odometry segment, the mint falls back to the newest snapshot,
+    // and the end of a burst is the moment the session knew most.
     // A different alignment: identity with a 7 m translation column.
     const later: AlignmentMatrix = [
       1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 7, 0, 0, 1,
