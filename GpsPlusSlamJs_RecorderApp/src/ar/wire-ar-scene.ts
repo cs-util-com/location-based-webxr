@@ -225,9 +225,12 @@ export function wireArScene({
       setProducer: (producer) => {
         resources.qrProducer = producer;
       },
-      // Read live, never recorded: the mint wants the alignment as it was at
-      // each sighting, and an alignment matrix is a DERIVED value that must
-      // not enter the action stream (decision D-A).
+      // Read live, never recorded: the save-time mint places a code through
+      // the alignment as it stands then, or as its odometry segment closed
+      // (the per-sighting snapshot is only the last fallback), and an
+      // alignment matrix is a DERIVED value that must not enter the action
+      // stream (decision D-A). No GPS accuracy is supplied, so minted levels
+      // carry none.
       readAlignment: () => {
         const state = storeRef.get().getState();
         return {

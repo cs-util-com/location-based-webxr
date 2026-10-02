@@ -22,17 +22,26 @@
  *    that sighting) by the owner's decision of 2026-10-02: a sighting taken
  *    before the alignment had any walk behind it carries an arbitrary yaw,
  *    and through it a recording that started at the code minted a heading
- *    72 degrees off p50 and a position 2.9 m off p50, against 1-5 degrees
- *    and 1.3 m through the alignment at mint time
- *    (`qr-anchor-mint.start-at-code.test.ts`).
+ *    72 degrees off p50 and a position 2.9 m off p50, against 1.0-4.9
+ *    degrees from 30 m walks up (7-10 at 15 m) and 1.3 m through the
+ *    alignment at mint time (`qr-anchor-mint.start-at-code.test.ts`). The
+ *    caller passes, for sightings from a segment that has closed, the
+ *    alignment that segment ended with.
+ *    KNOWN COST, pending the owner: a code seen mid-recording and then
+ *    walked away from inherits all SLAM drift after its sighting - 8.6 m
+ *    p50 at 500 m with 1 % and 1 degree per 100 m, against 1.7 m through its
+ *    own snapshot (the same file, `left`). The first MATURE alignment after
+ *    the last sighting (40 m or more of GPS extent) keeps both at 1.1-1.7 m.
  *
  * 3. **How are they combined?** The position is a recency-weighted median,
  *    the rotation a robust unweighted average. The weighting is what is left
  *    of DEC-3, and its original reason (a later sighting carried a later,
  *    better alignment) went with the per-sighting alignment: with one
  *    alignment it only prefers the later viewpoints, which also carry more
- *    drift. It is kept, unmeasured, until the field probe; both the weighted
- *    and the unweighted answer are returned, so the difference is visible.
+ *    drift. On the start-at-code sweep it changes nothing measurable (a 1e9 s
+ *    half-life gives the same p50 to 0.1 m and 0.1 degrees), so it stays,
+ *    unearned, until the field probe; both the weighted and the unweighted
+ *    answer are returned, so the difference is visible.
  */
 
 import { geodesicAngleRad } from '../../utils/geodesic-angle.js';
@@ -76,9 +85,15 @@ export type QrAnchorDeclineReason =
 export interface QrAnchorQuality {
   /** Sightings the position was actually combined from. */
   sightingCount: number;
-  /** Sightings the fixedness gate looked at. Equal to `sightingCount` since
-   *  2026-10-02 (every sighting is placed through one alignment); kept so the
-   *  level schema and the summary screen are unchanged. */
+  /**
+   * Sightings the fixedness gate looked at.
+   *
+   * @deprecated Equal to `sightingCount` since 2026-10-02 (every sighting is
+   * placed through one alignment, so none is set aside). It is in no level
+   * schema and nothing in this workspace reads it; it stays populated only
+   * because `QrAnchorQuality` is exported, and goes in the next breaking
+   * release. Read `sightingCount`.
+   */
   sightingsSeen: number;
   detectionCount: number;
   /** Outlier-INCLUSIVE max pairwise rotation angle across sightings (deg). */

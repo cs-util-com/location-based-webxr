@@ -86,11 +86,36 @@ quality }` or `{ ok: false, reason, detail }`.
   - **The sample-count floor reads the alignment actually used.** A code
     seen only before the third GPS fix used to be refused (the floor read the
     sighting's own snapshot) although the alignment at save had seen the
-    whole walk. (Separately, the 3 % of start-only codes the sweep refused
-    before are all minted now; that cause was not traced.)
+    whole walk. (Separately, the 2.5 % of start-only codes the sweep refused
+    before are all minted now. Traced: one recording in 40 whose only look
+    ended at 1.75 s on a detection dropout, so its own snapshot had seen 2
+    fixes, under the floor of 3.)
+  - **The floor does not check that the yaw is observable.** It counts
+    fixes, not the walk behind them: with under 5 m of GPS extent at mint
+    time the heading is 41 degrees p50 (151 p90), 5-10 m 7.3 / 22, 10-15 m
+    3.5 / 8 (the `extent` sweep). Whether to refuse or flag below an extent
+    floor is open with the owner:
+    `../../../docs/2026-10-02-1552-qr-mint-yaw-observability-floor-followup.md`.
   - **Why the segment check.** After a tracking restart or a loop closure
     the live alignment describes another odometry frame, so placing older
-    sightings through it would be wrong by however far the frame moved.
+    sightings through it would be wrong by however far the frame moved. The
+    Recorder then passes the alignment the sightings' segment closed with
+    (`qr-sighting-feeder.ts` keeps it at the frame change), so a
+    start-at-code code followed by a restart is not sent back to its own
+    immature snapshot (milestone review M1).
+  - **Known cost, pending the owner (milestone review H1).** A code seen
+    mid-recording and then walked away from inherits all SLAM drift after
+    its sighting, because the alignment at save describes the END of the
+    walk (the solver is recency-weighted). Integrated drift, 30 recordings
+    per cell (`left` sweep): position p50 / p90 at 500 m away 2.9 / 4.3 m
+    (0.5 % and 0.5 degree per 100 m), 8.6 / 11.6 m (1 %, 1 degree), 19.0 /
+    21.5 m (2 %, 2 degrees), and 11.0 m walking 500 m out and back to the
+    code; heading 3.5-7 degrees p50. Through the sighting's own snapshot
+    (DEC-3) it is 1.7-1.8 m and 1.5-2.7 degrees in every cell. The first
+    MATURE alignment at or after the last sighting (40-80 m of GPS extent)
+    holds 1.1-1.7 m and 1.0-2.3 degrees there and stays within 0.3 degrees
+    of this rule for start-at-code recordings; a floor of 10-20 m is worse
+    than this rule for those. Not built: it is the owner's choice.
 - **Position is recency-weighted; rotation is not.** The weighting is the
   part of DEC-3 still in force, and its reason went with the per-sighting
   alignment: it was "a later sighting carries a later, better alignment",
@@ -110,12 +135,22 @@ quality }` or `{ ok: false, reason, detail }`.
 ## Examples
 
 ```ts
-accumulator.flush(); // an open burst is never reported
 for (const text of accumulator.codes()) {
+  // Includes the visit in progress without closing it (`flush()` would
+  // split a visit that a periodic mint lands in).
+  const sightings = accumulator.sightingsIncludingOpen(text);
   const result = mintQrAnchorFromSightings({
-    sightings: accumulator.sightings(text),
+    sightings,
     spansFrameChange: accumulator.spansFrameChange(text),
     nowIso: new Date().toISOString(),
+    // The session's alignment now, tagged with the segment it describes
+    // (the Recorder's feeder: `alignmentFor(sightings.at(-1)?.segment)`).
+    currentAlignment: {
+      alignmentMatrix: selectAlignmentMatrix(state),
+      zero: selectZeroReference(state),
+      alignmentSampleCount: selectGpsPositions(state).length,
+      segment: accumulator.currentSegment(),
+    },
   });
   if (result.ok && result.level.ok) {
     await addFile(qrLevelEntryName(await qrCodeId(text)), result.level.json);
@@ -148,7 +183,9 @@ ordering is the part a later refactor could quietly lose.
 mint-time one for the rotation and the position, with its sample count
 stamped (and a sighting whose own snapshot was too young minted); the newest
 sighting's when the session moved to another segment, when none is passed,
-when the session has none, and for every position in that fallback. The
+when the session has none, and for every position in that fallback; and
+that the zero, a sighting seen before the first fix (no matrix, no zero)
+and the stamped GPS accuracy all come from the alignment used. The
 weighting tests make sightings disagree in the odometry frame, since they no
 longer can through their own alignments.
 
@@ -156,8 +193,13 @@ longer can through their own alignments.
 against the real store and solver: a sanity pin (exact inputs, mature
 alignment, heading under 1 degree), the reproduction (12 recordings, 30 m
 walks: heading p50 under 10 degrees with 1 and 2 looks, position p50 under
-2 m for a code seen only at the start), and the opt-in sweep of
-the fix candidates (`QR_MINT_START_AT_CODE_SWEEP=1`; the table goes to
-`QR_MINT_START_AT_CODE_SWEEP_OUT` when set, since vitest runs silent here).
+2 m for a code seen only at the start), two pins of the integrated drift
+model (without drift it IS the pivot model; translation drift is the stated
+share of the distance), and the opt-in sweeps
+(`QR_MINT_START_AT_CODE_SWEEP=1` for all, or a comma list of `start`, the
+fix candidates; `left`, a code left behind under integrated drift, about an
+hour; `extent`, heading against GPS extent; `refusals`, the newest-snapshot
+refusals traced). Tables go to `QR_MINT_START_AT_CODE_SWEEP_OUT` (plus a
+suffix per sweep) when set, since vitest runs silent here.
 
 No fixtures required.

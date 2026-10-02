@@ -81,7 +81,24 @@
   - **Migration:** none required; a caller that passes no
     `currentAlignment` gets the newest sighting's snapshot for every
     sighting. A caller with a live session should pass it (the Recorder
-    does).
+    does, and for a code seen before a tracking restart it passes the
+    alignment that code's odometry segment closed with).
+  - **Known cost, pending an owner decision:** a code seen mid-recording
+    and then walked away from inherits the SLAM drift accumulated after its
+    sighting, because the alignment at save describes the end of the walk:
+    on a synthetic sweep with integrated drift, 8.6 m p50 at 500 m away with
+    1 % and 1 degree per 100 m (19 m at 2 %, 2 degrees), against 1.7 m
+    through the sighting's own snapshot. Below about 300 m walked after the
+    code (200 m at 2 %) it is no worse. See the sidecar.
+  - **Existing levels are not re-minted.** The mint runs only on a live
+    recording's crash-safety syncs and final save; replaying never
+    re-mints, so a `qr/<id>.json` written before this fix for a recording
+    that started at its code keeps its wrong heading. Whether a re-mint
+    path is wanted is open:
+    `docs/2026-10-02-1551-qr-level-re-mint-path-followup.md`.
+  - **Deprecated:** `QrAnchorQuality.sightingsSeen`, now always equal to
+    `sightingCount`; it is in no level schema and goes in the next
+    breaking release.
 - **A recording's track and coverage count device fixes only.**
   `loadGpsPathFromBlob` (the replay preview's track, the Recorder's legacy
   coverage backfill) and `buildSessionMetadataRecord`'s `h3Cells` leave out
