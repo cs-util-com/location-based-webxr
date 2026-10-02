@@ -83,6 +83,7 @@ import {
 import {
   CODE_TURN_RULE,
   judgeCodeMove,
+  MOVED_CODE_FIT_WINDOW_S,
   type CodeTurnRule,
 } from "./moved-code-rule.js";
 import { alignmentNorthBearingDeg, fitGaussMarkov } from "./gps-noise-fit.js";
@@ -1016,8 +1017,12 @@ interface PairResult {
   /** The shipped correction-refusal bound for this visit and saved code. */
   readonly shippedBoundM: number;
   readonly rawGpsM: number;
-  /** The viewer: the rigid fit over every fix of the visit. */
+  /** The rigid fit over every fix of the visit (the recalibration). */
   readonly all: Trace;
+  /** The rigid fit over the fixes stamped at most `windowS` seconds before
+   *  the sighting, and every one after it (the viewer's bounded fit, M5c
+   *  review H2); computed on demand. */
+  readonly windowed: (windowS: number) => Trace;
 }
 
 function fixIndexAt(fixes: readonly WalkFix[], tMs: number): number {
@@ -1098,6 +1103,16 @@ function pairResult(A: Obs, B: Obs): PairResult | null {
     ),
     rawGpsM,
     all: traceOf({ ...base, fromIdx: 0 }),
+    windowed: (windowS: number) => {
+      const fixes = B.w.fixes!;
+      let fromIdx = 0;
+      while (
+        fromIdx < fixes.length &&
+        fixes[fromIdx]!.t < B.m.t - windowS * 1000
+      )
+        fromIdx += 1;
+      return traceOf({ ...base, fromIdx });
+    },
   };
 }
 
@@ -2441,7 +2456,9 @@ function sweepYawChannel(
 // Parameters (declared; swept where marked):
 // - the position half on the cross-day pairs: the check's horizon after the
 //   scan (120 / 300 / 600 s / the whole visit, swept), the shipped floor and
-//   gate. Two denominators: every pair (a visit that ends early simply stops
+//   gate, the shipped fit window (`MOVED_CODE_FIT_WINDOW_S`, 300 s before the
+//   sighting), and that window itself swept (120 / 300 / 600 s / unbounded)
+//   within 120 and 300 s. Two denominators: every pair (a visit that ends early simply stops
 //   being checked), and only the pairs whose visit lasts the horizon. The
 //   pairs carry NO heading truth - a reference mark's rotation is the phone's
 //   pose when it was marked, not a printed code's facing, so two days' marks
@@ -2460,6 +2477,8 @@ function sweepYawChannel(
 // ---------------------------------------------------------------------------
 
 const SHIPPED_HORIZONS_S = [120, 300, 600, Number.POSITIVE_INFINITY] as const;
+/** The fit window before the sighting (M5c review H2), swept. */
+const FIT_WINDOWS_S = [120, 300, 600, Number.POSITIVE_INFINITY] as const;
 const SETTLED_SAMPLES_SWEEP = [60, 120, 180] as const;
 const SETTLED_YAW_SWEEP_DEG = [30, 45, 60] as const;
 
@@ -2519,27 +2538,32 @@ function sweepShippedRule(
 ): void {
   // Position only: the marks carry no code heading (see above).
   const settled = false; // no turn check: position only
-  emit(
-    `M5c shipped rule, position half on cross-day pairs: unmoved pairs read moved within the check's horizon h, and 20 / 30 m moves caught (4 bearings). "all": every pair; "covered": pairs whose visit lasts h`,
-    SHIPPED_HORIZONS_S.map((h) => {
-      const covered = cross.filter(
-        (p) => !Number.isFinite(h) || covers(p.all, h),
-      );
-      const faOf = (ps: readonly PairResult[]) => {
-        const f = ps.map((p) => firstShipped(p.all, h, settled, SHIPPED));
-        return rate(
-          ps.map((p, i) => pairOutcome(p, f[i] !== null)),
+  const posTable = (
+    trOf: (p: PairResult) => Trace,
+    horizons: readonly number[],
+  ) =>
+    horizons.map((h) => {
+      const traces = cross.map(trOf);
+      const covered = cross
+        .map((p, i) => ({ p, tr: traces[i]! }))
+        .filter((x) => !Number.isFinite(h) || covers(x.tr, h));
+      const all = cross.map((p, i) => ({ p, tr: traces[i]! }));
+      type X = (typeof all)[number];
+      const fa = (xs: readonly X[]) =>
+        rate(
+          xs.map((x) =>
+            pairOutcome(x.p, firstShipped(x.tr, h, settled, SHIPPED) !== null),
+          ),
           "points",
         );
-      };
-      const det = (ps: readonly PairResult[], moveM: number) =>
+      const det = (xs: readonly X[], moveM: number) =>
         rate(
-          ps.flatMap((p) =>
+          xs.flatMap((x) =>
             MOVE_BEARINGS_DEG.map((b) =>
               pairOutcome(
-                p,
+                x.p,
                 firstShipped(
-                  p.all,
+                  x.tr,
                   h,
                   settled,
                   SHIPPED,
@@ -2554,14 +2578,29 @@ function sweepShippedRule(
       return {
         horizonS: Number.isFinite(h) ? h : "whole visit",
         pairs: `${String(covered.length)} covered of ${String(cross.length)}`,
-        faAll: faOf(cross),
-        faCovered: faOf(covered),
-        det20All: det(cross, 20),
+        faAll: fa(all),
+        faCovered: fa(covered),
+        det20All: det(all, 20),
         det20Covered: det(covered, 20),
-        det30All: det(cross, 30),
+        det30All: det(all, 30),
         det30Covered: det(covered, 30),
       };
-    }),
+    });
+  emit(
+    `M5c fit window (H2) on cross-day pairs: the rigid fit over the fixes stamped at most W s before the sighting; position half, within h; "all": every pair; "covered": pairs whose visit lasts h`,
+    FIT_WINDOWS_S.flatMap((w) =>
+      posTable(
+        (p) => (Number.isFinite(w) ? p.windowed(w) : p.all),
+        [120, 300],
+      ).map((row) => ({
+        windowS: Number.isFinite(w) ? w : "unbounded",
+        ...row,
+      })),
+    ),
+  );
+  emit(
+    `M5c shipped rule, position half on cross-day pairs (fit window ${String(MOVED_CODE_FIT_WINDOW_S)} s before the sighting): unmoved pairs read moved within the check's horizon h, and 20 / 30 m moves caught (4 bearings). "all": every pair; "covered": pairs whose visit lasts h`,
+    posTable((p) => p.windowed(MOVED_CODE_FIT_WINDOW_S), SHIPPED_HORIZONS_S),
   );
 
   // The turn check alone on the outdoor virtual codes.

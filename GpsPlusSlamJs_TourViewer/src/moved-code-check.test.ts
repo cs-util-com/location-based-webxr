@@ -31,7 +31,10 @@ import {
 
 import { objectPoseNue } from "./content-placement.js";
 import { createMovedCodeChecks } from "./moved-code-check.js";
-import { MOVED_CODE_RULE_VERSION } from "./moved-code-rule.js";
+import {
+  MOVED_CODE_FIT_WINDOW_S,
+  MOVED_CODE_RULE_VERSION,
+} from "./moved-code-rule.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 
 // The geodesy is licence-gated; building a store activates it.
@@ -283,6 +286,34 @@ describe("createMovedCodeChecks", { timeout: 60_000 }, () => {
       "snapshot",
       "update",
     ]);
+  });
+
+  // Why (M5c review H2): the real-walk measurement fitted visits of a few
+  // minutes; a fit over everything since the entry would let fixes from long
+  // before the scan - another street, another GPS bias - decide about the
+  // code. The fit reads only the fixes stamped within the window before the
+  // pin (and every one after it).
+  it("folds only the device fixes stamped within 300 s before the pin", () => {
+    const h = harness();
+    h.feed(circle(0, 400, [20, 50], 6));
+    h.pin(codeSeen([0, 0]), 400);
+    h.checks.update(h.view(), T0 + 400_000);
+    const view = h.checks.snapshot()[0]!;
+    expect(MOVED_CODE_FIT_WINDOW_S).toBe(300);
+    // Seconds 100 to 400: 301 fixes, a 300 s span.
+    expect(view.samples).toBe(301);
+    expect(view.spanS).toBeCloseTo(300, 6);
+  });
+
+  it("is not vetoed by fixes from long before the scan, however far off they read", () => {
+    const h = harness();
+    // Ninety seconds of fixes 150 m off (an old bias, or another place),
+    // then five unbiased minutes before the scan and one after it.
+    h.feed(circle(0, 90, [20, 10], 8, { bias: [150, 0] }));
+    h.feed(circle(91, 399, [20, 10], 8));
+    h.pin(codeSeen([0, 0]), 400);
+    expect(h.feed(circle(400, 460, [20, 10], 8))).toEqual([]);
+    expect(h.checks.snapshot()[0]!.magnitudeM).toBeLessThan(5);
   });
 
   // Why: after an odometry restart the pin names a place in a dead frame.

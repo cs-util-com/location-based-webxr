@@ -15,6 +15,8 @@ another way as moved (§7l D3). Pure; the per-fix wiring is
 - `CODE_TURN_RULE: CodeTurnRule` - `{ settledYawDeg: 45,
 settledAlignmentSamples: 120 }` (frozen).
 - `MOVED_CODE_HORIZON_S` (300) - how long after its pin a code is checked.
+- `MOVED_CODE_FIT_WINDOW_S` (300) - the fit window before the pin: only
+  device fixes stamped at most this long before it fold (M5c review H2).
 - `MOVED_CODE_RULE_VERSION` - carried by the `tourViewing/codeIgnored` log;
   bump it with any value here or in `CODE_MOVE_RULE`.
 - `isSettledSave(level, rule?)` - the level's
@@ -89,6 +91,14 @@ stops being checked); "covered" only the cases whose walk lasts the window.
   phone's pose when marked), so the turn check is measured on the virtual
   codes only; the whole rule's false alarms are at most the sum of the two
   halves (0.4 % + 0.3 % within 120 s on covered cases).
+
+Fit window (M5c review H2), swept on the same pairs with the shipped rule:
+120 / 300 / 600 s / unbounded give 24 / 23 / 23 / 23 of 6,166 unmoved pairs
+within 120 s (3 of 2,380 covered at every window) and catch 58.7 / 58.0 /
+58.0 / 58.0 % of 20 m moves (66.9 / 66.4 / 66.4 / 66.4 % covered). The
+window barely matters on this corpus because its visits are short (only 173
+pairs last 300 s): it bounds a long session, which the corpus cannot test
+(D27: the owner records 10 minute walks in the field test).
 
 Horizon: all 23 position alarms of 6,166 came within 120 s; 300 s keeps the
 check inside the measured range (visits under about 5 minutes).

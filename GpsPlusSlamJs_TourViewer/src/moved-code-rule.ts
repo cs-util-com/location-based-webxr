@@ -85,9 +85,26 @@ export const CODE_TURN_RULE: CodeTurnRule = Object.freeze({
  */
 export const MOVED_CODE_HORIZON_S = 300;
 
+/**
+ * The fit window (seconds) BEFORE a code's pin (M5c review H2): the check
+ * folds only the device fixes stamped at most this long before the pin, and
+ * every one after it, so a long session's old fixes (another street, another
+ * GPS bias) never decide about a code scanned now. 300 s is the range the
+ * real-walk measurement covered (visits of median 2.7 min, p90 5.7). Swept
+ * on the cross-day pairs (`code-displacement.recordings.test.ts`, "M5c fit
+ * window"): 120 / 300 / 600 s / unbounded; the sidecar carries the numbers.
+ * What reverses it: long-tour recordings in which a wider window catches
+ * moves earlier without more false alarms.
+ *
+ * The window compares a fix's own stamp (Geolocation time, epoch ms) with
+ * the pin's page clock (`Date.now` in the viewer): both epoch, as in the
+ * measurement, which compared fix stamps with the mark's action time.
+ */
+export const MOVED_CODE_FIT_WINDOW_S = 300;
+
 /** Bumped whenever a value above or in `CODE_MOVE_RULE` changes; the
  *  `tourViewing/codeIgnored` log carries it. */
-export const MOVED_CODE_RULE_VERSION = "d20-m5c-2026-10-02b";
+export const MOVED_CODE_RULE_VERSION = "d20-m5c-2026-10-02c";
 
 /**
  * Whether a saved level's pose was minted on a settled alignment: its

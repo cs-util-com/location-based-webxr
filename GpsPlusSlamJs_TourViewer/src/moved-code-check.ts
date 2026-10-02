@@ -12,9 +12,11 @@
  * - INCREMENTAL: each check folds only the fixes stored since its last
  *   update (O(1) per fix, `addDisplacementSample`). A history that SHRANK
  *   (a reset, e.g. the recovery's re-feed) is folded again from its start.
- * - FROM THE WHOLE HISTORY, as measured: the real-walk pairs fit every
- *   device fix of the visit, the ones before the scan too. Only an odometry
- *   frame change cuts it: the checks end there ({@link
+ * - FROM A BOUNDED HISTORY: the real-walk pairs fit every device fix of a
+ *   short visit, the ones before the scan too; the check folds the fixes
+ *   stamped at most `MOVED_CODE_FIT_WINDOW_S` (300 s) before the pin and
+ *   every one after it (M5c review H2). An odometry frame change also cuts
+ *   it: the checks end there ({@link
  *   MovedCodeChecks.frameChanged}) and a later pin folds only the fixes
  *   stored after the change.
  * - NO COMPASS (owner, 2026-10-02): a code's turn is read from its pose in
@@ -45,6 +47,7 @@ import { objectPoseNue } from "./content-placement.js";
 import {
   isSettledSave,
   judgeCodeMove,
+  MOVED_CODE_FIT_WINDOW_S,
   MOVED_CODE_HORIZON_S,
   MOVED_CODE_RULE_VERSION,
   type CodeMoveJudgement,
@@ -182,7 +185,11 @@ export function createMovedCodeChecks(): MovedCodeChecks {
       odometryPositions: odometryPositions.slice(check.folded),
       zero: history.zero,
     });
+    // The fit window (M5c review H2): fixes stamped long before the pin
+    // never fold.
+    const fromMs = check.atMs - MOVED_CODE_FIT_WINDOW_S * 1000;
     for (const sample of samples) {
+      if (sample.tMs < fromMs) continue;
       check.stats = addDisplacementSample(
         check.stats,
         check.pin,

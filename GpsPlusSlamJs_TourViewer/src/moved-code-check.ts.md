@@ -47,8 +47,14 @@ a verdict (the veto). No compass reading is taken (owner, 2026-10-02).
   growth is sliced the estimate is the same (property). A history that
   SHRANK (a reset, e.g. the veto's own recovery) is folded again from its
   start, so no fix counts twice.
-- **The whole history, as measured**: the real-walk pairs fit every device
-  fix of the visit, those before the scan too; only a frame change cuts it.
+- **A bounded fit window** (M5c review H2): only the device fixes stamped at
+  most `MOVED_CODE_FIT_WINDOW_S` (300 s, `moved-code-rule.ts`) before the
+  pin fold, and every one after it; a frame change cuts the history too.
+  The window compares a fix's Geolocation stamp with the pin's page clock
+  (`Date.now` in the viewer): both epoch milliseconds, as the measurement
+  compared them. The real-walk visits were short (median 2.7 min), so the
+  measured behaviour is the whole-visit fit; the window keeps a long session
+  inside it.
 - **No compass**: a code's turn is its rigid-fit yaw in GPS world space,
   read only for a settled save (`moved-code-rule.ts`).
 - Accuracies are the folded device fixes' reported ones (median by sorted
@@ -71,7 +77,8 @@ for (const v of checks.update(
 ## Tests
 
 `moved-code-check.test.ts` (a 40 m move read once after 60 s; an unmoved
-code never; the horizon; votes in the history change nothing; the settled
+code never; the horizon; the 300 s fit window, and old far-off fixes
+that no longer veto; votes in the history change nothing; the settled
 yaw; no turn check for an unsettled save; no compass input; a frame
 change; a reset; the evidence; one pin per code; `clear()`),
 `moved-code-check.property.test.ts` (slicing and vote-interleaving
