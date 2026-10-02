@@ -58,6 +58,16 @@ seconds since the pin, the rule's version. `recovery` is what the sink's
 `retractVotes` did (fixes re-fed, batches); the alignment is the one AFTER
 it.
 
+**After a veto the recording carries every device fix twice** (M5c review
+L4): once as stored when it arrived (`gpsData/recordGpsEvent`, or first in a
+keep-alive `gpsData/recordGpsEventBatch`), and again in the re-feed batches
+that follow `gpsData/resetGpsSessionData` right before this action. A
+replay through the reducer is right as it stands (the reset drops the first
+copies). Any OTHER recompute - a tool that collects the device fixes of a
+recording, a summary, the D20 sweeps - must honour the reset: keep only the
+fixes after the last `resetGpsSessionData`, or deduplicate by the fix id,
+or it counts each fix of that entry twice.
+
 ## Invariants & assumptions
 
 - **No reducer, on purpose.** Dispatching one changes no state; the recording

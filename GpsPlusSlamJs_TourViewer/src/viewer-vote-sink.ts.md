@@ -53,6 +53,11 @@ outlierFalloffExponent: 1, outlierRejectionEnabled: false }`.
   batches 193 ms, N = 3,600 (an hour at 1 Hz) in 15 batches 525 ms. It runs
   once per veto, synchronously in the store subscription that judged the
   code; on a phone expect several times that (not measured).
+- **A recording of the entry carries the device fixes twice** after a veto
+  (M5c review L4): the original dispatches, then the reset and the re-feed
+  batches. A replay is right as it stands; any other recompute of the
+  recording must honour the reset (`tour-viewing-actions.ts.md`,
+  `codeIgnored`).
 - The soft trimming is marked off, so the next vote (another code's) turns
   it on again before it is stored.
 - What the re-feed cannot carry: a device fix stored before this sink
