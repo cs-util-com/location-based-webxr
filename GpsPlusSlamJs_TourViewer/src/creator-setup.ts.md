@@ -294,25 +294,25 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
     the previews inside are disposed with `placedPreviews`. Objects already
     written to the zip by a Finish (the manifest's) are not shown - showing
     hosted objects in author mode is M4.
-    - **Re-judged on every new fix too, not only on a sighting** (M5b; M5b
-      review #8). The move prompt needs the refusal current, so each
-      render that finds a new fix in the store re-runs
-      `placeEarlierObjects` on the LATEST sighting through the CURRENT
-      alignment, whether or not the code is still in view. Consequence: a
-      GPS alignment that drifts past the plausibility bound while the code
-      is out of view moves the earlier objects, with no tap and no new
-      look at the code, from the code's frame to their stored geo - a jump
-      of at least the bound (13.5 m at a reported 2 m, 26.2 m at 5 m) - and back when it drifts
-      inside again. Accepted because that frame is exactly what the
-      visit's settle would save through at that moment (`settleVisit`
-      reads the same sighting through the same alignment): freezing the
-      preview would show the creator a placement the settle no longer
-      makes. Pinned by `authoring-settle.test.ts` "re-judges the earlier
-      notes' frame on a new fix while the code is out of view". What would
-      change it: a field report of notes jumping while the creator walks
-      away from the code - then the live frame and the settle's choice
-      would have to change together (for example, a refusal judged only
-      while the code is in view), never the preview alone.
+    - **The frame moves only on a sighting or an explicit action, never
+      on a fix** (owner's drift complaint, plan §1 / §2.1; §7m #8). The
+      move prompt needs the refusal current, so each render that finds a
+      new fix in the store re-judges the LATEST sighting through the
+      CURRENT alignment (`judgeRefusal`) - but that updates the refusal
+      (`liveRefusal`: the prompt and the panel line) only. The objects'
+      frame is re-chosen only by `placeEarlierObjects`: a stable sighting
+      of the code in hand, and the explicit paths (a measurement of the
+      code - a mint or a replace -, a replace's Undo, the visit's start). So
+      while the code is out of view the objects stay where its last
+      sighting put them, however far GPS drifts (M5b had re-placed them
+      on every fix, a jump of at least the plausibility bound - 13.5 m at
+      a reported 2 m, 26.2 m at 5 m - with no tap). Consequence, accepted:
+      after such a drift the preview can show the code's frame while the
+      settle at that moment would save through GPS; the panel's refused
+      line says so, and the next look at the code makes the two agree.
+      Pinned by `authoring-settle.test.ts` "keeps the earlier notes in the
+      code's frame on new fixes while the code is out of view" (it fails
+      when a fix re-places the frame).
   - **A preview from geo waits for the zero** (M2c review #4): on the
     first visit of a page load (a restored draft) the zero arrives with the
     first GPS fix, after `beginAuthorVisit` ran. `previewObject` records the
@@ -333,11 +333,13 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
     acceptance (plan §3.2) - then an averaged hold is the next step.
   - **A refused correction is said, in one line** (M2c review #2): each
     sighting re-evaluates the settle choice (`placeEarlierObjects`, with
-    this visit's median GPS accuracy); when the plausibility bound
+    this visit's median GPS accuracy), and so does each new fix
+    (`judgeRefusal`, the refusal only - see above); when the plausibility bound
     (`visit-settle.ts`) refuses the correction, the live line starts with
     `correctionRefusedLine` ("Code seen 60 m from its saved position - a
     second print or a moved poster? Not used; this visit follows GPS")
-    until the visit ends or a sighting is accepted, and the visit's
+    until the visit ends or the sighting is judged acceptable again (a
+    sighting, or a fix through which it is), and the visit's
     `tourAuthoring/settled` carries `refusedCorrection`.
   - **The entry hint** (§3.2a, D5): the live status line starts with
     `entryHint` while a tour is open and `ctx.visitCodeSighting` holds no
@@ -540,7 +542,7 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
     once)", M5b; `code-move-prompt.ts` decides WHEN): on every readout
     render the tracker is fed the latest sighting's refusal (re-judged
     through the current alignment whenever a fix landed since the last
-    look, `placeEarlierObjects`), its offset (`sightedCodeOffset`), the
+    look, `judgeRefusal`, which never moves the earlier objects), its offset (`sightedCodeOffset`), the
     mint gate's alignment half, the store's fix count and the latest
     fix's time, and the remembered answers. It asks only for a stored
     level in hand, in a live session, outside a Finish. A new ask logs

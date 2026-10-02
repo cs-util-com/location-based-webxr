@@ -932,15 +932,16 @@ describe(
       ).toBeLessThan(1e-2);
     });
 
-    it("re-judges the earlier notes' frame on a new fix while the code is out of view: a refusal moves them to their geo (M5b review #8)", async () => {
-      // Why this test matters: since M5b every new fix re-judges the
-      // latest sighting through the current alignment (the move prompt
-      // needs the refusal current). A GPS alignment that drifts past the
-      // bound therefore moves the earlier notes from the code's frame to
-      // their stored geo with no new look at the code - a jump nobody
-      // tapped for. It is the frame the visit's settle would use at that
-      // moment, so the preview stays truthful; this pins that consequence
-      // (accepted, creator-setup.ts.md "Earlier visits' objects").
+    it("keeps the earlier notes in the code's frame on new fixes while the code is out of view, though GPS drifts past the bound; only a sighting re-places them (M5b review #8, §7m #8)", async () => {
+      // Why this test matters: the owner's complaint was notes DRIFTING
+      // while authoring (plan 2026-09-28-0953 §1, §2.1). M5b re-judges the
+      // latest sighting on every new fix so the move prompt sees the
+      // refusal current; it once re-placed the earlier notes as a side
+      // effect, so a GPS drift past the bound moved them from the code's
+      // frame to their geo with no tap and no new look at the code. The
+      // frame changes only on a sighting of the code (or an explicit
+      // action), as before M5b; the per-fix re-judge feeds the prompt and
+      // the panel only (creator-setup.ts.md "Earlier visits' objects").
       const a = await firstVisit();
       a.beginVisit();
       a.setAlignment(SECOND);
@@ -949,24 +950,24 @@ describe(
       const atCode = new Vector3(2, 0, -1);
       expect(a.inWorldGroup("Gate").distanceTo(atCode)).toBeLessThan(1e-2);
 
-      // The code leaves the view; GPS drifts 60 m. No fix yet: unchanged.
+      // The code leaves the view; GPS drifts 60 m, and fixes keep landing.
       a.ctx.lastDetectedText = null;
       a.setAlignment(yawAlignment(0, [60, 400, 0]));
-      expect(a.inWorldGroup("Gate").distanceTo(atCode)).toBeLessThan(1e-2);
-
-      // One fix lands: the sighting is refused through the new alignment,
-      // and the note is where its geo puts it, tens of metres away.
-      a.setWalk({
-        fixes: Array.from({ length: MIN_ALIGNMENT_SAMPLES + 1 }, () => ({
-          latitude: ZERO.lat,
-          longitude: ZERO.lon,
-        })),
-        odometry: Array.from({ length: MIN_ALIGNMENT_SAMPLES + 1 }, () => [
-          0, 0, 0,
-        ]),
-      });
-      a.setup.renderAuthorReadout();
+      const fixes: unknown[] = [];
+      for (let i = 0; i < MIN_ALIGNMENT_SAMPLES + 3; i += 1) {
+        fixes.push({ latitude: ZERO.lat, longitude: ZERO.lon });
+        a.setWalk({ fixes: [...fixes], odometry: fixes.map(() => [0, 0, 0]) });
+        a.setup.renderAuthorReadout();
+        expect(a.inWorldGroup("Gate").distanceTo(atCode)).toBeLessThan(1e-2);
+      }
+      // The re-judge still ran: the panel says the settle would refuse the
+      // code through this alignment (what the move prompt reads).
       expect(a.dom.status.textContent).toMatch(/Code seen \d+ m/);
+
+      // A new look at the code is what re-places them: through the drifted
+      // alignment it is refused, so the note goes to its geo.
+      a.seeTheCode();
+      await flush();
       expect(a.inWorldGroup("Gate").distanceTo(atCode)).toBeGreaterThan(20);
     });
   },

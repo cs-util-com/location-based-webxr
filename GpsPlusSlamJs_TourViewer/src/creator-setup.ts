@@ -902,7 +902,8 @@ export function wireCreatorSetup(deps: {
    *  the draft's meta at tour open, re-stated by every meta write. */
   let moveAnswers: RememberedMoveAnswer[] = [];
   /** The store's fix count at the last refusal re-evaluation: a new fix
-   *  re-judges the latest sighting through the new alignment. */
+   *  re-judges the latest sighting through the new alignment - the
+   *  refusal only, never the earlier objects' frame (§7m #8). */
   let moveFixCount = -1;
   /** Codes moved to a new spot - by "Use the new spot" or the Replace
    *  button, any replace (M5b review #3) - by the visit that moved them:
@@ -947,7 +948,7 @@ export function wireCreatorSetup(deps: {
     const clock = fixClock();
     if (sessionLive() && clock.count !== moveFixCount) {
       moveFixCount = clock.count;
-      placeEarlierObjects();
+      judgeRefusal();
     }
     const live = sessionLive() && !ctx.finishing && levelInHandIsStored();
     const refusal = live ? liveRefusal : null;
@@ -2044,15 +2045,18 @@ export function wireCreatorSetup(deps: {
     return choice === null ? null : choice.refused;
   }
 
-  /** Move the earlier visits' frame to where this visit's knowledge of the
-   *  code puts it (see `earlierFrame`). Cheap: one matrix. */
-  function placeEarlierObjects(): void {
-    // Nothing to place outside a visit - and nothing to read either.
-    const frame = earlierFrame;
-    if (frame === null) return;
-    const scene = seams.getScene();
-    const group = seams.getArWorldGroup();
-    if (scene === null) return;
+  /**
+   * Re-judge this visit's latest sighting through the CURRENT alignment -
+   * the settle's choice - and update `liveRefusal` from it, WITHOUT moving
+   * the earlier objects: the move prompt calls this on every new fix, and
+   * the objects' frame changes only in `placeEarlierObjects` (a sighting
+   * of the code or an explicit action; §7m #8, the owner's drift
+   * complaint). Null, with `liveRefusal` left as it was, outside a visit
+   * (no frame) or before the scene exists.
+   */
+  function judgeRefusal(): ReturnType<typeof settleAlignment> {
+    // Nothing to judge outside a visit - and nothing to read either.
+    if (earlierFrame === null || seams.getScene() === null) return null;
     const state = arStore.getState();
     const choice = settleAlignment({
       visit: ctx.arSessionGeneration,
@@ -2064,6 +2068,17 @@ export function wireCreatorSetup(deps: {
       gpsAccuracyM: authorAlignmentInfo().gpsAccuracyM,
     });
     liveRefusal = refusalOf(choice);
+    return choice;
+  }
+
+  /** Move the earlier visits' frame to where this visit's knowledge of the
+   *  code puts it (see `earlierFrame`). Cheap: one matrix. */
+  function placeEarlierObjects(): void {
+    const choice = judgeRefusal();
+    const frame = earlierFrame;
+    const scene = seams.getScene();
+    if (frame === null || scene === null) return;
+    const group = seams.getArWorldGroup();
     if (choice?.basis === "code-corrected" && group !== null) {
       frame.matrix.fromArray(choice.alignment).invert();
       frame.matrixWorldNeedsUpdate = true;
