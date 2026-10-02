@@ -1870,13 +1870,16 @@ async function start() {
       // What the shader reads: the clouds' drift east, radians.
       cloudLonOffsetRad: globe.surfaceUniforms.uCloudLonOffset.value,
       sunEcef: globe.surfaceUniforms.uSunEcef.value.toArray(),
+      // The sky fill (DEC-GL5-11) as the shader reads it.
+      skyFill: {
+        floor: globe.surfaceUniforms.uSkyFloor.value,
+        share: globe.surfaceUniforms.uSkyShare.value,
+      },
       // What the shader reads, not what the hash says.
       look: {
         grade: globe.surfaceUniforms.uGrade.value,
         cloudRelief: globe.surfaceUniforms.uCloudRelief.value,
         twilight: globe.surfaceUniforms.uTwilight.value,
-        skyFloor: globe.surfaceUniforms.uSkyFloor.value,
-        skyShare: globe.surfaceUniforms.uSkyShare.value,
         space: sky.uniforms.uSpace.value,
         starGlow: sky.starUniforms.uStarGlow.value,
       },

@@ -156,7 +156,9 @@
     (0.5) from the Globe package's one sky level (`sky-level.ts`). A low
     sun's ground keeps that much of a zenith sun's light from the sky, as
     the terrain lab's relief does, so relief and globe agree at dusk; 0 is
-    the look before the fill (`withPreRound4Look` pins it).
+    the look before the fill (`withPreRound4Look` pins it). `state()`
+    reports it as `skyFill` (`{ floor, share }`, what the shader reads),
+    not under `look`.
   - Item 5 (a dark sea without a bright glint) needs no new switch:
     `waterRoughness=0.9` makes the water as rough as the land. Item 4
     (relief from elevation) needs a height map (data), not done.

@@ -38,6 +38,9 @@ const LAND_ROUGHNESS = 0.9;
 /**
  * The view: held over the coast at `altKm` after a short dive (the pin's,
  * with the hand-over off), clouds off so the sea is seen, drift off.
+ * Straight down (`pitchLow=90`): the sun's glint lies under the camera only
+ * then; the oblique hold of F1 looks 45 degrees down and the sea's glint
+ * leaves the frame (4.1 and 0.1 levels against the 12 the check needs).
  */
 async function holdOverCoast(page, context, altKm) {
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
@@ -47,7 +50,7 @@ async function holdOverCoast(page, context, altKm) {
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
-  const hash = `at=${COAST.latitude},${COAST.longitude}&spinMs=0&turnMs=0&${NOON}&cloudDrift=0&cloudOpacity=0&stars=0&atmo=0&diveMs=1000&handOver=0&handOverKm=${altKm}`;
+  const hash = `at=${COAST.latitude},${COAST.longitude}&spinMs=0&turnMs=0&${NOON}&cloudDrift=0&cloudOpacity=0&stars=0&atmo=0&diveMs=1000&handOver=0&handOverKm=${altKm}&pitchLow=90`;
   // The pin press starts the arrival prefetch: its city data is answered here.
   await routeCityData(page);
   await page.goto(`/labs/globe/#${hash}`);

@@ -130,7 +130,17 @@ test("during a dive the readout follows the camera and names the distance to the
   );
   expect(before).not.toBeNull();
   expect(altitudeKm(landed.readoutShown)).toBeCloseTo(50, 0);
-  expect(landed.readoutShown).toMatch(/ · 50\.\d km to the target$/);
+  // The dive holds obliquely since F1 (45 degrees down at 50 km), so the
+  // straight-line distance to the target is the altitude over the sine
+  // of the depression (70.7 km), the Earth's curve adding a little:
+  // within 2 %.
+  const toTarget = Number(
+    / · ([\d.]+) km to the target$/.exec(landed.readoutShown)?.[1],
+  );
+  const slant =
+    altitudeKm(landed.readoutShown) /
+    Math.sin((landed.cameraDepressionDeg * Math.PI) / 180);
+  expect(Math.abs(toTarget - slant)).toBeLessThan(0.02 * slant);
   expect(/** @type {number} */ (altitudeKm(during.readoutShown))).toBeLessThan(
     /** @type {number} */ (before),
   );
