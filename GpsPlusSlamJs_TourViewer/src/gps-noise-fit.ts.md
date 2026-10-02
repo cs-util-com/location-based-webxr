@@ -8,8 +8,10 @@ Two measurement kernels for the D20 recalibration on real recordings
 Gauss-Markov model (per-axis sigma, time constant tau) that best describes a
 real walk's GPS error, and the bearing an alignment gives the AR frame's
 north axis, which is what the compass comparison subtracts. Pure.
-MEASUREMENT ONLY: nothing in the viewer or the authoring flow reads it; the
-opt-in sweep `code-displacement.recordings.test.ts` does.
+The noise fit is measurement only (the opt-in sweep
+`code-displacement.recordings.test.ts` reads it); `alignmentNorthBearingDeg`
+is also read by the viewer's moved-code turn check (`moved-code-rule.ts`
+`compassTurnDeg`, D20 M5c).
 
 ## Public API
 

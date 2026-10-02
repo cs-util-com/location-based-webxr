@@ -1,8 +1,9 @@
 /**
  * How far a printed code has moved from its saved pose, as the visitor's
  * own GPS sees it (Tour Viewer authoring plan 2026-09-28-0953 §3.6,
- * decision D20, measured in milestone M5a; not wired into the viewer yet -
- * that is M5c).
+ * decision D20, measured in milestone M5a; recalibrated on real recordings
+ * and wired into the viewer in M5c: `moved-code-rule.ts` adds the turn
+ * check, `moved-code-check.ts` runs both per device fix).
  *
  * THE QUESTION. A scan pins the alignment to the code's SAVED pose: the
  * code's odometry pose is mapped onto it (`codeCorrection`). If the poster
@@ -45,7 +46,6 @@ import {
 
 import { codeCorrection, type NuePose } from "./visit-anchoring.js";
 import { deviceSamples, type VisitLogInput } from "./visit-log.js";
-import { correctionBoundM } from "./visit-settle.js";
 
 /** One device fix as the estimators read it; horizontal only. */
 export interface DisplacementSample {
@@ -104,6 +104,9 @@ export interface CodePin {
   readonly t: readonly [number, number];
   /** The saved code, GPS-world NUE: [north, east]. */
   readonly code: readonly [number, number];
+  /** The whole correction (column-major 4x4, odometry-NUE to GPS-world
+   *  NUE): the alignment the code alone implies, read for its heading. */
+  readonly alignment: readonly number[];
 }
 
 /**
@@ -126,6 +129,7 @@ export function pinCode(
     m: [a[0]!, a[8]!, a[2]!, a[10]!],
     t: [a[12]!, a[14]!],
     code: [storedNue.position[0], storedNue.position[2]],
+    alignment: a,
   };
 }
 
@@ -324,15 +328,12 @@ export function estimateCodeDisplacement(
 
 export type CodeMoveVerdict = "moved" | "consistent" | "undecided";
 
-/** The decision rule's parameters (all swept in M5a; see the sidecar). */
+/** The decision rule's parameters (swept in M5a and on real recordings;
+ *  see the sidecar). */
 export interface CodeMoveRule {
-  /** The bound never falls below this (m): the GPS bias the rule tolerates
-   *  on a correctly placed code, plus a margin. */
+  /** The bound (m), on its own: the GPS disagreement the rule tolerates on a
+   *  correctly placed code, plus a margin. */
   readonly floorM: number;
-  /** `correctionBoundM`'s accuracy factor. */
-  readonly accuracyFactor: number;
-  /** `correctionBoundM`'s accuracy for a side that reports none (m). */
-  readonly defaultAccuracyM: number;
   /** At or under this (m) the code agrees with GPS: `consistent`. */
   readonly agreementM: number;
   /** Fewer seconds of evidence than this: `undecided`. */
@@ -348,52 +349,46 @@ export interface CodeMoveRule {
  * reporting 2-3 m can still disagree by 8-15 m, while `correctionBoundM`
  * is then only 13.5-17.7 m.
  *
- * One decision (coordinator, 2026-10-01, M5b review #1) meant for both the
- * authoring prompt (`MOVE_PROMPT_RULE.floorM`, which uses it now) and the
- * viewer's rule (`CODE_MOVE_RULE.floorM`, which keeps its measured 30 m
- * until both are recalibrated on the owner's recordings). The prompt can
- * afford the lower value because it only ASKS the author; the viewer acts
+ * One decision (coordinator, 2026-10-01, M5b review #1) for both the
+ * authoring prompt (`MOVE_PROMPT_RULE.floorM`) and the viewer's rule
+ * (`CODE_MOVE_RULE.floorM`, judged against it ALONE since the owner's
+ * decision of 2026-10-02). The prompt only ASKS the author; the viewer acts
  * on its own.
  *
- * SYNTHETIC AND PROVISIONAL. Parameters it rests on: the regression gate's
- * corpus, whose worst cross-session disagreement of one reference point is
- * about 14 m and whose robust p90 is about 6 m (both synthetic), and the
- * prompt sweep's reported-accuracy arm (`code-move-prompt.sweep.test.ts`,
- * floors 15/20/25 m; the numbers are in `code-move-prompt.ts.md`). What
- * would reverse it: owner recordings in which an unmoved code's offset
- * between two visits exceeds 20 m (raise it), or in which real moves of
- * 20-30 m go unprompted often enough to matter (lower it).
+ * Parameters it rests on (the viewer's half, real recordings, results doc
+ * "Recalibrated on real recordings"): 6,166 cross-day pairs of 42 reference
+ * points marked on different days, 209 walks of median 2.7 min, the rigid
+ * fit over every device fix of the visit with 60 s and 2 m of evidence. At
+ * 20 m: 3 of 2,380 unmoved pairs past it within 120 s (2 of 37 points), 23
+ * of 6,166 over the whole visit; 66 % of 20 m and 99.9 % of 30 m moves caught
+ * within 120 s. At 15 m: 10 of 2,380 within 120 s (4 of 37 points). What
+ * would reverse it: another walk like the church one (27 m off at a
+ * reported 6 m) in more than about 1 in 50 walks, drift in tours much longer
+ * than 5 minutes, indoor use (10 walks measured). The prompt's half:
+ * `code-move-prompt.ts.md`.
  */
 export const MOVED_CODE_FLOOR_M = 20;
 
 /**
- * The rule M5a measured (results:
- * `GpsPlusSlamJs_Docs/docs/2026-10-01-2040-moved-code-detection-results.md`;
- * sidecar). SYNTHETIC AND PROVISIONAL: every value rests on simulated GPS
- * (no owner field recording existed), and the "never" figures below rest on
- * 12 independent noise draws per cell (0 of 12 bounds the false-alarm rate
- * only below about 22 %). Re-measure on recordings before trusting them.
- * Parameters it rests on: GPS error as Gauss-Markov noise of tau 30-300 s
- * and sigma 3-10 m plus a constant bias, 1 % odometry drift, the M5a
- * walks. With it an UNMOVED code did not read `moved` while sigma <= 3 m
- * and the bias was under 22.5 m (tau 300 s; 25 m at tau 30 s), nor at sigma
- * 5 m (tau 100 s) under 15 m; at sigma 10 m it did from B = 2.5 m at tau
- * 30 s, and at tau 300 s at any bias, B = 0 included. A moved code is read
- * as moved when |move + bias| clears about 30 m: 100 % of 50 m moves within
- * 20 s (median), 75 % of 30 m, 34 % of 20 m, 12 % of 10 m. What reverses
- * it: a lower floor (25 m: false alarms from sigma 5 m at B = 10 m), a
- * shorter span (0-30 s: the scan's first fixes decide alone), a GPS whose
- * error is larger than sigma 5 m without reporting it.
+ * The viewer's position rule, as the owner approved it on 2026-10-02 from
+ * the real-walk recalibration (results:
+ * `GpsPlusSlamJs_Docs/docs/2026-10-01-2040-moved-code-detection-results.md`,
+ * "Recalibrated on real recordings"; sidecar): the rigid fit's displacement
+ * against {@link MOVED_CODE_FLOOR_M} ALONE, once the evidence spans 60 s
+ * and 2 m. M5a's synthetic rule (a 30 m floor coupled to
+ * `correctionBoundM`) is retired: on real walks the coupled bound was
+ * 23-27 m (reported accuracy is not bias) and caught 9.6 % of 20 m moves
+ * against 66 % for the floor alone, for 0 against 3 of 2,380 unmoved pairs
+ * within 120 s.
  *
- * `floorM` stays the 30 m M5a measured for now: the decision of 2026-10-01
- * makes {@link MOVED_CODE_FLOOR_M} the one floor of the prompt and of this
- * rule, to be met at the recalibration on the owner's recordings rather
- * than by changing the viewer's numbers unmeasured.
+ * Parameters it rests on and what reverses them: {@link MOVED_CODE_FLOOR_M};
+ * the span (0/30/60/120 s swept: the first fixes after a scan must not
+ * decide alone) and the spread (0/2/5/10 m: 2 m keeps a visitor who stays
+ * near the code decidable; 5 m changed no real-walk false alarm). Outdoor,
+ * a few phones in mostly one area, visits under about 5 minutes.
  */
 export const CODE_MOVE_RULE: CodeMoveRule = Object.freeze({
-  floorM: 30,
-  accuracyFactor: 3,
-  defaultAccuracyM: 5,
+  floorM: MOVED_CODE_FLOOR_M,
   agreementM: 10,
   minSpanS: 60,
   minSpreadM: 2,
@@ -405,7 +400,8 @@ export const CODE_MOVE_RULE: CodeMoveRule = Object.freeze({
  * changed with both; the rigid fit's did not, at 0-18 degrees and 0-180),
  * which also means a poster turned in place is never `moved` (§7l D3).
  * The price: at a 30 m floor its first false alarm came one 2.5 m bias
- * step earlier than the 20 m residual estimator's at sigma 5 and 10 m.
+ * step earlier than the 20 m residual estimator's at sigma 5 and 10 m; on
+ * real walks the residual estimator lost every walk that left its radius.
  * No turn is fitted below the rule's minimum spread (§7l G2): such evidence
  * is `undecided` anyway, and a yaw drawn from a swaying visitor's GPS
  * wander would make the reported offset noise. Verdicts are unchanged.
@@ -416,10 +412,9 @@ export const CODE_MOVE_ESTIMATOR: DisplacementEstimator = Object.freeze({
 });
 
 /**
- * The verdict on one estimate. The bound is the authoring correction's
- * (`correctionBoundM` of the device fixes' and the saved level's
- * accuracies, with the rule's factor and default) but never under the
- * floor, because reported accuracy is not bias (§7j #2):
+ * The verdict on one estimate, against the rule's floor alone (owner,
+ * 2026-10-02; the coupling to the authoring correction's accuracy bound
+ * hid the floor on real walks, see {@link CODE_MOVE_RULE}):
  * - `undecided` - no estimate, or less than `minSpanS` / `minSpreadM` of
  *   evidence, or a size between the agreement and the bound;
  * - `moved` - beyond the bound;
@@ -427,21 +422,9 @@ export const CODE_MOVE_ESTIMATOR: DisplacementEstimator = Object.freeze({
  */
 export function judgeCodeDisplacement(
   estimate: DisplacementEstimate | null,
-  accuracies: {
-    /** The median reported accuracy of the DEVICE fixes (m). */
-    readonly deviceM: number | null | undefined;
-    /** The saved level's mint accuracy (m). */
-    readonly storedM: number | null | undefined;
-  },
   rule: CodeMoveRule,
 ): { verdict: CodeMoveVerdict; boundM: number } {
-  const boundM = Math.max(
-    rule.floorM,
-    correctionBoundM(accuracies.deviceM, accuracies.storedM, {
-      accuracyFactor: rule.accuracyFactor,
-      defaultAccuracyM: rule.defaultAccuracyM,
-    }),
-  );
+  const boundM = rule.floorM;
   if (
     estimate === null ||
     !(estimate.spanS >= rule.minSpanS) ||

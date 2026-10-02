@@ -69,14 +69,22 @@ import {
 import {
   addDisplacementSample,
   CODE_MOVE_ESTIMATOR,
+  CODE_MOVE_RULE,
   displacementEstimate,
   displacementSamples,
   EMPTY_DISPLACEMENT_STATS,
   pinCode,
   type CodePin,
   type DisplacementEstimator,
+  type CodeMoveRule,
+  type DisplacementEstimate,
   type DisplacementStats,
 } from "./code-displacement.js";
+import {
+  CODE_TURN_RULE,
+  judgeCodeMove,
+  type CodeTurnRule,
+} from "./moved-code-rule.js";
 import { alignmentNorthBearingDeg, fitGaussMarkov } from "./gps-noise-fit.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import { throughAlignment, type NuePose } from "./visit-anchoring.js";
@@ -1868,7 +1876,7 @@ function sweepTail(main: readonly PairResult[]): void {
   );
 }
 
-function sweepPairs(walks: readonly Walk[]): void {
+function sweepPairs(walks: readonly Walk[]): PairResult[] {
   const every = allPairs(walks);
   sweepCollisionRule(walks, every);
   const collisions = nameCollisions(markSites(walks), COLLISION_RULE);
@@ -2007,6 +2015,7 @@ function sweepPairs(walks: readonly Walk[]): void {
     }),
   );
   sweepRefusal(sets);
+  return cross;
 }
 
 /**
@@ -2420,6 +2429,257 @@ function sweepYawChannel(
   );
 }
 
+// ---------------------------------------------------------------------------
+// M5c: the viewer rule AS SHIPPED (`moved-code-rule.ts` `judgeCodeMove`,
+// called per fix exactly as the viewer's check calls it), first crossing.
+//
+// Parameters (declared; swept where marked):
+// - the position channel on the cross-day pairs: the check's horizon after
+//   the scan (120 / 300 / 600 s / the whole visit, swept), the shipped
+//   floor and gate;
+// - the turn channels on the outdoor virtual codes, the saved heading drawn
+//   from ANOTHER walk's published alignment (as `sweepYawChannel`), split by
+//   the fix count its alignment had solved (`settledAlignmentSamples`
+//   60 / 120 / 180, swept): settled-yaw with T 30 / 45 / 60; fallback-yaw
+//   (early save, no compass) with T 45 / 60 / 90 and its spread 2 / 5 / 10 /
+//   20 m; per-fix FIRST crossing within 120 / 300 s, which is what the
+//   viewer acts on (the earlier yaw tables read the last reading only);
+// - the outdoor proxy: the walks' median reported accuracy at 6 / 6.5 / 7 /
+//   8 m (indoor walks passing, outdoor walks lost).
+// ---------------------------------------------------------------------------
+
+const SHIPPED_HORIZONS_S = [120, 300, 600, Number.POSITIVE_INFINITY] as const;
+const SETTLED_SAMPLES_SWEEP = [60, 120, 180] as const;
+const OUTDOOR_ACC_SWEEP_M = [6, 6.5, 7, 8] as const;
+
+/** A trace's estimate at fix `k`, a move and a heading offset added (the
+ *  rigid fit: a move adds exactly, a turn reaches the yaw only). */
+function estimateAt(
+  tr: Trace,
+  k: number,
+  move: readonly [number, number] = [0, 0],
+  yawDeltaDeg = 0,
+): DisplacementEstimate {
+  const dn = tr.dn[k]! + move[0];
+  const de = tr.de[k]! + move[1];
+  return {
+    displacementM: [dn, de],
+    magnitudeM: Math.hypot(dn, de),
+    spanS: tr.span[k]!,
+    spreadM: tr.spread[k]!,
+    samples: 0,
+    yawDeg: wrap180(tr.yaw[k]! + yawDeltaDeg),
+  };
+}
+
+/** Seconds after the scan of the shipped rule's first `moved` within `h`
+ *  (Infinity: never). */
+function firstShipped(
+  tr: Trace,
+  h: number,
+  input: { settled: boolean; compassTurnDeg: number | null; outdoor: boolean },
+  rules: { move: CodeMoveRule; turn: CodeTurnRule },
+  move: readonly [number, number] = [0, 0],
+  yawDeltaDeg = 0,
+): number {
+  for (let k = 0; k < tr.tS.length && tr.tS[k]! <= h; k += 1) {
+    const j = judgeCodeMove(
+      { ...input, estimate: estimateAt(tr, k, move, yawDeltaDeg) },
+      rules,
+    );
+    if (j.verdict === "moved") return tr.tS[k]!;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+const SHIPPED = { move: CODE_MOVE_RULE, turn: CODE_TURN_RULE } as const;
+/** The turn channels alone: a floor no position reaches. */
+const turnOnly = (turn: CodeTurnRule) => ({
+  move: { ...CODE_MOVE_RULE, floorM: Number.POSITIVE_INFINITY },
+  turn,
+});
+
+function sweepShippedRule(
+  walks: readonly Walk[],
+  cross: readonly PairResult[],
+  outdoorCases: readonly Case[],
+  turnSign: number,
+): void {
+  // Position channel on the cross-day pairs, by the check's horizon. A
+  // compass reading of 0 outdoors keeps the turn channel silent, so only
+  // the position decides.
+  const posOnly = { settled: false, compassTurnDeg: 0, outdoor: true };
+  emit(
+    "M5c shipped rule, position channel on cross-day pairs: unmoved pairs read moved within the check's horizon h (all pairs, whether or not the visit lasts h), and 20 / 30 m moves caught (4 bearings)",
+    SHIPPED_HORIZONS_S.map((h) => {
+      const fa = cross.map((p) =>
+        pairOutcome(
+          p,
+          Number.isFinite(firstShipped(p.all, h, posOnly, SHIPPED)),
+        ),
+      );
+      const det = (moveM: number) =>
+        rate(
+          cross.flatMap((p) =>
+            MOVE_BEARINGS_DEG.map((b) =>
+              pairOutcome(
+                p,
+                Number.isFinite(
+                  firstShipped(
+                    p.all,
+                    h,
+                    posOnly,
+                    SHIPPED,
+                    bearingMove(moveM, b),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          "points",
+          false,
+        );
+      return {
+        horizonS: Number.isFinite(h) ? h : "whole visit",
+        fa: rate(fa, "points"),
+        det20: det(20),
+        det30: det(30),
+      };
+    }),
+  );
+
+  // Turn channels on the outdoor virtual codes.
+  const errsOf = new Map(
+    walks
+      .filter((w) => w.place === "outdoor")
+      .map((w) => [w.key, headingErrors(w)] as const),
+  );
+  const poolWalks = walks.filter(
+    (w) =>
+      w.place === "outdoor" &&
+      w.fixes!.length >= 120 &&
+      extentM(w.fixes!) >= 30,
+  );
+  const poolOf = (keep: (i: number) => boolean) =>
+    poolWalks.map((w) => {
+      const e = errsOf.get(w.key);
+      return e == null ? [] : finiteOf(e.published.filter((_, i) => keep(i)));
+    });
+  const rows: Record<string, unknown>[] = [];
+  for (const nSettled of SETTLED_SAMPLES_SWEEP) {
+    for (const kind of ["settled", "early"] as const) {
+      const pool = poolOf((i) => (kind === "settled") === i >= nSettled);
+      const candidates = pool.flatMap((a, k) => (a.length > 0 ? [k] : []));
+      const rnd = seeded(kind === "settled" ? 71 + nSettled : 73 + nSettled);
+      // One draw per code, shared by every variant below.
+      const draws = outdoorCases.map((c) => {
+        const pubSame = errsOf.get(c.walk)?.published[c.scanIdx];
+        if (pubSame === undefined || !Number.isFinite(pubSame))
+          return Number.NaN;
+        for (let tries = 0; tries < 50; tries += 1) {
+          const k = candidates[Math.floor(rnd() * candidates.length)];
+          if (k === undefined) return Number.NaN;
+          if (poolWalks[k]!.key === c.walk) continue;
+          const a = pool[k]!;
+          const other = a[Math.floor(rnd() * a.length)]!;
+          return -turnSign * pubSame + turnSign * other;
+        }
+        return Number.NaN;
+      });
+      const variants: {
+        label: string;
+        turn: CodeTurnRule;
+        settled: boolean;
+      }[] =
+        kind === "settled"
+          ? [30, 45, 60].map((T) => ({
+              label: `settled-yaw T=${String(T)}`,
+              turn: { ...CODE_TURN_RULE, settledYawDeg: T },
+              settled: true,
+            }))
+          : [45, 60, 90].flatMap((T) =>
+              [2, 5, 10, 20].map((s) => ({
+                label: `fallback-yaw T=${String(T)} spread>=${String(s)}`,
+                turn: {
+                  ...CODE_TURN_RULE,
+                  fallbackYawDeg: T,
+                  fallbackMinSpreadM: s,
+                },
+                settled: false,
+              })),
+            );
+      for (const h of [120, 300]) {
+        const cov = outdoorCases
+          .map((c, i) => ({ c, d: draws[i]! }))
+          .filter((x) => covers(x.c.rigid, h) && Number.isFinite(x.d));
+        for (const v of variants) {
+          const input = {
+            settled: v.settled,
+            compassTurnDeg: null,
+            outdoor: true,
+          };
+          const hitAt = (x: (typeof cov)[number], extra: number) =>
+            Number.isFinite(
+              firstShipped(
+                x.c.rigid,
+                h,
+                input,
+                turnOnly(v.turn),
+                [0, 0],
+                x.d + extra,
+              ),
+            );
+          const det = cov.flatMap((x) => [hitAt(x, 90), hitAt(x, -90)]);
+          const half = cov.map((x) => hitAt(x, 180));
+          rows.push({
+            settledSamples: nSettled,
+            savedFrom: kind,
+            withinS: h,
+            rule: v.label,
+            codes: cov.length,
+            fa: rate(
+              cov.map((x) => ({
+                hit: hitAt(x, 0),
+                unit: x.c.walk,
+                walks: [x.c.walk],
+              })),
+              "walks",
+            ),
+            det90: kOfN(det.filter(Boolean).length, det.length),
+            det180: kOfN(half.filter(Boolean).length, half.length),
+          });
+        }
+      }
+    }
+  }
+  emit(
+    "M5c shipped rule, turn channels on outdoor virtual codes (saved heading from ANOTHER walk; settled = that alignment had solved >= N fixes): first crossing within h, turn channel alone",
+    rows,
+  );
+
+  // The outdoor proxy: a walk's median reported accuracy.
+  const medAcc = (w: Walk): number =>
+    quantile(
+      (w.fixes ?? []).map((f) => f.acc ?? Number.NaN),
+      0.5,
+    );
+  const place = (p: Place) => walks.filter((w) => w.place === p);
+  emit(
+    "M5c outdoor proxy: walks whose median reported accuracy is at or under the cutoff (indoor ones passing would use the compass; outdoor ones not passing lose it)",
+    OUTDOOR_ACC_SWEEP_M.map((cut) => ({
+      cutoffM: cut,
+      indoorPassing: kOfN(
+        place("indoor").filter((w) => medAcc(w) <= cut).length,
+        place("indoor").length,
+      ),
+      outdoorLost: kOfN(
+        place("outdoor").filter((w) => !(medAcc(w) <= cut)).length,
+        place("outdoor").length,
+      ),
+    })),
+  );
+}
+
 describe.runIf(MODE === "sweep")("D20 real walks: the sweep", () => {
   it(
     "prints the real false-alarm, detection, noise-model and heading tables",
@@ -2447,10 +2707,16 @@ describe.runIf(MODE === "sweep")("D20 real walks: the sweep", () => {
       });
       const cases = walks.flatMap((w) => virtualCases(w));
       const turnSign = sweepVirtual(walks, cases);
-      sweepPairs(walks);
+      const cross = sweepPairs(walks);
       sweepNoiseModel(walks);
       sweepHeading(
         walks,
+        cases.filter((c) => c.place === "outdoor"),
+        turnSign,
+      );
+      sweepShippedRule(
+        walks,
+        cross,
         cases.filter((c) => c.place === "outdoor"),
         turnSign,
       );
