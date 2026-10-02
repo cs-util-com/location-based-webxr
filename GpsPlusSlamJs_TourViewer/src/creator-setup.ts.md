@@ -294,6 +294,25 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
     the previews inside are disposed with `placedPreviews`. Objects already
     written to the zip by a Finish (the manifest's) are not shown - showing
     hosted objects in author mode is M4.
+    - **Re-judged on every new fix too, not only on a sighting** (M5b; M5b
+      review #8). The move prompt needs the refusal current, so each
+      render that finds a new fix in the store re-runs
+      `placeEarlierObjects` on the LATEST sighting through the CURRENT
+      alignment, whether or not the code is still in view. Consequence: a
+      GPS alignment that drifts past the plausibility bound while the code
+      is out of view moves the earlier objects, with no tap and no new
+      look at the code, from the code's frame to their stored geo - a jump
+      of at least the bound (13.5 m at a reported 2 m, 26.2 m at 5 m) - and back when it drifts
+      inside again. Accepted because that frame is exactly what the
+      visit's settle would save through at that moment (`settleVisit`
+      reads the same sighting through the same alignment): freezing the
+      preview would show the creator a placement the settle no longer
+      makes. Pinned by `authoring-settle.test.ts` "re-judges the earlier
+      notes' frame on a new fix while the code is out of view". What would
+      change it: a field report of notes jumping while the creator walks
+      away from the code - then the live frame and the settle's choice
+      would have to change together (for example, a refusal judged only
+      while the code is in view), never the preview alone.
   - **A preview from geo waits for the zero** (M2c review #4): on the
     first visit of a page load (a restored draft) the zero arrives with the
     first GPS fix, after `beginAuthorVisit` ran. `previewObject` records the
