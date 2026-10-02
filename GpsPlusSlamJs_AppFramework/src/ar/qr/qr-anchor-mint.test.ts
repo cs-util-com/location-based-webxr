@@ -4,6 +4,7 @@ import {
   DEFAULT_MAX_FIXED_ROTATION_SPREAD_DEG,
   maxPairwiseRotationDeg,
   mintQrAnchorFromSightings,
+  QR_MINT_HEADING_UNCERTAIN_EXTENT_M,
 } from './qr-anchor-mint.js';
 import { calcRelativeCoordsInMeters } from '../../core/index.js';
 import { geodesicAngleRad } from '../../utils/geodesic-angle.js';
@@ -692,5 +693,85 @@ describe('mintQrAnchorFromSightings - which alignment places the code', () => {
       },
     });
     expect(rotationErrorDeg(result, throughMature)).toBeLessThan(1e-3);
+  });
+});
+
+describe('mintQrAnchorFromSightings - the uncertain-heading marker (D31)', () => {
+  /** Mint one sighting through a session alignment with this GPS extent. */
+  function mintWithExtent(
+    gpsExtentM: number | undefined,
+    segment = 0
+  ): ReturnType<typeof mintQrAnchorFromSightings> {
+    return mintQrAnchorFromSightings({
+      sightings: [sighting()],
+      spansFrameChange: false,
+      nowIso: NOW,
+      currentAlignment: {
+        alignmentMatrix: IDENTITY,
+        zero: ZERO,
+        alignmentSampleCount: 60,
+        segment,
+        ...(gpsExtentM !== undefined ? { gpsExtentM } : {}),
+      },
+    });
+  }
+
+  function qualityOf(
+    result: ReturnType<typeof mintQrAnchorFromSightings>
+  ): Record<string, unknown> {
+    if (!result.ok || !result.level.ok) throw new Error('mint failed');
+    return { ...result.level.level.qr.mintQuality };
+  }
+
+  // Why this test matters: owner decision D31. A code composed through an
+  // alignment that rests on under 10 m of GPS walk is SAVED (refusing it
+  // would lose the "scan the poster, stop" session), but its heading is
+  // close to guesswork: 13.8 degrees p50 and 88 p90 for the codes the
+  // marker catches on the extent sweep, 3.4 / 8 for the rest. The level
+  // must say so, or a viewer trusts it like any other.
+  it('marks a code minted through an alignment under 10 m of GPS extent', () => {
+    const quality = qualityOf(mintWithExtent(4));
+    expect(quality['headingUncertain']).toBe(true);
+    expect(quality['alignmentGpsExtentM']).toBe(4);
+  });
+
+  it('marks a code minted through a longer walk as NOT uncertain, explicitly', () => {
+    // `false` is a measured answer, distinct from an absent (unknown) one.
+    const quality = qualityOf(mintWithExtent(80));
+    expect(quality['headingUncertain']).toBe(false);
+    expect(quality['alignmentGpsExtentM']).toBe(80);
+  });
+
+  it('puts the boundary at exactly the threshold: 10 m is not uncertain', () => {
+    expect(QR_MINT_HEADING_UNCERTAIN_EXTENT_M).toBe(10);
+    expect(qualityOf(mintWithExtent(10))['headingUncertain']).toBe(false);
+    expect(qualityOf(mintWithExtent(9.99))['headingUncertain']).toBe(true);
+  });
+
+  it('stamps nothing when the extent is unknown', () => {
+    // A caller that does not supply the extent (a replay, an older app) must
+    // not produce a level that claims a heading is settled or unsettled.
+    const quality = qualityOf(mintWithExtent(undefined));
+    expect(quality).not.toHaveProperty('headingUncertain');
+    expect(quality).not.toHaveProperty('alignmentGpsExtentM');
+  });
+
+  it('stamps nothing for a non-finite or negative extent', () => {
+    // Defensive: a broken extent says nothing about the walk, and a NaN
+    // would otherwise compare false and claim "settled".
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+      expect(qualityOf(mintWithExtent(bad))).not.toHaveProperty(
+        'headingUncertain'
+      );
+    }
+  });
+
+  it('stamps nothing when the code falls back to its own sighting snapshot', () => {
+    // The extent describes the session alignment it came with. When that
+    // alignment is from another odometry segment the mint uses the newest
+    // sighting's own snapshot instead, whose extent nobody measured.
+    const quality = qualityOf(mintWithExtent(2, 1));
+    expect(quality).not.toHaveProperty('headingUncertain');
+    expect(quality).not.toHaveProperty('alignmentGpsExtentM');
   });
 });

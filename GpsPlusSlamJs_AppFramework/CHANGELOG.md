@@ -131,6 +131,21 @@
 
 ### Added
 
+- **A QR level marks a code whose heading is uncertain** (owner decision
+  D31, 2026-10-02): `QrMintQuality` gains the optional
+  `alignmentGpsExtentM` (the GPS extent of the alignment the code was
+  composed through) and `headingUncertain` (`true` under
+  `QR_MINT_HEADING_UNCERTAIN_EXTENT_M = 10` m, new export of
+  `ar/qr/qr-anchor-mint`). `mintQrAnchorFromSightings` stamps both when the
+  `currentAlignment` it places the code through carries a `gpsExtentM`.
+  The code is still written. Measured on the start-at-code `extent` sweep:
+  the marker catches 74 % of those short-walk codes, whose heading is 13.8 /
+  88 degrees p50 / p90 against 3.4 / 8 for the rest.
+  - **Absent means unknown:** levels minted before this, and mints without
+    an extent, carry neither field; a reader must not default
+    `headingUncertain` to `false`. Readers that do not know the fields
+    ignore them, so no migration is needed. The Tour Viewer does not read
+    them yet.
 - **`recordGpsEventBatch` and its `RecordGpsEventBatchPayload` type are
   re-exported** from `gps-plus-slam-app-framework/state` (and the package
   root), beside `recordGpsEvent`: several GPS observations with ONE alignment

@@ -14,6 +14,9 @@ Decision record:
 
 - `DEFAULT_MAX_FIXED_ROTATION_SPREAD_DEG`, `DEFAULT_RECENCY_HALF_LIFE_S` —
   both **guesses until the field probe measures them**.
+- `QR_MINT_HEADING_UNCERTAIN_EXTENT_M = 10` - the GPS extent (m) under which
+  a level is saved but marked `headingUncertain` (owner decision D31); the
+  measured reason and the swept values (5 / 10 / 15 m) are in its doc comment.
 - `maxPairwiseRotationDeg(rotations): number` — the outlier-inclusive
   cross-sighting rotation disagreement.
 - `QrMintAlignmentNow` - an alignment of the session (`alignmentMatrix`,
@@ -30,6 +33,14 @@ quality }` or `{ ok: false, reason, detail }`.
     through the newest sighting's own snapshot. Its zero, sample count and
     accuracy are the ones the level records. Optional, so a caller without a
     live session still mints.
+  - **The uncertain-heading marker (D31).** When that alignment is the one
+    used and carries a finite, non-negative `gpsExtentM`, the level's
+    `mintQuality` gets `alignmentGpsExtentM` and `headingUncertain`
+    (`extent < QR_MINT_HEADING_UNCERTAIN_EXTENT_M`; exactly 10 m is not
+    uncertain). The code is still written: refusing would lose the "scan
+    the poster, stop" session. With no usable extent, or when the mint falls
+    back to a sighting's own snapshot (whose extent nobody measured), both
+    fields are absent: absent means unknown, never settled.
   - **Never throws for a DATA condition**; the callers are a zip contributor
     and a summary panel, and both want a verdict rather than an exception.
   - `reason` ∈ `no-sightings | frame-changed | moved | no-alignment`; `detail`
@@ -221,3 +232,11 @@ refusals traced). Tables go to `QR_MINT_START_AT_CODE_SWEEP_OUT` (plus a
 suffix per sweep) when set, since vitest runs silent here.
 
 No fixtures required.
+
+The uncertain-heading marker (D31) has its own describe block in
+`qr-anchor-mint.test.ts`: marked under 10 m, an explicit `false` at 80 m,
+the boundary (10 m not marked, 9.99 m marked), and nothing stamped for an
+unknown, non-finite or negative extent or for the sighting-snapshot
+fallback. `qr-anchor-mint.property.test.ts` checks, for any finite
+non-negative extent, that the written and re-parsed level says exactly
+`extent < 10` and carries the extent.

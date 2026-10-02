@@ -80,6 +80,25 @@ export const DEFAULT_MAX_FIXED_ROTATION_SPREAD_DEG = 15;
  */
 export const DEFAULT_RECENCY_HALF_LIFE_S = 60;
 
+/**
+ * GPS extent (m) of the alignment a code is composed through below which
+ * the level is saved but marked `headingUncertain` (owner decision D31).
+ *
+ * Measured (`qr-anchor-mint.start-at-code.test.ts`, `extent` sweep: a
+ * recording that starts at the code, 3 looks, out-and-back walks of 0-30 m,
+ * 40 seeds each, 5 m GPS accuracy, the shipped mint): heading 41 degrees
+ * p50 at 0-5 m of extent, 7.3 at 5-10 m, 3.5 at 10-15 m. Swept as a marker:
+ * - 5 m marks 36 % of those codes and leaves the 5-10 m bin (7.3 / 22
+ *   degrees p50 / p90) unmarked: the unmarked codes are 4.9 / 16.
+ * - 10 m marks 74 %: marked 13.8 / 88 degrees, unmarked 3.4 / 8.
+ * - 15 m marks 89 % and buys nothing: the unmarked are still 3.4 / 8, so
+ *   it marks codes whose heading is as good as the rest.
+ * The shares describe that deliberately short-walk set, not real
+ * recordings. At 2-3 m GPS accuracy standing still spans less, so the same
+ * extent would mean a longer real walk and a lower value could serve.
+ */
+export const QR_MINT_HEADING_UNCERTAIN_EXTENT_M = 10;
+
 export type QrAnchorDeclineReason =
   'no-sightings' | 'frame-changed' | 'moved' | 'no-alignment';
 
@@ -133,6 +152,9 @@ interface MintFrame {
   zero: LatLong;
   /** What the level stamps about it (sample count, accuracy). */
   info: MintAlignmentInfo;
+  /** Its GPS extent (m), when the caller supplied a usable one. Only the
+   *  caller's alignment carries it; a sighting snapshot never does. */
+  gpsExtentM?: number;
 }
 
 /**
@@ -345,6 +367,9 @@ function mintFrame(
       alignmentMatrix: current.alignmentMatrix,
       zero: current.zero,
       info: alignmentInfo(current.alignmentSampleCount, current.gpsAccuracyM),
+      ...(usableExtent(current.gpsExtentM)
+        ? { gpsExtentM: current.gpsExtentM }
+        : {}),
     };
   }
   for (let i = sightings.length - 1; i >= 0; i -= 1) {
@@ -357,6 +382,28 @@ function mintFrame(
     };
   }
   return null;
+}
+
+/** A GPS extent that says something about the walk: finite, not negative. */
+function usableExtent(m: number | undefined): m is number {
+  return m !== undefined && Number.isFinite(m) && m >= 0;
+}
+
+/**
+ * The D31 marker for a level composed through `frame`: its extent and
+ * whether that is under {@link QR_MINT_HEADING_UNCERTAIN_EXTENT_M}. Empty
+ * when the extent is unknown, so the level says nothing rather than a
+ * default (absent = unknown).
+ */
+function headingMarker(frame: MintFrame): {
+  alignmentGpsExtentM?: number;
+  headingUncertain?: boolean;
+} {
+  if (frame.gpsExtentM === undefined) return {};
+  return {
+    alignmentGpsExtentM: frame.gpsExtentM,
+    headingUncertain: frame.gpsExtentM < QR_MINT_HEADING_UNCERTAIN_EXTENT_M,
+  };
 }
 
 /** The alignment facts the level assembly needs. */
@@ -558,6 +605,7 @@ export function mintQrAnchorFromSightings(
       rotationSpreadDeg: quality.rotationSpreadDeg,
       translationSpreadM: quality.translationSpreadM,
       physicalSizeSpreadM: quality.sizeSpreadM,
+      ...headingMarker(frame),
     },
   });
   if (!level.ok) {
