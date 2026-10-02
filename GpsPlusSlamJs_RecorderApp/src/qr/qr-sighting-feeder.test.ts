@@ -14,10 +14,11 @@ const PLACEMENT = {
 
 describe('createQrSightingFeeder', () => {
   it('snapshots the alignment AS IT IS at each detection', () => {
-    // Why this test matters: the mint uses each sighting's contemporaneous
-    // alignment (plan DEC-3) and the store keeps only the current one. If the
-    // feeder read the alignment once at wiring time, every sighting would
-    // carry the same stale matrix and the whole decision would be inert.
+    // Why this test matters: the mint falls back to a sighting's own
+    // snapshot when the alignment at save describes another odometry segment,
+    // and the store keeps only the current one. If the feeder read the
+    // alignment once at wiring time, every sighting would carry the same
+    // stale matrix and that fallback would place codes through it.
     let sampleCount = 2;
     const readAlignment = vi.fn(() => ({
       alignmentMatrix: IDENTITY,

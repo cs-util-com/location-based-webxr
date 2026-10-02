@@ -16,15 +16,17 @@ sighting accumulator, together with the alignment as it stood at that moment.
 - `noteFrameChange()` — the odometry frame changed.
 - `alignmentNow()` - the session's alignment as it stands NOW plus the
   accumulator's current segment (`QrMintAlignmentNow`), for the save-time
-  mint, which turns every sighting's rotation through it.
+  mint, which places every sighting through it.
 
 ## Invariants & assumptions
 
 - **The alignment is read PER DETECTION, not once at wiring time.** The mint
-  composes each sighting's position through its contemporaneous alignment
-  (plan DEC-3; the rotation goes through `alignmentNow()` instead) and the store
-  keeps no alignment history, so a snapshot taken once would make that whole
-  decision inert. A test pins that `readAlignment` is called per detection and
+  places every sighting through `alignmentNow()`, but falls back to the
+  newest per-sighting snapshot when the session has moved to another odometry
+  segment, and the store keeps no alignment history, so a snapshot taken once
+  would make that fallback place codes through a stale matrix. (Until
+  2026-10-02 every sighting went through its own snapshot, plan DEC-3,
+  superseded by the owner.) A test pins that `readAlignment` is called per detection and
   that a burst keeps its LAST value.
 - **The snapshot is memory-only. It is never dispatched or persisted.** The
   recorder records RAW observations so a future algorithm can be re-tested

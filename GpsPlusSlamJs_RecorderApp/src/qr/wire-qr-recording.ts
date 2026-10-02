@@ -109,10 +109,10 @@ export interface WireQrRecordingOptions {
    */
   setProducer: (producer: QrFrameSink | null) => void;
   /**
-   * Read the session's alignment as it stands NOW. Each sighting keeps the
-   * value from its last detection, because the mint composes its position
-   * through the alignment as it was AT that moment and the store keeps no
-   * history (plan DEC-3); the save-time mint reads it again for the rotation.
+   * Read the session's alignment as it stands NOW. The save-time mint reads
+   * it again and places every sighting through it; each sighting also keeps
+   * the value from its last detection, the mint's fallback after a tracking
+   * restart, because the store keeps no history.
    */
   readAlignment: QrSightingFeederDeps['readAlignment'];
   /** Receives the sighting feeder so save-time minting and the HUD can read

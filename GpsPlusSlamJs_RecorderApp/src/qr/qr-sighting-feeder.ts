@@ -2,10 +2,12 @@
  * Feeds the recorder's derived QR placements into the session's sighting
  * accumulator, together with the alignment as it stood at that moment.
  *
- * WHY THE ALIGNMENT IS READ HERE AND NOT RECORDED. The mint composes each
- * sighting's position through its CONTEMPORANEOUS alignment (plan DEC-3),
- * and the store keeps only the current one — no history. Snapshotting it per sighting is therefore
- * necessary. It must NOT be dispatched or persisted, though: the recorder
+ * WHY THE ALIGNMENT IS READ HERE AND NOT RECORDED. The save-time mint places
+ * every sighting through the alignment as it stands then (`alignmentNow()`),
+ * but falls back to the newest snapshot taken in a code's odometry segment
+ * when a tracking restart or loop closure moved the session to another one,
+ * and the store keeps only the current alignment - no history. Snapshotting
+ * it per sighting is therefore necessary. It must NOT be dispatched or persisted, though: the recorder
  * records RAW observations so a future algorithm can be re-tested against old
  * recordings (decision D-A), and an alignment matrix is a DERIVED value.
  * Replaying the recording re-solves the same alignment at the same point, so
@@ -54,9 +56,9 @@ export interface QrSightingFeeder {
   readonly accumulator: QrSightingAccumulator;
   /**
    * The session's alignment as it stands NOW, with the odometry segment it
-   * describes - for the save-time mint, which turns every sighting's
-   * rotation through it (a sighting's own snapshot can predate the walk
-   * that makes the alignment's yaw observable).
+   * describes - for the save-time mint, which places every sighting
+   * through it (a sighting's own snapshot can predate the walk that makes
+   * the alignment's yaw observable).
    */
   alignmentNow(): QrMintAlignmentNow;
 }

@@ -30,12 +30,12 @@ Decision record:
   recording right after a final scan would otherwise discard the best evidence
   in the session.
 - **It hands the mint the alignment as it stands at THIS run**
-  (`feeder.alignmentNow()`). The mint turns every sighting's rotation
-  through it, so a code scanned as the recording started (seen through an
-  alignment with no walk behind it, whose yaw is arbitrary) gets the
-  heading of the walked alignment. A level written at an early
-  crash-safety sync can therefore differ from the one written at save in
-  heading as well as position; the save is what the delivered zip carries.
+  (`feeder.alignmentNow()`). The mint places every sighting through it,
+  so a code scanned as the recording started (seen through an alignment
+  with no walk behind it, whose yaw is arbitrary) gets the heading and
+  position of the walked alignment. A level written at an early
+  crash-safety sync can therefore differ from the one written at save even
+  when no new sighting came in; the save is what the delivered zip carries.
 - **Foreign codes are never minted.** Without that gate the recorder would
   write a real latitude and longitude for every WiFi sticker, menu code and
   parcel label the camera saw, into a zip the author then publishes. It is the

@@ -121,7 +121,7 @@ export function createQrLevelZipContributor(
             nowIso: deps.nowIso(),
             // The alignment as it stands at THIS save: a code scanned as the
             // recording started was seen through an alignment with no walk
-            // behind it, and its rotation is turned through this one instead.
+            // behind it, and it is placed through this one instead.
             currentAlignment: feeder.alignmentNow(),
           });
           if (!result.ok) {
