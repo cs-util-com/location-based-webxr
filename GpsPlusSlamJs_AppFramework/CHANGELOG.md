@@ -369,6 +369,26 @@ source }` instead of the corners alone (unreleased API).
 
 ### Changed
 
+- **The compass cold start is on by default wherever GPS fixes are fed**
+  (owner decision D30, 2026-10-02; plan
+  `GpsPlusSlamJs_Docs/docs/2026-10-02-1830-compass-cold-start-default-plan.md`).
+  `createGpsPositionHandler` now starts the `AbsoluteOrientationSensor`
+  watch at the first fix that arrives while recording, so later fixes carry
+  `rawAbsoluteOrientation` and the core's cold-start yaw override (default
+  on since 2026-07-25) can act. Before, only apps that started the watch
+  themselves (the Recorder, OsmDemo) got it; the Tour Viewer,
+  MinimalExample and AnchorStarter now do too, with no code change.
+  - **No new permission prompt:** off Chrome Android (iOS, Safari, Firefox,
+    desktop, headless) it reports `unavailable` before any permission
+    query; it never calls `DeviceOrientationEvent.requestPermission`. An app
+    that already started the watch is never restarted (new
+    `ensureAbsoluteOrientationWatch`).
+  - **Opt out** with `absoluteOrientation: 'off'`; observe the default's
+    status with `onAbsoluteOrientationStatus`. Any other value throws a
+    `TypeError` at creation.
+  - **Cost:** one 20 Hz sensor while it runs; the handler never stops it
+    (the app's own `stopAbsoluteOrientationWatch()` still does).
+
 - **QR votes carry their provenance** (Tour Viewer authoring plan
   2026-09-28-0953, M2b). Every payload `buildQrGpsVotes` builds is stamped
   `rawGpsPoint.source: GPS_POINT_SOURCE_SYNTHETIC_QR`, the core's provenance

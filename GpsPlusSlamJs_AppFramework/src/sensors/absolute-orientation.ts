@@ -64,6 +64,10 @@ let latest: AbsoluteOrientationReading | null = null;
 // matches and the stale start aborts instead of installing a sensor teardown
 // no longer owns.
 let watchGeneration = 0;
+// True from a start until the next stop, whatever the start's outcome
+// (pending, active, unavailable, error). `ensureAbsoluteOrientationWatch`
+// reads it so a default start never restarts a watch an app already owns.
+let watchRequested = false;
 
 function getSensorCtor(): AbsoluteOrientationSensorCtor | null {
   if (typeof window === 'undefined') return null;
@@ -130,6 +134,7 @@ export async function startAbsoluteOrientationWatch(
   onStatus: (status: AbsoluteOrientationStatus) => void = () => {}
 ): Promise<void> {
   stopAbsoluteOrientationWatch();
+  watchRequested = true;
   const myGeneration = watchGeneration;
 
   // `onStatus` is caller-supplied; an unguarded throw from it would reject
@@ -227,6 +232,22 @@ export async function startAbsoluteOrientationWatch(
   }
 }
 
+/**
+ * Start the watch only if none was requested since the last stop; otherwise
+ * a no-op that leaves the running (or pending, or unavailable) watch, its
+ * cached reading and its `onStatus` callback untouched. This is the start
+ * `createGpsPositionHandler` uses by default (compass cold start, D30), so
+ * an app that started the watch itself, e.g. with a HUD status callback, is
+ * never restarted underneath. An unavailable platform is not retried until
+ * an explicit stop. Never throws.
+ */
+export function ensureAbsoluteOrientationWatch(
+  onStatus?: (status: AbsoluteOrientationStatus) => void
+): Promise<void> {
+  if (watchRequested) return Promise.resolve();
+  return startAbsoluteOrientationWatch(onStatus);
+}
+
 /** Latest reading, or null when unavailable/not-yet-warmed-up. Mirrors getLastDeviceOrientation. */
 export function getLatestAbsoluteOrientation(): AbsoluteOrientationReading | null {
   return latest;
@@ -236,6 +257,7 @@ export function getLatestAbsoluteOrientation(): AbsoluteOrientationReading | nul
 export function stopAbsoluteOrientationWatch(): void {
   // Invalidate any in-flight start awaiting its async permission gate.
   watchGeneration++;
+  watchRequested = false;
   if (sensor) {
     try {
       sensor.stop();
