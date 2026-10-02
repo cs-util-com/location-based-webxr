@@ -46,7 +46,12 @@ a verdict (the veto). No compass reading is taken (owner, 2026-10-02).
   history it folded and folds only the rest (O(1) per fix); however the
   growth is sliced the estimate is the same (property). A history that
   SHRANK (a reset, e.g. the veto's own recovery) is folded again from its
-  start, so no fix counts twice.
+  start, so no fix counts twice - unless an odometry frame change came
+  first (M5c review M4): the re-fed history then holds both frames, so every
+  check ends and later pins fold only what is stored after the reset. The
+  solve itself still blends frames after a WebXR origin reset, because the
+  viewer never dispatches `odometryTrackingRestarted`: filed as
+  `../docs/2026-10-02-1929-viewer-odometry-restart-not-dispatched-followup.md`.
 - **A bounded fit window** (M5c review H2): only the device fixes stamped at
   most `MOVED_CODE_FIT_WINDOW_S` (300 s, `moved-code-rule.ts`) before the
   pin fold, and every one after it; a frame change cuts the history too.
@@ -80,6 +85,6 @@ for (const v of checks.update(
 code never; the horizon; the 300 s fit window, and old far-off fixes
 that no longer veto; votes in the history change nothing; the settled
 yaw; no turn check for an unsettled save; no compass input; a frame
-change; a reset; the evidence; one pin per code; `clear()`),
+change; a reset; a reset after a frame change; the evidence; one pin per code; `clear()`),
 `moved-code-check.property.test.ts` (slicing and vote-interleaving
 invariance). The wired veto: `viewer-moved-code.test.ts`.

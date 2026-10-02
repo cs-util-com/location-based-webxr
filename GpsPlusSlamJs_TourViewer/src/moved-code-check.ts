@@ -11,7 +11,9 @@
  *   The code's own votes agree with its pin by construction.
  * - INCREMENTAL: each check folds only the fixes stored since its last
  *   update (O(1) per fix, `addDisplacementSample`). A history that SHRANK
- *   (a reset, e.g. the recovery's re-feed) is folded again from its start.
+ *   (a reset, e.g. the recovery's re-feed) is folded again from its start -
+ *   unless an odometry frame change came first: the re-fed history then
+ *   holds both frames, so every check ends instead (M5c review M4).
  * - FROM A BOUNDED HISTORY: the real-walk pairs fit every device fix of a
  *   short visit, the ones before the scan too; the check folds the fixes
  *   stamped at most `MOVED_CODE_FIT_WINDOW_S` (300 s) before the pin and
@@ -168,6 +170,8 @@ export function createMovedCodeChecks(): MovedCodeChecks {
   const checks = new Map<string, Check>();
   /** The first history index of the current odometry frame. */
   let frameStart = 0;
+  /** The history's length at the last update: a shorter one was reset. */
+  let seenLength = 0;
 
   function fold(
     check: Check,
@@ -249,7 +253,16 @@ export function createMovedCodeChecks(): MovedCodeChecks {
       });
     },
     update(history, nowMs) {
-      if (history.gpsPositions.length < frameStart) frameStart = 0;
+      const length = history.gpsPositions.length;
+      if (length < seenLength && frameStart > 0) {
+        // A reset after a frame change (the veto's recovery re-feeds every
+        // device fix, both frames'): re-folding from index 0 would mix the
+        // frames, so every check ends and later pins fold only what is
+        // stored from here on (M5c review M4).
+        checks.clear();
+        frameStart = length;
+      }
+      seenLength = length;
       const verdicts: MovedCodeVerdict[] = [];
       for (const check of [...checks.values()]) {
         const sinceScanS = (nowMs - check.atMs) / 1000;

@@ -332,6 +332,48 @@ describe("createMovedCodeChecks", { timeout: 60_000 }, () => {
     expect(h.checks.snapshot()[0]!.spanS).toBeCloseTo(9, 6);
   });
 
+  // Why (M5c review M4): after an odometry frame change the store's history
+  // holds two frames' fixes; the veto's recovery resets it and re-feeds
+  // them all. A check pinned in the new frame must not fold the old frame's
+  // fixes from index 0 - their odometry names other places. The check ends
+  // instead, and a later pin folds only what is stored after the reset.
+  it("ends its checks when the history shrinks after a frame change, instead of folding the old frame again", () => {
+    const h = harness();
+    const before = circle(0, 30, [20, 50], 6);
+    const after = circle(31, 60, [20, 50], 6);
+    h.feed(before);
+    h.checks.frameChanged(selectGpsPositions(h.store.getState()).length);
+    h.feed(after);
+    h.pin(codeSeen([0, 0]), 61);
+    // The code's votes join the history.
+    h.store.dispatch(
+      recordGpsEventBatch({
+        events: buildQrGpsVotes({
+          qrPoseWorld: codeSeen([0, 0]),
+          sizeM: 0.2,
+          qrGeo: SAVED_GEO,
+          syntheticAccuracyM: 5,
+          baselineM: 30,
+          count: 16,
+          timestamp: T0 + 61_000,
+        }),
+      }),
+    );
+    h.checks.update(h.view(), T0 + 61_000);
+    expect(h.checks.snapshot()[0]!.samples).toBe(after.length);
+    // A veto's recovery: reset, then every device fix of both frames.
+    h.store.dispatch(resetGpsSessionData());
+    h.store.dispatch(recordGpsEventBatch({ events: [...before, ...after] }));
+    h.checks.update(h.view(), T0 + 62_000);
+    expect(h.checks.snapshot()).toEqual([]);
+    // A later pin folds only the fixes stored after the reset.
+    h.pin(codeSeen([0, 0]), 62);
+    h.feed(circle(62, 70, [20, 50], 6));
+    const view = h.checks.snapshot()[0]!;
+    expect(view.samples).toBe(9);
+    expect(view.spanS).toBeCloseTo(8, 6);
+  });
+
   // Why: the recovery resets the GPS history and re-feeds the device fixes;
   // a check still running for another code must not double-count them.
   it("folds the history again when it shrinks (a reset), without counting a fix twice", () => {
