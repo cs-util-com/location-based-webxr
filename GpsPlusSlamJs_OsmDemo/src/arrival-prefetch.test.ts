@@ -8,6 +8,7 @@
  * an invalid target. No test touches the network; `fetchImpl` is the seam.
  */
 
+import { cellToLatLng } from "h3-js";
 import { describe, expect, it, vi } from "vitest";
 import {
   MemoryBlobStore,
@@ -240,5 +241,148 @@ describe("cancelling", () => {
     prefetch.abort();
     expect(report.outcome).toBe("settled");
     expect(prefetch.progress()).toBe(1);
+  });
+});
+
+describe("one Overpass tile at a time, nearest first", () => {
+  // Why: OsmDemo's own foreground fetch takes one tile at a time
+  // (`FETCH_CONCURRENCY` 1 in `demo-pipeline.ts`) so the source's two slots
+  // race that tile at two operators; a pool of two would spend them on two
+  // unraced tiles and hold two 21 MB tiles in memory at once. Plan order is
+  // ring order, so the tile under the target is warmed first.
+  const THREE_TILES = { lat: 50.9, lng: 6.9511 };
+  const plan = arrivalPlanFor(THREE_TILES);
+
+  /** Which plan tile an Overpass POST asks for, from its bbox. */
+  function tileOf(init: RequestInit | undefined): string {
+    const query =
+      new URLSearchParams(typeof init?.body === "string" ? init.body : "").get(
+        "data",
+      ) ?? "";
+    const m = /\[bbox:([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)\]/.exec(query);
+    if (m === null) throw new Error(`no bbox in ${query.slice(0, 80)}`);
+    const [s, w, n, e] = m.slice(1).map(Number) as [
+      number,
+      number,
+      number,
+      number,
+    ];
+    const inside = plan.overpassTiles.filter((tile) => {
+      const [lat, lng] = cellToLatLng(tile);
+      return lat > s && lat < n && lng > w && lng < e;
+    });
+    if (inside.length !== 1) throw new Error(`bbox matches ${inside.length}`);
+    return inside[0]!;
+  }
+
+  it("never has two tiles in flight, and asks in plan order", async () => {
+    expect(plan.overpassTiles.length).toBe(3);
+    const store = new MemoryBlobStore();
+    for (const url of plan.demUrls) await store.put(url, "AAAA");
+    const pending: { tile: string; release: () => void }[] = [];
+    const firstAsked: string[] = [];
+    let maxTilesInFlight = 0;
+    const fetchImpl = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      const tile = tileOf(init);
+      if (!firstAsked.includes(tile)) firstAsked.push(tile);
+      return new Promise<Response>((resolve, reject) => {
+        const entry = {
+          tile,
+          release: () =>
+            resolve(
+              new Response(JSON.stringify({ version: 0.6, elements: [] }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+              }),
+            ),
+        };
+        pending.push(entry);
+        maxTilesInFlight = Math.max(
+          maxTilesInFlight,
+          new Set(pending.map((p) => p.tile)).size,
+        );
+        init?.signal?.addEventListener("abort", () => {
+          pending.splice(pending.indexOf(entry), 1);
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      });
+    }) as unknown as typeof fetch;
+
+    const prefetch = startArrivalPrefetch(THREE_TILES, { store, fetchImpl });
+    while (!prefetch.done) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const next = pending.shift();
+      next?.release();
+    }
+    expect(maxTilesInFlight).toBe(1);
+    expect(firstAsked).toEqual(plan.overpassTiles);
+    expect((await prefetch.finished).counts.overpass.fetched).toBe(3);
+  });
+});
+
+describe("a store that cannot keep what it is given", () => {
+  // Why: warming is worth ~21 MB of donated bandwidth a tile only if the
+  // bytes stay. An OPFS store that is there but cannot write (quota, a
+  // revoked handle) swallows each failed write by design, so without a
+  // probe the prefetch would pull every tile and report it as warm.
+  function storeThatDropsWrites(): OsmBlobStore {
+    const keys: string[] = [];
+    return {
+      get: () => Promise.resolve(undefined),
+      put: (key) => {
+        keys.push(key);
+        return Promise.resolve();
+      },
+      delete: () => Promise.resolve(),
+      keys: () => Promise.resolve([]),
+    };
+  }
+
+  it("declines after a failed write probe, fetching nothing", async () => {
+    const { fetchImpl } = healthyNetwork();
+    const prefetch = startArrivalPrefetch(COLOGNE, {
+      store: storeThatDropsWrites(),
+      fetchImpl,
+    });
+    expect((await prefetch.finished).outcome).toBe("store-unwritable");
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(prefetch.progress()).toBe(1);
+  });
+
+  it("counts a job whose write failed as failed, not fetched", async () => {
+    // The probe passes; then every tile write fails the way the OPFS store
+    // reports it: swallowed, with its error counter raised.
+    const memory = new MemoryBlobStore();
+    let failWrites = false;
+    const stats = { errors: 0 };
+    const store: OsmBlobStore & { stats: { errors: number } } = {
+      stats,
+      get: (k) => memory.get(k),
+      put: async (k, v) => {
+        if (failWrites) {
+          stats.errors += 1;
+          return;
+        }
+        await memory.put(k, v);
+      },
+      delete: (k) => memory.delete(k),
+      keys: () => memory.keys(),
+    };
+    const { fetchImpl } = healthyNetwork();
+    const wrapped = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      failWrites = true;
+      return fetchImpl(input, init);
+    }) as unknown as typeof fetch;
+    const report = await startArrivalPrefetch(COLOGNE, {
+      store,
+      fetchImpl: wrapped,
+    }).finished;
+    expect(report.outcome).toBe("settled");
+    expect(report.counts.overpass.failed).toBe(PLAN.overpassTiles.length);
+    expect(report.counts.overpass.fetched).toBe(0);
+    expect(report.counts.dem.failed).toBe(PLAN.demUrls.length);
+    expect(report.writeFailures).toBe(
+      PLAN.overpassTiles.length + PLAN.demUrls.length,
+    );
   });
 });

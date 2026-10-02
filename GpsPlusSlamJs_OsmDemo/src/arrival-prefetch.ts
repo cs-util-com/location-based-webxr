@@ -21,10 +21,19 @@
  * tile for nothing. Without OPFS it declines (`no-persistent-store`) and
  * reads as done, so the flight does not wait for it.
  *
- * WHY NOT SPECULATIVE: the globe's flight is paced on this (the user is
- * waiting, as for OsmDemo's own foreground fetch it replaces), so the
- * Overpass source may race a cold tile at two operators, as it does for
- * OsmDemo's first fetch. Two tiles at a time, as `DemoPipeline` does.
+ * WHY NOT SPECULATIVE, AND ONE TILE AT A TIME: the globe's flight is paced
+ * on this (the user is waiting, as for OsmDemo's own foreground fetch it
+ * replaces), so the Overpass source may race a cold tile at two operators.
+ * Like `DemoPipeline` (`FETCH_CONCURRENCY` 1), the tiles go one at a time
+ * in plan order: the source's two slots race the tile under the target
+ * first, and only one 21 MB tile is ever parsed in memory at once.
+ *
+ * WHY A WRITE PROBE: the OPFS store swallows a failed write by design (a
+ * storage problem must not fail a fetch), so a store that exists but cannot
+ * keep anything (quota, a revoked handle) would let the prefetch pull every
+ * tile for nothing. A tiny put, get and delete first; if the value does not
+ * come back, it declines (`store-unwritable`). A write that fails later is
+ * counted (`writeFailures`) and its job reads as failed, not warmed.
  *
  * LAB-LOADABLE: the globe lab imports this as `/osm/arrival-prefetch.js`
  * (served TypeScript); see the sidecar for its import map.
@@ -47,8 +56,8 @@ import {
   openPersistentOsmStore,
 } from "./osm-tile-cache.js";
 
-/** Overpass tiles fetched at once: `DemoPipeline`'s pool, for its reasons. */
-const OVERPASS_POOL = 2;
+/** The write probe's key: namespaced apart from `osm/`, `rules/` and URLs. */
+const PROBE_KEY = "arrival-prefetch/probe";
 
 export interface ArrivalPrefetchOptions {
   /**
@@ -65,16 +74,23 @@ export interface ArrivalPrefetchOptions {
 /**
  * How it ended. `settled`: every job ended (the counts say how many warmed);
  * `aborted`: cancelled; `no-persistent-store`: nothing worth warming;
+ * `store-unwritable`: the store did not keep a probe value;
  * `invalid-target`: the target was not a latitude and longitude.
  */
 export type ArrivalPrefetchOutcome =
-  "settled" | "aborted" | "no-persistent-store" | "invalid-target";
+  | "settled"
+  | "aborted"
+  | "no-persistent-store"
+  | "store-unwritable"
+  | "invalid-target";
 
 export interface ArrivalPrefetchReport {
   readonly outcome: ArrivalPrefetchOutcome;
   readonly counts: ArrivalCounts;
   /** Characters written to the store (ASCII JSON and base64: bytes). */
   readonly bytesStored: number;
+  /** Writes the store failed (thrown, or counted in its `stats.errors`). */
+  readonly writeFailures: number;
   readonly elapsedMs: number;
   /**
    * The Overpass source's own timings per fetched tile. `decodeMs` (the
@@ -124,22 +140,23 @@ const tally = (total: number): Tally => ({
   failed: 0,
 });
 
-/** Runs `work` over `items`, `width` at a time, until done or aborted. */
-async function pool<T>(
-  items: readonly T[],
-  width: number,
-  signal: AbortSignal,
-  work: (item: T) => Promise<void>,
-): Promise<void> {
-  let next = 0;
-  const lane = async (): Promise<void> => {
-    while (!signal.aborted) {
-      const item = items[next++];
-      if (item === undefined) return;
-      await work(item);
-    }
-  };
-  await Promise.all(Array.from({ length: width }, lane));
+/** The store's own error counter, when it keeps one (`OpfsOsmBlobStore`). */
+function storeErrors(store: OsmBlobStore): number {
+  const stats = (store as { stats?: { errors?: unknown } }).stats;
+  return typeof stats?.errors === "number" ? stats.errors : 0;
+}
+
+/** Whether the store keeps a value: put, read back, delete. Never throws. */
+async function storeKeepsWrites(store: OsmBlobStore): Promise<boolean> {
+  const value = `probe-${Date.now()}`;
+  try {
+    await store.put(PROBE_KEY, value);
+    const back = await store.get(PROBE_KEY);
+    await store.delete(PROBE_KEY);
+    return back === value;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -156,6 +173,7 @@ export function startArrivalPrefetch(
   let looked = false;
   let inFlight = 0;
   let bytesStored = 0;
+  let writeFailures = 0;
   const overpassTimings: (OsmTileTimings & { tile: string })[] = [];
   let outcome: ArrivalPrefetchOutcome | undefined;
   let frozen = 0;
@@ -181,6 +199,7 @@ export function startArrivalPrefetch(
       outcome: result,
       counts: snapshot(),
       bytesStored,
+      writeFailures,
       elapsedMs: Math.max(0, now() - startedAt),
       overpassTimings: [...overpassTimings],
     });
@@ -215,12 +234,32 @@ export function startArrivalPrefetch(
       return;
     }
     if (outcome !== undefined) return;
+    if (!(await storeKeepsWrites(found))) {
+      finish("store-unwritable");
+      return;
+    }
+    if (outcome !== undefined) return;
 
-    // Every write is counted, so a measurement can read what was stored.
+    // Every write is counted, so a measurement can read what was stored, and
+    // a failed one (thrown, or swallowed and counted by the store) marks its
+    // key so the job reads as failed rather than warmed.
+    const failedKeys = new Set<string>();
     const store: OsmBlobStore = {
       get: (key) => found.get(key),
       put: async (key, value) => {
-        await found.put(key, value);
+        const before = storeErrors(found);
+        try {
+          await found.put(key, value);
+        } catch (error) {
+          failedKeys.add(key);
+          writeFailures += 1;
+          throw error;
+        }
+        if (storeErrors(found) > before) {
+          failedKeys.add(key);
+          writeFailures += 1;
+          return;
+        }
         bytesStored += value.length;
       },
       delete: (key) => found.delete(key),
@@ -257,18 +296,21 @@ export function startArrivalPrefetch(
       else job.failed += 1;
     };
 
-    const overpass = pool(coldTiles, OVERPASS_POOL, signal, async (tile) => {
-      inFlight += 1;
-      try {
-        const result = await source.fetchTile(tile, { signal });
-        if (result.timings !== undefined) {
-          overpassTimings.push({ ...result.timings, tile });
+    const overpass = (async (): Promise<void> => {
+      for (const tile of coldTiles) {
+        if (signal.aborted) return;
+        inFlight += 1;
+        try {
+          const result = await source.fetchTile(tile, { signal });
+          if (result.timings !== undefined) {
+            overpassTimings.push({ ...result.timings, tile });
+          }
+          settle(counts.overpass, !failedKeys.has(source.cacheKey(tile)));
+        } catch {
+          settle(counts.overpass, false);
         }
-        settle(counts.overpass, true);
-      } catch {
-        settle(counts.overpass, false);
       }
-    });
+    })();
     const dem = Promise.all(
       coldUrls.map(async (url) => {
         inFlight += 1;
@@ -281,7 +323,7 @@ export function startArrivalPrefetch(
           });
           // The caching fetch stored a clone; the body itself is not needed.
           await response.body?.cancel().catch(() => undefined);
-          settle(counts.dem, response.status === 200);
+          settle(counts.dem, response.status === 200 && !failedKeys.has(url));
         } catch {
           settle(counts.dem, false);
         }
