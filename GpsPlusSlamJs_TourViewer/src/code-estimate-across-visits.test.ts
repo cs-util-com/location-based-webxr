@@ -69,11 +69,20 @@
  *   5° when the bias tracks the accuracy); a hurried mix (4-20 m GPS,
  *   10-30 m walks) is almost never Good. Two pools of 320 differ by up to
  *   6 points of precision at the same setting: read the table to +-5.
- * - The Recorder's per-visit mint (`thresholds`, a pool of 160 visits) gets
- *   the heading badly wrong when a visit starts at the code (89° p50): the
- *   first look's alignment has no walk behind it, and the mint's rotation
- *   average is unweighted, so no half-life helps. The end-of-visit
- *   alignment (the Tour Viewer's settle) gives 5.0° p50.
+ * - The Recorder's per-visit mint (`thresholds`, a pool of 160 visits) got
+ *   the heading badly wrong when a visit started at the code (89° p50): it
+ *   composed each sighting through the alignment of its own moment, the
+ *   first look's alignment had no walk behind it, and the rotation average
+ *   is unweighted, so no half-life helped. The end-of-visit alignment (the
+ *   Tour Viewer's settle) gave 5.0° p50. FIXED 2026-10-02: the mint now
+ *   places every sighting through the alignment at mint time
+ *   (`currentAlignment`, owner decision retiring DEC-3; framework
+ *   `qr-anchor-mint.start-at-code.test.ts`), and `accumulatorEstimate`
+ *   below passes the visit's end alignment as that, so this arm measures the
+ *   shipped path. Re-run 2026-10-02 (the same 160 visits, yaw noise 2°):
+ *   the Recorder mint 4.7° / 16.7° heading p50 / p90 and 2.51 / 5.18 m,
+ *   against 5.0° / 17.2° and 2.41 / 5.78 m for the Tour Viewer's settle;
+ *   the half-life (5 s to 1e6 s) still changes nothing.
  * - The 15° spread gate (the same 160 visits) refuses 0 % of honest visits
  *   at 1-3° yaw noise (5 % at 5°) and catches a 20° re-hang 75-100 %; the
  *   4 s gap and the 60 s half-life change nothing in the Tour Viewer's flow.
@@ -643,8 +652,10 @@ const RECORDER_DEFAULTS: AccumulatorParams = {
 
 /**
  * The Recorder's mint, run on ONE visit's detections: each detection carries
- * the alignment as it stood then (DEC-3), the accumulator folds them into
- * sightings by the gap, and the mint gates the rotation spread and weights
+ * the alignment as it stood then (what the Recorder's feeder snapshots), the
+ * accumulator folds them into sightings by the gap, and the mint gates the
+ * rotation spread, places every sighting through the visit's END alignment
+ * (`currentAlignment`, as the Recorder's save does) and weights the position
  * by recency.
  */
 function accumulatorEstimate(
@@ -677,12 +688,24 @@ function accumulatorEstimate(
   const spreadDeg = maxPairwiseRotationDeg(
     sightings.map((s) => s.odomPose.rotation),
   );
+  const end = run.fixes[run.fixes.length - 1];
   const result = mintQrAnchorFromSightings({
     sightings,
     spansFrameChange: false,
     nowIso: new Date(EPOCH_MS).toISOString(),
     maxFixedRotationSpreadDeg: p.maxSpreadDeg,
     recencyHalfLifeS: p.halfLifeS,
+    ...(end === undefined
+      ? {}
+      : {
+          currentAlignment: {
+            alignmentMatrix: (end.alignment ??
+              null) as QrSightingObservation["alignmentMatrix"],
+            zero: run.zero,
+            alignmentSampleCount: end.sampleCount,
+            segment: 0,
+          },
+        }),
   });
   if (!result.ok) {
     return {
@@ -1363,9 +1386,10 @@ describe.runIf(runs("thresholds"))(
     }, 1_800_000);
 
     // Why this test matters: the half-life weights a visit's sightings by
-    // recency, each composed through the alignment of ITS moment (DEC-3).
-    // The Tour Viewer composes through the visit's END alignment instead.
-    // This measures both, so the choice is evidence, not habit.
+    // recency. Until 2026-10-02 each was composed through the alignment of
+    // ITS moment (DEC-3); the mint now places them all through the visit's
+    // END alignment, like the Tour Viewer's settle, which composes only the
+    // last look. This measures both, so the choice is evidence, not habit.
     it("sweeps the recency half-life against the end-alignment composition", () => {
       const pool = getThresholdPool();
       const look = DEFAULT_LOOK;
