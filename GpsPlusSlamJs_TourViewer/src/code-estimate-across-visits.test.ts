@@ -78,8 +78,14 @@
  *   places every sighting through the alignment at mint time
  *   (`currentAlignment`, owner decision retiring DEC-3; framework
  *   `qr-anchor-mint.start-at-code.test.ts`), and `accumulatorEstimate`
- *   below passes the visit's end alignment as that, so this arm measures the
- *   shipped path. Re-run 2026-10-02 (the same 160 visits, yaw noise 2°):
+ *   below passes the visit's end alignment as that. Since D28 was revised
+ *   the same day the Recorder passes the FIRST MATURE alignment (80 m of
+ *   GPS extent) at or after the code's last sighting, and the end
+ *   alignment only while the walk has not matured
+ *   (`qr-mint-alignment-tracker`), so this arm is the shipped path for a
+ *   visit whose GPS extent stays under 80 m after its last look, and not
+ *   for one that reaches it. Re-run 2026-10-02 (the same 160 visits, yaw
+ *   noise 2°):
  *   the Recorder mint 4.7° / 16.7° heading p50 / p90 and 2.51 / 5.18 m,
  *   against 5.0° / 17.2° and 2.41 / 5.78 m for the Tour Viewer's settle;
  *   the half-life (5 s to 1e6 s) still changes nothing.

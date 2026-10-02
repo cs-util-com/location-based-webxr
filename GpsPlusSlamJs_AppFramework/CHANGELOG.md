@@ -62,12 +62,23 @@
   it, so its yaw is arbitrary: 72 degrees heading error p50 and, for a code
   seen only at the start, 2.9 m, on a synthetic sweep against the real
   solver (M3a measured 89 degrees). Every sighting is now placed through ONE
-  alignment, the most informed one that still describes the sightings'
-  odometry frame: the new optional `currentAlignment` (the session's at
-  mint time, with its `segment`) when it is in their segment, else the
-  newest sighting's own snapshot. Same sweep: 1.0-4.9 degrees p50 from
-  30 m walks up (7-10 at 15 m) and 1.3 m. The owner superseded DEC-3 for
-  this on 2026-10-02.
+  alignment: the new optional `currentAlignment` (with its `segment`)
+  when it is in their segment, else the newest sighting's own snapshot.
+  Same sweep: 1.0-4.9 degrees p50 from 30 m walks up (7-10 at 15 m) and
+  1.3 m. The owner superseded DEC-3 for this on 2026-10-02.
+  - **Which alignment to pass (owner decision D28, revised 2026-10-02):**
+    the FIRST MATURE alignment at or after the code's last sighting,
+    maturity being 80 m of session GPS extent; before maturity the
+    alignment at save; after a tracking restart the one the code's segment
+    closed with. `createQrMintAlignmentTracker` (new) keeps that per code
+    from the sightings and alignment changes a caller reports, and
+    `createGpsExtentTracker` (new, `state/gps-extent-tracker`) supplies the
+    extent. Passing the alignment at save for every code (shipped first)
+    made a code seen mid-recording and then walked away from inherit all
+    SLAM drift after its sighting: 8.6 m p50 at 500 m away with 1 % and
+    1 degree per 100 m (19 m at 2 %, 2 degrees), against 1.1-1.7 m through
+    the first mature alignment, which keeps the start-at-code fix (a short
+    walk never matures, so it is the alignment at save there).
   - **Behaviour changes beyond the numbers:** the level's
     `alignmentSampleCount`, zero and GPS accuracy come from that alignment,
     so a code seen only before the third GPS fix is minted when the
@@ -76,20 +87,15 @@
     The position's recency weighting is unchanged; with one alignment it
     no longer has DEC-3's reason, and in the sweep it changes nothing
     measurable.
-  - **Added for it:** `QrMintAlignmentNow` and
-    `QrSightingAccumulator.currentSegment()`.
+  - **Added for it:** `QrMintAlignmentNow` (with an optional
+    `gpsExtentM`), `QrSightingAccumulator.currentSegment()`,
+    `createQrMintAlignmentTracker` with `QR_MINT_MATURE_GPS_EXTENT_M`
+    (`ar/qr/qr-mint-alignment-tracker`), and `createGpsExtentTracker`
+    (`state/gps-extent-tracker`).
   - **Migration:** none required; a caller that passes no
     `currentAlignment` gets the newest sighting's snapshot for every
-    sighting. A caller with a live session should pass it (the Recorder
-    does, and for a code seen before a tracking restart it passes the
-    alignment that code's odometry segment closed with).
-  - **Known cost, pending an owner decision:** a code seen mid-recording
-    and then walked away from inherits the SLAM drift accumulated after its
-    sighting, because the alignment at save describes the end of the walk:
-    on a synthetic sweep with integrated drift, 8.6 m p50 at 500 m away with
-    1 % and 1 degree per 100 m (19 m at 2 %, 2 degrees), against 1.7 m
-    through the sighting's own snapshot. Below about 300 m walked after the
-    code (200 m at 2 %) it is no worse. See the sidecar.
+    sighting. A caller with a live session should pass the alignment
+    `createQrMintAlignmentTracker` picks for the code (the Recorder does).
   - **Existing levels are not re-minted.** The mint runs only on a live
     recording's crash-safety syncs and final save; replaying never
     re-mints, so a `qr/<id>.json` written before this fix for a recording
