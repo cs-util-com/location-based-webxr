@@ -25,8 +25,9 @@ DEC-H3).
     Matched under the archive's `./` convention like a replacement (either
     spelling names the same file); a path the archive does not carry is
     ignored; a path that is also among the new entries throws
-    `ZipPackagingError` ("both removed and written"). Removed entries count
-    out of the progress `total`.
+    `ZipPackagingError` ("both removed and written"), compared on the bare
+    path so `x` and `./x` collide on any archive (PR #531 review). Removed
+    entries count out of the progress `total`.
   - `onProgress` - called after
     each carried-over entry is read and once more at `total/total` after the
     write.
@@ -105,7 +106,8 @@ STORE mode for carried and new entries (hand-rolled central-directory
 reader); zero-entry input; an input with a `./` name and a duplicate name
 is re-emitted; progress as entries read over the output count; the
 removal list (drops named entries, matches under `./`, ignores an absent
-path, refuses a path both removed and written, counts removals out of the
+path, refuses a path both removed and written - on a flat archive too, with
+only the removal carrying `./` -, counts removals out of the
 progress total); throws on
 an unsafe path, an unwritable payload and a non-zip input.
 `zip-coverage-embed-failure.test.ts` pins the wrapper's return-the-input

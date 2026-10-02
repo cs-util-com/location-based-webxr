@@ -441,6 +441,20 @@ describe('rebuildZipWithEntries', () => {
       ).rejects.toThrow(/both removed and written/);
     });
 
+    it('refuses the contradiction on a FLAT archive too, when only the removal carries the ./ (PR #531 review)', async () => {
+      // Why this test matters: a review read the two sides' `./` rules as
+      // disagreeing on a flat archive, so this exact call would pass
+      // silently. Both spellings name one file to every reader, so it must
+      // be refused. (A NEW `./` entry on a flat archive never gets here: it
+      // is refused earlier as an unsafe path.)
+      const input = await recordingLikeZip();
+      await expect(
+        rebuildZipWithEntries(input, [{ path: 'content/a.jpg', data: 'x' }], {
+          remove: ['./content/a.jpg'],
+        })
+      ).rejects.toThrow(/both removed and written/);
+    });
+
     it('counts removed entries out of the progress total', async () => {
       const seen: [number, number][] = [];
       await rebuildZipWithEntries(await recordingLikeZip(), [], {
