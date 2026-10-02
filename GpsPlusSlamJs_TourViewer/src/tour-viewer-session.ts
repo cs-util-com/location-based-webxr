@@ -41,6 +41,7 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { RenderedTourObjects } from "./content-placement.js";
 import type { FusedTallies, LastEvaluation } from "./qr-debug-readout.js";
 import type { PrintSizeCheck } from "./print-size-check.js";
+import type { MovedCodeChecks } from "./moved-code-check.js";
 import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { ViewerVoteSink } from "./viewer-vote-sink.js";
 import type { ScanGate } from "./scan-gate.js";
@@ -236,6 +237,9 @@ export interface TourViewerSession {
    *  while the debug view and the image planes need the answer synchronously —
    *  so the one place that can await it caches it here for both. */
   levelByText: Map<string, QrLevel | null>;
+  /** The level id each decoded text resolved to (the open tour's; cleared
+   *  with `levelByText`): what the moved-code veto is looked up by. */
+  levelIdByText: Map<string, string>;
 
   // --- the creator setup (creator-setup.ts) --------------------------------
   /** The most recently detected code — the one the stability gate tracks. */
@@ -352,6 +356,17 @@ export interface TourViewerSession {
    *  entry's start clears the overrides). Null outside a visitor entry: device fixes then
    *  take the plain `recordGpsEvent`. */
   viewerVoteSink: ViewerVoteSink | null;
+  /** This visitor AR entry's moved-code checks (authoring plan
+   *  2026-09-28-0953 §3.6, D20, M5c): created with the pipeline, cleared at
+   *  a tour switch, dropped at AR exit. */
+  movedCodeChecks: MovedCodeChecks | null;
+  /** The codes the moved-code check judged moved, by level id: ignored for
+   *  the rest of the page session for THIS tour (§7j #13) - kept across AR
+   *  entries, cleared at a tour switch ({@link endTourCodeVotes}). */
+  ignoredCodes: Map<string, { readonly text: string }>;
+  /** The ignored code the status line names in this AR entry (vetoed, or
+   *  seen again); null when none. */
+  viewerIgnoredText: string | null;
 
   // --- placement (viewer-placement.ts) ------------------------------------
   /** What the photo placement did — rendered by tour-flow. */
@@ -408,6 +423,10 @@ export function endQrPipeline(ctx: TourViewerSession): void {
   ctx.viewerKeepAlive = null;
   ctx.viewerVoteBudget = null;
   ctx.viewerVoteSink = null;
+  // The checks' pins are in this entry's odometry frame; the veto memory
+  // (`ignoredCodes`) outlives the entry, the line naming it does not.
+  ctx.movedCodeChecks = null;
+  ctx.viewerIgnoredText = null;
 }
 
 /**
@@ -419,11 +438,16 @@ export function endQrPipeline(ctx: TourViewerSession): void {
  * spent code never voted again (authoring plan 2026-09-28-0953, M2b
  * review #6). The soft trimming stays on (M2e milestone review #1; the seam
  * contract, rule 3): the closed tour's votes stay in the GPS history until
- * AR exit, and the hard trim back on them would jump the alignment.
+ * AR exit, and the hard trim back on them would jump the alignment. The
+ * moved-code checks and the veto memory are the closing tour's too (D20,
+ * M5c; §7j #13: per tour, cleared at a tour switch).
  */
 export function endTourCodeVotes(ctx: TourViewerSession): void {
   ctx.viewerKeepAlive?.stop();
   ctx.viewerVoteBudget?.reset();
+  ctx.movedCodeChecks?.clear();
+  ctx.ignoredCodes.clear();
+  ctx.viewerIgnoredText = null;
 }
 
 export function createTourViewerSession(): TourViewerSession {
@@ -441,6 +465,7 @@ export function createTourViewerSession(): TourViewerSession {
     qrDebugView: null,
     cameraFrameCount: 0,
     levelByText: new Map(),
+    levelIdByText: new Map(),
     lastDetectedText: null,
     activeSizeM: AUTHOR_DEFAULT_SIZE_M,
     authorErrorText: null,
@@ -473,6 +498,9 @@ export function createTourViewerSession(): TourViewerSession {
     viewerKeepAlive: null,
     viewerVoteBudget: null,
     viewerVoteSink: null,
+    movedCodeChecks: null,
+    ignoredCodes: new Map(),
+    viewerIgnoredText: null,
     placement: { kind: "idle" },
     viewerPlanesError: null,
     contentError: null,

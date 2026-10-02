@@ -21,7 +21,11 @@ so a field session where "the tour did not place" needs to say why:
   they carry the `n` token; code 1 has none), `…`-prefixed when cut; the full launch URL does not fit a line.
 - (module-private) `fusedCountsLine(label, counts)` - one code's counts on one line:
   `<label>: locks N, stable S | views a (empty e), fit b, fallback c, motion d, order f | re-reads r, natives ignored k`.
-- `debugReadoutLines({ status, unknownCode, unusableCode, tallies })` - the
+- `debugReadoutLines({ status, unknownCode, unusableCode, tallies,
+movedCodeChecks?, ignoredCodes? })` - since D20 M5c also one line per live
+  moved-code check (`moved-code check <code>: |D| x m, yaw y°, s s,
+spread m, n fixes, <turn channel>, compass c|-, <verdict>`) and one per
+  ignored code (`ignored (moved): <code>`). The rest of this entry: - the
   block: `qr: <controller status>` (the running controller's own status,
   so the creator's reads right too; milestone review of b4c #2) (with `no level: <id>` / `no size: <id>`),
   then one line per code, or `no code evaluated yet`.

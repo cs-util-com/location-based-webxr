@@ -250,3 +250,56 @@ describe("an AR entry's vote sink: one solve per lock and per keep-alive tick (D
     }
   });
 });
+
+describe("an AR entry's vote sink: retracting the votes of a moved code (D20, M5c)", () => {
+  // Why (M5a recovery arms, results doc "Recovery after a veto"): once the
+  // viewer decides a code was moved, its votes already in the history hold
+  // the alignment on the wrong spot - aged out they were still 5-8 m off
+  // after 10 minutes. Only a reset and a re-feed of the device fixes, with
+  // the soft keys off, lands exactly on the GPS answer. The batches stay
+  // within the core's 256-event limit.
+  it("resets the history, re-feeds only the device fixes in batches of at most 256, with the soft keys off", () => {
+    const { store, log } = storeWithLog();
+    const sink = startEntryVoteSink(store);
+    sink.castLockVotes(ring(T0 + 500));
+    for (let i = 1; i <= 300; i += 1) {
+      sink.recordFix(deviceFix(i), i % 50 === 0 ? ring(T0 + i * 1000) : []);
+    }
+    expect(overrides(store)).toMatchObject(VIEWER_SOFT_TRIM);
+    log.length = 0;
+    const result = sink.retractVotes();
+    expect(result).toEqual({ refedFixes: 300, batches: 2 });
+    expect(log.map((a) => a.type)).toEqual([
+      "gpsData/setAlignmentOverrides",
+      "gpsData/resetGpsSessionData",
+      "gpsData/recordGpsEventBatch",
+      "gpsData/recordGpsEventBatch",
+    ]);
+    const sizes = log
+      .filter((a) => a.type === "gpsData/recordGpsEventBatch")
+      .map((a) => (a.payload as { events: unknown[] }).events.length);
+    expect(sizes).toEqual([256, 44]);
+    expect(overrides(store)).toBeNull();
+    const stored = positions(store);
+    expect(stored).toHaveLength(300);
+    for (const p of stored) {
+      expect(gpsPointSourceOf(p)).toBe(GPS_POINT_SOURCE_DEVICE);
+    }
+  });
+
+  // Why: after the retraction the history holds no vote, so the hard trim
+  // is safe again; a later code's first vote must turn the soft keys back
+  // on (the jump regime M0b measured otherwise).
+  it("turns the soft keys on again before the next vote, and keeps collecting fixes", () => {
+    const { store } = storeWithLog();
+    const sink = startEntryVoteSink(store);
+    sink.castLockVotes(ring(T0 + 500));
+    sink.recordFix(deviceFix(1), []);
+    sink.retractVotes();
+    sink.recordFix(deviceFix(2), []);
+    expect(overrides(store)).toBeNull();
+    sink.castLockVotes(ring(T0 + 3000));
+    expect(overrides(store)).toMatchObject(VIEWER_SOFT_TRIM);
+    expect(sink.retractVotes()).toEqual({ refedFixes: 2, batches: 1 });
+  });
+});

@@ -12,6 +12,7 @@ import {
   VIEWER_VOTE_COUNT,
   buildViewerControllerConfig,
   createViewerKeepAlive,
+  IGNORED_CODE_LINE,
   imagePlaneRingNue,
   viewerStatusLine,
   type ViewerPipelineDeps,
@@ -236,10 +237,14 @@ describe("buildViewerControllerConfig", () => {
     const deps = fakeDeps();
     const config = buildViewerControllerConfig(deps);
     await config.fetchLevel(TEXT);
-    expect(deps.onLevelResolved).toHaveBeenCalledWith(TEXT, LEVEL);
+    expect(deps.onLevelResolved).toHaveBeenCalledWith(TEXT, LEVEL, TEXT_ID);
     const other = "https://gps.csutil.com/tour/?qr=nope";
     await config.fetchLevel(other);
-    expect(deps.onLevelResolved).toHaveBeenCalledWith(other, null);
+    expect(deps.onLevelResolved).toHaveBeenCalledWith(
+      other,
+      null,
+      expect.any(String),
+    );
   });
 
   it("reports a level that exists but cannot solve (no printed size)", async () => {
@@ -647,5 +652,111 @@ describe("qr-viewer-mode - fetchLevel never rejects", () => {
         value: subtle,
       });
     }
+  });
+});
+
+describe("buildViewerControllerConfig - a code the moved-code check ignores (D20, M5c)", () => {
+  // Why (§3.6, §7j #16, #4): once the viewer decided a code was moved, its
+  // later locks must not vote, must not hold or restart the keep-alive, and
+  // must not even cost the fused pose (~10 ms a lock on the phone): the
+  // veto is read by level id BEFORE the pose is computed. The lock itself is
+  // still reported, so the gate and the line can say the code is ignored.
+  const POSE = {
+    position: [2, 1.5, -3] as [number, number, number],
+    rotation: [0, 0, 0, 1] as [number, number, number, number],
+  };
+  it("computes no fused pose, casts no vote and re-arms nothing for it, and reports its lock as ignored", () => {
+    const keepAlive = createViewerKeepAlive();
+    const resolveStablePose = vi.fn(() => POSE);
+    const dispatchVotes = vi.fn();
+    const onLocked = vi.fn();
+    const onIgnoredLock = vi.fn();
+    let ignored = false;
+    const config = buildViewerControllerConfig(
+      fakeDeps({
+        keepAlive,
+        resolveStablePose,
+        dispatchVotes,
+        onLocked,
+        onIgnoredLock,
+        isIgnored: (text) => ignored && text === TEXT,
+      }),
+    );
+    const frame = (atMs: number): void => {
+      config.onDetection?.({ text: TEXT, timestamp: atMs } as QrDetectionEvent);
+      const pose = config.resolveStablePose?.(TEXT) ?? null;
+      if (pose !== null) config.dispatchVotes([{ v: atMs }] as never[]);
+      config.onLocked?.({} as never, LEVEL);
+    };
+    frame(1);
+    expect(dispatchVotes).toHaveBeenCalledTimes(1);
+    expect(keepAlive.phase(1).kind).toBe("holding");
+    // The veto lands; the viewer stops the keep-alive (its own job).
+    ignored = true;
+    keepAlive.stop();
+    resolveStablePose.mockClear();
+    onLocked.mockClear();
+    for (let t = 2; t < 40; t += 1) frame(t);
+    expect(resolveStablePose).not.toHaveBeenCalled();
+    expect(dispatchVotes).toHaveBeenCalledTimes(1);
+    expect(keepAlive.phase(40)).toEqual({ kind: "none" });
+    expect(onLocked).not.toHaveBeenCalled();
+    expect(onIgnoredLock).toHaveBeenLastCalledWith(TEXT, LEVEL);
+    // Even a vote set the controller built anyway is dropped.
+    config.onDetection?.({ text: TEXT, timestamp: 41 } as QrDetectionEvent);
+    config.dispatchVotes([{ v: 41 }] as never[]);
+    expect(dispatchVotes).toHaveBeenCalledTimes(1);
+  });
+
+  // Why: the moved-code check pins a code on the stable pose its first
+  // voted lock was built from - the same pose the keep-alive keeps.
+  it("hands every voted lock's stable pose to the moved-code check", () => {
+    const onVotedPose = vi.fn();
+    const config = buildViewerControllerConfig(
+      fakeDeps({ resolveStablePose: () => POSE, onVotedPose }),
+    );
+    config.onDetection?.({ text: TEXT, timestamp: 7 } as QrDetectionEvent);
+    config.resolveStablePose?.(TEXT);
+    config.dispatchVotes([{ v: 7 }] as never[]);
+    config.onLocked?.({} as never, LEVEL);
+    expect(onVotedPose).toHaveBeenCalledWith(
+      { text: TEXT, qrPoseWorld: POSE, level: LEVEL },
+      7,
+    );
+    // A lock that voted nothing hands nothing.
+    onVotedPose.mockClear();
+    config.onDetection?.({ text: TEXT, timestamp: 8 } as QrDetectionEvent);
+    config.onLocked?.({} as never, LEVEL);
+    expect(onVotedPose).not.toHaveBeenCalled();
+  });
+
+  // Why: the veto memory is keyed by LEVEL id (it outlives the controller's
+  // per-text cache and the AR entry), so the app must learn which id a
+  // decoded text resolved to.
+  it("reports the level id a text resolved to", async () => {
+    const onLevelResolved = vi.fn();
+    const config = buildViewerControllerConfig(fakeDeps({ onLevelResolved }));
+    await config.fetchLevel(TEXT);
+    expect(onLevelResolved).toHaveBeenCalledWith(TEXT, LEVEL, TEXT_ID);
+  });
+});
+
+describe("viewerStatusLine - an ignored code (D20, M5c)", () => {
+  // Why (§7j #4): the line must not claim "Relocalized" or invite a re-scan
+  // the veto ignores; it says, in plain words, what the visitor sees.
+  it("says the code seems moved and the tour shows by GPS, instead of any hold line", () => {
+    const line = viewerStatusLine({
+      status: "tracking",
+      unknownCode: null,
+      votedLocks: MAX_VOTED_LOCKS_PER_CODE,
+      lockedText: TEXT,
+      ignoredCode: TEXT,
+      hold: { kind: "ended", text: TEXT },
+    });
+    expect(line).toBe(IGNORED_CODE_LINE);
+    expect(IGNORED_CODE_LINE).toBe(
+      "This code seems to have been moved, so its position is not used. Showing the tour by GPS.",
+    );
+    expect(line).not.toMatch(/Relocaliz|Scan the code again/);
   });
 });

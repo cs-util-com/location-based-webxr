@@ -75,6 +75,24 @@ hasVoted)` is forwarded from every controller lock (no detected-text
 - `imagePlaneRingNue(centerNue, count, radiusM?)` — ring positions in
   GPS-world NUE at the anchor's height.
 
+## A code the moved-code check ignores (D20, M5c)
+
+- `ViewerPipelineDeps.isIgnored(text)` is read FIRST on every lock (§7j
+  #16): an ignored code's `resolveStablePose` returns null without asking
+  the fused pose (about 10 ms a lock on the phone), `dispatchVotes` drops
+  anything, a spent budget is not re-armed, and its lock goes to
+  `onIgnoredLock(text, level)` instead of `onLocked` - so no keep-alive
+  restart and no gate pass "via code".
+- `onVotedPose({ text, qrPoseWorld, level }, atMs)` - every voted lock's
+  stable pose, the one its votes (and the keep-alive) were built from: what
+  the moved-code check pins the code on.
+- `onLevelResolved(text, level, levelId)` now carries the level id (null
+  when the text could not be hashed): the veto memory is keyed by it.
+- `IGNORED_CODE_LINE` and `viewerStatusLine({ ..., ignoredCode })`: "This
+  code seems to have been moved, so its position is not used. Showing the
+  tour by GPS." replaces every lock and hold line (no "Relocalized", no
+  "Scan the code again", which the veto would ignore).
+
 ## Invariants & assumptions
 
 - **The vote budget is per code and hard** (review #6): the controller

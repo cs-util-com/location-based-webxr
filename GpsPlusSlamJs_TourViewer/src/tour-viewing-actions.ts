@@ -22,6 +22,7 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
+import type { MovedCodeEvidence } from "./moved-code-check.js";
 import type { KeepAlivePhase } from "./qr-vote-keep-alive.js";
 
 import {
@@ -128,6 +129,23 @@ interface KeepAliveLog extends ViewingMoment {
   };
 }
 
+interface CodeIgnoredLog extends ViewingMoment {
+  /** The code the moved-code check judged moved (authoring plan
+   *  2026-09-28-0953 §3.6, D20, M5c), and its level id - what the veto is
+   *  kept by for the rest of the tour. */
+  readonly text: string;
+  readonly levelId: string;
+  /** The detector's inputs as computed (§7j #15): device-only accuracies,
+   *  the fitted offset and yaw, span, spread, which channel decided, the
+   *  rule's version. */
+  readonly evidence: MovedCodeEvidence;
+  /** What the recovery did: device fixes re-fed after the GPS history was
+   *  reset, in how many batches. */
+  readonly recovery: { readonly refedFixes: number; readonly batches: number };
+  /** The store's alignment AFTER the recovery. */
+  readonly alignmentMatrix: AlignmentMatrix;
+}
+
 export const codeLocked: LogActionCreator<
   "tourViewing/codeLocked",
   CodeLockedLog
@@ -143,8 +161,14 @@ export const keepAliveChanged: LogActionCreator<
   KeepAliveLog
 > = logAction<KeepAliveLog>()("tourViewing/keepAlive");
 
+export const codeIgnored: LogActionCreator<
+  "tourViewing/codeIgnored",
+  CodeIgnoredLog
+> = logAction<CodeIgnoredLog>()("tourViewing/codeIgnored");
+
 /** Any `tourViewing/*` action. */
 export type TourViewingAction =
+  | ReturnType<typeof codeIgnored>
   | ReturnType<typeof codeLocked>
   | ReturnType<typeof votesCast>
   | ReturnType<typeof tourPlaced>

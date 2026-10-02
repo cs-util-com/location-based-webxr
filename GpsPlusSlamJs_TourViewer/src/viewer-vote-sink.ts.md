@@ -22,6 +22,8 @@ both must hold for EVERY vote:
 - `VIEWER_SOFT_TRIM` - the frozen override set M0c adopted:
   `{ outlierFalloffEnabled: true, outlierFalloffRadiusMeters: 1,
 outlierFalloffExponent: 1, outlierRejectionEnabled: false }`.
+- `RETRACT_BATCH_SIZE` (256) - the core's per-batch limit, the re-feed's
+  batch size.
 - `startEntryVoteSink(store): ViewerVoteSink` - dispatches
   `setAlignmentOverrides(null)` at once (the entry's FIRST store action from
   the viewer, before any fix or vote, on every entry - a plain-AR one too),
@@ -32,6 +34,23 @@ outlierFalloffExponent: 1, outlierRejectionEnabled: false }`.
   - `recordFix(fix, ring)` - one device fix: with a non-empty ring, the soft
     trimming on (once), then ONE batch `[fix, ...ring]`; with an empty ring,
     the plain `recordGpsEvent(fix)` and no override change.
+
+## Retracting a moved code's votes (D20, M5c)
+
+- `retractVotes(): { refedFixes, batches }` - the M5a recovery arm the owner
+  approved ("refeed-soft-off"): `setAlignmentOverrides(null)` first, then
+  `resetGpsSessionData()` (the zero stays), then every device fix this sink
+  stored (`recordFix`'s fix, in order; never a ring or a lock vote) re-fed
+  in `recordGpsEventBatch` batches of at most 256, one solve each. With
+  the soft keys off the result IS the GPS answer; aged-out votes held the
+  alignment 5-8 m off after 10 minutes, soft keys off without the reset
+  jumped 7.2 m in one fix (results doc "Recovery after a veto").
+- The soft trimming is marked off, so the next vote (another code's) turns
+  it on again before it is stored.
+- What the re-feed cannot carry: a device fix stored before this sink
+  existed (none in the viewer: the sink is created at the entry's start,
+  before its first fix), and another code's earlier votes - they go with the
+  vetoed code's (that code's keep-alive re-votes while it holds).
 
 ## Invariants & assumptions
 

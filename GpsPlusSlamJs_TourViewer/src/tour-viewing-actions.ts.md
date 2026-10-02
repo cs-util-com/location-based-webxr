@@ -45,6 +45,19 @@ altitude, accuracyM, odomPosition }` as the fusion received it),
 - Built with `tour-authoring-actions.ts`'s `logAction` (one helper per
   package), each creator annotated with its `LogActionCreator` type.
 
+## `tourViewing/codeIgnored` (D20, M5c; §7j #15)
+
+`codeIgnored({ text, levelId, evidence, recovery, alignmentMatrix,
+arVisitIndex, atMs })`: the moved-code check judged a code moved and the
+viewer vetoed it. `evidence` is `moved-code-check.ts`'s
+`MovedCodeEvidence` - the detector's inputs as computed: device-only
+accuracy median and count, the saved level's mint accuracy and alignment
+fix count, the fitted offset, |D|, the fit's yaw, span, spread, the turn
+channel and which channel decided, the compass turn, the outdoor proxy,
+seconds since the pin, the rule's version. `recovery` is what the sink's
+`retractVotes` did (fixes re-fed, batches); the alignment is the one AFTER
+it.
+
 ## Invariants & assumptions
 
 - **No reducer, on purpose.** Dispatching one changes no state; the recording

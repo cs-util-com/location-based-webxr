@@ -23,7 +23,7 @@ import {
 } from "gps-plus-slam-app-framework/state";
 
 import type { ViewerMode } from "./mode.js";
-import { viewerStatusLine } from "./qr-viewer-mode.js";
+import { IGNORED_CODE_LINE, viewerStatusLine } from "./qr-viewer-mode.js";
 import type { KeepAlivePhase } from "./qr-vote-keep-alive.js";
 import { gateSegment, type ScanGate } from "./scan-gate.js";
 
@@ -97,6 +97,9 @@ export interface ArStatusInput {
     /** The code keep-alive's phase (authoring plan M2b): what the line
      *  says once the vote budget is spent. */
     hold?: KeepAlivePhase | null;
+    /** A code the moved-code check ignores, vetoed or seen in this AR entry
+     *  (authoring plan 2026-09-28-0953 §3.6, D20, M5c). */
+    ignoredCode?: string | null;
   };
   /** The tracking-quality onboarding phase while running; null before the
    *  slice produced a report (or in author mode, which never reads it). */
@@ -238,16 +241,22 @@ export function arStatusLine(input: ArStatusInput): string {
     input.gate.kind === "not-required" &&
     (input.gate.reason === "no-lockable-level" ||
       input.gate.reason === "levels-unavailable");
+  // A code the moved-code check ignores (D20, M5c; §7j #4): the gate's
+  // short pass stands in for the generic scanning line, and the pipeline's
+  // plain sentence about the code, when it names one, stands for both.
+  const gateIgnored =
+    input.gate.kind === "passed" && input.gate.via === "ignored";
   const segments = [
     `${mode} — AR running · ${String(input.cameraFrames)} camera frames`,
     // The gate's own "point the phone at the code" replaces the pipeline's
     // generic scanning line; a detected-but-unknown code still shows.
-    (gateScanning && qr === "Scanning for the printed code…") ||
+    ((gateScanning || gateIgnored) &&
+      qr === "Scanning for the printed code…") ||
     (gateSaysNoCode &&
       (qr === NO_PRINTED_CODES || qr === "Scanning for the printed code…"))
       ? ""
       : qr,
-    gateSegment(input.gate),
+    gateIgnored && qr === IGNORED_CODE_LINE ? "" : gateSegment(input.gate),
     gateScanning ? "" : placementSegment(placement, input.readiness),
     contentSegment(input.content),
     input.planesError === null ? "" : `images failed: ${input.planesError}`,

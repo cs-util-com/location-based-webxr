@@ -98,6 +98,35 @@ recording. Its own module since the flows plan M6.
     `waiting-ready`. A tour without a recording declines at once (the ring
     waits for a lock). Cheap by design: a few predicate reads per dispatch.
 
+## The moved-code veto (D20, M5c; owner approval 2026-10-02)
+
+- **Pin.** `startViewerPipeline` creates the entry's `movedCodeChecks`;
+  the config's `onVotedPose` pins a code (by its level id from
+  `levelIdByText`) on the stable pose of its first voted lock, through the
+  current zero.
+- **Judge.** One store subscription per entry: whenever the GPS history
+  array changed, `checks.update(history, now())` folds the new device fixes
+  and judges; an odometry frame change (`qrDetected.frameEpoch`) ends every
+  pin (`frameChanged`). The recovery's own dispatches are not judged again.
+  `recordDeviceFix` hands the fix's compass reading (portrait
+  `rawAbsoluteOrientation`, `arNorthBearingDeg`) to the checks before the
+  fix is stored.
+- **Veto** (`vetoMovedCode`), once per level id: the id joins
+  `ignoredCodes` (the rest of the page session for this tour); the
+  keep-alive stops if it holds this code; `viewerVoteSink.retractVotes()`
+  resets the history and re-feeds the device fixes with the soft keys off,
+  so the content moves ONCE, to the GPS answer; the viewing log records
+  `codeIgnored` with the evidence and the recovery; `viewerIgnoredText` is
+  set; the gate passes `ignored` (`markGateIgnored`: a scanning gate, or
+  one the code itself passed; an escape or a waived gate stays).
+- **Afterwards** the config's `isIgnored(text)` (level id in
+  `ignoredCodes`) makes every later lock of the code free: no fused pose,
+  no vote, no keep-alive; `onIgnoredLock` sets the line and the gate. The
+  next entry's gate starts from `ignoredLevelIds` (all lockable codes
+  ignored: passed at once).
+- **No lock-time veto** (M5d dropped): a sighting is never judged through an
+  alignment that converged before it.
+
 ## Invariants & assumptions
 
 - Session-state fields it owns: the six `viewer*` QR-line inputs,

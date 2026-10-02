@@ -34,6 +34,12 @@
  *   the viewer turns on before an entry's first vote (`viewer-vote-sink.ts`,
  *   M2e).
  *
+ * - **A code the moved-code check ignores** (authoring plan
+ *   2026-09-28-0953 §3.6, D20, M5c): {@link ViewerPipelineDeps.isIgnored}
+ *   is read before anything else a lock costs - no fused pose, no vote, no
+ *   keep-alive restart or budget re-arm - and its lock is reported to
+ *   {@link ViewerPipelineDeps.onIgnoredLock} instead of `onLocked`.
+ *
  * The level lookup is the deferred NEGATIVE CACHE (delta #8): a scanned
  * code with no `qr/<c>.json` in the open tour resolves a geo-less
  * placeholder — cached per text by the controller — instead of rejecting,
@@ -177,7 +183,25 @@ export interface ViewerPipelineDeps {
    *  none). Resolving the id is ASYNC, so the app caches the answer here
    *  and the synchronous callbacks — the debug view, the image planes —
    *  read the cache instead of re-deriving it. */
-  onLevelResolved?(text: string, level: QrLevel | null): void;
+  onLevelResolved?(
+    text: string,
+    level: QrLevel | null,
+    /** The level id the text hashes to; null when it could not be hashed. */
+    levelId: string | null,
+  ): void;
+  /** Whether the moved-code check made the viewer ignore this code (keyed
+   *  by its level id, D20 M5c): read FIRST on every lock, before the fused
+   *  pose is computed (§7j #16). Absent: no code is ignored. */
+  isIgnored?(text: string): boolean;
+  /** A lock of an ignored code: it cast nothing and changed nothing; the
+   *  app says so (the gate's "code ignored" pass, the status line). */
+  onIgnoredLock?(text: string, level: QrLevel): void;
+  /** A voted lock's stable pose (raw WebXR), the one its votes were built
+   *  from, at the lock's time: what the moved-code check pins the code on. */
+  onVotedPose?(
+    code: { text: string; qrPoseWorld: Pose; level: QrLevel },
+    atMs: number,
+  ): void;
   /** The code's keep-alive (`createViewerKeepAlive`): each voted lock hands
    *  it the stable pose the votes were built from, every other lock is a
    *  re-scan that restarts its hold while that pose is fresh, and re-arms
@@ -236,6 +260,7 @@ export function buildViewerControllerConfig(
    *  the burst restarted the hold from a pose frozen ~1.25 s after the
    *  first lock, drift and all. */
   function rearmStaleCode(text: string, atMs: number): void {
+    if (ignored(text)) return;
     const keepAlive = deps.keepAlive;
     if (keepAlive === undefined || !voteBudget.isSpent(text)) return;
     if (!keepAlive.holdsFreshPose(text, atMs)) voteBudget.forget(text);
@@ -245,6 +270,12 @@ export function buildViewerControllerConfig(
    *  takes over); any other lock of the kept code restarts the hold while
    *  the kept pose is fresh (the keep-alive refuses a stale one). */
   function keepAliveOnLock(text: string, level: QrLevel): void {
+    if (frameVoted && frameStablePose?.text === text) {
+      deps.onVotedPose?.(
+        { text, qrPoseWorld: frameStablePose.pose, level },
+        lastDetectedAtMs,
+      );
+    }
     const keepAlive = deps.keepAlive;
     if (keepAlive === undefined) return;
     const { geo, physicalSizeM } = level.qr;
@@ -267,6 +298,8 @@ export function buildViewerControllerConfig(
       keepAlive.relock(text, lastDetectedAtMs);
     }
   }
+
+  const ignored = (text: string): boolean => deps.isIgnored?.(text) === true;
 
   return {
     frontEnd: deps.frontEnd,
@@ -296,24 +329,24 @@ export function buildViewerControllerConfig(
       try {
         id = await qrCodeId(text);
       } catch {
-        deps.onLevelResolved?.(text, null);
+        deps.onLevelResolved?.(text, null, null);
         return NO_LEVEL_PLACEHOLDER;
       }
       const level = deps.getLevels()?.get(id);
       if (level === undefined) {
         deps.onUnknownCode?.(id);
-        deps.onLevelResolved?.(text, null);
+        deps.onLevelResolved?.(text, null, id);
         return NO_LEVEL_PLACEHOLDER;
       }
       if (level.qr.physicalSizeM === undefined) {
         deps.onUnusableLevel?.(id);
       }
-      deps.onLevelResolved?.(text, level);
+      deps.onLevelResolved?.(text, level, id);
       return level;
     },
     dispatchVotes: (votes) => {
       const text = lastDetectedText;
-      if (text === null) return;
+      if (text === null || ignored(text)) return;
       if (!deps.canAcceptVotes()) return; // budget untouched — see the dep
       if (!voteBudget.tryConsume(text)) return;
       deps.dispatchVotes(votes);
@@ -328,12 +361,19 @@ export function buildViewerControllerConfig(
       rearmStaleCode(event.text, event.timestamp);
       deps.recordDetection(event);
     },
-    ...(deps.onLocked !== undefined || deps.keepAlive !== undefined
+    ...(deps.onLocked !== undefined ||
+    deps.keepAlive !== undefined ||
+    deps.onIgnoredLock !== undefined ||
+    deps.onVotedPose !== undefined
       ? {
           onLocked: (_solution: unknown, level: QrLevel) => {
             // The same frame's onDetection set the text, synchronously
             // before this (the controller's ordering contract).
             const text = lastDetectedText;
+            if (text !== null && ignored(text)) {
+              deps.onIgnoredLock?.(text, level);
+              return;
+            }
             if (text !== null) keepAliveOnLock(text, level);
             deps.onLocked?.(
               level,
@@ -348,7 +388,8 @@ export function buildViewerControllerConfig(
     // phone; QR near-frontal pose plan §61 #6) - which is why the pose a
     // voted lock used is kept for the keep-alive.
     resolveStablePose: (text) => {
-      if (voteBudget.isSpent(text)) return null;
+      // The veto first: an ignored code costs no fused pose (§7j #16).
+      if (ignored(text) || voteBudget.isSpent(text)) return null;
       const pose = deps.resolveStablePose(text);
       frameStablePose = pose === null ? null : { text, pose };
       return pose;
@@ -367,11 +408,20 @@ export function buildViewerControllerConfig(
   };
 }
 
+/** The line for a code the moved-code check ignores (D20, M5c; §7j #4):
+ *  no "Relocalized", no invitation to scan again - the veto would ignore
+ *  it. */
+export const IGNORED_CODE_LINE =
+  "This code seems to have been moved, so its position is not used. Showing the tour by GPS.";
+
 /** What the viewer's status line shows — pure, plain-language. */
 export function viewerStatusLine(input: {
   status: QrTrackingStatus | null;
   unknownCode: string | null;
   unusableCode?: string | null;
+  /** A code the moved-code check ignores, seen or vetoed in this AR entry;
+   *  its line replaces every lock and hold line. */
+  ignoredCode?: string | null;
   votedLocks: number;
   lockedText: string | null;
   /** Last lock's RMS reprojection error (px) — the on-device placement
@@ -390,6 +440,7 @@ export function viewerStatusLine(input: {
   if (input.unusableCode != null) {
     return `Code ${input.unusableCode}'s level has no printed size — it cannot relocalize.`;
   }
+  if (input.ignoredCode != null) return IGNORED_CODE_LINE;
   if (input.status === null) return "";
   if (input.lockedText !== null && input.votedLocks > 0) {
     const quality =

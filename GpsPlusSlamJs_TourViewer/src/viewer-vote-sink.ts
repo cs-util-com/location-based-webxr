@@ -18,6 +18,14 @@
  *   until AR exit - across a tour switch too: the closed tour's votes stay
  *   in the GPS history, and the hard trim back on them is the 2.8-5.8 m
  *   jump M0b/M2b measured at a 5-8 m bias (M0c: keep it for the session).
+ * - **A moved code's votes can be taken back (D20, M5c).** The sink keeps
+ *   every device fix it stored; {@link ViewerVoteSink.retractVotes} turns
+ *   the overrides off, resets the GPS history and re-feeds those fixes, in
+ *   batches of at most {@link RETRACT_BATCH_SIZE}: the M5a recovery arm
+ *   "refeed-soft-off", the only one that lands on the GPS answer (aged-out
+ *   votes still held the alignment 5-8 m off after 10 minutes). With no vote
+ *   left in the history the hard trim is safe; the next vote turns the soft
+ *   trimming on again.
  *
  * @see viewer-vote-sink.ts.md
  */
@@ -25,6 +33,7 @@
 import {
   recordGpsEvent,
   recordGpsEventBatch,
+  resetGpsSessionData,
   setAlignmentOverrides,
   type AlignmentOverrides,
   type RecordGpsEventPayload,
@@ -50,12 +59,17 @@ export const VIEWER_SOFT_TRIM: Readonly<AlignmentOverrides> = Object.freeze({
   outlierRejectionEnabled: false,
 });
 
+/** The re-feed's batch size: the core's limit per `recordGpsEventBatch`
+ *  (`MAX_GPS_EVENT_BATCH_SIZE`, core 1.26), so each batch is one solve. */
+export const RETRACT_BATCH_SIZE = 256;
+
 /** The store surface the sink needs: dispatch, and the current overrides. */
 interface VoteSinkStore {
   dispatch(
     action:
       | ReturnType<typeof recordGpsEvent>
       | ReturnType<typeof recordGpsEventBatch>
+      | ReturnType<typeof resetGpsSessionData>
       | ReturnType<typeof setAlignmentOverrides>,
   ): unknown;
   getState(): {
@@ -75,6 +89,10 @@ export interface ViewerVoteSink {
     fix: RecordGpsEventPayload,
     ring: readonly RecordGpsEventPayload[],
   ): void;
+  /** Take every vote back (a moved code, D20): the overrides off, the GPS
+   *  history reset (the zero stays), the device fixes this sink stored
+   *  re-fed in batches of at most {@link RETRACT_BATCH_SIZE}. */
+  retractVotes(): { refedFixes: number; batches: number };
 }
 
 /**
@@ -88,6 +106,9 @@ export function startEntryVoteSink(store: VoteSinkStore): ViewerVoteSink {
   /** Whether THIS entry turned the soft trimming on; it stays on until the
    *  next entry's start clears it. */
   let softOn = false;
+  /** Every device fix this sink stored, in order: what a retraction
+   *  re-feeds. */
+  const deviceFixes: RecordGpsEventPayload[] = [];
 
   function softBeforeVote(): void {
     if (softOn) return;
@@ -111,12 +132,30 @@ export function startEntryVoteSink(store: VoteSinkStore): ViewerVoteSink {
       store.dispatch(recordGpsEventBatch({ events: [...votes] }));
     },
     recordFix(fix, ring) {
+      deviceFixes.push(fix);
       if (ring.length === 0) {
         store.dispatch(recordGpsEvent(fix));
         return;
       }
       softBeforeVote();
       store.dispatch(recordGpsEventBatch({ events: [fix, ...ring] }));
+    },
+    retractVotes() {
+      // The soft keys off FIRST, so every re-fed batch solves under the
+      // core's own settings (M5a's "refeed-soft-off").
+      store.dispatch(setAlignmentOverrides(null));
+      softOn = false;
+      store.dispatch(resetGpsSessionData());
+      let batches = 0;
+      for (let i = 0; i < deviceFixes.length; i += RETRACT_BATCH_SIZE) {
+        store.dispatch(
+          recordGpsEventBatch({
+            events: deviceFixes.slice(i, i + RETRACT_BATCH_SIZE),
+          }),
+        );
+        batches += 1;
+      }
+      return { refedFixes: deviceFixes.length, batches };
     },
   };
 }

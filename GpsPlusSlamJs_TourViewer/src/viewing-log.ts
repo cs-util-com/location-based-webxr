@@ -21,6 +21,8 @@
  *   the end, the stop - never per tracked frame or per fix. Its votes stay
  *   out of the lock batches; they are in the raw stream as `qr-keep` GPS
  *   events.
+ * - A CODE THE MOVED-CODE CHECK IGNORES is logged once, at the veto, with
+ *   the detector's inputs and what the recovery did (D20, M5c; §7j #15).
  *
  * @see viewing-log.ts.md
  */
@@ -33,12 +35,18 @@ import type { RecordGpsEventPayload } from "gps-plus-slam-app-framework/state";
 import type { KeepAlivePhase, QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { AlignmentMatrix } from "./tour-authoring-actions.js";
 import {
+  codeIgnored,
   codeLocked,
   keepAliveChanged,
   tourPlaced,
   votesCast,
   type TourViewingAction,
 } from "./tour-viewing-actions.js";
+
+type CodeIgnoredInput = Omit<
+  Parameters<typeof codeIgnored>[0],
+  "alignmentMatrix" | "arVisitIndex" | "atMs"
+>;
 
 type PlacedInput = Omit<
   Parameters<typeof tourPlaced>[0],
@@ -59,6 +67,8 @@ export interface ViewingLog {
   /** The lock whose votes were just dispatched. */
   votedLock(text: string, votedLocks: number): void;
   placed(input: PlacedInput): void;
+  /** The moved-code check's veto, after its recovery. */
+  codeIgnored(input: CodeIgnoredInput): void;
   /** Wrap the AR entry's keep-alive so its state changes are logged; the
    *  wrapper forwards every call unchanged. */
   keepAlive(inner: QrVoteKeepAlive): QrVoteKeepAlive;
@@ -145,6 +155,16 @@ export function createViewingLog(deps: {
       if (!deps.enabled()) return;
       deps.dispatch(
         tourPlaced({
+          ...input,
+          alignmentMatrix: deps.alignmentMatrix(),
+          ...moment(),
+        }),
+      );
+    },
+    codeIgnored(input) {
+      if (!deps.enabled()) return;
+      deps.dispatch(
+        codeIgnored({
           ...input,
           alignmentMatrix: deps.alignmentMatrix(),
           ...moment(),
