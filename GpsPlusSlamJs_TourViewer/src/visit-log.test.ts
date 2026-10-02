@@ -28,6 +28,7 @@ import {
   buildVisitLogEntry,
   codeVisitPoses,
   createVisitLog,
+  deviceSamples,
   maxHorizontalExtentM,
   newVisitId,
   parseVisitLogEntry,
@@ -261,6 +262,42 @@ describe("buildVisitLogEntry", () => {
   });
 });
 
+describe("deviceSamples", () => {
+  // Why this test matters: the D20 displacement estimators (M5a,
+  // `code-displacement.ts`) read the viewer's GPS history through this ONE
+  // filter, so a synthetic code vote (whose odometry is the code, not the
+  // visitor) never counts as GPS evidence against the code it came from.
+  // They count evidence in TIME, so the fix's own timestamp comes along.
+  it("keeps device fixes with their odometry partner and timestamp, and drops the votes", () => {
+    const samples = deviceSamples({
+      gpsPositions: [
+        { ...fix(0, 0, 4), timestamp: 1_000 },
+        { ...fix(9, 9, 0.05, GPS_POINT_SOURCE_SYNTHETIC_QR), timestamp: 1_500 },
+        { ...fix(2, 0, 6), timestamp: 2_000 },
+        // No usable time: kept, without one.
+        { ...fix(4, 0, 6), timestamp: Number.NaN },
+      ],
+      odometryPositions: [
+        [0, 0, 0],
+        [9, 0, 9],
+        [2, 0, 0],
+        [4, 0, 0],
+      ],
+    });
+    expect(samples.map((s) => s.odom)).toEqual([
+      [0, 0, 0],
+      [2, 0, 0],
+      [4, 0, 0],
+    ]);
+    expect(samples.map((s) => s.timestampMs)).toEqual([
+      1_000,
+      2_000,
+      undefined,
+    ]);
+    expect(samples.map((s) => s.fix.accuracy)).toEqual([4, 6, 6]);
+  });
+});
+
 describe("thinPath", () => {
   const dist = (a: number, b: number): number => Math.abs(b - a);
 
@@ -454,5 +491,57 @@ describe("codeVisitPoses", () => {
     // The visit without an accuracy is skipped by the combiner, not
     // trusted with a made-up one.
     expect(combineCodeVisits(poses)?.visitCount).toBe(1);
+  });
+});
+
+describe("the move boundary (authoring plan 2026-09-28-0953 §3.6, M5b)", () => {
+  // Why these tests matter (§7j #12): once the author says a code moved
+  // ("Use the new spot"), the visits before describe the OLD spot. Combined
+  // with the visits after, the summary's estimate would sit between the two
+  // spots - a place the code never was. The visit that moved it marks the
+  // code, and the combiner reads only from the latest such mark on.
+  it("marks a code this visit moved, and only that code, and keeps the mark through the draft", () => {
+    const entry = buildVisitLogEntry(
+      input({
+        codes: [
+          { levelId: "lvl", odomPose: CODE_POSE },
+          { levelId: "other", odomPose: CODE_POSE },
+        ],
+        moved: ["lvl"],
+      }),
+    );
+    expect(entry.codes.find((c) => c.levelId === "lvl")?.moved).toBe(true);
+    expect(entry.codes.find((c) => c.levelId === "other")?.moved).toBe(
+      undefined,
+    );
+    expect(parseVisitLogEntry(serializeVisitLogEntry(entry))!.codes).toEqual(
+      entry.codes,
+    );
+    // Anything but `true` in a draft file is no mark.
+    const raw = JSON.parse(serializeVisitLogEntry(entry)) as {
+      codes: Record<string, unknown>[];
+    };
+    raw.codes[0]!["moved"] = "yes";
+    expect(
+      parseVisitLogEntry(JSON.stringify(raw))!.codes[0]!.moved,
+    ).toBeUndefined();
+  });
+
+  it("combines only the visits from the latest move of the code on", () => {
+    const before = buildVisitLogEntry(input({ visitId: "before", atMs: 1 }));
+    const moved = buildVisitLogEntry(
+      input({ visitId: "moved", atMs: 2, moved: ["lvl"] }),
+    );
+    const after = buildVisitLogEntry(input({ visitId: "after", atMs: 3 }));
+    expect(codeVisitPoses([before, moved, after], "lvl")).toHaveLength(2);
+    expect(codeVisitPoses([before, after], "lvl")).toHaveLength(2);
+    expect(codeVisitPoses([before, moved, after], "other")).toEqual([]);
+    // A second move: only from it on.
+    const again = buildVisitLogEntry(
+      input({ visitId: "again", atMs: 4, moved: ["lvl"] }),
+    );
+    expect(codeVisitPoses([before, moved, after, again], "lvl")).toHaveLength(
+      1,
+    );
   });
 });

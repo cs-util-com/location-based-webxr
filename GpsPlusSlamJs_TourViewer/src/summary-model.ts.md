@@ -16,7 +16,9 @@ map.
 - `buildSummaryModel(input: SummaryInput): SummaryModel`
   - `SummaryInput`: `visits` (the visit log), `references` (the codes'
     stored poses, the level in hand first, then the tour's other levels),
-    `objects` (the tour's objects as the zip now carries them).
+    `objects` (the tour's objects as the zip now carries them). The visits'
+    estimate combines only the visits from a code's latest move on
+    (`codeVisitPoses`, the move boundary of authoring plan §3.6, M5b).
   - `SummaryModel`: `tracks` (per visit: `gps`, `fused`), `codes`
     (`SummaryCode`), `objects` (`SummaryObject`: id, kind, label, lat,
     lng), `fitPoints` (everything drawn, for framing).
@@ -125,6 +127,7 @@ graded by the visit that saved it, apart from a Good estimate; not known
 when no kept visit saved it (or saved another pose); a code no visit
 measured; a code only the visits know ("no saved position") and the
 numbering; the second mark only past the estimate's predicted error, and
-the floor; pin and photo labels; walks
+the floor; the visits' estimate combining only the visits from the code's
+latest move on (the move boundary, M5b); pin and photo labels; walks
 kept apart and unreadable points dropped; framing covering the walk, the
 pins, the line and the ring.

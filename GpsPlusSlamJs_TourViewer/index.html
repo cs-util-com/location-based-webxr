@@ -150,6 +150,8 @@
       #setup-controls,
       #object-list,
       #replace-code-confirm,
+      #move-prompt,
+      #move-undo,
       #draft-offer,
       #recording-offer,
       #finish-block,
@@ -980,7 +982,58 @@
               ></button>
             </div>
             <div id="setup-status" data-testid="setup-status"></div>
+            <!-- Undo of a replace of the code's saved position (authoring
+                 plan 2026-09-28-0953 §3.6, M5b): until Finish, in AR and
+                 on the page, so outside #setup-controls. -->
+            <div id="move-undo" data-testid="move-undo" hidden>
+              <p id="move-undo-text" data-testid="move-undo-text"></p>
+              <button
+                type="button"
+                id="move-undo-button"
+                class="btn btn--prose"
+                data-testid="move-undo-button"
+              >
+                Undo
+              </button>
+            </div>
             <div id="setup-controls" data-testid="setup-controls" hidden>
+              <!-- The moved-code prompt (authoring plan 2026-09-28-0953
+                   §3.6, D20, M5b): asked once a refusal of the code in hand
+                   has lasted; creator-setup.ts decides when it shows. -->
+              <div
+                id="move-prompt"
+                data-testid="move-prompt"
+                role="group"
+                aria-live="polite"
+                hidden
+              >
+                <p id="move-prompt-text" data-testid="move-prompt-text"></p>
+                <button
+                  type="button"
+                  id="move-prompt-use"
+                  class="btn btn--prose"
+                  data-testid="move-prompt-use"
+                  disabled
+                >
+                  Use the new spot
+                </button>
+                <button
+                  type="button"
+                  id="move-prompt-copy"
+                  class="btn"
+                  data-testid="move-prompt-copy"
+                >
+                  It's a second copy
+                </button>
+                <button
+                  type="button"
+                  id="move-prompt-later"
+                  class="btn"
+                  data-testid="move-prompt-later"
+                >
+                  Not now
+                </button>
+              </div>
               <button
                 type="button"
                 id="setup-mint"

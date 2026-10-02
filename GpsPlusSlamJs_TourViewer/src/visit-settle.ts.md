@@ -68,7 +68,9 @@ draft and logs `tourAuthoring/settled`.
   visitor, so what its confirm states. Null without a readable alignment,
   a zero, a sighting of the level in hand or a stored pose. Shares its
   computation with the settle's correction (`sightedStoredCode`), so the
-  two can never disagree about the number.
+  two can never disagree about the number. Also `northM`/`eastM`: where
+  this visit sees the code minus its stored position - the spot the move
+  prompt (`code-move-prompt.ts`, M5b) remembers an answer for.
 - `storedGeo(json)` - a level's stored geo, or null (the object list's
   distance to the code).
 - `planVisitSettle(input): VisitSettle | null` - the settled records by
@@ -132,6 +134,12 @@ mint accuracy)` (unknown or unusable accuracies count as 5 m), or whose
   yaw exceeds 120 degrees, is refused: `settleAlignment` returns the plain
   visit alignment with `refused` set, the plan carries it, the setup
   shows one line and logs it in `tourAuthoring/settled`.
+  - `correctionBoundM(visit, stored, options?)` takes an optional
+    `{ accuracyFactor, defaultAccuracyM }` replacing the factor 3 and the
+    default 5 m (absent or unusable: the shipped values). They exist for
+    the moved-code rule of D20 (`code-displacement.ts`), which shares this
+    bound under a floor and whose M5a sweep varies both; the settle never
+    passes them.
   - **What the correction's size is when nothing is wrong** - the
     difference of two visits' GPS-only alignments at the code. Measured
     through the real solver (a throwaway sweep, 2026-09-30, 25 seeded pairs
@@ -216,7 +224,8 @@ const plan = planVisitSettle({
   an unreadable stored level; the plausibility bound (its formula, a
   correction just inside and just outside it at accuracies {3, 5, 10, 15}
   m, the yaw bound at 119 and 121 degrees, and the refusal carried into
-  the plan).
+  the plan); the bound's options (a factor and a default accuracy reach
+  it, absent or unusable ones are the shipped values).
 - `visit-settle.test.ts` also covers `measurementRole`: the level in hand
   kept (earlier visit, restored draft), the hosted level kept, a same-visit
   re-measure replacing, and every no-readable-pose case; and `planMove`:

@@ -91,6 +91,11 @@ interface VisitCode {
    *  stored pose came from, to grade what visitors get (M3a/M3b review
    *  #2). Absent for a visit that only saw the code. */
   readonly savedGeo?: QrGeoPose;
+  /** THE MOVE BOUNDARY (authoring plan §3.6, M5b; §7j #12): this visit
+   *  moved the code - the author answered "Use the new spot" - so earlier
+   *  visits describe the old spot and {@link codeVisitPoses} reads only
+   *  from the latest such visit on. Absent otherwise (never false). */
+  readonly moved?: true;
 }
 
 /** One AR visit, as the summary needs it after the store forgot it. */
@@ -128,6 +133,8 @@ interface VisitGpsFix {
   readonly latitude?: unknown;
   readonly longitude?: unknown;
   readonly latLongAccuracy?: unknown;
+  /** The fix's own time (epoch ms); read by {@link deviceSamples} only. */
+  readonly timestamp?: unknown;
   readonly source?: string;
 }
 
@@ -155,6 +162,8 @@ export interface VisitLogInput {
   }[];
   /** The pose the visit's settle saved for a code, when it saved one. */
   readonly saved?: { readonly levelId: string; readonly geo: QrGeoPose } | null;
+  /** The codes this visit moved to a new spot (the move boundary). */
+  readonly moved?: readonly string[];
 }
 
 const isFiniteNumber = (v: unknown): v is number =>
@@ -245,12 +254,20 @@ function finitePosition(p: readonly number[]): boolean {
   return p.length >= 3 && [p[0], p[1], p[2]].every(isFiniteNumber);
 }
 
-/** The device fixes with readable coordinates, and their odometry
- *  partners (index for index), synthetic code votes left out: a vote's
- *  odometry is the code's corner, not where the creator stood. */
-function deviceSamples(input: VisitLogInput): {
+/**
+ * The device fixes with readable coordinates, and their odometry partners
+ * (index for index), synthetic code votes left out: a vote's odometry is
+ * the code's corner, not where the creator stood. The ONE device-only
+ * filter over the store's GPS history; the moved-code estimators
+ * (`code-displacement.ts`) read through it too, which is why a fix's own
+ * time comes along (`timestampMs`, when finite).
+ */
+export function deviceSamples(
+  input: Pick<VisitLogInput, "gpsPositions" | "odometryPositions">,
+): {
   fix: VisitGpsPoint;
   odom: readonly number[] | null;
+  timestampMs?: number;
 }[] {
   const paired = input.gpsPositions.length === input.odometryPositions.length;
   return input.gpsPositions.flatMap((p, i) => {
@@ -258,7 +275,15 @@ function deviceSamples(input: VisitLogInput): {
     const fix = gpsPoint(p.latitude, p.longitude, p.latLongAccuracy);
     if (fix === null) return [];
     const odom = paired ? (input.odometryPositions[i] ?? null) : null;
-    return [{ fix, odom: odom !== null && finitePosition(odom) ? odom : null }];
+    const sample = {
+      fix,
+      odom: odom !== null && finitePosition(odom) ? odom : null,
+    };
+    return [
+      isFiniteNumber(p.timestamp)
+        ? { ...sample, timestampMs: p.timestamp }
+        : sample,
+    ];
   });
 }
 
@@ -340,10 +365,14 @@ export function buildVisitLogEntry(input: VisitLogInput): VisitLogEntry {
       const geo = codeGeo(odomPose, alignment, zero);
       if (geo === null) continue;
       const saved = input.saved;
-      codes.push(
+      const code: VisitCode =
         saved != null && saved.levelId === levelId
           ? { levelId, geo, savedGeo: saved.geo }
-          : { levelId, geo },
+          : { levelId, geo };
+      codes.push(
+        input.moved?.includes(levelId) === true
+          ? { ...code, moved: true }
+          : code,
       );
     }
   }
@@ -366,14 +395,22 @@ export function buildVisitLogEntry(input: VisitLogInput): VisitLogEntry {
 
 /**
  * The poses `combineCodeVisits` combines for `levelId`: one per visit that
- * measured it. A visit without an accuracy hands a NaN, which the combiner
- * skips as unusable rather than trusting it.
+ * measured it, from the latest visit that MOVED the code on (the move
+ * boundary; `entries` oldest first, as `VisitLog.entries` lists them). A
+ * visit without an accuracy hands a NaN, which the combiner skips as
+ * unusable rather than trusting it.
  */
 export function codeVisitPoses(
   entries: readonly VisitLogEntry[],
   levelId: string,
 ): CodeVisitPose[] {
-  return entries.flatMap((entry) =>
+  let boundary = 0;
+  entries.forEach((entry, i) => {
+    if (entry.codes.some((c) => c.levelId === levelId && c.moved === true)) {
+      boundary = i;
+    }
+  });
+  return entries.slice(boundary).flatMap((entry) =>
     entry.codes
       .filter((c) => c.levelId === levelId)
       .map((c) => ({
@@ -461,7 +498,9 @@ function readCode(value: unknown): VisitCode | null {
   if (geo === null) return null;
   const savedGeo =
     record["savedGeo"] === undefined ? null : readGeo(record["savedGeo"]);
-  return savedGeo === null ? { levelId, geo } : { levelId, geo, savedGeo };
+  const code: VisitCode =
+    savedGeo === null ? { levelId, geo } : { levelId, geo, savedGeo };
+  return record["moved"] === true ? { ...code, moved: true } : code;
 }
 
 /**

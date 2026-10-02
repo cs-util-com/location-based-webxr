@@ -364,6 +364,42 @@ describe("a rejection recorded in the meta is the commit point", () => {
   });
 });
 
+describe("the move prompt's remembered answers (authoring plan 2026-09-28-0953 §3.6, M5b)", () => {
+  // Why these tests matter (§7j #14): "It's a second copy" and "Not now"
+  // must survive a reload, or the prompt asks again for the same spot every
+  // time the page opens. They live in the meta, which every write re-states,
+  // and they are external data on the way back in.
+  const answer = {
+    levelId: "lvl",
+    northM: 40,
+    eastM: -3,
+    answer: "second-copy",
+    savedKey: "0badf00d",
+  } as const;
+
+  it("round-trips the answers through the meta", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, { ...META, moveAnswers: [answer] });
+    expect((await readDraft(store))?.moveAnswers).toEqual([answer]);
+  });
+
+  it("reads a meta without answers, or with unreadable ones, as no answers - never as a failed draft", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    await writeDraftObject(store, pin("a"));
+    expect((await readDraft(store))?.moveAnswers).toEqual([]);
+    await store.put(
+      "meta",
+      JSON.stringify({ ...META, moveAnswers: [answer, { levelId: 3 }, "x"] }),
+    );
+    const read = await readDraft(store);
+    expect(read?.moveAnswers).toEqual([answer]);
+    expect(read?.draft.objects.map((o) => o.id)).toEqual(["a"]);
+    await store.put("meta", JSON.stringify({ ...META, moveAnswers: 9 }));
+    expect((await readDraft(store))?.moveAnswers).toEqual([]);
+  });
+});
+
 describe("a deletion is its own file (a tombstone, authoring plan 2026-09-28-0953 §3.4)", () => {
   /**
    * Why these tests matter. Deleting an object the hosted zip carries is

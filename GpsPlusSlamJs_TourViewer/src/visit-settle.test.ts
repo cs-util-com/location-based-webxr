@@ -633,6 +633,29 @@ describe("the code correction's plausibility bound (M2c review #2)", () => {
     );
   });
 
+  // Why this test matters: D20's moved-code rule shares THIS bound with the
+  // authoring correction (plan §3.6) and M5a sweeps its factor and default
+  // accuracy, so both are options of the one formula rather than a copy of
+  // it - and leaving them out must stay exactly the authoring bound.
+  it("takes the accuracy factor and the default accuracy as options, the shipped ones when absent", () => {
+    expect(correctionBoundM(3, 4, {})).toBe(correctionBoundM(3, 4));
+    expect(correctionBoundM(3, 4, { accuracyFactor: 2 })).toBeCloseTo(
+      5 + 2 * 5,
+      9,
+    );
+    expect(correctionBoundM(undefined, 4, { defaultAccuracyM: 3 })).toBeCloseTo(
+      5 + 3 * 5,
+      9,
+    );
+    // An unusable option is the shipped value, never a NaN bound.
+    expect(
+      correctionBoundM(3, 4, {
+        accuracyFactor: Number.NaN,
+        defaultAccuracyM: -1,
+      }),
+    ).toBe(correctionBoundM(3, 4));
+  });
+
   it("accepts a correction just inside the bound and refuses one just outside, across plausible accuracies", () => {
     // The stored level's mint quality says 4 m (INFO); this visit's
     // accuracy is swept over what phones report outdoors and near
@@ -679,6 +702,10 @@ describe("the code correction's plausibility bound (M2c review #2)", () => {
     const near = sightedCodeOffset(input(offBy(3, 4)));
     expect(near?.horizontalM).toBeCloseTo(3, 2);
     expect(near?.yawDeg).toBeCloseTo(4, 4);
+    // And where (M5b): the code seen 3 m North of its saved position - the
+    // offset the move prompt remembers an answer for.
+    expect(near?.northM).toBeCloseTo(3, 2);
+    expect(near?.eastM).toBeCloseTo(0, 2);
     expect(sightedCodeOffset(input(offBy(60, 0)))?.horizontalM).toBeCloseTo(
       60,
       2,

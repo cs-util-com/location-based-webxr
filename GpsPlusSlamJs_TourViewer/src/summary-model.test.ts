@@ -227,6 +227,33 @@ describe("buildSummaryModel", () => {
     expect(text).toMatch(/3 visits \(the best 2 for the position\)/);
   });
 
+  // Why this test matters (authoring plan §3.6, M5b; §7j #12): after the
+  // author moved a code ("Use the new spot"), the visits of the old spot
+  // must not pull the visits' estimate back toward it - an estimate
+  // halfway between the two spots is a place the code never was.
+  it("combines only the visits from the code's latest move on", () => {
+    const old = poster(0, 0, 30);
+    const moved = poster(40, 0, 30);
+    const model = buildSummaryModel({
+      visits: [
+        visit("v1", [{ levelId: "lvl", geo: old, savedGeo: old }], { atMs: 1 }),
+        visit("v2", [{ levelId: "lvl", geo: old }], { atMs: 2 }),
+        visit(
+          "v3",
+          [{ levelId: "lvl", geo: moved, savedGeo: moved, moved: true }],
+          { atMs: 3 },
+        ),
+      ],
+      references: [{ levelId: "lvl", geo: moved }],
+      objects: [],
+    });
+    const code = model.codes[0]!;
+    expect(code.estimateVerdict?.numbers?.visitCount).toBe(1);
+    expect(distanceM(code.combined!, at(40, 0))).toBeLessThan(0.01);
+    // The stored pose is still graded by the visit that saved it.
+    expect(code.verdict.numbers?.visitCount).toBe(1);
+  });
+
   it("says what visitors get is not known when no visit on this device saved the stored pose", () => {
     const stored = poster(0, 0, 30);
     const model = buildSummaryModel({

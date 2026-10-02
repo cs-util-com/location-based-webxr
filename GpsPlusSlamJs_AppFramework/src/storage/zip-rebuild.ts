@@ -219,8 +219,7 @@ export async function rebuildZipWithEntries(
     const removed = removedArchiveNames(
       options.remove ?? [],
       entries,
-      archiveByName,
-      dotSlash
+      archiveByName
     );
     const replaced = new Set(targeted.map((e) => e.path));
     const existing = all.filter(
@@ -255,30 +254,26 @@ export async function rebuildZipWithEntries(
 }
 
 /**
- * The archive's own names for the paths in `remove` (each matched under the
- * archive's `./` convention, the way a replacement is); paths the archive
- * does not carry drop out.
+ * The archive's own names for the paths in `remove`; paths the archive
+ * does not carry drop out. Every name here is compared BARE (without a
+ * leading `./`): `./x` and `x` name one file to every reader, and
+ * `archiveByName` is keyed bare already (a flat archive has no `./` names
+ * to strip). One rule on both sides, so the contradiction check cannot
+ * miss a pairing (PR #531 review).
  *
  * @throws {ZipPackagingError} when a removed path is also a new entry.
  */
 function removedArchiveNames(
   remove: readonly string[],
   entries: readonly ZipEntryInput[],
-  archiveByName: ReadonlyMap<string, string>,
-  dotSlash: boolean
+  archiveByName: ReadonlyMap<string, string>
 ): Set<string> {
-  const written = new Set(
-    entries.map((e) => underArchiveConvention(e.path, dotSlash))
-  );
+  const bare = (path: string): string => underArchiveConvention(path, true);
+  const written = new Set(entries.map((e) => bare(e.path)));
   const out = new Set<string>();
   for (const path of remove) {
-    // The archive's convention, and ALSO a bare `./` the caller wrote on a
-    // flat archive: both spellings name one file to every reader.
-    const key = underArchiveConvention(
-      path,
-      dotSlash || path.startsWith(DOT_SLASH)
-    );
-    if (written.has(key) || written.has(DOT_SLASH + key)) {
+    const key = bare(path);
+    if (written.has(key)) {
       throw new ZipPackagingError(
         `rebuildZipWithEntries: entry '${path}' is both removed and written`
       );

@@ -60,6 +60,7 @@ import { parseVisitLogEntry } from "./visit-log.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 import { OUTCOME_HOLD_MS } from "./object-editing.js";
+import { MOVE_PROMPT_RULE, savedPoseKey } from "./code-move-prompt.js";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 import {
   correctedAlignment,
@@ -200,6 +201,14 @@ const DOM_KEYS = [
   "replaceCodeConfirmText",
   "replaceCodeYes",
   "replaceCodeNo",
+  "movePrompt",
+  "movePromptText",
+  "movePromptUse",
+  "movePromptCopy",
+  "movePromptLater",
+  "moveUndo",
+  "moveUndoText",
+  "moveUndoButton",
 ] as const;
 
 function el() {
@@ -921,6 +930,45 @@ describe(
       expect(
         a.inWorldGroup("Gate").distanceTo(new Vector3(2, 0, -1)),
       ).toBeLessThan(1e-2);
+    });
+
+    it("keeps the earlier notes in the code's frame on new fixes while the code is out of view, though GPS drifts past the bound; only a sighting re-places them (M5b review #8, §7m #8)", async () => {
+      // Why this test matters: the owner's complaint was notes DRIFTING
+      // while authoring (plan 2026-09-28-0953 §1, §2.1). M5b re-judges the
+      // latest sighting on every new fix so the move prompt sees the
+      // refusal current; it once re-placed the earlier notes as a side
+      // effect, so a GPS drift past the bound moved them from the code's
+      // frame to their geo with no tap and no new look at the code. The
+      // frame changes only on a sighting of the code (or an explicit
+      // action), as before M5b; the per-fix re-judge feeds the prompt and
+      // the panel only (creator-setup.ts.md "Earlier visits' objects").
+      const a = await firstVisit();
+      a.beginVisit();
+      a.setAlignment(SECOND);
+      a.seeTheCode();
+      await flush();
+      const atCode = new Vector3(2, 0, -1);
+      expect(a.inWorldGroup("Gate").distanceTo(atCode)).toBeLessThan(1e-2);
+
+      // The code leaves the view; GPS drifts 60 m, and fixes keep landing.
+      a.ctx.lastDetectedText = null;
+      a.setAlignment(yawAlignment(0, [60, 400, 0]));
+      const fixes: unknown[] = [];
+      for (let i = 0; i < MIN_ALIGNMENT_SAMPLES + 3; i += 1) {
+        fixes.push({ latitude: ZERO.lat, longitude: ZERO.lon });
+        a.setWalk({ fixes: [...fixes], odometry: fixes.map(() => [0, 0, 0]) });
+        a.setup.renderAuthorReadout();
+        expect(a.inWorldGroup("Gate").distanceTo(atCode)).toBeLessThan(1e-2);
+      }
+      // The re-judge still ran: the panel says the settle would refuse the
+      // code through this alignment (what the move prompt reads).
+      expect(a.dom.status.textContent).toMatch(/Code seen \d+ m/);
+
+      // A new look at the code is what re-places them: through the drifted
+      // alignment it is refused, so the note goes to its geo.
+      a.seeTheCode();
+      await flush();
+      expect(a.inWorldGroup("Gate").distanceTo(atCode)).toBeGreaterThan(20);
     });
   },
 );
@@ -2211,6 +2259,509 @@ describe(
       a.dom.finishButton.click();
       await finished(a.ctx);
       expect(summary.shown.at(-1)?.tracks).toEqual([]);
+    });
+  },
+);
+
+describe(
+  "the moved-code prompt (authoring plan 2026-09-28-0953 §3.6, D20, M5b)",
+  { timeout: SLOW_MS },
+  () => {
+    // Why these tests matter: "Use the new spot" moves the code for every
+    // visitor, so the composed setup must ask only once a refusal of the
+    // code in hand has LASTED with the mint gate open (§7j #8, #9), show
+    // the replace's progress and its outcome (the async-UI rule, §7j #10),
+    // count it as answered only once the replace happened, remember the
+    // other two answers in the draft (§7j #14), undo until Finish, mark
+    // the move in the visit log (§7j #12) and log all of it (§7j #15).
+    const TOUR = "https://example.test/tour.zip";
+    const T0 = 1_756_150_000_000;
+
+    /**
+     * A second visit that sees the stored code 60 m from its saved
+     * position: a refusal (bound 26.2 m at the default 5 m accuracy), and
+     * `fix(n)` adds n one-second device fixes, re-rendering after each as
+     * a store change would.
+     */
+    async function secondVisitFarFromTheCode(store?: DraftFileStore) {
+      const a = authoring(store === undefined ? {} : { store });
+      if (store !== undefined) {
+        await openFinishableTour(a);
+        a.setup.presentDraftForTour(TOUR);
+        await flush();
+      }
+      await a.mint();
+      a.endVisit();
+      const stored = a.ctx.mintedLevel!;
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [60, 400, 0]));
+      a.seeTheCode();
+      await flush();
+      const fixes: unknown[] = [];
+      const fix = (n: number): void => {
+        for (let i = 0; i < n; i += 1) {
+          fixes.push({
+            latitude: ZERO.lat,
+            longitude: ZERO.lon,
+            latLongAccuracy: 5,
+            timestamp: T0 + fixes.length * 1000,
+          });
+          a.setWalk({
+            fixes: [...fixes],
+            odometry: fixes.map(() => [0, 0, 0]),
+          });
+          a.setup.renderAuthorReadout();
+        }
+      };
+      fix(3);
+      return { a, stored, fix };
+    }
+
+    function logs(a: ReturnType<typeof authoring>, type: string) {
+      return a.dispatched
+        .filter((x) => x.type === `tourAuthoring/${type}`)
+        .map((x) => x.payload as Record<string, unknown>);
+    }
+
+    it("asks only once the refusal has lasted the rule's fixes and seconds, with the distance, and logs the ask once", async () => {
+      const { a, fix } = await secondVisitFarFromTheCode();
+      expect(a.dom.status.textContent).toMatch(/Code seen 60 m/);
+      fix(MOVE_PROMPT_RULE.minFixes - 1);
+      expect(a.dom.movePrompt.hidden).toBe(true);
+      fix(1);
+      expect(a.dom.movePrompt.hidden).toBe(false);
+      expect(a.dom.movePromptText.textContent).toBe(
+        "This code seems to have moved about 60 m. Use the new spot?",
+      );
+      expect(a.dom.movePromptUse.disabled).toBe(false);
+      fix(5);
+      const asked = logs(a, "codeMovePrompted");
+      expect(asked).toHaveLength(1);
+      expect(asked[0]).toMatchObject({
+        levelId: a.ctx.mintedLevel!.id,
+        arVisitIndex: 1,
+        fixes: MOVE_PROMPT_RULE.minFixes,
+        seconds: MOVE_PROMPT_RULE.minSeconds,
+      });
+      expect(asked[0]!["horizontalM"] as number).toBeCloseTo(60, 1);
+      expect(asked[0]!["northM"] as number).toBeCloseTo(60, 1);
+    });
+
+    it("does not ask while the mint gate is closed (too few of this session's fixes)", async () => {
+      const { a, fix } = await secondVisitFarFromTheCode();
+      a.ctx.gpsSamplesAtSessionStart = 1_000;
+      fix(MOVE_PROMPT_RULE.minFixes + 5);
+      expect(a.dom.status.textContent).toMatch(/Code seen 60 m/);
+      expect(a.dom.movePrompt.hidden).toBe(true);
+    });
+
+    it("'Use the new spot' shows its progress, replaces the saved position, logs it, and offers Undo", async () => {
+      const { a, stored, fix } = await secondVisitFarFromTheCode();
+      fix(MOVE_PROMPT_RULE.minFixes);
+      a.dom.movePromptUse.click();
+      // In progress until the replace lands.
+      expect(a.dom.movePromptUse.textContent).toBe("Using the new spot…");
+      expect(a.dom.movePromptUse.disabled).toBe(true);
+      expect(a.dom.movePromptCopy.disabled).toBe(true);
+      await vi.waitFor(() => {
+        expect(a.ctx.mintedLevel).not.toBeNull();
+        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      });
+      await flush();
+      expect(a.ctx.mintedLevel?.id).toBe(stored.id);
+      expect(a.dom.movePrompt.hidden).toBe(true);
+      expect(a.dom.movePromptUse.textContent).toBe("Use the new spot");
+      expect(a.dom.status.textContent).toContain(
+        "The code's saved position is now the new spot",
+      );
+      expect(a.dom.moveUndo.hidden).toBe(false);
+      const measured = logs(a, "codeMeasured").at(-1)!;
+      expect(measured["replaced"]).toEqual(stored);
+      expect(logs(a, "codeMoveAnswered")).toEqual([
+        expect.objectContaining({
+          answer: "use-new-spot",
+          replaced: true,
+          error: null,
+        }),
+      ]);
+      // Measured here now: no refusal, so no prompt however long.
+      fix(MOVE_PROMPT_RULE.minFixes + 5);
+      expect(a.dom.movePrompt.hidden).toBe(true);
+    });
+
+    it("'Use the new spot' says it is done only once the draft holds the new spot (M5b review #7)", async () => {
+      // Why: the async-UI rule asks for the DURABLE end state. The replace
+      // lands in memory at once, but a reload reads the draft: confirming
+      // before its write landed claimed a backup that might never exist.
+      const slow = slowDraftStore();
+      const { a, stored, fix } = await secondVisitFarFromTheCode(slow.store);
+      await slow.release();
+      fix(MOVE_PROMPT_RULE.minFixes);
+      a.dom.movePromptUse.click();
+      await vi.waitFor(() => {
+        expect(a.ctx.mintedLevel?.json).toBeDefined();
+        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      });
+      await flush();
+      // Replaced in memory, the draft's write still held: in progress.
+      expect(a.dom.movePromptUse.textContent).toBe("Using the new spot…");
+      expect(a.dom.movePromptUse.disabled).toBe(true);
+      expect(a.dom.status.textContent).not.toContain(
+        "The code's saved position is now the new spot",
+      );
+      await slow.release();
+      expect(a.dom.status.textContent).toContain(
+        "The code's saved position is now the new spot",
+      );
+      expect(a.dom.movePrompt.hidden).toBe(true);
+      const meta = JSON.parse(slow.files.get(META_KEY) as string) as {
+        level: { json: string };
+      };
+      expect(meta.level.json).toBe(a.ctx.mintedLevel!.json);
+    });
+
+    it("'Use the new spot' whose draft write is refused says the new spot is not backed up", async () => {
+      // Why: a refused write is the one failure the creator can still act
+      // on (finish and download); "now the new spot" alone would hide it.
+      const slow = slowDraftStore();
+      const { a, stored, fix } = await secondVisitFarFromTheCode(slow.store);
+      await slow.release();
+      fix(MOVE_PROMPT_RULE.minFixes);
+      slow.mode.refuse = true;
+      a.dom.movePromptUse.click();
+      await vi.waitFor(() => {
+        expect(a.ctx.mintedLevel?.json).toBeDefined();
+        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      });
+      await slow.release();
+      expect(a.dom.movePromptUse.textContent).toBe("Use the new spot");
+      expect(a.dom.status.textContent).toContain(
+        "this device could not save the change",
+      );
+      expect(logs(a, "codeMoveAnswered")).toEqual([
+        expect.objectContaining({ answer: "use-new-spot", replaced: true }),
+      ]);
+    });
+
+    it("'Not now' and 'It's a second copy' whose draft write is refused say the walk is not backed up", async () => {
+      // Why: both answers are remembered for a reload through the draft's
+      // meta only; a refused write must reach the creator, through the one
+      // backup notice.
+      for (const button of ["movePromptLater", "movePromptCopy"] as const) {
+        const slow = slowDraftStore();
+        const { a, fix } = await secondVisitFarFromTheCode(slow.store);
+        await slow.release();
+        fix(MOVE_PROMPT_RULE.minFixes);
+        slow.mode.refuse = true;
+        a.dom[button].click();
+        await slow.release();
+        expect(a.dom.movePrompt.hidden, button).toBe(true);
+        expect(a.dom.status.textContent, button).toContain(
+          "This device is not saving a backup copy",
+        );
+      }
+    });
+
+    it("'Use the new spot' that cannot replace says why, keeps the saved position, and the prompt comes back", async () => {
+      const { a, stored, fix } = await secondVisitFarFromTheCode();
+      fix(MOVE_PROMPT_RULE.minFixes);
+      // The camera lost the code between the render and the tap.
+      a.ctx.lastDetectedText = null;
+      a.dom.movePromptUse.click();
+      await flush();
+      expect(a.ctx.mintedLevel).toEqual(stored);
+      expect(a.dom.status.textContent).toContain("Could not use the new spot");
+      expect(logs(a, "codeMoveAnswered")).toEqual([
+        expect.objectContaining({
+          answer: "use-new-spot",
+          replaced: false,
+          error: expect.stringMatching(/./) as unknown,
+        }),
+      ]);
+      // Not counted as asked: with the code back in view it asks again.
+      a.seeTheCode();
+      fix(1);
+      expect(a.dom.movePrompt.hidden).toBe(false);
+      expect(a.dom.movePromptUse.textContent).toBe("Use the new spot");
+      expect(a.dom.moveUndo.hidden).toBe(true);
+    });
+
+    it("'Not now' and 'It's a second copy' keep the saved position, are logged, and are not asked again for the same spot - after a reload too", async () => {
+      for (const [button, answer] of [
+        ["movePromptLater", "not-now"],
+        ["movePromptCopy", "second-copy"],
+      ] as const) {
+        const { store, files } = memoryDraftStore();
+        const { a, stored, fix } = await secondVisitFarFromTheCode(store);
+        fix(MOVE_PROMPT_RULE.minFixes);
+        expect(a.dom.movePrompt.hidden).toBe(false);
+        a.dom[button].click();
+        await flush();
+        expect(a.dom.movePrompt.hidden).toBe(true);
+        expect(a.ctx.mintedLevel).toEqual(stored);
+        expect(logs(a, "codeMoveAnswered")).toEqual([
+          expect.objectContaining({ answer, replaced: false }),
+        ]);
+        fix(MOVE_PROMPT_RULE.minFixes + 5);
+        expect(a.dom.movePrompt.hidden).toBe(true);
+        const meta = JSON.parse(files.get(META_KEY) as string) as {
+          moveAnswers: { answer: string; levelId: string }[];
+        };
+        expect(meta.moveAnswers).toEqual([
+          expect.objectContaining({
+            answer,
+            levelId: stored.id,
+            // Against the saved pose it was given for (M5b review #2).
+            savedKey: savedPoseKey(stored.json),
+          }),
+        ]);
+
+        // The reload: a new setup over the same draft, the same spot.
+        const b = authoring({ store });
+        await openFinishableTour(b);
+        b.setup.presentDraftForTour(TOUR);
+        await flush();
+        b.ctx.mintedLevel = stored;
+        b.beginVisit();
+        b.setAlignment(yawAlignment(0, [60, 400, 0]));
+        b.seeTheCode();
+        await vi.waitFor(() => {
+          expect(b.ctx.visitCodeSighting).not.toBeNull();
+        });
+        const more: unknown[] = [];
+        for (let i = 0; i < MOVE_PROMPT_RULE.minFixes + 5; i += 1) {
+          more.push({
+            latitude: ZERO.lat,
+            longitude: ZERO.lon,
+            timestamp: T0 + i * 1000,
+          });
+          b.setWalk({ fixes: [...more], odometry: more.map(() => [0, 0, 0]) });
+          b.setup.renderAuthorReadout();
+        }
+        expect(b.dom.status.textContent).toMatch(/Code seen 60 m/);
+        expect(b.dom.movePrompt.hidden).toBe(true);
+      }
+    });
+
+    it("Undo until Finish restores the saved position, drops the visit's move boundary, logs it, and does not ask again for that spot", async () => {
+      const slow = slowDraftStore();
+      const { a, stored, fix } = await secondVisitFarFromTheCode(slow.store);
+      await slow.release();
+      fix(MOVE_PROMPT_RULE.minFixes);
+      a.dom.movePromptUse.click();
+      await vi.waitFor(() => {
+        expect(a.ctx.mintedLevel).not.toBeNull();
+        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      });
+      await slow.release();
+      // The visit ends: its log marks the move.
+      a.endVisit();
+      await slow.release();
+      const visitFile = () =>
+        [...slow.files.entries()]
+          .filter(([k]) => k.startsWith(visitKey("")))
+          .map(([, v]) => parseVisitLogEntry(v as string)!)
+          .sort((x, y) => x.atMs - y.atMs)
+          .at(-1)!;
+      expect(
+        visitFile().codes.find((c) => c.levelId === stored.id)?.moved,
+      ).toBe(true);
+
+      a.dom.moveUndoButton.click();
+      // In progress until the draft holds the undo.
+      expect(a.dom.moveUndoButton.textContent).toBe("Undoing…");
+      expect(a.dom.moveUndoButton.disabled).toBe(true);
+      await slow.release();
+      expect(a.ctx.mintedLevel).toEqual(stored);
+      expect(a.dom.moveUndo.hidden).toBe(true);
+      expect(a.dom.status.textContent).toContain(
+        "The code's saved position is back where it was",
+      );
+      expect(
+        visitFile().codes.find((c) => c.levelId === stored.id)?.moved,
+      ).toBeUndefined();
+      const meta = JSON.parse(slow.files.get(META_KEY) as string) as {
+        level: { json: string };
+        moveAnswers: { answer: string }[];
+      };
+      expect(meta.level.json).toBe(stored.json);
+      expect(meta.moveAnswers).toEqual([
+        expect.objectContaining({ answer: "not-now" }),
+      ]);
+      expect(logs(a, "codeReplaceUndone")).toEqual([
+        expect.objectContaining({
+          levelId: stored.id,
+          restored: stored,
+          fromPrompt: true,
+        }),
+      ]);
+    });
+
+    it("an Undo whose draft write is refused says the undo is not backed up", async () => {
+      const slow = slowDraftStore();
+      const { a, stored, fix } = await secondVisitFarFromTheCode(slow.store);
+      await slow.release();
+      fix(MOVE_PROMPT_RULE.minFixes);
+      a.dom.movePromptUse.click();
+      await vi.waitFor(() => {
+        expect(a.ctx.mintedLevel).not.toBeNull();
+        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      });
+      await slow.release();
+      slow.mode.refuse = true;
+      a.dom.moveUndoButton.click();
+      await slow.release();
+      expect(a.ctx.mintedLevel).toEqual(stored);
+      expect(a.dom.status.textContent).toContain(
+        "this device could not save the change",
+      );
+    });
+
+    it("Undo ends with a Finish", async () => {
+      const { store } = memoryDraftStore();
+      const { a, stored, fix } = await secondVisitFarFromTheCode(store);
+      a.ctx.tourManifestStatus = "settled";
+      fix(MOVE_PROMPT_RULE.minFixes);
+      a.dom.movePromptUse.click();
+      await vi.waitFor(() => {
+        expect(a.ctx.mintedLevel).not.toBeNull();
+        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      });
+      await flush();
+      expect(a.dom.moveUndo.hidden).toBe(false);
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).toBeNull();
+      await flush();
+      expect(a.dom.moveUndo.hidden).toBe(true);
+    });
+
+    /** The newest visit-log entry the draft holds. */
+    function lastVisitFile(files: Map<string, unknown>) {
+      return [...files.entries()]
+        .filter(([k]) => k.startsWith(visitKey("")))
+        .map(([, v]) => parseVisitLogEntry(v as string)!)
+        .sort((x, y) => x.atMs - y.atMs)
+        .at(-1)!;
+    }
+
+    /** "Replace the code's saved position" through its confirm. */
+    async function replaceWithTheButton(
+      a: ReturnType<typeof authoring>,
+      stored: { json: string },
+    ): Promise<void> {
+      a.setup.renderAuthorReadout();
+      a.dom.replaceCodeButton.click();
+      a.dom.replaceCodeYes.click();
+      await vi.waitFor(() => {
+        expect(a.ctx.mintedLevel).not.toBeNull();
+        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      });
+      await flush();
+    }
+
+    it("does not log a sighting answered 'It's a second copy' as a visit of the stored code; 'Not now' still does (M5b review #11)", async () => {
+      // Why: the visit log's code records are what the summary combines
+      // into the code's position across visits (`codeVisitPoses`). A print
+      // the creator called a second copy is not the stored code, so its
+      // sighting 60 m away would drag that estimate towards the copy -
+      // the opposite of what the answer said. "Not now" leaves it open,
+      // so that sighting stays a visit.
+      for (const [button, logged] of [
+        ["movePromptCopy", false],
+        ["movePromptLater", true],
+      ] as const) {
+        const { store, files } = memoryDraftStore();
+        const { a, stored, fix } = await secondVisitFarFromTheCode(store);
+        fix(MOVE_PROMPT_RULE.minFixes);
+        expect(a.dom.movePrompt.hidden, button).toBe(false);
+        a.dom[button].click();
+        await flush();
+        a.endVisit();
+        await flush();
+        const entry = lastVisitFile(files);
+        expect(entry.gps.length, button).toBeGreaterThan(0);
+        expect(
+          entry.codes.some((c) => c.levelId === stored.id),
+          button,
+        ).toBe(logged);
+      }
+    });
+
+    it("keeps Undo through a later measurement of the same code, whose level is briefly not in hand (M5b review #4)", async () => {
+      // Why: a measurement empties the level in hand while its identity
+      // hash is computed; a render in that moment (any fix) read that as
+      // "another level took over" and withdrew Undo for good.
+      const { a, stored, fix } = await secondVisitFarFromTheCode();
+      fix(MOVE_PROMPT_RULE.minFixes);
+      a.dom.movePromptUse.click();
+      await vi.waitFor(() => {
+        expect(a.ctx.mintedLevel?.json).toBeDefined();
+        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      });
+      await flush();
+      expect(a.dom.moveUndo.hidden).toBe(false);
+      a.setup.renderAuthorReadout();
+      a.dom.mintButton.click();
+      expect(a.ctx.mintedLevel).toBeNull();
+      a.setup.renderAuthorReadout();
+      await vi.waitFor(() => {
+        expect(a.ctx.mintedLevel?.id).toBe(stored.id);
+      });
+      await flush();
+      expect(a.dom.moveUndo.hidden).toBe(false);
+    });
+
+    it("marks the visit's move boundary for a Replace-button replace too, not only for the prompt's (M5b review #3)", async () => {
+      // Why: the boundary tells the summary which of the code's visits
+      // came before the move. A replace moves the code whichever button
+      // made it, so a visit replaced through the Replace button that
+      // carried no mark was combined with the visits before the move.
+      const { store, files } = memoryDraftStore();
+      const { a, stored } = await secondVisitFarFromTheCode(store);
+      await replaceWithTheButton(a, stored);
+      a.endVisit();
+      await flush();
+      expect(
+        lastVisitFile(files).codes.find((c) => c.levelId === stored.id)?.moved,
+      ).toBe(true);
+    });
+
+    it("undoes a Replace-button replace as not from the prompt, leaves the remembered answers alone, and the prompt can return (M5b review #6)", async () => {
+      // Why: Undo serves any replace (M5b review #3), but only a prompt's
+      // replace answered a prompt. Logged as `fromPrompt: true`, or
+      // remembered as a "Not now" for the spot, a Replace-button undo would
+      // misreport the creator's answer and silence a prompt nobody was
+      // ever shown for that spot.
+      const { store, files } = memoryDraftStore();
+      const { a, stored, fix } = await secondVisitFarFromTheCode(store);
+      await replaceWithTheButton(a, stored);
+      expect(a.dom.moveUndo.hidden).toBe(false);
+      a.dom.moveUndoButton.click();
+      await vi.waitFor(() => {
+        expect(a.dom.status.textContent).toContain(
+          "The code's saved position is back where it was",
+        );
+      });
+      expect(a.ctx.mintedLevel).toEqual(stored);
+      expect(logs(a, "codeReplaceUndone")).toEqual([
+        expect.objectContaining({
+          levelId: stored.id,
+          restored: stored,
+          fromPrompt: false,
+        }),
+      ]);
+      const meta = JSON.parse(files.get(META_KEY) as string) as {
+        level: { json: string };
+        moveAnswers: unknown[];
+      };
+      expect(meta.level.json).toBe(stored.json);
+      expect(meta.moveAnswers).toEqual([]);
+      // The refusal stands again against the restored pose: once it has
+      // lasted, the prompt asks.
+      fix(MOVE_PROMPT_RULE.minFixes);
+      expect(a.dom.movePrompt.hidden).toBe(false);
+      expect(logs(a, "codeMovePrompted")).toHaveLength(1);
     });
   },
 );
