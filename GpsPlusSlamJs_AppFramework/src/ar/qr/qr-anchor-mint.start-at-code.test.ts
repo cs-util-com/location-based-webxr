@@ -62,8 +62,56 @@
  * - (c) weighting the rotation by sample count: 5-15 p50 with 2 looks, 72
  *   with 1; by recency (60 s half-life): 19-37 with 2 looks.
  * - Refusals: 5-10 % at 5 degrees of yaw noise (the fixedness gate) for
- *   every candidate; 3 % of start-only codes for (a1) and the pre-fix mint
- *   (cause not traced), 0 % for (a2).
+ *   every candidate; 2.5 % of start-only codes for (a1) and the pre-fix mint,
+ *   0 % for (a2). Traced (`refusals`): one recording in 40 (seed 122, at every
+ *   walk and yaw noise) whose only look ended at 1.75 s on a detection
+ *   dropout, so its newest snapshot had seen 2 fixes, under the
+ *   MIN_ALIGNMENT_SAMPLES floor of 3.
+ * - (a3) the first MATURE alignment at or after the code's last sighting
+ *   (the snapshot kept updating until maturity; GPS extent >= 10/20/40/60/
+ *   80 m or >= 10/30/60 fixes): at 10 m or 10 fixes up to 8 degrees p50 and
+ *   15-24 p90 for start-only codes, worse than (a2); from 40 m within 0.3
+ *   degrees p50 of (a2), and identical when the walk never reaches the
+ *   floor (it then IS the alignment at save).
+ *
+ * THE CODE LEFT BEHIND (`left`, milestone review H1, 2026-10-02; 30
+ * recordings per cell, look yaw noise 2 degrees). The pivot drift above
+ * cannot show it: every look is from the stand the recording ends at. Here
+ * SLAM drift is INTEGRATED along the walk (yaw 0.5/1/2 degrees per 100 m,
+ * translation 0.5/1/2 % of distance, `IntegratedDrift`), the code is seen
+ * once or twice after two 60 m out-and-back walks matured the alignment,
+ * and the author then walks 100/200/300/500 m away (straight, or 50 m legs
+ * turning up to 60 degrees) or out and back to the code before Stop.
+ * - (a2), the shipped rule, inherits all drift after the sighting: position
+ *   p50 / p90 at 500 m away 2.9 / 4.3 m (0.5 deg, 0.5 %), 8.6 / 11.6 m
+ *   (1, 1 %), 19.0 / 21.5 m (2, 2 %); heading 3.5 and 7 degrees p50 at 1 and
+ *   2 degrees per 100 m. At 300 m and 1 %, 1 degree: 2.2 / 3.7 m. Walking
+ *   back to the code does not save it: 500 m out and back, 1 %, 1 degree:
+ *   11.0 / 15.3 m. Only at 100 m away is it as good as or better than the
+ *   rest (1.2-1.7 m, 1.1-2.2 degrees).
+ * - pre-fix (DEC-3) and (a1) are flat across every leave: 1.7-1.8 / 2.5-2.7 m
+ *   and 1.5-2.7 degrees p50 (4-5 p90).
+ * - (a3) with a 40-80 m extent floor is flat too: 1.1-1.7 / 2.1-3.1 m and
+ *   1.0-2.3 degrees p50 (3-6 p90) over every mid-recording cell. A floor of
+ *   10-20 m or 10-60 fixes is already met at the sighting there, so it IS
+ *   (a1). The 40 m p90 heading is 5-6 degrees at 2 % translation drift, the
+ *   80 m one 3-4. Under integrated drift a start-only code (walks 15-120 m)
+ *   minted through (a3) at 40 m: 1.8-3.8 degrees and 1.4-1.6 m, against
+ *   1.5-4.1 degrees and 1.4-4.0 m for (a2).
+ * - So (a2) is a regression for a code left behind: worse than DEC-3 from
+ *   about 300 m walked after it at 1 % and 1 degree per 100 m (200 m at
+ *   2 %), growing with the distance times the drift; and (a3) with an
+ *   extent floor of 40 m or more removes it while keeping the start-at-code
+ *   fix. The floor reverses at 10-20 m (worse than (a2) for a start-only
+ *   code), and (a3) gains nothing when the drift after the sighting is
+ *   small (0.5 %, 0.5 degrees, 100 m: 1.4 m against 1.3 m for (a2)).
+ *
+ * HEADING AGAINST GPS EXTENT (`extent`, milestone review M2; start-at-code,
+ * 3 looks, out-and-back walks 0-30 m, 40 seeds each; the extent is the
+ * largest distance between two fixes at mint time, noise included): below
+ * 5 m 41 / 151 degrees p50 / p90 (the yaw is unobservable), 5-10 m 7.3 / 22,
+ * 10-15 m 3.5 / 8, 15-20 m 3.4 / 8. The MIN_ALIGNMENT_SAMPLES floor (3
+ * fixes) passes every one of them.
  */
 
 import { writeFileSync } from 'node:fs';
@@ -86,7 +134,10 @@ import {
   calcRelativeCoordsInMeters,
   type Matrix4 as AlignmentMatrix,
 } from '../../core/index.js';
-import { mintQrAnchorFromSightings } from './qr-anchor-mint.js';
+import {
+  mintQrAnchorFromSightings,
+  type QrMintAlignmentNow,
+} from './qr-anchor-mint.js';
 import { qrWorldPoseFromOdom } from './qr-mint-level.js';
 import { averageRotation } from './qr-pose-aggregation.js';
 import { mintQrGeoPose } from './qr-geo-pose-minting.js';
@@ -173,6 +224,35 @@ interface RecordingSpec {
   readonly walkM: number;
   /** GPS noise off and drift off: the sanity pin's exact inputs. */
   readonly exact?: boolean;
+  /** After the three looks, a walk AWAY from the code before Stop (the
+   *  left-behind scenario). Absent: the recording ends at the code. */
+  readonly leave?: LeaveSpec;
+  /** Integrated SLAM drift instead of the default frame-yaw pivot. */
+  readonly drift?: IntegratedDrift;
+}
+
+interface LeaveSpec {
+  /** Path length walked after the last look (m). */
+  readonly distanceM: number;
+  /** Half of it out, then back along the same path to the code. */
+  readonly endBack: boolean;
+  /** One straight line (the largest lever arm a walk of this length has),
+   *  or 50 m legs turning by up to 60 degrees each. */
+  readonly path: 'straight' | 'meander';
+}
+
+/**
+ * Odometry drift INTEGRATED along the walk, which is how SLAM drifts: the
+ * heading error grows with distance walked, and every metre is reported
+ * with that metre's heading error, plus a translation bias in one random
+ * horizontal direction proportional to the distance (end-point error as a
+ * share of distance travelled). A pose recorded early stays in the frame
+ * as it was then, so an alignment fitted to the END of the walk sees it
+ * displaced by everything accumulated after it.
+ */
+interface IntegratedDrift {
+  readonly yawDegPer100m: number;
+  readonly transPct: number;
 }
 
 interface Waypoint {
@@ -200,6 +280,14 @@ interface Recording {
   readonly t0: Vector3;
   readonly yawSign: number;
   readonly waypoints: readonly Waypoint[];
+  /** The phone's integrated odometry position, when `spec.drift` is set. */
+  readonly track: OdomTrack | null;
+}
+
+/** The phone's odometry NUE position sampled every `stepS` from t = 0. */
+interface OdomTrack {
+  readonly stepS: number;
+  readonly points: readonly Vector3[];
 }
 
 function timeline(spec: RecordingSpec): {
@@ -231,7 +319,48 @@ function timeline(spec: RecordingSpec): {
     t += 0.5 + LOOK_S + 0.5;
     waypoints.push({ tS: t, at: STAND, walkedM: walked });
   }
+  if (spec.leave !== undefined) {
+    t = appendLeave(spec, waypoints, t, walked);
+  }
   return { waypoints, looks, endS: t };
+}
+
+/** The walk away from the code after the last look; returns the end time.
+ *  Its own random stream, so the walks and looks before it are unchanged. */
+function appendLeave(
+  spec: RecordingSpec,
+  waypoints: Waypoint[],
+  startS: number,
+  startWalkedM: number
+): number {
+  const leave = spec.leave!;
+  const rng = stream(spec.seed, 6);
+  const legM = leave.path === 'straight' ? Infinity : 50;
+  const outM = leave.endBack ? leave.distanceM / 2 : leave.distanceM;
+  let heading = rad(CODE_NORMAL_DEG + (rng() * 120 - 60));
+  const legs: NE[] = [];
+  let at: NE = STAND;
+  for (let done = 0; done < outM - 1e-9;) {
+    const len = Math.min(legM, outM - done);
+    at = [at[0] + len * Math.cos(heading), at[1] + len * Math.sin(heading)];
+    legs.push(at);
+    done += len;
+    heading += rad(rng() * 120 - 60);
+  }
+  const route = leave.endBack
+    ? [...legs, ...legs.slice(0, -1).reverse(), STAND]
+    : legs;
+  let t = startS;
+  let walked = startWalkedM;
+  let from: NE = STAND;
+  for (const to of route) {
+    const len = Math.hypot(to[0] - from[0], to[1] - from[1]);
+    t += len / WALK_SPEED_MPS;
+    walked += len;
+    waypoints.push({ tS: t, at: to, walkedM: walked });
+    from = to;
+  }
+  return t;
 }
 
 function phoneAt(
@@ -258,23 +387,85 @@ function phoneAt(
 
 const DRIFT_DEG_PER_100M = 1;
 
-/** The odometry frame at `tS`: world = Ry(yaw) . odomNue + t0. */
-function frameYaw(rec: Omit<Recording, 'fixes' | 'zero'>, tS: number): number {
+type RecordingFrame = Omit<Recording, 'fixes' | 'zero'>;
+
+/** The odometry frame at `tS`: world = Ry(yaw) . odomNue + t0 (with
+ *  integrated drift, only locally around the phone). */
+function frameYaw(rec: Omit<RecordingFrame, 'track'>, tS: number): number {
   if (rec.spec.exact === true) return rec.yaw0;
   const walked = phoneAt(rec.waypoints, tS).walkedM;
-  return rec.yaw0 + rec.yawSign * rad(DRIFT_DEG_PER_100M) * (walked / 100);
+  const rate = rec.spec.drift?.yawDegPer100m ?? DRIFT_DEG_PER_100M;
+  return rec.yaw0 + rec.yawSign * rad(rate) * (walked / 100);
 }
 
-function odomNueAt(
-  rec: Omit<Recording, 'fixes' | 'zero'>,
-  world: Vector3,
-  tS: number
-): Vector3 {
+function odomNueAt(rec: RecordingFrame, world: Vector3, tS: number): Vector3 {
+  if (rec.track !== null) {
+    // What the camera sees is relative to the phone, in the frame as it is
+    // at this moment; the phone's own odometry carries the drift so far.
+    const phone = phoneAt(rec.waypoints, tS).at;
+    const o = trackAt(rec.track, tS);
+    const rel = rotY(-frameYaw(rec, tS), [
+      world[0] - phone[0],
+      world[1] - PHONE_ALT,
+      world[2] - phone[1],
+    ]);
+    return [o[0] + rel[0], o[1] + rel[1], o[2] + rel[2]];
+  }
   return rotY(-frameYaw(rec, tS), [
     world[0] - rec.t0[0],
     world[1] - rec.t0[1],
     world[2] - rec.t0[2],
   ]);
+}
+
+const TRACK_STEP_S = 0.05;
+
+/** Integrate the phone's odometry along the walk (see `IntegratedDrift`). */
+function integrateTrack(
+  rec: Omit<RecordingFrame, 'track'>,
+  drift: IntegratedDrift
+): OdomTrack {
+  const biasDir = stream(rec.spec.seed, 5)() * 2 * Math.PI;
+  const bias: NE = [Math.cos(biasDir), Math.sin(biasDir)];
+  const eps = drift.transPct / 100;
+  const startNe = phoneAt(rec.waypoints, 0).at;
+  let o = rotY(-frameYaw(rec, 0), [
+    startNe[0] - rec.t0[0],
+    PHONE_ALT - rec.t0[1],
+    startNe[1] - rec.t0[2],
+  ]);
+  const points: Vector3[] = [o];
+  let prev = startNe;
+  const steps = Math.ceil(rec.endS / TRACK_STEP_S) + 1;
+  for (let i = 1; i <= steps; i += 1) {
+    const tS = i * TRACK_STEP_S;
+    const cur = phoneAt(rec.waypoints, tS).at;
+    const dn = cur[0] - prev[0];
+    const de = cur[1] - prev[1];
+    const len = Math.hypot(dn, de);
+    const d = rotY(-frameYaw(rec, tS - TRACK_STEP_S / 2), [
+      dn + eps * len * bias[0],
+      0,
+      de + eps * len * bias[1],
+    ]);
+    o = [o[0] + d[0], o[1], o[2] + d[2]];
+    points.push(o);
+    prev = cur;
+  }
+  return { stepS: TRACK_STEP_S, points };
+}
+
+function trackAt(track: OdomTrack, tS: number): Vector3 {
+  const pos = Math.max(0, tS / track.stepS);
+  const i = Math.min(Math.floor(pos), track.points.length - 1);
+  const a = track.points[i]!;
+  const b = track.points[Math.min(i + 1, track.points.length - 1)]!;
+  const f = pos - i;
+  return [
+    a[0] + f * (b[0] - a[0]),
+    a[1] + f * (b[1] - a[1]),
+    a[2] + f * (b[2] - a[2]),
+  ];
 }
 
 function gpsErrors(spec: RecordingSpec, count: number): NE[] {
@@ -301,7 +492,7 @@ function gpsErrors(spec: RecordingSpec, count: number): NE[] {
 function runRecording(spec: RecordingSpec): Recording {
   const { waypoints, looks, endS } = timeline(spec);
   const rng = stream(spec.seed, 3);
-  const frame = {
+  const base = {
     spec,
     looks,
     endS,
@@ -313,6 +504,10 @@ function runRecording(spec: RecordingSpec): Recording {
       STAND[1] + gaussian(rng) * 0.3,
     ] as Vector3,
     yawSign: rng() < 0.5 ? -1 : 1,
+  };
+  const frame: RecordingFrame = {
+    ...base,
+    track: spec.drift === undefined ? null : integrateTrack(base, spec.drift),
   };
   const store = createSlamAppStore({
     storageBackend: new NullStorageBackend(),
@@ -658,6 +853,51 @@ describe('start-at-code fixture: the conventions are sound', () => {
     expect(err!.headingDeg).toBeLessThan(1);
     expect(err!.horizontalM).toBeLessThan(0.5);
   });
+
+  // Why this test matters: the left-behind sweep rests on the integrated
+  // drift model. With no drift it must reduce EXACTLY to the frame-pivot
+  // model every other number here uses (at the integration grid's own
+  // instants, where it carries no interpolation error), including along the
+  // walk away from the code.
+  it('integrated odometry without drift is the pivot model', () => {
+    const leave: LeaveSpec = {
+      distanceM: 120,
+      endBack: false,
+      path: 'meander',
+    };
+    const pivot = runRecording({ seed: 5, walkM: 30, exact: true, leave });
+    const integrated = runRecording({
+      seed: 5,
+      walkM: 30,
+      exact: true,
+      leave,
+      drift: { yawDegPer100m: 0, transPct: 0 },
+    });
+    expect(integrated.endS).toBe(pivot.endS);
+    for (let tS = 0; tS <= pivot.endS; tS += 1) {
+      const a = codePoseAt(pivot, tS, 0).position;
+      const b = codePoseAt(integrated, tS, 0).position;
+      for (let k = 0; k < 3; k += 1) expect(b[k]).toBeCloseTo(a[k]!, 6);
+    }
+  });
+
+  // Why this test matters: the translation drift is a share of the distance
+  // walked. Walking 200 m out and back to the code with 2 % must leave the
+  // phone's odometry 4 m from where it started the walk, although the phone
+  // is back where it was.
+  it('translation drift is the stated share of the distance walked', () => {
+    const rec = runRecording({
+      seed: 9,
+      walkM: 30,
+      exact: true,
+      drift: { yawDegPer100m: 0, transPct: 2 },
+      leave: { distanceM: 200, endBack: true, path: 'straight' },
+    });
+    const leaveStartS = rec.looks[2]![1] + 0.5;
+    const from = trackAt(rec.track!, leaveStartS);
+    const to = trackAt(rec.track!, rec.endS);
+    expect(Math.hypot(to[0] - from[0], to[2] - from[2])).toBeCloseTo(4, 1);
+  });
 });
 
 describe('the Recorder mint when a recording starts at the code', () => {
@@ -762,7 +1002,68 @@ function candidateErrors(
         (s) => 1 / (1 + (lastAt - s.lastTimestamp) / 1000 / 60)
       ),
     ],
+    ...a3Candidates(rec, sightings),
   ];
+}
+
+/** What makes an alignment MATURE for candidate (a3). */
+interface Maturity {
+  readonly name: string;
+  readonly mature: (fix: FixSnapshot) => boolean;
+}
+
+/** The maturity floors (a3) is swept over: the GPS extent so far (largest
+ *  distance between two fixes, noise included) or the fix count. */
+const MATURITIES: readonly Maturity[] = [
+  { name: 'ext>=10m', mature: (f) => f.gpsExtentM >= 10 },
+  { name: 'ext>=20m', mature: (f) => f.gpsExtentM >= 20 },
+  { name: 'ext>=40m', mature: (f) => f.gpsExtentM >= 40 },
+  { name: 'ext>=60m', mature: (f) => f.gpsExtentM >= 60 },
+  { name: 'ext>=80m', mature: (f) => f.gpsExtentM >= 80 },
+  { name: 'n>=10', mature: (f) => f.sampleCount >= 10 },
+  { name: 'n>=30', mature: (f) => f.sampleCount >= 30 },
+  { name: 'n>=60', mature: (f) => f.sampleCount >= 60 },
+];
+
+/**
+ * (a3) the first MATURE alignment at or after the code's last sighting:
+ * the per-code snapshot a feeder would keep updating until the alignment
+ * matures and then freeze. A recording that stops before that minted
+ * through the newest snapshot, which is then the alignment at save (a2).
+ */
+function a3Alignment(
+  rec: Recording,
+  sightings: readonly QrSighting[],
+  maturity: Maturity
+): FixSnapshot {
+  const lastS =
+    ((sightings.at(-1)?.lastTimestamp ?? EPOCH_MS) - EPOCH_MS) / 1000;
+  const from = Math.floor(lastS);
+  const found = rec.fixes.find(
+    (f) => f.tS >= from && f.alignment !== null && maturity.mature(f)
+  );
+  return found ?? endAlignment(rec);
+}
+
+function asCurrent(rec: Recording, fix: FixSnapshot): QrMintAlignmentNow {
+  return {
+    alignmentMatrix: fix.alignment,
+    zero: rec.zero,
+    alignmentSampleCount: fix.sampleCount,
+    segment: 0,
+  };
+}
+
+function a3Candidates(
+  rec: Recording,
+  sightings: readonly QrSighting[]
+): [string, CandidateError][] {
+  return MATURITIES.map((m) => [
+    `a3 ${m.name}`,
+    mintError(sightings, {
+      currentAlignment: asCurrent(rec, a3Alignment(rec, sightings, m)),
+    }),
+  ]);
 }
 
 interface Column {
@@ -786,13 +1087,16 @@ function addTo(
   cols.set(name, c);
 }
 
-/** `name: headingP50/p90deg horizontalP50m rRefused%` per candidate. */
+/** `name: headingP50/p90deg horizontalP50/p90m rRefused%` per candidate. */
 function formatColumns(cols: ReadonlyMap<string, Column>, n: number): string {
   return [...cols.entries()]
     .map(([name, c]) => {
       const refused =
         c.refused > 0 ? ` r${String(Math.round((100 * c.refused) / n))}%` : '';
-      const pos = c.m.length > 0 ? ` ${quantile(c.m, 0.5).toFixed(1)}m` : '';
+      const pos =
+        c.m.length > 0
+          ? ` ${quantile(c.m, 0.5).toFixed(1)}/${quantile(c.m, 0.9).toFixed(1)}m`
+          : '';
       return `${name}: ${quantile(c.h, 0.5).toFixed(1)}/${quantile(c.h, 0.9).toFixed(0)}deg${pos}${refused}`;
     })
     .join(' | ');
@@ -814,36 +1118,335 @@ function sweepCell(
   return cols;
 }
 
-const SWEEP = process.env['QR_MINT_START_AT_CODE_SWEEP'] === '1';
+/**
+ * Which opt-in sweeps run: `QR_MINT_START_AT_CODE_SWEEP=1` runs all of
+ * them, or a comma list of `start`, `left`, `extent`, `refusals`.
+ */
+const SWEEPS = ((): ReadonlySet<string> => {
+  const raw = process.env['QR_MINT_START_AT_CODE_SWEEP'] ?? '';
+  if (raw === '1') return new Set(['start', 'left', 'extent', 'refusals']);
+  return new Set(raw.split(',').filter((s) => s !== ''));
+})();
 
-describe.skipIf(!SWEEP)('spike: fix candidates across the sweep', () => {
-  it(
-    'measures heading error per candidate across walk length, looks and yaw noise',
-    () => {
-      const seeds = Array.from({ length: 40 }, (_, i) => i + 101);
-      const rows: string[] = [];
-      for (const walkM of [15, 30, 60, 120]) {
-        const recs = seeds.map((seed) => runRecording({ seed, walkM }));
-        for (const looks of [1, 2, 3]) {
-          for (const yawNoiseDeg of [1, 3, 5]) {
-            const cols = sweepCell(recs, looks, yawNoiseDeg);
+/** The package runs vitest with `silent: true`, so a table goes to a file
+ *  when `QR_MINT_START_AT_CODE_SWEEP_OUT` names one (with `suffix` added
+ *  for every table but the first sweep's), and to the console otherwise. */
+function emitTable(lines: readonly string[], suffix = ''): void {
+  const table = lines.join('\n');
+  const out = process.env['QR_MINT_START_AT_CODE_SWEEP_OUT'];
+  if (out === undefined) console.log(table);
+  else writeFileSync(`${out}${suffix}`, `${table}\n`);
+}
+
+describe.skipIf(!SWEEPS.has('start'))(
+  'spike: fix candidates across the sweep',
+  () => {
+    it(
+      'measures heading error per candidate across walk length, looks and yaw noise',
+      () => {
+        const seeds = Array.from({ length: 40 }, (_, i) => i + 101);
+        const rows: string[] = [];
+        for (const walkM of [15, 30, 60, 120]) {
+          const recs = seeds.map((seed) => runRecording({ seed, walkM }));
+          for (const looks of [1, 2, 3]) {
+            for (const yawNoiseDeg of [1, 3, 5]) {
+              const cols = sweepCell(recs, looks, yawNoiseDeg);
+              rows.push(
+                `walk ${String(walkM)} m, looks ${String(looks)}, yaw ${String(yawNoiseDeg)}: ${formatColumns(cols, recs.length)}`
+              );
+            }
+          }
+        }
+        emitTable([
+          'heading p50/p90, horizontal p50/p90, refused share',
+          ...rows,
+        ]);
+        expect(rows.length).toBe(36);
+      },
+      30 * 60_000
+    );
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Opt-in: a code LEFT BEHIND (milestone review H1, 2026-10-02).
+// ---------------------------------------------------------------------------
+
+/** The candidates that survive into a design choice, on one recording. */
+function leftCandidates(
+  rec: Recording,
+  sightings: readonly QrSighting[]
+): [string, CandidateError][] {
+  return [
+    ['pre-fix', preFixError(rec, sightings)],
+    ['a1', mintError(sightings)],
+    [
+      'a2',
+      mintError(sightings, {
+        currentAlignment: asCurrent(rec, endAlignment(rec)),
+      }),
+    ],
+    ...a3Candidates(rec, sightings),
+  ];
+}
+
+interface LeftCell {
+  readonly label: string;
+  readonly spec: Omit<RecordingSpec, 'seed'>;
+  /** Looks `firstLook`..2 detect the code (2 = only the last, after both
+   *  walks; 1 = the last two; 0 = only the first, at the start). */
+  readonly firstLooks: readonly number[];
+}
+
+const driftTag = (d: IntegratedDrift): string =>
+  `yaw ${String(d.yawDegPer100m)}deg/100m, trans ${String(d.transPct)}%`;
+
+const UNIT_DRIFT: IntegratedDrift = { yawDegPer100m: 1, transPct: 1 };
+
+/** The sweep grid; every parameter it rests on is named in the label. */
+function leftCells(): LeftCell[] {
+  const drifts: IntegratedDrift[] = [];
+  for (const yawDegPer100m of [0.5, 1, 2])
+    for (const transPct of [0.5, 1, 2])
+      drifts.push({ yawDegPer100m, transPct });
+  return [...midCells(drifts), ...startCells()];
+}
+
+/** A code seen after the alignment matured, then left behind. */
+function midCells(drifts: readonly IntegratedDrift[]): LeftCell[] {
+  const cells: LeftCell[] = [];
+  const unit = UNIT_DRIFT;
+  for (const distanceM of [100, 200, 300, 500])
+    for (const drift of drifts)
+      cells.push({
+        label: `mid, leave ${String(distanceM)} m straight, ${driftTag(drift)}`,
+        spec: {
+          walkM: 60,
+          drift,
+          leave: { distanceM, endBack: false, path: 'straight' },
+        },
+        firstLooks: [2, 1],
+      });
+  for (const distanceM of [300, 500])
+    cells.push({
+      label: `mid, leave ${String(distanceM)} m meander, ${driftTag(unit)}`,
+      spec: {
+        walkM: 60,
+        drift: unit,
+        leave: { distanceM, endBack: false, path: 'meander' },
+      },
+      firstLooks: [2, 1],
+    });
+  for (const distanceM of [100, 300, 500])
+    for (const drift of drifts)
+      cells.push({
+        label: `mid, ${String(distanceM)} m out and back to the code, ${driftTag(drift)}`,
+        spec: {
+          walkM: 60,
+          drift,
+          leave: { distanceM, endBack: true, path: 'straight' },
+        },
+        firstLooks: [2],
+      });
+  return cells;
+}
+
+/** The start-at-code recording under integrated drift: the case the
+ *  shipped fix was made for, with the drift model the first sweep lacks. */
+function startCells(): LeftCell[] {
+  const cells: LeftCell[] = [];
+  const unit = UNIT_DRIFT;
+  for (const walkM of [15, 30, 60, 120])
+    for (const drift of [unit, { yawDegPer100m: 2, transPct: 2 }])
+      cells.push({
+        label: `start, walks ${String(walkM)} m, ends at code, ${driftTag(drift)}`,
+        spec: { walkM, drift },
+        firstLooks: [0],
+      });
+  for (const distanceM of [100, 300])
+    cells.push({
+      label: `start, walks 60 m, leave ${String(distanceM)} m straight, ${driftTag(unit)}`,
+      spec: {
+        walkM: 60,
+        drift: unit,
+        leave: { distanceM, endBack: false, path: 'straight' },
+      },
+      firstLooks: [0],
+    });
+  return cells;
+}
+
+const LOOK_NAMES: Record<number, string> = {
+  0: 'seen at start only',
+  1: 'seen twice mid',
+  2: 'seen once mid',
+};
+
+/** Looks `firstLook`..`looks - 1` detect: the start-only cell keeps look 0. */
+const looksFor = (firstLook: number): number => (firstLook === 0 ? 1 : 3);
+
+describe.skipIf(!SWEEPS.has('left'))(
+  'spike: a code left behind, under integrated drift',
+  () => {
+    it(
+      'measures each candidate for a code seen mid-recording and then walked away from',
+      () => {
+        const seedCount = Number(process.env['QR_MINT_LEFT_SEEDS'] ?? '30');
+        const seeds = Array.from({ length: seedCount }, (_, i) => i + 201);
+        const rows: string[] = [];
+        for (const cell of leftCells()) {
+          const recs = seeds.map((seed) =>
+            runRecording({ seed, ...cell.spec })
+          );
+          for (const firstLook of cell.firstLooks) {
+            const cols = new Map<string, Column>();
+            for (const rec of recs) {
+              const { sightings } = recordedSightings(
+                rec,
+                looksFor(firstLook),
+                DEFAULT_NOISE,
+                7,
+                firstLook
+              );
+              for (const [name, e] of leftCandidates(rec, sightings))
+                addTo(cols, name, e);
+            }
             rows.push(
-              `walk ${String(walkM)} m, looks ${String(looks)}, yaw ${String(yawNoiseDeg)}: ${formatColumns(cols, recs.length)}`
+              `${cell.label}, ${LOOK_NAMES[firstLook] ?? ''}: ${formatColumns(cols, recs.length)}`
             );
           }
         }
-      }
-      // The package runs vitest with `silent: true`, so the table goes to a
-      // file when one is named, and to the console otherwise.
-      const table = [
-        'heading p50/p90, horizontal p50, refused share',
-        ...rows,
-      ].join('\n');
-      const out = process.env['QR_MINT_START_AT_CODE_SWEEP_OUT'];
-      if (out === undefined) console.log(table);
-      else writeFileSync(out, `${table}\n`);
-      expect(rows.length).toBe(36);
-    },
-    30 * 60_000
-  );
-});
+        emitTable(
+          [
+            `left behind (${String(seedCount)} recordings per cell, look yaw noise 2 deg): heading p50/p90, horizontal p50/p90, refused share`,
+            ...rows,
+          ],
+          '.left-behind.txt'
+        );
+        expect(rows.length).toBeGreaterThan(0);
+      },
+      120 * 60_000
+    );
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Opt-in: heading error against the GPS extent the mint alignment rests on
+// (milestone review M2: nothing checks the alignment can observe yaw).
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!SWEEPS.has('extent'))(
+  'spike: mint heading against the GPS extent at mint time',
+  () => {
+    it(
+      'bins the shipped mint heading error by the GPS extent of its alignment',
+      () => {
+        const seeds = Array.from({ length: 40 }, (_, i) => i + 301);
+        const walks = [0, 2, 4, 6, 8, 10, 15, 20, 30];
+        const samples: { extentM: number; headingDeg: number | null }[] = [];
+        for (const walkM of walks) {
+          for (const seed of seeds) {
+            const rec = runRecording({ seed, walkM });
+            const end = endAlignment(rec);
+            const { sightings } = recordedSightings(rec, 3, DEFAULT_NOISE, 7);
+            const err = mintError(sightings, {
+              currentAlignment: asCurrent(rec, end),
+            });
+            samples.push({
+              extentM: end.gpsExtentM,
+              headingDeg: err?.headingDeg ?? null,
+            });
+          }
+        }
+        const headings = (rows: typeof samples): number[] =>
+          rows.map((s) => s.headingDeg).filter((v): v is number => v !== null);
+        const rows: string[] = [];
+        const bins = [0, 5, 10, 15, 20, 30, Infinity];
+        for (let i = 0; i + 1 < bins.length; i += 1) {
+          const lo = bins[i]!;
+          const hi = bins[i + 1]!;
+          const inBin = samples.filter(
+            (s) => s.extentM >= lo && s.extentM < hi
+          );
+          const h = headings(inBin);
+          rows.push(
+            `extent ${String(lo)}-${String(hi)} m: n ${String(inBin.length)}, refused ${String(inBin.length - h.length)}, heading p50/p90 ${quantile(h, 0.5).toFixed(1)}/${quantile(h, 0.9).toFixed(0)}deg`
+          );
+        }
+        for (const floorM of [5, 10, 15, 20]) {
+          const kept = samples.filter((s) => s.extentM >= floorM);
+          const h = headings(kept);
+          rows.push(
+            `floor ${String(floorM)} m: refuses ${((100 * (samples.length - kept.length)) / samples.length).toFixed(0)}% of these recordings, kept heading p50/p90 ${quantile(h, 0.5).toFixed(1)}/${quantile(h, 0.9).toFixed(0)}deg`
+          );
+        }
+        emitTable(
+          [
+            'start-at-code, 3 looks, out-and-back walks 0-30 m, 40 seeds each: shipped mint heading by GPS extent at mint time',
+            ...rows,
+          ],
+          '.extent.txt'
+        );
+        expect(samples.length).toBe(walks.length * seeds.length);
+      },
+      30 * 60_000
+    );
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Opt-in: why the newest-snapshot mint (a1, and DEC-3 before it) refused
+// about 3 % of start-only codes (milestone review G2).
+// ---------------------------------------------------------------------------
+
+/** Why the newest-snapshot mint refused these sightings, or `null`. */
+function refusalOf(sightings: readonly QrSighting[]): string | null {
+  const result = mintQrAnchorFromSightings({
+    sightings,
+    spansFrameChange: false,
+    nowIso: new Date(EPOCH_MS).toISOString(),
+  });
+  if (result.ok && result.level.ok) return null;
+  const last = sightings.at(-1);
+  const atS = ((last?.lastTimestamp ?? EPOCH_MS) - EPOCH_MS) / 1000;
+  const reason = result.ok ? 'level refused' : result.reason;
+  return `${reason}, last detection at ${atS.toFixed(2)} s, ${String(last?.alignmentSampleCount ?? 0)} fixes`;
+}
+
+describe.skipIf(!SWEEPS.has('refusals'))(
+  'spike: refusals of the newest-snapshot mint for a start-only code',
+  () => {
+    it(
+      'names the reason, the time of the last detection and its sample count',
+      () => {
+        const seeds = Array.from({ length: 40 }, (_, i) => i + 101);
+        const rows: string[] = [];
+        let total = 0;
+        for (const walkM of [15, 30, 60, 120]) {
+          const recs = seeds.map((seed) => runRecording({ seed, walkM }));
+          for (const yawNoiseDeg of [1, 3, 5]) {
+            const noise: LookNoise = { ...DEFAULT_NOISE, yawNoiseDeg };
+            for (const rec of recs) {
+              const { sightings } = recordedSightings(rec, 1, noise, 7);
+              total += 1;
+              const why = refusalOf(sightings);
+              if (why !== null)
+                rows.push(
+                  `walk ${String(walkM)}, yaw ${String(yawNoiseDeg)}, seed ${String(rec.spec.seed)}: ${why}`
+                );
+            }
+          }
+        }
+        emitTable(
+          [
+            `a1 refusals of start-only codes: ${String(rows.length)} of ${String(total)}`,
+            ...rows,
+          ],
+          '.refusals.txt'
+        );
+        expect(total).toBe(480);
+      },
+      30 * 60_000
+    );
+  }
+);
