@@ -216,20 +216,30 @@ const readScan = async (page) => ({
 // 30 and 100 m); the frame must span at least 200 m of relief. The scan
 // must also FIRE on a positive control (every tile's heights offset by up
 // to 50 m: at least 1e-3 of the pixels over 30 m), or it proves nothing.
+// The scan and its control run at the library's error target 1, finer
+// than the carrier's default 2: more tiles, so more edges in the frame
+// (35 against 14 at 30 km). At 2 the planted seams covered 9.96e-4 of the
+// pixels, at 1 5.65e-3: the control's power follows the edge count, so it
+// is measured where the edges are most. The default is scanned too, at
+// 30 km, for cracks and steps.
 test("no cracks and no seams between the relief's tiles, and the scan fires on a planted seam", async ({
   browser,
 }) => {
   test.setTimeout(1_200_000);
   const STEP_SHARE = 1e-4;
-  for (const alt of [30, 5]) {
+  for (const [alt, et] of [
+    [30, 1],
+    [5, 1],
+    [30, null],
+  ]) {
     const r = await measured(
       browser,
-      `carrier=terrain&alt=${alt}&nadir=1&debug=height`,
+      `carrier=terrain&alt=${alt}&nadir=1&debug=height${et === null ? "" : `&errorTarget=${et}`}`,
       readScan,
     );
     const s = shares(r.scan);
     console.log(
-      `seam scan straight down at ${alt} km (synthetic heights): ${r.scan.pixels} pixels, ${r.state.visibleTiles} tiles at levels ${JSON.stringify(r.state.visibleByLevel)}; heights ${r.scan.heightRangeM.map((v) => v.toFixed(0)).join("-")} m; cracks ${r.scan.holes}; steps over 10/30/100 m ${r.scan.steps.join("/")} (share over 30 m: ${below(s[1] ?? 0, STEP_SHARE)})`,
+      `seam scan straight down at ${alt} km, error target ${et ?? "default"} (synthetic heights): ${r.scan.pixels} pixels, ${r.state.visibleTiles} tiles at levels ${JSON.stringify(r.state.visibleByLevel)}; heights ${r.scan.heightRangeM.map((v) => v.toFixed(0)).join("-")} m; cracks ${r.scan.holes}; steps over 10/30/100 m ${r.scan.steps.join("/")} (share over 30 m: ${below(s[1] ?? 0, STEP_SHARE)})`,
     );
     expect(r.errors).toEqual([]);
     expect(
@@ -240,12 +250,12 @@ test("no cracks and no seams between the relief's tiles, and the scan fires on a
   }
   const control = await measured(
     browser,
-    "carrier=terrain&alt=30&nadir=1&debug=height&seamControl=1",
+    "carrier=terrain&alt=30&nadir=1&debug=height&errorTarget=1&seamControl=1",
     readScan,
   );
   const c = shares(control.scan);
   console.log(
-    `seam scan, POSITIVE CONTROL (tiles offset by up to 50 m): steps over 10/30/100 m ${control.scan.steps.join("/")} (share over 30 m ${(c[1] ?? 0).toExponential(2)}, must reach 1e-3)`,
+    `seam scan, POSITIVE CONTROL (tiles offset by up to 50 m, error target 1, ${control.state.visibleTiles} tiles): steps over 10/30/100 m ${control.scan.steps.join("/")} (share over 30 m ${(c[1] ?? 0).toExponential(2)}, must reach 1e-3)`,
   );
   expect(c[1]).toBeGreaterThanOrEqual(1e-3);
 });

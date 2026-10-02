@@ -272,7 +272,9 @@
     at `carrierShareAt` of the camera's altitude, computed once a frame
     (`uCarrierShare`; each pixel goes to one carrier). Outside the band
     the other carrier is neither drawn nor updated, so it fetches nothing.
-    `bandShare` (0-1) fixes the share at one view, for the smokes. The
+    `bandShare` (0-1) fixes the share at one view, and `bandFreeze=1`
+    stops both carriers' tile updates, for the smokes (the share stepped
+    over the same loaded tiles). The
     band exists because further out the carriers differ (at noon from
     1,000 km by a mean 4.31 levels, the relief's tiles coarser over part
     of the frame).

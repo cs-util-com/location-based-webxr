@@ -267,6 +267,9 @@ const PARAMS = {
   // A fixed share in place of the altitude's (null: by altitude), so a
   // smoke can step the cross-fade at one view.
   bandShare: { fallback: null, min: 0, max: 1 },
+  // 1 stops both carriers' tile updates (what is loaded stays, nothing
+  // refines or unloads), so a smoke can step the share over the same tiles.
+  bandFreeze: { fallback: 0, min: 0, max: 1 },
   // globe-albedo's detail on the relief's tiles (the terrain lab's style B
   // high-pass, `globe-detail-region.js`): its weight, 0 off.
   detail: { fallback: GLOBE_ALBEDO.detail, min: 0, max: 1 },
@@ -1651,9 +1654,10 @@ async function start() {
         });
       globe.surfaceUniforms.uCarrierShare.value = bandShare;
       globe.tiles.group.visible = bandShare < 1;
-      if (bandShare < 1) globe.update(camera, renderer);
+      const frozen = params.bandFreeze === 1;
+      if (bandShare < 1 && !frozen) globe.update(camera, renderer);
       terrain.tiles.group.visible = bandShare > 0;
-      if (bandShare > 0) {
+      if (bandShare > 0 && !frozen) {
         terrain.tiles.setCamera(camera);
         renderer.getDrawingBufferSize(terrainResolution);
         terrain.tiles.setResolution(
@@ -1942,6 +1946,17 @@ async function start() {
             visibleTiles: terrain.tiles.visibleTiles.size,
             heights: startParams.reliefHeights,
             share: bandShare,
+            // The relief's own loading, as the library counts it (its
+            // queues are shared with the globe's, so `settled` waits for
+            // both).
+            stats: (({ queued, downloading, parsing, loaded, failed }) => ({
+              queued,
+              downloading,
+              parsing,
+              loaded,
+              failed,
+            }))(terrain.tiles.stats),
+            cachedBytes: terrain.tiles.lruCache.cachedBytes,
             settled:
               terrain.tiles.loadProgress === 1 &&
               !terrain.tiles.downloadQueue.running &&
