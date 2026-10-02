@@ -34,7 +34,11 @@ Decision record:
   - `codes()` — every code seen.
   - `spansFrameChange(text)` — whether this code's sightings straddle a frame
     change.
-  - `reset()`.
+  - `currentSegment()` - the segment the session is in NOW (the one a
+    detection observed now would carry). A caller passes it with the live
+    alignment (`QrMintAlignmentNow`), so the mint can tell whether that
+    alignment still describes a code's sightings.
+  - `reset()` - also restarts the segment count at 0.
 - Types `QrSightingObservation`, `QrSighting`,
   `QrSightingAccumulatorOptions`.
 
@@ -108,6 +112,8 @@ for (const text of acc.codes()) {
   gap; a single detection still counts; an open burst is never reported and
   flush is idempotent; codes stay independent under interleaving; a frame
   change splits bursts 125 ms apart and bumps the segment; `spansFrameChange`;
+  `currentSegment` matching the segment of the next sighting and restarting
+  with reset;
   the robust aggregate sitting on the cluster rather than the outlier; the
   median size and the last alignment; the pose cap with the full detection
   count preserved; non-finite input dropped; reset; and the non-destructive

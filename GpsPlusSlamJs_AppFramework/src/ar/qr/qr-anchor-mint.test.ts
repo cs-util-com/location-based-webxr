@@ -1,12 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { Quaternion as ThreeQuaternion, Vector3 } from 'three';
+import { Matrix4, Quaternion as ThreeQuaternion, Vector3 } from 'three';
 import {
   DEFAULT_MAX_FIXED_ROTATION_SPREAD_DEG,
   maxPairwiseRotationDeg,
   mintQrAnchorFromSightings,
 } from './qr-anchor-mint.js';
 import { calcRelativeCoordsInMeters } from '../../core/index.js';
+import { geodesicAngleRad } from '../../utils/geodesic-angle.js';
+import { qrWorldPoseFromOdom } from './qr-mint-level.js';
 import type { QrSighting } from './qr-sighting-accumulator.js';
+import type { Quaternion } from 'gps-plus-slam-js';
 import type { Matrix4 as AlignmentMatrix } from '../../core/index.js';
 
 const IDENTITY: AlignmentMatrix = [
@@ -407,5 +410,149 @@ describe('mintQrAnchorFromSightings — recencyHalfLifeS validation', () => {
         recencyHalfLifeS: 0,
       })
     ).toThrow(RangeError);
+  });
+});
+
+// Added for the start-at-code heading defect (M3a results, open question 5;
+// reproduced in `qr-anchor-mint.start-at-code.test.ts`).
+describe('mintQrAnchorFromSightings - which alignment turns the rotation', () => {
+  /** An alignment turned by `deg` about Up, translated to (north, east). */
+  function turned(deg: number, north = 0, east = 0): AlignmentMatrix {
+    return new Matrix4()
+      .makeRotationY((deg * Math.PI) / 180)
+      .setPosition(north, 0, east)
+      .toArray();
+  }
+
+  /** The angle (deg) between the minted rotation and `expected`. */
+  function rotationErrorDeg(
+    result: ReturnType<typeof mintQrAnchorFromSightings>,
+    expected: Quaternion
+  ): number {
+    if (!result.ok || !result.level.ok) throw new Error('mint failed');
+    const rotation = result.level.level.qr.geo?.rotation;
+    if (rotation === undefined) throw new Error('no rotation minted');
+    return (geodesicAngleRad(rotation, expected) * 180) / Math.PI;
+  }
+
+  const odomPose = {
+    position: [0, 0, 0] as [number, number, number],
+    rotation: yaw(0),
+  };
+  /** What a sighting composed through the MATURE alignment turns to. */
+  const throughMature = qrWorldPoseFromOdom(odomPose, IDENTITY).rotation;
+
+  it('turns every sighting through the session alignment at mint time', () => {
+    // Why this test matters: this IS the defect. A recording that starts at
+    // the code has its first sighting composed through an alignment with no
+    // walk behind it, whose yaw is arbitrary (here: 90 degrees off). Turned
+    // through its own alignment, that sighting minted a heading wrong by up
+    // to 160 degrees (70 degrees p50 on the start-at-code sweep). The
+    // alignment at mint time has seen the whole walk.
+    const result = mintQrAnchorFromSightings({
+      sightings: [sighting({ odomPose, alignmentMatrix: turned(90) })],
+      spansFrameChange: false,
+      nowIso: NOW,
+      currentAlignment: {
+        alignmentMatrix: IDENTITY,
+        zero: ZERO,
+        alignmentSampleCount: 60,
+        segment: 0,
+      },
+    });
+    expect(rotationErrorDeg(result, throughMature)).toBeLessThan(1e-3);
+  });
+
+  it('keeps the POSITION on each sighting own alignment (DEC-3)', () => {
+    // Why this test matters: only the rotation moved to the mint-time
+    // alignment. Where the position is composed is the owner's DEC-3 and is
+    // left for the owner (the start-at-code sweep's position numbers are in
+    // the sidecar); this pins that the heading fix did not decide it.
+    const result = mintQrAnchorFromSightings({
+      sightings: [sighting({ odomPose, alignmentMatrix: turned(90, 10, 25) })],
+      spansFrameChange: false,
+      nowIso: NOW,
+      currentAlignment: {
+        alignmentMatrix: shifted(-40, 70),
+        zero: ZERO,
+        alignmentSampleCount: 60,
+        segment: 0,
+      },
+    });
+    if (!result.ok || !result.level.ok) throw new Error('mint failed');
+    const geo = result.level.level.qr.geo!;
+    const back = calcRelativeCoordsInMeters(
+      ZERO,
+      { lat: geo.lat, lon: geo.lon },
+      geo.alt,
+      0
+    );
+    expect(back[0]).toBeCloseTo(10, 2);
+    expect(back[2]).toBeCloseTo(25, 2);
+  });
+
+  it('uses the newest sighting alignment when the session moved to another odometry frame', () => {
+    // Why this test matters: after a tracking restart or a loop closure the
+    // session's alignment describes a DIFFERENT odometry frame than these
+    // sightings, so turning them through it would be wrong by however far
+    // the frame moved. The newest snapshot taken in their own frame is the
+    // most informed alignment that still describes them.
+    const result = mintQrAnchorFromSightings({
+      sightings: [
+        sighting({ odomPose, alignmentMatrix: turned(90), lastTimestamp: 0 }),
+        sighting({
+          odomPose,
+          alignmentMatrix: IDENTITY,
+          lastTimestamp: 60_000,
+        }),
+      ],
+      spansFrameChange: false,
+      nowIso: NOW,
+      currentAlignment: {
+        alignmentMatrix: turned(-120),
+        zero: ZERO,
+        alignmentSampleCount: 90,
+        segment: 1,
+      },
+    });
+    expect(rotationErrorDeg(result, throughMature)).toBeLessThan(1e-3);
+  });
+
+  it('uses the newest sighting alignment when the caller passes none', () => {
+    const result = mintQrAnchorFromSightings({
+      sightings: [
+        sighting({ odomPose, alignmentMatrix: turned(90), lastTimestamp: 0 }),
+        sighting({
+          odomPose,
+          alignmentMatrix: IDENTITY,
+          lastTimestamp: 60_000,
+        }),
+      ],
+      spansFrameChange: false,
+      nowIso: NOW,
+    });
+    expect(rotationErrorDeg(result, throughMature)).toBeLessThan(1e-3);
+  });
+
+  it('uses the newest sighting alignment while the session has none at mint time', () => {
+    const result = mintQrAnchorFromSightings({
+      sightings: [
+        sighting({ odomPose, alignmentMatrix: turned(90), lastTimestamp: 0 }),
+        sighting({
+          odomPose,
+          alignmentMatrix: IDENTITY,
+          lastTimestamp: 60_000,
+        }),
+      ],
+      spansFrameChange: false,
+      nowIso: NOW,
+      currentAlignment: {
+        alignmentMatrix: null,
+        zero: ZERO,
+        alignmentSampleCount: 0,
+        segment: 0,
+      },
+    });
+    expect(rotationErrorDeg(result, throughMature)).toBeLessThan(1e-3);
   });
 });

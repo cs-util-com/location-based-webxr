@@ -16,8 +16,14 @@
  *    magnitude, so that threshold cannot be set honestly before field data.
  *
  * 2. **Which alignment?** (DEC-3, the owner's call over the simpler
- *    final-alignment variant) Each sighting is composed with the alignment as
- *    it stood AT that sighting.
+ *    final-alignment variant) Each sighting's POSITION is composed with the
+ *    alignment as it stood AT that sighting. Its ROTATION is not: every
+ *    sighting is turned through the most informed alignment that still
+ *    describes its odometry frame (the session's at mint time, else the
+ *    newest sighting's own). A sighting taken before the alignment had any
+ *    walk behind it carries an arbitrary yaw, and turned through that it
+ *    minted a heading off by 70 degrees p50 whenever a recording started at
+ *    the code (`qr-anchor-mint.start-at-code.test.ts`).
  *
  * 3. **How are they combined?** Later sightings weigh more, on the owner's
  *    reasoning that a later alignment has seen more GPS. The counter-argument
@@ -39,6 +45,7 @@ import {
 } from './qr-mint-level.js';
 import type { QrSighting } from './qr-sighting-accumulator.js';
 import type { Quaternion } from 'gps-plus-slam-js';
+import type { LatLong, Matrix4 as AlignmentMatrix } from '../../core/index.js';
 
 /**
  * Rotation disagreement across sightings above which the code is declared
@@ -105,6 +112,21 @@ interface PlaceableSighting {
   zero: NonNullable<QrSighting['zero']>;
 }
 
+/**
+ * The session's alignment as it stands when the mint runs, and the odometry
+ * segment it belongs to (`QrSightingAccumulator.currentSegment()`).
+ */
+export interface QrMintAlignmentNow {
+  readonly alignmentMatrix: AlignmentMatrix | null;
+  readonly zero: LatLong | null;
+  readonly alignmentSampleCount: number;
+  readonly gpsAccuracyM?: number;
+  /** The accumulator's segment at mint time: the alignment describes THIS
+   *  odometry frame, and sightings from another one must not be turned
+   *  through it. */
+  readonly segment: number;
+}
+
 export interface MintQrAnchorInput {
   /**
    * **MUST be in ascending `lastTimestamp` order.** Three separate things
@@ -125,6 +147,14 @@ export interface MintQrAnchorInput {
   nowIso: string;
   maxFixedRotationSpreadDeg?: number;
   recencyHalfLifeS?: number;
+  /**
+   * The session's alignment at mint time. Every sighting's ROTATION is
+   * turned through it when it exists and belongs to the sightings' odometry
+   * segment; otherwise through the newest placeable sighting's own
+   * alignment. Optional so a caller with no live session (a replay, a test)
+   * still mints, with the newest snapshot it has.
+   */
+  currentAlignment?: QrMintAlignmentNow;
 }
 
 /**
@@ -261,10 +291,45 @@ function recencyWeights(
   });
 }
 
+/**
+ * The alignment every sighting's ROTATION is turned through: the most
+ * informed one that still describes the sightings' odometry frame.
+ *
+ * Not each sighting's own (which DEC-3 keeps for the position): the yaw of an
+ * alignment is unobservable until the walk has a baseline, so a sighting
+ * taken as the recording starts carries an arbitrary yaw, and the rotation
+ * average is not weighted, so one such sighting can turn the anchor by tens
+ * of degrees. Measured on the start-at-code sweep (40 recordings per cell,
+ * walks of 15-120 m, 1-3 looks, yaw noise 1-5 degrees): per-sighting gave
+ * 69-74 degrees p50 with one or two looks; this gives 1.0-4.9 degrees p50
+ * from 30 m walks up (7-10 degrees at 15 m). The cost: with three looks
+ * the old average was up to 0.6 degrees better at p50 (2.7 at 15 m), while
+ * its p90 reached 146 degrees.
+ *
+ * The session's alignment is used only when it is in the sightings' segment:
+ * after a tracking restart or loop closure it describes another frame, and
+ * the newest snapshot taken in their own frame is then the best available.
+ */
+function rotationAlignment(
+  placeable: readonly PlaceableSighting[],
+  newest: PlaceableSighting,
+  current: QrMintAlignmentNow | undefined
+): AlignmentMatrix {
+  if (
+    current !== undefined &&
+    current.alignmentMatrix !== null &&
+    placeable.every((p) => p.sighting.segment === current.segment)
+  ) {
+    return current.alignmentMatrix;
+  }
+  return newest.alignmentMatrix;
+}
+
 /** The combined world position, weighted and unweighted, plus the robust
  *  rotation — `null` when no orientation could be formed at all. */
 function combinePlacements(
   worlds: readonly WorldNuePose[],
+  rotations: readonly Quaternion[],
   weights: readonly number[]
 ): {
   weighted: { x: number; y: number; z: number };
@@ -274,7 +339,7 @@ function combinePlacements(
   const xs = worlds.map((w) => w.position.x);
   const ys = worlds.map((w) => w.position.y);
   const zs = worlds.map((w) => w.position.z);
-  const averaged = averageRotation(worlds.map((w) => w.rotation));
+  const averaged = averageRotation(rotations);
   const flat = worlds.map(() => 1);
   return {
     weighted: {
@@ -294,7 +359,7 @@ function combinePlacements(
       y: weightedMedian(ys, flat),
       z: weightedMedian(zs, flat),
     },
-    rotation: averaged?.quat ?? worlds.at(-1)?.rotation ?? null,
+    rotation: averaged?.quat ?? rotations.at(-1) ?? null,
   };
 }
 
@@ -337,7 +402,8 @@ function tailAlignment(tail: PlaceableSighting | undefined): MintAlignmentInfo {
  */
 function placeOrRefuse(
   sightings: readonly QrSighting[],
-  halfLifeS: number
+  halfLifeS: number,
+  current: QrMintAlignmentNow | undefined
 ):
   | { refusal: QrAnchorMintResult }
   | {
@@ -346,7 +412,8 @@ function placeOrRefuse(
       rotation: Quaternion;
     } {
   const placeable = placeableSightings(sightings);
-  if (placeable.length === 0) {
+  const newest = placeable.at(-1);
+  if (newest === undefined) {
     return {
       refusal: {
         ok: false,
@@ -360,8 +427,13 @@ function placeOrRefuse(
   const worlds = placeable.map((p) =>
     qrWorldPoseFromOdom(p.sighting.odomPose, p.alignmentMatrix)
   );
+  const turn = rotationAlignment(placeable, newest, current);
+  const rotations = placeable.map(
+    (p) => qrWorldPoseFromOdom(p.sighting.odomPose, turn).rotation
+  );
   const combined = combinePlacements(
     worlds,
+    rotations,
     recencyWeights(placeable, halfLifeS)
   );
   if (combined.rotation === null) {
@@ -424,7 +496,11 @@ export function mintQrAnchorFromSightings(
   const refusal = refuseUnusable(input, rotationSpreadDeg);
   if (refusal !== null) return refusal;
 
-  const placed = placeOrRefuse(sightings, recencyHalfLifeS);
+  const placed = placeOrRefuse(
+    sightings,
+    recencyHalfLifeS,
+    input.currentAlignment
+  );
   if ('refusal' in placed) return placed.refusal;
   const { placeable, combined, rotation } = placed;
 

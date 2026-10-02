@@ -132,6 +132,25 @@ describe('createQrSightingAccumulator — the odometry frame', () => {
     acc.flush();
     expect(acc.spansFrameChange(TEXT)).toBe(true);
   });
+
+  it('names the segment the session is in NOW, matching the next sighting', () => {
+    // Why this test matters: the mint turns sightings through the session's
+    // alignment at mint time only when that alignment describes THEIR
+    // odometry frame. This number is how a caller says which frame the live
+    // alignment describes, so it must be the segment a sighting observed
+    // now would carry - and must restart with `reset()`, as segments do.
+    const acc = createQrSightingAccumulator();
+    expect(acc.currentSegment()).toBe(0);
+    acc.noteFrameChange();
+    acc.noteFrameChange();
+    expect(acc.currentSegment()).toBe(2);
+    acc.observe(obs(0));
+    expect(acc.sightingsIncludingOpen(TEXT)[0]?.segment).toBe(
+      acc.currentSegment()
+    );
+    acc.reset();
+    expect(acc.currentSegment()).toBe(0);
+  });
 });
 
 describe('createQrSightingAccumulator — what a sighting carries', () => {

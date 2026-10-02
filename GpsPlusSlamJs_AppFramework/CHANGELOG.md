@@ -55,6 +55,23 @@
 
 ### Fixed
 
+- **`mintQrAnchorFromSightings` no longer mints an arbitrary heading when a
+  recording starts at the code.** Each sighting's rotation used to go
+  through the alignment as it stood at that sighting, and right after Start
+  Recording that alignment has no walk behind it, so its yaw is arbitrary:
+  69-74 degrees heading error p50 on a synthetic sweep against the real
+  solver (M3a measured 89). The rotation now goes through the most informed
+  alignment that still describes the sightings' odometry frame: the new
+  optional `currentAlignment` (the session's at mint time, with its
+  `segment`) when it is in their segment, else the newest sighting's own.
+  The position is unchanged (each sighting's own alignment, DEC-3). Same
+  sweep: 1.0-4.9 degrees p50 from 30 m walks up.
+  - **Added for it:** `QrMintAlignmentNow` and
+    `QrSightingAccumulator.currentSegment()`.
+  - **Migration:** none required; a caller that passes no
+    `currentAlignment` gets the newest sighting's alignment for the
+    rotation. A caller with a live session should pass it (the Recorder
+    does).
 - **A recording's track and coverage count device fixes only.**
   `loadGpsPathFromBlob` (the replay preview's track, the Recorder's legacy
   coverage backfill) and `buildSessionMetadataRecord`'s `h3Cells` leave out

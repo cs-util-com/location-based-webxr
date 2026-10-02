@@ -118,6 +118,12 @@ export interface QrSightingAccumulator {
   codes(): readonly string[];
   /** Whether this code's sightings straddle a frame change. */
   spansFrameChange(text: string): boolean;
+  /**
+   * The odometry segment the session is in NOW: the one a detection observed
+   * now would carry. A caller passes it with the live alignment, so the mint
+   * can tell whether that alignment still describes a code's sightings.
+   */
+  currentSegment(): number;
   /** Is a visit to this code in progress right now? */
   hasOpenBurst(text: string): boolean;
   reset(): void;
@@ -273,6 +279,8 @@ export function createQrSightingAccumulator(
     codes: () => [...new Set([...closed.keys(), ...open.keys()])],
 
     hasOpenBurst: (text) => open.has(text),
+
+    currentSegment: () => segment,
 
     spansFrameChange(text) {
       const list = closed.get(text) ?? [];
