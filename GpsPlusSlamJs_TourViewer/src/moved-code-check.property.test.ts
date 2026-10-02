@@ -121,7 +121,15 @@ function finalView(
   return checks.snapshot()[0]!;
 }
 
-describe("moved-code check properties", () => {
+/**
+ * Per-test timeout. The vote-interleaving property builds a fresh store per
+ * run (40 device fixes, each a full solve, plus up to 8 vote batches) 15
+ * times: 4.3 s run alone (2026-10-02, two workers), 21 s in a loaded gate
+ * run. It failed on time alone, never on a property.
+ */
+const SLOW_MS = 60_000;
+
+describe("moved-code check properties", { timeout: SLOW_MS }, () => {
   it("folds to the same estimate however the growing history is sliced", () => {
     const h = history(60, new Set());
     fc.assert(
