@@ -15,12 +15,15 @@
  *   (Neutral). Its diffuse term is Lambert's, albedo / π x intensity x
  *   dot(N, L), and that is what is modelled here; its GGX specular (a
  *   small share on dark ground) and the atmosphere's veil are not. `sunLight` keeps that for open flat ground
- *   (exactly dot(N, L)) and adds a sky fill only where the relief differs
- *   from flat: `shadow` is the direct light's share, the rest is the flat
- *   ground's light spread by the sky view. `sunLitColour` is then the
+ *   (exactly dot(N, L)) while the sun stands above the sky floor, and adds
+ *   a sky fill only where the relief differs from flat: `shadow` is the
+ *   direct light's share, the rest is the sky level spread by the sky
+ *   view. Below the floor the sky holds it (`SKY_FILL`, DEC-GL5-11), so a
+ *   low sun's shadows keep their colour. `sunLitColour` is then the
  *   globe's own pipeline for an albedo.
  * - THE CLOUD-SHADOW HOOK: every direct term goes through `sunDirect`, and
- *   `visibility` (1 = clear) enters there and nowhere else, so the
+ *   `visibility` (1 = clear) enters there and nowhere else (never the sky
+ *   fill: a cloud's shadow takes the direct light only), so the
  *   framework's `CloudShadow` column (`cloud-shadow.ts`: the light's colour
  *   times exp(-optical depth)) ports onto exactly this term. In the shader
  *   it is `terrainSunVisibility`, which returns 1 until that port.
@@ -30,12 +33,13 @@
  *
  * `SUN_GLSL` is the shader's copy of these functions, line for line; this
  * file is the reference CI runs. Dependency-free except the far field's
- * colour curves and style B's light (DEC-H3), so it runs under
- * `node --test`.
+ * colour curves, style B's light and the package's one `smoothstep`
+ * (DEC-H3), so it runs under `node --test`.
  *
  * @see terrain-sun.js.md
  */
 import { GLOBE_SUN, farColour } from "./terrain-far-field.js";
+import { smoothstep } from "./terrain-style.js";
 import { NATURAL } from "./terrain-styles.js";
 
 export { GLOBE_SUN };
@@ -47,6 +51,57 @@ const DEG = Math.PI / 180;
  * style's shade would explode, and the sun is then a sliver anyway.
  */
 export const MIN_SUN_Z = Math.sin(2 * DEG);
+
+/**
+ * The sky fill's parameters (DEC-GL5-11). The fill is the light the sky
+ * gives a face the sun does not reach; it used to follow the sun's height,
+ * `sin h`, so at a low sun it vanished with the direct light (0.2 x sin 11°
+ * on the Alps, under one 8-bit level) and the shadowed faces went black.
+ * The sky level is now `max(sin h, floor)` while the sun is up, faded to 0
+ * through the twilight below the horizon:
+ *
+ * - `floor` (0-1, in the units of open flat ground under a zenith sun): the
+ *   least sky level while the sun is up. Wherever sin h >= floor nothing
+ *   changes (the globe's flat ground is matched as before); below it the
+ *   light rises by (1 - shadow) x svf x (floor - sin h), so the change is
+ *   bounded and falls to 0 at a sun of asin(floor). The clear sky's light,
+ *   relative to the sun's beam, does not fall with the sun's height as the
+ *   beam's projection does (it holds or rises toward the horizon, where the
+ *   beam weakens in the air), so a floor is the plausible shape; the lab's
+ *   beam stays at full strength.
+ * - `twilightDeg`: the depth below the horizon over which the floor fades
+ *   (smoothly) to 0: civil twilight.
+ *
+ * The default floor is the measured choice: at an 11° sun on the Alps it
+ * lifts `globe-albedo`'s darkest tenth above 10 of 255 at 30 and 10 km and
+ * keeps the relief at least as contrasty as at noon (terrain-sun.js.md).
+ */
+export const SKY_FILL = Object.freeze({ floor: 0.5, twilightDeg: 6 });
+
+/**
+ * The sky's level for the fill at a sun height (`sunZ`, the sine of its
+ * elevation): max(sin h, floor) while the sun is up, the floor faded to 0
+ * over `twilightDeg` below the horizon. Never falls as the sun rises.
+ * RangeError for a non-finite height, a floor outside 0-1 or a twilight
+ * outside 0-90°.
+ */
+export function skyLevel(
+  sunZ,
+  floor = SKY_FILL.floor,
+  twilightDeg = SKY_FILL.twilightDeg,
+) {
+  if (!Number.isFinite(sunZ)) {
+    throw new RangeError(`sun height must be finite, got ${sunZ}`);
+  }
+  if (!(floor >= 0 && floor <= 1)) {
+    throw new RangeError(`sky floor must be in 0-1, got ${floor}`);
+  }
+  if (!(twilightDeg > 0 && twilightDeg < 90)) {
+    throw new RangeError(`twilight must be in 0-90°, got ${twilightDeg}`);
+  }
+  const fade = smoothstep(-Math.sin(twilightDeg * DEG), 0, sunZ);
+  return Math.max(Math.max(0, sunZ), floor * fade);
+}
 
 /**
  * A unit vector (east, north, up) toward a sun at an elevation and an
@@ -87,8 +142,9 @@ export function sunDownNote(sunZ, timeMs = null) {
     ? ` at ${new Date(timeMs).toISOString().slice(0, 16).replace("T", " ")} UTC`
     : "";
   return (
-    `The sun is below the horizon here${when}, so the relief lit by it is ` +
-    "dark. Set a daytime (#time=) or choose the map lights."
+    `The sun is below the horizon here${when}, so the relief lit by it has ` +
+    "only the fading twilight sky, then goes dark. Set a daytime (#time=) " +
+    "or choose the map lights."
   );
 }
 
@@ -163,21 +219,29 @@ export function sunRelativeShade(n, sun, visibility = 1) {
 
 /**
  * The sun-lit light at a point, in the globe's units: `shadow` x the direct
- * term + (1 - `shadow`) x the flat ground's light x the sky view. Open flat
- * ground in a clear sky gets exactly max(0, L.z), the globe's dot(N, L),
- * whatever the shadow share. RangeError for a shadow share outside 0-1.
+ * term + (1 - `shadow`) x the sky level (`skyLevel`) x the sky view. While
+ * the sun stands above the sky floor, open flat ground in a clear sky gets
+ * exactly max(0, L.z), the globe's dot(N, L), whatever the shadow share;
+ * below it the sky holds the floor (DEC-GL5-11). The visibility (a cloud's
+ * shadow) dims the direct term only, never the sky. RangeError for a
+ * shadow share or a floor outside 0-1.
  *
  * @param {number[]} n  the shading normal
  * @param {number[]} sun  unit ENU toward the sun
- * @param {{ shadow: number, svf?: number, visibility?: number }} o
+ * @param {{ shadow: number, svf?: number, visibility?: number,
+ *   skyFloor?: number }} o
  */
-export function sunLight(n, sun, { shadow, svf = 1, visibility = 1 }) {
+export function sunLight(
+  n,
+  sun,
+  { shadow, svf = 1, visibility = 1, skyFloor = SKY_FILL.floor },
+) {
   if (!(shadow >= 0 && shadow <= 1)) {
     throw new RangeError(`shadow must be in 0-1, got ${shadow}`);
   }
   return (
     shadow * sunDirect(n, sun, visibility) +
-    (1 - shadow) * Math.max(0, sun[2]) * svf
+    (1 - shadow) * skyLevel(sun[2], skyFloor) * svf
   );
 }
 
@@ -199,13 +263,15 @@ export function sunLitColour(
 
 /**
  * The shader's copy of this file (needs three's tone-mapping chunk and the
- * uniforms `uSun` (unit ENU toward the key light) and `uSunIntensity`).
+ * uniforms `uSun` (unit ENU toward the key light), `uSunIntensity` and
+ * `uSkyFloor` (`SKY_FILL.floor`, or the page's `sky` key)).
  * `terrainSunVisibility` is the cloud-shadow port's seat: it receives the
  * fragment's ENU position (m, x east, y north), its height above the datum
  * (m) and the direction to the sun, and returns 1 until then.
  */
 export const SUN_GLSL = /* glsl */ `
 const float MIN_SUN_Z = ${MIN_SUN_Z.toFixed(8)};
+const float TWILIGHT_Z = ${Math.sin(SKY_FILL.twilightDeg * DEG).toFixed(8)};
 
 // The cloud-shadow port's seat: the share of the sun's direct light that
 // reaches this point (1 = clear). Every direct term goes through it.
@@ -228,10 +294,18 @@ float sunRelativeShade(vec3 n, float visibility) {
   return sunDirect(n, visibility) / max(uSun.z, MIN_SUN_Z);
 }
 
+// terrain-sun.js skyLevel: the fill's light, the sun's height or the floor
+// while the sun is up, faded through the twilight. Never dimmed by the
+// visibility: a cloud's shadow takes the direct light only.
+float skyLevel() {
+  float fade = smoothstep(-TWILIGHT_Z, 0.0, uSun.z);
+  return max(max(0.0, uSun.z), uSkyFloor * fade);
+}
+
 // terrain-sun.js sunLight.
 float sunLight(vec3 n, float shadow, float svf, float visibility) {
   return shadow * sunDirect(n, visibility)
-    + (1.0 - shadow) * max(0.0, uSun.z) * svf;
+    + (1.0 - shadow) * skyLevel() * svf;
 }
 
 // terrain-sun.js sunLitColour: the diffuse term of the globe's

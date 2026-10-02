@@ -107,7 +107,7 @@
   field's state and weights, the light and the sun (`enu`, `elevationDeg`,
   `timeMs`, null with the map light), `sunIntensity`, the pixel ratio, the
   drawing `buffer`'s size and the camera's `fovDeg` (the comparison's pixel
-  scale), `imageryOn`, `detail` and
+  scale), `imageryOn`, `detail`, `sky` (the sky fill's floor) and
   `globeColour` (`albedo`, `coarse`, `coarseMs`, `samples`, `samplesMs`, `classes` (globe-classes has its drawn region's grids), `bandsOn` (globe-bands has its drawn region's ramp), `clamp` (the share of land posts above the top band),
   `bands` with globe-bands), `band`, the land range, B's lines, the credits text,
   the region's centre, whether the GPS place awaits a fix, the pin's

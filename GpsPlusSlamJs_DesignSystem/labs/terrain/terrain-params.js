@@ -16,6 +16,7 @@ import { GLOBE_ALBEDO, GLOBE_BANDS } from "./terrain-globe-colour.js";
 import { GLOBE_CLASSES } from "./terrain-globe-classes.js";
 import { PASTEL_ATLAS } from "./terrain-style.js";
 import { NATURAL, SWISS, TERRAIN_STYLES } from "./terrain-styles.js";
+import { SKY_FILL } from "./terrain-sun.js";
 
 /**
  * The committed places (DEC-TR-3), each a 256 km region at z8 (plan §9
@@ -184,6 +185,12 @@ export const PARAMS = Object.freeze({
    * relief the same (review 2026-10-01-1650 nit).
    */
   sunIntensity: { fallback: GLOBE_SUN.intensity, min: 0, max: 8 },
+  /**
+   * The sky fill's floor under the sun (DEC-GL5-11, `SKY_FILL`): the least
+   * sky light a face the sun does not reach keeps while the sun is up; 0 is
+   * the old fill, which followed the sun's height down to nothing.
+   */
+  sky: { fallback: SKY_FILL.floor, min: 0, max: 1 },
   /**
    * The drawing buffer's pixel ratio: 0 follows the device (capped at 2),
    * 1-3 pins it. The comparison page pins 1, because it reads its

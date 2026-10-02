@@ -13,7 +13,8 @@
     `ShaderMaterial` whose uniforms the page updates in place: per frame
     `uExag`, `uGain`, `uNearW`, `uFarReliefW`, `uSun` and
     `uLightMode`; per hash through
-    `applyStyle`; per build the textures and `uDatum`; once `uHalfM`,
+    `applyStyle` (including `uSkyFloor`, the sun light's sky floor from
+    the `sky` key); per build the textures and `uDatum`; once `uHalfM`,
     `uFarDeltaM`, `uFarDeltaUv` and `uFar`.
   - `applyStyle(material, params, { shaderStyle, latDeg, hRange })`: the
     style switch and every style's uniforms from the hash's params (see
@@ -58,6 +59,15 @@
     once per fragment and passed to every direct term: the cloud-shadow
     port replaces its body and nothing else. A sun straight overhead has
     no azimuth, so D's exposure colour is then flat.
+  - The imagery styles (`globe-albedo`, `globe-bands`, `globe-classes`)
+    are lit by `sunLight`, whose sky fill reads `skyLevel()`: the sun's
+    height or `uSkyFloor`, whichever is higher, while the sun is up, faded
+    through the twilight (DEC-GL5-11). The visibility seat never reaches
+    it. The map styles under the sun read the relative shade and do not
+    use the floor; the far field keeps the globe's own flat-ground light,
+    `sunDirect(up, vis)`, with no sky (the globe has none), so at a low
+    sun the near relief is lighter than the far field it blends into
+    (see `terrain-sun.js.md`).
   - Style B's lowland (`naturalLowland`, inside `naturalBase`): `uNatLowlandLight`
     to `uNatLowland` over 0-`uNatLowlandRampM`, mixed toward `uNatLowlandWood`
     by the relief spread (`spread`, the aux texture's red, metres:

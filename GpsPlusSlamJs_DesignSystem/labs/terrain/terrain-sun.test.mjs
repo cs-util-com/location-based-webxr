@@ -27,7 +27,9 @@ import { NATURAL, SWISS, singleLightShade } from "./terrain-styles.js";
 import {
   GLOBE_SUN,
   MAP_KEY_LIGHT,
+  SKY_FILL,
   reliefNormal,
+  skyLevel,
   sunDirect,
   sunEnu,
   sunEnuFromGlobe,
@@ -169,20 +171,34 @@ describe("the sun-lit light", () => {
       azimuthRad: 2 * Math.PI * next(),
     });
 
-  // The globe has no sky light: its flat ground reflects dot(N, L). The
-  // relief's sky fill is sized so open flat ground in full sun gets exactly
-  // that, whatever the shadow share, so the two agree at the hand-over.
-  it("gives open flat ground the globe's dot(N, L) for every shadow share (property)", () => {
-    for (let k = 0; k < 300; k++) {
+  // The globe has no sky light: its flat ground reflects dot(N, L). Wherever
+  // the sun stands above the sky floor, the relief's sky fill is sized so
+  // open flat ground in full sun gets exactly that, whatever the shadow
+  // share and the floor, so the two agree at the hand-over by day.
+  it("gives open flat ground the globe's dot(N, L) for every shadow share while the sun is above the floor (property)", () => {
+    let judged = 0;
+    for (let k = 0; k < 600; k++) {
       const sun = randomSun();
       const shadow = next();
+      const skyFloor = next();
+      if (sun[2] < skyFloor) continue;
+      judged += 1;
       close(
-        sunLight(reliefNormal(0, 0, 1), sun, { shadow, svf: 1 }),
+        sunLight(reliefNormal(0, 0, 1), sun, { shadow, svf: 1, skyFloor }),
         sun[2],
         1e-12,
         `case ${k}`,
       );
     }
+    assert.ok(judged > 100, `only ${judged} cases above the floor`);
+    // The default floor too, at the comparison's day sun (66°).
+    const day = sunEnu({ elevationRad: 66.3 * DEG, azimuthRad: 3 });
+    close(
+      sunLight(reliefNormal(0, 0, 1), day, { shadow: 0.8 }),
+      day[2],
+      1e-12,
+      "day, default floor",
+    );
   });
 
   it("is pure Lambert at shadow 1 and pure sky at shadow 0", () => {
@@ -194,11 +210,55 @@ describe("the sun-lit light", () => {
       1e-12,
       "1",
     );
-    close(sunLight(n, sun, { shadow: 0, svf: 0.7 }), 0.7 * sun[2], 1e-12, "0");
+    close(
+      sunLight(n, sun, { shadow: 0, svf: 0.7 }),
+      0.7 * skyLevel(sun[2]),
+      1e-12,
+      "0",
+    );
+  });
+
+  // DEC-GL5-11: the old fill, (1 - shadow) x sin(h) x svf, vanished with a
+  // low sun (0.2 x sin 11° on the Alps, under one 8-bit level), so the
+  // shadowed faces went black. The fill now reads the sky level, which
+  // holds the floor while the sun is up. The change is bounded: nothing
+  // moves where the sun stands above the floor (midday), and below it the
+  // light rises by exactly (1 - shadow) x svf x (floor - sin h).
+  it("changes the light only below the floor, by a declared amount (property)", () => {
+    for (let k = 0; k < 500; k++) {
+      const sun = randomSun();
+      const n = reliefNormal(next() - 0.5, next() - 0.5, 1 + next());
+      const shadow = next();
+      const svf = next();
+      const skyFloor = next();
+      const old = sunLight(n, sun, { shadow, svf, skyFloor: 0 });
+      const now = sunLight(n, sun, { shadow, svf, skyFloor });
+      close(
+        now - old,
+        (1 - shadow) * svf * Math.max(0, skyFloor - sun[2]),
+        1e-12,
+        `case ${k}`,
+      );
+    }
+  });
+
+  it("gives a face in full shadow the floor's sky at a low sun, not the sun's sliver", () => {
+    const low = sunEnu({ elevationRad: 11.2 * DEG, azimuthRad: 290 * DEG });
+    // A steep face turned from the sun (north-east facing at an evening sun).
+    const n = reliefNormal(-1.5, -1.5, 1.6);
+    assert.equal(sunDirect(n, low), 0);
+    const skyFloor = 0.5;
+    close(
+      sunLight(n, low, { shadow: 0.8, svf: 0.8, skyFloor }),
+      0.2 * 0.8 * skyFloor,
+      1e-12,
+      "shadowed face",
+    );
   });
 
   // The cloud-shadow port's contract: a cloud dims the direct share only;
-  // the sky fill stays, so a shadowed field is darker but never black.
+  // the sky fill stays, so a shadowed field is darker but never black. It
+  // holds for every floor: the sky level never reads the visibility.
   it("lets the visibility dim only the direct share (property)", () => {
     for (let k = 0; k < 300; k++) {
       const sun = randomSun();
@@ -206,8 +266,14 @@ describe("the sun-lit light", () => {
       const shadow = next();
       const svf = 0.5 + 0.5 * next();
       const v = next();
-      const lit = sunLight(n, sun, { shadow, svf });
-      const dimmed = sunLight(n, sun, { shadow, svf, visibility: v });
+      const skyFloor = next();
+      const lit = sunLight(n, sun, { shadow, svf, skyFloor });
+      const dimmed = sunLight(n, sun, {
+        shadow,
+        svf,
+        visibility: v,
+        skyFloor,
+      });
       close(
         lit - dimmed,
         shadow * (1 - v) * sunDirect(n, sun),
@@ -222,6 +288,85 @@ describe("the sun-lit light", () => {
     const sun = randomSun();
     assert.throws(() => sunLight([0, 0, 1], sun, { shadow: 1.5 }), RangeError);
     assert.throws(() => sunLight([0, 0, 1], sun, { shadow: NaN }), RangeError);
+  });
+});
+
+describe("the sky level (the fill's light, DEC-GL5-11)", () => {
+  const zOf = (deg) => Math.sin(deg * DEG);
+
+  it("declares its parameters: a floor in 0-1 and a civil twilight", () => {
+    assert.ok(SKY_FILL.floor > 0 && SKY_FILL.floor <= 1, `${SKY_FILL.floor}`);
+    assert.equal(SKY_FILL.twilightDeg, 6);
+    assert.ok(Object.isFrozen(SKY_FILL));
+  });
+
+  // The default (0.5) was chosen from the browser sweep (results
+  // 2026-10-02, floors 0-1 at a 66° and an 11° sun on the Alps): the
+  // largest floor whose low-sun relief is still at least as contrasty as
+  // the noon relief (CV) at 30 and 10 km, and the least that lifts the
+  // darkest tenth above 10 of 255 at both. Its declared consequences:
+  it("leaves every sun above 30° alone and more than doubles a shadowed face's sky at 11°", () => {
+    const shadowed = (deg, skyFloor) =>
+      sunLight(
+        reliefNormal(-1.5, -1.5, 1.6),
+        sunEnu({ elevationRad: deg * DEG, azimuthRad: 290 * DEG }),
+        { shadow: 0.8, svf: 0.85, skyFloor },
+      );
+    for (const deg of [30.01, 45, 66.3, 90]) {
+      assert.equal(skyLevel(zOf(deg)), skyLevel(zOf(deg), 0), `${deg}°`);
+    }
+    assert.ok(shadowed(11.2) >= 2 * shadowed(11.2, 0));
+  });
+
+  it("is the sun's height above the floor, and the floor between it and the horizon", () => {
+    for (const floor of [0, 0.2, 0.5, 0.8, 1]) {
+      for (const deg of [0, 2, 11.2, 30, 66.3, 90]) {
+        close(
+          skyLevel(zOf(deg), floor),
+          Math.max(zOf(deg), floor),
+          1e-12,
+          `floor ${floor}, ${deg}°`,
+        );
+      }
+    }
+  });
+
+  it("fades through the twilight to nothing", () => {
+    const floor = 0.6;
+    assert.equal(skyLevel(zOf(-SKY_FILL.twilightDeg), floor), 0);
+    assert.equal(skyLevel(zOf(-30), floor), 0);
+    assert.equal(skyLevel(-1, floor), 0);
+    const mid = skyLevel(zOf(-3), floor);
+    assert.ok(mid > 0 && mid < floor, `${mid}`);
+    // A shorter or longer twilight moves where it ends.
+    assert.equal(skyLevel(zOf(-4), floor, 3), 0);
+    assert.ok(skyLevel(zOf(-4), floor, 9) > 0);
+  });
+
+  // A sky that brightened as the sun sank would be a defect a viewer reads
+  // as a flicker at dusk.
+  it("never falls as the sun rises (property)", () => {
+    const next = random(1102);
+    for (let k = 0; k < 500; k++) {
+      const floor = next();
+      const a = -0.3 + 1.3 * next();
+      const b = a + 0.3 * next();
+      assert.ok(
+        skyLevel(a, floor) <= skyLevel(b, floor) + 1e-15,
+        `case ${k}: ${a} -> ${b} at floor ${floor}`,
+      );
+    }
+  });
+
+  it("refuses a floor outside 0-1 and a twilight that is not positive", () => {
+    assert.throws(() => skyLevel(0.5, 1.2), RangeError);
+    assert.throws(() => skyLevel(0.5, -0.1), RangeError);
+    assert.throws(() => skyLevel(0.5, NaN), RangeError);
+    assert.throws(() => skyLevel(0.5, 0.5, 0), RangeError);
+    assert.throws(
+      () => sunLight([0, 0, 1], [0, 0, 1], { shadow: 0.5, skyFloor: 2 }),
+      RangeError,
+    );
   });
 });
 
@@ -362,6 +507,9 @@ describe("the sun-down note (review 2026-10-01-1650 m3)", () => {
     const note = sunDownNote(-0.3, t);
     assert.match(note, /below the horizon/);
     assert.match(note, /2026-06-21 23:00 UTC/);
+    // The sky fill fades through the twilight (DEC-GL5-11), so just below
+    // the horizon the relief is dim, not black: the note says so.
+    assert.match(note, /twilight/);
     assert.match(note, /#time=/);
     assert.match(sunDownNote(0), /below the horizon here,/);
     assert.equal(sunDownNote(Number.NaN), null);
@@ -372,8 +520,9 @@ describe("the cloud-shadow seat in the shader (review 2026-10-01-1650 m4)", () =
   // Every direct sun term must go through `terrainSunVisibility`, so the
   // cloud-shadow port dims all of them. The far field once lit its texels
   // with the bare `max(0.0, uSun.z)`, bypassing the seat. In the shader the
-  // bare sun height may appear only in `sunLight`'s sky fill (deliberately
-  // undimmed, see terrain-sun.js.md) and in the relative shade's floor.
+  // bare sun height may appear only in the sky level, which `sunLight`'s
+  // fill reads (deliberately undimmed, see terrain-sun.js.md), and in the
+  // relative shade's floor.
   it("has no direct sun term outside the seat", () => {
     // Read as text, by a joined path: a `new URL("./x.js", import.meta.url)`
     // reads to knip as an import, which would pull the material's `three`
@@ -384,9 +533,36 @@ describe("the cloud-shadow seat in the shader (review 2026-10-01-1650 m4)", () =
     );
     const bare = (text) => text.match(/max\(0\.0, uSun\.z\)/g) ?? [];
     assert.deepEqual(bare(material), [], "terrain-material.js");
-    // SUN_GLSL: exactly one, the sky fill in sunLight.
+    // SUN_GLSL: exactly one, in the sky level the fill reads.
     const glsl = SUN_GLSL;
     assert.equal(bare(glsl).length, 1);
-    assert.match(glsl, /\(1\.0 - shadow\) \* max\(0\.0, uSun\.z\) \* svf/);
+    assert.match(
+      glsl,
+      /float skyLevel\(\) \{[^}]*max\(max\(0\.0, uSun\.z\), uSkyFloor \* fade\)/,
+    );
+    assert.match(glsl, /\(1\.0 - shadow\) \* skyLevel\(\) \* svf/);
+    // The visibility never reaches the sky level.
+    const sky = /float skyLevel\(\) \{[^}]*\}/.exec(glsl)[0];
+    assert.doesNotMatch(sky, /visibility|terrainSunVisibility/);
+  });
+
+  // The floor reaches the shader as a uniform the page sets from the hash's
+  // `sky` key; an undeclared uniform would not compile, and one never set
+  // would stay at its default whatever the link says.
+  it("is fed the page's sky floor", () => {
+    const material = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "terrain-material.js"),
+      "utf8",
+    );
+    assert.match(material, /uniform float uSkyFloor;/);
+    assert.match(material, /uSkyFloor: \{ value: SKY_FILL\.floor \}/);
+    assert.match(material, /u\.uSkyFloor\.value = params\.sky;/);
+  });
+
+  // The shader's twilight is the reference's, one number.
+  it("fades the sky over the reference's twilight", () => {
+    const m = /const float TWILIGHT_Z = ([0-9.]+);/.exec(SUN_GLSL);
+    assert.ok(m, "SUN_GLSL declares TWILIGHT_Z");
+    close(Number(m[1]), Math.sin(SKY_FILL.twilightDeg * DEG), 1e-8, "z");
   });
 });

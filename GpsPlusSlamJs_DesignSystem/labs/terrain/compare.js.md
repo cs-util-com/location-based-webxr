@@ -57,13 +57,20 @@ height), sunIntensity)`: flat ground under the globe's sun. That is
       once said), so the 300 and 100 km rows measure contrast at a coarser
       ground scale than the 30 and 10 km rows;
     - each row logs the modelled px/km and the measured median post
-      spacing in pixels (the projected grid).
+      spacing in pixels (the projected grid);
+    - and the darkest tenth of the posts (`darkTail`, DEC-GL5-11): its
+      luminance (`p10`) and mean CIELAB chroma (`chroma10`), whether the
+      shadows keep a hue at a low sun or sink to grey.
   - the frame cost at the day sun and 30 km (C: 300 km), the mean and sd
     of 10 frames, and its ratio to the FIRST row's mean (style A unless
     `?rows=` leaves it out) within one load: a CPU rasteriser's
     milliseconds are relative only.
 - Query: `?quick=1` (rows A and C1 at detail 0.5, 100 km, the day sun: the
-  smoke's bounded run); `?rows=A,C3` picks rows by id.
+  smoke's bounded run); `?rows=A,C3` picks rows by id; `?sky=0,0.5,1`
+  repeats every row at each sky floor (DEC-GL5-11, `withSkySweep`);
+  `?alts=30,10` captures only those altitudes (a row keeps all of its own
+  when none of them is named). The smoke passes them from
+  `TERRAIN_COMPARE_ROWS`, `TERRAIN_COMPARE_SKY` and `TERRAIN_COMPARE_ALTS`.
 - Waits: each capture waits for the hash to apply, the relief, the
   imagery and the imagery styles' grids, and the sky view, each bounded;
   a timeout ends the run with `error` set and says so on the page.

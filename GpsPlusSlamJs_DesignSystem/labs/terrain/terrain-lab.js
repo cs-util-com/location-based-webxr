@@ -1381,6 +1381,7 @@ function start() {
         },
         band: params.band,
         classWidth: params.classWidth,
+        sky: params.sky,
         light: params.light,
         sunIntensity: params.sunIntensity,
         // The drawing buffer the pixels are read from, and the camera's

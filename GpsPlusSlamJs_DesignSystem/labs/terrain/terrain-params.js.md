@@ -64,6 +64,11 @@ side }`: `extentM` includes the padding; `side` counts both edges.
   - `detail` (0-1, 0.5): `globe-albedo`'s weight of style B's ramp as a
     luminance high-pass (`terrain-globe-colour.js`).
   - `band` (100-800 m, 300): `globe-bands`' band width (the swept range).
+  - `sky` (0-1, `SKY_FILL.floor`): the sun light's sky floor
+    (`terrain-sun.js`, DEC-GL5-11), the least sky light a face the sun
+    does not reach keeps while the sun is up; 0 is the old fill, which
+    followed the sun's height. A slider under the light shows it with the
+    imagery styles (the only ones lit by `sunLight`).
   - `classWidth` (4-40, 12): `globe-classes`' colour kernel width (CIE76
     ΔE, `terrain-globe-classes.js`).
   - `IMAGERY_STYLES`: the styles coloured from the globe imagery

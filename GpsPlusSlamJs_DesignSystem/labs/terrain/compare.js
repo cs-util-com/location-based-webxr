@@ -10,7 +10,9 @@
  * never asserted.
  *
  * `?quick=1` runs two rows at one altitude and one sun (the smoke's
- * bounded run). `?rows=A,C1-d0.5` picks rows by id.
+ * bounded run). `?rows=A,C1-d0.5` picks rows by id. `?sky=0,0.5,1` repeats
+ * every row at each sky floor (DEC-GL5-11), and `?alts=30,10` captures
+ * only those altitudes (a row keeps those of its own it has).
  *
  * @see compare.js.md
  */
@@ -20,6 +22,7 @@ import {
   captureAltitudesKm,
   captureHash,
   contrastStepM,
+  darkTail,
   footprintPoints,
   groundGrid,
   groundPixelsPerM,
@@ -28,6 +31,7 @@ import {
   onCanvas,
   quantile,
   stats,
+  withSkySweep,
 } from "./terrain-compare.js";
 import { flyInPoseAtAltitude } from "./terrain-camera.js";
 import { FAR_FIELD } from "./terrain-far-field.js";
@@ -42,15 +46,32 @@ const statusLine = document.getElementById("compare-status");
 
 const query = new URLSearchParams(location.search);
 const quick = query.get("quick") === "1";
-const wanted = (query.get("rows") ?? "").split(",").filter(Boolean);
-const variants = quick
-  ? COMPARE_VARIANTS.filter((v) => ["A", "C1-d0.5"].includes(v.id))
-  : wanted.length > 0
-    ? COMPARE_VARIANTS.filter((v) => wanted.includes(v.id))
-    : COMPARE_VARIANTS;
-/** A row's capture altitudes (C has its own); one for a quick run. */
-const altitudesFor = (variant) =>
-  quick ? [100] : [...captureAltitudesKm(variant)];
+const list = (key) =>
+  (query.get(key) ?? "")
+    .split(",")
+    .filter(Boolean)
+    .map((t) => t.trim());
+const wanted = list("rows");
+const skies = list("sky").map(Number);
+const alts = list("alts").map(Number);
+const variants = withSkySweep(
+  quick
+    ? COMPARE_VARIANTS.filter((v) => ["A", "C1-d0.5"].includes(v.id))
+    : wanted.length > 0
+      ? COMPARE_VARIANTS.filter((v) => wanted.includes(v.id))
+      : COMPARE_VARIANTS,
+  skies,
+);
+/**
+ * A row's capture altitudes (C has its own), narrowed by `?alts=` to those
+ * it has (all of them if none is left); one for a quick run.
+ */
+const altitudesFor = (variant) => {
+  if (quick) return [100];
+  const own = [...captureAltitudesKm(variant)];
+  const picked = own.filter((km) => alts.includes(km));
+  return picked.length > 0 ? picked : own;
+};
 const suns = quick ? [COMPARE_PLAN.suns[0]] : [...COMPARE_PLAN.suns];
 
 /** The page's results, for a reader and for the smoke. */
@@ -172,6 +193,8 @@ function localContrast(s, pose) {
   const px = lab().readPixels(at.filter((_, i) => keep[i]));
   return {
     ...stats(px.map(luminance)),
+    // The darkest tenth (DEC-GL5-11): its luminance and its hue.
+    dark: darkTail(px, 0.1),
     stepM,
     scaled: stepM > COMPARE_PLAN.contrastStepM,
     pxPerKm: { across: perM.across * 1000, along: perM.along * 1000 },
@@ -291,7 +314,7 @@ function header(first) {
   for (const sun of suns) cells.push(`${sun.label}: captures along the fly-in`);
   cells.push(
     `ΔE to the globe at ${COMPARE_PLAN.handOverKm} km, mean / p95: per point; averaged over each imagery pixel`,
-    "Local contrast per altitude: luminance sd / mean / sd over mean, on posts [step] apart (* step widened to keep the posts 3 px apart)",
+    "Local contrast per altitude: luminance sd / mean / sd over mean (the darkest tenth's luminance and CIELAB chroma), on posts [step] apart (* step widened to keep the posts 3 px apart)",
     `Frame cost: x the first row (${first.label}), mean ± sd of ${COMPARE_PLAN.costFrames} frames`,
   );
   for (const text of cells) {
@@ -355,6 +378,7 @@ async function run() {
     out.costRatio = cost.mean / costFirst;
     const contrastText = (c, km) =>
       `${km} km ${fmt(c.std)} / ${fmt(c.mean, 0)} / ${fmt(c.std / c.mean, 2)} ` +
+      `(p10 ${fmt(c.dark.p, 0)}, chroma ${fmt(c.dark.chroma, 0)}) ` +
       `[${fmt(c.stepM / 1000, 1)} km${c.scaled ? "*" : ""}]`;
     const numbers = [
       suns
@@ -398,6 +422,7 @@ async function run() {
                   const c = p.contrast[km];
                   return (
                     `${km}:sd ${fmt(c.std, 2)} mean ${fmt(c.mean, 1)} cv ${fmt(c.std / c.mean, 3)} ` +
+                    `p10 ${fmt(c.dark.p, 1)} chroma10 ${fmt(c.dark.chroma, 1)} ` +
                     `step ${c.stepM} m${c.scaled ? "*" : ""} posts ${fmt(c.postPx, 1)} px ` +
                     `(model ${fmt(c.pxPerKm.along, 2)} along / ${fmt(c.pxPerKm.across, 2)} across px/km)`
                   );

@@ -24,8 +24,21 @@ const FULL = process.env.TERRAIN_COMPARE_FULL === "1";
 const PICKED = (process.env.TERRAIN_COMPARE_ROWS ?? "")
   .split(",")
   .filter(Boolean);
+/**
+ * `TERRAIN_COMPARE_SKY=0,0.5,1` (with FULL) repeats every row at each sky
+ * floor (the page's `?sky=`, DEC-GL5-11); `TERRAIN_COMPARE_ALTS=30,10`
+ * captures those altitudes only (the page's `?alts=`).
+ */
+const SKIES = (process.env.TERRAIN_COMPARE_SKY ?? "")
+  .split(",")
+  .filter(Boolean);
+const ALTS = (process.env.TERRAIN_COMPARE_ALTS ?? "")
+  .split(",")
+  .filter(Boolean);
 /** The full table's rows: every `COMPARE_VARIANTS` entry, or the picked. */
-const ROWS = PICKED.length > 0 ? PICKED.length : COMPARE_VARIANTS.length;
+const ROWS =
+  (PICKED.length > 0 ? PICKED.length : COMPARE_VARIANTS.length) *
+  Math.max(1, SKIES.length);
 
 test("the comparison page drives the lab's fly-in and logs every variant's numbers", async ({
   page,
@@ -38,11 +51,12 @@ test("the comparison page drives the lab's fly-in and logs every variant's numbe
     if (m.text().startsWith("compare ")) console.log(m.text());
   });
   page.on("pageerror", (e) => errors.push(e.message));
-  const query = !FULL
-    ? "?quick=1"
-    : PICKED.length > 0
-      ? `?rows=${PICKED.join(",")}`
-      : "";
+  const keys = new URLSearchParams();
+  if (!FULL) keys.set("quick", "1");
+  if (FULL && PICKED.length > 0) keys.set("rows", PICKED.join(","));
+  if (FULL && SKIES.length > 0) keys.set("sky", SKIES.join(","));
+  if (FULL && ALTS.length > 0) keys.set("alts", ALTS.join(","));
+  const query = keys.size > 0 ? `?${keys.toString()}` : "";
   await page.goto(`/labs/terrain/compare.html${query}`);
   await page.waitForFunction(() => window.__terrainCompare?.done, null, {
     timeout: FULL ? 3_500_000 : 580_000,
@@ -70,11 +84,25 @@ test("the comparison page drives the lab's fly-in and logs every variant's numbe
         // The measured post spacing honours the 3 px rule (a little under
         // it where the relief's lift foreshortens a post pair).
         expect(c.postPx, row.id).toBeGreaterThan(2);
+        // The darkest tenth is read (DEC-GL5-11).
+        expect(c.dark.n, row.id).toBeGreaterThan(1);
+        expect(Number.isFinite(c.dark.p), row.id).toBe(true);
       }
     }
   }
-  // One thumbnail per row, sun and altitude.
+  // One thumbnail per row, sun and capture altitude.
   const thumbs = await page.locator(".compare-thumb").count();
-  expect(thumbs).toBe(FULL ? ROWS * 2 * 4 : 2);
+  const shots = results.rows.reduce(
+    (sum, row) =>
+      sum +
+      Object.values(row.suns).reduce(
+        (k, sun) => k + Object.keys(sun.contrast).length,
+        0,
+      ),
+    0,
+  );
+  expect(thumbs).toBe(shots);
+  // Every row at every sun and altitude (four, unless `ALTS` narrows them).
+  if (ALTS.length === 0) expect(thumbs).toBe(FULL ? ROWS * 2 * 4 : 2);
   expect(errors).toEqual([]);
 });

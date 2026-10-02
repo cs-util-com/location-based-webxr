@@ -42,7 +42,7 @@ import {
   snowLineM,
   treeLineM,
 } from "./terrain-styles.js";
-import { GLOBE_SUN, MAP_KEY_LIGHT, SUN_GLSL } from "./terrain-sun.js";
+import { GLOBE_SUN, MAP_KEY_LIGHT, SKY_FILL, SUN_GLSL } from "./terrain-sun.js";
 import { GLOBE_ALBEDO } from "./terrain-globe-colour.js";
 import {
   GLOBE_CLASSES,
@@ -139,6 +139,8 @@ uniform float uLift;
 uniform vec3 uSun;
 uniform float uSunIntensity;
 uniform int uLightMode;
+// The sky fill's floor (terrain-sun.js SKY_FILL, the hash's sky key).
+uniform float uSkyFloor;
 // Style D.
 uniform vec3 uSwissSea;
 uniform vec3 uExpLight;
@@ -681,6 +683,7 @@ export function createTerrainMaterial(textures, { side, extentM, datum }) {
       uSun: { value: new THREE.Vector3(...MAP_KEY_LIGHT) },
       uSunIntensity: { value: GLOBE_SUN.intensity },
       uLightMode: { value: 0 },
+      uSkyFloor: { value: SKY_FILL.floor },
       uSwissSea: { value: rgb(w.sea) },
       uExpLight: { value: rgb(w.exposureLight) },
       uExpShadow: { value: rgb(w.exposureShadow) },
@@ -727,13 +730,15 @@ export function createTerrainMaterial(textures, { side, extentM, datum }) {
  * the switch, the shading strength, the A/E shading set (`shadeColour`:
  * A's from `PASTEL_ATLAS`, E's from `CLAY`), B's tree and snow lines for
  * the place's latitude plus their offsets, D's exposure, contrast and the
- * region's height range, and the snow mask. The far field's weights change
- * with the camera and are set per frame by the page.
+ * region's height range, the snow mask, the imagery styles' detail and
+ * colour width, and the sun light's sky floor. The far field's weights
+ * change with the camera and are set per frame by the page.
  *
  * @param {THREE.ShaderMaterial} material
  * @param {{ style: string, shadow: number, green: number, tree: number,
  *   snow: number, aspect: number, rock: number, lift: number,
- *   exposure: number, contrast: number, snowMask: number }} params
+ *   exposure: number, contrast: number, snowMask: number, detail: number,
+ *   classWidth: number, sky: number }} params
  * @param {{ shaderStyle: number, latDeg: number, hRange: [number, number] }} context
  */
 export function applyStyle(material, params, { shaderStyle, latDeg, hRange }) {
@@ -759,6 +764,7 @@ export function applyStyle(material, params, { shaderStyle, latDeg, hRange }) {
   u.uSnowMask.value = params.snowMask;
   u.uAlbedoDetail.value = params.detail;
   u.uClassWidth.value = params.classWidth;
+  u.uSkyFloor.value = params.sky;
 }
 
 /**

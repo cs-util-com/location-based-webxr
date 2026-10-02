@@ -27,6 +27,7 @@ import {
   readTerrainParams,
 } from "./terrain-params.js";
 import { GLOBE_SUN } from "./terrain-far-field.js";
+import { SKY_FILL } from "./terrain-sun.js";
 import { TERRAIN_STYLES } from "./terrain-styles.js";
 
 describe("the Appalachians place", () => {
@@ -293,6 +294,16 @@ describe("readTerrainParams", () => {
       [...IMAGERY_STYLES],
       ["globe-albedo", "globe-bands", "globe-classes"],
     );
+  });
+
+  // DEC-GL5-11: the sky fill's floor is a swept look value, so a link
+  // carries it; 0 is the old sun-derived fill, for the comparison.
+  it("reads the sky fill's floor in 0-1, default SKY_FILL.floor", () => {
+    assert.equal(readTerrainParams("").sky, SKY_FILL.floor);
+    assert.equal(readTerrainParams("sky=0").sky, 0);
+    assert.equal(readTerrainParams("sky=1").sky, 1);
+    assert.equal(readTerrainParams("sky=1.2").sky, SKY_FILL.floor);
+    assert.equal(readTerrainParams("sky=-0.1").sky, SKY_FILL.floor);
   });
 
   it("reads globe-classes' colour width in 4-40 ΔE", () => {

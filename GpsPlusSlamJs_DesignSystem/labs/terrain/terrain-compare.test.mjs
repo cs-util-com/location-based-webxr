@@ -20,6 +20,7 @@ import {
   COMPARE_VARIANTS,
   captureAltitudesKm,
   captureHash,
+  darkTail,
   contrastStepM,
   footprintPoints,
   groundGrid,
@@ -29,6 +30,7 @@ import {
   onCanvas,
   quantile,
   stats,
+  withSkySweep,
 } from "./terrain-compare.js";
 
 const close = (a, b, eps, what) =>
@@ -281,5 +283,72 @@ describe("the footprint-averaged hand-over (review 2026-10-01-1650 M2)", () => {
       [0.2, 0.4, 0.6],
     );
     assert.equal(linearMeanSrgb([]), null);
+  });
+});
+
+describe("the sky-fill sweep (DEC-GL5-11)", () => {
+  // The sky floor is judged across a range, never at one value: every
+  // picked row is captured at every floor of the sweep, each its own row.
+  it("repeats each row at every floor, the floor in its hash and its id", () => {
+    const rows = withSkySweep(
+      COMPARE_VARIANTS.filter((v) => ["B", "C1-d0.5"].includes(v.id)),
+      [0, 0.5],
+    );
+    assert.deepEqual(
+      rows.map((r) => r.id),
+      ["B@sky0", "B@sky0.5", "C1-d0.5@sky0", "C1-d0.5@sky0.5"],
+    );
+    assert.equal(rows[3].hash.sky, 0.5);
+    assert.equal(rows[3].hash.style, "globe-albedo");
+    assert.equal(rows[3].hash.detail, 0.5);
+    assert.match(rows[3].label, /sky floor 0\.5/);
+    // The lab reads the floor back from the capture's hash.
+    const pose = flyInPoseAtAltitude(30_000);
+    const hash = captureHash(rows[3], COMPARE_PLAN.suns[1], pose);
+    assert.equal(readTerrainParams(hash).sky, 0.5);
+  });
+
+  it("keeps the rows as they are with no floors, and a row's own altitudes", () => {
+    assert.deepEqual(withSkySweep(COMPARE_VARIANTS, []), COMPARE_VARIANTS);
+    const c = withSkySweep(
+      COMPARE_VARIANTS.filter((v) => v.id === "C"),
+      [1],
+    );
+    assert.deepEqual(c[0].altitudesKm, [1500, 900, 600, 300]);
+  });
+
+  it("refuses a floor outside 0-1", () => {
+    assert.throws(() => withSkySweep(COMPARE_VARIANTS, [1.5]), RangeError);
+    assert.throws(() => withSkySweep(COMPARE_VARIANTS, [NaN]), RangeError);
+  });
+});
+
+describe("the dark tail (DEC-GL5-11: do the shadows keep their colour?)", () => {
+  // The low-sun question is about the darkest ground: its luminance, and
+  // whether it still carries a hue (CIELAB chroma) or has sunk to grey.
+  it("reads the darkest share's luminance quantile and mean chroma", () => {
+    const grey = [10, 10, 10];
+    const green = [20, 60, 10];
+    const white = [250, 250, 250];
+    const px = [
+      ...Array(8).fill(white),
+      grey,
+      [12, 12, 12],
+      ...Array(10).fill(green),
+    ];
+    const t = darkTail(px, 0.1);
+    // 20 pixels: the darkest tenth is the two greys.
+    assert.equal(t.n, 2);
+    // Nearest rank: the 2nd of 20, the lighter grey.
+    close(t.p, 12, 1e-9, "p10");
+    assert.ok(t.chroma < 0.5, `grey has no chroma: ${t.chroma}`);
+    const g = darkTail(Array(10).fill(green), 0.1);
+    assert.ok(g.chroma > 20, `green keeps its chroma: ${g.chroma}`);
+  });
+
+  it("is NaN-free on an empty set", () => {
+    const t = darkTail([], 0.1);
+    assert.equal(t.n, 0);
+    assert.ok(Number.isNaN(t.p) && Number.isNaN(t.chroma));
   });
 });

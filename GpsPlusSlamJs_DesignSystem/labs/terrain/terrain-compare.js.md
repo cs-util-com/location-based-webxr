@@ -37,6 +37,15 @@
   - `captureHash(variant, sun, pose, plan?)`: the lab hash of one capture.
   - `stats(values)` (population mean and sd over the finite values),
     `quantile(values, p)` (nearest rank), `onCanvas([u, v])`.
+  - `withSkySweep(variants, skies)` (DEC-GL5-11): every row repeated at
+    each sky floor, `sky` in its hash, `@sky<floor>` on its id and the
+    floor in its label, its own altitudes kept; no floors returns the rows
+    as they are. RangeError for a floor outside 0-1 (the lab would read it
+    as its default without a word).
+  - `darkTail(pixels, share)`: the darkest `share` of 8-bit RGB pixels by
+    luminance: the luminance at that quantile (`p`, nearest rank), the
+    mean CIELAB chroma of those pixels (`chroma`: do the shadows keep a
+    hue?) and their count `n`; NaN and 0 for no pixels.
 - Invariants: every row's hash is read back by `readTerrainParams` with no
   note; a capture's hash reproduces its pose exactly (to the hash's 0.01°);
   the far field's near weight is 1 at every near style's capture and at
@@ -44,4 +53,5 @@
 - Tests: `terrain-compare.test.mjs` (the pixel scale against an
   independent pinhole projection and the review's own 1.15 / 0.74 px at
   300 km; the step's floor and 3 px rule; the pixel centre, the footprint
-  grid and the linear mean).
+  grid and the linear mean; the sky sweep's rows and their hash read back
+  by the lab; the dark tail's rank and chroma).

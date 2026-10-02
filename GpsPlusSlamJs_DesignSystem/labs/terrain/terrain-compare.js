@@ -13,12 +13,13 @@
  *   hand-over altitude, the local contrast at 1-10 km on the ground, and
  *   the frame cost as a ratio to style A within one page load.
  *
- * Dependency-free except the far field's colour curves (pure data and
- * arithmetic), so it runs under `node --test`.
+ * Dependency-free except the far field's colour curves and CIELAB (pure
+ * data and arithmetic), so it runs under `node --test`.
  *
  * @see terrain-compare.js.md
  */
 import { linearToSrgb, srgbToLinear } from "./terrain-far-field.js";
+import { srgbToLab } from "./terrain-globe-colour.js";
 
 /**
  * The rows: a label and the hash keys that make the variant (on top of the
@@ -233,4 +234,51 @@ export function linearMeanSrgb(colours) {
     for (let i = 0; i < 3; i++) sum[i] += srgbToLinear(c[i]);
   }
   return sum.map((v) => linearToSrgb(v / colours.length));
+}
+
+/**
+ * The rows repeated at every sky floor of a sweep (DEC-GL5-11): each row's
+ * hash gains `sky`, its id `@sky<floor>` and its label the floor; its own
+ * altitudes are kept. No floors keeps the rows as they are. RangeError for
+ * a floor outside 0-1 (the lab would read it as its default, silently).
+ */
+export function withSkySweep(variants, skies) {
+  if (skies.length === 0) return variants;
+  for (const sky of skies) {
+    if (!(sky >= 0 && sky <= 1)) {
+      throw new RangeError(`a sky floor must be in 0-1, got ${sky}`);
+    }
+  }
+  return variants.flatMap((v) =>
+    skies.map((sky) => ({
+      ...v,
+      id: `${v.id}@sky${sky}`,
+      label: `${v.label}, sky floor ${sky}`,
+      hash: { ...v.hash, sky },
+    })),
+  );
+}
+
+/**
+ * The darkest `share` of 8-bit RGB pixels by luminance (Rec. 709 weights on
+ * the 8-bit values, as the contrast's): the luminance at that quantile
+ * (`p`, nearest rank) and the mean CIELAB chroma of those pixels
+ * (`chroma`): whether the shadows still carry a hue or have sunk to grey.
+ * NaN for both, and `n` 0, with no pixels.
+ */
+export function darkTail(pixels, share) {
+  const lum = (px) => 0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2];
+  const sorted = [...pixels].sort((a, b) => lum(a) - lum(b));
+  const n = Math.min(
+    sorted.length,
+    Math.max(1, Math.ceil(share * sorted.length)),
+  );
+  if (sorted.length === 0) return { p: Number.NaN, chroma: Number.NaN, n: 0 };
+  const dark = sorted.slice(0, n);
+  const chroma =
+    dark.reduce((sum, px) => {
+      const [, a, b] = srgbToLab(px.slice(0, 3).map((v) => v / 255));
+      return sum + Math.hypot(a, b);
+    }, 0) / n;
+  return { p: lum(dark[n - 1]), chroma, n };
 }
