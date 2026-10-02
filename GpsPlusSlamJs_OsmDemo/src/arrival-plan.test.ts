@@ -86,6 +86,18 @@ async function demUrlsOsmDemoFetches(position: LatLng): Promise<Set<string>> {
   return urls;
 }
 
+/**
+ * The budget of one DEM reference run, ms. The reference is OsmDemo's REAL
+ * terrain field and DEM provider sampling the whole arrival window (about
+ * 170 000 lattice posts at 50° N, 390 000 at 64° N), because a smaller or
+ * hand-picked sample would be a second copy of the arithmetic under test.
+ * Measured 2026-10-02 for the slowest case, Reykjavik: 0.9 s on a quiet
+ * machine, 3.2-3.7 s beside other test runs, 5.9 s inside a full parallel
+ * gate, where it failed the default 5 s. The 30 s budget is five times the
+ * worst measured; the assertion is unchanged.
+ */
+const DEM_REFERENCE_TIMEOUT_MS = 30_000;
+
 const PLACES: readonly (readonly [string, LatLng])[] = [
   ["Cologne", { lat: 50.9413, lng: 6.9583 }],
   ["the Alps box", { lat: 46.56, lng: 9.14 }],
@@ -114,6 +126,7 @@ describe("arrivalPlanFor", () => {
       expect(new Set(plan.demUrls)).toEqual(fetched);
       expect(plan.demUrls.length).toBe(fetched.size);
     },
+    DEM_REFERENCE_TIMEOUT_MS,
   );
 
   it("agrees with OsmDemo's DEM requests at random places", async () => {
