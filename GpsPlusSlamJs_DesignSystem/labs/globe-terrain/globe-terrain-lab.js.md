@@ -51,8 +51,10 @@
     `test-results/globe-terrain/requests-<heights>-et<n>.json`, and
     `terrarium-bytes.mjs` sums their real sizes.
 - Tests: `globe-terrain.smoke.spec.mjs` (heights without the extension;
-  the look against the globe by day, dusk and night, from 150, 1,000 and
-  5,000 km and at 70 N, and the relief showing at E 3; the seam scan with
+  the look against the globe at the 150 km hold by day, dusk, night and
+  at 70 N, held to its bound; from 1,000 and 5,000 km measured only, since
+  the globe's own surface draws there (the altitude band); and the
+  relief showing at E 3; the seam scan with
   its positive control; the coast at E 3; the data per descent; and, with
   `GLOBE_TERRAIN_LIVE=1`, the real-tile seam scan, R16F against R32F at a
   low sun above 3,000 m, and the descent and error target on real

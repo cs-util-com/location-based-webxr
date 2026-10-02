@@ -29,6 +29,11 @@ import {
   tileGeographicBounds,
   useHalfFloatHeights,
 } from "./globe-terrain.js";
+import {
+  DETAIL_DECLARATIONS,
+  DETAIL_FRAGMENT,
+  createGlobeDetailUniforms,
+} from "./globe-detail.js";
 
 const DEG = Math.PI / 180;
 /** Normalised Web Mercator y (0 south, 1 north) of a latitude. */
@@ -291,6 +296,67 @@ describe("litTerrainMaterial", () => {
     expect(lit.customProgramCacheKey()).toBe(GLOBE_TERRAIN.programKey);
     // The imagery UV is clamped to the tile's texture (pole rows).
     expect(shader.vertexShader).toContain("vMapUv = clamp(");
+    // The relief's side of the band's dither (globe-surface-material.ts):
+    // its tiles keep the pixels the globe's tiles drop.
+    expect(
+      shader.fragmentShader.startsWith("#define GLOBE_FADE_SIDE 1\n"),
+    ).toBe(true);
+  });
+
+  // Why (F1, globe-albedo plus detail on the library's tiles): the detail
+  // factor multiplies the imagery's colour right after the map is read,
+  // before the globe's clouds whiten it, from ONE uniforms object every
+  // tile shares (the lab sets it once for all tiles). A tile compiled
+  // without its anchor must fail loudly, not drop the detail.
+  it("multiplies the shared detail into the imagery right after the map", () => {
+    const template = new THREE.MeshStandardMaterial();
+    const own = new THREE.MeshLambertMaterial();
+    const detail = createGlobeDetailUniforms();
+    const bounds = { west: 0.1, south: 0.7, east: 0.2, north: 0.8 };
+    const shaderOf = (fragmentShader: string) =>
+      ({
+        vertexShader:
+          "#include <common>\nvoid main() {\n#include <uv_vertex>\n}",
+        fragmentShader,
+        uniforms: {} as Record<string, THREE.IUniform>,
+      }) as unknown as THREE.WebGLProgramParametersWithUniforms;
+    const a = shaderOf(
+      "#include <common>\nvoid main() {\n#include <map_fragment>\n#include <alphamap_fragment>\n}",
+    );
+    const b = shaderOf(a.fragmentShader);
+    litTerrainMaterial(template, own, bounds, detail).onBeforeCompile(
+      a,
+      {} as THREE.WebGLRenderer,
+    );
+    litTerrainMaterial(template, own, bounds, detail).onBeforeCompile(
+      b,
+      {} as THREE.WebGLRenderer,
+    );
+    const fs = a.fragmentShader;
+    expect(fs.split(DETAIL_FRAGMENT).length - 1).toBe(1);
+    expect(fs.indexOf("#include <map_fragment>")).toBeLessThan(
+      fs.indexOf(DETAIL_FRAGMENT),
+    );
+    expect(fs.indexOf(DETAIL_FRAGMENT)).toBeLessThan(
+      fs.indexOf("#include <alphamap_fragment>"),
+    );
+    expect(fs.indexOf(DETAIL_DECLARATIONS)).toBeLessThan(fs.indexOf("main"));
+    for (const name of [
+      "uDetail",
+      "uDetailOn",
+      "uDetailRegion",
+      "uDetailHalfM",
+    ] as const) {
+      expect(a.uniforms[name]).toBe(detail[name]);
+      expect(b.uniforms[name]).toBe(detail[name]);
+    }
+    const missing = shaderOf("#include <common>\nvoid main() {}");
+    expect(() =>
+      litTerrainMaterial(template, own, bounds, detail).onBeforeCompile(
+        missing,
+        {} as THREE.WebGLRenderer,
+      ),
+    ).toThrow("#include <map_fragment>");
   });
 });
 
@@ -443,6 +509,29 @@ describe("createGlobeTerrain", () => {
       heights,
     );
     expect(terrain.litTiles()).toBe(1);
+    // Every loaded tile reads the terrain's one detail uniforms object,
+    // off until the page sets a grid.
+    const compiled = {
+      vertexShader: "#include <common>\nvoid main() {\n#include <uv_vertex>\n}",
+      fragmentShader:
+        "#include <common>\nvoid main() {\n#include <map_fragment>\n}",
+      uniforms: {} as Record<string, THREE.IUniform>,
+    } as unknown as THREE.WebGLProgramParametersWithUniforms;
+    mesh.material.onBeforeCompile(compiled, {} as THREE.WebGLRenderer);
+    expect(compiled.uniforms.uDetail).toBe(terrain.detail.uDetail);
+    expect(terrain.detail.uDetailOn.value).toBe(0);
+    terrain.setDetail(
+      {
+        ratio: new Float32Array(4).fill(1.2),
+        side: 2,
+        extentM: 500,
+        halfM: 400,
+      },
+      { lat: 46.5, lng: 9.5 },
+    );
+    expect(terrain.detail.uDetailOn.value).toBe(1);
+    terrain.setDetail(null, { lat: 46.5, lng: 9.5 });
+    expect(terrain.detail.uDetailOn.value).toBe(0);
     terrain.tiles.dispatchEvent({
       type: "dispose-model",
       scene: model,

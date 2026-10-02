@@ -137,6 +137,9 @@ function start() {
   let terrain = null;
   if (LOOK.carrier === "terrain") {
     globe.tiles.group.visible = false;
+    // The relief's side of the altitude band's dither keeps every pixel
+    // (this page shows one carrier at a time).
+    globe.surfaceUniforms.uCarrierShare.value = 1;
     terrain = createGlobeTerrain({
       url:
         LOOK.heights === "terrarium"

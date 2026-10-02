@@ -46,7 +46,7 @@
     degrees): the library snaps its pole rows to 90 degrees while the
     imagery it asked for ends there (F1a review minor 5). RangeError
     without normals.
-  - `litTerrainMaterial(template, own, bounds)`: the globe's lit copy for
+  - `litTerrainMaterial(template, own, bounds, detail?)`: the globe's lit copy for
     one tile: `own`'s map, displacement and bump maps and scales, both
     compile hooks (the library's first, then the globe's), the imagery UV
     from the normal over `bounds` (uniform `uTerrainGeoBounds`, clamped to
@@ -55,8 +55,14 @@
     plan's §5): exaggerated sea floors would sink 10-15 km under the
     water's imagery at E 3, so the sea keeps the globe's surface and
     colour. The clone and its hooks are `litCopy` from `globe-surface.ts`.
+    The fragment starts with `#define GLOBE_FADE_SIDE 1`: the relief's
+    side of the altitude band's dither (`globe-surface-material.ts`). With
+    `detail` (`globe-detail.ts`'s uniforms, one object for every tile) the
+    detail factor multiplies the imagery right after `map_fragment`; a
+    missing or doubled anchor then throws, naming it.
   - `createGlobeTerrain({ url, imagery, template, heightScale, maxZoom? })`
-    -> `{ tiles, plugin, litTiles(), dispose() }`: the library's
+    -> `{ tiles, plugin, detail, setDetail(grid, centre), litTiles(), dispose() }`
+    (`detail` the tiles' shared detail uniforms, off until `setDetail`): the library's
     `TerrariumMeshPlugin` on `url` (Terrarium encoded; `maxZoom` 12 by
     default), the imagery through `geographicOverlay`, and on every
     `load-model` the half-float heights and the lit copy; on
@@ -98,8 +104,9 @@
 - Tests: `globe-terrain.test.ts` (the range conversion and its size at
   46.5 N; the overlay adapter's calls; the half-float upload and its
   steps; the box from normals; the lit material's maps, hooks, UV patch
-  and key; the factory on a simulated tile load and dispose; refusals; the
-  library guard). The GPU side (heights read back with the extension
+  and key; the fade side; the detail patch's place, shared uniforms and
+  refused anchor; the factory on a simulated tile load and dispose, its
+  detail on and off; refusals; the library guard). The GPU side (heights read back with the extension
   hidden, the look against the globe at noon, dusk and night, the data
   budget, the seam scan) is the design system's
   `labs/globe-terrain/globe-terrain.smoke.spec.mjs`.

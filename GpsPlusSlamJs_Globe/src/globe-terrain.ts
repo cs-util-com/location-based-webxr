@@ -21,6 +21,14 @@ import * as THREE from "three";
 import { TilesRenderer } from "3d-tiles-renderer";
 import * as plugins from "3d-tiles-renderer/plugins";
 
+import {
+  DETAIL_DECLARATIONS,
+  DETAIL_FRAGMENT,
+  type GlobeDetailGrid,
+  type GlobeDetailUniforms,
+  createGlobeDetailUniforms,
+  setGlobeDetail,
+} from "./globe-detail.js";
 import { litCopy, tileMeshes } from "./globe-surface.js";
 
 export const GLOBE_TERRAIN = Object.freeze({
@@ -231,11 +239,26 @@ const SEA_CLAMPED_DISPLACEMENT = /* glsl */ `
 transformed += normalize( objectNormal ) * ( max( texture2D( displacementMap, vDisplacementMapUv ).x, 0.0 ) * displacementScale + displacementBias );
 #endif`;
 
+/** `source` with `code` after `anchor`, which must occur exactly once. */
+function after(source: string, anchor: string, code: string): string {
+  const parts = source.split(anchor);
+  if (parts.length !== 2) {
+    throw new Error(
+      `globe terrain: "${anchor}" occurs ${parts.length - 1} times in the shader, expected once`,
+    );
+  }
+  return `${parts[0]}${anchor}${code}${parts[1]}`;
+}
+
 /**
  * A lit copy of the globe's `template` for one terrain tile: the tile's
  * own imagery, displacement and bump maps and scales, the library's
  * compile hook (its bump chunk) and the template's (the globe's look),
- * and the imagery UV from the geodetic normal over `bounds`.
+ * the imagery UV from the geodetic normal over `bounds`, and the relief's
+ * side of the altitude band's dither (`GLOBE_FADE_SIDE` 1). With `detail`
+ * (the uniforms every tile shares), the detail factor (`globe-detail.ts`)
+ * multiplies the imagery right after the map is read; an anchor missing
+ * from the shader then throws, naming it.
  */
 export function litTerrainMaterial(
   template: THREE.MeshStandardMaterial,
@@ -247,6 +270,7 @@ export function litTerrainMaterial(
     bumpScale?: number;
   },
   bounds: GeographicBounds,
+  detail?: GlobeDetailUniforms,
 ): THREE.MeshStandardMaterial {
   const lit = litCopy(template);
   const geoBounds = {
@@ -277,6 +301,14 @@ export function litTerrainMaterial(
       /texture2D\( bumpMap, ([^)]*) \)\.x/g,
       "max( texture2D( bumpMap, $1 ).x, 0.0 )",
     );
+    if (detail) {
+      Object.assign(shader.uniforms, detail);
+      let fs = shader.fragmentShader;
+      fs = after(fs, "#include <common>", DETAIL_DECLARATIONS);
+      fs = after(fs, "#include <map_fragment>", DETAIL_FRAGMENT);
+      shader.fragmentShader = fs;
+    }
+    shader.fragmentShader = `#define GLOBE_FADE_SIDE 1\n${shader.fragmentShader}`;
   };
   lit.customProgramCacheKey = () => GLOBE_TERRAIN.programKey;
   lit.map = own.map ?? null;
@@ -308,6 +340,13 @@ const terrariumRuntime: unknown = (plugins as Record<string, unknown>)[
 export interface GlobeTerrain {
   readonly tiles: TilesRenderer;
   readonly plugin: TerrariumMeshPluginInstance;
+  /** The detail colour's uniforms, shared by every tile (off until set). */
+  readonly detail: GlobeDetailUniforms;
+  /** Sets the detail grid at `centre` (`setGlobeDetail`), or null for none. */
+  setDetail(
+    grid: GlobeDetailGrid | null,
+    centre: { lat: number; lng: number },
+  ): void;
   /** How many loaded tiles carry the globe's lit material now. */
   litTiles(): number;
   dispose(): void;
@@ -357,6 +396,7 @@ export function createGlobeTerrain(options: {
   // After the plugin: its init (TerrainRGBMeshPlugin) sets 1.
   tiles.errorTarget = GLOBE_TERRAIN.errorTarget;
   const owned = new Set<THREE.Material>();
+  const detail = createGlobeDetailUniforms();
   tiles.addEventListener("load-model", ({ scene }) => {
     for (const mesh of tileMeshes(scene)) {
       const own = mesh.material as THREE.MeshLambertMaterial;
@@ -365,6 +405,7 @@ export function createGlobeTerrain(options: {
         template,
         own,
         tileGeographicBounds(mesh.geometry),
+        detail,
       );
       owned.add(lit);
       mesh.material = lit;
@@ -379,10 +420,13 @@ export function createGlobeTerrain(options: {
   return {
     tiles,
     plugin,
+    detail,
+    setDetail: (grid, centre) => setGlobeDetail(detail, grid, centre),
     litTiles: () => owned.size,
     dispose() {
       for (const lit of owned) lit.dispose();
       owned.clear();
+      detail.uDetail.value.dispose();
       tiles.dispose();
     },
   };

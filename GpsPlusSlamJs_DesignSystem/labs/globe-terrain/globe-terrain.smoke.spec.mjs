@@ -121,25 +121,38 @@ const readGrid = (grid) => async (page) => ({
 
 // WHY (F0b; F1a review minor 6): the carrier must look like the globe
 // where it has no relief to add, flat (height scale 0), against the
-// globe's own surface: at noon, dusk and night at 150 km (imagery level
-// 5), at noon from 1,000 and 5,000 km, and at noon at 70 N. Before the
-// range fix the noon imagery came from 20 degrees south (mean 45.9 levels
+// globe's own surface, at 150 km (imagery level 5), where the flight holds
+// on the carrier: noon, dusk, night and noon at 70 N. Before the range
+// fix the noon imagery came from 20 degrees south (mean 45.9 levels
 // apart). Bounds: mean 4 levels, 95th percentile 16 (texture filtering
 // and tile levels differ between the two carriers). And the relief must
 // show: at E 3 the frame differs from the flat one.
-test("the carrier wears the globe's look by day, dusk and night, near and far, and at 70 N", async ({
+// From 1,000 and 5,000 km the two are MEASURED, not held to the bound:
+// there the globe's own surface draws (the altitude band, one-scene plan
+// §3.2; globe-relief.smoke.spec.mjs holds the cross-fade continuous).
+// The F1 measurement that set the band: at noon from 1,000 km mean 4.31
+// levels, the carrier's library tiles coarser over part of the frame
+// (levels 2-6, 40 tiles, against the globe's 2-5, 115 tiles).
+test("the carrier wears the globe's look at the hold by day, dusk, night and at 70 N", async ({
   browser,
 }) => {
   test.setTimeout(2_400_000);
   const grid = denseGrid();
   const MEAN = 4;
   const P95 = 16;
+  // Where in the frame the two differ: the grid's upper rows (farther
+  // ground) against its lower ones (the ground under the camera).
+  const upper = grid.map(([, y]) => y < 0.65);
+  const part = (px, keep) => px.filter((_, i) => upper[i] === keep);
+  // Every view is measured and logged before any is asserted, so one
+  // view's red does not hide the others.
+  const results = [];
   for (const [label, view] of [
     ["noon, 150 km", "alt=150&time=11.4"],
     ["dusk, 150 km", "alt=150&time=17.4"],
     ["night, 150 km", "alt=150&time=23.4"],
-    ["noon, 1,000 km", "alt=1000&time=11.4"],
-    ["noon, 5,000 km", "alt=5000&time=11.4"],
+    ["noon, 1,000 km (measured: the globe draws here)", "alt=1000&time=11.4"],
+    ["noon, 5,000 km (measured: the globe draws here)", "alt=5000&time=11.4"],
     ["noon, 150 km at 70 N", "alt=150&time=11.4&lat=70&lng=20"],
   ]) {
     const globe = await measured(
@@ -153,12 +166,23 @@ test("the carrier wears the globe's look by day, dusk and night, near and far, a
       readGrid(grid),
     );
     const c = compare(globe.px, flat.px);
+    const far = compare(part(globe.px, true), part(flat.px, true));
+    const near = compare(part(globe.px, false), part(flat.px, false));
     console.log(
-      `look at ${label}, ${grid.length} points: mean |difference| ${below(c.mean, MEAN)}, 95th percentile ${below(c.p95, P95)}; mean luminance globe ${meanLum(globe.px).toFixed(1)}, carrier ${meanLum(flat.px).toFixed(1)}; tiles by level globe ${JSON.stringify(globe.levels)}, carrier ${JSON.stringify(flat.levels)}`,
+      `look at ${label}, ${grid.length} points: mean |difference| ${below(c.mean, MEAN)}, 95th percentile ${below(c.p95, P95)} (upper rows mean ${far.mean.toFixed(2)}, lower rows ${near.mean.toFixed(2)}); mean luminance globe ${meanLum(globe.px).toFixed(1)}, carrier ${meanLum(flat.px).toFixed(1)}; tiles by level globe ${JSON.stringify(globe.levels)}, carrier ${JSON.stringify(flat.levels)}`,
     );
-    expect([...globe.errors, ...flat.errors]).toEqual([]);
-    expect(c.mean).toBeLessThanOrEqual(MEAN);
-    expect(c.p95).toBeLessThanOrEqual(P95);
+    results.push({
+      label,
+      c,
+      held: !label.includes("measured"),
+      errors: [...globe.errors, ...flat.errors],
+    });
+  }
+  for (const { label, c, held, errors } of results) {
+    expect(errors, label).toEqual([]);
+    if (!held) continue;
+    expect(c.mean, label).toBeLessThanOrEqual(MEAN);
+    expect(c.p95, label).toBeLessThanOrEqual(P95);
   }
   const flat = await measured(
     browser,

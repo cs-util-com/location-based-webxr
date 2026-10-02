@@ -28,8 +28,18 @@ cloudOpacity: 0.8, skyShare: 0.2 }`, the defaults (lab parameters `#nightGain=`,
     same sun in world space, kept by the surface), `uNight`,
     `uClouds`, `uNightGain`, `uWaterRoughness`, `uCloudOpacity`,
     `uCloudLonOffset` (radians, 0 until the caller sets it), `uSkyFloor`
-    (`SKY_FILL.floor`, lab `#sky=`) and `uSkyShare`
-    (`GLOBE_SURFACE_TUNING.skyShare`).
+    (`SKY_FILL.floor`, globe lab `#skyFloor=`) and `uSkyShare`
+    (`GLOBE_SURFACE_TUNING.skyShare`), and `uCarrierShare` (the altitude
+    band's relief share, 0 until the page sets it).
+  - `GLOBE_FADE_GLSL` and `globeFadeKeeps(d, share, side)`: the band's
+    cross-fade (one-scene plan §3.2). Each pixel goes to exactly one
+    carrier by a screen dither (interleaved gradient noise of
+    `gl_FragCoord`): the globe's tiles (`GLOBE_FADE_SIDE` 0, the default)
+    keep the pixels whose dither is at or above `uCarrierShare`, the
+    relief's tiles (`globe-terrain.ts` defines 1) the ones below. No
+    blending, so no sorting and no pixel lit twice. The discard is the
+    fragment's first work, after `clipping_planes_fragment`. Program key
+    v7 since.
   - `patchGlobeSurfaceShader(shader, uniforms)` - a pure string transform,
     in place: the geodetic-normal varying (the OBJECT-space normal:
     `GeneratedSurfacePlugin` writes the geodetic ellipsoid normal and gives

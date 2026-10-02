@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   GLOBE_FLIGHT,
+  carrierShareAt,
   exaggerationAt,
   frameCheck,
   minimumAltitudeM,
@@ -120,5 +121,66 @@ describe("frameCheck, over pitch x fov x altitude", () => {
         expect(c.groundAtTop, `${alt} m fov ${fov}`).toBe(true);
       }
     }
+  });
+});
+
+describe("carrierShareAt, the altitude band between the globe and the relief", () => {
+  // Why (one-scene plan §3.2 and §6; F1): above the band the globe's own
+  // surface draws, below it the relief's library tiles, and between them
+  // each pixel goes to one or the other by a dither at this share. The
+  // weights must be exact at the edges (nothing of the other carrier
+  // leaks outside the band), sum to one by construction, and never step
+  // back as the camera descends, or the fade would flicker.
+  it("is 0 above the band, 1 below it, exact at the edges", () => {
+    const { bandHighM, bandLowM } = GLOBE_FLIGHT;
+    expect(bandHighM).toBe(2_000_000);
+    expect(bandLowM).toBe(1_200_000);
+    expect(carrierShareAt(5_000_000)).toBe(0);
+    expect(carrierShareAt(bandHighM)).toBe(0);
+    expect(carrierShareAt(bandLowM)).toBe(1);
+    expect(carrierShareAt(150_000)).toBe(1);
+    const mid = carrierShareAt(Math.sqrt(bandHighM * bandLowM));
+    expect(mid).toBeCloseTo(0.5, 12);
+  });
+
+  it("never falls as the camera descends, over the band's sweep", () => {
+    for (const [highM, lowM] of [
+      [2_000_000, 1_200_000],
+      [4_000_000, 2_400_000],
+      [1_000_000, 600_000],
+    ] as const) {
+      let prev = -1;
+      for (let alt = 6_000_000; alt >= 1; alt *= 0.97) {
+        const s = carrierShareAt(alt, { highM, lowM });
+        expect(s).toBeGreaterThanOrEqual(prev);
+        expect(s).toBeGreaterThanOrEqual(0);
+        expect(s).toBeLessThanOrEqual(1);
+        prev = s;
+      }
+      expect(prev).toBe(1);
+    }
+  });
+
+  it("starts above the relief's first visible exaggeration", () => {
+    // E leaves 1 (its first 0.1 step) only inside or below the band, so
+    // the relief is flat while the globe still draws.
+    let firstE = 0;
+    for (let alt = 3_000_000; alt > 20_000; alt -= 10_000) {
+      if (exaggerationAt(alt) > 1) {
+        firstE = alt;
+        break;
+      }
+    }
+    expect(firstE).toBeLessThan(GLOBE_FLIGHT.bandHighM);
+  });
+
+  it("refuses a non-finite altitude or a band whose edges are not ordered", () => {
+    expect(() => carrierShareAt(Number.NaN)).toThrow(RangeError);
+    expect(() => carrierShareAt(1e6, { highM: 1e6, lowM: 2e6 })).toThrow(
+      RangeError,
+    );
+    expect(() => carrierShareAt(1e6, { highM: 1e6, lowM: 0 })).toThrow(
+      RangeError,
+    );
   });
 });

@@ -25,6 +25,8 @@ import {
   cloudLonOffsetRad,
   createGlobeSurfaceUniforms,
   patchGlobeSurfaceShader,
+  GLOBE_FADE_GLSL,
+  globeFadeKeeps,
 } from "./globe-surface-material.js";
 import { SKY_FILL, SKY_LEVEL_GLSL } from "./sky-level.js";
 
@@ -65,6 +67,9 @@ describe("createGlobeSurfaceUniforms", () => {
     expect(u.uGrade.value).toBe(0);
     expect(u.uCloudRelief.value).toBe(0);
     expect(u.uTwilight.value).toBe(0);
+    // The band's cross-fade: the relief's share of the pixels, 0 (the
+    // globe alone) until the page sets it.
+    expect(u.uCarrierShare.value).toBe(0);
   });
 });
 
@@ -229,6 +234,33 @@ describe("patchGlobeSurfaceShader", () => {
     expect(fill).toMatch(/^[^#]*#endif/);
   });
 
+  // Why (one-scene plan §3.2; F1): in the altitude band the globe's own
+  // tiles and the relief's tiles both draw, and each pixel must go to
+  // exactly one of them: a dither threshold against the relief's share,
+  // the globe keeping the pixels at or above it and the relief (its tiles
+  // define GLOBE_FADE_SIDE 1) the ones below. No blending, so no sorting
+  // and no double-lit pixels; the discard comes first, before any work.
+  it("discards by a screen dither against the relief's share, first, on the globe's side by default", () => {
+    const shader = standardShader();
+    const uniforms = createGlobeSurfaceUniforms(textures());
+    patchGlobeSurfaceShader(shader, uniforms);
+    const fs = shader.fragmentShader;
+    expect(shader.uniforms.uCarrierShare).toBe(uniforms.uCarrierShare);
+    expect(count(fs, GLOBE_FADE_GLSL)).toBe(1);
+    expect(fs).toContain(
+      ["#ifndef GLOBE_FADE_SIDE", "#define GLOBE_FADE_SIDE 0", "#endif"].join(
+        String.fromCharCode(10),
+      ),
+    );
+    const at = (x: string) => fs.indexOf(x);
+    expect(at("#include <clipping_planes_fragment>")).toBeLessThan(
+      at("if ( !globeFadeKeeps("),
+    );
+    expect(at("if ( !globeFadeKeeps(")).toBeLessThan(
+      at("#include <map_fragment>"),
+    );
+  });
+
   it("refuses a shader missing an anchor, or holding one twice, naming it", () => {
     for (const anchor of [
       "#include <common>",
@@ -236,6 +268,7 @@ describe("patchGlobeSurfaceShader", () => {
       "#include <roughnessmap_fragment>",
       "#include <emissivemap_fragment>",
       "#include <lights_fragment_end>",
+      "#include <clipping_planes_fragment>",
     ]) {
       const missing = standardShader();
       missing.fragmentShader = missing.fragmentShader.replace(anchor, "");
@@ -323,5 +356,28 @@ describe("applyGlobeSurface", () => {
     const shader = standardShader();
     a.onBeforeCompile(shader, {} as THREE.WebGLRenderer);
     expect(shader.uniforms.uNight).toBe(uniforms.uNight);
+  });
+});
+
+describe("globeFadeKeeps, the shader's dither split", () => {
+  // Why: the two carriers must tile the screen between them at every
+  // share: for any dither value exactly one side keeps the pixel, the
+  // globe everything at share 0 and the relief everything at share 1.
+  it("gives every pixel to exactly one side, at any share", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 1, maxExcluded: true, noNaN: true }),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        (d, share) => {
+          const globe = globeFadeKeeps(d, share, 0);
+          const relief = globeFadeKeeps(d, share, 1);
+          expect(globe !== relief).toBe(true);
+        },
+      ),
+    );
+    for (const d of [0, 0.3, 0.999]) {
+      expect(globeFadeKeeps(d, 0, 0)).toBe(true);
+      expect(globeFadeKeeps(d, 1, 1)).toBe(true);
+    }
   });
 });

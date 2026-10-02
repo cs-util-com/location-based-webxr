@@ -39,7 +39,7 @@ export const GLOBE_SURFACE_TUNING = {
 export const GLOBE_CLOUD_DRIFT_DEG_PER_S = 0.5;
 
 /** Every tile's program is the same one: three shares it by this key. */
-export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v6";
+export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v7";
 
 /** The one uniforms object every tile's shader reads. */
 export interface GlobeSurfaceUniforms {
@@ -74,6 +74,11 @@ export interface GlobeSurfaceUniforms {
    */
   readonly uSkyFloor: { value: number };
   readonly uSkyShare: { value: number };
+  /**
+   * The relief's share of the pixels in the altitude band (one-scene plan
+   * §3.2; `carrierShareAt`): 0 draws the globe alone, 1 the relief alone.
+   */
+  readonly uCarrierShare: { value: number };
 }
 
 /**
@@ -102,6 +107,7 @@ export function createGlobeSurfaceUniforms(textures: {
     uTwilight: { value: 0 },
     uSkyFloor: { value: SKY_FILL.floor },
     uSkyShare: { value: GLOBE_SURFACE_TUNING.skyShare },
+    uCarrierShare: { value: 0 },
   };
 }
 
@@ -122,6 +128,42 @@ export function cloudLonOffsetRad(sceneMs: number, degPerS: number): number {
   // A tiny negative remainder can round up to exactly 360.
   return deg >= 360 ? 0 : (deg * Math.PI) / 180;
 }
+
+/**
+ * Which carrier keeps a pixel in the band's cross-fade, for a dither value
+ * `d` in [0, 1) and the relief's `share`: the globe (`side` 0) keeps
+ * `d >= share`, the relief (`side` 1) keeps `d < share`, so every pixel
+ * goes to exactly one. The shader's `globeFadeKeeps`.
+ */
+export function globeFadeKeeps(d: number, share: number, side: 0 | 1): boolean {
+  return side === 0 ? d >= share : d < share;
+}
+
+/**
+ * The band's dither (one-scene plan §3.2): interleaved gradient noise of
+ * the pixel's position (Jimenez 2014), a fixed pattern in [0, 1) that
+ * spreads any share evenly over the screen, and the split
+ * `globeFadeKeeps`. The side is the define `GLOBE_FADE_SIDE`: 0 (the
+ * globe's tiles) unless a material defines 1 (the relief's tiles).
+ */
+export const GLOBE_FADE_GLSL = /* glsl */ `
+#ifndef GLOBE_FADE_SIDE
+#define GLOBE_FADE_SIDE 0
+#endif
+float globeFadeDither() {
+  return fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) );
+}
+bool globeFadeKeeps( float d, float share ) {
+#if GLOBE_FADE_SIDE == 0
+  return d >= share;
+#else
+  return d < share;
+#endif
+}`;
+
+/** First in the fragment's work: a pixel the other carrier owns is dropped. */
+const FRAGMENT_FADE = /* glsl */ `
+if ( !globeFadeKeeps( globeFadeDither(), uCarrierShare ) ) discard;`;
 
 const VERTEX_DECLARATIONS = /* glsl */ `
 varying vec3 vGeoNormal;`;
@@ -150,8 +192,10 @@ uniform float uCloudRelief;
 uniform float uTwilight;
 uniform float uSkyFloor;
 uniform float uSkyShare;
+uniform float uCarrierShare;
 const vec3 GLOBE_WARM_LIGHTS = vec3( 1.4, 0.95, 0.5 );
-${SKY_LEVEL_GLSL}`;
+${SKY_LEVEL_GLSL}
+${GLOBE_FADE_GLSL}`;
 
 /**
  * After the overlay's colour is in diffuseColor: the water from the tile's
@@ -249,6 +293,7 @@ export function patchGlobeSurfaceShader(
   vs = after(vs, "#include <beginnormal_vertex>", VERTEX_NORMAL);
   let fs = shader.fragmentShader;
   fs = after(fs, "#include <common>", FRAGMENT_DECLARATIONS);
+  fs = after(fs, "#include <clipping_planes_fragment>", FRAGMENT_FADE);
   fs = after(fs, "#include <alphamap_fragment>", FRAGMENT_SAMPLES);
   fs = after(fs, "#include <roughnessmap_fragment>", FRAGMENT_GLINT);
   fs = after(fs, "#include <emissivemap_fragment>", FRAGMENT_NIGHT);

@@ -29,6 +29,18 @@
     `groundAtTop` when the top ray's depression (pitch - fov / 2) exceeds
     the horizon's dip acos(R / (R + h)); `dipDeg` too. At fovY 50 and 45
     degrees the horizon leaves the frame below about 409 km.
+  - `carrierShareAt(altM, { highM?, lowM? })`: the relief carrier's share
+    of the pixels in the altitude band (one-scene plan §3.2): 0 at and
+    above `highM` (`GLOBE_FLIGHT.bandHighM`, 2,000 km; the globe's own
+    surface alone), 1 at and below `lowM` (`bandLowM`, 1,200 km; the
+    relief's tiles alone), smoothstep in the logarithm between; the
+    globe's share is 1 minus it. RangeError for a non-finite altitude or
+    edges not 0 < low < high. E leaves 1 (its first 0.1 step) near
+    1,300 km, inside the band, so the relief is flat while the globe still
+    draws. The band exists because the two carriers differ further out (at
+    noon from 1,000 km by a mean 4.31 levels: the relief's library tiles
+    are coarser over part of the frame).
+  - The smoothstep is `globe-camera.ts`'s (one per package).
 - Invariants & assumptions: the bands are parameters, not verdicts; the
   pitch sweep (30, 45, 60) runs in the lab's relief smoke.
 - Example:
@@ -42,5 +54,6 @@
 - Tests: `globe-flight.test.ts` (the pitch law's ends, monotony and
   continuity; the exaggeration's ends, steps and monotony; the clearance;
   the frame metric's 409 km edge and its hold at 150, 30 and 5 km for fov
-  40-60). The dive's use is `globe-dive.test.ts`; the browser is
+  40-60; the band's exact edges, its midpoint and its monotony over three
+  band placements). The dive's use is `globe-dive.test.ts`; the browser is
   `labs/globe/globe-relief.smoke.spec.mjs`.

@@ -6,6 +6,7 @@
  *
  * @see globe-flight.ts.md
  */
+import { smoothstep } from "./globe-camera.js";
 
 export const GLOBE_FLIGHT = Object.freeze({
   /** Above this the view looks at the Earth's centre (pitch 90 degrees). */
@@ -26,14 +27,18 @@ export const GLOBE_FLIGHT = Object.freeze({
   clearanceM: 300,
   /** The Earth's mean radius for the frame metric. */
   radiusM: 6_371_000,
+  /**
+   * The band where the relief's tiles take over from the globe's own
+   * surface (one-scene plan §3.2): the globe alone above `bandHighM`, the
+   * relief alone at and below `bandLowM`, a dithered cross-fade between.
+   * E leaves 1 (its first 0.1 step) near 1,300 km, inside the band, so the
+   * relief is flat while the globe still draws.
+   */
+  bandHighM: 2_000_000,
+  bandLowM: 1_200_000,
 });
 
 const DEG = Math.PI / 180;
-
-const smoothstep = (t: number): number => {
-  const x = Math.min(1, Math.max(0, t));
-  return x * x * (3 - 2 * x);
-};
 
 /** How far `altM` lies from `far` down to `near`, 0-1, in the logarithm. */
 const logShare = (altM: number, far: number, near: number): number =>
@@ -136,4 +141,31 @@ export function frameCheck(input: {
     groundAtTop: pitchDeg - fovYDeg / 2 > dipDeg,
     dipDeg,
   };
+}
+
+/**
+ * The relief carrier's share of the pixels at an altitude (m): 0 at and
+ * above `highM` (the globe's own surface draws alone), 1 at and below
+ * `lowM` (the relief's tiles alone), smoothstep in the logarithm of the
+ * altitude between; the globe's share is 1 minus it. Never falls as the
+ * camera descends. RangeError for a non-finite altitude or edges that are
+ * not 0 < lowM < highM.
+ */
+export function carrierShareAt(
+  altM: number,
+  options: { highM?: number; lowM?: number } = {},
+): number {
+  const { highM = GLOBE_FLIGHT.bandHighM, lowM = GLOBE_FLIGHT.bandLowM } =
+    options;
+  if (!Number.isFinite(altM)) {
+    throw new RangeError(`the altitude must be finite, got ${altM}`);
+  }
+  if (!(lowM > 0 && lowM < highM && Number.isFinite(highM))) {
+    throw new RangeError(
+      `the band needs 0 < low < high, got ${lowM} and ${highM}`,
+    );
+  }
+  if (altM >= highM) return 0;
+  if (altM <= lowM) return 1;
+  return smoothstep(logShare(altM, highM, lowM));
 }
