@@ -115,14 +115,17 @@ export function createQrLevelZipContributor(
             continue;
           }
           id = await qrCodeId(text);
+          const sightings = feeder.accumulator.sightingsIncludingOpen(text);
           const result = mintQrAnchorFromSightings({
-            sightings: feeder.accumulator.sightingsIncludingOpen(text),
+            sightings,
             spansFrameChange: feeder.accumulator.spansFrameChange(text),
             nowIso: deps.nowIso(),
-            // The alignment as it stands at THIS save: a code scanned as the
-            // recording started was seen through an alignment with no walk
-            // behind it, and it is placed through this one instead.
-            currentAlignment: feeder.alignmentNow(),
+            // The alignment as it stands at THIS save, or the one the code's
+            // odometry segment closed with: a code scanned as the recording
+            // started was seen through an alignment with no walk behind it,
+            // and it is placed through this one instead. (Sightings that
+            // span segments are refused before it is used.)
+            currentAlignment: feeder.alignmentFor(sightings.at(-1)?.segment),
           });
           if (!result.ok) {
             outcomes.push({

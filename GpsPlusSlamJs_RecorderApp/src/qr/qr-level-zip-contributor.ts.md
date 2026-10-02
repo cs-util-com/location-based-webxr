@@ -25,12 +25,16 @@ Decision record:
   contributors on **every 60-second crash-safety sync**, not only at save; the
   COLMAP contributor's own comment warns that a from-scratch re-parse of
   `actions/` there would be O(session²).
-- **It flushes the accumulator first.** The visit in progress is not closed
-  yet, and under recency weighting it is the one that counts MOST — stopping a
-  recording right after a final scan would otherwise discard the best evidence
-  in the session.
-- **It hands the mint the alignment as it stands at THIS run**
-  (`feeder.alignmentNow()`). The mint places every sighting through it,
+- **It reads the visit in progress without closing it**
+  (`sightingsIncludingOpen`, never `flush()`). Under recency weighting the
+  newest visit counts MOST, so a recording stopped right after a final scan
+  must still include it; and because this runs on every crash-safety sync,
+  flushing would split a visit that a sync lands in into two, both near full
+  weight.
+- **It hands the mint the alignment as it stands at THIS run**, or, for a
+  code seen before a tracking restart or loop closure, the alignment its
+  odometry segment closed with (`feeder.alignmentFor(segment)`, the segment
+  of the code's newest sighting). The mint places every sighting through it,
   so a code scanned as the recording started (seen through an alignment
   with no walk behind it, whose yaw is arbitrary) gets the heading and
   position of the walked alignment. A level written at an early
@@ -66,11 +70,13 @@ createQrLevelZipContributor({
 
 `qr-level-zip-contributor.test.ts` — the owned subdir; a session with QR off
 contributing 0 without throwing; one level per fixed code named by its
-identity, with the name RELATIVE to the subdir; the visit in progress closed
-before minting (a single open burst still produces a file); a foreign code
+identity, with the name RELATIVE to the subdir; the visit in progress
+included in the mint (a single open burst still produces a file); a foreign code
 refused with a plain-words reason; a moved code refused; and both the written
 position and the unweighted comparison reported; and a code seen through a
-quarter-turned alignment written with the heading of the alignment at save.
+quarter-turned alignment written with the heading of the alignment at save;
+and a code seen at the start followed by a tracking restart, written
+through the alignment its segment closed with (with a real feeder).
 
 The suite creates a store at module load — the documented licence-activation
 path, and what production does at boot before any recording can be saved.

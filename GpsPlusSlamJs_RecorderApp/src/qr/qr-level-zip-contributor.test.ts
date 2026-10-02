@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { createQrSightingAccumulator } from 'gps-plus-slam-app-framework/ar/qr/qr-sighting-accumulator';
 import { qrCodeId } from 'gps-plus-slam-app-framework/utils/qr-payload/qr-code-id';
 import { createQrLevelZipContributor } from './qr-level-zip-contributor';
+import { createQrSightingFeeder } from './qr-sighting-feeder';
 import { createSlamAppStore } from 'gps-plus-slam-app-framework/state';
 import { NullStorageBackend } from 'gps-plus-slam-app-framework/storage';
 import type { Matrix4 } from 'gps-plus-slam-app-framework/core';
@@ -59,7 +60,7 @@ function feederWith(
     accumulator,
     onPlacement: vi.fn(),
     noteFrameChange: vi.fn(),
-    alignmentNow: () => ({
+    alignmentFor: () => ({
       alignmentMatrix: IDENTITY,
       zero: { lat: 48, lon: 11 },
       alignmentSampleCount: 8,
@@ -129,7 +130,7 @@ describe('createQrLevelZipContributor', () => {
         accumulator,
         onPlacement: vi.fn(),
         noteFrameChange: vi.fn(),
-        alignmentNow: () => ({
+        alignmentFor: () => ({
           alignmentMatrix: IDENTITY,
           zero: { lat: 48, lon: 11 },
           alignmentSampleCount: 8,
@@ -274,7 +275,7 @@ describe('createQrLevelZipContributor - the heading of a code seen as the record
           accumulator,
           onPlacement: vi.fn(),
           noteFrameChange: vi.fn(),
-          alignmentNow: () => ({
+          alignmentFor: () => ({
             alignmentMatrix: IDENTITY,
             zero: { lat: 48, lon: 11 },
             alignmentSampleCount: 90,
@@ -296,5 +297,58 @@ describe('createQrLevelZipContributor - the heading of a code seen as the record
     const mature = await headingOf(IDENTITY);
     expect(mature).toBeDefined();
     expect(await headingOf(quarterTurn)).toBeCloseTo(mature!, 6);
+  });
+});
+
+describe('createQrLevelZipContributor - a code seen before a tracking restart', () => {
+  it('places it through the alignment its segment closed with, not the immature one it was seen with', async () => {
+    // Why this test matters (milestone review M1, 2026-10-02): a code scanned
+    // as the recording started is seen through an alignment with no walk
+    // behind it. If tracking then restarts, the session alignment at save
+    // describes another odometry frame, so the mint falls back for that
+    // code; the newest snapshot of its OWN is the immature one, and the
+    // start-at-code defect comes back. The feeder must keep the alignment
+    // its segment closed with - read BEFORE the restart reaches the store,
+    // whose reducer wipes the alignment - and hand that to the mint.
+    const immature: Matrix4 = [0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1];
+    const walked: Matrix4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 12, 0, -7, 1];
+    const zero = { lat: 48, lon: 11 };
+    let live: { alignmentMatrix: Matrix4 | null; count: number } = {
+      alignmentMatrix: immature,
+      count: 3,
+    };
+    const feeder = createQrSightingFeeder({
+      readAlignment: () => ({
+        alignmentMatrix: live.alignmentMatrix,
+        zero,
+        alignmentSampleCount: live.count,
+      }),
+    });
+    const placement = {
+      pose: {
+        position: [0, 0, -2] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+      },
+      sizeM: 0.16,
+    };
+    for (let i = 0; i < 4; i += 1) feeder.onPlacement(OURS, placement, i * 125);
+    // The walk matures the alignment; then tracking restarts. The order is
+    // the Recorder's: the feeder hears of it before the store does.
+    live = { alignmentMatrix: walked, count: 60 };
+    feeder.noteFrameChange();
+    live = { alignmentMatrix: IDENTITY, count: 4 };
+
+    const addFile = vi.fn();
+    const contributor = createQrLevelZipContributor({
+      getFeeder: () => feeder,
+      allowedHosts: HOSTS,
+      nowIso: () => NOW,
+    });
+    await expect(contributor.contribute(addFile)).resolves.toBe(1);
+    const blob = (addFile.mock.calls[0] as [string, Blob] | undefined)?.[1];
+    const level = JSON.parse(await blob!.text()) as {
+      qr: { mintQuality?: { alignmentSampleCount?: number } };
+    };
+    expect(level.qr.mintQuality?.alignmentSampleCount).toBe(60);
   });
 });

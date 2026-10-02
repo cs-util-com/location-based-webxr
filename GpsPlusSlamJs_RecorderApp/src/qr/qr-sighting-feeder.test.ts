@@ -120,11 +120,45 @@ describe('createQrSightingFeeder - the alignment at mint time', () => {
     sampleCount = 60;
     feeder.noteFrameChange();
 
-    expect(feeder.alignmentNow()).toEqual({
+    sampleCount = 75;
+
+    expect(feeder.alignmentFor()).toEqual({
       alignmentMatrix: IDENTITY,
       zero: { lat: 48, lon: 11 },
-      alignmentSampleCount: 60,
+      alignmentSampleCount: 75,
       segment: 1,
+    });
+  });
+
+  it('keeps the alignment each segment closed with, for that segment', () => {
+    // Why this test matters (milestone review M1): after a tracking restart
+    // the live alignment describes another odometry frame, and the
+    // restart's reducer wipes it. A code seen in the closed segment is
+    // placed through the alignment that segment ended with - read at the
+    // frame change, not later - and the live one serves only its own
+    // segment.
+    let sampleCount = 4;
+    const feeder = createQrSightingFeeder({
+      readAlignment: () => ({
+        alignmentMatrix: IDENTITY,
+        zero: { lat: 48, lon: 11 },
+        alignmentSampleCount: sampleCount,
+      }),
+    });
+    sampleCount = 60;
+    feeder.noteFrameChange();
+    sampleCount = 2;
+
+    expect(feeder.alignmentFor(0).alignmentSampleCount).toBe(60);
+    expect(feeder.alignmentFor(0).segment).toBe(0);
+    expect(feeder.alignmentFor(1).alignmentSampleCount).toBe(2);
+    // A segment it never saw close has no alignment: the mint then falls
+    // back to the sightings' own snapshot.
+    expect(feeder.alignmentFor(7)).toEqual({
+      alignmentMatrix: null,
+      zero: null,
+      alignmentSampleCount: 0,
+      segment: 7,
     });
   });
 });

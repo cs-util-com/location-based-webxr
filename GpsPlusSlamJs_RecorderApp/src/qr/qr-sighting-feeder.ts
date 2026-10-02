@@ -3,11 +3,12 @@
  * accumulator, together with the alignment as it stood at that moment.
  *
  * WHY THE ALIGNMENT IS READ HERE AND NOT RECORDED. The save-time mint places
- * every sighting through the alignment as it stands then (`alignmentNow()`),
- * but falls back to the newest snapshot taken in a code's odometry segment
- * when a tracking restart or loop closure moved the session to another one,
- * and the store keeps only the current alignment - no history. Snapshotting
- * it per sighting is therefore necessary. It must NOT be dispatched or persisted, though: the recorder
+ * every sighting through the alignment as it stands then (`alignmentFor()`),
+ * or, for a code seen before a tracking restart or loop closure, through the
+ * alignment its odometry segment closed with (kept here at
+ * `noteFrameChange()`); the newest per-sighting snapshot is the last
+ * fallback. The store keeps only the current alignment - no history - so
+ * these snapshots are necessary. They must NOT be dispatched or persisted, though: the recorder
  * records RAW observations so a future algorithm can be re-tested against old
  * recordings (decision D-A), and an alignment matrix is a DERIVED value.
  * Replaying the recording re-solves the same alignment at the same point, so
@@ -55,18 +56,25 @@ export interface QrSightingFeeder {
   /** The accumulator, for the mint and the status line. */
   readonly accumulator: QrSightingAccumulator;
   /**
-   * The session's alignment as it stands NOW, with the odometry segment it
-   * describes - for the save-time mint, which places every sighting
-   * through it (a sighting's own snapshot can predate the walk that makes
-   * the alignment's yaw observable).
+   * The most informed alignment that describes odometry segment `segment`
+   * (default: the current one), for the save-time mint, which places every
+   * sighting of a code through it - a sighting's own snapshot can predate
+   * the walk that makes the alignment's yaw observable. For the current
+   * segment that is the session's alignment as it stands NOW; for an
+   * earlier one, the alignment as it stood when that segment closed.
    */
-  alignmentNow(): QrMintAlignmentNow;
+  alignmentFor(segment?: number): QrMintAlignmentNow;
 }
 
 export function createQrSightingFeeder(
   deps: QrSightingFeederDeps
 ): QrSightingFeeder {
   const accumulator = deps.accumulator ?? createQrSightingAccumulator();
+  /** The alignment each closed segment ended with. Every segment below the
+   *  current one was closed by `noteFrameChange` (an accumulator reset
+   *  restarts at segment 0, so an entry left from before a reset is always
+   *  overwritten before it can be read). */
+  const closing = new Map<number, QrMintAlignmentNow>();
   return {
     accumulator,
     onPlacement(text, placement, timestampMs) {
@@ -85,10 +93,25 @@ export function createQrSightingFeeder(
       });
     },
     noteFrameChange() {
+      // Read BEFORE the frame change reaches the store: a tracking restart's
+      // reducer wipes the alignment, and the one that walked this segment is
+      // what its sightings must be placed through.
+      const segment = accumulator.currentSegment();
+      closing.set(segment, { ...deps.readAlignment(), segment });
       accumulator.noteFrameChange();
     },
-    alignmentNow() {
-      return { ...deps.readAlignment(), segment: accumulator.currentSegment() };
+    alignmentFor(segment = accumulator.currentSegment()) {
+      if (segment === accumulator.currentSegment()) {
+        return { ...deps.readAlignment(), segment };
+      }
+      return (
+        closing.get(segment) ?? {
+          alignmentMatrix: null,
+          zero: null,
+          alignmentSampleCount: 0,
+          segment,
+        }
+      );
     },
   };
 }
