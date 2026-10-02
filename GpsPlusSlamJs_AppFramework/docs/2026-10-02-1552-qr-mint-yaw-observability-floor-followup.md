@@ -1,8 +1,33 @@
 # A floor on how much walk the QR mint's alignment rests on - followup
 
-Status: open, a product decision for the owner. Filed 2026-10-02 from the
-milestone review of the Recorder code-heading fix (finding M2). Nothing was
-changed in code for it.
+Status: **decided: save and mark (D31)**, option C below, implemented on
+2026-10-02 in commits 0d59907e (framework) and
+03cda1c5 (Recorder summary). Filed the same day from the milestone review
+of the Recorder code-heading fix (finding M2).
+
+## Decision (owner decision D31, 2026-10-02)
+
+A code composed through an alignment with under 10 m of GPS extent is
+saved, and its level is marked: `mintQuality.headingUncertain: true` with
+`mintQuality.alignmentGpsExtentM` (`QR_MINT_HEADING_UNCERTAIN_EXTENT_M` in
+`../src/ar/qr/qr-anchor-mint.ts`). No refusal. The Recorder's summary
+screen says "Heading uncertain: walk a bit further before saving for a
+reliable direction." after such a code. Levels without the fields (all
+older ones, and any mint without an extent) mean unknown. The Tour Viewer
+side of D31 (treat a marked code as not settled) is scheduled separately.
+
+Why 10 m, from the same sweep run as a marker on the shipped mint (the
+first mature alignment, which a walk this short never reaches, so the
+alignment at save):
+
+- under 5 m: marks 36 %, unmarked heading 4.9 / 16 degrees p50 / p90 (the
+  5-10 m bin, 7.3 / 22, stays unmarked)
+- under 10 m: marks 74 %, marked 13.8 / 88, unmarked 3.4 / 8
+- under 15 m: marks 89 %, unmarked still 3.4 / 8 (marks good codes too)
+
+The extent comes from `../src/state/gps-extent-tracker.ts`, the same helper
+the maturity floor of D28 (revised, 80 m) reads, as the options below
+anticipated.
 
 ## The gap
 
@@ -54,7 +79,7 @@ screen, no `qr/<id>.json`), so it is the owner's call, not a pure guard.
 
 ## Options
 
-- **A - no floor (today).** A short recording mints a heading that can be
+- **A - no floor (before D31).** A short recording mints a heading that can be
   anything; the level's `mintQuality.alignmentSampleCount` does not reveal
   it.
 - **B - refuse below an extent floor (5 m, or 10 m),** with a plain-words
