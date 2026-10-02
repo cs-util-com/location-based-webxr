@@ -29,6 +29,13 @@ Decision record:
   yet, and under recency weighting it is the one that counts MOST — stopping a
   recording right after a final scan would otherwise discard the best evidence
   in the session.
+- **It hands the mint the alignment as it stands at THIS run**
+  (`feeder.alignmentNow()`). The mint turns every sighting's rotation
+  through it, so a code scanned as the recording started (seen through an
+  alignment with no walk behind it, whose yaw is arbitrary) gets the
+  heading of the walked alignment. A level written at an early
+  crash-safety sync can therefore differ from the one written at save in
+  heading as well as position; the save is what the delivered zip carries.
 - **Foreign codes are never minted.** Without that gate the recorder would
   write a real latitude and longitude for every WiFi sticker, menu code and
   parcel label the camera saw, into a zip the author then publishes. It is the
@@ -62,7 +69,8 @@ contributing 0 without throwing; one level per fixed code named by its
 identity, with the name RELATIVE to the subdir; the visit in progress closed
 before minting (a single open burst still produces a file); a foreign code
 refused with a plain-words reason; a moved code refused; and both the written
-position and the unweighted comparison reported.
+position and the unweighted comparison reported; and a code seen through a
+quarter-turned alignment written with the heading of the alignment at save.
 
 The suite creates a store at module load — the documented licence-activation
 path, and what production does at boot before any recording can be saved.

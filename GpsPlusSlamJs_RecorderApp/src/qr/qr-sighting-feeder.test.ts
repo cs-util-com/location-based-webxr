@@ -98,3 +98,32 @@ describe('createQrSightingFeeder', () => {
     expect(sighting?.alignmentMatrix).toBeNull();
   });
 });
+
+describe('createQrSightingFeeder - the alignment at mint time', () => {
+  it('reads the alignment NOW, with the odometry segment it describes', () => {
+    // Why this test matters: the save-time mint turns every sighting of a
+    // code through the session's alignment as it stands then (a recording
+    // that starts at the code otherwise mints the first look's arbitrary
+    // yaw). It must read the LIVE value, not the last detection's, and carry
+    // the segment so the mint can refuse to turn sightings from before a
+    // tracking restart through it.
+    let sampleCount = 4;
+    const feeder = createQrSightingFeeder({
+      readAlignment: () => ({
+        alignmentMatrix: IDENTITY,
+        zero: { lat: 48, lon: 11 },
+        alignmentSampleCount: sampleCount,
+      }),
+    });
+    feeder.onPlacement('code', PLACEMENT, 0);
+    sampleCount = 60;
+    feeder.noteFrameChange();
+
+    expect(feeder.alignmentNow()).toEqual({
+      alignmentMatrix: IDENTITY,
+      zero: { lat: 48, lon: 11 },
+      alignmentSampleCount: 60,
+      segment: 1,
+    });
+  });
+});

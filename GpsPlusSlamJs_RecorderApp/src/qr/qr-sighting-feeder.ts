@@ -2,9 +2,9 @@
  * Feeds the recorder's derived QR placements into the session's sighting
  * accumulator, together with the alignment as it stood at that moment.
  *
- * WHY THE ALIGNMENT IS READ HERE AND NOT RECORDED. The mint uses each
- * sighting's CONTEMPORANEOUS alignment (plan DEC-3), and the store keeps only
- * the current one — no history. Snapshotting it per sighting is therefore
+ * WHY THE ALIGNMENT IS READ HERE AND NOT RECORDED. The mint composes each
+ * sighting's position through its CONTEMPORANEOUS alignment (plan DEC-3),
+ * and the store keeps only the current one — no history. Snapshotting it per sighting is therefore
  * necessary. It must NOT be dispatched or persisted, though: the recorder
  * records RAW observations so a future algorithm can be re-tested against old
  * recordings (decision D-A), and an alignment matrix is a DERIVED value.
@@ -20,6 +20,7 @@ import {
   type QrSightingAccumulator,
 } from 'gps-plus-slam-app-framework/ar/qr/qr-sighting-accumulator';
 import type { DerivedQrPlacement } from 'gps-plus-slam-app-framework/ar/qr/qr-derived-pose';
+import type { QrMintAlignmentNow } from 'gps-plus-slam-app-framework/ar/qr/qr-anchor-mint';
 import type { LatLong, Matrix4 } from 'gps-plus-slam-app-framework/core';
 
 /** What the feeder needs to know about the session's alignment right now.
@@ -51,6 +52,13 @@ export interface QrSightingFeeder {
   noteFrameChange(): void;
   /** The accumulator, for the mint and the status line. */
   readonly accumulator: QrSightingAccumulator;
+  /**
+   * The session's alignment as it stands NOW, with the odometry segment it
+   * describes - for the save-time mint, which turns every sighting's
+   * rotation through it (a sighting's own snapshot can predate the walk
+   * that makes the alignment's yaw observable).
+   */
+  alignmentNow(): QrMintAlignmentNow;
 }
 
 export function createQrSightingFeeder(
@@ -76,6 +84,9 @@ export function createQrSightingFeeder(
     },
     noteFrameChange() {
       accumulator.noteFrameChange();
+    },
+    alignmentNow() {
+      return { ...deps.readAlignment(), segment: accumulator.currentSegment() };
     },
   };
 }

@@ -10,15 +10,19 @@ sighting accumulator, together with the alignment as it stood at that moment.
 - `createQrSightingFeeder(deps): QrSightingFeeder`
   - `deps.readAlignment()` — the session's alignment **right now**.
   - `deps.accumulator` — injectable for tests.
-  - Returns `{ onPlacement, noteFrameChange, accumulator }`.
+  - Returns `{ onPlacement, noteFrameChange, accumulator, alignmentNow }`.
 - `onPlacement(text, placement, timestampMs)` — wire into the debug
   controller's `onPlacement`.
 - `noteFrameChange()` — the odometry frame changed.
+- `alignmentNow()` - the session's alignment as it stands NOW plus the
+  accumulator's current segment (`QrMintAlignmentNow`), for the save-time
+  mint, which turns every sighting's rotation through it.
 
 ## Invariants & assumptions
 
 - **The alignment is read PER DETECTION, not once at wiring time.** The mint
-  uses each sighting's contemporaneous alignment (plan DEC-3) and the store
+  composes each sighting's position through its contemporaneous alignment
+  (plan DEC-3; the rotation goes through `alignmentNow()` instead) and the store
   keeps no alignment history, so a snapshot taken once would make that whole
   decision inert. A test pins that `readAlignment` is called per detection and
   that a burst keeps its LAST value.
@@ -51,5 +55,6 @@ createQrDebugController({ ...deps, onPlacement: sightings.onPlacement });
 
 `qr-sighting-feeder.test.ts` — the per-detection alignment snapshot (and that
 a burst keeps the last one); pose/size/accuracy passed through untouched; a
-frame change forwarded so sightings stay separable; and a session with no
-alignment yet still folding.
+frame change forwarded so sightings stay separable; a session with no
+alignment yet still folding; and `alignmentNow()` reading the LIVE value with
+the segment after a frame change.

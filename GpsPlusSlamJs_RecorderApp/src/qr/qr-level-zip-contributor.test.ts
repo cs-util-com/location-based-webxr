@@ -55,7 +55,17 @@ function feederWith(
       }
     }
   }
-  return { accumulator, onPlacement: vi.fn(), noteFrameChange: vi.fn() };
+  return {
+    accumulator,
+    onPlacement: vi.fn(),
+    noteFrameChange: vi.fn(),
+    alignmentNow: () => ({
+      alignmentMatrix: IDENTITY,
+      zero: { lat: 48, lon: 11 },
+      alignmentSampleCount: 8,
+      segment: accumulator.currentSegment(),
+    }),
+  };
 }
 
 describe('createQrLevelZipContributor', () => {
@@ -119,6 +129,12 @@ describe('createQrLevelZipContributor', () => {
         accumulator,
         onPlacement: vi.fn(),
         noteFrameChange: vi.fn(),
+        alignmentNow: () => ({
+          alignmentMatrix: IDENTITY,
+          zero: { lat: 48, lon: 11 },
+          alignmentSampleCount: 8,
+          segment: 0,
+        }),
       }),
       allowedHosts: HOSTS,
       nowIso: () => NOW,
@@ -223,5 +239,62 @@ describe('createQrLevelZipContributor — one bad code must not lose the recordi
     // vanishing.
     expect(failed?.detail).toContain('disk full');
     expect(outcomes.find((o) => o.text === other)?.written).toBe(true);
+  });
+});
+
+describe('createQrLevelZipContributor - the heading of a code seen as the recording started', () => {
+  it('turns the sightings through the alignment at save, not the one they were seen with', async () => {
+    // Why this test matters: this is the Recorder half of the start-at-code
+    // heading fix. Start Recording swaps the store, so a code scanned right
+    // away is seen through an alignment with no walk behind it - its yaw is
+    // arbitrary (here 90 degrees off). The contributor runs at save, when the
+    // session's alignment has seen the whole walk, and must hand THAT one to
+    // the mint, or the written qr/<id>.json carries the arbitrary heading.
+    const quarterTurn: Matrix4 = [
+      0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1,
+    ];
+    const headingOf = async (
+      seenWith: Matrix4
+    ): Promise<number | undefined> => {
+      const accumulator = createQrSightingAccumulator();
+      for (let i = 0; i < 4; i += 1) {
+        accumulator.observe({
+          text: OURS,
+          timestamp: i * 125,
+          odomPose: { position: [0, 0, -2], rotation: [0, 0, 0, 1] },
+          sizeM: 0.16,
+          alignmentMatrix: seenWith,
+          zero: { lat: 48, lon: 11 },
+          alignmentSampleCount: 4,
+        });
+      }
+      const addFile = vi.fn();
+      const contributor = createQrLevelZipContributor({
+        getFeeder: () => ({
+          accumulator,
+          onPlacement: vi.fn(),
+          noteFrameChange: vi.fn(),
+          alignmentNow: () => ({
+            alignmentMatrix: IDENTITY,
+            zero: { lat: 48, lon: 11 },
+            alignmentSampleCount: 90,
+            segment: accumulator.currentSegment(),
+          }),
+        }),
+        allowedHosts: HOSTS,
+        nowIso: () => NOW,
+      });
+      await contributor.contribute(addFile);
+      const blob = (addFile.mock.calls[0] as [string, Blob] | undefined)?.[1];
+      if (blob === undefined) return undefined;
+      const level = JSON.parse(await blob.text()) as {
+        qr: { geo?: { headingDeg?: number } };
+      };
+      return level.qr.geo?.headingDeg;
+    };
+
+    const mature = await headingOf(IDENTITY);
+    expect(mature).toBeDefined();
+    expect(await headingOf(quarterTurn)).toBeCloseTo(mature!, 6);
   });
 });
