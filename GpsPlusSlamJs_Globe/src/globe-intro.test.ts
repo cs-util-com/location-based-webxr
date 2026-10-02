@@ -267,3 +267,64 @@ describe("flyInStart", () => {
     );
   });
 });
+
+// Why (r764's Globe gate, 2026-10-02): fast-check found directions so
+// close to parallel (or antipodal) that the perpendicular the great-circle
+// interpolation builds rounded to the zero vector and threw "a
+// perpendicular must be a non-zero finite vector": in the lab that would
+// abort the intro. Found by a search over near-parallel pairs; earlier
+// runs passed by seed luck. The interpolation must take ANY perpendicular
+// for opposite directions and return the start for equal ones.
+describe("the great-circle interpolation at degenerate pairs", () => {
+  // A pair the search found (both normalised again on entry, as every
+  // public function does): 3e-16 apart.
+  const a: Vec3 = [
+    -0.8933070834511898, 0.12975012013101625, 0.4303107725608504,
+  ];
+  const nearA: Vec3 = [
+    -0.8933070834511901, 0.12975012013101628, 0.4303107725608505,
+  ];
+  const nearOpposite: Vec3 = [-nearA[0], -nearA[1], -nearA[2]];
+  const opposite: Vec3 = [-a[0], -a[1], -a[2]];
+  const finiteUnit = (v: Vec3) => {
+    expect(v.every((c) => Number.isFinite(c))).toBe(true);
+    expect(Math.hypot(...v)).toBeCloseTo(1, 12);
+  };
+
+  it("blends between equal and nearly equal directions without throwing", () => {
+    for (const b of [a, nearA]) {
+      const d = blendTarget(a, b, 750, 1500);
+      finiteUnit(d);
+      expect(angleDeg(d, a)).toBeLessThan(1e-6);
+    }
+  });
+
+  it("blends between opposite and nearly opposite directions through a perpendicular", () => {
+    for (const b of [opposite, nearOpposite]) {
+      const d = blendTarget(a, b, 750, 1500);
+      finiteUnit(d);
+      // Half-way along any great circle between opposites: 90 degrees.
+      expect(angleDeg(d, a)).toBeCloseTo(90, 6);
+    }
+  });
+
+  it("flies the fly-in between nearly equal and nearly opposite starts and targets", () => {
+    for (const target of [nearA, nearOpposite]) {
+      const p = introCameraPose(0.5, {
+        variant: "distance",
+        start: a,
+        target,
+        startKm: 50_000,
+        endKm: 16_000,
+        endFovDeg: 50,
+      });
+      finiteUnit(p.direction);
+      // Half-way (eased 0.5): on the start for a nearly equal target,
+      // 90 degrees from it for a nearly opposite one.
+      expect(angleDeg(p.direction, a)).toBeCloseTo(
+        target === nearA ? 0 : 90,
+        6,
+      );
+    }
+  });
+});

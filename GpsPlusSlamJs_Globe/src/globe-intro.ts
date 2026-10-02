@@ -57,17 +57,25 @@ function unit(v: Vec3, what: string): Vec3 {
 /** The smooth ease used throughout: 0 to 1 with zero slope at both ends. */
 const ease = (t: number): number => t * t * (3 - 2 * t);
 
+/** Below this length, `b` minus its part along `a` counts as zero. */
+const PARALLEL_EPSILON = 1e-9;
+
 /**
- * Spherical interpolation between unit vectors, `s` in [0, 1]; for
- * opposite vectors any great circle is as good, so one through a fixed
- * perpendicular is taken.
+ * Spherical interpolation between unit vectors, `s` in [0, 1]. The great
+ * circle's direction is `b` without its part along `a`; when that is (or
+ * rounds to) zero the two are parallel: equal ones give `a`, opposite ones
+ * take a great circle through a fixed perpendicular, as any is as good.
+ * Never throws for unit inputs (r764's gate found pairs 3e-16 apart whose
+ * perpendicular rounded to the zero vector).
  */
 function slerp(a: Vec3, b: Vec3, s: number): Vec3 {
   const cos = Math.min(1, Math.max(-1, dot(a, b)));
   const theta = Math.acos(cos);
-  if (theta < 1e-12) return a;
+  const rest: Vec3 = [b[0] - cos * a[0], b[1] - cos * a[1], b[2] - cos * a[2]];
+  const restLength = Math.hypot(rest[0], rest[1], rest[2]);
   let ortho: Vec3;
-  if (Math.PI - theta < 1e-9) {
+  if (restLength < PARALLEL_EPSILON || theta < 1e-12) {
+    if (cos > 0) return a;
     const helper: Vec3 = Math.abs(a[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
     const d = dot(helper, a);
     ortho = unit(
@@ -75,10 +83,7 @@ function slerp(a: Vec3, b: Vec3, s: number): Vec3 {
       "a perpendicular",
     );
   } else {
-    ortho = unit(
-      [b[0] - cos * a[0], b[1] - cos * a[1], b[2] - cos * a[2]],
-      "a perpendicular",
-    );
+    ortho = [rest[0] / restLength, rest[1] / restLength, rest[2] / restLength];
   }
   const phi = theta * s;
   const c = Math.cos(phi);

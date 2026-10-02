@@ -47,7 +47,13 @@ endFovDeg })`: `{ direction, distanceKm, fovDeg }` at `t` (clamped to
   - The ease is `t^2 (3 - 2t)`: zero slope at both ends, so the intro
     leaves and arrives without a jerk.
   - Opposite vectors (start and target 180 degrees apart) take the great
-    circle through a fixed perpendicular, a choice rather than an error.
+    circle through a fixed perpendicular, a choice rather than an error;
+    equal ones give the start. "Parallel" is decided by the length of the
+    target's part across the start (below 1e-9), not by the angle alone:
+    the Globe gate on r764 found pairs 3e-16 apart whose perpendicular
+    rounded to the zero vector and threw, which would have aborted the
+    intro. Pinned in `globe-intro.test.ts`; the properties pass over 20
+    seeds of 500 runs each (2 of 20 seeds failed before the fix).
   - Distances are from the centre, as the controls' limit is.
 - Example:
 
