@@ -55,7 +55,7 @@ export interface QrSightingObservation {
   /** The derived physical side length (m) at this moment. */
   readonly sizeM: number;
   /** The alignment TARGET matrix as it stands NOW - the mint's fallback
-   *  when the session alignment at mint time is in another segment. */
+   *  when the alignment it is passed is in another segment. */
   readonly alignmentMatrix: AlignmentMatrix | null;
   /** The session's GPS zero as it stands now. */
   readonly zero: LatLong | null;

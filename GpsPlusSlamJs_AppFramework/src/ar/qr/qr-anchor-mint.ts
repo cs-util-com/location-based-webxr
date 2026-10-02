@@ -15,23 +15,24 @@
  *    three-minute walk, drift and a genuinely moved poster produce the same
  *    magnitude, so that threshold cannot be set honestly before field data.
  *
- * 2. **Which alignment?** ONE for every sighting: the most informed one that
- *    still describes their odometry frame - the session's at mint time when
- *    it is in their segment, else the newest sighting's own snapshot. This
- *    superseded DEC-3 (each sighting through the alignment as it stood AT
- *    that sighting) by the owner's decision of 2026-10-02: a sighting taken
+ * 2. **Which alignment?** ONE for every sighting: the one the caller passes
+ *    as `currentAlignment` when it is in their odometry segment, else the
+ *    newest sighting's own snapshot. The caller decides which (owner
+ *    decision D28, revised 2026-10-02, `qr-mint-alignment-tracker.ts`): the
+ *    FIRST MATURE alignment (80 m of session GPS extent) at or after the
+ *    code's last sighting; before maturity the alignment at save, or the one
+ *    the code's segment closed with. This superseded DEC-3 (each sighting
+ *    through the alignment as it stood AT that sighting): a sighting taken
  *    before the alignment had any walk behind it carries an arbitrary yaw,
  *    and through it a recording that started at the code minted a heading
  *    72 degrees off p50 and a position 2.9 m off p50, against 1.0-4.9
- *    degrees from 30 m walks up (7-10 at 15 m) and 1.3 m through the
- *    alignment at mint time (`qr-anchor-mint.start-at-code.test.ts`). The
- *    caller passes, for sightings from a segment that has closed, the
- *    alignment that segment ended with.
- *    KNOWN COST, pending the owner: a code seen mid-recording and then
- *    walked away from inherits all SLAM drift after its sighting - 8.6 m
- *    p50 at 500 m with 1 % and 1 degree per 100 m, against 1.7 m through its
- *    own snapshot (the same file, `left`). The first MATURE alignment after
- *    the last sighting (40 m or more of GPS extent) keeps both at 1.1-1.7 m.
+ *    degrees from 30 m walks up (7-10 at 15 m) and 1.3 m through a matured
+ *    alignment (`qr-anchor-mint.start-at-code.test.ts`). It also superseded
+ *    the alignment at save for every code (a2, shipped for one day), under
+ *    which a code seen mid-recording and then walked away from inherited all
+ *    SLAM drift after its sighting: 8.6 m p50 at 500 m with 1 % and 1 degree
+ *    per 100 m, against 1.1-1.7 m through the first mature alignment (the
+ *    same file, `left`).
  *
  * 3. **How are they combined?** The position is a recency-weighted median,
  *    the rotation a robust unweighted average. The weighting is what is left
@@ -135,14 +136,24 @@ interface MintFrame {
 }
 
 /**
- * The session's alignment as it stands when the mint runs, and the odometry
- * segment it belongs to (`QrSightingAccumulator.currentSegment()`).
+ * An alignment of the session, and the odometry segment it belongs to
+ * (`QrSightingAccumulator.currentSegment()` when it was read). The mint's
+ * `currentAlignment`: the one `qr-mint-alignment-tracker.ts` picks for a
+ * code (the first mature one at or after its last sighting, else the
+ * alignment at save).
  */
 export interface QrMintAlignmentNow {
   readonly alignmentMatrix: AlignmentMatrix | null;
   readonly zero: LatLong | null;
   readonly alignmentSampleCount: number;
   readonly gpsAccuracyM?: number;
+  /**
+   * The GPS extent (m) this alignment rests on: the largest horizontal
+   * distance between two device fixes of its session so far
+   * (`state/gps-extent-tracker.ts`). It decides whether the yaw is
+   * observable; absent when the caller does not know it.
+   */
+  readonly gpsExtentM?: number;
   /** The accumulator's segment at mint time: the alignment describes THIS
    *  odometry frame, and sightings from another one must not be placed
    *  through it. */
@@ -170,11 +181,14 @@ export interface MintQrAnchorInput {
   maxFixedRotationSpreadDeg?: number;
   recencyHalfLifeS?: number;
   /**
-   * The session's alignment at mint time. Every sighting is placed through
-   * it (position and rotation) when its matrix and zero exist and it belongs
-   * to the sightings' odometry segment; otherwise through the newest
-   * sighting's own snapshot. Optional so a caller with no live session (a
-   * replay, a test) still mints, with the newest snapshot it has.
+   * The alignment to place this code through, as the caller's
+   * `qr-mint-alignment-tracker` picks it (D28 revised: the first mature one
+   * at or after the last sighting, else the alignment at save). Every
+   * sighting is placed through it (position and rotation) when its matrix
+   * and zero exist and it belongs to the sightings' odometry segment;
+   * otherwise through the newest sighting's own snapshot. Optional so a
+   * caller with no live session (a replay, a test) still mints, with the
+   * newest snapshot it has.
    */
   currentAlignment?: QrMintAlignmentNow;
 }
@@ -309,11 +323,12 @@ function recencyWeights(
  * on the start-at-code sweep (40 recordings per cell, walks 15-120 m, 1-3
  * looks, yaw noise 1-5 degrees): per-sighting composition gave 72 degrees
  * heading p50 and, for a code seen only at the start, 2.9 m; through the
- * alignment at mint time 1.0-4.9 degrees from 30 m walks up (7-10 at 15 m)
- * and 1.3 m. The cost: with three looks the old rotation average was up to
- * 0.6 degrees better at p50 (2.7 at 15 m), while its p90 reached 146.
+ * alignment at save 1.0-4.9 degrees from 30 m walks up (7-10 at 15 m) and
+ * 1.3 m. The cost: with three looks the old rotation average was up to 0.6
+ * degrees better at p50 (2.7 at 15 m), while its p90 reached 146. WHICH
+ * alignment the caller passes is decided outside (header, decision 2).
  *
- * The session's alignment is used only when it is in the sightings' segment:
+ * The caller's alignment is used only when it is in the sightings' segment:
  * after a tracking restart or loop closure it describes another frame, and
  * the newest snapshot taken in their own frame is then the best available.
  */

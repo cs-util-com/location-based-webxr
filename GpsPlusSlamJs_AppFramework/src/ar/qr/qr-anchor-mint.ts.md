@@ -16,16 +16,20 @@ Decision record:
   both **guesses until the field probe measures them**.
 - `maxPairwiseRotationDeg(rotations): number` — the outlier-inclusive
   cross-sighting rotation disagreement.
-- `QrMintAlignmentNow` - the session's alignment at mint time
-  (`alignmentMatrix`, `zero`, `alignmentSampleCount`, `gpsAccuracyM?`) plus
-  the accumulator's `segment` it describes.
+- `QrMintAlignmentNow` - an alignment of the session (`alignmentMatrix`,
+  `zero`, `alignmentSampleCount`, `gpsAccuracyM?`, `gpsExtentM?` - the
+  session's GPS extent it rests on) plus the accumulator's `segment` it
+  describes.
 - `mintQrAnchorFromSightings(input): QrAnchorMintResult` — `{ ok: true, level,
 quality }` or `{ ok: false, reason, detail }`.
-  - `input.currentAlignment?: QrMintAlignmentNow` - every sighting is placed
-    through it (position and rotation) when its matrix and zero exist and it
-    is in the sightings' segment; otherwise through the newest sighting's own
-    snapshot. Its zero, sample count and accuracy are the ones the level
-    records. Optional, so a caller without a live session still mints.
+  - `input.currentAlignment?: QrMintAlignmentNow` - the alignment the
+    caller picked for this code (`qr-mint-alignment-tracker.ts`: the first
+    mature one at or after its last sighting, else the alignment at save).
+    Every sighting is placed through it (position and rotation) when its
+    matrix and zero exist and it is in the sightings' segment; otherwise
+    through the newest sighting's own snapshot. Its zero, sample count and
+    accuracy are the ones the level records. Optional, so a caller without a
+    live session still mints.
   - **Never throws for a DATA condition**; the callers are a zip contributor
     and a summary panel, and both want a verdict rather than an exception.
   - `reason` ∈ `no-sightings | frame-changed | moved | no-alignment`; `detail`
@@ -59,9 +63,13 @@ quality }` or `{ ok: false, reason, detail }`.
 - **Translation disagreement is reported, never gating.** Over a three-minute
   walk, drift and a genuinely moved poster produce the same magnitude, so that
   threshold cannot be set honestly before the field data exists.
-- **Every sighting is placed through ONE alignment**: the session's at mint
-  time (`currentAlignment`) when it describes the sightings' odometry
-  segment, else the newest sighting's own snapshot.
+- **Every sighting is placed through ONE alignment**: the caller's
+  `currentAlignment` when it describes the sightings' odometry segment, else
+  the newest sighting's own snapshot. WHICH alignment the Recorder passes is
+  owner decision D28, revised 2026-10-02 (`qr-mint-alignment-tracker.ts`):
+  the FIRST MATURE alignment (80 m of session GPS extent) at or after the
+  code's last sighting; before maturity the alignment at save; after a
+  frame change the one the code's segment closed with.
   - **This superseded DEC-3** (each sighting through the alignment as it
     stood AT that sighting, the owner's original call), by the owner's
     decision of 2026-10-02, on these measurements from
@@ -103,10 +111,11 @@ quality }` or `{ ok: false, reason, detail }`.
     (`qr-sighting-feeder.ts` keeps it at the frame change), so a
     start-at-code code followed by a restart is not sent back to its own
     immature snapshot (milestone review M1).
-  - **Known cost, pending the owner (milestone review H1).** A code seen
-    mid-recording and then walked away from inherits all SLAM drift after
-    its sighting, because the alignment at save describes the END of the
-    walk (the solver is recency-weighted). Integrated drift, 30 recordings
+  - **Why not the alignment at save for every code (a2, shipped for one
+    day; milestone review H1).** A code seen mid-recording and then walked
+    away from inherits all SLAM drift after its sighting, because the
+    alignment at save describes the END of the walk (the solver is
+    recency-weighted). Integrated drift, 30 recordings
     per cell (`left` sweep): position p50 / p90 at 500 m away 2.9 / 4.3 m
     (0.5 % and 0.5 degree per 100 m), 8.6 / 11.6 m (1 %, 1 degree), 19.0 /
     21.5 m (2 %, 2 degrees), and 11.0 m walking 500 m out and back to the
@@ -114,8 +123,10 @@ quality }` or `{ ok: false, reason, detail }`.
     (DEC-3) it is 1.7-1.8 m and 1.5-2.7 degrees in every cell. The first
     MATURE alignment at or after the last sighting (40-80 m of GPS extent)
     holds 1.1-1.7 m and 1.0-2.3 degrees there and stays within 0.3 degrees
-    of this rule for start-at-code recordings; a floor of 10-20 m is worse
-    than this rule for those. Not built: it is the owner's choice.
+    of the alignment at save for start-at-code recordings; a floor of 10-20 m
+    is worse than that for those. The owner chose 80 m (p90 heading 3-4
+    degrees at 2 % translation drift, against 5-6 at 40 m); the shipped
+    rows are in the header of `qr-anchor-mint.start-at-code.test.ts`.
 - **Position is recency-weighted; rotation is not.** The weighting is the
   part of DEC-3 still in force, and its reason went with the per-sighting
   alignment: it was "a later sighting carries a later, better alignment",
@@ -143,14 +154,16 @@ for (const text of accumulator.codes()) {
     sightings,
     spansFrameChange: accumulator.spansFrameChange(text),
     nowIso: new Date().toISOString(),
-    // The session's alignment now, tagged with the segment it describes
-    // (the Recorder's feeder: `alignmentFor(sightings.at(-1)?.segment)`).
-    currentAlignment: {
+    // The first mature alignment at or after the code's last sighting, else
+    // the alignment now (the Recorder's feeder: `alignmentFor(text)`, over
+    // `createQrMintAlignmentTracker`).
+    currentAlignment: tracker.alignmentFor(text, {
       alignmentMatrix: selectAlignmentMatrix(state),
       zero: selectZeroReference(state),
       alignmentSampleCount: selectGpsPositions(state).length,
+      gpsExtentM: gpsExtent.update(selectGpsPositions(state)),
       segment: accumulator.currentSegment(),
-    },
+    }),
   });
   if (result.ok && result.level.ok) {
     await addFile(qrLevelEntryName(await qrCodeId(text)), result.level.json);
@@ -193,11 +206,16 @@ longer can through their own alignments.
 against the real store and solver: a sanity pin (exact inputs, mature
 alignment, heading under 1 degree), the reproduction (12 recordings, 30 m
 walks: heading p50 under 10 degrees with 1 and 2 looks, position p50 under
-2 m for a code seen only at the start), two pins of the integrated drift
+2 m for a code seen only at the start; both through the shipped
+`createQrMintAlignmentTracker` path), the left-behind pin (6 recordings,
+500 m away at 1 % and 1 degree per 100 m: the shipped path under 2.5 m p50,
+the alignment at save over 5 m), the store extent agreeing with the
+fixture's, two pins of the integrated drift
 model (without drift it IS the pivot model; translation drift is the stated
 share of the distance), and the opt-in sweeps
 (`QR_MINT_START_AT_CODE_SWEEP=1` for all, or a comma list of `start`, the
-fix candidates; `left`, a code left behind under integrated drift, about an
+fix candidates with the shipped `a3-80 shipped` column and the
+uncertain-heading marker shares; `left`, a code left behind under integrated drift, about an
 hour; `extent`, heading against GPS extent; `refusals`, the newest-snapshot
 refusals traced). Tables go to `QR_MINT_START_AT_CODE_SWEEP_OUT` (plus a
 suffix per sweep) when set, since vitest runs silent here.
