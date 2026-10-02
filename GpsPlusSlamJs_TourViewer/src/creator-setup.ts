@@ -181,7 +181,13 @@ const STORED_POSITION_KEPT =
 /** What a measurement tap became (`measureCode`): the move prompt's
  *  "Use the new spot" counts as answered only on `replaced` (M5b). */
 type MeasureOutcome =
-  | { readonly kind: "replaced" | "measured" | "kept" | "superseded" }
+  | {
+      readonly kind: "replaced";
+      /** The draft's meta write of the replace: true once the draft holds
+       *  it (or no draft is open), false when the write was refused. */
+      readonly saved: Promise<boolean>;
+    }
+  | { readonly kind: "measured" | "kept" | "superseded" }
   | { readonly kind: "failed"; readonly reason: string };
 
 /** What a visit settled through (`visitSettles` in `wireCreatorSetup`). */
@@ -1072,7 +1078,10 @@ export function wireCreatorSetup(deps: {
     dom.movePromptUse.disabled = true;
     dom.movePromptCopy.disabled = true;
     dom.movePromptLater.disabled = true;
-    void measureCode(true).then((outcome) => {
+    void measureCode(true).then(async (outcome) => {
+      // Said once the draft holds the replace - the durable end state (M5b
+      // review #7) - and the button stays busy until then.
+      const saved = outcome.kind === "replaced" ? await outcome.saved : true;
       moveBusy = false;
       const replaced = outcome.kind === "replaced";
       logMoveAnswer(
@@ -1090,7 +1099,12 @@ export function wireCreatorSetup(deps: {
         // the visit's move boundary (`measureCode`).
         if (undoable !== null) undoable = { ...undoable, prompt };
         moveOnset = null;
-        ctx.placementNote = MOVE_PROMPT_LABELS.used;
+        // The one backup notice is spent here too, so later refusals do not
+        // repeat it; the outcome then says what this refusal means.
+        if (!saved) noteNoPersistence();
+        ctx.placementNote = saved
+          ? MOVE_PROMPT_LABELS.used
+          : MOVE_PROMPT_LABELS.usedNotBackedUp;
       } else if (outcome.kind !== "superseded") {
         // Through the status line, the AR session's error channel; the
         // refusal still stands, so the prompt comes back.
@@ -2565,9 +2579,12 @@ export function wireCreatorSetup(deps: {
           boundary,
         };
       }
-      if (draftTourUrl !== null) void recordMeta(draftTourUrl);
+      const saved =
+        draftTourUrl === null
+          ? Promise.resolve(true)
+          : recordMeta(draftTourUrl).catch(() => false);
       renderAuthorReadout();
-      if (replaced !== null) return { kind: "replaced" };
+      if (replaced !== null) return { kind: "replaced", saved };
       return { kind: role.kept === "measurement" ? "measured" : "kept" };
     })();
   }

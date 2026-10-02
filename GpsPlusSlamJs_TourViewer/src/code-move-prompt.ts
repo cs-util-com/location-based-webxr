@@ -315,6 +315,8 @@ export const MOVE_PROMPT_LABELS = Object.freeze({
   secondCopy: "It's a second copy",
   notNow: "Not now",
   used: "The code's saved position is now the new spot. Notes keep their own positions.",
+  usedNotBackedUp:
+    "The code's saved position is the new spot here, but this device could not save the change - finish and download before closing the page.",
   useFailed:
     "Could not use the new spot - hold the phone on the code until it reads as measured, then try again.",
   undo: "Undo",

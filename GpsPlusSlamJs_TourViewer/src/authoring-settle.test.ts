@@ -2350,6 +2350,79 @@ describe(
       expect(a.dom.movePrompt.hidden).toBe(true);
     });
 
+    it("'Use the new spot' says it is done only once the draft holds the new spot (M5b review #7)", async () => {
+      // Why: the async-UI rule asks for the DURABLE end state. The replace
+      // lands in memory at once, but a reload reads the draft: confirming
+      // before its write landed claimed a backup that might never exist.
+      const slow = slowDraftStore();
+      const { a, stored, fix } = await secondVisitFarFromTheCode(slow.store);
+      await slow.release();
+      fix(MOVE_PROMPT_RULE.minFixes);
+      a.dom.movePromptUse.click();
+      await vi.waitFor(() => {
+        expect(a.ctx.mintedLevel?.json).toBeDefined();
+        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      });
+      await flush();
+      // Replaced in memory, the draft's write still held: in progress.
+      expect(a.dom.movePromptUse.textContent).toBe("Using the new spot…");
+      expect(a.dom.movePromptUse.disabled).toBe(true);
+      expect(a.dom.status.textContent).not.toContain(
+        "The code's saved position is now the new spot",
+      );
+      await slow.release();
+      expect(a.dom.status.textContent).toContain(
+        "The code's saved position is now the new spot",
+      );
+      expect(a.dom.movePrompt.hidden).toBe(true);
+      const meta = JSON.parse(slow.files.get(META_KEY) as string) as {
+        level: { json: string };
+      };
+      expect(meta.level.json).toBe(a.ctx.mintedLevel!.json);
+    });
+
+    it("'Use the new spot' whose draft write is refused says the new spot is not backed up", async () => {
+      // Why: a refused write is the one failure the creator can still act
+      // on (finish and download); "now the new spot" alone would hide it.
+      const slow = slowDraftStore();
+      const { a, stored, fix } = await secondVisitFarFromTheCode(slow.store);
+      await slow.release();
+      fix(MOVE_PROMPT_RULE.minFixes);
+      slow.mode.refuse = true;
+      a.dom.movePromptUse.click();
+      await vi.waitFor(() => {
+        expect(a.ctx.mintedLevel?.json).toBeDefined();
+        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      });
+      await slow.release();
+      expect(a.dom.movePromptUse.textContent).toBe("Use the new spot");
+      expect(a.dom.status.textContent).toContain(
+        "this device could not save the change",
+      );
+      expect(logs(a, "codeMoveAnswered")).toEqual([
+        expect.objectContaining({ answer: "use-new-spot", replaced: true }),
+      ]);
+    });
+
+    it("'Not now' and 'It's a second copy' whose draft write is refused say the walk is not backed up", async () => {
+      // Why: both answers are remembered for a reload through the draft's
+      // meta only; a refused write must reach the creator, through the one
+      // backup notice.
+      for (const button of ["movePromptLater", "movePromptCopy"] as const) {
+        const slow = slowDraftStore();
+        const { a, fix } = await secondVisitFarFromTheCode(slow.store);
+        await slow.release();
+        fix(MOVE_PROMPT_RULE.minFixes);
+        slow.mode.refuse = true;
+        a.dom[button].click();
+        await slow.release();
+        expect(a.dom.movePrompt.hidden, button).toBe(true);
+        expect(a.dom.status.textContent, button).toContain(
+          "This device is not saving a backup copy",
+        );
+      }
+    });
+
     it("'Use the new spot' that cannot replace says why, keeps the saved position, and the prompt comes back", async () => {
       const { a, stored, fix } = await secondVisitFarFromTheCode();
       fix(MOVE_PROMPT_RULE.minFixes);

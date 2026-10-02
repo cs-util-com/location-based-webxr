@@ -531,8 +531,12 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
       button reads "Using the new spot…" and the other two are disabled
       until it resolves; `measureCode` resolves with its outcome
       (`replaced`, `measured`, `kept`, `failed` with a reason,
-      `superseded`). Only `replaced` counts as answered, and the status
-      line says the saved position is the new spot. Anything else says "Could not use the
+      `superseded`). Only `replaced` counts as answered. Its outcome
+      carries the draft's meta write of the replace (`saved`), and the
+      button stays busy until that settles (M5b review #7): then the
+      status line says the saved position is the new spot, or, for a
+      refused write, that it is the new spot here but not saved on this
+      device (the backup notice is spent with it). Anything else says "Could not use the
       new spot..." in the status line (the AR session's error channel) and
       the prompt comes back while the refusal stands. Logged as
       `tourAuthoring/codeMoveAnswered` with `replaced` and `error`.
@@ -642,10 +646,14 @@ async states, tap-select, the overlay guard, the explicit replace). The
 moved-code prompt (M5b): `authoring-settle.test.ts` "the moved-code
 prompt" (asked only after the rule's fixes and seconds, logged once; not
 with the gate closed; "Use the new spot" in progress, replaced, logged,
-undoable, and its failure surfaced with the prompt coming back; a
-Replace-button replace marking the move boundary too; Undo kept through a
-later measurement of the same code; the other
-two answers remembered in the draft across a reload; Undo in progress,
+undoable, and its failure surfaced with the prompt coming back; its
+outcome said only once the draft holds the replace, and a refused write
+said as not backed up; a Replace-button replace marking the move boundary
+too, and its Undo logged as not from the prompt, leaving the remembered
+answers alone, with the prompt free to return; Undo kept through a later
+measurement of the same code; the other two answers remembered in the
+draft across a reload, and their refused write surfaced as the backup
+notice; Undo in progress,
 restoring the level and dropping the visit's move boundary, its refused
 write surfaced, ended by a Finish), plus the pure `code-move-prompt*`
 tests and the e2e `move-prompt.spec.js` (one per answer).
