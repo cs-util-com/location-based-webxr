@@ -10,6 +10,11 @@
     surface's sun intensity (5, DEC-GL4-1); a test holds it to
     `GpsPlusSlamJs_Globe/src/globe-surface.ts`.
   - `MIN_SUN_Z`: sin 2°, the floor a relative shade divides by.
+  - `SKY_FILL` and `skyLevel` are the Globe package's (`sky-level.ts`,
+    imported as `/globe/sky-level.js` and re-exported here): one
+    implementation that the globe's surface reads too (DEC-H3), so the
+    relief and the globe's flat ground take the same fill at a low sun.
+    `node --test` resolves the path with `test-route-loader.mjs`.
   - `SKY_FILL` `{ floor, twilightDeg: 6 }` (DEC-GL5-11): the sky fill's
     declared parameters. `floor` (0-1, in units of open flat ground under
     a zenith sun) is the least sky level while the sun is up; the page's
@@ -53,7 +58,8 @@
     2026-10-01-1650, not measured) and the atmosphere's veil.
   - `SUN_GLSL`: the shader's copy, with `terrainSunVisibility(enu, heightM,
 toSun)` returning 1 (the cloud-shadow port's seat) and `skyLevel()`
-    (its twilight a constant from `SKY_FILL`). Needs `uSun`,
+    (the shared `skyLevelOf` from `SKY_LEVEL_GLSL`, its twilight baked from
+    `SKY_FILL`). Needs `uSun`,
     `uSunIntensity`, `uSkyFloor` and three's tone-mapping chunk.
 - Invariants & assumptions:
   - The sun IS the globe's: the page calls `solarPosition(ms, 0, 0)` exactly

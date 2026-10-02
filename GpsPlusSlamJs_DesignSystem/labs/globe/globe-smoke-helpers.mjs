@@ -109,6 +109,9 @@ const PRE_ROUND4_LOOK = {
   // No atmosphere pass (round 4 DEC-GL4-4 turned it on by default): the
   // floors were measured on the bare surface and sky.
   atmo: "0",
+  // No sky fill (DEC-GL5-11 reached the globe in F1): the floors were
+  // measured on the direct light alone.
+  sky: "0",
 };
 
 /**

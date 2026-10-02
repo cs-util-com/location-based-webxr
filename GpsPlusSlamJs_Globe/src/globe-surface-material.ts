@@ -9,6 +9,8 @@
  */
 import * as THREE from "three";
 
+import { SKY_FILL, SKY_LEVEL_GLSL } from "./sky-level.js";
+
 /** The patch's tunables (lab parameters; the phone round sets them). */
 export const GLOBE_SURFACE_TUNING = {
   /**
@@ -20,6 +22,12 @@ export const GLOBE_SURFACE_TUNING = {
   waterRoughness: 0.35,
   /** How far a full cloud whitens the ground. */
   cloudOpacity: 0.8,
+  /**
+   * The sky fill's share of the diffuse light (DEC-GL5-11): 1 - the
+   * relief's direct share, the terrain lab's 0.8 (DEC-GL5-5). The rest is
+   * the sun's direct diffuse.
+   */
+  skyShare: 1 - 0.8,
 } as const;
 
 /**
@@ -31,7 +39,7 @@ export const GLOBE_SURFACE_TUNING = {
 export const GLOBE_CLOUD_DRIFT_DEG_PER_S = 0.5;
 
 /** Every tile's program is the same one: three shares it by this key. */
-export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v5";
+export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v6";
 
 /** The one uniforms object every tile's shader reads. */
 export interface GlobeSurfaceUniforms {
@@ -59,6 +67,13 @@ export interface GlobeSurfaceUniforms {
   readonly uGrade: { value: number };
   readonly uCloudRelief: { value: number };
   readonly uTwilight: { value: number };
+  /**
+   * The sky fill (DEC-GL5-11): its floor (`SKY_FILL.floor`; 0 is the look
+   * before, the fill then being the flat globe's own direct term) and its
+   * share of the diffuse light (`GLOBE_SURFACE_TUNING.skyShare`).
+   */
+  readonly uSkyFloor: { value: number };
+  readonly uSkyShare: { value: number };
 }
 
 /**
@@ -85,6 +100,8 @@ export function createGlobeSurfaceUniforms(textures: {
     uGrade: { value: 0 },
     uCloudRelief: { value: 0 },
     uTwilight: { value: 0 },
+    uSkyFloor: { value: SKY_FILL.floor },
+    uSkyShare: { value: GLOBE_SURFACE_TUNING.skyShare },
   };
 }
 
@@ -131,7 +148,10 @@ uniform float uCloudLonOffset;
 uniform float uGrade;
 uniform float uCloudRelief;
 uniform float uTwilight;
-const vec3 GLOBE_WARM_LIGHTS = vec3( 1.4, 0.95, 0.5 );`;
+uniform float uSkyFloor;
+uniform float uSkyShare;
+const vec3 GLOBE_WARM_LIGHTS = vec3( 1.4, 0.95, 0.5 );
+${SKY_LEVEL_GLSL}`;
 
 /**
  * After the overlay's colour is in diffuseColor: the water from the tile's
@@ -187,6 +207,22 @@ float globeNdl = dot( globeN, uSunEcef );
 totalEmissiveRadiance += globeNight * mix( vec3( 1.0 ), GLOBE_WARM_LIGHTS, uTwilight ) * uNightGain * ( 1.0 - smoothstep( -0.12, 0.08, globeNdl ) ) * ( 1.0 - 0.8 * globeCloud );
 totalEmissiveRadiance += uTwilight * diffuseColor.rgb * ( vec3( 0.06, 0.09, 0.16 ) * ( 1.0 - smoothstep( -0.25, 0.05, globeNdl ) ) + vec3( 0.35, 0.3, 0.3 ) * smoothstep( -0.12, 0.0, globeNdl ) * ( 1.0 - smoothstep( 0.0, 0.12, globeNdl ) ) );`;
 
+/**
+ * The sky fill (DEC-GL5-11), the relief's light on the globe's surface:
+ * the direct diffuse keeps `1 - uSkyShare` and the sky gives `uSkyShare`
+ * x the shared sky level at the geodetic sun height, in the sun light's
+ * own units (its colour times intensity), through three's Lambert. On flat
+ * ground with the sun above the floor that is the direct term again; below
+ * it the sky holds the floor and fades through the twilight. The specular
+ * (the water's glint) is untouched. Only with the sun light present, whose
+ * uniform exists only then.
+ */
+const FRAGMENT_SKY_FILL = /* glsl */ `
+#if NUM_DIR_LIGHTS > 0
+reflectedLight.directDiffuse *= 1.0 - uSkyShare;
+reflectedLight.indirectDiffuse += uSkyShare * skyLevelOf( globeNdl, uSkyFloor ) * directionalLights[ 0 ].color * BRDF_Lambert( material.diffuseContribution );
+#endif`;
+
 /** `source` with `code` after `anchor`, which must occur exactly once. */
 function after(source: string, anchor: string, code: string): string {
   const parts = source.split(anchor);
@@ -216,6 +252,7 @@ export function patchGlobeSurfaceShader(
   fs = after(fs, "#include <alphamap_fragment>", FRAGMENT_SAMPLES);
   fs = after(fs, "#include <roughnessmap_fragment>", FRAGMENT_GLINT);
   fs = after(fs, "#include <emissivemap_fragment>", FRAGMENT_NIGHT);
+  fs = after(fs, "#include <lights_fragment_end>", FRAGMENT_SKY_FILL);
   shader.vertexShader = vs;
   shader.fragmentShader = fs;
   Object.assign(shader.uniforms, uniforms);

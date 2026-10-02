@@ -39,6 +39,7 @@ import {
   sunDownNote,
   sunRelativeShade,
 } from "./terrain-sun.js";
+import * as shared from "/globe/sky-level.js";
 
 const DEG = Math.PI / 180;
 const close = (a, b, eps, what) =>
@@ -294,6 +295,34 @@ describe("the sun-lit light", () => {
 describe("the sky level (the fill's light, DEC-GL5-11)", () => {
   const zOf = (deg) => Math.sin(deg * DEG);
 
+  // One implementation (DEC-H3): the terrain lab and the globe lab read the
+  // Globe package's sky level, so at a low sun the relief and the globe's
+  // flat ground get the same fill. The terrain lab re-exports it; these are
+  // the same objects, not copies. The globe's surface shader reads the
+  // same module (checked in the globe surface material's own tests, and
+  // below by its import).
+  it("is the Globe package's, the one both labs read", () => {
+    assert.equal(SKY_FILL, shared.SKY_FILL);
+    assert.equal(skyLevel, shared.skyLevel);
+    for (const deg of [-10, -6, -3, 0, 5, 11.2, 30, 90]) {
+      assert.equal(skyLevel(zOf(deg)), shared.skyLevel(zOf(deg)), `${deg}°`);
+    }
+    const surface = readFileSync(
+      join(
+        dirname(fileURLToPath(import.meta.url)),
+        "..",
+        "..",
+        "..",
+        "GpsPlusSlamJs_Globe",
+        "src",
+        "globe-surface-material.ts",
+      ),
+      "utf8",
+    );
+    assert.match(surface, /from "\.\/sky-level\.js"/);
+    assert.match(surface, /SKY_LEVEL_GLSL/);
+  });
+
   it("declares its parameters: a floor in 0-1 and a civil twilight", () => {
     assert.ok(SKY_FILL.floor > 0 && SKY_FILL.floor <= 1, `${SKY_FILL.floor}`);
     assert.equal(SKY_FILL.twilightDeg, 6);
@@ -522,7 +551,8 @@ describe("the cloud-shadow seat in the shader (review 2026-10-01-1650 m4)", () =
   // with the bare `max(0.0, uSun.z)`, bypassing the seat. In the shader the
   // bare sun height may appear only in the sky level, which `sunLight`'s
   // fill reads (deliberately undimmed, see terrain-sun.js.md), and in the
-  // relative shade's floor.
+  // relative shade's floor. The sky level is the Globe package's shader
+  // function, `skyLevelOf`, which reads the sun height as its argument.
   it("has no direct sun term outside the seat", () => {
     // Read as text, by a joined path: a `new URL("./x.js", import.meta.url)`
     // reads to knip as an import, which would pull the material's `three`
@@ -533,12 +563,14 @@ describe("the cloud-shadow seat in the shader (review 2026-10-01-1650 m4)", () =
     );
     const bare = (text) => text.match(/max\(0\.0, uSun\.z\)/g) ?? [];
     assert.deepEqual(bare(material), [], "terrain-material.js");
-    // SUN_GLSL: exactly one, in the sky level the fill reads.
+    // SUN_GLSL: none; the sun height reaches the sky level only as the
+    // shared function's argument.
     const glsl = SUN_GLSL;
-    assert.equal(bare(glsl).length, 1);
+    assert.deepEqual(bare(glsl), []);
+    assert.ok(glsl.includes(shared.SKY_LEVEL_GLSL), "the shared skyLevelOf");
     assert.match(
       glsl,
-      /float skyLevel\(\) \{[^}]*max\(max\(0\.0, uSun\.z\), uSkyFloor \* fade\)/,
+      /float skyLevel\(\) \{\s*return skyLevelOf\(uSun\.z, uSkyFloor\);\s*\}/,
     );
     assert.match(glsl, /\(1\.0 - shadow\) \* skyLevel\(\) \* svf/);
     // The visibility never reaches the sky level.
@@ -561,8 +593,8 @@ describe("the cloud-shadow seat in the shader (review 2026-10-01-1650 m4)", () =
 
   // The shader's twilight is the reference's, one number.
   it("fades the sky over the reference's twilight", () => {
-    const m = /const float TWILIGHT_Z = ([0-9.]+);/.exec(SUN_GLSL);
-    assert.ok(m, "SUN_GLSL declares TWILIGHT_Z");
+    const m = /smoothstep\( -([0-9.]+), 0\.0, sunZ \)/.exec(SUN_GLSL);
+    assert.ok(m, "SUN_GLSL fades the floor through the twilight");
     close(Number(m[1]), Math.sin(SKY_FILL.twilightDeg * DEG), 1e-8, "z");
   });
 });

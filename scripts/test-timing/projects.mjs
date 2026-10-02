@@ -332,10 +332,14 @@ export const PROJECTS = [
       // checked, so it is a real stage, not an eyeball tool like shoot.mjs.
       // `labs/**`: the lab pages' pure modules (terrain plan 2026-09-27-0605
       // §9, finding 1); without it their unit tests would never run.
+      // `--import ./test-route-loader.mjs`: a lab module may import another
+      // package's source by its page path (`/globe/sky-level.js`, the one
+      // sky level both labs read); the loader resolves it through the dev
+      // server's own route table.
       {
         name: "test:unit",
         command:
-          'node --test "*.test.mjs" "3d/**/*.test.mjs" "labs/**/*.test.mjs"',
+          'node --import ./test-route-loader.mjs --test "*.test.mjs" "3d/**/*.test.mjs" "labs/**/*.test.mjs"',
         counts: null,
       },
       {

@@ -26,6 +26,7 @@ import {
   createGlobeSurfaceUniforms,
   patchGlobeSurfaceShader,
 } from "./globe-surface-material.js";
+import { SKY_FILL, SKY_LEVEL_GLSL } from "./sky-level.js";
 
 /** A fresh copy of the shader three compiles for MeshStandardMaterial. */
 function standardShader(): THREE.WebGLProgramParametersWithUniforms {
@@ -189,12 +190,52 @@ describe("patchGlobeSurfaceShader", () => {
     expect(fs).toContain("globeCloud * uCloudOpacity");
   });
 
+  // Why (DEC-GL5-11, F1 brief): the relief takes the sky's fill at a low
+  // sun (the share of the light that is not direct, times the sky level),
+  // the flat globe did not, so at 11 degrees the relief's flat ground read
+  // 0.255 of a zenith sun against the globe's 0.194. The globe's surface,
+  // and through it the relief's tiles, now reads the Globe package's one
+  // sky level: the direct diffuse keeps `1 - share`, the sky gives
+  // `share x skyLevel`, in the sun light's own units. With the floor at 0
+  // the fill is the geodetic sun height, which is the flat globe's own
+  // direct term: the look before, which the look pins use.
+  it("fills from the shared sky level, in the sun's units, after the lights", () => {
+    const uniforms = createGlobeSurfaceUniforms(textures());
+    expect(uniforms.uSkyFloor.value).toBe(SKY_FILL.floor);
+    expect(uniforms.uSkyShare.value).toBe(GLOBE_SURFACE_TUNING.skyShare);
+    // 1 - the relief's direct share (the terrain lab's 0.8, DEC-GL5-5).
+    expect(GLOBE_SURFACE_TUNING.skyShare).toBeCloseTo(0.2, 12);
+    const shader = standardShader();
+    patchGlobeSurfaceShader(shader, uniforms);
+    const fs = shader.fragmentShader;
+    expect(shader.uniforms.uSkyFloor).toBe(uniforms.uSkyFloor);
+    expect(shader.uniforms.uSkyShare).toBe(uniforms.uSkyShare);
+    expect(count(fs, SKY_LEVEL_GLSL)).toBe(1);
+    expect(fs).toContain("reflectedLight.directDiffuse *= 1.0 - uSkyShare;");
+    expect(fs).toContain(
+      "reflectedLight.indirectDiffuse += uSkyShare * skyLevelOf( globeNdl, uSkyFloor ) * directionalLights[ 0 ].color * BRDF_Lambert( material.diffuseContribution );",
+    );
+    const at = (s: string) => fs.indexOf(s);
+    expect(at("#include <lights_fragment_end>")).toBeLessThan(
+      at("reflectedLight.directDiffuse *= 1.0 - uSkyShare;"),
+    );
+    // The geodetic sun height is declared before it is read.
+    expect(at("float globeNdl =")).toBeLessThan(at("skyLevelOf( globeNdl"));
+    // Only with the sun light present: its uniform exists only then.
+    const fill = fs.slice(at("reflectedLight.directDiffuse *= 1.0"));
+    expect(fs.slice(0, at("reflectedLight.directDiffuse *= 1.0"))).toMatch(
+      /#if NUM_DIR_LIGHTS > 0\s*$/,
+    );
+    expect(fill).toMatch(/^[^#]*#endif/);
+  });
+
   it("refuses a shader missing an anchor, or holding one twice, naming it", () => {
     for (const anchor of [
       "#include <common>",
       "#include <alphamap_fragment>",
       "#include <roughnessmap_fragment>",
       "#include <emissivemap_fragment>",
+      "#include <lights_fragment_end>",
     ]) {
       const missing = standardShader();
       missing.fragmentShader = missing.fragmentShader.replace(anchor, "");

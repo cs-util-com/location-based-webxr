@@ -33,14 +33,16 @@
  *
  * `SUN_GLSL` is the shader's copy of these functions, line for line; this
  * file is the reference CI runs. Dependency-free except the far field's
- * colour curves, style B's light and the package's one `smoothstep`
- * (DEC-H3), so it runs under `node --test`.
+ * colour curves, style B's light and the Globe package's sky level
+ * (DEC-H3; `node --test` resolves `/globe/` with `test-route-loader.mjs`).
  *
  * @see terrain-sun.js.md
  */
 import { GLOBE_SUN, farColour } from "./terrain-far-field.js";
-import { smoothstep } from "./terrain-style.js";
 import { NATURAL } from "./terrain-styles.js";
+import { SKY_FILL, SKY_LEVEL_GLSL, skyLevel } from "/globe/sky-level.js";
+
+export { SKY_FILL, skyLevel };
 
 export { GLOBE_SUN };
 
@@ -52,56 +54,9 @@ const DEG = Math.PI / 180;
  */
 export const MIN_SUN_Z = Math.sin(2 * DEG);
 
-/**
- * The sky fill's parameters (DEC-GL5-11). The fill is the light the sky
- * gives a face the sun does not reach; it used to follow the sun's height,
- * `sin h`, so at a low sun it vanished with the direct light (0.2 x sin 11°
- * on the Alps, under one 8-bit level) and the shadowed faces went black.
- * The sky level is now `max(sin h, floor)` while the sun is up, faded to 0
- * through the twilight below the horizon:
- *
- * - `floor` (0-1, in the units of open flat ground under a zenith sun): the
- *   least sky level while the sun is up. Wherever sin h >= floor nothing
- *   changes (the globe's flat ground is matched as before); below it the
- *   light rises by (1 - shadow) x svf x (floor - sin h), so the change is
- *   bounded and falls to 0 at a sun of asin(floor). The clear sky's light,
- *   relative to the sun's beam, does not fall with the sun's height as the
- *   beam's projection does (it holds or rises toward the horizon, where the
- *   beam weakens in the air), so a floor is the plausible shape; the lab's
- *   beam stays at full strength.
- * - `twilightDeg`: the depth below the horizon over which the floor fades
- *   (smoothly) to 0: civil twilight.
- *
- * The default floor is the measured choice: at an 11° sun on the Alps it
- * lifts `globe-albedo`'s darkest tenth above 10 of 255 at 30 and 10 km and
- * keeps the relief at least as contrasty as at noon (terrain-sun.js.md).
- */
-export const SKY_FILL = Object.freeze({ floor: 0.5, twilightDeg: 6 });
-
-/**
- * The sky's level for the fill at a sun height (`sunZ`, the sine of its
- * elevation): max(sin h, floor) while the sun is up, the floor faded to 0
- * over `twilightDeg` below the horizon. Never falls as the sun rises.
- * RangeError for a non-finite height, a floor outside 0-1 or a twilight
- * outside 0-90°.
- */
-export function skyLevel(
-  sunZ,
-  floor = SKY_FILL.floor,
-  twilightDeg = SKY_FILL.twilightDeg,
-) {
-  if (!Number.isFinite(sunZ)) {
-    throw new RangeError(`sun height must be finite, got ${sunZ}`);
-  }
-  if (!(floor >= 0 && floor <= 1)) {
-    throw new RangeError(`sky floor must be in 0-1, got ${floor}`);
-  }
-  if (!(twilightDeg > 0 && twilightDeg < 90)) {
-    throw new RangeError(`twilight must be in 0-90°, got ${twilightDeg}`);
-  }
-  const fade = smoothstep(-Math.sin(twilightDeg * DEG), 0, sunZ);
-  return Math.max(Math.max(0, sunZ), floor * fade);
-}
+// The sky fill's parameters and level (DEC-GL5-11) are the Globe
+// package's (`/globe/sky-level.js`), the one implementation the globe's
+// surface reads too (F1 brief), re-exported above.
 
 /**
  * A unit vector (east, north, up) toward a sun at an elevation and an
@@ -271,7 +226,6 @@ export function sunLitColour(
  */
 export const SUN_GLSL = /* glsl */ `
 const float MIN_SUN_Z = ${MIN_SUN_Z.toFixed(8)};
-const float TWILIGHT_Z = ${Math.sin(SKY_FILL.twilightDeg * DEG).toFixed(8)};
 
 // The cloud-shadow port's seat: the share of the sun's direct light that
 // reaches this point (1 = clear). Every direct term goes through it.
@@ -297,9 +251,9 @@ float sunRelativeShade(vec3 n, float visibility) {
 // terrain-sun.js skyLevel: the fill's light, the sun's height or the floor
 // while the sun is up, faded through the twilight. Never dimmed by the
 // visibility: a cloud's shadow takes the direct light only.
+${SKY_LEVEL_GLSL}
 float skyLevel() {
-  float fade = smoothstep(-TWILIGHT_Z, 0.0, uSun.z);
-  return max(max(0.0, uSun.z), uSkyFloor * fade);
+  return skyLevelOf(uSun.z, uSkyFloor);
 }
 
 // terrain-sun.js sunLight.

@@ -9,8 +9,10 @@
 - Public API:
   - `GLOBE_SURFACE_TUNING` - `{ nightGain: 0.7 (the owner's look, round-4
 plan DEC-GL4-1; 1 before), waterRoughness: 0.35,
-cloudOpacity: 0.8 }`, the defaults (lab parameters `#nightGain=`,
+cloudOpacity: 0.8, skyShare: 0.2 }`, the defaults (lab parameters `#nightGain=`,
     `#waterRoughness=`, `#cloudOpacity=`; the phone round sets them).
+    `skyShare` is the sky fill's share of the diffuse light, 1 - the
+    relief's direct share (the terrain lab's 0.8, DEC-GL5-5).
   - `GLOBE_CLOUD_DRIFT_DEG_PER_S` - 0.5, the clouds' default drift in
     degrees of longitude per scene second (lab `#cloudDrift=`, 0-10): sized
     to move visibly within a few seconds at real time (about 1 px/s on a
@@ -20,12 +22,14 @@ cloudOpacity: 0.8 }`, the defaults (lab parameters `#nightGain=`,
     of the instant, so a pinned `#time=` shows the same clouds on every
     load. RangeError for a non-finite instant or rate.
   - `GLOBE_SURFACE_CACHE_KEY` - the program key every tile shares (`-v2`
-    since the drift uniform joined the program).
+    since the drift uniform joined the program, `-v6` since the sky fill).
   - `createGlobeSurfaceUniforms({ night, clouds })` returns the one
     shared uniforms object: `uSunEcef` (unit, ECEF), `uSunWorld` (the
     same sun in world space, kept by the surface), `uNight`,
     `uClouds`, `uNightGain`, `uWaterRoughness`, `uCloudOpacity`,
-    `uCloudLonOffset` (radians, 0 until the caller sets it).
+    `uCloudLonOffset` (radians, 0 until the caller sets it), `uSkyFloor`
+    (`SKY_FILL.floor`, lab `#sky=`) and `uSkyShare`
+    (`GLOBE_SURFACE_TUNING.skyShare`).
   - `patchGlobeSurfaceShader(shader, uniforms)` - a pure string transform,
     in place: the geodetic-normal varying (the OBJECT-space normal:
     `GeneratedSurfacePlugin` writes the geodetic ellipsoid normal and gives
@@ -47,6 +51,21 @@ cloudOpacity: 0.8 }`, the defaults (lab parameters `#nightGain=`,
     - after `emissivemap_fragment`: `night * uNightGain`, faded in across
       the terminator as `1 - smoothstep(-0.12, 0.08, n·sun)` (GLSL leaves
       smoothstep with edge0 > edge1 undefined) and dimmed 80 % under cloud.
+    - after `lights_fragment_end`: the sky fill (DEC-GL5-11), the
+      relief's light on the globe. The direct diffuse keeps
+      `1 - uSkyShare`; the sky adds `uSkyShare` x the Globe package's one
+      sky level (`sky-level.ts`, `skyLevelOf`) at the geodetic sun height
+      x the sun light's colour (its intensity included) through three's
+      Lambert. On flat ground with the sun above the floor that is the
+      direct term again (no change at noon); below it the sky holds the
+      floor and fades through the civil twilight, so a low sun's ground is
+      what the terrain lab's relief draws for flat ground (0.255 of a
+      zenith sun at 11.2 degrees, not 0.194). The specular (the glint) is
+      untouched. `uSkyFloor` 0 is exactly the look before on flat tiles
+      (the fill is then the geodetic sun height, the flat globe's own
+      direct term). Inside `#if NUM_DIR_LIGHTS > 0`: the sun light's
+      uniform exists only then. The relief's tiles (`globe-terrain.ts`)
+      carry the same patch, so relief and globe agree at a low sun.
     - Throws, naming the chunk, when an anchor is missing or repeated (a
       three upgrade that renamed one), instead of dropping a term.
   - The reference look's uniforms (round-4 plan 2026-09-28-2105
@@ -95,7 +114,9 @@ cloudOpacity: 0.8 }`, the defaults (lab parameters `#nightGain=`,
   anywhere in three's shader: the patch only inserts, always the same
   lines) and `globe-surface-material.test.ts`, on copies of three's real
   `ShaderLib.standard`: each term once and after its chunk, in order; the
-  uniforms shared; the drift offset in the cloud sample only;
+  uniforms shared; the drift offset in the cloud sample only; the sky fill
+  from the shared `SKY_LEVEL_GLSL`, after the lights, under the sun light's
+  guard;
   `cloudLonOffsetRad` exact modulo a turn at today's epoch (a property); `textureGrad` for all three samples; a missing or
   doubled anchor refused by name; one program key; no texture on the
   material but `map`. The browser: the lab smoke's day, night, glint and
