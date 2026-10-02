@@ -203,6 +203,34 @@ function answered(
 }
 
 /**
+ * Whether a sighting of `levelId` at `offset` from the saved pose
+ * `savedKey` is at a spot the creator answered "It's a second copy" for -
+ * the same level, saved pose and spot that keep the prompt quiet (M5b
+ * review #11). Such a sighting is another print, never a visit of the
+ * stored code. "Not now" leaves the question open, so it does not count;
+ * an offset that is not finite never matches.
+ */
+export function isSecondCopySpot(
+  answers: readonly RememberedMoveAnswer[],
+  sighting: {
+    readonly levelId: string;
+    readonly savedKey: string;
+    readonly offset: { readonly northM: number; readonly eastM: number };
+  },
+  sameSpotM: number = MOVE_PROMPT_RULE.sameSpotM,
+): boolean {
+  const { levelId, savedKey, offset } = sighting;
+  if (!finite(offset.northM) || !finite(offset.eastM)) return false;
+  return answered(
+    answers.filter((a) => a.answer === "second-copy"),
+    levelId,
+    savedKey,
+    offset,
+    sameSpotM,
+  );
+}
+
+/**
  * One step of the tracker: the onset carried to the next call, and the
  * prompt to show now (null for none).
  */

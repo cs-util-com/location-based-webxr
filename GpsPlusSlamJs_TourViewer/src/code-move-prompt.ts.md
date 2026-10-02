@@ -38,6 +38,12 @@ floorM: MOVED_CODE_FLOOR_M }` (20 m, from `code-displacement.ts`; swept,
 - `rememberMoveAnswer(answers, entry, sameSpotM?)` - adds an answer,
   replacing one for the same level, saved pose and spot, keeping the newest
   `MOVE_ANSWERS_MAX` (32).
+- `isSecondCopySpot(answers, { levelId, savedKey, offset }, sameSpotM?)` -
+  whether a sighting lies at a spot answered "It's a second copy" for that
+  level and saved pose (the same match that keeps the prompt quiet). The
+  creator setup keeps such a sighting out of the visit log: it is another
+  print, not a visit of the stored code (M5b review #11). "Not now" never
+  counts; a non-finite offset never matches.
 - `parseMoveAnswers(value)` - the answers in a meta value (external data):
   well-formed entries only, at most `MOVE_ANSWERS_MAX`. An entry without a
   `savedKey` (a draft written before M5b review #2) is dropped, not
@@ -189,11 +195,14 @@ if (prompt !== null) show(movePromptText(prompt.horizontalM));
   restarted history starting again, timeless fixes, missing inputs; an
   answer covering its spot but not a markedly different one or another
   code; the answers' memory (same spot replaced, the cap, the defensive
-  read); the text; the shipped rule.
+  read); `isSecondCopySpot` (only a second-copy answer, for the same
+  level, saved pose and spot); the text; the shipped rule.
 - `code-move-prompt.property.test.ts` - for any sequence of inputs, a
   prompt only for a lasting horizontal refusal beyond the floor with the
   gate open at an unanswered spot, its `fixes` counted from the current run, and never
-  before the rule's seconds.
+  before the rule's seconds; for any answers, a "Not now" never changes
+  `isSecondCopySpot` and a second copy at the sighting's own spot always
+  makes it one.
 - `code-move-prompt.sweep.test.ts` - the sweep above (it prints its
   tables, pins monotonicity in persistence and in the floor, the chosen
   values' properties, and that its run-length shortcut agrees with the

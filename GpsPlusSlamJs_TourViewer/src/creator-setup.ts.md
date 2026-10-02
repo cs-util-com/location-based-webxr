@@ -564,6 +564,11 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
       (`moveAnswers`, re-stated by every `recordMeta`, read at tour open
       whether or not the draft is restored and merged with answers given
       before it opened); a refused meta write is the backup notice.
+      A sighting of the code in hand at a spot answered "It's a second
+      copy" (`isSecondCopySpot`, through the visit's plain alignment, as
+      the prompt saw it) is kept out of the visit log (`logVisit`): it is
+      another print, so it must not count as a visit of the stored code
+      in `codeVisitPoses` (M5b review #11). "Not now" leaves it a visit.
     - **The move boundary**: ANY replace - the prompt's or the Replace
       button's - records its visit as the code's move boundary
       (`movedInVisit`, set in `measureCode`; M5b review #3), because
@@ -672,7 +677,8 @@ too, and its Undo logged as not from the prompt, leaving the remembered
 answers alone, with the prompt free to return; Undo kept through a later
 measurement of the same code; the other two answers remembered in the
 draft across a reload, and their refused write surfaced as the backup
-notice; Undo in progress,
+notice; a sighting answered "It's a second copy" kept out of the visit
+log while a "Not now" one stays in it; Undo in progress,
 restoring the level and dropping the visit's move boundary, its refused
 write surfaced, ended by a Finish), plus the pure `code-move-prompt*`
 tests and the e2e `move-prompt.spec.js` (one per answer).

@@ -26,6 +26,7 @@ import {
   visitSettled,
 } from "./tour-authoring-actions.js";
 import {
+  isSecondCopySpot,
   MOVE_PROMPT_LABELS,
   movePromptText,
   rememberMoveAnswer,
@@ -2273,15 +2274,18 @@ export function wireCreatorSetup(deps: {
     }
     // The tour's other stored codes this visit saw (M3a/M3b review #6),
     // then the code in hand last: the log keeps each code's LAST look.
+    // Never a print answered "It's a second copy" (M5b review #11).
     for (const seen of storedCodeSightings.values()) {
-      if (seen.visit !== visit) continue;
+      if (seen.visit !== visit || isSecondCopy(state, seen.sighting)) {
+        continue;
+      }
       codes.push({
         levelId: seen.sighting.levelId,
         odomPose: seen.sighting.odomPose,
       });
     }
     const sighting = ctx.visitCodeSighting;
-    if (sighting !== null) {
+    if (sighting !== null && !isSecondCopy(state, sighting)) {
       codes.push({ levelId: sighting.levelId, odomPose: sighting.odomPose });
     }
     const savedGeo = savedLevel === null ? null : storedGeo(savedLevel.json);
@@ -2307,6 +2311,37 @@ export function wireCreatorSetup(deps: {
     // A visit with no fix and no code has nothing to show or to combine.
     if (entry.gps.length === 0 && entry.codes.length === 0) return;
     recordVisit(entry);
+  }
+
+  /**
+   * Whether `sighting` - of the code in hand - lies, through this visit's
+   * plain alignment (the move prompt's view of it), at a spot answered
+   * "It's a second copy" for that level and its saved pose (M5b review
+   * #11). Only the level in hand: the prompt asks about no other code, so
+   * no other code has such an answer.
+   */
+  function isSecondCopy(
+    state: ReturnType<typeof arStore.getState>,
+    sighting: CodeSighting,
+  ): boolean {
+    const level = ctx.mintedLevel;
+    if (level === null || sighting.levelId !== level.id) return false;
+    const offset = sightedCodeOffset({
+      visit: ctx.arSessionGeneration,
+      alignment: selectAlignmentMatrix(state),
+      zero: selectZeroReference(state),
+      mintedLevel: level,
+      measurement: ctx.codeMeasurement,
+      sighting,
+    });
+    return (
+      offset !== null &&
+      isSecondCopySpot(moveAnswers, {
+        levelId: level.id,
+        savedKey: savedPoseKey(level.json),
+        offset,
+      })
+    );
   }
 
   /**

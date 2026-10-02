@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 import { MOVED_CODE_FLOOR_M } from "./code-displacement.js";
 import {
   isHorizontalRefusal,
+  isSecondCopySpot,
   MOVE_ANSWERS_MAX,
   MOVE_PROMPT_LABELS,
   MOVE_PROMPT_RULE,
@@ -262,6 +263,47 @@ describe("trackMovePrompt: an answer is not asked again for the same spot (§7j 
     // Without a saved pose's key there is nothing an answer could be kept
     // against: no prompt (the setup always has one with a level in hand).
     expect(run(30, { answers: [], savedKey: null }).prompt).toBeNull();
+  });
+});
+
+describe("isSecondCopySpot (M5b review #11)", () => {
+  // Why: a sighting at a spot the creator called "It's a second copy" is
+  // another print, not the stored code, so the visit log must not count it
+  // as a visit of that code. Only that answer says so - "Not now" leaves
+  // the question open - and only for the same level, the same saved pose
+  // and the same spot, exactly as the prompt itself stays quiet.
+  const copy: RememberedMoveAnswer = {
+    levelId: "lvl",
+    northM: 40,
+    eastM: 0,
+    answer: "second-copy",
+    savedKey: "k1",
+  };
+  const at = (northM: number, levelId = "lvl", savedKey = "k1") => ({
+    levelId,
+    savedKey,
+    offset: { northM, eastM: 0 },
+  });
+
+  it("is true within the same-spot distance of a second-copy answer for that level and saved pose", () => {
+    expect(isSecondCopySpot([copy], at(40 + 14), 15)).toBe(true);
+    expect(isSecondCopySpot([copy], at(40 + MOVE_PROMPT_RULE.sameSpotM))).toBe(
+      true,
+    );
+  });
+
+  it("is false beyond it, for another level or saved pose, and for a 'Not now'", () => {
+    expect(isSecondCopySpot([copy], at(40 + 16), 15)).toBe(false);
+    expect(isSecondCopySpot([copy], at(40, "other"))).toBe(false);
+    expect(isSecondCopySpot([copy], at(40, "lvl", "k2"))).toBe(false);
+    expect(isSecondCopySpot([{ ...copy, answer: "not-now" }], at(40))).toBe(
+      false,
+    );
+    expect(isSecondCopySpot([], at(40))).toBe(false);
+  });
+
+  it("is false for an offset that is not finite (defensive)", () => {
+    expect(isSecondCopySpot([copy], at(Number.NaN))).toBe(false);
   });
 });
 

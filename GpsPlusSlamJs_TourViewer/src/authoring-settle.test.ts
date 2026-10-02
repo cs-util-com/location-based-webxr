@@ -2659,6 +2659,34 @@ describe(
       await flush();
     }
 
+    it("does not log a sighting answered 'It's a second copy' as a visit of the stored code; 'Not now' still does (M5b review #11)", async () => {
+      // Why: the visit log's code records are what the summary combines
+      // into the code's position across visits (`codeVisitPoses`). A print
+      // the creator called a second copy is not the stored code, so its
+      // sighting 60 m away would drag that estimate towards the copy -
+      // the opposite of what the answer said. "Not now" leaves it open,
+      // so that sighting stays a visit.
+      for (const [button, logged] of [
+        ["movePromptCopy", false],
+        ["movePromptLater", true],
+      ] as const) {
+        const { store, files } = memoryDraftStore();
+        const { a, stored, fix } = await secondVisitFarFromTheCode(store);
+        fix(MOVE_PROMPT_RULE.minFixes);
+        expect(a.dom.movePrompt.hidden, button).toBe(false);
+        a.dom[button].click();
+        await flush();
+        a.endVisit();
+        await flush();
+        const entry = lastVisitFile(files);
+        expect(entry.gps.length, button).toBeGreaterThan(0);
+        expect(
+          entry.codes.some((c) => c.levelId === stored.id),
+          button,
+        ).toBe(logged);
+      }
+    });
+
     it("keeps Undo through a later measurement of the same code, whose level is briefly not in hand (M5b review #4)", async () => {
       // Why: a measurement empties the level in hand while its identity
       // hash is computed; a render in that moment (any fix) read that as
