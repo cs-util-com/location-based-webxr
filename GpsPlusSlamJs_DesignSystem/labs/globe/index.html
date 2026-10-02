@@ -12,7 +12,10 @@
           "three": "/vendor/three/build/three.module.js",
           "three/addons/": "/vendor/three/examples/jsm/",
           "3d-tiles-renderer": "/vendor/3d-tiles-renderer/build/index.js",
-          "3d-tiles-renderer/plugins": "/vendor/3d-tiles-renderer/build/index.plugins.js"
+          "3d-tiles-renderer/plugins": "/vendor/3d-tiles-renderer/build/index.plugins.js",
+          "h3-js": "/vendor/h3-js/dist/browser/h3-js.es.js",
+          "gps-plus-slam-osm": "/osm-lib/index.js",
+          "gps-plus-slam-app-framework/osm-bridge": "/fw/osm-bridge/index.js"
         }
       }
     </script>
@@ -124,7 +127,8 @@
         text-shadow: 0 0 3px #000;
       }
 
-      #globe-pin-status {
+      #globe-pin-status,
+      #globe-arrival-status {
         max-width: min(60vw, 420px);
         color: #c9d3e0;
         text-align: right;
@@ -572,7 +576,8 @@
           <div class="lookdev-section-body col">
             <label class="lookdev-field">
               <span class="hint"
-                >Dive (ms) <output data-for="diveMs"></output
+                >Dive (ms; set here it is fixed, otherwise the city data paces
+                it) <output data-for="diveMs"></output
               ></span>
               <input
                 class="slider"
@@ -639,6 +644,9 @@
            4 updates a second would flood a screen reader. -->
         <output id="globe-readout" aria-live="off"></output>
         <div class="globe-pin-group">
+          <!-- The city's data while the pin's dive loads it: tiles warmed of
+             the total, cold or warm, then how it ended (hidden when idle). -->
+          <output id="globe-arrival-status" aria-live="polite" hidden></output>
           <output id="globe-pin-status" aria-live="polite"></output>
           <button
             id="globe-pin"

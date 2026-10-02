@@ -20,6 +20,7 @@ import {
   arriveAt,
   luminance,
   meanOf,
+  routeCityData,
   withPreRound4Look,
 } from "./globe-smoke-helpers.mjs";
 
@@ -38,6 +39,8 @@ async function bootArrived(page, hash = VIEW) {
     if (m.type() === "error") errors.push(m.text());
   });
   page.on("pageerror", (e) => errors.push(e.message));
+  // A pin press starts the arrival prefetch: its city data is answered here.
+  await routeCityData(page);
   await page.goto(`/labs/globe/#${hash}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
@@ -390,10 +393,12 @@ test("a granted position dives there and hands over to the city", async ({
 }) => {
   test.setTimeout(300_000);
   await page.route(`${ORIGIN}/osm/**`, (route) =>
-    route.fulfill({
-      contentType: "text/html",
-      body: "<!doctype html><title>osm stand-in</title>",
-    }),
+    route.request().isNavigationRequest()
+      ? route.fulfill({
+          contentType: "text/html",
+          body: "<!doctype html><title>osm stand-in</title>",
+        })
+      : route.fallback(),
   );
   // The default 15 s dive, so the checks below run while it lasts.
   const { errors } = await bootWithGps(page, context, "");
@@ -528,6 +533,8 @@ test("the dive lands on the fix at the hand-over altitude, and a touch stops a d
 async function catchHandOver(page) {
   const urls = [];
   await page.route(`${ORIGIN}/osm/**`, (route) => {
+    // The hand-over navigation only: the prefix also serves the prefetch.
+    if (!route.request().isNavigationRequest()) return route.fallback();
     urls.push(route.request().url());
     return route.fulfill({ status: 204 });
   });

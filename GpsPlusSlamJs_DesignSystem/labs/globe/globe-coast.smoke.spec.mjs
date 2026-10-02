@@ -16,7 +16,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { luminance, meanOf } from "./globe-smoke-helpers.mjs";
+import { luminance, meanOf, routeCityData } from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 
@@ -48,6 +48,8 @@ async function holdOverCoast(page, context, altKm) {
     if (m.type() === "error") errors.push(m.text());
   });
   const hash = `at=${COAST.latitude},${COAST.longitude}&spinMs=0&turnMs=0&${NOON}&cloudDrift=0&cloudOpacity=0&stars=0&atmo=0&diveMs=1000&handOver=0&handOverKm=${altKm}`;
+  // The pin press starts the arrival prefetch: its city data is answered here.
+  await routeCityData(page);
   await page.goto(`/labs/globe/#${hash}`);
   await page.waitForFunction(() => window.__globeLab?.ready, null, {
     timeout: 60_000,

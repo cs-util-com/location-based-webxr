@@ -18,6 +18,8 @@ export async function bootGlobe(page, hash, { phase = "arrived" } = {}) {
     if (m.type() === "error") errors.push(m.text());
   });
   page.on("pageerror", (e) => errors.push(e.message));
+  // A pin press starts the arrival prefetch: its city data is answered here.
+  await routeCityData(page);
   await page.goto(`/labs/globe/#${hash}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
@@ -144,3 +146,66 @@ export const gridAround = (c, half, n) => {
   }
   return points;
 };
+
+/**
+ * Whether a request is the city data the pin's arrival prefetch fetches:
+ * an Overpass endpoint (OsmDemo's pool, `overpass-source.ts`) or a DEM tile
+ * (Mapterhorn or the AWS Terrarium bucket).
+ */
+const isCityData = (url) =>
+  /(^|\.)overpass-api\.de$|^overpass\.private\.coffee$|^overpass\.kumi\.systems$/.test(
+    url.hostname,
+  ) ||
+  (url.hostname === "maps.mail.ru" && url.pathname.includes("/overpass/")) ||
+  url.hostname === "tiles.mapterhorn.com" ||
+  (url.hostname === "s3.amazonaws.com" &&
+    url.pathname.startsWith("/elevation-tiles-prod/"));
+
+/**
+ * Answers the pin's arrival prefetch (round-5 plan 2026-10-01-0945 §3.6)
+ * here, so no smoke ever sends a request to the donated Overpass servers or
+ * the DEM hosts: Overpass with an empty tile, a DEM tile with a few bytes,
+ * a CORS preflight with its headers (cross-origin, so the browser checks
+ * them on a fulfilled response too). Everything else is left to the page.
+ * `holdOverpass` keeps the Overpass answers back until `release()`, for a
+ * test that needs a cold load in flight. Returns the requests seen.
+ */
+export async function routeCityData(page, { holdOverpass = false } = {}) {
+  const seen = { overpass: 0, dem: 0 };
+  let release = () => {};
+  const released = holdOverpass
+    ? new Promise((resolve) => {
+        release = resolve;
+      })
+    : Promise.resolve();
+  const cors = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST",
+    "Access-Control-Allow-Headers": "*",
+  };
+  await page.route(isCityData, async (route) => {
+    const request = route.request();
+    if (request.method() === "OPTIONS") {
+      return route.fulfill({ status: 204, headers: cors });
+    }
+    const url = new URL(request.url());
+    if (/overpass/.test(url.hostname + url.pathname)) {
+      seen.overpass += 1;
+      await released;
+      return route
+        .fulfill({
+          status: 200,
+          headers: { ...cors, "Content-Type": "application/json" },
+          body: JSON.stringify({ version: 0.6, elements: [] }),
+        })
+        .catch(() => {});
+    }
+    seen.dem += 1;
+    return route.fulfill({
+      status: 200,
+      headers: { ...cors, "Content-Type": "image/png" },
+      body: Buffer.from([137, 80, 78, 71]),
+    });
+  });
+  return { seen, release: () => release() };
+}

@@ -47,7 +47,9 @@
 - Hash parameters and ranges (`PARAMS`, the one source for the sliders too;
   out of range, empty or malformed reads as the default): `spinMs`,
   `turnMs` (0-10000), `diveMs` (the pin's dive, 1000-60000, default
-  15000), `handOverKm` (the hand-over altitude, 1-1000, default 150; the
+  15000; set in the hash it fixes the dive's length by hand, otherwise
+  the arrival prefetch paces it), `prefetch` (the arrival prefetch, on
+  unless 0; no panel control), `handOverKm` (the hand-over altitude, 1-1000, default 150; the
   plate offers 20, 50, 150), `handOver` (1 opens the city, 0 holds),
   `nightGain` (0-4, default 0.7), `waterRoughness`,
   `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default 0.5),
@@ -286,6 +288,43 @@
     first fifth, so a camera the controls had tilted turns smoothly
     instead of snapping), then held at the hand-over altitude.
 
+- The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6 step 1), wired
+  into the pin:
+  - at the fix, the lab loads `/osm/arrival-prefetch.js` (OsmDemo) with a
+    literal dynamic `import()` and starts it for the target, so the city
+    opens on a warm cache after the hand-over. Its graph (the Osm library,
+    about 1.1 MB of source, and H3, 0.55 MB) loads only then: the import
+    map's `h3-js`, `gps-plus-slam-osm` and
+    `gps-plus-slam-app-framework/osm-bridge` entries are unused at boot,
+    and `build-lookdev.test.mjs` fails if the lab's static graph reaches
+    them. Only `/globe/flight-pace.js` and `/globe/globe-arrival.js`
+    (small, no dependencies) load at boot;
+  - the dive's clock (`createDiveClock`): paced by the prefetch's
+    progress (`stepPace`: the cold pace until the data is in, the whole
+    path over at most the 30 s cap of DEC-GL5-6; about 8.6 s when the data
+    is already stored), mapped onto `diveMs` so the dive keeps its easing.
+    `diveMs` in the hash keeps the fixed dive as a manual override;
+    `prefetch=0` turns the prefetch off (and the fixed dive with it). A
+    module that does not load counts as done: nothing can be warmed, so
+    the dive does not wait;
+  - every way a flight stops (a press of the pin, a touch on the globe, a
+    hidden page, the hand-over) aborts the prefetch;
+  - the hand-over does not wait past the dive: the paced dive lands when
+    the data is in or at the cap, and hands over at once. Holding longer
+    is an open decision (the round-5 results, Q2), not built;
+  - the status line `#globe-arrival-status` (left of the pin's own,
+    hidden when idle, `aria-live="polite"`): the tiles warmed of the
+    total, cold or warm, while it runs, then how it ended
+    (`arrivalStatusText` in `/globe/globe-arrival.js`);
+  - `__globeLab.state().pin.arrival`: `outcome`, `progress`, `counts`,
+    `paced`, `rate` (the dive clock's, per ms) and `line`, for the
+    smokes;
+  - the smokes answer its network locally (`routeCityData` in
+    `globe-smoke-helpers.mjs`: Overpass with an empty tile, DEM tiles
+    with a few bytes), so no smoke sends a request to the Overpass
+    servers or the DEM hosts; `globe-arrival.smoke.spec.mjs` checks the
+    lazy load, the moving status line, the cold and warm pace, a quick
+    warm second flight and the abort on a stop.
 - The pin (round-2 plan M3g, DEC-FB2-2/3), bottom right as in OsmDemo (the
   design system's locate atom, `btn btn--locate`, with OsmDemo's pin
   glyph), with a status line to its left. Its phases and labels are

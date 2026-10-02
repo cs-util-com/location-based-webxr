@@ -44,6 +44,8 @@ import {
   startGlobeClock,
 } from "/globe/globe-clock.js";
 import { GLOBE_DIVE, diveStep, planDive } from "/globe/globe-dive.js";
+import { FLIGHT_PACE_DEFAULTS } from "/globe/flight-pace.js";
+import { arrivalStatusText, createDiveClock } from "/globe/globe-arrival.js";
 import { globePinView, nextPinPhase } from "/globe/globe-pin.js";
 import { globeReadoutText, readoutThrottle } from "/globe/globe-readout.js";
 import { handOverUrl } from "/globe/globe-handover.js";
@@ -80,6 +82,7 @@ const loadingLabel = document.getElementById("globe-loading");
 const replayButton = document.getElementById("globe-replay");
 const pinButton = document.getElementById("globe-pin");
 const pinStatus = document.getElementById("globe-pin-status");
+const arrivalStatus = document.getElementById("globe-arrival-status");
 const deviceLine = document.getElementById("globe-device");
 const readoutLine = document.getElementById("globe-readout");
 const costButton = document.querySelector("[data-atmo-cost]");
@@ -238,6 +241,11 @@ const PARAMS = {
     max: 1000,
   },
   handOver: { fallback: 1, min: 0, max: 1 },
+  // The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6): on unless 0.
+  // While it runs it paces the dive (`/globe/flight-pace.js`, at most the
+  // 30 s of DEC-GL5-6) unless `diveMs` is set in the hash, which keeps
+  // the fixed dive as a manual override.
+  prefetch: { fallback: 1, min: 0, max: 1 },
   nightGain: { fallback: GLOBE_SURFACE_TUNING.nightGain, min: 0, max: 4 },
   waterRoughness: {
     fallback: GLOBE_SURFACE_TUNING.waterRoughness,
@@ -417,6 +425,11 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
   let dive = null;
   let diveStartedAt = 0;
   /**
+   * The dive's elapsed time from the real one (`globe-arrival.js`'s dive
+   * clock: as it is when fixed, the paced path when the prefetch runs).
+   */
+  let diveClock = (elapsedMs) => elapsedMs;
+  /**
    * The target's arrival: when, the spin's direction then, and how long the
    * start blends from it (0 when no spin frame was drawn).
    */
@@ -592,12 +605,13 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
      * camera's own direction, the start's tilt fading out), then hold there
      * as `landed`.
      */
-    dive(now, target, start, { durationMs, toAltitudeM }) {
+    dive(now, target, start, { durationMs, toAltitudeM, clock }) {
       dive = planDive(ellipsoid, start, orbitPose(ellipsoid, target), {
         durationMs,
         toAltitudeM,
       });
       diveStartedAt = now;
+      diveClock = clock ?? ((elapsedMs) => elapsedMs);
       choice = { target, source: "pin" };
       phase = "diving";
       note(now);
@@ -605,7 +619,7 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
     /** The pose for this frame, advancing the states. */
     pose(now) {
       if (phase === "diving" || phase === "landed") {
-        const step = diveStep(dive, now - diveStartedAt);
+        const step = diveStep(dive, diveClock(now - diveStartedAt));
         if (step.done && phase === "diving") {
           phase = "landed";
           note(now);
@@ -746,6 +760,22 @@ function currentPose(camera) {
  * button, a new target) ends a flight too. `handOver=0` holds at the
  * hand-over altitude instead of leaving, to look at it. `navigate` is
  * `location.assign` (the page leaves).
+ *
+ * THE ARRIVAL PREFETCH (round-5 plan 2026-10-01-0945 §3.6 step 1): once the
+ * position is known, the lab loads OsmDemo's `/osm/arrival-prefetch.js`
+ * with a dynamic import (its graph, the Osm library and H3, about 1.7 MB,
+ * stays out of the boot) and starts it for the target, so the city opens
+ * on a warm cache. Its progress paces the dive (`createDiveClock`: the
+ * flight's path over at most the 30 s cap of DEC-GL5-6, about 8.6 s when
+ * the data is already stored); `diveMs` set in the hash keeps the fixed
+ * dive instead, and `prefetch=0` turns it off. A module that does not
+ * load counts as done (nothing can be warmed, so nothing is waited for).
+ * Every way a flight stops (a press, a touch, a hidden page) aborts it.
+ * The hand-over does not wait past the dive: the paced dive lands when the
+ * data is in or at the cap, and then hands over at once (holding longer is
+ * an open decision, the round-5 results' Q2). The status line beside the
+ * pin (`#globe-arrival-status`) shows the tiles warmed of the total, cold
+ * or warm, then how it ended (`arrivalStatusText`).
  */
 function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
   let phase = "idle";
@@ -754,6 +784,92 @@ function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
   let located = null;
   /** The last failure (denied, timeout, unavailable), until the next press. */
   let failure = null;
+  /**
+   * The current flight's arrival prefetch: the module's handle once loaded
+   * (`prefetch`), whether its module failed to load (`gaveUp`), whether the
+   * flight was stopped (`stopped`), its final `outcome`, and the dive
+   * clock it paces. Null before the first flight.
+   */
+  let arrival = null;
+  let arrivalLine = "";
+  const NO_JOBS = { total: 0, warm: 0, fetched: 0, failed: 0 };
+  const arrivalCounts = () =>
+    arrival?.prefetch?.stats().counts ?? { overpass: NO_JOBS, dem: NO_JOBS };
+  const arrivalProgress = () => {
+    if (!arrival) return 0;
+    if (arrival.gaveUp) return 1;
+    return arrival.prefetch?.progress() ?? 0;
+  };
+  const renderArrival = () => {
+    const text =
+      arrival && arrival.outcome !== "off"
+        ? arrivalStatusText({
+            outcome: arrival.outcome,
+            counts: arrivalCounts(),
+          })
+        : "";
+    if (text === arrivalLine) return;
+    arrivalLine = text;
+    arrivalStatus.textContent = text;
+    arrivalStatus.hidden = text === "";
+  };
+  /** Stops the current prefetch, if it still runs. */
+  const stopArrival = () => {
+    if (!arrival || arrival.stopped) return;
+    arrival.stopped = true;
+    if (arrival.outcome === null) {
+      arrival.prefetch?.abort();
+      arrival.outcome = "aborted";
+    }
+    renderArrival();
+  };
+  /**
+   * Starts the arrival prefetch for `target` and returns the dive's clock
+   * (`flight.dive`'s `clock`): paced by it, or fixed by `diveMs`.
+   */
+  const startArrival = (target, params) => {
+    stopArrival();
+    const enabled = params.prefetch !== 0;
+    const manual = new URLSearchParams(location.hash.slice(1)).has("diveMs");
+    const clock = createDiveClock(
+      enabled && !manual
+        ? {
+            kind: "paced",
+            durationMs: params.diveMs,
+            pace: FLIGHT_PACE_DEFAULTS,
+          }
+        : { kind: "fixed", durationMs: params.diveMs },
+    );
+    const mine = {
+      prefetch: null,
+      gaveUp: false,
+      stopped: false,
+      outcome: enabled ? null : "off",
+      clock,
+    };
+    arrival = mine;
+    if (enabled) {
+      // A literal specifier: the deploy crawl ships the module and its
+      // graph from it (`build-lookdev.mjs`), and nothing loads at boot.
+      import("/osm/arrival-prefetch.js").then(
+        ({ startArrivalPrefetch }) => {
+          if (mine.stopped) return;
+          mine.prefetch = startArrivalPrefetch(target);
+          void mine.prefetch.finished.then((report) => {
+            if (mine.outcome === null) mine.outcome = report.outcome;
+            renderArrival();
+          });
+        },
+        () => {
+          mine.gaveUp = true;
+          if (mine.outcome === null) mine.outcome = "unavailable";
+          renderArrival();
+        },
+      );
+    }
+    renderArrival();
+    return (elapsedMs) => clock.elapsedMs(elapsedMs, arrivalProgress());
+  };
   const render = () => {
     const view = globePinView(phase);
     pinButton.setAttribute("aria-label", view.label);
@@ -794,6 +910,7 @@ function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
     if (before === "flying") {
       // Stopped: the camera stays where the flight left it, for the controls.
       flight.yieldToUser(performance.now());
+      stopArrival();
       return;
     }
     if (before === "locating") {
@@ -819,6 +936,7 @@ function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
     const params = getParams();
     // The intro takes the camera: no drag or momentum left to resume.
     controls.release();
+    const clock = startArrival(located, params);
     flight.dive(
       performance.now(),
       located,
@@ -827,7 +945,11 @@ function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
         distanceM: camera.position.length(),
         quaternion: camera.quaternion.clone(),
       },
-      { durationMs: params.diveMs, toAltitudeM: params.handOverKm * 1000 },
+      {
+        durationMs: params.diveMs,
+        toAltitudeM: params.handOverKm * 1000,
+        clock,
+      },
     );
     go("located");
   });
@@ -835,7 +957,9 @@ function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
   return {
     /** The controls took the camera, or the intro restarted. */
     cameraTaken() {
-      if (phase === "flying") go("touch");
+      if (phase !== "flying") return;
+      stopArrival();
+      go("touch");
     },
     /**
      * The page is hidden (another tab, a locked phone) while flying: the
@@ -847,6 +971,7 @@ function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
     hidden() {
       if (phase !== "flying") return;
       flight.yieldToUser(performance.now());
+      stopArrival();
       message = "Stopped: the page was hidden. Tap the pin to fly again.";
       go("touch");
     },
@@ -861,8 +986,9 @@ function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
       message = "Back from the city.";
       go("returned");
     },
-    /** Per frame: a landed dive hands over (or holds). */
+    /** Per frame: the status line follows; a landed dive hands over (or holds). */
     frame() {
+      renderArrival();
       if (phase !== "flying" || flight.state().phase !== "landed") return;
       if (getParams().handOver === 0) {
         message = `Arrived ${shown(getParams().handOverKm)} km above you (the hand-over is off).`;
@@ -875,6 +1001,9 @@ function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
         sun: sunAt(located),
       });
       go("arrived");
+      // The dive has landed: the data is in, or the cap has passed. Nothing
+      // waits longer (the round-5 results' Q2); the page leaves now.
+      stopArrival();
       navigate(lastUrl);
     },
     state: () => ({
@@ -883,6 +1012,15 @@ function bindPin({ flight, controls, camera, getParams, sceneMs, navigate }) {
       status: pinStatus.textContent,
       located,
       handOverUrl: lastUrl,
+      // The arrival prefetch of the current flight (null before one).
+      arrival: arrival && {
+        outcome: arrival.outcome,
+        progress: arrivalProgress(),
+        counts: arrivalCounts(),
+        paced: arrival.clock.paced,
+        rate: arrival.clock.rate(),
+        line: arrivalLine,
+      },
     }),
   };
 }

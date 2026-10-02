@@ -14,7 +14,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { withPreRound4Look } from "./globe-smoke-helpers.mjs";
+import { routeCityData, withPreRound4Look } from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const VIEW = withPreRound4Look(
@@ -36,6 +36,8 @@ async function boot(page, hash) {
     if (m.type() === "error") errors.push(m.text());
   });
   page.on("pageerror", (e) => errors.push(e.message));
+  // A pin press starts the arrival prefetch: its city data is answered here.
+  await routeCityData(page);
   await page.goto(`/labs/globe/#${hash}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
