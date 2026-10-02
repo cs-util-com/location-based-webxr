@@ -31,15 +31,20 @@ Decision record:
   must still include it; and because this runs on every crash-safety sync,
   flushing would split a visit that a sync lands in into two, both near full
   weight.
-- **It hands the mint the alignment as it stands at THIS run**, or, for a
-  code seen before a tracking restart or loop closure, the alignment its
-  odometry segment closed with (`feeder.alignmentFor(segment)`, the segment
-  of the code's newest sighting). The mint places every sighting through it,
-  so a code scanned as the recording started (seen through an alignment
+- **It hands the mint the alignment the feeder picked for the code**
+  (`feeder.alignmentFor(text)`, owner decision D28 revised 2026-10-02): the
+  FIRST MATURE alignment (80 m of session GPS extent) at or after the code's
+  last sighting; before maturity the alignment as it stands at THIS run; for
+  a code waiting when a tracking restart or loop closure came, the alignment
+  its odometry segment closed with. The mint places every sighting through
+  it, so a code scanned as the recording started (seen through an alignment
   with no walk behind it, whose yaw is arbitrary) gets the heading and
-  position of the walked alignment. A level written at an early
-  crash-safety sync can therefore differ from the one written at save even
-  when no new sighting came in; the save is what the delivered zip carries.
+  position of the walked alignment, and a code seen mid-recording and then
+  walked away from does not inherit the SLAM drift of the walk after the
+  floor was reached. A level written at an early crash-safety sync can
+  therefore differ from the one written at save even when no new sighting
+  came in (a code still waiting for maturity follows the alignment); the
+  save is what the delivered zip carries.
 - **Foreign codes are never minted.** Without that gate the recorder would
   write a real latitude and longitude for every WiFi sticker, menu code and
   parcel label the camera saw, into a zip the author then publishes. It is the
@@ -75,8 +80,10 @@ included in the mint (a single open burst still produces a file); a foreign code
 refused with a plain-words reason; a moved code refused; and both the written
 position and the unweighted comparison reported; and a code seen through a
 quarter-turned alignment written with the heading of the alignment at save;
-and a code seen at the start followed by a tracking restart, written
-through the alignment its segment closed with (with a real feeder).
+a code seen at the start followed by a tracking restart, written through
+the alignment its segment closed with; and a code left behind, written
+through the mature alignment of its sighting rather than the one at save
+(both with a real feeder).
 
 The suite creates a store at module load — the documented licence-activation
 path, and what production does at boot before any recording can be saved.

@@ -60,6 +60,8 @@ function feederWith(
     accumulator,
     onPlacement: vi.fn(),
     noteFrameChange: vi.fn(),
+    noteAlignment: vi.fn(),
+    reset: vi.fn(),
     alignmentFor: () => ({
       alignmentMatrix: IDENTITY,
       zero: { lat: 48, lon: 11 },
@@ -130,6 +132,8 @@ describe('createQrLevelZipContributor', () => {
         accumulator,
         onPlacement: vi.fn(),
         noteFrameChange: vi.fn(),
+        noteAlignment: vi.fn(),
+        reset: vi.fn(),
         alignmentFor: () => ({
           alignmentMatrix: IDENTITY,
           zero: { lat: 48, lon: 11 },
@@ -275,6 +279,8 @@ describe('createQrLevelZipContributor - the heading of a code seen as the record
           accumulator,
           onPlacement: vi.fn(),
           noteFrameChange: vi.fn(),
+          noteAlignment: vi.fn(),
+          reset: vi.fn(),
           alignmentFor: () => ({
             alignmentMatrix: IDENTITY,
             zero: { lat: 48, lon: 11 },
@@ -350,5 +356,52 @@ describe('createQrLevelZipContributor - a code seen before a tracking restart', 
       qr: { mintQuality?: { alignmentSampleCount?: number } };
     };
     expect(level.qr.mintQuality?.alignmentSampleCount).toBe(60);
+  });
+});
+
+describe('createQrLevelZipContributor - a code left behind (D28 revised)', () => {
+  it('mints it through the first mature alignment after its sighting, not the one at save', async () => {
+    // Why this test matters (milestone review H1): through the alignment at
+    // save, a code seen after the walk matured and then walked away from
+    // inherits all SLAM drift of the walk after it (8.6 m p50 at 500 m with
+    // 1 % and 1 degree per 100 m). The save must hand the mint the alignment
+    // the feeder froze at the first mature one at or after the sighting.
+    const atSighting: Matrix4 = [
+      1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 0, 5, 1,
+    ];
+    const zero = { lat: 48, lon: 11 };
+    let live = { alignmentMatrix: atSighting, count: 120, extentM: 150 };
+    const feeder = createQrSightingFeeder({
+      readAlignment: () => ({
+        alignmentMatrix: live.alignmentMatrix,
+        zero,
+        alignmentSampleCount: live.count,
+        gpsExtentM: live.extentM,
+      }),
+    });
+    const placement = {
+      pose: {
+        position: [0, 0, -2] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+      },
+      sizeM: 0.16,
+    };
+    for (let i = 0; i < 4; i += 1) feeder.onPlacement(OURS, placement, i * 125);
+    // The author walks 500 m on; the alignment keeps changing.
+    live = { alignmentMatrix: IDENTITY, count: 640, extentM: 560 };
+    feeder.noteAlignment();
+
+    const addFile = vi.fn();
+    const contributor = createQrLevelZipContributor({
+      getFeeder: () => feeder,
+      allowedHosts: HOSTS,
+      nowIso: () => NOW,
+    });
+    await expect(contributor.contribute(addFile)).resolves.toBe(1);
+    const blob = (addFile.mock.calls[0] as [string, Blob] | undefined)?.[1];
+    const level = JSON.parse(await blob!.text()) as {
+      qr: { mintQuality?: { alignmentSampleCount?: number } };
+    };
+    expect(level.qr.mintQuality?.alignmentSampleCount).toBe(120);
   });
 });

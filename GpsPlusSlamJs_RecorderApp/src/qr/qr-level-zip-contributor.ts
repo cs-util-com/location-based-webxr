@@ -120,12 +120,14 @@ export function createQrLevelZipContributor(
             sightings,
             spansFrameChange: feeder.accumulator.spansFrameChange(text),
             nowIso: deps.nowIso(),
-            // The alignment as it stands at THIS save, or the one the code's
-            // odometry segment closed with: a code scanned as the recording
-            // started was seen through an alignment with no walk behind it,
-            // and it is placed through this one instead. (Sightings that
-            // span segments are refused before it is used.)
-            currentAlignment: feeder.alignmentFor(sightings.at(-1)?.segment),
+            // D28 revised: the first mature alignment (80 m of GPS extent)
+            // at or after the code's last sighting, which the feeder froze;
+            // before maturity, the alignment as it stands at THIS save, or
+            // the one the code's odometry segment closed with. Never the
+            // immature snapshot a code scanned as the recording started was
+            // seen through. (Sightings that span segments are refused
+            // before it is used.)
+            currentAlignment: feeder.alignmentFor(text),
           });
           if (!result.ok) {
             outcomes.push({
