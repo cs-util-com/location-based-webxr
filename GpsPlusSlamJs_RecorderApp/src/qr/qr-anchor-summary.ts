@@ -22,6 +22,10 @@ const NOTEWORTHY_DISAGREEMENT_M = 0.5;
  *  used to decide whether a difference is worth a sentence. */
 const METRES_PER_DEGREE = 111_000;
 
+/** Appended to the line of a code marked headingUncertain (D31). */
+const HEADING_UNCERTAIN_NOTE =
+  'Heading uncertain: walk a bit further before saving for a reliable direction.';
+
 /**
  * One line per code, or `null` when the recording saw none — in which case the
  * block is hidden rather than shown saying nothing.
@@ -58,7 +62,13 @@ function describeOutcome(outcome: QrAnchorOutcome): string {
     // the phone instead of on trust.
     parts.push(`newest-visit weighting moved it ${drift.toFixed(1)} m`);
   }
-  return `${parts.join(' · ')}.`;
+  const line = `${parts.join(' · ')}.`;
+  // D31: written, but its heading rests on under 10 m of GPS walk. Said
+  // while the author is still on site, where walking on and saving again
+  // fixes it. Absent (an older mint) and false say nothing.
+  return outcome.headingUncertain === true
+    ? `${line} ${HEADING_UNCERTAIN_NOTE}`
+    : line;
 }
 
 function label(outcome: QrAnchorOutcome): string {

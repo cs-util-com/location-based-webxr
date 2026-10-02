@@ -51,6 +51,10 @@ export interface QrAnchorOutcome {
   lon?: number;
   unweightedLat?: number;
   unweightedLon?: number;
+  /** The level was marked as having an uncertain heading (owner decision
+   *  D31: its alignment rested on under 10 m of GPS extent). Absent when
+   *  the mint could not tell, or for a code that was not written. */
+  headingUncertain?: boolean;
 }
 
 export interface QrLevelZipContributorDeps {
@@ -155,6 +159,7 @@ export function createQrLevelZipContributor(
             new Blob([result.level.json], { type: 'application/json' })
           );
           written += 1;
+          const heading = result.level.level.qr.mintQuality?.headingUncertain;
           outcomes.push({
             text,
             id,
@@ -168,6 +173,8 @@ export function createQrLevelZipContributor(
             lon: result.level.level.qr.geo?.lon,
             unweightedLat: result.quality.unweighted?.lat,
             unweightedLon: result.quality.unweighted?.lon,
+            // D31: copied only when the mint knew; absent stays absent.
+            ...(heading !== undefined ? { headingUncertain: heading } : {}),
           });
         } catch (err) {
           outcomes.push({

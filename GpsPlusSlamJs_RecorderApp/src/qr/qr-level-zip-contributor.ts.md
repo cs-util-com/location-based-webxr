@@ -12,6 +12,11 @@ Decision record:
 ## Public API
 
 - `QrAnchorOutcome` — what happened to one code, for the summary screen.
+  `headingUncertain?` (owner decision D31) is copied from the written
+  level's `mintQuality`: `true` when the code was composed through an
+  alignment with under 10 m of GPS extent, `false` when the extent was known
+  and long enough, absent when the mint did not know it or nothing was
+  written. The summary screen turns `true` into a plain-words note.
 - `createQrLevelZipContributor(deps): ZipExportContributor`
   - `deps.getFeeder()` — the session's sighting fold, `null` when QR
     recording is off.
@@ -83,7 +88,10 @@ quarter-turned alignment written with the heading of the alignment at save;
 a code seen at the start followed by a tracking restart, written through
 the alignment its segment closed with; and a code left behind, written
 through the mature alignment of its sighting rather than the one at save
-(both with a real feeder).
+(both with a real feeder); and the D31 marker with a real feeder: a 4 m
+extent writes the code with `headingUncertain: true` in the level and the
+outcome, 25 m gives `false`, and an unknown extent leaves the outcome
+field absent.
 
 The suite creates a store at module load — the documented licence-activation
 path, and what production does at boot before any recording can be saved.

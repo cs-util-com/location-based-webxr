@@ -405,3 +405,68 @@ describe('createQrLevelZipContributor - a code left behind (D28 revised)', () =>
     expect(level.qr.mintQuality?.alignmentSampleCount).toBe(120);
   });
 });
+
+describe('createQrLevelZipContributor - an uncertain heading (D31)', () => {
+  /** A real feeder whose session alignment rests on `extentM` of GPS
+   *  extent (or none), with one code seen four times. */
+  function feederWithExtent(extentM: number | undefined) {
+    const feeder = createQrSightingFeeder({
+      readAlignment: () => ({
+        alignmentMatrix: IDENTITY,
+        zero: { lat: 48, lon: 11 },
+        alignmentSampleCount: 30,
+        ...(extentM !== undefined ? { gpsExtentM: extentM } : {}),
+      }),
+    });
+    const placement = {
+      pose: {
+        position: [0, 0, -2] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+      },
+      sizeM: 0.16,
+    };
+    for (let i = 0; i < 4; i += 1) feeder.onPlacement(OURS, placement, i * 125);
+    return feeder;
+  }
+
+  async function outcomeFor(
+    extentM: number | undefined
+  ): Promise<{ outcome: QrAnchorOutcome | undefined; level: unknown }> {
+    const sink = outcomeSink();
+    const addFile = vi.fn();
+    const contributor = createQrLevelZipContributor({
+      getFeeder: () => feederWithExtent(extentM),
+      allowedHosts: HOSTS,
+      nowIso: () => NOW,
+      onOutcomes: sink.onOutcomes,
+    });
+    await expect(contributor.contribute(addFile)).resolves.toBe(1);
+    const blob = (addFile.mock.calls[0] as [string, Blob] | undefined)?.[1];
+    return { outcome: sink.seen()[0], level: JSON.parse(await blob!.text()) };
+  }
+
+  // Why this test matters (owner decision D31): a code saved after under
+  // 10 m of GPS walk is written, but its heading is close to guesswork
+  // (13.8 degrees p50, 88 p90 on the extent sweep). The marker must reach
+  // both the file (for a viewer) and the summary outcome (for the author,
+  // who can still walk on and save again).
+  it('writes the code, marks the level, and tells the summary', async () => {
+    const { outcome, level } = await outcomeFor(4);
+    expect(outcome?.written).toBe(true);
+    expect(outcome?.headingUncertain).toBe(true);
+    expect(level).toMatchObject({
+      qr: { mintQuality: { headingUncertain: true, alignmentGpsExtentM: 4 } },
+    });
+  });
+
+  it('reports a walk long enough as not uncertain', async () => {
+    const { outcome } = await outcomeFor(25);
+    expect(outcome?.headingUncertain).toBe(false);
+  });
+
+  it('leaves the field absent when the extent is unknown', async () => {
+    // Absent means unknown, and the summary then says nothing.
+    const { outcome } = await outcomeFor(undefined);
+    expect(outcome).not.toHaveProperty('headingUncertain');
+  });
+});

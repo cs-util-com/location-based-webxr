@@ -28,6 +28,12 @@ anything.
   on the phone instead of on trust.
 - **Never prints `undefined` or `NaN`** for a partially-filled outcome — a
   declined code carries no size or spread.
+- **An uncertain heading is said out loud** (owner decision D31): a written
+  code whose outcome carries `headingUncertain: true` (its alignment rested
+  on under 10 m of GPS extent) gets "Heading uncertain: walk a bit further
+  before saving for a reliable direction." after its line. Absent (an older
+  mint, or one that could not tell) and `false` add nothing, and a refused
+  code never gets it: no file was written, so there is no heading to doubt.
 - The metres-per-degree constant is only ever used to decide whether a
   difference is worth a sentence; it is not a geodesy result and must not be
   reused as one.
@@ -37,4 +43,5 @@ anything.
 `qr-anchor-summary.test.ts` — the hidden-when-empty case; a placed code with
 its visit count, size and turn; a refusal said out loud with its reason; the
 foreign-code label; the weighting note appearing only when the answer actually
-moved; singular "1 visit"; and no `undefined`/`NaN` for a partial outcome.
+moved; singular "1 visit"; the uncertain-heading note shown only for a written
+code marked `headingUncertain: true`; and no `undefined`/`NaN` for a partial outcome.
