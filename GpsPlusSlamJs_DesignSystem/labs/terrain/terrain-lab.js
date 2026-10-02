@@ -36,12 +36,15 @@ import {
   viewWidthM,
 } from "./terrain-exaggeration.js";
 import { PASTEL_ATLAS, hexToRgb, rampLut } from "./terrain-style.js";
+import { NATURAL, SHADER_STYLE, SWISS } from "./terrain-styles.js";
 import {
-  NATURAL,
-  SHADER_STYLE,
-  SWISS,
-  naturalBaseColour,
-} from "./terrain-styles.js";
+  coarseLuminanceGrid,
+  fineLuminanceGrid,
+} from "./terrain-detail-grid.js";
+import {
+  TILE_TIMEOUT_MS,
+  fetchTerrariumTiles,
+} from "./terrain-relief-fetch.js";
 import {
   FAR_FIELD,
   farFieldAt,
@@ -71,9 +74,7 @@ import {
   bandRampLut,
   bandSweep,
   boxMeanAt,
-  footprintLuminanceGrid,
   footprintM,
-  linearLuminance,
   summedArea,
 } from "./terrain-globe-colour.js";
 import {
@@ -126,8 +127,6 @@ const DEG = Math.PI / 180;
 const BACKGROUND = "#e4e8ec";
 /** The mesh's vertex pitch: every second post (plan §9 finding 20: one density). */
 const MESH_STEP_M = 2 * FIELD.spacingM;
-/** A tile request that never answers must not stall the lab forever. */
-const TILE_TIMEOUT_MS = 30_000;
 /** The preset the page opens on: the tilted view of the screenshots. */
 const DEFAULT_PRESET = "oblique";
 
@@ -388,33 +387,6 @@ async function decodeRgba(blob) {
     gl.deleteTexture(texture);
     bitmap.close();
   }
-}
-
-/**
- * Fetches every tile on the page's thread (plan §9 finding 4), each bounded
- * by a timeout; a failure is a gap (`bytes: null`), never a thrown batch.
- */
-async function fetchTiles(tiles, onProgress) {
-  let done = 0;
-  return Promise.all(
-    tiles.map(async (t) => {
-      const url = TERRARIUM_URL_TEMPLATE.replace("{z}", String(t.z))
-        .replace("{x}", String(t.x))
-        .replace("{y}", String(t.y));
-      let bytes = null;
-      try {
-        const response = await fetch(url, {
-          signal: AbortSignal.timeout(TILE_TIMEOUT_MS),
-        });
-        if (response.ok) bytes = await response.arrayBuffer();
-      } catch {
-        bytes = null;
-      }
-      done += 1;
-      onProgress(done);
-      return { ...t, url, bytes };
-    }),
-  );
 }
 
 /**
@@ -892,35 +864,12 @@ function start() {
         aspectSnowM: params.aspect,
         rockSlopeDeg: params.rock,
       };
-      const fineLum = new Float64Array(f.height.length);
-      for (let i = 0; i < fineLum.length; i++) {
-        fineLum[i] = linearLuminance(
-          naturalBaseColour(
-            {
-              heightM: f.height[i] + run.relief.datum,
-              gx: f.gx[i],
-              gy: f.gy[i],
-              smallM: f.reliefSmall[i],
-              spreadM: f.reliefStd[i],
-              latDeg: lat,
-            },
-            o,
-            NATURAL,
-            1,
-          ),
-        );
-      }
-      const coarse = footprintLuminanceGrid({
-        fineLum,
-        grid: {
-          side: spec.side,
-          spacingM: spec.spacingM,
-          extentM: spec.extentM,
-        },
-        halfM: spec.halfExtentM,
-        side: GLOBE_ALBEDO.side,
-        footprint: footprintM(FAR_FIELD.level, lat),
+      const fineLum = fineLuminanceGrid(f, {
+        datum: run.relief.datum,
+        latDeg: lat,
+        cover: o,
       });
+      const coarse = coarseLuminanceGrid(fineLum, spec, lat);
       globeColour.coarse?.dispose();
       globeColour.coarse = createScalarTexture(coarse, GLOBE_ALBEDO.side, (v) =>
         THREE.DataUtils.toHalfFloat(v),
@@ -1191,7 +1140,7 @@ function start() {
     showErrors();
     applyLive();
     loading.show(`Loading elevation tiles: 0 of ${count}`);
-    fetchTiles(tiles, (done) => {
+    fetchTerrariumTiles(tiles, TERRARIUM_URL_TEMPLATE, (done) => {
       if (mine === run.regionId) {
         loading.show(`Loading elevation tiles: ${done} of ${count}`);
       }

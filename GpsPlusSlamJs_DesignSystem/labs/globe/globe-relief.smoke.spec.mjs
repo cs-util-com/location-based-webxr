@@ -113,3 +113,182 @@ test("the pitch law's low pitch, swept over 30, 45 and 60 degrees", async ({
       expect(Math.max(...r.top.slice(0, 3))).toBeGreaterThan(10);
   }
 });
+
+/** The frame's lower 60 % (the ground under the hold), every 4 %. */
+const groundGrid = () => {
+  const g = [];
+  for (let y = 0.4; y <= 0.98; y += 0.04)
+    for (let x = 0.02; x <= 0.98; x += 0.04) g.push([x, y]);
+  return g;
+};
+const meanDiff = (a, b) =>
+  a.reduce(
+    (s, p, i) =>
+      s +
+      (Math.abs(p[0] - b[i][0]) +
+        Math.abs(p[1] - b[i][1]) +
+        Math.abs(p[2] - b[i][2])) /
+        3,
+    0,
+  ) / a.length;
+
+// WHY (F1, globe-albedo plus its detail on the library's tiles): the
+// relief's tiles wear the imagery as the albedo and take the terrain
+// lab's detail factor over the target's 256 km region (built in the page
+// from the same synthetic heights). Under the hold the detail must reach
+// the tiles: the frame differs from the same view without it, more for a
+// stronger detail. Bound: mean 1 level at the lab's default 0.5, reported
+// at x0.5 and x2; the sweep shows the weight acting (0.25, 0.5, 1).
+test("the relief's tiles take the terrain lab's detail under the hold", async ({
+  browser,
+}) => {
+  test.setTimeout(900_000);
+  const grid = groundGrid();
+  const frames = {};
+  const states = {};
+  for (const detail of [0, 0.25, 0.5, 1]) {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const errors = await diveAndLand(page, context, `${BASE}&detail=${detail}`);
+    if (detail > 0) {
+      await page.waitForFunction(
+        () => {
+          const d = window.__globeLab.state().relief?.detail;
+          return d?.state === "ready" || d?.state === "failed";
+        },
+        null,
+        { timeout: 120_000 },
+      );
+    }
+    states[detail] = (
+      await page.evaluate(() => window.__globeLab.state())
+    ).relief.detail;
+    frames[detail] = await page.evaluate(
+      (g) => window.__globeLab.readPixels(g),
+      grid,
+    );
+    expect(errors, `detail ${detail}`).toEqual([]);
+    await context.close();
+  }
+  const diff = (d) => meanDiff(frames[0], frames[d]);
+  const BOUND = 1;
+  const verdict = (v) =>
+    [0.5, 1, 2].map((k) => `x${k} ${v > BOUND * k ? "ok" : "NO"}`).join(" ");
+  console.log(
+    `relief detail under the hold, ${grid.length} points against detail 0: 0.25 ${diff(0.25).toFixed(2)}, 0.5 ${diff(0.5).toFixed(2)} (bound ${BOUND}: ${verdict(diff(0.5))}), 1 ${diff(1).toFixed(2)}; region ${JSON.stringify(states[0.5])}`,
+  );
+  expect(states[0]?.state).toBe("idle");
+  expect(states[0.5]?.state).toBe("ready");
+  expect(states[0.5]?.changedShare).toBeGreaterThan(0.05);
+  expect(diff(0.5)).toBeGreaterThan(BOUND);
+  expect(diff(0.25)).toBeLessThan(diff(0.5));
+  expect(diff(0.5)).toBeLessThan(diff(1));
+});
+
+/**
+ * Waits until both carriers have what they draw loaded and the counts
+ * hold still for a second: the globe's tiles while it has pixels (share
+ * below 1), the relief's while it has (share above 0).
+ */
+async function settleBoth(page) {
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      const r = s.relief;
+      const ready =
+        (r.share >= 1 || s.pendingTiles === 0) &&
+        (r.share <= 0 || (r.settled && r.visibleTiles > 0));
+      const w = window;
+      const key = `${r.share},${s.loadedTiles},${r.visibleTiles}`;
+      if (!ready || w.__bandKey !== key) {
+        w.__bandKey = key;
+        w.__bandSince = performance.now();
+        return false;
+      }
+      return performance.now() - w.__bandSince >= 1000;
+    },
+    null,
+    { timeout: 120_000, polling: 100 },
+  );
+}
+
+// WHY (one-scene plan §3.2 and §6; F1): above the band the globe's own
+// surface draws, below it the relief's tiles, and between them a dithered
+// cross-fade. The two carriers differ by a mean 4.3 levels at noon from
+// 1,000 km (the relief's library tiles are coarser over part of the
+// frame: globe-terrain.smoke.spec.mjs), so the swap must be spread: at a
+// fixed view inside the band, each 0.1 step of the relief's share may
+// change the ground by at most a mean 1 level (reported at x0.5 and x2),
+// so no frame of the dive jumps. Measured at three heights across the
+// band. Outside the band the other carrier is not drawn; the tile counts
+// and a frame-time ratio (SwiftShader, relative only) state the band's
+// cost.
+test("the band's cross-fade between the globe and the relief is continuous, and its cost stated", async ({
+  browser,
+}) => {
+  test.setTimeout(1_500_000);
+  const grid = groundGrid();
+  const STEP = 1;
+  const verdict = (v) =>
+    [0.5, 1, 2].map((k) => `x${k} ${v <= STEP * k ? "ok" : "NO"}`).join(" ");
+  const worst = [];
+  for (const altKm of [1900, 1550, 1250]) {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const base = `${BASE}&handOverKm=${altKm}&detail=0`;
+    await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+    await context.setGeolocation(TARGET);
+    const errors = await bootGlobe(page, `${base}&bandShare=0`);
+    await page.locator("#globe-pin").click();
+    await page.waitForFunction(
+      () => {
+        const s = window.__globeLab.state();
+        return s.phase === "landed" && s.pin.phase === "idle";
+      },
+      null,
+      { timeout: 120_000 },
+    );
+    const natural = await page.evaluate(() => {
+      const s = window.__globeLab.state();
+      return s.altitudeM;
+    });
+    const frames = [];
+    const costs = [];
+    for (let i = 0; i <= 10; i++) {
+      const share = i / 10;
+      await page.evaluate((h) => {
+        location.hash = h;
+      }, `${base}&bandShare=${share}`);
+      await page.waitForFunction(
+        (want) => window.__globeLab.state().relief?.share === want,
+        share,
+      );
+      await settleBoth(page);
+      frames.push(
+        await page.evaluate((g) => window.__globeLab.readPixels(g), grid),
+      );
+      if (i % 5 === 0) {
+        const s = await page.evaluate(() => window.__globeLab.state());
+        costs.push({
+          share,
+          globeTiles: s.relief.globeDrawn ? s.relief.globeTiles : 0,
+          reliefTiles: s.relief.reliefDrawn ? s.relief.visibleTiles : 0,
+          ms:
+            (await page.evaluate(() => window.__globeLab.timeFrames(10))) / 10,
+        });
+      }
+    }
+    const steps = frames.slice(1).map((f, i) => meanDiff(frames[i], f));
+    const max = Math.max(...steps);
+    worst.push(max);
+    console.log(
+      `band at ${altKm} km (landed ${(natural / 1000).toFixed(0)} km): per 0.1 of share, mean |difference| ${steps.map((d) => d.toFixed(2)).join(" ")}; worst ${max.toFixed(2)} (bound ${STEP}: ${verdict(max)}); full swap ${meanDiff(frames[0], frames[10]).toFixed(2)}; cost ${costs.map((c) => `share ${c.share}: globe ${c.globeTiles} tiles, relief ${c.reliefTiles} tiles, ${c.ms.toFixed(1)} ms a frame`).join("; ")}`,
+    );
+    expect(errors, `${altKm} km`).toEqual([]);
+    // Outside the band (share 0 and 1) the other carrier is not drawn.
+    expect(costs[0].reliefTiles, `${altKm} km`).toBe(0);
+    expect(costs[2].globeTiles, `${altKm} km`).toBe(0);
+    await context.close();
+  }
+  for (const max of worst) expect(max).toBeLessThanOrEqual(STEP);
+});

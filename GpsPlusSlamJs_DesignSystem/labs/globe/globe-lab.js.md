@@ -49,7 +49,7 @@
   `turnMs` (0-10000), `diveMs` (the pin's dive, 1000-60000, default
   15000; set in the hash it fixes the dive's length by hand, otherwise
   the arrival prefetch paces it), `prefetch` (the arrival prefetch, on
-  unless 0; no panel control), `handOverKm` (the hand-over altitude, 1-1000, default 150; the
+  unless 0; no panel control), `handOverKm` (the hand-over altitude, 1-5000, default 150; the
   plate offers 20, 50, 150), `handOver` (1 opens the city, 0 holds),
   `nightGain` (0-4, default 0.7), `waterRoughness`,
   `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default 0.5),
@@ -150,8 +150,9 @@
     `starMag` (fewer stars) and a high `starGain` it gives the
     reference's few bright stars as an alternative to the owner's dense
     field.
-  - `sky` (F1, DEC-GL5-11; not a reference-look switch): the sky
-    fill's floor, the terrain lab's `sky` key, default `SKY_FILL.floor`
+  - `skyFloor` (F1, DEC-GL5-11; not a reference-look switch): the sky
+    fill's floor, the terrain lab's `sky` key (here `sky` is the
+    background pass's switch), default `SKY_FILL.floor`
     (0.5) from the Globe package's one sky level (`sky-level.ts`). A low
     sun's ground keeps that much of a zenith sun's light from the sky, as
     the terrain lab's relief does, so relief and globe agree at dusk; 0 is
@@ -261,10 +262,27 @@
   F1; DEC-GL5-9):
   - `relief=1` (read once, at load; 0 by default until the atmosphere
     hand-over, F2) draws the library's terrain tiles
-    (`/globe/globe-terrain.js`) as the surface in place of the generated
-    globe tiles: the globe's group holds them, its template and uniforms
-    light them, its sun still turns with the tile group; the centre
-    raycast hits them. `reliefHeights=synthetic` serves heights generated
+    (`/globe/globe-terrain.js`) as the surface below the altitude band:
+    the globe's group holds them, its template and uniforms light them,
+    its sun still turns with the tile group; the centre raycast hits
+    whichever carrier draws most of the pixels.
+  - The altitude band (one-scene plan §3.2): above `bandHigh` (km, default
+    2,000) the globe's own tiles draw alone, at and below `bandLow`
+    (default 1,200) the relief's, and between them a dithered cross-fade
+    at `carrierShareAt` of the camera's altitude, computed once a frame
+    (`uCarrierShare`; each pixel goes to one carrier). Outside the band
+    the other carrier is neither drawn nor updated, so it fetches nothing.
+    `bandShare` (0-1) fixes the share at one view, for the smokes. The
+    band exists because further out the carriers differ (at noon from
+    1,000 km by a mean 4.31 levels, the relief's tiles coarser over part
+    of the frame).
+  - `detail` (0-1, default `GLOBE_ALBEDO.detail`, 0.5; 0 off):
+    `globe-albedo`'s detail on the relief's tiles. At the pin's fix the
+    page builds the terrain lab's 256 km region around the target
+    (`globe-detail-region.js`, loaded with the relief only) and hands its
+    grid of factors to the tiles; it applies at the next pin press.
+  - `handOverKm` goes up to 5,000 km since F1, so a smoke can hold inside
+    the band. `reliefHeights=synthetic` serves heights generated
     in the page (`../globe-terrain/synthetic-heights.js`; the smokes),
     otherwise the live Terrarium tiles, credited in the credits line.
   - Every frame the relief's exaggeration is `exaggerationAt` of the
@@ -278,7 +296,8 @@
     ray onto the drawn relief, at the hold's exaggeration), whichever is
     higher. `handOver` stays default 1 (DEC-GL5-8).
   - `state()` adds `relief` (`{ heightScale, litTiles, visibleTiles,
-heights }` or null) and `cameraDepressionDeg`.
+heights, share, settled, globeDrawn, reliefDrawn, globeTiles, detail }`
+    or null; `detail` is the region's state) and `cameraDepressionDeg`.
   - Not in F1 (recorded for F2/F3): the cloud slab's depth input and style
     C's neighbourhood terms on the library tiles; the re-oriented frame and
     the sky level's move into the Globe package are in the record's F1

@@ -17,7 +17,11 @@
     answer for a superseded region is dropped (`run.regionId`); the tiles of the region
     (`regionTiles`, projected by the Osm library's `toWorldPixel` in its
     `enuFrameAt` frame) are FETCHED ON THE PAGE, each bounded by a 30 s
-    timeout, a failure a gap, never a thrown batch;
+    timeout, a failure a gap, never a thrown batch (`terrain-relief-fetch.js`,
+    shared with the globe lab's detail region);
+  - globe-albedo's fine and coarse luminance come from
+    `terrain-detail-grid.js` (`fineLuminanceGrid`, `coarseLuminanceGrid`),
+    the implementation the globe lab's relief detail reads too;
   - copies of the bytes go to `terrain-worker.js`, transferred (the
     originals stay on the page for a rebuild when the sky view changes);
     its grids are packed

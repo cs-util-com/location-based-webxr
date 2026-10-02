@@ -65,9 +65,11 @@ import { createGlobeTerrain } from "/globe/globe-terrain.js";
 import { SKY_FILL } from "/globe/sky-level.js";
 import {
   GLOBE_FLIGHT,
+  carrierShareAt,
   exaggerationAt,
   minimumAltitudeM,
 } from "/globe/globe-flight.js";
+import { GLOBE_ALBEDO } from "../terrain/terrain-globe-colour.js";
 import {
   SYNTHETIC_HEIGHTS_URL,
   installSyntheticHeights,
@@ -256,10 +258,23 @@ const PARAMS = {
   // was. `reliefNear` is the near-ground exaggeration (3, DEC-GL5-5).
   relief: { fallback: 0, min: 0, max: 1 },
   reliefNear: { fallback: GLOBE_FLIGHT.exaggerationNear, min: 1, max: 5 },
+  // The altitude band (one-scene plan §3.2; km): above `bandHigh` the
+  // globe's own surface draws alone, at and below `bandLow` the relief's
+  // tiles, a dithered cross-fade between (`carrierShareAt`). Outside the
+  // band the other carrier is neither drawn nor updated (so not fetched).
+  bandHigh: { fallback: GLOBE_FLIGHT.bandHighM / 1000, min: 200, max: 10_000 },
+  bandLow: { fallback: GLOBE_FLIGHT.bandLowM / 1000, min: 100, max: 9_000 },
+  // A fixed share in place of the altitude's (null: by altitude), so a
+  // smoke can step the cross-fade at one view.
+  bandShare: { fallback: null, min: 0, max: 1 },
+  // globe-albedo's detail on the relief's tiles (the terrain lab's style B
+  // high-pass, `globe-detail-region.js`): its weight, 0 off.
+  detail: { fallback: GLOBE_ALBEDO.detail, min: 0, max: 1 },
+  // Up to 5,000 km since F1, so a smoke can hold inside the altitude band.
   handOverKm: {
     fallback: GLOBE_DIVE.handOverAltitudeM / 1000,
     min: 1,
-    max: 1000,
+    max: 5000,
   },
   handOver: { fallback: 1, min: 0, max: 1 },
   // The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6): on unless 0.
@@ -318,8 +333,9 @@ const PARAMS = {
   twilight: { fallback: 0, min: 0, max: 1 },
   // The sky fill's floor (DEC-GL5-11; the terrain lab's `sky` key, the
   // Globe package's one sky level): what a low sun's ground keeps from the
-  // sky. 0 is the look before the fill.
-  sky: { fallback: SKY_FILL.floor, min: 0, max: 1 },
+  // sky. 0 is the look before the fill. Not `sky`, which is the
+  // background pass's switch on this page.
+  skyFloor: { fallback: SKY_FILL.floor, min: 0, max: 1 },
   // 0.1 by default (round-5 plan DEC-GL5-4: navy space).
   space: { fallback: 0.1, min: 0, max: 1 },
   starGlow: { fallback: 0, min: 0, max: 1 },
@@ -815,6 +831,7 @@ function bindPin({
   sceneMs,
   navigate,
   diveFloorM = () => 0,
+  onLocated = () => {},
 }) {
   let phase = "idle";
   let message = "";
@@ -972,6 +989,7 @@ function bindPin({
     }
     located = { lat: outcome.fix.lat, lng: outcome.fix.lng };
     const params = getParams();
+    onLocated(located, params);
     // The intro takes the camera: no drag or momentum left to resume.
     controls.release();
     const clock = startArrival(located, params);
@@ -1267,12 +1285,22 @@ async function start() {
           heightScale: 1,
         })
       : null;
-  if (terrain) {
-    globe.tiles.group.visible = false;
-    globe.group.add(terrain.tiles.group);
-  }
-  /** The tiles the surface is drawn with: the relief's or the globe's. */
-  const surfaceTiles = terrain ? terrain.tiles : globe.tiles;
+  if (terrain) globe.group.add(terrain.tiles.group);
+  // The relief's detail colour, loaded only for the relief (its worker reads
+  // the Osm library, which the boot graph must not).
+  const detailRegion = terrain
+    ? (await import("./globe-detail-region.js")).createDetailRegion({
+        terrain,
+        urlTemplate: terrarium
+          ? terrarium.TERRARIUM_URL_TEMPLATE
+          : SYNTHETIC_HEIGHTS_URL,
+      })
+    : null;
+  /** The relief's share of the pixels this frame (the band's cross-fade). */
+  let bandShare = terrain ? 1 : 0;
+  /** The tiles the surface is mostly drawn with now: the relief's or the globe's. */
+  const surfaceTiles = () =>
+    terrain && bandShare >= 0.5 ? terrain.tiles : globe.tiles;
   const credits = creditsFor(globe.activeSources());
   renderCredits(
     credits,
@@ -1377,7 +1405,7 @@ async function start() {
     u.uGrade.value = params.grade;
     u.uCloudRelief.value = params.cloudRelief;
     u.uTwilight.value = params.twilight;
-    u.uSkyFloor.value = params.sky;
+    u.uSkyFloor.value = params.skyFloor;
     sky.setStarGlow(params.starGlow);
     globe.sun.intensity = params.sunIntensity;
     sky.setLook({ sunDiameterDeg: params.sunSize, glow: params.sunGlow });
@@ -1545,6 +1573,13 @@ async function start() {
   };
   pin = bindPin({
     diveFloorM,
+    // The relief's detail colour over the target's region, built while
+    // the dive runs.
+    onLocated: (target, p) => {
+      detailRegion?.load(target, { detail: p.detail }).catch((error) => {
+        console.error(`The relief's detail could not load: ${error}`);
+      });
+    },
     flight,
     controls,
     camera,
@@ -1598,14 +1633,8 @@ async function start() {
     }
     pin.frame();
     if (terrain) {
-      // The globe's own tiles are not drawn: only its sun and uniforms.
-      terrain.tiles.setCamera(camera);
-      renderer.getDrawingBufferSize(terrainResolution);
-      terrain.tiles.setResolution(
-        camera,
-        terrainResolution.x,
-        terrainResolution.y,
-      );
+      // The altitude band: each carrier is drawn, and updated (so fetched),
+      // only where it has pixels to draw.
       camera.updateMatrixWorld();
       const altitudeM = Math.max(
         0,
@@ -1613,10 +1642,30 @@ async function start() {
           globe.tiles.group.worldToLocal(camera.position.clone()),
         ),
       );
-      terrain.plugin.heightScale = exaggerationAt(altitudeM, {
-        near: params.reliefNear,
-      });
-      terrain.tiles.update();
+      const highM = params.bandHigh * 1000;
+      bandShare =
+        params.bandShare ??
+        carrierShareAt(altitudeM, {
+          highM,
+          lowM: Math.min(params.bandLow * 1000, highM - 1),
+        });
+      globe.surfaceUniforms.uCarrierShare.value = bandShare;
+      globe.tiles.group.visible = bandShare < 1;
+      if (bandShare < 1) globe.update(camera, renderer);
+      terrain.tiles.group.visible = bandShare > 0;
+      if (bandShare > 0) {
+        terrain.tiles.setCamera(camera);
+        renderer.getDrawingBufferSize(terrainResolution);
+        terrain.tiles.setResolution(
+          camera,
+          terrainResolution.x,
+          terrainResolution.y,
+        );
+        terrain.plugin.heightScale = exaggerationAt(altitudeM, {
+          near: params.reliefNear,
+        });
+        terrain.tiles.update();
+      }
     } else {
       globe.update(camera, renderer);
     }
@@ -1739,7 +1788,7 @@ async function start() {
    */
   const centreLatLon = () => {
     raycaster.setFromCamera(centre, camera);
-    const hit = raycaster.intersectObject(surfaceTiles.group, true)[0];
+    const hit = raycaster.intersectObject(surfaceTiles().group, true)[0];
     // A hit beyond the Earth's centre is on the far side: the ray slipped
     // past the near surface, so there is no answer, not a wrong one.
     if (!hit || hit.distance > camera.position.length()) return null;
@@ -1822,7 +1871,7 @@ async function start() {
         grade: globe.surfaceUniforms.uGrade.value,
         cloudRelief: globe.surfaceUniforms.uCloudRelief.value,
         twilight: globe.surfaceUniforms.uTwilight.value,
-        sky: globe.surfaceUniforms.uSkyFloor.value,
+        skyFloor: globe.surfaceUniforms.uSkyFloor.value,
         skyShare: globe.surfaceUniforms.uSkyShare.value,
         space: sky.uniforms.uSpace.value,
         starGlow: sky.starUniforms.uStarGlow.value,
@@ -1892,6 +1941,16 @@ async function start() {
             litTiles: terrain.litTiles(),
             visibleTiles: terrain.tiles.visibleTiles.size,
             heights: startParams.reliefHeights,
+            share: bandShare,
+            settled:
+              terrain.tiles.loadProgress === 1 &&
+              !terrain.tiles.downloadQueue.running &&
+              !terrain.tiles.parseQueue?.running &&
+              !terrain.tiles.processNodeQueue?.running,
+            globeDrawn: globe.tiles.group.visible,
+            reliefDrawn: terrain.tiles.group.visible,
+            globeTiles: globe.tiles.visibleTiles.size,
+            detail: detailRegion.state(),
           }
         : null,
       zoomOutLimitM: zoomOutM(),

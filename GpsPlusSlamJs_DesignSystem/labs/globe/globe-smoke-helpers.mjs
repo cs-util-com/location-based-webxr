@@ -111,7 +111,7 @@ const PRE_ROUND4_LOOK = {
   atmo: "0",
   // No sky fill (DEC-GL5-11 reached the globe in F1): the floors were
   // measured on the direct light alone.
-  sky: "0",
+  skyFloor: "0",
 };
 
 /**
