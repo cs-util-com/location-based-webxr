@@ -1341,7 +1341,10 @@ function detectionRows(
           const outs: Outcome[] = [];
           traces.forEach((tr, i) => {
             if (Number.isFinite(h) && !covers(tr, h)) return;
-            for (const t of times[i]!) outs.push(outcomeOf(i, t <= h));
+            // `t` is Infinity for a move never read as moved, and
+            // Infinity <= Infinity: the "Any" column needs the finite test.
+            for (const t of times[i]!)
+              outs.push(outcomeOf(i, Number.isFinite(t) && t <= h));
           });
           const r = rate(outs, unitName, false);
           row[Number.isFinite(h) ? `det${h}` : "detAny"] =
