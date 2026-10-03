@@ -730,7 +730,9 @@ test("cloud shadows are the column alone, the same from every viewpoint, at ever
       }
     }
   }
-  console.log(`cloud shadows by view and elevation (cover 0.6): ${lines.join("; ")}`);
+  console.log(
+    `cloud shadows by view and elevation (cover 0.6): ${lines.join("; ")}`,
+  );
   for (const r of results) {
     const at = `${r.view} ${r.mode} ${r.elevation}°`;
     // Clear columns change nothing, from every camera and at every sun.
