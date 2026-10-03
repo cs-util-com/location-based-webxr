@@ -9,7 +9,9 @@
  * both the range path and the full-body fallback.
  */
 
+import { ArchiveLimitError, DEFAULT_ARCHIVE_LIMITS } from './archive-limits.js';
 import type { ByteSource } from './byte-source.js';
+import { readResponseBodyCapped } from './capped-response-body.js';
 import {
   isDefinitivelyGone,
   parseContentRangeTotal,
@@ -163,6 +165,14 @@ export async function fetchRemoteValidators(
   }
 }
 
+/** The transport cap on a KNOWN size (null = unknown, checked later while
+ *  a body streams). */
+function assertWithinArchiveCap(size: number | null, maxBytes: number): void {
+  if (size !== null && size > maxBytes) {
+    throw new ArchiveLimitError('archive-bytes', maxBytes, size);
+  }
+}
+
 function asOkHead(
   info: RemoteValidatorProbe | null
 ): Extract<RemoteValidatorProbe, { kind: 'ok' }> | null {
@@ -188,12 +198,22 @@ function resolveProbeSize(
   return total;
 }
 
-/** HEAD for size + `bytes=0-0` GET for range support. Throws if `fetch` rejects. */
+/**
+ * HEAD for size + `bytes=0-0` GET for range support. Throws if `fetch`
+ * rejects, and throws {@link ArchiveLimitError} (`archive-bytes`) when the
+ * archive is larger than `maxArchiveBytes`: checked from the HEAD's size
+ * BEFORE the GET is sent, from the 206's total before any range read, and
+ * while a range-ignoring host's 200 body streams (K0 of the tour kit plan).
+ */
 export async function probeRemote(
   url: string,
-  fetchImpl: FetchImpl
+  fetchImpl: FetchImpl,
+  maxArchiveBytes: number = DEFAULT_ARCHIVE_LIMITS.maxArchiveBytes
 ): Promise<ProbeResult> {
   const okHead = asOkHead(await fetchRemoteValidators(url, fetchImpl));
+  const headSize = okHead?.size ?? null;
+  // Before the GET: an announced size past the cap never fetches a byte.
+  assertWithinArchiveCap(headSize, maxArchiveBytes);
 
   const probe = await fetchImpl(url, {
     headers: { Range: 'bytes=0-0' },
@@ -212,15 +232,19 @@ export async function probeRemote(
   const validators = okHead?.validators ?? readValidators(probe.headers);
   const validatorsField =
     validators !== undefined ? { validators } : ({} as const);
-  const size = resolveProbeSize(okHead?.size ?? null, probe);
+  const size = resolveProbeSize(headSize, probe);
 
   if (probe.status === 200) {
-    const body = new Uint8Array(await probe.arrayBuffer());
+    const body = new Uint8Array(
+      await (await readResponseBodyCapped(probe, maxArchiveBytes)).arrayBuffer()
+    );
     return { status: 200, size: size ?? body.length, body, ...validatorsField };
   }
-
   // Drain the small range body so the connection can be reused/closed.
   await probe.arrayBuffer().catch(() => undefined);
+  // A 206's total (Content-Range) can size an archive HEAD could not: it
+  // too must pass the cap before any range read is approved.
+  assertWithinArchiveCap(size, maxArchiveBytes);
   return { status: probe.status, size, ...validatorsField };
 }
 

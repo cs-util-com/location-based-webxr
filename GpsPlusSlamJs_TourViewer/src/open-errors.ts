@@ -5,7 +5,10 @@
  * branch carries a contract of its own).
  */
 
-import { OpenRemoteArchiveError } from "gps-plus-slam-app-framework/storage";
+import {
+  ArchiveLimitError,
+  OpenRemoteArchiveError,
+} from "gps-plus-slam-app-framework/storage";
 
 /** True for the URLs whose open failures are Drive's to explain: the share
  *  page, the raw download host, the site worker's proxy route, and the
@@ -39,6 +42,12 @@ export function describeOpenError(err: unknown, url?: string): string {
         return "That file does not exist (the link may have expired or been deleted).";
       case "corrupt":
         return "The file exists but is empty or not a readable archive.";
+      case "too-large":
+        // The cap's own sentence when the transport carried it (it names
+        // the limit); the bare cause otherwise.
+        return err.cause instanceof ArchiveLimitError
+          ? err.cause.message
+          : "The file is too large to open here.";
       case "cors":
         return (
           "The host refused the browser access (network down, or the host blocks cross-site reads).\n" +
@@ -55,5 +64,6 @@ export function describeOpenError(err: unknown, url?: string): string {
         return "That link cannot be opened as an archive.";
     }
   }
+  // A zip-bomb cap (tour kit plan K0) words itself in plain language.
   return err instanceof Error ? err.message : String(err);
 }

@@ -23,7 +23,9 @@ loading with MIME types, and the poisoned-cache recovery loop.
 ## Public API
 
 - `openTourSession(url, options?): Promise<TourSession>` with
-  `OpenTourOptions { fetchImpl?; cacheStore?; googleDriveApiKey?; corsProxyBaseUrl?; onStats? }`
+  `OpenTourOptions { fetchImpl?; cacheStore?; googleDriveApiKey?; corsProxyBaseUrl?; onStats?; limits? }`
+  — `limits` overrides the zip-bomb caps (`DEFAULT_ARCHIVE_LIMITS`) for
+  tests; the page always opens with the defaults.
 - `TourSession { entries; archive; hasRecording; manifestWrap; stats(); loadEntry(filename); loadContentEntry(image); close() }`
   — `hasRecording` is the synchronous `actions/` pre-check
   `loadRecordingActions()` applies (a wrapping folder tolerated), exposed
@@ -80,6 +82,19 @@ loading with MIME types, and the poisoned-cache recovery loop.
   zip reader.
 - Directory entries are dropped from `entries`; images are recognized by
   extension (jpg/jpeg/png/webp/gif/avif).
+- **The zip-bomb caps (tour kit plan K0, K-D1, review F1).** A tour comes
+  from any link (or file), so it is read as untrusted input: the open
+  carries the transport cap (`maxArchiveBytes`, cause `'too-large'`), the
+  directory is walked with `listZipEntriesCapped` (an `ArchiveLimitError`
+  past `maxEntries` fails the open), and EVERY entry the page reads -
+  `loadEntry`, `loadContentEntry`, `tour.json`, the levels, `session.json`
+  and the action stream - is inflated under ONE `DecompressionBudget` per
+  archive that counts the bytes actually produced (per entry, the text
+  entries at `maxTextEntryBytes`, and the archive total; a re-read of the
+  same entry is not charged twice). A cap hit fails only the read that hit
+  it: a level over the text cap degrades to "no level" like a corrupt one,
+  a content bomb fails that photo, and the tour stays open. Values and
+  their measurement: the framework's `archive-limits.ts.md`.
 
 ## Examples
 
@@ -92,4 +107,7 @@ const blob = await session.loadEntry(session.entries[0].filename);
 
 `tour-session.test.ts` — listing + classification + typed Blob loading, the
 live stats feed, unknown-entry rejection, the poisoned-cache evict-and-retry,
-and the broken-remote-archive propagate case.
+and the broken-remote-archive propagate case; "the zip-bomb caps (K0)" -
+the entry-count refusal, the text cap on `tour.json`, a deflated content
+bomb stopped with the tour still open, the shared total (a re-read free),
+and a level over the text cap degrading to no level.

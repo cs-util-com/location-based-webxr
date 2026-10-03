@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { OpenRemoteArchiveError } from "gps-plus-slam-app-framework/storage";
+import {
+  ArchiveLimitError,
+  OpenRemoteArchiveError,
+} from "gps-plus-slam-app-framework/storage";
 
 import { describeOpenError, isDriveUrl } from "./open-errors.js";
 
@@ -38,6 +41,23 @@ describe("describeOpenError", () => {
     expect(describeOpenError(refused)).toBe(
       "That link cannot be opened as an archive.",
     );
+  });
+
+  // Why (tour kit plan K0): a tour over the caps must say so in plain
+  // words, not as the generic "cannot be opened" line - the creator's fix
+  // (a smaller zip) is different from a broken link's.
+  it("says a too-large archive is too large, with the cap's own message for the zip caps", () => {
+    expect(
+      describeOpenError(new OpenRemoteArchiveError("x", "too-large")),
+    ).toMatch(/too large/i);
+    // The transport's cap error, when carried, names the limit.
+    const transport = new OpenRemoteArchiveError("x", "too-large", {
+      cause: new ArchiveLimitError("archive-bytes", 1024 ** 3, 2e9),
+    });
+    expect(describeOpenError(transport)).toMatch(/limit is 1\.0 GB/);
+    const capped = new ArchiveLimitError("entry-count", 20_000, 20_001);
+    expect(describeOpenError(capped)).toBe(capped.message);
+    expect(describeOpenError(capped)).toMatch(/too many files/);
   });
 
   it("passes any other error's message through", () => {

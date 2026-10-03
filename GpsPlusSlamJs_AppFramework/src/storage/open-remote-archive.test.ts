@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { ArchiveLimitError } from './archive-limits.js';
 import { InMemoryLocalCacheStore } from './local-cache-byte-source.js';
 import {
   OpenRemoteArchiveError,
@@ -731,5 +732,127 @@ describe('openRemoteArchive — fallbacks and rejections', () => {
     );
     expect(err).toBeInstanceOf(OpenRemoteArchiveError);
     expect((err as OpenRemoteArchiveError).rejectCause).toBe('cors');
+  });
+});
+
+/**
+ * Why these tests matter (tour kit plan K0, K-D1): a link may point at
+ * anything, so the archive's size is capped BEFORE its body is fetched -
+ * from the HEAD's Content-Length or the range probe's total - and every
+ * whole-body download is counted while it streams. Before K0 a
+ * range-refusing host's 200 was read whole into memory with no limit.
+ */
+describe('openRemoteArchive — the transport size cap', () => {
+  async function openErr(
+    opts: ServerOptions,
+    maxArchiveBytes: number
+  ): Promise<{ err: unknown; calls: Call[] }> {
+    const { fetchImpl, calls } = fakeServer(opts);
+    const err = await openRemoteArchive(URL_, {
+      fetchImpl,
+      maxArchiveBytes,
+      cacheStore: new InMemoryLocalCacheStore(),
+    }).then(
+      () => null,
+      (e: unknown) => e
+    );
+    return { err, calls };
+  }
+
+  it('refuses an archive whose HEAD announces more than the cap, before any GET', async () => {
+    const { err, calls } = await openErr({}, 4);
+    expect(err).toBeInstanceOf(OpenRemoteArchiveError);
+    expect((err as OpenRemoteArchiveError).rejectCause).toBe('too-large');
+    expect(calls.map((c) => c.method)).toEqual(['HEAD']);
+  });
+
+  it('refuses a ranged archive whose probe total exceeds the cap, without a warm download', async () => {
+    // HEAD refused: the size comes from the 206's Content-Range alone.
+    const { err, calls } = await openErr({ headStatus: 405 }, 4);
+    expect((err as OpenRemoteArchiveError).rejectCause).toBe('too-large');
+    expect(calls.filter((c) => c.method === 'GET' && c.range === null)).toEqual(
+      []
+    );
+  });
+
+  it('refuses a range-ignoring host whose whole-body answer exceeds the cap', async () => {
+    const { err } = await openErr(
+      { supportsRanges: false, headStatus: 405 },
+      4
+    );
+    expect((err as OpenRemoteArchiveError).rejectCause).toBe('too-large');
+  });
+
+  it('opens an archive exactly at the cap', async () => {
+    const { err } = await openErr({}, ARCHIVE.length);
+    expect(err).toBeNull();
+  });
+});
+
+/**
+ * Why these tests matter (K0, K-D1): in a browser a CORS block and a dead
+ * network reject the same way. The advice differs - "download the file and
+ * open it here" helps only the first - so an open that fails before any
+ * HTTP status says "offline" when the browser knows it is offline, and
+ * "cors" otherwise. A cached copy is still tried first (the cache test
+ * above), so the advice is only ever reached without a saved copy.
+ */
+describe('openRemoteArchive — offline versus a host that blocks browsers', () => {
+  it('says "offline" when the fetch fails and the browser reports no network', async () => {
+    const { fetchImpl } = fakeServer({ reject: true });
+    const err = await openRemoteArchive(URL_, {
+      fetchImpl,
+      isOnline: () => false,
+    }).then(
+      () => null,
+      (e: unknown) => e
+    );
+    expect((err as OpenRemoteArchiveError).rejectCause).toBe('offline');
+  });
+
+  it('says "cors" when the fetch fails while the browser reports a network', async () => {
+    const { fetchImpl } = fakeServer({ reject: true });
+    const err = await openRemoteArchive(URL_, {
+      fetchImpl,
+      isOnline: () => true,
+    }).then(
+      () => null,
+      (e: unknown) => e
+    );
+    expect((err as OpenRemoteArchiveError).rejectCause).toBe('cors');
+  });
+});
+
+describe('openRemoteArchive — the cap holds for a saved copy too', () => {
+  // Why this test matters: a copy saved before the cap existed (or under a
+  // larger one) must not reopen past it, or the cap would only protect the
+  // first visit.
+  it('does not serve a cached copy above the cap', async () => {
+    const { fetchImpl } = fakeServer({});
+    const store = new InMemoryLocalCacheStore();
+    await store.put(URL_, { blob: new Blob([ARCHIVE]) });
+    const err = await openRemoteArchive(URL_, {
+      fetchImpl,
+      cacheStore: store,
+      maxArchiveBytes: 4,
+    }).then(
+      () => null,
+      (e: unknown) => e
+    );
+    expect((err as OpenRemoteArchiveError).rejectCause).toBe('too-large');
+  });
+});
+
+describe('openRemoteArchive — a too-large rejection explains itself', () => {
+  // Why this test matters: the app shows the cap's own plain sentence
+  // (which names the limit), so the rejection must carry it.
+  it('carries the ArchiveLimitError as its cause', async () => {
+    const { fetchImpl } = fakeServer({});
+    const err = (await openRemoteArchive(URL_, {
+      fetchImpl,
+      maxArchiveBytes: 4,
+    }).catch((e: unknown) => e)) as OpenRemoteArchiveError;
+    expect(err.cause).toBeInstanceOf(ArchiveLimitError);
+    expect((err.cause as ArchiveLimitError).limit).toBe(4);
   });
 });

@@ -219,6 +219,8 @@ function openCauseText(cause: CodeTourStatus & { kind: "failed" }): string {
       return "the host refused the browser access";
     case "corrupt":
       return "the file is not a readable tour";
+    case "too-large":
+      return "the file is too large to open here";
     default:
       return "the link cannot be opened as a tour";
   }

@@ -9,7 +9,10 @@ the image-plane loader and the AR entry (flows plan M6 pulled it out of
 ## Public API
 
 - `describeOpenError(err, url?): string` - one sentence per
-  `OpenRemoteArchiveError.rejectCause` (`missing`, `corrupt`, `cors`); any
+  `OpenRemoteArchiveError.rejectCause` (`missing`, `corrupt`, `cors`,
+  `too-large` - the carried `ArchiveLimitError`'s own sentence, which names
+  the limit, tour kit plan K0); an `ArchiveLimitError` from the zip caps
+  passes its plain message through; any
   other cause reads as Drive's refusal when `url` is a Drive URL, else the
   generic "cannot be opened as an archive"; a non-probe error passes its
   message through.

@@ -22,7 +22,7 @@ Opens a ZIP file and returns all entries (directories and files). Uses `@zip.js/
 - **Output:** Array of `Entry` objects from `@zip.js/zip.js`
 - **Errors:** Throws if the data is not a valid ZIP file
 
-### `loadActionsFromZip(data: ZipSource, maxFileSize?: number): Promise<ZipActionEntry[]>`
+### `loadActionsFromZip(data: ZipSource, maxFileSize?: number, budget?: DecompressionBudget): Promise<ZipActionEntry[]>`
 
 Extracts all action JSON files from the `actions/` directory in the ZIP, parses them, and returns them sorted by filename — chronological because `formatActionFilename` zero-pads the index to six digits (see the invariant below).
 
@@ -32,7 +32,8 @@ Extracts all action JSON files from the `actions/` directory in the ZIP, parses 
   - `filename` — original path within the ZIP (e.g., `actions/000001.json`)
   - `action` — parsed Redux action (`RecordedAction`: `{ type: string; payload?: unknown }`)
 - **Warnings:** Logs a warning via `createLogger('ZipReader')` for any action file whose filename doesn't match the expected numeric pattern (e.g., `actions/my-notes.json`). The file is still processed and included in results. Also logs a warning for any action file that fails JSON parsing — the file is skipped, and remaining actions are still returned.
-- **Errors:** Throws if any action entry's `uncompressedSize` exceeds `maxFileSize` (DoS protection). Malformed JSON in individual action files is handled gracefully (skip + warn) rather than aborting the entire load — consistent with `loadGpsPathFromBlob`'s error-handling pattern.
+- **Decompression caps (tour kit plan K0, 2026-10-03):** each action is inflated through `readZipEntryText` (`capped-zip-entries.ts`), which counts the bytes ACTUALLY produced against `maxFileSize` and charges them to `budget` - the archive's total allowance. The declared-size check below stays as the cheap early refusal, but a declared size is never the only guard: before K0 many entries each just under 1 MB declared (kilobytes deflated) added up without any limit. Without a `budget` one is sized from the archive (`DecompressionBudget.forArchive`, after the listing so a lazy Reader knows its size; a Reader still reporting no size gets the absolute ceiling, never the small-archive floor, which would refuse a real long recording - the largest measured action stream is 214 MB). The Tour Viewer passes its session's one budget, so the action stream and the content share a total.
+- **Errors:** Throws if any action entry's `uncompressedSize` exceeds `maxFileSize` (DoS protection), and `ArchiveLimitError` when the inflated bytes pass a cap. Malformed JSON in individual action files is handled gracefully (skip + warn) rather than aborting the entire load — consistent with `loadGpsPathFromBlob`'s error-handling pattern.
 
 ### `loadSessionMetadata(data: Uint8Array, maxFileSize?: number): Promise<Record<string, unknown> | null>`
 
@@ -40,7 +41,7 @@ Reads `session.json` from the ZIP if present. Returns `null` when the file is ab
 
 - **Input:** ZIP file bytes as `Uint8Array`; optional `maxFileSize` (defaults to `MAX_ACTION_FILE_SIZE` = 1 MB)
 - **Output:** Parsed metadata object, or `null` if `session.json` is missing
-- **Errors:** Throws if `session.json` `uncompressedSize` exceeds `maxFileSize` (DoS protection)
+- **Errors:** Throws if `session.json` `uncompressedSize` exceeds `maxFileSize` (DoS protection), and `ArchiveLimitError` when the bytes actually inflated pass it (the declared size is not trusted alone, K0)
 
 ### `loadSessionMetadataFromBlob(blob: Blob, maxFileSize?: number): Promise<Record<string, unknown> | null>`
 

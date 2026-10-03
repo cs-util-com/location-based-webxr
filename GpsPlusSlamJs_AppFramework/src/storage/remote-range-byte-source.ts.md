@@ -9,8 +9,13 @@ that issues one HTTP Range fetch per read).
 ## Public API
 
 - `type FetchImpl = typeof fetch`
-- `probeRemote(url: string, fetchImpl: FetchImpl): Promise<ProbeResult>` — see
+- `probeRemote(url: string, fetchImpl: FetchImpl, maxArchiveBytes?: number): Promise<ProbeResult>` — see
   `range-probe.ts` for `ProbeResult`. Throws if `fetch` rejects (CORS/network).
+  Throws `ArchiveLimitError('archive-bytes')` above `maxArchiveBytes`
+  (default `DEFAULT_ARCHIVE_LIMITS.maxArchiveBytes`, tour kit plan K0): from
+  the HEAD's size BEFORE the probe GET is sent, from a 206's total before any
+  range read, and while a range-ignoring host's 200 body streams
+  (`readResponseBodyCapped`; before K0 that body was read whole with no limit).
   Captures freshness validators (ETag/Last-Modified) where readable — from
   the HEAD, or the probe GET when HEAD fails.
 - `fetchRemoteValidators(url, fetchImpl): Promise<RemoteValidatorProbe | null>`

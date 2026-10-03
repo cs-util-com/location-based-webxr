@@ -1,8 +1,14 @@
-import { TextReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
+import {
+  TextReader,
+  Uint8ArrayReader,
+  Uint8ArrayWriter,
+  ZipWriter,
+} from "@zip.js/zip.js";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
+  ArchiveLimitError,
   InMemoryLocalCacheStore,
   packFilesAsZip,
   type FetchImpl,
@@ -649,5 +655,106 @@ describe("hostedFileName (Drive replace plan §5 #8)", () => {
       fetchImpl: rangeServer(await buildZip()),
     });
     expect(session.hostedFileName()).toBeNull();
+  });
+});
+
+/**
+ * Why these tests matter (tour kit plan K0, K-D1, review F1): a tour may
+ * come from any link or file, so the session reads it like untrusted
+ * input. The directory walk stops at its entry cap, and every entry the
+ * page reads - tour.json, a level, a photo, the action stream - is
+ * inflated under one per-archive budget that counts the bytes actually
+ * produced. Before K0 a few KB of deflated zeros in `content/` would
+ * inflate without limit in the visitor's phone.
+ */
+describe("the zip-bomb caps (K0)", () => {
+  async function deflatedZip(
+    files: Record<string, string | Uint8Array>,
+  ): Promise<Uint8Array> {
+    const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 9 });
+    for (const [name, data] of Object.entries(files)) {
+      await writer.add(
+        name,
+        typeof data === "string"
+          ? new TextReader(data)
+          : new Uint8ArrayReader(data),
+      );
+    }
+    return writer.close();
+  }
+
+  it("refuses an archive whose directory lists more entries than the cap", async () => {
+    const zip = await deflatedZip({ a: "a", b: "b", c: "c" });
+    const err = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxEntries: 2 },
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveLimitError);
+    expect((err as ArchiveLimitError).kind).toBe("entry-count");
+  });
+
+  it("refuses a tour.json that inflates past the text cap", async () => {
+    const manifest = serializeTourManifest(createEmptyTourManifest());
+    const zip = await deflatedZip({
+      "tour.json": manifest + " ".repeat(5000),
+    });
+    const session = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxTextEntryBytes: 1000 },
+    });
+    await expect(session.loadTourManifest()).rejects.toBeInstanceOf(
+      ArchiveLimitError,
+    );
+    await session.close();
+  });
+
+  it("stops a content bomb at the per-entry cap; the tour stays open", async () => {
+    const zip = await deflatedZip({
+      "content/p1.jpg": new Uint8Array(4 * 1024 * 1024),
+      "images/ok.jpg": "fine",
+    });
+    const session = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxEntryBytes: 1024 * 1024 },
+    });
+    const err = await session
+      .loadContentEntry("content/p1.jpg")
+      .catch((e: unknown) => e);
+    expect((err as ArchiveLimitError).kind).toBe("entry-bytes");
+    expect((await session.loadEntry("images/ok.jpg")).size).toBe(4);
+    await session.close();
+  });
+
+  it("shares one total across every entry the page reads", async () => {
+    const zip = await deflatedZip({
+      "images/a.jpg": new Uint8Array(600 * 1024),
+      "images/b.jpg": new Uint8Array(600 * 1024),
+    });
+    const session = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxTotalBytes: 1024 * 1024, totalFloorBytes: 1024 * 1024 },
+    });
+    await session.loadEntry("images/a.jpg");
+    // A second look at the same photo costs nothing...
+    await session.loadEntry("images/a.jpg");
+    // ...a second photo past the total is refused.
+    const err = await session
+      .loadEntry("images/b.jpg")
+      .catch((e: unknown) => e);
+    expect((err as ArchiveLimitError).kind).toBe("total-bytes");
+    await session.close();
+  });
+
+  it("degrades a level file over the text cap to no level, as a corrupt one", async () => {
+    const zip = await deflatedZip({
+      "qr/big.json": LEVEL_JSON + " ".repeat(5000),
+      "qr/ok.json": LEVEL_JSON,
+    });
+    const session = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxTextEntryBytes: 1000 },
+    });
+    expect([...(await session.loadQrLevels()).keys()]).toEqual(["ok"]);
+    await session.close();
   });
 });

@@ -610,6 +610,12 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
     expect(final, "and what to do instead").toMatch(/restart AR/);
   });
 
+  it("names a too-large tour as too large (K0)", () => {
+    expect(
+      codeTourLine({ kind: "failed", cause: "too-large", retrying: false }),
+    ).toMatch(/too large/);
+  });
+
   it("stays short enough for the phone panel", () => {
     // The longest line shares the panel with the live readout at 360 px;
     // describeOpenError's 200-character Drive text was the review's worst
@@ -619,6 +625,7 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
       "cors",
       "corrupt",
       "unusable-link",
+      "too-large",
       "other",
     ] as const;
     for (const cause of causes) {

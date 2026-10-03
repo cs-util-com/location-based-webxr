@@ -20,6 +20,8 @@ import {
   MAX_ACTION_FILE_SIZE,
   type ZipActionEntry,
 } from './zip-reader';
+import { ArchiveLimitError } from './archive-limits';
+import { DecompressionBudget } from './capped-zip-entries';
 import {
   produceTestZip,
   type TestZipResult,
@@ -910,5 +912,63 @@ describe('ZipSource lazy Reader input', () => {
     expect(actionsResult).toEqual(await loadActionsFromZip(zipData));
     expect(meta).toEqual(await loadSessionMetadata(zipData));
     expect(subdir.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Why these tests matter (tour kit plan K0): a tour zip is often a whole
+ * recording, and the Tour Viewer parses its action stream through
+ * `loadActionsFromZip`. The per-entry check reads each entry's DECLARED
+ * size, so many entries each just under it - kilobytes deflated, a
+ * megabyte inflated - added up without any limit. The actions now read
+ * through a `DecompressionBudget` that counts the bytes actually inflated
+ * and caps the archive total.
+ */
+describe('loadActionsFromZip under a decompression budget', () => {
+  async function deflatedActions(count: number): Promise<Uint8Array> {
+    const { ZipWriter, Uint8ArrayWriter, TextReader } =
+      await import('@zip.js/zip.js');
+    const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 9 });
+    const padding = 'x'.repeat(500_000);
+    for (let i = 1; i <= count; i += 1) {
+      await writer.add(
+        `actions/${String(i).padStart(6, '0')}.json`,
+        new TextReader(JSON.stringify({ type: 'test/pad', payload: padding }))
+      );
+    }
+    return writer.close();
+  }
+
+  it('stops at the archive total even though every entry is under the per-entry cap', async () => {
+    const zip = await deflatedActions(4); // 4 x ~500 KB inflated, a few KB on disk
+    const budget = new DecompressionBudget({
+      maxEntryBytes: 1_048_576,
+      maxTotalBytes: 1_200_000,
+    });
+    const err = await loadActionsFromZip(
+      zip,
+      MAX_ACTION_FILE_SIZE,
+      budget
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveLimitError);
+    expect((err as ArchiveLimitError).kind).toBe('total-bytes');
+  });
+
+  it('reads the same stream in full under a budget that fits it', async () => {
+    const zip = await deflatedActions(4);
+    const budget = new DecompressionBudget({
+      maxEntryBytes: 1_048_576,
+      maxTotalBytes: 4_000_000,
+    });
+    const result = await loadActionsFromZip(zip, MAX_ACTION_FILE_SIZE, budget);
+    expect(result).toHaveLength(4);
+    expect(budget.totalBytes).toBeGreaterThan(2_000_000);
+  });
+
+  it('uses a default budget sized from the archive when none is passed', async () => {
+    // The default allowance has a 64 MiB floor, so a small real stream is
+    // unaffected - the guard only bites on a crafted archive.
+    const zip = await deflatedActions(2);
+    expect(await loadActionsFromZip(zip)).toHaveLength(2);
   });
 });

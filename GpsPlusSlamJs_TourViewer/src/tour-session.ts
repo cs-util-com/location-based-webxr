@@ -12,15 +12,16 @@
  * network-served archive is reported as-is: the file itself is broken.
  */
 
-import {
-  BlobWriter,
-  TextWriter,
-  ZipReader,
-  type FileEntry,
-} from "@zip.js/zip.js";
+import { ZipReader, type FileEntry } from "@zip.js/zip.js";
 import {
   ByteSourceReader,
+  DecompressionBudget,
+  DEFAULT_ARCHIVE_LIMITS,
+  listZipEntriesCapped,
   loadActionsFromZip,
+  readZipEntryBlob,
+  readZipEntryText,
+  type ArchiveLimits,
   openRemoteArchive,
   type ArchiveReadEvent,
   type LocalCacheStore,
@@ -71,6 +72,9 @@ export interface OpenTourOptions {
   corsProxyBaseUrl?: string;
   /** Fired after every read with the updated totals. */
   onStats?: (stats: Readonly<StreamStats>) => void;
+  /** Overrides of the zip-bomb caps (`DEFAULT_ARCHIVE_LIMITS`), for tests;
+   *  the page always opens with the defaults (tour kit plan K0). */
+  limits?: Partial<ArchiveLimits>;
 }
 
 export interface TourSession {
@@ -290,9 +294,13 @@ export async function openTourSession(
   };
   const named = { hostedFileName: () => hostedName };
 
-  const first = await openArchive(url, recording, onRead, false);
+  const limits: ArchiveLimits = {
+    ...DEFAULT_ARCHIVE_LIMITS,
+    ...options.limits,
+  };
+  const first = await openArchive(url, recording, onRead, false, limits);
   try {
-    return await buildSession(first, stats, options.cacheStore, named);
+    return await buildSession(first, stats, options.cacheStore, named, limits);
   } catch (err) {
     // Whatever failed to parse must not stay cached and must not keep
     // downloading: dispose (aborts the session's downloads), then evict —
@@ -304,9 +312,15 @@ export async function openTourSession(
     // Only a cache-served archive earns the retry: a remote parse failure
     // means the hosted file itself is broken.
     if (first.origin !== "cache") throw err;
-    const second = await openArchive(url, recording, onRead, true);
+    const second = await openArchive(url, recording, onRead, true, limits);
     try {
-      return await buildSession(second, stats, options.cacheStore, named);
+      return await buildSession(
+        second,
+        stats,
+        options.cacheStore,
+        named,
+        limits,
+      );
     } catch (retryErr) {
       second.dispose();
       await second.evict();
@@ -320,8 +334,10 @@ function openArchive(
   options: OpenTourOptions,
   onRead: (event: ArchiveReadEvent) => void,
   skipCache: boolean,
+  limits: ArchiveLimits,
 ): Promise<OpenedArchive> {
   return openRemoteArchive(url, {
+    maxArchiveBytes: limits.maxArchiveBytes,
     ...(options.fetchImpl !== undefined
       ? { fetchImpl: options.fetchImpl }
       : {}),
@@ -344,9 +360,16 @@ async function buildSession(
   stats: StreamStats,
   cacheStore: LocalCacheStore | undefined,
   named: Pick<TourSession, "hostedFileName">,
+  limits: ArchiveLimits,
 ): Promise<TourSession> {
   const reader = new ZipReader(new ByteSourceReader(archive.source));
-  const zipEntries = await reader.getEntries();
+  // The tour is untrusted input (tour kit plan K0): the directory walk stops
+  // at its entry cap, and every entry below is inflated under ONE budget
+  // for this archive that counts the bytes actually produced.
+  const zipEntries = await listZipEntriesCapped(reader, limits.maxEntries);
+  const budget = DecompressionBudget.forArchive(archive.size, limits);
+  const readText = (entry: FileEntry): Promise<string> =>
+    readZipEntryText(entry, budget, limits.maxTextEntryBytes);
   const byName = new Map<string, FileEntry>();
   const entries: TourEntry[] = [];
   for (const entry of zipEntries) {
@@ -385,10 +408,10 @@ async function buildSession(
         );
       }
       const extension = filename.split(".").at(-1)?.toLowerCase() ?? "";
-      return entry.getData(
-        new BlobWriter(
-          MIME_BY_EXTENSION[extension] ?? "application/octet-stream",
-        ),
+      return readZipEntryBlob(
+        entry,
+        budget,
+        MIME_BY_EXTENSION[extension] ?? "application/octet-stream",
       );
     },
     loadQrLevels: () =>
@@ -398,7 +421,7 @@ async function buildSession(
       parseQrLevelEntries([...byName.keys()], async (name) => {
         const entry = byName.get(name);
         if (entry === undefined) throw new Error(`missing entry: ${name}`);
-        return entry.getData(new TextWriter());
+        return readText(entry);
       }),
     loadRecordingActions: async () => {
       if (!hasRecording) {
@@ -411,6 +434,8 @@ async function buildSession(
         // would be the DEC-H3 drift.
         const loaded = await loadActionsFromZip(
           new ByteSourceReader(archive.source),
+          undefined,
+          budget,
         );
         return loaded.map((e) => e.action);
       } catch {
@@ -428,7 +453,7 @@ async function buildSession(
         // Typed `unknown`, deliberately: this is hand-editable JSON, and a
         // declared `number` here would launder whatever the file contains
         // past the era gate's runtime check (PR #367 review).
-        return JSON.parse(await entry.getData(new TextWriter())) as {
+        return JSON.parse(await readText(entry)) as {
           odomCoordVersion?: unknown;
         };
       } catch {
@@ -442,7 +467,7 @@ async function buildSession(
         async (name) => {
           const entry = byName.get(name);
           if (entry === undefined) throw new Error(`missing entry: ${name}`);
-          return entry.getData(new TextWriter());
+          return readText(entry);
         },
         parseTourManifest,
       ),

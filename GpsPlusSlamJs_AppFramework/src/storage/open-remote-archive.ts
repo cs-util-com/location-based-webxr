@@ -18,7 +18,9 @@
  * the open proceeds remote.
  */
 
+import { ArchiveLimitError, DEFAULT_ARCHIVE_LIMITS } from './archive-limits.js';
 import { SwitchableByteSource, type ByteSource } from './byte-source.js';
+import { readResponseBodyCapped } from './capped-response-body.js';
 import {
   LocalCacheByteSource,
   requestPersistentStorage,
@@ -66,6 +68,15 @@ export interface OpenRemoteArchiveOptions {
   warm?: boolean;
   /** Bypass the cache lookup — the poisoned-copy reopen path. */
   skipCache?: boolean;
+  /** The transport cap (`archive-limits.ts`); defaults to
+   *  `DEFAULT_ARCHIVE_LIMITS.maxArchiveBytes`. Above it the open rejects
+   *  with cause `'too-large'`, before the body is fetched when the size is
+   *  announced. */
+  maxArchiveBytes?: number;
+  /** Whether the browser reports a network (`navigator.onLine`), asked only
+   *  after a fetch rejected before any HTTP status: false turns cause
+   *  `'cors'` into `'offline'`. Injected for tests. */
+  isOnline?: () => boolean;
 }
 
 export interface OpenedArchive {
@@ -97,8 +108,14 @@ export class OpenRemoteArchiveError extends Error {
   override readonly name = 'OpenRemoteArchiveError';
   readonly rejectCause: RangeProbeRejectCause;
 
-  constructor(message: string, rejectCause: RangeProbeRejectCause) {
-    super(message);
+  /** `options.cause` carries the underlying error where one explains the
+   *  rejection in plain words (the `ArchiveLimitError` of `'too-large'`). */
+  constructor(
+    message: string,
+    rejectCause: RangeProbeRejectCause,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
     this.rejectCause = rejectCause;
   }
 }
@@ -119,21 +136,46 @@ export async function openRemoteArchive(
   });
   const store = options.cacheStore;
 
+  // The saved copy is tried FIRST: it is also what makes "offline" and
+  // "the host blocks browsers" (below) advice for the no-copy case only.
   const fromCache = await tryOpenFromCache(url, store, options, fetchImpl);
   if (fromCache !== null) return fromCache;
 
   let probe;
   try {
-    probe = await probeRemote(url, fetchImpl);
+    probe = await probeRemote(url, fetchImpl, maxArchiveBytesOf(options));
   } catch (err) {
-    // In a browser, a CORS block and a dead network both reject as TypeError —
-    // indistinguishable. Either way the link is unusable from here.
+    if (err instanceof ArchiveLimitError) throw tooLarge(url, err);
+    // In a browser, a CORS block and a dead network both reject as TypeError
+    // and cannot be told apart from the error. The browser's own network
+    // flag can: `onLine === false` is reliable (true is not - a captive
+    // portal is "online"), so only a known-offline browser gets 'offline'.
+    const offline = (options.isOnline ?? browserIsOnline)() === false;
     throw new OpenRemoteArchiveError(
-      `opening ${url} failed before any HTTP status (network down or CORS-blocked): ${String(err)}`,
-      'cors'
+      `opening ${url} failed before any HTTP status (${
+        offline ? 'the browser is offline' : 'network down or CORS-blocked'
+      }): ${String(err)}`,
+      offline ? 'offline' : 'cors'
     );
   }
   return openPerDecision(url, probe, fetchImpl, store, options);
+}
+
+function maxArchiveBytesOf(options: OpenRemoteArchiveOptions): number {
+  return options.maxArchiveBytes ?? DEFAULT_ARCHIVE_LIMITS.maxArchiveBytes;
+}
+
+/** `navigator.onLine`, or true where there is no navigator (Node). */
+function browserIsOnline(): boolean {
+  return (globalThis.navigator as Navigator | undefined)?.onLine !== false;
+}
+
+function tooLarge(url: string, err: ArchiveLimitError): OpenRemoteArchiveError {
+  return new OpenRemoteArchiveError(
+    `opening ${url} refused: ${err.message}`,
+    'too-large',
+    { cause: err }
+  );
 }
 
 /** The revalidated cache lookup; null means "proceed to the network". */
@@ -146,7 +188,12 @@ async function tryOpenFromCache(
   if (store === undefined || options.skipCache === true) return null;
   const cached = await store.get(url);
   if (cached === undefined) return null;
-  if (await isCachedCopyServable(url, cached, fetchImpl)) {
+  // A copy above the cap (saved before the cap existed, or under a larger
+  // one) is not served: the cap holds for every source of the bytes.
+  if (
+    cached.blob.size <= maxArchiveBytesOf(options) &&
+    (await isCachedCopyServable(url, cached, fetchImpl))
+  ) {
     return openLocal(url, cached, store, options, 'cache');
   }
   await store.delete(url); // stale — the author overwrote the archive
@@ -301,7 +348,17 @@ function openRanged(
         `range-ignore recovery download of ${url} failed (${res.status})`
       );
     }
-    const blob = await res.blob();
+    // Capped at the session's own size: any byte past it is already the
+    // "file changed mid-session" case checked below.
+    const blob = await readResponseBodyCapped(res, Math.max(1, size)).catch(
+      (err: unknown) => {
+        throw err instanceof ArchiveLimitError
+          ? new StructuralReadError(
+              `range-ignore recovery of ${url} streamed more than the expected ${size} bytes — the file changed mid-session`
+            )
+          : err;
+      }
+    );
     // The recovery pulled the WHOLE archive over the network; without this
     // synthetic event a stats consumer proves "how little was fetched" with
     // an inverted headline (PR #359 review — the warm-path twin of the
@@ -423,7 +480,12 @@ async function warmToCache(
       ]),
     });
     if (!res.ok) return false;
-    const blob = await res.blob();
+    // Capped at the session's size: a longer body is the wrong file, and
+    // the swap below would refuse it anyway - after holding all of it.
+    const blob = await readResponseBodyCapped(
+      res,
+      Math.max(1, switchable.size)
+    );
     // The warm pulled the WHOLE archive over the network; report it, or the
     // stats headline shows "132 KB fetched · serving from cache" after the
     // full file crossed the wire (PR #359 review).
@@ -460,7 +522,12 @@ async function openFullDownload(
       isDefinitivelyGone(res.status) ? 'missing' : 'unusable-link'
     );
   }
-  const blob = await res.blob();
+  const blob = await readResponseBodyCapped(
+    res,
+    maxArchiveBytesOf(options)
+  ).catch((err: unknown) => {
+    throw err instanceof ArchiveLimitError ? tooLarge(url, err) : err;
+  });
   return openLocal(
     url,
     { blob, ...(validators !== undefined ? { validators } : {}) },
