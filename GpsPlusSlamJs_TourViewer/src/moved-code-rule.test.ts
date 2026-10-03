@@ -63,6 +63,36 @@ describe("the turn check's input", () => {
     expect(isSettledSave(level())).toBe(false);
     expect(isSettledSave(level(Number.NaN))).toBe(false);
   });
+
+  // Why (owner decision D31, 2026-10-02): a code composed through an
+  // alignment with under about 10 m of GPS extent has a near-guesswork
+  // heading (measured 0-5 m: about 41 degrees p50), however many fixes that
+  // alignment had solved - a visitor standing still at the code piles up
+  // fixes without any extent. The mint marks such a level
+  // `headingUncertain`; the viewer must then not trust its heading, so the
+  // turn check does not run. Absent or `false` keeps the count rule
+  // (levels minted before D31 carry no marker).
+  it("never calls a save marked headingUncertain settled, whatever its count", () => {
+    const marked = (
+      alignmentSampleCount: number,
+      headingUncertain: boolean,
+    ): QrLevel => ({
+      version: 1,
+      qr: {
+        physicalSizeM: 0.2,
+        geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
+        mintQuality: {
+          alignmentSampleCount,
+          alignmentGpsExtentM: headingUncertain ? 3 : 40,
+          headingUncertain,
+        },
+      },
+    });
+    expect(isSettledSave(marked(120, true))).toBe(false);
+    expect(isSettledSave(marked(5_000, true))).toBe(false);
+    expect(isSettledSave(marked(120, false))).toBe(true);
+    expect(isSettledSave(marked(119, false))).toBe(false);
+  });
 });
 
 describe("judgeCodeMove", () => {

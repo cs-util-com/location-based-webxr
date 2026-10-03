@@ -17,7 +17,12 @@ import {
   CODE_MOVE_RULE,
   type DisplacementEstimate,
 } from "./code-displacement.js";
-import { CODE_TURN_RULE, judgeCodeMove } from "./moved-code-rule.js";
+import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import {
+  CODE_TURN_RULE,
+  isSettledSave,
+  judgeCodeMove,
+} from "./moved-code-rule.js";
 
 const yaw = fc.double({ min: -180, max: 180, noNaN: true });
 
@@ -99,6 +104,31 @@ describe("moved-code rule properties", () => {
           });
         },
       ),
+    );
+  });
+
+  // Why (owner decision D31): the uncertain-heading marker overrides any
+  // fix count, and an absent or `false` marker leaves the count rule alone,
+  // so levels minted before D31 read exactly as they did.
+  it("never calls a headingUncertain save settled; absent or false keeps the count rule", () => {
+    const levelOf = (n: number, marker: boolean | undefined): QrLevel => ({
+      version: 1,
+      qr: {
+        physicalSizeM: 0.2,
+        geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
+        mintQuality: {
+          alignmentSampleCount: n,
+          ...(marker === undefined ? {} : { headingUncertain: marker }),
+        },
+      },
+    });
+    fc.assert(
+      fc.property(fc.nat({ max: 1_000_000 }), (n) => {
+        const byCount = n >= CODE_TURN_RULE.settledAlignmentSamples;
+        expect(isSettledSave(levelOf(n, true))).toBe(false);
+        expect(isSettledSave(levelOf(n, false))).toBe(byCount);
+        expect(isSettledSave(levelOf(n, undefined))).toBe(byCount);
+      }),
     );
   });
 });

@@ -276,6 +276,29 @@ describe("createMovedCodeChecks", { timeout: 60_000 }, () => {
     expect(Math.abs(h.checks.snapshot()[0]!.yawDeg)).toBeGreaterThan(140);
   });
 
+  // Why (owner decision D31, 2026-10-02): a level the mint marked
+  // `headingUncertain` (its alignment spanned under about 10 m of GPS) is
+  // not settled even with a settled-looking fix count, so the same 90 degree
+  // turn that a settled save reads above is never judged for it.
+  it("never judges a turn for a save marked headingUncertain, whatever its fix count", () => {
+    const h = harness();
+    const uncertain: QrLevel = {
+      ...level(300),
+      qr: {
+        ...level(300).qr,
+        mintQuality: {
+          alignmentSampleCount: 300,
+          gpsAccuracyM: 3.5,
+          alignmentGpsExtentM: 4,
+          headingUncertain: true,
+        },
+      },
+    };
+    h.pin(codeSeen([0, 0], 90), 0, uncertain);
+    expect(h.feed(circle(0, 120, [20, 10], 10))).toEqual([]);
+    expect(h.checks.snapshot()[0]).toMatchObject({ turnChecked: false });
+  });
+
   // Why (owner, 2026-10-02): the code's rotation comes only from its pose in
   // GPS world space. The check offers no way in for a compass reading.
   it("takes no compass reading", () => {

@@ -15,7 +15,8 @@
  * heading, beyond `settledYawDeg`. It runs ONLY when
  * - the saved code was minted on a SETTLED alignment ({@link isSettledSave}):
  *   an early save carries its alignment's heading error into every reading
- *   (28.5 % of unmoved codes past 45 degrees on the real walks), and
+ *   (28.5 % of unmoved codes past 45 degrees on the real walks), and a save
+ *   the mint marked `headingUncertain` is never settled (D31), and
  * - the visitor has walked enough: the position rule's own evidence gate
  *   (`minSpanS`, `minSpreadM`), below which the fit has no turn.
  * Otherwise there is no turn check: an early save is judged by position
@@ -102,19 +103,25 @@ export const MOVED_CODE_HORIZON_S = 300;
  */
 export const MOVED_CODE_FIT_WINDOW_S = 300;
 
-/** Bumped whenever a value above or in `CODE_MOVE_RULE` changes; the
+/** Bumped whenever a value above or in `CODE_MOVE_RULE`, or what counts as
+ *  settled ({@link isSettledSave}), changes; the
  *  `tourViewing/codeIgnored` log carries it. */
-export const MOVED_CODE_RULE_VERSION = "d20-m5c-2026-10-02c";
+export const MOVED_CODE_RULE_VERSION = "d20-m5c-2026-10-03-d31";
 
 /**
  * Whether a saved level's pose was minted on a settled alignment: its
  * `mintQuality.alignmentSampleCount` reaches the rule's count. A level that
- * carries no count (hand-written, older tools) is NOT settled.
+ * carries no count (hand-written, older tools) is NOT settled, and neither
+ * is one the mint marked `headingUncertain` (owner decision D31: its
+ * alignment spanned under about 10 m of GPS, so its heading is close to
+ * guesswork however many fixes it had solved). An absent marker means the
+ * mint predates D31 or did not know the extent: the count rule alone.
  */
 export function isSettledSave(
   level: QrLevel,
   rule: CodeTurnRule = CODE_TURN_RULE,
 ): boolean {
+  if (level.qr.mintQuality?.headingUncertain === true) return false;
   const n = level.qr.mintQuality?.alignmentSampleCount;
   return (
     typeof n === "number" &&

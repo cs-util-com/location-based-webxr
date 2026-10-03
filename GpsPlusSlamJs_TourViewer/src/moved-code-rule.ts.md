@@ -18,9 +18,11 @@ settledAlignmentSamples: 120 }` (frozen).
 - `MOVED_CODE_FIT_WINDOW_S` (300) - the fit window before the pin: only
   device fixes stamped at most this long before it fold (M5c review H2).
 - `MOVED_CODE_RULE_VERSION` - carried by the `tourViewing/codeIgnored` log;
-  bump it with any value here or in `CODE_MOVE_RULE`.
+  bump it with any value here or in `CODE_MOVE_RULE`, or with a change to
+  what counts as settled.
 - `isSettledSave(level, rule?)` - the level's
-  `mintQuality.alignmentSampleCount` reaches `settledAlignmentSamples`; a
+  `mintQuality.alignmentSampleCount` reaches `settledAlignmentSamples` and
+  the level is not marked `mintQuality.headingUncertain === true` (D31); a
   level without the count is not settled.
 - `judgeCodeMove({ estimate, settled }, rules?)` -
   `{ verdict, decidedBy, boundM, turnChecked }`: `moved` by position first,
@@ -62,6 +64,20 @@ is the closest honest proxy. The real corpus records about 2 fixes a second
 so 120 fixes is about the 60 s the measurement called settled at the median
 rate; a 1 Hz phone needs 2 minutes (conservative: its codes are then judged
 by position only).
+
+**The uncertain-heading marker (owner decision D31, 2026-10-02).** A code
+composed through an alignment with under about 10 m of GPS extent is saved
+but marked `mintQuality.headingUncertain: true` by the framework mint
+(`qr-anchor-mint.ts`, threshold `QR_MINT_HEADING_UNCERTAIN_EXTENT_M`;
+measured: 0-5 m of extent about 41 degrees heading error p50, 5-10 m about
+7). The fix count cannot see this: a visitor standing at the code piles up
+fixes without any extent. So a marked level is NOT settled whatever its
+count, and gets no turn check (position only). The viewer reads the
+marker, never `alignmentGpsExtentM` against its own threshold: the 10 m
+decision lives in one place, the mint. Absent (levels minted before D31, or
+a mint that did not know the extent) means today's count rule; `false`
+means the same. What reverses it: a level whose marker was set wrongly, which
+only the mint can fix.
 
 **Checked: no tool counts its own votes** (M5c review L6, 2026-10-02). The
 Recorder reads the count from the store's whole GPS history
@@ -122,11 +138,13 @@ check inside the measured range (visits under about 5 minutes).
   test); a position move never depends on `settled`.
 - An unsettled save is never read as turned, at any yaw, span or spread
   (property test).
+- A save marked `headingUncertain` is never settled at any count; absent or
+  `false` reads exactly the count rule (property test).
 - No compass input exists; a stray one handed in changes nothing (test).
 
 ## Tests
 
-`moved-code-rule.test.ts` (the settled proxy, position first, the turn
+`moved-code-rule.test.ts` (the settled proxy and the D31 marker, position first, the turn
 check's threshold and gate, no turn check for an unsettled save, no compass,
 the recorded values), `moved-code-rule.property.test.ts`. The values'
 evidence: the opt-in `code-displacement.recordings.test.ts`
