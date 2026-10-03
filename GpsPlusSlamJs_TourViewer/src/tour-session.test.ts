@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ArchiveLimitError,
+  OpenRemoteArchiveError,
   InMemoryLocalCacheStore,
   packFilesAsZip,
   type FetchImpl,
@@ -19,6 +20,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   archiveFileName,
+  openTourFile,
   openTourSession,
   readArchiveInSlices,
   tourLabel,
@@ -840,5 +842,65 @@ describe("the media allowlist (K0)", () => {
       "application/octet-stream",
     );
     await session.close();
+  });
+});
+
+/**
+ * Why these tests matter (tour kit plan K0, K-D1): "open a file" is the way
+ * around a host that blocks browsers, so a file-opened tour must be the
+ * SAME session as a link's - same listing, same manifest, same caps - with
+ * a substitute identity: no URL, so the content key of `tour-file-key.ts`
+ * keys its draft, and the file's own name is the name a finished zip is
+ * offered under.
+ */
+describe("openTourFile (K0)", () => {
+  async function tourFile(name: string): Promise<File> {
+    const manifest = serializeTourManifest(createEmptyTourManifest());
+    const bytes = await buildZip({ "tour.json": manifest });
+    return new File([bytes as BlobPart], name, { type: "application/zip" });
+  }
+
+  it("opens a zip from the device as a full session, keyed by its content", async () => {
+    const file = await tourFile("tour (1).zip");
+    const opened = await openTourFile(file);
+    expect(opened.fromFile).toBe(true);
+    expect(opened.archive.url).toMatch(/^local-file:[0-9a-f]{32}$/);
+    expect(opened.hostedFileName()).toBe("tour (1).zip");
+    expect(opened.entries.map((e) => e.filename)).toContain("images/a.jpg");
+    expect(await opened.loadTourManifest()).toEqual(createEmptyTourManifest());
+    // The rebuild's input is the file itself, not a copy.
+    expect(await opened.readWholeArchive()).toBe(file);
+    expect(opened.stats().networkBytes).toBe(0);
+    await opened.close();
+  });
+
+  it("gives the same tour the same key under any file name", async () => {
+    const a = await openTourFile(await tourFile("tour.zip"));
+    const b = await openTourFile(await tourFile("tour (2).zip"));
+    expect(a.archive.url).toBe(b.archive.url);
+  });
+
+  it("says in plain words when the file is not a zip", async () => {
+    const err = await openTourFile(
+      new File(["not a zip at all"], "notes.zip"),
+    ).catch((e: unknown) => e);
+    expect((err as Error).message).toMatch(
+      /"notes\.zip" is not a readable tour zip/,
+    );
+  });
+
+  it("holds the transport cap on the file's size", async () => {
+    const err = await openTourFile(await tourFile("big.zip"), {
+      limits: { maxArchiveBytes: 10 },
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(OpenRemoteArchiveError);
+    expect((err as OpenRemoteArchiveError).rejectCause).toBe("too-large");
+  });
+
+  it("holds the entry cap while reading the key", async () => {
+    const err = await openTourFile(await tourFile("t.zip"), {
+      limits: { maxEntries: 2 },
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveLimitError);
   });
 });

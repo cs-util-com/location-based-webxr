@@ -583,6 +583,24 @@
                     Test link
                   </button>
                 </form>
+                <!-- "Open a file" (tour kit plan K0): a zip on this device,
+                     for a host that does not let browsers read its files.
+                     The picker is #file-input, outside the wizard, so a
+                     visitor can reach it too. -->
+                <p class="step-copy hint--dim">
+                  Or open a tour zip from this device. A file has no link, so
+                  its code can be printed only once the zip is hosted.
+                </p>
+                <div class="step-body">
+                  <button
+                    type="button"
+                    id="open-file"
+                    class="btn btn--prose"
+                    data-testid="open-file-button"
+                  >
+                    Open a file
+                  </button>
+                </div>
               </li>
             </ol>
           </details>
@@ -785,6 +803,21 @@
         </li>
       </ol>
       <div id="error" class="prose" role="alert" data-testid="error"></div>
+      <!-- Both modes (tour kit plan K0): the line naming a file-opened tour,
+           and the one file picker the "open a file" button clicks. -->
+      <p
+        id="file-status"
+        class="prose hint--dim"
+        hidden
+        data-testid="file-status"
+      ></p>
+      <input
+        id="file-input"
+        type="file"
+        accept=".zip,application/zip,application/x-zip-compressed"
+        hidden
+        data-testid="file-input"
+      />
       <!-- Step 4 wraps the AR section. Under WebXR DOM Overlay only the
            subtree of the element passed to initAR composites over the camera
            feed, so everything a person needs DURING a session (the status

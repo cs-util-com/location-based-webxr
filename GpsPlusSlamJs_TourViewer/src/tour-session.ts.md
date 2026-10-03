@@ -26,7 +26,9 @@ loading with MIME types, and the poisoned-cache recovery loop.
   `OpenTourOptions { fetchImpl?; cacheStore?; googleDriveApiKey?; corsProxyBaseUrl?; onStats?; limits? }`
   — `limits` overrides the zip-bomb caps (`DEFAULT_ARCHIVE_LIMITS`) for
   tests; the page always opens with the defaults.
-- `TourSession { entries; archive; hasRecording; manifestWrap; stats(); loadEntry(filename); loadContentEntry(image); close() }`
+- `openTourFile(file, options?): Promise<TourSession>` (tour kit plan K0)
+  - a tour zip on the device, `options.limits` as above.
+- `TourSession { entries; archive; fromFile; hasRecording; manifestWrap; stats(); loadEntry(filename); loadContentEntry(image); close() }`
   — `hasRecording` is the synchronous `actions/` pre-check
   `loadRecordingActions()` applies (a wrapping folder tolerated), exposed
   for the page's flow copy (`tour-flow.ts`, flows plan M1).
@@ -102,6 +104,17 @@ loading with MIME types, and the poisoned-cache recovery loop.
   it: a level over the text cap degrades to "no level" like a corrupt one,
   a content bomb fails that photo, and the tour stays open. Values and
   their measurement: the framework's `archive-limits.ts.md`.
+- **Opening a FILE (`openTourFile`, tour kit plan K0).** The same session
+  over the file's own bytes (`LocalCacheByteSource`): the same caps (the
+  transport cap from `file.size`, cause `'too-large'`), no network, no
+  cache, no warm download, no poison retry. `archive.url` is the content
+  key of `tour-file-key.ts` (`local-file:` + 128 bits of SHA-256 over the
+  sorted name / size / CRC list of the central directory, the reasoning is
+  in that sidecar) - the draft store and the scan comparisons key on it;
+  `hostedFileName()` is the file's name, so a finished zip is offered under
+  it; `readWholeArchive()` returns the file itself; `fromFile` is true and
+  the stats stay at zero. A file that is not a zip fails in plain words
+  ("... is not a readable tour zip"), with the zip error as its cause.
 
 ## Examples
 
@@ -120,4 +133,6 @@ bomb stopped with the tour still open, the shared total (a re-read free),
 and a level over the text cap degrading to no level; "the media allowlist
 (K0)" - an SVG content entry refused and never an image, a self-contained
 `.glb` served as a model while one with an outside buffer URI is refused,
-and Blob types from the allowlist (plain bytes otherwise).
+and Blob types from the allowlist (plain bytes otherwise); "openTourFile
+(K0)" - a full session keyed by content, the same key under any file name,
+the plain-words non-zip error, and the transport and entry caps.

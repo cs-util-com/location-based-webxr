@@ -11,7 +11,17 @@ DOM glue, its own module since the flows plan M6.
 ## Public API
 
 - `wireArchiveOpen({ ctx, dom, cacheStore, corsProxyBaseUrl, hooks }): ArchiveOpen`
-  - `ArchiveOpenDom { form; linkInput; openButton; statsPanel; statsHeadline; statsDetail; errorBox; gallery; storagePanel; clearCacheButton }`
+  - `ArchiveOpenDom { form; linkInput; openButton; openFileButton; fileInput; fileStatus; statsPanel; statsHeadline; statsDetail; errorBox; gallery; storagePanel; clearCacheButton }`
+    - **Open a file (tour kit plan K0).** `openFileButton` clicks the
+      hidden `fileInput`; a pick runs the same open path as a link with a
+      `file` source (`openTourFile`). The input's value is cleared on
+      every pick, so the same file can be picked again after a failure.
+      The file button shares the in-progress state of every open button
+      (async-UI rule, both outcomes tested). A file-opened tour is named
+      in `fileStatus`, gets no streaming stats (nothing streams), is
+      labelled by its file name, goes to `hooks.presentLocalTour(origin)`
+      instead of the print prefill (it has no link), and its draft is
+      keyed by the session's content key (`tour-file-key.ts`).
     - Step 4's paste form (F12) is gone: step 4 opens the tour its printed
       code names (`scanOpen`, scan-to-open plan §2), writing the link of
       record into `linkInput` first, so the page keeps one link of record
@@ -102,7 +112,12 @@ archive.boot().catch((err) => {
 the cached revisit, the changed-ETag refetch, clear cache, clear cache
 during a held warm, the hidden Storage section under `?nocache=1`),
 `launch-and-errors.spec.js` (the `?qr=` boot, both async-UI states, the
-error paths). `archive-open.test.ts` drives the real submit handler through
+error paths), `open-file.spec.js` (the real file chooser: a zip opened from
+the device, and a non-zip refused with the button restored).
+`archive-open-file.test.ts` (K0) drives the file button and picker over
+stand-ins: the in-progress state on both outcomes, the file named, the
+local hook instead of the print prefill, the content key reaching the
+draft, and a closed picker doing nothing. `archive-open.test.ts` drives the real submit handler through
 a failed open: the tour switch clears the fused-pose hint state. The logic
 beneath: `tour-session.test.ts`,
 `stats-view.test.ts`, `open-errors.test.ts`, `tour-flow.test.ts`

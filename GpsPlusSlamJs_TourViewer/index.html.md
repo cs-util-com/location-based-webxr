@@ -15,7 +15,12 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   session, F10 - it was six):
   1. **Host** (`#step-host`): three numbered sub-steps - get a zip (the
      optional starter-zip button), upload it, then paste and **test** the
-     link (`#open-form`, whose button reads "Test link", F6).
+     link (`#open-form`, whose button reads "Test link", F6) - or open a
+     tour zip from the device (`#open-file`, "Open a file", tour kit plan
+     K0; a file has no link, so its code is printed once the zip is
+     hosted). The picker itself (`#file-input`) and the line naming a
+     file-opened tour (`#file-status`) sit under `#error`, outside the
+     wizard, so a visitor reaches them too.
   2. **Print** (`#print-panel`): the printed code, on the page and as a
      PDF of N numbered posters (`#print-count`, `#print-paper`,
      `#print-pdf`) - the print dialog's "fit to page" silently rescales,
@@ -58,7 +63,8 @@ Behaviour lives in the wiring modules composed by `src/main.ts` (see
 ## Public API
 
 The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
-`starter-zip`, `link-input`, `open-button`, `storage-panel`,
+`starter-zip`, `link-input`, `open-button`, `open-file-button`,
+`file-input`, `file-status`, `storage-panel`,
 `clear-cache`, `print-panel` (owns `print-url-ask`, `print-url`,
 `print-url-shown`, `author-size`, `author-c`, `print-generate`,
 `print-info`, `print-canvas`, `print-button`, `print-url-out`,

@@ -87,7 +87,10 @@ listed in `index.html.md`. The concerns and their modules:
   cross-module entry points to the `hooks` object (`renderArStatus`,
   `renderArEntry`, `renderAuthorReadout`,
   `tryPlaceTour`, `startAuthorPipeline`, `startViewerPipeline`,
-  `presentTourForPrint`), and callers read the hooks at call time - which
+  `presentTourForPrint`, and `presentLocalTour` - a FILE-opened tour, tour
+  kit plan K0: the print step keeps asking for a link and a creator's
+  wizard opens step 2, or stays in step 4, without remembering a link),
+  and callers read the hooks at call time - which
   is what keeps the modules free of import cycles (`check:cycles` is in
   the gate). A hook read before its owner is wired is the no-op from
   `createUnwiredHooks()`, never a throw.

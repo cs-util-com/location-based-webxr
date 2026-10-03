@@ -224,6 +224,15 @@ hooks.presentTourForPrint = (url, origin) => {
   );
 };
 
+// A tour opened from a file (tour kit plan K0) has no link: the print step
+// keeps asking for one, and only a creator's wizard moves on - the same
+// steps a link would reach, without remembering a link to prefill.
+hooks.presentLocalTour = (origin) => {
+  print.presentNoTour();
+  if (mode !== "creator") return;
+  wizard.openStep(origin === "measure-step" ? "measure" : "print");
+};
+
 const visitor = wireVisitorScreen({
   mode,
   seams,
@@ -511,6 +520,9 @@ const archive = wireArchiveOpen({
     form: element("open-form"),
     linkInput: element("link"),
     openButton: element("open"),
+    openFileButton: element("open-file"),
+    fileInput: element("file-input"),
+    fileStatus: element("file-status"),
     statsPanel: element("stats"),
     statsHeadline: element("stats-headline"),
     statsDetail: element("stats-detail"),

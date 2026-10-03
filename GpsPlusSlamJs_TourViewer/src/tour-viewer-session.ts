@@ -132,6 +132,10 @@ export interface TourViewerHooks {
    *  from: an open started in step 4 must not answer by jumping to step 2
    *  and collapsing step 4, whose content is the AR overlay root. */
   presentTourForPrint(url: string, origin?: "host-step" | "measure-step"): void;
+  /** A tour opened from a FILE (tour kit plan K0): it has no link to
+   *  print, so the print step keeps asking for one, and the wizard moves on
+   *  as for a link (`origin` as above) without remembering a link. */
+  presentLocalTour(origin?: "host-step" | "measure-step"): void;
   /** A tour closed: the finish step's page-side state is stale. */
   resetFinishStep(): void;
   /** A creator's AR visit is running (its world group exists): show the
@@ -177,6 +181,7 @@ export function createUnwiredHooks(): TourViewerHooks {
     startAuthorPipeline: () => false,
     startViewerPipeline: () => false,
     presentTourForPrint: () => undefined,
+    presentLocalTour: () => undefined,
     resetFinishStep: () => undefined,
     beginAuthorVisit: () => undefined,
     endAuthorVisit: () => undefined,

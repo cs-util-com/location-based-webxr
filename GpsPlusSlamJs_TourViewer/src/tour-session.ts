@@ -14,8 +14,11 @@
 
 import { ZipReader, type FileEntry } from "@zip.js/zip.js";
 import {
+  ArchiveLimitError,
   ByteSourceReader,
   DecompressionBudget,
+  LocalCacheByteSource,
+  OpenRemoteArchiveError,
   DEFAULT_ARCHIVE_LIMITS,
   listZipEntriesCapped,
   loadActionsFromZip,
@@ -46,6 +49,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-media";
 
 import { fileNameFromContentDisposition } from "./content-disposition.js";
+import { tourFileKey } from "./tour-file-key.js";
 
 /** One archive entry as the gallery sees it (reached via `TourSession.entries`
  *  — not separately exported; knip counts a standalone export as dead). */
@@ -83,7 +87,12 @@ export interface OpenTourOptions {
 
 export interface TourSession {
   readonly entries: readonly TourEntry[];
+  /** For a file-opened tour (`openTourFile`) `archive.url` is its content
+   *  key (`tour-file-key.ts`), not a link. */
   readonly archive: OpenedArchive;
+  /** True when the tour was opened from a file on this device (tour kit
+   *  plan K0): no network, nothing to stream or cache. */
+  readonly fromFile: boolean;
   /** True when the zip carries an action stream (`actions/` entries) the
    *  capture-geo join can try to read - the same pre-check
    *  `loadRecordingActions` applies, exposed synchronously for the page's
@@ -322,6 +331,90 @@ export async function openTourSession(
   }
 }
 
+/**
+ * Open a tour from a FILE on this device (tour kit plan K0) - the way
+ * around a host that does not let browsers read its files. The same
+ * session as a link's (`buildSession`, the same caps) over the file's own
+ * bytes: no network, no cache, no warm download, no poison retry. Its
+ * `archive.url` is the content key of `tour-file-key.ts` (a file has no
+ * URL), which the draft store and the scan comparisons key on;
+ * `hostedFileName()` is the file's name, so a finished zip is offered
+ * under the name it was opened as.
+ *
+ * @throws OpenRemoteArchiveError `'too-large'` above the transport cap;
+ *   ArchiveLimitError past the entry cap; a plain-words Error for a file
+ *   that is not a zip.
+ */
+export async function openTourFile(
+  file: File,
+  options: Pick<OpenTourOptions, "limits"> = {},
+): Promise<TourSession> {
+  const limits: ArchiveLimits = {
+    ...DEFAULT_ARCHIVE_LIMITS,
+    ...options.limits,
+  };
+  if (file.size > limits.maxArchiveBytes) {
+    const cause = new ArchiveLimitError(
+      "archive-bytes",
+      limits.maxArchiveBytes,
+      file.size,
+    );
+    throw new OpenRemoteArchiveError(
+      `opening ${file.name} refused: ${cause.message}`,
+      "too-large",
+      { cause },
+    );
+  }
+  const archive: OpenedArchive = {
+    source: new LocalCacheByteSource(file),
+    size: file.size,
+    url: await fileKeyOf(file, limits),
+    origin: "cache",
+    warmed: Promise.resolve(true),
+    dispose: () => undefined,
+    evict: () => Promise.resolve(),
+  };
+  // Nothing streams from a file: the counters stay at zero, and the page
+  // shows none for it (`fromFile`).
+  const stats: StreamStats = {
+    networkRequests: 0,
+    networkBytes: 0,
+    cacheReads: 0,
+    cacheBytes: 0,
+    origin: "cache",
+  };
+  return buildSession(
+    archive,
+    stats,
+    undefined,
+    { hostedFileName: () => file.name },
+    limits,
+    file,
+  );
+}
+
+/** The file's content key, from its central directory (walked under the
+ *  same entry cap as any open). A file that is not a zip fails here, in
+ *  plain words. */
+async function fileKeyOf(file: File, limits: ArchiveLimits): Promise<string> {
+  const reader = new ZipReader(
+    new ByteSourceReader(new LocalCacheByteSource(file)),
+  );
+  try {
+    return await tourFileKey(
+      await listZipEntriesCapped(reader, limits.maxEntries),
+    );
+  } catch (err) {
+    if (err instanceof ArchiveLimitError) throw err;
+    throw new Error(
+      `"${file.name}" is not a readable tour zip (${err instanceof Error ? err.message : String(err)}).`,
+      { cause: err },
+    );
+  } finally {
+    await reader.close();
+  }
+}
+
 function openArchive(
   url: string,
   options: OpenTourOptions,
@@ -354,6 +447,8 @@ async function buildSession(
   cacheStore: LocalCacheStore | undefined,
   named: Pick<TourSession, "hostedFileName">,
   limits: ArchiveLimits,
+  /** The whole archive when it is a file on this device (`openTourFile`). */
+  localFile?: Blob,
 ): Promise<TourSession> {
   const reader = new ZipReader(new ByteSourceReader(archive.source));
   // The tour is untrusted input (tour kit plan K0): the directory walk stops
@@ -389,6 +484,7 @@ async function buildSession(
   const session: TourSession = {
     entries,
     archive,
+    fromFile: localFile !== undefined,
     hasRecording,
     manifestWrap,
     hostedFileName: named.hostedFileName,
@@ -484,6 +580,8 @@ async function buildSession(
         parseTourManifest,
       ),
     readWholeArchive: async () => {
+      // A file IS the whole archive - no copy, no slices.
+      if (localFile !== undefined) return localFile;
       // `warmed` resolves false without a store or after an abort; the
       // range read below is then the honest path, not an error.
       await archive.warmed.catch(() => undefined);
