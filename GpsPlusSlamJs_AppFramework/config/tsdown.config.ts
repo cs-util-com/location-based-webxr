@@ -162,6 +162,9 @@ const entryFiles = [
   'src/state/subscribe-to-selector.ts',
   // The session GPS extent the Recorder's QR mint reads (D28 revised).
   'src/state/gps-extent-tracker.ts',
+  // The maturity floor and the first-mature-alignment pick (D28 revised,
+  // D33), deep-imported by the Tour Viewer's authoring settle.
+  'src/state/alignment-maturity.ts',
 
   // storage/
   'src/storage/index.ts',

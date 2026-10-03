@@ -22,7 +22,11 @@ so it is the alignment at save there).
 
 ## Public API
 
-- `QR_MINT_MATURE_GPS_EXTENT_M = 80` - the maturity floor; its doc comment
+- `QR_MINT_MATURE_GPS_EXTENT_M = 80` - the maturity floor, the shared
+  `MATURE_GPS_EXTENT_M` of `../../state/alignment-maturity.ts` under the
+  mint's name (one constant for the mint, the GPS anchor's
+  `'mature-alignment'` start-up and the Tour Viewer's settle, D33); that
+  constant's doc comment
   carries the measured reason, the swept range and the reversing value
   (10-20 m).
 - `createQrMintAlignmentTracker(options?)`

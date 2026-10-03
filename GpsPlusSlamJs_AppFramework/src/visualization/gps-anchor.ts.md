@@ -43,6 +43,21 @@ keep, and no consumer passed any of the three.
 - `type GpsAnchorMode = 'snap-when-offscreen' | 'snap-every-tick'` —
   steady-state commit policy. Default `'snap-when-offscreen'`.
 - `type GpsAnchorPhase = 'bootstrap' | 'anchored'`.
+- `type GpsAnchorStartup = 'median' | 'mature-alignment'` - how the point is
+  first fixed (the `'bootstrap'` phase). Default `'median'` (unchanged for
+  every app; making the other the default is a later owner decision):
+  - `'median'` - the per-coordinate median of `secondsToAccumulateGpsPose`
+    1 Hz samples, as below.
+  - `'mature-alignment'` (owner decision D33, 2026-10-03) - the object's
+    position in `arWorldGroup`'s frame (raw odometry NUE, whatever the
+    group's lerped matrix is) through the FIRST MATURE alignment at or after
+    the placement: the first whose session GPS extent (`getGpsExtentM`)
+    reaches `matureGpsExtentM` (default 80 m, the shared
+    `../state/alignment-maturity.ts`). An object placed after the session
+    matured is fixed through the alignment read when the anchor is CREATED
+    (its placement), not a later one. While it waits the object is never
+    touched, so it stays rigid where it was placed. `settleNow()` is the
+    fallback when the session ends first.
 - `type GpsAnchorSamplePoint = LatLong | LatLongAlt`.
 - `interface GpsAnchorOptions` — required: `object3D`, `arWorldGroup`,
   `camera`, `gpsPoint`, `getAlignmentMatrix`, `getGpsZeroRef`,
@@ -50,7 +65,9 @@ keep, and no consumer passed any of the three.
   `mode`,
   `distanceThreshold` (default 2 m),
   `secondsToAccumulateGpsPose` (default 7 samples at 1 Hz),
-  `settlingSeconds` (default 0).
+  `settlingSeconds` (default 0), `startup` (default `'median'`),
+  `getGpsExtentM` (required by `'mature-alignment'`; null = unknown, never
+  mature), `matureGpsExtentM` (default 80).
   (The declared-but-never-wired `targetPosRefreshRateInSec` option was
   removed 2026-07-10, quality-review E-3 — the steady-state target is now
   cached on the `(zeroRef, alignmentMatrix, gpsPoint)` reference identities,
@@ -58,7 +75,13 @@ keep, and no consumer passed any of the three.
   with no refresh timer needed.)
 - `createGpsAnchor(options) → GpsAnchor` — the factory.
 - `interface GpsAnchor` — `phase`, `isFullyAnchored`, `gpsPoint`,
-  `markMovedExternally()`, `setGpsPoint(point)`, `dispose()`.
+  `markMovedExternally()`, `setGpsPoint(point)`, `settleNow()`,
+  `dispose()`.
+  - `settleNow()` - `'mature-alignment'` only: fix the point NOW through
+    the latest usable alignment followed since the placement (the session
+    is ending before maturity). Returns the committed point, or null when
+    nothing was committed (already fixed, `'median'` start-up, or no usable
+    alignment ever seen). Fires `onBootstrapComplete`.
 
 The `__tickForTests(dt, elapsed)` method is exposed on the returned
 object as an `@internal` testing seam in lieu of pumping the global
@@ -93,7 +116,15 @@ object as an `@internal` testing seam in lieu of pumping the global
 - **`getCurrentGpsPoint` returning null is a non-error**: the tick is
   silently skipped (no sample pushed, `lastSampleAtElapsed` not
   updated, so the next tick will retry). Mirrors "no fix yet".
-- **`onBootstrapComplete` fires from the median commit only**: invoked with the
+- **`'mature-alignment'` refuses what it cannot honour**: no
+  `getGpsExtentM`, `skipBootstrap: true` together with it, or a floor that
+  is not positive and finite throw at construction, before the object is
+  registered. `markMovedExternally()` re-opens the pick at the move (a move
+  is a new placement). A waiting anchor re-reads its inputs only when the
+  alignment or zero reference or the extent changed, and copies the matrix
+  it keeps.
+- **`onBootstrapComplete` fires from the median commit (or the
+  `'mature-alignment'` fix and `settleNow()`) only**: invoked with the
   exact committed `gpsPoint` whenever the bootstrap median is committed — once
   after the initial bootstrap and again after every re-bootstrap
   (`markMovedExternally` → re-accumulate → commit). It never fires when
@@ -153,7 +184,14 @@ anchor.markMovedExternally();
 
 ## Tests
 
-See [gps-anchor.test.ts](gps-anchor.test.ts). Coverage:
+See [gps-anchor.test.ts](gps-anchor.test.ts) and, for the `'mature-alignment'`
+start-up, [gps-anchor.mature-alignment.test.ts](gps-anchor.mature-alignment.test.ts)
+(waits untouched, then fixes through the first mature alignment and never
+moves again; fixed through the alignment at creation when already mature;
+`settleNow` through the latest usable alignment and null without one;
+re-opened by an external move; the refused configurations; `'median'`
+unchanged; a property test over random alignment and extent sequences).
+Coverage of `gps-anchor.test.ts`:
 
 - Bootstrap (sub-step 2):
   - Initial phase + `isFullyAnchored`.
