@@ -46,7 +46,7 @@
 
 /** The prompt's thresholds (swept in `code-move-prompt.sweep.test.ts`). */
 export interface MovePromptRule {
-  /** New fixes the refusal must last for. */
+  /** New fixes the offset must stay beyond the trigger for. */
   readonly minFixes: number;
   /** Seconds of the fixes' own time it must last for. */
   readonly minSeconds: number;
@@ -166,7 +166,7 @@ export interface MovePrompt {
   readonly yawDeg: number;
   /** The trigger the offset crossed (m): the rule's `floorM`. */
   readonly triggerM: number;
-  /** New fixes since the refusal began. */
+  /** New fixes since the run beyond the trigger began. */
   readonly fixes: number;
   /** Seconds of fix time since it began; null without readable times. */
   readonly seconds: number | null;
@@ -270,7 +270,7 @@ export function trackMovePrompt(
   }
   const lastFixMs = finite(input.lastFixMs) ? input.lastFixMs : null;
   // Another level, or a history that restarted (a new session's store),
-  // begins a new refusal.
+  // begins a new run.
   const start: MovePromptOnset =
     onset !== null && onset.levelId === levelId && fixCount >= onset.fixCount
       ? onset

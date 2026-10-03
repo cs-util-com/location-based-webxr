@@ -152,8 +152,8 @@ sessions per cell.
   refusal beyond max(floor, bound); the test arm is replaced by the trigger
   arm above), swept 0 (none) / 15 / 20 / 25 m at a reported 2 / 3 / 5 m
   (the worst cell across tau and solver proxy, of 200; persistence 20 s).
-  The floor is the shared `MOVED_CODE_FLOOR_M` (coordinator decision
-  2026-10-01, provisional 20 m): the regression gate's corpus has a worst
+  The floor was then the shared `MOVED_CODE_FLOOR_M` (coordinator decision
+  2026-10-01, provisional 20 m; since D26 the viewer's alone): the regression gate's corpus has a worst
   cross-session disagreement of one reference point of about 14 m and a
   robust p90 of about 6 m, both synthetic, until the recalibration on the
   owner's recordings.
@@ -176,11 +176,10 @@ sessions per cell.
     is kept because 15 m is beyond the corpus's worst and a prompt only
     asks; sigma 10 m prompts at every floor swept.
 - **What would reverse them:** field recordings in which an unmoved
-  code's refusal comes and goes over more than 20 s (raise the
-  persistence), or in which an unmoved code's offset differs by more than
-  20 m between visits (raise `sameSpotM`, and the floor), or in which
-  reported 2-3 m phones disagree between visits by 15 m or more (raise
-  the floor towards 25 m).
+  code's offset beyond the trigger comes and goes over more than 20 s
+  (raise the persistence), or in which an unmoved code's offset differs by
+  more than 20 m between visits (raise `sameSpotM`), or in which unmoved
+  offsets beyond 15 m are common in longer walks (raise the trigger, D27).
 
 ## Invariants & assumptions
 
