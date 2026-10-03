@@ -24,18 +24,19 @@ framework (`cloud-column.ts`, `cloud-sun.ts`).
     camera-centred at the origin, the sheet's and slab's in the world: the
     same anchors the sky's disc reads. `{ tau: 0, drawn: 0, noise: null }`
     for a sun at or below the horizon or a clear sky.
-  - `shadowAt(atmosphere, point, cameraPosition)` → the share of the sun
-    reaching a world point through the clouds the sky draws for that
-    camera: the cloud shadow patch's CPU twin
-    (`SkyAtmosphere.cloudTransmittanceToward`).
+  - `shadowAt(atmosphere, point)` → the share of the sun reaching a world
+    point through the clouds, the same from every viewpoint: the cloud
+    shadow patch's CPU twin (`SkyAtmosphere.cloudShadowToward`; owner bug
+    report 2026-09-28, the shadows no longer depend on the camera).
 
 ## Invariants & assumptions
 
 - The GPU reads the noise with mips; the disc's read is at level 0 (the
   twin's bilinear), the lit materials' at the level their derivatives
   pick, so `shadowAt` is exact near the camera and approximate far away.
-- `drawn` is the framework's `cloudColumnDrawn`, the twin of the GLSL the
-  disc and the cloud shadows share.
+- `drawn` is the framework's `cloudColumnDrawn`, the twin of the disc's
+  GLSL weight. The cloud shadows carry no such weight: a ground point's
+  shadow is its column toward the sun, whatever the camera sees.
 
 ## Example
 

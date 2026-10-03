@@ -152,7 +152,8 @@ denoise, resolutionScale })` is the sweep's handle; `setAoExclusions(bool)`
     every lit material is patched once, BEFORE the haze (the catalog, the
     rebuilt dense city and a new water material too), and synced with the
     sky in `useAtmosphere`; on by default here. `cloudShadowAt([x, y, z])`
-    returns the CPU twin's share of the sun reaching a world point, and
+    returns the CPU twin's share of the sun reaching a world point (the
+    same from every viewpoint), and
     `groundAt([[u, v], …])` the ground (or street) world points under
     canvas points (null where something else is hit first);
   - `setGodRays(bool)`: god rays (round-3 look-dev programme, stream G;

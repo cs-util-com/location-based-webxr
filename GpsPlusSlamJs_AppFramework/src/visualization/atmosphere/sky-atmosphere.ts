@@ -470,8 +470,9 @@ export class SkyAtmosphere {
    * `viewer` (the mode's far fade or horizon fade, and the aerial melt;
    * `cloudColumnTransmittanceToward`). 1 before the first sun, for a sun at
    * or below the horizon and in a clear sky. For dimming a light by the
-   * clouds as a whole (the look-dev page's "sun light dims" switch); the
-   * per-pixel shadows are `CloudShadow`'s.
+   * clouds as a whole as the camera sees them (the look-dev page's "sun
+   * light dims" switch); the per-pixel ground shadows are `CloudShadow`'s,
+   * with no view weight (their twin: `cloudShadowToward`).
    *
    * @throws RangeError for a non-finite point.
    */
@@ -505,6 +506,37 @@ export class SkyAtmosphere {
         anchored: this.mode !== 'dome',
         farFadeM: [fade.x, fade.y],
       }
+    );
+  }
+
+  /**
+   * The share of the sun reaching `point` through the clouds, as
+   * `CloudShadow` shades the ground: the column toward the sun alone, the
+   * same from every viewpoint and in every cloud mode (no weight for how
+   * much of that cloud a camera's sky draws; owner bug report 2026-09-28).
+   * 1 before the first sun, for a sun at or below the horizon and in a
+   * clear sky. The CPU twin of the cloud shadows.
+   *
+   * @throws RangeError for a non-finite point.
+   */
+  cloudShadowToward(point: readonly [number, number, number]): number {
+    if (!point.every(Number.isFinite)) {
+      throw new RangeError(`the point must be finite, got ${point.join(', ')}`);
+    }
+    const sun = this.sun;
+    const threshold = this.clouds.atmCloudThreshold.value;
+    if (sun === undefined || threshold >= 2) return 1;
+    const image = this.clouds.atmCloudTexture.value.image as {
+      data: Uint8Array;
+      width: number;
+    };
+    const offset = this.clouds.atmCloudOffset.value;
+    return cloudColumnTransmittanceToward(
+      point,
+      [sun.x, sun.y, sun.z],
+      threshold,
+      (u, v) => cloudNoiseSample(image.data, image.width, u, v),
+      [offset.x, offset.y]
     );
   }
 

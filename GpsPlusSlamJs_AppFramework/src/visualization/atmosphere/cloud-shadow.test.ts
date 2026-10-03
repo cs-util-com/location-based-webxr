@@ -40,8 +40,6 @@ function atmosphereSource() {
       atmCloudTexture: { value: new THREE.Texture() },
       atmCloudThreshold: { value: 0.61 },
       atmCloudOffset: { value: new THREE.Vector2(0.2, 0.3) },
-      atmCloudAnchored: { value: 1 },
-      atmCloudFarFadeM: { value: new THREE.Vector2(14_000, 21_000) },
     },
   };
 }
@@ -222,29 +220,27 @@ describe('CloudShadow uniforms', () => {
     expect(shadow.uniforms.atmShadowCloudThreshold.value).toBe(0.61);
     source.cloudUniforms.atmCloudThreshold.value = 0.4;
     expect(shadow.uniforms.atmShadowCloudThreshold.value).toBe(0.61);
-    // Where the sky draws its clouds (round-3 review, finding 1): the far
-    // fade shared, the anchor copied (a sync follows every mode change).
-    expect(shadow.uniforms.atmShadowCloudFarFadeM.value).toBe(
-      source.cloudUniforms.atmCloudFarFadeM.value
-    );
-    expect(shadow.uniforms.atmShadowCloudAnchored.value).toBe(1);
   });
 
-  // WHY (round-3 review, finding 1): the shadow weights its optical depth by
-  // how much of the cloud the sky DRAWS at the crossing, with the disc's own
-  // helper, so a low sun never darkens the ground under an empty sky.
-  it("weights the column by the sky's drawn share, like the disc", () => {
+  // WHY (owner bug report 2026-09-28): a cloud's shadow on the ground must
+  // not depend on where the camera is. The r758 review fix weighted the
+  // column by how much of the cloud the sky DRAWS from the camera, so with
+  // a low sun (the crossing ~22 km out, past the far fade) every ground
+  // shadow vanished, and came back when the camera moved toward the sun.
+  // The ground shadow is the column itself, the same from every viewpoint.
+  it("shades by the column alone, with no camera-dependent weight", () => {
     const material = new THREE.MeshStandardMaterial();
     new CloudShadow().apply(material);
     const f = compileWith(material, 'standard').fragmentShader;
-    const body = f.slice(f.indexOf('void atmShadowCloudLightInfo('));
-    expect(body).toContain(
-      'vec3 fromCamera = world + toLight * atmColumnDistance(world.y, toLight.y) - cameraPosition;'
+    const body = f.slice(
+      f.indexOf('void atmShadowCloudLightInfo('),
+      f.indexOf('#define getDirectionalLightInfo atmShadowCloudLightInfo')
     );
+    expect(body).not.toContain('atmColumnDrawn');
+    expect(body).not.toContain('fromCamera');
     expect(body).toContain(
-      'atmColumnDrawn(length(fromCamera), length(fromCamera.xz), toLight.y,'
+      'light.color *= exp(-atmColumnOpticalDepth(noise, atmShadowCloudThreshold, world.y, toLight.y));'
     );
-    expect(body).toContain('toLight.y) * drawn);');
   });
 
   // Patched materials read the SAME uniform objects: one switch reaches all.

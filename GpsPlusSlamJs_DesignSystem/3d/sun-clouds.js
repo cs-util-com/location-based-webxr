@@ -76,16 +76,12 @@ export function createSunCloudProbe() {
     },
     /**
      * The share of the sun reaching the world point `point` ([x, y, z]
-     * metres) through the clouds the sky draws for a camera at
-     * `cameraPosition`: the cloud shadow patch's CPU twin (the framework's
-     * `SkyAtmosphere.cloudTransmittanceToward`).
+     * metres) through the clouds, the same from every viewpoint: the cloud
+     * shadow patch's CPU twin (the framework's
+     * `SkyAtmosphere.cloudShadowToward`).
      */
-    shadowAt(atmosphere, point, cameraPosition) {
-      return atmosphere.cloudTransmittanceToward(point, [
-        cameraPosition.x,
-        cameraPosition.y,
-        cameraPosition.z,
-      ]);
+    shadowAt(atmosphere, point) {
+      return atmosphere.cloudShadowToward(point);
     },
   };
 }

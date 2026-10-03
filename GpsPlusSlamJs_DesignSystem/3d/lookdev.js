@@ -2074,7 +2074,7 @@ Object.assign(api, {
    */
   cloudShadowAt(point) {
     if (!atmosphere) throw new Error("the cloud shadows need the sky");
-    return sunCloudProbe.shadowAt(atmosphere, point, camera.position);
+    return sunCloudProbe.shadowAt(atmosphere, point);
   },
   /**
    * Test surface: the ground (or a street) under normalised canvas points

@@ -988,9 +988,10 @@ describe('SkyAtmosphere.cloudTransmittanceToward (round-3 DEC-FB3-7)', () => {
 
   // WHY (round-3 review, finding 1): at a 5° sun the column toward the sun
   // is read ~22 km out, past the slab's 21 km far fade, where the sky draws
-  // no cloud; the sun's disc shone clear while the ground went dark. The
-  // weighting by what the sky draws must make both agree: 1 in the slab
-  // there, although the unweighted column is thick.
+  // no cloud. The view-weighted value (the whole-scene sun-light dimming,
+  // which follows what the camera sees) must then read 1 in the slab,
+  // although the unweighted column is thick. The ground shadows do NOT use
+  // this weight (cloudShadowToward, owner bug report 2026-09-28).
   it('sees no cloud where the sky draws none (a low sun in the slab mode)', () => {
     const { atmosphere } = setup();
     const el = (5 * Math.PI) / 180;
@@ -1021,6 +1022,46 @@ describe('SkyAtmosphere.cloudTransmittanceToward (round-3 DEC-FB3-7)', () => {
       points.filter((p) => atmosphere.cloudTransmittanceToward(p, p) < 0.5)
         .length
     ).toBeGreaterThan(3);
+  });
+
+  // WHY (owner bug report 2026-09-28): the ground's cloud shadow is the
+  // same from every viewpoint, so its CPU twin takes no viewer: at a 5° sun
+  // in the slab (where the view-weighted value above reads 1 everywhere)
+  // the thick columns still shade, exactly as the unweighted column says.
+  it('cloudShadowToward is the unweighted column, the same for every viewer', () => {
+    const { atmosphere } = setup();
+    const el = (5 * Math.PI) / 180;
+    const sun = { x: Math.cos(el), y: Math.sin(el), z: 0 };
+    atmosphere.configure({ sunDirection: sun, cloudCover: 0.9, cloudMode: 'slab' });
+    const u = atmosphere.cloudUniforms;
+    const data = cloudNoise(CLOUD_TEXTURE_SIZE, 1);
+    const points: [number, number, number][] = [];
+    for (let i = 0; i < 12; i++) points.push([i * 700, 0, i * 300]);
+    for (const p of points) {
+      const raw = cloudColumnTransmittanceToward(
+        p,
+        [sun.x, sun.y, sun.z],
+        u.atmCloudThreshold.value,
+        (a, b) => cloudNoiseSample(data, CLOUD_TEXTURE_SIZE, a, b),
+        [u.atmCloudOffset.value.x, u.atmCloudOffset.value.y]
+      );
+      expect(atmosphere.cloudShadowToward(p)).toBeCloseTo(raw, 9);
+    }
+    expect(
+      points.filter((p) => atmosphere.cloudShadowToward(p) < 0.5).length
+    ).toBeGreaterThan(3);
+    // No viewer and no draw weight: every cloud mode gives the same column.
+    const slab = points.map((p) => atmosphere.cloudShadowToward(p));
+    for (const mode of ['dome', 'sheet'] as const) {
+      atmosphere.configure({ cloudMode: mode });
+      points.forEach((p, i) => {
+        expect(atmosphere.cloudShadowToward(p)).toBeCloseTo(slab[i], 12);
+      });
+    }
+    expect(atmosphere.cloudShadowToward([0, 0, 0])).toBeLessThanOrEqual(1);
+    expect(() => atmosphere.cloudShadowToward([Number.NaN, 0, 0])).toThrow(
+      RangeError
+    );
   });
 
   it('is 1 before a sun and in a clear sky, and refuses a non-finite point', () => {

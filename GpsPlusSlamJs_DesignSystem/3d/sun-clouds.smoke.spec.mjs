@@ -509,7 +509,7 @@ const shadedPair = (page, samples, offset) =>
  * a 0.95-1 transmittance). The drop per transmittance bin is logged and
  * must fall as the transmittance rises (the pattern is where the twin says).
  */
-const SHADOW = { darkMin: 45, clearMax: 3 };
+const SHADOW = { darkMin: 45, clearMax: 3, thickShare: 0.8 };
 
 const OFFSETS = [
   [0, 0],
@@ -667,14 +667,15 @@ test("the cloud shadows cost little (on/off ratio, logged)", async ({
   expect(errors).toEqual([]);
 });
 
-// WHY (round-3 review, finding 1): at a low sun the column toward the sun
-// is read ~22 km out, past the slab's 21 km far fade, where the sky draws no
-// cloud; the ground went dark under an empty sky while the disc shone clear.
-// Swept over the sun's elevation, in the dome and the slab: the GPU's cloud
-// shadow must follow the twin that weights the column by what the sky
-// draws (clear columns change nothing, thick ones darken), and the disc and
-// the ground must tell one story (logged per elevation).
-test("cloud shadows fall only under clouds the sky draws, at every sun elevation", async ({
+// WHY (owner bug report 2026-09-28): a cloud's shadow on the ground must
+// not depend on the camera. The r758 review fix weighted the column by what
+// the camera's sky draws, so with a low sun (the crossing ~22 km out, past
+// the slab's far fade) every ground shadow vanished, and came back when the
+// camera moved toward the sun. Swept over the sun's elevation, the two
+// cloud modes and two camera positions: the GPU's shadow must follow the
+// view-free twin (clear columns change nothing, thick ones darken), and the
+// thick columns must darken at a low sun too (the case that used to vanish).
+test("cloud shadows are the column alone, the same from every viewpoint, at every sun elevation", async ({
   page,
 }) => {
   const errors = await boot(
@@ -686,70 +687,66 @@ test("cloud shadows fall only under clouds the sky draws, at every sun elevation
     d.pauseLoop(true);
     d.setFloatingVisible(false);
     d.setCloudCover(0.6);
-    d.setView("city");
   });
   const lines = [];
   const results = [];
-  for (const mode of ["dome", "slab"]) {
-    for (const elevation of [2, 5, 10, 20, 58]) {
-      await page.evaluate(
-        ([m, e]) => {
-          const d = window.__lookdev;
-          d.setCloudMode(m);
-          const slider = document.querySelector("#elevation");
-          slider.value = String(e);
-          slider.dispatchEvent(new Event("input"));
-          d.setView("city");
-        },
-        [mode, elevation],
-      );
-      const samples = await groundSamples(page);
-      let clear = 0;
-      let clearMoved = 0;
-      let thick = 0;
-      let thickDark = 0;
-      let discClear = 0;
-      for (const offset of OFFSETS.slice(0, 3)) {
-        const twin = await twinAt(page, samples, offset);
-        const disc = await page.evaluate(() => {
-          const c = window.__lookdev.sunCloud();
-          return c.tau * c.drawn;
-        });
-        if (disc < 0.05) discClear += 1;
-        const { off, on } = await shadedPair(page, samples, offset);
-        samples.forEach((s, i) => {
-          const drop = sum(off[i]) - sum(on[i]);
-          if (twin[i] > 0.95) {
-            clear += 1;
-            if (Math.abs(drop) > SHADOW.clearMax) clearMoved += 1;
-          } else if (twin[i] < 0.2) {
-            thick += 1;
-            if (drop >= SHADOW.darkMin / 3) thickDark += 1;
-          }
-        });
+  for (const view of ["city", "aloft"]) {
+    for (const mode of ["dome", "slab"]) {
+      for (const elevation of [2, 5, 10, 20, 58]) {
+        await page.evaluate(
+          ([v, m, e]) => {
+            const d = window.__lookdev;
+            d.setCloudMode(m);
+            const slider = document.querySelector("#elevation");
+            slider.value = String(e);
+            slider.dispatchEvent(new Event("input"));
+            d.setView(v);
+          },
+          [view, mode, elevation],
+        );
+        const samples = await groundSamples(page);
+        let clear = 0;
+        let clearMoved = 0;
+        let thick = 0;
+        let thickDark = 0;
+        for (const offset of OFFSETS.slice(0, 3)) {
+          const twin = await twinAt(page, samples, offset);
+          const { off, on } = await shadedPair(page, samples, offset);
+          samples.forEach((s, i) => {
+            const drop = sum(off[i]) - sum(on[i]);
+            if (twin[i] > 0.95) {
+              clear += 1;
+              if (Math.abs(drop) > SHADOW.clearMax) clearMoved += 1;
+            } else if (twin[i] < 0.2) {
+              thick += 1;
+              if (drop >= SHADOW.darkMin / 3) thickDark += 1;
+            }
+          });
+        }
+        lines.push(
+          `${view} ${mode} ${elevation}°: ${samples.length} points, clear ${clear} (moved ${clearMoved}), thick ${thick} (dark ${thickDark})`,
+        );
+        results.push({ view, mode, elevation, clearMoved, thick, thickDark });
       }
-      lines.push(
-        `${mode} ${elevation}°: clear ${clear} (moved ${clearMoved}), thick ${thick} (dark ${thickDark}), disc clear at ${discClear}/3 offsets`,
-      );
-      results.push({ mode, elevation, clearMoved, thick, thickDark });
     }
   }
-  console.log(`cloud shadows by elevation (cover 0.6): ${lines.join("; ")}`);
+  console.log(`cloud shadows by view and elevation (cover 0.6): ${lines.join("; ")}`);
   for (const r of results) {
-    const at = `${r.mode} ${r.elevation}°`;
-    // Clear columns (the twin, weighted by what the sky draws) change
-    // nothing, at every elevation: the review's dark ground under an
-    // empty sky reads here as moved clear points.
+    const at = `${r.view} ${r.mode} ${r.elevation}°`;
+    // Clear columns change nothing, from every camera and at every sun.
     expect(r.clearMoved, at).toBe(0);
-    // Thick columns darken where the direct sun is strong enough to show
-    // it (from 10°; at 2-5° the sun light itself is dim, logged only).
-    if (r.elevation >= 10 && r.thick > 0) {
-      expect(r.thickDark / r.thick, at).toBeGreaterThan(0.8);
+    // Thick columns darken from 5° up (at 2° the direct sun itself is too
+    // dim to show a shadow; logged only). A view weight fails this at 5°.
+    if (r.elevation >= 5 && r.thick > 0) {
+      expect(r.thickDark / r.thick, at).toBeGreaterThan(SHADOW.thickShare);
     }
   }
-  // The review's case: a 5° sun in the slab draws no cloud toward the sun,
-  // so no ground may be thick-shadowed there.
-  expect(lines.find((l) => l.startsWith("slab 5°"))).toContain("thick 0");
+  // The owner's case: a low sun in the slab, from the city view, has thick
+  // columns, and they shade the ground.
+  const low = results.find(
+    (r) => r.view === "city" && r.mode === "slab" && r.elevation === 5,
+  );
+  expect(low.thick).toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });
 
