@@ -808,3 +808,289 @@ describe("moving a pin to the reticle (M4) goes through the settle's alignment",
     expect(planMove({ ...base, alignment: a2, zero: null })).toBeNull();
   });
 });
+
+describe("each object at its own moment (D33)", () => {
+  // Why these tests matter: settling every object through the alignment at
+  // the visit's END folds the SLAM drift walked after an object into it
+  // (8.4 m at 500 m, `visit-settle.left-behind.test.ts`). With the visit's
+  // picks each object, the measured code and each sighting goes through its
+  // OWN alignment (the first mature one after it), a correction uses the
+  // sighting NEAREST the object, and the bound is judged through that
+  // sighting's alignment - not the drifted end one.
+  const a1 = yawAlignment(20, [100, 400, 50]);
+  const stored = levelThrough(a1);
+  const timed = (atMs: number, alignment: number[] | null) => ({
+    atMs,
+    alignment,
+  });
+
+  /** `pose` in another odometry frame: `move` (a rigid change, raw WebXR)
+   *  applied, as drift or a new session origin would. */
+  function moved(pose: Pose, move: Matrix4): Pose {
+    const m = new Matrix4()
+      .compose(
+        new Vector3(...pose.position),
+        new Quaternion(...pose.rotation),
+        new Vector3(1, 1, 1),
+      )
+      .premultiply(move);
+    const p = new Vector3();
+    const q = new Quaternion();
+    m.decompose(p, q, new Vector3());
+    return { position: [p.x, p.y, p.z], rotation: [q.x, q.y, q.z, q.w] };
+  }
+
+  it("composes each note and the measured code through its own alignment, an object without one through the end", () => {
+    const aEarly = yawAlignment(5, [1, 400, 2]);
+    const aLate = yawAlignment(-8, [-3, 401, 4]);
+    const aCode = yawAlignment(2, [0.5, 400, -1]);
+    const aEnd = yawAlignment(30, [9, 402, -6]);
+    const placed = [
+      placedPin("early", [3, 0, -1], 0, aEarly),
+      placedPin("late", [-4, 0, 6], 0, aLate),
+      placedPin("unpicked", [1, 0, 1], 0, aEnd),
+    ];
+    const plan = planVisitSettle({
+      visit: 0,
+      placed,
+      alignment: aEnd,
+      zero: ZERO,
+      mintedLevel: levelThrough(aEnd),
+      measurement: measuredInVisit(0),
+      sighting: null,
+      alignmentInfo: INFO,
+      nowIso: NOW,
+      picks: {
+        objects: new Map([
+          ["early", timed(1_000, aEarly)],
+          ["late", timed(9_000, aLate)],
+        ]),
+        measurement: timed(500, aCode),
+        sightings: [],
+      },
+    })!;
+    const through = (local: [number, number, number], a: number[]) =>
+      new Vector3(
+        ...throughAlignment({ position: local, rotation: [0, 0, 0, 1] }, a)!
+          .position,
+      );
+    expect(plan.basis).toBe("measured-here");
+    expect(
+      worldOf(plan.objects[0]!.object).distanceTo(through([3, 0, -1], aEarly)),
+    ).toBeLessThan(1e-3);
+    expect(
+      worldOf(plan.objects[1]!.object).distanceTo(through([-4, 0, 6], aLate)),
+    ).toBeLessThan(1e-3);
+    expect(
+      worldOf(plan.objects[2]!.object).distanceTo(through([1, 0, 1], aEnd)),
+    ).toBeLessThan(1e-3);
+    expect(plan.objects.map((o) => o.alignment)).toEqual([aEarly, aLate, aEnd]);
+    expect(plan.levelAlignment).toEqual(aCode);
+    const codeLocal = odomNueFromWebXr(CODE);
+    expect(
+      codeWorldOf(plan.level!).distanceTo(
+        new Vector3(...throughAlignment(codeLocal, aCode)!.position),
+      ),
+    ).toBeLessThan(1e-3);
+  });
+
+  // Why this test matters: geo and quality block travel together (the
+  // sidecar's mintQuality invariant). A code re-minted through its pick
+  // must not carry the end alignment's fix count and accuracy.
+  it("gives a code re-minted through its pick the quality block of that alignment", () => {
+    const aCode = yawAlignment(2, [0.5, 400, -1]);
+    const aEnd = yawAlignment(30, [9, 402, -6]);
+    const pickInfo = { hasMatrix: true, sampleCount: 17, gpsAccuracyM: 3 };
+    const input = {
+      visit: 0,
+      placed: [],
+      alignment: aEnd,
+      zero: ZERO,
+      mintedLevel: levelThrough(aEnd),
+      measurement: measuredInVisit(0),
+      sighting: null,
+      alignmentInfo: INFO,
+      nowIso: NOW,
+    };
+    const quality = (plan: { level: { json: string } | null }) =>
+      parseQrLevel(JSON.parse(plan.level!.json) as unknown).qr.mintQuality;
+    const picked = planVisitSettle({
+      ...input,
+      picks: {
+        objects: new Map(),
+        measurement: { ...timed(500, aCode), alignmentInfo: pickInfo },
+        sightings: [],
+      },
+    })!;
+    expect(quality(picked)).toMatchObject({
+      alignmentSampleCount: 17,
+      gpsAccuracyM: 3,
+    });
+    // A pick without info, or no pick, keeps the end block.
+    const bare = planVisitSettle({
+      ...input,
+      picks: {
+        objects: new Map(),
+        measurement: timed(500, aCode),
+        sightings: [],
+      },
+    })!;
+    expect(quality(bare)).toMatchObject({
+      alignmentSampleCount: INFO.sampleCount,
+      gpsAccuracyM: INFO.gpsAccuracyM,
+    });
+  });
+
+  it("corrects each note through the sighting of the stored code nearest it in time", () => {
+    // The odometry drifted between the two sightings: by the second, the
+    // frame is turned 6 degrees and moved 2.5 m. A note placed next to the
+    // first sighting must be corrected through it, not through the latest.
+    const drift = new Matrix4().compose(
+      new Vector3(2.5, 0, -1),
+      new Quaternion(...yawQ(6)),
+      new Vector3(1, 1, 1),
+    );
+    const spot: Pose = { position: [0.3, 0, -5], rotation: [0, 0, 0, 1] };
+    const a2 = yawAlignment(-35, [80, 403, 40]);
+    const s0: CodeSighting = { text: TEXT, levelId: LEVEL_ID, odomPose: CODE };
+    const s1: CodeSighting = { ...s0, odomPose: moved(CODE, drift) };
+    const early = odomNueFromWebXr(spot).position;
+    const late = odomNueFromWebXr(moved(spot, drift)).position;
+    const plan = planVisitSettle({
+      visit: 1,
+      placed: [
+        placedPin("early", [...early], 1, a2),
+        placedPin("late", [...late], 1, a2),
+      ],
+      alignment: a2,
+      zero: ZERO,
+      mintedLevel: stored,
+      measurement: measuredInVisit(0),
+      sighting: s1,
+      alignmentInfo: INFO,
+      nowIso: NOW,
+      picks: {
+        objects: new Map([
+          ["early", timed(100, a2)],
+          ["late", timed(1_900, a2)],
+        ]),
+        measurement: null,
+        sightings: [
+          { ...timed(0, a2), sighting: s0 },
+          { ...timed(2_000, a2), sighting: s1 },
+        ],
+      },
+    })!;
+    // Both notes sit where the measuring visit's alignment puts the spot:
+    // each was corrected through the sighting seen in ITS frame.
+    const expected = new Vector3(
+      ...throughAlignment(odomNueFromWebXr(spot), a1)!.position,
+    );
+    for (const settled of plan.objects) {
+      expect(settled.basis).toBe("code-corrected");
+      expect(worldOf(settled.object).distanceTo(expected)).toBeLessThan(1e-3);
+    }
+    // Through the LATEST sighting (the settle before D33) the early note
+    // would carry the whole drift.
+    const old = planVisitSettle({
+      visit: 1,
+      placed: [placedPin("early", [...early], 1, a2)],
+      alignment: a2,
+      zero: ZERO,
+      mintedLevel: stored,
+      measurement: measuredInVisit(0),
+      sighting: s1,
+      alignmentInfo: INFO,
+      nowIso: NOW,
+    })!;
+    expect(
+      worldOf(old.objects[0]!.object).distanceTo(expected),
+    ).toBeGreaterThan(1);
+  });
+
+  it("judges the correction's bound through the sighting's own alignment, not the drifted end one", () => {
+    const sighting: CodeSighting = {
+      text: TEXT,
+      levelId: LEVEL_ID,
+      odomPose: CODE,
+    };
+    /** A visit alignment whose view of the code is `dx` m North off the
+     *  stored one. */
+    const offBy = (dx: number): number[] => {
+      const c = new Vector3(...odomNueFromWebXr(CODE).position);
+      const turned = yawAlignment(20, [0, 0, 0]);
+      const at = c.clone().applyMatrix4(new Matrix4().fromArray(turned));
+      const want = c.clone().applyMatrix4(new Matrix4().fromArray(a1));
+      return yawAlignment(20, [
+        want.x - at.x + dx,
+        want.y - at.y,
+        want.z - at.z,
+      ]);
+    };
+    const atSighting = offBy(2);
+    const end = offBy(60);
+    const input = {
+      visit: 1,
+      placed: [placedPin("pin", [3, 0, -1], 1, end)],
+      alignment: end,
+      zero: ZERO,
+      mintedLevel: stored,
+      measurement: measuredInVisit(0),
+      sighting,
+      alignmentInfo: INFO,
+      gpsAccuracyM: 4,
+      nowIso: NOW,
+    };
+    // Judged through the end alignment (no picks): 60 m, refused.
+    expect(planVisitSettle(input)!.refused).not.toBeNull();
+    const plan = planVisitSettle({
+      ...input,
+      picks: {
+        objects: new Map([["pin", timed(50, end)]]),
+        measurement: null,
+        sightings: [{ ...timed(0, atSighting), sighting }],
+      },
+    })!;
+    expect(plan.objects[0]!.basis).toBe("code-corrected");
+    expect(plan.objects[0]!.refused).toBeNull();
+    expect(plan.basis).toBe("code-corrected");
+    // A sighting that IS far off through its own alignment stays refused.
+    const far = planVisitSettle({
+      ...input,
+      picks: {
+        objects: new Map([["pin", timed(50, end)]]),
+        measurement: null,
+        sightings: [{ ...timed(0, offBy(60)), sighting }],
+      },
+    })!;
+    expect(far.objects[0]!.basis).toBe("visit-alignment");
+    expect(far.objects[0]!.refused).not.toBeNull();
+  });
+
+  it("ignores kept sightings of another code, and uses the input's sighting through the end alignment then", () => {
+    const a2 = yawAlignment(-35, [80, 403, 40]);
+    const other: CodeSighting = { text: "x", levelId: "other", odomPose: CODE };
+    const sighting: CodeSighting = {
+      text: TEXT,
+      levelId: LEVEL_ID,
+      odomPose: CODE,
+    };
+    const plan = planVisitSettle({
+      visit: 1,
+      placed: [placedPin("pin", [3, 0, -1], 1, a2)],
+      alignment: a2,
+      zero: ZERO,
+      mintedLevel: stored,
+      measurement: measuredInVisit(0),
+      sighting,
+      alignmentInfo: INFO,
+      nowIso: NOW,
+      picks: {
+        objects: new Map(),
+        measurement: null,
+        sightings: [{ ...timed(0, a2), sighting: other }],
+      },
+    })!;
+    expect(plan.objects[0]!.basis).toBe("code-corrected");
+  });
+});

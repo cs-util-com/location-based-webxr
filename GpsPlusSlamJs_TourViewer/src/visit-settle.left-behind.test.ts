@@ -121,11 +121,13 @@ import {
   type Waypoint,
 } from "gps-plus-slam-app-framework/test-utils/integrated-slam-drift";
 
+import { createVisitAlignmentTracker } from "./visit-alignment-picks.js";
 import { mintPin } from "./content-placement.js";
 import { odomNueFromWebXr } from "./visit-anchoring.js";
 import {
   planVisitSettle,
   storedGeo,
+  type CodeSighting,
   type VisitSettle,
   type VisitSettleInput,
 } from "./visit-settle.js";
@@ -673,6 +675,129 @@ function geoDistanceM(a: TourObject, b: TourObject): number {
   return Math.hypot(pa[0] - pb[0], pa[2] - pb[2]);
 }
 
+// ---------------------------------------------------------------------------
+// The settle as it ships since D33: the visit replayed through the shipped
+// tracker (`visit-alignment-picks.ts`) the way `creator-setup.ts` feeds it
+// - each fix's alignment and session extent, and between fixes the moment's
+// events - then `planVisitSettle` with its picks.
+// ---------------------------------------------------------------------------
+
+/** A sighting of the code (raw WebXR fused pose) as the page keeps it. */
+function sightingOf(pose: Pose): CodeSighting {
+  return { text: CODE_TEXT, levelId: LEVEL_ID, odomPose: pose };
+}
+
+/** The looks a STORED code is sighted at, as in {@link measureVisit}'s
+ *  D10b row: the first one (the entry hint), and on an out-and-back leave
+ *  the end-of-visit look. The same sightings as the end-alignment columns,
+ *  so SHIPPED differs from them by the D33 rule alone. */
+function storedSightingLooks(visit: Visit): number[] {
+  return visit.spec.leave?.endBack === true ? [0, visit.looks.length - 1] : [0];
+}
+
+/**
+ * The shipped settle of one visit: the pin placed at `placedS`, the code
+ * MEASURED at the end of the third look (`measured`), or a STORED code
+ * (`stored`) sighted at the end of {@link storedSightingLooks}.
+ */
+function settleAsShipped(
+  visit: Visit,
+  options: {
+    readonly measured: boolean;
+    readonly stored: { id: string; json: string } | null;
+  },
+): VisitSettle {
+  const tracker = createVisitAlignmentTracker();
+  const ms = (tS: number): number => Math.round(tS * 1000);
+  const events: { tS: number; apply: () => void }[] = [
+    {
+      tS: visit.placedS,
+      apply: () => tracker.notePlacement("pin", ms(visit.placedS)),
+    },
+  ];
+  const measureS = visit.looks[2]![1];
+  if (options.measured) {
+    events.push({
+      tS: measureS,
+      apply: () => tracker.noteMeasurement(ms(measureS)),
+    });
+  }
+  if (options.stored !== null) {
+    for (const look of storedSightingLooks(visit)) {
+      const endS = visit.looks[look]![1];
+      events.push({
+        tS: endS,
+        apply: () =>
+          tracker.noteSighting(sightingOf(codeSeenAt(visit, look)), ms(endS)),
+      });
+    }
+  }
+  events.sort((a, b) => a.tS - b.tS);
+  let next = 0;
+  for (const fix of visit.fixes) {
+    // An event between two fixes happens under the earlier one's alignment.
+    while (next < events.length && events[next]!.tS < fix.tS)
+      events[next++]!.apply();
+    tracker.noteAlignment({
+      alignmentMatrix: fix.alignment,
+      zero: visit.zero,
+      gpsExtentM: fix.extentM,
+    });
+  }
+  while (next < events.length) events[next++]!.apply();
+  const pinLocal = odomNueAt(visit, visit.pinWorld, visit.placedS);
+  const latestLook = storedSightingLooks(visit).at(-1)!;
+  const plan = planVisitSettle({
+    visit: 0,
+    placed: pinEntry(visit, pinLocal),
+    alignment: endAlignment(visit),
+    zero: visit.zero,
+    ...codeInputs(
+      options.measured ? codeSeenAt(visit, 2) : null,
+      options.stored === null
+        ? null
+        : { level: options.stored, sighting: codeSeenAt(visit, latestLook) },
+    ),
+    picks: tracker.picks(),
+    alignmentInfo: INFO,
+    gpsAccuracyM: ACCURACY_M,
+    nowIso: NOW_ISO,
+  });
+  if (plan === null) throw new Error("the settle planned nothing");
+  return plan;
+}
+
+/** The pin's settled geo error on the shipped path. */
+function shippedPinError(
+  visit: Visit,
+  stored: { id: string; json: string } | null,
+): { error: GeoError; refused: boolean } {
+  const plan = settleAsShipped(visit, { measured: false, stored });
+  const pin = plan.objects[0];
+  // A sighted stored code that did not correct the pin was refused. Read
+  // from the basis (the pin's own, else the plan's), so a planner without
+  // per-object choices is counted the same way, never as "no refusal".
+  const basis = (pin as { basis?: string } | undefined)?.basis ?? plan.basis;
+  return {
+    error: pinError(visit, pin?.object ?? null),
+    refused: stored !== null && basis !== "code-corrected",
+  };
+}
+
+/** The first alignment at or after `tS` whose session extent has GROWN by
+ *  `floorM` since `tS`, else the end one: the other reading of D33
+ *  ("80 m after its placement"), measured for comparison only. */
+function grownAfter(visit: Visit, tS: number, floorM: number): number[] {
+  const from = Math.floor(tS);
+  const atPlacement =
+    [...visit.fixes].reverse().find((f) => f.tS <= tS)?.extentM ?? 0;
+  const found = visit.fixes.find(
+    (f) =>
+      f.tS >= from && f.alignment !== null && f.extentM >= atPlacement + floorM,
+  );
+  return found?.alignment ?? endAlignment(visit);
+}
+
 function quantile(values: readonly number[], q: number): number {
   if (values.length === 0) return Number.NaN;
   const s = [...values].sort((a, b) => a - b);
@@ -751,6 +876,134 @@ describe("left-behind settle fixture: the conventions are sound", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Always-run: the shipped settle at a few cells of the sweep (D33).
+// ---------------------------------------------------------------------------
+
+/** Seeds per default cell: enough for a median, cheap enough for the gate. */
+const DEFAULT_SEEDS = [401, 402, 403, 404, 405];
+
+/**
+ * Meander seeds (500 m, 2 % / 2 deg per 100 m) whose correction the bound
+ * refuses when judged through the drifted END alignment: 8 of seeds
+ * 401-460 (405, 413, 420, 423, 427, 438, 449, 458; a one-off search with
+ * this file's fixture, 2026-10-03), three of them here with one that is
+ * never refused (401).
+ */
+const MEANDER_REFUSAL_SEEDS = [401, 405, 413, 420];
+
+function median(values: readonly number[]): number {
+  return quantile(values, 0.5);
+}
+
+describe("the shipped settle keeps notes and codes left behind (D33)", () => {
+  // Why these tests matter: they are the sweep's three findings as
+  // assertions on the path that ships. Each cell also runs the settle
+  // through the END alignment (the path before D33) and asserts that it
+  // fails there, so the cell provably measures the regression it guards.
+  it(
+    "places a note and a measured code left 500 m behind (1 % / 1 deg per 100 m) within about 2 m, where the end alignment is 8 m off",
+    () => {
+      const drift = { yawDegPer100m: 1, transPct: 1 };
+      const leave = {
+        distanceM: 500,
+        endBack: false,
+        path: "straight",
+      } as const;
+      const shipped: number[] = [];
+      const shippedCode: number[] = [];
+      const atEnd: number[] = [];
+      for (const seed of DEFAULT_SEEDS) {
+        const visit = runVisit({ seed, drift, leave });
+        shipped.push(shippedPinError(visit, null).error.horizontalM);
+        const measured = settleAsShipped(visit, {
+          measured: true,
+          stored: null,
+        });
+        shippedCode.push(codeError(measured.level).horizontalM);
+        const pinLocal = odomNueAt(visit, visit.pinWorld, visit.placedS);
+        atEnd.push(
+          pinError(
+            visit,
+            settleThrough(visit, endAlignment(visit), null, null, pinLocal).pin,
+          ).horizontalM,
+        );
+      }
+      expect(median(atEnd)).toBeGreaterThan(5);
+      expect(median(shipped)).toBeLessThan(2);
+      expect(Math.max(...shipped)).toBeLessThan(3.5);
+      expect(median(shippedCode)).toBeLessThan(2.5);
+    },
+    10 * 60_000,
+  );
+
+  it(
+    "keeps the start note of a 500 m out-and-back within about 2 m when the stored code is seen again at the end, where the latest sighting puts it 11 m off",
+    () => {
+      const drift = { yawDegPer100m: 1, transPct: 1 };
+      const leave = {
+        distanceM: 500,
+        endBack: true,
+        path: "straight",
+      } as const;
+      const shipped: number[] = [];
+      const latest: number[] = [];
+      for (const seed of DEFAULT_SEEDS) {
+        const visit = runVisit({ seed, drift, leave });
+        const stored = storedTrueLevel(visit);
+        shipped.push(shippedPinError(visit, stored).error.horizontalM);
+        const pinLocal = odomNueAt(visit, visit.pinWorld, visit.placedS);
+        latest.push(
+          pinError(
+            visit,
+            settleThrough(
+              visit,
+              endAlignment(visit),
+              null,
+              { level: stored, sighting: codeSeenAt(visit, 3) },
+              pinLocal,
+            ).pin,
+          ).horizontalM,
+        );
+      }
+      expect(median(latest)).toBeGreaterThan(5);
+      expect(median(shipped)).toBeLessThan(2);
+    },
+    10 * 60_000,
+  );
+
+  it(
+    "never refuses a correct stored code on a long meander (500 m, 2 % / 2 deg per 100 m), which the drifted end alignment does",
+    () => {
+      const drift = { yawDegPer100m: 2, transPct: 2 };
+      const leave = {
+        distanceM: 500,
+        endBack: false,
+        path: "meander",
+      } as const;
+      let refusedShipped = 0;
+      let refusedAtEnd = 0;
+      for (const seed of MEANDER_REFUSAL_SEEDS) {
+        const visit = runVisit({ seed, drift, leave });
+        const stored = storedTrueLevel(visit);
+        if (shippedPinError(visit, stored).refused) refusedShipped += 1;
+        const pinLocal = odomNueAt(visit, visit.pinWorld, visit.placedS);
+        const atEnd = settleThrough(
+          visit,
+          endAlignment(visit),
+          null,
+          { level: stored, sighting: codeSeenAt(visit, 0) },
+          pinLocal,
+        );
+        if (atEnd.plan.basis !== "code-corrected") refusedAtEnd += 1;
+      }
+      expect(refusedAtEnd).toBeGreaterThan(0);
+      expect(refusedShipped).toBe(0);
+    },
+    10 * 60_000,
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Opt-in: the sweep.
 // ---------------------------------------------------------------------------
 
@@ -792,6 +1045,7 @@ function measureVisit(
     codeStart: Map<string, Column>;
     d10b: Map<string, Column>;
     d10bRefused: { count: number };
+    d10bShippedRefused: { count: number };
   },
 ): void {
   const pin = placedPin(visit);
@@ -803,6 +1057,7 @@ function measureVisit(
     ["at-tap", (tS) => alignmentAt(visit, tS)],
     ["mature40", (tS) => matureAfter(visit, tS, 40)],
     ["mature80", (tS) => matureAfter(visit, tS, 80)],
+    ["grown80", (tS) => grownAfter(visit, tS, 80)],
   ];
 
   // No stored code: the note settles through the visit's alignment (the
@@ -829,6 +1084,13 @@ function measureVisit(
     );
     addTo(rows.codeStart, name, codeError(cs.level));
   }
+  // What ships (D33): the tracker and the planner with its picks.
+  addTo(rows.note, "SHIPPED", shippedPinError(visit, null).error);
+  addTo(
+    rows.codeMid,
+    "SHIPPED",
+    codeError(settleAsShipped(visit, { measured: true, stored: null }).level),
+  );
   // What the author sees change at the settle: the stored geo moving from
   // the tap-time record to the settled one.
   const settledNote = settleThrough(visit, end, null, null, pinLocal).pin!;
@@ -879,7 +1141,10 @@ function measureVisit(
   // the END alignment, so a long visit can push the start sighting past it
   // and the note then settles through the plain visit alignment.
   if (settle.plan.basis !== "code-corrected") rows.d10bRefused.count += 1;
-  addTo(rows.d10b, "settle(shipped)", pinError(visit, settle.pin));
+  addTo(rows.d10b, "settle(end,latest)", pinError(visit, settle.pin));
+  const shipped = shippedPinError(visit, stored);
+  if (shipped.refused) rows.d10bShippedRefused.count += 1;
+  addTo(rows.d10b, "SHIPPED", shipped.error);
   // The correction does not depend on which yaw-only alignment it starts
   // from (`correctedAlignment`): the tap-time alignment must give the same.
   const atTap = settleThrough(
@@ -987,6 +1252,7 @@ describe.skipIf(!SWEEP)(
             codeStart: new Map<string, Column>(),
             d10b: new Map<string, Column>(),
             d10bRefused: { count: 0 },
+            d10bShippedRefused: { count: 0 },
           };
           // A visit the settle cannot measure (no
           // alignment) is counted and named, never dropped silently.
@@ -1017,7 +1283,7 @@ describe.skipIf(!SWEEP)(
             `  code measured start:  ${formatColumns(rows.codeStart)}`,
           );
           lines.push(
-            `  note, stored code (D10b), correction refused in ${String(rows.d10bRefused.count)}: ${formatColumns(rows.d10b)}`,
+            `  note, stored code (D10b), correction refused in ${String(rows.d10bRefused.count)} (end,latest) / ${String(rows.d10bShippedRefused.count)} (SHIPPED): ${formatColumns(rows.d10b)}`,
           );
         }
         const table = lines.join("\n");

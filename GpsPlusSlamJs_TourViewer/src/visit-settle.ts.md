@@ -10,6 +10,25 @@ that visit and of every object placed in it is recomputed through ONE
 alignment, so code and notes share the same GPS error and keep the relation
 the phone's tracking saw (symptom B's half "B2", plan §2.2).
 
+**Each object at its own moment (owner decision D33, 2026-10-03).** With the
+visit's picks (`visit-alignment-picks.ts`; `input.picks`) every object, the
+measured code and each sighting of a stored code is composed through the
+FIRST MATURE alignment at or after its own moment (80 m of session GPS
+extent, the framework's `state/alignment-maturity`), else the visit's
+alignment at its end. A D10b correction uses the sighting of the code in
+hand NEAREST the object in time (a tie goes to the later), and the
+plausibility bound is judged through THAT sighting's alignment, not the
+drifted end one. Measured (`visit-settle.left-behind.test.ts`): a note left
+500 m behind at 1 % / 1 degree per 100 m settled 8.4 m off through the end
+alignment and about 1.2 m through the first mature one, flat in the
+distance walked after; a start note of an out-and-back that saw the stored
+code again at the end went 11 m off through the latest sighting; and long
+meanders at 2 degrees per 100 m had correct codes refused through the end
+alignment. Without picks (`picks` absent: the live views, `planMove`)
+everything goes through `alignment` and the input's `sighting`, exactly as
+before. Nothing visible changes while authoring: the previews stay rigid as
+placed, and only the stored geo is settled.
+
 Pure. `creator-setup.ts` reads the store (before the session teardown),
 applies the result to `ctx.placedObjects` and `ctx.mintedLevel`, rewrites the
 draft and logs `tourAuthoring/settled`.
@@ -21,8 +40,16 @@ draft and logs `tourAuthoring/settled`.
 - `interface CodeSighting` - the anchor code as the running visit last saw it
   stable: `text`, `levelId`, `odomPose` (raw WebXR, this visit's odometry).
 - `type SettleBasis` - `"measured-here" | "code-corrected" | "visit-alignment"`.
-- `settleAlignment(input): { basis, alignment } | null` - which alignment a
-  visit settles through:
+- `interface TimedAlignment` (`atMs`, `alignment` or null),
+  `TimedSighting` (+ `sighting`), `VisitAlignmentPicks` (`objects` by id,
+  `measurement`, `sightings` oldest first) - the D33 picks, as
+  `visit-alignment-picks.ts` hands them over. An unreadable `alignment`
+  counts as none (the end alignment is used).
+- `interface SettleChoice` - `{ basis, alignment, refused }`: what one
+  object settles through, and why.
+- `settleAlignment(input): SettleChoice | null` - which alignment a visit
+  settles through (with `picks`: an object placed at the visit's end, i.e.
+  the latest kept sighting judged through its own alignment):
   - `measured-here` - the visit measured the level in hand (its
     `CodeMeasurement` has this visit and this level id): the visit's own
     alignment at its end;
@@ -75,18 +102,32 @@ draft and logs `tourAuthoring/settled`.
   distance to the code).
 - `planVisitSettle(input): VisitSettle | null` - the settled records by
   index into `placed` (only objects whose `placement.visit` is this visit),
-  the basis and the alignment used, and the level re-minted through it when
-  the basis is `measured-here` (through `mintQrLevelFromWorld`, the code's
+  each with its own `SettleChoice` (D33: its pick by id, its nearest
+  sighting; no pick: the end alignment and the latest sighting); the
+  visit-level `basis`/`alignment`/`refused` of an object placed at the
+  visit's end (what a photo landing after the settle goes through); and
+  `level` re-minted through the measurement's pick (else the end alignment;
+  `levelAlignment` says which) when the basis is `measured-here` (through `mintQrLevelFromWorld`, the code's
   pose converted with the same `odomNueFromWebXr`). Null when the visit
   placed and measured nothing, or when `settleAlignment` is null.
 
 ## Invariants & assumptions
 
-- **One alignment per visit.** Every object of the visit and the code
-  measured in it go through the same matrix, so their relative geometry is
-  exactly the odometry's (unit test: the offset between pin and code after
-  the settle equals the odometry offset turned by the end alignment, within
-  1 mm; before it the tap-time records disagree by more than 0.1 m).
+- **One alignment per visit WITHOUT picks.** Every object of the visit and
+  the code measured in it go through the same matrix, so their relative
+  geometry is exactly the odometry's (unit test: the offset between pin and
+  code after the settle equals the odometry offset turned by the end
+  alignment, within 1 mm; before it the tap-time records disagree by more
+  than 0.1 m). **With picks (D33)** each goes through its own first mature
+  alignment instead: after the session matured, objects placed close in
+  time share nearly the same alignment, and an object left behind no longer
+  carries the drift walked after it.
+  - **Known difference (accepted 2026-10-04):** `creator-setup.ts`'s
+    `logVisit` still composes the visit's walk for the summary through the
+    end choice's alignment (`pathAlignment`), while each pin now settles
+    through its own pick, so the summary's path and its pins can differ
+    slightly (about the drift between a pin's pick and the visit's end).
+    Filed in the authoring plan's D33 follow-ups.
 - **Only what has odometry is touched.** Objects of other visits and
   restored draft objects (no `placement`) are never in the result; their geo
   stands.
@@ -95,8 +136,10 @@ draft and logs `tourAuthoring/settled`.
 - **The stored code is the reference in a corrected visit**: it is NOT
   re-minted (`level: null`), because the correction maps this visit onto it.
 - **A re-minted level keeps the id** and takes the quality block of the
-  alignment at the visit's end (`alignmentInfo`) and the settle's time as
-  `mintedAtIso`. A refused re-mint (fewer than `MIN_ALIGNMENT_SAMPLES` fixes)
+  alignment its geo comes from: the measurement pick's
+  (`picks.measurement.alignmentInfo`, D33) when the level goes through that
+  pick and the caller kept the info, else the end one (`alignmentInfo`);
+  and the settle's time as `mintedAtIso`. A refused re-mint (fewer than `MIN_ALIGNMENT_SAMPLES` fixes)
   keeps the old level.
   - **Why the block describes the SETTLE, not the tap.** `mintQuality` is
     the record the field validation (QR-pose plan M5) attributes a code's
@@ -112,7 +155,7 @@ draft and logs `tourAuthoring/settled`.
     and `tourAuthoring/settled` the visit alignment and the one used.
   - **Every mint-time field comes from the settle, none from the tap**:
     `mintedAtIso` (the settle's time), `alignmentSampleCount` and
-    `gpsAccuracyM` (the end alignment's). The unit test compares the whole
+    `gpsAccuracyM` (those of the alignment the geo comes from). The unit test compares the whole
     block, so a field that stayed tap-time would fail it. The tap's mint
     passes no extra `quality` fields today; one added there would have to
     be re-derived here too, or the settle would silently drop it.
@@ -237,3 +280,12 @@ const plan = planVisitSettle({
   and the cross-visit case with the second session's detections in a moved
   odometry origin.
 - `creator-finish.test.ts` - the settle at Finish, once.
+- D33: `visit-settle.test.ts` "each object at its own moment" (each object
+  and the measured code through its own pick, an unpicked one through the
+  end; a code re-minted through its pick carries that alignment's quality block; each note corrected through the sighting nearest it in time, where
+  the latest sighting is metres off; the bound judged through the
+  sighting's own alignment admits a correct code the end alignment refuses
+  and still refuses a far one; kept sightings of another code ignored);
+  `visit-settle.left-behind.test.ts` (the shipped path at three sweep
+  cells, each also failing through the end alignment); and
+  `authoring-settle.test.ts` (the wiring).

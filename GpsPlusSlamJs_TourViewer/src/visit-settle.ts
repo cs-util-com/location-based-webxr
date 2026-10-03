@@ -11,6 +11,16 @@
  * it (plan §2.2, B2). Settled through one alignment, code and notes share
  * the same GPS error and keep exactly the relation the phone's tracking saw.
  *
+ * EACH OBJECT AT ITS OWN MOMENT (owner decision D33, 2026-10-03): with the
+ * visit's picks (`visit-alignment-picks.ts`), each object, the measured code
+ * and each sighting of a stored code is composed through the FIRST MATURE
+ * alignment at or after its own moment (80 m of session GPS extent), else
+ * the visit's alignment at its end; a code correction uses the sighting
+ * NEAREST the object in time and is judged through THAT sighting's
+ * alignment. Without picks everything goes through the end alignment and
+ * the latest sighting, as below. Measured in
+ * `visit-settle.left-behind.test.ts`.
+ *
  * WHICH ALIGNMENT ({@link settleAlignment}):
  * - the visit MEASURED the code: the visit's alignment at its end (the
  *   solver's current, recency-weighted estimate); the code is re-minted
@@ -70,6 +80,36 @@ export interface CodeSighting {
   readonly odomPose: Pose;
 }
 
+/**
+ * When something happened in the visit, and the alignment it is composed
+ * through: the first mature alignment at or after it, else the latest usable
+ * one (D33; `visit-alignment-picks.ts` folds them).
+ */
+export interface TimedAlignment {
+  readonly atMs: number;
+  /** Column-major, 16 numbers; null when no usable alignment was seen
+   *  since (the visit's end alignment is used instead). */
+  readonly alignment: readonly number[] | null;
+  /** The mint gate's view of that alignment, when the caller knew it: the
+   *  quality block of a code re-minted through it. */
+  readonly alignmentInfo?: MintAlignmentInfo | undefined;
+}
+
+/** A stable sighting of the code in hand, at its moment. */
+export interface TimedSighting extends TimedAlignment {
+  readonly sighting: CodeSighting;
+}
+
+/** Everything the running visit's picks hold (D33). */
+export interface VisitAlignmentPicks {
+  /** By object id: when it was placed (or last moved). */
+  readonly objects: ReadonlyMap<string, TimedAlignment>;
+  /** The code measured in this visit. */
+  readonly measurement: TimedAlignment | null;
+  /** The code in hand's sightings, oldest first. */
+  readonly sightings: readonly TimedSighting[];
+}
+
 export type SettleBasis =
   "measured-here" | "code-corrected" | "visit-alignment";
 
@@ -86,6 +126,12 @@ export interface SettleAlignmentInput {
   /** This visit's median GPS accuracy (m), for the correction's bound;
    *  absent or unusable counts as {@link CORRECTION_DEFAULT_ACCURACY_M}. */
   readonly gpsAccuracyM?: number | null | undefined;
+  /**
+   * The visit's per-moment alignments (D33). Absent or null: every object
+   * through `alignment`, a correction through `sighting` judged through
+   * `alignment` (the live views, and a caller that kept no picks).
+   */
+  readonly picks?: VisitAlignmentPicks | null | undefined;
 }
 
 /**
@@ -261,24 +307,95 @@ function measuredHere(input: SettleAlignmentInput): boolean {
  * @returns null when the alignment is not 16 finite numbers or there is no
  *   zero: nothing can be settled, and the tap-time geo stands.
  */
-export function settleAlignment(input: SettleAlignmentInput): {
-  basis: SettleBasis;
-  alignment: number[];
-  /** A code correction this visit had, refused by the plausibility bound;
-   *  null otherwise. */
-  refused: CorrectionRefusal | null;
-} | null {
+export function settleAlignment(
+  input: SettleAlignmentInput,
+): SettleChoice | null {
   const alignment = readAlignment(input.alignment);
   if (alignment === null || input.zero === null) return null;
-  if (measuredHere(input)) {
-    return { basis: "measured-here", alignment, refused: null };
+  return choiceFor(input, alignment, input.zero, null, alignment);
+}
+
+/** What an object settles through, and why. */
+export interface SettleChoice {
+  readonly basis: SettleBasis;
+  readonly alignment: number[];
+  /** A code correction this object had, refused by the plausibility bound;
+   *  null otherwise. */
+  readonly refused: CorrectionRefusal | null;
+}
+
+/**
+ * The sighting of the code in hand a correction at `atMs` uses: the one
+ * NEAREST in time (a tie goes to the later; `atMs` null: the latest), with
+ * the alignment its correction is judged through - its own pick (D33).
+ * Without a kept sighting of that code, the input's `sighting` through
+ * `end` (the settle as before D33).
+ */
+function nearestSighting(
+  input: SettleAlignmentInput,
+  end: number[],
+  atMs: number | null,
+): { sighting: CodeSighting; alignment: number[] } | null {
+  const levelId = input.mintedLevel?.id;
+  const kept = (input.picks?.sightings ?? []).filter(
+    (s) => s.sighting.levelId === levelId && Number.isFinite(s.atMs),
+  );
+  if (kept.length === 0) {
+    return input.sighting === null
+      ? null
+      : { sighting: input.sighting, alignment: end };
   }
-  const correction = codeCorrectionOf(input, alignment, input.zero);
+  let best = kept[kept.length - 1]!;
+  if (atMs !== null && Number.isFinite(atMs)) {
+    let bestGap = Number.POSITIVE_INFINITY;
+    for (const s of kept) {
+      const gap = Math.abs(s.atMs - atMs);
+      if (gap <= bestGap) {
+        best = s;
+        bestGap = gap;
+      }
+    }
+  }
+  return {
+    sighting: best.sighting,
+    alignment: readAlignment(best.alignment) ?? end,
+  };
+}
+
+/**
+ * The choice for an object of the visit at `atMs` (null: at the end) whose
+ * own alignment is `own`: measured here, through `own`; else corrected
+ * through the nearest sighting of the stored code when the bound admits it,
+ * judged through that sighting's alignment; else `own`.
+ */
+function choiceFor(
+  input: SettleAlignmentInput,
+  end: number[],
+  zero: LatLong,
+  atMs: number | null,
+  own: number[],
+): SettleChoice {
+  if (measuredHere(input)) {
+    return { basis: "measured-here", alignment: own, refused: null };
+  }
+  const near = nearestSighting(input, end, atMs);
+  const correction =
+    near === null
+      ? null
+      : codeCorrectionOf(
+          { ...input, sighting: near.sighting },
+          near.alignment,
+          zero,
+        );
   if (correction === null) {
-    return { basis: "visit-alignment", alignment, refused: null };
+    return { basis: "visit-alignment", alignment: own, refused: null };
   }
   if ("refused" in correction) {
-    return { basis: "visit-alignment", alignment, refused: correction.refused };
+    return {
+      basis: "visit-alignment",
+      alignment: own,
+      refused: correction.refused,
+    };
   }
   return {
     basis: "code-corrected",
@@ -411,21 +528,27 @@ export interface VisitSettleInput extends SettleAlignmentInput {
     readonly placement?: { readonly visit: number; readonly local: NuePose };
   }[];
   /** The mint gate's view of the alignment at the visit's end, for the
-   *  re-minted level's quality block. */
+   *  re-minted level's quality block when the level goes through the end
+   *  alignment (no measurement pick, or one kept without its info). */
   readonly alignmentInfo: MintAlignmentInfo;
   readonly nowIso: string;
 }
 
 export interface VisitSettle {
+  /** The choice for an object placed at the visit's end (the latest
+   *  sighting): what a photo that lands after the settle goes through. */
   readonly basis: SettleBasis;
-  /** The alignment the geo was recomputed through. */
+  /** That choice's alignment. */
   readonly alignment: number[];
-  /** The settled records, by their index in `placed`. */
-  readonly objects: { index: number; object: TourObject }[];
-  /** The code re-minted through the visit's alignment, when this visit
+  /** The settled records, by their index in `placed`, each with its own
+   *  choice (D33). */
+  readonly objects: ({ index: number; object: TourObject } & SettleChoice)[];
+  /** The code re-minted from this visit's measurement, when this visit
    *  measured it; null otherwise (or when the re-mint was refused). */
   readonly level: { id: string; json: string } | null;
-  /** A code correction refused by the plausibility bound; null otherwise. */
+  /** The alignment `level` was re-minted through; null without one. */
+  readonly levelAlignment: number[] | null;
+  /** That end choice's refused correction; null otherwise. */
   readonly refused: CorrectionRefusal | null;
 }
 
@@ -444,19 +567,35 @@ export function planVisitSettle(input: VisitSettleInput): VisitSettle | null {
   );
   const measured = measuredHere(input);
   if (targets.length === 0 && !measured) return null;
-  const choice = settleAlignment(input);
+  const end = readAlignment(input.alignment);
   const zero = input.zero;
-  if (choice === null || zero === null) return null;
+  if (end === null || zero === null) return null;
+  const choice = choiceFor(input, end, zero, null, end);
   const objects = targets.flatMap(({ index, object, local }) => {
-    const settled = settledObject(object, local, choice.alignment, zero);
-    return settled === null ? [] : [{ index, object: settled }];
+    const timed = input.picks?.objects.get(object.id);
+    const own = readAlignment(timed?.alignment ?? null) ?? end;
+    const mine = choiceFor(input, end, zero, timed?.atMs ?? null, own);
+    const settled = settledObject(object, local, mine.alignment, zero);
+    return settled === null ? [] : [{ index, object: settled, ...mine }];
   });
-  const level = measured ? remintedLevel(input, choice.alignment, zero) : null;
+  const picked = readAlignment(input.picks?.measurement?.alignment ?? null);
+  const levelAlignment = measured ? (picked ?? end) : null;
+  // Geo and quality block travel together: through the measurement's pick,
+  // the block of that alignment (when the caller kept it).
+  const levelInfo =
+    picked === null
+      ? input.alignmentInfo
+      : (input.picks?.measurement?.alignmentInfo ?? input.alignmentInfo);
+  const level =
+    levelAlignment === null
+      ? null
+      : remintedLevel(input, levelAlignment, zero, levelInfo);
   return {
     basis: choice.basis,
     alignment: choice.alignment,
     objects,
     level,
+    levelAlignment: level === null ? null : levelAlignment,
     refused: choice.refused,
   };
 }
@@ -479,12 +618,7 @@ export function planMove(
     readonly object: TourObject;
     readonly local: NuePose;
   },
-): {
-  object: TourObject;
-  basis: SettleBasis;
-  alignment: number[];
-  refused: CorrectionRefusal | null;
-} | null {
+): ({ object: TourObject } & SettleChoice) | null {
   const choice = settleAlignment(input);
   if (choice === null || input.zero === null) return null;
   const object = settledObject(
@@ -502,6 +636,7 @@ function remintedLevel(
   input: VisitSettleInput,
   alignment: readonly number[],
   zero: LatLong,
+  alignmentInfo: MintAlignmentInfo,
 ): { id: string; json: string } | null {
   const { measurement, mintedLevel } = input;
   if (measurement === null || mintedLevel === null) return null;
@@ -520,7 +655,7 @@ function remintedLevel(
       rotation: [...world.rotation],
     },
     zero,
-    alignment: input.alignmentInfo,
+    alignment: alignmentInfo,
     sizeM: measurement.sizeM,
     nowIso: input.nowIso,
   });
