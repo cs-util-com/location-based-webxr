@@ -163,7 +163,7 @@ export interface PerfOverheadRun {
  * the hooks on minus those with them off, against the spread (max - min)
  * of the off runs, the noise floor. `pass` when both differences stay
  * within their spreads; `passAt` the same with the spread scaled by 0.5,
- * 1 and 2 (the bound swept, owner rule 2026-09-13). Null without two usable runs of each kind (a run
+ * 1 and 2 (the bound swept, the sweep rule of 2026-09-13). Null without two usable runs of each kind (a run
  * whose percentiles are null is not usable).
  */
 export function perfOverheadVerdict(runs: readonly PerfOverheadRun[]): {

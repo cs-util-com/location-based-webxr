@@ -1,7 +1,7 @@
 /**
  * Why this test matters (frame-hitch plan 2026-10-03-2017 §4.2): the
  * recorder's runs compare only if every run flies the same altitudes. The
- * time-driven path (the owner's phone) zooms at a constant speed in the
+ * time-driven path (a real phone) zooms at a constant speed in the
  * logarithm of the altitude, down and back up, with a settle at each end;
  * the frame-stepped path (SwiftShader) takes a fixed step per FRAME, so a
  * 300 ms frame and a 7 ms frame see the same sequence; and it holds at the

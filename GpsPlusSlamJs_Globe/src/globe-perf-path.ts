@@ -1,7 +1,7 @@
 /**
  * The frame-hitch recorder's flight paths (globe zoom frame-hitch plan
  * 2026-10-03-2017 §4.2): the places, the time-driven zoom for a real GPU
- * (the owner's phone) and the frame-stepped zoom for SwiftShader. Pure: a
+ * (a real phone) and the frame-stepped zoom for SwiftShader. Pure: a
  * run's altitudes are a function of its time or its frame index alone, so
  * runs compare.
  *

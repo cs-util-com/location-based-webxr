@@ -1,7 +1,7 @@
 # globe-perf-sweep.ts - the frame-hitch recorder's in-page sweep
 
 - Purpose: globe zoom frame-hitch plan 2026-10-03-2017 §4.4 and §4.3. The
-  owner runs one sweep on a phone and pastes one export, so the cell list
+  sweep runs once on a phone and its one export is pasted, so the cell list
   and its time estimate are fixed here.
 - Public API:
   - `PerfFactors`, `PerfCell` (with `hooks`: the recorder's event hooks

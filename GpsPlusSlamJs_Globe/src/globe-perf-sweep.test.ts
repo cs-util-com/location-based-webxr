@@ -1,6 +1,6 @@
 /**
  * Why this test matters (frame-hitch plan 2026-10-03-2017 §4.4, §4.3): the
- * owner runs the sweep once on a phone and pastes one export, so the cell
+ * sweep runs once on a phone and its one export is pasted, so the cell
  * list must be exactly the plan's: `quick` the four places at the default
  * speed, three repeats each, and its first cell again at the end (the heat
  * check, §4.1); `full` adds the Alps varied ONE factor at a time around the
