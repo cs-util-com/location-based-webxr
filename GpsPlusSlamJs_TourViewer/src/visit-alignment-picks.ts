@@ -51,7 +51,7 @@ export const SIGHTING_SPACING_MS = 1_000;
  * about it (fix count, GPS accuracy): a code re-minted through a pick
  * records the quality block of THAT alignment, not of the visit end one.
  */
-export interface PickedAlignmentMoment extends AlignmentMoment {
+interface PickedAlignmentMoment extends AlignmentMoment {
   readonly alignmentInfo?: MintAlignmentInfo | undefined;
 }
 

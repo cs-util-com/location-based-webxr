@@ -41,7 +41,8 @@ draft and logs `tourAuthoring/settled`.
   stable: `text`, `levelId`, `odomPose` (raw WebXR, this visit's odometry).
 - `type SettleBasis` - `"measured-here" | "code-corrected" | "visit-alignment"`.
 - `interface TimedAlignment` (`atMs`, `alignment` or null),
-  `TimedSighting` (+ `sighting`), `VisitAlignmentPicks` (`objects` by id,
+  `TimedSighting` (+ `sighting`; module-internal, the element type of
+  `sightings`), `VisitAlignmentPicks` (`objects` by id,
   `measurement`, `sightings` oldest first) - the D33 picks, as
   `visit-alignment-picks.ts` hands them over. An unreadable `alignment`
   counts as none (the end alignment is used).

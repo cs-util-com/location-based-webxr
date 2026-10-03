@@ -96,7 +96,7 @@ export interface TimedAlignment {
 }
 
 /** A stable sighting of the code in hand, at its moment. */
-export interface TimedSighting extends TimedAlignment {
+interface TimedSighting extends TimedAlignment {
   readonly sighting: CodeSighting;
 }
 

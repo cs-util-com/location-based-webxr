@@ -44,7 +44,7 @@ lives here.
 - `createVisitAlignmentTracker(): VisitAlignmentTracker`
   - `noteAlignment(now)` - the alignment as it stands now
     (`{ alignmentMatrix, zero, gpsExtentM, alignmentInfo? }`,
-    `PickedAlignmentMoment`); every open pick follows it, a mature one
+    `PickedAlignmentMoment`, module-internal); every open pick follows it, a mature one
     stays. `alignmentInfo` (the mint gate's fix count and accuracy) travels
     with the pick, so a code re-minted through it records that alignment's
     quality block.
