@@ -34,7 +34,11 @@ Decision record:
   - `codes()` — every code seen.
   - `spansFrameChange(text)` — whether this code's sightings straddle a frame
     change.
-  - `reset()`.
+  - `currentSegment()` - the segment the session is in NOW (the one a
+    detection observed now would carry). A caller passes it with the live
+    alignment (`QrMintAlignmentNow`), so the mint can tell whether that
+    alignment still describes a code's sightings.
+  - `reset()` - also restarts the segment count at 0.
 - Types `QrSightingObservation`, `QrSighting`,
   `QrSightingAccumulatorOptions`.
 
@@ -58,8 +62,12 @@ Decision record:
   the mint run repeatedly (every crash-safety sync) without changing the
   answer.
 - **Per-burst state carries the burst's LAST alignment, zero, sample count and
-  GPS accuracy**, because the mint uses each sighting's contemporaneous
-  alignment and the end of a burst is the moment the session knew most.
+  GPS accuracy**, because the mint falls back to the newest snapshot when
+  the alignment its caller passes describes another odometry segment (or
+  none is passed), and the end of a burst is the moment the session knew
+  most. (Until 2026-10-02 the mint composed every sighting through its own
+  snapshot, plan DEC-3; the owner superseded that. Which alignment the
+  Recorder passes is `qr-mint-alignment-tracker.ts`, D28 revised.)
 - **Poses per burst are capped** (`maxPosesPerSighting`, default 32) and the
   most RECENT are kept: a visitor standing at a poster produces detections
   indefinitely, and later frames in a burst come from more viewpoints with a
@@ -108,6 +116,8 @@ for (const text of acc.codes()) {
   gap; a single detection still counts; an open burst is never reported and
   flush is idempotent; codes stay independent under interleaving; a frame
   change splits bursts 125 ms apart and bumps the segment; `spansFrameChange`;
+  `currentSegment` matching the segment of the next sighting and restarting
+  with reset;
   the robust aggregate sitting on the cluster rather than the outlier; the
   median size and the last alignment; the pose cap with the full detection
   count preserved; non-finite input dropped; reset; and the non-destructive

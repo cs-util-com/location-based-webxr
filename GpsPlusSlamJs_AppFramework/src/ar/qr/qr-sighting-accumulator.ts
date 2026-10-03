@@ -54,7 +54,8 @@ export interface QrSightingObservation {
   readonly odomPose: Pose;
   /** The derived physical side length (m) at this moment. */
   readonly sizeM: number;
-  /** The alignment TARGET matrix as it stands NOW (DEC-3). */
+  /** The alignment TARGET matrix as it stands NOW - the mint's fallback
+   *  when the alignment it is passed is in another segment. */
   readonly alignmentMatrix: AlignmentMatrix | null;
   /** The session's GPS zero as it stands now. */
   readonly zero: LatLong | null;
@@ -79,7 +80,8 @@ export interface QrSighting {
   readonly rotationSpreadDeg: number;
   readonly sizeM: number;
   readonly sizeSpreadM: number;
-  /** Contemporaneous state, as of the burst's LAST detection (DEC-3). */
+  /** Contemporaneous state, as of the burst's LAST detection (the mint's
+   *  fallback alignment, see above). */
   readonly alignmentMatrix: AlignmentMatrix | null;
   readonly zero: LatLong | null;
   readonly alignmentSampleCount: number;
@@ -118,6 +120,12 @@ export interface QrSightingAccumulator {
   codes(): readonly string[];
   /** Whether this code's sightings straddle a frame change. */
   spansFrameChange(text: string): boolean;
+  /**
+   * The odometry segment the session is in NOW: the one a detection observed
+   * now would carry. A caller passes it with the live alignment, so the mint
+   * can tell whether that alignment still describes a code's sightings.
+   */
+  currentSegment(): number;
   /** Is a visit to this code in progress right now? */
   hasOpenBurst(text: string): boolean;
   reset(): void;
@@ -273,6 +281,8 @@ export function createQrSightingAccumulator(
     codes: () => [...new Set([...closed.keys(), ...open.keys()])],
 
     hasOpenBurst: (text) => open.has(text),
+
+    currentSegment: () => segment,
 
     spansFrameChange(text) {
       const list = closed.get(text) ?? [];

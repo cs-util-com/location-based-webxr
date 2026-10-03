@@ -108,8 +108,13 @@ would mean the first recording of the loop recorded nothing at all.
 
 ## Other options this module takes
 
-- `readAlignment` — the session's alignment as it stands NOW, read per
-  detection and never recorded (see `qr-sighting-feeder.ts.md`).
+- `readAlignment` — the session's alignment as it stands NOW, with the
+  session's GPS extent, read per detection AND per store change (once per
+  animation frame, after the debug update: `sightings.noteAlignment()`), and
+  never recorded. The store change is what lets a code waiting for a mature
+  alignment follow it (D28 revised; see `qr-sighting-feeder.ts.md`). A store
+  swap resets the feeder (`sightings.reset()`): the sightings and the
+  alignments kept for them go together.
 - `setSightingFeeder` — hands the sighting fold out, for the zip contributor
   and the HUD.
 - `onLevelState` — what a code's level lookup did, routed to the HUD so a

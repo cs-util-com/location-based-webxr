@@ -49,6 +49,7 @@ import { wireFrameTileStack } from '../visualization/frame-tile-stack';
 import { wireOccupancyStack } from '../visualization/occupancy-stack';
 import { setOccupancyGrid } from '../state/occupancy-grid-provider';
 import { wireQrRecording } from '../qr/wire-qr-recording';
+import { createGpsExtentTracker } from 'gps-plus-slam-app-framework/state/gps-extent-tracker';
 
 export interface WireArSceneDeps {
   /** Alignment-following group; raw-WebXR content parents here. */
@@ -218,6 +219,9 @@ export function wireArScene({
   // Live QR RAW recording + WS-5 debug viz (opt-in). Gated on the operator
   // setting; the camera-frame callback was registered before initAR.
   scope.wire('QR recording', options.qr.enabled, () => {
+    // Incremental, and it starts over by itself when a store swap or a
+    // tracking restart hands it a new GPS list.
+    const gpsExtent = createGpsExtentTracker();
     const unsubscribeQrRecording = wireQrRecording({
       storeRef,
       getArWorldGroup,
@@ -225,15 +229,20 @@ export function wireArScene({
       setProducer: (producer) => {
         resources.qrProducer = producer;
       },
-      // Read live, never recorded: the mint wants the alignment as it was at
-      // each sighting, and an alignment matrix is a DERIVED value that must
-      // not enter the action stream (decision D-A).
+      // Read live, never recorded: the save-time mint places a code through
+      // the first alignment at or after its last sighting whose GPS extent
+      // reaches 80 m, else the alignment at save or as its odometry segment
+      // closed (D28 revised), and an alignment matrix is a DERIVED value
+      // that must not enter the action stream (decision D-A). No GPS
+      // accuracy is supplied, so minted levels carry none.
       readAlignment: () => {
         const state = storeRef.get().getState();
+        const gpsPositions = selectGpsPositions(state);
         return {
           alignmentMatrix: selectAlignmentMatrix(state),
           zero: selectZeroReference(state),
-          alignmentSampleCount: selectGpsPositions(state).length,
+          alignmentSampleCount: gpsPositions.length,
+          gpsExtentM: gpsExtent.update(gpsPositions),
         };
       },
       // A code whose level is missing, unreachable or not ours must SAY so

@@ -51,6 +51,10 @@ export interface QrAnchorOutcome {
   lon?: number;
   unweightedLat?: number;
   unweightedLon?: number;
+  /** The level was marked as having an uncertain heading (owner decision
+   *  D31: its alignment rested on under 10 m of GPS extent). Absent when
+   *  the mint could not tell, or for a code that was not written. */
+  headingUncertain?: boolean;
 }
 
 export interface QrLevelZipContributorDeps {
@@ -115,10 +119,19 @@ export function createQrLevelZipContributor(
             continue;
           }
           id = await qrCodeId(text);
+          const sightings = feeder.accumulator.sightingsIncludingOpen(text);
           const result = mintQrAnchorFromSightings({
-            sightings: feeder.accumulator.sightingsIncludingOpen(text),
+            sightings,
             spansFrameChange: feeder.accumulator.spansFrameChange(text),
             nowIso: deps.nowIso(),
+            // D28 revised: the first mature alignment (80 m of GPS extent)
+            // at or after the code's last sighting, which the feeder froze;
+            // before maturity, the alignment as it stands at THIS save, or
+            // the one the code's odometry segment closed with. Never the
+            // immature snapshot a code scanned as the recording started was
+            // seen through. (Sightings that span segments are refused
+            // before it is used.)
+            currentAlignment: feeder.alignmentFor(text),
           });
           if (!result.ok) {
             outcomes.push({
@@ -146,6 +159,7 @@ export function createQrLevelZipContributor(
             new Blob([result.level.json], { type: 'application/json' })
           );
           written += 1;
+          const heading = result.level.level.qr.mintQuality?.headingUncertain;
           outcomes.push({
             text,
             id,
@@ -159,6 +173,8 @@ export function createQrLevelZipContributor(
             lon: result.level.level.qr.geo?.lon,
             unweightedLat: result.quality.unweighted?.lat,
             unweightedLon: result.quality.unweighted?.lon,
+            // D31: copied only when the mint knew; absent stays absent.
+            ...(heading !== undefined ? { headingUncertain: heading } : {}),
           });
         } catch (err) {
           outcomes.push({

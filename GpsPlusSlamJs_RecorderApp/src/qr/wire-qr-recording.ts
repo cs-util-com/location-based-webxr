@@ -109,9 +109,11 @@ export interface WireQrRecordingOptions {
    */
   setProducer: (producer: QrFrameSink | null) => void;
   /**
-   * Read the session's alignment as it stands NOW. Each sighting keeps the
-   * value from its last detection, because the mint uses the alignment as it
-   * was AT that moment and the store keeps no history (plan DEC-3).
+   * Read the session's alignment as it stands NOW, with the session's GPS
+   * extent. The feeder reads it at every detection and every store change,
+   * because the store keeps no history: a code is minted through the first
+   * alignment at or after its last sighting whose extent reaches 80 m, else
+   * through the alignment at save (owner decision D28, revised 2026-10-02).
    */
   readAlignment: QrSightingFeederDeps['readAlignment'];
   /** Receives the sighting feeder so save-time minting and the HUD can read
@@ -365,6 +367,10 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     rafId = requestAnimationFrame(() => {
       rafId = null;
       debug.update();
+      // A GPS fix is a store change: codes still waiting for a mature
+      // alignment (D28 revised) follow it. After `debug.update()`, so a
+      // placement derived in this frame is reported first.
+      sightings.noteAlignment();
       options.onQrStateChanged?.();
     });
   };
@@ -385,7 +391,8 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
   let attached = false;
   const stopFollowing = followStore(storeRef, (store: RecorderStore) => {
     if (attached) {
-      sightings.accumulator.reset();
+      // The sightings AND the alignments kept for them.
+      sightings.reset();
       syntheticVotes = 0;
       // The new store restarts its GPS list, so a code that spent its
       // budget against the previous one must be allowed to vote again.

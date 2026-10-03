@@ -75,6 +75,19 @@ export interface QrMintQuality {
   translationSpreadM?: number;
   /** Spread of the measured physical size (m). Non-negative. */
   physicalSizeSpreadM?: number;
+
+  // Owner decision D31 (2026-10-02). Absent in levels minted before it, and
+  // whenever the mint did not know the extent: absent means UNKNOWN, never
+  // "settled", so a reader must not default either field.
+
+  /** GPS extent (m) of the alignment the code was composed through: the
+   *  largest horizontal distance between two device fixes of its session
+   *  at that point. Non-negative. */
+  alignmentGpsExtentM?: number;
+  /** `true` when that extent was under the mint's threshold (10 m), so the
+   *  heading is close to guesswork and a viewer should not treat the code
+   *  as settled; `false` when it was measured and long enough. */
+  headingUncertain?: boolean;
 }
 
 /** Thrown when a fetched level file fails validation. */
@@ -163,7 +176,7 @@ function parseMintQuality(value: unknown): QrMintQuality | undefined {
   // near-identical if-blocks: the block list grew with the session-mint
   // fields, and copy-pasted validation is exactly how one of them ends up
   // silently unchecked.
-  const quality: Record<string, number | string> = {};
+  const quality: Record<string, number | string | boolean> = {};
   for (const [key, kind] of Object.entries(MINT_QUALITY_FIELDS)) {
     const raw = value[key];
     if (raw === undefined) continue;
@@ -173,7 +186,7 @@ function parseMintQuality(value: unknown): QrMintQuality | undefined {
 }
 
 /** The validation shapes a `mintQuality` field can take. */
-type MintQualityKind = 'positive' | 'non-negative' | 'count' | 'text';
+type MintQualityKind = 'positive' | 'non-negative' | 'count' | 'text' | 'flag';
 
 /** How each `mintQuality` field is validated. */
 const MINT_QUALITY_FIELDS = {
@@ -186,6 +199,8 @@ const MINT_QUALITY_FIELDS = {
   rotationSpreadDeg: 'non-negative',
   translationSpreadM: 'non-negative',
   physicalSizeSpreadM: 'non-negative',
+  alignmentGpsExtentM: 'non-negative',
+  headingUncertain: 'flag',
   // `satisfies` is load-bearing, not decoration: it is what makes "adding a
   // field means adding a row" TRUE rather than a promise. Without it a field
   // added to QrMintQuality with no row here is silently dropped by
@@ -197,10 +212,16 @@ function checkMintQualityField(
   key: string,
   raw: unknown,
   kind: MintQualityKind
-): number | string {
+): number | string | boolean {
+  if (kind === 'flag') return checkMintQualityFlag(key, raw);
   return kind === 'text'
     ? checkMintQualityText(key, raw)
     : checkMintQualityNumber(key, raw, kind);
+}
+
+function checkMintQualityFlag(key: string, raw: unknown): boolean {
+  if (typeof raw !== 'boolean') mintQualityError(key, 'true or false');
+  return raw;
 }
 
 function mintQualityError(key: string, expected: string): never {
@@ -219,7 +240,7 @@ function checkMintQualityText(key: string, raw: unknown): string {
 function checkMintQualityNumber(
   key: string,
   raw: unknown,
-  kind: Exclude<MintQualityKind, 'text'>
+  kind: Exclude<MintQualityKind, 'text' | 'flag'>
 ): number {
   if (!isFiniteNumber(raw)) mintQualityError(key, 'a finite number');
   if (kind === 'positive' && raw <= 0) {
