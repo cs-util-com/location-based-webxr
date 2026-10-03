@@ -47,7 +47,12 @@ import {
   sameGlobeClockSetting,
   startGlobeClock,
 } from "/globe/globe-clock.js";
-import { GLOBE_DIVE, diveStep, planDive } from "/globe/globe-dive.js";
+import {
+  GLOBE_DIVE,
+  diveStep,
+  obliqueCamera,
+  planDive,
+} from "/globe/globe-dive.js";
 import { FLIGHT_PACE_DEFAULTS } from "/globe/flight-pace.js";
 import { arrivalStatusText, createDiveClock } from "/globe/globe-arrival.js";
 import { globePinView, nextPinPhase } from "/globe/globe-pin.js";
@@ -65,7 +70,7 @@ import {
   globeZoomOutLimitM,
   limitGlobeZoomOut,
 } from "/globe/globe-zoom-limit.js";
-import { createGlobeTerrain } from "/globe/globe-terrain.js";
+import { GLOBE_TERRAIN, createGlobeTerrain } from "/globe/globe-terrain.js";
 import { releaseTileCache } from "/globe/globe-tile-cache.js";
 import { SKY_FILL } from "/globe/sky-level.js";
 import {
@@ -74,6 +79,7 @@ import {
   clearedAltitudeM,
   exaggerationAt,
   minimumAltitudeM,
+  pitchAtDeg,
 } from "/globe/globe-flight.js";
 import { GLOBE_ALBEDO } from "../terrain/terrain-globe-colour.js";
 import {
@@ -356,7 +362,38 @@ const PARAMS = {
   pixelRatio: { fallback: 2, min: 0.5, max: 4 },
   errorTarget: { fallback: null, min: 0.25, max: 256 },
   cacheMiB: { fallback: null, min: 8, max: 4096 },
+  // The controls' height adjustment (frame-hitch plan 2026-10-03-2017 §4.2,
+  // H5): 1 the library's default, 0 removes its two raycasts a frame.
+  adjustHeight: { fallback: 1, min: 0, max: 1 },
+  // The relief's cache cap (MiB; its floor keeps the same ratio) and its
+  // queues (§4.3), settable within one page load.
+  reliefCacheMiB: {
+    fallback: GLOBE_TERRAIN.cacheBytes / 2 ** 20,
+    min: 8,
+    max: 4096,
+  },
+  parseJobs: { fallback: 5, min: 1, max: 32 },
+  downloadsPerOrigin: { fallback: 25, min: 1, max: 64 },
+  // The frame-hitch recorder (`globe-perf.js`, §4): 1 loads it and shows
+  // its overlay; without it the page does no recorder work. `perfStep` 1
+  // flies the frame-stepped path (SwiftShader: counts only) at
+  // `perfSteps` steps a decade, each settle checkpoint held at most
+  // `perfSettleS`; `perfSpeed` (decades a second) replaces every run's
+  // speed, for short runs. The sweep and the place are the text keys
+  // `perfSweep` and `perfPlace` (`readHashParams`).
+  perf: { fallback: 0, min: 0, max: 1 },
+  perfStep: { fallback: 0, min: 0, max: 1 },
+  perfSteps: { fallback: 40, min: 1, max: 200 },
+  perfSettleS: { fallback: 120, min: 1, max: 600 },
+  perfSpeed: { fallback: null, min: 0.05, max: 20 },
 };
+
+/** The sweeps the recorder knows (`/globe/globe-perf-sweep.js`). */
+const PERF_SWEEPS = ["quick", "full", "overhead"];
+
+/** The floor the relief keeps under its cache cap, as a fraction of it. */
+const RELIEF_FLOOR_RATIO =
+  GLOBE_TERRAIN.cacheFloorBytes / GLOBE_TERRAIN.cacheBytes;
 
 /** The floor the surface keeps under its cache cap, as a fraction of it. */
 const CACHE_FLOOR_RATIO =
@@ -405,6 +442,17 @@ function readHashParams() {
       : "narrow",
     clock,
     timeScale: clock.scale ?? (clock.startMs === null ? 1 : 0),
+    // The recorder's sweep (null: one run) and the place of a single run
+    // (an id of `PERF_PLACES`; an unknown one flies the Alps).
+    perfSweep: PERF_SWEEPS.includes(params.get("perfSweep"))
+      ? params.get("perfSweep")
+      : null,
+    perfPlace: /^[a-z]{1,16}$/.test(params.get("perfPlace") ?? "")
+      ? params.get("perfPlace")
+      : "alps",
+    // `controls` drives every recorder run through the controls' wheel
+    // input; absent, each cell says (`/globe/globe-perf-sweep.js`).
+    perfDrive: params.get("perfDrive") === "controls" ? "controls" : null,
   };
 }
 
@@ -787,6 +835,10 @@ function cameraControls(scene, camera, globe, onTake) {
     /** The farthest the controls zoom out: a getter, metres from the centre. */
     limit(limitM) {
       limitGlobeZoomOut(controls, limitM);
+    },
+    /** The library's height adjustment (its two raycasts a frame, H5). */
+    setAdjustHeight(on) {
+      controls.adjustHeight = on;
     },
     release() {
       // Toggling `enabled` is the library's own reset: it ends any drag,
@@ -1475,6 +1527,7 @@ async function start() {
       renderer.setPixelRatio(ratio);
       fittedSize = ""; // refit on the next frame
     }
+    applyFactors(params);
     atmosphere.setLook({
       steps: params.atmoSteps,
       strength: params.atmoStrength,
@@ -1487,6 +1540,21 @@ async function start() {
       pixelRatio: renderer.getPixelRatio(),
       visible: params.stars !== 0,
     });
+  };
+  /**
+   * The factors the frame-hitch recorder varies (§4.3), from the hash or
+   * from one of its cells: the controls' height adjustment, the relief's
+   * cache and queues, and (from a cell) the pixel-ratio cap.
+   */
+  const applyFactors = (f) => {
+    controls.setAdjustHeight(f.adjustHeight === 1);
+    if (terrain) {
+      const cache = terrain.tiles.lruCache;
+      cache.maxBytesSize = f.reliefCacheMiB * 2 ** 20;
+      cache.minBytesSize = f.reliefCacheMiB * RELIEF_FLOOR_RATIO * 2 ** 20;
+      terrain.tiles.parseQueue.maxJobs = f.parseJobs;
+      terrain.tiles.downloadQueue.maxJobsPerOrigin = f.downloadsPerOrigin;
+    }
   };
   /** Reads the hash and applies it; a new target or timing restarts. */
   const onHash = () => {
@@ -1626,7 +1694,15 @@ async function start() {
     navigate: (url) => location.assign(url),
   });
 
+  /** The frame-hitch recorder (`#perf=1` only, `globe-perf.js`), or null. */
+  let perf = null;
+  /** An exaggeration the recorder holds in place of the altitude's, or null. */
+  let eOverride = null;
+  /** The band's share on the frame before (the recorder's edge mark). */
+  let lastShare = bandShare;
+
   const frame = () => {
+    perf?.frameStart(performance.now());
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     // Both sides: a phone's URL bar changes only the height.
@@ -1647,7 +1723,10 @@ async function start() {
     sunNow();
     const now = performance.now();
     frameAt = now;
-    if (flight.drives) {
+    if (perf?.drives()) {
+      // The recorder's paths (§4.2) place the camera themselves.
+      perf.drive(now);
+    } else if (flight.drives) {
       const step = flight.pose(now);
       if (step.pose) {
         applyOrbitPose(camera, step.pose, step.distanceM ?? distance);
@@ -1688,6 +1767,16 @@ async function start() {
           lowM: Math.min(params.bandLow * 1000, highM - 1),
         });
       globe.surfaceUniforms.uCarrierShare.value = bandShare;
+      if (perf) {
+        if (
+          bandShare > 0 !== lastShare > 0 ||
+          bandShare < 1 !== lastShare < 1
+        ) {
+          perf.mark("band.edge");
+        }
+        if (bandShare > 0 && bandShare < 1) perf.mark("band.mixed");
+      }
+      lastShare = bandShare;
       // A carrier out of the band for `bandReleaseMs` has its cache
       // released; a return before then cancels it. Not while frozen: the
       // smokes step the share over the same tiles.
@@ -1706,6 +1795,7 @@ async function start() {
             const t0 = performance.now();
             const bytes = releaseTileCache(cache);
             released[key] += bytes;
+            perf?.mark(`release.${key}`);
             o.done = true;
             // For the smokes: when the carrier left, when it was released,
             // and how long the release itself took (its dispose burst).
@@ -1754,9 +1844,18 @@ async function start() {
           terrainResolution.x,
           terrainResolution.y,
         );
-        terrain.plugin.heightScale = exaggerationAt(altitudeM, {
-          near: params.reliefNear,
-        });
+        // An E step re-walks the relief's tile tree (frame-hitch plan H1):
+        // the assignment is timed for the recorder.
+        const e =
+          eOverride ??
+          exaggerationAt(altitudeM, {
+            near: params.reliefNear,
+          });
+        if (e !== terrain.plugin.heightScale) {
+          const t0 = performance.now();
+          terrain.plugin.heightScale = e;
+          perf?.eStep(performance.now() - t0);
+        }
         terrain.tiles.update();
       }
     } else {
@@ -1807,6 +1906,7 @@ async function start() {
         sunIntensity: globe.sun.intensity,
       });
     }
+    perf?.frameEnd(performance.now());
   };
   renderer.setAnimationLoop(frame);
 
@@ -2214,7 +2314,119 @@ async function start() {
         return [px[0], px[1], px[2], px[3]];
       });
     },
+    /** The frame-hitch recorder's smoke API once it is loaded, else null. */
+    perf: null,
   };
+
+  // The frame-hitch recorder (frame-hitch plan 2026-10-03-2017 §4), loaded
+  // only with #perf=1: its handle on the page is what it reads (cheap
+  // counts, no raycasts, so it never adds to what it counts) and the few
+  // things it sets.
+  if (params.perf === 1) {
+    const { createGlobePerf } = await import("./globe-perf.js");
+    let tookCamera = false;
+    const altitudeNow = () =>
+      globe.tiles.ellipsoid.getPositionElevation(
+        globe.tiles.group.worldToLocal(camera.position.clone()),
+      );
+    perf = createGlobePerf({
+      renderer,
+      canvas,
+      globe,
+      terrain,
+      params: () => params,
+      counts: () => ({
+        ...globe.state(),
+        altitudeM: altitudeNow(),
+        relief: terrain
+          ? {
+              share: bandShare,
+              heightScale: terrain.plugin.heightScale,
+              visibleTiles: terrain.tiles.visibleTiles.size,
+              stats: terrain.tiles.stats,
+              cachedBytes: terrain.tiles.lruCache.cachedBytes,
+              globeCachedBytes: globe.tiles.lruCache.cachedBytes,
+            }
+          : null,
+      }),
+      /**
+       * The camera over `place` at `altitudeM`, pitched by the flight's
+       * law (`pitchAtDeg`), as the dive places it. The first call takes
+       * the camera from the fly-in and the pin, as a press would.
+       */
+      placeCamera(place, altitudeM) {
+        const now = performance.now();
+        if (!tookCamera) {
+          tookCamera = true;
+          flight.yieldToUser(now);
+          pin?.cameraTaken();
+          controls.release();
+        }
+        const ellipsoid = globe.tiles.ellipsoid;
+        const view = obliqueCamera(
+          ellipsoid,
+          orbitPose(ellipsoid, place),
+          altitudeM,
+          pitchAtDeg(altitudeM, { pitchLowDeg: params.pitchLow }),
+        );
+        camera.position.copy(view.position);
+        camera.quaternion.copy(view.quaternion);
+        camera.updateMatrixWorld();
+        returnFov(now);
+        controls.followIntro();
+      },
+      updateControls: () => controls.update(),
+      altitudeM: altitudeNow,
+      /**
+       * One frame of a zoom driven through the controls (§4.2, H5): a
+       * wheel event of `deltaY` at the canvas centre, then their update,
+       * as a wheel or a pinch runs them.
+       */
+      wheelZoom(deltaY) {
+        if (deltaY !== 0) {
+          const rect = canvas.getBoundingClientRect();
+          canvas.dispatchEvent(
+            new WheelEvent("wheel", {
+              deltaY,
+              deltaMode: 0,
+              clientX: rect.left + rect.width / 2,
+              clientY: rect.top + rect.height / 2,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+        }
+        controls.update();
+      },
+      /** The drawn carriers' queues are empty. */
+      settled() {
+        const globeIdle = bandShare >= 1 || globe.state().pendingTiles === 0;
+        const reliefIdle =
+          !terrain ||
+          bandShare <= 0 ||
+          (terrain.tiles.loadProgress === 1 &&
+            !terrain.tiles.downloadQueue.running &&
+            !terrain.tiles.parseQueue.running &&
+            !terrain.tiles.processNodeQueue.running);
+        return globeIdle && reliefIdle;
+      },
+      /** A cell's factors, or the hash's again (null). */
+      setFactors(cell) {
+        const f = cell ?? params;
+        applyFactors(f);
+        const ratio = Math.min(window.devicePixelRatio, f.pixelRatio);
+        if (renderer.getPixelRatio() !== ratio) {
+          renderer.setPixelRatio(ratio);
+          fittedSize = "";
+        }
+      },
+      setEOverride(e) {
+        eOverride = e;
+      },
+      currentE: () => terrain?.plugin.heightScale ?? null,
+    });
+    window.__globeLab.perf = perf.api;
+  }
 }
 
 start().catch((e) => {

@@ -497,6 +497,30 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     latitude exactly found no tile, or at a tile corner the far side of the
     Earth (the cause, shared vertices or three's triangle test, is not
     established). A hit beyond the Earth's centre reads as null.
+- The frame-hitch recorder (frame-hitch plan 2026-10-03-2017 §4, PERF-1;
+  `globe-perf.js`): `perf=1` loads it with a dynamic import after the
+  page is ready and shows its overlay; without it nothing of it is fetched
+  and the frame calls no recorder hook. Its hash keys:
+  - `perfStep` (1: the frame-stepped path), `perfSteps` (steps a decade,
+    1-200, default 40), `perfSettleS` (a checkpoint's longest hold, 1-600,
+    default 120), `perfSpeed` (decades a second for every run, 0.05-20;
+    default each cell's), and the text keys `perfSweep`
+    (`quick`, `full`, `overhead`; absent: one run) and `perfPlace`
+    (`ocean`, `alps`, `pole`, `city`; default `alps`), and `perfDrive`
+    (`controls` drives every run through the controls' wheel input;
+    absent, each cell says).
+  - The factors it varies, also hash keys that apply live:
+    `adjustHeight` (the controls' height adjustment, its two raycasts a
+    frame, default 1), `reliefCacheMiB` (the relief's cache cap, 8-4096,
+    default 64; its floor keeps the same ratio), `parseJobs` (1-32,
+    default 5) and `downloadsPerOrigin` (1-64, default 25), the relief's
+    own queues.
+  - While a path runs the recorder owns the camera (ahead of the fly-in,
+    the dive and the controls); the first placement takes the camera as a
+    press would. The frame marks band edges, frames inside the
+    cross-fade, cache releases and E steps (the `heightScale` assignment
+    timed, made only when E changes; an E held by the recorder replaces
+    the altitude's).
 - Invariants & assumptions: the page's import map maps `three` to the
   framework's copy and `3d-tiles-renderer` (and `/plugins`) to the vendored
   library; nothing leaves the machine. The sun is real, so a view can be on
