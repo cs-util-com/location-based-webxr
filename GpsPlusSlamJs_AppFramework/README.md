@@ -397,7 +397,7 @@ Everything needed to turn a printed QR code into a high-precision position obser
   - `startSession()` / `endSession()` / `recordDepthSample()` / `recordWriteFailure()` — Recording lifecycle actions.
   - `recordGpsEvent(payload)` — Record a paired AR+GPS observation.
   - `setZeroPos(...)` / `add2dImage(...)` — Core-library actions re-exported for convenience.
-  - `createGpsPositionHandler(config)` — Factory that adapts `GeolocationPosition` to a store dispatch.
+  - `createGpsPositionHandler(config)` — Factory that adapts `GeolocationPosition` to a store dispatch. By default (`absoluteOrientation: 'auto'`) it also starts the `AbsoluteOrientationSensor` watch at the first fix of a recording, so the core's compass cold start gets its reading in every app; a clean no-op off Chrome Android, `'off'` opts out.
   - `buildRawGpsPoint(...)` / `buildRecordGpsEventPayload(...)` / `updateDeviceOrientation(...)` / `eulerToQuaternion(...)` — The pure pieces behind that handler.
   - `captureGpsAnchorSample(options)` — Sample a paired AR pose + GPS point for anchoring.
 - **Replay**
