@@ -1,6 +1,6 @@
 # terrarium-bytes.mjs - the real data one descent costs
 
-- Purpose: round-5 F1a review major 4 (reproducible data numbers): the
+- Purpose: review 2026-10-02-1235 major 4 (reproducible data numbers): the
   globe-terrain data smoke records every height tile a descent asks for
   (`test-results/globe-terrain/requests-<heights>-et<n>.json`, heights
   `synthetic` or `terrarium`, error target n); the synthetic tiles' PNG

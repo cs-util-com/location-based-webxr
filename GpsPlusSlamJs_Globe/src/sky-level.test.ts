@@ -1,5 +1,5 @@
 /**
- * The sky's level for the fill light (DEC-GL5-11; F1 brief: one
+ * The sky's level for the fill light (DEC-GL5-11; DEC-H3: one
  * implementation in the Globe package, read by the terrain lab and the
  * globe's own surface).
  *

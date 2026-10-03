@@ -1,10 +1,13 @@
 /**
  * The sky's level for the fill light (DEC-GL5-11), the one implementation
- * the terrain lab's relief and the globe's surface both read (F1 brief).
- * Dependency-free, so the terrain lab's `node --test` files load it too.
+ * the terrain lab's relief and the globe's surface both read (DEC-H3).
+ * The terrain lab's `node --test` files load it through the design
+ * system's route loader.
  *
  * @see sky-level.ts.md
  */
+
+import { smoothstep } from "./globe-camera.js";
 
 const DEG = Math.PI / 180;
 
@@ -18,11 +21,6 @@ const DEG = Math.PI / 180;
  * above 10 of 255 and keeps the relief at least as contrasty as at noon).
  */
 export const SKY_FILL = Object.freeze({ floor: 0.5, twilightDeg: 6 });
-
-const smoothstep = (edge0: number, edge1: number, x: number): number => {
-  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
-};
 
 /**
  * The sky's level at a sun height (`sunZ`, the sine of its elevation):
@@ -45,7 +43,8 @@ export function skyLevel(
   if (!(twilightDeg > 0 && twilightDeg < 90)) {
     throw new RangeError(`twilight must be in 0-90°, got ${twilightDeg}`);
   }
-  const fade = smoothstep(-Math.sin(twilightDeg * DEG), 0, sunZ);
+  const edge = Math.sin(twilightDeg * DEG);
+  const fade = smoothstep((sunZ + edge) / edge);
   return Math.max(Math.max(0, sunZ), floor * fade);
 }
 

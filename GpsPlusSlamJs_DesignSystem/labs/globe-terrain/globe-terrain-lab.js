@@ -84,7 +84,7 @@ const sunEcefAt = (hours) => {
 };
 
 /**
- * Shows each tile's displaced height in two channels (F1a review major 1):
+ * Shows each tile's displaced height in two channels (review 2026-10-02-1235 major 1):
  * v = (h + 1,000 m) x 8, red its high byte, green its low byte, so a step
  * of 0.125 m reads from -1,000 to 7,191 m (the Alps fit). Blue is 0.
  */

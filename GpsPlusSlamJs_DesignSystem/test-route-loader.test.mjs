@@ -17,7 +17,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { defaultRoutes } from "./serve-routes.mjs";
-import { routeUrl } from "./test-route-loader.mjs";
+import { routeUrl, siblingSourceUrl } from "./test-route-loader.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const routes = defaultRoutes(join(here, ".."));
@@ -45,6 +45,42 @@ describe("routeUrl", () => {
 
   it("refuses what the server refuses", () => {
     assert.equal(routeUrl("/globe/../package.json", routes), null);
+  });
+});
+
+describe("siblingSourceUrl", () => {
+  // A routed TypeScript module imports its siblings as `./x.js`, as the
+  // server serves them; node does not rewrite that to `.ts`. Inside a
+  // TypeScript route's directory the hook does, so a shared module can
+  // import the package's own helpers instead of copying them.
+  it("maps a sibling .js of a routed TypeScript module to its .ts", () => {
+    assert.equal(
+      siblingSourceUrl(
+        "./globe-camera.js",
+        globeSource("sky-level.ts"),
+        routes,
+      ),
+      globeSource("globe-camera.ts"),
+    );
+  });
+
+  it("leaves a relative import outside the routes, a bare one and a missing file alone", () => {
+    const lab = pathToFileURL(
+      join(here, "labs", "terrain", "terrain-sun.js"),
+    ).href;
+    assert.equal(siblingSourceUrl("./terrain-styles.js", lab, routes), null);
+    assert.equal(
+      siblingSourceUrl("three", globeSource("sky-level.ts"), routes),
+      null,
+    );
+    assert.equal(
+      siblingSourceUrl(
+        "./no-such-module.js",
+        globeSource("sky-level.ts"),
+        routes,
+      ),
+      null,
+    );
   });
 });
 

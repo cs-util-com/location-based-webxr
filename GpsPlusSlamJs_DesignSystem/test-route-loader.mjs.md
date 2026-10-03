@@ -20,13 +20,17 @@
     bare and protocol-relative specifiers, a path no route claims, a route
     served as is (`/vendor/...`), or a path the server refuses (a `..`
     segment).
+  - `siblingSourceUrl(specifier, parentUrl, routes)` - for a module inside a
+    TypeScript route's directory, a relative `./x.js` import as its
+    `./x.ts` source when `x.js` does not exist and `x.ts` does (the server
+    serves `x.ts` as `x.js`; node does not rewrite it); null otherwise.
 - Invariants & assumptions:
   - Only TypeScript routes are mapped; everything else falls through to
     node's own resolution.
-  - The mapped module's OWN imports are resolved by node as written: a
-    TypeScript source that imports a sibling as `./x.js` would not load
-    (node does not rewrite `.js` to `.ts`). So a module imported this way
-    must be dependency-free, as `sky-level.ts` is.
+  - A mapped module's sibling imports resolve through the same hook; its
+    bare imports (`three`) resolve from its own package's `node_modules`.
+    Its type-only imports must be written `import type` (node erases
+    types, it does not resolve them).
 - Tests: `test-route-loader.test.mjs` (the mapping against the server's
-  table, the refusals, and the registered hook resolving and loading
-  `/globe/sky-level.js`).
+  table, the refusals, the sibling mapping and what it leaves alone, and
+  the registered hook resolving and loading `/globe/sky-level.js`).

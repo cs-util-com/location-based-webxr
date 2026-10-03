@@ -56,7 +56,7 @@ export const MIN_SUN_Z = Math.sin(2 * DEG);
 
 // The sky fill's parameters and level (DEC-GL5-11) are the Globe
 // package's (`/globe/sky-level.js`), the one implementation the globe's
-// surface reads too (F1 brief), re-exported above.
+// surface reads too (DEC-H3), re-exported above.
 
 /**
  * A unit vector (east, north, up) toward a sun at an elevation and an
