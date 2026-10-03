@@ -23,7 +23,9 @@ import {
   luminance,
   routeAll,
   state,
+  sweepLine,
 } from "./terrain-smoke-helpers.mjs";
+import { dragTurnDeg, settleFrameBound } from "./terrain-camera.js";
 import {
   NO_DATA_COLOURS,
   PASTEL_ATLAS,
@@ -322,61 +324,115 @@ test("a tilted plane keeps each point's colour at every exaggeration (E is not i
   expect(worst).toBeLessThanOrEqual(TILT_COLOUR_TOLERANCE);
 });
 
+/**
+ * The frames after a drag's hash write over which the pose must hold still
+ * at the hash's resolution (each one a controls update that could drift it).
+ */
+const STILL_FRAMES = 5;
+
+/** The signed difference `b - a` in degrees, the short way round. */
+const shortWay = (a, b) => ((((b - a) % 360) + 540) % 360) - 180;
+
 test("a drag writes the pose to the hash once the damping has settled", async ({
   page,
 }) => {
+  // The HANG GUARD, and only that. What this test checks is counted in
+  // frames below: the damping settles after a number of controls updates,
+  // and the wait's wall time is that number times this machine's frame cost
+  // (which grew about fourfold from 2026-09-28 to 10-02, and is 1.2-1.5x
+  // slower on CI). A wall-clock bound on that wait broke as soon as the
+  // frames got slower (findings 2026-10-03-2254 #3), so the wait below has
+  // no timeout of its own.
   test.setTimeout(300_000);
   await routeAll(page, fixtureTile);
-  await boot(page, "preset=oblique&svf=0");
-  const box = await page.locator("#terrain-canvas").boundingBox();
+  // `dpr=0.5`: this test reads no pixels, and the damping counts updates,
+  // not pixels (the canvas's CSS height, which sets the turn, is the same).
+  // A quarter of the pixels cut the frame to 0.57-0.58 of its dpr 1 cost
+  // (measured 2026-10-03, ABA within one load, 6 frames each: medians
+  // 822 / 478 / 835 / 480 / 834 ms under SwiftShader; ratios only).
+  await boot(page, "preset=oblique&svf=0&dpr=0.5");
+  const before = (await state(page)).pose;
+  const canvas = page.locator("#terrain-canvas");
+  const box = await canvas.boundingBox();
+  // OrbitControls turns 360° per canvas HEIGHT, read as it reads it.
+  const height = await canvas.evaluate((c) => c.clientHeight);
+  const [dx, dy] = [60, 12];
   const cx = box.x + box.width * 0.4;
   const cy = box.y + box.height * 0.5;
   await page.mouse.move(cx, cy);
   await page.mouse.down();
-  await page.mouse.move(cx + 60, cy + 12, { steps: 4 });
+  await page.mouse.move(cx + dx, cy + dy, { steps: 4 });
   await page.mouse.up();
+  const released = Date.now();
   await page.waitForFunction(
     () => /(^|&)alt=/.test(location.hash.slice(1)),
     null,
-    {
-      timeout: 120_000,
-    },
+    { timeout: 0 },
   );
-  // Let any remaining motion run out: the pose must then hold still.
-  await page.waitForFunction(
-    () => {
+  const waitMs = Date.now() - released;
+  // Once written, the link does not drift: the pose is the same over the
+  // next frames (each `state()` runs one). At the hash's resolution: the
+  // damping's last sub-millimetre steps are not what a link can express.
+  const keys = await page.evaluate((n) => {
+    const out = [];
+    for (let i = 0; i < n; i++) {
       const p = window.__terrainLab.state().pose;
-      // At the hash's resolution: the damping's last sub-millimetre steps
-      // run on for seconds and are not what a link can express.
-      const key = [
-        p.altitudeM.toFixed(0),
-        p.tiltDeg.toFixed(2),
-        p.headingDeg.toFixed(2),
-      ].join();
-      const w = window;
-      if (w.__poseKey !== key) {
-        w.__poseKey = key;
-        w.__poseSince = performance.now();
-        return false;
-      }
-      return performance.now() - w.__poseSince > 1500;
-    },
-    null,
-    { timeout: 60_000, polling: 100 },
+      out.push(
+        [
+          p.altitudeM.toFixed(0),
+          p.tiltDeg.toFixed(2),
+          p.headingDeg.toFixed(2),
+        ].join(),
+      );
+    }
+    return out;
+  }, STILL_FRAMES);
+  const { hash, pose, settleFrames } = await page.evaluate(() => {
+    const s = window.__terrainLab.state();
+    return {
+      hash: Object.fromEntries(new URLSearchParams(location.hash.slice(1))),
+      pose: s.pose,
+      settleFrames: s.settleFrames,
+    };
+  });
+  const turn = dragTurnDeg(dx, dy, height);
+  const bound = settleFrameBound({ tiltDeg: before.tiltDeg, ...turn });
+  const sweep = sweepLine(
+    settleFrames,
+    [0.5, 1, 2].map((k) => k * bound),
+    (t) => `x${t / bound}`,
   );
-  const { hash, pose } = await page.evaluate(() => ({
-    hash: Object.fromEntries(new URLSearchParams(location.hash.slice(1))),
-    pose: window.__terrainLab.state().pose,
-  }));
   console.log(
-    `drag: hash ${JSON.stringify(hash)}, settled pose ${JSON.stringify(pose)}`,
+    `drag: hash ${JSON.stringify(hash)}, settled pose ${JSON.stringify(pose)}, ` +
+      `settled in ${settleFrames} frames against a bound of ${bound} ` +
+      `(${sweep}), ${waitMs} ms, about ` +
+      `${Math.round(waitMs / settleFrames)} ms a frame; still over ` +
+      `${STILL_FRAMES} frames: ${JSON.stringify(keys)}`,
   );
+  expect(new Set(keys).size).toBe(1);
+  // The damping's settle in its own unit: never more frames than the
+  // damping factor and SETTLE allow for this drag's turn (the derivation,
+  // and its sweep against three's controls, in
+  // terrain-camera-damping.test.mjs).
+  expect(settleFrames).toBeGreaterThanOrEqual(2);
+  expect(settleFrames).toBeLessThanOrEqual(bound);
+  // The turn that settled is this drag's whole turn, so the bound was
+  // computed for the motion that actually ran.
+  expect(
+    Math.abs(
+      shortWay(before.headingDeg, pose.headingDeg) -
+        shortWay(0, turn.headingTurnDeg),
+    ),
+  ).toBeLessThanOrEqual(0.02);
+  expect(
+    Math.abs(before.tiltDeg - pose.tiltDeg - turn.tiltTurnDeg),
+  ).toBeLessThanOrEqual(0.02);
   // The link opens the view the camera stopped at, to the hash's resolution.
   expect(Math.abs(Number(hash.alt) - pose.altitudeM)).toBeLessThanOrEqual(1);
   expect(Math.abs(Number(hash.tilt) - pose.tiltDeg)).toBeLessThanOrEqual(0.02);
-  const dh =
-    ((((Number(hash.head) - pose.headingDeg) % 360) + 540) % 360) - 180;
-  expect(Math.abs(dh)).toBeLessThanOrEqual(0.02);
+  expect(
+    Math.abs(shortWay(pose.headingDeg, Number(hash.head))),
+  ).toBeLessThanOrEqual(0.02);
   expect(hash.preset).toBeUndefined();
 });
 

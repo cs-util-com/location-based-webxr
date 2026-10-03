@@ -128,3 +128,143 @@ export function flyInPoseAtAltitude(altitudeM, fly = FLY_IN) {
   const pose = poseAlong(Math.min(1, Math.max(0, s)), fly);
   return { ...pose, altitudeM };
 }
+
+/**
+ * The orbit controls' damping the lab sets (three's own default): each
+ * update applies this share of the turn still to go and keeps the rest.
+ */
+export const ORBIT_DAMPING = 0.05;
+
+/** The steepest tilt the lab's controls allow (their `maxPolarAngle`). */
+export const MAX_TILT_DEG = 89;
+
+/**
+ * The turn a mouse drag of (dx, dy) CSS px asks the orbit controls for, in
+ * degrees: 360° per canvas HEIGHT on both axes (three's rotate handler,
+ * rotate speed 1). `dx` turns the heading, `dy` the tilt (down lowers it).
+ * RangeError for a non-positive or non-finite height.
+ */
+export function dragTurnDeg(dxPx, dyPx, heightPx) {
+  if (!(heightPx > 0) || !Number.isFinite(heightPx)) {
+    throw new RangeError(`canvas height must be positive, got ${heightPx}`);
+  }
+  return {
+    headingTurnDeg: (360 * dxPx) / heightPx,
+    tiltTurnDeg: (360 * dyPx) / heightPx,
+  };
+}
+
+/**
+ * The most frames a drag's damping can take from the release to the hash
+ * write (`createSettleTracker`), for a turn of at most `headingTurnDeg` and
+ * `tiltTurnDeg` still to go at the release, of a drag that started at a
+ * tilt of `tiltDeg`. The turns are signed as `dragTurnDeg` returns them: a
+ * positive tilt turn LOWERS the tilt, so the drag runs from `tiltDeg` to
+ * `tiltDeg - tiltTurnDeg`.
+ *
+ * The derivation. With damping f, update i after the release (i = 1, 2, …)
+ * moves each axis by f (1 - f)^(i-1) of that axis' turn at the release. The
+ * tracker first compares at frame 2 and settles at the first frame whose
+ * step is below SETTLE on every axis:
+ * - heading: below `SETTLE.angleDeg`;
+ * - tilt: below `SETTLE.angleDeg` and below what moves the altitude by
+ *   `SETTLE.altitudeShare`. The altitude r cos(tilt) moves by at most
+ *   r sin(tilt) |step| against an altitude of at least r cos(tilt), so the
+ *   share is at most tan(tilt) |step|, read at the steepest tilt of the
+ *   drag's path, the larger of its two ends (capped at MAX_TILT_DEG). That
+ *   is conservative when the drag flattens the view: a tilt-dominated
+ *   settle may then come up to ln(tan(steep) / tan(shallow)) / -ln(1 - f)
+ *   frames early.
+ * For an axis with turn X and threshold T, the step falls below T at the
+ * first i with i - 1 > L = ln(f X / T) / -ln(1 - f), i.e. i = floor(L) + 2
+ * (i = 1 when f X < T already). The bound is the later axis, at least 2.
+ *
+ * It is an upper bound: an update during the drag (three runs one per
+ * pointer move) or a clamp leaves less to turn, never more. It is in FRAMES
+ * (updates), because that is what the damping counts; the wall time is this
+ * times a frame's cost, which is the machine's, not the damping's.
+ * RangeError for a damping outside (0, 1), a non-finite turn or a tilt
+ * outside 0-90°.
+ */
+export function settleFrameBound({
+  headingTurnDeg,
+  tiltTurnDeg,
+  tiltDeg,
+  dampingFactor = ORBIT_DAMPING,
+  settle = SETTLE,
+}) {
+  if (!(dampingFactor > 0 && dampingFactor < 1)) {
+    throw new RangeError(`damping must be in (0, 1), got ${dampingFactor}`);
+  }
+  for (const [what, v] of [
+    ["heading turn", headingTurnDeg],
+    ["tilt turn", tiltTurnDeg],
+  ]) {
+    if (!Number.isFinite(v)) {
+      throw new RangeError(`${what} must be finite, got ${v}`);
+    }
+  }
+  if (!(tiltDeg >= 0 && tiltDeg <= 90)) {
+    throw new RangeError(`tilt must be in 0-90°, got ${tiltDeg}`);
+  }
+  const steepest = Math.min(
+    MAX_TILT_DEG,
+    Math.max(tiltDeg, tiltDeg - tiltTurnDeg),
+  );
+  const tiltThreshold = Math.min(
+    settle.angleDeg,
+    settle.altitudeShare / Math.tan(steepest * DEG) / DEG,
+  );
+  const frameBelow = (turnDeg, threshold) => {
+    const first = dampingFactor * Math.abs(turnDeg);
+    if (first < threshold) return 1;
+    const l = Math.log(first / threshold) / -Math.log(1 - dampingFactor);
+    return Math.floor(l) + 2;
+  };
+  return Math.max(
+    2,
+    frameBelow(headingTurnDeg, settle.angleDeg),
+    frameBelow(tiltTurnDeg, tiltThreshold),
+  );
+}
+
+/**
+ * The lab's drag settle (T0/T1 review finding 12), fed one pose per frame
+ * after the controls' update: `end` (the finger lifts) arms it, `start` (a
+ * new gesture) disarms it, and `frame(pose)` returns true once, on the
+ * first frame that moved the pose by less than SETTLE (`poseSettled`), when
+ * the page finishes the damping and writes the pose. `frames` counts the
+ * frames from the release to that one (the smoke's measure of the damping,
+ * bounded by `settleFrameBound`); `active` is whether it is armed.
+ */
+export function createSettleTracker(settled = poseSettled) {
+  let active = false;
+  let last = null;
+  let frames = 0;
+  return {
+    get active() {
+      return active;
+    },
+    get frames() {
+      return frames;
+    },
+    start() {
+      active = false;
+    },
+    end() {
+      active = true;
+      last = null;
+      frames = 0;
+    },
+    frame(pose) {
+      if (!active) return false;
+      frames += 1;
+      if (last !== null && settled(last, pose)) {
+        active = false;
+        return true;
+      }
+      last = pose;
+      return false;
+    },
+  };
+}

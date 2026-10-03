@@ -76,7 +76,11 @@
   than 0.005°), not at the gesture's `end`, when the damping still turns
   the camera. At that point the rest of the damping is applied at once and
   the pose it lands on is written, so the link reproduces where the view
-  stopped. Every applied pose (preset, hash, fly-in) also ends any damping
+  stopped. The settle is `createSettleTracker` (terrain-camera.js), fed the
+  pose after each frame's controls update, with the damping set explicitly
+  to `ORBIT_DAMPING` (three's default); the frames it counted from the
+  release to the write are `state().settleFrames` (null before a drag), a
+  test hook the drag smoke bounds with `settleFrameBound`. Every applied pose (preset, hash, fly-in) also ends any damping
   first, or it would drift after being set. The location pin (bottom right,
   the design system's locate atom): a PRESS asks for the position with the
   framework's `locateOnce` (15 s), never the page's load; a second press
@@ -117,7 +121,7 @@
   the region's centre, whether the GPS place awaits a fix, the pin's
   phase, E and its parts, W, the boost, the pose, the flight's samples, the tiles,
   bytes, datum, missing posts and tiles, the relief, the loading history
-  and visibility, the error and readout text, and the textures' types),
+  and visibility, the error and readout text, the textures' types, the last user hash write's time and `settleFrames`),
   `project([x, y, z])`, `projectAll(points)` (one frame for many),
   `toEnu(lat, lng)`, `toLatLng(x, y)`,
   `fieldAt(x, y)` (the absolute height, gradient, small relief and relief spread the
@@ -145,7 +149,8 @@
   tile unchanged at E 1, 2, 5 and 10; a tilted plane's colours unchanged at
   those E, read at the lifted points (E is not in the shading normal); a
   ridge's silhouette against E; the fly-in; the plate and the hash; a drag's
-  pose written after the damping settles) and
+  pose written after the damping settles, within the frames
+  `settleFrameBound` allows, the wall clock only a hang guard) and
   `terrain-styles.smoke.spec.mjs` (T2: every style against A, B's snow on
   the Alps at E 1, 2, 5, D's warm and cool slopes and terraces, E's
   saturation, C's far field against the grid and the imagery, a failed

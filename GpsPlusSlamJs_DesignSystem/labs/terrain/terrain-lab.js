@@ -79,11 +79,13 @@ import {
 } from "./terrain-globe-colour.js";
 import {
   CAMERA_PRESETS,
+  MAX_TILT_DEG,
+  ORBIT_DAMPING,
+  createSettleTracker,
   flyInPose,
   orbitPosition,
   poseFromPosition,
   poseHashValues,
-  poseSettled,
 } from "./terrain-camera.js";
 import {
   FIELD,
@@ -453,7 +455,8 @@ function start() {
   const controls = new OrbitControls(camera, canvas);
   controls.enablePan = false;
   controls.enableDamping = true;
-  controls.maxPolarAngle = 89 * DEG;
+  controls.dampingFactor = ORBIT_DAMPING;
+  controls.maxPolarAngle = MAX_TILT_DEG * DEG;
   controls.minDistance = 2_000;
   controls.maxDistance = 3_000_000;
 
@@ -579,6 +582,8 @@ function start() {
   let material = null;
   let textures = null;
   let lastUserWrite = 0;
+  /** The frames the last drag's damping took to settle (null before one). */
+  let settleFrames = null;
 
   const panel = bindPanel(
     () => params,
@@ -910,32 +915,22 @@ function start() {
   // moves it by less than a perceptible step (`poseSettled`), the rest of
   // the damping is applied at once and the pose it lands on is written
   // (T0/T1 review finding 12).
-  const settle = { active: false, last: null };
-  controls.addEventListener("start", () => {
-    settle.active = false;
-  });
-  controls.addEventListener("end", () => {
-    settle.active = true;
-    settle.last = null;
-  });
+  const settle = createSettleTracker();
+  controls.addEventListener("start", () => settle.start());
+  controls.addEventListener("end", () => settle.end());
   const currentPose = () =>
     poseFromPosition(camera.position.clone().sub(controls.target).toArray());
   /** Called each frame after the controls update. */
   const writePoseWhenSettled = () => {
-    if (!settle.active) return;
-    const pose = currentPose();
-    if (settle.last !== null && poseSettled(settle.last, pose)) {
-      settle.active = false;
-      finishDamping();
-      lastUserWrite = performance.now();
-      panel.write({
-        preset: null,
-        fly: null,
-        ...poseHashValues(currentPose()),
-      });
-      return;
-    }
-    settle.last = pose;
+    if (!settle.active || !settle.frame(currentPose())) return;
+    finishDamping();
+    lastUserWrite = performance.now();
+    settleFrames = settle.frames;
+    panel.write({
+      preset: null,
+      fly: null,
+      ...poseHashValues(currentPose()),
+    });
   };
 
   const worker = new Worker(new URL("./terrain-worker.js", import.meta.url), {
@@ -1392,6 +1387,7 @@ function start() {
         floatType: THREE.FloatType,
         halfFloatType: THREE.HalfFloatType,
         lastUserWrite,
+        settleFrames,
       };
     },
     /** Where a point [x, y, z] (three's frame, metres) is on the canvas, 0-1. */
