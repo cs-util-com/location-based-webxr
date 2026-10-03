@@ -74,7 +74,11 @@
     detail factor multiplies the imagery right after `map_fragment`; a
     missing or doubled anchor then throws, naming it.
   - `createGlobeTerrain({ url, imagery, template, heightScale, maxZoom? })`
-    -> `{ tiles, plugin, detail, setDetail(grid, centre), litTiles(), dispose() }`
+    -> `{ tiles, plugin, detail, setDetail(grid, centre), litTiles(), heightScaleStats(), dispose() }`
+    (a change of `plugin.heightScale` refreshes only the bounding volumes
+    that are read, `globe-lazy-height-scale.ts`, and `heightScaleStats()`
+    gives its counters; the library walked its whole never-pruned tree on
+    every E step, perf plan 2026-10-03-2017 H1)
     (`detail` the tiles' shared detail uniforms, off until `setDetail`;
     `plugin.sampleCartographicElevation(lat, lon)` the library's drawn
     height at a place from the finest loaded tile, null where none is, which

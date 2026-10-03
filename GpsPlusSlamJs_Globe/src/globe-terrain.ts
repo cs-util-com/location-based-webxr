@@ -35,6 +35,10 @@ import {
   setGlobeDetail,
 } from "./globe-detail.js";
 import { litCopy, tileMeshes } from "./globe-surface.js";
+import {
+  installLazyHeightScale,
+  type LazyHeightScale,
+} from "./globe-lazy-height-scale.js";
 import { createMaterialRetirer } from "./globe-warm-material.js";
 
 export const GLOBE_TERRAIN = Object.freeze({
@@ -370,6 +374,8 @@ export interface GlobeTerrain {
   ): void;
   /** How many loaded tiles carry the globe's lit material now. */
   litTiles(): number;
+  /** The deferred height-scale refresh's counters (`installLazyHeightScale`). */
+  heightScaleStats(): ReturnType<LazyHeightScale["stats"]>;
   dispose(): void;
 }
 
@@ -437,6 +443,9 @@ export function createGlobeTerrain(options: {
   tiles.registerPlugin(plugin);
   // After the plugin: its init (TerrainRGBMeshPlugin) sets 1.
   tiles.errorTarget = GLOBE_TERRAIN.errorTarget;
+  // An E step refreshes only the volumes that are read, not the whole tree
+  // (globe-lazy-height-scale.ts; perf plan 2026-10-03-2017 H1).
+  const lazyHeightScale = installLazyHeightScale(tiles, plugin);
   const owned = new Set<THREE.Material>();
   const detail = createGlobeDetailUniforms();
   // The last retired lit material stays alive, so the relief's program
@@ -467,6 +476,7 @@ export function createGlobeTerrain(options: {
     plugin,
     detail,
     setDetail: (grid, centre) => setGlobeDetail(detail, grid, centre),
+    heightScaleStats: () => lazyHeightScale.stats(),
     litTiles: () => owned.size,
     dispose() {
       for (const lit of owned) lit.dispose();

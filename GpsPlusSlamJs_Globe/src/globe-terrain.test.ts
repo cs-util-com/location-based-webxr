@@ -606,6 +606,54 @@ describe("createGlobeTerrain", () => {
     terrain.dispose();
   });
 
+  // Why (perf plan 2026-10-03-2017 H1, PERF-2b A): the library's E step
+  // rebuilt every node's bounding volume (19,926 nodes by the end of one
+  // descent), the likeliest source of the owner's phone hitches. The relief
+  // must step through the deferred refresh, never the library's whole-tree
+  // method, and expose its counters for the frame-hitch recorder.
+  it("steps the height scale through the deferred refresh, not the whole-tree walk", () => {
+    const proto = Object.getPrototypeOf(
+      Object.getPrototypeOf(
+        createGlobeTerrain({
+          url: "/heights/{z}/{x}/{y}.png",
+          imagery: {
+            tiling: { maxLevel: 5 },
+            init: () => Promise.resolve(),
+            hasContent: () => false,
+            lockTexture: () => Promise.resolve(null),
+            getTexture: () => new THREE.Texture(),
+            releaseTexture: () => {},
+          },
+          template: new THREE.MeshStandardMaterial(),
+          heightScale: 1,
+        }).plugin,
+      ),
+    ) as { _updateHeightScale: () => void };
+    const wholeTree = vi.spyOn(proto, "_updateHeightScale");
+    const terrain = createGlobeTerrain({
+      url: "/heights/{z}/{x}/{y}.png",
+      imagery: {
+        tiling: { maxLevel: 5 },
+        init: () => Promise.resolve(),
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      },
+      template: new THREE.MeshStandardMaterial(),
+      heightScale: 1,
+    });
+    // The plugin's own init may set its scale once, on an empty tree,
+    // before the deferred refresh is installed; only the steps count.
+    const atCreation = wholeTree.mock.calls.length;
+    terrain.plugin.heightScale = 2.5;
+    terrain.plugin.heightScale = 2.6;
+    expect(wholeTree.mock.calls.length).toBe(atCreation);
+    expect(terrain.heightScaleStats().scaleChanges).toBe(2);
+    wholeTree.mockRestore();
+    terrain.dispose();
+  });
+
   it("refuses a missing url or a height scale that is not finite and >= 0", () => {
     const template = new THREE.MeshStandardMaterial();
     const imagery = {
