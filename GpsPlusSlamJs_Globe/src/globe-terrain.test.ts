@@ -536,13 +536,20 @@ describe("createGlobeTerrain", () => {
     expect(terrain.detail.uDetailOn.value).toBe(1);
     terrain.setDetail(null, { lat: 46.5, lng: 9.5 });
     expect(terrain.detail.uDetailOn.value).toBe(0);
+    // The last tile's lit material is kept alive past its tile (review
+    // 2026-10-03-2017 H4): its program must survive a release, or every
+    // return into the band compiles it again. It goes with the terrain.
+    const lit = mesh.material;
+    const freeLit = vi.spyOn(lit, "dispose");
     terrain.tiles.dispatchEvent({
       type: "dispose-model",
       scene: model,
       tile: {},
     } as never);
     expect(terrain.litTiles()).toBe(0);
+    expect(freeLit).not.toHaveBeenCalled();
     terrain.dispose();
+    expect(freeLit).toHaveBeenCalledTimes(1);
   });
 
   // Why (F1, the altitude band): the library gives every renderer ONE

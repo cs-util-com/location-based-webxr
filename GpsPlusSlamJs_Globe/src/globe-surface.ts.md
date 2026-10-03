@@ -60,8 +60,16 @@ onError)`) fetches the two global maps (night lights, clouds; the water mask is 
     the template's compile hooks (`Material.copy` does not carry
     `onBeforeCompile` or `customProgramCacheKey`), and records the clone in
     `owned`.
-  - `disposeLitMaterials(model, owned)` - frees those clones, never their
-    maps.
+  - `createGlobeImagery()` - a new overlay of the globe's imagery (the
+    committed Blue Marble pyramid, its projection and levels). The surface
+    makes its own with it, and the relief carrier gets another: an
+    overlay's image cache is shared by its users, so releasing one
+    carrier's tiles freed imagery the other was still composing ("the
+    image source is detached" in the band smokes).
+  - `disposeLitMaterials(model, owned, retire?)` - frees those clones (or
+    hands them to `retire`), never their maps. The surface retires them
+    through `globe-warm-material.ts`, so the last one stays alive and the
+    globe's program outlives a release of every tile.
   - `tileMeshes(root)` (every mesh under a tile model) and
     `litCopy(template)` (a clone keeping the compile hooks and program key)
     are exported for the relief carrier (`globe-terrain.ts`), so both

@@ -35,6 +35,7 @@ import {
   setGlobeDetail,
 } from "./globe-detail.js";
 import { litCopy, tileMeshes } from "./globe-surface.js";
+import { createMaterialRetirer } from "./globe-warm-material.js";
 
 export const GLOBE_TERRAIN = Object.freeze({
   /** The program key shared by every terrain tile's lit material. */
@@ -438,6 +439,9 @@ export function createGlobeTerrain(options: {
   tiles.errorTarget = GLOBE_TERRAIN.errorTarget;
   const owned = new Set<THREE.Material>();
   const detail = createGlobeDetailUniforms();
+  // The last retired lit material stays alive, so the relief's program
+  // survives a release of every tile (globe-warm-material.ts).
+  const retirer = createMaterialRetirer();
   tiles.addEventListener("load-model", ({ scene }) => {
     for (const mesh of tileMeshes(scene)) {
       const own = mesh.material as THREE.MeshLambertMaterial;
@@ -455,7 +459,7 @@ export function createGlobeTerrain(options: {
   tiles.addEventListener("dispose-model", ({ scene }) => {
     for (const mesh of tileMeshes(scene)) {
       const lit = mesh.material;
-      if (owned.delete(lit)) lit.dispose();
+      if (owned.delete(lit)) retirer.retire(lit);
     }
   });
   return {
@@ -467,6 +471,7 @@ export function createGlobeTerrain(options: {
     dispose() {
       for (const lit of owned) lit.dispose();
       owned.clear();
+      retirer.dispose();
       detail.uDetail.value.dispose();
       tiles.dispose();
     },

@@ -280,9 +280,17 @@
     band exists because further out the carriers differ (at noon from
     1,000 km by a mean 4.31 levels, the relief's tiles coarser over part
     of the frame).
-    - When the camera leaves the band on one side, the other carrier's
-      tile cache is released (`/globe/globe-tile-cache.js`), not only left
-      undrawn (review 2026-10-03-1835 major 4).
+    - When the camera has stayed out of the band on one side for
+      `bandReleaseMs` (default 5 s), the other carrier's tile cache is
+      released (`/globe/globe-tile-cache.js`), not only left undrawn
+      (review 2026-10-03-1835 major 4). A return before then cancels it,
+      so a zoom that wobbles over an edge never unloads, reloads and
+      recompiles (frame-hitch review 2026-10-03-2017 H4). Each carrier
+      keeps its last tile material alive (`/globe/globe-warm-material.js`),
+      so its shader program survives the release, and the relief draws
+      the imagery through its own overlay (`createGlobeImagery`), so a
+      release of the globe's tiles never frees imagery the relief is
+      composing.
     - Only a page with `relief=1` compiles the band into the globe's
       shader (`createGlobeSurface(loader, { band: true })`); the plain
       globe draws the program from before.

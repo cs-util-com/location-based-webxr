@@ -18,8 +18,11 @@
       returns.
   - `TileCache`: the structural type of the library's `LRUCache` this
     uses. The library's typings omit `cachedBytes`.
-- Invariants & assumptions: call it only for a renderer that is not
-  updated meanwhile. An update would mark its visible tiles used again
+- Invariants & assumptions: the caller decides when. The globe lab waits
+  until the carrier has stayed out of the band for a hold time, and the
+  carriers keep their shader program warm (`globe-warm-material.ts`),
+  because a release disposes every tile's material. Call it only for a
+  renderer that is not updated meanwhile. An update would mark its visible tiles used again
   and load them back.
 - Tests: `globe-tile-cache.test.ts`, on the library's real `LRUCache`:
   every tile unloaded past the floor, every dispose callback run, the

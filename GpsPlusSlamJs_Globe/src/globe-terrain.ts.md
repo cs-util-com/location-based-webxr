@@ -82,7 +82,8 @@
     `TerrariumMeshPlugin` on `url` (Terrarium encoded; `maxZoom` 12 by
     default), the imagery through `geographicOverlay`, and on every
     `load-model` the half-float heights and the lit copy; on
-    `dispose-model` the copy is freed. The caller adds `tiles.group` to
+    `dispose-model` the copy is retired (`globe-warm-material.ts`: the
+    last one stays alive, so the relief's program outlives a release). The caller adds `tiles.group` to
     its scene, sets the camera and resolution and calls `tiles.update()`.
     RangeError for an empty url or a height scale that is not finite and
     at least 0; Error if the library stops exporting the plugin (0.5.3

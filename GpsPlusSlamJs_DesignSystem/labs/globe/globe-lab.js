@@ -15,7 +15,11 @@
 import * as THREE from "three";
 import { GlobeControls, WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
-import { GLOBE_SURFACE, createGlobeSurface } from "/globe/globe-surface.js";
+import {
+  GLOBE_SURFACE,
+  createGlobeImagery,
+  createGlobeSurface,
+} from "/globe/globe-surface.js";
 import { creditsFor } from "/globe/globe-credits.js";
 import { GIBS_ACKNOWLEDGEMENT } from "/globe/globe-sources.js";
 import {
@@ -272,6 +276,10 @@ const PARAMS = {
   // 1 stops both carriers' tile updates (what is loaded stays, nothing
   // refines or unloads), so a smoke can step the share over the same tiles.
   bandFreeze: { fallback: 0, min: 0, max: 1 },
+  // How long (ms) a carrier must stay out of the band before its tile cache
+  // is released (frame-hitch review 2026-10-03-2017 H4): a zoom that wobbles
+  // over an edge never releases, so it never reloads or recompiles.
+  bandReleaseMs: { fallback: 5_000, min: 0, max: 60_000 },
   // globe-albedo's detail on the relief's tiles (the terrain lab's style B
   // high-pass, `globe-detail-region.js`): its weight, 0 off.
   detail: { fallback: GLOBE_ALBEDO.detail, min: 0, max: 1 },
@@ -1307,7 +1315,10 @@ async function start() {
           url: terrarium
             ? terrarium.TERRARIUM_URL_TEMPLATE
             : SYNTHETIC_HEIGHTS_URL,
-          imagery: globe.overlay,
+          // Its own overlay of the same imagery: an overlay's image cache is
+          // shared by its users, so releasing one carrier freed imagery the
+          // other was still composing.
+          imagery: createGlobeImagery(),
           template: globe.template,
           heightScale: 1,
         })
@@ -1332,8 +1343,15 @@ async function start() {
    * left the frame (review 2026-10-03-1835 major 4: outside the band the
    * inactive carrier's tiles are unloaded, not only left undrawn).
    */
-  let lastBandShare = 0;
   const released = { globe: 0, relief: 0 };
+  /**
+   * When each carrier left the band (performance.now(), null while it has
+   * pixels) and whether its cache has been released since.
+   */
+  const outOfBand = {
+    globe: { since: null, done: false, last: null },
+    relief: { since: null, done: false, last: null },
+  };
   /** The relief's share of the pixels this frame (the band's cross-fade). */
   let bandShare = terrain ? 1 : 0;
   /** The tiles the surface is mostly drawn with now: the relief's or the globe's. */
@@ -1670,12 +1688,36 @@ async function start() {
           lowM: Math.min(params.bandLow * 1000, highM - 1),
         });
       globe.surfaceUniforms.uCarrierShare.value = bandShare;
-      if (bandShare >= 1 && lastBandShare < 1) {
-        released.globe += releaseTileCache(globe.tiles.lruCache);
-      } else if (bandShare <= 0 && lastBandShare > 0) {
-        released.relief += releaseTileCache(terrain.tiles.lruCache);
+      // A carrier out of the band for `bandReleaseMs` has its cache
+      // released; a return before then cancels it. Not while frozen: the
+      // smokes step the share over the same tiles.
+      const frozen = params.bandFreeze === 1;
+      for (const [key, out, cache] of [
+        ["globe", bandShare >= 1, globe.tiles.lruCache],
+        ["relief", bandShare <= 0, terrain.tiles.lruCache],
+      ]) {
+        const o = outOfBand[key];
+        if (!out || frozen) {
+          if (!out) o.done = false;
+          o.since = null;
+        } else if (!o.done) {
+          o.since ??= now;
+          if (now - o.since >= params.bandReleaseMs) {
+            const t0 = performance.now();
+            const bytes = releaseTileCache(cache);
+            released[key] += bytes;
+            o.done = true;
+            // For the smokes: when the carrier left, when it was released,
+            // and how long the release itself took (its dispose burst).
+            o.last = {
+              leftAt: o.since,
+              releasedAt: now,
+              releaseMs: performance.now() - t0,
+              bytes,
+            };
+          }
+        }
       }
-      lastBandShare = bandShare;
       // The clearance every frame (one-scene plan §3.4; review 2026-10-03-1835
       // major 1): wherever the relief draws, the camera never comes closer
       // to the drawn ground under it than the clearance, whoever owns the
@@ -1702,7 +1744,6 @@ async function start() {
         }
       }
       globe.tiles.group.visible = bandShare < 1;
-      const frozen = params.bandFreeze === 1;
       if (bandShare < 1 && !frozen) globe.update(camera, renderer);
       terrain.tiles.group.visible = bandShare > 0;
       if (bandShare > 0 && !frozen) {
@@ -2011,6 +2052,10 @@ async function start() {
             cachedBytes: terrain.tiles.lruCache.cachedBytes,
             globeCachedBytes: globe.tiles.lruCache.cachedBytes,
             releasedBytes: { ...released },
+            lastRelease: {
+              globe: outOfBand.globe.last,
+              relief: outOfBand.relief.last,
+            },
             settled:
               terrain.tiles.loadProgress === 1 &&
               !terrain.tiles.downloadQueue.running &&

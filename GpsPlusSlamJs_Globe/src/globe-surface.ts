@@ -20,6 +20,7 @@ import {
   type GlobeSourceId,
 } from "./globe-sources.js";
 import { celestialToEcefQuaternion } from "./globe-stars.js";
+import { createMaterialRetirer } from "./globe-warm-material.js";
 import {
   applyGlobeSurface,
   createGlobeSurfaceUniforms,
@@ -200,11 +201,12 @@ export function litCopy(
 export function disposeLitMaterials(
   model: THREE.Object3D,
   owned: WeakSet<THREE.Material>,
+  retire: (material: THREE.Material) => void = (m) => m.dispose(),
 ): void {
   for (const mesh of tileMeshes(model)) {
     if (owned.has(mesh.material)) {
       owned.delete(mesh.material);
-      mesh.material.dispose();
+      retire(mesh.material);
     }
   }
 }
@@ -247,6 +249,21 @@ function globalMap(
 }
 
 /**
+ * A new overlay of the globe's imagery (the committed Blue Marble pyramid:
+ * `GLOBE_SURFACE.imageryUrl`, its projection and levels). Each carrier that
+ * draws it gets its own: an overlay's image cache is shared by every plugin
+ * that uses it, so releasing one carrier's tiles freed imagery the other was
+ * still composing (review 2026-10-03-1835 major 4 with the band's release).
+ */
+export function createGlobeImagery(): XYZTilesOverlay {
+  return new XYZTilesOverlay({
+    url: GLOBE_SURFACE.imageryUrl,
+    projection: GLOBE_SURFACE.overlayProjection,
+    levels: GLOBE_SURFACE.levels,
+  });
+}
+
+/**
  * The globe's surface. The caller adds `group` to its scene, points the
  * sun with `setSun` and calls `update` every frame; `dispose` frees the
  * tiles, the template and the maps. `loader` fetches the global maps (a
@@ -261,11 +278,7 @@ export function createGlobeSurface(
     levels: GLOBE_SURFACE.levels,
     applyOverlayTexture: true,
   };
-  const overlay = new XYZTilesOverlay({
-    url: GLOBE_SURFACE.imageryUrl,
-    projection: options.overlayProjection,
-    levels: options.levels,
-  });
+  const overlay = createGlobeImagery();
   const plugin = new GeneratedSurfacePlugin({
     overlay,
     applyOverlayTexture: options.applyOverlayTexture,
@@ -330,6 +343,9 @@ export function createGlobeSurface(
   };
   setSun(surfaceUniforms.uSunEcef.value.clone());
   const owned = new WeakSet<THREE.Material>();
+  // The last retired lit copy stays alive, so the globe's program survives
+  // a release of every tile (globe-warm-material.ts).
+  const retirer = createMaterialRetirer();
   let models = 0;
   let tileErrors = 0;
   tiles.addEventListener("load-model", ({ scene }) => {
@@ -337,7 +353,7 @@ export function createGlobeSurface(
     useLitMaterial(scene, template, owned);
   });
   tiles.addEventListener("dispose-model", ({ scene }) => {
-    disposeLitMaterials(scene, owned);
+    disposeLitMaterials(scene, owned, (m) => retirer.retire(m));
   });
   tiles.addEventListener("load-error", () => {
     tileErrors += 1;
@@ -394,6 +410,7 @@ export function createGlobeSurface(
     activeSources: () => GLOBE_SOURCES.map((s) => s.id),
     dispose() {
       tiles.dispose();
+      retirer.dispose();
       template.dispose();
       for (const map of Object.values(maps)) map.dispose();
       sun.dispose();

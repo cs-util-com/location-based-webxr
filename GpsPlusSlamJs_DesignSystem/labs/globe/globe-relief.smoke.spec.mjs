@@ -11,6 +11,11 @@
  * (round-5 §3.5's metric); the pitch is swept over the plan's 30-60
  * degrees. Heights are synthetic (generated in the page): nothing leaves
  * 127.0.0.1 (the city data is routed by the helper).
+ *
+ * These smokes measure the SETTLED frame (the relief's own queues idle):
+ * a steady state, not what a viewer sees while tiles still arrive in
+ * flight. The loading itself is measured elsewhere (the band's cost and
+ * the phone's requests).
  */
 import { expect, test } from "@playwright/test";
 
@@ -45,11 +50,17 @@ async function diveAndLand(page, context, hash) {
     null,
     { timeout: 120_000 },
   );
-  // Let the relief's tiles at the held altitude load.
+  // Let the relief's tiles at the held altitude load and settle (its own
+  // queues idle): a frame read while coarse tiles still stand in for fine
+  // ones measured the loading, not the relief (centre 0.19 degrees off,
+  // the detail's frames 12.8 levels apart).
   await page.waitForFunction(
-    () => window.__globeLab.state().relief?.visibleTiles > 0,
+    () => {
+      const r = window.__globeLab.state().relief;
+      return r?.visibleTiles > 0 && r.settled;
+    },
     null,
-    { timeout: 120_000 },
+    { timeout: 180_000 },
   );
   return errors;
 }
@@ -302,6 +313,11 @@ test("the band's cross-fade between the globe and the relief is continuous, and 
         });
       }
     }
+    // Frozen means nothing loads or unloads: both caches still hold tiles
+    // after the sweep (a release during the sweep emptied them once).
+    const after = await page.evaluate(() => window.__globeLab.state());
+    expect(after.relief.cachedBytes, `${altKm} km`).toBeGreaterThan(0);
+    expect(after.relief.globeCachedBytes, `${altKm} km`).toBeGreaterThan(0);
     const steps = frames.slice(1).map((f, i) => meanDiff(frames[i], f));
     const max = Math.max(...steps);
     worst.push(max);
@@ -323,42 +339,52 @@ test("the band's cross-fade between the globe and the relief is continuous, and 
 // WHY (one-scene plan §3.4; review 2026-10-03-1835 major 1): the clearance
 // once came from a single ray at the pin press, from orbit, where no relief
 // was loaded, so it was 0. Now every frame the camera is kept above the
-// drawn ground under it by the clearance. Held at 5 km over a 2 km+ ridge
-// of the synthetic heights (46.5 N 9.125 E, about 1.7-2.2 km, drawn at E 3
-// so 5-6.6 km): the hold must sit at least the clearance over the drawn
-// ground, which means the camera was lifted.
-test("the clearance holds every frame: a 5 km hold over a ridge drawn higher than it", async ({
-  page,
-  context,
-}) => {
-  test.setTimeout(300_000);
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation({ latitude: 46.5, longitude: 9.125 });
-  const errors = await bootGlobe(page, `${BASE}&handOverKm=5`);
-  await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => {
-      const s = window.__globeLab.state();
-      return (
-        s.phase === "landed" &&
-        s.pin.phase === "idle" &&
-        s.relief?.groundUnderCameraM !== null &&
-        s.relief?.visibleTiles > 0
-      );
-    },
-    null,
-    { timeout: 120_000 },
-  );
-  const s = await page.evaluate(() => window.__globeLab.state());
-  const ground = s.relief.groundUnderCameraM;
-  console.log(
-    `clearance at a 5 km hold: altitude ${(s.altitudeM / 1000).toFixed(2)} km, drawn ground under the camera ${(ground / 1000).toFixed(2)} km (E ${s.relief.heightScale}), lifted on ${s.relief.clearanceLifts} frames`,
-  );
-  expect(errors).toEqual([]);
-  expect(ground).toBeGreaterThan(5_000 - 300);
-  expect(s.altitudeM).toBeGreaterThanOrEqual(ground + 300 - 1);
-  expect(s.relief.clearanceLifts).toBeGreaterThan(0);
-});
+// drawn ground under it by the clearance. Held at 5 km across a ridge of
+// the synthetic heights (crest at 46.5 N 9.125 E, about 1.6-2.2 km, drawn at
+// E 3 so 4.8-6.6 km): the camera, 5 km south of the target at 45 degrees,
+// stands over the crest and about 2 km either side of it. At every point
+// the hold must sit at least the clearance over the drawn ground, and
+// wherever the ground comes within the clearance of the 5 km hold the
+// camera must have been lifted. Measured on the settled frame.
+for (const [label, lat] of [
+  ["over the crest", 46.545],
+  ["2 km north of the crest", 46.563],
+  ["2 km south of the crest", 46.527],
+]) {
+  test(`the clearance holds every frame: a 5 km hold ${label}`, async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(300_000);
+    await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+    await context.setGeolocation({ latitude: lat, longitude: 9.125 });
+    const errors = await bootGlobe(page, `${BASE}&handOverKm=5`);
+    await page.locator("#globe-pin").click();
+    await page.waitForFunction(
+      () => {
+        const st = window.__globeLab.state();
+        return (
+          st.phase === "landed" &&
+          st.pin.phase === "idle" &&
+          st.relief?.groundUnderCameraM !== null &&
+          st.relief?.visibleTiles > 0 &&
+          st.relief.settled
+        );
+      },
+      null,
+      { timeout: 180_000 },
+    );
+    const st = await page.evaluate(() => window.__globeLab.state());
+    const ground = st.relief.groundUnderCameraM;
+    const needsLift = Math.max(0, ground) + 300 > 5_000;
+    console.log(
+      `clearance at a 5 km hold ${label}: altitude ${(st.altitudeM / 1000).toFixed(2)} km, drawn ground under the camera ${(ground / 1000).toFixed(2)} km (E ${st.relief.heightScale}), lift needed ${needsLift}, lifted on ${st.relief.clearanceLifts} frames`,
+    );
+    expect(errors).toEqual([]);
+    expect(st.altitudeM).toBeGreaterThanOrEqual(Math.max(0, ground) + 300 - 1);
+    expect(st.relief.clearanceLifts > 0).toBe(needsLift);
+  });
+}
 
 // WHY (review 2026-10-03-1835 major 3): the dither is a screen pattern, so
 // a moving camera slides the ground under it and the fade could shimmer.
@@ -433,6 +459,9 @@ test("the band's fade does not shimmer under a moving camera", async ({
         await page.evaluate((g) => window.__globeLab.readPixels(g), grid),
       );
     }
+    const held = await page.evaluate(() => window.__globeLab.state());
+    expect(held.relief.cachedBytes, label).toBeGreaterThan(0);
+    expect(held.relief.globeCachedBytes, label).toBeGreaterThan(0);
     const steps = frames.slice(1).map((f, i) => meanDiff(frames[i], f));
     rows[label] = {
       max: Math.max(...steps),
@@ -554,4 +583,87 @@ test("a planted detail grid lands where it is placed: east of the target brighte
   expect(errors).toEqual([]);
   expect(up).toBeGreaterThanOrEqual(3);
   expect(drift).toBeLessThanOrEqual(0.5);
+});
+
+// WHY (frame-hitch review 2026-10-03-2017 H4): releasing a carrier's cache
+// at the very frame it leaves the band made a zoom that wobbles over an
+// edge unload, reload and recompile again and again. A carrier is released
+// only after it has stayed out of the band for `bandReleaseMs`. Five quick
+// excursions out of the band release nothing; a stay out releases no
+// sooner than the hold and at most one frame after it, timed in the page
+// (the frame that left the band to the frame that released), for holds of
+// 2, 5 and 10 s. Timed from the test, the release came a constant 2.6-2.8 s
+// after the hold, for every hold: the test's own latency (the hash, the
+// polling, frames of about 0.5 s under SwiftShader) and the release's
+// dispose burst, which is logged here for the frame-hitch plan (H4).
+test("a carrier's cache is released only after it stays out of the band", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(900_000);
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation(TARGET);
+  const base = `${BASE}&handOverKm=1550&detail=0`;
+  const errors = await bootGlobe(page, `${base}&bandShare=0.5`);
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return s.phase === "landed" && s.pin.phase === "idle";
+    },
+    null,
+    { timeout: 120_000 },
+  );
+  await settleBoth(page, "release hold, both at 0.5");
+  const releasedGlobe = () =>
+    page.evaluate(() => window.__globeLab.state().relief.releasedBytes.globe);
+  const setHash = (h) =>
+    page.evaluate((x) => {
+      location.hash = x;
+    }, h);
+  const at = (h) =>
+    page.waitForFunction((x) => window.__globeLab.state().appliedHash === x, h);
+  // Five excursions out of the band (share 1), each under a second.
+  for (let i = 0; i < 5; i++) {
+    await setHash(`${base}&bandShare=1&bandReleaseMs=5000`);
+    await at(`${base}&bandShare=1&bandReleaseMs=5000`);
+    await setHash(`${base}&bandShare=0.5&bandReleaseMs=5000`);
+    await at(`${base}&bandShare=0.5&bandReleaseMs=5000`);
+  }
+  const afterWobble = await releasedGlobe();
+  const rows = [];
+  for (const holdMs of [2_000, 5_000, 10_000]) {
+    // Back in the band, reloading, then out for good.
+    await setHash(`${base}&bandShare=0.5&bandReleaseMs=${holdMs}`);
+    await settleBoth(page, `release hold ${holdMs} ms, back at 0.5`);
+    const before = await releasedGlobe();
+    await setHash(`${base}&bandShare=1&bandReleaseMs=${holdMs}`);
+    await page.waitForFunction(
+      (b) => window.__globeLab.state().relief.releasedBytes.globe > b,
+      before,
+      { timeout: holdMs + 30_000 },
+    );
+    const last = await page.evaluate(
+      () => window.__globeLab.state().relief.lastRelease.globe,
+    );
+    const frameMs =
+      (await page.evaluate(() => window.__globeLab.timeFrames(5))) / 5;
+    rows.push({
+      holdMs,
+      took: last.releasedAt - last.leftAt,
+      releaseMs: last.releaseMs,
+      bytes: last.bytes,
+      frameMs,
+    });
+  }
+  console.log(
+    `release hold: after five excursions under a second, released ${afterWobble} bytes; ${rows.map((r) => `hold ${r.holdMs} ms released ${r.took.toFixed(0)} ms after leaving (a frame ${r.frameMs.toFixed(0)} ms), the release took ${r.releaseMs.toFixed(0)} ms for ${(r.bytes / 2 ** 20).toFixed(1)} MiB`).join(", ")}`,
+  );
+  expect(errors).toEqual([]);
+  expect(afterWobble).toBe(0);
+  for (const r of rows) {
+    expect(r.took).toBeGreaterThanOrEqual(r.holdMs);
+    // One frame after the hold at most, with the frame's own spread.
+    expect(r.took).toBeLessThan(r.holdMs + 2 * r.frameMs);
+  }
 });

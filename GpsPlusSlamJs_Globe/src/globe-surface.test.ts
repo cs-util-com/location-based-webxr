@@ -19,6 +19,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   GLOBE_SURFACE,
+  createGlobeImagery,
   createGlobeSurface,
   disposeLitMaterials,
   litCopy,
@@ -62,6 +63,35 @@ function stubLoader(): {
     },
   };
 }
+
+describe("createGlobeImagery", () => {
+  // Why (review 2026-10-03-1835 major 4 with the release): one imagery
+  // overlay shared by the globe's tiles and the relief's tiles let a
+  // release of one carrier free imagery the other was still composing
+  // ("drawImage: the image source is detached", in the phone and planted
+  // smokes). Each carrier gets its own overlay of the SAME imagery: same
+  // url, projection and levels.
+  it("makes a new overlay of the globe's imagery on every call", () => {
+    const a = createGlobeImagery();
+    const b = createGlobeImagery();
+    expect(a).not.toBe(b);
+    const sourceOf = (o: unknown) =>
+      (
+        o as {
+          imageSource: { url: string; levels: number; projection: string };
+        }
+      ).imageSource;
+    for (const o of [a, b]) {
+      expect(sourceOf(o).url).toBe(GLOBE_SURFACE.imageryUrl);
+      expect(sourceOf(o).levels).toBe(GLOBE_SURFACE.levels);
+      expect(sourceOf(o).projection).toBe(GLOBE_SURFACE.overlayProjection);
+    }
+    const globe = createGlobeSurface(stubLoader());
+    expect(globe.overlay).not.toBe(a);
+    expect(sourceOf(globe.overlay).url).toBe(GLOBE_SURFACE.imageryUrl);
+    globe.dispose();
+  });
+});
 
 describe("createGlobeSurface", () => {
   // Why (review 2026-10-03-1835 minor 10 and nit 3): a page with a
@@ -443,6 +473,21 @@ describe("disposeLitMaterials", () => {
     disposeLitMaterials(model, owned);
     for (const free of frees) expect(free).toHaveBeenCalledTimes(1);
     expect(freeMap).not.toHaveBeenCalled();
+  });
+
+  // Why (review 2026-10-03-2017 H4): the surface hands its retired lit
+  // copies to a retirer that keeps the latest alive, so the globe's
+  // program survives a release of all its tiles.
+  it("hands the lit copies to a retirer when given one", () => {
+    const model = tileModel([new THREE.Texture(), new THREE.Texture()]);
+    const owned = new WeakSet<THREE.Material>();
+    useLitMaterial(model, new THREE.MeshStandardMaterial(), owned);
+    const lit = meshes(model).map((m) => m.material as THREE.Material);
+    const frees = lit.map((m) => vi.spyOn(m, "dispose"));
+    const retired: THREE.Material[] = [];
+    disposeLitMaterials(model, owned, (m) => retired.push(m));
+    expect(retired).toEqual(lit);
+    for (const free of frees) expect(free).not.toHaveBeenCalled();
   });
 
   it("leaves materials it did not make alone", () => {
