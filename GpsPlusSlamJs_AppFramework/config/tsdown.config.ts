@@ -217,6 +217,10 @@ const entryFiles = [
   // archive actually carries. Advertised by the wildcard export and
   // documented, but never built, so no sibling could import it.
   'src/test-utils/zip-central-directory.ts',
+  // The integrated SLAM drift and GPS noise models the Recorder's
+  // left-behind sweep measured D28 with, shared with the Tour Viewer's
+  // authoring-settle sweep so both measure the same drift.
+  'src/test-utils/integrated-slam-drift.ts',
 
   // types/
   'src/types/index.ts',
