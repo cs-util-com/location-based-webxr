@@ -610,6 +610,12 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
     expect(final, "and what to do instead").toMatch(/restart AR/);
   });
 
+  it("names an offline phone as offline (K0)", () => {
+    expect(
+      codeTourLine({ kind: "failed", cause: "offline", retrying: true }),
+    ).toMatch(/offline/);
+  });
+
   it("names a too-large tour as too large (K0)", () => {
     expect(
       codeTourLine({ kind: "failed", cause: "too-large", retrying: false }),
@@ -626,6 +632,7 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
       "corrupt",
       "unusable-link",
       "too-large",
+      "offline",
       "other",
     ] as const;
     for (const cause of causes) {

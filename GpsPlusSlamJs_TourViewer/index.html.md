@@ -20,7 +20,9 @@ screen. Everything marked `.creator-only` is hidden for a visitor
      K0; a file has no link, so its code is printed once the zip is
      hosted). The picker itself (`#file-input`) and the line naming a
      file-opened tour (`#file-status`) sit under `#error`, outside the
-     wizard, so a visitor reaches them too.
+     wizard, so a visitor reaches them too - with `#file-advice`, the
+     "Open the downloaded file" button shown under a "host blocks
+     browsers" error.
   2. **Print** (`#print-panel`): the printed code, on the page and as a
      PDF of N numbered posters (`#print-count`, `#print-paper`,
      `#print-pdf`) - the print dialog's "fit to page" silently rescales,
@@ -64,7 +66,8 @@ Behaviour lives in the wiring modules composed by `src/main.ts` (see
 
 The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `starter-zip`, `link-input`, `open-button`, `open-file-button`,
-`file-input`, `file-status`, `storage-panel`,
+`file-input`, `file-status`, `file-advice`, `open-file-advice`,
+`storage-panel`,
 `clear-cache`, `print-panel` (owns `print-url-ask`, `print-url`,
 `print-url-shown`, `author-size`, `author-c`, `print-generate`,
 `print-info`, `print-canvas`, `print-button`, `print-url-out`,

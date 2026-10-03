@@ -15,7 +15,10 @@ which serves ranges normally but HOLDS a range-less GET (the background warm
 download) while the warm gate is closed (`/warm-gate?state=hold` /
 `?state=release`), the deterministic in-flight-warm window the
 clear-cache-during-warm spec needs. `release` is idempotent and answers
-already-queued requests, so call ordering cannot deadlock. And
+already-queued requests, so call ordering cannot deadlock.
+`/no-cors/tour.zip` serves the archive WITHOUT CORS headers - a host that
+blocks browsers, for the "download the file and open it here" spec (tour
+kit plan K0). And
 `/api/drive-proxy?id=…` - the standard zip with ranges, on the Drive
 proxy's own path so the app treats it as a Drive tour without a Google host
 (Drive replace plan §5 #12): `id=e2e-drive` sends `content-disposition`

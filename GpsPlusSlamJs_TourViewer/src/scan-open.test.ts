@@ -229,6 +229,23 @@ describe("a failed open", () => {
     expect(s.opened, "cors is retried, and the cap holds").toHaveLength(5);
   });
 
+  it("retries a phone that was offline (K0)", async () => {
+    // Tour kit plan K0 split `offline` out of `cors`: a phone back online
+    // must get the same retry a blocked host did.
+    const s = setup({
+      outcomes: [{ kind: "failed", cause: "offline" }, { kind: "opened" }],
+    });
+    await s.see(codeOf(A));
+    expect(s.scan.status(codeOf(A))).toEqual({
+      kind: "failed",
+      cause: "offline",
+      retrying: true,
+    });
+    s.advance(10_000);
+    await s.see(codeOf(A));
+    expect(s.opened).toHaveLength(2);
+  });
+
   it("does not retry a file that is there but unreadable", async () => {
     const s = setup({ outcomes: [{ kind: "failed", cause: "corrupt" }] });
     await s.see(codeOf(A));

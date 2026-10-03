@@ -1,15 +1,18 @@
 /**
- * "Open a file" (tour kit plan K0, K-D1).
+ * "Open a file" and the advice that leads to it (tour kit plan K0, K-D1).
  *
  * Why these tests matter: a link only opens when its host lets browsers
- * read the file; a zip on the device is the way around every other host.
- * These drive the real wiring (`wireArchiveOpen`) over stand-in elements
- * and a mocked session layer: the async-UI rule (the file button goes to
- * "Opening…" and comes back, on success and on failure), and the file
- * tour's own identity (its content key, never a link) reaching the draft
- * and the print step.
+ * read the file; for every other host the page now says "download the file
+ * and open it here" and offers the button right under the error. These
+ * drive the real wiring (`wireArchiveOpen`) over stand-in elements and a
+ * mocked session layer: the async-UI rule (every open button goes to
+ * "Opening…" and comes back, on success and on failure), the advice shown
+ * for a host that blocks browsers and NOT for an offline phone, and the
+ * file tour's own identity (its content key, never a link) reaching the
+ * draft and the print step.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { OpenRemoteArchiveError } from "gps-plus-slam-app-framework/storage";
 
 import { wireArchiveOpen, type ArchiveOpenDom } from "./archive-open.js";
 import {
@@ -121,10 +124,11 @@ function pick(dom: ReturnType<typeof wire>["dom"], file: File): void {
 }
 
 describe("open a file", () => {
-  it("the file button opens the picker", () => {
+  it("both file buttons open the one picker", () => {
     const { dom } = wire();
     dom.openFileButton.fire("click");
-    expect(dom.fileInput.clicks).toBe(1);
+    dom.openFileAdviceButton.fire("click");
+    expect(dom.fileInput.clicks).toBe(2);
   });
 
   it("opens the picked file: in progress, then the file named, its key handed on", async () => {
@@ -166,6 +170,10 @@ describe("open a file", () => {
     );
     expect(dom.openFileButton.disabled).toBe(false);
     expect(dom.openFileButton.textContent).toBe("Open a file");
+    expect(dom.openFileAdviceButton.textContent).toBe(
+      "Open the downloaded file",
+    );
+    expect(dom.fileAdvice.hidden).toBe(true);
   });
 
   it("does nothing when the picker closes without a file", () => {
@@ -174,5 +182,43 @@ describe("open a file", () => {
     dom.fileInput.fire("change");
     expect(mocks.openTourFile).not.toHaveBeenCalled();
     expect(dom.openFileButton.disabled).toBe(false);
+  });
+});
+
+describe("the advice after a failed link", () => {
+  async function failWith(cause: "cors" | "offline" | "missing") {
+    mocks.openTourSession.mockRejectedValueOnce(
+      new OpenRemoteArchiveError("x", cause),
+    );
+    const env = wire();
+    env.dom.linkInput.value = "https://blocked.example/tour.zip";
+    env.dom.form.fire("submit");
+    await vi.waitFor(() => expect(env.dom.errorBox.textContent).not.toBe(""));
+    return env;
+  }
+
+  it("a host that blocks browsers: download-and-open advice, with its button shown", async () => {
+    const { dom } = await failWith("cors");
+    expect(dom.errorBox.textContent).toContain("Download the file");
+    expect(dom.fileAdvice.hidden).toBe(false);
+  });
+
+  it("offline: says so, and offers no download", async () => {
+    const { dom } = await failWith("offline");
+    expect(dom.errorBox.textContent).toContain("offline");
+    expect(dom.fileAdvice.hidden).toBe(true);
+  });
+
+  it("a missing file: no download advice either", async () => {
+    const { dom } = await failWith("missing");
+    expect(dom.fileAdvice.hidden).toBe(true);
+  });
+
+  it("the advice goes away when the next open starts", async () => {
+    const { dom } = await failWith("cors");
+    expect(dom.fileAdvice.hidden).toBe(false);
+    mocks.openTourFile.mockReturnValueOnce(new Promise(() => undefined));
+    pick(dom, new File(["zip"], "tour.zip"));
+    await vi.waitFor(() => expect(dom.fileAdvice.hidden).toBe(true));
   });
 });

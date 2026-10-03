@@ -76,9 +76,14 @@ export interface ScanOpen {
 }
 
 /** Causes a creator can fix while standing at the poster: a file uploaded
- *  or shared a moment later, a host that let the browser in on retry.
- *  Anything else would fail the same way every time. */
-const RETRIED_CAUSES: ReadonlySet<string> = new Set(["missing", "cors"]);
+ *  or shared a moment later, a host that let the browser in on retry, a
+ *  phone that is back online (tour kit plan K0 split `offline` out of
+ *  `cors`). Anything else would fail the same way every time. */
+const RETRIED_CAUSES: ReadonlySet<string> = new Set([
+  "missing",
+  "cors",
+  "offline",
+]);
 const FIRST_RETRY_MS = 10_000;
 /** A retry costs one small request; a creator who just fixed the upload
  *  should not wait minutes at the poster (milestone review #10). */

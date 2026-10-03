@@ -585,8 +585,8 @@
                 </form>
                 <!-- "Open a file" (tour kit plan K0): a zip on this device,
                      for a host that does not let browsers read its files.
-                     The picker is #file-input, outside the wizard, so a
-                     visitor can reach it too. -->
+                     The picker is #file-input, outside the wizard, which
+                     the visitor's advice button uses too. -->
                 <p class="step-copy hint--dim">
                   Or open a tour zip from this device. A file has no link, so
                   its code can be printed only once the zip is hosted.
@@ -803,8 +803,19 @@
         </li>
       </ol>
       <div id="error" class="prose" role="alert" data-testid="error"></div>
-      <!-- Both modes (tour kit plan K0): the line naming a file-opened tour,
-           and the one file picker the "open a file" button clicks. -->
+      <!-- Both modes (tour kit plan K0): the advice's button under a "host
+           blocks browsers" error, the line naming a file-opened tour, and
+           the one file picker both "open a file" buttons click. -->
+      <div id="file-advice" hidden data-testid="file-advice">
+        <button
+          type="button"
+          id="open-file-advice"
+          class="btn"
+          data-testid="open-file-advice"
+        >
+          Open the downloaded file
+        </button>
+      </div>
       <p
         id="file-status"
         class="prose hint--dim"

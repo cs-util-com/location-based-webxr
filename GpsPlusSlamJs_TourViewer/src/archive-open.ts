@@ -14,7 +14,11 @@ import {
 import { resolveQrPayload } from "gps-plus-slam-app-framework/utils/qr-payload/qr-launch-dispatch";
 
 import { DEFAULT_ASSET_PREFIX } from "./code-tour.js";
-import { describeOpenError } from "./open-errors.js";
+import {
+  describeOpenError,
+  OPEN_FILE_ADVICE_LABEL,
+  offersFileOpen,
+} from "./open-errors.js";
 import { toStatsView } from "./stats-view.js";
 import { clearCacheLabel } from "./tour-flow.js";
 import {
@@ -53,8 +57,12 @@ export interface ArchiveOpenDom {
   openButton: HTMLButtonElement;
   /** Step 1's "Open a file" (creator page). */
   openFileButton: HTMLButtonElement;
-  /** The one hidden `<input type="file">` the file button clicks. */
+  /** The one hidden `<input type="file">` both file buttons click. */
   fileInput: HTMLInputElement;
+  /** Under the error box, both modes: shown with the "download the file and
+   *  open it here" advice for a host that blocks browsers (K0). */
+  fileAdvice: HTMLElement;
+  openFileAdviceButton: HTMLButtonElement;
   /** Names the file a tour was opened from (both modes). */
   fileStatus: HTMLElement;
   statsPanel: HTMLDivElement;
@@ -242,6 +250,7 @@ export function wireArchiveOpen(deps: {
   const openButtons = (): { button: HTMLButtonElement; idle: string }[] => [
     { button: dom.openButton, idle: OPEN_BUTTON_LABEL },
     { button: dom.openFileButton, idle: OPEN_FILE_LABEL },
+    { button: dom.openFileAdviceButton, idle: OPEN_FILE_ADVICE_LABEL },
   ];
 
   /** The session a source opens; a file has its own reader (no network,
@@ -292,6 +301,7 @@ export function wireArchiveOpen(deps: {
     opening = true;
     dom.errorBox.textContent = "";
     dom.fileStatus.hidden = true;
+    dom.fileAdvice.hidden = true;
     // Async-UI rule: the in-progress state engages BEFORE the first await —
     // teardown of a previous session is async, and a second submission
     // landing in that window used to race the button state (PR #357 review).
@@ -393,6 +403,10 @@ export function wireArchiveOpen(deps: {
         err,
         source.kind === "link" ? source.url : undefined,
       );
+      // A host that blocks browsers: the advice says "download the file
+      // and open it here", and its button is right below it (K0). Offline,
+      // missing, broken or too large: a download would not help.
+      dom.fileAdvice.hidden = !offersFileOpen(cause);
       // The scan-to-open retry policy reads the cause (plan §9 #7).
       return { kind: "failed", cause };
     } finally {
@@ -432,12 +446,14 @@ export function wireArchiveOpen(deps: {
     if (url !== "") void openUrl(url);
   });
 
-  // "Open a file" (tour kit plan K0): the button opens the picker; the
-  // pick opens the tour. The value is cleared so picking the SAME file
+  // "Open a file" (tour kit plan K0): both buttons open the one picker;
+  // the pick opens the tour. The value is cleared so picking the SAME file
   // again (after a fix, or a failed open) still fires `change`.
-  dom.openFileButton.addEventListener("click", () => {
-    dom.fileInput.click();
-  });
+  for (const button of [dom.openFileButton, dom.openFileAdviceButton]) {
+    button.addEventListener("click", () => {
+      dom.fileInput.click();
+    });
+  }
   dom.fileInput.addEventListener("change", () => {
     const file = dom.fileInput.files?.[0];
     dom.fileInput.value = "";

@@ -11,7 +11,12 @@ DOM glue, its own module since the flows plan M6.
 ## Public API
 
 - `wireArchiveOpen({ ctx, dom, cacheStore, corsProxyBaseUrl, hooks }): ArchiveOpen`
-  - `ArchiveOpenDom { form; linkInput; openButton; openFileButton; fileInput; fileStatus; statsPanel; statsHeadline; statsDetail; errorBox; gallery; storagePanel; clearCacheButton }`
+  - `ArchiveOpenDom { form; linkInput; openButton; openFileButton; fileInput; fileAdvice; openFileAdviceButton; fileStatus; statsPanel; statsHeadline; statsDetail; errorBox; gallery; storagePanel; clearCacheButton }`
+    - **The advice (tour kit plan K0).** A failed open whose cause
+      `offersFileOpen` (a host that blocks browsers, `cors`) shows
+      `fileAdvice` - its button opens the same picker - under the error
+      that says "download the file and open it here"; every new open hides
+      it again. `offline` gets its own sentence and no button.
     - **Open a file (tour kit plan K0).** `openFileButton` clicks the
       hidden `fileInput`; a pick runs the same open path as a link with a
       `file` source (`openTourFile`). The input's value is cleared on

@@ -6,11 +6,14 @@ import { expect, test } from "@playwright/test";
  * its host lets browsers read the file. "Open a file" is the way around a
  * host that does not: the tour is downloaded, then opened from the device.
  * These specs drive the REAL file chooser (Playwright's `filechooser`
- * event) and check the async-UI states on success and on failure.
+ * event), check the async-UI states on success and on failure, and check
+ * that a host that blocks browsers - and only such a host, not an offline
+ * phone - gets the "download the file" advice with its own button.
  */
 
 const ARCHIVE_HOST = "http://127.0.0.1:5197";
 const RANGES_URL = `${ARCHIVE_HOST}/ranges-ok/tour.zip`;
+const NO_CORS_URL = `${ARCHIVE_HOST}/no-cors/tour.zip`;
 
 /**
  * The e2e tour's bytes, as a file a visitor downloaded.
@@ -64,4 +67,43 @@ test("a file that is not a zip reports a plain error and restores the button", a
   });
   await expect(page.getByTestId("open-file-button")).toHaveText("Open a file");
   await expect(page.getByTestId("open-file-button")).toBeEnabled();
+});
+
+test("a host that blocks browsers gets the download advice, and its button opens the file", async ({
+  page,
+  request,
+}) => {
+  const file = await tourFile(request);
+  await page.goto(`/?nocache=1&qr=${encodeURIComponent(NO_CORS_URL)}`);
+  await expect(page.getByTestId("error")).toContainText("Download the file", {
+    timeout: 15000,
+  });
+  const advice = page.getByTestId("open-file-advice");
+  await expect(advice).toBeVisible();
+
+  const chooser = page.waitForEvent("filechooser");
+  await advice.click();
+  await (await chooser).setFiles(file);
+  // The visitor's tour opened from the file: named, and the advice and the
+  // error are gone.
+  await expect(page.getByTestId("file-status")).toContainText("tour (1).zip", {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("error")).toHaveText("");
+  await expect(advice).toBeHidden();
+});
+
+test("an offline phone is told it is offline, not to download the file", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/?nocache=1");
+  await context.setOffline(true);
+  await page.getByTestId("link-input").fill(RANGES_URL);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("error")).toContainText("offline", {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId("open-file-advice")).toBeHidden();
+  await context.setOffline(false);
 });

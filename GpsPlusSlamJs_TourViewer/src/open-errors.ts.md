@@ -9,13 +9,21 @@ the image-plane loader and the AR entry (flows plan M6 pulled it out of
 ## Public API
 
 - `describeOpenError(err, url?): string` - one sentence per
-  `OpenRemoteArchiveError.rejectCause` (`missing`, `corrupt`, `cors`,
+  `OpenRemoteArchiveError.rejectCause` (`missing`, `corrupt`, `cors` - with
+  the advice "download the file to this device, then tap
+  `OPEN_FILE_ADVICE_LABEL` below", tour kit plan K0 - `offline` - "this
+  device is offline, and this tour is not saved on it", K0 -
   `too-large` - the carried `ArchiveLimitError`'s own sentence, which names
   the limit, tour kit plan K0); an `ArchiveLimitError` from the zip caps
   passes its plain message through; any
   other cause reads as Drive's refusal when `url` is a Drive URL, else the
   generic "cannot be opened as an archive"; a non-probe error passes its
   message through.
+- `offersFileOpen(cause): boolean` - true for `cors` only: the page shows
+  the "Open the downloaded file" button under the error. Offline a
+  download is impossible too; a missing, broken or too-large file is not
+  fixed by downloading it. `OPEN_FILE_ADVICE_LABEL` is that button's label,
+  named in the advice so the two cannot drift.
 - `isDriveUrl(url, base = location.href): boolean` - the share page, the
   raw download host, the site worker's `/api/drive-proxy` route, or the
   Drive API form (`www.googleapis.com/drive/…`) that a configured
@@ -28,6 +36,14 @@ the image-plane loader and the AR entry (flows plan M6 pulled it out of
 - The Drive-aware default branch exists because a refused Drive file used
   to read as the generic archive error and hide the cause (drive-proxy plan
   Rev 2, review finding 12).
+- `cors` versus `offline` (tour kit plan K0): both are a fetch that failed
+  before any HTTP status, which a browser reports identically. The
+  framework tries the saved copy FIRST and calls it `offline` only when
+  `navigator.onLine` is false (reliable in that direction; `true` is not -
+  a captive portal is "online"), so the download advice is only ever shown
+  without a saved copy and with a network the browser believes in. A
+  dropped connection while "online" still reads as `cors`; the wording
+  names that possibility.
 - Pure: no DOM, no fetch.
 
 ## Examples

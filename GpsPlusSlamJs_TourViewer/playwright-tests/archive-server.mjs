@@ -20,6 +20,9 @@
  *   (the background warm download) is HELD while the warm gate is closed
  *   (`/warm-gate?state=hold` / `?state=release`) — the deterministic
  *   in-flight-warm window the clear-cache-during-warm spec needs.
+ * - `/no-cors/tour.zip` - the archive WITHOUT CORS headers: a host that
+ *   blocks browsers, which the "download the file and open it here"
+ *   advice exists for (tour kit plan K0).
  *
  * CORS: the app origin (the vite port) differs from this server's,
  * and `Range` is not a CORS-safelisted request header, so the preflight
@@ -332,6 +335,14 @@ createServer((req, res) => {
   }
   if (url.pathname === "/warm-gate") {
     handleWarmGate(res, url);
+    return;
+  }
+  if (url.pathname === "/no-cors/tour.zip") {
+    // A host that blocks browsers (tour kit plan K0): the archive is there,
+    // but no answer carries CORS headers, so the browser refuses the read.
+    res
+      .writeHead(200, { "content-length": String(zipBytes.length) })
+      .end(req.method === "HEAD" ? undefined : Buffer.from(zipBytes));
     return;
   }
   if (url.pathname === "/ranges-ok/recording-tour.zip") {

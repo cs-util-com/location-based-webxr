@@ -4,7 +4,12 @@ import {
   OpenRemoteArchiveError,
 } from "gps-plus-slam-app-framework/storage";
 
-import { describeOpenError, isDriveUrl } from "./open-errors.js";
+import {
+  describeOpenError,
+  isDriveUrl,
+  OPEN_FILE_ADVICE_LABEL,
+  offersFileOpen,
+} from "./open-errors.js";
 
 /**
  * Why these tests matter: the open error is the only thing a creator sees
@@ -27,6 +32,41 @@ describe("describeOpenError", () => {
     ).toContain("refused the browser access");
   });
 
+  // Why (tour kit plan K0, K-D1): a host that blocks browsers and a dead
+  // network fail the same way in a browser, and only the first is helped by
+  // "download the file and open it here". The framework splits off
+  // `offline` when the browser knows it is offline (after any saved copy
+  // was tried); the page must word the two apart.
+  it("advises downloading the file for a host that blocks browsers, naming the button", () => {
+    const text = describeOpenError(new OpenRemoteArchiveError("x", "cors"));
+    expect(text).toContain("Download the file");
+    expect(text).toContain(`"${OPEN_FILE_ADVICE_LABEL}"`);
+  });
+
+  it("tells an offline phone it is offline, without the download advice", () => {
+    const text = describeOpenError(new OpenRemoteArchiveError("x", "offline"));
+    expect(text).toMatch(/offline/);
+    expect(text).not.toContain("Download the file");
+  });
+});
+
+describe("offersFileOpen", () => {
+  it("offers the file button for a host that blocks browsers only", () => {
+    expect(offersFileOpen("cors")).toBe(true);
+    for (const cause of [
+      "offline",
+      "missing",
+      "corrupt",
+      "too-large",
+      "unusable-link",
+      "other",
+    ]) {
+      expect(offersFileOpen(cause), cause).toBe(false);
+    }
+  });
+});
+
+describe("describeOpenError (the rest)", () => {
   it("explains a refused Drive link as Drive's, and any other host generically", () => {
     const refused = new OpenRemoteArchiveError("x", "unusable-link");
     expect(
