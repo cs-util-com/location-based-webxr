@@ -30,7 +30,9 @@ TourPin | TourPhoto` (a discriminated union on `kind`, so a renderer
   manifest, and the content file's stem (`tour-archive.ts`).
 - A `pin` needs a non-empty `label`; a `photo` needs `image` equal to
   `tourContentEntryName(id, ext)` for ITS OWN id (`content/<id>.<ext>`;
-  any other string rejects) and positive integer `imageWidth`/
+  any other string rejects) with an allowlisted IMAGE extension (no SVG,
+  no model or media; tour kit plan K0, checked before the name is built so
+  the error is the manifest's own) and positive integer `imageWidth`/
   `imageHeight` (the plane's aspect without decoding), and may carry a
   label. `createdAtIso` must parse as a date.
 - `version` must equal `TOUR_MANIFEST_VERSION`: a later reader keys a

@@ -40,6 +40,10 @@ import {
   parseTourManifest,
   type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  checkGlbInert,
+  tourMediaTypeOfEntry,
+} from "gps-plus-slam-app-framework/ar/tour-media";
 
 import { fileNameFromContentDisposition } from "./content-disposition.js";
 
@@ -243,17 +247,6 @@ function cut(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-const IMAGE_EXTENSION = /\.(jpe?g|png|webp|gif|avif)$/i;
-
-const MIME_BY_EXTENSION: Record<string, string> = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-  gif: "image/gif",
-  avif: "image/avif",
-};
-
 export async function openTourSession(
   url: string,
   options: OpenTourOptions = {},
@@ -378,7 +371,7 @@ async function buildSession(
     entries.push({
       filename: entry.filename,
       size: entry.uncompressedSize,
-      isImage: IMAGE_EXTENSION.test(entry.filename),
+      isImage: tourMediaTypeOfEntry(entry.filename)?.kind === "image",
     });
   }
   // `includes`, not `startsWith`: the framework's parser tolerates a
@@ -407,11 +400,12 @@ async function buildSession(
           new Error(`tour archive has no readable entry "${filename}"`),
         );
       }
-      const extension = filename.split(".").at(-1)?.toLowerCase() ?? "";
+      // The media allowlist types the Blob (tour kit plan K0); anything
+      // else is plain bytes, never a type a browser renders as a page.
       return readZipEntryBlob(
         entry,
         budget,
-        MIME_BY_EXTENSION[extension] ?? "application/octet-stream",
+        tourMediaTypeOfEntry(filename)?.mime ?? "application/octet-stream",
       );
     },
     loadQrLevels: () =>
@@ -460,7 +454,25 @@ async function buildSession(
         return null;
       }
     },
-    loadContentEntry: (image) => session.loadEntry(`${manifestWrap}${image}`),
+    loadContentEntry: async (image) => {
+      // Placed content is ALLOWLISTED media only (tour kit plan K0, review
+      // D12): a tour from any link must stay inert on this origin.
+      const type = tourMediaTypeOfEntry(image);
+      if (type === null) {
+        throw new Error(
+          `"${image}" is not a media type a tour may carry (images, .glb models, audio and video only).`,
+        );
+      }
+      const blob = await session.loadEntry(`${manifestWrap}${image}`);
+      if (type.kind !== "model") return blob;
+      const check = checkGlbInert(new Uint8Array(await blob.arrayBuffer()));
+      if (!check.ok) {
+        throw new Error(
+          `The 3D model "${image}" cannot be shown: ${check.reason}.`,
+        );
+      }
+      return blob;
+    },
     loadTourManifest: () =>
       readTourManifestFromEntries(
         [...byName.keys()],

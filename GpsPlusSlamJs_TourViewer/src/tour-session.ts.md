@@ -81,7 +81,14 @@ loading with MIME types, and the poisoned-cache recovery loop.
 - `close()` disposes the archive (aborting any warm download) and closes the
   zip reader.
 - Directory entries are dropped from `entries`; images are recognized by
-  extension (jpg/jpeg/png/webp/gif/avif).
+  extension (jpg/jpeg/png/webp/gif/avif), through the framework's media
+  allowlist (`ar/tour-media.ts`).
+- **The media allowlist (tour kit plan K0, review D12).** A Blob gets the
+  allowlisted MIME type of its entry, or `application/octet-stream` -
+  never a type a browser renders as a page. `loadContentEntry` refuses any
+  name outside the allowlist (an SVG in `content/` included, even when the
+  zip holds one) and a `.glb` that fails `checkGlbInert` (an outside URI, a
+  decoder extension), with a plain-words error.
 - **The zip-bomb caps (tour kit plan K0, K-D1, review F1).** A tour comes
   from any link (or file), so it is read as untrusted input: the open
   carries the transport cap (`maxArchiveBytes`, cause `'too-large'`), the
@@ -110,4 +117,7 @@ live stats feed, unknown-entry rejection, the poisoned-cache evict-and-retry,
 and the broken-remote-archive propagate case; "the zip-bomb caps (K0)" -
 the entry-count refusal, the text cap on `tour.json`, a deflated content
 bomb stopped with the tour still open, the shared total (a re-read free),
-and a level over the text cap degrading to no level.
+and a level over the text cap degrading to no level; "the media allowlist
+(K0)" - an SVG content entry refused and never an image, a self-contained
+`.glb` served as a model while one with an outside buffer URI is refused,
+and Blob types from the allowlist (plain bytes otherwise).

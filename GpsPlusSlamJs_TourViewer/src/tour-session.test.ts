@@ -758,3 +758,87 @@ describe("the zip-bomb caps (K0)", () => {
     await session.close();
   });
 });
+
+/**
+ * Why these tests matter (tour kit plan K0, review D12): placed content is
+ * read through `loadContentEntry`, so this is where the media allowlist
+ * holds for a tour from any link - an SVG (which can carry script) is
+ * never handed to the page even when the zip contains one, and a `.glb`
+ * that would fetch from outside or need a downloaded decoder is refused.
+ */
+describe("the media allowlist (K0)", () => {
+  function glbWith(json: unknown): Uint8Array {
+    let text = JSON.stringify(json);
+    while (text.length % 4 !== 0) text += " ";
+    const body = new TextEncoder().encode(text);
+    const out = new Uint8Array(20 + body.length);
+    const view = new DataView(out.buffer);
+    view.setUint32(0, 0x46546c67, true);
+    view.setUint32(4, 2, true);
+    view.setUint32(8, out.length, true);
+    view.setUint32(12, body.length, true);
+    view.setUint32(16, 0x4e4f534a, true);
+    out.set(body, 20);
+    return out;
+  }
+
+  async function sessionOf(files: Record<string, string | Uint8Array>) {
+    const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
+    for (const [name, data] of Object.entries(files)) {
+      await writer.add(
+        name,
+        typeof data === "string"
+          ? new TextReader(data)
+          : new Uint8ArrayReader(data),
+      );
+    }
+    return openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(await writer.close()),
+    });
+  }
+
+  it("refuses an SVG content entry, and never counts it as an image", async () => {
+    const session = await sessionOf({
+      "content/p1.svg": "<svg onload='x()'/>",
+      "content/p2.jpg": "JPEG",
+    });
+    await expect(session.loadContentEntry("content/p1.svg")).rejects.toThrow(
+      /not a media type a tour may carry/,
+    );
+    expect(
+      session.entries.find((e) => e.filename.endsWith(".svg"))?.isImage,
+    ).toBe(false);
+    const photo = await session.loadContentEntry("content/p2.jpg");
+    expect(photo.type).toBe("image/jpeg");
+    await session.close();
+  });
+
+  it("serves a self-contained .glb as a model, and refuses one that reaches outside", async () => {
+    const session = await sessionOf({
+      "content/m1.glb": glbWith({ asset: { version: "2.0" } }),
+      "content/m2.glb": glbWith({
+        asset: { version: "2.0" },
+        buffers: [{ uri: "https://cdn.example/m2.bin" }],
+      }),
+    });
+    expect((await session.loadContentEntry("content/m1.glb")).type).toBe(
+      "model/gltf-binary",
+    );
+    await expect(session.loadContentEntry("content/m2.glb")).rejects.toThrow(
+      /points outside the file/,
+    );
+    await session.close();
+  });
+
+  it("types any allowlisted entry by the allowlist, anything else as plain bytes", async () => {
+    const session = await sessionOf({
+      "audio/a.mp3": "ID3",
+      "notes/readme.html": "<b>hi</b>",
+    });
+    expect((await session.loadEntry("audio/a.mp3")).type).toBe("audio/mpeg");
+    expect((await session.loadEntry("notes/readme.html")).type).toBe(
+      "application/octet-stream",
+    );
+    await session.close();
+  });
+});

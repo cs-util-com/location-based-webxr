@@ -63,6 +63,8 @@ const entryFiles = [
   // imported by the Tour Viewer via the `./ar/*` wildcard, so per-file.
   'src/ar/tour-manifest.ts',
   'src/ar/tour-archive.ts',
+  // The tour media allowlist (tour kit plan K0), deep-imported the same way.
+  'src/ar/tour-media.ts',
   'src/ar/frame-loop.ts',
   // Shared hit-test reticle driver (2026-07-18 promotion of the three
   // app-local copies) — deep-imported by consumer apps via the `./ar/*`

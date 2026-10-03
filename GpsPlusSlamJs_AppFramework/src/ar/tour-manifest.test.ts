@@ -100,6 +100,17 @@ describe('parseTourManifest', () => {
       /objects\[0\]\.image/,
     ],
     [
+      // K0: SVG can carry script; a photo is a raster image only.
+      'a photo whose image is an SVG',
+      { version: 1, objects: [{ ...photo, image: 'content/f1.svg' }] },
+      /objects\[0\]\.image" must be content\/f1\.<ext> \(an image type\)/,
+    ],
+    [
+      'a photo whose image is a model, not an image',
+      { version: 1, objects: [{ ...photo, image: 'content/f1.glb' }] },
+      /objects\[0\]\.image" must be content\/f1\.<ext> \(an image type\)/,
+    ],
+    [
       'a photo with a zero height',
       { version: 1, objects: [{ ...photo, imageHeight: 0 }] },
       /imageHeight/,

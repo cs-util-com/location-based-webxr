@@ -25,6 +25,7 @@ import { isFiniteNumber, isRecord } from '../utils/json-guards.js';
 import { parseGeoPose } from './qr/geo-pose.js';
 import type { QrGeoPose } from './qr/qr-gps-vote.js';
 import { tourContentEntryName } from './tour-archive.js';
+import { tourMediaTypeOf } from './tour-media.js';
 
 /** The manifest's schema version this module reads and writes. */
 export const TOUR_MANIFEST_VERSION = 1;
@@ -127,11 +128,15 @@ function parsePhoto(value: Record<string, unknown>, at: string): TourPhoto {
   // any string would look up an entry the writer never produced.
   const extension =
     typeof image === 'string' ? IMAGE_ENTRY.exec(image)?.[1] : undefined;
+  // A photo is an IMAGE (tour kit plan K0): an allowlisted raster type,
+  // checked before `tourContentEntryName`, which would throw a TypeError
+  // rather than the manifest's own validation error.
   if (
     extension === undefined ||
+    tourMediaTypeOf(extension)?.kind !== 'image' ||
     image !== tourContentEntryName(base.id, extension)
   ) {
-    fail(`"${at}.image" must be content/${base.id}.<ext>`);
+    fail(`"${at}.image" must be content/${base.id}.<ext> (an image type)`);
   }
   if (!isPositiveInteger(imageWidth) || !isPositiveInteger(imageHeight)) {
     fail(`"${at}.imageWidth"/"imageHeight" must be positive integers`);
