@@ -40,17 +40,51 @@
  * `VISIT_SETTLE_LEFT_BEHIND_SEEDS`, default 30; the table goes to the file
  * `VISIT_SETTLE_LEFT_BEHIND_OUT` names, else the console).
  *
- * Measured result (2026-10-03, 30 visits per cell, horizontal p50 / p90;
- * "end" = what ships, "tap" = the alignment at the tap, "m40"/"m80" = the
- * first alignment at or after the tap whose session GPS extent reaches 40 /
- * 80 m, else the end one):
+ * WHAT SHIPS SINCE D33 (re-measured 2026-10-04, same grid, 30 visits per
+ * cell; the SHIPPED columns run `visit-alignment-picks.ts` and
+ * `planVisitSettle` with its picks, fed as `creator-setup.ts` feeds them):
+ * - Note and code measured mid-visit: SHIPPED equals m80 in every row of
+ *   every cell (it is m80, now through the real tracker): notes 1.1-1.7 m
+ *   p50, 1.8-3.8 m p90; 500 m at 1 deg / 1 %: 1.2 / 2.1 m against 8.4 /
+ *   11.2 m through the end alignment, and 1.2 / 2.1 m against 15.8 / 24.5 m
+ *   on a 500 m meander at 2 / 2.
+ * - Stored code (D10b, sighted at the first look and, out and back, at the
+ *   last): the correction goes through the sighting NEAREST the pin, so an
+ *   out-and-back start note keeps the start sighting's 1.2-2.5 m (500 m,
+ *   1 / 1: 1.2 / 1.5 m against 11.2 / 15.2 m through the latest; 2 / 2:
+ *   2.5 / 2.8 m against 22.5 / 30.4 m). The bound, judged through the
+ *   sighting's own alignment, refuses nothing in any cell (the end
+ *   alignment refused 1 / 2 / 5 of 30 on the 500 m meanders at 2 deg). A
+ *   refusal is counted from the basis, so a silent fallback could not hide.
+ *   Where the start sighting is the only one (straight and meander leaves),
+ *   SHIPPED equals the end-alignment path by construction: the correction
+ *   does not depend on the alignment it starts from, and what is left is the
+ *   drift between the sighting and the tap (5.2 / 6.6 m after 240 m of walks
+ *   at 2 / 2, the worst cell).
+ * - KNOWN LIMIT of the 80 m floor (the owner's value, D28/D33): on a short
+ *   visit the session's extent reaches 80 m only near or after its end, so
+ *   the first mature pick IS about the end alignment. 100 m out and back:
+ *   SHIPPED = m80 = end = 1.2-1.7 / 2.6-3.8 m, where m40 gives 1.0-1.1 /
+ *   1.6-1.7 m and the tap 1.2 / 2.0-2.1 m. The same holds for a code
+ *   measured at the start of 120 m walks (5.3 m against 1.6 m for m40).
+ *   A lower floor would win there and lose heading p90 elsewhere (see
+ *   `alignment-maturity.ts`).
+ * - "grown80" (the other reading of D33: the extent GROWN by 80 m since the
+ *   placement) is no better: 0.9-1.7 / 1.8-3.8 m, with p90 up to 3.0-3.3 m
+ *   where m80 has 2.1-2.7.
+ *
+ * Measured result BEFORE D33 (2026-10-03, 30 visits per cell, horizontal
+ * p50 / p90; "end" = what shipped then, "tap" = the alignment at the tap,
+ * "m40"/"m80" = the first alignment at or after the tap whose session GPS
+ * extent reaches 40 / 80 m, else the end one):
  * - NO STORED CODE, the note: the shipped settle regresses a note left
  *   behind exactly as the Recorder's save-time mint did. 500 m straight:
  *   2.5 / 3.8 m at 0.5 deg / 0.5 %, 8.4 / 11.2 m at 1 deg / 1 %, 18.1 /
  *   20.8 m at 2 deg / 2 %; 300 m: 1.3-3.6 m p50 (8.4 at 2 deg / 2 % out
  *   and back). Out and back is the worst path (500 m, 1 deg / 1 %: 10.6 /
  *   16.2 m). At 100 m it is no worse than the rest (1.0-1.7 m). tap, m40
- *   and m80 are flat in every cell: 1.0-1.2 / 1.6-2.1 m.
+ *   and m80 are flat in L: 1.0-1.4 / 1.6-2.8 m, except m80 on 100 m out
+ *   and back (the known limit above).
  * - A code measured mid-visit regresses the same way (500 m, 1 deg / 1 %:
  *   8.7 m, heading 3.4 / 6.1 deg) and is fixed the same way (m80: 1.2-1.3 m,
  *   heading 1.4-1.6 / 4.6-5.4 deg, the best heading of the candidates; m40
