@@ -427,11 +427,10 @@ export async function installTourViewerArFakes(page, options = {}) {
             timer.cancelled = true;
           };
         },
-        createLabel: (text) => {
-          // A bare three Object3D stands in for the canvas-backed sprite.
-          const object = { name: `label:${text}`, position: { set() {} } };
-          return { object, dispose() {} };
-        },
+        // No `createLabel` fake: Chromium has the canvas the real text
+        // sprite needs. A plain-object stand-in was REFUSED by three's
+        // Object3D.add (only a console error), so no spec saw a pin label
+        // in the scene graph.
         stopCameraFrameCapture: () => {
           test.stopCaptureCalls += 1;
         },

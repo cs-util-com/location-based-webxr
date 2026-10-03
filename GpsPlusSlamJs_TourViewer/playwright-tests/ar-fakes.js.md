@@ -55,8 +55,10 @@ camera, so `installTourViewerArFakes(page)` installs
   the app's teardown in the specs too (the finish step relies on it).
   `reticleVisible` / `reticlePosition` / `reticleDisposals` and
   `encodedFrames` script the creator's placement layer (the hit-test
-  reticle and the JPEG encoder fakes; `createLabel` returns a bare object
-  in place of the canvas sprite); a tap in AR (authoring plan
+  reticle and the JPEG encoder fakes; `createLabel` is deliberately NOT
+  faked - Chromium has a canvas, so pin labels are the real text sprites,
+  and a plain-object stand-in was refused by three's `Object3D.add` with
+  only a console error); a tap in AR (authoring plan
   2026-09-28-0953 M4): `startHitTestReticle` keeps the app's select
   listener as `xrSelect`, `tapXr(selector?)` taps like the runtime does
   (with a null target ray, a screen-centre tap) -
