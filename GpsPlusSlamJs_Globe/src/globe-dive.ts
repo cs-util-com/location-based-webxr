@@ -218,7 +218,7 @@ export function diveStep(
  * lower pitches move the camera back along the meridian by the angle the
  * triangle centre-camera-ground gives. The screen's up is the pose's north.
  */
-function obliqueCamera(
+export function obliqueCamera(
   ellipsoid: Ellipsoid,
   pose: OrbitPose,
   altitudeM: number,

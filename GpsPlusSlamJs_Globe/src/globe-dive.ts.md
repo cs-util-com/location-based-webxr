@@ -45,7 +45,8 @@ done }`: since round-5 F1 the OBLIQUE approach (plan §3.5): the pose
     eased in from 90 over the first fifth so a start below 5,000 km begins
     exactly where the camera is; times the start's offset slerped from
     itself to identity over the same fifth (`1 - smoothstep(t / 0.2)`).
-  - Internal: `obliqueCamera(ellipsoid, pose, altitudeM, pitchDeg)` -> `{ position,
+  - `obliqueCamera(ellipsoid, pose, altitudeM, pitchDeg)` (exported for the
+    frame-hitch recorder's paths, which place the camera as the dive does) -> `{ position,
 quaternion }`: the camera at the ground point's surface radius plus the
     altitude from the centre, moved back along the meridian (south) by the
     angle the triangle centre-camera-ground gives for the depression, and
