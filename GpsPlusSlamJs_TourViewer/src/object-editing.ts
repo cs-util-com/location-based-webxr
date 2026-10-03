@@ -108,6 +108,11 @@ export interface ObjectEditingDeps {
   readonly sessionLive: () => boolean;
   /** The placement gate (measured code, aligned, running, no Finish). */
   readonly placementAllowed: () => boolean;
+  /** An object was moved in the running visit, now: the settle composes
+   *  it through the first mature alignment after the MOVE (D33,
+   *  `visit-alignment-picks.ts`). Optional: without it the move settles
+   *  through the end alignment. */
+  readonly notePlaced?: (id: string) => void;
   /** The settle's inputs as they stand (the level in hand, this visit's
    *  measurement and sighting, the GPS accuracy): what a move goes
    *  through, so it takes the same code correction (D10b). */
@@ -403,6 +408,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
       object: after,
       placement: { visit, local },
     });
+    deps.notePlaced?.(after.id);
     arStore.dispatch(
       objectMoved({
         before,

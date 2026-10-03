@@ -239,7 +239,14 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   the store teardown resets the alignment) and a Finish tapped while the
   session is live run `settleVisit`: `planVisitSettle` (`visit-settle.ts`)
   recomputes the geo of the code measured in this visit and of every object
-  placed in it through one alignment; the records replace the tap-time ones
+  placed in it - since D33 each through the first mature alignment after its
+  own moment (`visit-alignment-picks.ts`, fed by `syncAlignmentPicks` on
+  every store change with the alignment, the zero and the session GPS extent;
+  a pin at its Save, a photo at its tap, a move through
+  `object-editing.ts`'s `notePlaced`, the measurement at its tap, each
+  stable sighting of the code in hand; emptied at each visit's start and
+  end), a correction through the sighting nearest each object; the records
+  replace the tap-time ones
   in `ctx.placedObjects` and `ctx.mintedLevel`, each settled object's draft
   record and the meta are REWRITTEN (the per-object file design already
   keys by id; no format change - so a page reload keeps the settled geo,
@@ -261,8 +268,9 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   - **Late arrivals join their visit's settle** (M2c review #6): the record
     is kept even for a visit with nothing to settle yet. A photo whose
     encode lands after its visit settled (the session ended, or a Finish
-    ran) is minted through the record's alignment and zero - which IS the
-    settle - and logged as `tourAuthoring/settled` with trigger
+    ran) is minted through the record's alignment and zero - the settle's
+    choice for an object placed at the visit's end, which a photo landing
+    late is (its capture a moment before the end) - and logged as `tourAuthoring/settled` with trigger
     `late-arrival`. Minting it through the store instead would use an
     alignment that belongs to no visit (the teardown resets it).
   - **A Finish removes from the list only what its zip carries** (the ids

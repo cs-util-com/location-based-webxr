@@ -180,8 +180,20 @@ interface VisitSettledLog {
     readonly levelId: string;
     readonly odomPose: Pose;
   } | null;
-  /** Each settled object's new geo. */
-  readonly objects: readonly { readonly id: string; readonly geo: QrGeoPose }[];
+  /** Each settled object's new geo, and (since D33, absent in older
+   *  recordings) its own choice: each object goes through the first mature
+   *  alignment after its own moment, so `usedAlignment` above is only the
+   *  choice for an object placed at the visit's end. */
+  readonly objects: readonly {
+    readonly id: string;
+    readonly geo: QrGeoPose;
+    readonly basis?: SettleBasis;
+    readonly usedAlignment?: readonly number[];
+    readonly refusedCorrection?: CorrectionRefusal | null;
+  }[];
+  /** The alignment `level` was re-minted through (the measurement's own,
+   *  D33); null without a level. Absent in older recordings. */
+  readonly levelAlignment?: readonly number[] | null;
   /** The code re-minted through `usedAlignment` when this visit measured
    *  it; null otherwise. */
   readonly level: { readonly id: string; readonly json: string } | null;

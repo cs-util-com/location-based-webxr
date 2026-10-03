@@ -36,8 +36,15 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
   through that visit's settle when its encode landed), `basis` (`visit-settle.ts`), `visitAlignment` (the store's, read
   before the teardown), `usedAlignment` (what the geo went through),
   `sighting` (the code pose a correction used, or null), `objects` (each
-  settled object's `id` and new `geo`), `level` (the re-minted code, or
-  null), `referenceLevel` (the level in hand when the settle ran, before any
+  settled object's `id` and new `geo`, and since D33 its own `basis`,
+  `usedAlignment` and `refusedCorrection`: each object goes through the
+  first mature alignment after its own moment, so the top-level
+  `usedAlignment` is the choice for an object placed at the visit's end -
+  what a late arrival uses; these three are optional and absent in
+  recordings made before D33, and no reader parses them yet: the entry is
+  only checked for its place in the action order), `level` (the re-minted
+  code, or null) with `levelAlignment` (the measurement's own alignment,
+  D33; optional, absent before D33), `referenceLevel` (the level in hand when the settle ran, before any
   re-mint - the stored pose a code correction maps onto) and `zero` (M2c
   review #7): with `visitAlignment` and `sighting` a replay recomputes a
   code-corrected `usedAlignment` through `correctedAlignment` (pinned by the
