@@ -39,7 +39,7 @@ export const GLOBE_SURFACE_TUNING = {
 export const GLOBE_CLOUD_DRIFT_DEG_PER_S = 0.5;
 
 /** Every tile's program is the same one: three shares it by this key. */
-export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v7";
+export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v8";
 
 /** The one uniforms object every tile's shader reads. */
 export interface GlobeSurfaceUniforms {
@@ -79,6 +79,17 @@ export interface GlobeSurfaceUniforms {
    * §3.2; `carrierShareAt`): 0 draws the globe alone, 1 the relief alone.
    */
   readonly uCarrierShare: { value: number };
+  /**
+   * The sun light's radiance (its colour times intensity), kept by the
+   * surface every time the sun is set: the sky fill's light, by role rather
+   * than as the scene's first directional light.
+   */
+  readonly uSunRadiance: { value: THREE.Vector3 };
+}
+
+/** How the patch is compiled: `band` for a page that draws a relief. */
+export interface GlobeSurfacePatchOptions {
+  readonly band?: boolean;
 }
 
 /**
@@ -108,6 +119,7 @@ export function createGlobeSurfaceUniforms(textures: {
     uSkyFloor: { value: SKY_FILL.floor },
     uSkyShare: { value: GLOBE_SURFACE_TUNING.skyShare },
     uCarrierShare: { value: 0 },
+    uSunRadiance: { value: new THREE.Vector3(0, 0, 0) },
   };
 }
 
@@ -161,9 +173,18 @@ bool globeFadeKeeps( float d, float share ) {
 #endif
 }`;
 
+/**
+ * The band's code is compiled only where a relief exists: the globe's tiles
+ * of a page with a relief (`GLOBE_BAND`) and the relief's own tiles
+ * (`GLOBE_FADE_SIDE` 1). The plain globe draws the program from before.
+ */
+const BAND_GUARD = "#if defined( GLOBE_BAND ) || GLOBE_FADE_SIDE == 1";
+
 /** First in the fragment's work: a pixel the other carrier owns is dropped. */
 const FRAGMENT_FADE = /* glsl */ `
-if ( !globeFadeKeeps( globeFadeDither(), uCarrierShare ) ) discard;`;
+${BAND_GUARD}
+if ( !globeFadeKeeps( globeFadeDither(), uCarrierShare ) ) discard;
+#endif`;
 
 const VERTEX_DECLARATIONS = /* glsl */ `
 varying vec3 vGeoNormal;`;
@@ -193,6 +214,7 @@ uniform float uTwilight;
 uniform float uSkyFloor;
 uniform float uSkyShare;
 uniform float uCarrierShare;
+uniform vec3 uSunRadiance;
 const vec3 GLOBE_WARM_LIGHTS = vec3( 1.4, 0.95, 0.5 );
 ${SKY_LEVEL_GLSL}
 ${GLOBE_FADE_GLSL}`;
@@ -252,19 +274,25 @@ totalEmissiveRadiance += globeNight * mix( vec3( 1.0 ), GLOBE_WARM_LIGHTS, uTwil
 totalEmissiveRadiance += uTwilight * diffuseColor.rgb * ( vec3( 0.06, 0.09, 0.16 ) * ( 1.0 - smoothstep( -0.25, 0.05, globeNdl ) ) + vec3( 0.35, 0.3, 0.3 ) * smoothstep( -0.12, 0.0, globeNdl ) * ( 1.0 - smoothstep( 0.0, 0.12, globeNdl ) ) );`;
 
 /**
- * The sky fill (DEC-GL5-11), the relief's light on the globe's surface:
- * the direct diffuse keeps `1 - uSkyShare` and the sky gives `uSkyShare`
- * x the shared sky level at the geodetic sun height, in the sun light's
- * own units (its colour times intensity), through three's Lambert. On flat
- * ground with the sun above the floor that is the direct term again; below
- * it the sky holds the floor and fades through the twilight. The specular
- * (the water's glint) is untouched. Only with the sun light present, whose
- * uniform exists only then.
+ * The sky fill (DEC-GL5-11), the relief's light: the direct diffuse keeps
+ * `1 - share` and the sky gives `share` x the shared sky level at the
+ * geodetic sun height, in the sun's radiance, through three's Lambert. On
+ * flat ground with the sun above the floor that is the direct term again;
+ * below it the sky holds the floor and fades through the twilight. The
+ * specular (the water's glint) is untouched. The relief's tiles take the
+ * full `uSkyShare`; the globe's own tiles take it only as far as the
+ * relief has the pixels (`uCarrierShare`), so the globe's look above the
+ * band is the approved one and the two agree where they meet.
  */
 const FRAGMENT_SKY_FILL = /* glsl */ `
-#if NUM_DIR_LIGHTS > 0
-reflectedLight.directDiffuse *= 1.0 - uSkyShare;
-reflectedLight.indirectDiffuse += uSkyShare * skyLevelOf( globeNdl, uSkyFloor ) * directionalLights[ 0 ].color * BRDF_Lambert( material.diffuseContribution );
+${BAND_GUARD}
+#if GLOBE_FADE_SIDE == 0
+float globeSkyShare = uSkyShare * uCarrierShare;
+#else
+float globeSkyShare = uSkyShare;
+#endif
+reflectedLight.directDiffuse *= 1.0 - globeSkyShare;
+reflectedLight.indirectDiffuse += globeSkyShare * skyLevelOf( globeNdl, uSkyFloor ) * uSunRadiance * BRDF_Lambert( material.diffuseContribution );
 #endif`;
 
 /** `source` with `code` after `anchor`, which must occur exactly once. */
@@ -287,6 +315,7 @@ function after(source: string, anchor: string, code: string): string {
 export function patchGlobeSurfaceShader(
   shader: THREE.WebGLProgramParametersWithUniforms,
   uniforms: GlobeSurfaceUniforms,
+  options: GlobeSurfacePatchOptions = {},
 ): void {
   let vs = shader.vertexShader;
   vs = after(vs, "#include <common>", VERTEX_DECLARATIONS);
@@ -299,20 +328,24 @@ export function patchGlobeSurfaceShader(
   fs = after(fs, "#include <emissivemap_fragment>", FRAGMENT_NIGHT);
   fs = after(fs, "#include <lights_fragment_end>", FRAGMENT_SKY_FILL);
   shader.vertexShader = vs;
-  shader.fragmentShader = fs;
+  shader.fragmentShader = options.band ? `#define GLOBE_BAND\n${fs}` : fs;
   Object.assign(shader.uniforms, uniforms);
 }
 
 /**
  * Makes `material` draw the globe's surface: the patch on compile, and one
- * program key for all of them. Material.copy does not carry these hooks,
- * so a clone needs this again.
+ * program key for all of them (its own for a page with a relief, `band`).
+ * Material.copy does not carry these hooks, so a clone needs this again.
  */
 export function applyGlobeSurface(
   material: THREE.MeshStandardMaterial,
   uniforms: GlobeSurfaceUniforms,
+  options: GlobeSurfacePatchOptions = {},
 ): void {
   material.onBeforeCompile = (shader) =>
-    patchGlobeSurfaceShader(shader, uniforms);
-  material.customProgramCacheKey = () => GLOBE_SURFACE_CACHE_KEY;
+    patchGlobeSurfaceShader(shader, uniforms, options);
+  const key = options.band
+    ? `${GLOBE_SURFACE_CACHE_KEY}-band`
+    : GLOBE_SURFACE_CACHE_KEY;
+  material.customProgramCacheKey = () => key;
 }

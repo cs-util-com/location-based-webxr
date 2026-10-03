@@ -195,43 +195,78 @@ describe("patchGlobeSurfaceShader", () => {
     expect(fs).toContain("globeCloud * uCloudOpacity");
   });
 
-  // Why (DEC-GL5-11, F1 brief): the relief takes the sky's fill at a low
-  // sun (the share of the light that is not direct, times the sky level),
-  // the flat globe did not, so at 11 degrees the relief's flat ground read
-  // 0.255 of a zenith sun against the globe's 0.194. The globe's surface,
-  // and through it the relief's tiles, now reads the Globe package's one
-  // sky level: the direct diffuse keeps `1 - share`, the sky gives
-  // `share x skyLevel`, in the sun light's own units. With the floor at 0
-  // the fill is the geodetic sun height, which is the flat globe's own
-  // direct term: the look before, which the look pins use.
-  it("fills from the shared sky level, in the sun's units, after the lights", () => {
+  // Why (DEC-GL5-11; review 2026-10-03-1835 major 2): the relief takes the
+  // sky's fill at a low sun (the share of the light that is not direct,
+  // times the sky level). The globe's own tiles take it only as far as the
+  // relief has the pixels (the band's share), so the approved globe look
+  // above the band is unchanged and globe and relief agree where they
+  // meet. The relief's tiles (GLOBE_FADE_SIDE 1) take it in full. The
+  // light is the sun's radiance by role (uSunRadiance, kept by the
+  // surface), not the first directional light.
+  it("fills from the shared sky level by the relief's share, in the sun's units, after the lights", () => {
     const uniforms = createGlobeSurfaceUniforms(textures());
     expect(uniforms.uSkyFloor.value).toBe(SKY_FILL.floor);
     expect(uniforms.uSkyShare.value).toBe(GLOBE_SURFACE_TUNING.skyShare);
     // 1 - the relief's direct share (the terrain lab's 0.8, DEC-GL5-5).
     expect(GLOBE_SURFACE_TUNING.skyShare).toBeCloseTo(0.2, 12);
+    expect(uniforms.uSunRadiance.value.toArray()).toEqual([0, 0, 0]);
     const shader = standardShader();
     patchGlobeSurfaceShader(shader, uniforms);
     const fs = shader.fragmentShader;
     expect(shader.uniforms.uSkyFloor).toBe(uniforms.uSkyFloor);
     expect(shader.uniforms.uSkyShare).toBe(uniforms.uSkyShare);
+    expect(shader.uniforms.uSunRadiance).toBe(uniforms.uSunRadiance);
     expect(count(fs, SKY_LEVEL_GLSL)).toBe(1);
-    expect(fs).toContain("reflectedLight.directDiffuse *= 1.0 - uSkyShare;");
+    expect(fs).not.toContain("directionalLights[ 0 ]");
     expect(fs).toContain(
-      "reflectedLight.indirectDiffuse += uSkyShare * skyLevelOf( globeNdl, uSkyFloor ) * directionalLights[ 0 ].color * BRDF_Lambert( material.diffuseContribution );",
+      [
+        "#if GLOBE_FADE_SIDE == 0",
+        "float globeSkyShare = uSkyShare * uCarrierShare;",
+        "#else",
+        "float globeSkyShare = uSkyShare;",
+        "#endif",
+      ].join(String.fromCharCode(10)),
     );
-    const at = (s: string) => fs.indexOf(s);
+    expect(fs).toContain(
+      "reflectedLight.directDiffuse *= 1.0 - globeSkyShare;",
+    );
+    expect(fs).toContain(
+      "reflectedLight.indirectDiffuse += globeSkyShare * skyLevelOf( globeNdl, uSkyFloor ) * uSunRadiance * BRDF_Lambert( material.diffuseContribution );",
+    );
+    const at = (x: string) => fs.indexOf(x);
     expect(at("#include <lights_fragment_end>")).toBeLessThan(
-      at("reflectedLight.directDiffuse *= 1.0 - uSkyShare;"),
+      at("float globeSkyShare"),
     );
     // The geodetic sun height is declared before it is read.
     expect(at("float globeNdl =")).toBeLessThan(at("skyLevelOf( globeNdl"));
-    // Only with the sun light present: its uniform exists only then.
-    const fill = fs.slice(at("reflectedLight.directDiffuse *= 1.0"));
-    expect(fs.slice(0, at("reflectedLight.directDiffuse *= 1.0"))).toMatch(
-      /#if NUM_DIR_LIGHTS > 0\s*$/,
-    );
-    expect(fill).toMatch(/^[^#]*#endif/);
+  });
+
+  // Why (review 2026-10-03-1835 minor 10): without a relief the band's
+  // discard and the fill are not compiled into the globe's shader at all:
+  // every viewer of the plain globe draws exactly the program from before
+  // the relief. A page with a relief asks for the band (GLOBE_BAND), and
+  // its program has its own key.
+  it("compiles the band's discard and fill only for a page with a relief", () => {
+    const uniforms = createGlobeSurfaceUniforms(textures());
+    const plain = standardShader();
+    patchGlobeSurfaceShader(plain, uniforms);
+    expect(plain.fragmentShader).not.toContain("#define GLOBE_BAND");
+    const guard = "#if defined( GLOBE_BAND ) || GLOBE_FADE_SIDE == 1";
+    expect(count(plain.fragmentShader, guard)).toBe(2);
+    const at = (x: string) => plain.fragmentShader.indexOf(x);
+    expect(at(guard)).toBeLessThan(at("discard;"));
+    const band = standardShader();
+    patchGlobeSurfaceShader(band, uniforms, { band: true });
+    expect(band.fragmentShader.startsWith("#define GLOBE_BAND")).toBe(true);
+    const m = new THREE.MeshStandardMaterial();
+    applyGlobeSurface(m, uniforms);
+    expect(m.customProgramCacheKey()).toBe(GLOBE_SURFACE_CACHE_KEY);
+    const mb = new THREE.MeshStandardMaterial();
+    applyGlobeSurface(mb, uniforms, { band: true });
+    expect(mb.customProgramCacheKey()).toBe(`${GLOBE_SURFACE_CACHE_KEY}-band`);
+    const compiled = standardShader();
+    mb.onBeforeCompile(compiled, {} as THREE.WebGLRenderer);
+    expect(compiled.fragmentShader.startsWith("#define GLOBE_BAND")).toBe(true);
   });
 
   // Why (one-scene plan §3.2; F1): in the altitude band the globe's own

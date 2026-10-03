@@ -42,7 +42,7 @@ const LAND_ROUGHNESS = 0.9;
  * then; the oblique hold of F1 looks 45 degrees down and the sea's glint
  * leaves the frame (4.1 and 0.1 levels against the 12 the check needs).
  */
-async function holdOverCoast(page, context, altKm) {
+async function holdOverCoast(page, context, altKm, straightDown = true) {
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(COAST);
   const errors = [];
@@ -50,7 +50,7 @@ async function holdOverCoast(page, context, altKm) {
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
-  const hash = `at=${COAST.latitude},${COAST.longitude}&spinMs=0&turnMs=0&${NOON}&cloudDrift=0&cloudOpacity=0&stars=0&atmo=0&diveMs=1000&handOver=0&handOverKm=${altKm}&pitchLow=90`;
+  const hash = `at=${COAST.latitude},${COAST.longitude}&spinMs=0&turnMs=0&${NOON}&cloudDrift=0&cloudOpacity=0&stars=0&atmo=0&diveMs=1000&handOver=0&handOverKm=${altKm}${straightDown ? "&pitchLow=90" : ""}`;
   // The pin press starts the arrival prefetch: its city data is answered here.
   await routeCityData(page);
   await page.goto(`/labs/globe/#${hash}`);
@@ -239,3 +239,38 @@ for (const altKm of [150, 50]) {
     expect(errors).toEqual([]);
   });
 }
+
+// WHY (review 2026-10-03-1835 nit 2): the default hold is oblique (45
+// degrees down), where the sea's glint leaves the frame, so the glint
+// checks above hold the view straight down. The default view must still
+// show the sea as the imagery's dark blue, not black, and no glint on the
+// land beside the coast.
+test("the default oblique hold over the coast: the sea is sea, the land does not glint", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(120_000);
+  const { errors, hash } = await holdOverCoast(page, context, 150, false);
+  const n = 401;
+  const on = await middleRow(page, n);
+  await page.evaluate((h) => {
+    location.hash = h;
+  }, `${hash}&waterRoughness=${LAND_ROUGHNESS}`);
+  await page.waitForFunction(
+    () => window.__globeLab.state().tuning.waterRoughness === 0.9,
+  );
+  const off = await middleRow(page, n);
+  const state = await page.evaluate(() => window.__globeLab.state());
+  const r = glintOnLand(on, off, 10);
+  const [sea] = await page.evaluate(
+    (p) => window.__globeLab.readPixels(p),
+    [[(r.seaSample + 0.5) / n, 0.5]],
+  );
+  console.log(
+    `coast 150 km up, oblique (${state.cameraDepressionDeg?.toFixed(1)} deg): land glint max ${r.landMax.toFixed(1)}, sea glint mean ${r.seaMean.toFixed(1)}, open sea RGB ${sea.slice(0, 3).join("/")}`,
+  );
+  expect(r.landMax).toBeLessThanOrEqual(LAND_GLINT_MAX);
+  expect(sea[2]).toBeGreaterThan(sea[0]);
+  expect(Math.max(sea[0], sea[1], sea[2])).toBeGreaterThan(5);
+  expect(errors).toEqual([]);
+});

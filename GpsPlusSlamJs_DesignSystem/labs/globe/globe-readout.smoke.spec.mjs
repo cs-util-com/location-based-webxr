@@ -131,16 +131,30 @@ test("during a dive the readout follows the camera and names the distance to the
   expect(before).not.toBeNull();
   expect(altitudeKm(landed.readoutShown)).toBeCloseTo(50, 0);
   // The dive holds obliquely since F1 (45 degrees down at 50 km), so the
-  // straight-line distance to the target is the altitude over the sine
-  // of the depression (70.7 km), the Earth's curve adding a little:
-  // within 2 %.
+  // line names the straight-line distance to the target's ground point:
+  // the chord from the camera (the local radius plus the altitude) along
+  // the view ray, at the depression, to the ground at the local radius
+  // (WGS84 at Cologne's latitude). Within 0.5 % (review 2026-10-03-1835
+  // nit 1: 71.0 km shown, 70.7 by altitude over sine).
   const toTarget = Number(
     / · ([\d.]+) km to the target$/.exec(landed.readoutShown)?.[1],
   );
-  const slant =
-    altitudeKm(landed.readoutShown) /
-    Math.sin((landed.cameraDepressionDeg * Math.PI) / 180);
-  expect(Math.abs(toTarget - slant)).toBeLessThan(0.02 * slant);
+  const lat = (COLOGNE.latitude * Math.PI) / 180;
+  const a = 6378.137;
+  const b = 6356.752314245;
+  const radiusKm = Math.sqrt(
+    ((a * a * Math.cos(lat)) ** 2 + (b * b * Math.sin(lat)) ** 2) /
+      ((a * Math.cos(lat)) ** 2 + (b * Math.sin(lat)) ** 2),
+  );
+  const camera = radiusKm + altitudeKm(landed.readoutShown);
+  const gamma = ((90 - landed.cameraDepressionDeg) * Math.PI) / 180;
+  const chord =
+    camera * Math.cos(gamma) -
+    Math.sqrt(radiusKm ** 2 - (camera * Math.sin(gamma)) ** 2);
+  console.log(
+    `dive readout: ${toTarget} km to the target against the chord ${chord.toFixed(2)} km`,
+  );
+  expect(Math.abs(toTarget - chord)).toBeLessThan(0.005 * chord);
   expect(/** @type {number} */ (altitudeKm(during.readoutShown))).toBeLessThan(
     /** @type {number} */ (before),
   );

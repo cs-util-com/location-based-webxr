@@ -28,6 +28,12 @@ export const GLOBE_FLIGHT = Object.freeze({
   /** The Earth's mean radius for the frame metric. */
   radiusM: 6_371_000,
   /**
+   * The least the view looks below the horizon (degrees): the view's centre
+   * is the target, so the law never looks past the horizon there (at a low
+   * pitch of 30 it did, between about 985 and 1,300 km).
+   */
+  horizonMarginDeg: 5,
+  /**
    * The band where the relief's tiles take over from the globe's own
    * surface (one-scene plan §3.2): the globe alone above `bandHighM`, the
    * relief alone at and below `bandLowM`, a dithered cross-fade between.
@@ -45,12 +51,19 @@ const logShare = (altM: number, far: number, near: number): number =>
   (Math.log(far) - Math.log(Math.max(altM, 1))) /
   (Math.log(far) - Math.log(near));
 
+/** The horizon's dip below the local horizontal at an altitude (degrees). */
+const horizonDipDeg = (altitudeM: number): number => {
+  const r = GLOBE_FLIGHT.radiusM;
+  return Math.acos(r / (r + Math.max(0, altitudeM))) / DEG;
+};
+
 /**
  * The view's depression below the local horizontal at an altitude (m):
  * 90 degrees (looking at the centre) above `pitchHighM`, `pitchLowDeg`
  * from `pitchLowM` down, smoothstep in the logarithm of the altitude
- * between. RangeError for a non-finite altitude or a low pitch outside
- * 0-90 degrees.
+ * between; never less than `horizonMarginDeg` below the horizon, so the
+ * target (the view's centre) stays in view. RangeError for a non-finite
+ * altitude or a low pitch outside 0-90 degrees.
  */
 export function pitchAtDeg(
   altM: number,
@@ -68,7 +81,11 @@ export function pitchAtDeg(
   const s = smoothstep(
     logShare(altM, GLOBE_FLIGHT.pitchHighM, GLOBE_FLIGHT.pitchLowM),
   );
-  return 90 + (pitchLowDeg - 90) * s;
+  const law = 90 + (pitchLowDeg - 90) * s;
+  return Math.min(
+    90,
+    Math.max(law, horizonDipDeg(altM) + GLOBE_FLIGHT.horizonMarginDeg),
+  );
 }
 
 /**
@@ -124,20 +141,19 @@ export function minimumAltitudeM(
 /**
  * The plan's frame metric for a camera looking at the target from
  * `altitudeM` with depression `pitchDeg` and vertical field of view
- * `fovYDeg`: the target sits at the view's centre (in the centre third by
- * construction), and the ground fills the top edge when the top ray's
- * depression exceeds the horizon's dip, acos(R / (R + h)).
+ * `fovYDeg`, against the horizon's dip, acos(R / (R + h)):
+ * `targetVisible` when the view's centre (the target) looks below the
+ * horizon, `groundAtTop` when the top ray does too.
  */
 export function frameCheck(input: {
   altitudeM: number;
   pitchDeg: number;
   fovYDeg: number;
-}): { targetInCentreThird: boolean; groundAtTop: boolean; dipDeg: number } {
+}): { targetVisible: boolean; groundAtTop: boolean; dipDeg: number } {
   const { altitudeM, pitchDeg, fovYDeg } = input;
-  const r = GLOBE_FLIGHT.radiusM;
-  const dipDeg = Math.acos(r / (r + altitudeM)) / DEG;
+  const dipDeg = horizonDipDeg(altitudeM);
   return {
-    targetInCentreThird: true,
+    targetVisible: pitchDeg > dipDeg,
     groundAtTop: pitchDeg - fovYDeg / 2 > dipDeg,
     dipDeg,
   };
@@ -168,4 +184,32 @@ export function carrierShareAt(
   if (altM >= highM) return 0;
   if (altM <= lowM) return 1;
   return smoothstep(logShare(altM, highM, lowM));
+}
+
+/**
+ * The camera's altitude (m) raised, if need be, to the clearance over the
+ * DRAWN ground under it: `displacedGroundM` is the relief's height there as
+ * drawn (already exaggerated; the sea at 0), null where no relief is
+ * loaded, which leaves the altitude alone. Applied every frame (one-scene
+ * plan §3.4). RangeError for a non-finite altitude or ground, or a negative
+ * clearance.
+ */
+export function clearedAltitudeM(
+  altitudeM: number,
+  displacedGroundM: number | null,
+  clearanceM: number,
+): number {
+  if (!Number.isFinite(altitudeM)) {
+    throw new RangeError(`the altitude must be finite, got ${altitudeM}`);
+  }
+  if (displacedGroundM !== null && !Number.isFinite(displacedGroundM)) {
+    throw new RangeError(
+      `the ground must be finite or null, got ${displacedGroundM}`,
+    );
+  }
+  if (!(clearanceM >= 0 && Number.isFinite(clearanceM))) {
+    throw new RangeError(`the clearance must be >= 0, got ${clearanceM}`);
+  }
+  if (displacedGroundM === null) return altitudeM;
+  return Math.max(altitudeM, Math.max(0, displacedGroundM) + clearanceM);
 }

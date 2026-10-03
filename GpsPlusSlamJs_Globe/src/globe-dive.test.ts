@@ -262,6 +262,47 @@ describe("planDive and diveStep", () => {
     expect(forward.dot(toGround)).toBeGreaterThan(1 - 1e-9);
   });
 
+  // Why (review 2026-10-03-1835 minor 8): a dive that starts below
+  // 5,000 km starts where the pitch law already wants a tilt; the first
+  // fifth eases from straight down (where the camera is) to the law, so
+  // the first frame is the camera's own and no frame jumps, and from the
+  // end of that fifth on the depression IS the law.
+  it("eases from straight down to the pitch law over the first fifth, from 3,000 km", () => {
+    const start = orbitCamera(10, 20, ell.radius.x + 3_000_000);
+    const dive = planDive(ell, start, equator, {
+      durationMs: 10_000,
+      toAltitudeM: 150_000,
+    });
+    const depressionAt = (ms: number) => {
+      const step = diveStep(dive, ms);
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+        step.quaternion,
+      );
+      const down = step.position.clone().negate().normalize();
+      return {
+        deg: (Math.asin(Math.min(1, forward.dot(down))) * 180) / Math.PI,
+        altitudeM: step.altitudeM,
+      };
+    };
+    // The first frame is the start: straight down at the centre.
+    // (asin near 1 resolves to about 1e-6 degrees.)
+    expect(depressionAt(0).deg).toBeGreaterThan(90 - 1e-4);
+    expect(pitchAtDeg(depressionAt(0).altitudeM)).toBeLessThan(89);
+    // No jump: a 10 ms step (more than a 60 Hz frame) turns the view by
+    // well under a degree.
+    let prev = depressionAt(0).deg;
+    for (let ms = 10; ms <= 10_000; ms += 10) {
+      const d = depressionAt(ms).deg;
+      expect(Math.abs(d - prev), `${ms} ms`).toBeLessThan(0.5);
+      prev = d;
+    }
+    // From the first fifth on, the law.
+    for (const ms of [2_000, 3_000, 6_000, 10_000]) {
+      const d = depressionAt(ms);
+      expect(d.deg).toBeCloseTo(pitchAtDeg(d.altitudeM), 4);
+    }
+  });
+
   it("starts at a tilted camera's own rotation and fades it out over the first fifth", () => {
     const start = orbitCamera(10, 30, 30_000_000);
     const tilt = new THREE.Quaternion().setFromAxisAngle(

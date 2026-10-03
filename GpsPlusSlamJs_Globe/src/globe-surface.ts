@@ -23,6 +23,7 @@ import { celestialToEcefQuaternion } from "./globe-stars.js";
 import {
   applyGlobeSurface,
   createGlobeSurfaceUniforms,
+  type GlobeSurfacePatchOptions,
   type GlobeSurfaceUniforms,
 } from "./globe-surface-material.js";
 import {
@@ -253,6 +254,7 @@ function globalMap(
  */
 export function createGlobeSurface(
   loader: GlobeSurfaceLoader = textureLoader,
+  patch: GlobeSurfacePatchOptions = {},
 ): GlobeSurface {
   const options: GlobeSurfaceOptions = {
     overlayProjection: GLOBE_SURFACE.overlayProjection,
@@ -288,7 +290,7 @@ export function createGlobeSurface(
   };
   const surfaceUniforms = createGlobeSurfaceUniforms(maps);
   const template = new THREE.MeshStandardMaterial({ roughness: 0.9 });
-  applyGlobeSurface(template, surfaceUniforms);
+  applyGlobeSurface(template, surfaceUniforms, patch);
   const sun = new THREE.DirectionalLight(0xffffff, GLOBE_SURFACE.sunIntensity);
   // NOT inside tiles.group: that group updates its children's world
   // matrices only when its own changes, so a light there keeps the matrix
@@ -301,6 +303,10 @@ export function createGlobeSurface(
    * group, identity in the lab, a rotation once phase 5 re-centres.
    */
   const syncSun = () => {
+    // The sky fill's light, by role: this light's colour times intensity.
+    surfaceUniforms.uSunRadiance.value
+      .set(sun.color.r, sun.color.g, sun.color.b)
+      .multiplyScalar(sun.intensity);
     sun.position
       .copy(surfaceUniforms.uSunEcef.value)
       .transformDirection(tiles.group.matrix);

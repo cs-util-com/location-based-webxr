@@ -181,7 +181,7 @@ test("the relief's tiles take the terrain lab's detail under the hold", async ({
   const verdict = (v) =>
     [0.5, 1, 2].map((k) => `x${k} ${v > BOUND * k ? "ok" : "NO"}`).join(" ");
   console.log(
-    `relief detail under the hold, ${grid.length} points against detail 0: noise (a second load at 0) ${noise.toFixed(3)}; 0.25 ${diff(0.25).toFixed(2)}, 0.5 ${diff(0.5).toFixed(2)} (bound ${BOUND.toFixed(3)}: ${verdict(diff(0.5))}), 1 ${diff(1).toFixed(2)}; region ${JSON.stringify(states[0.5])}`,
+    `relief detail under the hold (the region: ${states[0.5]?.tiles} z8 height tiles, ${((states[0.5]?.bytes ?? 0) / 2 ** 20).toFixed(2)} MiB), ${grid.length} points against detail 0: noise (a second load at 0) ${noise.toFixed(3)}; 0.25 ${diff(0.25).toFixed(2)}, 0.5 ${diff(0.5).toFixed(2)} (bound ${BOUND.toFixed(3)}: ${verdict(diff(0.5))}), 1 ${diff(1).toFixed(2)}; region ${JSON.stringify(states[0.5])}`,
   );
   expect(states[0]?.state).toBe("idle");
   expect(states[0.5]?.state).toBe("ready");
@@ -230,12 +230,13 @@ async function settleBoth(page, label) {
 
 // WHY (one-scene plan §3.2 and §6; F1): above the band the globe's own
 // surface draws, below it the relief's tiles, and between them a dithered
-// cross-fade. The two carriers differ by a mean 4.3 levels at noon from
-// 1,000 km (the relief's library tiles are coarser over part of the
-// frame: globe-terrain.smoke.spec.mjs), so the swap must be spread: at a
-// fixed view inside the band, each 0.1 step of the relief's share may
-// change the ground by at most a mean 1 level (reported at x0.5 and x2),
-// so no frame of the dive jumps. Both carriers are loaded first at share
+// cross-fade. What this check measures (review 2026-10-03-1835 major 3):
+// at a FIXED view, a 0.1 step of the share moves a tenth of the pixels
+// from one carrier to the other, so the step is a tenth of the two
+// carriers' distance (the full swap) by construction. It bounds that
+// distance per step at a mean 1 level (reported at x0.5 and x2); it does
+// not measure continuity under motion, which the moving-camera check
+// below does. Both carriers are loaded first at share
 // 0.5, then their tiles are frozen (`bandFreeze`) and the share stepped,
 // so the steps measure the fade, not the tiles still refining. Measured
 // at three heights across the band. Outside the band the other carrier is
@@ -317,4 +318,240 @@ test("the band's cross-fade between the globe and the relief is continuous, and 
     `band frames taken still loading: ${unsettled.join(", ") || "none"}`,
   );
   for (const max of worst) expect(max).toBeLessThanOrEqual(STEP);
+});
+
+// WHY (one-scene plan §3.4; review 2026-10-03-1835 major 1): the clearance
+// once came from a single ray at the pin press, from orbit, where no relief
+// was loaded, so it was 0. Now every frame the camera is kept above the
+// drawn ground under it by the clearance. Held at 5 km over a 2 km+ ridge
+// of the synthetic heights (46.5 N 9.125 E, about 1.7-2.2 km, drawn at E 3
+// so 5-6.6 km): the hold must sit at least the clearance over the drawn
+// ground, which means the camera was lifted.
+test("the clearance holds every frame: a 5 km hold over a ridge drawn higher than it", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(300_000);
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation({ latitude: 46.5, longitude: 9.125 });
+  const errors = await bootGlobe(page, `${BASE}&handOverKm=5`);
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return (
+        s.phase === "landed" &&
+        s.pin.phase === "idle" &&
+        s.relief?.groundUnderCameraM !== null &&
+        s.relief?.visibleTiles > 0
+      );
+    },
+    null,
+    { timeout: 120_000 },
+  );
+  const s = await page.evaluate(() => window.__globeLab.state());
+  const ground = s.relief.groundUnderCameraM;
+  console.log(
+    `clearance at a 5 km hold: altitude ${(s.altitudeM / 1000).toFixed(2)} km, drawn ground under the camera ${(ground / 1000).toFixed(2)} km (E ${s.relief.heightScale}), lifted on ${s.relief.clearanceLifts} frames`,
+  );
+  expect(errors).toEqual([]);
+  expect(ground).toBeGreaterThan(5_000 - 300);
+  expect(s.altitudeM).toBeGreaterThanOrEqual(ground + 300 - 1);
+  expect(s.relief.clearanceLifts).toBeGreaterThan(0);
+});
+
+// WHY (review 2026-10-03-1835 major 3): the dither is a screen pattern, so
+// a moving camera slides the ground under it and the fade could shimmer.
+// The camera is held at 31 dive times through the band (about three real
+// frames apart in altitude), over the same loaded tiles (frozen), three
+// times: the fade by altitude, the globe alone (share 0) and the relief
+// alone (share 1). The fade's worst frame-to-frame change may exceed the
+// worse of the two carriers' own by at most a mean 1 level (reported at
+// x0.5 and x2); more is the dither shimmering.
+test("the band's fade does not shimmer under a moving camera", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(900_000);
+  const grid = groundGrid();
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation(TARGET);
+  const base = `${BASE}&handOverKm=1100&detail=0`;
+  const errors = await bootGlobe(page, `${base}&bandShare=0.5`);
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return s.phase === "landed" && s.pin.phase === "idle";
+    },
+    null,
+    { timeout: 120_000 },
+  );
+  // Both carriers load at the band's middle, then the tiles are frozen.
+  const mid = await page.evaluate(() => {
+    let lo = 0;
+    let hi = 60_000;
+    for (let i = 0; i < 40; i++) {
+      const m = (lo + hi) / 2;
+      if (window.__globeLab.diveAltitudeAt(m) > 1_550_000) lo = m;
+      else hi = m;
+    }
+    return lo;
+  });
+  await page.evaluate((ms) => window.__globeLab.holdDiveAt(ms), mid);
+  await settleBoth(page, "moving camera, both at 0.5");
+  const times = await page.evaluate(() => {
+    const at = (km) => {
+      let lo = 0;
+      let hi = 60_000;
+      for (let i = 0; i < 40; i++) {
+        const m = (lo + hi) / 2;
+        if (window.__globeLab.diveAltitudeAt(m) > km * 1000) lo = m;
+        else hi = m;
+      }
+      return lo;
+    };
+    const out = [];
+    for (let i = 0; i <= 30; i++) {
+      out.push(at(2_050 * (1_150 / 2_050) ** (i / 30)));
+    }
+    return out;
+  });
+  const rows = {};
+  for (const [label, extra] of [
+    ["fade", ""],
+    ["globe", "&bandShare=0"],
+    ["relief", "&bandShare=1"],
+  ]) {
+    await page.evaluate((h) => {
+      location.hash = h;
+    }, `${base}${extra}&bandFreeze=1`);
+    const frames = [];
+    for (const ms of times) {
+      await page.evaluate((t) => window.__globeLab.holdDiveAt(t), ms);
+      frames.push(
+        await page.evaluate((g) => window.__globeLab.readPixels(g), grid),
+      );
+    }
+    const steps = frames.slice(1).map((f, i) => meanDiff(frames[i], f));
+    rows[label] = {
+      max: Math.max(...steps),
+      mean: steps.reduce((a, b) => a + b, 0) / steps.length,
+    };
+  }
+  const MARGIN = 1;
+  const worst = Math.max(rows.globe.max, rows.relief.max);
+  const excess = rows.fade.max - worst;
+  console.log(
+    `band under a moving camera, 31 frames 2,050 to 1,150 km: worst frame-to-frame step fade ${rows.fade.max.toFixed(2)} (mean ${rows.fade.mean.toFixed(2)}), globe ${rows.globe.max.toFixed(2)} (${rows.globe.mean.toFixed(2)}), relief ${rows.relief.max.toFixed(2)} (${rows.relief.mean.toFixed(2)}); excess ${excess.toFixed(2)} (margin ${MARGIN}: ${[0.5, 1, 2].map((k) => `x${k} ${excess <= MARGIN * k ? "ok" : "NO"}`).join(" ")})`,
+  );
+  expect(errors).toEqual([]);
+  expect(excess).toBeLessThanOrEqual(MARGIN);
+});
+
+// WHY (review 2026-10-03-1835 major 4): "outside the band the other carrier
+// fetches nothing" was true by construction and unmeasured, and the
+// globe's 64 MB cache stayed resident down to the hold. On a phone's
+// viewport (390 x 844 at DPR 2): above the band the relief has fetched
+// nothing; at the 150 km hold the globe's cache has been released and the
+// globe asks for no tile over five seconds; the two caches together stay
+// under 72 MiB there (the relief's own 64 MB budget plus an eighth),
+// reported at x0.5 and x2.
+test("outside the band the other carrier fetches nothing and holds no memory, on a phone", async ({
+  browser,
+}) => {
+  test.setTimeout(300_000);
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 2,
+  });
+  const page = await context.newPage();
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation(TARGET);
+  const errors = await bootGlobe(page, BASE);
+  await page.waitForFunction(
+    () => window.__globeLab.state().pendingTiles === 0,
+    null,
+    { timeout: 120_000 },
+  );
+  const above = await page.evaluate(() => window.__globeLab.state());
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return (
+        s.phase === "landed" &&
+        s.pin.phase === "idle" &&
+        s.relief?.settled &&
+        s.relief.visibleTiles > 0
+      );
+    },
+    null,
+    { timeout: 120_000 },
+  );
+  const sum = (a) => a.reduce((x, y) => x + y, 0);
+  const t0 = await page.evaluate(() => {
+    const s = window.__globeLab.state();
+    return { requests: s.tileRequestsByLevel, at: performance.now() };
+  });
+  await page.waitForFunction((at) => performance.now() - at > 5_000, t0.at);
+  const held = await page.evaluate(() => window.__globeLab.state());
+  const MIB = 2 ** 20;
+  const total = (held.relief.cachedBytes + held.relief.globeCachedBytes) / MIB;
+  const LIMIT = 72;
+  console.log(
+    `phone 390x844 DPR 2: above the band relief loaded ${above.relief.stats.loaded}, cache ${(above.relief.cachedBytes / MIB).toFixed(1)} MiB; at the hold the globe released ${(held.relief.releasedBytes.globe / MIB).toFixed(1)} MiB, its cache ${(held.relief.globeCachedBytes / MIB).toFixed(1)} MiB, globe tile requests over 5 s ${sum(held.tileRequestsByLevel) - sum(t0.requests)}; both caches ${total.toFixed(1)} MiB (limit ${LIMIT}: ${[0.5, 1, 2].map((k) => `x${k} ${total <= LIMIT * k ? "ok" : "NO"}`).join(" ")})`,
+  );
+  expect(errors).toEqual([]);
+  expect(above.relief.stats.loaded).toBe(0);
+  expect(above.relief.cachedBytes).toBe(0);
+  expect(held.relief.releasedBytes.globe).toBeGreaterThan(0);
+  expect(held.relief.globeCachedBytes).toBe(0);
+  expect(sum(held.tileRequestsByLevel)).toBe(sum(t0.requests));
+  expect(total).toBeLessThanOrEqual(LIMIT);
+  await context.close();
+});
+
+// WHY (review 2026-10-03-1835 minor 9): the detail test proved the wiring
+// (the frame changes); this proves the PLACE. A planted grid brightens the
+// ground east of the target by 1.6 and leaves the west alone; from the
+// hold, looking north, east is the frame's right. The right of the frame
+// must brighten and the left must not (bounds: right up by at least 3
+// levels, left within 0.5; reported at x0.5 and x2).
+test("a planted detail grid lands where it is placed: east of the target brightens, west does not", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(300_000);
+  const errors = await diveAndLand(page, context, `${BASE}&detail=0`);
+  const half = (left) => {
+    const g = [];
+    for (let y = 0.45; y <= 0.95; y += 0.05)
+      for (let x = left ? 0.05 : 0.6; x <= (left ? 0.4 : 0.95); x += 0.05)
+        g.push([x, y]);
+    return g;
+  };
+  const read = (g) => page.evaluate((p) => window.__globeLab.readPixels(p), g);
+  const lum = (px) =>
+    px.reduce((s, p) => s + 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2], 0) /
+    px.length;
+  const before = {
+    left: lum(await read(half(true))),
+    right: lum(await read(half(false))),
+  };
+  expect(
+    await page.evaluate(() => window.__globeLab.plantDetail(1.6)),
+  ).not.toBeNull();
+  const after = {
+    left: lum(await read(half(true))),
+    right: lum(await read(half(false))),
+  };
+  const up = after.right - before.right;
+  const drift = Math.abs(after.left - before.left);
+  console.log(
+    `planted detail (1.6 east of the target): right half ${before.right.toFixed(1)} -> ${after.right.toFixed(1)} (up ${up.toFixed(2)}, floor 3: ${[0.5, 1, 2].map((k) => `x${k} ${up >= 3 * k ? "ok" : "NO"}`).join(" ")}), left half ${before.left.toFixed(1)} -> ${after.left.toFixed(1)} (drift ${drift.toFixed(2)}, bound 0.5: ${[0.5, 1, 2].map((k) => `x${k} ${drift <= 0.5 * k ? "ok" : "NO"}`).join(" ")})`,
+  );
+  expect(errors).toEqual([]);
+  expect(up).toBeGreaterThanOrEqual(3);
+  expect(drift).toBeLessThanOrEqual(0.5);
 });

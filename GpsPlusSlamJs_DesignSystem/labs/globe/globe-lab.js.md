@@ -280,6 +280,12 @@
     band exists because further out the carriers differ (at noon from
     1,000 km by a mean 4.31 levels, the relief's tiles coarser over part
     of the frame).
+    - When the camera leaves the band on one side, the other carrier's
+      tile cache is released (`/globe/globe-tile-cache.js`), not only left
+      undrawn (review 2026-10-03-1835 major 4).
+    - Only a page with `relief=1` compiles the band into the globe's
+      shader (`createGlobeSurface(loader, { band: true })`); the plain
+      globe draws the program from before.
   - `detail` (0-1, default `GLOBE_ALBEDO.detail`, 0.5; 0 off):
     `globe-albedo`'s detail on the relief's tiles. At the pin's fix the
     page builds the terrain lab's 256 km region around the target
@@ -296,16 +302,26 @@
   - The pin's dive is the oblique approach (`planDive`'s pitch law; the
     `pitchLow` key, 30-90, default 45; 90 flies the old straight-down
     dive), ending at the hand-over altitude or the clearance rule's floor
-    over the target (`minimumAltitudeM` of the ground under it, read by a
-    ray onto the drawn relief, at the hold's exaggeration), whichever is
+    over the target (`minimumAltitudeM` of the ground under it, read from
+    the plugin's height sampler, at the hold's exaggeration), whichever is
     higher. `handOver` stays default 1 (DEC-GL5-8).
+  - The clearance every frame (review 2026-10-03-1835 major 1): wherever
+    the relief draws, the camera is raised to the clearance over the drawn
+    ground under it (`clearedAltitudeM` of the plugin's
+    `sampleCartographicElevation`), whoever owns the camera.
+  - Test hooks on `__globeLab`: `holdDiveAt(ms)` holds the camera at a
+    dive time (null runs on) and `diveAltitudeAt(ms)` reads the dive's
+    altitude without moving it (the moving-camera band smoke);
+    `plantDetail(eastFactor)` plants a detail grid east of the target (the
+    placement smoke).
   - `state()` adds `relief` (`{ heightScale, litTiles, visibleTiles,
-heights, share, settled, globeDrawn, reliefDrawn, globeTiles, detail }`
-    or null; `detail` is the region's state) and `cameraDepressionDeg`.
-  - Not in F1 (recorded for F2/F3): the cloud slab's depth input and style
-    C's neighbourhood terms on the library tiles; the re-oriented frame and
-    the sky level's move into the Globe package are in the record's F1
-    section with their state.
+heights, share, groundUnderCameraM, clearanceLifts, settled, stats,
+cachedBytes, globeCachedBytes, releasedBytes, globeDrawn, reliefDrawn,
+globeTiles, detail }` or null; `detail` is the region's state, with its
+    height tiles and bytes once ready) and `cameraDepressionDeg`.
+  - Not yet (the F2 plan 2026-10-03-1922): the re-oriented frame, the
+    planes from the exaggerated relief, the atmosphere hand-over and the
+    cloud slab's depth input; style C's neighbourhood terms later.
 - Touch and mouse (round-2 plan 2026-09-26-2055 M3a, M3b; round-3 plan
   2026-09-27-0532 §4 E): the tile library's own `GlobeControls` on the
   canvas, damping on:

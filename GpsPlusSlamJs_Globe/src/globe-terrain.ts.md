@@ -47,7 +47,7 @@
     the imagery picks for it (`calculateLevel`; the plugin passes its own
     tile level, up to 14); `tiling` passed through. `init` rejects with a
     RangeError for imagery that is not plate carree (its tiling's
-    projection not EPSG:4326 or CRS:84; F1a review minor 7), checked once
+    projection not EPSG:4326 or CRS:84; review 2026-10-02-1235 minor 7), checked once
     the imagery has initialised, since the library reports "none" before.
   - `useHalfFloatHeights(texture)`: `internalFormat = "R16F"` on a 32-bit
     float texture, once; other textures untouched. Heights stay metres
@@ -57,14 +57,14 @@
   - `tileGeographicBounds(geometry)`: a tile's box in radians from its
     geodetic normals, its latitude held to the Web Mercator limit (85.0511
     degrees): the library snaps its pole rows to 90 degrees while the
-    imagery it asked for ends there (F1a review minor 5). RangeError
+    imagery it asked for ends there (review 2026-10-02-1235 minor 5). RangeError
     without normals.
   - `litTerrainMaterial(template, own, bounds, detail?)`: the globe's lit copy for
     one tile: `own`'s map, displacement and bump maps and scales, both
     compile hooks (the library's first, then the globe's), the imagery UV
     from the normal over `bounds` (uniform `uTerrainGeoBounds`, clamped to
     the texture), program key `GLOBE_TERRAIN.programKey`. Heights below 0
-    are displaced and bump-shaded as 0 (F1a review major 3, the one-scene
+    are displaced and bump-shaded as 0 (review 2026-10-02-1235 major 3, the one-scene
     plan's §5): exaggerated sea floors would sink 10-15 km under the
     water's imagery at E 3, so the sea keeps the globe's surface and
     colour. The clone and its hooks are `litCopy` from `globe-surface.ts`.
@@ -75,7 +75,10 @@
     missing or doubled anchor then throws, naming it.
   - `createGlobeTerrain({ url, imagery, template, heightScale, maxZoom? })`
     -> `{ tiles, plugin, detail, setDetail(grid, centre), litTiles(), dispose() }`
-    (`detail` the tiles' shared detail uniforms, off until `setDetail`): the library's
+    (`detail` the tiles' shared detail uniforms, off until `setDetail`;
+    `plugin.sampleCartographicElevation(lat, lon)` the library's drawn
+    height at a place from the finest loaded tile, null where none is, which
+    the globe lab's per-frame clearance reads): the library's
     `TerrariumMeshPlugin` on `url` (Terrarium encoded; `maxZoom` 12 by
     default), the imagery through `geographicOverlay`, and on every
     `load-model` the half-float heights and the lit copy; on
@@ -95,7 +98,7 @@
     map) are not used.
   - Tiles never cross the antimeridian (XYZ tiles are aligned to it).
   - Levels: the library's tile `depth` counts its root, so a tile's level
-    is `depth - 1` (F1a review minor 9).
+    is `depth - 1` (review 2026-10-02-1235 minor 9).
   - A guard test reads the library's plugin source: if a bump makes it
     convert the overlay range itself, the adapter would convert twice.
 - Example:

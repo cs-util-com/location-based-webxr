@@ -16,8 +16,9 @@
     - `state()` returns one of:
       - `idle`;
       - `loading`;
-      - `ready`, with `posts`, `changedShare` (the share of factors that
-        are not 1) and `centre`;
+      - `ready`, with `tiles` and `bytes` (the region's z8 height tiles,
+        the data the detail costs), `posts`, `changedShare` (the share of
+        factors that are not 1) and `centre`;
       - `failed`, with `message` (no tile loaded, a worker error, or a
         target that is not a finite position).
 - Invariants & assumptions:

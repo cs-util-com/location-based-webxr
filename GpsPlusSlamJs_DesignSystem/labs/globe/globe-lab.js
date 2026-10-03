@@ -62,10 +62,12 @@ import {
   limitGlobeZoomOut,
 } from "/globe/globe-zoom-limit.js";
 import { createGlobeTerrain } from "/globe/globe-terrain.js";
+import { releaseTileCache } from "/globe/globe-tile-cache.js";
 import { SKY_FILL } from "/globe/sky-level.js";
 import {
   GLOBE_FLIGHT,
   carrierShareAt,
+  clearedAltitudeM,
   exaggerationAt,
   minimumAltitudeM,
 } from "/globe/globe-flight.js";
@@ -477,6 +479,8 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
    * clock: as it is when fixed, the paced path when the prefetch runs).
    */
   let diveClock = (elapsedMs) => elapsedMs;
+  /** A fixed dive time (ms) the pose holds at, for the smokes; null: run. */
+  let diveHoldMs = null;
   /**
    * The target's arrival: when, the spin's direction then, and how long the
    * start blends from it (0 when no spin frame was drawn).
@@ -660,15 +664,32 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
         pitchLowDeg: params.pitchLow,
       });
       diveStartedAt = now;
+      diveHoldMs = null;
       diveClock = clock ?? ((elapsedMs) => elapsedMs);
       choice = { target, source: "pin" };
       phase = "diving";
       note(now);
     },
+    /**
+     * For the smokes: hold the camera at a dive time (ms, null to run on),
+     * and read the dive's altitude at a time without moving the camera.
+     * Null without a dive.
+     */
+    holdDiveAt(ms) {
+      if (!dive) return null;
+      diveHoldMs = ms;
+      return diveStep(dive, ms ?? 0).altitudeM;
+    },
+    diveAltitudeAt(ms) {
+      return dive ? diveStep(dive, ms).altitudeM : null;
+    },
     /** The pose for this frame, advancing the states. */
     pose(now) {
       if (phase === "diving" || phase === "landed") {
-        const step = diveStep(dive, diveClock(now - diveStartedAt));
+        const step = diveStep(
+          dive,
+          diveHoldMs ?? diveClock(now - diveStartedAt),
+        );
         if (step.done && phase === "diving") {
           phase = "landed";
           note(now);
@@ -1254,8 +1275,12 @@ async function start() {
   /** When the frame loop last ran (performance.now()), for the smokes. */
   let frameAt = 0;
   const terrainResolution = new THREE.Vector2();
-  const floorRay = new THREE.Raycaster();
-  const globe = createGlobeSurface();
+  const startParams = readHashParams();
+  // A page with a relief compiles the band into the globe's shader; the
+  // plain globe draws the program from before the relief.
+  const globe = createGlobeSurface(undefined, {
+    band: startParams.relief === 1,
+  });
   useSurfaceDefaults(globe);
   const { radius: radii } = globe.tiles.ellipsoid;
   const atmosphere = createGlobeAtmosphere(renderer, [
@@ -1267,7 +1292,6 @@ async function start() {
   // The relief (F1): the library's terrain tiles wearing the globe's look,
   // in the globe's group, in place of the generated tiles. Created once, on
   // the page's first relief=1; its heights are exaggerated by altitude.
-  const startParams = readHashParams();
   if (startParams.relief === 1 && startParams.reliefHeights === "synthetic") {
     installSyntheticHeights();
   }
@@ -1299,6 +1323,17 @@ async function start() {
           : SYNTHETIC_HEIGHTS_URL,
       })
     : null;
+  /** The drawn ground under the camera (m, null with no relief there). */
+  let groundUnderCameraM = null;
+  /** Frames on which the clearance raised the camera. */
+  let clearanceLifts = 0;
+  /**
+   * The share on the frame before, and the bytes released when a carrier
+   * left the frame (review 2026-10-03-1835 major 4: outside the band the
+   * inactive carrier's tiles are unloaded, not only left undrawn).
+   */
+  let lastBandShare = 0;
+  const released = { globe: 0, relief: 0 };
   /** The relief's share of the pixels this frame (the band's cross-fade). */
   let bandShare = terrain ? 1 : 0;
   /** The tiles the surface is mostly drawn with now: the relief's or the globe's. */
@@ -1545,30 +1580,12 @@ async function start() {
    */
   const diveFloorM = (target) => {
     if (!terrain) return 0;
-    const ell = globe.tiles.ellipsoid;
-    const lat = target.lat * DEG;
-    const lon = target.lng * DEG;
-    const above = ell.getCartographicToPosition(
-      lat,
-      lon,
-      100_000,
-      new THREE.Vector3(),
+    const ground = terrain.plugin.sampleCartographicElevation(
+      target.lat * DEG,
+      target.lng * DEG,
     );
-    const ground = ell.getCartographicToPosition(
-      lat,
-      lon,
-      0,
-      new THREE.Vector3(),
-    );
-    const local = terrain.tiles.group;
-    local.updateMatrixWorld(true);
-    const from = above.applyMatrix4(local.matrixWorld);
-    const to = ground.applyMatrix4(local.matrixWorld);
-    floorRay.set(from, to.sub(from).normalize());
-    const hit = floorRay.intersectObject(local, true)[0];
-    if (!hit) return 0;
-    const heightM =
-      (100_000 - hit.distance) / Math.max(terrain.plugin.heightScale, 1);
+    if (ground === null) return 0;
+    const heightM = ground / Math.max(terrain.plugin.heightScale, 1);
     const e = exaggerationAt(params.handOverKm * 1000, {
       near: params.reliefNear,
     });
@@ -1653,6 +1670,37 @@ async function start() {
           lowM: Math.min(params.bandLow * 1000, highM - 1),
         });
       globe.surfaceUniforms.uCarrierShare.value = bandShare;
+      if (bandShare >= 1 && lastBandShare < 1) {
+        released.globe += releaseTileCache(globe.tiles.lruCache);
+      } else if (bandShare <= 0 && lastBandShare > 0) {
+        released.relief += releaseTileCache(terrain.tiles.lruCache);
+      }
+      lastBandShare = bandShare;
+      // The clearance every frame (one-scene plan §3.4; review 2026-10-03-1835
+      // major 1): wherever the relief draws, the camera never comes closer
+      // to the drawn ground under it than the clearance, whoever owns the
+      // camera (the dive, the hold or the controls).
+      if (bandShare > 0) {
+        const at = globe.tiles.ellipsoid.getPositionToCartographic(
+          globe.tiles.group.worldToLocal(camera.position.clone()),
+          {},
+        );
+        groundUnderCameraM = terrain.plugin.sampleCartographicElevation(
+          at.lat,
+          at.lon,
+        );
+        const cleared = clearedAltitudeM(
+          altitudeM,
+          groundUnderCameraM,
+          GLOBE_FLIGHT.clearanceM,
+        );
+        if (cleared > altitudeM) {
+          const r = camera.position.length();
+          camera.position.multiplyScalar((r + cleared - altitudeM) / r);
+          camera.updateMatrixWorld();
+          clearanceLifts += 1;
+        }
+      }
       globe.tiles.group.visible = bandShare < 1;
       const frozen = params.bandFreeze === 1;
       if (bandShare < 1 && !frozen) globe.update(camera, renderer);
@@ -1949,9 +1997,10 @@ async function start() {
             visibleTiles: terrain.tiles.visibleTiles.size,
             heights: startParams.reliefHeights,
             share: bandShare,
-            // The relief's own loading, as the library counts it (its
-            // queues are shared with the globe's, so `settled` waits for
-            // both).
+            groundUnderCameraM,
+            clearanceLifts,
+            // The relief's own loading, as the library counts it (its own
+            // cache and queues, so `settled` is the relief's alone).
             stats: (({ queued, downloading, parsing, loaded, failed }) => ({
               queued,
               downloading,
@@ -1960,6 +2009,8 @@ async function start() {
               failed,
             }))(terrain.tiles.stats),
             cachedBytes: terrain.tiles.lruCache.cachedBytes,
+            globeCachedBytes: globe.tiles.lruCache.cachedBytes,
+            releasedBytes: { ...released },
             settled:
               terrain.tiles.loadProgress === 1 &&
               !terrain.tiles.downloadQueue.running &&
@@ -2046,6 +2097,30 @@ async function start() {
      * time in ms. Under SwiftShader it is relative only: compare two
      * settings within one page load, never across machines.
      */
+    /**
+     * For the smokes: plants a detail grid over the target (128 km either
+     * side) whose factor is `eastFactor` east of the target and 1 west of
+     * it, in place of the region's; null without a relief or a target.
+     */
+    plantDetail(eastFactor) {
+      const target = flight.state().target;
+      if (!terrain || !target) return null;
+      const side = 65;
+      const extentM = 128_000;
+      const ratio = new Float32Array(side * side);
+      for (let r = 0; r < side; r++) {
+        for (let c = 0; c < side; c++) {
+          const x = -extentM + (c * 2 * extentM) / (side - 1);
+          ratio[r * side + c] = x > 0 ? eastFactor : 1;
+        }
+      }
+      terrain.setDetail({ ratio, side, extentM, halfM: extentM }, target);
+      return target;
+    },
+    /** The dive's altitude at a dive time (m), the camera unmoved. */
+    diveAltitudeAt: (ms) => flight.diveAltitudeAt(ms),
+    /** Holds the camera at a dive time (ms; null runs on); its altitude. */
+    holdDiveAt: (ms) => flight.holdDiveAt(ms),
     timeFrames(n) {
       const gl = renderer.getContext();
       const px = new Uint8Array(4);

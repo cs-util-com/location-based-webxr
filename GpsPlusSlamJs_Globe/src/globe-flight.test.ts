@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   GLOBE_FLIGHT,
   carrierShareAt,
+  clearedAltitudeM,
   exaggerationAt,
   frameCheck,
   minimumAltitudeM,
@@ -82,7 +83,7 @@ describe("exaggerationAt", () => {
 
 describe("minimumAltitudeM", () => {
   // One-scene plan §3.4: the clearance is over the EXAGGERATED ground, the
-  // sea drawn at 0 (F1a review major 3).
+  // sea drawn at 0 (review 2026-10-02-1235 major 3).
   it("is the exaggerated ground plus the clearance", () => {
     expect(minimumAltitudeM(4_000, 3, 500)).toBe(12_500);
     expect(minimumAltitudeM(-2_000, 3, 500)).toBe(500);
@@ -91,6 +92,32 @@ describe("minimumAltitudeM", () => {
     );
     expect(() => minimumAltitudeM(0, 0.5, 100)).toThrow(RangeError);
     expect(() => minimumAltitudeM(0, 1, -1)).toThrow(RangeError);
+  });
+});
+
+describe("clearedAltitudeM", () => {
+  // Why (review 2026-10-03-1835 major 1): the clearance computed once at
+  // the pin, from orbit, found no relief and was 0, so a low hold over the
+  // Alps could sit inside a mountain. Every frame the camera is raised to
+  // the clearance over the DRAWN (displaced, exaggerated) ground under it,
+  // the sea at 0; with no relief loaded there it is left alone.
+  it("raises the camera to the clearance over the drawn ground, and only then", () => {
+    expect(clearedAltitudeM(5_000, 6_600, 300)).toBe(6_900);
+    expect(clearedAltitudeM(10_000, 6_600, 300)).toBe(10_000);
+    expect(clearedAltitudeM(200, -3_000, 300)).toBe(300);
+    expect(clearedAltitudeM(5_000, null, 300)).toBe(5_000);
+    for (let alt = 0; alt <= 20_000; alt += 250) {
+      for (const ground of [-1_000, 0, 2_000, 8_000, 15_000]) {
+        const a = clearedAltitudeM(alt, ground, GLOBE_FLIGHT.clearanceM);
+        expect(a).toBeGreaterThanOrEqual(alt);
+        expect(a).toBeGreaterThanOrEqual(
+          Math.max(0, ground) + GLOBE_FLIGHT.clearanceM,
+        );
+      }
+    }
+    expect(() => clearedAltitudeM(Number.NaN, 0, 300)).toThrow(RangeError);
+    expect(() => clearedAltitudeM(0, Number.NaN, 300)).toThrow(RangeError);
+    expect(() => clearedAltitudeM(0, 0, -1)).toThrow(RangeError);
   });
 });
 
@@ -109,6 +136,39 @@ describe("frameCheck, over pitch x fov x altitude", () => {
     ).toBe(false);
   });
 
+  // Why (review 2026-10-03-1835 minor 7): the view's centre is the
+  // target, and at a low pitch it looked past the horizon (pitchLow 30
+  // between about 985 and 1,300 km, where the horizon dips more than 30
+  // degrees). The law keeps the view at least `horizonMarginDeg` below the
+  // horizon, so the target is in view over the whole pitch x fov x
+  // altitude sweep.
+  it("keeps the target in view over pitch x fov x altitude", () => {
+    const r = GLOBE_FLIGHT.radiusM;
+    const dip = (alt: number) => (Math.acos(r / (r + alt)) * 180) / Math.PI;
+    expect(
+      frameCheck({ altitudeM: 1_100_000, pitchDeg: 30, fovYDeg: 50 })
+        .targetVisible,
+    ).toBe(false);
+    for (const pitchLowDeg of [30, 45, 60, 90]) {
+      for (const fov of [40, 50, 60]) {
+        for (let alt = 1_000; alt <= 30_000_000; alt *= 1.15) {
+          const pitch = pitchAtDeg(alt, { pitchLowDeg });
+          const c = frameCheck({
+            altitudeM: alt,
+            pitchDeg: pitch,
+            fovYDeg: fov,
+          });
+          expect(c.targetVisible, `${pitchLowDeg} ${alt} m`).toBe(true);
+          expect(pitch).toBeGreaterThanOrEqual(
+            Math.min(90, dip(alt) + GLOBE_FLIGHT.horizonMarginDeg) - 1e-9,
+          );
+        }
+      }
+    }
+    // Where the horizon is low the law is the plan's own value.
+    expect(pitchAtDeg(150_000, { pitchLowDeg: 30 })).toBe(30);
+  });
+
   it("holds for the default pitch at every altitude of the held flight (150 km down)", () => {
     for (const alt of [150_000, 30_000, 5_000]) {
       for (const fov of [40, 50, 60]) {
@@ -117,7 +177,7 @@ describe("frameCheck, over pitch x fov x altitude", () => {
           pitchDeg: pitchAtDeg(alt),
           fovYDeg: fov,
         });
-        expect(c.targetInCentreThird, `${alt} m fov ${fov}`).toBe(true);
+        expect(c.targetVisible, `${alt} m fov ${fov}`).toBe(true);
         expect(c.groundAtTop, `${alt} m fov ${fov}`).toBe(true);
       }
     }

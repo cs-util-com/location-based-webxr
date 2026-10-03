@@ -9,12 +9,16 @@
     sweep), `exaggerationFarM` 2,000 km and `exaggerationNearM` 20 km (the
     exaggeration's band), `exaggerationNear` 3 (DEC-GL5-5),
     `exaggerationStep` 0.1, `clearanceM` 300, `radiusM` 6,371 km (the frame
-    metric's sphere).
+    metric's sphere), `horizonMarginDeg` 5 (the least the view looks below
+    the horizon).
   - `pitchAtDeg(altM, { pitchLowDeg? })`: the view's depression below the
     local horizontal: 90 above `pitchHighM` (looking at the centre,
     continuous with the intro's end), `pitchLowDeg` from `pitchLowM` down,
-    smoothstep in the logarithm between. RangeError for a non-finite
-    altitude or a low pitch outside 0-90.
+    smoothstep in the logarithm between; never less than
+    `horizonMarginDeg` below the horizon, so the target (the view's centre)
+    stays in view (review 2026-10-03-1835 minor 7: a low pitch of 30 looked
+    past the horizon between about 985 and 1,300 km). RangeError for a
+    non-finite altitude or a low pitch outside 0-90.
   - `exaggerationAt(altM, { near? })`: 1 above `exaggerationFarM`, `near`
     from `exaggerationNearM` down, smoothstep in the logarithm between,
     rounded to `exaggerationStep` (so the tile tree is not re-traversed
@@ -24,10 +28,10 @@
     ground drawn at exaggeration `e`: max(ground, 0) x e + clearance (the
     sea drawn at 0, as the relief draws it). RangeError for e below 1 or a
     negative clearance.
-  - `frameCheck({ altitudeM, pitchDeg, fovYDeg })`: the plan's metric: the
-    target at the view's centre (in the centre third by construction) and
-    `groundAtTop` when the top ray's depression (pitch - fov / 2) exceeds
-    the horizon's dip acos(R / (R + h)); `dipDeg` too. At fovY 50 and 45
+  - `frameCheck({ altitudeM, pitchDeg, fovYDeg })`: the plan's metric:
+    `targetVisible` when the view's centre (the target) looks below the
+    horizon, `groundAtTop` when the top ray's depression (pitch - fov / 2)
+    exceeds the horizon's dip acos(R / (R + h)); `dipDeg` too. At fovY 50 and 45
     degrees the horizon leaves the frame below about 409 km.
   - `carrierShareAt(altM, { highM?, lowM? })`: the relief carrier's share
     of the pixels in the altitude band (one-scene plan §3.2): 0 at and
@@ -41,6 +45,12 @@
     noon from 1,000 km by a mean 4.31 levels: the relief's library tiles
     are coarser over part of the frame).
   - The smoothstep is `globe-camera.ts`'s (one per package).
+  - `clearedAltitudeM(altitudeM, displacedGroundM, clearanceM)`: the
+    camera's altitude raised, if need be, to the clearance over the DRAWN
+    ground under it (already exaggerated, the sea at 0); null ground (no
+    relief loaded there) leaves it alone. The globe lab applies it every
+    frame (review 2026-10-03-1835 major 1). RangeError for a non-finite
+    altitude or ground, or a negative clearance.
 - Invariants & assumptions: the bands are parameters, not verdicts; the
   pitch sweep (30, 45, 60) runs in the lab's relief smoke.
 - Example:

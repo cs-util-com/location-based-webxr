@@ -138,7 +138,7 @@ describe("geographicOverlay", () => {
 });
 
 describe("geographicOverlay, the imagery's projection", () => {
-  // Why (F1a review minor 7): the conversion assumes plate-carree
+  // Why (review 2026-10-02-1235 minor 7): the conversion assumes plate-carree
   // imagery; a Web Mercator imagery source would be converted wrongly
   // without a word, so it is refused. The overlay's projection is only
   // known once it has initialised (before, the library reports "none":
@@ -229,7 +229,7 @@ describe("tileGeographicBounds", () => {
     expect(b.north / DEG).toBeCloseTo(42, 4);
   });
 
-  // Why (F1a review minor 5): the library snaps its pole rows to 90
+  // Why (review 2026-10-02-1235 minor 5): the library snaps its pole rows to 90
   // degrees while the imagery it was asked for ends at the Web Mercator
   // limit (85.0511 degrees); the box must end there too, or a pole tile's
   // imagery is stretched over the cap.
@@ -362,7 +362,7 @@ describe("litTerrainMaterial", () => {
 });
 
 describe("bathymetry clamped at the surface", () => {
-  // Why (F1a review major 3; one-scene plan §5): exaggerated sea floors
+  // Why (review 2026-10-02-1235 major 3; one-scene plan §5): exaggerated sea floors
   // sank 10-15 km under the water's imagery at E 3. Heights below 0 are
   // drawn and shaded as 0, so the sea keeps the globe's surface and colour.
   it("displaces and shades with heights clamped at 0", () => {
@@ -472,7 +472,10 @@ describe("createGlobeTerrain", () => {
       heightScale: 2,
     });
     expect(terrain.plugin.heightScale).toBe(2);
-    // The error target picked by the look (F1a review major 4): 2 draws
+    // The per-frame clearance reads the drawn height through the plugin's
+    // own sampler (review 2026-10-03-1835 major 1): null with nothing loaded.
+    expect(terrain.plugin.sampleCartographicElevation(0.8, 0.16)).toBeNull();
+    // The error target picked by the look (review 2026-10-02-1235 major 4): 2 draws
     // the real Alps as 1 does (mean 0.12 levels, 95th percentile 0 at
     // 30 km) for 9.9 MiB a descent against 11.5; 4 differs by 42 levels.
     expect(GLOBE_TERRAIN.errorTarget).toBe(2);

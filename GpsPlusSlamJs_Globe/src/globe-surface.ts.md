@@ -15,7 +15,8 @@
     the floor the library evicts down to. The floor must sit below the cap:
     the library's default floor (0.3 GB) left a full cache over the cap
     whenever nothing was pending.
-  - `createGlobeSurface(loader?)` returns `{ tiles, group, plugin, overlay,
+  - `createGlobeSurface(loader?, { band? })` (`band` for a page with a
+    relief: the template compiles the altitude band's code) returns `{ tiles, group, plugin, overlay,
 options, sun, surfaceUniforms, template, setSun(directionEcef), update(camera,
 renderer), state(), celestialToWorld(siderealAngleRad, target?),
 activeSources(), dispose() }`.
@@ -34,7 +35,8 @@ activeSources(), dispose() }`.
       `tiles.group`'s placement in `group` (identity in the lab; phase 5
       re-centres the tiles, and the light must follow them), and keeps
       `uSunWorld` (the sun through every group above the tiles, for the
-      cloud shading's screen-space sun; review 2026-10-01 m4). `update`
+      cloud shading's screen-space sun; review 2026-10-01 m4) and
+      `uSunRadiance` (the light's colour x intensity, the sky fill's light). `update`
       re-syncs both each frame. RangeError for a zero or non-finite vector.
     - `state()` is `{ models, tileErrors, cachedBytes, pendingTiles,
 loadedTiles, refusedTiles, mapsLoaded, mapErrors, mapsTotal }`

@@ -64,6 +64,30 @@ function stubLoader(): {
 }
 
 describe("createGlobeSurface", () => {
+  // Why (review 2026-10-03-1835 minor 10 and nit 3): a page with a
+  // relief compiles the band (its own program key); the plain globe does
+  // not. The sky fill reads the sun by role: the surface keeps the sun
+  // light's radiance (colour x intensity) in a uniform every time the sun
+  // is set, so a changed intensity reaches the fill.
+  it("compiles the band only when asked, and keeps the sun's radiance for the fill", () => {
+    const plain = createGlobeSurface(stubLoader());
+    expect(plain.template.customProgramCacheKey()).toBe(
+      GLOBE_SURFACE_CACHE_KEY,
+    );
+    const band = createGlobeSurface(stubLoader(), { band: true });
+    expect(band.template.customProgramCacheKey()).toBe(
+      `${GLOBE_SURFACE_CACHE_KEY}-band`,
+    );
+    band.sun.intensity = 3;
+    band.sun.color.setRGB(1, 0.5, 0.25);
+    band.setSun(new THREE.Vector3(0, 0, 2));
+    expect(band.surfaceUniforms.uSunRadiance.value.toArray()).toEqual([
+      3, 1.5, 0.75,
+    ]);
+    plain.dispose();
+    band.dispose();
+  });
+
   // The phone's memory: the tiles' cache is capped (about 90 level-3 tiles
   // with mips are ~31 MB, plan §7.4), and the library unloads past it.
   it("caps the tile cache at the budget", () => {
@@ -340,7 +364,7 @@ const meshes = (root: THREE.Object3D): THREE.Mesh[] => {
 };
 
 describe("litCopy and tileMeshes (shared with the relief carrier)", () => {
-  // Why (F1a review minor 8, DEC-H3): the globe's tiles and the relief's
+  // Why (review 2026-10-02-1235 minor 8, DEC-H3): the globe's tiles and the relief's
   // both need "a clone of the template with its compile hooks" and "every
   // mesh under a tile model"; one implementation each, used by both.
   it("clones the template with its compile hooks and program key", () => {

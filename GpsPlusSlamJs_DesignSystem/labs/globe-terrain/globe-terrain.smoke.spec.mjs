@@ -119,7 +119,7 @@ const readGrid = (grid) => async (page) => ({
     .visibleByLevel,
 });
 
-// WHY (F0b; F1a review minor 6): the carrier must look like the globe
+// WHY (F0b; review 2026-10-02-1235 minor 6): the carrier must look like the globe
 // where it has no relief to add, flat (height scale 0), against the
 // globe's own surface, at 150 km (imagery level 5), where the flight holds
 // on the carrier: noon, dusk, night and noon at 70 N. Before the range
@@ -208,20 +208,19 @@ const readScan = async (page) => ({
   state: await page.evaluate(() => window.__terrainCarrier.state()),
 });
 
-// WHY (F1a review major 1): looking straight down, no ridge hides another,
+// WHY (review 2026-10-02-1235 major 1): looking straight down, no ridge hides another,
 // so a step between neighbouring pixels (both axes) beyond the terrain's
 // own slope is a seam, and the background (magenta) showing through is a
 // crack. Heights are read in two channels (0.125 m a step). Bounds: no
-// cracks; steps over 30 m on at most 1e-4 of the pixels (reported at 10,
-// 30 and 100 m); the frame must span at least 200 m of relief. The scan
-// must also FIRE on a positive control (every tile's heights offset by up
-// to 50 m: at least 1e-3 of the pixels over 30 m), or it proves nothing.
-// The scan and its control run at the library's error target 1, finer
-// than the carrier's default 2: more tiles, so more edges in the frame
-// (35 against 14 at 30 km). At 2 the planted seams covered 9.96e-4 of the
-// pixels, at 1 5.65e-3: the control's power follows the edge count, so it
-// is measured where the edges are most. The default is scanned too, at
-// 30 km, for cracks and steps.
+// cracks; steps over 30 m on at most STEP_SHARE (1e-4) of the pixels
+// (reported at 10, 30 and 100 m); the frame must span at least 200 m of
+// relief. The scan must also FIRE on a positive control (every tile's
+// heights offset by up to 50 m), or it proves nothing. The control runs
+// at the carrier's default error target (review 2026-10-03-1835 minor 6),
+// the configuration the scan validates, and must reach 5 x STEP_SHARE
+// over 30 m (reported at 2.5, 5 and 10 x): the planted seams' share
+// follows the frame's tile edges (14 tiles at 30 km at the default, 9.96e-4
+// measured; 35 tiles and 5.65e-3 at error target 1, also scanned).
 test("no cracks and no seams between the relief's tiles, and the scan fires on a planted seam", async ({
   browser,
 }) => {
@@ -250,17 +249,17 @@ test("no cracks and no seams between the relief's tiles, and the scan fires on a
   }
   const control = await measured(
     browser,
-    "carrier=terrain&alt=30&nadir=1&debug=height&errorTarget=1&seamControl=1",
+    "carrier=terrain&alt=30&nadir=1&debug=height&seamControl=1",
     readScan,
   );
   const c = shares(control.scan);
   console.log(
-    `seam scan, POSITIVE CONTROL (tiles offset by up to 50 m, error target 1, ${control.state.visibleTiles} tiles): steps over 10/30/100 m ${control.scan.steps.join("/")} (share over 30 m ${(c[1] ?? 0).toExponential(2)}, must reach 1e-3)`,
+    `seam scan, POSITIVE CONTROL (tiles offset by up to 50 m, the default error target, ${control.state.visibleTiles} tiles): steps over 10/30/100 m ${control.scan.steps.join("/")} (share over 30 m ${(c[1] ?? 0).toExponential(2)}; must reach 5 x ${STEP_SHARE}: ${[2.5, 5, 10].map((k) => `x${k} ${(c[1] ?? 0) >= k * STEP_SHARE ? "ok" : "NO"}`).join(" ")})`,
   );
-  expect(c[1]).toBeGreaterThanOrEqual(1e-3);
+  expect(c[1]).toBeGreaterThanOrEqual(5 * STEP_SHARE);
 });
 
-// WHY (F1a review major 3; one-scene plan §5): exaggerated sea floors sank
+// WHY (review 2026-10-02-1235 major 3; one-scene plan §5): exaggerated sea floors sank
 // 10-15 km under the water's imagery at E 3. With the synthetic heights
 // lowered 1,500 m (a coast: valleys below 0), the drawn heights never go
 // below 0, and over the sea the frame at E 3 matches the flat one (the
@@ -354,7 +353,7 @@ test("the data one descent asks for, at three error targets, on a phone", async 
 });
 
 // ---- Live: the real Terrarium tiles (network, opt-in) ----
-// GLOBE_TERRAIN_LIVE=1 runs these (F1a review majors 1, 2 and 4); they
+// GLOBE_TERRAIN_LIVE=1 runs these (review 2026-10-02-1235 majors 1, 2 and 4); they
 // fetch from AWS, so the default gate skips them.
 const live = process.env.GLOBE_TERRAIN_LIVE === "1";
 
@@ -377,7 +376,7 @@ test.describe("on the real Terrarium heights (GLOBE_TERRAIN_LIVE=1)", () => {
     }
   });
 
-  // F1a review major 2: half-float steps (2-4 m above 2,048 m) against a
+  // review 2026-10-02-1235 major 2: half-float steps (2-4 m above 2,048 m) against a
   // 26 m texel at E 3 could band the bump shading at a low sun. Measured
   // over Mont Blanc (45.83 N 6.86 E, above 3,000 m), the sun 10 degrees up
   // (16.6 h UTC on the equinox), E 3: R16F against R32F (the extension is
@@ -403,7 +402,7 @@ test.describe("on the real Terrarium heights (GLOBE_TERRAIN_LIVE=1)", () => {
     }
   });
 
-  // F1a review major 4: the descent on real heights (sizes summed by
+  // review 2026-10-02-1235 major 4: the descent on real heights (sizes summed by
   // terrarium-bytes.mjs), and the error target picked by the look: at E 3,
   // 30 and 5 km, error targets 2 and 4 against 1; the coarsest whose 95th
   // percentile stays within 8 levels.

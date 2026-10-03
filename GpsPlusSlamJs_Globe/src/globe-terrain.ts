@@ -41,7 +41,7 @@ export const GLOBE_TERRAIN = Object.freeze({
   programKey: "globe-terrain-lit",
   /**
    * The tiles' error target, picked by the look on real heights over the
-   * Alps (F1a review major 4): 2 draws what the library's default 1 draws
+   * Alps (review 2026-10-02-1235 major 4): 2 draws what the library's default 1 draws
    * (mean 0.12 levels, 95th percentile 0 at 30 km) for 9.9 MiB of heights
    * a phone descent against 11.5; 4 (7.7 MiB) differs by 42 levels.
    */
@@ -215,7 +215,7 @@ export function tileGeographicBounds(
     north = Math.max(north, lat);
   }
   // The library snaps its pole rows to 90 degrees; the imagery it asked
-  // for ends at the Web Mercator limit (F1a review minor 5).
+  // for ends at the Web Mercator limit (review 2026-10-02-1235 minor 5).
   return {
     west,
     south: Math.max(south, -MERCATOR_LIMIT),
@@ -244,7 +244,7 @@ const GEO_UV_VERTEX = /* glsl */ `
 #endif`;
 
 /**
- * The displacement with heights below 0 drawn as 0 (F1a review major 3;
+ * The displacement with heights below 0 drawn as 0 (review 2026-10-02-1235 major 3;
  * one-scene plan §5): exaggerated sea floors would sink 10-15 km under the
  * water's imagery at E 3, so the sea keeps the globe's surface and colour.
  */
@@ -336,6 +336,12 @@ export function litTerrainMaterial(
 /** What this module uses of the library's TerrariumMeshPlugin (untyped in 0.5.3). */
 interface TerrariumMeshPluginInstance {
   heightScale: number;
+  /**
+   * The drawn height (m, the height scale applied) at a geodetic latitude
+   * and longitude (radians) from the finest loaded height tile, or null
+   * where none is loaded: the per-frame clearance reads it.
+   */
+  sampleCartographicElevation(lat: number, lon: number): number | null;
 }
 
 type TerrariumMeshPluginConstructor = new (options: {

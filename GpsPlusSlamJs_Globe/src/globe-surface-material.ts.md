@@ -22,15 +22,19 @@ cloudOpacity: 0.8, skyShare: 0.2 }`, the defaults (lab parameters `#nightGain=`,
     of the instant, so a pinned `#time=` shows the same clouds on every
     load. RangeError for a non-finite instant or rate.
   - `GLOBE_SURFACE_CACHE_KEY` - the program key every tile shares (`-v2`
-    since the drift uniform joined the program, `-v6` since the sky fill).
+    since the drift uniform joined the program, `-v6` since the sky fill,
+    `-v8` since the fill follows the band). A page with a relief compiles
+    the band (`band: true`) under its own key, the same with `-band`.
   - `createGlobeSurfaceUniforms({ night, clouds })` returns the one
     shared uniforms object: `uSunEcef` (unit, ECEF), `uSunWorld` (the
     same sun in world space, kept by the surface), `uNight`,
     `uClouds`, `uNightGain`, `uWaterRoughness`, `uCloudOpacity`,
     `uCloudLonOffset` (radians, 0 until the caller sets it), `uSkyFloor`
     (`SKY_FILL.floor`, globe lab `#skyFloor=`) and `uSkyShare`
-    (`GLOBE_SURFACE_TUNING.skyShare`), and `uCarrierShare` (the altitude
-    band's relief share, 0 until the page sets it).
+    (`GLOBE_SURFACE_TUNING.skyShare`), `uCarrierShare` (the altitude
+    band's relief share, 0 until the page sets it) and `uSunRadiance` (the
+    sun light's colour x intensity, kept by the surface: the fill's light by
+    role, not the scene's first directional light).
   - `GLOBE_FADE_GLSL` and `globeFadeKeeps(d, share, side)`: the band's
     cross-fade (one-scene plan §3.2). Each pixel goes to exactly one
     carrier by a screen dither (interleaved gradient noise of
@@ -38,8 +42,17 @@ cloudOpacity: 0.8, skyShare: 0.2 }`, the defaults (lab parameters `#nightGain=`,
     keep the pixels whose dither is at or above `uCarrierShare`, the
     relief's tiles (`globe-terrain.ts` defines 1) the ones below. No
     blending, so no sorting and no pixel lit twice. The discard is the
-    fragment's first work, after `clipping_planes_fragment`. Program key
-    v7 since.
+    fragment's first work, after `clipping_planes_fragment`.
+  - The band's code (the discard and the sky fill) is compiled only where a
+    relief exists: `#if defined( GLOBE_BAND ) || GLOBE_FADE_SIDE == 1`. The
+    plain globe draws the program from before the relief (review
+    2026-10-03-1835 minor 10). `patchGlobeSurfaceShader(shader, uniforms,
+{ band })` and `applyGlobeSurface(material, uniforms, { band })` prefix
+    `#define GLOBE_BAND` for a page with a relief.
+  - The sky fill's share on the globe's own tiles is `uSkyShare x
+uCarrierShare`, so above the band (share 0) the approved globe look is
+    unchanged and the two carriers agree where they meet (review
+    2026-10-03-1835 major 2); the relief's tiles take `uSkyShare` in full.
   - `patchGlobeSurfaceShader(shader, uniforms)` - a pure string transform,
     in place: the geodetic-normal varying (the OBJECT-space normal:
     `GeneratedSurfacePlugin` writes the geodetic ellipsoid normal and gives

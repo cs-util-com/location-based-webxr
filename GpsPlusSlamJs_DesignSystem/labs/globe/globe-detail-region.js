@@ -58,6 +58,9 @@ export function createDetailRegion({ terrain, urlTemplate }) {
         toWorldPixel,
       });
       const fetched = await fetchTerrariumTiles(tiles, urlTemplate);
+      // Counted before the bytes are transferred to the worker.
+      const loaded = fetched.filter((t) => t.bytes !== null);
+      const bytes = loaded.reduce((n, t) => n + t.bytes.byteLength, 0);
       if (mine !== run) return;
       if (fetched.every((t) => t.bytes === null)) {
         fail(mine, "no height tile of the region could load");
@@ -104,6 +107,9 @@ export function createDetailRegion({ terrain, urlTemplate }) {
         const changed = grid.ratio.filter((v) => v !== 1).length;
         current = {
           state: "ready",
+          // The data the detail costs: the region's height tiles (z8).
+          tiles: loaded.length,
+          bytes,
           posts: grid.ratio.length,
           changedShare: changed / grid.ratio.length,
           centre: place.centre,
