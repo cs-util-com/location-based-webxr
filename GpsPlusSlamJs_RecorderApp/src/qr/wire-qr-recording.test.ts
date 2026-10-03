@@ -476,6 +476,58 @@ describe('wireQrRecording', () => {
     expect(onQrStateChanged).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * Why this test matters (D28 revised, 2026-10-02): a code is minted
+   * through the first alignment at or after its sighting whose GPS extent
+   * reaches 80 m. The store keeps no alignment history, so the feeder must
+   * hear of every alignment change - a GPS fix is a store change - or a code
+   * left behind is frozen at whatever the save sees, which is the drift the
+   * rule exists to avoid. Once per animation frame is enough.
+   */
+  it('reports store changes to the sighting feeder as alignment changes', () => {
+    const live = { count: 5, extentM: 2 };
+    let feeder: {
+      alignmentFor: (text: string) => { alignmentSampleCount: number };
+    } | null = null;
+    const store = makeStore();
+    const { ref } = makeStoreRef(store);
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr,
+      setProducer: vi.fn(),
+      readAlignment: () => ({
+        alignmentMatrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+        zero: { lat: 48, lon: 11 },
+        alignmentSampleCount: live.count,
+        gpsExtentM: live.extentM,
+      }),
+      setSightingFeeder: (f) => {
+        feeder = f;
+      },
+    });
+    const onPlacement = capturedDebugDeps.current!.onPlacement as (
+      text: string,
+      placement: unknown,
+      timestampMs: number
+    ) => void;
+    const text = 'https://gps.csutil.com/?qr=x';
+    onPlacement(
+      text,
+      { pose: { position: [1, 2, 3], rotation: [0, 0, 0, 1] }, sizeM: 0.16 },
+      1000
+    );
+
+    live.count = 50;
+    live.extentM = 90;
+    store.emit();
+    flushRaf();
+    live.count = 999;
+    live.extentM = 500;
+
+    expect(feeder!.alignmentFor(text).alignmentSampleCount).toBe(50);
+  });
+
   it('dispose() stops capture, disposes the producer, clears it, and disposes the viz', () => {
     const setProducer = vi.fn();
     const { ref } = makeStoreRef(makeStore());

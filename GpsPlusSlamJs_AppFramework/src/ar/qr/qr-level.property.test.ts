@@ -45,6 +45,10 @@ const arbMintQuality = fc.record(
     alignmentSampleCount: fc.integer({ min: 0, max: 10_000 }),
     alignmentRmseM: jsonDouble({ min: 0, max: 50 }),
     mintedAtIso: fc.constant('2026-08-25T12:00:00Z'),
+    // D31: the boolean is the one non-numeric, non-text kind; `false` must
+    // survive the round trip as `false`, not vanish as falsy.
+    alignmentGpsExtentM: jsonDouble({ min: 0, max: 5000 }),
+    headingUncertain: fc.boolean(),
   },
   { requiredKeys: [] }
 );

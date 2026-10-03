@@ -44,7 +44,9 @@
     feeds alignment) → `enableArWorldGroupAlignment({ store, arWorldGroup })`
     (lerps the alignment onto `arWorldGroup` so the camera + anchor ride it
     together — GPS-registers the view, without which the camera is pure-VIO) →
-    `createGpsPositionHandler` + `startGpsWatch` →
+    `createGpsPositionHandler` + `startGpsWatch` (the handler starts the
+    compass cold start's `AbsoluteOrientationSensor` at the first recorded
+    fix: framework default since 2026-10-02, D30, no code here) →
     `requestDeviceOrientationPermission` + `startOrientationWatch` →
     wire `placeButton` + `copyLinkButton` clicks →
     `readCachedAnchor()` → on a **cache-miss** start the reticle loop

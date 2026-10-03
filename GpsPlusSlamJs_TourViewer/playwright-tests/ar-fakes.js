@@ -157,6 +157,36 @@ export async function installTourViewerArFakes(page, options = {}) {
         endXrSession() {
           test.sessionEndCallback?.({ requestedByApp: false });
         },
+        /** The AR pose a device GPS fix is paired with (the `getArPose`
+         *  seam): `{ position: {x, y, z}, orientation: {x, y, z, w} }`,
+         *  raw WebXR, or null (the handler then drops the fix). */
+        arPose: /** @type {any} */ (null),
+        /** The GPS watch the session started (the controller's
+         *  `startGpsWatch`), and a fix delivered through it - the page's
+         *  own path: coordinator, `recordDeviceFix`, the vote sink. */
+        gpsCallback: /** @type {any} */ (null),
+        /**
+         * Deliver one device fix at `arPosition` (raw WebXR) reading
+         * `lat`/`lon`, stamped `timestamp`.
+         * @param {{ lat: number, lon: number, accuracy?: number, timestamp: number, arPosition: [number, number, number] }} fix
+         */
+        emitGps(fix) {
+          const [x, y, z] = fix.arPosition;
+          test.arPose = {
+            position: { x, y, z },
+            orientation: { x: 0, y: 0, z: 0, w: 1 },
+          };
+          test.gpsCallback?.({
+            lat: fix.lat,
+            lon: fix.lon,
+            altitude: 400,
+            accuracy: fix.accuracy ?? 4,
+            altitudeAccuracy: null,
+            heading: null,
+            speed: null,
+            timestamp: fix.timestamp,
+          });
+        },
       };
       /** @type {any} */ (window).__tourViewerTest = test;
 
@@ -231,7 +261,9 @@ export async function installTourViewerArFakes(page, options = {}) {
             Promise.resolve({ granted: true }),
           requestWebXRWithDepthPermission: () =>
             Promise.resolve({ granted: true }),
-          startGpsWatch: () => {},
+          startGpsWatch: (onPosition) => {
+            test.gpsCallback = onPosition;
+          },
           startOrientationWatch: () => {},
           stopGpsWatch: () => {},
           stopOrientationWatch: () => {},
@@ -295,6 +327,7 @@ export async function installTourViewerArFakes(page, options = {}) {
         },
         getIntrinsics: () => ({ fx: 500, fy: 500, cx: 1, cy: 1 }),
         getScene: () => (test.initARCalls.length > 0 ? fakeScene : null),
+        getArPose: () => test.arPose,
         createQrDebugView: () => ({
           update: () => {
             test.qrDebugUpdates += 1;

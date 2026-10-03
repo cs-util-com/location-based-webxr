@@ -49,6 +49,12 @@ since the flows plan M6.
     modules can call it without importing this one.
   - Subscribes the button renderer to the controller and binds the click.
 
+## Moved-code veto inputs (D20, M5c)
+
+`renderArStatus` passes `ignoredCode: ctx.viewerIgnoredText` to the line;
+`renderDebugReadout` passes the live checks' snapshot and the ignored
+codes to the `?debug=1` block.
+
 ## Invariants & assumptions
 
 - Session-state fields it owns: `qrController` (disposed and nulled on

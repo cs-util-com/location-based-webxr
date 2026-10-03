@@ -29,13 +29,13 @@ import {
   EMPTY_DISPLACEMENT_STATS,
   estimateCodeDisplacement,
   judgeCodeDisplacement,
+  MOVED_CODE_FLOOR_M,
   pinCode,
   type CodeMoveRule,
   type DisplacementSample,
 } from "./code-displacement.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import type { NuePose } from "./visit-anchoring.js";
-import { correctionBoundM } from "./visit-settle.js";
 
 // The geodesy is licence-gated; building a store activates it.
 createTourViewerStore();
@@ -415,8 +415,6 @@ describe("displacementSamples (the viewer's history as the estimators read it)",
 describe("judgeCodeDisplacement (the decision rule)", () => {
   const RULE: CodeMoveRule = {
     floorM: 20,
-    accuracyFactor: 3,
-    defaultAccuracyM: 5,
     agreementM: 10,
     minSpanS: 60,
     minSpreadM: 2,
@@ -430,74 +428,57 @@ describe("judgeCodeDisplacement (the decision rule)", () => {
     yawDeg: 0,
   });
 
-  it("uses the larger of the floor and the authoring correction's bound", () => {
-    // Reported 2 m on both sides: 5 + 3 * 2.83 = 13.5 m, under the floor.
-    expect(
-      judgeCodeDisplacement(est(5), { deviceM: 2, storedM: 2 }, RULE),
-    ).toMatchObject({ boundM: 20 });
-    // Reported 5 m: 26.2 m, over it.
-    expect(
-      judgeCodeDisplacement(est(5), { deviceM: 5, storedM: 5 }, RULE).boundM,
-    ).toBeCloseTo(correctionBoundM(5, 5), 9);
-    // The rule's own factor and default accuracy reach the bound.
-    expect(
-      judgeCodeDisplacement(
-        est(5),
-        { deviceM: 5, storedM: undefined },
-        { ...RULE, accuracyFactor: 4, defaultAccuracyM: 8 },
-      ).boundM,
-    ).toBeCloseTo(5 + 4 * Math.hypot(5, 8), 9);
+  // Why this test matters (owner decision 2026-10-02, results doc "Recalibrated
+  // on real recordings"): the viewer's bound is the floor ALONE. Coupled to
+  // the authoring correction's accuracy bound it was 23-27 m on real walks
+  // (reported accuracy is not bias) and caught 9.6 % of 20 m moves instead
+  // of 66 %; nothing about the visitor's reported accuracy may raise it.
+  it("judges against the floor alone: the bound is the floor", () => {
+    expect(judgeCodeDisplacement(est(5), RULE)).toEqual({
+      verdict: "consistent",
+      boundM: 20,
+    });
+    expect(judgeCodeDisplacement(est(5), { ...RULE, floorM: 30 }).boundM).toBe(
+      30,
+    );
   });
 
   it("says moved beyond the bound, consistent within the agreement, undecided between", () => {
-    const acc = { deviceM: 2, storedM: 2 };
-    expect(judgeCodeDisplacement(est(20.01), acc, RULE).verdict).toBe("moved");
-    expect(judgeCodeDisplacement(est(20), acc, RULE).verdict).toBe("undecided");
-    expect(judgeCodeDisplacement(est(10), acc, RULE).verdict).toBe(
-      "consistent",
-    );
-    expect(judgeCodeDisplacement(est(15), acc, RULE).verdict).toBe("undecided");
+    expect(judgeCodeDisplacement(est(20.01), RULE).verdict).toBe("moved");
+    expect(judgeCodeDisplacement(est(20), RULE).verdict).toBe("undecided");
+    expect(judgeCodeDisplacement(est(10), RULE).verdict).toBe("consistent");
+    expect(judgeCodeDisplacement(est(15), RULE).verdict).toBe("undecided");
   });
 
-  // Why this test matters: M5a chose these values from its sweep (results
-  // in the sidecar); M5c wires them. A change here moves the veto's false
-  // alarm and detection limits and must be re-read against the results.
-  it("records M5a's measured rule: rigid-fit evidence of 60 s and 2 m, a 30 m floor", () => {
+  // Why this test matters: the owner approved these values on 2026-10-02
+  // from the real-walk recalibration (cross-day pairs of 42 reference
+  // points: 3 of 2380 unmoved pairs past 20 m within 120 s, 66 % of 20 m
+  // moves caught). A change here moves the veto's false-alarm and detection
+  // limits and must be re-read against the results doc.
+  it("records the owner-approved rule: rigid-fit evidence of 60 s and 2 m, a 20 m floor alone", () => {
     expect(CODE_MOVE_RULE).toEqual({
-      floorM: 30,
-      accuracyFactor: 3,
-      defaultAccuracyM: 5,
+      floorM: 20,
       agreementM: 10,
       minSpanS: 60,
       minSpreadM: 2,
     });
+    expect(CODE_MOVE_RULE.floorM).toBe(MOVED_CODE_FLOOR_M);
     expect(CODE_MOVE_ESTIMATOR).toEqual({
       kind: "rigid",
       minYawSpreadM: CODE_MOVE_RULE.minSpreadM,
     });
-    // The floor binds at every reported accuracy up to 5 m (26.2 m).
-    for (const acc of [2, 3, 5]) {
-      expect(
-        judgeCodeDisplacement(
-          est(31),
-          { deviceM: acc, storedM: acc },
-          CODE_MOVE_RULE,
-        ),
-      ).toEqual({ verdict: "moved", boundM: 30 });
-    }
+    expect(judgeCodeDisplacement(est(20.5), CODE_MOVE_RULE)).toEqual({
+      verdict: "moved",
+      boundM: 20,
+    });
   });
 
   it("is undecided without enough time or spread, whatever the size", () => {
-    const acc = { deviceM: 2, storedM: 2 };
-    expect(judgeCodeDisplacement(null, acc, RULE).verdict).toBe("undecided");
-    expect(judgeCodeDisplacement(est(80, 59), acc, RULE).verdict).toBe(
+    expect(judgeCodeDisplacement(null, RULE).verdict).toBe("undecided");
+    expect(judgeCodeDisplacement(est(80, 59), RULE).verdict).toBe("undecided");
+    expect(judgeCodeDisplacement(est(80, 600, 1.9), RULE).verdict).toBe(
       "undecided",
     );
-    expect(judgeCodeDisplacement(est(80, 600, 1.9), acc, RULE).verdict).toBe(
-      "undecided",
-    );
-    expect(judgeCodeDisplacement(est(1, 59), acc, RULE).verdict).toBe(
-      "undecided",
-    );
+    expect(judgeCodeDisplacement(est(1, 59), RULE).verdict).toBe("undecided");
   });
 });

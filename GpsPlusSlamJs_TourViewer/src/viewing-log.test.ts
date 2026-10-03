@@ -371,3 +371,59 @@ describe("the viewer's tourViewing log of the code keep-alive (M1b review #5)", 
     expect(keepAlive.phase(100)).toEqual({ kind: "none" });
   });
 });
+
+describe("the viewer's tourViewing log of an ignored code (D20, M5c)", () => {
+  const EVIDENCE = {
+    ruleVersion: "test-version",
+    decidedBy: "position" as const,
+    turnChecked: true,
+    boundM: 20,
+    displacementM: [31.5, -4.25] as const,
+    magnitudeM: 31.79,
+    yawDeg: 2.5,
+    spanS: 72,
+    spreadM: 6.5,
+    deviceFixes: 140,
+    deviceAccuracyMedianM: 3.8,
+    storedAccuracyM: null,
+    alignmentSampleCount: 300,
+    settled: true,
+    sinceScanS: 64,
+  };
+
+  // Why (§7j #15): a field recording must be able to say why the viewer
+  // stopped using a code - the detector's inputs as computed, which channel
+  // decided, the rule's version, and what the recovery did - and a visitor
+  // without the recording pays nothing.
+  it("logs the veto with the detector's inputs and the recovery, only while the recording runs", () => {
+    const h = harness();
+    h.log.codeIgnored({
+      text: "code-a",
+      levelId: "lvl-a",
+      evidence: EVIDENCE,
+      recovery: { refedFixes: 140, batches: 1 },
+    });
+    expect(h.dispatched).toHaveLength(1);
+    const action = h.dispatched[0]!;
+    expect(action.type).toBe("tourViewing/codeIgnored");
+    expect(action.payload).toEqual({
+      text: "code-a",
+      levelId: "lvl-a",
+      evidence: EVIDENCE,
+      recovery: { refedFixes: 140, batches: 1 },
+      alignmentMatrix: MATRIX,
+      arVisitIndex: 0,
+      atMs: T0,
+    });
+    expect(JSON.parse(JSON.stringify(action.payload))).toEqual(action.payload);
+
+    const off = harness(false);
+    off.log.codeIgnored({
+      text: "code-a",
+      levelId: "lvl-a",
+      evidence: EVIDENCE,
+      recovery: { refedFixes: 0, batches: 0 },
+    });
+    expect(off.dispatched).toEqual([]);
+  });
+});

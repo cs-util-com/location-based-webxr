@@ -56,6 +56,15 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
   stored" for 0). `removed` is the store's index length read BEFORE the
   open session's eviction (flows plan M2).
 
+## A code the moved-code check ignores (D20, M5c)
+
+`ArStatusInput.qr.ignoredCode` reaches `viewerStatusLine`, which then says
+"This code seems to have been moved, so its position is not used. Showing
+the tour by GPS." With the gate passed via `ignored`, that sentence stands
+for both (the gate's short pass is dropped); without a code to name (a
+re-entry) the gate's "Code ignored - placing the tour by GPS." replaces the
+generic scanning line.
+
 ## Invariants & assumptions
 
 - **The running prefix is a contract:** `"<mode> — AR running · N camera

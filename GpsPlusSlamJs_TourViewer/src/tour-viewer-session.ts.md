@@ -27,7 +27,10 @@ lives here.
   code already "voted", so its gate passed on a lock that cast nothing and
   a spent code never voted or held again. It leaves the entry's soft
   trimming on: the closed tour's votes stay in the GPS history until AR
-  exit (the seam contract, rule 3, in `viewer-placement.ts.md`).
+  exit (the seam contract, rule 3, in `viewer-placement.ts.md`). It also
+  clears the moved-code checks and the veto memory (`ignoredCodes`,
+  `viewerIgnoredText`): per tour, cleared at a tour switch (D20 M5c, §7j
+  #13).
   `archive-open.ts`'s teardown calls it.
 - `interface TourViewerSession` - the fields, grouped by owner:
   - the open tour (`archive-open.ts`): `session`, `currentLevels`,
@@ -97,6 +100,21 @@ lives here.
   module is wired.
   (`QrController` and `QrDebugView` are module-private: reached through
   the fields, a standalone export counts as dead.)
+
+## The moved-code veto's state (D20, M5c)
+
+- `levelIdByText` - the level id each decoded text resolved to (cleared
+  with `levelByText` at a tour close).
+- `movedCodeChecks` - the AR entry's checks (`moved-code-check.ts`);
+  dropped by `endQrPipeline`, cleared by `endTourCodeVotes`.
+- `ignoredCodes` - level id to text of every code judged moved: ignored
+  for the rest of the page session for this tour, across AR entries;
+  cleared only by `endTourCodeVotes` (a tour switch).
+- `viewerIgnoredText` - the ignored code the status line names in this AR
+  entry; cleared at AR exit and at a tour switch, and by another code's voted lock
+  (M5c review M1).
+- `scanGateCodeText` - the code whose voted lock passed the scan gate; a
+  veto flips the gate to `ignored` only for this code (M5c review M1).
 
 ## Invariants & assumptions
 

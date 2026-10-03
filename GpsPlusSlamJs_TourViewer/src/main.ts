@@ -8,10 +8,7 @@
  * lives here; the e2e suite drives the composed page.
  */
 
-import {
-  createEnableGpsArController,
-  getCurrentArPose,
-} from "gps-plus-slam-app-framework/ar";
+import { createEnableGpsArController } from "gps-plus-slam-app-framework/ar";
 import {
   createEmptyTourManifest,
   serializeTourManifest,
@@ -480,7 +477,7 @@ hooks.reconsiderScanGate = viewer.reconsiderScanGate;
 // solve (authoring plan 2026-09-28-0953 D18); otherwise as before.
 const gpsHandler = createGpsPositionHandler({
   store: arStore,
-  getArPose: getCurrentArPose,
+  getArPose: () => seams.getArPose(),
   recordFix: viewer.recordDeviceFix,
 });
 

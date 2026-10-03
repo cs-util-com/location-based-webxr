@@ -25,6 +25,9 @@ Plan:
   `votesCast`.
 - `ViewingLog.placed(input)` - logs `tourPlaced`, adding the alignment, the
   visit and the time.
+- `ViewingLog.codeIgnored({ text, levelId, evidence, recovery })` - logs
+  `codeIgnored` once per veto (D20, M5c; §7j #15), adding the alignment
+  AFTER the recovery and the moment; silent while the recording is off.
 - `ViewingLog.keepAlive(inner): QrVoteKeepAlive` - wraps the AR entry's
   keep-alive (`viewer-placement.ts`, `startKeepAlive`): every call is
   forwarded unchanged, and each state change is logged as

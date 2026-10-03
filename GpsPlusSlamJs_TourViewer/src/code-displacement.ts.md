@@ -5,8 +5,10 @@
 How far a printed code has moved from its saved pose, as the visitor's own
 device GPS sees it, and the decision rule `moved | consistent | undecided`
 on that estimate (Tour Viewer authoring plan 2026-09-28-0953 §3.6, owner
-decision D20, measured in milestone M5a). Pure; NOT wired into the viewer
-yet - the post-scan veto that uses it is M5c.
+decision D20, measured in milestone M5a and recalibrated on real recordings).
+Pure. The viewer's post-scan veto (M5c) uses it through
+`moved-code-rule.ts` (which adds the turn check) and `moved-code-check.ts`
+(which runs both per device fix).
 
 ## Public API
 
@@ -32,20 +34,18 @@ estimator, sample)`, `displacementEstimate(stats, estimator)` - the
   last fix used), `spreadM` (RMS distance of the used fixes' pinned
   positions from their centroid), `samples`, `yawDeg` (the rigid fit's turn,
   0 for `residual`).
-- `judgeCodeDisplacement(estimate, { deviceM, storedM }, rule)` -
-  `{ verdict, boundM }`, with `CodeMoveRule` = `{ floorM, accuracyFactor,
-defaultAccuracyM, agreementM, minSpanS, minSpreadM }`.
-- `MOVED_CODE_FLOOR_M` (20 m) - the one moved-code floor (coordinator
-  decision 2026-10-01, M5b review #1): no offset at or under it is ever
-  treated as a move, however small the reported accuracies make
-  `correctionBoundM`. The authoring prompt uses it now
-  (`MOVE_PROMPT_RULE.floorM`, `code-move-prompt.ts`); `CODE_MOVE_RULE`
-  keeps its measured 30 m until both are recalibrated on the owner's
-  recordings. SYNTHETIC AND PROVISIONAL: it rests on the regression gate's
-  corpus (worst cross-session disagreement of one reference point about
-  14 m, robust p90 about 6 m) and the prompt sweep's floor arm (numbers in
-  `code-move-prompt.ts.md`); recordings with an unmoved code more than
-  20 m off between visits would raise it.
+- `judgeCodeDisplacement(estimate, rule)` - `{ verdict, boundM }`, with
+  `CodeMoveRule` = `{ floorM, agreementM, minSpanS, minSpreadM }`; the
+  bound is the floor alone.
+- `MOVED_CODE_FLOOR_M` (20 m) - the viewer's moved-code floor
+  (`CODE_MOVE_RULE.floorM`; approved by the owner on 2026-10-02 from the
+  real-walk recalibration). The authoring prompt shared it until D26
+  (2026-10-02) and now has its own 15 m trigger (`MOVE_PROMPT_FLOOR_M`,
+  `code-move-prompt.ts`). Viewer evidence: 3 of 2,380
+  unmoved cross-day pairs past it within 120 s (2 of 37 points), 23 of
+  6,166 over the whole visit; 66 % of 20 m moves caught within 120 s.
+- `CODE_MOVE_RULE` - `{ floorM: 20, agreementM: 10, minSpanS: 60,
+minSpreadM: 2 }`, the owner-approved viewer rule.
 - Errors: a residual radius that is not a positive finite number, or a
   rigid `minYawSpreadM` that is not a non-negative finite number, throws
   `RangeError` (a programming error); external data never throws.
@@ -73,18 +73,20 @@ both relative to the saved code.
 
 ## The decision rule
 
-`boundM = max(floorM, correctionBoundM(deviceM, storedM, { accuracyFactor,
-defaultAccuracyM }))` - the authoring correction's bound
-(`visit-settle.ts`), never under the floor, because reported accuracy is
-not bias (§7j #2). Then:
+`boundM = floorM` - the floor ALONE (owner, 2026-10-02). M5a coupled it to
+the authoring correction's accuracy bound, `max(floorM, correctionBoundM(...))`;
+on real walks that bound was 23-27 m (p10-median: reported accuracy is not
+bias, §7j #2) and caught 9.6 % of 20 m moves within 120 s against 66 % for
+the floor alone, for 0 against 3 of 2,380 unmoved pairs. Then:
 
 - `undecided` - no estimate, `spanS < minSpanS` or `spreadM < minSpreadM`,
   or a magnitude between `agreementM` and the bound;
 - `moved` - magnitude above the bound;
 - `consistent` - magnitude at or under `agreementM`.
 
-`deviceM` must be the median accuracy of DEVICE fixes, never of stored
-points (the votes carry 5 m; §7j #3).
+Accuracies no longer enter the verdict; the viewer's check still LOGS the
+device fixes' median (device fixes only, never stored points: the votes
+carry 5 m; §7j #3).
 
 ## Invariants & assumptions
 
@@ -95,7 +97,16 @@ points (the votes carry 5 m; §7j #3).
 - Frames: GPS fixes and the saved pose relative to the same zero
   (GPS-world NUE); odometry in odometry-NUE (`odomNueFromWebXr`).
 
-## M5a measurements (what the parameters rest on)
+## Real recordings (what the shipped values rest on)
+
+The recalibration (results doc, section "Recalibrated on real recordings,
+with a heading channel"; harness `code-displacement.recordings.test.ts`,
+opt-in `D20_REAL=replay` then `D20_REAL=sweep`): 209 real walks, 6,166
+cross-day pairs of 42 reference points. The M5c sweep in the same harness
+runs the shipped rule per fix (`moved-code-rule.ts.md`). The M5a section
+below is the synthetic history the first rule rested on.
+
+## M5a measurements (synthetic; the retired 30 m coupled rule)
 
 Harness: the M5a block of `viewer-vote-strength.test.ts` (opt-in
 `VOTE_STRENGTH_SWEEP=m5a-detect`, `m5a-breakdown`, `m5a-bias`, `m5a-two`,
@@ -176,14 +187,7 @@ const samples = displacementSamples({
   zero: selectZeroReference(state),
 });
 const est = estimateCodeDisplacement(samples, pin!, { kind: "rigid" });
-const { verdict } = judgeCodeDisplacement(
-  est,
-  {
-    deviceM: medianDeviceAccuracy,
-    storedM: level.qr.mintQuality?.gpsAccuracyM,
-  },
-  rule,
-);
+const { verdict } = judgeCodeDisplacement(est, CODE_MOVE_RULE);
 ```
 
 ## Tests
@@ -195,7 +199,8 @@ const { verdict } = judgeCodeDisplacement(
   swaying visitor's under `CODE_MOVE_ESTIMATOR` too), the estimator
   parameter checks,
   skipped samples, the fold equal to the list, `displacementSamples`
-  dropping the votes, and the rule's three verdicts and bound.
+  dropping the votes, and the rule's three verdicts and its floor-alone
+  bound (the owner-approved values pinned).
 - `code-displacement.property.test.ts` - for any frame, saved pose,
   heading error, turn, move, walk and bias: the rigid fit reads exactly
   move plus bias; the residual estimator leaks at most `2 sin(theta/2) R`

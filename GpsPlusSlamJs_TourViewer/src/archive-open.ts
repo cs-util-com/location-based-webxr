@@ -121,6 +121,7 @@ export function wireArchiveOpen(deps: {
     // review #8).
     ctx.qrController?.reset();
     ctx.levelByText.clear();
+    ctx.levelIdByText.clear();
     // The code keep-alive holds a closing tour's code for up to ~4 min,
     // and the vote budget remembers which codes voted; the pipeline
     // outlives the switch, so both end with the tour here (M2b; review #6).

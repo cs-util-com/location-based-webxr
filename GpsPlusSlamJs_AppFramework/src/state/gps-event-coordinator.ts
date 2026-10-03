@@ -30,8 +30,10 @@ import {
   resetDeviceOrientationCache,
 } from '../sensors/device-orientation-cache';
 import {
+  ensureAbsoluteOrientationWatch,
   getLatestAbsoluteOrientation,
   type AbsoluteOrientationReading,
+  type AbsoluteOrientationStatus,
 } from '../sensors/absolute-orientation';
 import { createLogger } from '../utils/logger';
 
@@ -63,6 +65,23 @@ export interface RecordingCoordinatorConfig {
    * fix is lost.
    */
   recordFix?: (payload: RecordGpsEventPayload) => void;
+  /**
+   * The compass cold start (owner decision D30, 2026-10-02). `'auto'` (the
+   * default) starts the `AbsoluteOrientationSensor` watch at the first fix
+   * that arrives while recording, so every fix after it carries
+   * `rawAbsoluteOrientation` and the core's cold-start yaw override can act.
+   * It never restarts a watch the app started itself, and it is a reported
+   * no-op wherever the sensor does not exist (iOS, Safari, Firefox, desktop,
+   * headless). `'off'` never starts it; a watch the app starts itself still
+   * feeds the fixes.
+   */
+  absoluteOrientation?: 'auto' | 'off';
+  /**
+   * Status of the watch the `'auto'` default started (`active`,
+   * `unavailable`, `error`). Not called for a watch the app started itself;
+   * that start reports to its own callback. Defaults to a log line.
+   */
+  onAbsoluteOrientationStatus?: (status: AbsoluteOrientationStatus) => void;
 }
 
 // Device-orientation cache moved to `sensors/device-orientation-cache.ts`
@@ -203,12 +222,42 @@ export function createGpsPositionHandler(
     ((payload: RecordGpsEventPayload) => {
       store.dispatch(recordGpsEvent(payload));
     });
+  const onCompassStatus =
+    config.onAbsoluteOrientationStatus ??
+    ((status: AbsoluteOrientationStatus) => {
+      log.info('Absolute orientation (compass cold start):', status);
+    });
+  const compassMode = config.absoluteOrientation ?? 'auto';
+  // Validated, not coerced: a JS caller's typo ('Off', false) must not
+  // silently start a sensor the app meant to keep off.
+  if (compassMode !== 'auto' && compassMode !== 'off') {
+    throw new TypeError(
+      `createGpsPositionHandler: absoluteOrientation must be 'auto' or 'off', got ${String(compassMode)}`
+    );
+  }
+  // Once per handler, so an app's teardown stop (the Recorder's, OsmDemo's)
+  // is never undone by a late fix of the same handler.
+  let compassStartPending = compassMode === 'auto';
 
   return (position: GpsPosition): void => {
     // Check if we're recording
     const state = store.getState().recording;
     if (!state.isRecording) {
       return; // Don't record if not in recording mode
+    }
+
+    // THE COMPASS COLD START (D30): started here, at the first fix of a
+    // recording, rather than when the handler is created, because two apps
+    // create the handler at page load and fixes flow only inside their AR
+    // session. Fire-and-forget: the first fix never waits on a sensor that
+    // may never arrive, and the start never throws.
+    if (compassStartPending) {
+      compassStartPending = false;
+      void ensureAbsoluteOrientationWatch(onCompassStatus).catch(
+        (err: unknown) => {
+          log.error('Absolute orientation start failed:', err);
+        }
+      );
     }
 
     // Get current AR pose - this is the CRITICAL step

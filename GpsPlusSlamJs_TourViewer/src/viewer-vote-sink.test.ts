@@ -13,6 +13,9 @@
  * solving). And every vote and keep-alive tick must be ONE solve (D18): a
  * lock's ring as one batch, a device fix and its ring as one batch.
  */
+import { createRequire } from "node:module";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildQrGpsVotes } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import {
@@ -250,3 +253,88 @@ describe("an AR entry's vote sink: one solve per lock and per keep-alive tick (D
     }
   });
 });
+
+/**
+ * Per-test timeout of the retraction tests. The first stores 300 device
+ * fixes, each a full solve over the growing history, then re-feeds them: it
+ * took 4.6 s run alone (2026-10-02, two workers) - next to the 5 s default -
+ * and over 5 s in three of this day's gate runs while other sessions' suites loaded the
+ * machine. It failed on time alone, never on an assertion.
+ */
+const RETRACT_MS = 60_000;
+
+describe(
+  "an AR entry's vote sink: retracting the votes of a moved code (D20, M5c)",
+  { timeout: RETRACT_MS },
+  () => {
+    // Why (M5a recovery arms, results doc "Recovery after a veto"): once the
+    // viewer decides a code was moved, its votes already in the history hold
+    // the alignment on the wrong spot - aged out they were still 5-8 m off
+    // after 10 minutes. Only a reset and a re-feed of the device fixes, with
+    // the soft keys off, lands exactly on the GPS answer. The batches stay
+    // within the core's 256-event limit.
+    it("resets the history, re-feeds only the device fixes in batches of at most 256, with the soft keys off", () => {
+      const { store, log } = storeWithLog();
+      const sink = startEntryVoteSink(store);
+      sink.castLockVotes(ring(T0 + 500));
+      for (let i = 1; i <= 300; i += 1) {
+        sink.recordFix(deviceFix(i), i % 50 === 0 ? ring(T0 + i * 1000) : []);
+      }
+      expect(overrides(store)).toMatchObject(VIEWER_SOFT_TRIM);
+      log.length = 0;
+      const result = sink.retractVotes();
+      expect(result).toEqual({ refedFixes: 300, batches: 2 });
+      expect(log.map((a) => a.type)).toEqual([
+        "gpsData/setAlignmentOverrides",
+        "gpsData/resetGpsSessionData",
+        "gpsData/recordGpsEventBatch",
+        "gpsData/recordGpsEventBatch",
+      ]);
+      const sizes = log
+        .filter((a) => a.type === "gpsData/recordGpsEventBatch")
+        .map((a) => (a.payload as { events: unknown[] }).events.length);
+      expect(sizes).toEqual([256, 44]);
+      expect(overrides(store)).toBeNull();
+      const stored = positions(store);
+      expect(stored).toHaveLength(300);
+      for (const p of stored) {
+        expect(gpsPointSourceOf(p)).toBe(GPS_POINT_SOURCE_DEVICE);
+      }
+    });
+
+    // Why (M5c review L5): the re-feed's batch size (module-private
+    // `RETRACT_BATCH_SIZE`, 256 - the sizes the test above pins) is the
+    // core's per-batch limit, which the framework does not re-export. A core
+    // that lowered it would refuse every full batch of a re-feed; this reads
+    // the limit from the core the framework actually resolves, so the two
+    // cannot drift apart silently.
+    it("re-feeds in batches of the installed core's MAX_GPS_EVENT_BATCH_SIZE (256)", async () => {
+      const frameworkPkg = path.resolve(
+        import.meta.dirname,
+        "../node_modules/gps-plus-slam-app-framework/package.json",
+      );
+      const corePath = createRequire(frameworkPkg).resolve("gps-plus-slam-js");
+      const core = (await import(pathToFileURL(corePath).href)) as Record<
+        string,
+        unknown
+      >;
+      expect(core["MAX_GPS_EVENT_BATCH_SIZE"]).toBe(256);
+    });
+
+    // Why: after the retraction the history holds no vote, so the hard trim
+    // is safe again; a later code's first vote must turn the soft keys back
+    // on (the jump regime M0b measured otherwise).
+    it("turns the soft keys on again before the next vote, and keeps collecting fixes", () => {
+      const { store } = storeWithLog();
+      const sink = startEntryVoteSink(store);
+      sink.castLockVotes(ring(T0 + 500));
+      sink.recordFix(deviceFix(1), []);
+      sink.retractVotes();
+      sink.recordFix(deviceFix(2), []);
+      expect(overrides(store)).toBeNull();
+      sink.castLockVotes(ring(T0 + 3000));
+      expect(overrides(store)).toMatchObject(VIEWER_SOFT_TRIM);
+      expect(sink.retractVotes()).toEqual({ refedFixes: 2, batches: 1 });
+    });
+  },
+);

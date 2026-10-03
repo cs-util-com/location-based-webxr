@@ -162,3 +162,39 @@ describe("visitorFusedHint", () => {
     ).toBeNull();
   });
 });
+
+describe("debugReadoutLines - the moved-code checks (D20, M5c)", () => {
+  // Why: in a field test the only way to see why a code is (not yet)
+  // ignored is the check's live numbers: the fitted offset and turn, the
+  // evidence behind them, whether the turn check runs and the verdict so far,
+  // plus which codes are already ignored.
+  it("adds one line per live check and one per ignored code", () => {
+    expect(
+      debugReadoutLines({
+        status: "tracking",
+        unknownCode: null,
+        unusableCode: null,
+        tallies: null,
+        movedCodeChecks: [
+          {
+            text: URL_A,
+            levelId: "a",
+            magnitudeM: 12.345,
+            yawDeg: -3.21,
+            spanS: 45.6,
+            spreadM: 4.04,
+            samples: 90,
+            turnChecked: true,
+            verdict: "undecided",
+          },
+        ],
+        ignoredCodes: [URL_B],
+      }),
+    ).toEqual([
+      "qr: tracking",
+      "no code evaluated yet",
+      "moved-code check …abcdefgh&n=1: |D| 12.3 m, yaw -3.2°, 46 s, spread 4.0 m, 90 fixes, turn check on, undecided",
+      "ignored (moved): …abcdefgh&n=2",
+    ]);
+  });
+});

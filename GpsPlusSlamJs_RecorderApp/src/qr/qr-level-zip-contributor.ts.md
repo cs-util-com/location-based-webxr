@@ -12,6 +12,11 @@ Decision record:
 ## Public API
 
 - `QrAnchorOutcome` — what happened to one code, for the summary screen.
+  `headingUncertain?` (owner decision D31) is copied from the written
+  level's `mintQuality`: `true` when the code was composed through an
+  alignment with under 10 m of GPS extent, `false` when the extent was known
+  and long enough, absent when the mint did not know it or nothing was
+  written. The summary screen turns `true` into a plain-words note.
 - `createQrLevelZipContributor(deps): ZipExportContributor`
   - `deps.getFeeder()` — the session's sighting fold, `null` when QR
     recording is off.
@@ -25,10 +30,26 @@ Decision record:
   contributors on **every 60-second crash-safety sync**, not only at save; the
   COLMAP contributor's own comment warns that a from-scratch re-parse of
   `actions/` there would be O(session²).
-- **It flushes the accumulator first.** The visit in progress is not closed
-  yet, and under recency weighting it is the one that counts MOST — stopping a
-  recording right after a final scan would otherwise discard the best evidence
-  in the session.
+- **It reads the visit in progress without closing it**
+  (`sightingsIncludingOpen`, never `flush()`). Under recency weighting the
+  newest visit counts MOST, so a recording stopped right after a final scan
+  must still include it; and because this runs on every crash-safety sync,
+  flushing would split a visit that a sync lands in into two, both near full
+  weight.
+- **It hands the mint the alignment the feeder picked for the code**
+  (`feeder.alignmentFor(text)`, owner decision D28 revised 2026-10-02): the
+  FIRST MATURE alignment (80 m of session GPS extent) at or after the code's
+  last sighting; before maturity the alignment as it stands at THIS run; for
+  a code waiting when a tracking restart or loop closure came, the alignment
+  its odometry segment closed with. The mint places every sighting through
+  it, so a code scanned as the recording started (seen through an alignment
+  with no walk behind it, whose yaw is arbitrary) gets the heading and
+  position of the walked alignment, and a code seen mid-recording and then
+  walked away from does not inherit the SLAM drift of the walk after the
+  floor was reached. A level written at an early crash-safety sync can
+  therefore differ from the one written at save even when no new sighting
+  came in (a code still waiting for maturity follows the alignment); the
+  save is what the delivered zip carries.
 - **Foreign codes are never minted.** Without that gate the recorder would
   write a real latitude and longitude for every WiFi sticker, menu code and
   parcel label the camera saw, into a zip the author then publishes. It is the
@@ -59,10 +80,18 @@ createQrLevelZipContributor({
 
 `qr-level-zip-contributor.test.ts` — the owned subdir; a session with QR off
 contributing 0 without throwing; one level per fixed code named by its
-identity, with the name RELATIVE to the subdir; the visit in progress closed
-before minting (a single open burst still produces a file); a foreign code
+identity, with the name RELATIVE to the subdir; the visit in progress
+included in the mint (a single open burst still produces a file); a foreign code
 refused with a plain-words reason; a moved code refused; and both the written
-position and the unweighted comparison reported.
+position and the unweighted comparison reported; and a code seen through a
+quarter-turned alignment written with the heading of the alignment at save;
+a code seen at the start followed by a tracking restart, written through
+the alignment its segment closed with; and a code left behind, written
+through the mature alignment of its sighting rather than the one at save
+(both with a real feeder); and the D31 marker with a real feeder: a 4 m
+extent writes the code with `headingUncertain: true` in the level and the
+outcome, 25 m gives `false`, and an unknown extent leaves the outcome
+field absent.
 
 The suite creates a store at module load — the documented licence-activation
 path, and what production does at boot before any recording can be saved.

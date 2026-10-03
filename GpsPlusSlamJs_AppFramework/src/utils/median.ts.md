@@ -94,4 +94,5 @@ run and is what surfaced the tie-slack defect above.
 - **Falls back to the unweighted `lowerMedian` when no weight survives**, so a
   caller with usable samples is never handed NaN because its weights were bad.
 - Added for the session anchor mint, where the owner chose recency weighting
-  (plan DEC-3 / M-C1).
+  (plan DEC-3 / M-C1; DEC-3's per-sighting alignment was superseded on
+  2026-10-02, the weighting kept).

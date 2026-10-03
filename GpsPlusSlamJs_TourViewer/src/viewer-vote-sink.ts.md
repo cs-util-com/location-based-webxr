@@ -22,6 +22,10 @@ both must hold for EVERY vote:
 - `VIEWER_SOFT_TRIM` - the frozen override set M0c adopted:
   `{ outlierFalloffEnabled: true, outlierFalloffRadiusMeters: 1,
 outlierFalloffExponent: 1, outlierRejectionEnabled: false }`.
+- (module-private) `RETRACT_BATCH_SIZE` (256) - the core's per-batch
+  limit, the re-feed's batch size. The framework does not re-export the core's
+  `MAX_GPS_EVENT_BATCH_SIZE`; a test reads it from the core the framework
+  resolves and pins it to 256 (M5c review L5).
 - `startEntryVoteSink(store): ViewerVoteSink` - dispatches
   `setAlignmentOverrides(null)` at once (the entry's FIRST store action from
   the viewer, before any fix or vote, on every entry - a plain-AR one too),
@@ -32,6 +36,36 @@ outlierFalloffExponent: 1, outlierRejectionEnabled: false }`.
   - `recordFix(fix, ring)` - one device fix: with a non-empty ring, the soft
     trimming on (once), then ONE batch `[fix, ...ring]`; with an empty ring,
     the plain `recordGpsEvent(fix)` and no override change.
+
+## Retracting a moved code's votes (D20, M5c)
+
+- `retractVotes(): { refedFixes, batches }` - the M5a recovery arm the owner
+  approved ("refeed-soft-off"): `setAlignmentOverrides(null)` first, then
+  `resetGpsSessionData()` (the zero stays), then every device fix this sink
+  stored (`recordFix`'s fix, in order; never a ring or a lock vote) re-fed
+  in `recordGpsEventBatch` batches of at most 256, one solve each. With
+  the soft keys off the result IS the GPS answer; aged-out votes held the
+  alignment 5-8 m off after 10 minutes, soft keys off without the reset
+  jumped 7.2 m in one fix (results doc "Recovery after a veto").
+- **Its cost** (M5c review L1): `ceil(N / 256)` full solves, N being the
+  device fixes this sink stored since the entry began (each batch is one
+  solve over the whole re-fed history so far). Measured on the desktop
+  (2026-10-02, the machine loaded by other sessions' suites, one run each,
+  a synthetic 40 m walk): N = 600 in 3 batches 82 ms, N = 1,800 in 8
+  batches 193 ms, N = 3,600 (an hour at 1 Hz) in 15 batches 525 ms. It runs
+  once per veto, synchronously in the store subscription that judged the
+  code; on a phone expect several times that (not measured).
+- **A recording of the entry carries the device fixes twice** after a veto
+  (M5c review L4): the original dispatches, then the reset and the re-feed
+  batches. A replay is right as it stands; any other recompute of the
+  recording must honour the reset (`tour-viewing-actions.ts.md`,
+  `codeIgnored`).
+- The soft trimming is marked off, so the next vote (another code's) turns
+  it on again before it is stored.
+- What the re-feed cannot carry: a device fix stored before this sink
+  existed (none in the viewer: the sink is created at the entry's start,
+  before its first fix), and another code's earlier votes - they go with the
+  vetoed code's (that code's keep-alive re-votes while it holds).
 
 ## Invariants & assumptions
 

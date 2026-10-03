@@ -180,3 +180,52 @@ describe("reconsiderScanGate - the levels could not be read (M5 review #1)", () 
     expect(reconsiderScanGate(idle, "unavailable")).toBe(idle);
   });
 });
+
+describe("the scan gate and a code the moved-code check ignores (D20, M5c)", () => {
+  // Why (§7j #4): a vetoed code must not leave the gate asking the visitor
+  // to point the phone at it for 45 s; the gate passes "ignored" and says
+  // the tour is placed by GPS. A tour whose every lockable code is ignored
+  // needs no scan at all on its next AR entry; one with another lockable
+  // code still asks for that one.
+  it("passes 'ignored' when every lockable level is ignored, and still scans for one that is not", () => {
+    const two = new Map([
+      ["a", lockable],
+      ["b", lockable],
+    ]);
+    const start = (ignored: ReadonlySet<string>) =>
+      scanGateAtSessionStart({
+        mode: "visitor",
+        hasDetector: true,
+        levels: two,
+        ignoredLevelIds: ignored,
+      });
+    expect(start(new Set(["a", "b"]))).toEqual({
+      kind: "passed",
+      via: "ignored",
+    });
+    expect(start(new Set(["a"]))).toEqual({
+      kind: "scanning",
+      escapeOffered: false,
+    });
+    expect(
+      reconsiderScanGate(
+        { kind: "scanning", escapeOffered: true },
+        two,
+        new Set(["a", "b"]),
+      ),
+    ).toEqual({ kind: "passed", via: "ignored" });
+    expect(
+      reconsiderScanGate(
+        { kind: "scanning", escapeOffered: false },
+        two,
+        new Set(["b"]),
+      ),
+    ).toEqual({ kind: "scanning", escapeOffered: false });
+  });
+
+  it("allows placement and says, in plain words, that the code is ignored and GPS places the tour", () => {
+    const gate: ScanGate = { kind: "passed", via: "ignored" };
+    expect(gateAllowsPlacement(gate)).toBe(true);
+    expect(gateSegment(gate)).toBe("Code ignored - placing the tour by GPS.");
+  });
+});

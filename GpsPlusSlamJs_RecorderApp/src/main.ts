@@ -1217,12 +1217,15 @@ async function handleEnterAR(): Promise<void> {
       tracking: {
         store,
         onRestarted: (payload) => {
-          store.dispatch(odometryTrackingRestarted(payload));
           // The odometry frame just moved under every stored QR pose, so
           // sightings either side of this are not comparable. Without this
           // call the segmentation gate exists but can never fire, and the
           // mint would average two frames into a plausible-looking anchor.
+          // It runs BEFORE the dispatch: the feeder keeps the alignment the
+          // closing segment ended with, for that segment's codes, and the
+          // restart's reducer wipes it.
           arSessionResources.qrSightingFeeder?.noteFrameChange();
+          store.dispatch(odometryTrackingRestarted(payload));
           // Origin reset: clear the loop-closure handler's last-pose memory
           // (deactivate ⇒ reset) before re-arming — the reference-space jump
           // is an origin correction, not a relocalization loop closure.

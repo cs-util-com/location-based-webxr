@@ -394,6 +394,53 @@ describe('parseQrLevel — mintQuality', () => {
     }
   });
 
+  // Why these tests matter (owner decision D31): a code composed through an
+  // alignment with under 10 m of GPS extent is saved but MARKED, so a viewer
+  // can treat its heading as unsettled. The marker only works if it reaches
+  // the file: a field the table does not know is dropped by serializeQrLevel
+  // without a sound, so both are asserted by name, `false` included.
+  it.each([true, false])(
+    'keeps headingUncertain = %s and the extent through a serialize round-trip',
+    (headingUncertain) => {
+      const mintQuality = { headingUncertain, alignmentGpsExtentM: 6.5 };
+      const level = parseQrLevel({ ...base, qr: { mintQuality } });
+      const reparsed = parseQrLevel(JSON.parse(serializeQrLevel(level)));
+      expect(reparsed.qr.mintQuality?.headingUncertain).toBe(headingUncertain);
+      expect(reparsed.qr.mintQuality?.alignmentGpsExtentM).toBe(6.5);
+    }
+  );
+
+  it('reads an older level without the D31 fields as "unknown", not as settled', () => {
+    // Absent is the only honest reading of a level minted before the marker
+    // existed: nothing was measured, so nothing may be defaulted.
+    const level = parseQrLevel({
+      ...base,
+      qr: { mintQuality: { alignmentSampleCount: 12 } },
+    });
+    expect(level.qr.mintQuality).not.toHaveProperty('headingUncertain');
+    expect(level.qr.mintQuality).not.toHaveProperty('alignmentGpsExtentM');
+  });
+
+  it('accepts a zero GPS extent (a phone that never moved)', () => {
+    const level = parseQrLevel({
+      ...base,
+      qr: { mintQuality: { alignmentGpsExtentM: 0, headingUncertain: true } },
+    });
+    expect(level.qr.mintQuality?.alignmentGpsExtentM).toBe(0);
+  });
+
+  it.each([
+    [{ headingUncertain: 'yes' }, 'a string flag'],
+    [{ headingUncertain: 1 }, 'a numeric flag'],
+    [{ headingUncertain: null }, 'a null flag'],
+    [{ alignmentGpsExtentM: -1 }, 'a negative extent'],
+    [{ alignmentGpsExtentM: Number.NaN }, 'a NaN extent'],
+  ] as [unknown, string][])('rejects mintQuality %j (%s)', (mintQuality) => {
+    expect(() => parseQrLevel({ ...base, qr: { mintQuality } })).toThrow(
+      QrLevelValidationError
+    );
+  });
+
   it('accepts zero for the counts and spreads', () => {
     // Why this test matters: a code seen in exactly one sighting has zero
     // cross-sighting spread. Validating these as "positive" would reject the

@@ -6,19 +6,21 @@
  * Why these tests matter: the prompt overwrites a code's saved position for
  * every visitor when the author says yes, so asking at the wrong moment is
  * the expensive failure. The cold review (§7j #8, #9) named the two wrong
- * moments - a yaw-only refusal (a turned print, not a move) and a transient
- * refusal of an immature alignment - and #14 asked that an answer is not
- * asked again for the same spot after a reload. Each test below pins one
- * of those rules on the pure tracker the creator setup calls on every
- * store change.
+ * moments - a turn alone (a turned print, not a move) and a transient offset
+ * of an immature alignment - and #14 asked that an answer is not asked again
+ * for the same spot after a reload. Since the owner's decision D26
+ * (2026-10-02) the prompt has its OWN 15 m trigger on the sighting's offset,
+ * independent of the settle's refusal (about 26 m): a code moved 15-26 m used
+ * to shift the visit's notes silently. Each test below pins one of those
+ * rules on the pure tracker the creator setup calls on every store change.
  */
 import { describe, expect, it } from "vitest";
 
 import { MOVED_CODE_FLOOR_M } from "./code-displacement.js";
 import {
-  isHorizontalRefusal,
   isSecondCopySpot,
   MOVE_ANSWERS_MAX,
+  MOVE_PROMPT_FLOOR_M,
   MOVE_PROMPT_LABELS,
   MOVE_PROMPT_RULE,
   movePromptText,
@@ -31,21 +33,20 @@ import {
   type RememberedMoveAnswer,
 } from "./code-move-prompt.js";
 
-const RULE = { minFixes: 5, minSeconds: 10, sameSpotM: 15, floorM: 20 };
+const RULE = { minFixes: 5, minSeconds: 10, sameSpotM: 15, floorM: 15 };
 
-/** A horizontal refusal: the code seen 40 m from its saved spot. */
-const MOVED = {
-  horizontalM: 40,
-  yawDeg: 3,
-  maxHorizontalM: 26.2,
-  maxYawDeg: 120,
-};
+/** The code seen 40 m north of its saved spot, barely turned. */
+const at = (northM: number, yawDeg = 3) => ({
+  horizontalM: Math.abs(northM),
+  northM,
+  eastM: 0,
+  yawDeg,
+});
 
 function input(overrides: Partial<MovePromptInput> = {}): MovePromptInput {
   return {
     levelId: "lvl",
-    refusal: MOVED,
-    offset: { northM: 40, eastM: 0 },
+    offset: at(40),
     gateOpen: true,
     fixCount: 10,
     lastFixMs: 1_000_000,
@@ -81,21 +82,8 @@ function run(
   return result;
 }
 
-describe("isHorizontalRefusal", () => {
-  it("is true only when the refusal broke the horizontal bound", () => {
-    expect(isHorizontalRefusal(MOVED)).toBe(true);
-    expect(isHorizontalRefusal({ horizontalM: 10, maxHorizontalM: 26.2 })).toBe(
-      false,
-    );
-    expect(isHorizontalRefusal(null)).toBe(false);
-    expect(isHorizontalRefusal({ ...MOVED, horizontalM: Number.NaN })).toBe(
-      false,
-    );
-  });
-});
-
 describe("trackMovePrompt: when the prompt asks", () => {
-  it("asks only once the refusal has persisted for the rule's fixes AND seconds", () => {
+  it("asks only once the offset has persisted beyond the trigger for the rule's fixes AND seconds", () => {
     // 4 one-second fixes: neither 5 fixes nor 10 s yet.
     expect(run(4).prompt).toBeNull();
     // 9 fixes over 9 s: the fix count is met, the time is not.
@@ -107,7 +95,7 @@ describe("trackMovePrompt: when the prompt asks", () => {
       northM: 40,
       eastM: 0,
       yawDeg: 3,
-      maxHorizontalM: 26.2,
+      triggerM: 15,
       fixes: 10,
       seconds: 10,
       savedKey: "k1",
@@ -125,39 +113,32 @@ describe("trackMovePrompt: when the prompt asks", () => {
     expect(late.prompt).toBeNull();
   });
 
-  it("never asks on a yaw-only refusal - a turned print is not a move (§7j #8)", () => {
-    expect(
-      run(60, {
-        refusal: { ...MOVED, horizontalM: 12, yawDeg: 170 },
-        offset: { northM: 12, eastM: 0 },
-      }).prompt,
-    ).toBeNull();
+  it("never asks for a turn alone - a turned print is not a move (§7j #8)", () => {
+    expect(run(60, { offset: at(12, 170) }).prompt).toBeNull();
   });
 
-  it("never asks for a refusal under the floor, however long it lasts (M5b review #1)", () => {
-    // At a reported 2 m on both sides the refusal's bound is 13.5 m, so a
-    // between-visit GPS bias difference of 15 m refuses an unmoved code.
-    // The refusal stands (the correction is still not applied); only the
-    // question "has it moved?" waits for the floor.
-    const small = { ...MOVED, maxHorizontalM: 13.5 };
+  // Why (D26): the settle refuses a correction only beyond about 26 m, and
+  // below that the visit silently follows the code. The prompt's own trigger
+  // asks for an 18 m offset that no refusal ever flagged, and stays quiet
+  // at 12 m, with the shipped rule.
+  it("asks for a code seen 18 m off with no refusal, never for 12 m (D26, the shipped 15 m trigger)", () => {
+    expect(MOVE_PROMPT_RULE.floorM).toBe(15);
+    const shipped = (northM: number) =>
+      run(MOVE_PROMPT_RULE.minFixes, { offset: at(northM) }, MOVE_PROMPT_RULE)
+        .prompt;
+    expect(shipped(18)).toMatchObject({ horizontalM: 18, triggerM: 15 });
+    expect(shipped(-18)).not.toBeNull();
+    expect(shipped(12)).toBeNull();
+    expect(shipped(15)).toBeNull();
+  });
+
+  it("never asks for an offset at or under the trigger, however long it lasts", () => {
+    expect(run(60, { offset: at(14.9) }).prompt).toBeNull();
+    expect(run(60, { offset: at(15) }).prompt).toBeNull();
+    expect(run(60, { offset: at(15.5) }).prompt).not.toBeNull();
+    // A non-finite size never asks.
     expect(
-      run(60, {
-        refusal: { ...small, horizontalM: 19.9 },
-        offset: { northM: 19.9, eastM: 0 },
-      }).prompt,
-    ).toBeNull();
-    expect(
-      run(60, {
-        refusal: { ...small, horizontalM: 20.5 },
-        offset: { northM: 20.5, eastM: 0 },
-      }).prompt,
-    ).not.toBeNull();
-    // Above the floor the refusal's own bound still decides.
-    expect(
-      run(60, {
-        refusal: { ...MOVED, horizontalM: 26, maxHorizontalM: 26.2 },
-        offset: { northM: 26, eastM: 0 },
-      }).prompt,
+      run(60, { offset: { ...at(40), horizontalM: Number.NaN } }).prompt,
     ).toBeNull();
   });
 
@@ -165,7 +146,7 @@ describe("trackMovePrompt: when the prompt asks", () => {
     expect(run(60, { gateOpen: false }).prompt).toBeNull();
   });
 
-  it("starts counting again after any break in the refusal", () => {
+  it("starts counting again after any break in the offset", () => {
     let onset: MovePromptOnset | null = null;
     for (let i = 0; i <= 8; i += 1) {
       onset = trackMovePrompt(
@@ -174,14 +155,14 @@ describe("trackMovePrompt: when the prompt asks", () => {
         RULE,
       ).onset;
     }
-    // One accepted sighting: the refusal is gone for a fix.
+    // One sighting under the trigger: the run is broken for a fix.
     onset = trackMovePrompt(
       onset,
-      input({ refusal: null, fixCount: 19, lastFixMs: 1_009_000 }),
+      input({ offset: at(10), fixCount: 19, lastFixMs: 1_009_000 }),
       RULE,
     ).onset;
     expect(onset).toBeNull();
-    // Refused again: two fixes later is not ten seconds of refusal.
+    // Beyond it again: two fixes later is not ten seconds of it.
     for (let i = 0; i <= 2; i += 1) {
       const r = trackMovePrompt(
         onset,
@@ -396,15 +377,16 @@ describe("MOVE_PROMPT_RULE", () => {
       minFixes: 20,
       minSeconds: 20,
       sameSpotM: 20,
-      floorM: MOVED_CODE_FLOOR_M,
+      floorM: MOVE_PROMPT_FLOOR_M,
     });
   });
 
-  // Why this test matters: the floor is ONE decision meant for both the
-  // prompt and the viewer's rule (coordinator, 2026-10-01; provisional
-  // until the owner's recordings), so the prompt reads it from the one
-  // constant instead of restating it.
-  it("asks only beyond the shared moved-code floor of 20 m", () => {
+  // Why this test matters (D25, D26): the prompt and the viewer no longer
+  // share one floor. The prompt only ASKS the author, at 15 m, measured on
+  // the real cross-day pairs; the viewer ACTS on its own, at 20 m. Two named
+  // constants, so neither moves with the other.
+  it("asks beyond its own 15 m trigger; the viewer keeps its own 20 m floor", () => {
+    expect(MOVE_PROMPT_FLOOR_M).toBe(15);
     expect(MOVED_CODE_FLOOR_M).toBe(20);
   });
 });

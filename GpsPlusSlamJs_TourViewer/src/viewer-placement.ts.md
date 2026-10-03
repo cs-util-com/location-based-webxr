@@ -98,6 +98,43 @@ recording. Its own module since the flows plan M6.
     `waiting-ready`. A tour without a recording declines at once (the ring
     waits for a lock). Cheap by design: a few predicate reads per dispatch.
 
+## The moved-code veto (D20, M5c; owner approval 2026-10-02)
+
+- **Pin.** `startViewerPipeline` creates the entry's `movedCodeChecks`;
+  the config's `onVotedPose` pins a code (by its level id from
+  `levelIdByText`) on the stable pose of its first voted lock, through the
+  current zero.
+- **Judge.** One store subscription per entry: whenever the GPS history
+  array changed, `checks.update(history, now())` folds the new device fixes
+  and judges; an odometry frame change (`qrDetected.frameEpoch`) ends every
+  pin (`frameChanged`). The recovery's own dispatches are not judged again.
+  No compass reading reaches the checks (owner, 2026-10-02): a code's turn
+  comes from its pose in GPS world space only.
+- **Veto** (`vetoMovedCode`), once per level id: the id joins
+  `ignoredCodes` (the rest of the page session for this tour); the
+  keep-alive stops if it holds this code; `viewerVoteSink.retractVotes()`
+  resets the history and re-feeds the device fixes with the soft keys off,
+  so the content moves ONCE, to the GPS answer; the vote budget is reset
+  (M5c review M2: every code's votes are gone, so another code, even a
+  spent one the keep-alive holds, votes again on its next lock; the vetoed
+  code stays blocked by `isIgnored`); the viewing log records
+  `codeIgnored` with the evidence and the recovery; `viewerIgnoredText` is
+  set; the gate passes `ignored` (`markGateIgnored`: a scanning gate, or
+  one the code itself passed; an escape or a waived gate stays).
+- **Afterwards** the config's `isIgnored(text)` (level id in
+  `ignoredCodes`) makes every later lock of the code free: no fused pose,
+  no vote, no keep-alive; `onIgnoredLock` sets the line and the gate. The
+  next entry's gate starts from `ignoredLevelIds` (all lockable codes
+  ignored: passed at once).
+- **Two codes** (M5c review M1): the gate records which code passed it
+  (`ctx.scanGateCodeText`); a veto flips it to `ignored` only for that
+  code. Another code's voted lock clears `viewerIgnoredText` (the line no
+  longer names the vetoed code) and turns an `ignored` gate back to `code`
+  for itself. The lock's text is the latest detection's, which the
+  controller reports before the lock.
+- **No lock-time veto** (M5d dropped): a sighting is never judged through an
+  alignment that converged before it.
+
 ## Invariants & assumptions
 
 - Session-state fields it owns: the six `viewer*` QR-line inputs,

@@ -2283,7 +2283,10 @@ describe(
      * `fix(n)` adds n one-second device fixes, re-rendering after each as
      * a store change would.
      */
-    async function secondVisitFarFromTheCode(store?: DraftFileStore) {
+    async function secondVisitFarFromTheCode(
+      store?: DraftFileStore,
+      northM = 60,
+    ) {
       const a = authoring(store === undefined ? {} : { store });
       if (store !== undefined) {
         await openFinishableTour(a);
@@ -2294,7 +2297,7 @@ describe(
       a.endVisit();
       const stored = a.ctx.mintedLevel!;
       a.beginVisit();
-      a.setAlignment(yawAlignment(0, [60, 400, 0]));
+      a.setAlignment(yawAlignment(0, [northM, 400, 0]));
       a.seeTheCode();
       await flush();
       const fixes: unknown[] = [];
@@ -2345,6 +2348,35 @@ describe(
       });
       expect(asked[0]!["horizontalM"] as number).toBeCloseTo(60, 1);
       expect(asked[0]!["northM"] as number).toBeCloseTo(60, 1);
+    });
+
+    // Why (D26): the settle refuses a correction only beyond about 26 m;
+    // below that the visit follows the code. A poster moved 18 m used to
+    // shift the visit's notes silently. The prompt's own 15 m trigger asks
+    // while the visit still follows the code, and stays quiet at 12 m.
+    it("asks for a code seen 18 m off that the settle accepts, after the rule's fixes and seconds (D26)", async () => {
+      const { a, fix } = await secondVisitFarFromTheCode(undefined, 18);
+      // No refusal: the settle accepts the correction, the visit follows
+      // the code.
+      expect(a.dom.status.textContent).not.toMatch(/this visit follows GPS/);
+      fix(MOVE_PROMPT_RULE.minFixes - 1);
+      expect(a.dom.movePrompt.hidden).toBe(true);
+      fix(1);
+      expect(a.dom.movePrompt.hidden).toBe(false);
+      expect(a.dom.movePromptText.textContent).toBe(
+        "This code seems to have moved about 18 m. Use the new spot?",
+      );
+      const asked = logs(a, "codeMovePrompted");
+      expect(asked).toHaveLength(1);
+      expect(asked[0]!["maxHorizontalM"]).toBe(15);
+      expect(asked[0]!["horizontalM"] as number).toBeCloseTo(18, 1);
+    });
+
+    it("does not ask for a code seen 12 m off, however long (D26)", async () => {
+      const { a, fix } = await secondVisitFarFromTheCode(undefined, 12);
+      fix(MOVE_PROMPT_RULE.minFixes + 10);
+      expect(a.dom.movePrompt.hidden).toBe(true);
+      expect(logs(a, "codeMovePrompted")).toHaveLength(0);
     });
 
     it("does not ask while the mint gate is closed (too few of this session's fixes)", async () => {

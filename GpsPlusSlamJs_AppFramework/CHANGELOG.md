@@ -55,6 +55,56 @@
 
 ### Fixed
 
+- **`mintQrAnchorFromSightings` no longer mints an arbitrary heading, or a
+  poor position, when a recording starts at the code.** Each sighting used
+  to be composed through the alignment as it stood at that sighting (plan
+  DEC-3), and right after Start Recording that alignment has no walk behind
+  it, so its yaw is arbitrary: 72 degrees heading error p50 and, for a code
+  seen only at the start, 2.9 m, on a synthetic sweep against the real
+  solver (M3a measured 89 degrees). Every sighting is now placed through ONE
+  alignment: the new optional `currentAlignment` (with its `segment`)
+  when it is in their segment, else the newest sighting's own snapshot.
+  Same sweep: 1.0-4.9 degrees p50 from 30 m walks up (7-10 at 15 m) and
+  1.3 m. The owner superseded DEC-3 for this on 2026-10-02.
+  - **Which alignment to pass (owner decision D28, revised 2026-10-02):**
+    the FIRST MATURE alignment at or after the code's last sighting,
+    maturity being 80 m of session GPS extent; before maturity the
+    alignment at save; after a tracking restart the one the code's segment
+    closed with. `createQrMintAlignmentTracker` (new) keeps that per code
+    from the sightings and alignment changes a caller reports, and
+    `createGpsExtentTracker` (new, `state/gps-extent-tracker`) supplies the
+    extent. Passing the alignment at save for every code (shipped first)
+    made a code seen mid-recording and then walked away from inherit all
+    SLAM drift after its sighting: 8.6 m p50 at 500 m away with 1 % and
+    1 degree per 100 m (19 m at 2 %, 2 degrees), against 1.1-1.7 m through
+    the first mature alignment, which keeps the start-at-code fix (a short
+    walk never matures, so it is the alignment at save there).
+  - **Behaviour changes beyond the numbers:** the level's
+    `alignmentSampleCount`, zero and GPS accuracy come from that alignment,
+    so a code seen only before the third GPS fix is minted when the
+    session's alignment has matured instead of being refused; every
+    sighting counts as placed (`sightingCount` equals `sightingsSeen`).
+    The position's recency weighting is unchanged; with one alignment it
+    no longer has DEC-3's reason, and in the sweep it changes nothing
+    measurable.
+  - **Added for it:** `QrMintAlignmentNow` (with an optional
+    `gpsExtentM`), `QrSightingAccumulator.currentSegment()`,
+    `createQrMintAlignmentTracker` with `QR_MINT_MATURE_GPS_EXTENT_M`
+    (`ar/qr/qr-mint-alignment-tracker`), and `createGpsExtentTracker`
+    (`state/gps-extent-tracker`).
+  - **Migration:** none required; a caller that passes no
+    `currentAlignment` gets the newest sighting's snapshot for every
+    sighting. A caller with a live session should pass the alignment
+    `createQrMintAlignmentTracker` picks for the code (the Recorder does).
+  - **Existing levels are not re-minted.** The mint runs only on a live
+    recording's crash-safety syncs and final save; replaying never
+    re-mints, so a `qr/<id>.json` written before this fix for a recording
+    that started at its code keeps its wrong heading. Whether a re-mint
+    path is wanted is open:
+    `docs/2026-10-02-1551-qr-level-re-mint-path-followup.md`.
+  - **Deprecated:** `QrAnchorQuality.sightingsSeen`, now always equal to
+    `sightingCount`; it is in no level schema and goes in the next
+    breaking release.
 - **A recording's track and coverage count device fixes only.**
   `loadGpsPathFromBlob` (the replay preview's track, the Recorder's legacy
   coverage backfill) and `buildSessionMetadataRecord`'s `h3Cells` leave out
@@ -120,6 +170,21 @@
   `cloudColumnTransmittanceToward`; the slab's `cloudSlabCumulativeM`,
   `cloudSlabThresholdThicknessM` and `cloudSlabThicknessM` moved there and
   are re-exported from `cloud-slab.js`).
+- **A QR level marks a code whose heading is uncertain** (owner decision
+  D31, 2026-10-02): `QrMintQuality` gains the optional
+  `alignmentGpsExtentM` (the GPS extent of the alignment the code was
+  composed through) and `headingUncertain` (`true` under
+  `QR_MINT_HEADING_UNCERTAIN_EXTENT_M = 10` m, new export of
+  `ar/qr/qr-anchor-mint`). `mintQrAnchorFromSightings` stamps both when the
+  `currentAlignment` it places the code through carries a `gpsExtentM`.
+  The code is still written. Measured on the start-at-code `extent` sweep:
+  the marker catches 74 % of those short-walk codes, whose heading is 13.8 /
+  88 degrees p50 / p90 against 3.4 / 8 for the rest.
+  - **Absent means unknown:** levels minted before this, and mints without
+    an extent, carry neither field; a reader must not default
+    `headingUncertain` to `false`. Readers that do not know the fields
+    ignore them, so no migration is needed. The Tour Viewer does not read
+    them yet.
 - **`recordGpsEventBatch` and its `RecordGpsEventBatchPayload` type are
   re-exported** from `gps-plus-slam-app-framework/state` (and the package
   root), beside `recordGpsEvent`: several GPS observations with ONE alignment
@@ -433,6 +498,26 @@ source }` instead of the corners alone (unreleased API).
   - **Migration:** replace per-slider calls with one
     `guardSlidersIn(document)` in the page's entry; keeping a per-slider
     call under a page-wide install double-guards that slider.
+- **The compass cold start is on by default wherever GPS fixes are fed**
+  (owner decision D30, 2026-10-02; plan
+  `GpsPlusSlamJs_Docs/docs/2026-10-02-1830-compass-cold-start-default-plan.md`).
+  `createGpsPositionHandler` now starts the `AbsoluteOrientationSensor`
+  watch at the first fix that arrives while recording, so later fixes carry
+  `rawAbsoluteOrientation` and the core's cold-start yaw override (default
+  on since 2026-07-25) can act. Before, only apps that started the watch
+  themselves (the Recorder, OsmDemo) got it; the Tour Viewer,
+  MinimalExample and AnchorStarter now do too, with no code change.
+  - **No new permission prompt:** off Chrome Android (iOS, Safari, Firefox,
+    desktop, headless) it reports `unavailable` before any permission
+    query; it never calls `DeviceOrientationEvent.requestPermission`. An app
+    that already started the watch is never restarted (new
+    `ensureAbsoluteOrientationWatch`).
+  - **Opt out** with `absoluteOrientation: 'off'`; observe the default's
+    status with `onAbsoluteOrientationStatus`. Any other value throws a
+    `TypeError` at creation.
+  - **Cost:** one 20 Hz sensor while it runs; the handler never stops it
+    (the app's own `stopAbsoluteOrientationWatch()` still does).
+
 - **QR votes carry their provenance** (Tour Viewer authoring plan
   2026-09-28-0953, M2b). Every payload `buildQrGpsVotes` builds is stamped
   `rawGpsPoint.source: GPS_POINT_SOURCE_SYNTHETIC_QR`, the core's provenance

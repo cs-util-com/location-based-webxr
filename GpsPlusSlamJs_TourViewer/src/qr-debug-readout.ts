@@ -12,6 +12,7 @@ import {
   type QrFusedPose,
 } from "gps-plus-slam-app-framework/ar/qr";
 import type { QrTrackingStatus } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
+import type { MovedCodeCheckView } from "./moved-code-check.js";
 import { waitingFor } from "./qr-author-mode.js";
 
 /** Per decoded text, the lock counts of one pipeline's fused pose. */
@@ -65,6 +66,10 @@ export function debugReadoutLines(input: {
   unknownCode: string | null;
   unusableCode: string | null;
   tallies: FusedTallies | null;
+  /** The live moved-code checks (D20, M5c); absent: none shown. */
+  movedCodeChecks?: readonly MovedCodeCheckView[];
+  /** The texts of the codes the viewer ignores as moved. */
+  ignoredCodes?: readonly string[];
 }): string[] {
   let head = `qr: ${input.status ?? "off"}`;
   if (input.unknownCode !== null) head += ` | no level: ${input.unknownCode}`;
@@ -74,6 +79,17 @@ export function debugReadoutLines(input: {
     lines.push(fusedCountsLine(codeLabel(text), tally.summary()));
   }
   if (lines.length === 1) lines.push("no code evaluated yet");
+  for (const c of input.movedCodeChecks ?? []) {
+    lines.push(
+      `moved-code check ${codeLabel(c.text)}: |D| ${c.magnitudeM.toFixed(1)} m, ` +
+        `yaw ${c.yawDeg.toFixed(1)}°, ${c.spanS.toFixed(0)} s, ` +
+        `spread ${c.spreadM.toFixed(1)} m, ${String(c.samples)} fixes, ` +
+        `turn check ${c.turnChecked ? "on" : "off"}, ${c.verdict}`,
+    );
+  }
+  for (const text of input.ignoredCodes ?? []) {
+    lines.push(`ignored (moved): ${codeLabel(text)}`);
+  }
   return lines;
 }
 

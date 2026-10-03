@@ -419,3 +419,37 @@ describe("arStatusLine - composition", () => {
     ).toBe("Visitor mode — AR running · 3 camera frames · loading photos 1/2…");
   });
 });
+
+describe("arStatusLine - a code the moved-code check ignores (D20, M5c)", () => {
+  // Why (§7j #4): the visitor reads ONE plain sentence - the code seems
+  // moved, its position is not used, GPS shows the tour - never the
+  // "Relocalized" hold line, and not the gate's short pass on top of it.
+  it("says it once, in plain words, with the gate's short pass folded in", () => {
+    const line = arStatusLine({
+      ...RUNNING_BASE,
+      tour: { kind: "open", levelCount: 1 },
+      qr: {
+        ...RUNNING_BASE.qr,
+        status: "tracking",
+        votedLocks: 10,
+        lockedText: "code",
+        ignoredCode: "code",
+      },
+      gate: { kind: "passed", via: "ignored" },
+    });
+    expect(line).toBe(
+      "Visitor mode — AR running · 3 camera frames · This code seems to have been moved, so its position is not used. Showing the tour by GPS.",
+    );
+  });
+
+  it("shows the gate's short pass when the line has no code to name (a re-entry)", () => {
+    const line = arStatusLine({
+      ...RUNNING_BASE,
+      tour: { kind: "open", levelCount: 1 },
+      qr: { ...RUNNING_BASE.qr, status: "scanning" },
+      gate: { kind: "passed", via: "ignored" },
+    });
+    expect(line).toContain("Code ignored - placing the tour by GPS.");
+    expect(line).not.toContain("Scanning for the printed code");
+  });
+});

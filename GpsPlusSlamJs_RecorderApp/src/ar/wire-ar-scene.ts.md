@@ -55,6 +55,13 @@ camera follower) construct directly and will propagate a throw to
   2026-09-04; before that the two sites carried copies kept in parity by
   comment). Likewise the frame tiles: `visualization/frame-tile-stack.ts`,
   with the live-only `maxTiles` cap passed here and omitted by replay.
+- **The QR block reads the alignment live, with the GPS extent.** Its
+  `readAlignment` returns the store's alignment matrix, zero, GPS fix count
+  and the session's GPS extent (a `createGpsExtentTracker` per QR wiring,
+  incremental, starting over by itself on a new GPS list). The extent is what
+  the sighting feeder needs to tell when an alignment is mature enough to
+  mint a code through (80 m, D28 revised); without it every code would fall
+  back to the alignment at save.
 - **Parenting rule:** anything whose coordinates are raw-WebXR must hang off
   `arWorldGroup`, not the scene root, so it rides the alignment matrix like
   the camera does. Only the camera follower is deliberately at scene root.

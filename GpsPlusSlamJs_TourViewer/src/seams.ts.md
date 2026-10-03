@@ -9,10 +9,16 @@ Keeps `main.ts` glue-only.
 
 ## Public API
 
+- `getArPose()` - the framework's `getCurrentArPose`: the pose each device
+  GPS fix is paired with. A seam (D20 M5c) so the e2e, which has no XR
+  frames, can send GPS fixes through the page's real path
+  (`createGpsPositionHandler` -> `recordDeviceFix` -> the vote sink).
+
 - `interface TourViewerSeams { controllerDeps; getArWorldGroup;
 enableArWorldGroupAlignment; startCameraFrameCapture;
 stopCameraFrameCapture; startDepthCapture; stopDepthCapture; createQrFrontEnd; solveQrPose; estimateQrPrintSize;
-getIntrinsics; createQrDebugView; getScene; queryGeolocationPermission;
+getIntrinsics; createQrDebugView; getScene; getArPose;
+queryGeolocationPermission;
 requestLocationOnce; shareOrDownloadZip; downloadZip; canShareZip; downloadPdf;
 startHitTestReticle; pickObjectInView; encodeFrameJpeg;
 createLabel; schedule }`

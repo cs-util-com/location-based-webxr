@@ -143,6 +143,8 @@ export function wireArEntry(deps: {
         reprojectionErrorPx: ctx.viewerReprojectionPx,
         // The code keep-alive's phase at render time (it counts down).
         hold: ctx.viewerKeepAlive?.phase(Date.now()) ?? null,
+        // A code the moved-code check ignores (D20, M5c).
+        ignoredCode: ctx.viewerIgnoredText,
         // Read from the last evaluation, never re-evaluated here: this runs
         // per camera frame, past the budget's short-circuit (plan §67 #5).
         fusedHint: authorMode
@@ -184,6 +186,8 @@ export function wireArEntry(deps: {
       unknownCode: ctx.viewerUnknownCode,
       unusableCode: ctx.viewerUnusableCode,
       tallies: ctx.fusedTallies,
+      movedCodeChecks: ctx.movedCodeChecks?.snapshot() ?? [],
+      ignoredCodes: [...ctx.ignoredCodes.values()].map((c) => c.text),
     }).join("\n");
   }
 

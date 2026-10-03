@@ -15,16 +15,34 @@
  *    three-minute walk, drift and a genuinely moved poster produce the same
  *    magnitude, so that threshold cannot be set honestly before field data.
  *
- * 2. **Which alignment?** (DEC-3, the owner's call over the simpler
- *    final-alignment variant) Each sighting is composed with the alignment as
- *    it stood AT that sighting.
+ * 2. **Which alignment?** ONE for every sighting: the one the caller passes
+ *    as `currentAlignment` when it is in their odometry segment, else the
+ *    newest sighting's own snapshot. The caller decides which (owner
+ *    decision D28, revised 2026-10-02, `qr-mint-alignment-tracker.ts`): the
+ *    FIRST MATURE alignment (80 m of session GPS extent) at or after the
+ *    code's last sighting; before maturity the alignment at save, or the one
+ *    the code's segment closed with. This superseded DEC-3 (each sighting
+ *    through the alignment as it stood AT that sighting): a sighting taken
+ *    before the alignment had any walk behind it carries an arbitrary yaw,
+ *    and through it a recording that started at the code minted a heading
+ *    72 degrees off p50 and a position 2.9 m off p50, against 1.0-4.9
+ *    degrees from 30 m walks up (7-10 at 15 m) and 1.3 m through a matured
+ *    alignment (`qr-anchor-mint.start-at-code.test.ts`). It also superseded
+ *    the alignment at save for every code (a2, shipped for one day), under
+ *    which a code seen mid-recording and then walked away from inherited all
+ *    SLAM drift after its sighting: 8.6 m p50 at 500 m with 1 % and 1 degree
+ *    per 100 m, against 1.1-1.7 m through the first mature alignment (the
+ *    same file, `left`).
  *
- * 3. **How are they combined?** Later sightings weigh more, on the owner's
- *    reasoning that a later alignment has seen more GPS. The counter-argument
- *    is recorded rather than hidden: later sightings also carry more
- *    accumulated drift, so this is a judgement the field probe is meant to
- *    settle. Both the weighted and the unweighted answer are returned, so the
- *    difference is visible instead of assumed.
+ * 3. **How are they combined?** The position is a recency-weighted median,
+ *    the rotation a robust unweighted average. The weighting is what is left
+ *    of DEC-3, and its original reason (a later sighting carried a later,
+ *    better alignment) went with the per-sighting alignment: with one
+ *    alignment it only prefers the later viewpoints, which also carry more
+ *    drift. On the start-at-code sweep it changes nothing measurable (a 1e9 s
+ *    half-life gives the same p50 to 0.1 m and 0.1 degrees), so it stays,
+ *    unearned, until the field probe; both the weighted and the unweighted
+ *    answer are returned, so the difference is visible.
  */
 
 import { geodesicAngleRad } from '../../utils/geodesic-angle.js';
@@ -39,6 +57,7 @@ import {
 } from './qr-mint-level.js';
 import type { QrSighting } from './qr-sighting-accumulator.js';
 import type { Quaternion } from 'gps-plus-slam-js';
+import type { LatLong, Matrix4 as AlignmentMatrix } from '../../core/index.js';
 
 /**
  * Rotation disagreement across sightings above which the code is declared
@@ -61,13 +80,40 @@ export const DEFAULT_MAX_FIXED_ROTATION_SPREAD_DEG = 15;
  */
 export const DEFAULT_RECENCY_HALF_LIFE_S = 60;
 
+/**
+ * GPS extent (m) of the alignment a code is composed through below which
+ * the level is saved but marked `headingUncertain` (owner decision D31).
+ *
+ * Measured (`qr-anchor-mint.start-at-code.test.ts`, `extent` sweep: a
+ * recording that starts at the code, 3 looks, out-and-back walks of 0-30 m,
+ * 40 seeds each, 5 m GPS accuracy, the shipped mint): heading 41 degrees
+ * p50 at 0-5 m of extent, 7.3 at 5-10 m, 3.5 at 10-15 m. Swept as a marker:
+ * - 5 m marks 36 % of those codes and leaves the 5-10 m bin (7.3 / 22
+ *   degrees p50 / p90) unmarked: the unmarked codes are 4.9 / 16.
+ * - 10 m marks 74 %: marked 13.8 / 88 degrees, unmarked 3.4 / 8.
+ * - 15 m marks 89 % and buys nothing: the unmarked are still 3.4 / 8, so
+ *   it marks codes whose heading is as good as the rest.
+ * The shares describe that deliberately short-walk set, not real
+ * recordings. At 2-3 m GPS accuracy standing still spans less, so the same
+ * extent would mean a longer real walk and a lower value could serve.
+ */
+export const QR_MINT_HEADING_UNCERTAIN_EXTENT_M = 10;
+
 export type QrAnchorDeclineReason =
   'no-sightings' | 'frame-changed' | 'moved' | 'no-alignment';
 
 export interface QrAnchorQuality {
   /** Sightings the position was actually combined from. */
   sightingCount: number;
-  /** Sightings the fixedness gate looked at, placeable or not. */
+  /**
+   * Sightings the fixedness gate looked at.
+   *
+   * @deprecated Equal to `sightingCount` since 2026-10-02 (every sighting is
+   * placed through one alignment, so none is set aside). It is in no level
+   * schema and nothing in this workspace reads it; it stays populated only
+   * because `QrAnchorQuality` is exported, and goes in the next breaking
+   * release. Read `sightingCount`.
+   */
   sightingsSeen: number;
   detectionCount: number;
   /** Outlier-INCLUSIVE max pairwise rotation angle across sightings (deg). */
@@ -98,20 +144,51 @@ export type QrAnchorMintResult =
   | { ok: true; level: MintQrLevelResult; quality: QrAnchorQuality }
   | { ok: false; reason: QrAnchorDeclineReason; detail: string };
 
-/** A sighting that has everything needed to place it, narrowed. */
-interface PlaceableSighting {
-  sighting: QrSighting;
-  alignmentMatrix: NonNullable<QrSighting['alignmentMatrix']>;
-  zero: NonNullable<QrSighting['zero']>;
+/** The one alignment every sighting of a code is placed through, narrowed
+ *  by construction - a filter would not tell the compiler the fields are
+ *  non-null, and casting one away is how a null reaches the composition. */
+interface MintFrame {
+  alignmentMatrix: AlignmentMatrix;
+  zero: LatLong;
+  /** What the level stamps about it (sample count, accuracy). */
+  info: MintAlignmentInfo;
+  /** Its GPS extent (m), when the caller supplied a usable one. Only the
+   *  caller's alignment carries it; a sighting snapshot never does. */
+  gpsExtentM?: number;
+}
+
+/**
+ * An alignment of the session, and the odometry segment it belongs to
+ * (`QrSightingAccumulator.currentSegment()` when it was read). The mint's
+ * `currentAlignment`: the one `qr-mint-alignment-tracker.ts` picks for a
+ * code (the first mature one at or after its last sighting, else the
+ * alignment at save).
+ */
+export interface QrMintAlignmentNow {
+  readonly alignmentMatrix: AlignmentMatrix | null;
+  readonly zero: LatLong | null;
+  readonly alignmentSampleCount: number;
+  readonly gpsAccuracyM?: number;
+  /**
+   * The GPS extent (m) this alignment rests on: the largest horizontal
+   * distance between two device fixes of its session so far
+   * (`state/gps-extent-tracker.ts`). It decides whether the yaw is
+   * observable; absent when the caller does not know it.
+   */
+  readonly gpsExtentM?: number;
+  /** The accumulator's segment at mint time: the alignment describes THIS
+   *  odometry frame, and sightings from another one must not be placed
+   *  through it. */
+  readonly segment: number;
 }
 
 export interface MintQrAnchorInput {
   /**
-   * **MUST be in ascending `lastTimestamp` order.** Three separate things
-   * take "the latest sighting" as `placeable.at(-1)` — the recency weighting,
-   * the GPS `zero` the anchor is minted against, and the stamped
-   * `alignmentSampleCount` — so an unordered array does not merely weight
-   * oddly, it mints against the wrong reference position.
+   * **MUST be in ascending `lastTimestamp` order.** The recency weighting
+   * takes "the latest sighting" as the last one, and without a usable
+   * `currentAlignment` so do the alignment, the GPS `zero` and the stamped
+   * `alignmentSampleCount` - so an unordered array does not merely weight
+   * oddly, it mints through the wrong alignment.
    *
    * The one production caller (`qr-sighting-accumulator`) appends in arrival
    * order and therefore satisfies this for free, which is why nothing caught
@@ -125,6 +202,17 @@ export interface MintQrAnchorInput {
   nowIso: string;
   maxFixedRotationSpreadDeg?: number;
   recencyHalfLifeS?: number;
+  /**
+   * The alignment to place this code through, as the caller's
+   * `qr-mint-alignment-tracker` picks it (D28 revised: the first mature one
+   * at or after the last sighting, else the alignment at save). Every
+   * sighting is placed through it (position and rotation) when its matrix
+   * and zero exist and it belongs to the sightings' odometry segment;
+   * otherwise through the newest sighting's own snapshot. Optional so a
+   * caller with no live session (a replay, a test) still mints, with the
+   * newest snapshot it has.
+   */
+  currentAlignment?: QrMintAlignmentNow;
 }
 
 /**
@@ -208,21 +296,6 @@ function refuseUnusable(
   return null;
 }
 
-/** The sightings that can be placed at all, narrowed by construction — a
- *  filter would not tell the compiler the fields are non-null, and casting
- *  one away is how a null reaches the composition. */
-function placeableSightings(
-  sightings: readonly QrSighting[]
-): PlaceableSighting[] {
-  const placeable: PlaceableSighting[] = [];
-  for (const sighting of sightings) {
-    const { alignmentMatrix, zero } = sighting;
-    if (alignmentMatrix === null || zero === null) continue;
-    placeable.push({ sighting, alignmentMatrix, zero });
-  }
-  return placeable;
-}
-
 /**
  * The caller's half-life, or the default — rejecting values that would make
  * {@link recencyWeights} produce weights `weightedMedian` silently drops
@@ -251,14 +324,98 @@ function resolveRecencyHalfLifeS(value: number | undefined): number {
 
 /** `1 / (1 + age / halfLife)`, age measured back from the last sighting. */
 function recencyWeights(
-  placeable: readonly PlaceableSighting[],
+  sightings: readonly QrSighting[],
   halfLifeS: number
 ): number[] {
-  const lastAt = placeable.at(-1)?.sighting.lastTimestamp ?? 0;
-  return placeable.map((p) => {
-    const ageS = Math.max(0, (lastAt - p.sighting.lastTimestamp) / 1000);
+  const lastAt = sightings.at(-1)?.lastTimestamp ?? 0;
+  return sightings.map((s) => {
+    const ageS = Math.max(0, (lastAt - s.lastTimestamp) / 1000);
     return 1 / (1 + ageS / halfLifeS);
   });
+}
+
+/**
+ * The ONE alignment every sighting is placed through: the most informed one
+ * that still describes the sightings' odometry frame, or `null` when there
+ * is none at all.
+ *
+ * Not each sighting's own (DEC-3, superseded by the owner on 2026-10-02): an
+ * alignment's yaw is unobservable until the walk has a baseline, so a
+ * sighting taken as the recording starts carries an arbitrary yaw. Measured
+ * on the start-at-code sweep (40 recordings per cell, walks 15-120 m, 1-3
+ * looks, yaw noise 1-5 degrees): per-sighting composition gave 72 degrees
+ * heading p50 and, for a code seen only at the start, 2.9 m; through the
+ * alignment at save 1.0-4.9 degrees from 30 m walks up (7-10 at 15 m) and
+ * 1.3 m. The cost: with three looks the old rotation average was up to 0.6
+ * degrees better at p50 (2.7 at 15 m), while its p90 reached 146. WHICH
+ * alignment the caller passes is decided outside (header, decision 2).
+ *
+ * The caller's alignment is used only when it is in the sightings' segment:
+ * after a tracking restart or loop closure it describes another frame, and
+ * the newest snapshot taken in their own frame is then the best available.
+ */
+function mintFrame(
+  sightings: readonly QrSighting[],
+  current: QrMintAlignmentNow | undefined
+): MintFrame | null {
+  if (
+    current?.alignmentMatrix != null &&
+    current.zero !== null &&
+    sightings.every((s) => s.segment === current.segment)
+  ) {
+    return {
+      alignmentMatrix: current.alignmentMatrix,
+      zero: current.zero,
+      info: alignmentInfo(current.alignmentSampleCount, current.gpsAccuracyM),
+      ...(usableExtent(current.gpsExtentM)
+        ? { gpsExtentM: current.gpsExtentM }
+        : {}),
+    };
+  }
+  for (let i = sightings.length - 1; i >= 0; i -= 1) {
+    const s = sightings[i];
+    if (s?.alignmentMatrix == null || s.zero === null) continue;
+    return {
+      alignmentMatrix: s.alignmentMatrix,
+      zero: s.zero,
+      info: alignmentInfo(s.alignmentSampleCount, s.gpsAccuracyM),
+    };
+  }
+  return null;
+}
+
+/** A GPS extent that says something about the walk: finite, not negative. */
+function usableExtent(m: number | undefined): m is number {
+  return m !== undefined && Number.isFinite(m) && m >= 0;
+}
+
+/**
+ * The D31 marker for a level composed through `frame`: its extent and
+ * whether that is under {@link QR_MINT_HEADING_UNCERTAIN_EXTENT_M}. Empty
+ * when the extent is unknown, so the level says nothing rather than a
+ * default (absent = unknown).
+ */
+function headingMarker(frame: MintFrame): {
+  alignmentGpsExtentM?: number;
+  headingUncertain?: boolean;
+} {
+  if (frame.gpsExtentM === undefined) return {};
+  return {
+    alignmentGpsExtentM: frame.gpsExtentM,
+    headingUncertain: frame.gpsExtentM < QR_MINT_HEADING_UNCERTAIN_EXTENT_M,
+  };
+}
+
+/** The alignment facts the level assembly needs. */
+function alignmentInfo(
+  sampleCount: number,
+  gpsAccuracyM: number | undefined
+): MintAlignmentInfo {
+  return {
+    hasMatrix: true,
+    sampleCount,
+    ...(gpsAccuracyM !== undefined ? { gpsAccuracyM } : {}),
+  };
 }
 
 /** The combined world position, weighted and unweighted, plus the robust
@@ -319,34 +476,24 @@ function buildQuality(
   };
 }
 
-/** The alignment facts the level assembly needs, from the last sighting. */
-function tailAlignment(tail: PlaceableSighting | undefined): MintAlignmentInfo {
-  return {
-    hasMatrix: true,
-    sampleCount: tail?.sighting.alignmentSampleCount ?? 0,
-    ...(tail?.sighting.gpsAccuracyM !== undefined
-      ? { gpsAccuracyM: tail.sighting.gpsAccuracyM }
-      : {}),
-  };
-}
-
 /**
- * Place every usable sighting and combine them — or the reason none of that
- * was possible. Both refusals live here so the entry point stays one
+ * Place every sighting through the one alignment and combine them - or the
+ * reason that was not possible. Both refusals live here so the entry point stays one
  * straight line, which is also what keeps it under the complexity budget.
  */
 function placeOrRefuse(
   sightings: readonly QrSighting[],
-  halfLifeS: number
+  halfLifeS: number,
+  current: QrMintAlignmentNow | undefined
 ):
   | { refusal: QrAnchorMintResult }
   | {
-      placeable: PlaceableSighting[];
+      frame: MintFrame;
       combined: ReturnType<typeof combinePlacements>;
       rotation: Quaternion;
     } {
-  const placeable = placeableSightings(sightings);
-  if (placeable.length === 0) {
+  const frame = mintFrame(sightings, current);
+  if (frame === null) {
     return {
       refusal: {
         ok: false,
@@ -357,12 +504,12 @@ function placeOrRefuse(
       },
     };
   }
-  const worlds = placeable.map((p) =>
-    qrWorldPoseFromOdom(p.sighting.odomPose, p.alignmentMatrix)
+  const worlds = sightings.map((s) =>
+    qrWorldPoseFromOdom(s.odomPose, frame.alignmentMatrix)
   );
   const combined = combinePlacements(
     worlds,
-    recencyWeights(placeable, halfLifeS)
+    recencyWeights(sightings, halfLifeS)
   );
   if (combined.rotation === null) {
     return {
@@ -373,7 +520,7 @@ function placeOrRefuse(
       },
     };
   }
-  return { placeable, combined, rotation: combined.rotation };
+  return { frame, combined, rotation: combined.rotation };
 }
 
 /**
@@ -424,29 +571,27 @@ export function mintQrAnchorFromSightings(
   const refusal = refuseUnusable(input, rotationSpreadDeg);
   if (refusal !== null) return refusal;
 
-  const placed = placeOrRefuse(sightings, recencyHalfLifeS);
+  const placed = placeOrRefuse(
+    sightings,
+    recencyHalfLifeS,
+    input.currentAlignment
+  );
   if ('refusal' in placed) return placed.refusal;
-  const { placeable, combined, rotation } = placed;
+  const { frame, combined, rotation } = placed;
 
-  const sortedSizes = placeable
-    .map((p) => p.sighting.sizeM)
-    .sort((a, b) => a - b);
-  // Counted over the sightings actually USED, not every sighting seen: a
-  // session whose early visits had no alignment would otherwise report
-  // "placed from 8 visits" when three were placed.
+  const sortedSizes = sightings.map((s) => s.sizeM).sort((a, b) => a - b);
+  // Every sighting is placed through the one alignment, so the sightings
+  // used and the sightings seen are the same set (they were not while each
+  // needed its own snapshot).
   const quality = buildQuality(
-    placeable.map((p) => p.sighting),
+    sightings,
     sortedSizes,
     rotationSpreadDeg,
     translationSpreadM
   );
-  // The gate ran over ALL sightings, so the spread it refused on is the one
-  // reported, even when fewer were placeable.
-  quality.sightingsSeen = sightings.length;
-  const tail = placeable.at(-1);
   const shared = {
-    zero: tail?.zero ?? null,
-    alignment: tailAlignment(tail),
+    zero: frame.zero,
+    alignment: frame.info,
     sizeM: quality.sizeM,
     nowIso,
   };
@@ -460,6 +605,7 @@ export function mintQrAnchorFromSightings(
       rotationSpreadDeg: quality.rotationSpreadDeg,
       translationSpreadM: quality.translationSpreadM,
       physicalSizeSpreadM: quality.sizeSpreadM,
+      ...headingMarker(frame),
     },
   });
   if (!level.ok) {
