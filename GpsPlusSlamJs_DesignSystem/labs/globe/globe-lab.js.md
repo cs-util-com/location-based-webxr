@@ -258,7 +258,10 @@
     `fovY` (the lab's) and `cameraFov` (the camera's, which the fly-in
     varies), `zoomOutLimitM`, `cameraDirection` (unit, ECEF), and for the
     fly-in `flyInStart` (its start now, null before a target), `firstTurn`
-    (the camera's direction on its first frame), `flyInBlendMs` (0 when no
+    (the camera's direction on its first frame), `firstTurnDistanceM` (the
+    camera's distance from the centre on that frame, as the frame loop
+    placed it, so a smoke reads the start without racing the clock; reset
+    on restart), `flyInBlendMs` (0 when no
     spin was shown) and `flyInSettled`.
 - The relief and the oblique flight (round-5 plan 2026-10-01-0945 §3.5,
   F1; DEC-GL5-9):

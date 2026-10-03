@@ -545,6 +545,13 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
   let spinShown = false;
   /** The camera's direction on the fly-in's first frame, for the smokes. */
   let firstTurn = null;
+  /**
+   * The camera's distance from the centre (m) on the fly-in's first frame,
+   * as the frame loop placed it (`cameraPlaced`), for the smokes; and
+   * whether the pose just returned is that first frame's.
+   */
+  let firstTurnDistanceM = null;
+  let firstTurnPending = false;
   /** A position from the permission rule, and whether none will come. */
   let fix = null;
   let noFix = false;
@@ -568,6 +575,8 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
     arrival = null;
     spinShown = false;
     firstTurn = null;
+    firstTurnDistanceM = null;
+    firstTurnPending = false;
     blend = null;
     note(now);
   };
@@ -650,7 +659,10 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
           endKm: fitDistance() / 1000,
           endFovDeg: params.fovY,
         });
-        firstTurn ??= [...p.direction];
+        if (firstTurn === null) {
+          firstTurn = [...p.direction];
+          firstTurnPending = true;
+        }
         return {
           pose: poseToward(p.direction),
           distanceM: p.distanceKm * 1000,
@@ -754,6 +766,15 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
       }
       return introPose(now);
     },
+    /**
+     * The frame loop placed the camera at `distanceM` from the centre:
+     * kept when it was the fly-in's first frame.
+     */
+    cameraPlaced(distanceM) {
+      if (!firstTurnPending) return;
+      firstTurnPending = false;
+      firstTurnDistanceM = distanceM;
+    },
     state: () => ({
       phase,
       target: choice.target,
@@ -771,6 +792,7 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
           ? startDirection(performance.now())
           : null,
       firstTurn,
+      firstTurnDistanceM,
       // How long the start blends from the spin (0: no spin was shown),
       // and whether that blend is over.
       flyInBlendMs: arrival?.blendMs ?? null,
@@ -1730,6 +1752,7 @@ async function start() {
       const step = flight.pose(now);
       if (step.pose) {
         applyOrbitPose(camera, step.pose, step.distanceM ?? distance);
+        flight.cameraPlaced(camera.position.length());
         if (step.fovDeg !== undefined && camera.fov !== step.fovDeg) {
           camera.fov = step.fovDeg;
           camera.updateProjectionMatrix();

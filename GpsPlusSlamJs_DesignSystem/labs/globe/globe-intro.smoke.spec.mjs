@@ -56,12 +56,23 @@ const libraryKm = (fovYDeg, aspect) => {
  * (the corner black, so the lit centre cannot be space).
  */
 async function zoomOutToLimit(page) {
-  await bootGlobe(page, `at=30,15&turnMs=60000&intro=distance&${BASE}`, {
+  await bootGlobe(page, `at=30,15&turnMs=10000&intro=distance&${BASE}`, {
     phase: "turning",
   });
   const early = await cameraNow(page);
   expect(early.phase).toBe("turning");
-  expect(early.km).toBeGreaterThan(0.95 * early.limitKm);
+  // The camera as the frame loop placed it on the fly-in's FIRST frame,
+  // recorded by the lab: a read at whatever time the page answers lands
+  // frames into the fly-in (677 ms on CI, past the 649 ms a 5 s flight
+  // stays within 5 % of the limit).
+  const first = await page.evaluate(() => {
+    const s = window.__globeLab.state();
+    return { turnMs: s.turnMs, km: s.firstTurnDistanceM / 1000 };
+  });
+  // The lab replaces an out-of-range turnMs with its default silently
+  // (PARAMS.turnMs, 0-10,000): the run must be the one asked for.
+  expect(first.turnMs).toBe(10_000);
+  expect(first.km).toBeGreaterThanOrEqual(0.999 * early.limitKm);
   await applyHash(page, `at=30,15&turnMs=0&intro=distance&${BASE}`);
   await page.waitForFunction(
     () => window.__globeLab.state().phase === "arrived",
@@ -185,9 +196,13 @@ test("a press during the fly-in eases the field of view back to fovY", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  await bootGlobe(page, `at=30,15&turnMs=60000&intro=narrow&${BASE}`, {
+  await bootGlobe(page, `at=30,15&turnMs=10000&intro=narrow&${BASE}`, {
     phase: "turning",
   });
+  // The flight asked for, not the default an out-of-range value falls to.
+  expect(await page.evaluate(() => window.__globeLab.state().turnMs)).toBe(
+    10_000,
+  );
   const before = await cameraNow(page);
   expect(before.cameraFov).toBeGreaterThan(before.fov + 10);
   // Every frame's field of view, from the press for 1.5 s (3x the ease),
@@ -542,16 +557,17 @@ test("the turn cap and the fly-in's length, swept", async ({ page }) => {
   const at = "at=50.94,6.96&spinMs=0&intro=distance";
   const night =
     "time=2026-03-20T00:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0";
-  await bootGlobe(page, `${at}&turnMs=60000&${night}`, { phase: "turning" });
+  await bootGlobe(page, `${at}&turnMs=10000&${night}`, { phase: "turning" });
   const target = ecefDirection(COLOGNE);
   const caps = [];
   for (const cap of [45, 90, 180]) {
-    await applyHash(page, `${at}&turnMs=60000&turnCap=${cap}&${night}`);
+    await applyHash(page, `${at}&turnMs=10000&turnCap=${cap}&${night}`);
     await page.waitForFunction(() => {
       const s = window.__globeLab.state();
       return s.phase === "turning" && s.flyInSettled;
     });
     const s = await page.evaluate(() => window.__globeLab.state());
+    expect(s.turnMs).toBe(10_000);
     const toSun = angleBetween(target, s.sunEcef);
     caps.push({
       cap,

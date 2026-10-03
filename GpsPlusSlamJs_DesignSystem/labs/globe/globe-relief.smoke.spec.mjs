@@ -50,6 +50,7 @@ async function diveAndLand(page, context, hash) {
     null,
     { timeout: 120_000 },
   );
+  const landedAt = Date.now();
   // Let the relief's tiles at the held altitude load and settle (its own
   // queues idle): a frame read while coarse tiles still stand in for fine
   // ones measured the loading, not the relief (centre 0.19 degrees off,
@@ -61,6 +62,11 @@ async function diveAndLand(page, context, hash) {
     },
     null,
     { timeout: 180_000 },
+  );
+  // The settle's own time, against the 180 s wait (CI runs 1.2-1.5x
+  // slower than a local run), so the margin is read, not inferred.
+  console.log(
+    `relief settled ${((Date.now() - landedAt) / 1000).toFixed(1)} s after landing (wait 180 s)`,
   );
   return errors;
 }
