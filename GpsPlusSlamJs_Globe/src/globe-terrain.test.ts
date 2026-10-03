@@ -654,6 +654,40 @@ describe("createGlobeTerrain", () => {
     terrain.dispose();
   });
 
+  // Why: the owner's phone measures before and after on ONE preview (perf
+  // plan 2026-10-03-2017, DEC-PERF-2): `lazyHeightScale: false` keeps the
+  // library's own whole-tree step, so the before run is the old cost.
+  it("keeps the library's whole-tree step when the deferred refresh is off", () => {
+    const options = {
+      url: "/heights/{z}/{x}/{y}.png",
+      imagery: {
+        tiling: { maxLevel: 5 },
+        init: () => Promise.resolve(),
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      },
+      template: new THREE.MeshStandardMaterial(),
+      heightScale: 1,
+    };
+    const proto = Object.getPrototypeOf(
+      Object.getPrototypeOf(createGlobeTerrain(options).plugin),
+    ) as { _updateHeightScale: () => void };
+    const wholeTree = vi.spyOn(proto, "_updateHeightScale");
+    const terrain = createGlobeTerrain({ ...options, lazyHeightScale: false });
+    const atCreation = wholeTree.mock.calls.length;
+    terrain.plugin.heightScale = 2.5;
+    expect(wholeTree.mock.calls.length).toBe(atCreation + 1);
+    expect(terrain.heightScaleStats()).toEqual({
+      lastStepRefreshes: 0,
+      deferredRefreshes: 0,
+      scaleChanges: 0,
+    });
+    wholeTree.mockRestore();
+    terrain.dispose();
+  });
+
   it("refuses a missing url or a height scale that is not finite and >= 0", () => {
     const template = new THREE.MeshStandardMaterial();
     const imagery = {

@@ -11,7 +11,11 @@
 import { LRUCache } from "3d-tiles-renderer";
 import { describe, expect, it } from "vitest";
 
-import { type TileCache, releaseTileCache } from "./globe-tile-cache.js";
+import {
+  type TileCache,
+  drainTileCache,
+  releaseTileCache,
+} from "./globe-tile-cache.js";
 
 describe("releaseTileCache", () => {
   it("unloads every tile, past the floor, and keeps the limits", () => {
@@ -45,5 +49,80 @@ describe("releaseTileCache", () => {
   it("is a no-op on an empty cache", () => {
     const cache = new LRUCache();
     expect(releaseTileCache(cache as unknown as TileCache)).toBe(0);
+  });
+});
+
+/**
+ * Why (perf plan 2026-10-03-2017 H4, PERF-2c): a release disposed every
+ * tile in ONE frame; the frame-hitch recorder counted 188 globe disposals
+ * in a single frame, a dispose burst on the GPU thread. The drain spreads
+ * the same release over frames, at most `maxTiles` disposals a frame, and
+ * can stop between frames when the carrier comes back into the band.
+ */
+describe("drainTileCache", () => {
+  function filled(count: number) {
+    const lru = new LRUCache();
+    const cache = lru as unknown as TileCache & typeof lru;
+    cache.minSize = 6;
+    cache.maxSize = 800;
+    // Room for every tile: the cache refuses an add once it is full.
+    cache.minBytesSize = 48 * 2 ** 20;
+    cache.maxBytesSize = 256 * 2 ** 20;
+    const disposed: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const tile = { id: i };
+      cache.add(tile, () => {
+        disposed.push(i);
+      });
+      cache.setLoaded(tile, true);
+      cache.setMemoryUsage(tile, 2 ** 20);
+      cache.markUsed(tile);
+    }
+    return { cache, disposed };
+  }
+
+  it("disposes at most maxTiles a call, and empties the cache over calls", () => {
+    for (const maxTiles of [4, 8, 16]) {
+      const { cache, disposed } = filled(188);
+      const perCall: number[] = [];
+      const lefts: number[] = [];
+      let freed = 0;
+      for (let call = 0; call < 1_000 && cache.cachedBytes > 0; call++) {
+        const before = disposed.length;
+        const step = drainTileCache(cache, maxTiles);
+        freed += step.freedBytes;
+        perCall.push(disposed.length - before);
+        lefts.push(step.left + disposed.length);
+      }
+      // `left` is what remains after the call.
+      expect(new Set(lefts)).toEqual(new Set([188]));
+      expect(Math.max(...perCall)).toBe(maxTiles);
+      expect(perCall.length).toBe(Math.ceil(188 / maxTiles));
+      expect(disposed.length).toBe(188);
+      expect(freed).toBe(188 * 2 ** 20);
+      // The limits are the cache's own throughout: nothing to restore.
+      expect(cache.minSize).toBe(6);
+      expect(cache.maxBytesSize).toBe(256 * 2 ** 20);
+    }
+  });
+
+  it("leaves the remaining tiles loaded when the caller stops draining", () => {
+    const { cache, disposed } = filled(40);
+    drainTileCache(cache, 8);
+    drainTileCache(cache, 8);
+    expect(disposed.length).toBe(16);
+    expect(cache.cachedBytes).toBe(24 * 2 ** 20);
+  });
+
+  it("is a no-op on an empty cache, and refuses a step that is not a positive integer", () => {
+    const cache = new LRUCache() as unknown as TileCache;
+    expect(drainTileCache(cache, 8)).toEqual({
+      freedBytes: 0,
+      removed: 0,
+      left: 0,
+    });
+    for (const bad of [0, -1, 2.5, Number.NaN, Infinity]) {
+      expect(() => drainTileCache(cache, bad)).toThrow(RangeError);
+    }
   });
 });

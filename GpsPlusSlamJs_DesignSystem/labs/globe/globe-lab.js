@@ -71,7 +71,7 @@ import {
   limitGlobeZoomOut,
 } from "/globe/globe-zoom-limit.js";
 import { GLOBE_TERRAIN, createGlobeTerrain } from "/globe/globe-terrain.js";
-import { releaseTileCache } from "/globe/globe-tile-cache.js";
+import { drainTileCache, releaseTileCache } from "/globe/globe-tile-cache.js";
 import { SKY_FILL } from "/globe/sky-level.js";
 import {
   GLOBE_FLIGHT,
@@ -286,6 +286,13 @@ const PARAMS = {
   // is released (frame-hitch review 2026-10-03-2017 H4): a zoom that wobbles
   // over an edge never releases, so it never reloads or recompiles.
   bandReleaseMs: { fallback: 5_000, min: 0, max: 60_000 },
+  // At most this many tiles a released carrier disposes per frame
+  // (frame-hitch review 2026-10-03-2017 H4: one frame disposed 188); 0
+  // releases the whole cache in one frame, as before, for a before/after.
+  bandDrainTiles: { fallback: 8, min: 0, max: 512 },
+  // 0 keeps the tile library's whole-tree height-scale step (H1), for a
+  // before/after on one preview; read at start.
+  lazyE: { fallback: 1, min: 0, max: 1 },
   // globe-albedo's detail on the relief's tiles (the terrain lab's style B
   // high-pass, `globe-detail-region.js`): its weight, 0 off.
   detail: { fallback: GLOBE_ALBEDO.detail, min: 0, max: 1 },
@@ -1395,6 +1402,7 @@ async function start() {
           imagery: createGlobeImagery(),
           template: globe.template,
           heightScale: 1,
+          lazyHeightScale: startParams.lazyE === 1,
         })
       : null;
   if (terrain) globe.group.add(terrain.tiles.group);
@@ -1815,19 +1823,44 @@ async function start() {
         } else if (!o.done) {
           o.since ??= now;
           if (now - o.since >= params.bandReleaseMs) {
+            // For the smokes: when the carrier left, when its release
+            // started and ended, and its dispose cost per frame.
+            if (o.last?.leftAt !== o.since) {
+              o.last = {
+                leftAt: o.since,
+                releasedAt: now,
+                drainedAt: null,
+                frames: 0,
+                maxPerFrame: 0,
+                releaseMs: 0,
+                worstFrameMs: 0,
+                bytes: 0,
+              };
+              perf?.mark(`release.${key}`);
+            }
             const t0 = performance.now();
-            const bytes = releaseTileCache(cache);
+            const items = cache.itemList.length;
+            const step = params.bandDrainTiles;
+            const bytes =
+              step === 0
+                ? releaseTileCache(cache)
+                : drainTileCache(cache, step).freedBytes;
+            const ms = performance.now() - t0;
+            const l = o.last;
+            l.frames++;
+            l.maxPerFrame = Math.max(
+              l.maxPerFrame,
+              items - cache.itemList.length,
+            );
+            l.releaseMs += ms;
+            l.worstFrameMs = Math.max(l.worstFrameMs, ms);
+            l.bytes += bytes;
             released[key] += bytes;
-            perf?.mark(`release.${key}`);
-            o.done = true;
-            // For the smokes: when the carrier left, when it was released,
-            // and how long the release itself took (its dispose burst).
-            o.last = {
-              leftAt: o.since,
-              releasedAt: now,
-              releaseMs: performance.now() - t0,
-              bytes,
-            };
+            perf?.mark(`drain.${key}`);
+            if (cache.itemList.length === 0) {
+              o.done = true;
+              l.drainedAt = now;
+            }
           }
         }
       }

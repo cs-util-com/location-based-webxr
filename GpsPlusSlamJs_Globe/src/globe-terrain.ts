@@ -385,7 +385,10 @@ export interface GlobeTerrain {
  * `geographicOverlay`, and on every tile it loads: heights as R16F
  * (`useHalfFloatHeights`) and the globe's lit copy of `template` over the
  * tile's box (`litTerrainMaterial`). The caller adds `tiles.group` to its
- * scene and calls `tiles.update()`. RangeError for an empty url or a
+ * scene and calls `tiles.update()`. A height-scale step refreshes only the
+ * bounding volumes that are read (`installLazyHeightScale`) unless
+ * `lazyHeightScale` is false, which keeps the library's whole-tree step (the
+ * before case of a frame-time comparison). RangeError for an empty url or a
  * height scale that is not finite and >= 0; Error if the library stops
  * exporting the plugin.
  */
@@ -395,8 +398,16 @@ export function createGlobeTerrain(options: {
   template: THREE.MeshStandardMaterial;
   heightScale: number;
   maxZoom?: number;
+  lazyHeightScale?: boolean;
 }): GlobeTerrain {
-  const { url, imagery, template, heightScale, maxZoom = 12 } = options;
+  const {
+    url,
+    imagery,
+    template,
+    heightScale,
+    maxZoom = 12,
+    lazyHeightScale: lazy = true,
+  } = options;
   if (typeof url !== "string" || url.length === 0) {
     throw new RangeError("the terrain needs a tile url");
   }
@@ -445,7 +456,7 @@ export function createGlobeTerrain(options: {
   tiles.errorTarget = GLOBE_TERRAIN.errorTarget;
   // An E step refreshes only the volumes that are read, not the whole tree
   // (globe-lazy-height-scale.ts; perf plan 2026-10-03-2017 H1).
-  const lazyHeightScale = installLazyHeightScale(tiles, plugin);
+  const lazyHeightScale = lazy ? installLazyHeightScale(tiles, plugin) : null;
   const owned = new Set<THREE.Material>();
   const detail = createGlobeDetailUniforms();
   // The last retired lit material stays alive, so the relief's program
@@ -476,7 +487,12 @@ export function createGlobeTerrain(options: {
     plugin,
     detail,
     setDetail: (grid, centre) => setGlobeDetail(detail, grid, centre),
-    heightScaleStats: () => lazyHeightScale.stats(),
+    heightScaleStats: () =>
+      lazyHeightScale?.stats() ?? {
+        lastStepRefreshes: 0,
+        deferredRefreshes: 0,
+        scaleChanges: 0,
+      },
     litTiles: () => owned.size,
     dispose() {
       for (const lit of owned) lit.dispose();

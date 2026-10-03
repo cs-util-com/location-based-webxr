@@ -18,6 +18,55 @@ export interface TileCache {
   maxBytesSize: number;
   markAllUnused(): void;
   unloadUnusedContent(): void;
+  /** Every item the cache holds (the library's own list, in no fixed order). */
+  readonly itemList: readonly unknown[];
+  /** Removes one item, running its dispose callback; false if absent. */
+  remove(item: unknown): boolean;
+  /** The library's unload order: a positive result unloads `a` first. */
+  unloadPriorityCallback?: ((a: unknown, b: unknown) => number) | null;
+  defaultPriorityCallback?: (a: unknown, b: unknown) => number;
+}
+
+/** One `drainTileCache` call's result. */
+export interface TileCacheDrainStep {
+  /** Bytes the call freed. */
+  freedBytes: number;
+  /** Items the call removed (each one's dispose callback ran). */
+  removed: number;
+  /** Items still in the cache after the call. */
+  left: number;
+}
+
+/**
+ * Removes at most `maxTiles` items from `cache`, the ones the library would
+ * unload first, and returns what it freed. Called once a frame it spreads a
+ * release over frames (perf plan 2026-10-03-2017 H4: one frame disposed
+ * 188 tiles); the caller stops calling when the carrier is back, and the
+ * rest stay loaded. The cache's limits are never touched. RangeError
+ * unless `maxTiles` is a positive integer.
+ */
+export function drainTileCache(
+  cache: TileCache,
+  maxTiles: number,
+): TileCacheDrainStep {
+  if (!Number.isInteger(maxTiles) || maxTiles < 1) {
+    throw new RangeError(
+      `the drain step must be a positive integer, got ${maxTiles}`,
+    );
+  }
+  const before = cache.cachedBytes;
+  const order = cache.unloadPriorityCallback ?? cache.defaultPriorityCallback;
+  const items = [...cache.itemList];
+  if (order) items.sort((a, b) => -order(a, b));
+  let removed = 0;
+  for (const item of items.slice(0, maxTiles)) {
+    if (cache.remove(item)) removed++;
+  }
+  return {
+    freedBytes: before - cache.cachedBytes,
+    removed,
+    left: cache.itemList.length,
+  };
 }
 
 /** At most this many unload passes (each frees part of the excess). */

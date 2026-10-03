@@ -530,6 +530,13 @@ test("outside the band the other carrier fetches nothing and holds no memory, on
     return { requests: s.tileRequestsByLevel, at: performance.now() };
   });
   await page.waitForFunction((at) => performance.now() - at > 5_000, t0.at);
+  // The release spreads its disposals over frames (bandDrainTiles, perf
+  // plan 2026-10-03-2017 H4): read once the globe's drain has finished.
+  await page.waitForFunction(
+    () => window.__globeLab.state().relief.lastRelease.globe?.drainedAt != null,
+    null,
+    { timeout: 120_000 },
+  );
   const held = await page.evaluate(() => window.__globeLab.state());
   const MIB = 2 ** 20;
   const total = (held.relief.cachedBytes + held.relief.globeCachedBytes) / MIB;
@@ -649,6 +656,13 @@ test("a carrier's cache is released only after it stays out of the band", async 
       before,
       { timeout: holdMs + 30_000 },
     );
+    // The drain runs over frames; read it once it has finished.
+    await page.waitForFunction(
+      () =>
+        window.__globeLab.state().relief.lastRelease.globe?.drainedAt != null,
+      null,
+      { timeout: 120_000 },
+    );
     const last = await page.evaluate(
       () => window.__globeLab.state().relief.lastRelease.globe,
     );
@@ -658,12 +672,15 @@ test("a carrier's cache is released only after it stays out of the band", async 
       holdMs,
       took: last.releasedAt - last.leftAt,
       releaseMs: last.releaseMs,
+      worstFrameMs: last.worstFrameMs,
+      frames: last.frames,
+      maxPerFrame: last.maxPerFrame,
       bytes: last.bytes,
       frameMs,
     });
   }
   console.log(
-    `release hold: after five excursions under a second, released ${afterWobble} bytes; ${rows.map((r) => `hold ${r.holdMs} ms released ${r.took.toFixed(0)} ms after leaving (a frame ${r.frameMs.toFixed(0)} ms), the release took ${r.releaseMs.toFixed(0)} ms for ${(r.bytes / 2 ** 20).toFixed(1)} MiB`).join(", ")}`,
+    `release hold: after five excursions under a second, released ${afterWobble} bytes; ${rows.map((r) => `hold ${r.holdMs} ms released ${r.took.toFixed(0)} ms after leaving (a frame ${r.frameMs.toFixed(0)} ms), the release took ${r.releaseMs.toFixed(0)} ms for ${(r.bytes / 2 ** 20).toFixed(1)} MiB over ${r.frames} frames, at most ${r.maxPerFrame} tiles and ${r.worstFrameMs.toFixed(1)} ms in one`).join(", ")}`,
   );
   expect(errors).toEqual([]);
   expect(afterWobble).toBe(0);
@@ -671,5 +688,8 @@ test("a carrier's cache is released only after it stays out of the band", async 
     expect(r.took).toBeGreaterThanOrEqual(r.holdMs);
     // One frame after the hold at most, with the frame's own spread.
     expect(r.took).toBeLessThan(r.holdMs + 2 * r.frameMs);
+    // The drain's cap (bandDrainTiles 8 by default) holds in every frame.
+    expect(r.maxPerFrame).toBeGreaterThan(0);
+    expect(r.maxPerFrame).toBeLessThanOrEqual(8);
   }
 });

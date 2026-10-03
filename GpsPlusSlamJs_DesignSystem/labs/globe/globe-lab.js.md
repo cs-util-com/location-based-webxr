@@ -286,7 +286,16 @@
     - When the camera has stayed out of the band on one side for
       `bandReleaseMs` (default 5 s), the other carrier's tile cache is
       released (`/globe/globe-tile-cache.js`), not only left undrawn
-      (review 2026-10-03-1835 major 4). A return before then cancels it,
+      (review 2026-10-03-1835 major 4). The release disposes at most
+      `bandDrainTiles` tiles a frame (default 8; `drainTileCache`) instead
+      of the whole cache in one frame (one frame disposed 188 tiles,
+      frame-hitch plan 2026-10-03-2017 H4); 0 restores the one-frame
+      release for a before/after. A return to the band stops a drain and
+      keeps the rest. `lastRelease` in the state gives each release's
+      start, end, frames, largest per-frame count and dispose time.
+      `lazyE=0` (read at start) keeps the tile library's whole-tree
+      height-scale step instead of `createGlobeTerrain`'s deferred one
+      (H1), also for a before/after on one preview. A return before then cancels it,
       so a zoom that wobbles over an edge never unloads, reloads and
       recompiles (frame-hitch review 2026-10-03-2017 H4). Each carrier
       keeps its last tile material alive (`/globe/globe-warm-material.js`),
