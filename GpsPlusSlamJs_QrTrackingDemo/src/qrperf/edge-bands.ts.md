@@ -29,7 +29,7 @@ band.
 - The band limits are for reading field data, not thresholds: about 110 px
   is a 16 cm code at 1.2 m, about 375 px the same code at 35 cm on the
   demo's capture (fy ~ 819).
-- Percentiles are nearest-rank (`pipeline-timings.ts`), like the rest of
+- Percentiles are nearest-rank (the framework's `utils/percentile`), like the rest of
   `?qrperf`.
 
 ## Tests

@@ -172,6 +172,23 @@ const CANONICAL = [
     why: "the recorder and the framework each had an unnamed signed-delta expression, and they disagreed at exactly 180° - two conventions for one quantity, one of them on the bare double-mod the sibling normalizer exists to replace",
   },
   {
+    name: "nearestRankPercentile",
+    rule: "shared",
+    home: "GpsPlusSlamJs_AppFramework/src/utils/percentile.ts",
+    why: "the rank rule is a contract the frame recorder's pass/fail target rests on: three private copies (the sun check, OsmDemo's frame times, QrTrackingDemo's timings) differed at p = 0 and NaN p, and all took ceil(0.07 * 100) as rank 8 (globe zoom performance plan PERF-0, 2026-10-03)",
+  },
+  {
+    name: "createFrameTimes",
+    rule: "shared",
+    home: "GpsPlusSlamJs_AppFramework/src/utils/frame-times.ts",
+    why: "moved from OsmDemo so the AR sun shadow line and the globe lab's recorder read one ring; a second ring with its own rank rule would report a different p95 for the same frames (globe zoom performance plan PERF-0, 2026-10-03)",
+  },
+  {
+    name: "percentile",
+    rule: "perPackage",
+    why: "the unqualified name says nothing about the rank rule (nearest rank or interpolated), the same reason as `median` below; the framework's private one in sun-check.ts was folded into utils/percentile.ts",
+  },
+  {
     name: "median",
     rule: "perPackage",
     why: "the unqualified name says nothing about the even-length rule, so two of them in one package is two rules nobody chose between - which is what GpsPlusSlamJs_Osm had",

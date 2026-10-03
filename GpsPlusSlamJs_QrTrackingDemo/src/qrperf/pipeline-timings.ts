@@ -4,6 +4,7 @@
  */
 
 import { interpolatingMedian } from "gps-plus-slam-app-framework/utils/median";
+import { nearestRankPercentile } from "gps-plus-slam-app-framework/utils/percentile";
 
 /** Summary of one stage's durations over the window, milliseconds. */
 export interface StageSummary {
@@ -43,17 +44,6 @@ export interface PipelineTimingsOptions {
   stageWindows?: Record<string, number>;
   /** Window for event rates, ms. Default 10 000. */
   rateWindowMs?: number;
-}
-
-/** Nearest-rank percentile of a sample (`p` in [0, 1]); NaN when empty. */
-export function nearestRankPercentile(
-  values: readonly number[],
-  p: number,
-): number {
-  if (values.length === 0) return Number.NaN;
-  const sorted = [...values].sort((a, b) => a - b);
-  const rank = Math.max(1, Math.ceil(p * sorted.length));
-  return sorted[Math.min(rank, sorted.length) - 1]!;
 }
 
 function summarize(xs: number[]): StageSummary {

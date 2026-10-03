@@ -91,7 +91,9 @@ is unit-tested without a WebXR session (no e2e can enter AR).
   first map after each switch-on is not reported, because that frame also
   carries the recompile.
 - **The frame times come from every frame's `dt`**, because the HUD's fps is
-  a window mean, blind to the one frame that renders a map.
+  a window mean, blind to the one frame that renders a map. The ring is the
+  framework's `utils/frame-times` (DEC-H3; it also carries a p99, which the
+  status line does not show).
 
 ## Example
 

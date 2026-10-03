@@ -64,8 +64,9 @@ p95Abs, meanSigned }`: the STABLE fused pose's own quality (what the
 - One `add` per LOCK (the demo calls it from `resolveStablePose`), not per
   HUD render.
 - `joint + averaged <= locks`: an `unknown` result has neither method.
-- Percentiles use `pipeline-timings.ts`'s `nearestRankPercentile`, like the
-  rest of `?qrperf`.
+- Percentiles use the framework's `nearestRankPercentile`
+  (`gps-plus-slam-app-framework/utils/percentile`), like the rest of
+  `?qrperf`.
 
 ## Tests
 

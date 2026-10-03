@@ -337,7 +337,7 @@ describe("describeArSunShadow", () => {
   // WHY: the field test reads the HUD; each state says why, and "on" carries
   // the numbers the prototype measures.
   it("says why there is no shadow, and the cost when there is", () => {
-    const frameTimes = { p50: 16.4, p95: 18.2, max: 81, count: 300 };
+    const frameTimes = { p50: 16.4, p95: 18.2, p99: 40, max: 81, count: 300 };
     expect(
       describeArSunShadow({
         state: "on",

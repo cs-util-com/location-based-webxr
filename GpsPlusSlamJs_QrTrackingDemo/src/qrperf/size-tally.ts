@@ -9,7 +9,7 @@ import {
   createQrParallaxSizeTally,
   type QrParallaxSizeSample,
 } from "gps-plus-slam-app-framework/ar/qr";
-import { nearestRankPercentile } from "./pipeline-timings.js";
+import { nearestRankPercentile } from "gps-plus-slam-app-framework/utils/percentile";
 import type { SizeState } from "./motion-tally.js";
 
 /** Sizes further apart than this read as a conflict (plan §7: 2x-class). */

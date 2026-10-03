@@ -12,7 +12,7 @@ import {
   createFusedPoseTally,
   type QrFusedPose,
 } from "gps-plus-slam-app-framework/ar/qr";
-import { nearestRankPercentile } from "./pipeline-timings.js";
+import { nearestRankPercentile } from "gps-plus-slam-app-framework/utils/percentile";
 import {
   bandsLine,
   createBandedPercentiles,

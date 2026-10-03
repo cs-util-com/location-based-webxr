@@ -1,9 +1,10 @@
 /**
  * OsmDemo's pieces of the AR sun shadow prototype (plan
  * 2026-09-23-2343-ar-sun-shadow-prototype-plan, M3): the URL switch, which
- * objects cast, the test pole, the shadow-receiving plane and the frame-time
- * buffer. The light, the rig and the map policy are the framework's
- * (`visualization/sun-shadow`, `visualization/sun-shadow-rig`).
+ * objects cast, the test pole and the shadow-receiving plane. The light, the
+ * rig and the map policy are the framework's (`visualization/sun-shadow`,
+ * `visualization/sun-shadow-rig`), and so is the frame-time ring
+ * (`utils/frame-times`, moved there on 2026-10-03, DEC-H3).
  *
  * @see ar-sun-shadow.ts.md
  */
@@ -123,45 +124,4 @@ export function createShadowPlane(
   plane.receiveShadow = true;
   plane.castShadow = false;
   return plane;
-}
-
-/**
- * The last `capacity` frame times, ms, with nearest-rank percentiles: the
- * HUD's fps is a window mean, blind to the one frame that renders a shadow
- * map (plan §7 item 7).
- */
-export function createFrameTimes(capacity = 300): {
-  push(ms: number): void;
-  summary(): { p50: number; p95: number; max: number; count: number } | null;
-} {
-  if (!(Number.isInteger(capacity) && capacity > 0)) {
-    throw new RangeError(
-      `capacity must be a positive integer, got ${capacity}`,
-    );
-  }
-  const ring = new Float64Array(capacity);
-  let count = 0;
-  let next = 0;
-  const rank = (sorted: Float64Array, p: number) =>
-    sorted[
-      Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1))
-    ]!;
-  return {
-    push(ms) {
-      if (!(Number.isFinite(ms) && ms >= 0)) return;
-      ring[next] = ms;
-      next = (next + 1) % capacity;
-      count = Math.min(count + 1, capacity);
-    },
-    summary() {
-      if (count === 0) return null;
-      const sorted = ring.slice(0, count).sort();
-      return {
-        p50: rank(sorted, 0.5),
-        p95: rank(sorted, 0.95),
-        max: sorted[count - 1]!,
-        count,
-      };
-    },
-  };
 }

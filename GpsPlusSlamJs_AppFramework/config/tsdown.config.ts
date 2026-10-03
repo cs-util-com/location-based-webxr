@@ -280,6 +280,14 @@ const entryFiles = [
   // tsc and vitest resolve it while Vite in the browser does not (found by
   // the recorder e2e stage, 26 minutes into a cascade).
   'src/utils/median.ts',
+  // The nearest-rank percentile (DEC-H3) - deep-imported by QrTrackingDemo's
+  // ?qrperf tallies and by the frame-time helpers below; per-file for the
+  // './utils/*' wildcard, like median.ts.
+  'src/utils/percentile.ts',
+  // The frame-time ring (moved from OsmDemo 2026-10-03, DEC-H3) -
+  // deep-imported by OsmDemo's AR sun shadow session and served to the
+  // globe lab's recorder; per-file for the './utils/*' wildcard.
+  'src/utils/frame-times.ts',
   // The locate buttons' shared behaviour (labels, error mapping, the fix
   // each failure names, one request) - deep-imported by the OSM demo's
   // locate control and served to the globe lab's pin (round-2 plan

@@ -7,24 +7,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import {
-  createPipelineTimings,
-  nearestRankPercentile,
-} from "./pipeline-timings.js";
+import { createPipelineTimings } from "./pipeline-timings.js";
 
-describe("nearestRankPercentile", () => {
-  it("returns the nearest-rank value of a sorted copy", () => {
-    const xs = [5, 1, 4, 2, 3];
-    expect(nearestRankPercentile(xs, 0.5)).toBe(3);
-    expect(nearestRankPercentile(xs, 0.95)).toBe(5);
-    expect(nearestRankPercentile(xs, 0)).toBe(1);
-    expect(xs).toEqual([5, 1, 4, 2, 3]); // input untouched
-  });
-
-  it("is NaN for an empty sample", () => {
-    expect(nearestRankPercentile([], 0.5)).toBeNaN();
-  });
-});
+// The percentile rule itself is the framework's (utils/percentile, DEC-H3)
+// and is tested there; these tests pin how the collector uses it.
 
 describe("createPipelineTimings", () => {
   it("summarises each stage as n / median / p95 / max over the window", () => {

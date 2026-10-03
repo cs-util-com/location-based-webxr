@@ -38,6 +38,11 @@ import {
   bearingDeltaDeg,
   normalizeBearingDeg,
 } from '../utils/bearing-degrees.js';
+// The shared rules (DEC-H3): the interpolating median and the nearest-rank
+// percentile, whose private copies here behaved the same on every window
+// this check builds (non-empty, p = 0.8).
+import { interpolatingMedian as median } from '../utils/median.js';
+import { nearestRankPercentile as percentile } from '../utils/percentile.js';
 import { registerFrameUpdate } from './frame-loop.js';
 import { registerSessionDisposer } from './session-disposers.js';
 import {
@@ -234,21 +239,9 @@ const DEG = Math.PI / 180;
 const IDENTITY = new THREE.Matrix4();
 const STANDARD_AIR = { pressureHPa: 1010, temperatureC: 10 };
 
-const median = (values: readonly number[]): number => {
-  const s = [...values].sort((a, b) => a - b);
-  const mid = s.length >> 1;
-  return s.length % 2 === 1 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
-};
-
 const normalize = (v: Vec3): Vec3 => {
   const l = Math.hypot(v[0], v[1], v[2]);
   return [v[0] / l, v[1] / l, v[2] / l];
-};
-
-/** The value below which a fraction `p` of `values` lies (nearest rank). */
-const percentile = (values: readonly number[], p: number): number => {
-  const s = [...values].sort((a, b) => a - b);
-  return s[Math.min(s.length - 1, Math.ceil(p * s.length) - 1)]!;
 };
 
 const medianDirection = (rays: readonly Vec3[]): Vec3 =>

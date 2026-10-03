@@ -13,7 +13,6 @@ import {
   AR_SHADOW_CASTER,
   SHADOW_POLE,
   applyArShadowCasting,
-  createFrameTimes,
   createShadowPlane,
   createShadowPole,
   markArShadowCaster,
@@ -107,29 +106,6 @@ describe("createShadowPlane", () => {
     expect(() => createShadowPlane(0, 0.4)).toThrow(RangeError);
     expect(() => createShadowPlane(25, 1.2)).toThrow(RangeError);
     expect(() => createShadowPlane(25, Number.NaN)).toThrow(RangeError);
-  });
-});
-
-describe("createFrameTimes", () => {
-  // The one slow frame a window mean hides must show in p95 and max.
-  it("reports nearest-rank percentiles and the max over the last frames", () => {
-    const times = createFrameTimes(100);
-    expect(times.summary()).toBeNull();
-    for (let i = 0; i < 99; i++) times.push(16);
-    times.push(80);
-    expect(times.summary()).toEqual({ p50: 16, p95: 16, max: 80, count: 100 });
-    for (let i = 0; i < 10; i++) times.push(40);
-    const s = times.summary()!;
-    expect(s.count).toBe(100);
-    expect(s.p95).toBe(40);
-    expect(s.max).toBe(80);
-  });
-
-  it("drops the oldest frames and ignores bad values", () => {
-    const times = createFrameTimes(3);
-    for (const ms of [100, 1, 2, 3, Number.NaN, -5]) times.push(ms);
-    expect(times.summary()).toEqual({ p50: 2, p95: 3, max: 3, count: 3 });
-    expect(() => createFrameTimes(0)).toThrow(RangeError);
   });
 });
 

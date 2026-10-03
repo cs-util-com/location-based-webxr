@@ -66,6 +66,10 @@ heading error for an app to show or log.
   update mid-window is flagged, not refused, and a two-cluster shake cannot
   hide behind a median (a test showed the median distance reading 0 for
   16 frames one way and 15 the other).
+  The percentile and the medians are the shared `utils/percentile.ts`
+  (nearest rank) and `utils/median.ts` (interpolating) since 2026-10-03
+  (DEC-H3); the private copies they replaced gave the same values on every
+  window this check builds.
 - **The marker is hidden, and a Mark refused, without a position, before
   the first alignment (the group still the identity), and with the sun
   down** (below −1° hidden, below 0° no Mark).

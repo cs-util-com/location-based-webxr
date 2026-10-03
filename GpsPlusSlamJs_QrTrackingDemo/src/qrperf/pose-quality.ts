@@ -14,7 +14,7 @@ import {
   type BandPercentiles,
   type Banded,
 } from "./edge-bands.js";
-import { nearestRankPercentile } from "./pipeline-timings.js";
+import { nearestRankPercentile } from "gps-plus-slam-app-framework/utils/percentile";
 import type { Point } from "./corner-compare.js";
 
 type Quat = readonly [number, number, number, number];

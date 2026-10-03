@@ -6,7 +6,7 @@
  * threshold becomes size-relative. See edge-bands.ts.md.
  */
 
-import { nearestRankPercentile } from "./pipeline-timings.js";
+import { nearestRankPercentile } from "gps-plus-slam-app-framework/utils/percentile";
 
 export type EdgeBand = "small" | "medium" | "large";
 

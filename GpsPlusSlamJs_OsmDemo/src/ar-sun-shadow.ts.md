@@ -9,11 +9,12 @@ OsmDemo's pieces of the AR sun shadow prototype (plan
 - the `?sunShadow` switch;
 - which objects cast;
 - the test pole;
-- the shadow-receiving plane;
-- a frame-time buffer.
+- the shadow-receiving plane.
 
 The light, the rig and the map policy are the framework's
-(`visualization/sun-shadow`, `visualization/sun-shadow-rig`). The AR wiring
+(`visualization/sun-shadow`, `visualization/sun-shadow-rig`), and so is the
+frame-time ring the session reads (`utils/frame-times`, moved there from
+this file on 2026-10-03 for the globe frame recorder, DEC-H3). The AR wiring
 lives in `ar-mode.ts`.
 
 ## Public API
@@ -36,9 +37,6 @@ lives in `ar-mode.ts`.
   draws only the shadow. It never casts, has no fog, does not write depth,
   and has a negative polygon offset against the coplanar ground layers.
   `RangeError` for a bad size or opacity.
-- `createFrameTimes(capacity = 300)`: a ring of frame times in ms. `summary()`
-  gives nearest-rank p50 / p95 and the max, or `null` when empty.
-  Non-finite or negative values are ignored.
 
 ## Invariants & assumptions
 
@@ -48,9 +46,6 @@ lives in `ar-mode.ts`.
   (plan §2 Q1, §7 item 9).
 - **The plane is the only receiver.** In AR everything else is either the
   camera image or an overlay.
-- **The frame times exist because the HUD's fps is a window mean.** That
-  mean is blind to the one frame that renders a shadow map (plan §7
-  item 7).
 
 ## Example
 
@@ -69,5 +64,7 @@ if (sunShadowEnabled(location.search)) {
 - the switch's values, and the compile check's switch kept apart from it;
 - tagged-only casting and turning it off;
 - the pole's shape and tag;
-- the plane's material flags, size and refusals;
-- the frame-time percentiles, the ring's overwrite, and the refusals.
+- the plane's material flags, size and refusals.
+
+The frame-time ring's tests moved with it to the framework's
+`utils/frame-times.test.ts`.

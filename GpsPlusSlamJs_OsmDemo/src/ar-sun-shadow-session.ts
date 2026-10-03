@@ -24,12 +24,12 @@ import {
   shadowOpacity,
   sunShadowActive,
 } from "gps-plus-slam-app-framework/visualization/sun-shadow-rig";
-
 import {
   createFrameTimes,
-  createShadowPlane,
-  createShadowPole,
-} from "./ar-sun-shadow.js";
+  type FrameTimesSummary,
+} from "gps-plus-slam-app-framework/utils/frame-times";
+
+import { createShadowPlane, createShadowPole } from "./ar-sun-shadow.js";
 
 /** A point in anchor ENU, metres (x east, y north). */
 type EnuPoint = { readonly x: number; readonly y: number };
@@ -83,9 +83,7 @@ export interface ArSunShadowStatus {
   readonly sunElevationDeg: number | undefined;
   /** Shadow maps rendered this session. */
   readonly renders: number;
-  readonly frameTimes: ReturnType<
-    ReturnType<typeof createFrameTimes>["summary"]
-  >;
+  readonly frameTimes: FrameTimesSummary | null;
   /**
    * The time of the frame that drew the latest shadow map, in ms. The map
    * renders in the renderer's render AFTER the frame callbacks, so its cost

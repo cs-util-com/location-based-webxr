@@ -11,11 +11,10 @@ Rolling collector behind the `?qrperf` report: per-stage duration summaries and 
   - `count(event, atMs, weight = 1)` - timestamps an event; a weight turns the rate into "units per second" (e.g. ms of capture work per second).
   - `snapshot(nowMs)` - `{ stages: { [stage]: { n, median, p95, max } }, ratesPerSec: { [event]: sum(weights in window) / window s }, totals: { [event]: all-time sum }, longFrames: { over1_5x, over2x } }`. `totals` exist because a screenshot taken after a phase change would otherwise only show the last 10 s (review finding 3).
   - `reset()`.
-- **`nearestRankPercentile(values, p)`** - nearest-rank percentile of a copy; `NaN` for an empty sample.
 
 ## Invariants & assumptions
 
-- Median is the framework's shared `interpolatingMedian` (`gps-plus-slam-app-framework/utils/median`, DEC-H3).
+- Median is the framework's shared `interpolatingMedian` (`gps-plus-slam-app-framework/utils/median`, DEC-H3), and the p95 its shared `nearestRankPercentile` (`gps-plus-slam-app-framework/utils/percentile`, moved there from this file on 2026-10-03 for the globe frame recorder, DEC-H3).
 - `min <= median <= p95 <= max` and `n <= windowSize` for any input (seeded property test).
 - `longFrames` counts `xr-frame` intervals longer than 1.5x and 2x their own median - relative on purpose, because a 30 fps and a 60 fps session differ by 2x (cold review finding 10).
 - Rates count only events after `nowMs - rateWindowMs`; older timestamps are dropped at snapshot time, so memory stays bounded.

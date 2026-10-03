@@ -57,7 +57,7 @@ fix (QR near-frontal pose plan 2026-09-23-2314, M1). Pure.
   reading). The jitter is the largest corner displacement, in pixels. It is a
   LOWER bound on the per-frame corner error: a static quantisation bias does
   not move between frames.
-- Percentiles are nearest-rank (`pipeline-timings.ts`); the quaternion angle is
+- Percentiles are nearest-rank (the framework's `utils/percentile`); the quaternion angle is
   a local one-liner (the framework's `geodesicAngleRad` is not a built entry).
 - Inputs are trusted here; the instrument's `wrapSolve` validates their shape
   before calling `add`.
