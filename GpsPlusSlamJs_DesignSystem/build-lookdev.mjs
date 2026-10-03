@@ -81,8 +81,11 @@ const DYNAMIC_IMPORT = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
 /**
  * Block comments, and line comments that start at a line's beginning or
  * after whitespace or a semicolon (so `https://` in a string survives):
- * removed before the dynamic-import scan, because a JSDoc type such as
- * `{import("./x.js").T}` or a comment naming an import is not an import.
+ * removed from our own sources before both import scans, because a JSDoc
+ * type such as `{import("./x.js").T}`, a comment naming an import, or
+ * prose quoting a word after "export" (`and "The export"; ...`) is not an
+ * import. A vendored library is scanned as it is: its strings (shader
+ * source) may hold comment markers that are not comments.
  */
 const COMMENTS = /\/\*[\s\S]*?\*\/|(^|[\s;])\/\/[^\n]*/gm;
 /** What the crawl follows as a module rather than copying as an asset. */
@@ -280,11 +283,12 @@ export function buildLookdev({
       const text = load(url);
       sources.push(text);
       const scope = worker ? null : imports;
-      for (const match of text.matchAll(SPECIFIER)) {
+      const ours = !url.startsWith("/vendor/");
+      const code = ours ? text.replace(COMMENTS, "$1") : text;
+      for (const match of code.matchAll(SPECIFIER)) {
         queue.push({ url: resolveSpecifier(match[1], url, scope), worker });
       }
-      if (followDynamic && !url.startsWith("/vendor/")) {
-        const code = text.replace(COMMENTS, "$1");
+      if (followDynamic && ours) {
         for (const match of code.matchAll(DYNAMIC_IMPORT)) {
           queue.push({ url: resolveSpecifier(match[1], url, scope), worker });
         }

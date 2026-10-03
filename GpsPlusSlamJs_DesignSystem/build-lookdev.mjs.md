@@ -40,6 +40,10 @@ followDynamic? })` → the written paths relative to `outDir`. `base`
     route serves), resolved with the page's import map, so a module a lab
     loads lazily is shipped (the globe's arrival prefetch at the pin press,
     round-5 plan 2026-10-01-0945 §3.6). On today's pages it adds no file;
+  - scans our own sources for STATIC imports outside comments too (prose
+    such as `and "The export"; DEC-...` once read as `export "..."` and
+    failed the build); a vendored library is scanned as it is, since its
+    strings (shader source) may hold comment markers that are not comments;
   - rewrites the page's absolute route prefixes to sit under `base`; the
     prefixes come from the route table (each route's first path segment),
     so a new route needs no second list (W7 globe plan M0);
@@ -82,7 +86,8 @@ followDynamic? })` → the written paths relative to `outDir`. `base`
   a closed graph: its worker, the Osm library under `osm-lib/` and OsmDemo's
   heightfield under `osm/`, stripped and rebased, its fixtures not shipped.
   A dynamic import is shipped with its graph and left out when
-  `followDynamic` is false; the globe lab's static boot graph contains
+  `followDynamic` is false; an import, static or dynamic, spelled inside a
+  comment is not followed; the globe lab's static boot graph contains
   neither the Osm library, nor h3-js, nor the arrival prefetch; and a probe
   page with the prefetch's import map closes its graph (OsmDemo, the Osm
   library, the framework's OPFS store without its logger, H3, the pace).

@@ -606,6 +606,8 @@ describe("buildLookdev and dynamic imports", () => {
         'import { now } from "./eager.js";',
         '// A comment naming import("./not-shipped.js") is not an import,',
         '/** nor is a JSDoc type: @type {import("./types-only.js").T} */',
+        '/** nor prose that quotes a word after "export": see "The export"; DEC-X). */',
+        '// nor a line comment: import "./line-comment.js";',
         'const url = "https://example.test/"; // and a URL is not a comment',
         "export async function later() {",
         '  return (await import("./deferred.js")).value + now + url;',
@@ -648,6 +650,21 @@ describe("buildLookdev and dynamic imports", () => {
     });
     assert.ok(!files.some((f) => f.includes("not-shipped")));
     assert.ok(!files.some((f) => f.includes("types-only")));
+  });
+
+  // WHY (frame-hitch plan 2026-10-03-2017, PERF-1): a static-import scan
+  // over comments read the framework's prose 'and "The export"; DEC-...'
+  // as an `export "..."` and failed the whole build on a specifier that is
+  // a sentence. Comments are not code for the static scan either.
+  it("ignores a static import or export spelled inside a comment", () => {
+    const files = buildLookdev({
+      outDir: join(out, "static-comments"),
+      base: "/lookdev/",
+      packageRoot: root,
+    });
+    assert.ok(files.includes("labs/lazy/eager.js"));
+    assert.ok(!files.some((f) => f.includes("line-comment")));
+    assert.ok(!files.some((f) => f.includes("DEC-X")));
   });
 
   it("leaves it out of the boot graph when dynamic imports are not followed", () => {
