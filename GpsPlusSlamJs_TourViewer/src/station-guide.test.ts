@@ -355,6 +355,25 @@ describe("wireStationGuide", () => {
     expect(far.found).toEqual(["tower"]);
   });
 
+  it("a held code lock ends with its AR session: the next session's check starts afresh, so the old hold cannot count (R1)", () => {
+    // Why this test matters: the moved-code checks are per AR entry. A
+    // hold carried into the next session would only ever be released by
+    // its clock - a moved poster never vetoed in the first session would
+    // then find its station in the second.
+    const s: TourStation = {
+      ...station("tower", 100, 0),
+      anchor: { code: "lvl-a", geo: station("x", 100, 0).anchor.geo! },
+    };
+    const h = harness({ stations: [s], order: "fixed", levels: null });
+    h.at(0, 0);
+    h.guide.codeLocked("lvl-a");
+    h.guide.endSession();
+    h.advance(CODE_HOLD_MAX_MS + 1);
+    h.at(0, 0);
+    expect(h.found).toEqual([]);
+    expect(h.dom.line.textContent).toBe("Next: TOWER, 100 m");
+  });
+
   it("a held code lock counts at the latest after CODE_HOLD_MAX_MS, and at once without a usable GPS fix (R1)", () => {
     const s: TourStation = {
       ...station("tower", 100, 0),

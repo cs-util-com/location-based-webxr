@@ -699,6 +699,9 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       hud?.dispose();
       hud = null;
       replayFound = true;
+      // The moved-code checks are per AR entry: a hold ends with its
+      // session, and the code must lock again in the next (R1).
+      held.clear();
       deps.onGuide?.(null, null);
       dom.line.hidden = true;
       dom.skip.hidden = true;

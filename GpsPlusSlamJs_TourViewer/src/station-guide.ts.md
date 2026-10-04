@@ -77,6 +77,8 @@ activateM)` (each tick, each offered station with a distance: the
     agrees, or `CODE_HOLD_MAX_MS` (75 s) passed - then the lock counts; a
     veto drops the hold (its votes are taken back, so the station is found
     by walking to it as any other);
+  - a hold ends with its AR session (the moved-code checks are per AR
+    entry); the code must lock again in the next;
   - which of the reviewer's two rules: the hybrid. Rule (b) alone (the
     visitor's FUSED position inside the activation radius) is defeated by
     the code's own votes, which put the fused visitor on the saved spot
