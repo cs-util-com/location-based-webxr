@@ -778,6 +778,39 @@ describe("the zip-bomb caps (K0)", () => {
     await session.close();
   });
 
+  it("surfaces a capture-geo refusal instead of reading it as 'no recording' (K0 milestone review R9)", async () => {
+    // The join's caller shows a thrown error in the AR status line ("photo
+    // ring (reading the recording failed: ...)"); a swallowed refusal read
+    // as an ordinary tour without a walk, so the visitor never learned why.
+    const pad = "x".repeat(600 * 1024);
+    const zip = await deflatedZip({
+      "actions/000001.json": JSON.stringify({ type: "a", payload: pad }),
+      "actions/000002.json": JSON.stringify({ type: "b", payload: pad }),
+    });
+    const session = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxTotalBytes: 1024 * 1024, totalFloorBytes: 1024 * 1024 },
+    });
+    const err = await session.loadRecordingActions().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveLimitError);
+    expect((err as ArchiveLimitError).kind).toBe("total-bytes");
+    await session.close();
+  });
+
+  it("surfaces a session.json past the text cap the same way", async () => {
+    const zip = await deflatedZip({
+      "session.json": `{"odomCoordVersion":5,"pad":"${"x".repeat(5000)}"}`,
+    });
+    const session = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxTextEntryBytes: 1000 },
+    });
+    await expect(session.loadSessionMeta()).rejects.toBeInstanceOf(
+      ArchiveLimitError,
+    );
+    await session.close();
+  });
+
   it("degrades a level file over the text cap to no level, as a corrupt one", async () => {
     const zip = await deflatedZip({
       "qr/big.json": LEVEL_JSON + " ".repeat(5000),

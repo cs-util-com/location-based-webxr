@@ -12,10 +12,10 @@ K-D1 and cold-review finding F1: three SEPARATE caps).
 
 ## Public API
 
-- `interface ArchiveLimits { maxArchiveBytes; maxEntries; maxEntryBytes; maxTextEntryBytes; totalRatio; totalFloorBytes; maxTotalBytes }`
+- `interface ArchiveLimits { maxArchiveBytes; maxEntries; maxDirectoryBytes; maxEntryBytes; maxTextEntryBytes; totalRatio; totalFloorBytes; maxTotalBytes }`
 - `DEFAULT_ARCHIVE_LIMITS` (frozen): 1 GiB, 20,000 entries, a 16 MiB
   single read (the central directory, K0 milestone review R4), 256 MiB per
-  entry, 16 MiB per text entry, total = 10 x the archive size, at least
+  entry, 16 MiB per text entry, total = 20 x the archive size, at least
   64 MiB, at most 2 GiB.
 - `resolveArchiveLimits(overrides?)`: defaults plus overrides; throws
   `RangeError` for a cap that is not a positive safe integer (ratio: a
@@ -79,13 +79,19 @@ pass for the ratio.
   needing a single video file over 256 MB.
 - `maxTextEntryBytes`: **16 MiB = 80x** the largest JSON. Text sits on the
   JS heap, so it is the tighter cap.
-- `totalRatio`: 4 = 1.06x over the re-deflated worst case (too tight: a
-  JSON-heavy re-zip would be refused), **10 = 2.6x**, 32 = 8.5x. Floor 16 /
+- `totalRatio` (raised from 10 to 20 by the K0 milestone review, R9): the
+  binding case is not the 3.78x whole-archive ratio but a tour that is
+  nearly all JSON, which re-deflates like the recording's JSON, **10.4x**.
+  Against that: 10 = 0.96x (refuses it once past the floor - the old
+  value sat below this sidecar's own number), 16 = 1.54x, **20 = 1.92x**,
+  32 = 3.08x. Against the whole-archive 3.78x: 20 = 5.3x. The price is a
+  larger allowance for a SMALL archive (a 50 MB zip may now inflate to
+  1 GB, not 500 MB); the 2 GiB ceiling is unchanged, and since the capped
+  reads stream into Blobs (R5) the total is no longer page memory. Floor 16 /
   **64** / 256 MiB: 64 MiB covers any small hand-made tour whose JSON
   deflates 20x or more. Ceiling **2 GiB** above every allowance a 1 GiB
   archive could need. Reverses if a real tour's whole-archive ratio passes
-  10 (a deflated tour that is nearly all JSON, at more than 64 MiB
-  inflated).
+  20 (JSON deflating better than 20x, at more than 64 MiB inflated).
 
 ## Invariants
 

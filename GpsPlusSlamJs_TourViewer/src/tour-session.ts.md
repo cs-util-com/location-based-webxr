@@ -113,6 +113,13 @@ loading with MIME types, and the poisoned-cache recovery loop.
   it: a level over the text cap degrades to "no level" like a corrupt one,
   a content bomb fails that photo, and the tour stays open. Values and
   their measurement: the framework's `archive-limits.ts.md`.
+- **A refusal of the recording is never "no recording"** (K0 milestone
+  review R9): `loadRecordingActions` and `loadSessionMeta` still read a
+  corrupt stream or file as null (the join declines, the tour works), but
+  REJECT with the `ArchiveLimitError` when a cap refuses them, so the
+  join's caller (`viewer-placement.ts`) shows it in the AR status line
+  ("photo ring (reading the recording failed: ...)") instead of a silent
+  ring.
 - **Opening a FILE (`openTourFile`, tour kit plan K0).** The same session
   over the file's own bytes (`LocalCacheByteSource`): the same caps (the
   transport cap from `file.size`, cause `'too-large'`), no network, no

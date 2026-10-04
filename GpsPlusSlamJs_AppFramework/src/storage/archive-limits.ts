@@ -63,7 +63,7 @@ export const DEFAULT_ARCHIVE_LIMITS: ArchiveLimits = Object.freeze({
   maxDirectoryBytes: 16 * MiB,
   maxEntryBytes: 256 * MiB,
   maxTextEntryBytes: 16 * MiB,
-  totalRatio: 10,
+  totalRatio: 20,
   totalFloorBytes: 64 * MiB,
   maxTotalBytes: 2048 * MiB,
 });

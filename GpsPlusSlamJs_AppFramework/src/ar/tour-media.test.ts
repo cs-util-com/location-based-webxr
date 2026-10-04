@@ -166,3 +166,85 @@ describe('checkGlbInert', () => {
     );
   });
 });
+
+/** `base` with `chunks` appended (type, payload), the header length
+ *  updated to the new size unless `headerLength` overrides it. */
+function withChunks(
+  base: Uint8Array,
+  chunks: readonly { type: number; data: Uint8Array }[],
+  headerLength?: number
+): Uint8Array {
+  const total =
+    base.length + chunks.reduce((sum, c) => sum + 8 + c.data.length, 0);
+  const out = new Uint8Array(total);
+  out.set(base, 0);
+  const view = new DataView(out.buffer);
+  let at = base.length;
+  for (const chunk of chunks) {
+    view.setUint32(at, chunk.data.length, true);
+    view.setUint32(at + 4, chunk.type, true);
+    out.set(chunk.data, at + 8);
+    at += 8 + chunk.data.length;
+  }
+  view.setUint32(8, headerLength ?? total, true);
+  return out;
+}
+
+const JSON_CHUNK = 0x4e4f534a;
+const BIN_CHUNK = 0x004e4942;
+const SAFE = { asset: { version: '2.0' }, buffers: [{ byteLength: 4 }] };
+
+/**
+ * Why these tests matter (K0 milestone review R8): three.js's glTF loader
+ * walks EVERY chunk of a .glb and takes a later JSON chunk over the first.
+ * A check that read only the first chunk passed a model whose second JSON
+ * chunk points at an http URL - the page would then fetch it. The check
+ * now requires exactly the shape the format allows: one JSON chunk, an
+ * optional binary chunk, then the end, with the header's length equal to
+ * the data's.
+ */
+describe('checkGlbInert - the chunk structure', () => {
+  it('accepts a JSON chunk followed by one binary chunk', () => {
+    const model = withChunks(glb(SAFE), [
+      { type: BIN_CHUNK, data: new Uint8Array(4) },
+    ]);
+    expect(checkGlbInert(model)).toEqual({ ok: true });
+  });
+
+  it('refuses a second JSON chunk that points outside the file', () => {
+    const evil = new TextEncoder().encode(
+      JSON.stringify({
+        asset: { version: '2.0' },
+        buffers: [{ uri: 'http://evil.example/x.bin' }],
+      }).padEnd(64, ' ')
+    );
+    const model = withChunks(glb(SAFE), [{ type: JSON_CHUNK, data: evil }]);
+    expect(checkGlbInert(model).ok).toBe(false);
+  });
+
+  it('refuses any chunk after the binary chunk', () => {
+    const model = withChunks(glb(SAFE), [
+      { type: BIN_CHUNK, data: new Uint8Array(4) },
+      { type: BIN_CHUNK, data: new Uint8Array(4) },
+    ]);
+    expect(checkGlbInert(model).ok).toBe(false);
+  });
+
+  it('refuses a header length that is not the data length', () => {
+    const model = glb(SAFE);
+    expect(checkGlbInert(withChunks(model, [], model.length - 4)).ok).toBe(
+      false
+    );
+    const trailing = new Uint8Array(model.length + 8);
+    trailing.set(model, 0);
+    expect(checkGlbInert(trailing).ok).toBe(false);
+  });
+
+  it('refuses a binary chunk that runs past the end', () => {
+    const model = withChunks(glb(SAFE), [
+      { type: BIN_CHUNK, data: new Uint8Array(4) },
+    ]);
+    new DataView(model.buffer).setUint32(model.length - 12, 400, true);
+    expect(checkGlbInert(model).ok).toBe(false);
+  });
+});

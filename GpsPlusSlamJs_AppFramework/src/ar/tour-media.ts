@@ -76,6 +76,7 @@ const DECODER_EXTENSIONS: ReadonlySet<string> = new Set([
 
 const GLB_MAGIC = 0x46546c67; // "glTF"
 const CHUNK_JSON = 0x4e4f534a; // "JSON"
+const CHUNK_BIN = 0x004e4942; // "BIN\0"
 
 export type GlbCheck = { ok: true } | { ok: false; reason: string };
 
@@ -105,18 +106,52 @@ function extensionProblem(json: Record<string, unknown>): string | null {
   return null;
 }
 
-function glbJson(bytes: Uint8Array): Record<string, unknown> | string {
-  if (bytes.length < 20) return 'it is too short to be a .glb';
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+/**
+ * Why the bytes are not exactly the shape the format allows - one JSON
+ * chunk, an optional binary chunk, then the end, with the header's length
+ * equal to the data's - or null. three.js's loader walks EVERY chunk and
+ * takes a later JSON chunk over the first, so a check that read only the
+ * first one passed a model whose second chunk points outside the file
+ * (K0 milestone review R8).
+ */
+function glbStructureProblem(
+  view: DataView,
+  chunkLength: number
+): string | null {
+  if (view.getUint32(8, true) !== view.byteLength) {
+    return 'its declared length does not match the file';
+  }
+  let end = 20 + chunkLength;
+  if (end + 8 <= view.byteLength) {
+    if (view.getUint32(end + 4, true) !== CHUNK_BIN) {
+      return 'it has a chunk other than one JSON and one binary chunk';
+    }
+    end += 8 + view.getUint32(end, true);
+  }
+  return end === view.byteLength
+    ? null
+    : 'it has data past its last chunk, or a chunk that runs past the end';
+}
+
+/** Why the 20-byte header and first chunk header are not a glTF 2.0
+ *  binary opening with a JSON chunk that fits the data, or null. */
+function glbHeaderProblem(view: DataView): string | null {
+  if (view.byteLength < 20) return 'it is too short to be a .glb';
   if (view.getUint32(0, true) !== GLB_MAGIC) return 'it is not a .glb file';
   if (view.getUint32(4, true) !== 2) return 'only glTF 2.0 is supported';
+  return view.getUint32(16, true) !== CHUNK_JSON ||
+    20 + view.getUint32(12, true) > view.byteLength
+    ? 'its JSON chunk is missing or truncated'
+    : null;
+}
+
+function glbJson(bytes: Uint8Array): Record<string, unknown> | string {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const header = glbHeaderProblem(view);
+  if (header !== null) return header;
   const chunkLength = view.getUint32(12, true);
-  if (
-    view.getUint32(16, true) !== CHUNK_JSON ||
-    20 + chunkLength > bytes.length
-  ) {
-    return 'its JSON chunk is missing or truncated';
-  }
+  const structure = glbStructureProblem(view, chunkLength);
+  if (structure !== null) return structure;
   try {
     const parsed: unknown = JSON.parse(
       new TextDecoder().decode(bytes.subarray(20, 20 + chunkLength))
@@ -132,7 +167,8 @@ function glbJson(bytes: Uint8Array): Record<string, unknown> | string {
 }
 
 /**
- * Whether a `.glb` is self-contained and inert: glTF 2.0 binary, every
+ * Whether a `.glb` is self-contained and inert: glTF 2.0 binary of exactly
+ * one JSON chunk, an optional binary chunk and nothing else, every
  * buffer and image either in the file's own binary chunk or a `data:` URI
  * (never a relative path or an http URL the page would fetch), and no
  * extension that needs a decoder from outside. The reason is plain words.

@@ -28,6 +28,9 @@ const CORPUS = {
   /** Total decompressed / archive size: 1.0 as written (stored entries),
    *  3.78 for the largest recording re-zipped with deflate throughout. */
   worstWholeArchiveRatio: 3.78,
+  /** The JSON of the largest recording re-zipped with deflate: what a
+   *  tour that is nearly all JSON would inflate by. */
+  worstJsonRatio: 10.4,
 };
 
 describe('DEFAULT_ARCHIVE_LIMITS against the measured corpus', () => {
@@ -49,6 +52,14 @@ describe('DEFAULT_ARCHIVE_LIMITS against the measured corpus', () => {
     );
     expect(DEFAULT_ARCHIVE_LIMITS.totalRatio).toBeGreaterThanOrEqual(
       2 * CORPUS.worstWholeArchiveRatio
+    );
+  });
+
+  it('lets a nearly-all-JSON deflated tour decompress in full, with margin (K0 milestone review R9)', () => {
+    // A total ratio of 10 sat BELOW the measured 10.4x of re-deflated
+    // JSON, so such a tour past the 64 MiB floor would have been refused.
+    expect(DEFAULT_ARCHIVE_LIMITS.totalRatio).toBeGreaterThanOrEqual(
+      1.5 * CORPUS.worstJsonRatio
     );
   });
 
