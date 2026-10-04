@@ -139,13 +139,16 @@ export async function openRemoteArchive(
   // The saved copy is tried FIRST: it is also what makes "offline" and
   // "the host blocks browsers" (below) advice for the no-copy case only.
   const fromCache = await tryOpenFromCache(url, store, options, fetchImpl);
-  if (fromCache !== null) return fromCache;
+  if ('opened' in fromCache) return fromCache.opened;
 
   let probe;
   try {
     probe = await probeRemote(url, fetchImpl, maxArchiveBytesOf(options));
   } catch (err) {
     if (err instanceof ArchiveLimitError) throw tooLarge(url, err);
+    // A saved copy exists but is over the cap (K0 milestone review R12):
+    // that, not the network, is why this visitor cannot open the tour.
+    if (fromCache.refused !== null) throw tooLarge(url, fromCache.refused);
     // In a browser, a CORS block and a dead network both reject as TypeError
     // and cannot be told apart from the error. The browser's own network
     // flag can: `onLine === false` is reliable (true is not - a captive
@@ -178,26 +181,40 @@ function tooLarge(url: string, err: ArchiveLimitError): OpenRemoteArchiveError {
   );
 }
 
-/** The revalidated cache lookup; null means "proceed to the network". */
+/** The revalidated cache lookup: the opened copy, or why there is none to
+ *  serve (`refused`: a copy over the cap, kept; null: no usable copy) -
+ *  either way the caller proceeds to the network. */
 async function tryOpenFromCache(
   url: string,
   store: LocalCacheStore | undefined,
   options: OpenRemoteArchiveOptions,
   fetchImpl: FetchImpl
-): Promise<OpenedArchive | null> {
-  if (store === undefined || options.skipCache === true) return null;
+): Promise<{ opened: OpenedArchive } | { refused: ArchiveLimitError | null }> {
+  if (store === undefined || options.skipCache === true) {
+    return { refused: null };
+  }
   const cached = await store.get(url);
-  if (cached === undefined) return null;
+  if (cached === undefined) return { refused: null };
   // A copy above the cap (saved before the cap existed, or under a larger
-  // one) is not served: the cap holds for every source of the bytes.
-  if (
-    cached.blob.size <= maxArchiveBytesOf(options) &&
-    (await isCachedCopyServable(url, cached, fetchImpl))
-  ) {
-    return openLocal(url, cached, store, options, 'cache');
+  // one) is not served: the cap holds for every source of the bytes. It is
+  // KEPT, though (K0 milestone review R12): it is the visitor's own
+  // download, and a cap that refuses it today must not destroy it. A fresh
+  // download that fits replaces it through the warm.
+  const maxBytes = maxArchiveBytesOf(options);
+  if (cached.blob.size > maxBytes) {
+    return {
+      refused: new ArchiveLimitError(
+        'archive-bytes',
+        maxBytes,
+        cached.blob.size
+      ),
+    };
+  }
+  if (await isCachedCopyServable(url, cached, fetchImpl)) {
+    return { opened: await openLocal(url, cached, store, options, 'cache') };
   }
   await store.delete(url); // stale — the author overwrote the archive
-  return null;
+  return { refused: null };
 }
 
 function openPerDecision(

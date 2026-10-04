@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   BlobWriter,
+  ERR_INVALID_UNCOMPRESSED_SIZE,
+  ERR_OVERLAPPING_ENTRY,
   Uint8ArrayReader,
   Uint8ArrayWriter,
   ZipReader,
@@ -58,6 +60,26 @@ function withDeclaredSize(zip: Uint8Array, size: number): Uint8Array {
   return out;
 }
 
+/** Rename entries in place (local and central headers): every name in
+ *  `from` becomes `to`, which must have the same length. zip.js refuses to
+ *  WRITE a duplicate name, so a crafted archive is made by patching bytes. */
+function withSameName(
+  zip: Uint8Array,
+  from: readonly string[],
+  to: string
+): Uint8Array {
+  const out = zip.slice();
+  const target = new TextEncoder().encode(to);
+  for (const name of from) {
+    const needle = new TextEncoder().encode(name);
+    if (needle.length !== target.length) throw new Error('same length only');
+    for (let i = 0; i + needle.length <= out.length; i += 1) {
+      if (needle.every((b, j) => out[i + j] === b)) out.set(target, i);
+    }
+  }
+  return out;
+}
+
 describe('listZipEntriesCapped', () => {
   it('lists every entry up to the cap', async () => {
     const zip = await deflatedZip({ a: 'a', b: 'b', c: 'c' });
@@ -109,22 +131,51 @@ describe('reading entries under a DecompressionBudget', () => {
     expect((err as ArchiveLimitError).observed).toBeLessThan(8 * MiB);
   });
 
-  it('stops on the bytes produced, even when the entry declares a size within the cap', async () => {
-    // The declared size says 100 bytes; the data inflates to 8 MiB. zip.js
-    // has its own check against the declared size, and the cap is the one
-    // that does not depend on the file being honest: either way the read
-    // must fail and never deliver the inflated data.
+  it('stops an understated entry at the cap, before zip.js would stop it at the declared size', async () => {
+    // K0 milestone review R11: the declared size says 4 MiB, the data
+    // inflates to 8 MiB. zip.js's own check would let 4 MiB through before
+    // refusing; the cap (1 MiB) counts the bytes actually produced and
+    // stops first - so this test fails if the count is ever removed, which
+    // a lie BELOW the cap (next test) cannot show.
+    const zip = withDeclaredSize(
+      await deflatedZip({ liar: new Uint8Array(8 * MiB) }),
+      4 * MiB
+    );
+    const [entry] = await entriesOf(zip);
+    expect(entry!.uncompressedSize).toBe(4 * MiB);
+    const budget = new DecompressionBudget({
+      maxEntryBytes: MiB,
+      maxTotalBytes: 100 * MiB,
+    });
+    const err = await readZipEntryBlob(entry!, budget, '').catch(
+      (e: unknown) => e
+    );
+    expect(err).toBeInstanceOf(ArchiveLimitError);
+    expect((err as ArchiveLimitError).kind).toBe('entry-bytes');
+    expect((err as ArchiveLimitError).limit).toBe(MiB);
+    expect((err as ArchiveLimitError).observed).toBeLessThan(4 * MiB);
+  });
+
+  it('leaves a lie below the cap to zip.js, which refuses it at the declared size', async () => {
+    // Declared 100 bytes, inflates to 8 MiB. zip.js checks its output
+    // against the declared size and refuses at 100 bytes, long before the
+    // cap could; measured 2026-10-04 (zip.js 2.11.2), its error wins every
+    // time. Pinned so a zip.js upgrade that drops the check is noticed:
+    // the cap above would then be the only guard.
     const zip = withDeclaredSize(
       await deflatedZip({ liar: new Uint8Array(8 * MiB) }),
       100
     );
     const [entry] = await entriesOf(zip);
-    expect(entry!.uncompressedSize).toBe(100);
     const budget = new DecompressionBudget({
       maxEntryBytes: MiB,
       maxTotalBytes: 100 * MiB,
     });
-    await expect(readZipEntryBlob(entry!, budget, '')).rejects.toThrow();
+    const err = await readZipEntryBlob(entry!, budget, '').catch(
+      (e: unknown) => e
+    );
+    expect(err).not.toBeInstanceOf(ArchiveLimitError);
+    expect((err as Error).message).toBe(ERR_INVALID_UNCOMPRESSED_SIZE);
   });
 
   it('stops on the bytes produced when the entry declares a huge size', async () => {
@@ -174,6 +225,68 @@ describe('reading entries under a DecompressionBudget', () => {
     await readZipEntryBlob(a!, budget, '');
     const err = await readZipEntryBlob(b!, budget, '').catch((e: unknown) => e);
     expect((err as ArchiveLimitError).kind).toBe('total-bytes');
+  });
+
+  it('charges entries that share a NAME separately (the total keys on the entry, not its name)', async () => {
+    // K0 milestone review R3: a crafted zip can list one name thousands of
+    // times, each copy its own deflated data. Keyed on the name, every
+    // copy after the first charged nothing, so the archive total never
+    // bit. Four copies of 600 KiB against a 1 MiB total must be refused.
+    const zip = withSameName(
+      await deflatedZip({
+        'a/1': new Uint8Array(600 * 1024),
+        'a/2': new Uint8Array(600 * 1024),
+        'a/3': new Uint8Array(600 * 1024),
+        'a/4': new Uint8Array(600 * 1024),
+      }),
+      ['a/2', 'a/3', 'a/4'],
+      'a/1'
+    );
+    const entries = await entriesOf(zip);
+    expect(entries.map((e) => e.filename)).toEqual([
+      'a/1',
+      'a/1',
+      'a/1',
+      'a/1',
+    ]);
+    const budget = new DecompressionBudget({
+      maxEntryBytes: MiB,
+      maxTotalBytes: MiB,
+    });
+    const err = await (async () => {
+      for (const entry of entries) await readZipEntryBlob(entry, budget, '');
+    })().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveLimitError);
+    expect((err as ArchiveLimitError).kind).toBe('total-bytes');
+  });
+
+  it('refuses a second record over data another record already read (one offset, two names)', async () => {
+    // The flip side of keying on the offset: a re-read of ONE entry is
+    // free, so a crafted directory listing thousands of records that all
+    // point at one deflated payload must not pass as re-reads. zip.js's
+    // overlap check refuses the second record before it inflates.
+    const zip = await deflatedZip({
+      a: new Uint8Array(600 * 1024),
+      b: new Uint8Array(600 * 1024),
+    });
+    const crafted = zip.slice();
+    const view = new DataView(crafted.buffer);
+    const centralOffsets: number[] = [];
+    for (let i = 0; i + 4 <= crafted.length; i += 1) {
+      if (view.getUint32(i, true) === 0x02014b50) centralOffsets.push(i);
+    }
+    const [first, second] = centralOffsets;
+    // Record b's local header offset (central +42) := record a's.
+    view.setUint32(second! + 42, view.getUint32(first! + 42, true), true);
+    const [a, b] = await entriesOf(crafted);
+    expect(b!.offset).toBe(a!.offset);
+    const budget = new DecompressionBudget({
+      maxEntryBytes: MiB,
+      maxTotalBytes: 100 * MiB,
+    });
+    expect((await readZipEntryBlob(a!, budget, '')).size).toBe(600 * 1024);
+    const err = await readZipEntryBlob(b!, budget, '').catch((e: unknown) => e);
+    expect((err as Error).message).toBe(ERR_OVERLAPPING_ENTRY);
   });
 
   it('does not charge a re-read of the same entry twice', async () => {

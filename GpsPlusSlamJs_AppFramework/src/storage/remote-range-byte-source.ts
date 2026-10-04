@@ -85,6 +85,45 @@ function classifyRangeResponse(
   return null;
 }
 
+/**
+ * The 206 body of a read of `length` bytes - never more (K0 milestone
+ * review R2). Read chunk by chunk into one buffer of exactly `length`; a
+ * chunk that would overflow it cancels the rest of the body and fails the
+ * read, so a host answering a small range with gigabytes cannot get past
+ * the transport cap this way. A body with no stream (Response-shaped
+ * fakes) is read whole and length-checked, as before.
+ */
+async function readExactBody(
+  res: Response,
+  length: number,
+  where: string
+): Promise<Uint8Array> {
+  const wrongLength = (got: string): StructuralReadError =>
+    new StructuralReadError(
+      `range read at ${where} returned ${got} bytes, expected ${String(length)}`
+    );
+  if (!res.body) {
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.length !== length) throw wrongLength(String(bytes.length));
+    return bytes;
+  }
+  const out = new Uint8Array(length);
+  const reader = res.body.getReader();
+  let filled = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (filled + value.byteLength > length) {
+      await reader.cancel().catch(() => undefined);
+      throw wrongLength(`more than ${String(length)}`);
+    }
+    out.set(value, filled);
+    filled += value.byteLength;
+  }
+  if (filled !== length) throw wrongLength(String(filled));
+  return out;
+}
+
 /** A HEAD is headers-only — anything slower than this is a hung connection. */
 const HEAD_TIMEOUT_MS = 15_000;
 /** The probe GET may legitimately stream the whole archive (a 200 from a
@@ -240,8 +279,9 @@ export async function probeRemote(
     );
     return { status: 200, size: size ?? body.length, body, ...validatorsField };
   }
-  // Drain the small range body so the connection can be reused/closed.
-  await probe.arrayBuffer().catch(() => undefined);
+  // Cancelled, never drained (K0 milestone review R2): one byte was asked
+  // for, and a host that streams more would otherwise pass the cap here.
+  await probe.body?.cancel().catch(() => undefined);
   // A 206's total (Content-Range) can size an archive HEAD could not: it
   // too must pass the cap before any range read is approved.
   assertWithinArchiveCap(size, maxArchiveBytes);
@@ -305,12 +345,6 @@ export class RemoteRangeByteSource implements ByteSource {
       await res.body?.cancel().catch(() => undefined);
       throw failure;
     }
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    if (bytes.length !== length) {
-      throw new StructuralReadError(
-        `range read at ${offset}-${end} returned ${bytes.length} bytes, expected ${length}`
-      );
-    }
-    return bytes;
+    return readExactBody(res, length, `${offset}-${end}`);
   }
 }

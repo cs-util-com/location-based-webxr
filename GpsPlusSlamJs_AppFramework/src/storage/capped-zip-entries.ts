@@ -8,15 +8,15 @@
  * output against the declared size, which stops a small lie but not a
  * huge one). The archive total counts DISTINCT data: re-reading an entry
  * (the gallery, the image planes, a retry) charges only bytes beyond its
- * largest earlier read.
+ * largest earlier read. An entry is known by WHERE its data starts (its
+ * local header offset), never by its name: a crafted directory can list one
+ * name thousands of times (K0 milestone review R3). Two directory records
+ * whose data overlap - one offset under two names, or a shared-kernel bomb -
+ * are refused by zip.js's own overlap check, so one offset never stands for
+ * more than one record's data.
  */
 
-import {
-  Writer,
-  type Entry,
-  type FileEntry,
-  type ZipReader,
-} from '@zip.js/zip.js';
+import { type Entry, type FileEntry, type ZipReader } from '@zip.js/zip.js';
 
 import {
   ArchiveLimitError,
@@ -25,6 +25,7 @@ import {
   totalBytesAllowance,
   type ArchiveLimits,
 } from './archive-limits.js';
+import { byteCountingStream } from './byte-counting-stream.js';
 
 /**
  * The central directory's entries, walked one at a time and refused once
@@ -61,8 +62,9 @@ function assertCap(name: string, value: number): void {
 export class DecompressionBudget {
   readonly maxEntryBytes: number;
   readonly maxTotalBytes: number;
-  /** Largest number of bytes any read of each entry produced so far. */
-  readonly #charged = new Map<string, number>();
+  /** Largest number of bytes any read of each entry produced so far, by
+   *  the entry's local header offset. */
+  readonly #charged = new Map<number, number>();
   #total = 0;
 
   constructor(caps: { maxEntryBytes: number; maxTotalBytes: number }) {
@@ -90,71 +92,64 @@ export class DecompressionBudget {
     return this.#total;
   }
 
-  /** A read of `key` has produced `written` bytes so far; throws once that
-   *  passes `maxEntryBytes` (the smaller of it and the call's own cap) or
-   *  the archive total. */
-  charge(key: string, written: number, entryCap: number): void {
+  /** A read of the entry whose data starts at `offset` has produced
+   *  `written` bytes so far; throws once that passes `entryCap` (the
+   *  smaller of `maxEntryBytes` and the call's own cap) or the archive
+   *  total. One budget serves ONE archive: two archives' offsets collide. */
+  charge(offset: number, written: number, entryCap: number): void {
     if (written > entryCap) {
       throw new ArchiveLimitError('entry-bytes', entryCap, written);
     }
-    const before = this.#charged.get(key) ?? 0;
+    const before = this.#charged.get(offset) ?? 0;
     if (written <= before) return;
     const total = this.#total + (written - before);
     if (total > this.maxTotalBytes) {
       throw new ArchiveLimitError('total-bytes', this.maxTotalBytes, total);
     }
-    this.#charged.set(key, written);
+    this.#charged.set(offset, written);
     this.#total = total;
   }
 }
 
-/** Collects the inflated chunks, charging the budget as each arrives. */
-class CountingChunkWriter extends Writer<Uint8Array[]> {
-  readonly #chunks: Uint8Array[] = [];
-  readonly #onWrite: (written: number) => void;
-  #written = 0;
-  /** The cap error, kept in case zip.js wraps the stream's abort reason. */
-  limitError: ArchiveLimitError | null = null;
-
-  constructor(onWrite: (written: number) => void) {
-    super();
-    this.#onWrite = onWrite;
-  }
-
-  override writeUint8Array(array: Uint8Array): Promise<void> {
-    this.#written += array.length;
-    try {
-      this.#onWrite(this.#written);
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      if (error instanceof ArchiveLimitError) this.limitError = error;
-      return Promise.reject(error);
-    }
-    this.#chunks.push(array);
-    return Promise.resolve();
-  }
-
-  override getData(): Promise<Uint8Array[]> {
-    return Promise.resolve(this.#chunks);
-  }
-}
-
-async function readChunks(
+/**
+ * Inflate one entry through a byte counter that charges the budget as each
+ * chunk arrives, handing the counted stream to `consume` as a Response
+ * body. zip.js writes straight into the counter's writable, so nothing is
+ * collected in page memory on the way (K0 milestone review R5): a Blob is
+ * assembled by `Response.blob()` (outside the JS heap in a browser).
+ */
+async function readCounted<T>(
   entry: FileEntry,
   budget: DecompressionBudget,
-  maxEntryBytes: number | undefined
-): Promise<Uint8Array[]> {
+  maxEntryBytes: number | undefined,
+  consume: (body: Response) => Promise<T>
+): Promise<T> {
   if (maxEntryBytes !== undefined) assertCap('maxEntryBytes', maxEntryBytes);
   const cap = Math.min(budget.maxEntryBytes, maxEntryBytes ?? Infinity);
-  const writer = new CountingChunkWriter((written) => {
-    budget.charge(entry.filename, written, cap);
+  /** The cap error, kept in case zip.js wraps the stream's abort reason. */
+  let limitError: ArchiveLimitError | null = null;
+  const counter = byteCountingStream((written) => {
+    try {
+      budget.charge(entry.offset, written, cap);
+    } catch (err) {
+      if (err instanceof ArchiveLimitError) limitError = err;
+      throw err;
+    }
   });
+  // Consumed WHILE zip.js writes: the counter holds no more than its
+  // queue, so an unread readable would stall the inflate.
+  const consumed = consume(new Response(counter.readable));
+  consumed.catch(() => undefined); // its error is the read's, thrown below
   try {
-    return await entry.getData(writer);
+    // The overlap check is what makes the offset a sound key: a second
+    // record over data another record already read is refused, never
+    // charged as a free re-read.
+    await entry.getData(counter.writable, { checkOverlappingEntry: true });
   } catch (err) {
     // The cap's own error wins over however zip.js reports the abort.
-    throw writer.limitError ?? err;
+    throw limitError ?? err;
   }
+  return consumed;
 }
 
 /** One entry inflated to a Blob of `mimeType`, under the budget (and the
@@ -165,20 +160,21 @@ export async function readZipEntryBlob(
   mimeType: string,
   maxEntryBytes?: number
 ): Promise<Blob> {
-  const chunks = await readChunks(entry, budget, maxEntryBytes);
-  return new Blob(chunks as BlobPart[], { type: mimeType });
+  const blob = await readCounted(entry, budget, maxEntryBytes, (body) =>
+    body.blob()
+  );
+  // A Blob over a Blob is a reference, not a copy.
+  return blob.type === mimeType ? blob : new Blob([blob], { type: mimeType });
 }
 
 /** One entry inflated and decoded as UTF-8 text, under the budget (and the
- *  optional tighter `maxEntryBytes`, e.g. `maxTextEntryBytes`). */
+ *  optional tighter `maxEntryBytes`, e.g. `maxTextEntryBytes`). Text
+ *  lives on the JS heap whatever reads it, so the caller's tighter cap is
+ *  what bounds it. */
 export async function readZipEntryText(
   entry: FileEntry,
   budget: DecompressionBudget,
   maxEntryBytes?: number
 ): Promise<string> {
-  const chunks = await readChunks(entry, budget, maxEntryBytes);
-  const decoder = new TextDecoder();
-  let text = '';
-  for (const chunk of chunks) text += decoder.decode(chunk, { stream: true });
-  return text + decoder.decode();
+  return readCounted(entry, budget, maxEntryBytes, (body) => body.text());
 }

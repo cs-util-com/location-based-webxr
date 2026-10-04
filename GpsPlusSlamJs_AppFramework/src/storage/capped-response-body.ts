@@ -9,9 +9,15 @@
  * - WHILE reading: the stream is counted chunk by chunk and cancelled the
  *   moment it passes the cap, because the header may be missing (chunked
  *   transfer) or lie.
+ *
+ * The count is a stream (`byte-counting-stream.ts`) feeding
+ * `Response.blob()`, so no chunk is collected in page memory on the way
+ * (K0 milestone review R5): the cap bounds the download, and the browser
+ * assembles the Blob outside the JS heap.
  */
 
 import { ArchiveLimitError } from './archive-limits.js';
+import { byteCountingStream } from './byte-counting-stream.js';
 
 function announcedLength(headers: Headers): number | null {
   const raw = headers.get('content-length');
@@ -20,28 +26,14 @@ function announcedLength(headers: Headers): number | null {
   return Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
-function refuse(maxBytes: number, observed: number): never {
-  throw new ArchiveLimitError('archive-bytes', maxBytes, observed);
+/** `blob` with the response's type: `Response.blob()` types it from its
+ *  own (absent) headers. A Blob over a Blob is a reference, not a copy. */
+function typed(blob: Blob, type: string): Blob {
+  return type === '' || blob.type === type ? blob : new Blob([blob], { type });
 }
 
-/** The stream's chunks, cancelled the moment their sum passes the cap. */
-async function readStreamCapped(
-  body: ReadableStream<Uint8Array>,
-  maxBytes: number
-): Promise<Uint8Array[]> {
-  const reader = body.getReader();
-  const parts: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) return parts;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => undefined);
-      refuse(maxBytes, total);
-    }
-    parts.push(value);
-  }
+function refuse(maxBytes: number, observed: number): never {
+  throw new ArchiveLimitError('archive-bytes', maxBytes, observed);
 }
 
 /**
@@ -65,14 +57,19 @@ export async function readResponseBodyCapped(
     await res.body?.cancel().catch(() => undefined);
     refuse(maxBytes, announced);
   }
+  const type = res.headers.get('content-type') ?? '';
   if (!res.body) {
     // No stream to count (Response-shaped fakes, some polyfills): the cap
     // still holds, after the fact.
     const blob = await res.blob();
     return blob.size > maxBytes ? refuse(maxBytes, blob.size) : blob;
   }
-  const parts = await readStreamCapped(res.body, maxBytes);
-  return new Blob(parts as BlobPart[], {
-    type: res.headers.get('content-type') ?? '',
-  });
+  // Past the cap the counter throws: the pipe cancels the body with that
+  // error and `blob()` rejects with it.
+  const counted = res.body.pipeThrough(
+    byteCountingStream((total) => {
+      if (total > maxBytes) refuse(maxBytes, total);
+    })
+  );
+  return typed(await new Response(counted).blob(), type);
 }

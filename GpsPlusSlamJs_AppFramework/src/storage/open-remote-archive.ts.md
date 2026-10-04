@@ -76,8 +76,14 @@ archive-format-agnostic; zip.js enters only where a caller wraps
   open rejects with `'too-large'`: from the HEAD's `Content-Length` before
   any GET, from a 206's total before any range read, and while a
   range-ignoring host's 200 or a full download streams
-  (`readResponseBodyCapped`). A saved copy above the cap is not served (and
-  is dropped), so the cap protects every visit, not only the first. The warm
+  (`readResponseBodyCapped`). A saved copy above the cap is not served, so
+  the cap protects every visit, not only the first - but it is KEPT (K0
+  milestone review R12): it is the visitor's own download, and a cap that
+  refuses it today (a smaller cap, a configuration mistake) must not
+  destroy it. A download that fits replaces it through the warm. When the
+  network then fails before any HTTP status, the open rejects with
+  `'too-large'` carrying the copy's `ArchiveLimitError`, not with
+  `'offline'`/`'cors'`: the size is why this visitor cannot open it. The warm
   and recovery downloads are capped at the session's own size: a longer body
   is the wrong file, which the size check would refuse anyway - after
   holding all of it.
@@ -114,5 +120,9 @@ try {
 normalization, warm switch/persist, the size-mismatch persist refusal,
 dispose-aborts-warm, warm opt-out, fresh/stale/validator-less/offline cache
 paths, skipCache + evict, eager-local degrade, the missing/cors reject
-causes. `zip-streaming-request-budget.test.ts` — the measured request/byte
+causes. The K0 milestone review (R11) added the warm and recovery caps
+watched on a real stream: a body longer than the session size is
+cancelled within a few chunks, never drained (without the cap the outcome
+looks the same, but only after the whole body was held).
+`zip-streaming-request-budget.test.ts` — the measured request/byte
 ceilings against a real zip.

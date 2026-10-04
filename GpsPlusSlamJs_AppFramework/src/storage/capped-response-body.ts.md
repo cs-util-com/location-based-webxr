@@ -25,7 +25,14 @@ download, the background warm copy and the range-ignore recovery
   reading it; the stream is cancelled.
 - The stream is counted chunk by chunk and cancelled as soon as it passes
   the cap: a missing (chunked) or lying header cannot carry more bytes in.
-  At most one chunk past the cap is ever held.
+  The chunk that passes the cap is never delivered.
+- **No chunk is collected in page memory** (K0 milestone review R5): the
+  count is a pass-through stream (`byte-counting-stream.ts`) feeding
+  `new Response(stream).blob()`, which a browser assembles outside the JS
+  heap. Before, every chunk sat in a JS array until the Blob was built, so
+  the 1 GiB transport cap was also up to 1 GiB of page memory on a phone.
+  The Blob is re-typed with the response's `content-type` (a Blob over a
+  Blob is a reference, not a copy).
 - An unreadable `Content-Length` (`abc`, negative, unsafe) is ignored, not
   trusted; the count still holds.
 - A response without a stream (Response-shaped test fakes, some polyfills)

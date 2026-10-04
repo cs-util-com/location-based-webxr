@@ -16,6 +16,8 @@ that issues one HTTP Range fetch per read).
   the HEAD's size BEFORE the probe GET is sent, from a 206's total before any
   range read, and while a range-ignoring host's 200 body streams
   (`readResponseBodyCapped`; before K0 that body was read whole with no limit).
+  A 206 probe body is CANCELLED, never drained (K0 milestone review R2): one
+  byte was asked for, and draining it read whatever the host sent.
   Captures freshness validators (ETag/Last-Modified) where readable — from
   the HEAD, or the probe GET when HEAD fails.
 - `fetchRemoteValidators(url, fetchImpl): Promise<RemoteValidatorProbe | null>`
@@ -70,7 +72,13 @@ qr-level's tests to fake more than they consume.
   never retried); any other failure is a plain `Error` (transient,
   retry-eligible by a caller's policy).
 - The returned body must be exactly `length` bytes, or the read fails
-  structurally. `Content-Range` is additionally validated against the
+  structurally - and it is READ as at most `length` bytes (K0 milestone
+  review R2): chunks go into one buffer of that size, and a chunk that would
+  overflow it cancels the rest of the body and fails the read. Before, the
+  body was read whole with `arrayBuffer()` and only then length-checked,
+  so a host answering a small range with gigabytes bypassed the transport
+  cap. `Content-Length` is not consulted for this: a body with a content
+  encoding announces its encoded size, and the count needs no header. `Content-Range` is additionally validated against the
   requested offsets — but only when readable: the header is not
   CORS-safelisted, and e.g. raw.githubusercontent exposes no headers, so a
   null `Content-Range` on a 206 is normal, not an error.
@@ -101,4 +109,6 @@ abort-signal presence, the 4xx-structural / 5xx-transient split, the 206
 requirement (200 full-body rejection), body-length and Content-Range
 validation (incl. the CORS-hidden-header acceptance case), zero-length
 short-circuit, and `probeRemote`'s failed-HEAD / unusable-Content-Length
-guards.
+guards; range bodies stopping at the requested length (a 206 streaming 1,000
+times more is cancelled within a few chunks, an exact one returned intact,
+the probe's 206 body cancelled - K0 milestone review R2).

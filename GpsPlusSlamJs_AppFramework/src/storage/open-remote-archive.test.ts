@@ -840,6 +840,32 @@ describe('openRemoteArchive - the cap holds for a saved copy too', () => {
       (e: unknown) => e
     );
     expect((err as OpenRemoteArchiveError).rejectCause).toBe('too-large');
+    // K0 milestone review R12: KEPT, not deleted. The copy is the visitor's
+    // own download; a cap that refuses to serve it today (a smaller cap, a
+    // config mistake) must not destroy it.
+    expect((await store.get(URL_))?.blob.size).toBe(ARCHIVE.length);
+  });
+
+  it('names the size as the reason when the copy is over the cap and the network is down', async () => {
+    // Without this the visitor would be told "offline" - true, but not why
+    // the copy they have does not open.
+    const { fetchImpl } = fakeServer({ reject: true });
+    const store = new InMemoryLocalCacheStore();
+    await store.put(URL_, { blob: new Blob([ARCHIVE]) });
+    const err = await openRemoteArchive(URL_, {
+      fetchImpl,
+      cacheStore: store,
+      maxArchiveBytes: 4,
+      isOnline: () => false,
+    }).then(
+      () => null,
+      (e: unknown) => e
+    );
+    expect((err as OpenRemoteArchiveError).rejectCause).toBe('too-large');
+    expect((err as OpenRemoteArchiveError).cause).toBeInstanceOf(
+      ArchiveLimitError
+    );
+    expect((await store.get(URL_))?.blob.size).toBe(ARCHIVE.length);
   });
 });
 
@@ -854,5 +880,84 @@ describe('openRemoteArchive - a too-large rejection explains itself', () => {
     }).catch((e: unknown) => e)) as OpenRemoteArchiveError;
     expect(err.cause).toBeInstanceOf(ArchiveLimitError);
     expect((err.cause as ArchiveLimitError).limit).toBe(4);
+  });
+});
+
+/**
+ * Why these tests matter (K0 milestone review R11): the warm download and
+ * the range-ignore recovery both read a whole body, capped at the
+ * session's own size. Without the cap the outcome LOOKS the same (the
+ * size check after the download refuses the copy), but only after the
+ * whole body - possibly gigabytes from a hostile host - was held in page
+ * memory. So these tests watch the stream itself: it must be cancelled
+ * within a chunk of the cap, never drained.
+ */
+describe('openRemoteArchive - the warm and recovery downloads stop at the session size', () => {
+  const CHUNK = 4;
+  const CHUNKS = 1000; // 4,000 bytes against an 8-byte archive
+
+  /** A real streamed body far longer than the archive, counting pulls. */
+  function longBody(): {
+    response: Response;
+    pulls: () => number;
+    cancelled: () => boolean;
+  } {
+    let pulls = 0;
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls > CHUNKS) controller.close();
+        else controller.enqueue(new Uint8Array(CHUNK).fill(9));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    return {
+      response: new Response(stream, { status: 200 }),
+      pulls: () => pulls,
+      cancelled: () => cancelled,
+    };
+  }
+
+  /** `fakeServer`, except every range-less GET answers `body`. */
+  function withLongFullBody(
+    opts: ServerOptions,
+    body: ReturnType<typeof longBody>
+  ): FetchImpl {
+    const { fetchImpl } = fakeServer(opts);
+    return (input, init) => {
+      const method = init?.method ?? 'GET';
+      const ranged = new Headers(init?.headers).has('range');
+      return method === 'GET' && !ranged
+        ? Promise.resolve(body.response)
+        : fetchImpl(input, init);
+    };
+  }
+
+  it('cancels a warm download that streams past the session size', async () => {
+    const body = longBody();
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl: withLongFullBody({}, body),
+      cacheStore: new InMemoryLocalCacheStore(),
+    });
+    await expect(opened.warmed).resolves.toBe(false);
+    expect(body.cancelled()).toBe(true);
+    // A few chunks past 8 bytes at most (the stream's own read-ahead),
+    // never the 1,000 an uncapped read drains.
+    expect(body.pulls()).toBeLessThan(10);
+  });
+
+  it('fails a recovery download that streams past the session size, without draining it', async () => {
+    const body = longBody();
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl: withLongFullBody({ flipRangesAfterProbe: true }, body),
+      warm: false,
+    });
+    const err = await opened.source.read(0, 2).catch((e: unknown) => e);
+    expect((err as Error).message).toMatch(/streamed more than the expected/);
+    expect(body.cancelled()).toBe(true);
+    expect(body.pulls()).toBeLessThan(10);
   });
 });

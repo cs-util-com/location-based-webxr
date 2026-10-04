@@ -965,6 +965,36 @@ describe('loadActionsFromZip under a decompression budget', () => {
     expect(budget.totalBytes).toBeGreaterThan(2_000_000);
   });
 
+  it('stops at the archive total when the action entries all share ONE name', async () => {
+    // K0 milestone review R3: thousands of copies of `actions/000001.json`,
+    // each its own deflated data, all read by the filter below. Charged by
+    // name, every copy after the first was free and the total never bit.
+    const zip = await deflatedActions(4);
+    const copies = ['000002', '000003', '000004'].map(
+      (n) => `actions/${n}.json`
+    );
+    const crafted = zip.slice();
+    const target = new TextEncoder().encode('actions/000001.json');
+    for (const name of copies) {
+      const needle = new TextEncoder().encode(name);
+      for (let i = 0; i + needle.length <= crafted.length; i += 1) {
+        if (needle.every((b, j) => crafted[i + j] === b))
+          crafted.set(target, i);
+      }
+    }
+    const budget = new DecompressionBudget({
+      maxEntryBytes: 1_048_576,
+      maxTotalBytes: 1_200_000,
+    });
+    const err = await loadActionsFromZip(
+      crafted,
+      MAX_ACTION_FILE_SIZE,
+      budget
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveLimitError);
+    expect((err as ArchiveLimitError).kind).toBe('total-bytes');
+  });
+
   it('uses a default budget sized from the archive when none is passed', async () => {
     // The default allowance has a 64 MiB floor, so a small real stream is
     // unaffected - the guard only bites on a crafted archive.
