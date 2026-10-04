@@ -18,8 +18,11 @@
  *    CI timing is machine-dependent (same policy as
  *    `occupancy-mesher.perf.test.ts`); exact numbers are logged for humans.
  *
- * A bytes-per-cell probe (Step 3.1's CellRecord flattening) is logged
- * informationally — heap deltas are GC-noisy, so it never gates.
+ * A bytes-per-cell probe (Step 3.1's CellRecord flattening) used to build a
+ * third, 100k-cell grid here only to log a figure. It was removed on
+ * 2026-10-04 (gate-speed plan, milestone review R11): heap deltas are
+ * GC-noisy so it never gated, and the framework's vitest config runs
+ * `silent`, so no run ever showed the line.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -104,37 +107,6 @@ describe('occupancy-grid long-session scaling (fps plan Steps 1–3 acceptance)'
           `${large.grid.size} cells → ${largeMs.toFixed(3)} ms`
       );
       expect(largeMs).toBeLessThan(Math.max(4 * smallMs, 5));
-
-      // Informational bytes-per-cell probe (Step 3.1 CellRecord flattening).
-      // Heap deltas are GC-noisy → never gates; the trend is what matters
-      // (~201 B/cell measured before the flattening, 2026-06-30 Round 5).
-      // OPT-IN with DEBUG_PERF=1 (gate-speed plan 2026-10-04, G3): it builds a
-      // third, 100k-cell grid only to print a line, and the framework's vitest
-      // config runs `silent`, so in a gate run nobody ever saw it. (A plain
-      // `--silent=false` / `--no-silent` on the command line did not surface the
-      // line either, 2026-10-04; whoever needs the number should print it from
-      // a debugger or a scratch copy of this test.)
-      const node = (
-        globalThis as {
-          process?: {
-            memoryUsage?: () => { heapUsed: number };
-            env?: Record<string, string | undefined>;
-          };
-        }
-      ).process;
-      const memory = node?.memoryUsage;
-      if (memory && node?.env?.['DEBUG_PERF'] === '1') {
-        const before = memory().heapUsed;
-        const probe = buildSyntheticSurfaceGrid({
-          cellsX: 316,
-          cellsZ: 316, // ~100k cells, the corpus regime
-          cellSizeM: CELL_SIZE_M,
-        });
-        const bytesPerCell = (memory().heapUsed - before) / probe.grid.size;
-        console.log(
-          `[perf] ~${probe.grid.size} cells ≈ ${bytesPerCell.toFixed(0)} B/cell (informational; pre-flattening baseline ~201 B/cell)`
-        );
-      }
     }
   );
 });
