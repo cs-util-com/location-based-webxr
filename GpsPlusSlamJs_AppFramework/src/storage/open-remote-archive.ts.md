@@ -14,12 +14,12 @@ archive-format-agnostic; zip.js enters only where a caller wraps
 
 - `openRemoteArchive(rawUrl, options?): Promise<OpenedArchive>`
 - `interface OpenRemoteArchiveOptions { fetchImpl?; cacheStore?; googleDriveApiKey?; corsProxyBaseUrl?; onRead?; warm?; skipCache?; maxArchiveBytes?; isOnline? }`
-  - `maxArchiveBytes` is the transport cap (`archive-limits.ts`, default
-    1 GiB); `isOnline` (default `navigator.onLine`) is injected for tests.
-    — `corsProxyBaseUrl` routes Drive links through the site worker's CORS
-    proxy (precedence over the API key; see `share-link.ts.md`). Note the
-    cache keys on the NORMALIZED url, so changing which Drive form is active
-    orphans previously cached copies (one re-download, then LRU eviction).
+  The `maxArchiveBytes` option is the transport cap (`archive-limits.ts`, default
+  1 GiB); `isOnline` (default `navigator.onLine`) is injected for tests.
+  — `corsProxyBaseUrl` routes Drive links through the site worker's CORS
+  proxy (precedence over the API key; see `share-link.ts.md`). Note the
+  cache keys on the NORMALIZED url, so changing which Drive form is active
+  orphans previously cached copies (one re-download, then LRU eviction).
 - `interface OpenedArchive { source; size; url; origin; warmed; dispose(); evict() }`
 - `class OpenRemoteArchiveError extends Error { rejectCause: RangeProbeRejectCause }`
 - `type ArchiveReadOrigin = 'network' | 'cache'`,
