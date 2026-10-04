@@ -53,6 +53,15 @@ DOM glue, its own module since the flows plan M6.
 
 ## Invariants & assumptions
 
+- **A late integrity failure** (tour kit plan K1, §8 D3; a tier-2 read or
+  the tier-3 whole-archive check, `tour-integrity.ts`) tears the tour down
+  with the same `teardownSession` a tour switch uses - its content goes,
+  in AR too - and says why on the page and in the AR status line
+  (`ctx.contentError`; the error box is outside the overlay). A failure
+  from a session that is no longer open changes nothing; one found before
+  the page held the session is handled at the end of the open
+  (`reportEarlyFailure`).
+
 - Session-state fields it owns: `session`, `currentLevels`,
   `openGeneration`; a successful open re-derives the scan gate for a
   running session (`hooks.startScanGate`) and its level load's outcome

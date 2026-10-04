@@ -1002,3 +1002,50 @@ describe('loadActionsFromZip under a decompression budget', () => {
     expect(await loadActionsFromZip(zip)).toHaveLength(2);
   });
 });
+
+describe('loadActionsFromZip with the caller own entry reader (tour kit plan K1)', () => {
+  // Why this matters: a signed tour hashes every entry it reads (tier 2).
+  // The action stream is read by this parser, so the parser must read each
+  // entry through the caller's reader - with the per-file cap it would have
+  // applied - or the recording would be the one part of a signed tour that
+  // is never checked.
+  it('reads every action entry through the given reader, with the per-file cap', async () => {
+    const { ZipWriter, Uint8ArrayWriter, TextReader } =
+      await import('@zip.js/zip.js');
+    const writer = new ZipWriter(new Uint8ArrayWriter());
+    await writer.add('actions/000001.json', new TextReader('{"type":"a"}'));
+    await writer.add('actions/000002.json', new TextReader('{"type":"b"}'));
+    const zip = await writer.close();
+    const seen: [string, number][] = [];
+    const result = await loadActionsFromZip(
+      zip,
+      1234,
+      undefined,
+      (entry, maxBytes) => {
+        seen.push([entry.filename, maxBytes]);
+        return Promise.resolve(`{"type":"via-${entry.filename.slice(8, 14)}"}`);
+      }
+    );
+    expect(seen).toEqual([
+      ['actions/000001.json', 1234],
+      ['actions/000002.json', 1234],
+    ]);
+    expect(result.map((r) => r.action.type)).toEqual([
+      'via-000001',
+      'via-000002',
+    ]);
+  });
+
+  it('lets the reader refuse: its error is the parse error', async () => {
+    const { ZipWriter, Uint8ArrayWriter, TextReader } =
+      await import('@zip.js/zip.js');
+    const writer = new ZipWriter(new Uint8ArrayWriter());
+    await writer.add('actions/000001.json', new TextReader('{"type":"a"}'));
+    const zip = await writer.close();
+    await expect(
+      loadActionsFromZip(zip, undefined, undefined, () =>
+        Promise.reject(new Error('modified'))
+      )
+    ).rejects.toThrow('modified');
+  });
+});

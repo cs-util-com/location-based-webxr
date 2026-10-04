@@ -35,6 +35,21 @@ loading with MIME types, and the poisoned-cache recovery loop.
     the build, before the session exists: an archive that does not match
     its manifest rejects the open (`TourIntegrityError`), and a
     cache-served one takes the poison path (evict, reopen remote).
+  - TIER 2: every entry read (`loadEntry`, `loadEntryText`,
+    `loadContentEntry`, the levels, `session.json`, the recording's action
+    entries through `loadActionsFromZip`'s reader parameter) goes through
+    ONE capped read that also hashes the bytes against the manifest
+    (`TourIntegrityGuard`); a tour without a manifest reads unhashed.
+  - `wholeArchiveCheck` - TIER 3's outcome (`checked | failed |
+not-checked`): a link's complete copies are checked through
+    `openRemoteArchive`'s `acceptLocalCopy` before they back the session or
+    are cached; a saved copy and a file are checked in the background after
+    open; without a cache a ranged link is `not-checked`.
+  - `integrityFailure()` - the LATE failure (tier 2 or 3), once found. It
+    is latched: every later read rejects with it, `readWholeArchive` too;
+    the session evicts its cached copy and calls
+    `options.onIntegrityFailure(err, session)` once (the page removes the
+    tour's content).
   - `budget` - the archive's one `DecompressionBudget`; the creator's
     Finish passes it to `rebuildZipWithEntries` when the rebuild's input
     is this archive (K0 milestone review R1).

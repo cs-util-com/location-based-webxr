@@ -13,6 +13,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { OpenRemoteArchiveError } from "gps-plus-slam-app-framework/storage";
+import { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 
 import { wireArchiveOpen, type ArchiveOpenDom } from "./archive-open.js";
 import {
@@ -74,7 +75,9 @@ function fakeSession(url: string) {
     }),
     loadTourManifest: () => Promise.resolve(null),
     loadQrLevels: () => Promise.resolve(new Map()),
-    close: () => Promise.resolve(),
+    integrity: { kind: "none" },
+    integrityFailure: () => null,
+    close: vi.fn(() => Promise.resolve()),
   };
 }
 
@@ -220,5 +223,47 @@ describe("the advice after a failed link", () => {
     mocks.openTourFile.mockReturnValueOnce(new Promise(() => undefined));
     pick(dom, new File(["zip"], "tour.zip"));
     await vi.waitFor(() => expect(dom.fileAdvice.hidden).toBe(true));
+  });
+});
+
+describe("a late integrity failure (tour kit plan K1, §8 D3)", () => {
+  // Why this matters: a range-streamed tour is checked entry by entry and
+  // as a whole only once its download ends - by then it may be on screen,
+  // in AR. The failure must remove the tour's content and say why, in the
+  // page AND in the AR status line (the error box is outside the overlay),
+  // and a failure from a tour that is no longer open must change nothing.
+  async function openedFile() {
+    const session = fakeSession("local-file:abc");
+    mocks.openTourFile.mockResolvedValueOnce(session);
+    const wired = wire();
+    pick(wired.dom, new File(["zip"], "tour.zip"));
+    await vi.waitFor(() => {
+      expect(wired.ctx.session).toBe(session);
+    });
+    const options = mocks.openTourFile.mock.calls[0]?.[1] as {
+      onIntegrityFailure: (err: TourIntegrityError, s: unknown) => void;
+    };
+    return { ...wired, session, report: options.onIntegrityFailure };
+  }
+
+  it("removes the open tour and says it does not match its list, in the page and the AR line", async () => {
+    const { ctx, dom, session, report } = await openedFile();
+    report(new TourIntegrityError("hash-mismatch", "bad bytes"), session);
+    await vi.waitFor(() => {
+      expect(dom.errorBox.textContent).toMatch(/does not match its own list/);
+    });
+    expect(ctx.session).toBeNull();
+    expect(session.close).toHaveBeenCalled();
+    expect(dom.errorBox.textContent).toMatch(/content was removed/);
+    expect(ctx.contentError).toBe(dom.errorBox.textContent);
+  });
+
+  it("ignores a failure reported by a tour that is no longer open", async () => {
+    const { ctx, dom, report } = await openedFile();
+    const stale = fakeSession("local-file:old");
+    report(new TourIntegrityError("hash-mismatch", "bad bytes"), stale);
+    await Promise.resolve();
+    expect(ctx.session).not.toBeNull();
+    expect(dom.errorBox.textContent).toBe("");
   });
 });

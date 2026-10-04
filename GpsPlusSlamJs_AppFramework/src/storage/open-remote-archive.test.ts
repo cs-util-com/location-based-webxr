@@ -961,3 +961,113 @@ describe('openRemoteArchive - the warm and recovery downloads stop at the sessio
     expect(body.pulls()).toBeLessThan(10);
   });
 });
+
+describe('openRemoteArchive - acceptLocalCopy (tour kit plan K1, tier 3)', () => {
+  // Why these tests matter: a signed tour is checked as a whole once its
+  // complete copy exists (§8 D3), and a copy that fails that check must
+  // never be cached or saved - not even briefly, since a cached copy is
+  // served offline on the next visit. The hook runs BEFORE a copy backs
+  // the session or reaches the store, on every path that produces one.
+  const refuse = () => Promise.reject(new Error('copy refused'));
+
+  it('the warm hands its complete copy to the hook, then switches and persists', async () => {
+    const { fetchImpl } = fakeServer({ etag: '"v1"' });
+    const store = new InMemoryLocalCacheStore();
+    const seen: number[] = [];
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl,
+      cacheStore: store,
+      acceptLocalCopy: async (blob) => {
+        seen.push(blob.size);
+        await Promise.resolve();
+      },
+    });
+    await expect(opened.warmed).resolves.toBe(true);
+    expect(seen).toEqual([ARCHIVE.length]);
+    await expect(store.get(URL_)).resolves.toBeDefined();
+  });
+
+  it('a refused warm copy is neither switched to nor persisted', async () => {
+    const { fetchImpl } = fakeServer({ etag: '"v1"' });
+    const store = new InMemoryLocalCacheStore();
+    const events: ArchiveReadEvent[] = [];
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl,
+      cacheStore: store,
+      acceptLocalCopy: refuse,
+      onRead: (e) => events.push(e),
+    });
+    await expect(opened.warmed).resolves.toBe(false);
+    await expect(store.get(URL_)).resolves.toBeUndefined();
+    await opened.source.read(0, 2);
+    expect(events.at(-1)?.origin).toBe('network');
+  });
+
+  it('a warm copy of the wrong size never reaches the hook (the switch refuses it anyway)', async () => {
+    const { fetchImpl } = fakeServer({ fullBody: 'wrong-size' });
+    let called = false;
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl,
+      cacheStore: new InMemoryLocalCacheStore(),
+      acceptLocalCopy: () => {
+        called = true;
+        return Promise.resolve();
+      },
+    });
+    await expect(opened.warmed).resolves.toBe(false);
+    expect(called).toBe(false);
+  });
+
+  it('a refused eager copy fails the open and stores nothing', async () => {
+    const { fetchImpl } = fakeServer({ supportsRanges: false });
+    const store = new InMemoryLocalCacheStore();
+    await expect(
+      openRemoteArchive(URL_, {
+        fetchImpl,
+        cacheStore: store,
+        acceptLocalCopy: refuse,
+      })
+    ).rejects.toThrow('copy refused');
+    await expect(store.get(URL_)).resolves.toBeUndefined();
+  });
+
+  it('a refused eager copy fails the open without a store too: it would back the session', async () => {
+    const { fetchImpl } = fakeServer({ supportsRanges: false });
+    await expect(
+      openRemoteArchive(URL_, { fetchImpl, acceptLocalCopy: refuse })
+    ).rejects.toThrow('copy refused');
+  });
+
+  it('a refused recovery copy fails the read and stores nothing', async () => {
+    const { fetchImpl } = fakeServer({ flipRangesAfterProbe: true });
+    const store = new InMemoryLocalCacheStore();
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl,
+      cacheStore: store,
+      warm: false,
+      acceptLocalCopy: refuse,
+    });
+    await expect(opened.source.read(2, 3)).rejects.toThrow('copy refused');
+    await expect(store.get(URL_)).resolves.toBeUndefined();
+  });
+
+  it('a cached copy is served without the hook: the session checks it itself', async () => {
+    const { fetchImpl } = fakeServer({ etag: '"v1"' });
+    const store = new InMemoryLocalCacheStore();
+    await store.put(URL_, {
+      blob: new Blob([ARCHIVE]),
+      validators: { etag: '"v1"' },
+    });
+    let called = false;
+    const opened = await openRemoteArchive(URL_, {
+      fetchImpl,
+      cacheStore: store,
+      acceptLocalCopy: () => {
+        called = true;
+        return Promise.resolve();
+      },
+    });
+    expect(opened.origin).toBe('cache');
+    expect(called).toBe(false);
+  });
+});

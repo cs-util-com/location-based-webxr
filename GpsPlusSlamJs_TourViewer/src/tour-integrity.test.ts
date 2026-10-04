@@ -9,10 +9,12 @@
  * reads them (`test-support/tour-signing-fixture.ts`).
  */
 
-import { describe, expect, it } from "vitest";
+import fc from "fast-check";
+import { describe, expect, it, vi } from "vitest";
 
 import { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
+  InMemoryLocalCacheStore,
   writeStoreZip,
   type FetchImpl,
   type ZipEntryInput,
@@ -166,5 +168,235 @@ describe("tier 1: the archive against its manifest, at open", () => {
     const zip = await repack([...entries, { path: "evil.jpg", data: "X" }]);
     const file = new File([zip], "tour.zip", { type: "application/zip" });
     expect(await failureKind(openTourFile(file))).toBe("unlisted-file");
+  });
+});
+
+/** Serves real 206 slices of `bytes`; the range-less GET (the warm
+ *  download) serves `fullBody`, which a test can make differ. */
+function rangeServer(
+  bytes: Uint8Array,
+  fullBody: Uint8Array = bytes,
+): FetchImpl {
+  return (_input, init) => {
+    const headers = { "content-length": String(bytes.length), etag: '"t1"' };
+    if ((init?.method ?? "GET") === "HEAD") {
+      return Promise.resolve(new Response(null, { status: 200, headers }));
+    }
+    const range = new Headers(init?.headers).get("range");
+    if (range === null) {
+      return Promise.resolve(
+        new Response(fullBody.slice(), { status: 200, headers }),
+      );
+    }
+    const m = /^bytes=(\d+)-(\d+)$/.exec(range)!;
+    const [start, end] = [Number(m[1]), Number(m[2])];
+    const slice = bytes.slice(start, Math.min(end + 1, bytes.length));
+    return Promise.resolve(
+      new Response(slice, {
+        status: 206,
+        headers: {
+          ...headers,
+          "content-range": `bytes ${String(start)}-${String(start + slice.length - 1)}/${String(bytes.length)}`,
+        },
+      }),
+    );
+  };
+}
+
+/** The fixture with one entry's bytes replaced by SAME-LENGTH bytes: the
+ *  names and sizes still match (tier 1 passes), the hash does not. */
+async function tampered(
+  path: string,
+  data: string,
+  files: Record<string, string> = FILES,
+): Promise<Blob> {
+  const { entries } = await buildListedTourFixture(files);
+  return writeStoreZip(
+    entries.map((e) => (e.path === path ? { ...e, data } : e)),
+    "test",
+  );
+}
+
+describe("tier 2: every entry read is hashed", () => {
+  it("a read whose bytes changed fails, is reported once, and every later read fails too", async () => {
+    const zip = await tampered("content/gate.jpg", "JPEGDATB");
+    const reported: string[] = [];
+    const session = await openTourSession("https://host/t.zip", {
+      fetchImpl: rangeServer(await bytesOf(zip)),
+      onIntegrityFailure: (err, s) => {
+        reported.push(err.kind);
+        expect(s).toBe(session);
+      },
+    });
+    // Tier 1 passed: names and sizes match.
+    expect(session.integrity.kind).toBe("listed");
+    expect(await failureKind(session.loadEntry("content/gate.jpg"))).toBe(
+      "hash-mismatch",
+    );
+    expect(reported).toEqual(["hash-mismatch"]);
+    expect(session.integrityFailure()?.kind).toBe("hash-mismatch");
+    // An honest entry, read after the failure, is not shown either.
+    expect(await failureKind(session.loadEntryText("tour.json"))).toBe(
+      "hash-mismatch",
+    );
+    expect(await failureKind(session.readWholeArchive())).toBe("hash-mismatch");
+    expect(reported).toHaveLength(1);
+    await session.close();
+  });
+
+  it("honest entries read through unchanged", async () => {
+    const { zip } = await buildListedTourFixture(FILES);
+    const session = await openTourSession("https://host/t.zip", {
+      fetchImpl: rangeServer(await bytesOf(zip)),
+    });
+    await expect(
+      session.loadEntry("content/gate.jpg").then((b) => b.text()),
+    ).resolves.toBe("JPEGDATA");
+    expect(session.integrityFailure()).toBeNull();
+    await session.close();
+  });
+
+  it("any single flipped byte of an entry fails its read (property)", async () => {
+    const content = "0123456789abcdefghij";
+    const files = { ...FILES, "content/gate.jpg": content };
+    await fc.assert(
+      fc.asyncProperty(
+        fc.nat({ max: content.length - 1 }),
+        fc.constantFrom("~", "#", "Z"),
+        async (at, replacement) => {
+          fc.pre(content[at] !== replacement);
+          const changed = `${content.slice(0, at)}${replacement}${content.slice(at + 1)}`;
+          const zip = await tampered("content/gate.jpg", changed, files);
+          const session = await openTourSession("https://host/t.zip", {
+            fetchImpl: rangeServer(await bytesOf(zip)),
+          });
+          expect(await failureKind(session.loadEntry("content/gate.jpg"))).toBe(
+            "hash-mismatch",
+          );
+          await session.close();
+        },
+      ),
+      { numRuns: 20 },
+    );
+  });
+
+  it("hashes the recording's action entries too", async () => {
+    const action = JSON.stringify({ type: "gps", t: 1 });
+    const files = { ...FILES, "actions/000001.json": action };
+    const zip = await tampered(
+      "actions/000001.json",
+      action.replace("1}", "2}"),
+      files,
+    );
+    const session = await openTourSession("https://host/t.zip", {
+      fetchImpl: rangeServer(await bytesOf(zip)),
+    });
+    expect(await failureKind(session.loadRecordingActions())).toBe(
+      "hash-mismatch",
+    );
+    await session.close();
+  });
+});
+
+describe("tier 3: the whole archive, once it is on the device", () => {
+  it("checks the warm copy and caches it when it matches", async () => {
+    const { zip } = await buildListedTourFixture(FILES);
+    const cacheStore = new InMemoryLocalCacheStore();
+    const session = await openTourSession("https://host/t.zip", {
+      fetchImpl: rangeServer(await bytesOf(zip)),
+      cacheStore,
+    });
+    await expect(session.wholeArchiveCheck).resolves.toBe("checked");
+    await expect(cacheStore.get(session.archive.url)).resolves.toBeDefined();
+    await session.close();
+  });
+
+  it("a warm copy that does not match fails LATE, is never cached, and stops every read", async () => {
+    const good = await bytesOf((await buildListedTourFixture(FILES)).zip);
+    const bad = await bytesOf(await tampered("content/gate.jpg", "JPEGDATB"));
+    const cacheStore = new InMemoryLocalCacheStore();
+    const reported: string[] = [];
+    const session = await openTourSession("https://host/t.zip", {
+      fetchImpl: rangeServer(good, bad),
+      cacheStore,
+      onIntegrityFailure: (err) => reported.push(err.kind),
+    });
+    await expect(session.wholeArchiveCheck).resolves.toBe("failed");
+    expect(reported).toEqual(["hash-mismatch"]);
+    await expect(cacheStore.get(session.archive.url)).resolves.toBeUndefined();
+    expect(await failureKind(session.loadEntryText("tour.json"))).toBe(
+      "hash-mismatch",
+    );
+    await session.close();
+  });
+
+  it("an archive downloaded whole at open is checked before it opens, and never cached when it fails", async () => {
+    const bad = await bytesOf(await tampered("content/gate.jpg", "JPEGDATB"));
+    const cacheStore = new InMemoryLocalCacheStore();
+    // A host that ignores Range: the open downloads the whole body.
+    expect(
+      await failureKind(
+        openTourSession("https://host/t.zip", {
+          fetchImpl: server(bad),
+          cacheStore,
+        }),
+      ),
+    ).toBe("hash-mismatch");
+    await expect(cacheStore.get("https://host/t.zip")).resolves.toBeUndefined();
+  });
+
+  it("re-checks a SAVED copy in the background and drops it when it fails", async () => {
+    const bad = await tampered("content/gate.jpg", "JPEGDATB");
+    const cacheStore = new InMemoryLocalCacheStore();
+    // A copy saved before K1 existed (no check ran when it was stored).
+    await cacheStore.put("https://host/t.zip", {
+      blob: bad,
+      validators: { etag: '"t1"' },
+    });
+    const reported: string[] = [];
+    const session = await openTourSession("https://host/t.zip", {
+      fetchImpl: rangeServer(await bytesOf(bad)),
+      cacheStore,
+      onIntegrityFailure: (err) => reported.push(err.kind),
+    });
+    expect(session.archive.origin).toBe("cache");
+    await expect(session.wholeArchiveCheck).resolves.toBe("failed");
+    expect(reported).toEqual(["hash-mismatch"]);
+    await vi.waitFor(async () => {
+      await expect(
+        cacheStore.get("https://host/t.zip"),
+      ).resolves.toBeUndefined();
+    });
+    await session.close();
+  });
+
+  it("checks a tour opened from a file as a whole", async () => {
+    const bad = await tampered("content/gate.jpg", "JPEGDATB");
+    const reported: string[] = [];
+    const session = await openTourFile(
+      new File([bad], "tour.zip", { type: "application/zip" }),
+      { onIntegrityFailure: (err) => reported.push(err.kind) },
+    );
+    await expect(session.wholeArchiveCheck).resolves.toBe("failed");
+    expect(reported).toEqual(["hash-mismatch"]);
+    await session.close();
+  });
+
+  it("a tour without a manifest: checked with a cache (nothing to find), not checked without one", async () => {
+    const zip = await writeStoreZip(
+      Object.entries(FILES).map(([path, data]) => ({ path, data })),
+      "test",
+    );
+    const cached = await openTourSession("https://host/t.zip", {
+      fetchImpl: rangeServer(await bytesOf(zip)),
+      cacheStore: new InMemoryLocalCacheStore(),
+    });
+    await expect(cached.wholeArchiveCheck).resolves.toBe("checked");
+    await cached.close();
+    const uncached = await openTourSession("https://host/t.zip", {
+      fetchImpl: rangeServer(await bytesOf(zip)),
+    });
+    await expect(uncached.wholeArchiveCheck).resolves.toBe("not-checked");
+    await uncached.close();
   });
 });

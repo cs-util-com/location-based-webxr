@@ -14,7 +14,10 @@ import {
 import { resolveQrPayload } from "gps-plus-slam-app-framework/utils/qr-payload/qr-launch-dispatch";
 
 import { DEFAULT_ASSET_PREFIX } from "./code-tour.js";
+import type { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
+
 import {
+  describeIntegrityError,
   describeOpenError,
   OPEN_FILE_ADVICE_LABEL,
   offersFileOpen,
@@ -253,6 +256,34 @@ export function wireArchiveOpen(deps: {
     { button: dom.openFileAdviceButton, idle: OPEN_FILE_ADVICE_LABEL },
   ];
 
+  /**
+   * A LATE integrity failure (tour kit plan K1, §8 D3): an entry read, or
+   * the whole archive once it arrived, does not match the list the tour
+   * opened with. The tour's content is removed - in AR too, through the
+   * same teardown a tour switch uses - and the visitor is told why, on the
+   * page and in the AR status line (the error box is outside the overlay).
+   * The session already dropped its cached copy and refuses every read.
+   */
+  function onIntegrityFailure(
+    err: TourIntegrityError,
+    failed: TourSession,
+  ): void {
+    if (ctx.session !== failed) return; // closed or superseded: nothing shown
+    void teardownSession().then(() => {
+      const message = `${describeIntegrityError(err)} Its content was removed.`;
+      dom.errorBox.textContent = message;
+      ctx.contentError = message;
+      hooks.renderArStatus();
+    });
+  }
+
+  /** A late failure the session found before the page held it (its
+   *  report went nowhere then): handled now, through the same teardown. */
+  function reportEarlyFailure(opened: TourSession): void {
+    const early = opened.integrityFailure();
+    if (early !== null) onIntegrityFailure(early, opened);
+  }
+
   /** The session a source opens; a file has its own reader (no network,
    *  no cache: the bytes are already on the device). */
   function openSession(source: TourSource): Promise<TourSession> {
@@ -260,11 +291,12 @@ export function wireArchiveOpen(deps: {
       renderStats();
     };
     return source.kind === "file"
-      ? openTourFile(source.file)
+      ? openTourFile(source.file, { onIntegrityFailure })
       : openTourSession(source.url, {
           ...(cacheStore !== undefined ? { cacheStore } : {}),
           corsProxyBaseUrl,
           onStats,
+          onIntegrityFailure,
         });
   }
 
@@ -394,6 +426,7 @@ export function wireArchiveOpen(deps: {
           // its own line names the failure inside the overlay.
           hooks.reconsiderScanGate("unavailable");
         });
+      reportEarlyFailure(opened);
       return { kind: "opened" };
     } catch (err) {
       if (generation !== ctx.openGeneration) return { kind: "superseded" };

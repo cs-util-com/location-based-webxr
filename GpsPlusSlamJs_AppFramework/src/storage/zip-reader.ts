@@ -143,6 +143,18 @@ function budgetFor(
       });
 }
 
+/** The caller's entry reader, or the capped default under `allowance`. */
+function actionTextReader(
+  readText:
+    ((entry: FileEntry, maxBytes: number) => Promise<string>) | undefined,
+  allowance: DecompressionBudget
+): (entry: FileEntry, maxBytes: number) => Promise<string> {
+  return (
+    readText ??
+    ((entry, maxBytes) => readZipEntryText(entry, allowance, maxBytes))
+  );
+}
+
 /**
  * Load all recorded Redux actions from a zip file.
  *
@@ -158,16 +170,22 @@ function budgetFor(
  * @param budget - The archive's decompression allowance (`capped-zip-entries`); a
  *   caller reading several parts of one archive passes one budget to all of them.
  *   Defaults to one sized from the archive (`DecompressionBudget.forArchive`).
+ * @param readText - Reads one action entry's text, given the per-file cap.
+ *   Defaults to `readZipEntryText` under `budget`. A caller that must CHECK
+ *   every entry it reads (the Tour Viewer hashes each entry of a signed tour,
+ *   tour kit plan K1) passes its own reader; its rejection is the parse's.
  * @returns Array of action entries sorted by filename
  * @throws ArchiveLimitError when the inflated bytes pass a cap
  */
 export async function loadActionsFromZip(
   data: ZipSource,
   maxFileSize: number = MAX_ACTION_FILE_SIZE,
-  budget?: DecompressionBudget
+  budget?: DecompressionBudget,
+  readText?: (entry: FileEntry, maxBytes: number) => Promise<string>
 ): Promise<ZipActionEntry[]> {
   const entries = await readZipEntries(data);
   const allowance = budgetFor(data, budget);
+  const read = actionTextReader(readText, allowance);
 
   // Filter to action JSON files only
   const actionEntries = entries
@@ -197,7 +215,7 @@ export async function loadActionsFromZip(
             'The file will still be processed.'
         );
       }
-      const text = await readZipEntryText(entry, allowance, maxFileSize);
+      const text = await read(entry, maxFileSize);
       let action: RecordedAction;
       try {
         const parsed: unknown = JSON.parse(text);

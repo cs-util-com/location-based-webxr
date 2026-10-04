@@ -13,6 +13,7 @@
  */
 
 import { ZipReader, type FileEntry } from "@zip.js/zip.js";
+import { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
   ArchiveLimitError,
   ByteSourceReader,
@@ -23,7 +24,6 @@ import {
   listZipEntriesCapped,
   loadActionsFromZip,
   readZipEntryBlob,
-  readZipEntryText,
   type ArchiveLimits,
   openRemoteArchive,
   type ArchiveReadEvent,
@@ -50,7 +50,14 @@ import {
 
 import { fileNameFromContentDisposition } from "./content-disposition.js";
 import { tourFileKey } from "./tour-file-key.js";
-import { openTourIntegrity, type TourIntegrity } from "./tour-integrity.js";
+import {
+  integrityIdentity,
+  openTourIntegrity,
+  TourIntegrityGuard,
+  WholeArchiveCheck,
+  type TourIntegrity,
+  type WholeArchiveOutcome,
+} from "./tour-integrity.js";
 
 /** One archive entry as the gallery sees it (reached via `TourSession.entries`
  *  — not separately exported; knip counts a standalone export as dead). */
@@ -84,6 +91,14 @@ export interface OpenTourOptions {
   /** Overrides of the zip-bomb caps (`DEFAULT_ARCHIVE_LIMITS`), for tests;
    *  the page always opens with the defaults (tour kit plan K0). */
   limits?: Partial<ArchiveLimits>;
+  /**
+   * A LATE integrity failure (tour kit plan K1, §8 D3): an entry read
+   * (tier 2) or the whole archive (tier 3) does not match the manifest the
+   * tour opened with. By then the tour may be on screen, in AR: the page
+   * removes its content. The session has already latched the failure
+   * (every later read rejects) and dropped any cached copy.
+   */
+  onIntegrityFailure?: (err: TourIntegrityError, session: TourSession) => void;
 }
 
 export interface TourSession {
@@ -121,6 +136,17 @@ export interface TourSession {
    * its manifest never becomes a session: the open rejects.
    */
   readonly integrity: TourIntegrity;
+  /**
+   * Tier 3's outcome: `checked` once a complete copy (the warm download,
+   * an eager download, a saved copy, the file) was hashed as a whole and
+   * carried the same manifest; `failed` on a late failure; `not-checked`
+   * when no complete copy came (no cache, an aborted warm), which leaves
+   * tier 2 as the only check.
+   */
+  readonly wholeArchiveCheck: Promise<WholeArchiveOutcome>;
+  /** The late failure, once tier 2 or 3 found one; every read then rejects
+   *  with it. */
+  integrityFailure(): TourIntegrityError | null;
   stats(): Readonly<StreamStats>;
   /** Decompress one entry to a Blob (images get their MIME type). */
   loadEntry(filename: string): Promise<Blob>;
@@ -319,9 +345,14 @@ export async function openTourSession(
     ...DEFAULT_ARCHIVE_LIMITS,
     ...options.limits,
   };
-  const first = await openArchive(url, recording, onRead, false, limits);
+  const late = options.onIntegrityFailure;
+  let whole = new WholeArchiveCheck(limits);
+  const first = await openArchive(url, recording, onRead, false, limits, whole);
   try {
-    return await buildSession(first, stats, options.cacheStore, named, limits);
+    return await buildSession(first, stats, options.cacheStore, named, limits, {
+      whole,
+      ...(late === undefined ? {} : { onIntegrityFailure: late }),
+    });
   } catch (err) {
     // Whatever failed to parse must not stay cached and must not keep
     // downloading: dispose (aborts the session's downloads), then evict —
@@ -333,7 +364,15 @@ export async function openTourSession(
     // Only a cache-served archive earns the retry: a remote parse failure
     // means the hosted file itself is broken.
     if (first.origin !== "cache") throw err;
-    const second = await openArchive(url, recording, onRead, true, limits);
+    whole = new WholeArchiveCheck(limits);
+    const second = await openArchive(
+      url,
+      recording,
+      onRead,
+      true,
+      limits,
+      whole,
+    );
     try {
       return await buildSession(
         second,
@@ -341,6 +380,10 @@ export async function openTourSession(
         options.cacheStore,
         named,
         limits,
+        {
+          whole,
+          ...(late === undefined ? {} : { onIntegrityFailure: late }),
+        },
       );
     } catch (retryErr) {
       second.dispose();
@@ -366,7 +409,7 @@ export async function openTourSession(
  */
 export async function openTourFile(
   file: File,
-  options: Pick<OpenTourOptions, "limits"> = {},
+  options: Pick<OpenTourOptions, "limits" | "onIntegrityFailure"> = {},
 ): Promise<TourSession> {
   const limits: ArchiveLimits = {
     ...DEFAULT_ARCHIVE_LIMITS,
@@ -408,7 +451,13 @@ export async function openTourFile(
     undefined,
     { hostedFileName: () => file.name },
     limits,
-    file,
+    {
+      localFile: file,
+      whole: new WholeArchiveCheck(limits),
+      ...(options.onIntegrityFailure === undefined
+        ? {}
+        : { onIntegrityFailure: options.onIntegrityFailure }),
+    },
   );
 }
 
@@ -443,6 +492,7 @@ function openArchive(
   onRead: (event: ArchiveReadEvent) => void,
   skipCache: boolean,
   limits: ArchiveLimits,
+  whole: WholeArchiveCheck,
 ): Promise<OpenedArchive> {
   return openRemoteArchive(url, {
     maxArchiveBytes: limits.maxArchiveBytes,
@@ -460,6 +510,9 @@ function openArchive(
       : {}),
     onRead,
     skipCache,
+    // Tier 3 (tour kit plan K1): every complete copy is checked as a whole
+    // before it backs the session or is cached.
+    acceptLocalCopy: whole.accept,
   });
 }
 
@@ -469,9 +522,14 @@ async function buildSession(
   cacheStore: LocalCacheStore | undefined,
   named: Pick<TourSession, "hostedFileName">,
   limits: ArchiveLimits,
-  /** The whole archive when it is a file on this device (`openTourFile`). */
-  localFile?: Blob,
+  checks: {
+    /** The whole archive when it is a file on this device (`openTourFile`). */
+    readonly localFile?: Blob;
+    readonly whole: WholeArchiveCheck;
+    readonly onIntegrityFailure?: OpenTourOptions["onIntegrityFailure"];
+  },
 ): Promise<TourSession> {
+  const { localFile, whole } = checks;
   // The tour is untrusted input (tour kit plan K0): no single read may pass
   // the directory cap (zip.js reads a declared directory in one piece, K0
   // milestone review R4), the directory walk stops at its entry cap, and
@@ -498,8 +556,29 @@ async function buildSession(
         ).arrayBuffer(),
       ),
   );
-  const readText = (entry: FileEntry): Promise<string> =>
-    readZipEntryText(entry, budget, limits.maxTextEntryBytes);
+  // Tiers 2 and 3 report through one latch: the copy is dropped from the
+  // cache, and the page is told (it removes the tour's content).
+  const guard = new TourIntegrityGuard(integrity, (err) => {
+    void archive.evict();
+    checks.onIntegrityFailure?.(err, session);
+  });
+  /** Every entry read: capped (K0), then hashed against the manifest
+   *  (tier 2) - one path, so no read can skip the check. */
+  const readBlob = async (
+    entry: FileEntry,
+    mimeType: string,
+    cap?: number,
+  ): Promise<Blob> => {
+    guard.assertIntact();
+    return guard.checked(
+      entry.filename,
+      await readZipEntryBlob(entry, budget, mimeType, cap),
+    );
+  };
+  const readText = async (
+    entry: FileEntry,
+    cap: number = limits.maxTextEntryBytes,
+  ): Promise<string> => (await readBlob(entry, "text/plain", cap)).text();
   const byName = new Map<string, FileEntry>();
   const entries: TourEntry[] = [];
   const entryNamed = (filename: string): FileEntry => {
@@ -539,13 +618,14 @@ async function buildSession(
     hostedFileName: named.hostedFileName,
     budget,
     integrity,
+    wholeArchiveCheck: whole.done,
+    integrityFailure: () => guard.failure,
     stats: () => ({ ...stats }),
     loadEntry: async (filename) =>
       // The media allowlist types the Blob (tour kit plan K0); anything
       // else is plain bytes, never a type a browser renders as a page.
-      readZipEntryBlob(
+      readBlob(
         entryNamed(filename),
-        budget,
         tourMediaTypeOfEntry(filename)?.mime ?? "application/octet-stream",
       ),
     loadEntryText: async (filename) => readText(entryNamed(filename)),
@@ -571,12 +651,15 @@ async function buildSession(
           new ByteSourceReader(archive.source, limits.maxDirectoryBytes),
           undefined,
           budget,
+          // The session's own read, so every action entry is hashed too.
+          (entry, maxBytes) => readText(entry, maxBytes),
         );
         return loaded.map((e) => e.action);
       } catch (err) {
         // A cap's refusal is not "no recording": it reaches the visitor
         // through the join's error line (K0 milestone review R9).
         if (err instanceof ArchiveLimitError) throw err;
+        if (err instanceof TourIntegrityError) throw err;
         return null; // corrupt stream → the join declines, the tour works
       }
     },
@@ -595,7 +678,8 @@ async function buildSession(
           odomCoordVersion?: unknown;
         };
       } catch (err) {
-        if (err instanceof ArchiveLimitError) throw err; // as above (R9)
+        if (err instanceof ArchiveLimitError) throw err;
+        if (err instanceof TourIntegrityError) throw err; // as above (R9)
         return null;
       }
     },
@@ -629,6 +713,7 @@ async function buildSession(
         parseTourManifest,
       ),
     readWholeArchive: async () => {
+      guard.assertIntact();
       // A file IS the whole archive - no copy, no slices.
       if (localFile !== undefined) return localFile;
       // `warmed` resolves false without a store or after an abort; the
@@ -647,5 +732,41 @@ async function buildSession(
       await reader.close();
     },
   };
+  startWholeCheck(session, whole, guard, cacheStore, localFile);
   return session;
+}
+
+/**
+ * Tier 3's start for a copy the open did not hand to `acceptLocalCopy`:
+ * the file itself, or a SAVED copy (it may predate K1, so it is checked
+ * again, in the background - the tour is already showing). A ranged
+ * session's warm copy is checked inside the warm; without one, tier 3
+ * never runs.
+ */
+function startWholeCheck(
+  session: TourSession,
+  whole: WholeArchiveCheck,
+  guard: TourIntegrityGuard,
+  cacheStore: LocalCacheStore | undefined,
+  localFile: Blob | undefined,
+): void {
+  whole.bind(integrityIdentity(session.integrity), (err) => guard.fail(err));
+  const { archive } = session;
+  void archive.warmed.then(async (warmed) => {
+    if (!warmed) {
+      whole.notChecked();
+      return;
+    }
+    const local =
+      localFile ??
+      (archive.origin === "cache"
+        ? (await cacheStore?.get(archive.url))?.blob
+        : undefined);
+    // A network open that warmed already offered its copy to the check.
+    if (local === undefined || session.integrity.kind === "none") {
+      if (archive.origin === "cache") whole.notChecked();
+      return;
+    }
+    await whole.accept(local).catch(() => undefined);
+  });
 }

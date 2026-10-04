@@ -22,11 +22,11 @@ Opens a ZIP file and returns all entries (directories and files). Uses `@zip.js/
 - **Output:** Array of `Entry` objects from `@zip.js/zip.js`
 - **Errors:** Throws if the data is not a valid ZIP file
 
-### `loadActionsFromZip(data: ZipSource, maxFileSize?: number, budget?: DecompressionBudget): Promise<ZipActionEntry[]>`
+### `loadActionsFromZip(data: ZipSource, maxFileSize?: number, budget?: DecompressionBudget, readText?: (entry, maxBytes) => Promise<string>): Promise<ZipActionEntry[]>`
 
 Extracts all action JSON files from the `actions/` directory in the ZIP, parses them, and returns them sorted by filename — chronological because `formatActionFilename` zero-pads the index to six digits (see the invariant below).
 
-- **Input:** ZIP file bytes as `Uint8Array`; optional `maxFileSize` (defaults to `MAX_ACTION_FILE_SIZE` = 1 MB)
+- **Input:** ZIP file bytes as `Uint8Array`; optional `maxFileSize` (defaults to `MAX_ACTION_FILE_SIZE` = 1 MB); optional `readText`, which reads each action entry in place of `readZipEntryText` under `budget` and is given `maxFileSize` - the Tour Viewer passes its own reader so every action entry of a signed tour is hashed (tour kit plan K1, tier 2); its rejection is the parse's
 - **Output:** Array of `ZipActionEntry` objects, each containing:
   - `index` — 1-based numeric index from zero-padded filename (e.g., 1 from `000001.json`). Returns `NaN` for non-numeric filenames.
   - `filename` — original path within the ZIP (e.g., `actions/000001.json`)

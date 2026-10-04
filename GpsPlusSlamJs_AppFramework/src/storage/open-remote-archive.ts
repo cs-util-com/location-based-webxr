@@ -73,6 +73,19 @@ export interface OpenRemoteArchiveOptions {
    *  with cause `'too-large'`, before the body is fetched when the size is
    *  announced. */
   maxArchiveBytes?: number;
+  /**
+   * Called with every COMPLETE copy of the archive this module produces -
+   * the warm download, a range-ignore recovery, an eager or a full
+   * download - before that copy backs the session or reaches the store. A
+   * rejection keeps it out of both: the warm leaves the session remote
+   * (`warmed` false), a recovery fails its read, an eager or full download
+   * fails the open with the rejection. A copy served FROM the store is not
+   * passed here: it was accepted when it was stored, and a consumer that
+   * needs to re-check an older copy does so itself. The Tour Viewer checks a
+   * signed tour as a whole here, so a copy that fails is never cached (tour
+   * kit plan K1, §8 D3).
+   */
+  acceptLocalCopy?: (blob: Blob) => Promise<void>;
   /** Whether the browser reports a network (`navigator.onLine`), asked only
    *  after a fetch rejected before any HTTP status: false turns cause
    *  `'cors'` into `'offline'`. Injected for tests. */
@@ -229,16 +242,14 @@ function openPerDecision(
     case 'ranges':
       return openRanged(url, decision.size, probe.validators, options, store);
     case 'eager-local':
-      return openLocal(
+      return openAccepted(
         url,
         {
           blob: new Blob([decision.body as BlobPart]),
           validators: probe.validators,
         },
         store,
-        options,
-        'network',
-        { persist: true }
+        options
       );
     case 'full-download':
       return openFullDownload(url, probe.validators, fetchImpl, store, options);
@@ -279,6 +290,18 @@ function cachedCopyMatchesLive(
     return cv.lastModified === lv.lastModified;
   }
   return live.size === null || live.size === cached.blob.size;
+}
+
+/** A whole archive downloaded at open (eager or full): offered to
+ *  `acceptLocalCopy` first, then served and persisted. */
+async function openAccepted(
+  url: string,
+  entry: CachedArchive,
+  store: LocalCacheStore | undefined,
+  options: OpenRemoteArchiveOptions
+): Promise<OpenedArchive> {
+  await options.acceptLocalCopy?.(entry.blob);
+  return openLocal(url, entry, store, options, 'network', { persist: true });
 }
 
 /** Serve a complete local blob; persist it first when asked to. */
@@ -386,6 +409,7 @@ function openRanged(
         `range-ignore recovery downloaded ${blob.size} bytes, expected ${size} — the file changed mid-session`
       );
     }
+    await options.acceptLocalCopy?.(blob);
     const local = instrument(new LocalCacheByteSource(blob), 'cache', options);
     if (switchable.switchTo(local) && store !== undefined && !evicted) {
       await requestPersistentStorage();
@@ -507,6 +531,10 @@ async function warmToCache(
     // stats headline shows "132 KB fetched · serving from cache" after the
     // full file crossed the wire (PR #359 review).
     options.onRead?.({ origin: 'network', offset: 0, length: blob.size });
+    // The switch refuses another size; only a copy it could take is offered
+    // for acceptance (a refusal throws into the catch below: stay remote).
+    if (blob.size !== switchable.size) return false;
+    await options.acceptLocalCopy?.(blob);
     const local = instrument(new LocalCacheByteSource(blob), 'cache', options);
     if (!switchable.switchTo(local)) return false;
     if (isEvicted()) return true; // swapped local, but never repersist
@@ -545,13 +573,11 @@ async function openFullDownload(
   ).catch((err: unknown) => {
     throw err instanceof ArchiveLimitError ? tooLarge(url, err) : err;
   });
-  return openLocal(
+  return openAccepted(
     url,
     { blob, ...(validators !== undefined ? { validators } : {}) },
     store,
-    options,
-    'network',
-    { persist: true }
+    options
   );
 }
 
