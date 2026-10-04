@@ -55,6 +55,15 @@
 
 ### Fixed
 
+- **Cloud shadows on the ground are the same from every viewpoint**
+  (owner bug report 2026-09-28): with a low sun a shadow weighted by how
+  much of the cloud the camera's sky draws vanished, and came back when
+  the camera moved toward the sun. `CloudShadow` now shades a ground point
+  by its cloud column toward the light alone. `CloudShadowUniforms` no
+  longer has `atmShadowCloudAnchored` and `atmShadowCloudFarFadeM`, and a
+  `CloudShadowSource` no longer needs `atmCloudAnchored` or
+  `atmCloudFarFadeM`.
+
 - **`mintQrAnchorFromSightings` no longer mints an arbitrary heading, or a
   poor position, when a recording starts at the code.** Each sighting used
   to be composed through the alignment as it stood at that sighting (plan
@@ -130,6 +139,20 @@
   alignment re-basing, QR frame resets, loss warnings).
 
 ### Added
+
+- `SkyAtmosphere.cloudShadowToward(point)`: the share of the sun reaching
+  a world point through the clouds as `CloudShadow` shades the ground (the
+  column toward the sun alone, the same from every viewpoint), the CPU twin
+  of the cloud shadows.
+- `utils/percentile`: `nearestRank`, `nearestRankPercentile` and
+  `percentileOfSorted`, the framework's one nearest-rank percentile. A
+  decimal `p` gets its exact rank (`0.07` of 100 values is rank 7, not 8).
+- `utils/frame-times`: `createFrameTimes(capacity)`, the live frame-time
+  ring with p50 / p95 / p99 / max (moved from OsmDemo).
+- The frame recorder's pure parts, read from source by the design
+  system's globe lab (not package entries): `utils/frame-histogram`,
+  `utils/frame-attribution`, `utils/frame-target`, `utils/frame-run` and
+  `utils/frame-run-report`.
 
 - **`guardSlidersIn(root)`** in `utils/slider-scroll-guard`: one install per
   page (`guardSlidersIn(document)`) guards every range input, including ones
@@ -472,6 +495,9 @@ source }` instead of the corners alone (unreleased API).
   independent of the library that wrote it.
 
 ### Changed
+
+- `ar/sun-check` uses the shared percentile and median helpers; its
+  results are unchanged.
 
 - **`OpfsOsmBlobStore` reports failures through an injected `warn` and no
   longer imports the framework logger** (`osm-bridge`). The constructor
