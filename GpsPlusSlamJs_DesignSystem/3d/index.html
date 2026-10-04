@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Look-dev: sky and atmosphere</title>
+    <link rel="stylesheet" href="../design.css" />
+    <link rel="stylesheet" href="./lookdev.css" />
+    <!-- three comes from the framework's own lockfile-pinned copy, served by
+         serve.mjs; the deploy rewrites these to the same pinned version. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/vendor/three/build/three.module.js",
+          "three/addons/": "/vendor/three/examples/jsm/",
+          "three/examples/jsm/": "/vendor/three/examples/jsm/"
+        }
+      }
+    </script>
+    <script type="module" src="./lookdev.js"></script>
+    <script type="module" src="./panel.js"></script>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <aside class="lookdev-panel plate col" aria-label="Look controls">
+      <button
+        type="button"
+        class="lookdev-head"
+        aria-expanded="true"
+        aria-controls="lookdev-body"
+      >
+        <span class="lookdev-title">Sky and atmosphere</span>
+        <span class="lookdev-chevron" aria-hidden="true"></span>
+      </button>
+      <span class="hint lookdev-error" data-error-box></span>
+      <div id="lookdev-body" class="lookdev-body col">
+        <details class="lookdev-section" data-section="look" open>
+          <summary>Look</summary>
+          <div class="lookdev-section-body col">
+            <div class="lookdev-presets" data-presets></div>
+            <span class="select-wrap">
+              <select id="tone" class="select" aria-label="Tone mapping">
+                <option value="neutral">Khronos Neutral</option>
+                <option value="agx">AgX</option>
+                <option value="aces">ACES Filmic</option>
+              </select>
+            </span>
+            <span class="select-wrap">
+              <select id="tier" class="select" aria-label="Cost tier">
+                <option value="phone">Phone tier (no bloom)</option>
+                <option value="desktop">Desktop tier (bloom)</option>
+              </select>
+            </span>
+            <label class="switch">
+              <input id="ao" type="checkbox" />
+              <span class="switch-track"></span>
+              Ambient occlusion (creases)
+            </label>
+            <div class="lookdev-ao-tier lookdev-field" data-ao-tier>
+              <span class="hint"
+                >Ambient occlusion draws on the Desktop tier only.</span
+              >
+              <button type="button" class="btn" id="ao-desktop">
+                Switch to the Desktop tier
+              </button>
+            </div>
+          </div>
+        </details>
+        <details class="lookdev-section" data-section="sun" open>
+          <summary>Sun</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint">Sun elevation</span>
+              <input
+                id="elevation"
+                class="slider"
+                type="range"
+                min="-10"
+                max="70"
+                step="0.5"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint">Sun azimuth</span>
+              <input
+                id="azimuth"
+                class="slider"
+                type="range"
+                min="0"
+                max="360"
+                step="1"
+              />
+            </label>
+          </div>
+        </details>
+        <details class="lookdev-section" data-section="atmosphere" open>
+          <summary>Atmosphere</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint">Visibility</span>
+              <input
+                id="visibility"
+                class="slider"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint">Exposure compensation (EV)</span>
+              <input
+                id="exposure"
+                class="slider"
+                type="range"
+                min="-4"
+                max="4"
+                step="0.1"
+              />
+            </label>
+            <label class="switch">
+              <input id="haze" type="checkbox" checked />
+              <span class="switch-track"></span>
+              Haze (sky-matched aerial perspective)
+            </label>
+          </div>
+        </details>
+        <details class="lookdev-section" data-section="water" open>
+          <summary>Water</summary>
+          <div class="lookdev-section-body col">
+            <span class="select-wrap">
+              <select id="water-set" class="select" aria-label="Water wave set">
+                <option value="C0">
+                  Water: today's six waves (repeats 1.00)
+                </option>
+                <option value="C1">
+                  Water C1: today's six waves + warp (repeats 0.86)
+                </option>
+                <option value="P50">
+                  Water P50: phone, 12 waves + wind patches (repeats 0.50)
+                </option>
+                <option value="P30">
+                  Water P30: phone, stronger wind patches (repeats 0.34)
+                </option>
+                <option value="D30">
+                  Water D30: desktop, 16 waves + wind patches (repeats 0.30)
+                </option>
+              </select>
+            </span>
+            <span class="hint"
+              >Repeats: how strongly the far water copies itself (1 = an exact
+              repeat). Judge on the lake view.</span
+            >
+            <label class="switch">
+              <input data-water-polish="waterRough" type="checkbox" />
+              <span class="switch-track"></span>
+              Far water turns to sheen (lost waves become roughness)
+            </label>
+            <label class="switch">
+              <input data-water-polish="waterSun" type="checkbox" />
+              <span class="switch-track"></span>
+              Sun glints as wide as the sun's disc
+            </label>
+            <label class="switch">
+              <input data-water-polish="waterFresnel" type="checkbox" />
+              <span class="switch-track"></span>
+              Rough water mirrors less at grazing angles
+            </label>
+            <label class="switch">
+              <input data-water-polish="waterTiles" type="checkbox" />
+              <span class="switch-track"></span>
+              Finest ripples do not repeat (second, rotated sample)
+            </label>
+            <label class="switch">
+              <input data-water-polish="waterGusts" type="checkbox" />
+              <span class="switch-track"></span>
+              Gusts: calm and ruffled patches moving with the wind
+            </label>
+            <label class="switch">
+              <input data-water-polish="waterBody" type="checkbox" />
+              <span class="switch-track"></span>
+              Water body lit from above, light through backlit crests
+            </label>
+            <span class="hint"
+              >Each switch is one trick on top of the wave set; judge each alone
+              against all off.</span
+            >
+          </div>
+        </details>
+        <details class="lookdev-section" data-section="clouds" open>
+          <summary>Clouds</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint">Cloud cover</span>
+              <input
+                id="clouds"
+                class="slider"
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+              />
+            </label>
+            <span class="select-wrap">
+              <select id="cloud-mode" class="select" aria-label="Cloud mode">
+                <option value="dome">Clouds on the sky (dome)</option>
+                <option value="sheet">Clouds to fly through (sheet)</option>
+                <option value="slab">Clouds as a thin volume (slab)</option>
+              </select>
+            </span>
+            <label class="switch">
+              <input id="sun-disc" type="checkbox" />
+              <span class="switch-track"></span>
+              Sun dims behind clouds
+            </label>
+            <label class="switch">
+              <input id="sun-aureole" type="checkbox" />
+              <span class="switch-track"></span>
+              Aureole (thin cloud glows around the sun)
+            </label>
+            <label class="switch">
+              <input id="sun-silver" type="checkbox" />
+              <span class="switch-track"></span>
+              Silver lining (thin backlit edges brighten)
+            </label>
+            <label class="switch">
+              <input id="cloud-shadows" type="checkbox" />
+              <span class="switch-track"></span>
+              Cloud shadows on the ground
+            </label>
+            <label class="switch">
+              <input id="sun-light-dim" type="checkbox" />
+              <span class="switch-track"></span>
+              Sun light dims under cloud (whole scene)
+            </label>
+            <label class="switch">
+              <input id="god-rays" type="checkbox" />
+              <span class="switch-track"></span>
+              God rays (light shafts around the sun)
+            </label>
+            <span class="hint"
+              >Judge with View: straight at the sun, and a cloud crossing it.
+              The aureole and the silver lining are drawn on the dome and the
+              slab clouds, not on the sheet. God rays need the sun on screen,
+              with buildings or clouds partly in front of it.</span
+            >
+          </div>
+        </details>
+        <details class="lookdev-section" data-section="view" open>
+          <summary>View and cost</summary>
+          <div class="lookdev-section-body col">
+            <span class="select-wrap">
+              <select id="camera-view" class="select" aria-label="View">
+                <option value="city">View: city</option>
+                <option value="sun">View: toward the sun</option>
+                <option value="atsun">View: straight at the sun</option>
+                <option value="antisun">View: away from the sun</option>
+                <option value="lake">View: lake</option>
+                <option value="aloft">
+                  View: just above the sheet (2.15 km)
+                </option>
+                <option value="inside">View: inside the clouds (2 km)</option>
+                <option value="above">View: above the clouds (3.2 km)</option>
+                <option value="catalog">View: the material catalog</option>
+              </select>
+            </span>
+            <span class="select-wrap">
+              <select id="city-fill" class="select" aria-label="City fill">
+                <option value="0@42">City: the block only</option>
+                <option value="2500@42">City: 2,500 buildings</option>
+                <option value="100000@42">
+                  City: the whole ring (about 9,500, 42 m lots)
+                </option>
+                <option value="100000@31">
+                  City: denser (about 17,500, 31 m lots)
+                </option>
+                <option value="100000@20">
+                  City: densest (about 42,000, 20 m lots)
+                </option>
+              </select>
+            </span>
+            <label class="switch">
+              <input id="varied" type="checkbox" />
+              <span class="switch-track"></span>
+              Varied city materials (from the catalog)
+            </label>
+            <span class="select-wrap">
+              <select
+                id="city-materials"
+                class="select"
+                aria-label="City material count"
+              >
+                <option value="4">City: 4 catalog materials</option>
+                <option value="8">City: 8 catalog materials</option>
+                <option value="12">City: 12 catalog materials</option>
+              </select>
+            </span>
+            <span class="select-wrap">
+              <select id="city-finish" class="select" aria-label="City finish">
+                <option value="mixed">
+                  Finish: mixed (each material's own)
+                </option>
+                <option value="shiny">Finish: all shiny (roughness 0)</option>
+                <option value="matte">Finish: all matte (roughness 1)</option>
+              </select>
+            </span>
+            <label class="switch">
+              <input id="shadows" type="checkbox" />
+              <span class="switch-track"></span>
+              Sun shadows (prototype)
+            </label>
+          </div>
+        </details>
+        <details class="lookdev-section" data-section="materials" open>
+          <summary>Materials</summary>
+          <div class="lookdev-section-body col">
+            <label class="switch">
+              <input id="catalog" type="checkbox" />
+              <span class="switch-track"></span>
+              Material catalog (labelled spheres)
+            </label>
+            <span class="hint"
+              >Pick View: the material catalog to judge the spheres close up.
+              Labels show for the nearest spheres.</span
+            >
+          </div>
+        </details>
+        <details class="lookdev-section" data-section="readout" open>
+          <summary>Readout</summary>
+          <div class="lookdev-section-body col">
+            <span class="hint" data-values></span>
+            <span class="hint" data-stats></span>
+          </div>
+        </details>
+      </div>
+    </aside>
+  </body>
+</html>

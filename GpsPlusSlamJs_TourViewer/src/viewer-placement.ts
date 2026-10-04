@@ -6,17 +6,29 @@
  * relocalize the session via budgeted synthetic GPS votes and REFINE the
  * alignment under the placed planes, and the ring around a code is the
  * fallback for a tour without a recording.
+ *
+ * A scanned code is also CHECKED after the scan (authoring plan
+ * 2026-09-28-0953 §3.6, D20, M5c; `moved-code-check.ts`): on each new device
+ * fix in the store. A code read as moved is VETOED - its keep-alive stops,
+ * every vote is taken back (`ViewerVoteSink.retractVotes`), so the content
+ * moves once to where GPS puts it; its later locks are ignored for the rest
+ * of the tour; the gate and the line say so; the viewing log records why.
  */
 
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
+import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
+import { createQrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import {
   recordGpsEvent,
   recordQrDetection,
   replayActions,
-  selectStableQrPose,
+  selectGpsPositions,
+  selectOdometryPositions,
+  selectQrFusedEntries,
   selectTrackingQuality,
   selectZeroReference,
+  type RecordGpsEventPayload,
 } from "gps-plus-slam-app-framework/state";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
@@ -31,7 +43,13 @@ import {
 import { renderTourObjects } from "./content-placement.js";
 import { placeCapturedImagePlanes, placeImagePlanes } from "./image-planes.js";
 import type { ViewerMode } from "./mode.js";
+import {
+  createMovedCodeChecks,
+  type MovedCodeChecks,
+  type MovedCodeVerdict,
+} from "./moved-code-check.js";
 import { describeOpenError } from "./open-errors.js";
+import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
 import {
   gateAllowsPlacement,
   isLockableLevel,
@@ -41,8 +59,11 @@ import {
 } from "./scan-gate.js";
 import {
   buildViewerControllerConfig,
+  createViewerKeepAlive,
   imagePlaneRingNue,
+  MAX_VOTED_LOCKS_PER_CODE,
 } from "./qr-viewer-mode.js";
+import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { TourViewerSeams } from "./seams.js";
 import { isPlacementReady } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
@@ -52,6 +73,8 @@ import type {
   TourViewerSession,
   TourViewerStore,
 } from "./tour-viewer-session.js";
+import { startEntryVoteSink } from "./viewer-vote-sink.js";
+import type { ViewingLog } from "./viewing-log.js";
 
 /** The display downscale for capture planes — the framework decoder's
  *  documented OOM mitigation (the recorder defaults to 2 for the same
@@ -67,6 +90,10 @@ export interface ViewerPlacement {
   /** Creates the viewer tracking controller for THIS AR entry; false when
    *  there is no detector (the session is plain AR - still placing photos). */
   startViewerPipeline: () => boolean;
+  /** Where the page's device GPS fixes go (`createGpsPositionHandler`'s
+   *  `recordFix`): with the code keep-alive holding, the fix and its ring
+   *  as ONE batch (D18); otherwise the plain `recordGpsEvent`. */
+  recordDeviceFix: (fix: RecordGpsEventPayload) => void;
   /** The ready-triggered placement; cheap enough to run on every dispatch. */
   tryPlaceTour: () => void;
   /** The session reached running, or a tour opened into a running
@@ -93,6 +120,14 @@ export function createViewerPlacement(deps: {
   /** The gate's escape button (inside the overlay). */
   escapeButton: HTMLButtonElement;
   hooks: TourViewerHooks;
+  /** The `?debug=1` viewer recording's `tourViewing/*` log (M1b); silent
+   *  while no recording runs. Absent: nothing is logged. */
+  viewingLog?: ViewingLog;
+  /** The page clock: the QR controller's detection times and the moment a
+   *  GPS fix ARRIVES, the one clock the keep-alive's hold runs on (M2b
+   *  review #4). Absent: `Date.now` - the controller's own default and
+   *  what the status line reads the hold with. */
+  now?: () => number;
 }): ViewerPlacement {
   const {
     ctx,
@@ -105,26 +140,59 @@ export function createViewerPlacement(deps: {
     hooks,
   } = deps;
   const authorMode = mode === "creator";
+  const now = deps.now ?? Date.now;
   /** Whether this session has a detector (set by startViewerPipeline). */
   let hasDetector = false;
 
-  function passGate(via: "code" | "skipped"): void {
+  /** Pass a scanning gate; `text`: the code whose voted lock passed it. */
+  function passGate(
+    via: "code" | "skipped" | "ignored",
+    text: string | null = null,
+  ): void {
     if (ctx.scanGate.kind !== "scanning") return;
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
     escapeButton.hidden = true;
     ctx.scanGate = { kind: "passed", via };
+    ctx.scanGateCodeText = via === "code" ? text : null;
     // Place first, render after: the line describes the placement state
     // the pass produced, not the one before it (M5 review #7).
     tryPlaceTour();
     hooks.renderArStatus();
   }
 
+  /** A code the moved-code check ignores: a scanning gate passes as
+   *  `ignored`, and a gate THIS code passed says it no longer counts
+   *  (§7j #4); a gate another code passed stays with that code (M5c review
+   *  M1). An escape or a waived gate stays as it is. */
+  function markGateIgnored(text: string): void {
+    if (ctx.scanGate.kind === "scanning") {
+      passGate("ignored");
+      return;
+    }
+    if (
+      ctx.scanGate.kind === "passed" &&
+      ctx.scanGate.via === "code" &&
+      ctx.scanGateCodeText === text
+    ) {
+      ctx.scanGate = { kind: "passed", via: "ignored" };
+      ctx.scanGateCodeText = null;
+    }
+  }
+
+  /** The text of the latest detection: the code a lock reports on (the
+   *  controller reports a frame's detection before its lock). */
+  let lastDetectedText: string | null = null;
+
+  const ignoredLevelIds = (): ReadonlySet<string> =>
+    new Set(ctx.ignoredCodes.keys());
+
   function resetScanGate(): void {
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
     escapeButton.hidden = true;
     ctx.scanGate = { kind: "idle" };
+    ctx.scanGateCodeText = null;
     hooks.renderArStatus();
   }
 
@@ -137,10 +205,12 @@ export function createViewerPlacement(deps: {
     }
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
+    ctx.scanGateCodeText = null;
     ctx.scanGate = scanGateAtSessionStart({
       mode,
       hasDetector,
       levels: ctx.currentLevels,
+      ignoredLevelIds: ignoredLevelIds(),
     });
     if (ctx.scanGate.kind === "scanning") {
       // Its own clock (plan review #11): a device without frames must still
@@ -159,7 +229,7 @@ export function createViewerPlacement(deps: {
   function reconsiderScanGate(
     levels: ReadonlyMap<string, QrLevel> | "unavailable",
   ): void {
-    const next = reconsiderGate(ctx.scanGate, levels);
+    const next = reconsiderGate(ctx.scanGate, levels, ignoredLevelIds());
     if (next === ctx.scanGate) return;
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
@@ -176,6 +246,11 @@ export function createViewerPlacement(deps: {
   /** Levels are only useful with an open tour; the viewer pipeline reads
    *  them live so a tour opened AFTER entering AR still resolves. */
   function startViewerPipeline(): boolean {
+    // FIRST, before the plain-AR return below (the seam contract, rule 1):
+    // the entry clears every solver override, so no entry keeps a previous
+    // one's soft trimming - a plain-AR entry casts no vote that would.
+    const sink = startEntryVoteSink(arStore);
+    ctx.viewerVoteSink = sink;
     const frontEnd = seams.createQrFrontEnd();
     hasDetector = frontEnd !== null;
     if (frontEnd === null) {
@@ -183,15 +258,88 @@ export function createViewerPlacement(deps: {
       // state, the QR line just never appears.
       return false;
     }
+    // The code's FUSED pose (QR near-frontal pose plan §60): the joint
+    // rotation over its recent detections, gated on their agreement. One
+    // source per pipeline start, i.e. per AR session (§61 #9); each code's
+    // tracker takes its level's printed size (§61 #8 - resolved before the
+    // code's first lock). Inert today: every TourViewer entry carries a raw
+    // pose, which gives the position, and the rotation is size-free - the
+    // size matters only for entries without one (milestone review of b4b #6).
+    // Its counts (the ?debug=1 readout) and its last new evaluation (the
+    // visitor hint), kept in this closure so a late evaluation of an ended
+    // session reaches neither the next session's tallies nor its line
+    // (plan §66, §67 #5 and #10).
+    const tallies: FusedTallies = new Map();
+    const fusedPose = createFusedQrPoseSource({
+      entriesOf: (text) => selectQrFusedEntries(arStore.getState(), text),
+      optionsFor: (text) => {
+        const sizeM = ctx.levelByText.get(text)?.qr.physicalSizeM;
+        return sizeM === undefined ? {} : { sizeM };
+      },
+      onEvaluated: (result, _ms, text) => {
+        tallyEvaluation(tallies, text, result);
+        if (live()) {
+          ctx.viewerLastEvaluation = { text, result, atMs: performance.now() };
+        }
+      },
+    });
+    ctx.fusedPose = fusedPose;
+    ctx.fusedTallies = tallies;
+    ctx.viewerLastEvaluation = null;
+    // This session's pipeline is live while its source is the session's: the
+    // level lookup runs its callbacks inside the fetch the controller awaits,
+    // before the controller's dispose guard (milestone review of b4b #3).
+    const live = (): boolean => ctx.fusedPose === fusedPose;
+    // Every viewer vote - a lock's ring here, the keep-alive's rings in
+    // `recordDeviceFix` - goes through the entry's sink: one batch each, the
+    // soft trimming on before the first (`viewer-vote-sink.ts`).
+    const keepAlive = startKeepAlive();
+    // Per AR entry like the keep-alive, reset per TOUR by the tour switch
+    // (`endTourCodeVotes`, M2b review #6).
+    const voteBudget = createQrVoteBudget(MAX_VOTED_LOCKS_PER_CODE);
+    ctx.viewerVoteBudget = voteBudget;
+    // Per AR entry like the keep-alive; the veto memory it feeds is per tour.
+    const checks = startMovedCodeChecks();
+    /** Whether the moved-code check made the viewer ignore this text's
+     *  level (by level id: the memory outlives the per-text caches). */
+    const isIgnored = (text: string): boolean => {
+      const id = ctx.levelIdByText.get(text);
+      return id !== undefined && ctx.ignoredCodes.has(id);
+    };
     ctx.qrController = createQrTrackingController(
       buildViewerControllerConfig({
         frontEnd,
+        now,
         solvePose: (input) => seams.solveQrPose(input),
-        getCameraPose: () => seams.getCameraPose(),
         getIntrinsics: (image) => seams.getIntrinsics(image),
         getLevels: () => ctx.currentLevels,
-        dispatchVote: (payload) => {
-          arStore.dispatch(recordGpsEvent(payload));
+        // Only a lock's votes join the viewing log's per-lock batch; the
+        // keep-alive's are recorded as stamped GPS events, never mislabelled
+        // as the next lock's.
+        dispatchVotes: (payloads) => {
+          sink.castLockVotes(payloads);
+          for (const payload of payloads) deps.viewingLog?.vote(payload);
+        },
+        keepAlive,
+        voteBudget,
+        isIgnored,
+        onIgnoredLock: (text) => {
+          if (!live()) return;
+          ctx.viewerIgnoredText = text;
+          markGateIgnored(text);
+          hooks.renderArStatus();
+        },
+        // The check pins a code on the pose its first voted lock used.
+        onVotedPose: (code, atMs) => {
+          if (!live()) return;
+          const levelId = ctx.levelIdByText.get(code.text);
+          if (levelId === undefined) return;
+          checks.pin({
+            ...code,
+            levelId,
+            atMs,
+            zero: selectZeroReference(arStore.getState()),
+          });
         },
         // recordGpsEvent silently no-ops until the session ZERO exists -
         // the budget must not be charged for dropped votes (M4 review #2).
@@ -208,26 +356,53 @@ export function createViewerPlacement(deps: {
         canAcceptVotes: () => arStore.getState().gpsData?.zero != null,
         // The same convergence gate minting uses (M4 review #3): the
         // controller skips the vote — budget untouched — while null.
-        resolveStablePose: (text) =>
-          selectStableQrPose(arStore.getState(), text),
+        resolveStablePose: (text) => fusedPose.resolve(text),
         recordDetection: (event) => {
+          lastDetectedText = event.text;
           ctx.viewerUnknownCode = null; // a level-carrying detection supersedes it
           ctx.viewerUnusableCode = null;
           ctx.latestReprojectionPx = event.reprojectionErrorPx;
           arStore.dispatch(recordQrDetection(event));
           const level = ctx.levelByText.get(event.text) ?? null;
+          // The status is still the previous frame's here (the controller
+          // reports tracking after this frame's votes).
+          deps.viewingLog?.detection(event, level, ctx.viewerQrStatus);
           ctx.qrDebugView?.update(
             event.qrPoseWorld,
             level?.qr.physicalSizeM ?? null,
           );
         },
-        onLevelResolved: (text, level) => {
+        onLevelResolved: (text, level, levelId) => {
+          if (!live()) return;
           ctx.levelByText.set(text, level);
+          if (level !== null && levelId !== null) {
+            ctx.levelIdByText.set(text, levelId);
+          }
         },
-        onLocked: (level) => {
-          // The gate passes on the LOCK against a lockable level, not on a
-          // vote (M5; plan review #1).
-          if (isLockableLevel(level)) passGate("code");
+        onLocked: (level, hasVoted) => {
+          // The gate passes on the LOCK of a lockable level (M5; plan review
+          // #1) whose code has cast votes: a lock before the store takes
+          // votes, or while the pose converges, corrected nothing, and
+          // passing on it placed the content through GPS alone while the
+          // line said the code had worked (authoring plan 2026-09-28-0953
+          // §2.2 B3). The escape button still passes a gate no vote reaches.
+          if (!hasVoted || !isLockableLevel(level)) return;
+          if (ctx.scanGate.kind === "scanning") {
+            passGate("code", lastDetectedText);
+            return;
+          }
+          // A working code after a veto (M5c review M1): the gate that said
+          // "code ignored" names this code again.
+          if (
+            ctx.scanGate.kind === "passed" &&
+            ctx.scanGate.via === "ignored" &&
+            lastDetectedText !== null &&
+            !isIgnored(lastDetectedText)
+          ) {
+            ctx.scanGate = { kind: "passed", via: "code" };
+            ctx.scanGateCodeText = lastDetectedText;
+            hooks.renderArStatus();
+          }
         },
         onError: (message) => {
           errorBox.textContent = `QR tracking failed: ${message}`;
@@ -237,14 +412,25 @@ export function createViewerPlacement(deps: {
           hooks.renderArStatus();
         },
         onUnknownCode: (code) => {
+          if (!live()) return;
           ctx.viewerUnknownCode = code;
           hooks.renderArStatus();
         },
         onUnusableLevel: (code) => {
+          if (!live()) return;
           ctx.viewerUnusableCode = code;
           hooks.renderArStatus();
         },
         onVotedLock: (text, votedLocks) => {
+          deps.viewingLog?.votedLock(text, votedLocks);
+          // Another code voted: the line about an ignored one no longer
+          // describes what places the tour (M5c review M1).
+          if (
+            ctx.viewerIgnoredText !== null &&
+            ctx.viewerIgnoredText !== text
+          ) {
+            ctx.viewerIgnoredText = null;
+          }
           ctx.viewerLockedText = text;
           ctx.viewerVotedLocks = votedLocks;
           ctx.viewerReprojectionPx = ctx.latestReprojectionPx;
@@ -280,6 +466,161 @@ export function createViewerPlacement(deps: {
       }),
     );
     return true;
+  }
+
+  /**
+   * This AR entry's code keep-alive (authoring plan 2026-09-28-0953 §3.2,
+   * M2b), and the one store subscription that stops it when the odometry
+   * frame changes: a frame change (`qrDetected.frameEpoch`: an odometry
+   * restart or loop closure) leaves the kept pose naming a place in the old
+   * frame, so the hold ends there (M2b review #1); the code's next scan
+   * votes afresh in the new one. The subscription ends itself once the
+   * entry's keep-alive is no longer the session's (`endQrPipeline` at AR
+   * exit, or the next entry's pipeline). Its votes are cast per device fix
+   * by {@link recordDeviceFix}.
+   */
+  function startKeepAlive(): QrVoteKeepAlive {
+    ctx.viewerKeepAlive?.stop();
+    // Its state changes go to the viewing log (M1b review #5).
+    const created = createViewerKeepAlive();
+    const keepAlive = deps.viewingLog?.keepAlive(created) ?? created;
+    ctx.viewerKeepAlive = keepAlive;
+    const frameEpoch = (): number =>
+      arStore.getState().qrDetected.frameEpoch ?? 0;
+    let keptFrameEpoch = frameEpoch();
+    const unsubscribe = arStore.subscribe(() => {
+      if (ctx.viewerKeepAlive !== keepAlive) {
+        unsubscribe();
+        return;
+      }
+      const epoch = frameEpoch();
+      if (epoch !== keptFrameEpoch) {
+        keptFrameEpoch = epoch;
+        keepAlive.stop();
+      }
+    });
+    return keepAlive;
+  }
+
+  /**
+   * This AR entry's moved-code checks (D20, M5c), and the one store
+   * subscription that feeds them: whenever the GPS history changed, its new
+   * device fixes are folded and judged (`moved-code-check.ts` reads device
+   * fixes only), and a code read as moved is vetoed. An odometry frame
+   * change ends every pin, as it ends the keep-alive. The subscription ends
+   * itself once the entry's checks are no longer the session's. The
+   * dispatches of the veto's own recovery are not judged again.
+   */
+  function startMovedCodeChecks(): MovedCodeChecks {
+    const checks = createMovedCodeChecks();
+    ctx.movedCodeChecks = checks;
+    const frameEpoch = (): number =>
+      arStore.getState().qrDetected.frameEpoch ?? 0;
+    let keptFrameEpoch = frameEpoch();
+    let seenPositions: unknown = null;
+    let judging = false;
+    const unsubscribe = arStore.subscribe(() => {
+      if (ctx.movedCodeChecks !== checks) {
+        unsubscribe();
+        return;
+      }
+      if (judging) return;
+      const state = arStore.getState();
+      const gpsPositions = selectGpsPositions(state);
+      const epoch = frameEpoch();
+      if (epoch !== keptFrameEpoch) {
+        keptFrameEpoch = epoch;
+        checks.frameChanged(gpsPositions.length);
+      }
+      // The store hands out a new array whenever the history changed.
+      if (gpsPositions === seenPositions) return;
+      seenPositions = gpsPositions;
+      judging = true;
+      try {
+        const verdicts = checks.update(
+          {
+            gpsPositions,
+            odometryPositions: selectOdometryPositions(state),
+            zero: selectZeroReference(state),
+          },
+          now(),
+        );
+        for (const verdict of verdicts) vetoMovedCode(verdict);
+      } finally {
+        judging = false;
+        seenPositions = selectGpsPositions(arStore.getState());
+      }
+    });
+    return checks;
+  }
+
+  /**
+   * The veto (owner decision 2026-10-02): the code is ignored for the rest
+   * of the tour; its keep-alive stops; every vote is taken back - the GPS
+   * history reset and the device fixes re-fed with the soft keys off (the
+   * M5a arm that lands on the GPS answer), so the content moves ONCE; the
+   * gate and the line say the code is ignored; the viewing log records the
+   * detector's inputs and the recovery.
+   */
+  function vetoMovedCode(verdict: MovedCodeVerdict): void {
+    if (ctx.ignoredCodes.has(verdict.levelId)) return;
+    ctx.ignoredCodes.set(verdict.levelId, { text: verdict.text });
+    const keepAlive = ctx.viewerKeepAlive;
+    const hold = keepAlive?.phase(now());
+    if (
+      hold !== undefined &&
+      hold.kind !== "none" &&
+      hold.text === verdict.text
+    ) {
+      keepAlive?.stop();
+    }
+    const recovery = ctx.viewerVoteSink?.retractVotes() ?? {
+      refedFixes: 0,
+      batches: 0,
+    };
+    // Every code's votes are gone, so every code may vote again by lock
+    // (M5c review M2): a spent code the keep-alive holds would otherwise
+    // cast nothing on its next lock. The vetoed code stays blocked by
+    // `isIgnored`, which the budget never reaches.
+    ctx.viewerVoteBudget?.reset();
+    deps.viewingLog?.codeIgnored({
+      text: verdict.text,
+      levelId: verdict.levelId,
+      evidence: verdict.evidence,
+      recovery,
+    });
+    ctx.viewerIgnoredText = verdict.text;
+    markGateIgnored(verdict.text);
+    hooks.renderArStatus();
+  }
+
+  /**
+   * A device GPS fix, as the coordinator built it (main.ts hands this to
+   * `createGpsPositionHandler` as `recordFix`): the keep-alive's trigger
+   * (M2b) and, with D18, the fix's way into the store. The cadence is the one
+   * M0b/M0c measured - one ring with each device fix - and nothing but a
+   * device fix triggers it, so the keep-alive never answers a vote (its own
+   * or a lock's). A fix is scheduled by when it ARRIVED, on the clock the
+   * locks are timed on; its Geolocation time only stamps the votes (M2b
+   * review #4). While the keep-alive casts a ring for it, the fix and the
+   * ring are ONE batch, the fix first: one solve per tick, the compass
+   * easing compounded per stored event (core 1.26). Otherwise - no viewer
+   * entry (author mode, outside AR), no kept code, the fade owing less than
+   * a ring, a fix whose time is not finite - it is the plain
+   * `recordGpsEvent` it always was.
+   */
+  function recordDeviceFix(fix: RecordGpsEventPayload): void {
+    const sink = ctx.viewerVoteSink;
+    if (sink === null) {
+      arStore.dispatch(recordGpsEvent(fix));
+      return;
+    }
+    const ring =
+      ctx.viewerKeepAlive?.votesForFix({
+        atMs: now(),
+        stampMs: fix.rawGpsPoint.timestamp,
+      }) ?? [];
+    sink.recordFix(fix, ring);
   }
 
   /**
@@ -369,6 +710,13 @@ export function createViewerPlacement(deps: {
           return;
         }
         ctx.contentRendered = rendered;
+        deps.viewingLog?.placed({
+          what: "content",
+          basis: "geo",
+          count: rendered.count,
+          zero,
+          skipped: rendered.skipped,
+        });
         hooks.renderArStatus();
       },
       (err: unknown) => {
@@ -453,11 +801,17 @@ export function createViewerPlacement(deps: {
           geo.alt,
           0,
         );
-        await placeDecodedPlanes(current, scene, [
-          centerNue[0],
-          centerNue[1],
-          centerNue[2],
-        ]);
+        const ringCenter = [centerNue[0], centerNue[1], centerNue[2]] as const;
+        const ringed = await placeDecodedPlanes(current, scene, ringCenter);
+        if (ringed > 0 && lockedText !== null) {
+          deps.viewingLog?.placed({
+            what: "ring",
+            basis: "code",
+            count: ringed,
+            zero,
+            code: { text: lockedText, geo, centerNue: ringCenter },
+          });
+        }
       }
     } finally {
       // Only the run that still owns the latch may clear it — a stale run's
@@ -570,6 +924,16 @@ export function createViewerPlacement(deps: {
       fixes: verdict.quality.pairCount,
       gpsAccuracyMedianM: verdict.quality.gpsAccuracyMedianM,
     };
+    deps.viewingLog?.placed({
+      what: "capture-spots",
+      basis: "geo",
+      count: ctx.imagePlanes.count,
+      zero: viewerZero,
+      join: {
+        fixes: verdict.quality.pairCount,
+        gpsAccuracyMedianM: verdict.quality.gpsAccuracyMedianM,
+      },
+    });
     hooks.renderArStatus();
     return true;
   }
@@ -635,11 +999,13 @@ export function createViewerPlacement(deps: {
     return paired;
   }
 
+  /** The ring around a code; resolves how many planes it placed (0: none,
+   *  its textures freed). */
   async function placeDecodedPlanes(
     current: TourSession,
     scene: Scene,
     centerNue: readonly [number, number, number],
-  ): Promise<void> {
+  ): Promise<number> {
     const textures = await decodeTourTextures(current);
     // Re-checked AFTER the awaits: the tour may have closed, the AR session
     // may have ended, or a sibling run may have won — every bail path must
@@ -651,7 +1017,7 @@ export function createViewerPlacement(deps: {
       !sessionLive()
     ) {
       for (const texture of textures) texture.dispose();
-      return;
+      return 0;
     }
     ctx.imagePlanes = placeImagePlanes({
       scene,
@@ -668,6 +1034,7 @@ export function createViewerPlacement(deps: {
       count: ctx.imagePlanes.count,
     };
     hooks.renderArStatus();
+    return ctx.imagePlanes.count;
   }
 
   /** First three streamed images → upright textures; a broken image just
@@ -691,6 +1058,7 @@ export function createViewerPlacement(deps: {
 
   return {
     startViewerPipeline,
+    recordDeviceFix,
     tryPlaceTour,
     startScanGate,
     resetScanGate,

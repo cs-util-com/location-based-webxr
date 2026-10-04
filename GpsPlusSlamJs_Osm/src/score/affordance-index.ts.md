@@ -138,6 +138,15 @@ Returns `{state:"scored", score}`, `{state:"empty"}` or `{state:"unknown"}`.
   tile must not throw away the conversion work for the whole map. This is
   `OsmGeoSpatialIndexer`'s `geometryLookup`/`envelopeLookup` pair, the
   reference's single best performance idea.
+  - **"Actually replaced" means CHANGED CONTENT, and until 2026-09-21 it meant
+    a different OBJECT.** Both merge paths compared the held record with the
+    incoming one using `!==`. Since fetch tiles are H3 cells' bounding
+    rectangles they overlap, `out geom` returns a feature's whole geometry
+    whenever its bbox is touched, and the parser builds a fresh object per
+    delivery — so every re-delivered duplicate near a tile seam, and every
+    record of a refetched tile, looked like an edit. The promise above was
+    quietly false for exactly the features a walking user keeps re-fetching.
+    Both paths now use `sameFeatureContent`.
 - **Two-stage funnel**: a cheap bbox test from RAW inline positions over every
   feature, then ring stitching, clipping and covering only for survivors. At
   res 7 a fetch tile is estimated at ~40,000–116,000 features and a working set

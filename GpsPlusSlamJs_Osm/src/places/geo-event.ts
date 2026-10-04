@@ -249,7 +249,7 @@ export function climbToLocalMaximum({
   };
 }
 
-/**
+/*
  * Candidates the C# evaluates per batch, and how many batches it will try.
  *
  * `COUNT = 10`, `RETRY_COUNT = 10` — `GeoEvent.cs:60-61`, so up to 100

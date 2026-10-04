@@ -29,6 +29,11 @@ import { parsePlaywrightCounts, parseVitestCounts } from './reporter-parse.mjs';
 import { buildStageCommand, decideRecording } from './stage-args.mjs';
 import { getStage, stageOrder } from './projects.mjs';
 import {
+  LOWERED_MARKER_ENV,
+  spawnAtPriority,
+  stageSpawnPriority,
+} from './stage-priority.mjs';
+import {
   appendRecording,
   formatSeconds,
   parseStore,
@@ -114,11 +119,26 @@ function withBinPath(env, root) {
  * @param {string} command
  * @param {string} cwd
  * @param {NodeJS.ProcessEnv} env
+ * @param {number | null} priority - OS priority for the stage's process tree,
+ *   or null to inherit (see stage-priority.mjs)
  * @returns {Promise<number>}
  */
-function execShell(command, cwd, env) {
+function execShell(command, cwd, env, priority) {
   return new Promise((resolve) => {
-    const child = spawn(command, { shell: true, stdio: 'inherit', cwd, env });
+    const child = spawnAtPriority(
+      ({ lowered }) =>
+        spawn(command, {
+          shell: true,
+          stdio: 'inherit',
+          cwd,
+          // The marker tells the Playwright configs the stage really runs
+          // lowered, so they may move the GPU work into the browser process.
+          // Never inherited: a stage that is not lowered must not claim it.
+          env: { ...env, [LOWERED_MARKER_ENV]: lowered ? '1' : undefined },
+        }),
+      priority,
+      os
+    );
     child.on('error', (error) => {
       console.error(
         `test-timing: failed to spawn stage command: ${String(error)}`
@@ -283,7 +303,12 @@ export async function runStage(project, stageName, forwardedArgs) {
   }
 
   const start = performance.now();
-  const exitCode = await execShell(command, root, env);
+  const exitCode = await execShell(
+    command,
+    root,
+    env,
+    stageSpawnPriority(stage, { platform: process.platform, env })
+  );
   const durationMs = Math.round(performance.now() - start);
 
   let recorded = false;

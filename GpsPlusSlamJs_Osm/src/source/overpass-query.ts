@@ -95,11 +95,14 @@ export interface BoundingBox {
 
 /** Thrown for the one input this module genuinely cannot express. */
 export class AntimeridianCellError extends Error {
-  constructor(readonly cell: string) {
+  readonly cell: string;
+
+  constructor(cell: string) {
     super(
       `H3 cell ${cell} crosses the antimeridian; a single Overpass bbox cannot express it. ` +
         `Split the query, or use a source that does not go through a bbox.`,
     );
+    this.cell = cell;
     this.name = "AntimeridianCellError";
   }
 }
@@ -240,6 +243,43 @@ export function buildTileQuery(
     // The one thing to watch: if a future rule ever needs a `type=route`,
     // `waterway` or `power` relation, this query stops delivering it and the
     // differential test is what will say so.
+    //
+    // **ONE RELATION STATEMENT PER KEY, AND DO NOT "SIMPLIFY" THESE INTO ONE
+    // UNQUALIFIED STATEMENT.** That was tried, shipped and reverted the same
+    // day (2026-09-20), and the reversal is the most useful thing on this page.
+    //
+    // The attempt replaced these 32 statements with a single
+    // `relation["type"~"^(multipolygon|boundary)$"]`. On `z.overpass-api.de` it
+    // was genuinely 1.7-2.2x faster, measured over two cities and two
+    // resolutions, with the surplus relations filtered client-side so the
+    // delivered element set was provably unchanged. Then a field report
+    // arrived, and a counterbalanced run over ALL FIVE pool endpoints on one
+    // res-7 Manhattan tile said:
+    //
+    //   form             lz4   vk-maps   z     coffee   main    total
+    //   32 keyed         1/3     3/3    3/3     1/3      2/3    10/15
+    //   1 unqualified    2/3     0/3    3/3     0/3      0/3     5/15
+    //
+    // **It halved the success rate everywhere except the one instance it had
+    // been benchmarked on.** `maps.mail.ru` went 3/3 to 0/3, and it holds
+    // weight 3 of 8 in the operator draw — so over a third of requests began
+    // failing over, which costs far more wall clock than the query ever saved.
+    //
+    // The mechanism is the one this project already learned on 2026-07-28 and
+    // failed to recognise in a new costume: **a regex on a selector Overpass
+    // cannot index first is the thing that 504s.** `relation["k"]["type"~R]`
+    // starts from the key index and regex-checks a handful of candidates;
+    // `relation["type"~R]` has no index to start from and must evaluate the
+    // regex against every relation in the bbox. `z` tolerating it is not
+    // evidence that it is cheap — `z` is also the one host that returned 12/12
+    // in the 2026-08-01 sweep while five others 504'd.
+    //
+    // A variant worth measuring, if anyone returns to this: two EXACT-value
+    // statements,
+    // `relation["type"="multipolygon"];relation["type"="boundary"];` — 34
+    // statements, no regex, both index-usable. **Measure it on every pool
+    // endpoint before believing it.** See
+    // `GpsPlusSlamJs_Docs/docs/2026-09-20-0123-overpass-selector-decomposition-results.md`.
     `(${keys.map((key) => `nw["${key}"];`).join("")}${keys
       .map((key) => `relation["${key}"]["type"~"^(multipolygon|boundary)$"];`)
       .join("")});`,

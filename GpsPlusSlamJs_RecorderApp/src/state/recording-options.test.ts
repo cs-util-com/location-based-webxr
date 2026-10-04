@@ -14,6 +14,10 @@ import {
   DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS,
 } from 'gps-plus-slam-app-framework/ar/depth-sampler';
 import {
+  DEFAULT_QR_CAPTURE_INTERVAL_MS,
+  QR_CAPTURE_INTERVAL_CONSTRAINTS,
+} from 'gps-plus-slam-app-framework/ar/qr/qr-capture-cadence';
+import {
   loadRecordingOptions,
   saveRecordingOptions,
   resetRecordingOptions,
@@ -1195,6 +1199,16 @@ describe('recording-options', () => {
       ).toBe(false);
       // A genuine true must survive.
       expect(validateQrOptions({ enabled: true }).enabled).toBe(true);
+    });
+
+    // Why this test matters: the QR demo's `?interval=` parser reads the same
+    // framework bounds (QR perf plan 2026-09-23-2314, M1). A restated copy here
+    // would drift from it, as the two `capture` bounds already have.
+    it('takes its interval bounds and default from the framework', () => {
+      expect(QR_CONSTRAINTS.intervalMs).toBe(QR_CAPTURE_INTERVAL_CONSTRAINTS);
+      expect(DEFAULT_RECORDING_OPTIONS.qr.intervalMs).toBe(
+        DEFAULT_QR_CAPTURE_INTERVAL_MS
+      );
     });
 
     it('clamps intervalMs below/above the constraint range', () => {

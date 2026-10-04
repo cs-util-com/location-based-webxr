@@ -360,15 +360,6 @@ function isRefusal(result) {
 const SECOND_CITY = { lat: 49.4122, lng: 8.7101, label: "heidelberg-altstadt" };
 
 /**
- * W1's full sweep (DEC-R5-1, DEC-R5-10).
- *
- * The rules that bound the load all live in `benchmark-matrix.mjs` and are
- * unit-tested; this function is the I/O around them. What it adds on top is the
- * two things only a running process can do: **write after every cell** so three
- * unattended hours cannot be lost to a laptop sleep, and **stop cleanly at a
- * runtime budget** rather than at the end of the matrix.
- */
-/**
  * Lets a dropped host back in once its operator has been quiet (F29).
  *
  * RE-ADMISSION IS THE POINT, not the decay on its own. A decaying counter beside
@@ -404,6 +395,15 @@ function keysForCell(cell, keys) {
   return cell.keyCount === undefined ? keys : keys.slice(0, cell.keyCount);
 }
 
+/**
+ * W1's full sweep (DEC-R5-1, DEC-R5-10).
+ *
+ * The rules that bound the load all live in `benchmark-matrix.mjs` and are
+ * unit-tested; this function is the I/O around them. What it adds on top is the
+ * two things only a running process can do: **write after every cell** so three
+ * unattended hours cannot be lost to a laptop sleep, and **stop cleanly at a
+ * runtime budget** rather than at the end of the matrix.
+ */
 async function runMatrix() {
   const centre = {
     lat: arg("lat", DEFAULT_CENTRE.lat),
@@ -681,6 +681,7 @@ function cellRecord(cell) {
 }
 
 async function main() {
+  if (process.argv.includes("--compare-map3d")) return runMap3dComparison();
   if (process.argv.includes("--matrix")) return runMatrix();
 
   const centre = {
@@ -742,6 +743,149 @@ async function main() {
   const outPath = join(outDir, `overpass-endpoint-benchmark-res${res}.json`);
   writeFileSync(outPath, `${JSON.stringify(out, null, 2)}\n`);
   console.log(`\nwrote ${outPath}`);
+}
+
+/** Focused, named-arm comparison; old benchmark modes remain reproducible. */
+async function runMap3dComparison() {
+  const { buildComparisonProfiles, planComparisonCells } =
+    await import("./benchmark-map3d.mjs");
+  const { runComparison } = await import("./benchmark-comparison-run.mjs");
+  const keys = selectKeysFromCaptureScript();
+  const res = comparisonNumberArg("res", 7);
+  const repeats = comparisonNumberArg("repeats", 2);
+  const budgetMs = comparisonNumberArg("budget-minutes", 15) * 60_000;
+  const maxTotalBytes = comparisonNumberArg("max-mb", 500) * 1_000_000;
+  const siteName = stringArg("site", "manhattan");
+  // VALIDATED BEFORE IT IS USED. This ran after the ternary below, whose else
+  // branch is Cologne - so any value other than "manhattan" resolved to a
+  // Cologne bbox first and only then threw. Harmless today because nothing
+  // between the two lines observes the bbox, and a guard that depends on that
+  // staying true is not a guard. Raised in review of PR #475.
+  if (!["manhattan", "cologne"].includes(siteName))
+    throw new Error("--site must be manhattan or cologne");
+  const bbox =
+    siteName === "manhattan"
+      ? {
+          south: 40.748649127451834,
+          west: -74.00064468383789,
+          north: 40.78467511524571,
+          east: -73.93524169921875,
+        }
+      : bboxOfCell(latLngToCell(DEFAULT_CENTRE.lat, DEFAULT_CENTRE.lng, res));
+  const site = {
+    id: siteName === "manhattan" ? siteName : `${siteName}-res${res}`,
+    bbox,
+  };
+  const available = buildComparisonProfiles({ bbox, keys });
+  const selected = stringArg(
+    "profiles",
+    "map3d,encoded,geom-only,timeout180,full-production180,preview",
+  ).split(",");
+  if (selected.some((id) => !available.some((profile) => profile.id === id)))
+    throw new Error("Unknown comparison profile");
+  const profiles = selected.map((id) =>
+    available.find((profile) => profile.id === id),
+  );
+  // THE DEFAULT IS THE GUARD, and it used to be a single hostname.
+  //
+  // On 2026-09-20 a one-statement relation query measured 1.7-2.2x faster over
+  // two cities and two resolutions, shipped, and was reverted within two hours:
+  // across the whole pool it HALVED the per-request success rate, and the
+  // benchmark had never asked the other four endpoints because `--hosts`
+  // defaulted to one. Comparing the full pool costs more time and more borrowed
+  // capacity; finding that out from a field report costs more than both.
+  const hosts = resolveComparisonHosts();
+  const cells = planComparisonCells({
+    hosts,
+    sites: [site],
+    repeats,
+    profilesForSite: () => profiles,
+  });
+  if (process.argv.includes("--dry-run")) {
+    console.log(JSON.stringify({ site, cells }, null, 2));
+    return;
+  }
+  const outName = stringArg("out", undefined);
+  if (!outName || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.json$/.test(outName))
+    throw new Error("Comparison requires --out <new-filename.json>");
+  const outDir = join(__dirname, "..", "docs");
+  mkdirSync(outDir, { recursive: true });
+  const outPath = join(outDir, outName);
+  // Reserve exclusively: even --force must not overwrite comparison evidence.
+  writeFileSync(
+    outPath,
+    JSON.stringify({ plannedCells: cells, results: [], complete: false }),
+    { flag: "wx" },
+  );
+  // Slot gating is ON by default (owner decision D1, 2026-09-20). The
+  // 2026-09-19 run fired blind and lost 24 of 37 planned cases to a give-up
+  // guard triggered by refusals the server never queued. `--no-status` exists
+  // so a host that does not serve `/api/status` stays measurable.
+  const { fetchStatus } = await import("./benchmark-status.mjs");
+  const useStatus = !process.argv.includes("--no-status");
+  console.log(
+    `Comparison: ${cells.length} cases; slot gating ${useStatus ? "on" : "OFF"}; writing ${outPath}`,
+  );
+  await runComparison(cells, {
+    budgetMs,
+    maxTotalBytes,
+    ...(useStatus ? { readStatus: fetchStatus } : {}),
+    save: (document) =>
+      writeFileSync(outPath, `${JSON.stringify(document, null, 2)}\n`),
+  });
+}
+
+/**
+ * The comparison mode's endpoint pool.
+ *
+ * **THE DEFAULT IS THE GUARD, and it used to be a single hostname.** On
+ * 2026-09-20 a one-statement relation query measured 1.7-2.2x faster over two
+ * cities and two resolutions, shipped, and was reverted within two hours:
+ * across the whole pool it HALVED the per-request success rate, and
+ * `maps.mail.ru` - weight 3 of 8 in the operator draw - went 3/3 to 0/3. The
+ * benchmark had never asked the other four, because `--hosts` defaulted to one.
+ *
+ * Narrowing is still allowed, but narrowing to ONE OPERATOR is refused unless
+ * `--accept-single-host` says it was meant. That write-up DID record "one
+ * operator, one instance... inferred, not measured" in its limitations before
+ * shipping, and it changed nothing: **a named limitation is not a mitigation**,
+ * so the narrowing has to appear in the command line and therefore in the
+ * artifact.
+ *
+ * Keyed on OPERATOR rather than hostname, because `lz4`, `z` and
+ * `overpass-api.de` are three names for one operator - and it was one of those
+ * three that produced the misleading verdict.
+ */
+function resolveComparisonHosts() {
+  const wanted = stringArg(
+    "hosts",
+    ENDPOINTS.map((entry) => new URL(entry.url).hostname).join(","),
+  ).split(",");
+  const hosts = wanted.map((hostname) => {
+    const endpoint = ENDPOINTS.find(
+      (entry) => new URL(entry.url).hostname === hostname,
+    );
+    if (!endpoint) throw new Error(`Unknown endpoint hostname: ${hostname}`);
+    return endpoint.url;
+  });
+  const operators = new Set(hosts.map((url) => operatorForUrl(url)));
+  if (operators.size < 2 && !process.argv.includes("--accept-single-host")) {
+    throw new Error(
+      `Refusing a single-host comparison: ${[...operators].join(", ")} is one operator, ` +
+        `so the result cannot generalise to the pool. Widen --hosts, or pass ` +
+        `--accept-single-host to record that you meant it.`,
+    );
+  }
+  return hosts;
+}
+
+function comparisonNumberArg(name, fallback) {
+  const index = process.argv.indexOf(`--${name}`);
+  if (index === -1) return fallback;
+  const value = Number(process.argv[index + 1]);
+  if (!Number.isFinite(value) || value <= 0)
+    throw new Error(`--${name} must be a positive number`);
+  return value;
 }
 
 await main();

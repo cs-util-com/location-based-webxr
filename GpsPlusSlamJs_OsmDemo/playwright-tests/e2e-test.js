@@ -21,6 +21,8 @@ import {
   createPageDiagnostics,
 } from "../../scripts/e2e/page-diagnostics.mjs";
 
+import { withPinnedSunDate } from "./fixtures.js";
+
 export const test = base.extend({
   // OVERRIDES `page` RATHER THAN BEING AN `auto` FIXTURE, and the difference
   // matters. An auto fixture that destructures `page` instantiates a browser
@@ -33,6 +35,10 @@ export const test = base.extend({
   // here; those files wire `createPageDiagnostics` themselves.
   page: async ({ page, baseURL }, use, testInfo) => {
     const diagnostics = createPageDiagnostics(page, { baseUrl: baseURL });
+    // EVERY NAVIGATION PINS THE SUN'S DATE (plan 2026-09-23-2149, M2): the
+    // sun is real, so the look depends on the date; see SUN_PIN_DATE.
+    const goto = page.goto.bind(page);
+    page.goto = (url, options) => goto(withPinnedSunDate(url), options);
     await use(page);
     await attachOnFailure(diagnostics, testInfo);
   },

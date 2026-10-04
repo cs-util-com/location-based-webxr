@@ -23,6 +23,10 @@ Next free: **5188**.
   package's playwright config). First aux port ever allocated; keep aux
   ports in the 519x range and list them here — the guard test only scans
   `vite.config.ts` files, so this table is the only place that knows them.
+- **5198** — `GpsPlusSlamJs_DesignSystem` 3D look-dev smoke and
+  `shoot-3d.mjs` and `measure-globe.mjs` (`serve.mjs` bound to 127.0.0.1, `3d/playwright.config.mjs`,
+  never reused). Distinct from the phone-round `pnpm run serve` on 4173, so
+  a smoke never attaches to a server left running for a phone.
 
 Each VITE port above appears in three places for its package — `vite.config.ts` (`server.port`) and
 `playwright-tests/playwright.config.js` (`baseURL` and the `webServer` `command`/`url`).

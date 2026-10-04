@@ -25,6 +25,11 @@ import { FETCH_RES } from "../spatial/resolutions.js";
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
 const TILE = latLngToCell(COLOGNE.lat, COLOGNE.lng, FETCH_RES);
 
+/** Non-overlapping occurrences of a literal needle; clearer than an escaped regex. */
+function countOf(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
 describe("cellToBoundingBox", () => {
   it("contains every vertex of the cell boundary", () => {
     const bbox = cellToBoundingBox(TILE);
@@ -136,10 +141,49 @@ describe("buildTileQuery", () => {
         `relation["${key}"]["type"~"^(multipolygon|boundary)$"];`,
       );
     }
-    expect(q.match(/nw\[/g)).toHaveLength(OVERPASS_SELECT_KEYS.length);
-    expect(q.match(/relation\[/g)).toHaveLength(OVERPASS_SELECT_KEYS.length);
+    expect(countOf(q, "nw[")).toBe(OVERPASS_SELECT_KEYS.length);
+    expect(countOf(q, "relation[")).toBe(OVERPASS_SELECT_KEYS.length);
   });
 
+  it("keeps the relation selector KEYED, which a field test paid for", () => {
+    // WHY THIS TEST EXISTS, and it is the expensive kind of knowledge. On
+    // 2026-09-20 these 32 keyed relation statements were replaced by a single
+    // `relation["type"~"^(multipolygon|boundary)$"]`, benchmarked at 1.7-2.2x
+    // faster over two cities and two resolutions, with the surplus relations
+    // filtered client-side so the delivered element set was provably
+    // unchanged. It shipped. A field report of "it barely loads any more"
+    // followed within the hour.
+    //
+    // A counterbalanced run over all five pool endpoints, one res-7 Manhattan
+    // tile, three rounds:
+    //
+    //   32 keyed        lz4 1/3, vk-maps 3/3, z 3/3, coffee 1/3, main 2/3 = 10/15
+    //   1 unqualified   lz4 2/3, vk-maps 0/3, z 3/3, coffee 0/3, main 0/3 =  5/15
+    //
+    // The whole 1.7-2.2x had been measured on `z` — the ONE endpoint that
+    // tolerates it, and the same host that returned 12/12 in the 2026-08-01
+    // sweep while five others 504'd. `maps.mail.ru` holds weight 3 of 8 in the
+    // operator draw and went 3/3 to 0/3, so over a third of requests started
+    // failing over, which costs far more than the query ever saved.
+    //
+    // The mechanism is one this project already knew: a regex on a selector
+    // Overpass cannot index first is what 504s. `relation["k"]["type"~R]`
+    // starts from the key index; `relation["type"~R]` has nothing to start from
+    // and regex-matches every relation in the bbox.
+    //
+    // So this asserts the PROPERTY, not just the count: every relation
+    // statement is qualified by a key, and none selects on `type` alone.
+    const q = buildTileQuery(bbox);
+    expect(q).not.toContain('relation["type"~');
+    expect(q).not.toContain('relation["type"=');
+    for (const statement of q.split(";")) {
+      if (!statement.includes("relation[")) continue;
+      expect(
+        statement,
+        "every relation statement must start from an indexed key",
+      ).toMatch(/relation\["[a-z_:]+"\]\["type"~/);
+    }
+  });
   it("takes only AREAL relations, which is the F32 saving", () => {
     // THIS REPLACES "selects nodes, ways and relations in each statement", and
     // the reversal is deliberate rather than a loosening. That rule came from

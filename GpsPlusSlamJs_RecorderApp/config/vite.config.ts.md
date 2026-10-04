@@ -22,9 +22,11 @@ The config injects five build-time string constants via `define`:
 - `__LIB_VERSION__`
 - `__FW_VERSION__`
 
+The block is built by the framework's `createBuildMetadataDefine(appDir)` (`GpsPlusSlamJs_AppFramework/scripts/build-metadata-define.mjs`, imported by relative path; node-only and not published), which the Tour Viewer's Vite config uses too - one define block for both apps (DEC-H3, 2026-09-28). It lived here until then.
+
 Package versions are read from the relevant `package.json` files and validated to ensure they contain a string `version` field before being exposed to the app.
 
-The metadata is defined twice for each field: once as a bare constant (`__BUILD_COMMIT__`) and once as an explicit `globalThis.__BUILD_COMMIT__` property access. This keeps future direct-constant use working while also supporting the recorder's runtime-safe helper, which reads `globalThis.__...` properties.
+The metadata is defined twice for each field: once as a bare constant (`__BUILD_COMMIT__`) and once as an explicit `globalThis.__BUILD_COMMIT__` property access. The framework's reader (`gps-plus-slam-app-framework/utils/build-info`) reads the `globalThis.__...` properties; the bare form keeps direct-constant use working.
 
 All metadata values are computed once per config load, then reused for every define entry so the duplicated keys stay identical.
 

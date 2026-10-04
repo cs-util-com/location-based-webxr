@@ -37,6 +37,8 @@ export async function installQrDemoFakes(page, { planar = true } = {}) {
         worldGroupChildren: [],
         /** The frame callback stashed by the faked `startFrameSource`. */
         pump: null,
+        /** The options the app passed to `startFrameSource`. */
+        frameSourceOptions: null,
       };
       window.__qrDemoTest = control;
 
@@ -86,15 +88,16 @@ export async function installQrDemoFakes(page, { planar = true } = {}) {
             ],
           },
           depthAt: () => 1,
-          cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
           // A symmetric perspective projection (column-major) so PnP intrinsics
           // are sane: fx = fy = 1.732·W/2, principal point at the frame centre.
           projectionMatrix: [
             1.732, 0, 0, 0, 0, 1.732, 0, 0, 0, 0, -1.0002, -1, 0, 0, -0.2, 0,
           ],
         }),
-        startFrameSource: (onImage) => {
+        startFrameSource: (onImage, options) => {
           control.pump = onImage;
+          // What the app asked the source for (e.g. `?interval=`).
+          control.frameSourceOptions = options;
           return () => {
             control.pump = null;
           };
@@ -103,9 +106,14 @@ export async function installQrDemoFakes(page, { planar = true } = {}) {
 
       // Stash the frame geometry for `feedFrames`.
       control.frameImage = {
-        data: new Uint8ClampedArray(0),
-        width: frameSize,
-        height: frameSize,
+        image: {
+          data: new Uint8ClampedArray(0),
+          width: frameSize,
+          height: frameSize,
+        },
+        // The pose the framework pairs every captured frame with.
+        cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        capturedAtMs: 0,
       };
     },
     {

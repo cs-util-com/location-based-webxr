@@ -68,6 +68,20 @@ function makeSource(
     // care about the distribution rather than one sequence override it.
     random: () => 0,
     now: () => 1_000_000,
+    // ONE IN-FLIGHT REQUEST, so these tests see ONE request per tile.
+    //
+    // Since 2026-09-22 a cold tile is RACED at two operators when the client
+    // has spare concurrency, which would double the request count in every
+    // assertion below - and none of these tests is about racing. They are
+    // about headers, de-duplication, the retry ladder, the transport deadline
+    // and the slot budget, and each would become a test about racing wearing
+    // its old name.
+    //
+    // The race is covered in `overpass-race.test.ts`, including the invariant
+    // that made it necessary: in-flight requests never exceed `maxConcurrent`,
+    // racing included. A test here that wants the shipped two-wide behaviour
+    // overrides this, as the bounded-concurrency pair below does.
+    maxConcurrent: 1,
     sleepImpl: (ms: number) => {
       sleeps.push(ms);
       return Promise.resolve();
@@ -219,7 +233,15 @@ describe("bounded concurrency", () => {
           });
         }),
     );
-    const { source } = makeSource(fetchImpl, { maxConcurrent: 2 });
+    // A SINGLE-OPERATOR POOL, so this stays a test of the semaphore rather
+    // than of racing. With two operators a cold tile is raced and makes two
+    // requests, and the resolver bookkeeping below - one resolver per expected
+    // request - would starve. That the race itself never breaches this cap is
+    // asserted directly in `overpass-race.test.ts`.
+    const { source } = makeSource(fetchImpl, {
+      maxConcurrent: 2,
+      endpoints: ["https://lz4.overpass-api.de/api/interpreter"],
+    });
 
     const tiles = [
       TILE,
@@ -632,9 +654,9 @@ describe("AbortSignal support, end to end", () => {
     const controller = new AbortController();
     controller.abort();
 
-    await expect(source.fetchTile(TILE, controller.signal)).rejects.toThrow(
-      /aborted/i,
-    );
+    await expect(
+      source.fetchTile(TILE, { signal: controller.signal }),
+    ).rejects.toThrow(/aborted/i);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -655,7 +677,7 @@ describe("AbortSignal support, end to end", () => {
     const { source } = makeSource(fetchImpl);
     const controller = new AbortController();
 
-    const pending = source.fetchTile(TILE, controller.signal);
+    const pending = source.fetchTile(TILE, { signal: controller.signal });
     pending.catch(() => undefined); // observed below; keep Node quiet meanwhile
     await Promise.resolve();
 
@@ -1035,5 +1057,273 @@ describe("the attempt log stays consistent with the request count", () => {
     expect(source.stats.attempts.every((a) => a.error !== undefined)).toBe(
       true,
     );
+  });
+});
+
+describe("per-attempt transport deadline", () => {
+  // WHY THIS EXISTS AT ALL. Until 2026-09-20 `dispatch` passed only the
+  // caller's signal, so there was NO transport bound: `[timeout:180]` bounds
+  // Overpass's server-side EXECUTION, not a socket that accepts a connection
+  // and then goes quiet. A field test measured `overpass.private.coffee`
+  // holding a request for 199 s before answering, and the true worst case was
+  // whatever TCP/OS timeout happened to apply - i.e. outside this codebase.
+  //
+  // 45 s comes from a swept simulation over the measured per-host latency
+  // distribution (deadline in {15,20,30,35,45,60,90,120,180,210,none}): mean
+  // time-to-first-geometry 114.2 s unbounded against 59.7 s at 45 s, p90
+  // 336.3 s against 115.1 s. The knee sits between 30 s and 35 s - below it the
+  // deadline starts killing `maps.mail.ru`'s genuine ~31-35 s successes and
+  // costs more than it saves. 45 s rather than the point optimum of 35 s
+  // because 35 s is tuned to the maximum of a three-sample distribution, which
+  // is guaranteed to be too tight in the field.
+
+  it("bounds a request that would otherwise hang forever", async () => {
+    const fetchImpl = vi.fn(
+      (_url: string, init: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject((init.signal as AbortSignal).reason as Error),
+          );
+        }),
+    );
+    const { source } = makeSource(fetchImpl, {
+      requestTimeoutMs: 40,
+      maxRetries: 0,
+    });
+    await expect(source.fetchTile(TILE)).rejects.toThrow();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("makes the deadline RETRYABLE, not a hard abort - the whole point", async () => {
+    // THE LOAD-BEARING ASSERTION. `isAbortError` matches `name ===
+    // "AbortError"` and the attempt loop RETHROWS those instead of retrying, so
+    // spelling the deadline as `controller.abort()` would convert every slow
+    // request into a dead tile rather than a move to the next endpoint. In
+    // simulation that mistake costs single-cycle success 97.0% -> 54.9%.
+    // `AbortSignal.timeout` yields a `TimeoutError`, which the loop treats as a
+    // retryable transport failure - the same distinction `terrarium.ts` already
+    // relies on in this package.
+    let call = 0;
+    const fetchImpl = vi.fn((_url: string, init: { signal?: AbortSignal }) => {
+      call += 1;
+      if (call === 1) {
+        return new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject((init.signal as AbortSignal).reason as Error),
+          );
+        });
+      }
+      return Promise.resolve(jsonResponse({ elements: [] }));
+    });
+    const { source } = makeSource(fetchImpl, { requestTimeoutMs: 40 });
+
+    const result = await source.fetchTile(TILE);
+
+    // It recovered on the NEXT endpoint rather than failing the tile.
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.tile).toBe(TILE);
+    // And the two attempts went to different endpoints, which is what makes the
+    // deadline useful rather than merely shorter.
+    expect(fetchImpl.mock.calls[0]?.[0]).not.toBe(fetchImpl.mock.calls[1]?.[0]);
+  });
+
+  it("still honours the caller's abort as a HARD abort", async () => {
+    // The deadline must not blunt cancellation: a caller who navigates away
+    // wants the tile abandoned, not retried onto another endpoint.
+    const controller = new AbortController();
+    const fetchImpl = vi.fn(
+      (_url: string, init: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject((init.signal as AbortSignal).reason as Error),
+          );
+        }),
+    );
+    const { source } = makeSource(fetchImpl, { requestTimeoutMs: 60_000 });
+
+    const pending = source.fetchTile(TILE, { signal: controller.signal });
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    // One attempt only: an abort is not retried.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("can be switched off for a self-hosted instance, and the OFF is observable", async () => {
+    // A private instance with no competition may legitimately want to wait, and
+    // the pool's own `[timeout:180]` is the only other bound.
+    //
+    // ASSERTS THAT THE SIGNAL NEVER FIRES, and getting to that took two
+    // attempts. The first version of this test checked only that one request
+    // went out - which a `fetchImpl` resolving immediately does under a 45 s
+    // deadline too, so it passed whether the opt-out worked or not (raised in
+    // review of PR #475). The second checked that NO signal reached `fetch`,
+    // which is also wrong: the in-flight de-duplication supplies one on every
+    // request, deadline or no deadline. What the opt-out actually controls is
+    // whether that signal ever ABORTS on its own.
+    let captured: AbortSignal | undefined;
+    const fetchImpl = vi.fn((_url: string, init?: RequestInit) => {
+      captured = init?.signal ?? undefined;
+      return new Promise<Response>((resolve) => {
+        setTimeout(() => resolve(jsonResponse({ elements: [] })), 60);
+      });
+    });
+    const { source } = makeSource(fetchImpl, {
+      requestTimeoutMs: undefined,
+      sleepImpl: () => Promise.resolve(),
+    });
+
+    await source.fetchTile(TILE);
+
+    expect(captured).toBeInstanceOf(AbortSignal);
+    expect(captured?.aborted).toBe(false);
+  });
+
+  it("DOES fire when a deadline is configured, so the test above means something", async () => {
+    // The counterweight. Without it, a change that removed the deadline
+    // entirely would satisfy the opt-out test and nothing would notice.
+    let captured: AbortSignal | undefined;
+    const fetchImpl = vi.fn((_url: string, init?: RequestInit) => {
+      captured = init?.signal ?? undefined;
+      return new Promise<Response>((resolve) => {
+        setTimeout(() => resolve(jsonResponse({ elements: [] })), 60);
+      });
+    });
+    const { source } = makeSource(fetchImpl, {
+      requestTimeoutMs: 10,
+      sleepImpl: () => Promise.resolve(),
+    });
+
+    await source.fetchTile(TILE).catch(() => undefined);
+
+    expect(captured?.aborted).toBe(true);
+    expect((captured?.reason as Error | undefined)?.name).toBe("TimeoutError");
+  });
+});
+
+describe("the draw learns which operators are actually serving", () => {
+  /**
+   * WHY THESE TESTS MATTER. `operator-health.ts` is unit-tested on its own, and
+   * a tracker that nothing feeds is a tracker that does nothing. These are the
+   * WIRING: that the source classifies each attempt correctly, and that the
+   * classification reaches the draw.
+   *
+   * The classification is the part worth pinning, because three outcomes look
+   * alike from here and mean opposite things - a 504 is the host refusing us, a
+   * 400 is our own malformed query, and an abort is the caller leaving. Getting
+   * the middle one wrong would walk the whole pool one endpoint at a time while
+   * the query stayed broken.
+   */
+  const FOSSGIS = "https://lz4.overpass-api.de/api/interpreter";
+  const VK = "https://maps.mail.ru/osm/tools/overpass/api/interpreter";
+
+  /** Which endpoint each call went to, in order. */
+  function endpointsHit(fetchImpl: ReturnType<typeof vi.fn>): string[] {
+    return fetchImpl.mock.calls.map((call) => String(call[0]));
+  }
+
+  it("moves the draw away from an operator that keeps refusing", async () => {
+    // THE ITEM, end to end. `private.coffee` served 2 of 5 production tiles on
+    // 2026-09-21, both of them past the shipped 45 s deadline; a static weight
+    // keeps sending traffic there all session. With a real random draw over
+    // many tiles, an operator that always 504s must end up receiving a smaller
+    // share than it started with.
+    let seed = 1;
+    const random = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes("lz4")
+            ? errorResponse(504)
+            : jsonResponse(OK_BODY),
+        ),
+      );
+    const { source } = makeSource(fetchImpl, {
+      endpoints: [FOSSGIS, VK],
+      random,
+      maxRetries: 3,
+    });
+
+    // THE FIRST ENDPOINT OF EACH TILE, which is what the DRAW chose. An earlier
+    // version of this test took the LAST call instead, and was therefore
+    // vacuous: the failing host can never be the last call, so the share read
+    // as zero whether or not the draw had learned anything. Caught by reverting
+    // the wiring and watching the test stay green.
+    const firstChoices: string[] = [];
+    for (let i = 0; i < 40; i++) {
+      await source.fetchTile(TILE);
+      const first = endpointsHit(fetchImpl)[0];
+      if (first !== undefined) firstChoices.push(first);
+      fetchImpl.mockClear();
+    }
+
+    const share =
+      firstChoices.filter((url) => url.includes("lz4")).length /
+      firstChoices.length;
+    // FOSSGIS starts at 4 of 7 by base weight. After a session of refusals it
+    // must be well below that - the exact figure depends on the draw, so this
+    // pins the DIRECTION, which is the claim.
+    expect(share).toBeLessThan(0.3);
+  });
+
+  it("does NOT demote an operator for a 400 - that is our query, not their host", async () => {
+    // A malformed query is reported honestly by whichever host happens to get
+    // it. Counting that against the host would walk the pool while the bug
+    // stayed, and the next session would start from a poisoned prior.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(errorResponse(400)));
+    const { source } = makeSource(fetchImpl, { endpoints: [FOSSGIS, VK] });
+
+    await expect(source.fetchTile(TILE)).rejects.toThrow(/400/);
+
+    // The next tile must still start where the base weights say - with
+    // `random: () => 0` that is the heaviest operator, FOSSGIS.
+    fetchImpl.mockClear();
+    fetchImpl.mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+    await source.fetchTile(TILE_B);
+
+    expect(endpointsHit(fetchImpl)[0]).toBe(FOSSGIS);
+  });
+
+  it("does NOT demote an operator because the caller aborted", async () => {
+    // An abort says the user left, not that the host was failing - it may have
+    // been about to answer perfectly.
+    const controller = new AbortController();
+    const fetchImpl = vi.fn().mockImplementation(() => {
+      controller.abort();
+      return Promise.reject(
+        new DOMException("The operation was aborted.", "AbortError"),
+      );
+    });
+    const { source } = makeSource(fetchImpl, { endpoints: [FOSSGIS, VK] });
+
+    await expect(
+      source.fetchTile(TILE, { signal: controller.signal }),
+    ).rejects.toThrow();
+
+    fetchImpl.mockClear();
+    fetchImpl.mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+    await source.fetchTile(TILE_B);
+
+    expect(endpointsHit(fetchImpl)[0]).toBe(FOSSGIS);
+  });
+
+  it("draws exactly as the constants say on the very first fetch", async () => {
+    // A fresh session must not be a different experiment from the one the
+    // weights describe. Nothing has been observed, so nothing is scaled.
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(OK_BODY)));
+    const { source } = makeSource(fetchImpl, { endpoints: [FOSSGIS, VK] });
+
+    await source.fetchTile(TILE);
+
+    expect(endpointsHit(fetchImpl)[0]).toBe(FOSSGIS);
   });
 });

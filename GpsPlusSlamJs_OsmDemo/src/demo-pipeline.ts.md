@@ -95,10 +95,26 @@ path, with no DOM in it.
     superseded during its single fetch would otherwise go on to score 19 chunks and
     931 cells for a position the user had already left. **A test found this** — see
     `demo-pipeline.test.ts`.
-  - The signal is deliberately NOT threaded into `fetchTile`, which would need an
-    `AbortSignal` through `OsmDataSource`, `CachingSource` and `OverpassSource` — a
-    package API change and its own piece of work. The request already in flight
-    completes; only the ones after it are skipped.
+  - **The signal IS threaded into `fetchTile`**, so a superseded run stops the
+    transfer rather than merely stopping before the next one. This section used
+    to say the opposite - that the API change through `OsmDataSource`,
+    `CachingSource` and `OverpassSource` was "its own piece of work" and that
+    the in-flight request completes. That change has since landed, the inline
+    comment saying so was removed with it, and this copy outlived the
+    constraint it described. Raised in review of PR #475.
+  - **A ring's missing tiles are fetched ONE at a time** (`FETCH_CONCURRENCY`,
+    1 since 2026-09-22). It was two, so that two tiles cost `max(t1, t2)`
+    rather than `t1 + t2`.
+    - **The two in-flight requests moved to RACING instead**, by owner
+      decision: the source now asks two operators for each cold tile and takes
+      the first answer. Ring parallelism helped the 18.8% of positions whose
+      first ring needs two tiles; racing helps every cold tile, and helps on the
+      axis that actually hurt - measured 4 of 9 tiles served inside the deadline
+      without it against 7 of 9 with it.
+    - The client's peak is therefore unchanged at two in-flight requests.
+      Raising this back to two without lowering something else would make it
+      four, and that number was sized against Overpass's per-operator
+      `Rate limit: 2`.
 
 - **DOM-free and unit-tested, because the browser is a bad debugger.** Iteration
   8's value is a human judging a picture; getting the data to the picture is
@@ -230,10 +246,17 @@ missing four stages** — the plan's own failure mode, one level down.
   fetching, that growth would be invisible, and it is the term nothing has ever
   measured.
 - **`fetchMs` and `pipelineMs` are wall clocks, and `fetchMs` is what makes the fetch parts
-  falsifiable.** `click-timings.ts` subtracts the per-tile parts from it and
-  reports the difference as `fetchUnattributedMs`. Any set of plausible
-  per-stage numbers adds up to something;
-  only a separately measured whole can say the parts are wrong.
+  falsifiable.** `click-timings.ts` subtracts the loop's CRITICAL PATH
+  (`fetchCriticalPathMs`) plus the merge from it and reports the difference as
+  `fetchUnattributedMs`. Any set of plausible per-stage numbers adds up to
+  something; only a separately measured whole can say the parts are wrong.
+  - **It subtracted the per-tile PARTS until 2026-09-22, and that stopped being
+    right on 2026-09-20** when the loop began fetching two tiles at once. The
+    parts are sums over tiles that overlap, so they exceeded the wall clock and
+    every multi-tile click printed as untrustworthy - the exact case the pool
+    exists for. `fetchCriticalPathMs` is the busiest fetch worker's own total,
+    i.e. the earliest the loop could have ended; on a single-tile pass it equals
+    the sum of the parts, so no already-correct number moved.
 - **`tilesUnmeasured` is a count, not an absence.** A fixture-backed run must
   not read as a click whose network cost nothing.
 - **`featuresHeld` is `tilesHeld`'s missing denominator** (added 2026-08-31).

@@ -34,9 +34,6 @@
  */
 
 import {
-  CachingSource,
-  MemoryBlobStore,
-  OverpassSource,
   browserPngDecoder,
   buildAreaPlates,
   buildBarriers,
@@ -70,13 +67,10 @@ import {
   type OsmFeature,
   type RuleTable,
 } from "gps-plus-slam-osm";
-import {
-  OpfsOsmBlobStore,
-  openOsmStoreDirectory,
-} from "gps-plus-slam-app-framework/osm-bridge";
 
 import { planRouteWithIndex } from "../agent-route.js";
 import { createDemProvider } from "../dem-provider.js";
+import { createOsmTileSource, openOsmStore } from "../osm-tile-cache.js";
 import { WALKABLE_CATEGORY, walkableScoreOf } from "../route-penalty.js";
 import { buildCellMesh } from "../cell-mesh.js";
 import { shellRandFor } from "./shell-rand.js";
@@ -92,6 +86,7 @@ import { createTerrainField, type TerrainField } from "../terrain-field.js";
 import { terrainWindowFor } from "../terrain-window.js";
 import { createMeshPlanner } from "./mesh-planner.js";
 import { createObstacleIndexCache } from "./obstacle-index-cache.js";
+import { osmStoreWarn } from "./osm-store-warn.js";
 import { createPrefetchQueue, type PrefetchQueue } from "./prefetch-queue.js";
 import {
   createTerrainGate,
@@ -110,24 +105,6 @@ import {
   type UpdateResult,
   type WorkerCalls,
 } from "./protocol.js";
-
-/**
- * OPFS where available, memory otherwise.
- *
- * OPFS is the point — a cached res-7 tile is tens of MB and refetching it on
- * every reload would be an abuse of donated infrastructure. But the demo must
- * still run in a browser without it rather than refusing to start.
- */
-async function makeStore() {
-  try {
-    const root = await navigator.storage.getDirectory();
-    return new OpfsOsmBlobStore({
-      directory: await openOsmStoreDirectory(root),
-    });
-  } catch {
-    return new MemoryBlobStore();
-  }
-}
 
 /** Everything the worker owns, built once on `init`. */
 interface WorkerState {
@@ -206,14 +183,6 @@ let terrainCentre:
 const terrainGate = createTerrainGate();
 
 /**
- * The ENU frame at `centre` plus the terrain sampler every builder reads.
- *
- * ONE PLACE, because the region slabs are now built on their own as well as
- * inside a full mesh (W6) and the two must stand on the same surface. Deriving
- * the sampler twice is the shape of defect this demo keeps finding: two
- * computations that agree today with nothing asserting they always will.
- */
-/**
  * The key the cell-mesh request's single score is filed under.
  *
  * `buildCellMesh` looks a score up by category, and the caller has already
@@ -239,6 +208,14 @@ function heightAtEnu(point: { x: number; y: number }): number {
   return field === undefined ? 0 : field.heightAt(point);
 }
 
+/**
+ * The ENU frame at `centre` plus the terrain sampler every builder reads.
+ *
+ * ONE PLACE, because the region slabs are now built on their own as well as
+ * inside a full mesh (W6) and the two must stand on the same surface. Deriving
+ * the sampler twice is the shape of defect this demo keeps finding: two
+ * computations that agree today with nothing asserting they always will.
+ */
 function meshOptions(centre: LatLng): {
   frame: ReturnType<typeof enuFrameAt>;
   groundHeightM?: (position: LatLng) => number;
@@ -560,13 +537,6 @@ let lastMeshBuild: MeshBuildRecord | undefined;
 let updatesInFlight = 0;
 
 /**
- * Builds what this pass actually needs to send.
- *
- * The region slabs are ALWAYS rebuilt, because they are a product of SCORING and
- * scoring is exactly what a widening ring changes. Everything else is a product
- * of the features, the terrain and the frame origin.
- */
-/**
  * Packs below-surface outlines into ENU x,y pairs.
  *
  * ONE IMPLEMENTATION FOR BOTH REPLY KINDS. The full mesh and the regions-only
@@ -590,6 +560,13 @@ function packUnderground(
   });
 }
 
+/**
+ * Builds what this pass actually needs to send.
+ *
+ * The region slabs are ALWAYS rebuilt, because they are a product of SCORING and
+ * scoring is exactly what a widening ring changes. Everything else is a product
+ * of the features, the terrain and the frame origin.
+ */
 function meshUpdateFor(
   snapshot: {
     position: LatLng;
@@ -652,14 +629,14 @@ async function handle<K extends WorkerCallKind>(
       // The same OPFS store serves both because the keys are namespaced —
       // `rules/v1/table.csv` against `osm/v{n}/{tile}` — and a second store would
       // be a second OPFS directory for no reason.
-      const store = await makeStore();
+      // OPFS where available, memory otherwise - built in `osm-tile-cache.ts`,
+      // the one place the globe's arrival prefetch builds it too, so the two
+      // can never warm and read different caches. Its failures go to the
+      // framework logger (a Sentry Issue), as before the store stopped
+      // importing the logger itself.
+      const store = await openOsmStore({ warn: osmStoreWarn });
       const loaded = await loadRuleTable({ store });
-      const source = new CachingSource(
-        new OverpassSource({
-          userAgent: "gps-plus-slam-osm-demo (github.com/cs-util-com)",
-        }),
-        store,
-      );
+      const source = createOsmTileSource(store);
       const pipeline = new DemoPipeline({ source, table: loaded.table });
       // THE SAME STORE AGAIN, third tenant: DEM tiles are keyed by their full
       // request URL, so they coexist with `osm/v{n}/…` and `rules/v1/…` the
@@ -696,8 +673,15 @@ async function handle<K extends WorkerCallKind>(
         // OPFS blob store the next foreground fetch reads from. A separate
         // source would warm a cache nobody consults.
         prefetch: createPrefetchQueue({
+          // WHERE THE EXEMPTION IS DECLARED. Everything this queue fetches
+          // is a background ring warm nobody is waiting on, so the flag
+          // belongs to the WIRING rather than inside the queue - the queue
+          // has no opinion about racing and should not grow one.
           fetchTile: (tile, prefetchSignal) =>
-            source.fetchTile(tile, prefetchSignal),
+            source.fetchTile(tile, {
+              signal: prefetchSignal,
+              speculative: true,
+            }),
           isLoaded: (tile) => pipeline.hasTile(tile),
         }),
         terrainField,
@@ -743,6 +727,23 @@ async function handle<K extends WorkerCallKind>(
       // THE HANDLER'S OWN WALL CLOCK, measured wholly inside the worker so the
       // page can derive the clone cost without needing a shared origin at all.
       const workerStart = nowMs();
+      // FREE THE SLOT BEFORE THE USER'S OWN FETCH, not after it.
+      //
+      // `prefetch.replace` runs below, AFTER `pipeline.update` - it has to,
+      // because it STARTS background requests and the user's tile must never
+      // queue behind one. The consequence was that its other half, dropping
+      // what the user has left behind, also ran too late: the previous
+      // position's prefetch held one of the two slots for the whole of this
+      // fetch. `OverpassSlotBudget.tryAcquire` refuses rather than queues, the
+      // refusal lands in `demo-pipeline`'s per-tile catch, and the tile becomes
+      // a `missingTiles` entry - geometry silently absent, no error anywhere,
+      // on the 18.5% of positions whose first ring needs two tiles.
+      //
+      // `retain` is the dropping half alone and starts nothing, so it is safe
+      // here. A prefetch the new position still wants is KEPT, because
+      // discarding a 15-90 s background fetch on every click would mean it never
+      // finishes.
+      prefetch.retain(pipeline.neighbourTilesFor(position));
       const snapshot = await pipeline.update(
         position,
         category,

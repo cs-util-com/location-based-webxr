@@ -56,6 +56,19 @@
       #overlay > * {
         pointer-events: auto;
       }
+      /* The diagnostics line (first-visit report on r753): small, a fixed
+         four-line box so its changing numbers never reflow the panel, and
+         deaf to taps so it never swallows one meant for the scene. It stays
+         visible in AR: the owner reads it from a screenshot. */
+      #diagnostics {
+        display: block;
+        font-size: var(--size-hint);
+        line-height: 1.3;
+        height: calc(4 * 1.3em);
+        overflow: hidden;
+        overflow-wrap: anywhere;
+        pointer-events: none;
+      }
     </style>
   </head>
   <body>
@@ -176,11 +189,22 @@
                 <option value="off">Off</option>
               </select>
             </span>
+            <label class="switch">
+              <input
+                id="shadows-toggle"
+                type="checkbox"
+                data-testid="shadows-toggle"
+                checked
+              />
+              <span class="switch-track"></span>
+              Shadows
+            </label>
           </div>
           <span id="physics-hint" class="hint">
             Click / tap to shoot a ball into the scene.
           </span>
           <span id="stats" class="num" data-testid="stats"></span>
+          <span id="diagnostics" class="num" data-testid="diagnostics"></span>
           <p
             id="error"
             class="prose"

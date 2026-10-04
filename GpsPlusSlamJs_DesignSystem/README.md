@@ -79,6 +79,30 @@ accepted cost that Android blocks `getUserMedia` without HTTPS - the
 live camera background shows its error toast there; every other
 background works.
 
+## The 3D look-dev page (`3d/`)
+
+Since 2026-09-23 the package also hosts a 3D page for the demos' scene look:
+a physical sky and atmosphere (the framework's `SkyAtmosphere`) over a
+stand-in city, with presets, a tone-map A/B, the sky-matched haze and a
+cloud layer; OsmDemo's desktop view runs the same sky since M3. It stays no-build: `serve.mjs` serves the framework's TypeScript
+source with the types stripped, and three from the framework's
+lockfile-pinned copy. `pnpm run serve` → `/3d/`, `pnpm run shoot:3d` for
+screenshots, `pnpm run measure:globe` for the globe lab's memory and
+download table, and the `test:e2e` gate stage compiles and checks every shader.
+Details: `3d/README.md`.
+
+### The browser tests: a fast tier and on-demand measurements
+
+`pnpm run test:e2e` runs the fast tier only (`3d/pages.fast.spec.mjs`,
+about 5 minutes): every deployable page opens, reaches its ready signal,
+compiles the shader variants its switches select and draws, with no page
+error, console error, missing file or network request. The measurements
+(every `*.smoke.spec.mjs`: looks, costs, sweeps, hours on a CPU rasteriser)
+run on demand: `DS_E2E_TIER=full pnpm run test:e2e` for all, or name one
+(`pnpm run test:e2e labs/globe/globe-relief.smoke.spec.mjs`). Run a lab's
+measurements when a change targets its look or its cost, and before a look
+decision. Plan: `2026-10-04-1002-design-system-fast-e2e-tier-plan.md`.
+
 ## Vendoring into an app
 
 Before the first copy lands, measure what the sheet would change on the

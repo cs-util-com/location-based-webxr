@@ -40,6 +40,7 @@ This module is the entry point that runs on page load. It also exports the follo
 ## Invariants & Assumptions
 
 - Runs in a browser with potential WebXR support
+- `main()` first installs the framework's page-wide [`guardSlidersIn(document)`](../../GpsPlusSlamJs_AppFramework/src/utils/slider-scroll-guard.ts.md), so a vertical swipe that starts on any slider (the settings modal's, the HUD debug wheel's built at runtime) scrolls instead of editing it (2026-07-27 feedback, 2026-09-30 report). Held to it by the root `tests/repo-config/slider-pages-load-the-guard.test.js`.
 - DOM elements exist in `index.html` (buttons, modals, etc.)
 - File System Access API available (Chrome Android 142+)
 - **Navigation store getter**: `initNavigation` receives `() => store` (not `store` directly) so that after soft reset the navigation module always resolves the current store instance (Bug 9 fix).
@@ -84,6 +85,11 @@ This module is the entry point that runs on page load. It also exports the follo
   options, the scope and the resources record to `wireArScene`, which attaches
   every visualizer/grid/subscriber block. `main.ts` keeps only the session
   negotiation, the callbacks struct and the user-facing status/error paths.
+- **The AR sun check** (`?debug=1` only, like the wheel; sun-overlay plan M3):
+  created at init by [`ar/recorder-sun-check.ts`](ar/recorder-sun-check.ts.md), switched by
+  the wheel's `onSunCheckChange`, and attached after `wireArScene` with
+  `attachSunCheckToSession`, which detaches it at the session's end (the
+  framework's session disposers) or at the scope's unwind, whichever comes first.
 - **Live QR recording + debug viz** (opt-in, `recording-options.qr.enabled`;
   recorder live-QR WS-2/WS-5). When enabled, `handleEnterAR` includes the
   camera-frame group in the `ArSessionCallbacks` struct passed to `initAR`

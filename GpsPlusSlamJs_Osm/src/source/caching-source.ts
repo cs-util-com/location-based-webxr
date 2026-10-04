@@ -9,7 +9,11 @@
  * @see caching-source.ts.md
  */
 
-import type { OsmDataSource, OsmTileResult } from "./osm-data-source.js";
+import type {
+  FetchTileOptions,
+  OsmDataSource,
+  OsmTileResult,
+} from "./osm-data-source.js";
 import { elapsedMs, joinedTimings } from "./osm-data-source.js";
 import type { OsmBlobStore } from "./osm-blob-store.js";
 import { OVERPASS_SCHEMA_VERSION } from "./overpass-query.js";
@@ -43,6 +47,13 @@ export interface EnsureOptions {
    * per call, and `fetchedAt` is surfaced so they can decide.
    */
   readonly maxAgeMs?: number;
+  /**
+   * Passed straight through to the inner source - see
+   * {@link FetchTileOptions.speculative}. Caching itself does not care: a
+   * speculative tile is stored and served exactly like any other, which is the
+   * whole point of warming one.
+   */
+  readonly speculative?: boolean;
 }
 
 /**
@@ -79,11 +90,16 @@ export class CachingSource implements OsmDataSource {
     storeFailures: 0,
   };
 
+  private readonly inner: OsmDataSource;
+  private readonly store: OsmBlobStore;
+
   constructor(
-    private readonly inner: OsmDataSource,
-    private readonly store: OsmBlobStore,
+    inner: OsmDataSource,
+    store: OsmBlobStore,
     options: CachingSourceOptions = {},
   ) {
+    this.inner = inner;
+    this.store = store;
     this.attribution = inner.attribution;
     this.sourceId = `cached(${inner.sourceId})`;
     this.schemaVersion = options.schemaVersion ?? OVERPASS_SCHEMA_VERSION;
@@ -110,9 +126,11 @@ export class CachingSource implements OsmDataSource {
     return `osm/v${this.schemaVersion}/${tile}`;
   }
 
-  fetchTile(tile: string, signal?: AbortSignal): Promise<OsmTileResult> {
+  fetchTile(tile: string, options?: FetchTileOptions): Promise<OsmTileResult> {
+    const signal = options?.signal;
     return this.ensureTile(tile, {
       ...(signal !== undefined ? { signal } : {}),
+      ...(options?.speculative === true ? { speculative: true } : {}),
     });
   }
 
@@ -166,7 +184,13 @@ export class CachingSource implements OsmDataSource {
     const result = await this.inFlight.join(
       tile,
       (dedupSignal) =>
-        this.fetchAndStore(tile, cached, read.probeMs, dedupSignal),
+        this.fetchAndStore(
+          tile,
+          cached,
+          read.probeMs,
+          dedupSignal,
+          options.speculative === true,
+        ),
       options.signal,
     );
     if (!joined) return result;
@@ -203,9 +227,17 @@ export class CachingSource implements OsmDataSource {
     cached: OsmTileResult | undefined,
     probeMs: number,
     signal: AbortSignal,
+    speculative: boolean,
   ): Promise<OsmTileResult> {
     return this.inner
-      .fetchTile(tile, signal)
+      .fetchTile(tile, {
+        signal,
+        // FORWARDED RATHER THAN DROPPED. This decorator is the only thing
+        // between the prefetch queue and the Overpass client in the demo's
+        // wiring, so swallowing the flag here would silently un-exempt every
+        // background ring warm and nothing would fail.
+        ...(speculative ? { speculative: true } : {}),
+      })
       .then(async (result) => {
         // STRIPPED BEFORE PERSISTING, and this is the single most consequential
         // line in the file for the click-path breakdown. `timings` describes
@@ -325,14 +357,6 @@ export class CachingSource implements OsmDataSource {
   }
 
   /**
-   * Reads and validates a cached entry.
-   *
-   * A corrupt or truncated entry (interrupted write, quota eviction mid-write,
-   * a storage backend that lied) is treated as a miss rather than allowed to
-   * throw. The cost of being wrong is one refetch; the cost of throwing is a
-   * permanently poisoned tile that no amount of retrying fixes.
-   */
-  /**
    * Reads, validates, and reports what the attempt cost either way.
    *
    * `probeMs` is the WHOLE attempt — read plus decode — and is what a miss or a
@@ -344,6 +368,11 @@ export class CachingSource implements OsmDataSource {
    * one branch that dropped it. (This used to say "measured in a `finally`";
    * the behaviour was right and there is no `finally` here, so a reader looking
    * for one would not find it.)
+   *
+   * A corrupt or truncated entry (interrupted write, quota eviction
+   * mid-write, a storage backend that lied) is treated as a MISS rather than
+   * allowed to throw. The cost of being wrong is one refetch; the cost of
+   * throwing is a permanently poisoned tile that no amount of retrying fixes.
    */
   private async readCachedTimed(tile: string): Promise<{
     readonly result: OsmTileResult | undefined;

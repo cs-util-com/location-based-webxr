@@ -6,12 +6,12 @@ Redux middleware factory that persists qualifying actions to a `StorageBackend` 
 
 ## Public API
 
-| Export                          | Kind     | Description                                                                                  |
-| ------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
-| `PersistenceMiddlewareOptions`  | Type     | Options: `storageBackend` (required), `persistedPrefixes` (required), `onWriteFailure` (opt) |
-| `PersistenceMiddleware`         | Type     | `Middleware & { flushPendingWrites(): Promise<void> }` — the middleware plus its drain hook  |
-| `createPersistenceMiddleware()` | Function | Factory returning a `PersistenceMiddleware`                                                  |
-| `slicePrefixOf()`               | Function | `'gpsData/setZeroPos'` → `'gpsData'`; used by callers to derive prefixes from action types   |
+| Export                          | Kind     | Description                                                                                                                           |
+| ------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `PersistenceMiddlewareOptions`  | Type     | Options: `storageBackend` (required), `persistedPrefixes` (required), `onWriteFailure`, `persistWhile`, `continuousActionIndex` (opt) |
+| `PersistenceMiddleware`         | Type     | `Middleware & { flushPendingWrites(): Promise<void> }` — the middleware plus its drain hook                                           |
+| `createPersistenceMiddleware()` | Function | Factory returning a `PersistenceMiddleware`                                                                                           |
+| `slicePrefixOf()`               | Function | `'gpsData/setZeroPos'` → `'gpsData'`; used by callers to derive prefixes from action types                                            |
 
 ## Persistence Rules
 
@@ -20,11 +20,16 @@ Redux middleware factory that persists qualifying actions to a `StorageBackend` 
 3. **Exclusion:** `recording/recordWriteFailure` is always excluded (derived from the imported `recordWriteFailure.type`, not a literal) to prevent recursive persistence.
 4. **Non-persisted prefixes:** `routing/*`, `scenario/*`, `gpsElements/*`, `arElements/*`, `tracking/*`, `trackingQuality/*`, and any other non-whitelisted action types are not persisted.
 5. **Stop semantics:** `endSession` itself IS persisted (detected via `wasRecording` check). After `endSession`, `isRecording` is `false`, so no further actions are persisted.
+6. **Session-spanning recordings (opt-in, 2026-09-28):** two options for an app whose own recording outlives its sessions - the Tour Viewer, which dispatches `startSession` on every AR entry and `endSession` + `resetGpsSessionData` on every exit ([authoring recording plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-09-28-0953-tour-viewer-authoring-recording-anchoring-and-editing-plan.md) §2.3, review findings 1 and 2).
+   - `persistWhile?: () => boolean` **replaces** rule 1 (and with it rule 5's `endSession` special case): an action is persisted exactly when the predicate returns true after the reducer ran. Without it the per-entry reset (dispatched after `endSession`) and every action dispatched on the page outside a session are dropped, and a replay solves a later entry over both entries' odometry pairs, which the live session never did.
+   - `continuousActionIndex?: boolean` (default `false`) stops the numbering from restarting at `startSession`; without it a second session overwrites the first one's `000001.json` onwards.
+   - The two are independent flags; the defaults are exactly the rules above, which the Recorder relies on.
 
 ## Invariants & Assumptions
 
 - **Per-instance action index** (Bug 10 fix): each middleware instance maintains its own `actionIndex` counter starting at 0. Pre-increment yields 1-based indices (`000001.json`, `000002.json`, …). This prevents cross-store index bleed.
-- **Index reset on startSession:** `actionIndex` is reset to 0 when `recording/startSession` is dispatched, ensuring each session starts at index 1.
+- **Index reset on startSession:** `actionIndex` is reset to 0 when `recording/startSession` is dispatched, ensuring each session starts at index 1 - unless `continuousActionIndex` is set, when the index runs for the instance's whole life.
+- **The option branches are resolved once, at creation** (`persistsAfterReduce`, `restartsNumbering`), so the per-action handler stays one straight line; the options cannot change after the middleware is built.
 - **Write queue with concurrency limit:** `storageBackend.writeAction()` calls are enqueued in a `WriteQueue` with a maximum of 3 concurrent writes. This prevents unbounded memory growth when storage is slow (e.g., OPFS locked by another tab or GC pauses on mobile). Failures are caught and handled via `recordWriteFailure` dispatch + `onWriteFailure` callback.
 - **Drain hook (`flushPendingWrites`, 2026-07-12):** resolves once the queue is fully idle — every enqueued write (including ones waiting behind the concurrency cap) has settled; resolves immediately when idle and never hangs on rejected writes (they count as settled). The stop flow MUST await it (via the store's `flushPendingActionWrites`) before anything reads the session's `actions/` (final sync, ZIP export) — otherwise an action dispatched moments before Stop can land after the export enumerated the directory and silently miss the zip (indoor-loop enablement follow-up §3.6b). Writes enqueued after the queue went idle again are not waited for.
 - **Error normalization:** non-`Error` rejections (e.g., `Promise.reject('string')`) are wrapped in `new Error(String(err))` before processing.
@@ -68,6 +73,7 @@ configureStore({
   - Action passthrough (middleware doesn't block dispatch)
   - Concurrent write limit when storage is slow (backpressure)
   - Multi-session actionIndex reset (new sessions start at index 1)
+  - **Session-spanning recordings** (`describe('session-spanning recordings ...')`): with `persistWhile` + `continuousActionIndex`, two AR entries record every action including the reset after `endSession` and a page-side action, numbered 1..9 without restarting; `persistWhile` false writes nothing even inside a session; `persistWhile` alone still restarts at each `startSession`; the defaults still drop the reset and the page-side action and restart at 1
   - `endSession` persistence (not dropped by isRecording=false gate)
   - **Data-driven whitelist:** only slices listed in `persistedPrefixes` are persisted; an unlisted slice is dropped even while recording (the rename-drift guard)
   - **`slicePrefixOf`** unit tests (namespaced type → prefix, no-slash passthrough, first-slash split)

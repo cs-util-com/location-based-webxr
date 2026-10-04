@@ -444,10 +444,23 @@ test.describe("the background ring prefetch", () => {
         .poll(() => counts.overpassQuery, { timeout: 30000 })
         .toBeGreaterThan(1);
 
-      // AT MOST SEVEN: the tile the user is in plus its six neighbours
-      // (`fetchWorkingSet`). More than that would mean the queue is following the
-      // ring of a ring, which is how a background loader becomes a crawler.
-      expect(counts.overpassQuery).toBeLessThanOrEqual(7);
+      // AT MOST EIGHT REQUESTS for seven TILES - the one the user is in plus its
+      // six neighbours (`fetchWorkingSet`). The split is the point: the user's
+      // own tile is raced at two operators and costs TWO requests, while each
+      // background neighbour is fetched speculatively and costs ONE. More than
+      // that would mean the queue is following the ring of a ring, which is how
+      // a background loader becomes a crawler.
+      //
+      // ⚠️ THE UNITS ARE REQUESTS, NOT TILES, and this number has moved twice
+      // in one day - 7, then 14, now 8 - so read it rather than adjusting it.
+      // Racing exists so a tile the USER is waiting for arrives at all:
+      // measured 4 of 9 served inside the 45 s deadline without it against 7 of
+      // 9 with it. It briefly applied to prefetches too, which is what this
+      // test caught at 14. Nobody is waiting on a background warm - if it fails
+      // the neighbour simply is not warm, and the user's later fetch is itself
+      // raced - so `FetchTileOptions.speculative` exempts it, and the doubling
+      // is back to where it buys something.
+      expect(counts.overpassQuery).toBeLessThanOrEqual(8);
     });
 
     await test.step("a prefetched neighbour is reused, not fetched again", async () => {

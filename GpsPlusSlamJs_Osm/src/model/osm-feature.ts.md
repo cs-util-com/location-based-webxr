@@ -16,8 +16,30 @@ The typed OSM domain model: a **raw element graph**, not GeoJSON.
 - `getOsmDebugUrl(type, id)` → openstreetmap.org permalink.
 - `isClosedWay(way)` → boolean.
 - `positionsEqual(a, b)` → boolean (exact).
+- `sameFeatureContent(a, b)` → boolean. Same tags and same geometry, comparing
+  CONTENT only - identity is assumed already settled by `featureKey`.
 
 ## Invariants & assumptions
+
+- **`sameFeatureContent` exists because "the same feature" arrives as different
+  objects.** Fetch tiles are H3 cells' bounding RECTANGLES, so adjacent tiles
+  overlap; `out geom` returns a feature's whole geometry whenever its bbox is
+  touched; and the parser builds a fresh object per delivery. `AffordanceIndex`
+  compared held against incoming with `!==` on BOTH its merge paths, so every
+  re-delivered duplicate near a seam looked like an edit and threw away its
+  converted geometry - breaking that class's own promise that conversion happens
+  once per feature ever.
+  - **It compares content, never identity.** Two features reaching it have
+    already matched on `featureKey` (type plus id). Comparing those again would
+    be redundant; comparing them INSTEAD is what makes an edited feature look
+    unchanged.
+  - **Exact coordinates, for `positionsEqual`'s reason.** Overpass emits the
+    same node's coordinates identically wherever it appears, which is what makes
+    re-delivery detectable at all; an epsilon would also call a genuinely moved
+    node unchanged.
+  - **The bias is towards "changed".** Anything it cannot prove identical is
+    reported different, so the caller re-converts. A needless re-conversion
+    costs microseconds; a missed one draws the old shape forever.
 
 - **Everything here is structured-cloneable.** Plain objects and arrays only —
   no class instances, no methods, no closures, no `Map`/`Set` on the wire. These

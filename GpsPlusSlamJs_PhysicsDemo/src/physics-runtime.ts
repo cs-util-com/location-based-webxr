@@ -69,7 +69,14 @@ export interface PhysicsRuntime {
   ): void;
   clearBalls(): void;
   ballCount(): number;
+  /** Each ball's WORLD position and radius (metres), for probes. */
+  balls(): { position: THREE.Vector3; radius: number }[];
   colliderShapeCount(): number;
+  /**
+   * The `nowMs` of the last collider build, or null while none was built
+   * (the status line's collider age).
+   */
+  colliderBuiltAtMs(): number | null;
   dispose(): void;
 }
 
@@ -134,7 +141,18 @@ export function createPhysicsRuntime(
       session.clearBalls();
     },
     ballCount: () => session.ballCount(),
+    balls() {
+      ballGroup.updateWorldMatrix(true, true);
+      // The ball meshes are this group's children: a unit sphere scaled to
+      // the radius (WEBXR_TO_NUE and the alignment carry no scale).
+      return ballGroup.children.map((mesh) => ({
+        position: mesh.getWorldPosition(new THREE.Vector3()),
+        radius: mesh.scale.x,
+      }));
+    },
     colliderShapeCount: () => session.colliderShapeCount(),
+    colliderBuiltAtMs: () =>
+      Number.isFinite(lastRebuild) ? lastRebuild : null,
     dispose(): void {
       session.dispose();
       arWorldGroup.remove(ballGroup);

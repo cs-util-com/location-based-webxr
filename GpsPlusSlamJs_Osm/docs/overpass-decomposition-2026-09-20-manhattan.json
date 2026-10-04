@@ -1,0 +1,604 @@
+{
+  "measuredAt": "2026-09-19T23:30:05.879Z",
+  "finishedAt": "2026-09-19T23:41:02.002Z",
+  "runtime": {
+    "node": "v24.14.1",
+    "platform": "win32"
+  },
+  "settings": {
+    "budgetMs": 1680000,
+    "maxTotalBytes": 900000000,
+    "requestTimeoutMs": 210000,
+    "maxResponseBytes": 120000000,
+    "cooldownMs": 60000
+  },
+  "plannedCells": [
+    {
+      "id": "[1,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"full-production180\"]",
+      "profile": "full-production180",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"highway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"surface\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"landuse\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"natural\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"leisure\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"amenity\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"barrier\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"access\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"wheelchair\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"water\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"waterway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"man_made\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"tourism\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sport\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"playground\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:part\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"min_height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:shape\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"layer\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"historic\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"place\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"power\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"entrance\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"railway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"service\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"foot\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"crossing\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sidewalk\"][\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 1
+    },
+    {
+      "id": "[1,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33\"]",
+      "profile": "prod-33",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"=\"multipolygon\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 1
+    },
+    {
+      "id": "[1,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33-areal\"]",
+      "profile": "prod-33-areal",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 1
+    },
+    {
+      "id": "[2,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33-areal\"]",
+      "profile": "prod-33-areal",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 2
+    },
+    {
+      "id": "[2,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33\"]",
+      "profile": "prod-33",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"=\"multipolygon\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 2
+    },
+    {
+      "id": "[2,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"full-production180\"]",
+      "profile": "full-production180",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"highway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"surface\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"landuse\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"natural\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"leisure\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"amenity\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"barrier\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"access\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"wheelchair\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"water\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"waterway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"man_made\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"tourism\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sport\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"playground\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:part\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"min_height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:shape\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"layer\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"historic\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"place\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"power\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"entrance\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"railway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"service\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"foot\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"crossing\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sidewalk\"][\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 2
+    },
+    {
+      "id": "[3,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33\"]",
+      "profile": "prod-33",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"=\"multipolygon\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 3
+    },
+    {
+      "id": "[3,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33-areal\"]",
+      "profile": "prod-33-areal",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 3
+    },
+    {
+      "id": "[3,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"full-production180\"]",
+      "profile": "full-production180",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"highway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"surface\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"landuse\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"natural\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"leisure\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"amenity\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"barrier\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"access\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"wheelchair\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"water\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"waterway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"man_made\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"tourism\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sport\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"playground\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:part\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"min_height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:shape\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"layer\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"historic\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"place\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"power\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"entrance\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"railway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"service\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"foot\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"crossing\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sidewalk\"][\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 3
+    }
+  ],
+  "complete": true,
+  "results": [
+    {
+      "id": "[1,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"full-production180\"]",
+      "profile": "full-production180",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"highway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"surface\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"landuse\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"natural\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"leisure\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"amenity\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"barrier\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"access\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"wheelchair\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"water\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"waterway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"man_made\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"tourism\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sport\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"playground\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:part\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"min_height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:shape\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"layer\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"historic\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"place\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"power\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"entrance\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"railway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"service\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"foot\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"crossing\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sidewalk\"][\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 1,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:30:06.057Z",
+      "finishedAt": "2026-09-19T23:30:34.316Z",
+      "headersMs": 20624,
+      "firstByteMs": 20626,
+      "totalMs": 28259,
+      "bytes": 49467471,
+      "decodeMs": 1310,
+      "elementCount": 71571,
+      "counts": {
+        "node": 28118,
+        "way": 43098,
+        "relation": 355
+      },
+      "semanticHash": "2736de7a76984ade54a0bfa77740fae6158c8fa71839014973bd6cc751b0506a",
+      "osmTimestamp": "2026-09-19T23:28:48Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789860618000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    },
+    {
+      "id": "[1,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33\"]",
+      "profile": "prod-33",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"=\"multipolygon\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 1,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:31:35.811Z",
+      "finishedAt": "2026-09-19T23:31:50.137Z",
+      "headersMs": 11383,
+      "firstByteMs": 11385,
+      "totalMs": 14327,
+      "bytes": 49365149,
+      "decodeMs": 1263,
+      "elementCount": 71571,
+      "counts": {
+        "node": 28118,
+        "way": 43098,
+        "relation": 355
+      },
+      "semanticHash": "849ae7de18484905688ba3e0e18b28c6ea42ca1baaba190a684e51e5f8564fa1",
+      "osmTimestamp": "2026-09-19T23:29:48Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789860708000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    },
+    {
+      "id": "[1,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33-areal\"]",
+      "profile": "prod-33-areal",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 1,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:32:51.587Z",
+      "finishedAt": "2026-09-19T23:33:09.162Z",
+      "headersMs": 14678,
+      "firstByteMs": 14679,
+      "totalMs": 17575,
+      "bytes": 50588645,
+      "decodeMs": 1197,
+      "elementCount": 71608,
+      "counts": {
+        "node": 28118,
+        "way": 43098,
+        "relation": 392
+      },
+      "semanticHash": "ff9f882912097d4b8898d80e31be0d71a0a6568908a0236a55566778f75ee4a2",
+      "osmTimestamp": "2026-09-19T23:31:46Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789860783000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    },
+    {
+      "id": "[2,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33-areal\"]",
+      "profile": "prod-33-areal",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 2,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:34:10.589Z",
+      "finishedAt": "2026-09-19T23:34:23.531Z",
+      "headersMs": 10134,
+      "firstByteMs": 10135,
+      "totalMs": 12942,
+      "bytes": 50588645,
+      "decodeMs": 1200,
+      "elementCount": 71608,
+      "counts": {
+        "node": 28118,
+        "way": 43098,
+        "relation": 392
+      },
+      "semanticHash": "ff9f882912097d4b8898d80e31be0d71a0a6568908a0236a55566778f75ee4a2",
+      "osmTimestamp": "2026-09-19T23:33:00Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789860862000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    },
+    {
+      "id": "[2,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33\"]",
+      "profile": "prod-33",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"=\"multipolygon\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 2,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:35:24.910Z",
+      "finishedAt": "2026-09-19T23:35:41.548Z",
+      "headersMs": 12872,
+      "firstByteMs": 12872,
+      "totalMs": 16637,
+      "bytes": 49365149,
+      "decodeMs": 1153,
+      "elementCount": 71571,
+      "counts": {
+        "node": 28118,
+        "way": 43098,
+        "relation": 355
+      },
+      "semanticHash": "849ae7de18484905688ba3e0e18b28c6ea42ca1baaba190a684e51e5f8564fa1",
+      "osmTimestamp": "2026-09-19T23:34:00Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789860937000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    },
+    {
+      "id": "[2,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"full-production180\"]",
+      "profile": "full-production180",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"highway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"surface\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"landuse\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"natural\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"leisure\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"amenity\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"barrier\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"access\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"wheelchair\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"water\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"waterway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"man_made\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"tourism\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sport\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"playground\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:part\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"min_height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:shape\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"layer\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"historic\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"place\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"power\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"entrance\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"railway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"service\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"foot\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"crossing\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sidewalk\"][\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 2,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:36:42.901Z",
+      "finishedAt": "2026-09-19T23:37:05.211Z",
+      "headersMs": 19283,
+      "firstByteMs": 19284,
+      "totalMs": 22310,
+      "bytes": 49467471,
+      "decodeMs": 1211,
+      "elementCount": 71571,
+      "counts": {
+        "node": 28118,
+        "way": 43098,
+        "relation": 355
+      },
+      "semanticHash": "2736de7a76984ade54a0bfa77740fae6158c8fa71839014973bd6cc751b0506a",
+      "osmTimestamp": "2026-09-19T23:35:01Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789861015000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    },
+    {
+      "id": "[3,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33\"]",
+      "profile": "prod-33",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"=\"multipolygon\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 3,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:38:06.573Z",
+      "finishedAt": "2026-09-19T23:38:18.770Z",
+      "headersMs": 10050,
+      "firstByteMs": 10050,
+      "totalMs": 12196,
+      "bytes": 49365149,
+      "decodeMs": 1131,
+      "elementCount": 71571,
+      "counts": {
+        "node": 28118,
+        "way": 43098,
+        "relation": 355
+      },
+      "semanticHash": "849ae7de18484905688ba3e0e18b28c6ea42ca1baaba190a684e51e5f8564fa1",
+      "osmTimestamp": "2026-09-19T23:37:02Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789861099000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    },
+    {
+      "id": "[3,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"prod-33-areal\"]",
+      "profile": "prod-33-areal",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 3,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:39:20.083Z",
+      "finishedAt": "2026-09-19T23:39:31.701Z",
+      "headersMs": 9594,
+      "firstByteMs": 9594,
+      "totalMs": 11618,
+      "bytes": 50588645,
+      "decodeMs": 1094,
+      "elementCount": 71608,
+      "counts": {
+        "node": 28118,
+        "way": 43098,
+        "relation": 392
+      },
+      "semanticHash": "ff9f882912097d4b8898d80e31be0d71a0a6568908a0236a55566778f75ee4a2",
+      "osmTimestamp": "2026-09-19T23:38:00Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789861172000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    },
+    {
+      "id": "[3,\"manhattan\",\"https://z.overpass-api.de/api/interpreter\",\"full-production180\"]",
+      "profile": "full-production180",
+      "query": "[out:json][timeout:180][bbox:40.748649127451834,-74.00064468383789,40.78467511524571,-73.93524169921875];\n(nw[\"highway\"];nw[\"surface\"];nw[\"landuse\"];nw[\"natural\"];nw[\"leisure\"];nw[\"amenity\"];nw[\"barrier\"];nw[\"access\"];nw[\"wheelchair\"];nw[\"water\"];nw[\"waterway\"];nw[\"man_made\"];nw[\"tourism\"];nw[\"sport\"];nw[\"playground\"];nw[\"building\"];nw[\"building:part\"];nw[\"building:levels\"];nw[\"height\"];nw[\"min_height\"];nw[\"roof:shape\"];nw[\"roof:levels\"];nw[\"layer\"];nw[\"historic\"];nw[\"place\"];nw[\"power\"];nw[\"entrance\"];nw[\"railway\"];nw[\"service\"];nw[\"foot\"];nw[\"crossing\"];nw[\"sidewalk\"];relation[\"highway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"surface\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"landuse\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"natural\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"leisure\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"amenity\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"barrier\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"access\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"wheelchair\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"water\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"waterway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"man_made\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"tourism\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sport\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"playground\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:part\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"building:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"min_height\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:shape\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"roof:levels\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"layer\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"historic\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"place\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"power\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"entrance\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"railway\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"service\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"foot\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"crossing\"][\"type\"~\"^(multipolygon|boundary)$\"];relation[\"sidewalk\"][\"type\"~\"^(multipolygon|boundary)$\"];);\nout geom;",
+      "encoding": "form",
+      "timeoutSeconds": 180,
+      "url": "https://z.overpass-api.de/api/interpreter",
+      "operator": "fossgis",
+      "site": "manhattan",
+      "bbox": {
+        "south": 40.748649127451834,
+        "west": -74.00064468383789,
+        "north": 40.78467511524571,
+        "east": -73.93524169921875
+      },
+      "round": 3,
+      "ok": true,
+      "httpStatus": 200,
+      "status": "200 OK",
+      "startedAt": "2026-09-19T23:40:36.620Z",
+      "finishedAt": "2026-09-19T23:41:00.870Z",
+      "headersMs": 21539,
+      "firstByteMs": 21539,
+      "totalMs": 24250,
+      "bytes": 49467471,
+      "decodeMs": 1131,
+      "elementCount": 71571,
+      "counts": {
+        "node": 28118,
+        "way": 43098,
+        "relation": 355
+      },
+      "semanticHash": "2736de7a76984ade54a0bfa77740fae6158c8fa71839014973bd6cc751b0506a",
+      "osmTimestamp": "2026-09-19T23:39:04Z",
+      "statusBefore": {
+        "ok": true,
+        "waitMs": 0,
+        "clientId": "1354463306",
+        "serverTimeMs": 1789861245000,
+        "announcedEndpoint": "gall.openstreetmap.de/",
+        "rateLimit": 2,
+        "unlimited": false,
+        "slotsAvailable": 2,
+        "slotsAvailableAtMs": [],
+        "runningQueries": 0
+      }
+    }
+  ],
+  "totals": {
+    "planned": 9,
+    "sent": 9,
+    "skipped": 0,
+    "successful": 9,
+    "failed": 0,
+    "decodedBodyBytes": 448263795
+  }
+}

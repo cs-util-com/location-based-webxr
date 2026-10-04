@@ -22,6 +22,15 @@ imagePoints, intrinsics) → OpenCvPnpResult | null`. Stateless; construct once
   4-point DLT (8×8, `h₃₃ = 1`). `null` when degenerate.
 - `ippePoseCandidates(H) → PoseCandidate[]` — the IPPE candidate generator (see
   below). Up to 4 chirality-valid candidates; `[]` when degenerate.
+- `realIppeCandidates(H) → PoseCandidate[]` — the subset of
+  `ippePoseCandidates` that can be the true pose: the smaller-depth root
+  `τ = 1/σ_max`, both signs (the mirror-flip pair). The other root has
+  `τ²·(G1 + G2) > 2`, so it needs a negative squared z-component that is
+  clamped away, and is a rotation only because `nearestRotation3x3` forces
+  it into one. Used by `qr-multi-view-pose.ts` for its starts;
+  `PlanarPnpSquare` still picks among ALL candidates (owner decision, QR
+  near-frontal pose plan 2026-09-23-2314 §10: removing the invalid root
+  alone made the near-frontal median worse).
 - `nearestRotation3x3(M) → Mat3` — projects a near-orthogonal matrix onto SO(3)
   via iterative polar decomposition (Higham), forcing `det = +1`.
 - `rotationToRodrigues(R) → Vector3` — row-major rotation → axis·angle vector
@@ -77,6 +86,8 @@ const solution = solveQrPose({
   polar rotation incl. reflection→proper, Rodrigues incl. near-180°, degenerate
   homography), and `solve` on fronto-parallel/tilted/strong-tilt-flip plus the
   rejection paths (`<4` pts, non-finite, bad intrinsics).
+- `qr-multi-view-pose.test.ts` — `realIppeCandidates` keeps exactly the
+  smaller-depth root and it contains the true rotation (tilts 5-50°).
 - `planar-pnp.property.test.ts` — random poses in a realistic viewing cone:
   reproject to ~0 px **and** recover ground-truth orientation (proves the flip
   disambiguation); a sub-pixel-noise variant asserts bounded graceful
@@ -90,7 +101,8 @@ const solution = solveQrPose({
 - The **tilt-flip is a fundamental planar ambiguity**: under heavy corner noise
   near fronto-parallel the reprojection pick can choose the wrong candidate. The
   sliding-window aggregation downstream and sub-pixel corner refinement (a
-  separate follow-up) are the mitigations — not this solver.
+  separate follow-up) are the mitigations — not this solver. The joint solve
+  over several views (`qr-multi-view-pose.ts`) is the one that removes it.
 - Translation/scale accuracy depends on a correct printed size and intrinsics;
   reprojection error is size-invariant, so a wrong size shows up as a scaled
   `t`, not a rejected solve.

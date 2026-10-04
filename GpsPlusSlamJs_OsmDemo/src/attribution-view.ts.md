@@ -52,7 +52,7 @@ for a control whose job is to keep a credit on screen.
   locator addresses the bar by that class — so replacing the rendering did not
   also mean rewriting the suite's selectors.
 - **This file is DOM only.** The Leaflet wiring lives in `map-view.ts`, the same
-  split `locate-control.ts` / `locate-state.ts` uses, and the reason is that no
+  split `locate-control.ts` / the framework's `utils/locate-state.ts` uses, and the reason is that no
   unit test in this package instantiates a Leaflet map.
 
 ## Examples

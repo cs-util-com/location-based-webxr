@@ -30,9 +30,9 @@ These are declared as optional globals because unit tests may intentionally omit
 ## Tests
 
 - `main.test.ts`, `main.replay-wiring.test.ts`, and Playwright specs rely on the `Window` hook declarations.
-- `build-info.test.ts` and related UI/recording tests rely on the optional build metadata globals.
+- `src/timing/alignment-timing-main.ts` reads `globalThis.__BUILD_COMMIT__` directly and relies on these declarations; the framework's reader (`gps-plus-slam-app-framework/utils/build-info`) declares no globals of its own.
 
 ## Related
 
-- [utils/build-info.ts](utils/build-info.ts.md)
+- The framework's `utils/build-info.ts` (the reader) and `scripts/build-metadata-define.mjs` (the define block), moved there from this app on 2026-09-28
 - [2026-04-20-zip-debug-metadata-plan.md](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-04-20-zip-debug-metadata-plan.md)

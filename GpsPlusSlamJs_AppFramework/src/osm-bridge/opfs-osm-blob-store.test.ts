@@ -209,6 +209,36 @@ describe('failures stay misses', () => {
     expect(store.stats.errors).toBe(1);
   });
 
+  it('a failure is reported through the injected warn, with the key', async () => {
+    // Why this test matters: the store no longer imports the framework
+    // logger (its Sentry import cannot load in the design system's no-build
+    // labs, which warm this same cache from the globe; round-5 plan
+    // 2026-10-01-0945 §3.6). A failed write must still be reported, not
+    // swallowed silently, so the warning goes to whoever constructed it.
+    const directory = fakeDirectory();
+    directory.failures.write = true;
+    const warn = vi.fn();
+    const store = new OpfsOsmBlobStore({ directory, warn });
+    await store.put('osm/v2/a', '1');
+    directory.failures.list = true;
+    await store.keys();
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls[0]?.[1]).toMatchObject({ key: 'osm/v2/a' });
+  });
+
+  it('warns on the console when nothing is injected', async () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const directory = fakeDirectory();
+      directory.failures.write = true;
+      await storeOn(directory).put('osm/v2/a', '1');
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(String(spy.mock.calls[0]?.[0])).toContain('OsmBlobStore');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('a listing failure yields no keys rather than throwing', async () => {
     const directory = fakeDirectory();
     directory.failures.list = true;

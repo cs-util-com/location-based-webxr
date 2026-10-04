@@ -62,7 +62,19 @@ debug/observe or trigger-only level. `qr` itself is still required as an object.
   so M4 reads real fields, not a convention buried in opaque content. Plus
   the **session-mint** block, for a code minted from a whole recording
   rather than from one live moment: `sightingCount`, `detectionCount`,
-  `rotationSpreadDeg`, `translationSpreadM`, `physicalSizeSpreadM`.
+  `rotationSpreadDeg`, `translationSpreadM`, `physicalSizeSpreadM`. And the
+  **uncertain-heading marker** (owner decision D31):
+  `alignmentGpsExtentM` (non-negative, the GPS extent of the alignment the
+  code was composed through) and `headingUncertain` (a boolean, `true` when
+  that extent was under 10 m, `QR_MINT_HEADING_UNCERTAIN_EXTENT_M` in
+  `qr-anchor-mint.ts`).
+  - **Absent means UNKNOWN** for both: every level minted before D31, and
+    any mint that did not know the extent. A reader must not default
+    `headingUncertain` to `false`; a reader that does not know the fields
+    ignores them, so older readers keep working.
+  - `headingUncertain` is the table's one `flag` kind: only `true` or
+    `false` is accepted (a string, number or `null` rejects), and `false`
+    survives a round trip as `false`.
   - **Zero is valid for every count and spread** — a code seen in exactly
     one sighting has no cross-sighting disagreement, which is the most
     confident case there is, not an invalid one. Only `gpsAccuracyM` is
@@ -82,7 +94,12 @@ debug/observe or trigger-only level. `qr` itself is still required as an object.
   the geo-less / size-less / bare-`qr` optional cases, rejection of a
   present-but-invalid size or partial geo and every malformed field; fetch
   success, non-OK, non-JSON, network failure, and propagated schema violation
-  (all via an injected fetch).
+  (all via an injected fetch). The D31 fields: `headingUncertain` true and
+  false and `alignmentGpsExtentM` asserted by name through a serialize round
+  trip, an older level without them read as absent, a zero extent accepted,
+  and a non-boolean flag or a negative / NaN extent rejected.
+- `qr-level.property.test.ts` - the serialize round trip for any valid level,
+  the D31 fields included in its `mintQuality` arbitrary.
 
 ## Related
 

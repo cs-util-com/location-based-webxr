@@ -30,6 +30,7 @@ export const ZERO_STAGE_TIMINGS: DemoStageTimings = {
   slotWaitMs: 0,
   joinedMs: 0,
   fetchMs: 0,
+  fetchCriticalPathMs: 0,
   mergeMs: 0,
   scoreMs: 0,
   deriveMs: 0,

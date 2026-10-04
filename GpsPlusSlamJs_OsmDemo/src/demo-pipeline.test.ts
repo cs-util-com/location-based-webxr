@@ -12,7 +12,7 @@
  * @see demo-pipeline.ts.md
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   cellToBoundary,
   cellToLatLng,
@@ -1302,5 +1302,200 @@ describe("the snapshot reports what was excluded as below-surface", () => {
     expect(snapshot.undergroundOutlines).toHaveLength(1);
     expect(snapshot.undergroundOutlines[0]).toEqual(ring(0.002));
     expect(snapshot.undergroundCount).toBe(1);
+  });
+});
+
+describe("concurrent ring fetching", () => {
+  // WHY THIS EXISTS. The ring's missing tiles were fetched strictly one after
+  // another, so a position needing two tiles waited `t1 + t2` where it could
+  // have waited `max(t1, t2)`. A single res-7 Overpass fetch measured 8-35 s on
+  // a healthy endpoint, so the saving is seconds, not milliseconds.
+  //
+  // It is worth exactly nothing for the common case, and that is fine: over
+  // 14 641 positions each in Cologne, Manhattan and Tokyo, 80.2% of positions
+  // need ONE new tile at the first ring, 18.8% need two, 1.0% three. This is
+  // for that 19.8%, and its whole appeal is that it costs the other 80.2%
+  // nothing - no extra publish, no extra CPU, no UI state.
+  //
+  // TWO IS THE CAP, AND IT IS NOT ARBITRARY. Overpass advertises `Rate limit: 2`
+  // per client per operator and it is a CONCURRENCY limit. Two is the widest
+  // pool that structurally cannot breach it; at three, a seven-tile load exceeds
+  // it in 72% of runs. Two also matches `DEFAULT_MAX_CONCURRENT` and the slot
+  // budget's default, so nothing downstream needs raising - which matters,
+  // because `OverpassSlotBudget.tryAcquire` REFUSES rather than queues, and a
+  // pool wider than the budget would quietly turn tiles into missing geometry.
+
+  const COLOGNE = { lat: 50.9413, lng: 6.9583 };
+  /** Minimal table: these tests are about the fetch loop, not about scoring. */
+  const TABLE = parseRuleTable(
+    ["id,Key,Value,walkable", "leisure_park,leisure,park,3"].join("\n"),
+    { source: "test", fetchedAt: 0 },
+  );
+
+  /** The first position whose first-ring working set needs `count` tiles. */
+  function positionNeeding(count: number): { lat: number; lng: number } {
+    for (let dLat = 0; dLat < 400; dLat++) {
+      for (let dLng = 0; dLng < 400; dLng++) {
+        const position = {
+          lat: COLOGNE.lat + dLat * 0.0012,
+          lng: COLOGNE.lng + dLng * 0.0012,
+        };
+        const chunk = latLngToCell(position.lat, position.lng, SCORE_CHUNK_RES);
+        if (
+          fetchTilesForScoreWorkingSet(chunk, SCORE_DISK_RADIUS).length ===
+          count
+        ) {
+          return position;
+        }
+      }
+    }
+    throw new Error(`no position found needing ${count} tiles`);
+  }
+
+  /** A source whose tiles resolve only when the test releases them. */
+  function gatedSource(): {
+    source: OsmDataSource;
+    started: string[];
+    release: (tile: string) => void;
+    peakInFlight: () => number;
+  } {
+    const started: string[] = [];
+    const pending = new Map<string, () => void>();
+    let live = 0;
+    let peak = 0;
+    return {
+      started,
+      peakInFlight: () => peak,
+      release: (tile) => {
+        pending.get(tile)?.();
+        pending.delete(tile);
+      },
+      source: {
+        attribution: "test",
+        sourceId: "fixture:gated",
+        fetchTile: (tile) => {
+          started.push(tile);
+          live += 1;
+          peak = Math.max(peak, live);
+          return new Promise((resolve) => {
+            pending.set(tile, () => {
+              live -= 1;
+              resolve({
+                tile,
+                features: [],
+                fetchedAt: 0,
+                sourceId: "fixture:gated",
+                schemaVersion: 1,
+                skipped: [],
+              });
+            });
+          });
+        },
+      },
+    };
+  }
+
+  it("fetches a ring's tiles ONE AT A TIME, because racing spends the pair", async () => {
+    // THIS TEST WAS INVERTED ON 2026-09-22, and the inversion is the record of
+    // an owner decision rather than a regression. It used to assert that the
+    // second tile started before the first resolved.
+    //
+    // The client's in-flight budget is two requests, sized against what the
+    // Overpass hosts advertise. Those two used to buy two tiles fetched at
+    // once; they now buy ONE tile asked of two operators simultaneously, with
+    // the first answer winning. Measured 2026-09-21: one attempt at a time
+    // served 4 of 9 tiles inside the 45 s deadline, racing served 7 of 9.
+    // Ring parallelism helped the 18.8% of positions whose first ring needs two
+    // tiles; racing helps every cold tile, and helps on the axis that hurt.
+    const position = positionNeeding(2);
+    const { source, started, release } = gatedSource();
+    const pipeline = new DemoPipeline({ source, table: TABLE });
+
+    const pending = pipeline.update(position, "walkable");
+    await vi.waitFor(() => {
+      expect(started).toHaveLength(1);
+    });
+
+    // Nothing else starts while the first is outstanding. A microtask turn is
+    // enough: the pool would have dispatched its second worker immediately.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(started).toHaveLength(1);
+
+    // `!` rather than a guard: the assertions above have already established
+    // the length, and a conditional here would let the test pass by skipping
+    // its own release if that ever stopped being true.
+    release(started[0]!);
+    await vi.waitFor(() => {
+      expect(started).toHaveLength(2);
+    });
+    release(started[1]!);
+    await pending;
+  });
+
+  it("never runs more than one fetch at once, however many tiles are due", async () => {
+    // The politeness cap, asserted rather than commented. The number is one
+    // rather than two because a cold tile now issues two requests of its own;
+    // `overpass-race.test.ts` holds the other half of that budget, asserting
+    // that the race itself never exceeds the source's `maxConcurrent`.
+    const position = positionNeeding(3);
+    const { source, started, release, peakInFlight } = gatedSource();
+    const pipeline = new DemoPipeline({ source, table: TABLE });
+
+    const pending = pipeline.update(position, "walkable");
+    await vi.waitFor(() => {
+      expect(started.length).toBeGreaterThanOrEqual(1);
+    });
+    for (let i = 0; i < 10 && started.length > 0; i++) {
+      const tile = started.shift();
+      if (tile !== undefined) release(tile);
+      await Promise.resolve();
+    }
+    await pending;
+
+    expect(peakInFlight()).toBe(1);
+  });
+
+  // "gives an identical answer whichever order the servers reply in" was
+  // DELETED here on 2026-09-22, deliberately rather than by neglect. It varied
+  // arrival order by releasing two concurrently-started tiles in opposite
+  // orders, and with a serial ring no two tiles are ever outstanding together -
+  // arrival order IS working-set order by construction, so the test could no
+  // longer construct the disagreement it existed to check.
+  //
+  // The property itself is not lost and is better held where it lives:
+  // `merge-tiles.property.test.ts` proves order-independence over ALL
+  // permutations with fast-check, rather than over the one pair of orders this
+  // could reach.
+
+  it("lets one tile fail without taking its siblings down", async () => {
+    // The sequential per-tile `try/catch` gave this for free. A pool awaited
+    // with `Promise.all` would reject on the first failure and abandon its
+    // siblings mid-flight, so this pins what must not regress.
+    const position = positionNeeding(2);
+    let failed: string | undefined;
+    const source: OsmDataSource = {
+      attribution: "test",
+      sourceId: "fixture:flaky",
+      fetchTile: (tile) => {
+        if (failed === undefined) {
+          failed = tile;
+          return Promise.reject(new Error("upstream said no"));
+        }
+        return Promise.resolve({
+          tile,
+          features: [],
+          fetchedAt: 0,
+          sourceId: "fixture:flaky",
+          schemaVersion: 1,
+          skipped: [],
+        });
+      },
+    };
+    const pipeline = new DemoPipeline({ source, table: TABLE });
+
+    const snapshot = await pipeline.update(position, "walkable");
+
+    expect(snapshot.missingTiles).toEqual([failed]);
   });
 });

@@ -44,14 +44,6 @@ export interface DistanceFormatOptions {
 }
 
 /**
- * Formats a distance in metres for display.
- *
- * **Negative input clamps to zero.** Distance is a magnitude; a negative one
- * means a caller subtracted in the wrong order, and "-3.0 m" on screen is
- * strictly less useful than "0 m" for finding that out. Non-finite input
- * likewise formats as zero rather than propagating `NaN` into the UI.
- */
-/**
  * Clamps a decimals option into `toFixed`'s domain.
  *
  * `toFixed` throws a `RangeError` for fraction digits below 0 or above 100,
@@ -74,6 +66,14 @@ function stepMetres(value: number, step: number): number {
   return step > 0 && step !== 1 ? Math.round(value / step) * step : value;
 }
 
+/**
+ * Formats a distance in metres for display.
+ *
+ * **Negative input clamps to zero.** Distance is a magnitude; a negative one
+ * means a caller subtracted in the wrong order, and "-3.0 m" on screen is
+ * strictly less useful than "0 m" for finding that out. Non-finite input
+ * likewise formats as zero rather than propagating `NaN` into the UI.
+ */
 export function formatDistance(
   metres: number,
   options: DistanceFormatOptions = {}

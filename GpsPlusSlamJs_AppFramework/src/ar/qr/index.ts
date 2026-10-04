@@ -50,6 +50,7 @@ export {
   rotateVectorByQuaternion,
   signedQuadArea,
   validateQuad,
+  meanEdgePx,
   reprojectionErrorPx,
   solveQrPose,
 } from './qr-pose.js';
@@ -130,9 +131,11 @@ export {
   type DetectedBarcodeLike,
   type BarcodeDetectorLike,
   type ToImageBitmapSource,
+  type CornerOrderer,
   BarcodeDetectorFrontEnd,
   createBarcodeDetectorFrontEnd,
 } from './qr-frontend.js';
+export type { CornerOrderSource } from './qr-corner-order.js';
 
 // --- planar-pnp (pure-JS IPPE; the OpenCV-free SolvePnpSquare) ---
 export {
@@ -143,9 +146,77 @@ export {
   homographyFromCorrespondences,
   nearestRotation3x3,
   ippePoseCandidates,
+  realIppeCandidates,
   rotationToRodrigues,
   PlanarPnpSquare,
 } from './planar-pnp.js';
+
+// --- qr-multi-view-pose (one code rotation from several views) ---
+export {
+  type QrViewObservation,
+  type QrMultiViewPoseOptions,
+  type QrMultiViewPoseResult,
+  solveQrPoseMultiView,
+  viewErrorAtRotationPx,
+} from './qr-multi-view-pose.js';
+
+// --- qr-fused-window (which detections of one code may be combined) ---
+export {
+  type QrFusedEntry,
+  type QrFusedWindowOptions,
+  selectFusedWindow,
+} from './qr-fused-window.js';
+
+// --- qr-fused-pose (the windowed joint rotation, its gate and fallback) ---
+export {
+  type QrFusedPoseOptions,
+  type QrFusedPose,
+  type FusedQrPoseTracker,
+  evaluateFusedQrPose,
+  createFusedQrPoseTracker,
+} from './qr-fused-pose.js';
+export {
+  createFusedQrPoseSource,
+  type FusedQrPoseSource,
+  type FusedQrPoseSourceConfig,
+} from './qr-fused-pose-source.js';
+export {
+  createFusedPoseTally,
+  type FusedPoseCounts,
+  type FusedPoseTally,
+} from './qr-fused-pose-tally.js';
+export {
+  estimateQrSizeFromParallax,
+  type QrParallaxSize,
+  type QrParallaxSizeOptions,
+} from './qr-size-parallax.js';
+export {
+  createQrParallaxSizeTally,
+  measuredSizeOffer,
+  type MeasuredSizeOfferOptions,
+  type QrParallaxSizeCounts,
+  type QrParallaxSizeOutcome,
+  type QrParallaxSizeSample,
+  type QrParallaxSizeTally,
+  type QrParallaxSizeWindow,
+} from './qr-parallax-size-tally.js';
+
+// --- qr-motion (is the code being moved / turned; plan §26) ---
+export {
+  type QrMotionState,
+  type QrMotionOptions,
+  type QrMotionSignals,
+  type QrMotion,
+  type QrMotionTracker,
+  measureQrMotion,
+  createQrMotionTracker,
+} from './qr-motion.js';
+
+// --- qr-capture-cadence (capture interval default + bounds) ---
+export {
+  DEFAULT_QR_CAPTURE_INTERVAL_MS,
+  QR_CAPTURE_INTERVAL_CONSTRAINTS,
+} from './qr-capture-cadence.js';
 
 // --- detection-scheduler (generic) ---
 export {

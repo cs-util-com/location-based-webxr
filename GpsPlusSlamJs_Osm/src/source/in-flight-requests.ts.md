@@ -57,9 +57,13 @@ call — **without** letting the first caller's `AbortSignal` govern the rest.
 ```ts
 private readonly inFlight = new InFlightRequests<OsmTileResult>();
 
-fetchTile(tile: string, signal?: AbortSignal): Promise<OsmTileResult> {
+fetchTile(tile: string, options?: FetchTileOptions): Promise<OsmTileResult> {
   if (this.inFlight.has(tile)) this.stats.deduplicated++;
-  return this.inFlight.join(tile, (own) => this.fetchUncached(tile, own), signal);
+  return this.inFlight.join(
+    tile,
+    (own) => this.fetchUncached(tile, own),
+    options?.signal,
+  );
 }
 ```
 

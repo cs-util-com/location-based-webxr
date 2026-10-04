@@ -15,25 +15,44 @@ the WS-5 **consumer** (debug axis+cube). `main.ts` calls it once in `handleEnter
   - `options.qr` — `{ enabled, intervalMs, captureSize }` (caller gates on `enabled`).
   - `options.setProducer(producer | null)` — receives the producer so the
     initAR `callbacks.cameraFrame.onFrame` (wired at Enter-AR) can forward frames to it.
-  - returns a `dispose()` that stops capture, resets/clears the producer, detaches
+  - returns a `dispose()` that stops capture, disposes/clears the producer (a decode or level fetch in flight then reaches no callback, QR near-frontal pose plan §61), detaches
     the debug subscriber + swap listener, and disposes the viz.
 
 ## Invariants & assumptions
 
-- **Clock domain (load-bearing, open topic A):** the producer's `now` is
-  `Date.now()` (EPOCH ms) — the SAME clock the recorded depth stream uses
+- **Clock domain (load-bearing, open topic A):** a detection's timestamp must be
+  EPOCH ms — the SAME clock the recorded depth stream uses
   (`DepthSample.timestamp = performance.timeOrigin + frameTs`) — so the
   derive-on-read size as-of join (`depth.ts ≤ detection.ts`) pairs each detection
   with the right depth sample. Stamping `performance.now()` (relative) was the
   original "no debug cube" bug: it never satisfies the join.
+  - Since QR perf plan 2026-09-23, M4 the RAW record's `timestamp` is the frame's
+    `capturedAtMs` (`performance.timeOrigin + xrTime`, set by the framework), in
+    both modes. No clock override is passed to the producer any more (M4 review
+    finding 7): its scheduler never throttles at `minIntervalMs: 0`.
 - **Single cadence owner:** `startCameraFrameCapture({ intervalMs })` throttles;
   the producer runs `minIntervalMs: 0`.
+- **Busy veto (QR perf plan 2026-09-23, M3):** both modes pass
+  `wantsFrame: () => !producer.isBusy()`, so no frame is read back from the GPU
+  while a detect - in level mode including the first-sighting level fetch (up
+  to 15 s) - is in flight; the scheduler would drop it anyway. The HUD row therefore
+  does not depend on camera frames alone: `onQrStateChanged` fires from the
+  rAF-coalesced store listener below, so a raw detection recorded during a level
+  fetch shows at once (review finding 6, 2026-09-23). A never-busy producer (no
+  detector: the always-null detect) keeps capturing every interval, so the
+  per-frame refresh - and the "scanning" row - still runs.
 - **rAF-coalesced viz updates (F3, perf-degradation fix):** per-store-action
   `debug.update()` calls are coalesced to at most one per animation frame (the
   store bursts depth + GPS + ~8 Hz QR); the initial wire + store swaps update
   synchronously for immediacy. The pending frame is cancelled on dispose.
-- **Camera pose** comes from the current XR frame (`getCurrentArPose()`, Option A) —
-  fresh every frame, not stale to the 1 Hz depth. **Projection** still comes from
+- **Camera pose** comes WITH each captured frame (`CapturedCameraFrame.cameraPose`,
+  QR perf plan 2026-09-23, M4): the framework pairs the pixels with the pose of the
+  XR frame they were captured in, so it is neither stale to the 1 Hz depth nor read
+  after the async decode. This module passes no pose reader to either producer; the
+  former Option A `getCurrentArPose()` read and its ARPose→Pose copy are gone.
+  `QrFrameSink.offerFrame(frame: CapturedCameraFrame)` (in
+  `ar/ar-session-resources.ts`) is what `main.ts`'s `cameraFrame.onFrame` forwards
+  to. **Projection** still comes from
   the latest depth sample (near-constant FOV; per-frame projection is open topic F).
   The observation's `imageWidth/Height` come from the detector-frame buffer.
 - **Store-swap safe:** dispatches + reads go through `storeRef.get()`, and the
@@ -41,12 +60,17 @@ the WS-5 **consumer** (debug axis+cube). `main.ts` calls it once in `handleEnter
 
 ## Tests
 
-- `wire-qr-recording.test.ts` — producer clock is `performance.now()` not epoch;
+- `wire-qr-recording.test.ts` — producer clock is epoch ms, not `performance.now()`;
   capture started with the configured cadence/size; producer handed to
-  `setProducer`; camera pose/projection read from the latest depth sample;
+  `setProducer`; no pose reader passed to either producer (the frame carries the
+  pose, M4) while projection/intrinsics come from the latest depth sample;
   detections dispatch RAW into the current store; debug controller driven on change
   - re-attached across a swap; `dispose()` tears everything down. Framework
     producer/controller are mocked.
+- `wire-qr-recording-fused.test.ts` — the b6a seams: the controller gets the
+  fused stable pose, each resolved level's size reaches the fused votes, each
+  recorded raw detection is evaluated, a store swap (not the first attach)
+  starts fresh trackers.
 
 ## Related
 
@@ -65,7 +89,16 @@ the WS-5 **consumer** (debug axis+cube). `main.ts` calls it once in `handleEnter
   level lookup through `qr-level-source` and synthetic GPS votes into the
   store. **Only one producer runs.** Running both would decode every camera
   frame twice on the AR frame path, which is why the framework's detection
-  event carries the raw corners and camera pose.
+  event carries the raw corners and camera pose. The votes ride the FUSED
+  pose (`qr-fused-votes.ts`, QR near-frontal pose plan §71-§72, b6a): a
+  code votes only once the joint rotation over its recent detections is
+  stable, at the level's printed size, evaluated after each recorded raw
+  detection; before b6a they rode each lock's single-frame solve.
+
+Both modes record each detection's corner-order source (`orderSource`,
+QR near-frontal pose plan §60, b4b-2) when the front end gives one, so a
+replay can apply the fused window's native-frame rule; recordings made
+before this carry none.
 
 The raw record rides `onRawDetection` — the validated DECODE — not
 `onDetection`, which fires on a locked, solved pose and therefore needs a
@@ -75,13 +108,18 @@ would mean the first recording of the loop recorded nothing at all.
 
 ## Other options this module takes
 
-- `readAlignment` — the session's alignment as it stands NOW, read per
-  detection and never recorded (see `qr-sighting-feeder.ts.md`).
+- `readAlignment` — the session's alignment as it stands NOW, with the
+  session's GPS extent, read per detection AND per store change (once per
+  animation frame, after the debug update: `sightings.noteAlignment()`), and
+  never recorded. The store change is what lets a code waiting for a mature
+  alignment follow it (D28 revised; see `qr-sighting-feeder.ts.md`). A store
+  swap resets the feeder (`sightings.reset()`): the sightings and the
+  alignments kept for them go together.
 - `setSightingFeeder` — hands the sighting fold out, for the zip contributor
   and the HUD.
 - `onLevelState` — what a code's level lookup did, routed to the HUD so a
   code the session cannot use says so instead of being silent.
 
-(The module header's note about the producer clock is the authority: it is
-**epoch ms** via `Date.now()`, shared with the depth stream so the as-of size
-join can pair them.)
+(The module header's note about the clock domain is the authority: the record
+is stamped **epoch ms** - the frame's capture time - shared with the depth
+stream so the as-of size join can pair them.)

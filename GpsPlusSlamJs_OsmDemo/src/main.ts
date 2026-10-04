@@ -42,9 +42,17 @@ import { parseStartPosition } from "./start-position.js";
 import {
   browserPlaceUrl,
   parseCameraTarget,
+  sunPinnedHref,
   writeCamera,
+  writeLight,
   writePlace,
 } from "./url-state.js";
+import { createLightDialog } from "./light-dialog.js";
+import {
+  describeLightSettings,
+  parseLightSettings,
+  serializeLightSettings,
+} from "./light-settings.js";
 import { describeDrawCost } from "./draw-cost.js";
 import {
   describeGeoEvent,
@@ -86,9 +94,13 @@ import {
 } from "./ar-entry.js";
 import { startArMode, type ArMode } from "./ar-mode.js";
 import { autoElevationEnabled } from "./ar-elevation-auto.js";
+import { shadowCheckEnabled, sunShadowEnabled } from "./ar-sun-shadow.js";
 import { startArWalk, type ArWalk } from "./ar-walk-controller.js";
 import { createArToast } from "./ar-toast.js";
 import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
+import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
+import { createLoadingAnnouncer } from "./loading-announcer.js";
+import { createLoadingOverlay } from "./loading-overlay.js";
 import { canEnterAr, terrainReadout } from "./ar-origin.js";
 import { createGeoEventCycle } from "./geo-event-cycle.js";
 import { GeoEventPicker } from "./geo-event-picker.js";
@@ -172,17 +184,34 @@ import {
   renderSafely,
 } from "./refresh-cycle.js";
 import { createAnchorHolder } from "./scene-anchor.js";
+import {
+  bootInstant,
+  formatSolarClock,
+  formatSunReadout,
+  instantAt,
+  instantToSlider,
+  sliderToInstant,
+  viewerToday,
+  moveToDate,
+  parseSolarTime,
+  parseSunDate,
+  relocate,
+  stepSun,
+  sunDateOf,
+  type SunPlace,
+} from "./sun-clock.js";
+import type { SunAngles } from "./sun-position.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 import { createRpcClient, workerTransport } from "./worker/rpc-client.js";
+import { solarPosition } from "gps-plus-slam-app-framework/geo/solar-position";
 
-/**
- * How far one press of the time key moves the sun, as a fraction of the day.
- *
- * 1/24 — an hour a press, so a full day is 24 presses and holding the key sweeps
- * it in a few seconds. Small enough that the golden-hour band can be found, large
- * enough that reaching noon is not a chore.
- */
-const TIME_STEP = 1 / 24;
+/** The sun's angles at an instant and a place (the real sun, plan 2026-09-23-2149). */
+function sunAnglesAt(ms: number, place: SunPlace): SunAngles {
+  const p = solarPosition(ms, place.lat, place.lng);
+  return { elevationRad: p.elevationRad, azimuthRad: p.azimuthRad };
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
 
 const el = <T extends HTMLElement>(id: string): T => {
   const found = document.getElementById(id);
@@ -213,6 +242,10 @@ function createWorkerClient(onFatal: (message: string) => void) {
 }
 
 async function main(): Promise<void> {
+  // Every slider on the page, including the ones the light dialog and the AR
+  // compass control build at runtime: a vertical swipe that starts on one
+  // scrolls instead of editing it (owner report 2026-09-30).
+  guardSlidersIn(document);
   const status = el("status");
   const categorySelect = el<HTMLSelectElement>("category");
   const showBelow = el<HTMLInputElement>("show-below");
@@ -221,6 +254,45 @@ async function main(): Promise<void> {
   const showBelowLabel = el("show-below-label");
 
   status.textContent = "Loading the rule table…";
+
+  /**
+   * The loading channel: an overlay CENTRED ON THE 3D SCENE, not a toast.
+   *
+   * It was a second `createToast` in the page's bottom-left corner for about an
+   * hour. The owner's verdict on seeing it was that it belongs over the view
+   * whose content is being waited for, and that it must stay until the models
+   * are actually on screen — and a toast can do neither, because it lives in a
+   * page-corner root and dismisses itself after a linger that is roughly half a
+   * median cold load. See `loading-overlay.ts`.
+   *
+   * Retiring that second toast also removed a hazard worth not re-introducing:
+   * while it existed, `#toast-root` could hold TWO `.toast` elements, so every
+   * unqualified `#toast-root .toast` locator in the e2e suite was one timing
+   * change away from a strict-mode violation.
+   *
+   * Created this early because `attachSitePicker` below is one of the gestures
+   * that arms it.
+   */
+  const loadingOverlay = createLoadingOverlay(el("scene"));
+  const loadingAnnouncer = createLoadingAnnouncer({ toast: loadingOverlay });
+
+  /**
+   * Both loading indicators, from the one signal that is actually true.
+   *
+   * The dot on the status line stays lit for the WHOLE refresh — five widening
+   * rings, each of which may pull a fresh res-7 tile — while the toast takes
+   * itself down as soon as the map has something on it. That is deliberate:
+   * they answer different questions, "is it still working?" and "did my tap do
+   * anything?".
+   *
+   * A CLASS, NOT AN ELEMENT: `writeStatus` rewrites `status.textContent` on
+   * every update, which would delete a child node. The dot is a pseudo-element
+   * of `.is-loading`, which survives the text being replaced.
+   */
+  const setRefreshBusy = (busy: boolean): void => {
+    status.classList.toggle("is-loading", busy);
+    loadingAnnouncer.busyChanged(busy);
+  };
 
   /**
    * Where a worker-level failure goes.
@@ -261,6 +333,23 @@ async function main(): Promise<void> {
   categorySelect.value = pickDefaultCategory(loaded.categories);
 
   const start = parseStartPosition(window.location.search);
+
+  // THE REAL SUN (plan 2026-09-23-2149, M2; DEC-SUN-2..8). The sun is where
+  // it really is for the map's place and a date: the VIEWER's today by
+  // default (DEC-SUN-14), booting at the afternoon sun at 20° (DEC-SUN-13;
+  // plan 2026-09-24-0706). `?date=` and `?time=`
+  // (apparent solar HH:MM) are READ-ONLY test pins, never written back, so
+  // DEC-R12-5 (no presentation state in the URL) holds; the e2e suite pins
+  // the date because the look now changes with the season.
+  const sunParams = new URLSearchParams(window.location.search);
+  let sunPlace: SunPlace = { lat: start.lat, lng: start.lng };
+  const sunBootDate =
+    parseSunDate(sunParams.get("date")) ?? viewerToday(new Date());
+  const sunPinnedTime = parseSolarTime(sunParams.get("time"));
+  let sunInstant =
+    sunPinnedTime === null
+      ? bootInstant(sunBootDate, sunPlace)
+      : instantAt(sunBootDate, sunPlace, sunPinnedTime);
 
   const { store, actions, subscribe } = createDemoStore({
     start,
@@ -322,6 +411,7 @@ async function main(): Promise<void> {
 
   const buildingView = new BuildingView({
     container: el("scene"),
+    initialSun: sunAnglesAt(sunInstant, sunPlace),
     onCameraMove: (view) => reportCameraView(view),
     // A cell selection dispatches the SAME action a 2D cell click does: the panel
     // does not know, and must not know, which view the selection came from. A POI
@@ -357,6 +447,11 @@ async function main(): Promise<void> {
       }
     },
   });
+  // THE DESKTOP SHADOW COMPILE CHECK (`?shadowCheck=1`, shadow plan M3d):
+  // a read-only diagnostic for the e2e, off unless asked for.
+  if (shadowCheckEnabled(window.location.search)) {
+    buildingView.enableShadowCheck();
+  }
   // THE GROUND PICKER (W11, DEC-R3-3). Three exclusive states rather than W23's
   // checkbox: the CPU path, the GPU path, and none at all — the last of which is
   // what makes the OSM ground areas inspectable on their own, since `plates`
@@ -393,24 +488,125 @@ async function main(): Promise<void> {
   // each press regenerates the environment map, which is a render pass. That is
   // affordable precisely because it is a deliberate press rather than something
   // a drag triggers; see `sun-position.ts`.
-  const stepTime = (by: number) => () => {
-    // WRAPPED, not clamped, so holding the key walks through a whole day and
-    // comes back. `sunAt` clamps its input, so an unwrapped step would park the
-    // sun at midnight and look broken.
-    const next = (buildingView.timeOfDayValue() + by + 1) % 1;
-    buildingView.setTimeOfDay(next);
+  // THE REAL SUN'S CONTROL (plan 2026-09-23-2149, M2). "t"/"T" step through
+  // the day's stops (fine near the horizon, the night skipped); the date
+  // input picks any date, keeping the phase. See `sun-clock.ts` for the rules.
+  //
+  // NO DAY OR MONTH KEYS (M2 review, e2e-measured): four more rows in the
+  // shortcut list pushed it over the map's own controls at phone width
+  // (`map-and-cells.spec.js`, picker and list open). The date input already
+  // steps a day or a month natively (↑/↓ on its day or month segment), which
+  // is why the input must NOT lose focus on every change.
+  const sunDateInput = el<HTMLInputElement>("sun-date");
+  // THE TIME SLIDER (DEC-SUN-15): civil dawn to civil dusk of the shown
+  // date, linear in time; 0…1000 on the element. It follows every other
+  // move (keys, date, re-anchor) through `showSunControl`.
+  const sunTimeInput = el<HTMLInputElement>("sun-time");
+  const SUN_SLIDER_STEPS = 1000;
+  const sunReadout = el("sun-readout");
+  const showSunControl = () => {
+    const d = sunDateOf(sunInstant, sunPlace);
+    sunDateInput.value = `${d.year}-${pad2(d.month)}-${pad2(d.day)}`;
+    sunTimeInput.value = String(
+      Math.round(instantToSlider(sunInstant, sunPlace) * SUN_SLIDER_STEPS),
+    );
+    sunReadout.textContent = formatSunReadout(sunInstant, sunPlace);
   };
+  // THE LIGHT DIALOG (plan 2026-09-24-2140): the owner tunes the noon
+  // lighting live and pastes the result back. The settings travel in the URL
+  // (`?light=`, a deliberate exception to DEC-R12-5, see url-state.ts); the
+  // shipped look writes nothing.
+  const lightUrl = browserPlaceUrl(window);
+  const initialLight = parseLightSettings(window.location.search);
+  if (serializeLightSettings(initialLight) !== null) {
+    buildingView.setLightSettings(initialLight);
+  }
+  // Sampled like the camera (400 ms): a drag is a stream of input events,
+  // and browsers refuse replaceState past a rate a fast drag reaches.
+  const LIGHT_URL_SAMPLE_MS = 400;
+  const writeLightUrl = throttle((value: string | null) => {
+    writeLight(lightUrl, value);
+  }, LIGHT_URL_SAMPLE_MS);
+  const lightOpen = el("light-open");
+  const lightDialog = createLightDialog({
+    parent: el("scene"),
+    opener: lightOpen,
+    initial: initialLight,
+    onChange: (settings) => {
+      buildingView.setLightSettings(settings);
+      writeLightUrl(serializeLightSettings(settings));
+    },
+    measure: (withMargin) => {
+      // A grid still building would be measured as the previous one, or as
+      // none at all right after Cells is ticked.
+      if (withMargin && buildGrid.busy) {
+        throw new Error("the heat grid is still building, try again");
+      }
+      return {
+        ...buildingView.measureLight({ withMargin }),
+        view: groundModeLabel(
+          parseGroundMode(selectOsmView(store.getState()).groundMode),
+        ),
+      };
+    },
+    // The sun on screen is pinned into the link (the address bar never
+    // carries it), so a pasted pick is reproduced at the same sun.
+    copyText: (settings) => {
+      const date = sunDateInput.value;
+      const clock = formatSolarClock(sunInstant, sunPlace);
+      return `${describeLightSettings(settings)} | sun ${date} ${clock} solar time | ${sunPinnedHref(window.location.href, date, clock)}`;
+    },
+    writeClipboard: (text) => navigator.clipboard.writeText(text),
+    // The page's 2D error channel; created further down, before any click.
+    showError: (message) => toast.show(message),
+  });
+  const moveSun = (next: number) => {
+    sunInstant = next;
+    buildingView.setSunAngles(sunAnglesAt(sunInstant, sunPlace));
+    showSunControl();
+    lightDialog.refresh();
+  };
+  showSunControl();
+  sunDateInput.addEventListener("change", () => {
+    const picked = parseSunDate(sunDateInput.value);
+    if (picked !== null) moveSun(moveToDate(sunInstant, sunPlace, picked));
+  });
+  // HAND FOCUS BACK ON ENTER OR ESCAPE, never on change (M2 review finding
+  // 4): "change" fires per edited segment, so blurring there broke typing a
+  // year digit by digit and ↑/↓ stepping. Focus must come back at some point
+  // because the hotkey registry ignores keys typed into inputs, so a focused
+  // field swallows "t" (plan 2026-09-23-2149, review finding 13).
+  sunDateInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === "Escape") sunDateInput.blur();
+  });
+  // SAMPLED WHILE DRAGGING (PR #489 review): each move re-renders the sky
+  // LUT, reads it back and re-bakes the environment
+  // (`BuildingView.setSunAngles`), so a drag moves the sun at most every
+  // 50 ms, with the value the slider holds by then, and always once after
+  // the last event (`throttle.ts`).
+  const moveSunToSlider = throttle(() => {
+    const fraction = Number(sunTimeInput.value) / SUN_SLIDER_STEPS;
+    moveSun(
+      sliderToInstant(fraction, sunDateOf(sunInstant, sunPlace), sunPlace),
+    );
+  }, 50);
+  sunTimeInput.addEventListener("input", () => moveSunToSlider());
   hotkeys.add({
     key: "t",
-    description: "step the sun forward (time of day)",
-    handler: stepTime(TIME_STEP),
+    description: "step the sun forward (skips the night)",
+    handler: () => moveSun(stepSun(sunInstant, sunPlace, 1)),
   });
   hotkeys.add({
     key: "T",
     description: "step the sun back",
-    handler: stepTime(-TIME_STEP),
+    handler: () => moveSun(stepSun(sunInstant, sunPlace, -1)),
   });
-
+  lightOpen.addEventListener("click", () => lightDialog.toggle());
+  hotkeys.add({
+    key: "l",
+    description: "open or close the light settings",
+    handler: () => lightDialog.toggle(),
+  });
   // THE LOOK PRESETS (§3, DEC-R6-9/10). One key cycles whole looks rather than
   // four keys toggling four axes: sixteen combinations means no combination is
   // tested, the e2e suite can only pin one, and these axes interact — opacity
@@ -561,6 +757,10 @@ async function main(): Promise<void> {
   attachSitePicker({
     select: el<HTMLSelectElement>("site"),
     onChoose: (place) => {
+      // A gesture, so the refresh it starts may announce itself. This one is
+      // the longest wait in the demo: a declared jump to another city fetches
+      // everything cold.
+      loadingAnnouncer.arm();
       mapView.centreOn(place.position);
       declaredSiteId = place.id;
       // A DECLARED place change, not travel. The picker spans Cologne to Tokyo,
@@ -857,6 +1057,11 @@ async function main(): Promise<void> {
     // terrain load's requested datum identical — the worker's gate compares
     // them, and two independent samples would be two chances to disagree.
     geoidUndulationM: () => arUndulationM,
+    // WHAT DRIVES BOTH LOADING INDICATORS. Not the store's `loading.phase`:
+    // this cycle dispatches `fetchStarted` once, above the ring loop, and every
+    // ring's `snapshotReady` sets the phase back to idle — so the phase is idle
+    // for most of a wait that can run to a minute.
+    onBusyChange: setRefreshBusy,
     // THE CLICK-PATH BREAKDOWN, one line per ring. `console.info` rather than
     // the status bar for the reason `describeGeoEventStats` uses it: this is a
     // developer diagnostic and the status line already carries the cell counts
@@ -910,6 +1115,12 @@ async function main(): Promise<void> {
   // Clicking the map moves the "user", which is how a walk is simulated without
   // a phone — and crossing a res-11 boundary is what exercises the chunk cache.
   mapView.map.on("click", (event: { latlng: { lat: number; lng: number } }) => {
+    // ARMED HERE, AND THIS IS THE ONLY PLACE IT CAN BE. Every position-driven
+    // refresh — this click, a GPS fix, the walking agent, the AR controller —
+    // arrives at `refresh` through the one `positionChanged` subscriber, which
+    // cannot tell them apart. The toast is for a refresh the user asked for, so
+    // intent is latched where it is still known. See `loading-announcer.ts`.
+    loadingAnnouncer.arm();
     store.dispatch(
       actions.positionChanged({
         lat: event.latlng.lat,
@@ -918,6 +1129,7 @@ async function main(): Promise<void> {
     );
   });
   categorySelect.addEventListener("change", () => {
+    loadingAnnouncer.arm();
     store.dispatch(actions.categoryChanged(categorySelect.value));
   });
   showBelow.addEventListener("change", () => {
@@ -1300,7 +1512,7 @@ async function main(): Promise<void> {
     void findGeoEvent(undefined);
   });
 
-  /**
+  /*
    * AR MODE (DEC-12, AR milestone 1).
    *
    * The button's appearance is DERIVED by `arButtonState` from three facts and
@@ -1866,6 +2078,9 @@ async function main(): Promise<void> {
             },
           }
         : {}),
+      // THE AR SUN SHADOW PROTOTYPE (`?sunShadow=1`, plan 2026-09-23-2343
+      // M3): OFF unless asked for, read at entry like the switch above.
+      sunShadow: sunShadowEnabled(window.location.search),
       // M4. Pulled at the readout's own cadence rather than pushed, because
       // fixes arrive ~1 Hz while draw cost changes every frame.
       //
@@ -2812,6 +3027,20 @@ async function main(): Promise<void> {
         drawScene(snapshot);
       });
       writeStatus();
+      // THE MAP NOW HAS SOMETHING ON IT, so the "loading" toast has nothing
+      // left to say — owner decision: "instantly hide it once the data is
+      // loaded". The `busy` flag cannot serve here: it stays true through four
+      // more rings of widening, long after this first snapshot drew.
+      //
+      // GUARDED, AND THE GUARD IS THE WHOLE CORRECTNESS OF THE SITE PICKER.
+      // This subscriber fires on any CHANGE to the snapshot, and two actions
+      // change it to `undefined`: `placeChanged` and `fetchFailed`. Unguarded,
+      // a site pick made while a refresh was already running cancelled its own
+      // announcement — `arm()` started the countdown, the `placeChanged`
+      // dispatch two lines later read as "data arrived" and killed it, and the
+      // longest wait in the demo went unannounced under a collapsed header.
+      // Found in cold review; the e2e below drives exactly that sequence.
+      if (snapshot !== undefined) loadingAnnouncer.dataArrived();
     },
   );
 
@@ -2881,6 +3110,14 @@ async function main(): Promise<void> {
       // The agent goes with it. It is standing where the user WAS, and after a
       // teleport that is a different city.
       if (anchor.reanchored) buildingView.clearRoute();
+      // THE SUN FOLLOWS THE ANCHOR, keeping its phase (the same elevation on
+      // the same limb): golden hour in Cologne stays golden hour in Tokyo.
+      if (anchor.reanchored) {
+        const place = { lat: anchors.origin.lat, lng: anchors.origin.lng };
+        const moved = relocate(sunInstant, sunPlace, place);
+        sunPlace = place;
+        moveSun(moved);
+      }
       // W11 (R4-12). A click must bring the chosen point back to the middle of
       // the 3D view without spinning it: `MapControls` pans camera and target
       // together, so after any pan the pivot is somewhere else entirely and the
@@ -3215,6 +3452,20 @@ async function main(): Promise<void> {
   // resolve while the first picture is still being assembled.
   // The holder was seeded with `start`, so this reads the same origin the first
   // refresh will send — the two cannot disagree about the opening scene.
+  // THE COLD START ANNOUNCES ITSELF (owner, 2026-09-22, after seeing it live).
+  //
+  // This reverses the decision taken an hour earlier, and the reversal is the
+  // interesting part: asked in the abstract whether opening the page counts as
+  // a gesture, the answer was no - nobody clicked anything, and the status
+  // line's dot is visible at startup because the header begins open. Asked
+  // again after actually opening the app, the answer was the opposite. Opening
+  // the page IS the intent, it is the longest wait the app has, and a small dot
+  // is not what someone watching an empty scene for thirty seconds needs.
+  //
+  // `arm()` rather than a special case inside the announcer: the boot is a
+  // gesture like any other, and the latch it sets is consumed by the refresh
+  // below exactly as a map click's would be.
+  loadingAnnouncer.arm();
   await Promise.all([
     loadTerrain({ centre: start, frameOrigin: anchors.origin }),
     refresh(),

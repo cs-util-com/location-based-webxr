@@ -19,6 +19,27 @@ and the home of every item of the plan's §5.3 network discipline.
 
 ## Invariants & assumptions
 
+- **Every attempt carries a transport deadline, default 45 s
+  (`requestTimeoutMs`).** `[timeout:180]` bounds Overpass's server-side
+  EXECUTION and says nothing about a connection that is accepted and then goes
+  quiet; before 2026-09-20 nothing here bounded the transport at all, so the
+  worst case was whatever TCP/OS timeout applied. A field run measured
+  `overpass.private.coffee` holding a request 199 s before answering.
+  - **A deadline hit FAILS OVER; it does not kill the tile.** It is spelled
+    `AbortSignal.timeout`, which rejects with `TimeoutError` - a retryable
+    transport failure to the attempt loop. `isAbortError` matches only
+    `AbortError`, which the loop rethrows, so a manually-aborted deadline would
+    convert every slow request into a dead tile. Measured in simulation at
+    single-cycle success 97.0% against 54.9%.
+  - **45 s is a swept value, not a round one.** Mean time-to-first-geometry
+    114.2 s unbounded against 59.7 s at 45 s; p90 336.3 s against 115.1 s. The
+    knee is between 30 s and 35 s: below it the deadline kills `maps.mail.ru`'s
+    genuine ~31-35 s successes and costs more than it saves. 45 s over the point
+    optimum of 35 s because 35 s is tuned to the maximum of a three-sample
+    distribution. See `DEFAULT_REQUEST_TIMEOUT_MS` for what would move it.
+  - A caller's own `signal` still aborts hard and is never retried; the two
+    reasons stay distinguishable through `composeSignals`.
+
 - **`userAgent` is required with no default.** A shared default would make every
   consumer of this library indistinguishable to the servers, so one bad actor
   would get all of them blocked. Constructing without one throws.
@@ -63,9 +84,43 @@ and the home of every item of the plan's §5.3 network discipline.
     the woken waiter's continuation) in which `active` reads below the cap while
     a waiter is already committed. A caller arriving there takes the slot too,
     and the cap is exceeded — which is what earns a 429.
+  - **A RACED TILE TAKES TWO UNITS OF THIS BUDGET, not one** (2026-09-22). The
+    gate counts tiles, so before this was fixed a racing tile made two requests
+    against a budget that thought it had made one, and a client configured for
+    two in-flight requests made four. The second unit is taken opportunistically
+    (`tryTakeExtraSlot`); a refusal simply means this tile does not race.
+    Making the gate WEIGHTED instead would deadlock any consumer who set
+    `maxConcurrent: 1`, because a weight of two can never be satisfied.
+
+- **A COLD TILE THE CALLER IS WAITING FOR IS RACED at two distinct
+  operators**, first answer wins, loser cancelled. Measured 2026-09-21: within the shipped 45 s deadline one attempt
+  at a time served 4 of 9 tiles at a 32.2 s median; the race served 7 of 9 at
+  27.0 s. **Most of that is the success rate, not the latency** - in 3 of 9
+  races the first-drawn operator failed outright.
+  - **The cost is the extra REQUEST and nothing reduces it.** Cancelling the
+    loser frees a socket, not the server's work: across all nine measured races
+    the loser had transferred at most 695 bytes - an error page - when the
+    winner finished, and the query had already been executed regardless.
+  - **Two DISTINCT operators, asserted rather than assumed.** Same-host
+    concurrency is refused - measured in three independent runs. A later change
+    to the draw that put two of one operator first would otherwise land in the
+    one arrangement every measurement says does not work.
+  - **The loser's cancellation is not the caller's abort.** Each racer gets a
+    private controller composed with the caller's signal, so our own
+    cancellation is swallowed while a real abort still propagates.
+  - Both outcomes reach the health tally, and `stats.requests` counts two - the
+    numbers this client's load on donated infrastructure is read from.
   - Covered by a test that sweeps the arrival across the whole window rather
     than guessing one offset; on the released-slot version only offset 7 of 10
     tripped it.
+  - **A SPECULATIVE tile is NOT raced** (`FetchTileOptions.speculative`,
+    2026-09-22). The whole case for spending a second request is that somebody
+    is sitting in front of a wait; nobody is waiting on a background ring warm,
+    and if it fails the neighbour is merely not warm while the fetch the user
+    eventually makes is itself raced. The demo's ring warm went from 14
+    requests to 7 - an e2e counting requests is what found the cost, before
+    anyone read this code. The spare concurrency unit stays free for a
+    foreground tile as well, which is the same argument in resource terms.
 - **`userAgent` does not reach the server from a browser.** `User-Agent` and
   `Referer` are on the fetch spec's forbidden-request-header list, so the
   browser drops both silently — no error, no warning. The option still does its
@@ -118,7 +173,22 @@ inventory. Which endpoint an attempt uses comes from
 (weighted by `DEFAULT_OPERATOR_WEIGHTS`) and returns a permutation of the pool
 for that one tile.
 
-Three consequences worth knowing:
+**Those weights are now a PRIOR, not the answer.** Since 2026-09-21 the source
+holds an [`operator-health.ts`](./operator-health.ts.md) tally and passes
+`health.weightsFrom(DEFAULT_OPERATOR_WEIGHTS)` to the draw, so a host that keeps
+refusing receives less traffic and one that recovers earns it back. The
+constants are untouched until something has actually been observed, so the first
+fetch of a session draws exactly as they say.
+
+- **Each attempt is classified where its status is**, not in the catch where it
+  is gone: a 504 is the host refusing us, a 400 or 414 is our own malformed
+  query (`"ours"`, dropped rather than counted), an abort is the caller leaving
+  (also dropped). Getting the middle one wrong would walk the pool one endpoint
+  at a time while the query stayed broken.
+- **Success is recorded AFTER `toResult`**, because a 200 carrying an HTML error
+  page is not this operator serving us, and that is where it is discovered.
+
+Three consequences of the draw itself worth knowing:
 
 - **The first attempts hit distinct operators.** With the default pool that is
   three different quotas before any repeat, which is what makes a retry

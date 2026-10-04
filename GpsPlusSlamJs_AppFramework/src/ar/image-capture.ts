@@ -149,13 +149,14 @@ export interface ImageCaptureCallbacks {
   /** Called when an image is successfully captured */
   onCaptured: (image: CapturedImage) => void;
   /** Called when image capture fails (e.g., toBlob returns null on low memory) */
-  onCaptureFailed?: () => void;
+  onCaptureFailed?: (() => void) | undefined;
   /**
    * Called when a captured image appears suspicious (likely black/empty).
    * This can happen on mobile devices when WebGL hasn't composited the frame yet.
    * The image is still saved (for debugging) but this callback allows logging.
    */
-  onSuspiciousImage?: (blobSize: number, frameIndex: number) => void;
+  onSuspiciousImage?:
+    ((blobSize: number, frameIndex: number) => void) | undefined;
   /**
    * Optional custom frame capture function.
    * When provided, this is used instead of canvas.toBlob() for capturing frames.
@@ -184,7 +185,8 @@ export interface ImageCaptureCallbacks {
    * analyzer cannot deadlock the pipeline. See `image-quality.ts` and
    * `GpsPlusSlamJs_Docs/docs/2026-06-24-1057-image-quality-gate-plan.md`.
    */
-  analyzeFrame?: (frame: CapturedFrame) => Promise<FrameQualityVerdict>;
+  analyzeFrame?:
+    ((frame: CapturedFrame) => Promise<FrameQualityVerdict>) | undefined;
 }
 
 /**

@@ -38,7 +38,7 @@ export interface GpsAnchorSampleGpsPoint {
  */
 export interface GpsAnchorSample {
   readonly gpsPoint: GpsAnchorSampleGpsPoint;
-  readonly fusedGpsPoint?: GpsAnchorSampleGpsPoint;
+  readonly fusedGpsPoint?: GpsAnchorSampleGpsPoint | undefined;
   readonly arPose: ARPose;
   readonly odomPosition: Vector3;
   readonly odomRotation: Quaternion;
@@ -47,7 +47,7 @@ export interface GpsAnchorSample {
 
 export interface CaptureGpsAnchorSampleOptions {
   /** Optional fused GPS point (computed elsewhere from the alignment matrix). */
-  readonly fusedGpsPoint?: GpsAnchorSampleGpsPoint;
+  readonly fusedGpsPoint?: GpsAnchorSampleGpsPoint | undefined;
   /** Defaults to `Date.now()` at capture time. */
   readonly timestamp?: number;
 }

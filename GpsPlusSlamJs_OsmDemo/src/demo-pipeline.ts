@@ -270,6 +270,28 @@ export interface DemoStageTimings {
    */
   readonly fetchMs: number;
   /**
+   * The BUSIEST fetch worker's own total — the fetch loop's critical path.
+   *
+   * **This exists because the 2-wide pool broke the reconciliation above.**
+   * Every other fetch term is SUMMED over tiles, and since 2026-09-20 those
+   * tiles overlap in time: two ten-second downloads cost ten seconds of
+   * `fetchMs`, not twenty. So the parts came to more than the whole, and
+   * `click-timings.ts` marked EVERY multi-tile click untrustworthy — which is
+   * exactly the case the pool was built for, and exactly the case the
+   * instrument could no longer describe.
+   *
+   * NOT the longest single tile, which is the tempting and wrong definition:
+   * with two workers and five tiles one worker may take three of them in
+   * sequence, and the pool cannot finish before that worker does. So each
+   * worker accumulates its own spans and this is the maximum over workers,
+   * which is the earliest the loop could possibly have ended.
+   *
+   * A failed tile still counts: it consumed wall clock whether or not it
+   * produced a result, and leaving it out would make the critical path look
+   * shorter than the loop that contained it.
+   */
+  readonly fetchCriticalPathMs: number;
+  /**
    * Stage 3 — `acceptTile`, i.e. `mergeTiles` over every tile held this session.
    *
    * Measured apart from `fetchMs` even though it runs inside the same loop,
@@ -430,6 +452,62 @@ export interface DemoSnapshot {
 }
 
 /**
+ * How many of a ring's missing tiles are fetched at once.
+ *
+ * **Two, and the number is load-bearing rather than tidy.** Overpass advertises
+ * `Rate limit: 2` per client per operator and it is a CONCURRENCY limit, so two
+ * is the widest pool that structurally cannot breach it. It also matches the
+ * source's own `DEFAULT_MAX_CONCURRENT` and its slot budget's default, so
+ * raising it here alone would be worse than rude: `OverpassSlotBudget.tryAcquire`
+ * refuses rather than queues, and those refusals would surface as missing
+ * geometry with no error. Raise the budget in the same change or not at all.
+ *
+ * **ONE SINCE 2026-09-22, because racing spends the same two slots better.**
+ * The source now sends each COLD tile to two operators at once and takes the
+ * first answer. Owner decision: the client's in-flight concurrency stays where
+ * it was, so the two slots go to racing one tile rather than to fetching two
+ * tiles sequentially-each.
+ *
+ * What that trades, stated plainly: ring parallelism helped the **18.8%** of
+ * positions whose first ring needs two tiles, and helped them by overlapping
+ * two fetches. Racing helps **every** cold tile, and helps them on the axis
+ * that actually hurt - measured 2026-09-21, first-attempt-alone served 4 of 9
+ * tiles inside the 45 s deadline against the race's 7 of 9. A tile that widens
+ * a second later is a worse outcome than a tile that never arrives.
+ *
+ * With this at 1, a racing tile holds one unit here and takes a second through
+ * `tryTakeExtraSlot`, so the peak is the same two in-flight requests as before.
+ * Raising this back to 2 without lowering something else would make it four.
+ */
+const FETCH_CONCURRENCY = 1;
+
+/**
+ * Throws if the caller has moved on.
+ *
+ * A FUNCTION rather than three inline checks, and not only to remove the
+ * duplication. Inline, TypeScript narrows `signal.aborted` to `false` after the
+ * first check and then reports every later one as unreachable - but the signal
+ * is aborted by the CALLER during an await, which no narrowing can see. Behind
+ * a call boundary the checks stay honest.
+ */
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted === true) {
+    throw new DOMException("Aborted", "AbortError");
+  }
+}
+
+/**
+ * A rejection that means "the caller moved on", as opposed to a failed tile.
+ *
+ * An abort must NOT become a `missingTiles` entry: the UI renders that as
+ * "N tile(s) unavailable", which would report a superseded click as a data
+ * failure the user cannot act on.
+ */
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+/**
  * Owns an `AffordanceIndex` and the fetches that feed it.
  *
  * STILL NOT A STORE, AND STILL NOT AN EVENT EMITTER — but the reason has
@@ -563,54 +641,129 @@ export class DemoPipeline {
     };
     let mergeMs = 0;
     const fetchStart = this.clock();
-    for (const tile of fetchTilesForScoreWorkingSet(chunk, scoredRadius)) {
-      if (this.loaded.has(tile)) continue;
-      // CHECKED PER TILE, which is the granularity that matters: a tile is
-      // ~21 MB, so stopping between tiles is most of the saving available from
-      // abort at all. Once the worker's caller has moved on, continuing to pull
-      // tiles for a position the user has left is exactly the waste the fetch
-      // discipline exists to avoid.
-      if (signal?.aborted === true) {
-        throw new DOMException("Aborted", "AbortError");
-      }
-      try {
-        // AND THREADED INTO THE REQUEST ITSELF, so a superseded run stops the
-        // transfer rather than merely stopping before the next one. An earlier
-        // comment here said this "would need an `AbortSignal` through
-        // `OsmDataSource`, `CachingSource` and `OverpassSource`, which is a
-        // package API change" — that API change has since landed, and
-        // `fetchTile(tile, signal)` is honoured all the way down to `fetch`. The
-        // comment outlived the constraint it described.
-        const result: OsmTileResult = await this.source.fetchTile(tile, signal);
-        this.loaded.add(tile);
-        totals.tilesFetched++;
-        // ABSENT IS COUNTED, NEVER ZEROED. A source that does not instrument
-        // itself must show up as `tilesUnmeasured`, or a fixture-backed run
-        // reads as a click whose network cost nothing.
-        const t = result.timings;
-        if (t === undefined) {
-          totals.tilesUnmeasured++;
-        } else {
-          totals.transportMs += t.transportMs;
-          totals.decodeMs += t.decodeMs;
-          totals.parseMs += t.parseMs;
-          totals.storeMs += t.storeMs ?? 0;
-          totals.probeMs += t.probeMs ?? 0;
-          totals.slotWaitMs += t.slotWaitMs;
-          totals.joinedMs += t.joinedMs ?? 0;
-          if (t.servedBy === "network") totals.tilesFromNetwork++;
-          else if (t.servedBy === "cache") totals.tilesFromCache++;
+    const wanted = fetchTilesForScoreWorkingSet(chunk, scoredRadius).filter(
+      (tile) => !this.loaded.has(tile),
+    );
+    // CHECKED BEFORE ANY FETCH STARTS. The per-tile check below only fires when
+    // a worker goes back for another tile, and at an interior position the
+    // working set needs exactly one — so an already-superseded run must be
+    // stopped here or it pays for a tile the user has left.
+    throwIfAborted(signal);
+
+    // FETCHED CONCURRENTLY, MERGED SEQUENTIALLY. Two tiles used to cost
+    // `t1 + t2` and now cost `max(t1, t2)`; a res-7 Overpass fetch measured
+    // 8-35 s on a healthy endpoint, so that is seconds. It buys the common case
+    // nothing — 80.2% of positions need exactly one new tile at the first ring,
+    // 18.8% need two — and the reason to do it anyway is that it costs that
+    // 80.2% nothing either: no extra publish, no extra CPU, no UI state.
+    //
+    // **TWO, AND THE NUMBER IS LOAD-BEARING.** Overpass advertises
+    // `Rate limit: 2` per client per operator and it is a CONCURRENCY limit, so
+    // two is the widest pool that structurally cannot breach it; at three, a
+    // seven-tile load exceeds it in 72% of runs. Two also matches the source's
+    // `DEFAULT_MAX_CONCURRENT` and its slot budget, so nothing downstream needs
+    // raising — and that matters more than it looks, because
+    // `OverpassSlotBudget.tryAcquire` REFUSES rather than queues. A pool wider
+    // than the budget would not merely be rude: the refusals land in the catch
+    // below and become missing geometry with no error anywhere.
+    const outcomes = new Map<string, OsmTileResult>();
+    let next = 0;
+    let aborted = false;
+    // THE CRITICAL PATH, accumulated per worker and maximised across them.
+    // See `fetchCriticalPathMs` for why the longest single TILE is the wrong
+    // definition once a worker can take several in sequence.
+    let fetchCriticalPathMs = 0;
+    const worker = async (): Promise<void> => {
+      let mine = 0;
+      // FOLDED ON EVERY EXIT PATH, not only the normal one: an aborted or
+      // errored worker still spent the time it spent, and a critical path that
+      // ignored it would read shorter than the loop that contained it.
+      const done = (): void => {
+        fetchCriticalPathMs = Math.max(fetchCriticalPathMs, mine);
+      };
+      for (;;) {
+        const index = next++;
+        const tile = wanted[index];
+        if (tile === undefined) {
+          done();
+          return;
         }
-        // STAGE 3, CLOCKED SEPARATELY THOUGH IT SITS INSIDE THIS LOOP. It is
-        // the term the plan predicts grows across a session, and it is the term
-        // nothing has ever measured; inside the fetch stage that growth would
-        // be invisible.
-        const mergeStart = this.clock();
-        this.index.acceptTile(result);
-        mergeMs += Math.max(0, this.clock() - mergeStart);
-      } catch {
-        missingTiles.push(tile);
+        // A tile is ~21 MB, so stopping between tiles is most of the saving
+        // abort can offer at all.
+        if (signal?.aborted === true) {
+          aborted = true;
+          done();
+          return;
+        }
+        const tileStart = this.clock();
+        try {
+          // THREADED INTO THE REQUEST ITSELF, so a superseded run stops the
+          // transfer rather than merely stopping before the next one.
+          outcomes.set(tile, await this.source.fetchTile(tile, { signal }));
+          mine += Math.max(0, this.clock() - tileStart);
+        } catch (error) {
+          mine += Math.max(0, this.clock() - tileStart);
+          if (isAbortError(error)) {
+            aborted = true;
+            done();
+            return;
+          }
+          // Left absent in `outcomes`; recorded as missing in working-set order
+          // below, so which server answered first cannot reorder the report.
+        }
       }
+    };
+    // `allSettled`, not `all`: `all` rejects on the first failure while its
+    // siblings are still in flight, which both abandons work already paid for
+    // and produces unhandled rejections from the losers.
+    await Promise.allSettled(
+      Array.from(
+        { length: Math.min(FETCH_CONCURRENCY, wanted.length) },
+        worker,
+      ),
+    );
+
+    // MERGED IN WORKING-SET ORDER, NEVER ARRIVAL ORDER. `acceptTile` is
+    // order-free — every permutation of up to seven tiles was executed and
+    // produced identical scores — so this is not needed for correctness of the
+    // merge itself. It is needed so a run's RESULT does not depend on which
+    // server happened to answer first, which is the reproducibility every
+    // fixture-backed test in this package rests on.
+    for (const tile of wanted) {
+      const result = outcomes.get(tile);
+      if (result === undefined) {
+        if (!aborted) missingTiles.push(tile);
+        continue;
+      }
+      this.loaded.add(tile);
+      totals.tilesFetched++;
+      // ABSENT IS COUNTED, NEVER ZEROED. A source that does not instrument
+      // itself must show up as `tilesUnmeasured`, or a fixture-backed run
+      // reads as a click whose network cost nothing.
+      const t = result.timings;
+      if (t === undefined) {
+        totals.tilesUnmeasured++;
+      } else {
+        totals.transportMs += t.transportMs;
+        totals.decodeMs += t.decodeMs;
+        totals.parseMs += t.parseMs;
+        totals.storeMs += t.storeMs ?? 0;
+        totals.probeMs += t.probeMs ?? 0;
+        totals.slotWaitMs += t.slotWaitMs;
+        totals.joinedMs += t.joinedMs ?? 0;
+        if (t.servedBy === "network") totals.tilesFromNetwork++;
+        else if (t.servedBy === "cache") totals.tilesFromCache++;
+      }
+      // STAGE 3, CLOCKED SEPARATELY THOUGH IT SITS INSIDE THIS LOOP. It is the
+      // term the plan predicts grows across a session, and it is the term
+      // nothing has ever measured; inside the fetch stage that growth would be
+      // invisible.
+      const mergeStart = this.clock();
+      this.index.acceptTile(result);
+      mergeMs += Math.max(0, this.clock() - mergeStart);
+    }
+    if (aborted) {
+      throw new DOMException("Aborted", "AbortError");
     }
     const fetchMs = Math.max(0, this.clock() - fetchStart);
 
@@ -620,9 +773,7 @@ export class DemoPipeline {
     // its single fetch would otherwise go on to score 19 chunks and 931 cells
     // for a position the user has already left. Scoring is the other expensive
     // half of this method, so skipping it is worth as much as skipping a tile.
-    if (signal?.aborted === true) {
-      throw new DOMException("Aborted", "AbortError");
-    }
+    throwIfAborted(signal);
 
     const scoreStart = this.clock();
     this.index.update(position, radius);
@@ -720,6 +871,7 @@ export class DemoPipeline {
       timings: {
         ...totals,
         fetchMs,
+        fetchCriticalPathMs,
         mergeMs,
         scoreMs,
         // CLOSED HERE, on the last line before the snapshot leaves, so stage 5
@@ -911,17 +1063,6 @@ export class DemoPipeline {
     const deriveStart = nowMs();
 
     /**
-     * The cells a tile's own batch-0 candidates could climb over.
-     *
-     * `requireLoaded` ABANDONS on the first cell whose fetch tile is missing
-     * and returns `undefined`. Building the whole array and then testing it
-     * would be correct and wasteful in exactly the common case: after this
-     * gate, most neighbours are rejected, and a reach that leaves its fetch
-     * tile usually does so on an early cell. That waste would land inside
-     * `deriveMs`, which is the number W7's benchmark is read off — so the
-     * measurement would be reporting work the search did not need.
-     */
-    /**
      * EXHAUSTIVE REACH: one res-13 seed per res-11 chunk of the tile.
      *
      * 343 seeds rather than the ~1 270 cells ten candidate discs cover, because
@@ -947,6 +1088,17 @@ export class DemoPipeline {
       return cells;
     };
 
+    /**
+     * The cells a tile's own batch-0 candidates could climb over.
+     *
+     * `requireLoaded` ABANDONS on the first cell whose fetch tile is missing
+     * and returns `undefined`. Building the whole array and then testing it
+     * would be correct and wasteful in exactly the common case: after this
+     * gate, most neighbours are rejected, and a reach that leaves its fetch
+     * tile usually does so on an early cell. That waste would land inside
+     * `deriveMs`, which is the number W7's benchmark is read off — so the
+     * measurement would be reporting work the search did not need.
+     */
     const climbReachOf = (
       each: string,
       requireLoaded = false,
@@ -991,7 +1143,7 @@ export class DemoPipeline {
         throw new DOMException("Aborted", "AbortError");
       }
       try {
-        this.index.acceptTile(await this.source.fetchTile(missing, signal));
+        this.index.acceptTile(await this.source.fetchTile(missing, { signal }));
         this.loaded.add(missing);
         // COUNTED ON SUCCESS ONLY. `missingTiles.length` would report tiles
         // that failed to download as work done, and a failed tile is the case

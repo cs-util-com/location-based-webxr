@@ -35,6 +35,11 @@ fallbackTimeoutMs?, publishTimeoutMs?, onUpgrade? }): RacingElevationProvider` �
 - `PREFERRED_DEM_SOURCE_ID` (`"mapterhorn"`) / `FAST_DEM_SOURCE_ID`
   (`"aws-open-data"`) — what `stats.servedBy` reports. Named explicitly because
   both ends are `TerrariumProvider` instances differing only by URL.
+- `DEM_URL_TEMPLATES` (`preferred`: Mapterhorn, `fast`: AWS) - the two arms'
+  tile URLs, used by `createDemProvider` itself and by the globe's arrival
+  prefetch (`arrival-plan.ts`, round-5 plan 2026-10-01-0945 §3.6), which warms
+  the cache with exactly these URLs. The cache key is the URL, so one
+  constant is what keeps the two from warming and reading different keys.
 
 - `DEM_SOURCE_ID` — `"mapterhorn+terrarium"`, the composed provider's
   `sourceId`. The worker reports it with every terrain result

@@ -8,10 +8,30 @@ consumer to inject.
 ## Public API
 
 - `class OpfsOsmBlobStore implements OsmBlobStore` — `get`, `put`, `delete`,
-  `keys`, plus `stats` (`gets`, `hits`, `puts`, `deletes`, `errors`)
+  `keys`, plus `stats` (`gets`, `hits`, `puts`, `deletes`, `errors`).
+  Constructed with `{ directory, warn? }`.
+- `type OsmBlobStoreWarn = (message, details) => void` - where a failed write
+  or listing is reported; defaults to `console.warn` with an
+  `[OsmBlobStore]` prefix.
 - `interface OsmBlobStore` — declared structurally, see below
 - `openOsmStoreDirectory(root, name?): Promise<FileSystemDirectoryHandle>`
 - `fileNameFor(key)`, `keyForFileName(name)`, `OSM_STORE_DIR`
+
+## Why it imports no logger (2026-10-01)
+
+The design system's no-build labs import this file as served TypeScript: the
+globe lab warms this same OPFS cache during its fly-in so OsmDemo opens warm
+(round-5 plan `2026-10-01-0945-globe-round-5-fly-in-and-terrain-blend-plan.md`
+§3.6, DEC-GL5-8). The served routes resolve only `.js` specifiers, and the
+framework logger imports `@sentry/browser`, which no lab can resolve. So the
+logger import is gone and warnings go to the injected `warn`.
+
+Nothing is lost where it is constructed today: `log.warn` also reports a
+Sentry Issue, so every existing production construction site passes
+`warn: (m, d) => log.warn(m, d)`. That is one site, OsmDemo's worker
+(`GpsPlusSlamJs_OsmDemo/src/worker/osm-store-warn.ts`, pinned by its
+test). A page that cannot load the logger (the globe lab's arrival
+prefetch) keeps the `console.warn` default.
 
 ## Invariants & assumptions
 

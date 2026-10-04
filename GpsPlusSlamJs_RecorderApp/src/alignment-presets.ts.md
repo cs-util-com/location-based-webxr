@@ -8,11 +8,18 @@ The alignment presets the in-recording settings wheel switches between (2026-09-
 
 - `AlignmentPreset` — `{ id, label, overrides }`; `overrides: null` means the shipped defaults (clears any preset).
 - `SHIPPED_PRESET_ID` — `'shipped'`, always the first entry.
-- `ALIGNMENT_PRESETS` — nine entries, in dropdown order:
-  - `shipped` (recency 250, threshold 5).
-  - The two stage-2 SURVIVORS: recency 100, and recency 100 + accuracy exponent 0.75 (the rotation-first scorecard's candidates 1 and 2; both calmer than shipped on every rotation axis, within 1° of cross-walk agreement).
-  - The FIELD-JUDGEMENT block (full search stage 2, 2026-09-02, findings G3): recency 25 + accuracy 0.75; the calmest row of the grid (no recency, keep 40 %); no recency + no rejection + accuracy 0.75 (owner request at the stage-2 interview: the no-rejection end of the grid); and two recency-25 rows (no rejection; threshold 7 + keep 40 %). Every one of these failed the search's cross-session guardrail and carries the cost in its label ("agreement −4.4°": two walks of the same street agree that much less than under shipped, one building; "+1.1 m" where the position p90 also left the +1.0 m allowance).
-  - The ROBUST-SOLVER arm (recency 50, robust solver, accuracy 1): its calmest stage-1 cell, inside noise of shipped; present so the wheel's heading-penalty box has a preset under which it acts (plan D6).
+- `ALIGNMENT_PRESETS` — seven entries, in dropdown order:
+  - `shipped` (recency 250, threshold 5) — the baseline; a field test without it measures nothing.
+  - The MEMORY LADDER (2026-09-12): `w45`, `w90`, `w180`, `w300`, `wall`. One variable — how far back the solver may look — and nothing else.
+
+**What the ladder is FOR, and it is not what the first draft of this sidecar said.** An offline sweep ranked "no window at all" best and that result was **withdrawn the same day** under adversary review: the metric behind it scores less motion as better (its ranking correlates with "which arm moved least" at Spearman +0.943), and on the in-sample GPS residual every rung from `w90` outward is worse than shipped on **159 of 159** recordings. So the ladder is a **question**, not a recommendation.
+
+The question it asks the tester is **not "which feels steadiest"** — a frozen alignment feels beautifully steady, which is exactly how this failure mode hides. It is **"after a long walk, does the content still sit on the right spot"**. `w45` is present as the deliberately bad rung, because a ladder with no bad rung cannot calibrate the eye against the numbers.
+
+- The ROBUST-SOLVER arm (recency 50, robust solver, accuracy 1): its calmest stage-1 cell, inside noise of shipped; present so the wheel's heading-penalty box has a preset under which it acts (plan D6).
+
+**Removed 2026-09-12** — `f100`, `f100-exp075`, `f25-exp075`, `calm-ret04`, `calm-none-exp075`, `f25-none-exp1`, `f25-thr7-ret04-exp1`. All seven came from the 2026-09-01/02 rotation-first scorecard, whose accuracy-exponent axis is now known to be confounded: the kernel ADDS the accuracy and age terms, so raising `gpsAccuracyExponent` also squashes the recency span, and those presets were never testing accuracy. Each also varied two or three knobs at once, so a field impression could not be attributed to any of them. Recordings store the override PAYLOAD rather than the preset id, so nothing recorded with them is affected — but `seedWheelSettings` reverse-matches overrides to a preset, so replaying such a recording now shows `shipped` in the wheel. The replay is byte-identical; the readback LABEL is what lies.
+
 - `findAlignmentPreset(id)` — lookup; `undefined` for an unknown id, never a silent default.
 
 ## Reading "recency N"
@@ -24,6 +31,8 @@ The alignment presets the in-recording settings wheel switches between (2026-09-
 - **Only whitelisted keys.** Every override key must be one the library's `setAlignmentOverrides` accepts (`ALIGNMENT_OVERRIDE_KEYS`, re-exported by the framework); an unknown key would throw at dispatch time in the field, so the test pins it here.
 - **Nothing here is a promotion.** The shipped config stays the default of every session; a preset is applied only when the tester picks it on the wheel and is never persisted.
 - **Exactly one preset enables the robust solver**, so the heading-penalty box (disabled otherwise) has a defined home.
+- **Every ladder rung sets `timeWeightEnabled: false`.** With recency decay left running, the oldest fix INSIDE a 90 s window is still weighted 251x lighter than the newest, so the window would not be the variable under test. That exact confound wasted an arm in the offline probe; on the phone it would waste a walk.
+- **`wall` carries no window key at all, and that is load-bearing.** No public override sets `useOnlyRecentData` back to `false`, so the rung depends on the shipped default being `false` PLUS `setAlignmentOverrides` replacing rather than merging. If that ever became a merge, `wall` would silently inherit the previously selected rung's window — which is why a test pins the produced payload.
 - Ids are dropdown values and never renumbered; labels are written for a phone outdoors, not for a config reader, and name the memory direction.
 
 ## Example
@@ -35,4 +44,4 @@ if (preset) store.dispatch(setAlignmentOverrides(preset.overrides));
 
 ## Tests
 
-`alignment-presets.test.ts` — shipped first with `null`, unique ids, every key whitelisted by the library, the three scorecard candidates' knobs, the nine-entry order with the field-judgement labels carrying their agreement cost, exactly one robust preset, "recency N" naming with the direction on the survivors, unknown id → `undefined`.
+`alignment-presets.test.ts` — shipped first with `null`, unique ids, every key whitelisted by the library, the ladder contract (rung ids and order, keys a subset of `{timeWeightEnabled, recentWindowSeconds}`, `timeWeightEnabled: false` on every rung, strictly increasing windows, `wall` carrying only the one key), the seven-entry dropdown order, every removed id resolving to `undefined`, exactly one robust preset, "recency N" naming with `^no recency` required on every rung, unknown id → `undefined`.

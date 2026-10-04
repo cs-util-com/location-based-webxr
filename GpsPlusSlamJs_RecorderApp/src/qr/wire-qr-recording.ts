@@ -11,16 +11,19 @@
  *    (re-attaching across `Start Recording` / replay store swaps) that renders the
  *    derived axis+cube under `arWorldGroup`.
  *
- * **Clock domain (load-bearing — plan open topic A):** the producer's `now` is
- * `Date.now()` (EPOCH ms), the SAME clock the recorded depth stream uses
- * (`DepthSample.timestamp = performance.timeOrigin + frameTs`, depth-sampler.ts),
- * so the derive-on-read size as-of join (`depth.ts <= detection.ts`) pairs each
- * detection with the right depth sample. Using `performance.now()` (relative)
+ * **Clock domain (load-bearing — plan open topic A):** a detection's timestamp is
+ * its frame's capture time, EPOCH ms (`performance.timeOrigin + xrTime`, stamped by
+ * the framework since QR perf plan M4) - the SAME clock the recorded depth stream
+ * uses (`DepthSample.timestamp = performance.timeOrigin + frameTs`,
+ * depth-sampler.ts), so the derive-on-read size as-of join
+ * (`depth.ts <= detection.ts`) pairs each detection with the right depth sample. Using `performance.now()` (relative)
  * here was a bug: it never satisfies the join, so the size — and the debug cube —
  * never resolve.
  *
- * Camera POSE comes from the current XR frame (`getCurrentArPose()`, Option A) so
- * it is not stale to the 1 Hz depth cadence; PROJECTION (PnP intrinsics) still
+ * Camera POSE comes WITH each captured frame (the framework pairs the pixels with
+ * the pose of the XR frame they were captured in - QR perf plan 2026-09-23, M4),
+ * so it is neither stale to the 1 Hz depth cadence nor read after the async
+ * decode; PROJECTION (PnP intrinsics) still
  * comes from the latest depth sample (the only per-frame projection source today;
  * a fresher per-frame projection is open topic F). The producer's
  * `imageWidth/Height` come from the detector-frame buffer (the RGBA capture).
@@ -43,11 +46,9 @@ import {
   createBarcodeDetectorFrontEnd,
   type RgbaImage,
 } from 'gps-plus-slam-app-framework/ar/qr/qr-frontend';
-import type { Pose } from 'gps-plus-slam-app-framework/ar/qr/qr-pose';
 import {
   startCameraFrameCapture,
   stopCameraFrameCapture,
-  getCurrentArPose,
 } from 'gps-plus-slam-app-framework/ar/webxr-session';
 import type { QrCaptureOptions } from '../state/recording-options';
 import { recordQrDetection } from 'gps-plus-slam-app-framework/state';
@@ -77,6 +78,7 @@ import {
   type QrSightingFeeder,
   type QrSightingFeederDeps,
 } from './qr-sighting-feeder';
+import { createQrFusedVotes } from './qr-fused-votes';
 
 /** Bare-name `?qr=` payloads resolve under this prefix — the convention the
  *  framework's launch builder documents. */
@@ -107,9 +109,11 @@ export interface WireQrRecordingOptions {
    */
   setProducer: (producer: QrFrameSink | null) => void;
   /**
-   * Read the session's alignment as it stands NOW. Each sighting keeps the
-   * value from its last detection, because the mint uses the alignment as it
-   * was AT that moment and the store keeps no history (plan DEC-3).
+   * Read the session's alignment as it stands NOW, with the session's GPS
+   * extent. The feeder reads it at every detection and every store change,
+   * because the store keeps no history: a code is minted through the first
+   * alignment at or after its last sighting whose extent reaches 80 m, else
+   * through the alignment at save (owner decision D28, revised 2026-10-02).
    */
   readAlignment: QrSightingFeederDeps['readAlignment'];
   /** Receives the sighting feeder so save-time minting and the HUD can read
@@ -117,6 +121,12 @@ export interface WireQrRecordingOptions {
   setSightingFeeder?: (feeder: QrSightingFeeder | null) => void;
   /** What a scanned code's level lookup did, for the HUD. */
   onLevelState?: (text: string, state: QrLevelLookupState) => void;
+  /**
+   * QR store state changed (coalesced to one call per animation frame), for
+   * the HUD row. Independent of camera frames, which the capture veto pauses
+   * while a detect or level fetch is in flight.
+   */
+  onQrStateChanged?: () => void;
 }
 
 /**
@@ -136,7 +146,7 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
    * then came back after the session ended and dispatched into whatever store
    * was current by then.
    */
-  let frameSink: { reset: () => void } | null = null;
+  let frameSink: { dispose: () => void } | null = null;
   /** True once the tracking controller has taken over the frame stream. */
   let usingLevels = false;
   /**
@@ -158,13 +168,15 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
    * in the session against, so the pinned centroid would propagate one
    * code's error into every new `qr/<id>.json`.
    */
-  // NOTE: unlike the TourViewer this wires no `resolveStablePose`, so these
-  // votes ride the RAW single-frame solve rather than the sliding-window
-  // filtered pose. Whether authoring should use the stable pose too is a
-  // design question with a real cost either way (the gate SKIPS votes while
-  // converging), filed with the measurement that would settle it:
-  // ../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-30-1520-recorder-vote-pose-stability-followup.md
   const voteBudget = createQrVoteBudget();
+  // The votes ride the FUSED pose (QR near-frontal pose plan §71-§72, b6a;
+  // the owner's call, §66): a code votes only once the joint rotation over
+  // its recent detections is stable, at that rotation. Evaluated per
+  // recorded detection, so a replay rebuilds the same gate.
+  const fusedVotes = createQrFusedVotes({
+    getQrState: () => storeRef.get().getState(),
+    isSpent: (text) => voteBudget.isSpent(text),
+  });
   /** The code the next vote batch belongs to; see `onDetection`. */
   let lastVotedText: string | null = null;
 
@@ -197,27 +209,6 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     ? (image: RgbaImage) => frontEnd.detect(image)
     : () => Promise.resolve(null);
 
-  // Camera pose: the CURRENT XR-frame pose (Option A) — refreshed every frame,
-  // so it is NOT the up-to-~1s-stale 1 Hz depth-sample pose. It rides the same
-  // raw-WebXR/odom frame as the depth sample's pose, so it is coordinate-
-  // compatible; we only reshape ARPose ({x,y,z}/{x,y,z,w}) into the Pose tuples.
-  const getCameraPose = (): Pose | null => {
-    const arPose = getCurrentArPose();
-    if (!arPose) return null;
-    return {
-      position: [
-        arPose.position.x,
-        arPose.position.y,
-        arPose.position.z,
-      ] as Pose['position'],
-      rotation: [
-        arPose.orientation.x,
-        arPose.orientation.y,
-        arPose.orientation.z,
-        arPose.orientation.w,
-      ] as Pose['rotation'],
-    };
-  };
   // Projection (PnP intrinsics) still comes from the depth sample — the only
   // per-frame projection source today, and FOV is near-constant per session
   // (a fresher per-frame projection is open topic F).
@@ -243,7 +234,18 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     const tracking = createQrTrackingController({
       frontEnd,
       solvePose: (input) => solveQrPose({ ...input, solver: pnpSolver }),
-      fetchLevel: (text) => levelSource.fetchLevel(text),
+      fetchLevel: async (text) => {
+        const level = await levelSource.fetchLevel(text);
+        // The fused trackers need the printed size (plan §72 #1). Only a
+        // level with geo votes, so a geo-less one (debug, trigger) is never
+        // solved (plan §75 #2).
+        fusedVotes.noteLevelSize(
+          text,
+          level.qr.geo ? level.qr.physicalSizeM : undefined
+        );
+        return level;
+      },
+      resolveStablePose: (text) => fusedVotes.resolveStablePose(text),
       // The source owns the retry timing; without this the controller's own
       // cache would keep the first failure for the whole session.
       shouldCacheLevel: (level) => levelSource.shouldCacheLevel(level),
@@ -285,10 +287,12 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
             projectionMatrix,
             imageWidth: raw.imageWidth,
             imageHeight: raw.imageHeight,
+            // Kept so a replay can ignore native-order frames (plan §60).
+            ...(raw.orderSource ? { orderSource: raw.orderSource } : {}),
           })
         );
+        fusedVotes.onRecorded(raw.text);
       },
-      getCameraPose,
       getIntrinsics: (image) => {
         const projectionMatrix = getProjectionMatrix();
         return projectionMatrix === null
@@ -309,6 +313,9 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     startCameraFrameCapture({
       intervalMs: qr.intervalMs,
       captureSize: qr.captureSize,
+      // Skip the GPU readback while a detect (incl. a level fetch) is in
+      // flight - the scheduler would drop that frame anyway.
+      wantsFrame: () => !tracking.isBusy(),
     });
     disposeLevelSource = () => {
       levelSource.dispose();
@@ -320,17 +327,9 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     ? null
     : createQrDetectionController({
         detect,
-        getCameraPose,
         getProjectionMatrix,
         recordDetection: (observation) =>
           storeRef.get().dispatch(recordQrDetection(observation)),
-        // MUST share the depth stream's clock: `DepthSample.timestamp` is EPOCH ms
-        // (`performance.timeOrigin + frameTs`, depth-sampler.ts), and the derive-on-
-        // read size as-of join keys QR detections by the SAME timestamp. Date.now()
-        // is epoch; `performance.now()` (relative) would never satisfy
-        // `depth.ts <= detection.ts`, so the size — and the debug cube — never
-        // resolve. (See open topic A; the original "epoch ms" intent was correct.)
-        now: () => Date.now(),
         // The camera-frame source owns the cadence; detect every delivered frame.
         minIntervalMs: 0,
       });
@@ -341,6 +340,7 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     startCameraFrameCapture({
       intervalMs: qr.intervalMs,
       captureSize: qr.captureSize,
+      wantsFrame: () => !producer.isBusy(),
     });
   }
 
@@ -367,6 +367,11 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     rafId = requestAnimationFrame(() => {
       rafId = null;
       debug.update();
+      // A GPS fix is a store change: codes still waiting for a mature
+      // alignment (D28 revised) follow it. After `debug.update()`, so a
+      // placement derived in this frame is reported first.
+      sightings.noteAlignment();
+      options.onQrStateChanged?.();
     });
   };
 
@@ -386,11 +391,13 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
   let attached = false;
   const stopFollowing = followStore(storeRef, (store: RecorderStore) => {
     if (attached) {
-      sightings.accumulator.reset();
+      // The sightings AND the alignments kept for them.
+      sightings.reset();
       syntheticVotes = 0;
       // The new store restarts its GPS list, so a code that spent its
       // budget against the previous one must be allowed to vote again.
       voteBudget.reset();
+      fusedVotes.resetForStore();
     }
     attached = true;
     const detach = store.subscribe(scheduleUpdate);
@@ -401,7 +408,9 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
   return () => {
     stopCameraFrameCapture();
     disposeLevelSource?.();
-    frameSink?.reset();
+    // dispose, not reset: a decode or level fetch in flight must reach no
+    // callback after the session ended (QR near-frontal pose plan §61).
+    frameSink?.dispose();
     setProducer(null);
     options.setSightingFeeder?.(null);
     if (rafId !== null) {

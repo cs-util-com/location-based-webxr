@@ -12,6 +12,7 @@ Encapsulates recording-session lifecycle state and event handlers, extracted fro
 | -------------------------- | --------- | ----------------------------------------------------------------------- |
 | `RecordingSessionDeps`     | Interface | Dependency bag for the factory (store access, options, callbacks, etc.) |
 | `RecordingSessionHandlers` | Interface | Returned handle with lifecycle methods and tracker proxies              |
+| `SessionRuntime`           | Interface | Re-exported from [session-runtime.ts](./session-runtime.ts.md)          |
 
 ### Factory
 
@@ -26,6 +27,7 @@ Encapsulates recording-session lifecycle state and event handlers, extracted fro
 | `handleStartRecording()`      | Starts session: storage, sensors, GPS watch, sync manager, store subscribers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `handleStopRecording()`       | Re-entrancy-guarded: stops sensors, final sync, hides recording controls (Bug 8 fix), shows summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `handleBackDuringRecording()` | Shows confirmation dialog; on confirm stops recording and navigates back                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `isStopInProgress()`          | True for the whole Stop teardown (the re-entrancy flag, read-only). `isRecording` stays true after `performStop` flushed the action writes for the zip and until it ends the session, so an action dispatched in that window can miss the zip; late-note recorders (the sun check, `../ar/sun-sighting-note.ts`) refuse it through this getter.                                                                                                                                                                                                                                           |
 | `getCurrentSessionName()`     | Returns the current session name string                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `setCurrentSessionName(name)` | Sets session name                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `recordWriteSuccess()`        | Null-safe proxy to write-failure tracker                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
@@ -37,11 +39,22 @@ Encapsulates recording-session lifecycle state and event handlers, extracted fro
 
 ## State owned (private to each factory instance)
 
+**One named object, `SessionRuntime`, plus two loose flags** — and the split is
+a real distinction rather than a filing choice.
+
+`runtime` holds the nine things a RECORDING owns:
 `writeFailureTracker` / `captureFailureTracker` (created per session),
-`currentSessionName`, `syncManager` / `lastSyncResult`, `imageQualityClient`,
-`absCompassHudTimer`, and the two re-entrancy guards
-`backDuringRecordingInProgress` and `stopInProgress`, plus `unsubscribeStore`
-for subscriber cleanup.
+`currentSessionName`, `syncManager` / `lastSyncResult`,
+`latestQrAnchorOutcomes`, `unsubscribeStore`, `imageQualityClient` and
+`absCompassHudTimer`. They were nine separate `let`s until 2026-09-22; naming
+them is what lets the 168-line `performStop` be moved out at all, since it
+reaches into all of them.
+
+`backDuringRecordingInProgress` and `stopInProgress` stay as plain `let`s
+because they guard a HANDLER against re-entry, not a resource: each is false
+again before its handler returns, while everything in `runtime` outlives the
+call that created it. A guard must also stay where its handler is — travelling
+with an extracted flow would let a second entry find a fresh copy and proceed.
 
 The ref-point **view** subscribers (3D spheres + live-map markers) are NOT wired
 here — they are AR-scoped and store-swap-following via main's `storeRef`
@@ -49,9 +62,31 @@ here — they are AR-scoped and store-swap-following via main's `storeRef`
 2026-07-05). The `deps.setStore(newStore)` call in `handleStartRecording` is
 what triggers their re-wire.
 
+## What lives elsewhere (2026-09-22)
+
+The stop flow was extracted; this module keeps the handlers and the wiring.
+
+- [`stop-recording.ts`](./stop-recording.ts.md) - `performStop` (170 lines, nine
+  ordered steps), `stopLiveFeeds`, `stopAbsCompassHudUpdates`.
+  **`handleStopRecording` stayed here**: it is the re-entrancy guard and the
+  thing that un-bricks the UI on a throw, and `stopInProgress` must not travel.
+- [`zip-contributors.ts`](./zip-contributors.ts.md) - `buildZipContributors`,
+  which has two callers far apart in the lifecycle (the crash-safety sync armed
+  at start, and the final export at stop).
+- [`session-runtime.ts`](./session-runtime.ts.md) - the `SessionRuntime` shape
+  and `FALLBACK_SCENARIO`, so the stop flow does not have to import its caller.
+
+The extracted modules take NARROW deps interfaces (`StopRecordingDeps`,
+`ZipContributorDeps`) rather than the whole `RecordingSessionDeps`, which is
+what keeps the dependency one-way. `RecordingSessionDeps` satisfies both
+structurally, so the factory passes `deps` unchanged.
+
+The file went from 939 lines to 682.
+
 ## Invariants & Assumptions
 
-- **Factory pattern**: Each call to `createRecordingSessionHandlers` returns independent state. No module-level mutable state.
+- **Factory pattern**: Each call to `createRecordingSessionHandlers` returns independent state. No module-level mutable state. The `runtime` object is created fresh per call, so two handler instances never share a worker, a timer or a sync manager.
+- **`SessionRuntime` is mutable on purpose, and every field is nulled by its owner.** These are live resources whose lifetime is the recording's, so `readonly` would be a lie. What keeps them honest is that each is cleared on the path that stops it — `cleanupForNewRecording` and `reset` both do it again, which is what makes a missed clear visible rather than latent.
 - **The GPS-marker opt-out must be re-asserted after `clearAll()` (regression fixed 2026-06-18)**: `handleStartRecording` calls `gpsEventVisualizer.clearAll()` to dispose the previous session's markers, but `clearAll()` resets the shared visualizer to its pristine **visible** state (a replay-safety reset). This path runs _after_ Enter-AR already applied the operator's `visualization.gpsAlignmentMarkers` opt-out, so the immediately following `setVisible(...)` is load-bearing — without it, GPS spheres reappear during recording even though the toggle is off.
 - **Image-quality gate lifecycle**: when `recordingOptions.images.qualityFilter.enabled`, `handleStartRecording` spawns the off-thread analyzer worker (`createImageQualityAnalyzer`) and injects it via the `deps.setImageQualityAnalyzer` dep **before** `startImageCapture` (the manager reads the analyzer when constructed); when disabled it spawns no worker and clears the analyzer (`deps.setImageQualityAnalyzer(null)`) so a previous recording's worker can't leak in. The dep is injected by main.ts and writes main's `activeImageQualityAnalyzer` ref, which the stable `imageCapture.qualityAnalyzer` wrapper passed to `initAR` delegates to (the framework's `setImageQualityAnalyzer` export was deleted in the setter fold; recordings start/stop within one AR session, so the per-recording Worker cannot be an initAR-time constant). `performStop` clears the callback and `dispose()`s the worker. The worker is owned here (one per recording), so its rolling sharpness baseline resets each recording. **Fail-open on worker init**: the worker is constructed synchronously, so `new Worker` can throw on a locked-down deployment (e.g. CSP `worker-src`). That construction is wrapped in `try/catch` — on failure the gate is disabled (`deps.setImageQualityAnalyzer(null)`) and recording proceeds, rather than aborting a session whose GPS/orientation watches have already started. See `image-quality-client.ts.md`.
 - **Dependency injection**: `getStore()` is called on every use to resolve the _current_ store (supports soft reset via Bug 9 getter pattern).

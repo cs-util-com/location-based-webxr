@@ -10,14 +10,17 @@
  * acquisition are ON in viewer AND author mode, and depth stays OFF in both
  * (v1 authoring takes the printed size as an input, which dissolved the
  * per-mode depth split). Author mode only changes labels here; the pipelines
- * diverge in M3/M4.
+ * diverge in M3/M4. The one exception is an entry the creator's
+ * troubleshooting recording records: it asks for depth, because the
+ * recording carries depth samples instead of camera pictures (authoring
+ * recording plan 2026-09-28-0953, decision D4).
  */
 
 import type {
   ArSessionCallbacks,
   EnableGpsArConfig,
   EnableGpsArState,
-  RgbaImage,
+  CapturedCameraFrame,
   TrackingSubscribableStore,
 } from "gps-plus-slam-app-framework/ar";
 import type {
@@ -27,12 +30,14 @@ import type {
 import {
   startSession,
   teardownArSessionState,
+  type DepthSample,
   type SubscribableStore,
 } from "gps-plus-slam-app-framework/state";
 import type {
   endSession,
   resetGpsSessionData,
 } from "gps-plus-slam-app-framework/state";
+import { DEFAULT_QR_CAPTURE_INTERVAL_MS } from "gps-plus-slam-app-framework/ar/qr/qr-capture-cadence";
 import type { Object3D } from "three";
 
 import type { ViewerMode } from "./mode.js";
@@ -42,9 +47,10 @@ import type { ViewerMode } from "./mode.js";
  * for). The frame source is the SINGLE cadence owner (Option A): the QR
  * controller that will consume these frames in M3/M4 must run
  * `minIntervalMs: 0`, because two equal throttles in series drop ~1 frame
- * per cycle.
+ * per cycle. The value is the framework's shared QR default (DEC-H3), not
+ * a copy.
  */
-export const CAMERA_FRAME_INTERVAL_MS = 125;
+export const CAMERA_FRAME_INTERVAL_MS = DEFAULT_QR_CAPTURE_INTERVAL_MS;
 
 export interface ArButtonView {
   label: string;
@@ -115,11 +121,15 @@ export interface ArEnableHooks {
    *  those dispatches (flows plan M4). Without it the slice is mounted but
    *  never fed, and the phase sits at `initializing` for the whole session. */
   trackingStore: TrackingSubscribableStore;
-  /** Every throttled camera frame (top-left RGBA) — the future QR feed. */
-  onFrame(image: RgbaImage): void;
+  /** Every throttled camera frame: top-left RGBA plus its capture pose/time. */
+  onFrame(frame: CapturedCameraFrame): void;
   onSessionEnd(): void;
   onGpsPosition(position: GpsPosition): void;
   onOrientation(orientation: RawDeviceOrientation): void;
+  /** Present only for an entry the troubleshooting recording records
+   *  (decision D4): requests the depth feature and receives its samples.
+   *  Absent, depth stays off as for every other entry. */
+  onDepthSample?: (sample: DepthSample) => void;
 }
 
 /**
@@ -131,8 +141,8 @@ export interface ArEnableHooks {
 export function buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig {
   const callbacks: ArSessionCallbacks = {
     cameraFrame: {
-      onFrame: (image) => {
-        hooks.onFrame(image);
+      onFrame: (frame) => {
+        hooks.onFrame(frame);
       },
     },
     // The framework's own poseReceived/poseLost dispatch path (the recorder
@@ -142,18 +152,25 @@ export function buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig {
     onSessionEnd: () => {
       hooks.onSessionEnd();
     },
+    // Presence creates the framework's depth sampler at initAR; sampling
+    // itself starts with `startDepthCapture` once the session runs.
+    ...(hooks.onDepthSample === undefined
+      ? {}
+      : { depth: { onCaptured: hooks.onDepthSample } }),
   };
   return {
     container: hooks.container,
     requestHitTest: hooks.requestHitTest,
-    // Camera ON (access + texture acquisition), depth OFF — in BOTH modes.
+    // Camera ON (access + texture acquisition), depth OFF — in BOTH modes,
+    // unless this entry is recorded (then depth is requested as an OPTIONAL
+    // feature: a phone without it starts AR all the same, without depth).
     // These are the opposite of MinimalExample/AnchorStarter, which turn the
     // camera path off to dodge its Chromium crash surface; a CV app needs it
     // and inherits that surface (mitigated by the framework's projection-
     // layer workaround inside initAR).
     isolationOptions: {
       enableCameraAccess: true,
-      enableDepthSensingFeature: false,
+      enableDepthSensingFeature: hooks.onDepthSample !== undefined,
       enableCameraTextureAcquisition: true,
     },
     callbacks,

@@ -60,14 +60,64 @@ test.describe('debug wheel', () => {
     );
     expect(before).toMatchObject({ presetId: 'shipped', touched: false });
 
-    await panel.locator('#debug-wheel-preset').selectOption('f100');
+    await panel.locator('#debug-wheel-preset').selectOption('w90');
     const after = await page.evaluate(() =>
       window.testHooks.getDebugWheelValues()
     );
-    expect(after).toMatchObject({ presetId: 'f100', touched: true });
+    expect(after).toMatchObject({ presetId: 'w90', touched: true });
 
     // The gear is a real toggle, not a one-way open.
     await gear.click();
     await expect(panel).toBeHidden();
+  });
+});
+
+test.describe('the sun check toggle (sun-overlay plan M3)', () => {
+  // Why: the toggle, its safety note and the recorder glue are wired in
+  // main.ts, which no unit test executes. Only a browser proves the box is
+  // in the wheel, that enabling it shows the safety note in the overlay
+  // root, and that declining leaves it off. The check itself needs a real
+  // AR session (the field checklist), so the accepted path here only proves
+  // the box stays on and no sun HUD appears without a session.
+  const openWheel = async (page) => {
+    await fakeWebXRSupport(page);
+    await page.goto('/?debug=1');
+    await waitForTestHooks(page);
+    await page.evaluate(() => {
+      window.testHooks.hideSetupModal();
+      window.testHooks.showRecordingControls();
+    });
+    const gear = page.locator('#btn-debug-wheel');
+    await gear.waitFor({ state: 'visible' });
+    await gear.click();
+    return page.locator('#debug-wheel-sun-check');
+  };
+
+  test('declining the safety note leaves the check off', async ({ page }) => {
+    const box = await openWheel(page);
+    await expect(box).not.toBeChecked();
+    await box.click();
+    const cancel = page.getByTestId('confirm-dialog-cancel');
+    await cancel.waitFor({ state: 'visible' });
+    await expect(page.locator('#app')).toContainText(
+      'Never look at the sun directly'
+    );
+    await cancel.click();
+    await expect(box).not.toBeChecked();
+    await expect(box).toBeEnabled();
+    await expect(page.locator('#sun-check')).toHaveCount(0);
+  });
+
+  test('accepting it turns the box on, with no sun HUD before an AR session', async ({
+    page,
+  }) => {
+    const box = await openWheel(page);
+    await box.click();
+    const confirm = page.getByTestId('confirm-dialog-confirm');
+    await confirm.waitFor({ state: 'visible' });
+    await confirm.click();
+    await expect(box).toBeChecked();
+    await expect(box).toBeEnabled();
+    await expect(page.locator('#sun-check')).toHaveCount(0);
   });
 });

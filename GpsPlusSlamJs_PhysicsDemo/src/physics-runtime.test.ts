@@ -101,6 +101,25 @@ describe("createPhysicsRuntime", () => {
     runtime.dispose();
   });
 
+  // The status line's collider age (r752 first-load report): when the
+  // collider was last built, or null while it never was.
+  it("says when it last built the collider", () => {
+    const source = meshSource(null);
+    const runtime = createPhysicsRuntime(new THREE.Group(), source, {
+      colliderRebuildMs: 500,
+    });
+    runtime.step(0);
+    expect(runtime.colliderBuiltAtMs()).toBeNull();
+    source.set(quad());
+    runtime.step(40);
+    expect(runtime.colliderBuiltAtMs()).toBe(40);
+    runtime.step(300); // inside the throttle window: not rebuilt
+    expect(runtime.colliderBuiltAtMs()).toBe(40);
+    runtime.step(600);
+    expect(runtime.colliderBuiltAtMs()).toBe(600);
+    runtime.dispose();
+  });
+
   it("shoots a ball from a WORLD origin with a WORLD velocity (both converted to local)", () => {
     const arWorldGroup = new THREE.Group(); // identity → ball group world = WEBXR_TO_NUE
     const runtime = createPhysicsRuntime(arWorldGroup, null); // no floor → free flight
@@ -127,6 +146,21 @@ describe("createPhysicsRuntime", () => {
     // The velocity carried it in +X, and gravity pulled it down a little.
     expect(ballMesh.position.x).toBeGreaterThan(0.3);
     expect(ballMesh.position.y).toBeLessThan(5);
+    runtime.dispose();
+  });
+
+  // The shadow probe (round-2 plan M1) finds each ball on screen through
+  // this: world positions after the alignment chain, and the real radius.
+  it("reports each ball's WORLD position and radius", () => {
+    const arWorldGroup = new THREE.Group();
+    arWorldGroup.position.set(10, 0, -3);
+    const runtime = createPhysicsRuntime(arWorldGroup, null);
+    const worldOrigin = new THREE.Vector3(11, 2, -4);
+    runtime.spawnBallWithVelocity(worldOrigin, new THREE.Vector3(0, 0, 0));
+    const [ball] = runtime.balls();
+    expect(runtime.balls()).toHaveLength(1);
+    expect(ball!.position.distanceTo(worldOrigin)).toBeLessThan(1e-6);
+    expect(ball!.radius).toBeCloseTo(0.08, 9);
     runtime.dispose();
   });
 

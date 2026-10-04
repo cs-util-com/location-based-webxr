@@ -1,0 +1,99 @@
+# terrain-params.js: place, field and hash parameters
+
+- Purpose: the terrain lab's one state, the URL hash (terrain plan
+  2026-09-27-0605 §4 "The control plate and the hash", DEC-TR-2/3/4, §9
+  findings 8, 9, 11, 14, 20), and the place and grid it draws.
+- Public API:
+  - `TERRAIN_PLACES`: each a 256 km square (`halfExtentM` 128 km) at z8:
+    - `appalachians`: the Blue Ridge, centre 37.9° N, 79.2° W;
+    - `alps`: the central Alps, centre 46.56° N, 9.14° E (the middle of z8
+      tile 134/90, so the region and its padding fit in 3 x 3 tiles),
+      7.4-10.9° E and 45.3-47.8° N, Monte Rosa and the Bernese Oberland to
+      the Bernina. Added in T2 because style B's snow is checked on it.
+    - `germany`: northern Germany, centre 53.75° N, 9.14° E (the middle of
+      tile 134/82, 3 x 3 tiles), 7.1-11.2° E and 52.5-55.0° N: the lower
+      Elbe, Hamburg, the North Sea coast and Schleswig-Holstein; the flat
+      place (T3), with sea posts.
+  - `GPS_PLACE` (`"gps"`) and `placeFor(id, fix)`: a committed place by
+    id, or the GPS place (the same 256 km z8 region) around a fix, or null
+    for the GPS place before any fix (the page then waits for a press).
+  - `FIELD`: posts every 500 m (about the z8 texel), an 8 km padding ring,
+    the relief sigma (2 km), the detail sigma (2 posts), the sky view's
+    march (16 posts, 8 km: the padding covers it exactly). The hash sets the
+    sky view's directions only, never the steps; 32 steps would need a 16 km
+    ring (and, at z8, may reach a tenth tile row: check the fixtures).
+  - The grid is equirectangular ENU: see `terrain-pipeline.js.md` for its
+    residual against the true ground (about +-1.6 % east-west at the edges).
+  - `fieldSpec(place)` -> `{ centre, zoom, halfExtentM, extentM, spacingM,
+side }`: `extentM` includes the padding; `side` counts both edges.
+  - `PARAMS`: every numeric key with its default and range:
+    - the view: `exag` (1-10, 3), `auto` (0/1, 0), `autoExp` (0.3), `tau`
+      (0.5 s), `shade` (1.6), `boostExp` (0.3), `svf` (directions, 8; 0 is
+      off), `flyMs` (12 s);
+    - the look: `green` (0.7, styles A and C), `shadow` (0-1; with no key,
+      the style's own, 0.8 for every style);
+    - style B: `tree` and `snow` (line offsets, -1500 to 1500 m, 0),
+      `aspect` (poleward snow, 0-600 m, 250), `rock` (28-50°, 38), `lift`
+      (0-0.4, 0.2), `snowMask` (0/1, 0: the mask instead of the colours);
+    - style D: `exposure` (0-0.7, 0.35), `contrast` (the lowlands' share,
+      0.2-1, 0.4);
+    - the far field: `far` (0/1, 0), `farHigh` (100-5000 km, 1500) and
+      `farLow` (10-2000 km, 300);
+    - the light (globe round-5 plan §3.3): `light` (0 the map styles' own
+      lights, 1 the globe's sun at the page's clock; with no key, the
+      style's own, `STYLE_LIGHT`). The clock's `time`/`timeScale` are the
+      globe lab's keys, read on the page by `/globe/globe-clock.js`;
+      `sunIntensity` (0-8, the globe's 5) is the globe lab's key too, so a
+      link tuned there lights the relief alike;
+    - `dpr` (0-3, 0): the drawing buffer's pixel ratio, 0 the device's
+      capped at 2; the comparison page pins 1 (review 2026-10-01-1650 M1).
+  - `LOOK_DEFAULTS` `{ shadow: 0.8, shade: 1.6, exag: 3 }`: the owner's look
+    values (globe round-5 plan 2026-10-01-0945 DEC-GL5-5), every style's
+    defaults. Before: exaggeration 2, slope gain 1, and each style's
+    reference shadow (A and C 0.45, B 0.65, D 0.6, E 0.55), which the
+    styles' reference constants (`PASTEL_ATLAS.shadow` and kin) still
+    carry for their unit tests.
+  - The shadow is `LOOK_DEFAULTS.shadow` for every style (the per-style
+    `STYLE_SHADOW` table held 0.8 for each since DEC-GL5-5 and was
+    collapsed, review 2026-10-01-1650 nit).
+  - `pixelRatioFor(dpr, deviceRatio)`: the `dpr` key when above 0, else
+    the device's ratio capped at 2 (1 for a non-positive or non-numeric
+    device ratio).
+  - `STYLE_LIGHT`: each style's own light (every map style 0, the imagery
+    styles 1: they are the globe's colours under the globe's sun).
+  - `detail` (0-1, 0.5): `globe-albedo`'s weight of style B's ramp as a
+    luminance high-pass (`terrain-globe-colour.js`).
+  - `band` (100-800 m, 300): `globe-bands`' band width (the swept range).
+  - `sky` (0-1, `SKY_FILL.floor`): the sun light's sky floor
+    (`terrain-sun.js`, DEC-GL5-11), the least sky light a face the sun
+    does not reach keeps while the sun is up; 0 is the old fill, which
+    followed the sun's height. A slider under the light shows it with the
+    imagery styles (the only ones lit by `sunLight`).
+  - `classWidth` (4-40, 12): `globe-classes`' colour kernel width (CIE76
+    ΔE, `terrain-globe-classes.js`).
+  - `IMAGERY_STYLES`: the styles coloured from the globe imagery
+    (`globe-albedo`, `globe-bands`, `globe-classes`);
+    `readTerrainParams` sets `imageryOn` for them and for the far field
+    (`farOn`), and the page loads the imagery then.
+  - `readTerrainParams(hash)`: every PARAMS value, `place`, `style` (one of
+    `terrain-styles.js`'s `TERRAIN_STYLES`), `farOn` (style C, or `far=1`),
+    `preset` (`top`, `oblique`, `low`, `fly` or null), `camera` (from
+    `alt`, `tilt` and `head` when all three are valid, else null) and
+    `notes` (what fell back, for the status line).
+- Invariants: out of range, empty or malformed reads as the default, never
+  NaN (a NaN uniform removes the draw silently). A `farLow` at or above
+  `farHigh` falls back to both defaults with a note. An unknown place
+  falls back to the Appalachians with a note, an unknown style to style A.
+  Places and styles are the tables' OWN keys (`Object.hasOwn`): an `in`
+  lookup also accepted `toString` or `constructor`, which reached the
+  region and the shader as functions (review 2026-09-29 B1). `place=gps` is read as it
+  is; the hash never carries coordinates (plan §9 finding 20), so a link
+  to it needs a press of the pin to draw anything.
+- Tests: `terrain-params.test.mjs`: the places and `placeFor` (with and
+  without a fix, an invalid fix, `place=gps` without a note), the field's posts, its
+  padding against the sky-view march the lab runs and three blur sigmas, no
+  hash key for the steps, the defaults (DEC-GL5-5's for every style), in-range values, five malformed
+  values, the camera triple, presets, the place and style fallbacks (inherited property names included), every
+  style, each style's own shadow and light and their overrides, the far field's switch
+  and its altitude check. `terrain-pipeline.test.mjs` holds each place's
+  tile set to its committed fixtures.

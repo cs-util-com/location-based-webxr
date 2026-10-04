@@ -17,6 +17,7 @@ import { installOPFSMocks } from '../test-utils/browser-mocks';
 import {
   initOpfsStorage,
   createSession,
+  createSessionInDirectory,
   writeAction,
   writeFrame,
   listSessions,
@@ -194,6 +195,55 @@ describe('opfs-storage', () => {
       await expect(createSession(new Date())).rejects.toThrow(
         /not initialized/i
       );
+    });
+  });
+
+  describe('createSessionInDirectory', () => {
+    // Why: the Tour Viewer's troubleshooting recording shares this origin
+    // with the Recorder but must NOT land in the Recorder's `sessions/`
+    // folder (plan 2026-09-28-0953, review finding 16). It needs the same
+    // session layout, the same same-second collision probe and the same
+    // write functions - in a parent directory of its own - without a second
+    // copy of the probe.
+    it('creates the session layout under the given parent and targets the writes at it', async () => {
+      const parent = (await opfsRoot.getDirectoryHandle('tour-viewer', {
+        create: true,
+      })) as MockOPFSDirectoryHandle;
+
+      const result = await createSessionInDirectory(
+        parent,
+        new Date('2026-09-28T10:30:00Z')
+      );
+      await writeAction({ type: 'gpsData/setZeroPos' }, 1);
+
+      expect(result.sessionName).toBe('recording-2026-09-28_10-30-00utc');
+      const session = (await parent.getDirectoryHandle(
+        result.sessionName
+      )) as MockOPFSDirectoryHandle;
+      expect(getSessionHandle()).toBe(session);
+      const actions = (await session.getDirectoryHandle(
+        'actions'
+      )) as MockOPFSDirectoryHandle;
+      expect(actions.getStoredContentAsString('000001.json')).toContain(
+        'gpsData/setZeroPos'
+      );
+      // Needs no initOpfsStorage and creates no `sessions/` folder.
+      await expect(
+        opfsRoot.getDirectoryHandle('gps-plus-slam')
+      ).rejects.toThrow();
+    });
+
+    it('probes for a free name in THAT parent, like createSession does', async () => {
+      const parent = (await opfsRoot.getDirectoryHandle('tour-viewer', {
+        create: true,
+      })) as MockOPFSDirectoryHandle;
+      const at = new Date('2026-09-28T10:30:00Z');
+
+      const first = await createSessionInDirectory(parent, at);
+      const second = await createSessionInDirectory(parent, at);
+
+      expect(first.sessionName).toBe('recording-2026-09-28_10-30-00utc');
+      expect(second.sessionName).toBe('recording-2026-09-28_10-30-00utc-2');
     });
   });
 

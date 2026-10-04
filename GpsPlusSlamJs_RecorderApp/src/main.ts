@@ -52,7 +52,7 @@ import {
 import { initSessionSummary, hideSessionSummary } from './ui/session-summary';
 import { initLogPanel, showLogPanel } from './ui/log-panel';
 import { initToast, showToast, TOAST_DURATION_ERROR } from './ui/toast';
-import { destroyConfirmDialog } from './ui/confirm-dialog';
+import { destroyConfirmDialog, showConfirmDialog } from './ui/confirm-dialog';
 import {
   initAR,
   endARSession,
@@ -66,6 +66,12 @@ import {
   type DepthSample,
 } from 'gps-plus-slam-app-framework/ar/webxr-session';
 import { registerXrFrameUpdate } from 'gps-plus-slam-app-framework/ar/xr-frame-loop';
+import { registerSessionDisposer } from 'gps-plus-slam-app-framework/ar/session-disposers';
+import {
+  attachSunCheckToSession,
+  createRecorderSunCheck,
+} from './ar/recorder-sun-check';
+import type { SunCheckUi } from './ar/sun-check-ui';
 import { getXrErrorMessage } from 'gps-plus-slam-app-framework/ar/xr-error-handler';
 import { applyChromiumProjectionLayerWorkaround } from 'gps-plus-slam-app-framework/ar/chromium-camera-access-workaround';
 import {
@@ -128,7 +134,7 @@ import {
 } from 'gps-plus-slam-app-framework/core';
 import { isSegmentingActionType } from 'gps-plus-slam-app-framework/state/segmenting-actions';
 import { createStoreRef } from './state/store-ref';
-import { debugUiEnabledFromSearch } from './debug-flag';
+import { debugUiEnabledFromSearch } from 'gps-plus-slam-app-framework/utils/debug-flag';
 import { createDebugWheel, type DebugWheel } from './ui/hud-debug-wheel';
 import { createArSessionScope } from './utils/ar-session-scope';
 import { createArSessionResources } from './ar/ar-session-resources';
@@ -159,6 +165,7 @@ import {
   type RecordingOptions,
 } from './state/recording-options';
 import { initSettingsModal } from './ui/settings-modal';
+import { guardSlidersIn } from 'gps-plus-slam-app-framework/utils/slider-scroll-guard';
 
 import { listFormatter } from 'gps-plus-slam-app-framework/utils/list-formatter';
 
@@ -211,6 +218,8 @@ const storeRef = createStoreRef(store);
 // the tester touched. `null` for every ordinary user - the flag is the only
 // surface change (see ui/hud-debug-wheel.ts.md).
 let debugWheel: DebugWheel | null = null;
+/** The AR sun check (sun-overlay plan M3), `?debug=1` only, like the wheel. */
+let sunCheckUi: SunCheckUi | null = null;
 
 // Every AR-session-scoped resource registers its teardown here at its
 // creation site (see utils/ar-session-scope.ts and the 2026-07-11
@@ -375,6 +384,7 @@ const recordingSessionHandlers = createRecordingSessionHandlers({
 const refPointHandlers = createRefPointHandlers({
   getStore: () => store,
   getCurrentSessionName: () => recordingSessionHandlers.getCurrentSessionName(),
+  isStopInProgress: () => recordingSessionHandlers.isStopInProgress(),
 });
 
 // Folder manager — encapsulates folder selection, save location, scenario management
@@ -843,6 +853,11 @@ export function collectTrackerErrors(
 async function main(): Promise<void> {
   log.info('Initializing...');
 
+  // Every slider on the page, the settings modal's and the ones built at
+  // runtime (the HUD debug wheel): a vertical swipe that starts on one
+  // scrolls instead of editing it (2026-07-27 feedback, 2026-09-30 report).
+  guardSlidersIn(document);
+
   // Load recording options from localStorage (before any other init)
   recordingOptions = loadRecordingOptions();
   log.info('Recording options loaded:', recordingOptions);
@@ -937,7 +952,25 @@ async function main(): Promise<void> {
     const controlsRoot = document.getElementById('controls');
     const overlayRoot = document.getElementById('app');
     if (controlsRoot && overlayRoot) {
-      debugWheel = createDebugWheel({ storeRef, controlsRoot, overlayRoot });
+      sunCheckUi = createRecorderSunCheck({
+        storeRef,
+        appContainer: overlayRoot,
+        getScene,
+        getArWorldGroup,
+        isStopInProgress: () => recordingSessionHandlers.isStopInProgress(),
+        isReplaying: () => replayHandlers.getIsReplayMode(),
+        showToast,
+        confirm: showConfirmDialog,
+        // The check can turn itself off on attach; the box must follow.
+        onEnabledChange: (on) => debugWheel?.showSunCheck(on),
+      });
+      const sunCheck = sunCheckUi;
+      debugWheel = createDebugWheel({
+        storeRef,
+        controlsRoot,
+        overlayRoot,
+        onSunCheckChange: (on) => sunCheck.setEnabled(on),
+      });
       debugWheel.attach();
     }
   }
@@ -1167,8 +1200,8 @@ async function handleEnterAR(): Promise<void> {
       ...(recordingOptions.qr.enabled
         ? {
             cameraFrame: {
-              onFrame: (image) => {
-                arSessionResources.qrProducer?.offerFrame(image);
+              onFrame: (frame) => {
+                arSessionResources.qrProducer?.offerFrame(frame);
                 refreshQrStatus();
               },
             },
@@ -1184,12 +1217,15 @@ async function handleEnterAR(): Promise<void> {
       tracking: {
         store,
         onRestarted: (payload) => {
-          store.dispatch(odometryTrackingRestarted(payload));
           // The odometry frame just moved under every stored QR pose, so
           // sightings either side of this are not comparable. Without this
           // call the segmentation gate exists but can never fire, and the
           // mint would average two frames into a plausible-looking anchor.
+          // It runs BEFORE the dispatch: the feeder keeps the alignment the
+          // closing segment ended with, for that segment's codes, and the
+          // restart's reducer wipes it.
           arSessionResources.qrSightingFeeder?.noteFrameChange();
+          store.dispatch(odometryTrackingRestarted(payload));
           // Origin reset: clear the loop-closure handler's last-pose memory
           // (deactivate ⇒ reset) before re-arming — the reference-space jump
           // is an origin correction, not a relocalization loop closure.
@@ -1293,7 +1329,18 @@ async function handleEnterAR(): Promise<void> {
           qrHud.noteLevelState(text, state);
           refreshQrStatus();
         },
+        // The row follows recorded detections too, not only camera frames: the
+        // capture veto pauses frames while a level fetch is in flight.
+        onQrStateChanged: refreshQrStatus,
       });
+      // The sun check starts here if its wheel box is on (sun-overlay M3).
+      if (sunCheckUi) {
+        attachSunCheckToSession(
+          sunCheckUi,
+          arSessionScope,
+          registerSessionDisposer
+        );
+      }
     }
 
     // Issue #2 fix: Update status to match AR_READY state per Application State Machine

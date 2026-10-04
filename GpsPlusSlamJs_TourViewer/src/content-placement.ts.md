@@ -23,15 +23,17 @@ imageHeight, nowIso }): TourPhoto | null` - the camera's RAW odometry pose
   its facing through `rotationFromHeading` (the framework's -heading about
   Up convention) instead of facing East.
 - `rotationFromHeading(headingDeg)` - that quaternion.
-- `renderTourObjects(objects, { scene, zero, makeLabel, loadPhotoTexture })`
+- `renderTourObjects(objects, { scene, zero, poseOf?, makeLabel, loadPhotoTexture })`
   builds ONE `Group` and adds it to the scene only after the last photo
   decoded (photos decode one at a time - memory), so a session ending
   mid-run owns no stray labels; `dispose` removes the group.
   Details:
   Promise<RenderedTourObjects>` - pins as label objects, photos as capture
 planes (`placeCapturedImagePlanes`), all at the scene root; a photo whose
-texture fails is skipped and named in `skipped`; `dispose()` removes and
-  frees everything.
+texture fails is skipped and named in `skipped`; `dispose()`removes and
+frees everything.`root` is the one group every rendered object hangs
+under - what a tap in AR is cast against to name the object
+(`object-pick.ts`, authoring plan 2026-09-28-0953 M4).
 
 ## Invariants & assumptions
 
@@ -43,7 +45,12 @@ texture fails is skipped and named in `skipped`; `dispose()` removes and
 - GPS-world `y` IS absolute altitude (the stack's convention); the records
   carry it as `geo.alt`.
 - Rendering is at the scene root in the session's NUE, like the photo
-  planes; `makeLabel` and `loadPhotoTexture` are injected because node has
+  planes - unless the caller passes `poseOf`, a pose per object in the
+  frame of the `scene` it hands in. The creator's previews of the running
+  AR visit use it to sit under the AR world group at their odometry pose,
+  so they stay rigid while GPS re-solves (authoring plan 2026-09-28-0953
+  §3.2, M2c); a geo-derived pose under the world group would apply the
+  alignment twice; `makeLabel` and `loadPhotoTexture` are injected because node has
   no canvas and the photo bytes live in different places for the creator
   (a Blob in memory) and the visitor (an archive entry).
 
@@ -67,7 +74,18 @@ const preview = await renderTourObjects(objects, {
 
 ## Tests
 
+`viewer-content-alignment.test.ts` (authoring plan M2d, decision D10a) -
+through the real call site (`viewer-placement.ts`) and the real QR
+controller: the pin is rendered on the first voted lock, at the scene root
+(not under the odometry group or an anchor), with that lock's votes already
+in the store, and is never re-placed while the scan's votes move it in the
+visitor's view. At B = 8 m the hard trim makes the result exact (the case
+pins that the whole correction arrives, not an accuracy); at B = 3 m over a
+longer walk the pin shows the alignment's GPS/vote compromise (between 5 mm
+and 0.1 m, measured 24 mm).
+
 `content-placement.test.ts` - the pin round trip (mint → NUE) as a property
 over positions; the photo's frame direction pinned by bearing against the
 framework's basis constant; refusals without zero/alignment; the id shape
-(property); rendering with a fake scene: counts, a skipped photo, disposal.
+(property); rendering with a fake scene: counts, a skipped photo, disposal, and a
+caller's own pose and frame (`poseOf`) for pins and photos.

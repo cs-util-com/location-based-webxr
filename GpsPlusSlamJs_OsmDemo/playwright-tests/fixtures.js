@@ -21,12 +21,49 @@
 
 import { expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { deflateSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_OVERPASS_ENDPOINTS } from "gps-plus-slam-osm";
+import { terrariumPng } from "../../scripts/e2e/terrarium-png.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * THE DATE THE WHOLE SUITE'S SUN IS COMPUTED FOR (plan 2026-09-23-2149, M2).
+ *
+ * The sun is real since then: it depends on the date, so an unpinned suite
+ * would be green in September and red in June (the boot sun's azimuth runs
+ * from 225° to 304° over the year here). 23 Sep is chosen because its boot
+ * sun at the fixture, the 3.5° evening golden hour at ~265°, reproduces the
+ * retired plausible-day default (3.4° / 266°), so every threshold measured
+ * under the old sun stays valid. A URL parameter, not a faked `Date`:
+ * `pinQuestClock` fakes `Date` to 15 June for the quest specs, and the sun
+ * must not follow it.
+ */
+export const SUN_PIN_DATE = "2026-09-23";
+
+/** An app URL with the suite's sun date, unless it already pins one. */
+export function withPinnedSunDate(url) {
+  if (typeof url !== "string" || !url.startsWith("/")) return url;
+  const parsed = new URL(url, "http://pin.invalid");
+  if (!parsed.pathname.endsWith("/") && !parsed.pathname.endsWith(".html"))
+    return url;
+  if (parsed.searchParams.has("date")) return url;
+  parsed.searchParams.set("date", SUN_PIN_DATE);
+  return parsed.pathname + parsed.search + parsed.hash;
+}
+
+/**
+ * A page URL's query WITHOUT the suite's sun pin, for assertions about the
+ * app's own URL keys (`url-state.ts` keeps parameters it does not own, so
+ * the pin survives every write).
+ */
+export function appSearch(url) {
+  const params = new URL(url).searchParams;
+  params.delete("date");
+  const query = params.toString();
+  return query === "" ? "" : `?${query}`;
+}
 
 /**
  * The app URL that puts the simulated user ON the fixture.
@@ -41,7 +78,7 @@ const here = dirname(fileURLToPath(import.meta.url));
  * was Cologne Cathedral and ~2 km was already enough. What matters is that the
  * default is not ON the fixture, which is now true by a much larger margin.
  */
-export const AT_FIXTURE = `/?lat=${50.9231}&lng=${6.9445}`;
+export const AT_FIXTURE = `/?lat=${50.9231}&lng=${6.9445}&date=${SUN_PIN_DATE}`;
 
 /**
  * How long a poll waits for a REPAINT to land.
@@ -425,7 +462,7 @@ export async function stubNetwork(page, options = {}) {
     await route.fulfill({
       status: 200,
       contentType: "image/png",
-      body: terrariumPng(),
+      body: demTilePng(),
     });
   };
   await page.route(isMapterhorn, serveDemTile);
@@ -746,8 +783,10 @@ export async function expectCanvasFillsContainer(page) {
 /**
  * A 2x2 Terrarium DEM tile: a low plateau with one 40 m corner.
  *
- * ENCODED HERE rather than checked in as a binary, because the interesting part
- * is the ENCODING and a base64 blob hides it. Terrarium stores height as
+ * DECLARED HERE as heights rather than checked in as a binary, because the
+ * interesting part is the ENCODING and a base64 blob hides it; the bytes come
+ * from the workspace's one Terrarium encoder (`scripts/e2e/terrarium-png.mjs`,
+ * DEC-H3). Terrarium stores height as
  * `(r * 256 + g + b / 256) - 32768`, so `r = 128, g = 0` is exactly 0 m and each
  * step of `g` is one metre.
  *
@@ -773,51 +812,8 @@ export async function expectCanvasFillsContainer(page) {
  * pre-fix relief assertion in this suite ran against a flat field and proved
  * nothing about displacement.
  */
-function terrariumPng() {
-  const heights = [
-    [128, 0, 0],
-    [128, 0, 0],
-    [128, 0, 0],
-    [128, 40, 0],
-  ];
-  // Raw scanlines: one filter byte (0 = none) then RGB triples.
-  const raw = Buffer.concat([
-    Buffer.from([0, ...heights[0], ...heights[1]]),
-    Buffer.from([0, ...heights[2], ...heights[3]]),
-  ]);
-
-  const chunk = (type, data) => {
-    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-    const length = Buffer.alloc(4);
-    length.writeUInt32BE(data.length);
-    const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(crc32(body) >>> 0);
-    return Buffer.concat([length, body, crc]);
-  };
-
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(2, 0); // width
-  ihdr.writeUInt32BE(2, 4); // height
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 2; // colour type: truecolour RGB
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", ihdr),
-    chunk("IDAT", deflateSync(raw)),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
-}
-
-/** CRC-32, as PNG specifies it. */
-function crc32(buffer) {
-  let crc = ~0;
-  for (const byte of buffer) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit++) {
-      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
-    }
-  }
-  return ~crc;
+function demTilePng() {
+  return terrariumPng(2, 2, (col, row) => (col === 1 && row === 1 ? 40 : 0));
 }
 
 /**

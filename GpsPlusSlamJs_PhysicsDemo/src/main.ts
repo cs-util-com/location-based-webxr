@@ -16,8 +16,13 @@ import { detectArSupport, applyModeEntry } from "./mode-detection";
 import { loadAndStartReplay, type ReplayLaunchSink } from "./replay-launch";
 import { initRapier } from "./physics-world";
 import { startArMode } from "./ar-mode";
+import { shadowsEnabledFromSearch } from "./ar-shadows-wiring";
+import {
+  createVisibilityCounter,
+  rebuildEnabledFromSearch,
+} from "./shadow-diagnostics";
 import { createPerfStatsOverlay } from "gps-plus-slam-app-framework/visualization/perf-stats-overlay";
-import { guardSliderAgainstScroll } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
+import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import { startReplayPhysics } from "./replay-physics";
 import type { ReplaySessionController } from "gps-plus-slam-app-framework/state/replay-session";
 
@@ -30,6 +35,10 @@ function requireEl<T extends HTMLElement = HTMLElement>(id: string): T {
 }
 
 function main(): void {
+  // Every slider on the page: a vertical swipe that starts on one scrolls the
+  // panel instead of editing it (2026-07-27 recorder field feedback, the same
+  // bug class; generalised to every demo page 2026-09-30).
+  guardSlidersIn(document);
   const app = requireEl("app");
   const overlay = requireEl("overlay");
   const modeScreen = requireEl("mode-screen");
@@ -45,6 +54,23 @@ function main(): void {
   const meshStyleSelect = requireEl<HTMLSelectElement>("mesh-style");
   const meshShaderSelect = requireEl<HTMLSelectElement>("mesh-shader");
   const statsEl = requireEl("stats");
+  // The diagnostics line (first-visit report on r753), its own element.
+  const diagnosticsEl = requireEl("diagnostics");
+  // The first-visit receiver rebuild, on unless `?rebuild=0` (owner's A/B).
+  const rebuild = rebuildEnabledFromSearch(window.location.search);
+  // Page visibility from load on: a permission prompt can hide the page
+  // before the AR session exists.
+  const pageVisibility = createVisibilityCounter(document.visibilityState);
+  document.addEventListener("visibilitychange", () =>
+    pageVisibility.observe(document.visibilityState),
+  );
+  // The Shadows switch (round-2 plan M1), shared by AR and the replay.
+  const shadowToggle = requireEl<HTMLInputElement>("shadows-toggle");
+  // AR shadows from the thrown balls, on unless `?shadows=0` (W4 plan §11).
+  const shadows = shadowsEnabledFromSearch(window.location.search);
+  // The shadow pixel e2e's hook (round-2 plan M1); off in normal use.
+  const shadowProbe =
+    new URLSearchParams(window.location.search).get("shadowProbe") === "1";
   const replayControls = requireEl("replay-controls");
 
   // Always-on FPS / memory panel (user feedback #4): mounted into the dom-overlay
@@ -69,12 +95,21 @@ function main(): void {
       startArButton.disabled = true;
       capabilityMessage.hidden = false;
       capabilityMessage.textContent = "Starting AR…";
+      // The start timings on the status line (first-visit report on r753).
+      const tappedAtMs = performance.now();
       void initRapier().then(() =>
         startArMode({
+          start: { tappedAtMs, physicsReadyAtMs: performance.now() },
           container: app,
           statsEl,
+          diagnosticsEl,
+          rebuild,
+          pageHidden: () => pageVisibility.hidden(),
           meshStyleSelect,
           meshShaderSelect,
+          shadows,
+          shadowToggle,
+          panel: requireEl("mesh-controls"),
           onFrame: () => perfStats.update(),
           onError: (message) => {
             startArButton.disabled = false;
@@ -134,7 +169,11 @@ function main(): void {
           meshStyleSelect,
           meshShaderSelect,
           statsEl,
+          diagnosticsEl,
           onFrame: () => perfStats.update(),
+          shadows,
+          shadowToggle,
+          shadowProbe,
         });
       });
 
@@ -173,11 +212,6 @@ function main(): void {
     speedValue.textContent = `${factor}×`;
     controller?.setSpeed(factor);
   };
-  // Guard BEFORE the listener: on a phone the replay panel is swiped past, and
-  // a native range input would otherwise edit itself as the finger travels
-  // (2026-07-27 recorder field feedback, same bug class). At-target listeners
-  // fire in registration order, which is what lets the guard shield this one.
-  guardSliderAgainstScroll(speedInput);
   speedInput.addEventListener("input", applySpeed);
 }
 

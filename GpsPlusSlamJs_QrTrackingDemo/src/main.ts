@@ -20,11 +20,21 @@
  */
 
 import {
+  qrFrameChanged,
   recordQrDetection,
   recordQrSizeEstimate,
+  selectQrFusedEntries,
   selectQrSize,
-  selectStableQrPose,
 } from "gps-plus-slam-app-framework/state";
+import {
+  createFusedQrPoseSource,
+  estimateQrSizeFromParallax,
+} from "gps-plus-slam-app-framework/ar/qr";
+import { createMotionTrail } from "./motion-trail.js";
+import {
+  createMotionTrailView,
+  type MotionTrailView,
+} from "./motion-trail-view.js";
 
 import { getSeams } from "./seams.js";
 import { createQrDemoStore, type QrDemoStore } from "./demo-store.js";
@@ -36,7 +46,15 @@ import {
   createQrDebugView,
   type QrDebugView,
 } from "gps-plus-slam-app-framework/ar/qr/qr-debug-view";
-import { createQrDemoController } from "./demo-controller.js";
+import {
+  createDefaultSolvePose,
+  createQrDemoController,
+} from "./demo-controller.js";
+import { parseQrPerfParams } from "./qrperf/qrperf-params.js";
+import { parseIntervalParam } from "./interval-param.js";
+import { DEFAULT_QR_CAPTURE_INTERVAL_MS } from "gps-plus-slam-app-framework/ar/qr/qr-capture-cadence";
+import { mountQrPerf, type MountedQrPerf } from "./qrperf/mount-qrperf.js";
+import type { CaptureTiming } from "gps-plus-slam-app-framework/ar/camera-blit-capture";
 import { toHudView, type DemoStatus } from "./hud-view.js";
 import { isDemoSupported, capabilityMessage } from "./capability.js";
 import {
@@ -51,8 +69,12 @@ import {
  * every frame would waste CPU/GPU/battery. This is the SINGLE cadence knob — it
  * drives the framework `CameraFrameSource` (the one throttle, Option A); the
  * controller then detects every delivered frame (`minIntervalMs: 0`).
+ * `?interval=<ms>` overrides it for field measurements (QR near-frontal pose
+ * plan, M1); the default and the bounds are the framework's, shared with the
+ * Recorder.
  */
-const DETECT_INTERVAL_MS = 125;
+const DETECT_INTERVAL_MS =
+  parseIntervalParam(location.search) ?? DEFAULT_QR_CAPTURE_INTERVAL_MS;
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -71,12 +93,35 @@ const dom = {
   hudSamples: el("hud-samples"),
   hudSpread: el("hud-spread"),
   hudLifecycle: el("hud-lifecycle"),
+  hudPose: el("hud-pose"),
+  hudMotion: el("hud-motion"),
   debugLog: el("debug-log"),
+  qrperfLog: el("qrperf-log"),
+  qrperfCopy: el<HTMLButtonElement>("qrperf-copy"),
   error: el("error"),
 } as const;
 
 let store: QrDemoStore | null = null;
+/**
+ * The fused QR pose per payload (M3b b5); one per page, trackers per code.
+ * With `?qrperf`, each NEW evaluation's cost is timed (plan §30): the HUD's
+ * render evaluates first, so a stopwatch around a later read would time a
+ * cache hit.
+ */
+const fusedPose = createFusedQrPoseSource({
+  entriesOf: (text) =>
+    store ? selectQrFusedEntries(store.getState(), text) : [],
+  onEvaluated: (_result, ms) => perf?.instrument.onFusedCost(ms),
+});
+/** The `?qrperf` instrument, when the flag is set (null otherwise). */
+let perf: MountedQrPerf | null = null;
 let view: QrDebugView | null = null;
+/**
+ * The active code's last ~2 s of positions, drawn in its motion mode's
+ * colour (plan §26); cleared on a restart or another code.
+ */
+const trail = createMotionTrail();
+let trailView: MotionTrailView | null = null;
 let stopFrames: (() => void) | null = null;
 let status: DemoStatus = "idle";
 /** The most-recently detected payload — drives which marker the HUD shows. */
@@ -98,19 +143,35 @@ function renderHud(): void {
     store && activeText
       ? selectQrSize(store.getState(), activeText)
       : undefined;
-  const v = toHudView(status, size);
+  // Re-evaluate (cheap: cached until a new detection or a frame change) so a
+  // restart shows at once, not at the next lock.
+  if (store && activeText) fusedPose.evaluate(activeText);
+  const v = toHudView(
+    status,
+    size,
+    activeText ? fusedPose.last(activeText) : null,
+  );
   dom.hudStatus.textContent = v.statusLabel;
   dom.hudSize.textContent = v.sizeLabel;
   dom.hudSamples.textContent = v.sampleLabel;
   dom.hudSpread.textContent = v.spreadLabel;
   dom.hudLifecycle.textContent = v.lifecycleLabel;
+  dom.hudPose.textContent = v.poseLabel;
+  dom.hudMotion.textContent = v.motionLabel;
+  dom.hudMotion.style.color = v.motionColor ?? "";
+  trailView?.update(trail.points(), v.motionColor);
 }
 
 function failStart(err: unknown): void {
   stopFrames?.();
   stopFrames = null;
+  perf?.dispose();
+  perf = null;
   view?.dispose();
   view = null;
+  trailView?.dispose();
+  trailView = null;
+  trail.clear();
   dom.startButton.disabled = false;
   dom.startButton.textContent = "Start AR";
   dom.startScreen.hidden = false;
@@ -130,7 +191,13 @@ async function startAr(): Promise<void> {
   store.subscribe(renderHud);
 
   try {
-    await seams.initAR(dom.app);
+    await seams.initAR(dom.app, {
+      onFrameChanged: () => {
+        // The old positions live in the old frame: never draw through it.
+        trail.clear();
+        store?.dispatch(qrFrameChanged());
+      },
+    });
   } catch (err) {
     failStart(err);
     return;
@@ -143,12 +210,36 @@ async function startAr(): Promise<void> {
   }
 
   view = createQrDebugView(group);
-  const detect = seams.createDetect();
+  trailView = createMotionTrailView(group);
+  // `?qrperf` (plan 2026-09-23 M2): opt-in stage timings; null when off, and
+  // then every hook below is exactly the un-instrumented pipeline.
+  const perfParams = parseQrPerfParams(window.location.search);
+  perf = mountQrPerf(
+    perfParams,
+    { log: dom.qrperfLog, copy: dom.qrperfCopy },
+    DETECT_INTERVAL_MS,
+  );
+  // `baseline=1` reproduces the pre-M3 pipeline in the same build (plan
+  // DEC-Q7): a full pixel copy per decode, and a capture every interval.
+  const baseDetect = seams.createDetect(
+    perfParams.baseline
+      ? {
+          copyPixels: true,
+          onCopyMs: (ms) => perf?.instrument.onPixelCopy(ms),
+        }
+      : undefined,
+  );
+  const detect = perf ? perf.instrument.wrapDetect(baseDetect) : baseDetect;
   const controller = createQrDemoController({
     detect,
+    ...(perf
+      ? { solvePose: perf.instrument.wrapSolve(createDefaultSolvePose()) }
+      : {}),
     getDepthContext: () => seams.getDepthContext(),
     recordDetection: (event) => {
+      if (event.text !== activeText) trail.clear();
       activeText = event.text;
+      trail.add(event.timestamp, event.qrPoseWorld.position);
       store?.dispatch(recordQrDetection(event));
     },
     recordSize: (text, estimate) => {
@@ -176,11 +267,39 @@ async function startAr(): Promise<void> {
       // which withheld even the axis while the depth size was still converging.
       view?.update(pose, sizeM);
     },
-    // Smooth the overlay with the windowed stable pose once it converges; the
-    // controller falls back to the raw frame pose while the window fills. Reads
-    // the slice AFTER recordDetection has fed the current frame in.
-    resolveStablePose: (text) =>
-      store ? selectStableQrPose(store.getState(), text) : null,
+    // The overlay shows the FUSED pose (the joint rotation over the window,
+    // QR near-frontal pose plan M3b b5) once its gate opens; the controller
+    // falls back to the raw frame pose until then. Reads the slice AFTER
+    // recordDetection has fed the current frame in.
+    resolveStablePose: (text) => {
+      if (!store) return null;
+      const pose = fusedPose.resolve(text);
+      // Once per lock: the ?qrperf report tallies the fused result.
+      const last = fusedPose.last(text);
+      if (perf && last) {
+        // The size state goes with it: the switch log shows whether a
+        // "moving" came while the size was still converging (plan §30).
+        const size = selectQrSize(store.getState(), text);
+        const depth = size
+          ? { status: size.status, estimateM: size.estimateM }
+          : undefined;
+        perf.instrument.onFused(last, depth);
+        // The size section (QR size consensus plan S2, log only): parallax
+        // assumes a still code, so a turning one is counted, not measured -
+        // the turn signal is the size-free check (plan §8).
+        const turning = last.motion?.state.includes("turning") ?? false;
+        perf.instrument.onSize({
+          parallax: turning
+            ? null
+            : estimateQrSizeFromParallax(
+                selectQrFusedEntries(store.getState(), text),
+              ),
+          turning,
+          ...(depth ? { depth } : {}),
+        });
+      }
+      return pose;
+    },
     onStatus: (next) => {
       status = next;
       debugLog.append(formatStatusLine(performance.now(), next));
@@ -195,14 +314,24 @@ async function startAr(): Promise<void> {
   });
 
   // The framework CameraFrameSource owns the cadence (Option A).
-  stopFrames = seams.startFrameSource((image) => controller.offerFrame(image), {
+  stopFrames = seams.startFrameSource((frame) => controller.offerFrame(frame), {
     intervalMs: DETECT_INTERVAL_MS,
+    ...(perf ? { onCaptureTiming: captureTimingHook(perf) } : {}),
+    // Skip the GPU readback of frames the busy detector would drop anyway.
+    ...(perfParams.baseline ? {} : { wantsFrame: () => !controller.isBusy() }),
   });
 
   dom.startScreen.hidden = true;
   dom.hud.hidden = false;
   status = "scanning";
   renderHud();
+}
+
+/** The `?qrperf` capture-timing hook, bound to its instrument. */
+function captureTimingHook(
+  mounted: MountedQrPerf,
+): (timing: CaptureTiming) => void {
+  return (timing) => mounted.instrument.onCaptureTiming(timing);
 }
 
 async function main(): Promise<void> {
@@ -232,7 +361,9 @@ async function main(): Promise<void> {
 
 window.addEventListener("beforeunload", () => {
   stopFrames?.();
+  perf?.dispose();
   view?.dispose();
+  trailView?.dispose();
 });
 
 void main();

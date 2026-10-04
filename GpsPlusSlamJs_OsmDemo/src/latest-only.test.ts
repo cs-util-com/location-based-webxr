@@ -222,3 +222,113 @@ describe("latestOnly — cancelling a superseded run", () => {
     expect(seen[1]?.aborted).toBe(false);
   });
 });
+
+describe("onBusyChange", () => {
+  /**
+   * WHY THIS EXISTS, and why the obvious alternative is wrong.
+   *
+   * The demo needs to show "we are loading" for as long as a refresh runs. The
+   * obvious source is the store's `loading.phase`, and it is NOT one:
+   * `refresh-cycle.ts` dispatches `fetchStarted` **once**, before the ring
+   * loop, and every ring's `snapshotReady` sets the phase back to idle. With
+   * `PROGRESSIVE_RADII` spanning five radii the phase is idle for four fifths
+   * of the run — and the later rings are exactly the ones that straddle new
+   * res-7 tiles and pull fresh 15–90 s fetches. An indicator driven by the
+   * phase switches itself off in the middle of the wait it exists to describe.
+   *
+   * This wrapper already knows the answer; it simply had no way to say it.
+   */
+
+  it("reports true when a run starts and false when it goes idle", async () => {
+    const seen: boolean[] = [];
+    const refresh = latestOnly(async () => {}, {
+      onBusyChange: (busy) => seen.push(busy),
+    });
+
+    await refresh("a");
+
+    expect(seen).toEqual([true, false]);
+  });
+
+  it("reports NOTHING while a queued input keeps the same run going", async () => {
+    // THE ITEM. Supersession is one continuous busy stretch from the user's
+    // point of view, and a second `true` would let a subscriber re-trigger
+    // whatever it does on the rising edge — for the announcer, re-showing a
+    // toast the user is already looking at, with its bar restarted.
+    const seen: boolean[] = [];
+    const first = deferred();
+    const run = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValue(undefined);
+    const refresh = latestOnly(run, {
+      onBusyChange: (busy) => seen.push(busy),
+    });
+
+    const a = refresh("a");
+    const b = refresh("b");
+    const c = refresh("c");
+    first.resolve();
+    await Promise.all([a, b, c]);
+
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(seen).toEqual([true, false]);
+  });
+
+  it("agrees with `busy` at the moment it is called", async () => {
+    // A callback reporting a state the getter contradicts is the kind of
+    // detail nobody checks and everybody trips over later.
+    const seen: { reported: boolean; getter: boolean }[] = [];
+    const refresh: ReturnType<typeof latestOnly<string>> = latestOnly(
+      async () => {},
+      {
+        onBusyChange: (busy) =>
+          seen.push({ reported: busy, getter: refresh.busy }),
+      },
+    );
+
+    await refresh("a");
+
+    expect(seen).toEqual([
+      { reported: true, getter: true },
+      { reported: false, getter: false },
+    ]);
+  });
+
+  it("reports idle after a runner that threw", async () => {
+    // The wrapper swallows runner errors by design, so a failed fetch settles
+    // exactly like a successful one. An indicator that missed the falling edge
+    // here would spin forever on the one outcome where the user most needs to
+    // know the app has stopped trying.
+    const seen: boolean[] = [];
+    const refresh = latestOnly(
+      () => Promise.reject(new Error("overpass said no")),
+      { onBusyChange: (busy) => seen.push(busy) },
+    );
+
+    await refresh("a");
+
+    expect(seen).toEqual([true, false]);
+  });
+
+  it("survives a listener that throws, because this wrapper never rejects", async () => {
+    // `latestOnly` documents that it never rejects — callers `void` it. A
+    // subscriber touching a detached DOM node must not be able to turn that
+    // into an unhandled rejection, which would take the demo's only
+    // interaction with it.
+    const refresh = latestOnly(async () => {}, {
+      onBusyChange: () => {
+        throw new Error("listener blew up");
+      },
+    });
+
+    await expect(refresh("a")).resolves.toBeUndefined();
+    expect(refresh.busy).toBe(false);
+  });
+
+  it("is optional, so every existing caller is unaffected", async () => {
+    const refresh = latestOnly(async () => {});
+
+    await expect(refresh("a")).resolves.toBeUndefined();
+  });
+});

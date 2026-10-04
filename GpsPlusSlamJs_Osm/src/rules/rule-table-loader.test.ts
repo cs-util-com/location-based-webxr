@@ -25,6 +25,7 @@ import {
   RULE_TABLE_CSV_URL,
   DEFAULT_TTL_MS,
   DEFAULT_MAX_RULE_DRIFT,
+  DEFAULT_FETCH_TIMEOUT_MS,
 } from "./rule-table-loader.js";
 import { parseRuleTable, ruleValue } from "./rule-table.js";
 import { MemoryBlobStore } from "../source/memory-blob-store.js";
@@ -396,5 +397,127 @@ describe("the drift guard — the only thing between a bad sheet edit and every 
 
     expect(loaded.tier).toBe("cache");
     expect(loaded.degradedBecause).toMatch(/categories disappeared/);
+  });
+});
+
+describe("the live fetch is BOUNDED — it sits on the app's cold-start path", () => {
+  /**
+   * Why these tests matter, and why the bound is not a nicety.
+   *
+   * This fetch is awaited inside the demo worker's `init`, which the main
+   * thread awaits before it constructs anything - so until it settles, NO
+   * Overpass request has been dispatched and the user sees an empty map. Until
+   * 2026-09-21 it was spelled `await fetchImpl(url)` with no signal and no
+   * deadline, so a `docs.google.com` that accepted the connection and then went
+   * quiet stalled the whole application for however long the OS happened to
+   * wait. That is the same defect class the Overpass transport deadline fixed
+   * on 2026-09-20, in a place nobody had looked.
+   *
+   * Degrading is close to free here and blocking is not, which is what makes
+   * the trade one-sided: the three tiers below this one are a cache and a
+   * checked-in snapshot, the sheet is tuning data that moves on a scale of
+   * months, and `degradedBecause` says so out loud.
+   */
+  it("gives up on a fetch that never settles, and degrades instead of hanging", async () => {
+    // The whole point: a promise that never resolves must not become an app
+    // that never starts.
+    const loaded = await loadRuleTable({
+      fetchImpl: vi.fn().mockImplementation(
+        (_url: string, init?: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              // Faithful to real fetch: the reason IS the DOMException the
+              // timeout raised, and the loader must treat it like any other
+              // failed fetch.
+              const reason = init.signal?.reason;
+              reject(
+                reason instanceof Error ? reason : new Error(String(reason)),
+              );
+            });
+          }),
+      ) as never,
+      timeoutMs: 20,
+      onWarn: () => {},
+    });
+
+    expect(loaded.tier).toBe("snapshot");
+    expect(loaded.degradedBecause).toMatch(/live fetch failed/);
+  });
+
+  it("passes a signal the caller can see, so the request is actually cancelled", async () => {
+    // A deadline that only stops WAITING leaves the socket open; this pins that
+    // the abort reaches `fetch` itself.
+    const seen: (AbortSignal | null | undefined)[] = [];
+    await loadRuleTable({
+      fetchImpl: vi.fn().mockImplementation(
+        (_url: string, init?: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            seen.push(init?.signal);
+            init?.signal?.addEventListener("abort", () => {
+              // Faithful to real fetch: the reason IS the DOMException the
+              // timeout raised, and the loader must treat it like any other
+              // failed fetch.
+              const reason = init.signal?.reason;
+              reject(
+                reason instanceof Error ? reason : new Error(String(reason)),
+              );
+            });
+          }),
+      ) as never,
+      timeoutMs: 20,
+      onWarn: () => {},
+    });
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.aborted).toBe(true);
+  });
+
+  it("applies the default deadline when the caller names none", async () => {
+    // The default is what actually protects the app, since no caller in this
+    // workspace passes `timeoutMs` - so it is the branch worth pinning, not the
+    // explicit one. A signal at all is the observable proof: its expiry is
+    // 8 s away and a unit test must not wait for it.
+    const seen: (AbortSignal | null | undefined)[] = [];
+    await loadRuleTable({
+      fetchImpl: vi
+        .fn()
+        .mockImplementation((_url: string, init?: RequestInit) => {
+          seen.push(init?.signal);
+          return ok(sheet());
+        }) as never,
+      onWarn: () => {},
+    });
+
+    expect(seen[0]).toBeInstanceOf(AbortSignal);
+    expect(DEFAULT_FETCH_TIMEOUT_MS).toBeGreaterThan(0);
+  });
+
+  it("lets a caller opt out with an explicit undefined, and then sends no signal", async () => {
+    // The escape hatch, pinned so it cannot silently become "0 ms".
+    const seen: (AbortSignal | null | undefined)[] = [];
+    await loadRuleTable({
+      fetchImpl: vi
+        .fn()
+        .mockImplementation((_url: string, init?: RequestInit) => {
+          seen.push(init?.signal);
+          return ok(sheet());
+        }) as never,
+      timeoutMs: undefined,
+      onWarn: () => {},
+    });
+
+    expect(seen[0]).toBeUndefined();
+  });
+
+  it("does not disturb a fetch that answers in time", async () => {
+    // The bound must be invisible on the happy path, or it is a regression of
+    // its own.
+    const loaded = await loadRuleTable({
+      fetchImpl: vi.fn().mockImplementation(() => ok(sheet())) as never,
+      timeoutMs: 10_000,
+      onWarn: () => {},
+    });
+
+    expect(loaded.tier).toBe("live");
   });
 });

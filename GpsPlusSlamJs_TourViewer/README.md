@@ -8,10 +8,11 @@ downloading the whole file first.
 
 ## Two pages in one
 
-- **The plain page is the creator's guided setup.** Six steps, one open
-  at a time: host a zip and paste its link, print the code, hang it,
-  measure it in AR and place content, download the rebuilt zip, replace
-  the hosted file. The link last opened and the step reached with it are
+- **The plain page is the creator's guided setup.** Four steps, one open
+  at a time: host a zip and paste its link, print the code, hang it, and
+  measure it in AR and place content - after Finish the same step offers
+  the rebuilt zip for download and the recipe for replacing the hosted
+  file. The link last opened and the step reached with it are
   remembered on the device: after a reload (the AR session, the print
   dialog) the link is prefilled and Open returns to that step.
 - **A `?qr=` launch is the visitor's screen.** Scanning the printed code
@@ -40,14 +41,15 @@ author flag.
    map, and the panel shows the accuracy). Then, at the spots you choose,
    "Place a pin here" (a text label on the surface under the ring) and
    "Capture a photo" (the camera frame, placed where you stood). "Finish"
-   ends the session.
-5. **Download the rebuilt zip** - the page rebuilds the archive in the
-   browser: the original entries byte for byte, plus `qr/<id>.json` (the
-   measured code's pose) and `tour.json` (the placed objects, with GPS
-   positions and rotations against north) and the captured photos under
-   `content/`. Large archives take a while; the panel shows the progress.
-6. **Replace the hosted zip** - overwrite the file at the same link (the
-   page shows the per-provider recipe). The printed code does not change.
+   ends the session, and the same step then offers:
+   - **the rebuilt zip** - the page rebuilds the archive in the browser:
+     the original entries byte for byte, plus `qr/<id>.json` (the measured
+     code's pose) and `tour.json` (the placed objects, with GPS positions
+     and rotations against north) and the captured photos under
+     `content/`. Large archives take a while; the panel shows the progress.
+   - **replacing the hosted zip** - overwrite the file at the same link
+     (the page shows the per-provider recipe). The printed code does not
+     change.
 
 A "Storage" section below the steps explains the local copies the viewer
 keeps (up to five opened tours, revalidated automatically) and holds the
@@ -57,7 +59,8 @@ clear-cache control.
 
 The tour's archive streams in while the consent screen shows (a visitor
 gets no thumbnails; the tour appears in AR). Inside AR the status line
-asks for the printed code; once it locks, the tour's
+asks for the printed code; once it locks and its votes have corrected
+the placement, the tour's
 `tour.json` content appears (pins as labels, photos as planes at their
 capture spots), and a tour that carries a recording also places its
 photos at the spots they were taken. A tour whose zip carries no measured

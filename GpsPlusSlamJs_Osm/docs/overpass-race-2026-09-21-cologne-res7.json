@@ -1,0 +1,277 @@
+{
+  "measuredAt": "2026-09-21T17:20:14.987Z",
+  "cell": "871fa1999ffffff",
+  "bbox": {
+    "south": 50.93036679415017,
+    "north": 50.95331114355559,
+    "west": 6.946904705455983,
+    "east": 6.982049755430545
+  },
+  "keyCount": 32,
+  "records": [
+    {
+      "round": 1,
+      "pair": [
+        "fossgis",
+        "vk-maps"
+      ],
+      "first": "fossgis",
+      "second": "vk-maps",
+      "winner": "vk-maps",
+      "loserBytesAtWin": 695,
+      "raceMs": 28070,
+      "sequentialMs": null,
+      "results": {
+        "fossgis": {
+          "bytes": 695,
+          "firstByteMs": 7972,
+          "totalMs": 7973,
+          "ok": false,
+          "status": "504 Gateway Timeout"
+        },
+        "vk-maps": {
+          "bytes": 21363967,
+          "firstByteMs": 26126,
+          "totalMs": 28070,
+          "ok": true,
+          "status": "200 OK"
+        }
+      }
+    },
+    {
+      "round": 1,
+      "pair": [
+        "fossgis",
+        "private.coffee"
+      ],
+      "first": "fossgis",
+      "second": "private.coffee",
+      "winner": "private.coffee",
+      "loserBytesAtWin": 695,
+      "raceMs": 100993,
+      "sequentialMs": null,
+      "results": {
+        "fossgis": {
+          "bytes": 695,
+          "firstByteMs": 9938,
+          "totalMs": 9938,
+          "ok": false,
+          "status": "504 Gateway Timeout"
+        },
+        "private.coffee": {
+          "bytes": 21071501,
+          "firstByteMs": 93727,
+          "totalMs": 100993,
+          "ok": true,
+          "status": "200 OK"
+        }
+      }
+    },
+    {
+      "round": 1,
+      "pair": [
+        "vk-maps",
+        "private.coffee"
+      ],
+      "first": "vk-maps",
+      "second": "private.coffee",
+      "winner": "vk-maps",
+      "loserBytesAtWin": 0,
+      "raceMs": 34302,
+      "sequentialMs": 34302,
+      "results": {
+        "vk-maps": {
+          "bytes": 21363967,
+          "firstByteMs": 27020,
+          "totalMs": 34302,
+          "ok": true,
+          "status": "200 OK"
+        },
+        "private.coffee": {
+          "bytes": 0,
+          "firstByteMs": null,
+          "totalMs": 120009,
+          "ok": false,
+          "status": null,
+          "error": "The operation was aborted due to timeout"
+        }
+      }
+    },
+    {
+      "round": 2,
+      "pair": [
+        "vk-maps",
+        "fossgis"
+      ],
+      "first": "vk-maps",
+      "second": "fossgis",
+      "winner": "fossgis",
+      "loserBytesAtWin": 160,
+      "raceMs": 17168,
+      "sequentialMs": null,
+      "results": {
+        "vk-maps": {
+          "bytes": 160,
+          "firstByteMs": 389,
+          "totalMs": 389,
+          "ok": false,
+          "status": "504 Gateway Time-out"
+        },
+        "fossgis": {
+          "bytes": 21363968,
+          "firstByteMs": 14243,
+          "totalMs": 17168,
+          "ok": true,
+          "status": "200 OK"
+        }
+      }
+    },
+    {
+      "round": 2,
+      "pair": [
+        "private.coffee",
+        "fossgis"
+      ],
+      "first": "private.coffee",
+      "second": "fossgis",
+      "winner": "fossgis",
+      "loserBytesAtWin": 0,
+      "raceMs": 23749,
+      "sequentialMs": 101426,
+      "results": {
+        "private.coffee": {
+          "bytes": 20970982,
+          "firstByteMs": 93513,
+          "totalMs": 101426,
+          "ok": true,
+          "status": "200 OK"
+        },
+        "fossgis": {
+          "bytes": 21363968,
+          "firstByteMs": 22283,
+          "totalMs": 23749,
+          "ok": true,
+          "status": "200 OK"
+        }
+      }
+    },
+    {
+      "round": 2,
+      "pair": [
+        "private.coffee",
+        "vk-maps"
+      ],
+      "first": "private.coffee",
+      "second": "vk-maps",
+      "winner": "private.coffee",
+      "loserBytesAtWin": 695,
+      "raceMs": 115111,
+      "sequentialMs": 115111,
+      "results": {
+        "private.coffee": {
+          "bytes": 21079059,
+          "firstByteMs": 106619,
+          "totalMs": 115111,
+          "ok": true,
+          "status": "200 OK"
+        },
+        "vk-maps": {
+          "bytes": 695,
+          "firstByteMs": 59429,
+          "totalMs": 59429,
+          "ok": false,
+          "status": "504 Gateway Timeout"
+        }
+      }
+    },
+    {
+      "round": 3,
+      "pair": [
+        "fossgis",
+        "vk-maps"
+      ],
+      "first": "fossgis",
+      "second": "vk-maps",
+      "winner": "fossgis",
+      "loserBytesAtWin": 160,
+      "raceMs": 27013,
+      "sequentialMs": 27013,
+      "results": {
+        "fossgis": {
+          "bytes": 21363968,
+          "firstByteMs": 17343,
+          "totalMs": 27013,
+          "ok": true,
+          "status": "200 OK"
+        },
+        "vk-maps": {
+          "bytes": 160,
+          "firstByteMs": 550,
+          "totalMs": 550,
+          "ok": false,
+          "status": "504 Gateway Time-out"
+        }
+      }
+    },
+    {
+      "round": 3,
+      "pair": [
+        "fossgis",
+        "private.coffee"
+      ],
+      "first": "fossgis",
+      "second": "private.coffee",
+      "winner": "fossgis",
+      "loserBytesAtWin": 0,
+      "raceMs": 16907,
+      "sequentialMs": 16907,
+      "results": {
+        "fossgis": {
+          "bytes": 21363968,
+          "firstByteMs": 14411,
+          "totalMs": 16907,
+          "ok": true,
+          "status": "200 OK"
+        },
+        "private.coffee": {
+          "bytes": 0,
+          "firstByteMs": null,
+          "totalMs": 120016,
+          "ok": false,
+          "status": null,
+          "error": "The operation was aborted due to timeout"
+        }
+      }
+    },
+    {
+      "round": 3,
+      "pair": [
+        "vk-maps",
+        "private.coffee"
+      ],
+      "first": "vk-maps",
+      "second": "private.coffee",
+      "winner": "vk-maps",
+      "loserBytesAtWin": 0,
+      "raceMs": 32160,
+      "sequentialMs": 32160,
+      "results": {
+        "vk-maps": {
+          "bytes": 21363967,
+          "firstByteMs": 28265,
+          "totalMs": 32160,
+          "ok": true,
+          "status": "200 OK"
+        },
+        "private.coffee": {
+          "bytes": 0,
+          "firstByteMs": null,
+          "totalMs": 120002,
+          "ok": false,
+          "status": null,
+          "error": "The operation was aborted due to timeout"
+        }
+      }
+    }
+  ]
+}

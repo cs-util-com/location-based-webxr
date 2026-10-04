@@ -20,8 +20,8 @@
  *
  * **Clock domain (load-bearing):** depth timestamps are EPOCH ms
  * (`DepthSample.timestamp = performance.timeOrigin + frameTs`, `ar/depth-sampler.ts`),
- * and the QR producer MUST stamp detections from the same epoch clock (`Date.now()`;
- * plan open topic A). The lookup is a pure numeric `≤` over those stamps; if the QR
+ * and QR detections MUST carry the same epoch clock - since QR perf plan M4 the
+ * frame's capture time, `performance.timeOrigin + xrTime` (plan open topic A). The lookup is a pure numeric `≤` over those stamps; if the QR
  * producer used relative `performance.now()` instead, every join would silently miss.
  *
  * @see gps-plus-slam-app-framework/ar/qr/qr-derived-pose — the consumer of `resolveDepthAt`.

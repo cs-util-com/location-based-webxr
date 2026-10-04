@@ -104,6 +104,20 @@ entirely after confirming they were only transitively pulled in.
     local publishing run. Without the matching `project` glob, knip does not
     look inside the directory at all and reported `marked` — the build-time
     markdown renderer — as an unused devDependency.
+- **GpsPlusSlamJs_DesignSystem** - **`ignoreUnresolved: ["/3d/water-metrics.mjs"]`**,
+  for the same reason as OsmDemo's entry below: the water-polish smoke
+  imports the page's own metrics module inside `page.evaluate`
+  (`await import("/3d/water-metrics.mjs")`), a URL the dev server resolves
+  from the page root, not a path relative to the spec. A rename or move
+  makes that import 404 and the smoke fail at once, so the ignore hides
+  nothing; it is an exact string, so a second such import must be added on
+  purpose. Found by the root dead-code check before the r759 publish.
+- **GpsPlusSlamJs_Globe** - `scripts/fetch-globe-assets.mjs` is an entry
+  and `scripts/**/*.mjs` is in `project`: the script is run by hand (never
+  by a build or a test), so nothing imports it, yet it is the only user of
+  the `sharp` devDependency (the WebP encoding, round-4 plan 2026-09-28-2105
+  DEC-GL4-10) and of `src/water-alpha.ts` outside the tests. Without both
+  lines knip reports `sharp` as an unused devDependency.
 - **GpsPlusSlamJs_OsmDemo** — two entries are listed explicitly because
   knip's Vite plugin finds neither of them. `src/worker/demo-worker.ts`
   is reached through `new Worker(new URL(...), { type: "module" })`,

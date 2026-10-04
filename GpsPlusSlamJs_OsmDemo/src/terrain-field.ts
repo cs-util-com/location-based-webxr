@@ -194,6 +194,34 @@ function metresPerPixel(lat: number, zoom: number, tileSize = 256): number {
   return (equator * Math.cos((lat * Math.PI) / 180)) / (2 ** zoom * tileSize);
 }
 
+/** The integer lattice pixel a position falls nearest to, at `zoom`. */
+function nearestPixel(
+  position: LatLng,
+  zoom: number,
+): { x: number; y: number } {
+  const raw = toWorldPixel(position, zoom);
+  return { x: Math.round(raw.x), y: Math.round(raw.y) };
+}
+
+/**
+ * The square of lattice posts `ensureAround(centre, radiusM)` covers: every
+ * integer pixel within `reach` of `origin` on both axes.
+ *
+ * Exported for the globe's arrival prefetch (round-5 plan 2026-10-01-0945
+ * §3.6), which must fetch exactly the DEM tiles a fresh field asks for
+ * here; one formula, so the two cannot drift.
+ */
+export function latticeWindow(
+  centre: LatLng,
+  radiusM: number,
+  zoom: number = DEFAULT_TERRARIUM_ZOOM,
+): { readonly origin: { x: number; y: number }; readonly reach: number } {
+  const perPixel = metresPerPixel(centre.lat, zoom);
+  // `+1` so the requested radius is fully covered rather than truncated.
+  const reach = Math.ceil(radiusM / perPixel) + 1;
+  return { origin: nearestPixel(centre, zoom), reach };
+}
+
 export function createTerrainField(options: TerrainFieldOptions): TerrainField {
   const { provider } = options;
   const zoom = options.zoom ?? DEFAULT_TERRARIUM_ZOOM;
@@ -257,20 +285,15 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
   const key = (x: number, y: number): string => `${x}/${y}`;
 
   /** The integer pixel a position falls nearest to. */
-  const pixelOf = (position: LatLng): { x: number; y: number } => {
-    const raw = toWorldPixel(position, zoom);
-    return { x: Math.round(raw.x), y: Math.round(raw.y) };
-  };
+  const pixelOf = (position: LatLng): { x: number; y: number } =>
+    nearestPixel(position, zoom);
 
   async function ensureAround(
     centre: LatLng,
     radiusM: number,
     signal?: AbortSignal,
   ): Promise<void> {
-    const perPixel = metresPerPixel(centre.lat, zoom);
-    // `+1` so the requested radius is fully covered rather than truncated.
-    const reach = Math.ceil(radiusM / perPixel) + 1;
-    const origin = pixelOf(centre);
+    const { origin, reach } = latticeWindow(centre, radiusM, zoom);
 
     const viewPosts = (2 * reach + 1) ** 2;
     const missing: { x: number; y: number }[] = [];

@@ -50,7 +50,7 @@ export interface DepthSamplerCallbacks {
    * Triggered after unavailabilityThresholdMs with no depth data.
    * Field Test Readiness Issue #8.
    */
-  onDepthUnavailable?: () => void;
+  onDepthUnavailable?: (() => void) | undefined;
   /**
    * Lazily acquire a camera-color lookup for the CURRENT XR frame
    * (occupancy-grid port plan Iter 8). Invoked at most once per *emitted*

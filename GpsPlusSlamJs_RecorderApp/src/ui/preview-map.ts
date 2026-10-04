@@ -16,8 +16,8 @@ import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import { VIS_COLORS } from 'gps-plus-slam-app-framework/visualization/vis-colors';
 import type { GpsPathCoord } from 'gps-plus-slam-app-framework/storage/zip-reader';
 import { addAccuracyCircles } from 'gps-plus-slam-app-framework/visualization/accuracy-circles';
+import { addOsmTileLayer } from 'gps-plus-slam-app-framework/visualization/osm-tile-layer';
 import {
-  addOsmTileLayer,
   PATH_POLYLINE_WEIGHT,
   PATH_POLYLINE_OPACITY,
   INITIAL_ZOOM,

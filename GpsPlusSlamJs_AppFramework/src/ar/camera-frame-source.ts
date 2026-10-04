@@ -50,18 +50,21 @@ export interface CameraFrameSourceConfig {
   intervalMs: number;
 }
 
-/** Injected I/O for the camera frame source. */
-export interface CameraFrameSourceCallbacks {
+/**
+ * Injected I/O for the camera frame source. `TFrame` is whatever the capture
+ * builds - the session delivers a pose-paired `CapturedCameraFrame`.
+ */
+export interface CameraFrameSourceCallbacks<TFrame = RgbaImage> {
   /**
-   * Capture the current XR frame as top-left-origin RGBA, or `null` when no
+   * Capture the current XR frame (given its XR frame `timestamp`), or `null` when no
    * frame is available (no camera texture yet, GL failure). This is the GPU
    * blit + readback; the source only invokes it at the throttled cadence so
    * the cost is bounded. A `null` return does NOT consume the interval slot —
    * the next frame retries immediately (a missing texture is transient).
    */
-  capture: () => RgbaImage | null;
+  capture: (timestamp: number) => TFrame | null;
   /** Receive a throttled, successfully-captured frame. */
-  onCapture: (image: RgbaImage) => void;
+  onCapture: (frame: TFrame) => void;
 }
 
 const DEFAULT_CONFIG: CameraFrameSourceConfig = {
@@ -72,15 +75,16 @@ const DEFAULT_CONFIG: CameraFrameSourceConfig = {
  * Throttled RGBA capturer. Construct with the injected `capture`/`onCapture`
  * pair, `start()`, then call `onFrame(timestamp)` once per XR frame.
  */
-export class CameraFrameSource {
-  private readonly callbacks: CameraFrameSourceCallbacks;
+export class CameraFrameSource<TFrame = RgbaImage> {
+  private readonly callbacks: CameraFrameSourceCallbacks<TFrame>;
   private readonly config: CameraFrameSourceConfig;
   private running = false;
   private captureCount = 0;
   private lastCaptureTime = -Infinity;
+  private wantsFrame: (() => boolean) | null = null;
 
   constructor(
-    callbacks: CameraFrameSourceCallbacks,
+    callbacks: CameraFrameSourceCallbacks<TFrame>,
     config?: Partial<CameraFrameSourceConfig>
   ) {
     this.callbacks = callbacks;
@@ -133,6 +137,16 @@ export class CameraFrameSource {
   }
 
   /**
+   * Let the consumer veto captures it cannot use (e.g. while its detector is
+   * still busy with the previous frame). A veto skips the blit + readback
+   * without consuming the interval, so the first frame after the veto lifts is
+   * captured at once. `null` restores "always wanted".
+   */
+  setWantsFrame(wantsFrame: (() => boolean) | null): void {
+    this.wantsFrame = wantsFrame;
+  }
+
+  /**
    * Per-XR-frame tick. Captures + delivers a frame at most once per
    * `intervalMs`; otherwise a cheap no-op so it is safe to call every frame.
    *
@@ -145,11 +159,14 @@ export class CameraFrameSource {
     if (timestamp - this.lastCaptureTime < this.config.intervalMs) {
       return;
     }
+    if (!this.consumerWantsFrame()) {
+      return; // slot NOT consumed: retry on the next frame
+    }
 
     // Interval elapsed — do the (expensive) capture now. A null result is a
     // transient missing-texture; do NOT consume the slot so the next frame
     // retries rather than waiting another full interval.
-    const image = this.captureSafely();
+    const image = this.captureSafely(timestamp);
     if (!image) {
       return;
     }
@@ -159,14 +176,24 @@ export class CameraFrameSource {
     this.callbacks.onCapture(image);
   }
 
+  /** The consumer's veto; a throwing predicate counts as "wanted". */
+  private consumerWantsFrame(): boolean {
+    if (!this.wantsFrame) return true;
+    try {
+      return this.wantsFrame();
+    } catch {
+      return true;
+    }
+  }
+
   /**
    * Run the injected capture, guarded so a blit failure (e.g. GL context loss)
    * can never throw out of the XR frame loop — it degrades to "no frame this
    * tick", exactly like a missing texture.
    */
-  private captureSafely(): RgbaImage | null {
+  private captureSafely(timestamp: number): TFrame | null {
     try {
-      return this.callbacks.capture();
+      return this.callbacks.capture(timestamp);
     } catch {
       return null;
     }

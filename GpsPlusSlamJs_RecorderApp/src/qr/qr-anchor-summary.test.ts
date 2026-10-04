@@ -89,6 +89,36 @@ describe('qrAnchorSummaryLines', () => {
     ]);
     expect(line).not.toMatch(/undefined|NaN/);
   });
+
+  // Why this test matters (owner decision D31): a code saved through an
+  // alignment with under 10 m of GPS walk behind it is written, but its
+  // heading is close to guesswork (13.8 degrees p50, 88 p90 on the extent
+  // sweep). The summary is the only place the author learns that while
+  // still on site, where walking a bit further and saving again fixes it.
+  it('tells the author when a written code has an uncertain heading', () => {
+    const line = qrAnchorSummaryLines([outcome({ headingUncertain: true })]);
+    expect(line).toMatch(/✓/);
+    expect(line).toMatch(
+      /Heading uncertain: walk a bit further before saving for a reliable direction\./
+    );
+  });
+
+  it('says nothing about the heading when it is not marked uncertain', () => {
+    // Absent means unknown (an older mint) and false means checked: neither
+    // is a reason to worry the author.
+    expect(qrAnchorSummaryLines([outcome()])).not.toMatch(/Heading/);
+    expect(
+      qrAnchorSummaryLines([outcome({ headingUncertain: false })])
+    ).not.toMatch(/Heading/);
+  });
+
+  it('never adds the heading note to a refused code', () => {
+    // A refused code wrote no file, so there is no heading to doubt.
+    const line = qrAnchorSummaryLines([
+      outcome({ written: false, detail: 'Refused.', headingUncertain: true }),
+    ]);
+    expect(line).not.toMatch(/Heading/);
+  });
 });
 
 // Added after an e2e caught it: the panel is drawn from data that crosses a

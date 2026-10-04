@@ -18,6 +18,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
+import { AR_SHADOW_CASTER } from "./ar-sun-shadow.js";
 import { drawMeshLayers } from "./mesh-layers.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
@@ -220,5 +221,35 @@ describe("a family-L marker inside a building", () => {
     expect(at.x).toBeCloseTo(5, 4);
     expect(at.z).toBeCloseTo(5, 4);
     expect(at.y).toBeCloseTo(3, 4);
+  });
+});
+
+describe("the AR sun shadow's caster tag (shadow plan M3)", () => {
+  // WHY: in AR only GROUND pins cast the virtual sun shadow; a symbol on a
+  // roof would cast onto the street a shadow its real building already
+  // casts. The tag is set where the bucket is built, so no later rule has to
+  // re-derive the host placement (plan 2026-09-23-2343 §10).
+  it("tags ground pins as casters and roof-hosted symbols not", () => {
+    const { objects } = drawMeshLayers(
+      meshWith([
+        marker({
+          kind: "amenity=cafe",
+          position: { x: -300, y: -300 },
+          hosts: [buildingHost],
+        }),
+        marker({ kind: "amenity=cafe", position: { x: 10, y: 10 } }),
+      ]),
+      { ...POI_ONLY, buildings: true },
+    );
+    const buckets = objects.filter(
+      (o) => o.userData["poiInstances"] !== undefined,
+    );
+    expect(buckets).toHaveLength(2);
+    const tagged = buckets.map((o) => o.userData[AR_SHADOW_CASTER] === true);
+    expect(tagged.sort()).toEqual([false, true]);
+    const hostBucket = buckets.find(
+      (o) => o.userData[AR_SHADOW_CASTER] !== true,
+    )!;
+    expect(positionOf([hostBucket]).x).toBeCloseTo(40, 4);
   });
 });

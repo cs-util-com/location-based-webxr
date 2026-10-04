@@ -19,7 +19,10 @@ does not exist."
 ## Public API
 
 - `ArMeasurements` — `{ drawCost?, fps?, fixAccuracyM?, metresFromAnchor?,
-worldBaselineY? }`, every field optional and independent.
+worldBaselineY?, sunShadowLine?, … }`, every field optional and independent.
+  - `sunShadowLine` is the AR sun shadow prototype's line, already formatted
+    by `describeArSunShadow` (`ar-sun-shadow-session.ts`); it is printed as
+    given, before the geoid line, and absent means no line.
 - `describeArMeasurements(m): readonly string[]` — one line per measurement that
   has a value, in a fixed order.
 
@@ -72,7 +75,8 @@ describeArMeasurements({ drawCost: { calls: 12, triangles: 1000 }, fps: 59.6 });
 cost omitted; `Infinity` and `NaN` fps dropped; both precision rules; the fixed
 order with all four present; the order preserved with two missing; and the
 terrain-line source suffix (primary share, fallback-only wording, composed-id
-fallback when stats are absent or counted nothing).
+fallback when stats are absent or counted nothing); and the sun shadow
+line printed when given and absent otherwise.
 
 The surface is [`ar-hud.ts`](ar-hud.ts.md); that `ar-mode.ts` actually samples
 it, from the AR renderer, is pinned in `ar-mode.test.ts`.

@@ -13,6 +13,11 @@ plan defers the Recorder's live camera wiring).
 - `realSeams` — the production implementation.
 - `QrDemoSeams` — `checkSupport`, `initAR`, `endARSession`, `getArWorldGroup`,
   `createDetect`, `getDepthContext`, `startFrameSource`.
+- `createDetect({ copyPixels? })` — `copyPixels: true` builds the PRE-fix front
+  end (a full frame copy per decode) for the `?qrperf=1&baseline=1` A/B run only;
+  the default hands the owned buffer over as-is (framework default, M3).
+- `FrameSourceOptions` — `{ intervalMs?, onCaptureTiming?, wantsFrame? }`, passed
+  straight to `startCameraFrameCapture`.
 
 ## Invariants
 
@@ -20,17 +25,27 @@ plan defers the Recorder's live camera wiring).
   `import.meta.env.DEV && !import.meta.env.VITEST` — Vite statically strips it
   from production; unit tests ignore it.
 - PROD `getDepthContext` builds an unprojector + nearest-neighbour depth lookup +
-  camera pose + the view `projectionMatrix` from the latest `DepthSample`
+  the view `projectionMatrix` from the latest `DepthSample`
   (the `depth` group passed to the framework `initAR`). The `projectionMatrix`
-  feeds PnP intrinsics (`intrinsicsFromProjection`) in the controller.
+  feeds PnP intrinsics (`intrinsicsFromProjection`) in the controller. It no
+  longer supplies a camera pose (QR perf plan 2026-09-23, M4): the depth sample
+  arrives every 250 ms, so the solve uses each frame's own capture pose instead.
+- `initAR(container, hooks?)`: `hooks.onFrameChanged` (M3b b5) adds a
+  `callbacks.tracking` group built by `restart-tracking.ts` - a tracking
+  store of its own plus `onRestarted` - so the demo hears about odometry
+  restarts without the session's per-frame dispatches reaching the HUD's
+  store. The e2e fakes' one-parameter `initAR` stays compatible.
 - PROD frames come from the framework's generic **camera-frame RGBA capture**
   (B2): the seam's `initAR` passes the framework `initAR` a
   `callbacks.cameraFrame` group (alongside the depth group — the framework's
   pre-init setters were folded into `initAR`) that forwards each throttled
-  **top-left RGBA**
-  frame to the active consumer; `startFrameSource(onImage, { intervalMs })` sets
-  that consumer and calls `startCameraFrameCapture({ intervalMs })` — the source
+  frame - a `CapturedCameraFrame`: **top-left RGBA** plus the camera pose and
+  epoch-ms time of its capture (M4) - to the active consumer;
+  `startFrameSource(onFrame: (frame: CapturedCameraFrame) => void, { intervalMs, onCaptureTiming, wantsFrame })` sets
+  that consumer and calls `startCameraFrameCapture({ intervalMs, onCaptureTiming, wantsFrame })` — the source
   is the single cadence owner (Option A; the controller runs `minIntervalMs: 0`).
+  `onCaptureTiming` is the opt-in `?qrperf` stage-timing hook (`qrperf/`); e2e
+  fakes may ignore it.
   The old `OffscreenCanvas` JPEG decode (`decodeToRgba`) is gone.
   `startFrameSource` itself stays as the **e2e frame-injection seam** — only its
   PROD body changed.

@@ -45,7 +45,11 @@ state machine collapses the score to `'warming-up' | 'ar-lost' | 'degraded' |
   - `computeCoverage(odomPositions, options?)` — §4.5.
   - `computeGpsVsFusedDivergence(...)` — §4.6 diagnostic only.
   - `createTrackingQualityListenerMiddleware(options?)` — Redux listener that
-    buffers alignment matrices and recomputes the report on relevant actions.
+    buffers alignment matrices and recomputes the report on relevant actions:
+    `recordGpsEvent`, `recordGpsEventBatch` (core 1.26: one solve, so at
+    most one snapshot for all its fixes), `setZeroPos`, the tracking pose
+    actions and the session/tracking resets. Without the batch a viewer fed
+    by batches never advanced its report (its placement trigger reads it).
 - **Reducer / actions**
   - `trackingQualityReducer`.
   - `snapshotPushed(AlignmentSnapshot)`, `snapshotsTrimmed({size})`,

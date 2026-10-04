@@ -193,6 +193,75 @@ describe("createOccupancyView", () => {
     vi.useRealTimers();
   });
 
+  // The AR shadows give the receiver to whichever occluder is current each
+  // frame (W4 plan §11); a stale handle would leave the new mesh without it.
+  it("getOcclusionMesh follows the occluder setMeshMode recreates", () => {
+    const view = createOccupancyView(new THREE.Group(), makeFakeStore());
+    const first = view.getOcclusionMesh();
+    expect(first).toBeInstanceOf(OcclusionMesh);
+    expect(first.getMesh()).toBe(view.getMesh());
+    view.setMeshMode("greedy");
+    const second = view.getOcclusionMesh();
+    expect(second).not.toBe(first);
+    expect(second.getMesh()).toBe(view.getMesh());
+    view.dispose();
+  });
+
+  // The shadow probe re-meshes on demand (the paused replay has no depth
+  // stream): it must re-mesh the CURRENT occluder from the grid, the same
+  // call a depth refresh makes, without adding a sample.
+  it("remesh re-meshes the current occluder from the grid, no sample added", () => {
+    const addSample = vi.spyOn(OccupancyGrid.prototype, "addSample");
+    const meshUpdate = vi.spyOn(OcclusionMesh.prototype, "update");
+    const view = createOccupancyView(new THREE.Group(), makeFakeStore());
+    view.setMeshMode("greedy");
+    meshUpdate.mockClear();
+    view.remesh();
+    expect(meshUpdate).toHaveBeenCalledTimes(1);
+    expect(meshUpdate.mock.contexts[0]).toBe(view.getOcclusionMesh());
+    expect(addSample).not.toHaveBeenCalled();
+    view.dispose();
+  });
+
+  // The status line's depth diagnostics (r752 first-load report): how many
+  // depth samples reached the grid, and when the last one did.
+  it("counts the depth samples it folds in and stamps the last one", () => {
+    let now = 1000;
+    const store = makeFakeStore();
+    const view = createOccupancyView(new THREE.Group(), store, {
+      now: () => now,
+    });
+    expect(view.depthStats()).toEqual({ samples: 0, lastSampleAtMs: null });
+    store.push(sample);
+    now = 1500;
+    store.push({ ...sample, timestamp: 2 });
+    expect(view.depthStats()).toEqual({ samples: 2, lastSampleAtMs: 1500 });
+    view.dispose();
+  });
+
+  // The first-visit rebuild (owner report on r753): the Mesh dropdown's
+  // path, switching away and back, repaired a missing shadow. `rebuild` is
+  // that path without changing the mode: a NEW occluder, same mode and skin,
+  // re-meshed from the grid at once, and the old one disposed.
+  it("rebuild recreates the occluder in the same mode and re-meshes it", () => {
+    const dispose = vi.spyOn(OcclusionMesh.prototype, "dispose");
+    const meshUpdate = vi.spyOn(OcclusionMesh.prototype, "update");
+    const view = createOccupancyView(new THREE.Group(), makeFakeStore(), {
+      meshMode: "smooth",
+      debugStyle: "off",
+    });
+    const first = view.getOcclusionMesh();
+    const setStyle = vi.spyOn(OcclusionMesh.prototype, "setDebugStyle");
+    meshUpdate.mockClear();
+    view.rebuild();
+    const second = view.getOcclusionMesh();
+    expect(second).not.toBe(first);
+    expect(dispose.mock.contexts).toContain(first);
+    expect(meshUpdate.mock.contexts).toEqual([second]);
+    expect(setStyle).toHaveBeenCalledWith("off");
+    view.dispose();
+  });
+
   it("detaches the subscription on dispose", () => {
     const addSample = vi.spyOn(OccupancyGrid.prototype, "addSample");
     const store = makeFakeStore();

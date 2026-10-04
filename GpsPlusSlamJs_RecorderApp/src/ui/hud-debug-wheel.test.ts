@@ -98,11 +98,17 @@ describe('dispatchWheelSettings - one control, its own setting', () => {
     const store = fakeStore();
     dispatchWheelSettings(
       store,
-      { ...WHEEL_DEFAULTS, presetId: 'f100' },
+      { ...WHEEL_DEFAULTS, presetId: 'w90' },
       only('presetId')
     );
-    expect(types(store)).toEqual(['gpsData/setAlignmentOverrides']);
-    expect(payloads(store)[0]).toEqual({ timeWeightFactor: 100 });
+    expect(types(store)).toEqual([
+      'gpsData/setAlignmentOverrides',
+      'diagnostics/note',
+    ]);
+    expect(payloads(store)[0]).toEqual({
+      timeWeightEnabled: false,
+      recentWindowSeconds: 90,
+    });
   });
 
   it('the compass slider is the seven compass settings, prior on at that weight', () => {
@@ -177,11 +183,90 @@ describe('dispatchWheelSettings - one control, its own setting', () => {
     ]);
   });
 
-  it('every control together is eleven actions, and the shipped preset clears with null', () => {
+  it('every control together is eleven settings plus one provenance note, and the shipped preset clears with null', () => {
     const store = fakeStore();
     dispatchWheelSettings(store, { ...WHEEL_DEFAULTS, presetId: 'shipped' });
-    expect(types(store)).toHaveLength(11);
+    // Eleven SETTINGS and exactly one note. The note has no reducer and changes
+    // nothing; it is counted separately here so that a stray extra setting
+    // still fails this test rather than hiding inside a bumped total.
+    const settings = types(store).filter((t) => t !== 'diagnostics/note');
+    expect(settings).toHaveLength(11);
+    expect(types(store).filter((t) => t === 'diagnostics/note')).toHaveLength(
+      1
+    );
     expect(payloads(store)[0]).toBeNull();
+  });
+});
+
+describe('dispatchWheelSettings - the preset is recorded, not just applied', () => {
+  /**
+   * Why this test matters: the override PAYLOAD reaches the recording, but
+   * nothing in it names the preset the tester tapped - and a preset deleted
+   * later cannot be reverse-matched from its payload at all (seven were deleted
+   * on 2026-09-12). Without this note, a walk is only self-documenting for as
+   * long as the preset list happens not to change.
+   */
+  it('writes a diagnostic note naming the preset, alongside the setting', () => {
+    const store = fakeStore();
+    dispatchWheelSettings(
+      store,
+      { ...WHEEL_DEFAULTS, presetId: 'w180' },
+      only('presetId')
+    );
+    expect(types(store)).toEqual([
+      'gpsData/setAlignmentOverrides',
+      'diagnostics/note',
+    ]);
+    const note = payloads(store)[1] as {
+      kind: string;
+      atMs: number;
+      detail: Record<string, unknown>;
+    };
+    expect(note.kind).toBe('alignment-preset');
+    expect(note.detail).toEqual({ presetId: 'w180', known: true });
+    expect(Number.isFinite(note.atMs)).toBe(true);
+  });
+
+  /**
+   * Why this test matters: switching mid-walk is the whole point of the wheel,
+   * and it is the case a session-start snapshot would get WRONG - it would
+   * assert a preset that was active for the first thirty seconds. Two notes
+   * with two timestamps is the thing that makes a mid-walk A/B readable later.
+   */
+  it('writes one note per switch, so a mid-walk A/B is recoverable', () => {
+    const store = fakeStore();
+    dispatchWheelSettings(
+      store,
+      { ...WHEEL_DEFAULTS, presetId: 'shipped' },
+      only('presetId')
+    );
+    dispatchWheelSettings(
+      store,
+      { ...WHEEL_DEFAULTS, presetId: 'wall' },
+      only('presetId')
+    );
+    const notes = payloads(store).filter(
+      (x): x is { kind: string; detail: { presetId: string } } =>
+        typeof x === 'object' && x !== null && 'kind' in x
+    );
+    expect(notes.map((n) => n.detail.presetId)).toEqual(['shipped', 'wall']);
+  });
+
+  /**
+   * Why this test matters: an unknown id dispatches setAlignmentOverrides(null),
+   * which is indistinguishable in the action stream from deliberately choosing
+   * the shipped baseline. The note carries the difference.
+   */
+  it('marks an unknown preset id as unknown rather than silently reading as shipped', () => {
+    const store = fakeStore();
+    dispatchWheelSettings(
+      store,
+      { ...WHEEL_DEFAULTS, presetId: 'f100' }, // deleted 2026-09-12
+      only('presetId')
+    );
+    expect(payloads(store)[0]).toBeNull();
+    const note = payloads(store)[1] as { detail: Record<string, unknown> };
+    expect(note.detail).toEqual({ presetId: 'f100', known: false });
   });
 });
 
@@ -254,18 +339,18 @@ describe('seedWheelSettings - untouched controls show the session', () => {
     const s = seedWheelSettings(WHEEL_DEFAULTS, new Set(), {
       gpsData: {
         alignmentOverrides: {
-          gpsAccuracyExponent: 0.75,
-          timeWeightFactor: 100,
+          recentWindowSeconds: 180,
+          timeWeightEnabled: false,
         },
       },
     });
-    expect(s.presetId).toBe('f100-exp075');
+    expect(s.presetId).toBe('w180');
   });
 
   it('reads the gate, pair selection, prerequisite, penalty and a matching preset from a decided store', () => {
     const seeded = seedWheelSettings(WHEEL_DEFAULTS, new Set(), {
       gpsData: {
-        alignmentOverrides: { timeWeightFactor: 100 },
+        alignmentOverrides: { timeWeightEnabled: false },
         compassTrustGateMode: 'latch',
         compassPairSelectionEnabled: true,
         compassPairSelectionMode: 'hard',
@@ -273,7 +358,7 @@ describe('seedWheelSettings - untouched controls show the session', () => {
         consensusSolverHeadingPenalty: 0.25,
       },
     });
-    expect(seeded.presetId).toBe('f100');
+    expect(seeded.presetId).toBe('wall');
     expect(seeded.trustGateMode).toBe('latch');
     expect(seeded.pairSelection).toBe('hard');
     expect(seeded.pairSelectionRequireTrust).toBe(false);
@@ -362,9 +447,20 @@ describe('createDebugWheel', () => {
     const preset = overlay.querySelector(
       '#debug-wheel-preset'
     ) as HTMLSelectElement;
-    preset.value = 'f100';
+    preset.value = 'w90';
     preset.dispatchEvent(new Event('change'));
-    expect(types(store)).toEqual(['gpsData/setAlignmentOverrides']);
+    expect(types(store)).toEqual([
+      'gpsData/setAlignmentOverrides',
+      'diagnostics/note',
+    ]);
+    // The PAYLOAD, not just the action type. Asserting the type alone is
+    // satisfied by setAlignmentOverrides(null), which is what an unknown preset
+    // id dispatches - so when this test named a preset that had been deleted it
+    // went on passing while testing nothing. Found by cold review, 2026-09-12.
+    expect(payloads(store)[0]).toEqual({
+      timeWeightEnabled: false,
+      recentWindowSeconds: 90,
+    });
   });
 
   it('shows the session: untouched controls are seeded from a decided store', () => {
@@ -389,14 +485,17 @@ describe('createDebugWheel', () => {
     const preset = overlay.querySelector(
       '#debug-wheel-preset'
     ) as HTMLSelectElement;
-    preset.value = 'f100';
+    preset.value = 'w90';
     preset.dispatchEvent(new Event('change'));
-    expect(wheel.values().presetId).toBe('f100');
+    expect(wheel.values().presetId).toBe('w90');
     expect(store.dispatched).toEqual([]); // undecided store: nothing yet
     store.decide();
     expect(store.dispatched).toEqual([]); // not inside the deciding dispatch
     await flush();
-    expect(types(store)).toEqual(['gpsData/setAlignmentOverrides']);
+    expect(types(store)).toEqual([
+      'gpsData/setAlignmentOverrides',
+      'diagnostics/note',
+    ]);
   });
 
   it('re-applies every touched control to a swapped-in store (Start Recording), once per store', async () => {
@@ -404,10 +503,11 @@ describe('createDebugWheel', () => {
     first.decide();
     const { wheel, ref } = mount(first);
     wheel.set({ compassInfluence: 0.8 });
-    wheel.set({ presetId: 'f100' });
+    wheel.set({ presetId: 'w90' });
     expect(types(first)).toEqual([
       ...COMPASS_SEVEN,
       'gpsData/setAlignmentOverrides',
+      'diagnostics/note',
     ]);
     const second = fakeStore();
     ref.set(second);
@@ -418,12 +518,13 @@ describe('createDebugWheel', () => {
     // Both touched controls, in dispatch order preset-first.
     expect(types(second)).toEqual([
       'gpsData/setAlignmentOverrides',
+      'diagnostics/note',
       ...COMPASS_SEVEN,
     ]);
-    expect(payloads(second)[3]).toBe(0.8);
+    expect(payloads(second)[4]).toBe(0.8);
     second.dispatch({ type: 'noise' });
     await flush();
-    expect(second.dispatched).toHaveLength(9);
+    expect(second.dispatched).toHaveLength(10);
   });
 
   // Production order since PR #407 review: the recording handlers swap the
@@ -441,7 +542,7 @@ describe('createDebugWheel', () => {
     replay.decide();
     await flush();
     expect(replay.dispatched).toEqual([]);
-    wheel.set({ presetId: 'f100' }); // held while suspended
+    wheel.set({ presetId: 'w90' }); // held while suspended
     expect(replay.dispatched).toEqual([]);
     const next = fakeStore();
     next.decide();
@@ -451,6 +552,7 @@ describe('createDebugWheel', () => {
     wheel.resume();
     expect(types(next)).toEqual([
       'gpsData/setAlignmentOverrides',
+      'diagnostics/note',
       'gpsData/setCompassTrustGateMode',
     ]);
   });
@@ -467,13 +569,14 @@ describe('createDebugWheel', () => {
     wheel.set({ trustGateMode: 'latch' });
     expect(types(store)).toEqual(['gpsData/setCompassTrustGateMode']);
     wheel.suspend();
-    wheel.set({ presetId: 'f100' }); // held: the store is suspended
+    wheel.set({ presetId: 'w90' }); // held: the store is suspended
     expect(types(store)).toEqual(['gpsData/setCompassTrustGateMode']);
     wheel.resume(); // same store, already marked applied before the hold
     await flush();
     expect(types(store)).toEqual([
       'gpsData/setCompassTrustGateMode',
       'gpsData/setAlignmentOverrides',
+      'diagnostics/note',
       'gpsData/setCompassTrustGateMode',
     ]);
   });
@@ -636,5 +739,81 @@ describe('formatWheelReadout', () => {
         { medianStepDeg: 0.4567, steps: 30 }
       )
     ).toBe('yaw 10.0° · churn 0.46°/fix (30) · compass – · 2 fixes');
+  });
+});
+
+describe('the sun check toggle (sun-overlay plan M3)', () => {
+  // WHY: the sun check is LOCAL UI state, not a store setting: it must never
+  // be dispatched or replayed onto a new store, and the box must show the
+  // state actually reached (declining the safety note leaves it off).
+  const mountWith = (onSunCheckChange?: (on: boolean) => Promise<boolean>) => {
+    document.body.innerHTML = '<div id="controls"></div><div id="app"></div>';
+    const store = fakeStore();
+    const wheel = createDebugWheel({
+      storeRef: createStoreRef<RecorderStore>(store),
+      controlsRoot: document.getElementById('controls')!,
+      overlayRoot: document.getElementById('app')!,
+      ...(onSunCheckChange ? { onSunCheckChange } : {}),
+    });
+    wheel.attach();
+    const box = document.querySelector<HTMLInputElement>(
+      '#debug-wheel-sun-check'
+    );
+    return { wheel, store, box };
+  };
+
+  it('is absent when the app offers no sun check', () => {
+    expect(mountWith().box).toBeNull();
+  });
+
+  it('asks the app, disables itself while waiting, and shows the state reached', async () => {
+    let answer: (on: boolean) => void = () => {};
+    const onSunCheckChange = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve;
+        })
+    );
+    const { wheel, store, box } = mountWith(onSunCheckChange);
+    expect(box?.checked).toBe(false);
+    box!.checked = true;
+    box!.dispatchEvent(new Event('change'));
+    expect(onSunCheckChange).toHaveBeenCalledWith(true);
+    expect(box!.disabled).toBe(true);
+    answer(false); // the safety note was declined
+    await new Promise((r) => setTimeout(r, 0));
+    expect(box!.disabled).toBe(false);
+    expect(box!.checked).toBe(false);
+    expect(wheel.touched()).toBe(false);
+    expect(store.dispatched).toEqual([]);
+  });
+  // WHY (the async-UI rule's failure path, M3 review finding 6): a callback
+  // that rejects must leave the box unchecked and usable, never stuck
+  // disabled; the success path must show the box on.
+  it('reverts to unchecked and usable when the app rejects, and shows success', async () => {
+    const failing = mountWith(() => Promise.reject(new Error('boom')));
+    failing.box!.checked = true;
+    failing.box!.dispatchEvent(new Event('change'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(failing.box!.checked).toBe(false);
+    expect(failing.box!.disabled).toBe(false);
+
+    const ok = mountWith(() => Promise.resolve(true));
+    ok.box!.checked = true;
+    ok.box!.dispatchEvent(new Event('change'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(ok.box!.checked).toBe(true);
+    expect(ok.box!.disabled).toBe(false);
+  });
+
+  // WHY (M3 review finding 3): the check can turn itself off when an AR
+  // session attaches; the app then sets the box, or it would read "on".
+  it('shows a state the app changed', () => {
+    const { wheel, box } = mountWith(() => Promise.resolve(true));
+    wheel.showSunCheck(true);
+    expect(box!.checked).toBe(true);
+    wheel.showSunCheck(false);
+    expect(box!.checked).toBe(false);
+    expect(() => mountWith().wheel.showSunCheck(true)).not.toThrow();
   });
 });

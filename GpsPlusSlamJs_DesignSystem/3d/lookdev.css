@@ -1,0 +1,130 @@
+/*
+ * Page chrome for the 3D look-dev page only (like catalog.css for the HUD
+ * catalog): the canvas fills the window and the control plate floats over
+ * it. Every visual comes from design.css's atoms; this file only places them.
+ */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: black;
+}
+
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/*
+ * THE PLATE NEVER SCROLLS; ITS BODY DOES (programme plan 2026-09-26-0539,
+ * W1 M2). A scrolling plate carried the design-system stripe away with its
+ * content, and on a phone the plate covered the scene, so it collapses from
+ * its header and per section (panel.js).
+ */
+.lookdev-panel {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+  overflow: hidden;
+  gap: 8px;
+}
+
+.lookdev-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--size-read);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lookdev-chevron {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentcolor;
+  border-bottom: 2px solid currentcolor;
+  transform: rotate(45deg);
+  transition: transform 0.15s;
+}
+
+.lookdev-head[aria-expanded="false"] .lookdev-chevron {
+  transform: rotate(-45deg);
+}
+
+.lookdev-body {
+  min-height: 0;
+  overflow: auto;
+  gap: var(--space-2);
+}
+
+.lookdev-body[hidden] {
+  display: none;
+}
+
+.lookdev-section > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.lookdev-section-body {
+  gap: 8px;
+  padding-top: var(--space-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lookdev-chevron {
+    transition: none;
+  }
+}
+
+.lookdev-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lookdev-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lookdev-error:empty {
+  display: none;
+}
+
+/* The material catalog's labels (W5 plan 2026-09-26-0549, M1): an overlay
+   right after the canvas, so the panel (a later sibling) stays above it. */
+.lookdev-catalog-labels {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.lookdev-catalog-label {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--size-read);
+  white-space: nowrap;
+}
+
+/* The ambient occlusion switch's tier note (round-3 plan 2026-09-27-0532,
+   stream C): shown on the phone tier only; `hidden` must beat the flex. */
+.lookdev-ao-tier[hidden] {
+  display: none;
+}

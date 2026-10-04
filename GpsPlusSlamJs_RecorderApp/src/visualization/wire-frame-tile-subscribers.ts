@@ -35,11 +35,6 @@ import { followStore } from '../state/store-ref';
 
 /**
  * Default minimum byte threshold below which a frame blob is treated
- * as broken/empty and skipped. Initial heuristic — the F3.6 corpus
- * test calibrates this against the field-recording fixture.
- */
-/**
- * Default minimum byte threshold below which a frame blob is treated
  * as broken/empty and skipped. Internal default — F3.5 wirers may
  * override via `minFrameBytes`; F3.6 will calibrate against the
  * field-recording corpus.

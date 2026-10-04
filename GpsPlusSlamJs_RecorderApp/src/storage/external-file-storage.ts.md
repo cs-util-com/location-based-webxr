@@ -116,5 +116,5 @@ if (saveResult.success) {
 ## Related Files
 
 - [sync-manager.ts](sync-manager.ts) — Uses the save file handle for periodic sync
-- [zip-export.ts](zip-export.ts) — `syncToExternalZip()` writes to the file handle
-- [file-system.ts](file-system.ts) — OPFS-based storage (internal, always used)
+- [the framework's zip-export.ts](../../../GpsPlusSlamJs_AppFramework/src/storage/zip-export.ts) — where `syncToExternalZip()` moved to. NOTE it has no production caller in either root any more; its own sidecar says so.
+- OPFS-based storage was a `file-system.ts` in this folder; **that module no longer exists**, so the "internal, always used" claim this line carried describes nothing.

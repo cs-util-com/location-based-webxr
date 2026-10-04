@@ -40,7 +40,7 @@ export interface DetectionSchedulerConfig<TResult, TImage = RgbaImage> {
   /** Consecutive successes required before a lock is reported. Default 3. */
   requiredLockCount?: number;
   /** Injectable clock (ms). Defaults to `performance.now()`/`Date.now()`. */
-  now?: () => number;
+  now?: (() => number) | undefined;
   /** Called on each success once locked (consecutiveLocks ≥ requiredLockCount). */
   onLocked?: (result: TResult) => void;
   /** Called when a detection completes with no usable result. */
@@ -58,6 +58,12 @@ export interface DetectionScheduler<TImage = RgbaImage> {
   readonly consecutiveLocks: number;
   /** True once `consecutiveLocks` has reached `requiredLockCount`. */
   readonly locked: boolean;
+  /**
+   * Stop for good (QR near-frontal pose plan §61): no new detection starts,
+   * and one in flight reaches no callback when it settles - an app ending
+   * its AR session must not see a late lock land in the next one.
+   */
+  dispose(): void;
 }
 
 const defaultNow = (): number =>
@@ -79,6 +85,7 @@ export function createDetectionScheduler<TResult, TImage = RgbaImage>(
   } = config;
 
   let inFlight = false;
+  let disposed = false;
   let consecutiveLocks = 0;
   // -Infinity so the first offered frame always passes the throttle.
   let lastStart = -Infinity;
@@ -93,7 +100,11 @@ export function createDetectionScheduler<TResult, TImage = RgbaImage>(
     get locked() {
       return consecutiveLocks >= requiredLockCount;
     },
+    dispose(): void {
+      disposed = true;
+    },
     offerFrame(image: TImage): void {
+      if (disposed) return;
       if (inFlight) return; // coalesce
       const t = now();
       if (t - lastStart < minIntervalMs) return; // throttle
@@ -119,6 +130,7 @@ export function createDetectionScheduler<TResult, TImage = RgbaImage>(
       // the scheduler's own state stays correct regardless of callback behavior.
       started
         .then((result) => {
+          if (disposed) return;
           if (result) {
             consecutiveLocks = Math.min(
               consecutiveLocks + 1,
@@ -142,6 +154,7 @@ export function createDetectionScheduler<TResult, TImage = RgbaImage>(
         })
         .catch((err: unknown) => {
           consecutiveLocks = 0;
+          if (disposed) return;
           try {
             onError?.(err);
           } catch (callbackErr) {

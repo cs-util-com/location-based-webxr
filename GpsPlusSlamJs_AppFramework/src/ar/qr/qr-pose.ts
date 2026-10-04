@@ -272,6 +272,27 @@ export function signedQuadArea(corners: readonly Point2[]): number {
   return sum / 2;
 }
 
+/**
+ * The code's size on screen: the mean length of the quad's four edges, px
+ * (plan §34 R1: what every pixel signal and gate is judged against). Null
+ * for anything but four finite corners.
+ */
+export function meanEdgePx(corners: readonly Point2[]): number | null {
+  if (
+    corners.length !== 4 ||
+    corners.some((c) => !Number.isFinite(c.x) || !Number.isFinite(c.y))
+  ) {
+    return null;
+  }
+  let sum = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = corners[i]!;
+    const b = corners[(i + 1) % 4]!;
+    sum += Math.hypot(b.x - a.x, b.y - a.y);
+  }
+  return sum / 4;
+}
+
 /** Result of {@link validateQuad}. */
 export interface QuadValidation {
   ok: boolean;

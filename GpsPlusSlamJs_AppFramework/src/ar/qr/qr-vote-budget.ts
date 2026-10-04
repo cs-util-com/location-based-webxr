@@ -40,8 +40,21 @@ export interface QrVoteBudget {
   tryConsume(text: string): boolean;
   /** Batches already spent by `text` — for status lines. */
   spentFor(text: string): number;
+  /**
+   * Whether `text` has spent its budget at THIS budget's cap - so a
+   * consumer can skip work for a code that can no longer vote (the fused
+   * pose's solve, QR near-frontal pose plan §71).
+   */
+  isSpent(text: string): boolean;
   /** Forget every code (store swap, session end). */
   reset(): void;
+  /**
+   * Forget one code: its next lock may vote again, the others keep their
+   * spend. For a consumer that re-arms a code whose last vote is too old to
+   * trust (the Tour Viewer's keep-alive, authoring plan 2026-09-28-0953
+   * M2b). A code never charged is a no-op.
+   */
+  forget(text: string): void;
 }
 
 export function createQrVoteBudget(
@@ -56,8 +69,12 @@ export function createQrVoteBudget(
       return true;
     },
     spentFor: (text) => spent.get(text) ?? 0,
+    isSpent: (text) => (spent.get(text) ?? 0) >= maxLocksPerCode,
     reset: () => {
       spent.clear();
+    },
+    forget: (text) => {
+      spent.delete(text);
     },
   };
 }

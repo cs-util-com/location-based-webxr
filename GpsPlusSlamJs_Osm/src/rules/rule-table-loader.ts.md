@@ -11,7 +11,7 @@ checked-in snapshot. Includes the drift guard.
 - `snapshotRuleTable(now?): RuleTable`
 - `checkDrift(candidate, previous, maxDrift): string | undefined`
 - `RULE_TABLE_CSV_URL`, `DEFAULT_TTL_MS` (100 min, matching C#),
-  `DEFAULT_MAX_RULE_DRIFT` (1/3)
+  `DEFAULT_MAX_RULE_DRIFT` (1/3), `DEFAULT_FETCH_TIMEOUT_MS` (8 s)
 
 `LoadedRuleTable`: `{ table, tier, degradedBecause? }`.
 
@@ -21,6 +21,22 @@ checked-in snapshot. Includes the drift guard.
   has no affordance data at all, and the snapshot is always present. Every
   degradation is reported through `onWarn` **and** named in `degradedBecause`, so
   "why are my scores the old ones?" is answerable from the return value.
+- **The live fetch is BOUNDED, because it sits on an application's cold-start
+  path.** In the OSM demo it is awaited inside the worker's `init`, which the
+  main thread awaits before it builds anything - so nothing else, not one
+  Overpass request, is dispatched until it settles. Until 2026-09-21 it was a
+  bare `await fetchImpl(url)`: a `docs.google.com` that accepted the connection
+  and then went quiet stalled the whole app for whatever the OS timeout happened
+  to be, with no error anywhere. The deadline is `AbortSignal.timeout`, so the
+  request is genuinely cancelled rather than merely abandoned, and an expiry is
+  caught by the same `catch` as any other failed fetch - it degrades to tier 2
+  or 3 and says so in `degradedBecause`. `timeoutMs: undefined` opts out, for a
+  caller that really does want to wait forever.
+  - **Why a flat constant rather than a tuned one:** the trade is one-sided.
+    Expiring costs a cached or checked-in table of tuning data that moves on a
+    scale of months; not expiring costs the user the entire application. Every
+    value from ~2 s to ~15 s gives the same verdict, so the choice within that
+    range only trades a rare unnecessary degradation against a rare long stall.
 - **The TTL short-circuits the network.** Without it the sheet would be fetched
   on every start-up of every app — third-party load we have no right to create.
 - **The drift baseline is the CACHE, never the snapshot.** This is the subtle

@@ -6,6 +6,8 @@
     "moduleResolution": "bundler",
     "lib": ["ES2022", "DOM"],
     "strict": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
     "noUncheckedIndexedAccess": true,
     "noEmit": true,
     "allowJs": true,

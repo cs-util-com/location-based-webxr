@@ -64,13 +64,6 @@ export function parseUsageCount(raw: string | undefined): number | undefined {
 }
 
 /**
- * The most common POI values in the sheet, most common first.
- *
- * Ties break on `kind` so the ranking is total and therefore reproducible: two
- * tags with the same count would otherwise swap places between runs and make
- * the committed list look like it had drifted.
- */
-/**
  * One row as a ranked kind, or `undefined` when it is not a POI value at all.
  *
  * Split out of `rankPoiKinds` so the loop stays a loop: the row-level rejections
@@ -92,6 +85,13 @@ function rankedKindFor(
   return { kind: `${key}=${value}`, key, value, count };
 }
 
+/**
+ * The most common POI values in the sheet, most common first.
+ *
+ * Ties break on `kind` so the ranking is total and therefore reproducible: two
+ * tags with the same count would otherwise swap places between runs and make
+ * the committed list look like it had drifted.
+ */
 export function rankPoiKinds(csv: string, limit: number): RankedPoiKind[] {
   const eligible = new Set<string>(POI_KEYS);
   const ranked: RankedPoiKind[] = [];

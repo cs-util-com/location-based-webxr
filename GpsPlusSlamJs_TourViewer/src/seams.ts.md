@@ -9,42 +9,68 @@ Keeps `main.ts` glue-only.
 
 ## Public API
 
+- `getArPose()` - the framework's `getCurrentArPose`: the pose each device
+  GPS fix is paired with. A seam (D20 M5c) so the e2e, which has no XR
+  frames, can send GPS fixes through the page's real path
+  (`createGpsPositionHandler` -> `recordDeviceFix` -> the vote sink).
+
 - `interface TourViewerSeams { controllerDeps; getArWorldGroup;
 enableArWorldGroupAlignment; startCameraFrameCapture;
-stopCameraFrameCapture; createQrFrontEnd; solveQrPose; getCameraPose;
-getIntrinsics; createQrDebugView; getScene; queryGeolocationPermission;
-requestLocationOnce; shareOrDownloadZip; canShareZip; downloadPdf;
-startHitTestReticle; encodeFrameJpeg;
-createLabel; schedule }` - the placement layer (M4: the framework's hit-test
-  reticle under the world group; the camera frame → JPEG encoder, which is
-  the framework's `rgbaImageToJpegBlob` behind an opacity guard, async
-  throughout; the framework text sprite for a pin's label at a 2:1
-  canvas/scale with a transparent pill) and the
-  one-shot clock behind the scan gate's escape (M5; the e2e fires it instead
-  of waiting) - `controllerDeps` is a
-  `Partial<EnableGpsArDeps>` injected into `createEnableGpsArController`
-  (empty in production; the e2e fake supplies the full dep set there). The
-  `queryGeolocationPermission` / `requestLocationOnce` are the visitor
-  screen's location gate (guided-setup plan DEC-N2): the Permissions API
-  state, and one `getCurrentPosition` on its own tap resolving
-  "granted" | "denied" (error code 1) | "unavailable" (any other failure).
-  `downloadPdf` is the same picker-or-anchor path with a PDF filter
-  instead of a zip one (the printable sheet of numbered codes); it is its
-  own seam so the picker offers the right file type and so the e2e
-  captures the bytes rather than the browser writing a file.
-  `shareOrDownloadZip` is the framework's `shareOrDownloadBlob`: the
-  device share sheet where the browser can share FILES, else the
-  picker-or-anchor download (the e2e fake captures the blob). It answers
-  two things - which route ran, and whether anything left the page - and
-  the app needs both, because the copy after a share cannot promise the
-  hosted link is unchanged. `canShareZip` is the same capability asked
-  WITHOUT a file, for labelling the button at wire time. The
-  QR quartet (M3) is the author pipeline's device layer: BarcodeDetector
-  front end (or `null` — desktop has no fallback by design), the pure-JS
-  planar-PnP solver, the current XR-frame pose as tuples (raw WebXR/odom),
-  and PnP intrinsics from the in-session camera projection scaled to the
-  DETECTOR buffer's dimensions (depth is OFF in this app, so the projection
-  matrix is the only source).
+stopCameraFrameCapture; startDepthCapture; stopDepthCapture; createQrFrontEnd; solveQrPose; estimateQrPrintSize;
+getIntrinsics; createQrDebugView; getScene; getArPose;
+queryGeolocationPermission;
+requestLocationOnce; shareOrDownloadZip; downloadZip; canShareZip; downloadPdf;
+startHitTestReticle; pickObjectInView; encodeFrameJpeg;
+createLabel; schedule }`
+  - `startHitTestReticle(arWorldGroup, onSelect?)` - `onSelect` hears
+    every XR `select` the DOM overlay did not cancel (a tap in AR,
+    authoring plan 2026-09-28-0953 M4), through the framework driver's own
+    `onSelect` option, with where the tap pointed: the driver's second
+    argument (`SelectTargetRay`, the target ray relative to the viewer),
+    or null (M4 review #4).
+  - `pickObjectInView(targets, tap)` - the object id under the tap:
+    `object-pick.ts`'s camera-ray raycast with the framework camera,
+    through `ndcOfTargetRay(camera, tap.targetRayInViewer)` - the screen
+    centre when `tap` is null or its ray has no screen point - with the
+    angular tolerance (`PICK_TOLERANCE_DEG`); null without a camera. A seam because the e2e scene is a stub with no
+    geometry, so the fake names the id a spec scripts. - the placement layer (M4: the framework's hit-test
+    reticle under the world group; the camera frame → JPEG encoder, which is
+    the framework's `rgbaImageToJpegBlob` behind an opacity guard, async
+    throughout; the framework text sprite for a pin's label at a 2:1
+    canvas/scale with a transparent pill) and the
+    one-shot clock behind the scan gate's escape (M5; the e2e fires it instead
+    of waiting); `startDepthCapture` / `stopDepthCapture` are the framework's
+    depth sampler controls, used only by an entry the troubleshooting
+    recording records (authoring recording plan 2026-09-28-0953, D4; the e2e
+    fake counts the calls) - `controllerDeps` is a
+    `Partial<EnableGpsArDeps>` injected into `createEnableGpsArController`
+    (empty in production; the e2e fake supplies the full dep set there). The
+    `queryGeolocationPermission` / `requestLocationOnce` are the visitor
+    screen's location gate (guided-setup plan DEC-N2): the Permissions API
+    state, and one `getCurrentPosition` on its own tap resolving
+    "granted" | "denied" (error code 1) | "unavailable" (any other failure).
+    `downloadPdf` is the same picker-or-anchor path with a PDF filter
+    instead of a zip one (the printable sheet of numbered codes); it is its
+    own seam so the picker offers the right file type and so the e2e
+    captures the bytes rather than the browser writing a file.
+    `downloadZip` is the framework's `downloadBlob` for a zip - a SAVE, never
+    a share: a Drive tour's route (Drive replace plan §2 decision 4).
+    `shareOrDownloadZip` is the framework's `shareOrDownloadBlob`: the
+    device share sheet where the browser can share FILES, else the
+    picker-or-anchor download (the e2e fake captures the blob). It answers
+    two things - which route ran, and whether anything left the page - and
+    the app needs both, because the copy after a share cannot promise the
+    hosted link is unchanged. `canShareZip` is the same capability asked
+    WITHOUT a file, for labelling the button at wire time. The
+    QR trio (M3; a quartet until the QR perf plan 2026-09-23 M4 removed
+    `getCameraPose`) is the author pipeline's device layer: BarcodeDetector
+    front end (or `null` — desktop has no fallback by design), the pure-JS
+    planar-PnP solver, and PnP intrinsics from the in-session camera projection scaled to the
+    DETECTOR buffer's dimensions (depth is OFF in this app, so the projection
+    matrix is the only source). There is no camera-pose seam: every camera
+    frame arrives as a `CapturedCameraFrame` carrying the pose of the XR frame
+    it was captured in, and the QR controllers and the photo placement read
+    that (`frame.cameraPose`).
 - `realSeams: TourViewerSeams` — the unmodified framework wiring.
 - `getSeams(): TourViewerSeams` — real seams unless the DEV-only override is
   present.

@@ -15,7 +15,11 @@
  * @see overpass-source.ts.md
  */
 
-import type { OsmDataSource, OsmTileResult } from "./osm-data-source.js";
+import type {
+  FetchTileOptions,
+  OsmDataSource,
+  OsmTileResult,
+} from "./osm-data-source.js";
 import {
   OSM_ATTRIBUTION,
   elapsedMs,
@@ -39,7 +43,30 @@ import {
 import { OverpassSlotBudget } from "./slot-budget.js";
 import { operatorForUrl } from "./overpass-operators.js";
 import { planEndpointOrder, type OperatorWeights } from "./endpoint-order.js";
+import {
+  createOperatorHealth,
+  type OperatorHealth,
+  type OperatorOutcome,
+} from "./operator-health.js";
 import { InFlightRequests } from "./in-flight-requests.js";
+import { composeSignals } from "./compose-signals.js";
+
+/**
+ * What a NON-OK status says about the operator that returned it.
+ *
+ * 400 and 414 are our own query - malformed, or too long for this instance's
+ * front end - and the host reported them honestly. Counting those against it
+ * would walk the pool one endpoint at a time while the query stayed broken.
+ * Everything else, quota refusals and gateway timeouts alike, is this operator
+ * failing to serve us.
+ *
+ * A module-level function rather than an inline ternary because the attempt
+ * loop is already at the complexity limit, and because this is a policy worth
+ * finding by name.
+ */
+function operatorOutcomeFor(status: number): OperatorOutcome {
+  return status === 400 || status === 414 ? "ours" : "failure";
+}
 
 /**
  * Default endpoint pool.
@@ -133,6 +160,22 @@ export interface OverpassSourceOptions {
   /** Retries after the first attempt. */
   readonly maxRetries?: number;
   readonly timeoutSeconds?: number;
+  /**
+   * Per-attempt transport deadline, in milliseconds. Defaults to
+   * {@link DEFAULT_REQUEST_TIMEOUT_MS}; pass `undefined` explicitly to disable.
+   *
+   * **This bounds the TRANSPORT, which `[timeout:180]` does not.** Overpass's
+   * `[timeout:]` caps server-side execution; it says nothing about a connection
+   * that is accepted and then goes quiet, and before this existed the worst case
+   * was whatever TCP/OS timeout applied - i.e. not controlled here at all.
+   *
+   * A hit fails over to the next endpoint rather than killing the tile, because
+   * it surfaces as a `TimeoutError` and not an `AbortError`.
+   *
+   * Disable it for a self-hosted instance with no competition, where waiting is
+   * cheaper than retrying.
+   */
+  readonly requestTimeoutMs?: number;
   readonly backoff?: BackoffOptions;
   readonly random?: () => number;
   readonly now?: () => number;
@@ -186,6 +229,72 @@ export interface OverpassStats {
   /** The most recent attempts, oldest first. Bounded — see `maxAttemptLog`. */
   attempts: OverpassAttempt[];
 }
+
+/**
+ * Default per-attempt transport deadline.
+ *
+ * **Chosen from a sweep, not a round number.** Simulated over the per-host
+ * latency distribution measured on 2026-09-20 across all five pool endpoints,
+ * with candidates {15, 20, 30, 35, 45, 60, 90, 120, 180, 210, none} ms*1000:
+ * mean time-to-first-geometry is 114.2 s unbounded against 59.7 s here, and p90
+ * 336.3 s against 115.1 s.
+ *
+ * **The knee sits between 30 s and 35 s.** Below it the deadline starts killing
+ * `maps.mail.ru`'s genuine ~31-35 s successes, and the retry that recovers them
+ * costs more than the deadline saved (at 30 s, 23.7% of good requests are
+ * killed and the typical kill is a net loss of ~16 s). At 35-45 s the only
+ * thing killed is `private.coffee`'s 199 s success, and killing it wins ~135 s.
+ *
+ * **45 rather than the point optimum of 35**, because 35 s is tuned to the
+ * maximum of a THREE-sample distribution and is guaranteed to be too tight in
+ * the field; widening the distribution with lognormal jitter puts the fraction
+ * of requests made worse at 10.6% for 35 s against 4.7% for 45 s. 45 s
+ * dominates 60 s on both mean and p90 under every assumption swept.
+ *
+ * **What would move this number:** the fast hosts' true slow tail. If more than
+ * ~5% of legitimate successes on `lz4`/`maps.mail.ru` land beyond 50 s, 45 s is
+ * too tight and 60-75 s is right. Three samples per host cannot settle that -
+ * re-measure with `scripts/benchmark-endpoints.mjs` before trusting it further.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
+
+/**
+ * What the opening race produced.
+ *
+ * ONE SHAPE rather than a three-way union, and the reason is mundane but real:
+ * the caller is already at the complexity ratchet, and a union costs it a
+ * discriminant check per case. `result` present means the tile is served;
+ * otherwise `startAttempt` says where the sequential loop resumes - 2 when the
+ * pair was spent, 0 when no race happened.
+ */
+interface RaceOutcome {
+  readonly result: OsmTileResult | undefined;
+  readonly error: unknown;
+  readonly startAttempt: 0 | 2;
+}
+
+/** No race happened; the caller starts its loop from the beginning. */
+const SKIPPED_RACE: RaceOutcome = {
+  result: undefined,
+  error: undefined,
+  startAttempt: 0,
+};
+
+/**
+ * What one attempt produced: a tile, or a failure the loop may retry.
+ *
+ * `response` is carried because the backoff reads `Retry-After` from it, and
+ * is absent for a failure that never produced a response at all (a reset
+ * connection, DNS). It is the only thing the loop needs that the error itself
+ * cannot tell it.
+ */
+type AttemptOutcome =
+  | { readonly kind: "served"; readonly result: OsmTileResult }
+  | {
+      readonly kind: "failed";
+      readonly response: Response | undefined;
+      readonly error: unknown;
+    };
 
 /** Matches the measured `Rate limit: 2` on the public instances. */
 const DEFAULT_MAX_CONCURRENT = 2;
@@ -340,14 +449,25 @@ export class PermanentOverpassError extends Error {
  * Measured recovery on the public instances is ~30 s, not hours.
  */
 export class RateLimitedError extends Error {
-  constructor(
-    message: string,
-    /** Milliseconds until a slot is expected to be free. May be 0 if unknown. */
-    readonly retryAfterMs: number,
-  ) {
+  /** Milliseconds until a slot is expected to be free. May be 0 if unknown. */
+  readonly retryAfterMs: number;
+
+  constructor(message: string, retryAfterMs: number) {
     super(message);
+    this.retryAfterMs = retryAfterMs;
     this.name = "RateLimitedError";
   }
+}
+
+/**
+ * What a racing tile borrowed, so it can give back exactly that.
+ *
+ * `slot` implies `concurrency`: the shared budget is only asked once this
+ * source's own gate has said yes.
+ */
+interface RacePermits {
+  readonly concurrency: boolean;
+  readonly slot: boolean;
 }
 
 export class OverpassSource implements OsmDataSource {
@@ -367,6 +487,7 @@ export class OverpassSource implements OsmDataSource {
   private readonly maxConcurrent: number;
   private readonly maxRetries: number;
   private readonly timeoutSeconds: number;
+  private readonly requestTimeoutMs: number | undefined;
   private readonly backoff: BackoffOptions;
   private readonly random: () => number;
   private readonly now: () => number;
@@ -413,6 +534,16 @@ export class OverpassSource implements OsmDataSource {
   private readonly maxAttemptLog: number;
   private readonly operatorWeights: OperatorWeights;
 
+  /**
+   * What each operator has actually done for THIS source, so the draw can move
+   * away from one that is refusing and back when it recovers.
+   *
+   * Per instance, deliberately: two sources in one page are two clients with
+   * two quotas and two experiences, and sharing the tally would let one
+   * source's outage steer the other's draw.
+   */
+  private readonly health: OperatorHealth = createOperatorHealth();
+
   constructor(options: OverpassSourceOptions) {
     const resolved = { ...defaultOptions(), ...stripUndefined(options) };
     validateOptions(options);
@@ -425,6 +556,10 @@ export class OverpassSource implements OsmDataSource {
     this.maxConcurrent = resolved.maxConcurrent;
     this.maxRetries = resolved.maxRetries;
     this.timeoutSeconds = resolved.timeoutSeconds;
+    this.requestTimeoutMs =
+      "requestTimeoutMs" in options
+        ? options.requestTimeoutMs
+        : DEFAULT_REQUEST_TIMEOUT_MS;
     this.backoff = resolved.backoff;
     this.random = resolved.random;
     this.now = resolved.now;
@@ -438,7 +573,12 @@ export class OverpassSource implements OsmDataSource {
     this.poolOperators = [...new Set(this.endpoints.map(operatorForUrl))];
   }
 
-  async fetchTile(tile: string, signal?: AbortSignal): Promise<OsmTileResult> {
+  async fetchTile(
+    tile: string,
+    options?: FetchTileOptions,
+  ): Promise<OsmTileResult> {
+    const signal = options?.signal;
+    const speculative = options?.speculative === true;
     // READ BEFORE JOINING, because joining is what makes this caller a joiner.
     const joined = this.inFlight.has(tile);
     if (joined) this.stats.deduplicated++;
@@ -451,7 +591,7 @@ export class OverpassSource implements OsmDataSource {
       tile,
       (dedupSignal) =>
         this.withConcurrencyLimit((slotWaitMs) =>
-          this.fetchTileUncached(tile, slotWaitMs, dedupSignal),
+          this.fetchTileUncached(tile, slotWaitMs, dedupSignal, speculative),
         ),
       signal,
     );
@@ -465,7 +605,8 @@ export class OverpassSource implements OsmDataSource {
   private async fetchTileUncached(
     tile: string,
     slotWaitMs: number,
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
+    speculative: boolean,
   ): Promise<OsmTileResult> {
     // Take a slot BEFORE building anything. Refusing here is the whole point of
     // the budget: a request not sent cannot be rate-limited, and the caller is
@@ -486,7 +627,12 @@ export class OverpassSource implements OsmDataSource {
       );
     }
     try {
-      return await this.fetchTileWithSlot(tile, slotWaitMs, signal);
+      return await this.fetchTileWithSlot(
+        tile,
+        slotWaitMs,
+        signal,
+        speculative,
+      );
     } finally {
       this.budget.release();
     }
@@ -495,7 +641,8 @@ export class OverpassSource implements OsmDataSource {
   private async fetchTileWithSlot(
     tile: string,
     slotWaitMs: number,
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
+    speculative: boolean,
   ): Promise<OsmTileResult> {
     const query = buildTileQuery(
       cellToBoundingBox(tile),
@@ -504,118 +651,469 @@ export class OverpassSource implements OsmDataSource {
     );
 
     let lastError: unknown;
-    // TRANSPORT IS CLOCKED AROUND THE WHOLE LOOP, backoff sleeps included, and
-    // `attempts` is reported next to it so the two readings that produce the
-    // same number stay distinguishable: a big `transportMs` at one attempt is a
-    // slow server, and the same figure at three attempts is mostly sleeping.
-    const transportStart = this.monotonicNow();
-    // Operators this tile has already had refused, so the backoff can tell
-    // "wait for a quota to recover" from "ask somebody else". See
-    // `shouldWaitBeforeRetry`.
-    const refusedOperators = new Set<string>();
-    // DRAWN ONCE FOR THIS TILE. See `planAttemptOrder`.
-    const attemptOrder = this.planAttemptOrder();
-    // attempt 0 is the initial try; 1..maxRetries are retries.
-    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
-      throwIfAborted(signal);
-      // Walk the order drawn for this tile. The modulo is a backstop for a
-      // `maxRetries` larger than the pool, not the selection rule — the rule is
-      // in `endpoint-order.ts`, and the order it returns already guarantees
-      // that the first attempts hit distinct operators.
-      const endpoint = attemptOrder[attempt % attemptOrder.length] as string;
-      // Recorded before the request rather than after it fails: every path out
-      // of this iteration other than success is a refusal, and recording it in
-      // one place beats three.
-      refusedOperators.add(operatorForUrl(endpoint));
-      if (attempt > 0) {
-        this.stats.retries++;
-      }
-      this.stats.requests++;
-
-      // Whether THIS dispatch already produced a recorded attempt. The catch
-      // below must not add a second record for the same request: a 200 whose
-      // body is an HTML error page is recorded here with its status, then
-      // `toResult`'s .json() throws and lands in the catch. Recording again
-      // would make attempts.length exceed stats.requests and overstate quota
-      // use — and an instance answering 200 with an error page is exactly the
-      // case this log exists to diagnose.
-      let recorded = false;
-
-      try {
-        const response = await this.dispatch(endpoint, query, signal);
-        this.recordAttempt({
-          endpoint,
-          status: response.status,
-          at: this.now(),
-        });
-        recorded = true;
-
-        if (response.ok) {
-          return await this.toResult(tile, endpoint, response, {
+    const permits = this.acquireRacePermits(speculative);
+    const raceSlot = permits.slot;
+    try {
+      // TRANSPORT IS CLOCKED AROUND THE WHOLE LOOP, backoff sleeps included, and
+      // `attempts` is reported next to it so the two readings that produce the
+      // same number stay distinguishable: a big `transportMs` at one attempt is a
+      // slow server, and the same figure at three attempts is mostly sleeping.
+      const transportStart = this.monotonicNow();
+      // Operators this tile has already had refused, so the backoff can tell
+      // "wait for a quota to recover" from "ask somebody else". See
+      // `shouldWaitBeforeRetry`.
+      const refusedOperators = new Set<string>();
+      // DRAWN ONCE FOR THIS TILE. See `planAttemptOrder`.
+      const attemptOrder = this.planAttemptOrder();
+      // THE RACE (M2/M3). Extracted so this method reads as "acquire, maybe
+      // race, then loop" - and because inlining it put this method over the
+      // complexity ratchet, which is the ratchet doing its job.
+      // NOT AWAITED WHEN THERE IS NO RACE, and the guard is about TIMING rather
+      // than speed. An `await` yields a microtask even on a method that returns
+      // immediately, and that turn is enough for a caller who aborted right after
+      // calling us to be seen before the first dispatch - turning one request
+      // into none. That is arguably better behaviour, but it is not a change
+      // anyone designed, and a refactor should not move an observable by
+      // accident.
+      const raced = !raceSlot
+        ? SKIPPED_RACE
+        : await this.raceFirstPairIfAllowed({
+            tile,
+            query,
             slotWaitMs,
             transportStart,
-            attempts: attempt + 1,
+            signal,
+            allowed: raceSlot,
+            attemptOrder,
+            refusedOperators,
           });
-        }
+      if (raced.result !== undefined) {
+        return raced.result;
+      }
+      lastError = raced.error;
 
-        if (!RETRYABLE_STATUSES.has(response.status)) {
-          throw new PermanentOverpassError(
-            `Overpass ${endpoint} returned ${response.status} ${response.statusText}`,
-          );
+      // attempt 0 is the initial try; 1..maxRetries are retries. When the pair
+      // above raced, attempts 0 and 1 are already spent and this resumes at 2.
+      for (
+        let attempt = raced.startAttempt;
+        attempt <= this.maxRetries;
+        attempt++
+      ) {
+        throwIfAborted(signal);
+        // Walk the order drawn for this tile. The modulo is a backstop for a
+        // `maxRetries` larger than the pool, not the selection rule — the rule is
+        // in `endpoint-order.ts`, and the order it returns already guarantees
+        // that the first attempts hit distinct operators.
+        const endpoint = attemptOrder[attempt % attemptOrder.length] as string;
+        // Recorded before the request rather than after it fails: every path out
+        // of this iteration other than success is a refusal, and recording it in
+        // one place beats three.
+        refusedOperators.add(operatorForUrl(endpoint));
+        if (attempt > 0) {
+          this.stats.retries++;
         }
-        this.noteRateLimit(response, endpoint);
-        lastError = new Error(
-          `Overpass ${endpoint} returned ${response.status} ${response.statusText}`,
-        );
-        await this.waitBeforeRetry(
+        this.stats.requests++;
+
+        const outcome = await this.runOneAttempt({
+          tile,
+          query,
+          endpoint,
           attempt,
-          response,
+          slotWaitMs,
+          transportStart,
           signal,
-          refusedOperators,
-          attemptOrder,
-        );
-      } catch (error) {
-        // Aborts and permanent failures must escape the loop rather than be
-        // re-attempted. Both were previously caught here and retried: a 400
-        // (our query is malformed) cost four requests instead of one, and an
-        // abort kept working on an area the user had already left.
-        if (isAbortError(error) || error instanceof PermanentOverpassError) {
-          throw error;
+        });
+        if (outcome.kind === "served") {
+          return outcome.result;
         }
-        // A transport failure (DNS, reset connection) never produced a status.
-        // Recorded WITHOUT one rather than omitted: dropping it would make the
-        // log claim fewer requests than were really made, which is the one
-        // direction of error that under-reports quota use.
+        lastError = outcome.error;
+
+        // ONE RULE FOR BOTH FAILURE PATHS, and checking that it could be one was
+        // the point of doing this extraction carefully. The two paths LOOKED
+        // asymmetric before it — the thrown one broke out on the last attempt
+        // while the non-ok one fell through to the backoff — and the first draft
+        // of this refactor faithfully preserved that with an extra condition and
+        // a comment calling the difference observable.
         //
-        // Only when the dispatch itself failed. The previous guard here tested
-        // `!(error instanceof PermanentOverpassError)`, which was dead code -
-        // the block above already rethrew every one of those - while the case
-        // it needed to exclude (a response recorded with its status whose BODY
-        // then failed to parse) went unguarded.
-        if (!recorded) {
-          this.recordAttempt({
-            endpoint,
-            error: describe(error),
-            at: this.now(),
-          });
-        }
-        lastError = error;
+        // It is not. `shouldWaitBeforeRetry` already returns false when
+        // `attempt >= maxRetries`, so the non-ok path's extra call was a no-op
+        // that the loop condition then ended anyway. The guard lives in one
+        // place; this is the same guard, stated once.
         if (attempt >= this.maxRetries) {
           break;
         }
         await this.waitBeforeRetry(
           attempt,
-          undefined,
+          outcome.response,
           signal,
           refusedOperators,
           attemptOrder,
         );
       }
+
+      throw new Error(
+        `Overpass fetch failed for tile ${tile} after ${this.maxRetries + 1} attempt(s): ${describe(lastError)}`,
+      );
+    } finally {
+      this.releaseRacePermits(permits);
+    }
+  }
+
+  /**
+   * Decides whether this tile may race, and takes what a race costs.
+   *
+   * THE RACE'S TWO PERMISSIONS (M3). It needs a second unit of BOTH budgets,
+   * and neither refusal is an error:
+   *
+   * - {@link tryTakeExtraSlot} is this source's own concurrency gate, which
+   *   counts REQUESTS in flight. Without it the race would quietly double what
+   *   `maxConcurrent` promises — a client configured for two in-flight requests
+   *   would make four — and that number was sized against Overpass's
+   *   `Rate limit: 2`. A guard that exists to stop this client getting an
+   *   operator's whole user base blocked is not one to route around.
+   * - `budget.tryAcquire` is the SHARED slot budget across sources, which
+   *   counts globally for the same reason.
+   *
+   * A refusal on either means this tile runs one attempt at a time, i.e.
+   * exactly the behaviour that shipped before racing existed. `RateLimitedError`
+   * therefore keeps meaning "there is nowhere to go": it is raised by the FIRST
+   * acquire in {@link fetchTileUncached}, never by these.
+   *
+   * **NOBODY IS WAITING ON A SPECULATIVE TILE, so it is not raced.** Racing is
+   * worth roughly twice the requests because it took tiles served inside the
+   * 45 s deadline from 4 of 9 to 7 of 9 — a statement about a user sitting in
+   * front of a wait. A background ring warm has no deadline to miss: if it
+   * fails the neighbour is simply not warm, and the fetch the user eventually
+   * makes is itself raced. Doubling it would be pure load on infrastructure
+   * that is donated, which an e2e counting requests found before anyone read
+   * this code (7 per ring warm became 14). Declining also leaves the spare
+   * concurrency unit free for a tile somebody IS waiting for.
+   *
+   * PAIRED WITH {@link releaseRacePermits}, which is the reason both halves
+   * are methods rather than four inline conditions: a race takes up to two
+   * things and returns exactly what it took, and that is easier to keep true
+   * when acquire and release sit next to each other.
+   */
+  private acquireRacePermits(speculative: boolean): RacePermits {
+    if (speculative) return { concurrency: false, slot: false };
+    const concurrency = this.tryTakeExtraSlot();
+    return {
+      concurrency,
+      slot: concurrency && this.budget.tryAcquire(this.poolOperators),
+    };
+  }
+
+  /** Returns whatever {@link acquireRacePermits} took, and nothing else. */
+  private releaseRacePermits(permits: RacePermits): void {
+    if (permits.slot) this.budget.release();
+    if (permits.concurrency) this.releaseExtraSlot();
+  }
+
+  /**
+   * Races the first two attempts, when the client has the budget for it.
+   *
+   * WHY IT IS RACED AT ALL. Measured 2026-09-21 on the production res-7 query:
+   * within the shipped 45 s deadline, one attempt at a time served **4 of 9**
+   * tiles at a 32.2 s median; racing two distinct operators served **7 of 9**
+   * at 27.0 s. **Most of that is the success rate, not the latency** - in 3 of
+   * the 9 races the first-drawn operator failed outright, and there the race
+   * did not make the tile faster, it made the tile arrive.
+   *
+   * THE COST IS THE EXTRA REQUEST AND NOTHING REDUCES IT. Cancelling the loser
+   * frees a socket, not the server's work: across all nine measured races the
+   * loser had transferred at most 695 bytes - an error page - when the winner
+   * finished, and the query had already been parsed and executed regardless.
+   * So this is roughly twice the requests per cold tile against donated
+   * infrastructure, knowingly.
+   *
+   * WHY IT IS NOT THE HEDGING REJECTED ON 2026-09-20. That objection was that
+   * two requests "double concurrency against a limit that counts concurrency" -
+   * true of two requests to ONE operator, and confirmed emphatically:
+   * same-host concurrency was refused in every arm that tried it. Overpass's
+   * `Rate limit: 2` is per client PER OPERATOR, so one request each at two
+   * operators uses one slot at each of two quotas.
+   *
+   * AND WHY A DELAYED HEDGE IS NOT USED INSTEAD. Firing the second only when
+   * the first is slow sounds strictly cheaper. Against the same artifact it
+   * saves nothing: the fastest SUCCESSFUL first-drawn response in the whole run
+   * was 16.9 s, so a 10 s hedge avoids the second request in 0 of 9 races and a
+   * 20 s hedge in 1 of 9 - by which point most of the median wait is already
+   * spent.
+   *
+   * `skipped` means this tile did not race and the caller starts at attempt 0;
+   * `spent` means attempts 0 and 1 are gone and the caller resumes at 2.
+   */
+  private async raceFirstPairIfAllowed(input: {
+    readonly tile: string;
+    readonly query: string;
+    readonly slotWaitMs: number;
+    readonly transportStart: number;
+    readonly signal?: AbortSignal | undefined;
+    readonly allowed: boolean;
+    readonly attemptOrder: readonly string[];
+    readonly refusedOperators: Set<string>;
+  }): Promise<RaceOutcome> {
+    const { tile, attemptOrder, refusedOperators, signal } = input;
+    if (!input.allowed || attemptOrder.length < 2) return SKIPPED_RACE;
+
+    const first = attemptOrder[0] as string;
+    const second = attemptOrder[1] as string;
+    // ASSERTED, NOT ASSUMED. `planEndpointOrder` already returns distinct
+    // operators first, and that is exactly the kind of guarantee a later change
+    // to the draw would break silently - into the one arrangement every
+    // measurement says is refused.
+    if (operatorForUrl(first) === operatorForUrl(second)) {
+      return SKIPPED_RACE;
     }
 
-    throw new Error(
-      `Overpass fetch failed for tile ${tile} after ${this.maxRetries + 1} attempt(s): ${describe(lastError)}`,
+    refusedOperators.add(operatorForUrl(first));
+    refusedOperators.add(operatorForUrl(second));
+    // TWO REQUESTS, RECORDED AS TWO. `stats.requests` and the attempt log are
+    // what quota use is read from, so a race that reported one would understate
+    // this client's load on hosts that donate it. `retries` keeps its meaning
+    // of "attempts after the first", preserving `requests === retries + 1`.
+    this.stats.requests += 2;
+    this.stats.retries++;
+
+    const outcome = await this.raceTwoAttempts(
+      {
+        tile,
+        query: input.query,
+        slotWaitMs: input.slotWaitMs,
+        transportStart: input.transportStart,
+        signal,
+      },
+      first,
+      second,
     );
+    if (outcome.kind === "served") {
+      return { result: outcome.result, error: undefined, startAttempt: 0 };
+    }
+    if (this.maxRetries < 2) {
+      throw new Error(
+        `Overpass fetch failed for tile ${tile} after 2 attempt(s): ${describe(outcome.error)}`,
+      );
+    }
+    await this.waitBeforeRetry(
+      1,
+      outcome.response,
+      signal,
+      refusedOperators,
+      attemptOrder,
+    );
+    return { result: undefined, error: outcome.error, startAttempt: 2 };
+  }
+
+  /**
+   * Two attempts at two DISTINCT operators, at once. First tile back wins.
+   *
+   * WHAT MAKES THIS DIFFERENT FROM `Promise.any`, and why it is written out.
+   * Three things have to be true that a bare combinator does not give:
+   *
+   * 1. **The loser is cancelled, and its cancellation must not look like the
+   *    CALLER's.** Each runner gets its own controller composed with the
+   *    caller's signal; when one serves a tile, the other's controller is
+   *    aborted and its `AbortError` is swallowed here. An abort that came from
+   *    the caller still propagates, because that signal is composed in and its
+   *    abort is not ours to swallow.
+   * 2. **Both outcomes are evidence.** A raced loser that 504s says something
+   *    true about that operator, and `runOneAttempt` has already told the
+   *    health tally so. Nothing here may discard that.
+   * 3. **A permanent error is still permanent.** If a runner throws
+   *    `PermanentOverpassError` - our query is malformed - trying the other
+   *    host cannot help, so it propagates rather than being treated as one
+   *    runner's bad luck.
+   */
+  private async raceTwoAttempts(
+    shared: {
+      readonly tile: string;
+      readonly query: string;
+      readonly slotWaitMs: number;
+      readonly transportStart: number;
+      readonly signal?: AbortSignal | undefined;
+    },
+    first: string,
+    second: string,
+  ): Promise<AttemptOutcome> {
+    const controllers = [new AbortController(), new AbortController()];
+    const endpoints = [first, second];
+    let settled = false;
+
+    const run = async (index: number): Promise<AttemptOutcome> => {
+      const controller = controllers[index] as AbortController;
+      try {
+        const outcome = await this.runOneAttempt({
+          tile: shared.tile,
+          query: shared.query,
+          endpoint: endpoints[index] as string,
+          // BOTH RACERS ARE ATTEMPT 0 for reporting purposes: `attempts` on the
+          // result is "how many requests did this tile cost before one worked",
+          // and the winner of a race cost one request of its own. The pair's
+          // true cost is in `stats.requests`, which the caller incremented by
+          // two.
+          attempt: 0,
+          slotWaitMs: shared.slotWaitMs,
+          transportStart: shared.transportStart,
+          signal: composeSignals(shared.signal, controller.signal),
+        });
+        if (outcome.kind === "served") {
+          settled = true;
+          // The other runner is now pointless. Its transfer stops; the query
+          // it asked for is already running on that server and finishes there.
+          controllers[1 - index]?.abort();
+        }
+        return outcome;
+      } catch (error) {
+        // OUR OWN CANCELLATION IS NOT A FAILURE and is not the caller's abort.
+        // Distinguishing them is the whole reason each runner has a private
+        // controller rather than sharing one.
+        if (isAbortError(error) && settled && shared.signal?.aborted !== true) {
+          return {
+            kind: "failed",
+            response: undefined,
+            error: new Error(
+              `raced attempt to ${endpoints[index] as string} was cancelled`,
+            ),
+          };
+        }
+        throw error;
+      }
+    };
+
+    // `all`, not `any`: both settle either way, and the losing runner must be
+    // awaited rather than left to reject unobserved. A floating rejection from
+    // a cancelled racer is an unhandled rejection in a worker, which is the
+    // failure mode this package's own `Promise.allSettled` comment elsewhere
+    // exists to prevent.
+    const [a, b] = await Promise.all([run(0), run(1)]);
+    if (a.kind === "served") return a;
+    if (b.kind === "served") return b;
+    // Neither served. The FIRST-DRAWN runner's failure is the one reported,
+    // because it is the one the sequential path would have produced - so a
+    // reader comparing logs across the change sees the same error text.
+    return a;
+  }
+
+  /**
+   * ONE attempt at ONE endpoint: dispatch, classify, record.
+   *
+   * EXTRACTED SO IT CAN BE RUN TWICE AT ONCE (racing plan, M1). The retry loop
+   * above carries a decade of reasons per branch — the attempt log that must
+   * not over-count, the rate-limit penalty, the abort/permanent/retryable
+   * three-way split, the health tally — and racing two operators duplicates
+   * every one of them unless the per-attempt work has a single home first.
+   * This milestone is a pure refactor with no behaviour change; the existing
+   * tests are its specification.
+   *
+   * TERMINAL FAILURES STILL THROW rather than being returned as an outcome. An
+   * abort means the caller left and a permanent error means retrying is
+   * pointless, so neither is a decision the loop should be able to get wrong by
+   * forgetting to re-check a discriminant.
+   */
+  private async runOneAttempt(input: {
+    readonly tile: string;
+    readonly query: string;
+    readonly endpoint: string;
+    readonly attempt: number;
+    readonly slotWaitMs: number;
+    readonly transportStart: number;
+    readonly signal?: AbortSignal | undefined;
+  }): Promise<AttemptOutcome> {
+    const { tile, query, endpoint, attempt, signal } = input;
+
+    // Whether THIS dispatch already produced a recorded attempt. The catch
+    // below must not add a second record for the same request: a 200 whose
+    // body is an HTML error page is recorded here with its status, then
+    // `toResult`'s .json() throws and lands in the catch. Recording again
+    // would make attempts.length exceed stats.requests and overstate quota
+    // use — and an instance answering 200 with an error page is exactly the
+    // case this log exists to diagnose.
+    let recorded = false;
+
+    try {
+      const response = await this.dispatch(endpoint, query, signal);
+      this.recordAttempt({
+        endpoint,
+        status: response.status,
+        at: this.now(),
+      });
+      recorded = true;
+
+      if (response.ok) {
+        // AFTER `toResult`, not before it. A 200 carrying an HTML error page
+        // is not this operator serving us, and `toResult` is where that is
+        // discovered; recording the success first would credit the host for a
+        // response the catch below is about to call a failure.
+        const result = await this.toResult(tile, endpoint, response, {
+          slotWaitMs: input.slotWaitMs,
+          transportStart: input.transportStart,
+          attempts: attempt + 1,
+        });
+        this.health.record(operatorForUrl(endpoint), "success");
+        return { kind: "served", result };
+      }
+
+      // CLASSIFIED HERE, where the status is, rather than in the catch where
+      // it is gone. A 400 is our own malformed query and says nothing about
+      // the host - demoting the operator that reported it honestly would walk
+      // the pool one endpoint at a time while the query stayed broken.
+      this.health.record(
+        operatorForUrl(endpoint),
+        operatorOutcomeFor(response.status),
+      );
+
+      if (!RETRYABLE_STATUSES.has(response.status)) {
+        throw new PermanentOverpassError(
+          `Overpass ${endpoint} returned ${response.status} ${response.statusText}`,
+        );
+      }
+      this.noteRateLimit(response, endpoint);
+      return {
+        kind: "failed",
+        response,
+        error: new Error(
+          `Overpass ${endpoint} returned ${response.status} ${response.statusText}`,
+        ),
+      };
+    } catch (error) {
+      // Aborts and permanent failures must escape rather than be re-attempted.
+      // Both were previously caught here and retried: a 400 (our query is
+      // malformed) cost four requests instead of one, and an abort kept working
+      // on an area the user had already left.
+      if (isAbortError(error) || error instanceof PermanentOverpassError) {
+        // AN ABORT IS NOT EVIDENCE. The caller left; the host may have been
+        // about to answer perfectly. A permanent error already recorded its
+        // own verdict from the status.
+        throw error;
+      }
+      // Transport failures and unparseable bodies. Both are this operator
+      // failing to serve us, whatever the cause.
+      //
+      // NO "ALREADY RECORDED" GUARD IS NEEDED HERE, unlike `recorded` above,
+      // and the asymmetry is worth stating. The only place that records a
+      // health verdict before this one is the non-ok branch, and that branch
+      // either throws `PermanentOverpassError` - rethrown three lines up -
+      // or returns. Nothing that records a verdict reaches this line.
+      this.health.record(operatorForUrl(endpoint), "failure");
+      // A transport failure (DNS, reset connection) never produced a status.
+      // Recorded WITHOUT one rather than omitted: dropping it would make the
+      // log claim fewer requests than were really made, which is the one
+      // direction of error that under-reports quota use.
+      //
+      // Only when the dispatch itself failed. The previous guard here tested
+      // `!(error instanceof PermanentOverpassError)`, which was dead code -
+      // the block above already rethrew every one of those - while the case
+      // it needed to exclude (a response recorded with its status whose BODY
+      // then failed to parse) went unguarded.
+      if (!recorded) {
+        this.recordAttempt({
+          endpoint,
+          error: describe(error),
+          at: this.now(),
+        });
+      }
+      return { kind: "failed", response: undefined, error };
+    }
   }
 
   /** Appends to the bounded attempt log. */
@@ -653,7 +1151,28 @@ export class OverpassSource implements OsmDataSource {
         Referer: this.userAgent,
       },
       body: new URLSearchParams({ data: query }).toString(),
-      ...(signal !== undefined ? { signal } : {}),
+      // PER-ATTEMPT TRANSPORT DEADLINE. Until 2026-09-20 this passed only the
+      // caller's signal, so nothing bounded the transport at all: `[timeout:180]`
+      // bounds Overpass's server-side EXECUTION, not a socket that accepts a
+      // connection and then goes quiet. A field run measured
+      // `overpass.private.coffee` holding a request 199 s before answering, and
+      // the real worst case was whatever TCP/OS timeout happened to apply -
+      // outside this codebase entirely.
+      //
+      // **`AbortSignal.timeout`, NEVER `controller.abort()`, and the difference
+      // is the whole change.** A timeout rejects with `TimeoutError`, which the
+      // attempt loop treats as a retryable transport failure and fails over to
+      // the next endpoint; `isAbortError` matches only `AbortError`, which the
+      // loop RETHROWS. Spelling the deadline as a manual abort would turn every
+      // slow request into a dead tile - measured in simulation at single-cycle
+      // success 97.0% -> 54.9%. `composeSignals` keeps the two reasons
+      // distinguishable; see its sidecar for why that identity is load-bearing.
+      signal: composeSignals(
+        signal,
+        this.requestTimeoutMs === undefined
+          ? undefined
+          : AbortSignal.timeout(this.requestTimeoutMs),
+      ),
     });
   }
 
@@ -848,7 +1367,11 @@ export class OverpassSource implements OsmDataSource {
   private planAttemptOrder(): readonly string[] {
     const order = planEndpointOrder(
       this.endpoints,
-      this.operatorWeights,
+      // SCALED BY WHAT THIS SESSION HAS SEEN. The constants remain the prior;
+      // `operator-health.ts` only multiplies them, and returns them untouched
+      // until something has actually been observed - so the first fetch of a
+      // session draws exactly as the constants say.
+      this.health.weightsFrom(this.operatorWeights),
       this.random,
     );
     // Spending an attempt on a quota that has already refused is the same
@@ -873,6 +1396,45 @@ export class OverpassSource implements OsmDataSource {
   }
 
   /**
+   * Takes a SECOND unit of this source's concurrency, or reports that there is
+   * none — for the racing pair, which is two requests inside one tile.
+   *
+   * **WHY THE GATE IS NOT MADE WEIGHTED INSTEAD.** The obvious shape is for a
+   * racing tile to acquire two units at once. That deadlocks permanently for
+   * any consumer who configured `maxConcurrent: 1`: a weight of two can never
+   * be satisfied, and the tile waits forever on a queue nothing will ever
+   * drain. Taking the second unit OPPORTUNISTICALLY cannot deadlock, because
+   * refusal is a normal answer that simply means "do not race this one".
+   *
+   * It also degrades in the right direction under load: when the client is
+   * already busy, tiles stop racing and the footprint stays flat. That is the
+   * behaviour a politeness budget should have.
+   *
+   * Never waits. Every `true` must be paired with one
+   * {@link releaseExtraSlot}.
+   */
+  private tryTakeExtraSlot(): boolean {
+    if (this.active >= this.maxConcurrent) return false;
+    this.active++;
+    return true;
+  }
+
+  /**
+   * Returns a unit taken by {@link tryTakeExtraSlot}.
+   *
+   * HANDS THE UNIT OVER rather than decrementing when someone is queued, for
+   * exactly the reason {@link withConcurrencyLimit} does: a waiter resumes one
+   * microtask after being woken, and a decrement-then-wake leaves a window in
+   * which the count reads below the cap while a woken waiter is already
+   * committed to running.
+   */
+  private releaseExtraSlot(): void {
+    const next = this.queue.shift();
+    if (next === undefined) this.active--;
+    else next();
+  }
+
+  /**
    * Counting semaphore that HANDS THE SLOT OVER rather than releasing it.
    *
    * The distinction is the whole correctness argument. A waiter resumes in a
@@ -885,8 +1447,7 @@ export class OverpassSource implements OsmDataSource {
    *
    * So a releaser with someone queued never decrements: it passes its own slot
    * on, already counted, and only the last one out turns the light off.
-   */
-  /**
+   *
    * @param task receives how long it waited for its slot, in ms.
    *   **Passed down rather than measured inside** because the wait is a real
    *   stage of the click the user is waiting through: folded into

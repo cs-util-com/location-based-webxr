@@ -11,14 +11,31 @@ camera, so `installTourViewerArFakes(page)` installs
 ## Public API
 
 - `installTourViewerArFakes(page)` — call in `beforeEach`, before `goto`.
+- `seedAlignment(page)` — dispatches the session zero and three consistent
+  GPS fixes into the app store, so the mint gate and placement unlock.
+  Shared by `ar-mode.spec.js`, `object-editing.spec.js` and
+  `ar-layout.spec.js` (it was copied into the first two).
+- `openFixtureTour(page)` - opens the fixture tour on the creator's page
+  (`?nocache=1`, range streaming) and opens step 4; `enterArAndMeasure(page)`
+  enters AR, arms the fixture code, seeds the alignment and measures it, so
+  placement unlocks. Moved out of `object-editing.spec.js` when
+  `summary.spec.js` (authoring plan 2026-09-28-0953 M3b) needed the same
+  steps.
 - Control surface `window.__tourViewerTest`: `initARCalls` (records
   `hasCameraFrame` + the isolation flags), `captureCalls`,
   `alignmentCalls`, `alignmentStore` (the real app store the alignment
   binding received — specs assert `recording.isRecording` through it),
   `stopCaptureCalls`, `endARSessionCalls`, `cameraFrameCallback`,
-  `emitFrames(n)` (delivers fake RGBA frames through the initAR camera
-  callback), `sessionEndCallback` + `endXrSession()` (simulate a system
-  session end), and `armQrDetection(text, position?)` + `nextDetection` /
+  `emitFrames(n)` (delivers fake frames - RGBA plus an identity capture pose
+  and `capturedAtMs`, the framework's `CapturedCameraFrame` shape - through
+  the initAR camera callback; there is no `getCameraPose` seam to fake), `sessionEndCallback` + `endXrSession()` (simulate a system
+  session end), `emitGps({ lat, lon, accuracy?, timestamp, arPosition })`
+  (delivers one device fix through the GPS watch the session started -
+  `gpsCallback`, kept by the fake `startGpsWatch` - paired with `arPose`,
+  which the `getArPose` seam returns: the page's own path, coordinator,
+  `recordDeviceFix` and the vote sink; the moved-code e2e, D20 M5c, needs
+  it because the veto re-feeds the fixes the sink stored), and
+  `armQrDetection(text, position?)` + `nextDetection` /
   `nextSolution` — scripted device-level QR results for the author
   pipeline; the REAL controller, slice, stability gate and mint run over
   them — plus `fakeScene` (a scene-root stub the image planes land in);
@@ -39,12 +56,37 @@ camera, so `installTourViewerArFakes(page)` installs
   `reticleVisible` / `reticlePosition` / `reticleDisposals` and
   `encodedFrames` script the creator's placement layer (the hit-test
   reticle and the JPEG encoder fakes; `createLabel` returns a bare object
-  in place of the canvas sprite); `timers` + `fireTimers()` are the scan
+  in place of the canvas sprite); a tap in AR (authoring plan
+  2026-09-28-0953 M4): `startHitTestReticle` keeps the app's select
+  listener as `xrSelect`, `tapXr(selector?)` taps like the runtime does
+  (with a null target ray, a screen-centre tap) -
+  `beforexrselect` dispatched at the overlay element first, and NO select
+  when it was cancelled (it returns whether the select fired) - and
+  `pickObjectInView` returns the scripted `pickId` only when the app
+  rendered that id (`pickTargets` records the ids it was offered; the stub
+  scene has no geometry, the real raycast is `object-pick.test.ts`'s);
+  `timers` + `fireTimers()` are the scan
   gate's escape clock (the `schedule` seam), so a spec fires the 45 s
-  without waiting.
+  without waiting. The troubleshooting recording's depth (authoring
+  recording plan 2026-09-28-0953, D4): `initARCalls` records `hasDepth`,
+  `depthCaptureCalls` / `stopDepthCalls` count the depth seams, and
+  `emitDepthSample()` feeds one sample through the initAR depth callback
+  (`depthCallback`). The fake world group's `matrixWorld` and `worldToLocal`
+  follow the store's alignment (the identity before one exists), as the real
+  group's lerped matrix does: the creator's placement reads the reticle's
+  odometry through it, and the authoring settle (authoring plan
+  2026-09-28-0953 M2c) maps that back through the alignment - an identity
+  group under a real alignment would move every settled pin by it.
 
 ## Invariants & assumptions
 
+- The fake `initAR` inserts a window-sized canvas as the overlay root's
+  first child, as the framework does - without it no spec could see a panel
+  pushed below the screen by it (the owner's r750 field test).
+  `installTourViewerArFakes(page, { printSizeM })` makes the print-size
+  estimate report that size, one new independent window per call (the
+  fakes' single camera pose carries no parallax), so the creator's size
+  offer appears after three detections.
 - The fake controller deps grant every permission and resolve `initAR`
   immediately, so the controller walks `checking → ready → running` — the
   specs prove the COMPOSED wiring, not the framework internals (those have
@@ -54,5 +96,6 @@ camera, so `installTourViewerArFakes(page)` installs
 
 ## Tests
 
-Consumed by `ar-mode.spec.js`. Not a test file itself; the prod-inert
+Consumed by `ar-mode.spec.js`, `ar-layout.spec.js` and
+`object-editing.spec.js`. Not a test file itself; the prod-inert
 guarantee it relies on is unit-tested in `src/seams.test.ts`.

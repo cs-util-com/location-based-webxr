@@ -35,7 +35,9 @@
  * `setHSL(..., THREE.SRGBColorSpace)`, which converts into Linear-sRGB, and
  * writing that straight to an sRGB target renders it darker and less saturated
  * than the HSL picked in the lab; and the shell is the one thing in the scene
- * not passing through ACES at exposure. Whether that is the approved look — the
+ * not passing through the demo's tone mapping (Khronos Neutral since plan
+ * 2026-09-23-2149 M3; ACES when this was written). Whether that is the
+ * approved look — the
  * lab may itself have been ungraded — is an open question, filed as
  * `docs/2026-08-17-2220-ar-shell-colour-pipeline-followup.md`. Stated here so
  * the file stops reading as if it lived under the same grade as its neighbours.

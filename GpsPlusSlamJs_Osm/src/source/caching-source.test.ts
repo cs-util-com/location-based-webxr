@@ -23,7 +23,11 @@ import { CachingSource } from "./caching-source.js";
 import { RateLimitedError } from "./overpass-source.js";
 import { MemoryBlobStore } from "./memory-blob-store.js";
 import { OVERPASS_SCHEMA_VERSION } from "./overpass-query.js";
-import type { OsmDataSource, OsmTileResult } from "./osm-data-source.js";
+import type {
+  FetchTileOptions,
+  OsmDataSource,
+  OsmTileResult,
+} from "./osm-data-source.js";
 import { FETCH_RES } from "../spatial/resolutions.js";
 
 const TILE = latLngToCell(50.9413, 6.9583, FETCH_RES);
@@ -38,7 +42,10 @@ class CountingSource implements OsmDataSource {
   readonly attribution = "© OpenStreetMap contributors";
   readonly sourceId = "counting";
   calls = 0;
-  constructor(private readonly fetchedAt = 1000) {}
+  private readonly fetchedAt: number;
+  constructor(fetchedAt = 1000) {
+    this.fetchedAt = fetchedAt;
+  }
 
   fetchTile(tile: string): Promise<OsmTileResult> {
     this.calls++;
@@ -439,8 +446,8 @@ describe("decorator transparency", () => {
     let seen: AbortSignal | undefined;
     const inner = new CountingSource();
     vi.spyOn(inner, "fetchTile").mockImplementation(
-      (_tile: string, signal?: AbortSignal) => {
-        seen = signal;
+      (_tile: string, options?: FetchTileOptions) => {
+        seen = options?.signal;
         return new Promise<OsmTileResult>(() => {
           /* never settles */
         });
@@ -449,7 +456,7 @@ describe("decorator transparency", () => {
     const cache = new CachingSource(inner, new MemoryBlobStore());
     const controller = new AbortController();
 
-    const pending = cache.fetchTile(TILE, controller.signal);
+    const pending = cache.fetchTile(TILE, { signal: controller.signal });
     pending.catch(() => undefined);
     // A macrotask, not a microtask: `ensureTile` awaits the store read before
     // it ever reaches the inner source.
@@ -489,9 +496,9 @@ describe("decorator transparency", () => {
     const prefetch = new AbortController();
     const movement = new AbortController();
 
-    const prefetched = cache.fetchTile(TILE, prefetch.signal);
+    const prefetched = cache.fetchTile(TILE, { signal: prefetch.signal });
     prefetched.catch(() => undefined);
-    const moved = cache.fetchTile(TILE, movement.signal);
+    const moved = cache.fetchTile(TILE, { signal: movement.signal });
     // Both must have JOINED before the abort, otherwise the test would pass
     // trivially by never having shared a request in the first place.
     await settle();

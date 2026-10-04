@@ -2,37 +2,47 @@
 
 ## Purpose
 
-Shared OSM base-map setup and path style tokens for the two Leaflet views in
-the recorder app: [preview-map.ts](preview-map.ts) and
-[summary-map.ts](summary-map.ts). Centralises the OSM tile URL/attribution,
-zoom limit, polyline thickness/opacity, initial zoom, and `fitBounds` padding
-so both screens stay visually consistent.
+The recorder's shared path and view style tokens for its Leaflet views:
+[preview-map.ts](preview-map.ts), [map-browser.ts](map-browser.ts) and
+[summary-map.ts](summary-map.ts) - polyline thickness/opacity, initial zoom,
+and `fitBounds` padding - so the screens stay visually consistent.
 
-Scope is intentionally narrow: only values/helpers that are identical in both
-views live here. View-specific concerns (fullscreen toggle, multi-path/ref
-markers, resize delays) stay in their respective files.
+**The basemap layer moved to the framework** (2026-10-01):
+`addOsmTileLayer` is now
+`gps-plus-slam-app-framework/visualization/osm-tile-layer`
+([sidecar](../../../GpsPlusSlamJs_AppFramework/src/visualization/osm-tile-layer.ts.md)),
+because the summary map's shell moved there too
+([summary-map-shell.ts.md](../../../GpsPlusSlamJs_AppFramework/src/visualization/summary-map-shell.ts.md),
+DEC-H3, Tour Viewer authoring plan 2026-09-28-0953 §3.3) and draws the
+basemap itself. The views import it from there. The three tile-policy values
+were already in `gps-plus-slam-app-framework/utils/osm-tiles` since
+2026-09-22.
 
 ## Public API
 
-- `OSM_TILE_URL`, `OSM_ATTRIBUTION`, `OSM_MAX_ZOOM` — the OSM tile policy
-  values used by both maps.
-- `addOsmTileLayer(map): L.TileLayer` — creates and attaches the standard OSM
-  tile layer; returns it so callers can track the layer for cleanup.
 - `PATH_POLYLINE_WEIGHT`, `PATH_POLYLINE_OPACITY` — stroke style applied to
   every GPS path polyline (raw, fused, alignment snapshots).
-- `INITIAL_ZOOM` — zoom passed to `setView` before `fitBounds` runs.
+- `INITIAL_ZOOM` — zoom passed to `setView` before `fitBounds` runs (the
+  summary map hands it to the shell as `initialZoom`).
 - `FIT_BOUNDS_PADDING` — pixel padding for `fitBounds`; prevents markers and
   accuracy circles from being clipped at the edges.
 
 ## Invariants & assumptions
 
-- `addOsmTileLayer` calls `.addTo(map)` synchronously; the returned tile
-  layer is already on the map.
 - All exported values are constants and safe to reuse across map instances.
+- **What stays here is the recorder's LOOK, and that is the boundary.**
+  `PATH_POLYLINE_WEIGHT`, `PATH_POLYLINE_OPACITY`, `INITIAL_ZOOM` and
+  `FIT_BOUNDS_PADDING` are this app's styling choices, with no second consumer
+  and no contract behind them. The tile URL, attribution and zoom ceiling were
+  the opposite — an agreement with the tile operator — which is why only those
+  three moved. A boundary survey that same day looked at moving the whole file
+  and rejected it for exactly this reason.
 
 ## Examples
 
 ```ts
+import { addOsmTileLayer } from 'gps-plus-slam-app-framework/visualization/osm-tile-layer';
+
 const map = L.map(container).setView([lat, lng], INITIAL_ZOOM);
 const tileLayer = addOsmTileLayer(map);
 layers.push(tileLayer); // for cleanup
@@ -47,5 +57,5 @@ map.fitBounds(bounds, { padding: FIT_BOUNDS_PADDING });
   [summary-map.test.ts](summary-map.test.ts), which both assert the OSM tile
   URL and the `fitBounds` padding.
 - Direct unit coverage in [map-osm-base.test.ts](map-osm-base.test.ts) pins
-  down the tile-layer options and the constant values so a drift in either
-  view would be caught even if the consumer-level assertions are loosened.
+  down the constant values; the tile layer's options are pinned by the
+  framework's `visualization/osm-tile-layer.test.ts`.

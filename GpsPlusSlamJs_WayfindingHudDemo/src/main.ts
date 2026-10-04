@@ -20,7 +20,7 @@ import {
   type HudDemoConfig,
 } from "./hud-config";
 import { applyModeEntry, detectArSupport } from "./mode-detection";
-import { guardSliderAgainstScroll } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
+import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 
 function requireEl<T extends HTMLElement = HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -31,6 +31,10 @@ function requireEl<T extends HTMLElement = HTMLElement>(id: string): T {
 }
 
 function main(): void {
+  // Every slider on the page: the HUD control row is swiped past on a phone,
+  // and a swipe that starts on a slider must scroll, not edit it (2026-07-27
+  // recorder field feedback, the same bug class; generalised 2026-09-30).
+  guardSlidersIn(document);
   const app = requireEl("app");
   const modeScreen = requireEl("mode-screen");
   const startArButton = requireEl<HTMLButtonElement>("start-ar-button");
@@ -100,12 +104,6 @@ function main(): void {
   };
 
   for (const slider of Object.values(sliders)) {
-    // Guard BEFORE the listener: the HUD control row is swiped past on a phone,
-    // and a native range input would otherwise edit itself as the finger
-    // travels (2026-07-27 recorder field feedback, same bug class). At-target
-    // listeners fire in registration order, which is what lets the guard shield
-    // this one.
-    guardSliderAgainstScroll(slider);
     // `input` keeps the number under the thumb live; the HUD is re-created on
     // `change` (the drag's release), not per pixel of the drag — with the
     // entrance on, each re-creation allocated four 256² canvases and their

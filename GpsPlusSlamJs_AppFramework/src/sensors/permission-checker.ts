@@ -11,6 +11,11 @@
 import { createIsolatedRegistry } from '../utils/isolated-registry';
 import { createLogger } from '../utils/logger';
 import { probeImmersiveArSupportOutcome } from '../ar/webxr-support-probe';
+import {
+  geolocationPermissionState,
+  queryPermissionState,
+  type PermissionState,
+} from './permission-state';
 
 const log = createLogger('PermissionChecker');
 
@@ -182,10 +187,12 @@ export async function checkWebXRSupport(): Promise<PermissionStatus> {
  * Shared Permissions-API status checker (quality-review C-2): probe-free
  * query with the standard supported/granted/denied/prompt mapping. The two
  * former copies (geolocation/camera) differed only in the API guard and the
- * user-facing strings.
+ * user-facing strings. The query itself is `permission-state.ts`'s, the one
+ * implementation the globe lab reads too.
  */
 async function checkPermissionViaQuery(options: {
-  readonly name: PermissionName;
+  /** The prompt-free query for this permission. */
+  readonly queryState: () => Promise<PermissionState>;
   /** Result of the feature-specific API-availability guard. */
   readonly apiAvailable: boolean;
   readonly unsupportedError: string;
@@ -199,23 +206,13 @@ async function checkPermissionViaQuery(options: {
     };
   }
 
-  // Try Permissions API first (doesn't trigger prompt)
-  if (navigator.permissions) {
-    try {
-      const result = await navigator.permissions.query({ name: options.name });
-      if (result.state === 'granted') {
-        return { supported: true, granted: true };
-      } else if (result.state === 'denied') {
-        return { supported: true, granted: false, error: options.deniedError };
-      }
-      // 'prompt' state - permission not yet requested
-      return { supported: true, granted: null };
-    } catch {
-      // Permissions API query failed, continue to the unknown fallback
-    }
+  // The Permissions API never prompts. 'prompt' (not yet requested) and
+  // 'unknown' (no API, or the query failed) both leave the state open.
+  const state = await options.queryState();
+  if (state === 'granted') return { supported: true, granted: true };
+  if (state === 'denied') {
+    return { supported: true, granted: false, error: options.deniedError };
   }
-
-  // Fallback: the feature is supported but we don't know permission state
   return { supported: true, granted: null };
 }
 
@@ -225,7 +222,7 @@ async function checkPermissionViaQuery(options: {
  */
 export async function checkGeolocationPermission(): Promise<PermissionStatus> {
   return checkPermissionViaQuery({
-    name: 'geolocation',
+    queryState: geolocationPermissionState,
     apiAvailable: !!navigator.geolocation,
     unsupportedError: 'Geolocation API not available in this browser.',
     deniedError: 'Location access denied. Please enable in browser settings.',
@@ -293,7 +290,7 @@ export async function requestGeolocationPermission(
  */
 export async function checkCameraPermission(): Promise<PermissionStatus> {
   return checkPermissionViaQuery({
-    name: 'camera',
+    queryState: () => queryPermissionState('camera'),
     apiAvailable: !!navigator.mediaDevices?.getUserMedia,
     unsupportedError:
       'Camera API not available. Use HTTPS and a modern browser.',

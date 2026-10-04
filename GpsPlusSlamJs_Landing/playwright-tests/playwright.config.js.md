@@ -17,6 +17,7 @@ decision, 2026-07-12).
   reused locally, fresh in CI.
 - CI: 2 retries, 1 worker, github + json reporters; local: list + html.
 - `PLAYWRIGHT_CAPTURE=1` forces trace/screenshot/video capture.
+- Chromium is launched with `browserLaunchArgs(process.env)` from `scripts/e2e/browser-launch.mjs`: `--in-process-gpu` when run-stage lowered the browser stage (Windows), so the WebGL work inherits the lowered priority; nothing otherwise.
 
 ## Invariants & assumptions
 

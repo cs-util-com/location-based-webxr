@@ -4,10 +4,12 @@
 
 ## Public API
 
-- `createRefreshCycle({ store, actions, worker, onMesh, anchors })` → `LatestOnly<void>`
+- `createRefreshCycle({ store, actions, worker, onMesh, anchors, … })` → `LatestOnly<void>`
   - Takes **no arguments** when called. Reads `position` and `category` from the store at call time.
   - Dispatches `fetchStarted` → (`snapshotReady` | `fetchFailed`).
   - Coalesced through `latestOnly`: at most one run in flight, only the newest waiting intent survives, never rejects.
+  - Optional callbacks: `geoidUndulationM` (the datum, read at post time), `onTimings` and `onClickSummary` (the click-path breakdown), and `onBusyChange`.
+  - **`onBusyChange(busy)` is the only honest "a refresh is in progress" the demo has**, and the obvious alternative is wrong: this cycle dispatches `fetchStarted` ONCE, above the ring loop, while every ring's `snapshotReady` resets the phase to idle — so `loading.phase` is idle for most of a wait that can run to a minute. Passed straight to `latestOnly`, so it fires on transitions only and a supersession is silent. See `latest-only.ts.md`.
 - `renderSafely({ store, actions }, label, draw)` — runs one view's draw; on a throw dispatches `nonFatalError` with `"<label>: <message>"` and returns normally.
 - `isFinalRing(radius)` — whether a snapshot of this radius is the LAST one a refresh will publish. Exported from here rather than computed by callers because this file owns `PROGRESSIVE_RADII`, and "last" must not be able to go stale somewhere else when that list changes. `>=` rather than `===`, so a radius the cycle never scores reads as finished — an unexpected value should be a cosmetic bug, not a permanent "still widening" in the UI.
 - **`anchors` is READ, never decided here.** This cycle used to own the scene-anchor decision, and that was a defect: a position change drives three consumers of the frame — the camera pivot, the terrain load and this — and this one runs LAST, so the other two read the outgoing anchor whenever it moved. The holder is advanced once by `main.ts`'s position subscriber and everything downstream reads the same value. A refresh with no position change (a category switch, a layer toggle, the initial load) therefore re-sends the held origin rather than re-deriving one from wherever the user happens to be. See `scene-anchor.ts.md`.

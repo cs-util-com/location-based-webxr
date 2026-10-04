@@ -55,7 +55,10 @@ export interface StoreSubscriberDeps {
     addGpsEvent: (
       gpsCoords: Vector3,
       odomPosition: Vector3,
-      accuracy?: { horizontal?: number; vertical?: number }
+      accuracy?: {
+        horizontal?: number | undefined;
+        vertical?: number | undefined;
+      }
     ) => void;
     addAlignmentSnapshot: (nuePosition: Vector3) => void;
   };

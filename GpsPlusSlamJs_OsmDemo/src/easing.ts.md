@@ -64,3 +64,8 @@ provably not a redesign.
 - `ar-entry-veil.ts` — the mesh sphere's fade after landing.
 - `terrain-slope.ts` — the ground treatment's steepness ramp; the one caller
   whose `t` is not a time ratio, clamped at its call site.
+- `GpsPlusSlamJs_DesignSystem/3d/preset-glide.js` (via the look-dev page,
+  `lookdev.js`, which serves this file at `/osm/easing.js`) - the look
+  presets' 5 s glide. A consumer OUTSIDE this package: a change of the
+  curve changes that glide too, and `preset-glide.test.mjs` imports this
+  source to pin it (its t = 0.25 check assumes an ease-in-out).

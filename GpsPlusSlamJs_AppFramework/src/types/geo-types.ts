@@ -32,7 +32,7 @@ export interface RawGpsSample extends GpsCoord {
    * Horizontal accuracy in meters (1σ / 68% confidence).
    * `undefined` when the source GPS event lacked the field.
    */
-  readonly accuracy?: number;
+  readonly accuracy?: number | undefined;
 }
 
 /**

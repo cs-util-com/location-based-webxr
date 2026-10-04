@@ -19,6 +19,9 @@ import {
   clearQrMarker,
   clearAllQrMarkers,
   setQrMaxHistory,
+  qrFrameChanged,
+  selectQrFusedEntries,
+  selectQrRawObservations,
   selectLatestQrDetection,
   selectQrMarker,
   selectQrSize,
@@ -32,6 +35,8 @@ import {
   type QrDetectionEntry,
 } from './qr-detected-slice';
 import { PlanarPnpSquare } from '../ar/qr/planar-pnp';
+import { combineReducers } from '@reduxjs/toolkit';
+import { trackingReducer, clearLastRestartedPayload } from './tracking-slice';
 
 function entry(
   text: string,
@@ -425,5 +430,332 @@ describe('selectSolvedQrPose (derive-on-read, D-A)', () => {
     let s = init();
     s = qrDetectedReducer(s, recordQrDetection(raw));
     expect(selectSolvedQrPose({ qrDetected: s }, 'A', deps)).toBeNull();
+  });
+});
+
+describe('the frame epoch (M3b b2)', () => {
+  // Why this test matters (QR near-frontal pose plan §16 #4, §19): after an
+  // odometry restart or a loop closure, older detections live in another
+  // coordinate frame, and the fused window must not combine them with newer
+  // ones. The slice stamps every detection with the frame epoch it arrived
+  // in; the epoch moves on the recorded gpsData actions (so a replay of an
+  // old recording reproduces it with no new action), on the session's own
+  // restart bookkeeping (`tracking/clearLastRestartedPayload`, which reaches
+  // any store holding the tracking slice), and on an explicit
+  // `qrFrameChanged` for apps that have neither.
+  it('stamps each detection with the current frame epoch', () => {
+    let s = init();
+    expect(s.frameEpoch).toBe(0);
+    s = qrDetectedReducer(s, recordQrDetection(entry('A', 1)));
+    expect(s.markers['A']!.detections[0]!.frameEpoch).toBe(0);
+  });
+
+  it.each([
+    'gpsData/odometryTrackingRestarted',
+    'gpsData/arLoopClosureDetected',
+    'tracking/clearLastRestartedPayload',
+  ])('moves to the next epoch on %s', (type) => {
+    let s = qrDetectedReducer(init(), recordQrDetection(entry('A', 1)));
+    s = qrDetectedReducer(s, { type });
+    expect(s.frameEpoch).toBe(1);
+    s = qrDetectedReducer(s, recordQrDetection(entry('A', 2)));
+    const d = s.markers['A']!.detections;
+    expect(d.map((e) => e.frameEpoch)).toEqual([0, 1]);
+  });
+
+  it('moves to the next epoch on qrFrameChanged', () => {
+    const s = qrDetectedReducer(init(), qrFrameChanged());
+    expect(s.frameEpoch).toBe(1);
+  });
+
+  // The epoch comes from the store, never from the payload: a recorded
+  // payload that carries one (or a producer that guesses) cannot make a
+  // replay disagree with the live run.
+  it('ignores a frame epoch in the payload', () => {
+    const s = qrDetectedReducer(
+      init(),
+      recordQrDetection({ ...entry('A', 1), frameEpoch: 7 })
+    );
+    expect(s.markers['A']!.detections[0]!.frameEpoch).toBe(0);
+  });
+
+  // Determinism and stamping over a recorded stream: unrelated actions in
+  // between change nothing, and each recorded frame change starts a new
+  // epoch. (Reducing the same stream twice is only a determinism check; the
+  // live-vs-replay difference is the next test.)
+  it('stamps a recorded stream deterministically', () => {
+    const stream = [
+      recordQrDetection(entry('A', 1)),
+      { type: 'gpsData/someOtherAction' },
+      recordQrDetection(entry('A', 2)),
+      { type: 'gpsData/odometryTrackingRestarted' },
+      recordQrDetection(entry('A', 3)),
+      { type: 'gpsData/arLoopClosureDetected' },
+      recordQrDetection(entry('B', 4)),
+    ];
+    const run = () => stream.reduce(qrDetectedReducer, init());
+    const a = run();
+    const b = run();
+    expect(a).toEqual(b);
+    expect(a.markers['A']!.detections.map((e) => e.frameEpoch)).toEqual([
+      0, 0, 1,
+    ]);
+    expect(a.markers['B']!.detections[0]!.frameEpoch).toBe(2);
+  });
+
+  // State from before the epoch existed (a hand-built or persisted state
+  // without the field) must not turn into NaN on the first restart.
+  it('treats a missing epoch as 0', () => {
+    const old: QrDetectedState = { maxHistory: 8, markers: {} };
+    let s = qrDetectedReducer(old, recordQrDetection(entry('A', 1)));
+    expect(s.markers['A']!.detections[0]!.frameEpoch).toBe(0);
+    s = qrDetectedReducer(s, qrFrameChanged());
+    expect(s.frameEpoch).toBe(1);
+  });
+
+  // Why this test matters (b2/b3 review #4): live, one recorder restart
+  // bumps the epoch TWICE (the recorded gpsData action and the session's
+  // tracking/clearLastRestartedPayload); a replay only has the recorded
+  // actions and bumps once. The epoch NUMBERS then differ, but the
+  // PARTITION of detections into frames must be the same - that is all the
+  // fused window compares. Epoch numbers are not comparable between a live
+  // run and its replay.
+  it('partitions a live stream and its replay the same way', () => {
+    const live = [
+      recordQrDetection(entry('A', 1)),
+      recordQrDetection(entry('A', 2)),
+      { type: 'gpsData/odometryTrackingRestarted' },
+      clearLastRestartedPayload(),
+      recordQrDetection(entry('A', 3)),
+      recordQrDetection(entry('A', 4)),
+    ];
+    const replay = live.filter((a) => !a.type.startsWith('tracking/'));
+    const groups = (s: QrDetectedState) => {
+      const d = s.markers['A']!.detections;
+      return d.map(
+        (e) => d.filter((f) => f.frameEpoch === e.frameEpoch).length
+      );
+    };
+    const a = live.reduce(qrDetectedReducer, init());
+    const b = replay.reduce(qrDetectedReducer, init());
+    expect(a.frameEpoch).toBe(2);
+    expect(b.frameEpoch).toBe(1);
+    expect(groups(a)).toEqual(groups(b));
+    expect(groups(a)).toEqual([2, 2, 2, 2]);
+  });
+
+  // Why this test matters (review #7, #8): the TourViewer's ONLY restart
+  // signal is the tracking slice's own action, reaching qrDetected through
+  // the shared store. Dispatched through a store holding BOTH slices, with
+  // the real action creator (a renamed reducer would break a string match
+  // silently), it must move the epoch.
+  it('moves the epoch in a store that holds the tracking slice too', () => {
+    const reducer = combineReducers({
+      tracking: trackingReducer,
+      qrDetected: qrDetectedReducer,
+    });
+    let s = reducer(undefined, { type: '@@INIT' });
+    s = reducer(s, clearLastRestartedPayload());
+    expect(s.qrDetected.frameEpoch).toBe(1);
+  });
+
+  // Clearing markers is not a frame change: the epoch keeps counting.
+  it('keeps the epoch through clearAllQrMarkers', () => {
+    let s = qrDetectedReducer(init(), qrFrameChanged());
+    s = qrDetectedReducer(s, clearAllQrMarkers());
+    expect(s.frameEpoch).toBe(1);
+  });
+});
+
+describe('selectQrFusedEntries (M3b b3)', () => {
+  const corners = [
+    { x: 100, y: 100 },
+    { x: 200, y: 100 },
+    { x: 200, y: 200 },
+    { x: 100, y: 200 },
+  ];
+  const cameraPose = {
+    position: [0, 0, 0] as [number, number, number],
+    rotation: [0, 0, 0, 1] as [number, number, number, number],
+  };
+  const intrinsics = { fx: 500, fy: 500, cx: 320, cy: 240 };
+  // A symmetric GL projection: fx = P[0] * W / 2 = 1.5 * 640 / 2 = 480.
+  const projectionMatrix = [
+    1.5, 0, 0, 0, 0, 2, 0, 0, 0, 0, -1, -1, 0, 0, -0.2, 0,
+  ] as unknown as QrDetectionEntry['projectionMatrix'] & object;
+
+  // Why this test matters: the fused window reads the slice through this
+  // selector. It must accept both producers (the tracking controller's
+  // events with intrinsics and a solved pose; the recorder's raw entries
+  // with a projection matrix instead), drop what cannot feed the solve, and
+  // keep the frame epoch the reducer stamped.
+  it('maps event entries and raw entries, and skips unusable ones', () => {
+    let s = init();
+    s = qrDetectedReducer(
+      s,
+      recordQrDetection({ ...entry('A', 1), corners, cameraPose, intrinsics })
+    );
+    s = qrDetectedReducer(
+      s,
+      recordQrDetection({
+        text: 'A',
+        timestamp: 2,
+        corners,
+        cameraPose,
+        projectionMatrix,
+        imageWidth: 640,
+        imageHeight: 480,
+      })
+    );
+    s = qrDetectedReducer(s, recordQrDetection(entry('A', 3)));
+    s = qrDetectedReducer(
+      s,
+      recordQrDetection({ ...entry('A', 4), corners, cameraPose, intrinsics })
+    );
+    const mapped = selectQrFusedEntries({ qrDetected: s }, 'A');
+    expect(mapped.map((e) => e.timestamp)).toEqual([1, 2, 4]);
+    // One frame here; scoping to the current epoch has its own test below.
+    expect(mapped[0]!.intrinsics).toEqual(intrinsics);
+    expect(mapped[0]!.rawPose).toEqual(entry('A', 1).qrPoseWorld);
+    expect(mapped[1]!.intrinsics.fx).toBeCloseTo(480, 9);
+    expect(mapped[1]!.rawPose).toBeNull();
+    expect(mapped.map((e) => e.frameEpoch)).toEqual([0, 0, 0]);
+  });
+
+  // Why this test matters (plan §54-§55): the fused window can ignore a
+  // native-order frame only if the selector hands the source on.
+  it('hands on the corner-order source, and none when the entry has none', () => {
+    let s2 = init();
+    s2 = qrDetectedReducer(
+      s2,
+      recordQrDetection({
+        ...entry('A', 1),
+        corners,
+        cameraPose,
+        intrinsics,
+        orderSource: 'native',
+      })
+    );
+    s2 = qrDetectedReducer(
+      s2,
+      recordQrDetection({ ...entry('A', 2), corners, cameraPose, intrinsics })
+    );
+    const mapped = selectQrFusedEntries({ qrDetected: s2 }, 'A');
+    expect(mapped[0]!.orderSource).toBe('native');
+    expect('orderSource' in mapped[1]!).toBe(false);
+  });
+
+  // Milestone review of b4b #7: the recorder stores each detection's order
+  // source (b4b-2); the raw-observation reader a replay consumer uses must
+  // not drop it.
+  it('keeps the corner-order source in the raw observations', () => {
+    const s2 = qrDetectedReducer(
+      init(),
+      recordQrDetection({
+        text: 'A',
+        timestamp: 2,
+        corners,
+        cameraPose,
+        projectionMatrix,
+        imageWidth: 640,
+        imageHeight: 480,
+        orderSource: 'native',
+      })
+    );
+    expect(
+      selectQrRawObservations({ qrDetected: s2 }, 'A')[0]!.orderSource
+    ).toBe('native');
+  });
+
+  // Why this test matters (plan §16 #5): the fused tracker caches on the
+  // entries ARRAY; the TourViewer reads this every XR frame. The selector
+  // must hand out the SAME array until a new detection arrives, or the
+  // joint solve runs per frame.
+  it('returns the same array until the detections change', () => {
+    let s = qrDetectedReducer(
+      init(),
+      recordQrDetection({ ...entry('A', 1), corners, cameraPose, intrinsics })
+    );
+    const a = selectQrFusedEntries({ qrDetected: s }, 'A');
+    expect(selectQrFusedEntries({ qrDetected: s }, 'A')).toBe(a);
+    s = qrDetectedReducer(s, { type: 'unrelated' });
+    expect(selectQrFusedEntries({ qrDetected: s }, 'A')).toBe(a);
+    s = qrDetectedReducer(
+      s,
+      recordQrDetection({ ...entry('A', 2), corners, cameraPose, intrinsics })
+    );
+    expect(selectQrFusedEntries({ qrDetected: s }, 'A')).not.toBe(a);
+  });
+
+  it('is empty for an unknown marker', () => {
+    expect(selectQrFusedEntries({ qrDetected: init() }, 'X')).toEqual([]);
+  });
+
+  // An entry's own intrinsics win over those derivable from its projection.
+  it("prefers an entry's own intrinsics over its projection", () => {
+    const s = qrDetectedReducer(
+      init(),
+      recordQrDetection({
+        text: 'A',
+        timestamp: 1,
+        corners,
+        cameraPose,
+        intrinsics,
+        projectionMatrix,
+        imageWidth: 640,
+        imageHeight: 480,
+      })
+    );
+    expect(selectQrFusedEntries({ qrDetected: s }, 'A')[0]!.intrinsics).toEqual(
+      intrinsics
+    );
+  });
+
+  // Why this test matters (b2/b3 review #2): after a restart the old
+  // detections live in another frame. A reader on a hot path must stop
+  // getting them at once, not when the code is next seen - so only the
+  // CURRENT epoch's entries are returned, and the array changes with it.
+  it('returns only the current frame epoch, starting afresh on a restart', () => {
+    let s = qrDetectedReducer(
+      init(),
+      recordQrDetection({ ...entry('A', 1), corners, cameraPose, intrinsics })
+    );
+    const before = selectQrFusedEntries({ qrDetected: s }, 'A');
+    expect(before).toHaveLength(1);
+    s = qrDetectedReducer(s, qrFrameChanged());
+    const after = selectQrFusedEntries({ qrDetected: s }, 'A');
+    expect(after).toEqual([]);
+    expect(after).not.toBe(before);
+    s = qrDetectedReducer(
+      s,
+      recordQrDetection({ ...entry('A', 2), corners, cameraPose, intrinsics })
+    );
+    expect(
+      selectQrFusedEntries({ qrDetected: s }, 'A').map((e) => e.timestamp)
+    ).toEqual([2]);
+  });
+
+  // Why this test matters (review #5): a size estimate does not change the
+  // detections, so it must not hand out a new array - that made the demo
+  // solve twice per lock.
+  it('keeps the detections array through a size estimate', () => {
+    let s = qrDetectedReducer(
+      init(),
+      recordQrDetection({ ...entry('A', 1), corners, cameraPose, intrinsics })
+    );
+    const a = selectQrFusedEntries({ qrDetected: s }, 'A');
+    s = qrDetectedReducer(
+      s,
+      recordQrSizeEstimate({
+        text: 'A',
+        estimate: {
+          status: 'estimated',
+          estimateM: 0.16,
+          sampleCount: 5,
+          spreadM: 0,
+        },
+      })
+    );
+    expect(selectQrFusedEntries({ qrDetected: s }, 'A')).toBe(a);
   });
 });

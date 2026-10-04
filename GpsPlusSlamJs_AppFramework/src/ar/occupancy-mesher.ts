@@ -31,14 +31,14 @@
  */
 
 import type { Vector3 } from 'gps-plus-slam-js';
-import type { GridCell } from './bresenham3d';
+import type { GridCell } from './bresenham3d.js';
 import {
   CELL_KEY_STRIDE_X,
   CELL_KEY_STRIDE_Y,
   HALF_LATTICE_CELL_KEY_LIMIT,
   packCellKey as cellKey,
-} from './cell-key';
-import { PackedKeyHash } from './packed-key-hash';
+} from './cell-key.js';
+import { PackedKeyHash } from './packed-key-hash.js';
 
 /**
  * An axis-aligned bounding box for one occupied cell (or, after greedy merge, a
@@ -115,7 +115,7 @@ export interface MeshOccupiedCellsOptions {
    * (PR #161 review), so implementations must read the coordinates and must NOT
    * retain the tuple (no caching it as a key, no async use). Copy it if needed.
    */
-  readonly getCellPoint?: (cell: GridCell) => Vector3 | null;
+  readonly getCellPoint?: ((cell: GridCell) => Vector3 | null) | undefined;
   /**
    * Pre-packed per-cell centroids for `'smooth'`, aligned with the **input
    * `cells` order** (3 numbers per input cell; a non-finite triple — the
@@ -128,7 +128,7 @@ export interface MeshOccupiedCellsOptions {
    * `getCellPoint`; other modes ignore `centroids` entirely (`'corner-fit'`
    * still needs the callback).
    */
-  readonly centroids?: Float64Array | null;
+  readonly centroids?: Float64Array | null | undefined;
   /**
    * Set `false` to skip building the per-cell AABB list (`result.aabbs` is
    * then empty). The occlusion-mesh worker path consumes only
@@ -429,36 +429,6 @@ function buildCulled(
 }
 
 /**
- * 'smooth' mode — **standard Naive Surface Nets (dual contouring)** over the
- * occupancy field, consuming the per-cell measured centroids the cube meshers
- * discard.
- *
- * Treats occupancy as a binary field sampled at integer cell coordinates and
- * contours the occupied/empty boundary:
- *  - **Vertices** — one welded vertex per "dual cell" (a unit cube whose 8
- *    corners are the cells `b … b+1`) that **straddles** the boundary (≥1
- *    occupied AND ≥1 empty corner), placed at the **mean of its occupied
- *    corners' `getCellPoint()`** (the measured surface points; the corners'
- *    geometric centres without a provider). Welding by dual-cell key makes the
- *    surface crack-free.
- *  - **Quads** — one per occupied↔empty **crossing**: for every occupied-cell
- *    face whose neighbour is empty (the SAME set the cube mesher emits), a quad
- *    joins the 4 dual cells sharing that edge, wound to face the empty side.
- *
- * Because there is one quad per crossing, **coverage matches the cubes** — unlike
- * the previous 2×2-fully-occupied-patch heuristic, which only meshed flat solid
- * blocks and so missed 80–90 % of a real, ragged depth surface (the reported
- * "barely any surfaces" bug; 2026-06-30 rewrite). The result is smooth (welded
- * vertices pulled onto the measured surface) and watertight for closed regions;
- * over a thin feature (a one-cell floor) the top and bottom dual vertices average
- * the same cells and coincide, so it reads as a single smooth sheet — the
- * smoothest of the modes. Exception: a dual cell with exactly ONE occupied
- * corner is nudged toward its dual-cell centre ({@link SINGLE_CORNER_NUDGE_K}),
- * so features thin in ≥2 dimensions (isolated voxels, line/pillar ends) keep a
- * non-zero area instead of collapsing onto a single point; on a thin floor this
- * puffs only the perimeter-corner vertices by ±0.25·cell.
- */
-/**
  * 'smooth' single-occupied-corner fallback strength: a dual cell with exactly
  * one occupied corner places its vertex ON that corner's cell point, so every
  * dual cell around a feature thin in ≥2 dimensions (an isolated voxel, the end
@@ -578,6 +548,36 @@ function grownCopy<T extends Float32Array | Uint32Array>(
   return grown;
 }
 
+/**
+ * 'smooth' mode — **standard Naive Surface Nets (dual contouring)** over the
+ * occupancy field, consuming the per-cell measured centroids the cube meshers
+ * discard.
+ *
+ * Treats occupancy as a binary field sampled at integer cell coordinates and
+ * contours the occupied/empty boundary:
+ *  - **Vertices** — one welded vertex per "dual cell" (a unit cube whose 8
+ *    corners are the cells `b … b+1`) that **straddles** the boundary (≥1
+ *    occupied AND ≥1 empty corner), placed at the **mean of its occupied
+ *    corners' `getCellPoint()`** (the measured surface points; the corners'
+ *    geometric centres without a provider). Welding by dual-cell key makes the
+ *    surface crack-free.
+ *  - **Quads** — one per occupied↔empty **crossing**: for every occupied-cell
+ *    face whose neighbour is empty (the SAME set the cube mesher emits), a quad
+ *    joins the 4 dual cells sharing that edge, wound to face the empty side.
+ *
+ * Because there is one quad per crossing, **coverage matches the cubes** — unlike
+ * the previous 2×2-fully-occupied-patch heuristic, which only meshed flat solid
+ * blocks and so missed 80–90 % of a real, ragged depth surface (the reported
+ * "barely any surfaces" bug; 2026-06-30 rewrite). The result is smooth (welded
+ * vertices pulled onto the measured surface) and watertight for closed regions;
+ * over a thin feature (a one-cell floor) the top and bottom dual vertices average
+ * the same cells and coincide, so it reads as a single smooth sheet — the
+ * smoothest of the modes. Exception: a dual cell with exactly ONE occupied
+ * corner is nudged toward its dual-cell centre ({@link SINGLE_CORNER_NUDGE_K}),
+ * so features thin in ≥2 dimensions (isolated voxels, line/pillar ends) keep a
+ * non-zero area instead of collapsing onto a single point; on a thin floor this
+ * puffs only the perimeter-corner vertices by ±0.25·cell.
+ */
 function buildSmooth(
   occupied: PackedKeyHash,
   uniqueCells: readonly GridCell[],

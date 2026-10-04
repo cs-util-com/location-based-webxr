@@ -23,18 +23,57 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
 - `syntheticAuthorLevel(sizeM): QrLevel` — `{version:1, qr:{physicalSizeM}}`;
   throws on a non-positive/non-finite size.
 - `buildAuthorControllerConfig(sizeM, deps: AuthorPipelineDeps)` — deps:
-  `{ frontEnd, solvePose, getCameraPose, getIntrinsics, recordDetection }`.
+  `{ frontEnd, solvePose, getIntrinsics, recordDetection }`. No pose reader:
+  the controller solves each frame against its own capture pose
+  (`CapturedCameraFrame.cameraPose`, QR perf plan 2026-09-23 M4).
 - `MIN_ALIGNMENT_SAMPLES = 3` — the mint gate's alignment floor. A non-null
   matrix is VACUOUS (the store ships an identity matrix from the first GPS
   fix), so the gate counts solved-in fixes (milestone review #1).
-- `authorStatusLine(detectedText, stability, alignment: AuthorAlignmentInfo)`
+- `authorStatusLine(detectedText, fused: QrFusedPose | null, alignment: AuthorAlignmentInfo)`
   → `{ text; canMint }` — the mint gate's only UI; each blocked state names
-  what is missing, including the fix count. The copy is the creator
+  what is missing, including the fix count. Since QR near-frontal pose plan
+  §60 it reads the FUSED pose: while it is not stable the line names what it
+  waits for, in plain words per `notStableReason` ("walk slowly around the
+  code", "keep moving slowly", "the views disagree", "the code seemed to move, keep it in view",
+  "code not read clearly, move closer"), never the view threshold and never
+  "hold steady" - moving the camera is what resolves the tilt (§61 #11). The copy is the creator
   setup's guidance since the guided-setup plan M3 ("Hold the phone on the
   printed code…", "Measured and stable - save the position.").
-- `setupHint({ measured, tourOpen, hadLevel })` - what the panel says once
-  measured: open the tour (step 1) when none is open, that the measurement
-  replaces a code the tour already carried, else place content or finish.
+- `entryHint({ tourOpen, codeSeen })` - the AR visit's first hint (authoring
+  plan 2026-09-28-0953 §3.2a, decision D5): "First, point the camera at the
+  code you scanned to open this tour." while a tour is open and the code in
+  hand has not been seen stable in this visit; empty otherwise. It blocks
+  nothing: a later visit's notes are corrected through the code only when
+  the code was seen (D10b), and the owner chose a hint over a rule.
+- `correctionRefusedLine({ horizontalM, yawDeg, maxHorizontalM })` - the one
+  line that says a code correction was refused (M2c review #2): "Code seen
+  N m from its saved position" (or "turned N°" when only the yaw broke the
+  bound) "- a second print or a moved poster? Not used; this visit follows
+  GPS".
+- `replaceCodeConfirmText(size | null)` (M4 review #3) - the explicit
+  replace's confirm question. It says what a visitor will see, not only what
+  is stored: the code moves for everyone ("it moves about 3.4 m and turns
+  4°"), notes already placed keep their saved positions, so the ones placed
+  against the old position will appear shifted by about that much - more
+  the further from the code when it also turns. One decimal below 10 m,
+  whole metres above; a turn under 1° is left out (under 0.35 m at 20 m).
+  `null` (no sighting of the code in hand) keeps the words without a
+  number. Notes never move along with the code (owner decision D19), so no
+  such option is offered.
+- `setupHint({ measured, tourOpen, hadLevel, keptStored? })` - what the
+  panel says once measured: "Position saved." when no tour is open
+  (`codeTourLine` then says what is happening to the code's tour;
+  scan-to-open plan §9 #9); "Saved position kept." when the level in hand
+  is a stored pose this visit did not measure (D10b: a new measurement only
+  corrects the visit, M2c review #5); that the measurement replaces a code
+  the tour already carried; else place content or finish.
+- `codeTourLine(status: CodeTourStatus): string` - the scan-to-open status
+  of the code in view (`scan-open.ts`) in plain words: opening, does not
+  point to a tour, could not open (a short cause, and either "keep the
+  code in view" or "fix the link, then restart AR"), the level in hand was
+  measured for another tour (named), another tour's code is added to the
+  open tour (plan §13), cannot tell; "" when
+  quiet. At most 110 characters: it shares the panel with the readout.
 - `finishReadiness({ measured, tourOpen })` → `"ready" | "not-measured" |
 "no-tour"` - the finish button's gate.
 - `MISSING_SIZE_MESSAGE` - what a creator reads when the printed-size
@@ -65,9 +104,18 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   (reading, rebuilding N of M, ready, failed, download, saving, saved as,
   not saved) AND the share route's own (share, sharing, shared, nothing
   was shared).
+  A Drive tour has its own two: `readyDrive(bytes, filename)` carries the
+  "delete any older copy first" warning - the only moment it can prevent a
+  repeat download's "name (1).zip" - and `savedToPhone(filename)` names
+  Downloads and the Drive steps.
+- `driveReplaceSteps(name, nameKnown)` - the numbered Drive steps shown
+  after the save: an optional rename/check-the-name step, then a check that
+  the saved file is not "name (1).zip" (if it is: delete every copy, save
+  again - picking "name.zip" beside it would upload the OLD zip), the new
+  tab with "Desktop site", the folder upload, "Replace existing file".
 - `finishIdleLabel(canShare)`, `finishBusyLabel(canShare)`,
-  `finishHandoffStatus({ route, delivered }, filename)` - the button's words
-  and the status line, as pure functions.
+  `finishHandoffStatus({ route, delivered }, filename, drive)` - the
+  button's words and the status line, as pure functions.
   - They are pure, and here rather than inline in the click handler,
     because THREE of the four outcomes cannot be reached in an e2e run: a
     headless browser has no share sheet, so this is the only place the
@@ -92,8 +140,8 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   the printed size is an INPUT — no depth, no corner-based sizing.
 - **`minIntervalMs: 0`**: the camera-frame source is the single cadence
   owner (Option A); two equal throttles in series drop ~1 frame per cycle.
-- **Minting reads the STABLE pose** (delta #2) in RAW WebXR/odom space (the
-  frame the controller composes with `getCameraPose`); the conversion is
+- **Minting reads the STABLE fused pose** (delta #2; plan §60) in RAW WebXR/odom space (the
+  frame the controller composes with each frame's capture pose); the conversion is
   `alignment × WEBXR_TO_NUE × pose`, using the alignment TARGET matrix
   (`selectAlignmentMatrix`), not the lerped visual transform — for a mint,
   the converged solve is the honest frame.
@@ -108,11 +156,10 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
 const config = buildAuthorControllerConfig(0.2, {
   frontEnd,
   solvePose,
-  getCameraPose,
   getIntrinsics,
   recordDetection: (e) => store.dispatch(recordQrDetection(e)),
 });
-// … detections accumulate; once selectQrPoseStability says 'stable':
+// … detections accumulate; once the fused pose (createFusedQrPoseSource) is 'stable':
 const result = mintQrLevel({
   odomPose: stablePose,
   alignmentMatrix,
@@ -122,6 +169,15 @@ const result = mintQrLevel({
   nowIso,
 }); // from the framework — see qr-mint-level.ts.md
 ```
+
+- `waitingFor(reason)` is exported: the visitor hint
+  (`qr-debug-readout.ts`) reads the same copy (plan §66, DEC-H3).
+
+- `authorStatusLine(..., sizeCheckPending?)` adds "Take a step sideways to
+  check the print size." to the ready line while the print-size check has no
+  answer; `sizeOfferView(measuredM, typedM)` and `adoptedSizeNote(sizeM)`
+  are the offer's copy (QR size consensus plan S3a): approximate, the ruler
+  as arbiter, the field's unit (metres) beside the centimetres.
 
 ## Tests
 

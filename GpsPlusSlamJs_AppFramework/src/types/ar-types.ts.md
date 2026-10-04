@@ -16,8 +16,10 @@ must not be forked.
 
 - **`ArPoseTuples`** — `{ position: Vector3, rotation: Quaternion }`, tuple-form
   pose for storage/serialization (library readonly tuples from
-  `gps-plus-slam-js`). Used where poses are persisted as plain JSON arrays:
-  `RefPointObservation`, `ParsedRefPointAction`, `RefPointRecord`.
+  `gps-plus-slam-js`). Used where poses are persisted as plain JSON arrays —
+  the live example is the recorder's `RefPointObservation`. (This line also
+  named `ParsedRefPointAction` and `RefPointRecord`; neither exists in either
+  root any more.)
 - **`WebXRVec3` / `WebXRQuaternion`** — object-form `{x,y,z}` / `{x,y,z,w}` as
   the WebXR API returns them (`XRViewerPose`). Deliberately distinct from the
   library's tuple forms; also used by `CapturedImage` and the pose mocks.

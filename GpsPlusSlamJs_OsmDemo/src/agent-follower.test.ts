@@ -256,12 +256,6 @@ describe("stepFollower", () => {
   });
 
   /**
-   * A NON-FINITE TARGET IS REFUSED RATHER THAN CHASED. The target comes from
-   * `pointAlong` over worker-supplied geometry, and one `NaN` reaching the
-   * integrator poisons the follower's velocity permanently — the agent would
-   * never move again, with nothing on screen to say why.
-   */
-  /**
    * A NON-FINITE SMOOTH TIME FALLS BACK RATHER THAN POISONING (review on #276).
    * `NaN` propagates into the velocity for ever; `Infinity` makes `omega` zero,
    * so the agent never moves and `followerSettled` never agrees — and since
@@ -281,6 +275,12 @@ describe("stepFollower", () => {
     }
   });
 
+  /**
+   * A NON-FINITE TARGET IS REFUSED RATHER THAN CHASED. The target comes from
+   * `pointAlong` over worker-supplied geometry, and one `NaN` reaching the
+   * integrator poisons the follower's velocity permanently — the agent would
+   * never move again, with nothing on screen to say why.
+   */
   it("ignores a non-finite target", () => {
     const start = followerAt(at(1, 2));
     expect(stepFollower(start, { x: Number.NaN, y: 0, z: 0 }, 1 / 60)).toEqual(

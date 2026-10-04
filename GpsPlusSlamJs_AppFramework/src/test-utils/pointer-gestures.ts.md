@@ -26,7 +26,19 @@ what "a swipe" and "a tap" mean.
     gesture over for scrolling).
   - `options.pointerType` defaults to `'touch'`; `options.durationMs` defaults to
     1000 ms — deliberately above any tap window, so a gesture only counts as a
-    tap when a test says so.
+    tap when a test says so. `options.pointerId` defaults to `1`.
+  - `options.touchEvents: true` also dispatches the touch events Chromium sends
+    beside the pointer stream: `touchstart` / `touchmove` after each pointer
+    event (before the value write, which is the touch event's default action)
+    and a `touchend` last (left out with `options.omitTouchEnd`, to model a lost
+    end event). After the `touchend` it fires the `change` Blink sends as that
+    event's default action, but only when the value differs from the one the
+    gesture started with: seen in headless Chromium on 2026-09-30 after an
+    unguarded swipe and after a guarded tap (`input:s change:s change:t`),
+    never after a guarded scroll whose value the guard restored.
+  - `options.afterCancel` (with `end: 'cancel'` and `touchEvents`): points Blink
+    keeps writing after the `pointercancel`, because its own direction lock said
+    horizontal on the first move; each is a `touchmove` plus a value write.
   - Throws if `path` is empty.
 
 ## Invariants & assumptions

@@ -12,15 +12,24 @@
  * dependency decision — see the follow-up
  * `GpsPlusSlamJs_Docs/docs/2026-06-17-0020-qr-decoder-fallback-followup.md`.
  *
- * Corners are emitted in **pixel** coordinates (top-left origin); corner-order
- * normalization / winding validation lives downstream in `qr-pose.ts`
- * (`validateQuad`), so the pose path is front-end-agnostic. The corner order is
- * not contractually TL,TR,BR,BL — validate regardless.
+ * Corners are emitted in **pixel** coordinates (top-left origin), in SYMBOL
+ * order (TL, TR, BR, BL of the printed code) whenever the finder patterns say
+ * so (`qr-corner-order.ts`): the native detector reports them in IMAGE order
+ * on the owner's phone, which turned the solved pose in 90-degree steps
+ * ("Cause A"; QR near-frontal pose plan 2026-09-23-2314, M1c). When the image
+ * cannot tell, the order is chained from the same code's last known order
+ * (plan §42: at most 500 ms between detections, a small roll, no jump of
+ * the centre) or, failing that, comes from the detector.
  *
  * The native detector is INJECTED so this module and its tests need no DOM.
  */
 
 import type { Point2 } from './qr-pose.js';
+import { rgbaToImageData } from '../rgba-image-data.js';
+import {
+  createCornerOrderCanonicalizer,
+  type CornerOrderSource,
+} from './qr-corner-order.js';
 
 /** Raw RGBA pixels of the frame fed to detection (top-left origin). */
 export interface RgbaImage {
@@ -33,6 +42,16 @@ export interface RgbaImage {
 export interface QrDetection {
   corners: [Point2, Point2, Point2, Point2];
   text: string;
+  /**
+   * Where the corner order came from (near-frontal pose plan §39 F0a):
+   * `finder`, `memory` or `native`; absent when the producer does not say.
+   */
+  orderSource?: CornerOrderSource;
+  /**
+   * On a finder frame with a live chain (plan §42 S4): whether the chain
+   * would have chosen the same order - the chain's error rate on the phone.
+   */
+  orderAudit?: 'agree' | 'disagree' | 'reject';
 }
 
 /** Front-agnostic detect+decode contract. */
@@ -53,6 +72,17 @@ export interface DetectedBarcodeLike {
   format?: string;
 }
 
+/** Puts one detection's corners into symbol order, saying how (injectable for tests). */
+export type CornerOrderer = (
+  text: string,
+  image: RgbaImage,
+  corners: [Point2, Point2, Point2, Point2]
+) => {
+  corners: [Point2, Point2, Point2, Point2];
+  source: CornerOrderSource;
+  audit?: 'agree' | 'disagree' | 'reject';
+};
+
 /** The slice of `BarcodeDetector` we depend on. */
 export interface BarcodeDetectorLike {
   detect(image: unknown): Promise<DetectedBarcodeLike[]>;
@@ -64,20 +94,27 @@ export interface BarcodeDetectorLike {
  */
 export type ToImageBitmapSource = (image: RgbaImage) => unknown;
 
-const defaultToImageData: ToImageBitmapSource = (image) =>
-  new ImageData(new Uint8ClampedArray(image.data), image.width, image.height);
+/**
+ * Default conversion: wrap the frame in `ImageData` WITHOUT copying (the frame
+ * is already an owned copy; QR perf plan 2026-09-23, M3). The adopt-or-copy
+ * rule lives in one place, `../rgba-image-data.ts`.
+ */
+const defaultToImageData: ToImageBitmapSource = rgbaToImageData;
 
 export class BarcodeDetectorFrontEnd implements QrFrontEnd {
   readonly kind = 'barcode-detector';
   private readonly detector: BarcodeDetectorLike;
   private readonly toSource: ToImageBitmapSource;
+  private readonly orderCorners: CornerOrderer;
 
   constructor(
     detector: BarcodeDetectorLike,
-    toSource: ToImageBitmapSource = defaultToImageData
+    toSource: ToImageBitmapSource = defaultToImageData,
+    orderCorners: CornerOrderer = defaultCornerOrderer()
   ) {
     this.detector = detector;
     this.toSource = toSource;
+    this.orderCorners = orderCorners;
   }
 
   async detect(image: RgbaImage): Promise<QrDetection | null> {
@@ -85,7 +122,13 @@ export class BarcodeDetectorFrontEnd implements QrFrontEnd {
     for (const r of results) {
       const corners = toQuad(r.cornerPoints);
       if (corners && typeof r.rawValue === 'string' && r.rawValue.length > 0) {
-        return { corners, text: r.rawValue };
+        const ordered = this.orderCorners(r.rawValue, image, corners);
+        return {
+          corners: ordered.corners,
+          text: r.rawValue,
+          orderSource: ordered.source,
+          ...(ordered.audit ? { orderAudit: ordered.audit } : {}),
+        };
       }
     }
     return null;
@@ -96,10 +139,12 @@ export class BarcodeDetectorFrontEnd implements QrFrontEnd {
  * Build a {@link BarcodeDetectorFrontEnd} if the runtime exposes a
  * `BarcodeDetector` constructor; otherwise `null` (→ the caller must handle the
  * unsupported-browser case; there is no OpenCV fallback). `ctor` is injectable
- * for tests.
+ * for tests; `toSource` overrides the default no-copy conversion (e.g. a
+ * measuring or copying one for a performance A/B).
  */
 export function createBarcodeDetectorFrontEnd(
-  ctor?: new (opts: { formats: string[] }) => BarcodeDetectorLike
+  ctor?: new (opts: { formats: string[] }) => BarcodeDetectorLike,
+  toSource?: ToImageBitmapSource
 ): BarcodeDetectorFrontEnd | null {
   const Ctor =
     ctor ??
@@ -111,10 +156,26 @@ export function createBarcodeDetectorFrontEnd(
       }
     ).BarcodeDetector;
   if (!Ctor) return null;
-  return new BarcodeDetectorFrontEnd(new Ctor({ formats: ['qr_code'] }));
+  return new BarcodeDetectorFrontEnd(
+    new Ctor({ formats: ['qr_code'] }),
+    toSource ?? defaultToImageData
+  );
 }
 
 // --- helpers ---------------------------------------------------------------
+
+/** The finder-pattern orderer with its per-code memory, one per front end. */
+function defaultCornerOrderer(): CornerOrderer {
+  const canonicalizer = createCornerOrderCanonicalizer();
+  return (text, image, corners) => {
+    const result = canonicalizer.canonicalize(text, image, corners);
+    return {
+      corners: result.corners,
+      source: result.source,
+      ...(result.audit ? { audit: result.audit } : {}),
+    };
+  };
+}
 
 function toQuad(
   points: ReadonlyArray<{ x: number; y: number }>

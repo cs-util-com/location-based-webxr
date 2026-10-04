@@ -26,6 +26,7 @@ import {
 // The shared mesh teardown, deep-imported for the same reason as the overlay
 // above: the `/visualization` barrel would pull the whole AR/scene stack into a
 // module that already costs enough to import.
+import { enableSunShadows } from "gps-plus-slam-app-framework/visualization/sun-shadow";
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
 
 import type { CellMesh } from "./cell-mesh.js";
@@ -43,7 +44,18 @@ import {
 } from "./cell-presets.js";
 import { cellFaceMaterial, cellOutlineMaterial } from "./cell-materials.js";
 import { installGroundSlope } from "./ground-slope-shader.js";
-import { drawMeshLayers } from "./mesh-layers.js";
+import {
+  applyBuildingSkyLight,
+  applySurfaceGain,
+  drawMeshLayers,
+} from "./mesh-layers.js";
+import {
+  DEFAULT_LIGHT_SETTINGS,
+  gainOf,
+  type LightSettings,
+} from "./light-settings.js";
+import { litSurfaceLuma, meanChroma } from "./light-readouts.js";
+import { applyArShadowCasting } from "./ar-sun-shadow.js";
 import { SceneContent, type ContentFrame } from "./scene-content.js";
 import { createQuestBeacons } from "./quest-beacon.js";
 import { type QuestBeaconPlacement } from "./quest-beacon-placement.js";
@@ -61,10 +73,16 @@ import {
 import { isPickGesture, type PointerOrigin } from "./pick-gesture.js";
 import { resolvePick, type Pick, type ScenePoint } from "./pick.js";
 import { AGENT_SPEED_MPS, pathLengthM, pointAlong } from "./route-path.js";
-import { DEFAULT_TIME_OF_DAY, sunAt } from "./sun-position.js";
+import type { SunAngles } from "./sun-position.js";
 import { terrainTextureFrom } from "./terrain-texture.js";
 import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
-import { FOG_RGB, TONE_MAPPING_EXPOSURE, SkyRig } from "./sky-rig.js";
+import type { HazeModeSwitch } from "./ar-scene-environment.js";
+import {
+  AtmosphereRig,
+  surfaceGainAt,
+  TONE_MAPPING,
+  TONE_MAPPING_EXPOSURE,
+} from "./atmosphere-rig.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
 // Re-exported so the many call sites that import these from the view keep working.
@@ -162,12 +180,6 @@ export function groundPositionFor(centreEnu: {
   return { x: centreEnu.x, y: 0, z: -centreEnu.y };
 }
 
-/**
- * Where the haze starts, metres.
- *
- * Two thirds of the way out, so the fade is gradual enough to read as distance
- * rather than as a wall — the whole reason the far plane can be lowered at all.
- */
 /**
  * Where the haze starts, as a fraction of the far plane.
  *
@@ -288,6 +300,12 @@ const AGENT_RADIUS_M = 1.2;
 export interface BuildingViewOptions {
   readonly container: HTMLElement;
   /**
+   * Where the sun starts (plan 2026-09-23-2149, M2): the caller's sun clock
+   * knows the place and the date. Passed in rather than set after
+   * construction so the sky is built once for the right sun, not rebuilt.
+   */
+  readonly initialSun: SunAngles;
+  /**
    * Called with whatever the user selected (W12).
    *
    * GENERALISED from `onCellClick(cell)`, because a cell is no longer the only
@@ -389,12 +407,6 @@ export class BuildingView {
   /** The agent itself — one marker, created on the first route (DEC-R11-15). */
   private agent: THREE.Mesh<THREE.BufferGeometry, THREE.Material> | undefined;
   /**
-   * The walk in progress: the path, when it started, and what to call at the end.
-   *
-   * HELD RATHER THAN CLOSED OVER, so a second order replaces the first instead
-   * of running two walks against one marker — and so `dispose()` can drop it.
-   */
-  /**
    * The walk in progress: the exact path, when it began, and the BODY on it.
    *
    * `follower` is what the user actually sees (DEC-R13-3/4): the drawn polyline
@@ -403,6 +415,10 @@ export class BuildingView {
    * because the follower is integrated per elapsed second rather than per frame
    * — a rAF-counted step would make the motion depend on the display's refresh
    * rate, which is the failure `agent-follower.test.ts` pins directly.
+   *
+   * HELD RATHER THAN CLOSED OVER, so a second order replaces the first
+   * instead of running two walks against one marker — and so `dispose()` can
+   * drop it.
    */
   private walk:
     | {
@@ -428,22 +444,32 @@ export class BuildingView {
   private readonly ground: THREE.Mesh<THREE.PlaneGeometry, THREE.Material>;
   /** The AR shell material while a session runs; see `setArShellMaterial`. */
   private arShellMaterial: THREE.Material | undefined;
+  /** The desktop shadow compile check is on; see `enableShadowCheck`. */
+  private shadowCheck = false;
+  /** The AR sun shadow's casting; see `setArShadowCasting`. */
+  private arShadowCasting = false;
+  /** Bumped on every caster change, for the shadow map's update rule. */
+  private arShadowCasterGeneration = 0;
+  private arShadowCasterCount = 0;
   /**
-   * The scattering sky and the environment map derived from it (§1).
-   *
-   * Owns both, because they have one invariant between them: the environment is
-   * regenerated whenever the sun moves, and the previous render target must be
-   * released when it is. See `sky-rig.ts`.
+   * The physical sky and everything that must agree with it: the environment
+   * light, the sun light, the fog colour and the distance haze (plan
+   * 2026-09-23-0048, M3). See `atmosphere-rig.ts`.
    */
-  private readonly skyRig: SkyRig;
+  private readonly atmosphere: AtmosphereRig;
   /**
-   * Where the sun is, in `0..1` across the day (DEC-R6-3).
-   *
-   * A FIELD RATHER THAN A CONSTANT because it is now a control. It replaces the
-   * camera-derived azimuth that DEC-R4-6 introduced; see `sun-position.ts` for
-   * why that had to go and what pays for it.
+   * Where the sun is (DEC-R6-3). The REAL sun since plan 2026-09-23-2149: the
+   * caller's sun clock (`sun-clock.ts`) owns the place, the date and the
+   * stepping; this view only draws the angles it is given.
    */
-  private timeOfDay = DEFAULT_TIME_OF_DAY;
+  private sunAngles: SunAngles;
+  /**
+   * The noon brightening's current factor (plan 2026-09-24-0901), HELD so
+   * every rebuild re-applies it: new meshes arrive at factor 1.
+   */
+  private surfaceGain = 1;
+  /** The light dialog's settings (plan 2026-09-24-2140); the shipped look by default. */
+  private lightSettings: LightSettings = DEFAULT_LIGHT_SETTINGS;
   /** The flat plane's vertex positions, kept so terrain can be re-applied. */
   private flatGround: Float32Array | undefined;
   /** The current field, so a mode switch and the ramp can re-read it. */
@@ -525,6 +551,7 @@ export class BuildingView {
 
   constructor(options: BuildingViewOptions) {
     this.container = options.container;
+    this.sunAngles = options.initialSun;
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       // Without this the drawing buffer is cleared after each composite, so a
@@ -551,7 +578,7 @@ export class BuildingView {
     // `scene.background` and — deliberately — to nothing else, under a long
     // comment explaining why `scene.environment` had to stay unset. That comment
     // was right about the mechanism and its reason has now expired, so the short
-    // version stays here and the rest moved to `sky-rig.ts`:
+    // version stays here (the long one lived in the since-deleted `sky-rig.ts`):
     //
     // W20 set `scene.environment` to that RAW equirect texture. three routes any
     // environment map through its CubeUV path, which expects PMREM-processed
@@ -562,20 +589,25 @@ export class BuildingView {
     // still reported "21 volumes" and every pixel assertion stayed green.
     //
     // THE FIX IS NOT "LEAVE IT UNSET", IT IS "PMREM IT FIRST", which is what
-    // `SkyRig` does. The environment map is what actually makes surfaces shiny —
+    // the sky's environment bake does. The environment map is what actually makes surfaces shiny —
     // the ingredient DEC-R5-8 deferred to "the shader round", which this is.
     //
     // The guard that must come with it is a DRAWS-ANYTHING check in the e2e
     // suite, not an assertion that the field was set: the outage above was
     // invisible to property assertions.
-    this.skyRig = new SkyRig({ renderer: this.renderer, scene: this.scene });
+    //
+    // THE SKY IS NOW PHYSICAL (plan 2026-09-23-0048, M3): `atmosphere-rig.ts`
+    // replaced `sky-rig.ts`, whose Preetham disc overflowed the half-float
+    // PMREM above ~20° of sun and blacked out every standard material. It is
+    // built below, once the sun light it drives exists.
 
-    // ACES FILMIC TONE MAPPING (DEC-R6-4), and it is not optional alongside a
-    // scattering sky: unmapped, such a sky blows out to white, because its
-    // radiance range is far wider than the display's. It re-maps EVERY colour in
-    // the scene, which is why the e2e suite's absolute-colour assertions had to
-    // become palette-independent claims BEFORE this landed.
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    // TONE MAPPING (DEC-R6-4; Khronos Neutral since plan 2026-09-23-2149
+    // M3, see `TONE_MAPPING`), and it is not optional alongside a scattering
+    // sky: unmapped, such a sky blows out to white, because its radiance
+    // range is far wider than the display's. It re-maps EVERY colour in the
+    // scene, which is why the e2e suite's absolute-colour assertions had to
+    // become palette-independent claims BEFORE the first grade landed.
+    this.renderer.toneMapping = TONE_MAPPING;
     this.renderer.toneMappingExposure = TONE_MAPPING_EXPOSURE;
 
     // DISTANCE HAZE, and this REVERSES a round-2 decision on its own terms.
@@ -587,15 +619,11 @@ export class BuildingView {
     //
     // The colour is the sky's HORIZON, not an arbitrary grey: anything else and
     // the fade reads as a grey band in front of the sky rather than as distance.
-    this.scene.fog = new THREE.Fog(
-      new THREE.Color(
-        (FOG_RGB[0] ?? 0) / 255,
-        (FOG_RGB[1] ?? 0) / 255,
-        (FOG_RGB[2] ?? 0) / 255,
-      ),
-      FOG_NEAR_M,
-      FAR_PLANE_M,
-    );
+    // The atmosphere rig sets it at every sun change (it used to be a constant
+    // that matched the sky at one time of day); black until then. The fog is
+    // also what enables the rig's physical haze in three's shaders, and its
+    // near/far are where that haze completes.
+    this.scene.fog = new THREE.Fog(0x000000, FOG_NEAR_M, FAR_PLANE_M);
 
     this.content.add(this.group);
     // THE BEACONS JOIN THE CONTENT ROOT ONCE, HERE. An earlier version of this
@@ -603,16 +631,18 @@ export class BuildingView {
     // grid happened to be rebuilt — so they were absent on a fresh view and the
     // e2e caught it by measuring nothing when they were cleared.
     this.content.add(this.questBeacons.root);
-    // Ambient LOWERED from 0.55. Ambient light is flat by definition — it adds the
-    // same amount to every facet regardless of its normal — so it was actively
-    // washing out the only cue that distinguishes one ground facet from the next.
-    // The environment map now supplies the soft fill it used to.
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+    // THE AMBIENT LIGHT IS GONE (M3). It was lowered from 0.55 to 0.25 because
+    // flat light washes out the only cue that distinguishes one ground facet
+    // from the next, and "the environment map now supplies the soft fill it
+    // used to". With the physical sky that is fully true: the environment is
+    // the sky's own light, exposed with it, while a fixed ambient term would
+    // not follow the time of day. The fallback sky brings a hemisphere light.
+    //
     // THE HEMISPHERE LIGHT IS GONE (§1), and its own comment said why it would
     // be. It read: "the directional fill the environment map used to contribute,
     // from a LIGHT rather than from a texture" — it was a stand-in for the
-    // environment map that could not be used, and `SkyRig` now supplies the real
-    // thing. Keeping both would double-count the sky's fill and wash out exactly
+    // environment map that could not be used, and the sky now supplies the real
+    // thing (the fallback sky, without an environment map, brings its own). Keeping both would double-count the sky's fill and wash out exactly
     // the facet contrast DEC-R2-1 exists to produce.
     //
     // THE SUN IS PHYSICAL NOW (DEC-R6-3, reversing DEC-R4-6). Its azimuth used
@@ -622,6 +652,18 @@ export class BuildingView {
     // that pay for the reversal.
     this.sun = new THREE.DirectionalLight(0xffffff, 1.1);
     this.scene.add(this.sun);
+    this.atmosphere = new AtmosphereRig({
+      renderer: this.renderer,
+      scene: this.scene,
+      sun: this.sun,
+    });
+    // WHICH SKY RUNS, published where tests and people can read it. The
+    // fallback is silent by design, so without this an e2e run on a device
+    // (or a lost context) that fell back would measure the wrong sky and
+    // pass (M3 review, finding 4).
+    this.container.dataset["sky"] = this.atmosphere.usingFallback
+      ? "fallback"
+      : "physical";
     // NOT aimed here: `aimSun` reads `this.controls`, which is constructed
     // further down. Aiming it at this point threw inside the constructor, took
     // the whole view with it, and turned 58 e2e tests red at once — a useful
@@ -766,7 +808,8 @@ export class BuildingView {
       // NO LONGER RE-AIMS THE SUN, and that is a saving rather than an omission.
       // Under DEC-R4-6 the sun tracked the camera so every drag moved it; the
       // sun is physical since DEC-R6-3. Re-aiming here would now call
-      // `PMREMGenerator.fromScene` on every drag — exactly the per-frame
+      // the sky's LUT pass, readback and environment bake on every drag —
+      // exactly the per-frame
       // main-thread cost DEC-R3-9's on-demand renderer exists to avoid.
       this.requestFrame();
       // WHERE THE CAMERA IS LOOKING, reported raw (DEC-R13-7). The ninth session
@@ -817,6 +860,7 @@ export class BuildingView {
    */
   setQuestBeacons(placements: readonly QuestBeaconPlacement[]): void {
     this.questBeacons.set(placements);
+    this.reapplyArShadowCasting();
     this.requestFrame();
   }
 
@@ -1303,31 +1347,6 @@ export class BuildingView {
   }
 
   /**
-   * Draws the affordance grid, replacing any previous one.
-   *
-   * Kept out of `this.group` (and therefore out of `clear()`) so rebuilding the
-   * buildings does not silently drop the grid, and vice versa — they arrive from
-   * different parts of the same snapshot and neither should depend on the
-   * other's timing.
-   */
-  /**
-   * Draws the outlines of features excluded as below-surface, at their depth.
-   *
-   * WHY THE 3D VIEW AND NOT ONLY THE MAP. This answers what SHAPE the excluded
-   * thing was — a silo or a building dropped wrongly reads as a hole in the
-   * skyline, which no 2D outline conveys. The map answers WHERE it is. Neither
-   * answers the other's question.
-   *
-   * DRAWN BELOW THE GROUND, at a fixed depth rather than at the feature's real
-   * one, because OSM carries no reliable depth for these: `layer=-1` is an
-   * ordering, not a distance. A fixed offset is an honest "this is underneath"
-   * rather than a fabricated elevation.
-   *
-   * Kept out of `this.group` for the same reason the cell grid is: it arrives
-   * from a different part of the snapshot and rebuilding the buildings must not
-   * silently drop it.
-   */
-  /**
    * Removes and frees the underground lines, if any are up.
    *
    * SHARED BY THREE CALLERS, and that is the point. `renderUnderground` needs
@@ -1346,6 +1365,23 @@ export class BuildingView {
     this.undergroundLines = undefined;
   }
 
+  /**
+   * Draws the outlines of features excluded as below-surface, at their depth.
+   *
+   * WHY THE 3D VIEW AND NOT ONLY THE MAP. This answers what SHAPE the excluded
+   * thing was — a silo or a building dropped wrongly reads as a hole in the
+   * skyline, which no 2D outline conveys. The map answers WHERE it is. Neither
+   * answers the other's question.
+   *
+   * DRAWN BELOW THE GROUND, at a fixed depth rather than at the feature's real
+   * one, because OSM carries no reliable depth for these: `layer=-1` is an
+   * ordering, not a distance. A fixed offset is an honest "this is underneath"
+   * rather than a fabricated elevation.
+   *
+   * Kept out of `this.group` for the same reason the cell grid is: it arrives
+   * from a different part of the snapshot and rebuilding the buildings must not
+   * silently drop it.
+   */
   renderUnderground(outlines: readonly Float32Array[]): void {
     this.clearUnderground();
     // BUILT IN `underground-lines.ts`, not here. This view needs a WebGL
@@ -1360,6 +1396,14 @@ export class BuildingView {
     this.requestFrame();
   }
 
+  /**
+   * Draws the affordance grid, replacing any previous one.
+   *
+   * Kept out of `this.group` (and therefore out of `clear()`) so rebuilding the
+   * buildings does not silently drop the grid, and vice versa — they arrive from
+   * different parts of the same snapshot and neither should depend on the
+   * other's timing.
+   */
   renderCells(mesh: CellMesh): void {
     if (this.cellMesh !== undefined) {
       this.content.remove(this.cellMesh);
@@ -1435,6 +1479,112 @@ export class BuildingView {
   }
 
   /**
+   * The light dialog's settings (plan 2026-09-24-2140): the surface gain's
+   * ramp (applied through `aimSun`, as the sun does), the exposure through
+   * the rig (which re-derives the sun light, fog and haze), and the sky light
+   * on buildings (applied before every render). Held, so rebuilt meshes and
+   * later sun changes keep them.
+   */
+  setLightSettings(settings: LightSettings): void {
+    this.lightSettings = settings;
+    this.atmosphere.setExposure({
+      ev: settings.exposureEv,
+      adaptation: settings.exposureAdaptation,
+    });
+    this.aimSun();
+    this.requestFrame();
+  }
+
+  /**
+   * The light dialog's readouts, measured on this view as it stands: the
+   * lit-surface brightness with the heat grid hidden, and the chroma the grid
+   * adds (the DEC-R4-5 margin; `null` when no grid is drawn, or when
+   * `withMargin` is false, which skips the second render). Renders
+   * synchronously and reads with `gl.readPixels` straight after each render,
+   * so each read is exactly the frame just drawn with the grid as set. The
+   * grid's mesh and outlines are restored as found, also when a render
+   * throws.
+   */
+  measureLight({ withMargin = true }: { withMargin?: boolean } = {}): {
+    litLuma: number;
+    margin: number | null;
+  } {
+    const read = (): Uint8Array => {
+      this.prepareFrame();
+      this.renderer.render(this.scene, this.camera);
+      const gl = this.renderer.getContext();
+      const pixels = new Uint8Array(
+        gl.drawingBufferWidth * gl.drawingBufferHeight * 4,
+      );
+      gl.readPixels(
+        0,
+        0,
+        gl.drawingBufferWidth,
+        gl.drawingBufferHeight,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        pixels,
+      );
+      return pixels;
+    };
+    const grid = [this.cellMesh, this.cellOutlines].filter(
+      (o): o is NonNullable<typeof o> => o !== undefined && o.visible,
+    );
+    try {
+      for (const o of grid) o.visible = false;
+      const without = read();
+      const litLuma = litSurfaceLuma(without);
+      let margin: number | null = null;
+      if (withMargin && grid.length > 0) {
+        for (const o of grid) o.visible = true;
+        margin = meanChroma(read()) - meanChroma(without);
+      }
+      return { litLuma, margin };
+    } finally {
+      for (const o of grid) o.visible = true;
+      this.requestFrame();
+    }
+  }
+
+  /** Before every render: the haze and the sky light on buildings. */
+  private prepareFrame(): void {
+    this.atmosphere.prepareFrame(this.camera);
+    applyBuildingSkyLight(
+      this.group,
+      this.scene.environment,
+      this.scene.environmentIntensity,
+      this.lightSettings.buildingSkyLight,
+    );
+  }
+
+  /**
+   * Moves the sun (§1, DEC-R6-3; the real sun since plan 2026-09-23-2149).
+   *
+   * THE COST LIVES HERE, DELIBERATELY. Each call renders the sky's sky-view
+   * LUT, reads it back (for the exposure and the fog colour) and re-bakes the
+   * environment map. That is affordable because only the user's time
+   * controls call it, never the camera: the hotkeys, the date, and the time
+   * slider, which `main.ts` samples to one call per 50 ms while it is
+   * dragged. See `aimSun` and `sun-clock.ts`, whose
+   * stops keep the sun within civil twilight (≥ −6°).
+   */
+  setSunAngles(angles: SunAngles): void {
+    this.sunAngles = angles;
+    this.aimSun();
+    // On-demand rendering: without this the new sun is invisible until the
+    // camera moves, which is finding R2-3 in a new place.
+    this.requestFrame();
+  }
+
+  /**
+   * The physical sky's distance haze, for the AR session to put on stock fog
+   * while it runs (`applyArEnvironment`).
+   */
+  distanceHaze(): HazeModeSwitch {
+    return this.atmosphere.haze;
+  }
+
+  /**
    * Points the sun from the camera's current azimuth (W12).
    *
    * Called from the controls' `change` handler rather than from a loop: the sun
@@ -1445,31 +1595,6 @@ export class BuildingView {
    * direction matters — but it must be large enough to sit outside the scene if
    * a shadow camera is ever added.
    */
-  /**
-   * Moves the sun to a time of day in `0..1` (§1, DEC-R6-3).
-   *
-   * THE COST LIVES HERE, DELIBERATELY. Each call regenerates the PMREM
-   * environment map, which is a render pass. That is affordable precisely
-   * because this is a deliberate user action rather than something a drag
-   * triggers — see `aimSun` and `sun-position.ts`.
-   *
-   * Out-of-range values are handled by `sunAt`, which clamps rather than
-   * extrapolating: a sun below the horizon puts the scattering shader outside
-   * its defined range, where its output is undefined rather than merely dark.
-   */
-  setTimeOfDay(timeOfDay: number): void {
-    this.timeOfDay = timeOfDay;
-    this.aimSun();
-    // On-demand rendering: without this the new sun is invisible until the
-    // camera moves, which is finding R2-3 in a new place.
-    this.requestFrame();
-  }
-
-  /** Where the sun currently is, in `0..1`. */
-  timeOfDayValue(): number {
-    return this.timeOfDay;
-  }
-
   private aimSun(): void {
     // ONE VECTOR, TWO CONSUMERS, and it now comes back from the rig rather than
     // being derived twice: `setSun` points the sky shader and returns the same
@@ -1484,9 +1609,9 @@ export class BuildingView {
     // a sun that follows the camera spins the whole scattering sky as you pan —
     // so the only input is the time of day, and the helper that measured the
     // camera's azimuth was deleted once nothing had read it for two rounds.
-    // That is also what makes the PMREM regeneration inside `setSun`
+    // That is also what makes the sky rebuild inside `setSun`
     // affordable — it runs when the user changes the time, not on every drag.
-    const direction = this.skyRig.setSun(sunAt(this.timeOfDay));
+    const direction = this.atmosphere.setSun(this.sunAngles);
     const distance = 1000;
     this.sun.position.set(
       direction.x * distance,
@@ -1509,28 +1634,14 @@ export class BuildingView {
     // TOGETHER so the direction is preserved.
     this.sun.target.position.set(0, 0, 0);
     this.sun.target.updateMatrixWorld();
+    // The noon brightening follows the sun (plan 2026-09-24-0901).
+    this.surfaceGain = surfaceGainAt(
+      this.sunAngles.elevationRad,
+      gainOf(this.lightSettings),
+    );
+    applySurfaceGain(this.group, this.surfaceGain);
   }
 
-  /**
-   * Schedules exactly one frame, coalescing repeats.
-   *
-   * WHY NOT A PERMANENT rAF LOOP. That was the first attempt, and it was
-   * measured: an always-running loop over a static city scene made the e2e
-   * suite ~6× slower (21 s → 2.2 m) and pushed one test into a timeout, because
-   * the loop competes for the same CPU as everything else in a headless
-   * browser. On a phone it is worse than slow — it is a scene that never stops
-   * drawing, burning battery to repaint an identical picture.
-   *
-   * The scene is static except while the user is moving the camera, so frames
-   * are scheduled on demand. This still works with damping, which is the part
-   * that looks like it should need a loop: `controls.update()` emits another
-   * `change` while the camera is still easing, which schedules the next frame,
-   * so the sequence sustains itself until the motion settles and then stops.
-   *
-   * The handle is HELD so `dispose()` can cancel it. An orphaned frame callback
-   * touching a disposed WebGL context is a crash, not a leak — the same reason
-   * the resize listener is held rather than passed inline.
-   */
   /**
    * Stop drawing and hide the canvas, keeping everything else alive (M5).
    *
@@ -1576,6 +1687,26 @@ export class BuildingView {
     this.requestFrame();
   }
 
+  /**
+   * Schedules exactly one frame, coalescing repeats.
+   *
+   * WHY NOT A PERMANENT rAF LOOP. That was the first attempt, and it was
+   * measured: an always-running loop over a static city scene made the e2e
+   * suite ~6× slower (21 s → 2.2 m) and pushed one test into a timeout, because
+   * the loop competes for the same CPU as everything else in a headless
+   * browser. On a phone it is worse than slow — it is a scene that never stops
+   * drawing, burning battery to repaint an identical picture.
+   *
+   * The scene is static except while the user is moving the camera, so frames
+   * are scheduled on demand. This still works with damping, which is the part
+   * that looks like it should need a loop: `controls.update()` emits another
+   * `change` while the camera is still easing, which schedules the next frame,
+   * so the sequence sustains itself until the motion settles and then stops.
+   *
+   * The handle is HELD so `dispose()` can cancel it. An orphaned frame callback
+   * touching a disposed WebGL context is a crash, not a leak — the same reason
+   * the resize listener is held rather than passed inline.
+   */
   private requestFrame(): void {
     // THE GUARD THAT MAKES `suspend` MEAN ANYTHING. Every one of the dozen
     // `requestFrame()` call sites in this file is a path a suspended view can
@@ -1589,6 +1720,7 @@ export class BuildingView {
       // BEFORE THE RENDER, so this frame shows where the agent now is rather
       // than where it was one frame ago.
       const walking = this.advanceWalk();
+      this.prepareFrame();
       this.renderer.render(this.scene, this.camera);
       // THE ONE OBSERVABLE BEHIND "THE SCENE GOES QUIET" (stage 4, DEC-R11-15).
       // The regression this stage carries is a reintroduced permanent render
@@ -1609,6 +1741,11 @@ export class BuildingView {
       // counting something adjacent to rendering rather than rendering.
       this.frames += 1;
       this.container.dataset["frames"] = String(this.frames);
+      // The compile check's proof that a map was really drawn (three
+      // allocates it on the first shadow pass).
+      if (this.shadowCheck && this.sun.shadow.map !== null) {
+        this.container.dataset["shadowCheck"] = "rendered";
+      }
       // Captured immediately after the render: three resets these counters at
       // the START of each render, so any later read would describe a frame that
       // has not happened yet.
@@ -1682,6 +1819,9 @@ export class BuildingView {
     // layer detectable, which the longhand form could not: see that file's header.
     const { objects, stats } = drawMeshLayers(mesh, layers, context);
     for (const object of objects) this.group.add(object);
+    // New meshes arrive at factor 1; the noon brightening is held on the
+    // view for exactly this (the lesson of the AR shell material below).
+    applySurfaceGain(this.group, this.surfaceGain);
     // RE-APPLIED AFTER EVERY REBUILD. The objects above are brand new and carry
     // the desktop material; without this a refetch mid-session would silently
     // drop the AR look at whatever moment the user walked far enough to trigger
@@ -1689,6 +1829,9 @@ export class BuildingView {
     if (this.arShellMaterial !== undefined) {
       this.setArShellMaterial(this.arShellMaterial);
     }
+    // The same rule for the AR sun shadow's casting: the new pins are born
+    // not casting.
+    this.reapplyArShadowCasting();
 
     // SCHEDULED, not rendered inline. A synchronous `renderer.render()` here does
     // put pixels in the drawing buffer, but with `antialias: true` that buffer is
@@ -1738,6 +1881,7 @@ export class BuildingView {
     // rather than at the call site so the next direct-scene layer does not
     // have to remember to add a line to `drawScene`.
     this.clearUnderground();
+    this.prepareFrame();
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -2100,25 +2244,69 @@ export class BuildingView {
   }
 
   /**
-   * Hand the map-derived content to another scene graph, or take it back.
+   * The desktop shadow COMPILE CHECK (`?shadowCheck=1`, shadow plan
+   * 2026-09-23-2343 §10 M3d). Shadow maps on and the view's sun casting, so
+   * every lit material the demo builds compiles its shadow-map variant (three
+   * adds `USE_SHADOWMAP` to every lit program once any light casts, whatever
+   * the object's `receiveShadow`), and the tagged casters cast.
    *
-   * **The AR entry and exit point.** AR mode calls this with the framework's
-   * scene root and `"gps-world-nue"`; leaving AR calls it with
-   * {@link localRoot} and `"demo-scene"`.
-   *
-   * **THE FRAME ARGUMENT IS NOT OPTIONAL IN PRACTICE, and an earlier version of
-   * this docstring said the coordinates were "already in the right space".**
-   * They are not: the demo's scene is X=East, Y=Up, Z=−North; the GPS-world
-   * frame is NUE. Attaching without the conversion renders the city 90° off.
-   * `scene-content.ts` owns the mapping and pins it.
-   *
-   * REPARENTING, NOT REBUILDING. The subtree moves whole and keeps its
-   * children, so returning costs nothing — which is what makes the M5 decision
-   * (hide the desktop renderer rather than dispose it) cheap to honour.
-   *
-   * **What does NOT move:** the lights, the ground plane, the sun rig and the
-   * NPC. See `scene-content.ts` for why each stays.
+   * **Why it exists:** the AR sun shadow does exactly this to the same
+   * materials, and no e2e can enter AR. A patched material whose chunk no
+   * longer compiles with shadows fails silently there (a console error and a
+   * missing object); here it fails an e2e. Nothing receives, so the picture
+   * is unchanged. Once a map has been drawn the container reads
+   * `data-shadow-check="rendered"`, so the check cannot pass without
+   * having run.
    */
+  enableShadowCheck(): void {
+    enableSunShadows(this.renderer);
+    this.sun.castShadow = true;
+    this.shadowCheck = true;
+    this.container.dataset["shadowCheck"] = "on";
+    this.setArShadowCasting(true);
+    this.requestFrame();
+  }
+
+  /**
+   * The AR sun shadow prototype's casting (plan 2026-09-23-2343, M3): while
+   * on, every object tagged at build time (`markArShadowCaster`: ground POI
+   * pins, quest beacons, the test pole) casts, and nothing else does (the
+   * X-ray shells, trees, roof-hosted pins, cells). HELD and re-applied after
+   * every rebuild, like the shell material, because rebuilt objects are born
+   * not casting.
+   */
+  setArShadowCasting(on: boolean): void {
+    this.arShadowCasting = on;
+    this.reapplyArShadowCasting();
+  }
+
+  /**
+   * The casters' part of the shadow map's update rule: it changes whenever
+   * the casters were rebuilt or switched (`casterGeneration` of the rig).
+   */
+  get arShadowCasterSignature(): string {
+    return `${this.arShadowCasterGeneration}:${this.arShadowCasterCount}`;
+  }
+
+  /** Adds the shadow prototype's props (pole, plane) to the placed content. */
+  addArShadowProps(...objects: THREE.Object3D[]): void {
+    for (const object of objects) this.content.add(object);
+    this.reapplyArShadowCasting();
+  }
+
+  removeArShadowProps(...objects: THREE.Object3D[]): void {
+    for (const object of objects) this.content.remove(object);
+    this.reapplyArShadowCasting();
+  }
+
+  private reapplyArShadowCasting(): void {
+    this.arShadowCasterGeneration += 1;
+    this.arShadowCasterCount = applyArShadowCasting(
+      this.content.root,
+      this.arShadowCasting,
+    );
+  }
+
   /**
    * Swap the building meshes to an AR shell material, or restore the desktop one.
    *
@@ -2164,6 +2352,26 @@ export class BuildingView {
     this.requestFrame();
   }
 
+  /**
+   * Hand the map-derived content to another scene graph, or take it back.
+   *
+   * **The AR entry and exit point.** AR mode calls this with the framework's
+   * scene root and `"gps-world-nue"`; leaving AR calls it with
+   * {@link localRoot} and `"demo-scene"`.
+   *
+   * **THE FRAME ARGUMENT IS NOT OPTIONAL IN PRACTICE, and an earlier version of
+   * this docstring said the coordinates were "already in the right space".**
+   * They are not: the demo's scene is X=East, Y=Up, Z=−North; the GPS-world
+   * frame is NUE. Attaching without the conversion renders the city 90° off.
+   * `scene-content.ts` owns the mapping and pins it.
+   *
+   * REPARENTING, NOT REBUILDING. The subtree moves whole and keeps its
+   * children, so returning costs nothing — which is what makes the M5 decision
+   * (hide the desktop renderer rather than dispose it) cheap to honour.
+   *
+   * **What does NOT move:** the lights, the ground plane, the sun rig and the
+   * NPC. See `scene-content.ts` for why each stays.
+   */
   attachContentTo(
     root: THREE.Object3D,
     frame: ContentFrame,
@@ -2232,13 +2440,12 @@ export class BuildingView {
     // form that does not depend on which mode the view happened to be in.
     this.ground.geometry.dispose();
     this.groundMaterial.dispose();
-    // The sky owns a PMREM render target as well as its own geometry and
-    // material, and it is now BOTH `scene.background` and `scene.environment` —
-    // so leaving it behind keeps the whole scene reachable AND abandons GPU
-    // memory. `SkyRig.dispose()` clears both fields as well as freeing, because
-    // a disposed texture left assigned is a use-after-free three does not
-    // report: it silently stops drawing the materials that sample it.
-    this.skyRig.dispose();
+    // The sky owns its LUT render targets, the environment map, its mesh and
+    // the haze's texture. `AtmosphereRig.dispose()` clears `scene.environment`
+    // as well as freeing, because a disposed texture left assigned is a
+    // use-after-free three does not report: it silently stops drawing the
+    // materials that sample it.
+    this.atmosphere.dispose();
     this.perfStats?.dispose();
     this.perfStats = undefined;
     this.groundRampMaterial.dispose();

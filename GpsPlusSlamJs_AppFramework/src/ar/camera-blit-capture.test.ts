@@ -397,6 +397,76 @@ describe('camera-blit-capture', () => {
         blitCapture.captureToRgba(mockRenderer as never, mockTexture as never);
         expect(Array.from(first!.data)).toEqual(snapshot);
       });
+
+      /**
+       * Why these tests matter (QR perf instrument, plan M2): the blit +
+       * synchronous readback and the JS flip copy are the two capture stages
+       * only the framework can time. The timing callback must report both, per
+       * capture, and the default path (no callback) must not even read the
+       * clock - the instrument is opt-in and must cost nothing when off.
+       */
+      it('reports blit+readback and flip-copy durations to an optional timing callback', () => {
+        blitCapture = new CameraBlitCapture({ width: 2, height: 2 });
+        const onTiming = vi.fn();
+        const rgba = blitCapture.captureToRgba(
+          mockRenderer as never,
+          mockTexture as never,
+          onTiming
+        );
+        expect(rgba).not.toBeNull();
+        expect(onTiming).toHaveBeenCalledTimes(1);
+        const timing = onTiming.mock.calls[0]![0] as {
+          blitReadbackMs: number;
+          flipCopyMs: number;
+          width: number;
+          height: number;
+        };
+        expect(timing.blitReadbackMs).toBeGreaterThanOrEqual(0);
+        expect(timing.flipCopyMs).toBeGreaterThanOrEqual(0);
+        expect(timing.width).toBe(2);
+        expect(timing.height).toBe(2);
+      });
+
+      it('does not read the clock when no timing callback is given', () => {
+        blitCapture = new CameraBlitCapture({ width: 2, height: 2 });
+        const nowSpy = vi.spyOn(performance, 'now');
+        try {
+          blitCapture.captureToRgba(
+            mockRenderer as never,
+            mockTexture as never
+          );
+          expect(nowSpy).not.toHaveBeenCalled();
+        } finally {
+          nowSpy.mockRestore();
+        }
+      });
+
+      // Why this matters (M4 review #9): the timing hook is a diagnostic. A
+      // throwing hook must not turn every capture into 'no frame' - that would
+      // stop QR detection while still paying for each readback.
+      it('still returns the frame when the timing callback throws', () => {
+        blitCapture = new CameraBlitCapture({ width: 2, height: 2 });
+        const rgba = blitCapture.captureToRgba(
+          mockRenderer as never,
+          mockTexture as never,
+          () => {
+            throw new Error('instrument bug');
+          }
+        );
+        expect(rgba).not.toBeNull();
+      });
+
+      it('does not report a timing for a failed capture', () => {
+        blitCapture = new CameraBlitCapture({ width: 2, height: 2 });
+        blitCapture.dispose();
+        const onTiming = vi.fn();
+        blitCapture.captureToRgba(
+          mockRenderer as never,
+          mockTexture as never,
+          onTiming
+        );
+        expect(onTiming).not.toHaveBeenCalled();
+      });
     });
 
     describe('isBlack helper', () => {
@@ -743,17 +813,6 @@ describe('camera-blit-capture', () => {
       });
 
       /**
-       * Why this test matters:
-       * The guard was `newWidth <= 0 || newHeight <= 0`, which is FALSE for
-       * NaN — the exact form removed from `computeCaptureSize` in this same
-       * file, and missed here (PR #375 review). NaN or Infinity reached
-       * `renderTarget.setSize` and `new Uint8Array(w * h * 4)`, the latter
-       * throwing or allocating nothing useful. The existing tests pinned
-       * only `0`, which is the one invalid value the old guard did catch.
-       * This is a PUBLIC method, so hardened in-repo call sites do not
-       * cover it.
-       */
-      /**
        * Why this test matters (PR #379 review):
        * the guard rejected non-finite but not non-INTEGER dimensions.
        * `resizeIfNeeded` is documented to RETURN FALSE when its dimensions
@@ -783,6 +842,17 @@ describe('camera-blit-capture', () => {
         }
       });
 
+      /**
+       * Why this test matters:
+       * The guard was `newWidth <= 0 || newHeight <= 0`, which is FALSE for
+       * NaN — the exact form removed from `computeCaptureSize` in this same
+       * file, and missed here (PR #375 review). NaN or Infinity reached
+       * `renderTarget.setSize` and `new Uint8Array(w * h * 4)`, the latter
+       * throwing or allocating nothing useful. The existing tests pinned
+       * only `0`, which is the one invalid value the old guard did catch.
+       * This is a PUBLIC method, so hardened in-repo call sites do not
+       * cover it.
+       */
       it('refuses NaN and Infinite dimensions, not just zero', () => {
         blitCapture = new CameraBlitCapture({ width: 64, height: 64 });
         for (const [w, h] of [

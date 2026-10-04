@@ -38,6 +38,12 @@ pixel grid, fetched once each and reused as the user moves.
       and functions do not survive a structured clone; the page samples `N` once
       at the frame origin, which is uniform to ~5 cm across a city.
   - `postCount` — held posts, so the eviction bound is testable.
+- `latticeWindow(centre, radiusM, zoom = DEFAULT_TERRARIUM_ZOOM)` →
+  `{ origin, reach }` - the square of integer lattice pixels `ensureAround`
+  covers (`reach` = `ceil(radiusM / metres per pixel) + 1`, `origin` the
+  nearest pixel). `ensureAround` uses it, and so does the globe's arrival
+  prefetch (`arrival-plan.ts`, round-5 plan 2026-10-01-0945 §3.6), which must
+  fetch exactly the DEM tiles a fresh field asks for.
 
 ## Invariants & assumptions
 

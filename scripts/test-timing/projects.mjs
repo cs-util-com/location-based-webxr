@@ -206,6 +206,9 @@ export const PROJECTS = [
       // library with no framework dependency, so a break here is never caused
       // by an app and should surface before the slow app gates run.
       packageGateStage("test:osm", "gps-plus-slam-osm"),
+      // The globe intro's private package (W7, plan 2026-09-26-0539 §7.1):
+      // pure TypeScript with no workspace dependency, like osm.
+      packageGateStage("test:globe", "gps-plus-slam-globe"),
       // Pure server-side package (the Cloudflare site worker) with no
       // workspace dependencies: like osm, a break here is never caused by an
       // app, so it surfaces before the slow app gates run.
@@ -308,19 +311,41 @@ export const PROJECTS = [
         // added after it was written (the split's design.css/catalog.css
         // would never have been formatted while the gate stayed green)
         command:
-          'prettier --log-level warn --write --ignore-unknown "*.css" "*.html" "*.mjs" "*.md" "config/*.mjs" package.json',
+          'prettier --log-level warn --write --ignore-unknown "*.css" "*.html" "*.mjs" "*.md" "config/*.mjs" "3d/**/*" "labs/**/*" package.json',
         counts: null,
       },
       {
         name: "lint:css",
         command:
-          'stylelint "*.css" --config config/stylelint.config.mjs --allow-empty-input',
+          'stylelint "*.css" "3d/*.css" --config config/stylelint.config.mjs --allow-empty-input',
         counts: null,
       },
       {
         name: "check:tokens",
         command: "node check-tokens.mjs",
         counts: null,
+      },
+      // The 3D look-dev page (plan 2026-09-23-0048): the dev server's route
+      // table, under Node's own runner (the package has no vitest and needs
+      // none for pure .mjs), then the page's WebGL smoke. The smoke is the
+      // only place the framework's atmosphere shaders are compiled and
+      // checked, so it is a real stage, not an eyeball tool like shoot.mjs.
+      // `labs/**`: the lab pages' pure modules (terrain plan 2026-09-27-0605
+      // §9, finding 1); without it their unit tests would never run.
+      // `--import ./test-route-loader.mjs`: a lab module may import another
+      // package's source by its page path (`/globe/sky-level.js`, the one
+      // sky level both labs read); the loader resolves it through the dev
+      // server's own route table.
+      {
+        name: "test:unit",
+        command:
+          'node --import ./test-route-loader.mjs --test "*.test.mjs" "3d/**/*.test.mjs" "labs/**/*.test.mjs"',
+        counts: null,
+      },
+      {
+        name: "test:e2e",
+        command: "playwright test --config 3d/playwright.config.mjs",
+        counts: "playwright",
       },
     ],
   },
@@ -365,6 +390,49 @@ export const PROJECTS = [
         counts: "vitest",
         // Filtered single-file TDD runs skip coverage (speedup plan C.1).
         filteredRunCommand: "vitest run --config=config/vitest.config.ts",
+      },
+    ],
+  },
+  {
+    // The globe intro's code (W7 phase 1, plan 2026-09-26-0539 §7.1),
+    // modelled on the osm entry: no build and no e2e; its browser check is
+    // the design system's globe lab smoke, which the served-by edge in
+    // scripts/test-changed/select.mjs selects on a globe change.
+    name: "GpsPlusSlamJs_Globe",
+    dir: "GpsPlusSlamJs_Globe",
+    chainNames: ["test:core"],
+    stages: [
+      {
+        name: "format",
+        command:
+          'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" package.json README.md',
+        counts: null,
+      },
+      {
+        name: "lint",
+        command: "eslint . --config config/eslint.config.mjs --max-warnings 0",
+        counts: null,
+      },
+      {
+        name: "check:cycles",
+        command:
+          "dpdm -T --exit-code circular:1 --no-warning --no-tree ./src/globe-surface.ts",
+        counts: null,
+      },
+      {
+        name: "typecheck",
+        command: "tsc -p tsconfig.app.json --noEmit",
+        counts: null,
+      },
+      {
+        name: "typecheck:tests",
+        command: "tsc -p tsconfig.vitest.json --noEmit",
+        counts: null,
+      },
+      {
+        name: "test:unit",
+        command: "vitest run --config=config/vitest.config.ts",
+        counts: "vitest",
       },
     ],
   },

@@ -149,8 +149,8 @@ export interface Wizard {
   rememberedTourUrl(): string | null;
   /** A tour opened: the launch link becomes usable and a step opens. Which
    *  step: the one this creator last reached with THIS tour, else `prefer`
-   *  when the caller knows where the creator is standing (step 4's own
-   *  "paste the link" form does), else the print step. */
+   *  when the caller knows where the creator is standing (step 4's scan
+   *  does), else the print step. */
   presentTour(url: string, options?: { prefer?: WizardStep }): void;
   /** A code was generated: the link carries the PRINTED payload (the
    *  measured shortest form and the code-number token), so the tester's
@@ -159,19 +159,29 @@ export interface Wizard {
 }
 
 /** The launch link for `url`, relative to the page (the landing's `?qr=`
- *  forward is not needed when the viewer itself is the origin). */
-export function visitorLaunchHref(url: string): string {
-  return `?qr=${encodeURIComponent(url)}`;
+ *  forward is not needed when the viewer itself is the origin). With
+ *  `debug`, the link keeps the page's `?debug=1` (plan §67 #2). */
+export function visitorLaunchHref(url: string, debug = false): string {
+  return withDebugFlag(`?qr=${encodeURIComponent(url)}`, debug);
+}
+
+/** `search` with `debug=1` appended when `debug` is on. */
+function withDebugFlag(search: string, debug: boolean): string {
+  return debug ? `${search}&debug=1` : search;
 }
 
 /** The printed launch URL's query, re-homed on the viewer's own origin:
  *  `https://gps.csutil.com/?qr=~blob&n=2` → `?qr=~blob&n=2`. A URL without
- *  a `qr` parameter is not a launch link and yields null. */
-export function launchHrefFromPrintedUrl(launchUrl: string): string | null {
+ *  a `qr` parameter is not a launch link and yields null. With `debug`,
+ *  the link keeps the page's `?debug=1` (plan §67 #2). */
+export function launchHrefFromPrintedUrl(
+  launchUrl: string,
+  debug = false,
+): string | null {
   try {
     const parsed = new URL(launchUrl);
     if (!parsed.searchParams.has("qr")) return null;
-    return parsed.search;
+    return withDebugFlag(parsed.search, debug);
   } catch {
     return null;
   }
@@ -218,6 +228,8 @@ export function wireWizard(deps: {
   /** Whether an AR session is live right now. Step 4 holds the DOM-overlay
    *  root, so while this is true the wizard must not collapse it. */
   arSessionActive?: () => boolean;
+  /** The page's `?debug=1`: the visitor link carries it on (plan §67 #2). */
+  debug?: boolean;
 }): Wizard {
   const { mode, dom, packStarter, download, stepStore } = deps;
   const arSessionActive = deps.arSessionActive ?? (() => false);
@@ -406,22 +418,25 @@ export function wireWizard(deps: {
     },
     rememberedTourUrl,
     presentTour: (url, options) => {
-      dom.visitorLink.href = visitorLaunchHref(url);
+      dom.visitorLink.href = visitorLaunchHref(url, deps.debug);
       dom.visitorLink.hidden = false;
       if (mode !== "creator") return;
       tourUrl = url;
       rememberUrl(url);
       // Land where the creator got to with this tour (a reload after the
       // AR session, a return from the print dialog). Failing that, where
-      // the CALLER says the creator is standing: step 4's own "paste the
-      // link" form opens the tour from step 4, and without this the page
-      // would answer by jumping to step 2 and collapsing step 4 - undoing
-      // the very thing the form exists to do (M3 review #1). A remembered
+      // the CALLER says the creator is standing: step 4's scan opens the
+      // tour from step 4, and without this the page would answer by
+      // jumping to step 2 and collapsing step 4 (M3 review #1). A remembered
       // step still wins: it is evidence about this creator and this tour.
+      // A tour opened DURING a session was reached in step 4, but openStep
+      // changes nothing and remembers nothing while a session runs - so it
+      // is remembered here (scan-to-open plan §9 #12).
+      if (arSessionActive()) remember("measure");
       openStep(remembered(url) ?? options?.prefer ?? "print");
     },
     presentLaunchUrl: (launchUrl) => {
-      const href = launchHrefFromPrintedUrl(launchUrl);
+      const href = launchHrefFromPrintedUrl(launchUrl, deps.debug);
       if (href === null) return;
       dom.visitorLink.href = href;
       dom.visitorLink.hidden = false;

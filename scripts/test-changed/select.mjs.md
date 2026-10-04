@@ -43,3 +43,14 @@ holds or silently does not.
 An empty dependent set is a safe no-op: pnpm prints "No projects matched the
 filters" and exits 0 (verified), which is what a package with no dependents
 gets.
+
+## The served-by edge (globe plan 2026-09-26-0539 §8, W7 M0)
+
+The design system SERVES the globe package through its routes but does not
+depend on it, so pnpm's graph never selects it. A change in
+`GpsPlusSlamJs_Globe` therefore also selects `GpsPlusSlamJs_DesignSystem`,
+in full: its globe lab smoke is the globe's only browser check. The
+framework and OsmDemo are served too but are deliberately NOT listed: that
+would put the design system's ~11 min e2e on every framework commit, an
+owner decision filed with the W7 M0 record. Tested in `select.test.mjs`
+("the served-by edge").

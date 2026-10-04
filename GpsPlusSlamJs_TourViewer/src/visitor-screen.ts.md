@@ -57,6 +57,12 @@ const visitor = wireVisitorScreen({
 // in ar-entry: if (locationGate.pending()) { await locationGate.request(); return; }
 ```
 
+- **The intro asks the visitor to keep the code in view while moving
+  slowly** (plan §67 #4). Not because the gate needs angles - it needs 5
+  views that fit within 1.5 px, and a wall code held still can settle -
+  but because views from different angles resolve the code's tilt (plan
+  §16 #1). An angular-diversity gate from b7 would make it a requirement.
+
 ## Tests
 
 `visitor-screen.test.ts` - the pure rule (property over the four states),

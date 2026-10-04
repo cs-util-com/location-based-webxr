@@ -63,6 +63,10 @@
          restyle of the element it protects. */
       input[type="range"] {
         margin: 2px;
+        /* Not a pin: a vertical swipe over a slider scrolls (Chromium's own
+           default, said out loud for other engines); the value itself is
+           held by the framework's slider guard, installed in main.ts. */
+        touch-action: pan-y;
       }
       * {
         box-sizing: border-box;
@@ -577,6 +581,44 @@
       #details[hidden] {
         display: none;
       }
+      /* THE LIGHT DIALOG (plan 2026-09-24-2140): top-left of the 3D view, the
+         corner nothing else occupies (the details panel is top-right, the
+         hotkey list and the event picker bottom-left). Above the details
+         panel: below ~1376px of window the two meet, and the dialog is the
+         one the user just opened. On a phone it covers the floating header
+         while open; its Close button and Escape close it. */
+      #light-dialog {
+        position: absolute;
+        top: 0.5rem;
+        left: 0.5rem;
+        width: 20rem;
+        max-width: 60%;
+        max-height: calc(100% - 1rem);
+        overflow-y: auto;
+        z-index: 1001;
+        font-size: 0.78rem;
+      }
+      #light-dialog[hidden] {
+        display: none;
+      }
+      #light-dialog h2 {
+        margin: 0 0 0.4rem;
+        font-size: 0.9rem;
+      }
+      #light-dialog .light-row {
+        display: grid;
+        grid-template-columns: 1fr 2.6rem;
+        gap: 0.1rem 0.4rem;
+        margin-bottom: 0.35rem;
+      }
+      #light-dialog .light-row span {
+        grid-column: 1 / -1;
+      }
+      #light-dialog .light-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.3rem;
+      }
       /* Bottom-LEFT, so it cannot sit under the details panel and cannot be
          mistaken for it. Same surface treatment, deliberately: it is the same
          kind of thing — an overlay that explains the view. */
@@ -605,7 +647,9 @@
          + the 0.5rem offset). 6rem (96px) cleared the toast but already
          covered the list's top row — the move from bottom-right silently
          dropped the old "sits opposite the hotkey list" invariant (PR #345
-         review). 8rem (128px) clears both with about one row of slack; the
+         review). 8rem (128px) cleared four bindings but not a fifth (the
+         light dialog's `l`, 2026-09-24, caught by the guard below); 10rem
+         (160px) clears five with about one row of slack. The
          list grows a row per future hotkey, so the e2e overlap guard in
          `map-and-cells.spec.js` (picker vs `#hotkey-help`, list open) is what
          keeps this offset honest rather than merely measured-once.
@@ -617,7 +661,7 @@
       #geo-event-picker {
         position: absolute;
         left: 0.5rem;
-        bottom: 8rem;
+        bottom: 10rem;
         z-index: 1000;
         display: flex;
         flex-wrap: wrap;
@@ -985,7 +1029,8 @@
       header[data-collapsed="true"] #status,
       header[data-collapsed="true"] #ground-mode-label,
       header[data-collapsed="true"] #layer-group-world,
-      header[data-collapsed="true"] #layer-group-diagnostics {
+      header[data-collapsed="true"] #layer-group-diagnostics,
+      header[data-collapsed="true"] #sun-group {
         display: none;
       }
 
@@ -1020,13 +1065,10 @@
         white-space: nowrap;
       }
 
-      .geo-event-button {
-        /* CONSTANT LABEL AND A FLOOR ON THE WIDTH (F4a). The label is one of
-           two constants now, but `Show Quests` and `Finding...` are
-           different lengths -- so without this the button still resizes on
-           every press, which is the reported defect with a smaller
-           amplitude. Wide enough for the longer of the two. */
-        min-width: 7.5rem;
+      /* The header's buttons: the light dialog's opener looks like Show
+         Quests, not like the design system's tall panel buttons. */
+      .geo-event-button,
+      #light-open {
         font: inherit;
         color: #e6e8ef;
         background: #2a2f3d;
@@ -1034,6 +1076,14 @@
         border-radius: 4px;
         padding: 0.15rem 0.5rem;
         cursor: pointer;
+      }
+      .geo-event-button {
+        /* CONSTANT LABEL AND A FLOOR ON THE WIDTH (F4a). The label is one of
+           two constants now, but `Show Quests` and `Finding...` are
+           different lengths -- so without this the button still resizes on
+           every press, which is the reported defect with a smaller
+           amplitude. Wide enough for the longer of the two. */
+        min-width: 7.5rem;
       }
       .geo-event-button:disabled {
         opacity: 0.6;
@@ -1596,6 +1646,27 @@
         />
         <span id="render-distance-value">draw 2400 m</span>
       </label>
+      <!-- THE REAL SUN (plan 2026-09-23-2149; its UI round plan 2026-09-24-0706,
+           DEC-SUN-14/15): a header block like CATEGORY / WORLD / DEBUG, so it
+           has their dark background and collapses with the header. The date
+           (the viewer's today by default), a time slider from civil dawn to
+           civil dusk, and a labelled APPARENT SOLAR time without the date the
+           field already shows. t/T step the time; the date field's own ↑/↓
+           step a day or a month. -->
+      <div class="layer-group" id="sun-group">
+        <span class="layer-group-label">Sun</span>
+        <input type="date" id="sun-date" aria-label="Sun date" />
+        <input
+          type="range"
+          id="sun-time"
+          min="0"
+          max="1000"
+          step="1"
+          aria-label="Sun time of day, dawn to dusk"
+        />
+        <span id="sun-readout"></span>
+        <button type="button" id="light-open">Light</button>
+      </div>
       <!-- THE READOUT BLOCK (J2, DEC-J5). "Der zusätzliche Debug-Text und die
            Farbskala ... die können ja auch dann zusammen in einen Block, weil
            die haben ja noch keinen."

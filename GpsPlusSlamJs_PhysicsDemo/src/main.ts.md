@@ -12,22 +12,34 @@ lives in the tested `mode-detection` / `replay-launch` modules; this file is glu
 
 - On load, `detectArSupport()` reveals the "Start AR" button only on a
   WebXR-capable device; clicking it inits Rapier then calls `startArMode`
-  (`ar-mode.ts`) for a genuine live-AR physics session (the play/pause/speed row is
+  (`ar-mode.ts`, given the tap and physics-ready times for the start
+  timings, the `#diagnostics` element, `?rebuild=0` parsed by
+  `rebuildEnabledFromSearch`, and the page's hidden count, observed from
+  page load because a permission prompt can hide the page before the
+  session exists; the replay gets `#diagnostics` too) for a genuine live-AR physics session (the play/pause/speed row is
   hidden in AR — it is replay-only). The desktop-replay path is always available.
 - Selecting a recording moves the UI through the async-feedback states:
   `#capability-message` → "Loading recording…" (input disabled) → on success the
   mode screen hides and `#replay-panel` appears with a status + play/pause + speed;
   on failure the message reverts to the error and the input re-enables.
 - Play/pause toggles `controller.pause()`/`resume()` and its label; the speed
-  slider calls `controller.setSpeed()` and updates the `N×` readout. The slider
-  is first wrapped by the framework's
-  [`guardSliderAgainstScroll`](../../GpsPlusSlamJs_AppFramework/src/utils/slider-scroll-guard.ts.md)
-  — **installed before the `input` listener**, since at-target listeners fire in
-  registration order and that is the only reason the guard can stop a
-  scroll-gesture event before this file reacts. On touch, the speed changes only
-  on an explicit horizontal drag or a short tap; swiping past the panel scrolls
-  the page (paired with `touch-action: pan-y` in `index.html`, pinned by
-  `slider-touch-gesture.test.ts`).
+  slider calls `controller.setSpeed()` and updates the `N×` readout. `main()`
+  first installs the framework's page-wide
+  [`guardSlidersIn(document)`](../../GpsPlusSlamJs_AppFramework/src/utils/slider-scroll-guard.ts.md)
+  (capture phase, so listener order does not matter; held to it by the root
+  `slider-pages-load-the-guard` repo-config test). On touch, the speed changes
+  only on an explicit horizontal drag or a short tap; swiping past the panel
+  scrolls the page (paired with `touch-action: pan-y` in `index.html`, pinned
+  by `slider-touch-gesture.test.ts`).
+- `?shadows=0` (or `off` / `false`) starts the AR shadows switched off in
+  both modes (`shadowsEnabledFromSearch`); they are on otherwise (W4 AR
+  shadows plan 2026-09-26-0549 §11). The panel's Shadows switch
+  (`#shadows-toggle`, the design system's `.switch`) turns them on and off
+  in either mode (round-2 plan 2026-09-26-2055 M1).
+- AR gets the controls panel (`#mesh-controls`) as `panel`, so a tap on the
+  switch or a dropdown does not also shoot a ball.
+- `?shadowProbe=1` exposes the shadow pixel probe's test hook in the replay
+  (`shadow-probe.ts`); off in normal use.
 - Once Rapier's WASM is ready (loaded lazily on first replay) it calls
   `startReplayPhysics` (`replay-physics.ts`), which owns the occupancy view (occlusion
   AND collider), the shared physics runtime, the rAF step loop, the mesh/shader

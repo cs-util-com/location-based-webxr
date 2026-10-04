@@ -52,9 +52,20 @@ loading with MIME types, and the poisoned-cache recovery loop.
   its size matches, else the archive in 4 MiB range slices gathered into
   one Blob (each request keeps the transport's per-slice timeout; the
   slices are views, not copies).
+- `hostedFileName(): string | null` - the hosted file's name as its host
+  sends it (`content-disposition`, parsed by `content-disposition.ts`), or
+  null (an offline cache hit, a host that sends none). Recorded by a thin
+  wrapper around the open's `fetchImpl` from the requests the open already
+  makes (the probe's HEAD) - never an extra request - and it closes with
+  the session (Drive replace plan §5 #8).
 - `archiveFileName(url): string` (pure) - the hosted file's name for the
   same-name re-upload: the last path segment when it ends in `.zip`
   (decoded), else `tour.zip`.
+- `tourLabel(url): string` (pure, never throws) - what the creator's panel
+  calls a tour (scan-to-open plan §9 #11): a real `.zip` name (cut at 24),
+  else `Google Drive file <first 10 of the id>…` for every Drive spelling
+  and the proxy route, else `host/<first 12 of the last segment>…`, else
+  "the tour". Short on purpose: it shares a line with the live readout.
 
 ## Invariants & assumptions
 

@@ -11,23 +11,26 @@
  * "In the final report screen when I clicked 'Stop' I would like to be able
  * to see the map with the path the user walked (both the raw GPS path and
  * the fused GPS+SLAM path)."
+ *
+ * THE SHELL LIVES IN THE FRAMEWORK since 2026-10-01
+ * (`gps-plus-slam-app-framework/visualization/summary-map-shell`, DEC-H3,
+ * Tour Viewer authoring plan 2026-09-28-0953 §3.3): the map, the basemap,
+ * the shared trajectory layers, the fullscreen toggle and the cleanup. This
+ * file is what the RECORDER adds to it - its reference-point markers, its
+ * Tailwind classes, and centring on the final position.
  */
 
-import L from 'leaflet';
-import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import type {
   GpsCoord,
   RawGpsSample,
 } from 'gps-plus-slam-app-framework/types/geo-types';
 import { VIS_COLORS } from 'gps-plus-slam-app-framework/visualization/vis-colors';
-import { drawMapData } from 'gps-plus-slam-app-framework/visualization/map-overlay-draw';
+import { createSummaryMapShell } from 'gps-plus-slam-app-framework/visualization/summary-map-shell';
 import {
   drawRefPointMarkers,
   type RefPointMarkerInput,
 } from './draw-ref-point-markers';
-import { addOsmTileLayer, INITIAL_ZOOM } from './map-osm-base';
-
-const log = createLogger('SummaryMap');
+import { INITIAL_ZOOM } from './map-osm-base';
 
 // ============================================================================
 // Types
@@ -83,12 +86,16 @@ export const FUSED_PATH_COLOR = VIS_COLORS.FUSED_VIO.css;
 export const REF_POINT_COLOR = VIS_COLORS.CURRENT_REF_POINT.css;
 export const ALIGNMENT_SNAPSHOT_COLOR = VIS_COLORS.ALIGNMENT_SNAPSHOT.css;
 
-/** CSS classes added in fullscreen mode */
-const FULLSCREEN_CLASSES = ['fixed', 'inset-0', 'z-[60]'];
-/** CSS classes removed in fullscreen mode (restored on collapse) */
-const INLINE_CLASSES = ['h-48', 'rounded-lg'];
-/** Delay (ms) before calling invalidateSize after a resize transition */
-const RESIZE_DELAY_MS = 300;
+/** The recorder's fullscreen toggle, in its Tailwind utilities. */
+const FULLSCREEN = {
+  /** Added in fullscreen mode. */
+  expandedClasses: ['fixed', 'inset-0', 'z-[60]'],
+  /** Removed in fullscreen mode (restored on collapse). */
+  inlineClasses: ['h-48', 'rounded-lg'],
+  buttonClassName:
+    'absolute top-2 right-2 z-10 bg-black/60 hover:bg-black/80 text-white rounded-lg w-9 h-9 flex items-center justify-center text-lg shadow-md transition-colors',
+  hiddenClass: 'hidden',
+} as const;
 
 // ============================================================================
 // Implementation
@@ -96,6 +103,12 @@ const RESIZE_DELAY_MS = 300;
 
 /**
  * Create a summary map in the given container.
+ *
+ * Centred on the FINAL user position of the recording (last raw GPS
+ * reading, falling back to the last fused position), never fitted to all
+ * elements: when prior ref points sit far away from each other that
+ * bounds-fit zooms the recording down to a useless dot (user feedback
+ * 2026-06-02). Reference points are drawn but never extend the view.
  *
  * @param container - DOM element to render the map into
  * @param data - GPS paths and reference points to display
@@ -105,188 +118,18 @@ export function createSummaryMap(
   container: HTMLElement | null,
   data: SummaryMapData
 ): SummaryMapInstance | null {
-  // Validate container
-  if (!container) {
-    log.warn('Cannot create summary map: container is null');
-    return null;
-  }
-
-  // Narrow type for closures (TS can't narrow the parameter in nested functions)
-  const mapContainer = container;
-
-  // Validate data - need at least one GPS point to show anything
-  if (data.rawGpsPath.length === 0 && data.fusedPath.length === 0) {
-    log.warn('Cannot create summary map: no GPS path data');
-    return null;
-  }
-
-  try {
-    // Center on the FINAL user position of the recording (last raw GPS
-    // reading, falling back to the last fused position). Earlier this fit the
-    // map to the bounds of *all* elements — including reference points — but
-    // when prior ref points sit far away from each other that bounds-fit zooms
-    // the recording down to a useless dot. Centering on where the recording
-    // ended keeps the actual walked area in view. (User feedback 2026-06-02.)
-    const centerPoint = data.rawGpsPath.at(-1) ?? data.fusedPath.at(-1)!;
-    const map = L.map(mapContainer).setView(
-      [centerPoint.lat, centerPoint.lng],
-      INITIAL_ZOOM
-    );
-
-    // Add OSM tile layer
-    const tileLayer = addOsmTileLayer(map);
-
-    // Track all layers for cleanup (tile layer + data layers)
-    const layers: L.Layer[] = [tileLayer];
-
-    // Draw every trajectory layer (raw GPS + accuracy circles, fused path,
-    // alignment-snapshot path) through the SHARED overlay-drawing module so
-    // the summary map and the live/replay overlay render identically (Phase 3
-    // of the map-system review; fixes Findings 1 & 4 of the
-    // unified-trajectory-map user feedback). Reference-point markers are a
-    // RECORDER concept and are drawn separately via the recorder-owned helper.
-    const { layers: dataLayers } = drawMapData(map, {
-      userPosition: null,
+  return createSummaryMapShell(
+    container,
+    {
       rawGpsPath: data.rawGpsPath,
       fusedPath: data.fusedPath,
       alignmentSnapshots: data.alignmentSnapshots ?? [],
-    });
-    layers.push(...dataLayers);
-
-    // Draw reference-point markers (prior vs. current by timestamp). They are
-    // intentionally NOT used to extend the map view: far-away prior ref points
-    // must not drag the camera away from the recording (see centering note
-    // above).
-    const refLayers = drawRefPointMarkers(
-      map,
-      data.referencePoints,
-      data.startTime ?? 0
-    );
-    layers.push(...refLayers);
-
-    // Force a resize in case container wasn't visible initially
-    const resizeTimeoutId = setTimeout(() => map.invalidateSize(), 100);
-
-    log.info('Summary map created', {
-      rawPoints: data.rawGpsPath.length,
-      fusedPoints: data.fusedPath.length,
-      refPoints: data.referencePoints.length,
-    });
-
-    // Track if already destroyed to prevent double cleanup
-    let destroyed = false;
-    let expanded = false;
-    let expandResizeTimeoutId: ReturnType<typeof setTimeout> | null = null;
-
-    // --- Fullscreen toggle buttons ---
-    const expandBtn = document.createElement('button');
-    expandBtn.setAttribute('data-testid', 'btn-map-expand');
-    expandBtn.className =
-      'absolute top-2 right-2 z-10 bg-black/60 hover:bg-black/80 text-white rounded-lg w-9 h-9 flex items-center justify-center text-lg shadow-md transition-colors';
-    expandBtn.textContent = '⛶';
-    expandBtn.title = 'Enlarge map';
-
-    const collapseBtn = document.createElement('button');
-    collapseBtn.setAttribute('data-testid', 'btn-map-collapse');
-    collapseBtn.className =
-      'absolute top-2 right-2 z-10 bg-black/60 hover:bg-black/80 text-white rounded-lg w-9 h-9 flex items-center justify-center text-lg shadow-md transition-colors hidden';
-    collapseBtn.textContent = '✕';
-    collapseBtn.title = 'Close fullscreen';
-
-    // Ensure the container supports absolute positioning of child buttons
-    if (
-      !mapContainer.style.position &&
-      !mapContainer.classList.contains('relative')
-    ) {
-      mapContainer.classList.add('relative');
+    },
+    {
+      initialZoom: INITIAL_ZOOM,
+      drawExtra: (map) =>
+        drawRefPointMarkers(map, data.referencePoints, data.startTime ?? 0),
+      fullscreen: FULLSCREEN,
     }
-    mapContainer.appendChild(expandBtn);
-    mapContainer.appendChild(collapseBtn);
-
-    // --- Expand / collapse helpers ---
-
-    /**
-     * Schedule an `invalidateSize` + re-center after the CSS transition has
-     * settled. Shared by `doExpand` / `doCollapse` so the resize logic and the
-     * timeout-cancellation guard live in exactly one place. Re-centers on the
-     * final user position while preserving the current zoom level.
-     */
-    function scheduleResizeRefit(): void {
-      if (expandResizeTimeoutId !== null) {
-        clearTimeout(expandResizeTimeoutId);
-      }
-      expandResizeTimeoutId = setTimeout(() => {
-        map.invalidateSize();
-        map.setView([centerPoint.lat, centerPoint.lng], map.getZoom());
-      }, RESIZE_DELAY_MS);
-    }
-
-    function doExpand(): void {
-      if (destroyed || expanded) {
-        return;
-      }
-      expanded = true;
-      mapContainer.classList.remove(...INLINE_CLASSES);
-      mapContainer.classList.add(...FULLSCREEN_CLASSES);
-      expandBtn.classList.add('hidden');
-      collapseBtn.classList.remove('hidden');
-      scheduleResizeRefit();
-      log.debug('Summary map expanded to fullscreen');
-    }
-
-    function doCollapse(): void {
-      if (destroyed || !expanded) {
-        return;
-      }
-      expanded = false;
-      mapContainer.classList.remove(...FULLSCREEN_CLASSES);
-      mapContainer.classList.add(...INLINE_CLASSES);
-      collapseBtn.classList.add('hidden');
-      expandBtn.classList.remove('hidden');
-      scheduleResizeRefit();
-      log.debug('Summary map collapsed to inline');
-    }
-
-    expandBtn.addEventListener('click', doExpand);
-    collapseBtn.addEventListener('click', doCollapse);
-
-    return {
-      destroy: () => {
-        if (destroyed) {
-          return;
-        }
-        destroyed = true;
-        clearTimeout(resizeTimeoutId);
-        if (expandResizeTimeoutId !== null) {
-          clearTimeout(expandResizeTimeoutId);
-        }
-
-        // Remove listeners explicitly before removing DOM nodes to avoid leaks
-        expandBtn.removeEventListener('click', doExpand);
-        collapseBtn.removeEventListener('click', doCollapse);
-        expandBtn.remove();
-        collapseBtn.remove();
-
-        try {
-          for (const layer of layers) {
-            try {
-              layer.remove();
-            } catch (err) {
-              log.warn('Ignoring error during layer cleanup:', err);
-            }
-          }
-          map.remove();
-          log.debug('Summary map destroyed');
-        } catch (err) {
-          log.warn('Error during map cleanup:', err);
-        }
-      },
-      expand: doExpand,
-      collapse: doCollapse,
-      isExpanded: () => expanded,
-    };
-  } catch (err) {
-    log.error('Failed to create summary map:', err);
-    return null;
-  }
+  );
 }

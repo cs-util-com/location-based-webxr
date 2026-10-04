@@ -119,3 +119,122 @@ export function isClosedWay(way: OsmWay): boolean {
 export function positionsEqual(a: LatLng, b: LatLng): boolean {
   return a.lat === b.lat && a.lng === b.lng;
 }
+
+/**
+ * Do two features carry the same CONTENT - the same tags and the same geometry?
+ *
+ * **WHY THIS IS NOT `a === b`, and why that mattered.** Fetch tiles are H3
+ * cells' bounding RECTANGLES, so adjacent tiles overlap, and `out geom` returns
+ * a feature's whole geometry whenever its bbox is touched. A feature near a
+ * seam is therefore delivered by several tiles - the same feature, byte for
+ * byte - and the parser builds a fresh object each time. An identity comparison
+ * calls every one of those an edit.
+ *
+ * `AffordanceIndex` used one, and so discarded the converted geometry and the
+ * cached bounds of every re-delivered feature. Converting geometry is the
+ * expensive half of scoring, and that class's own header promises it happens
+ * "once per feature ever, not once per chunk".
+ *
+ * **IDENTITY IS ASSUMED ALREADY SETTLED.** This compares content only: the
+ * caller looks features up by {@link featureKey}, which is type plus id, so two
+ * features reaching this function are already the same OSM element. Comparing
+ * type and id again would be redundant, and comparing them INSTEAD would be
+ * wrong - it is exactly what makes an edited feature look unchanged.
+ *
+ * **EXACT COORDINATE COMPARISON, for the reason {@link positionsEqual} gives:**
+ * Overpass emits the same node's coordinates identically wherever it appears,
+ * so exactness is what makes re-delivery detectable at all. An epsilon would
+ * additionally call a genuinely moved node unchanged.
+ *
+ * **THE BIAS IS TOWARDS "CHANGED".** Anything this cannot prove identical - a
+ * shape it does not recognise, a member list of a different length - is
+ * reported as different, so the caller re-converts. A needless re-conversion
+ * costs microseconds; a missed one draws the old shape forever.
+ */
+export function sameFeatureContent(a: OsmFeature, b: OsmFeature): boolean {
+  if (a === b) return true;
+  if (a.type !== b.type) return false;
+  if (!sameTags(a.tags, b.tags)) return false;
+  if (a.type === "node") {
+    return b.type === "node" && positionsEqual(a.position, b.position);
+  }
+  if (a.type === "way") {
+    return b.type === "way" && samePositions(a.geometry, b.geometry);
+  }
+  return b.type === "relation" && sameMembers(a.members, b.members);
+}
+
+function sameTags(a: OsmTags, b: OsmTags): boolean {
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const key of keys) {
+    // `Object.hasOwn` as well as the value check: an explicit `undefined` and a
+    // missing key are different tag sets and compare equal without it.
+    if (!Object.hasOwn(b, key) || a[key] !== b[key]) return false;
+  }
+  return true;
+}
+
+function samePositions(a: readonly LatLng[], b: readonly LatLng[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i];
+    const right = b[i];
+    if (left === undefined || right === undefined) return false;
+    if (!positionsEqual(left, right)) return false;
+  }
+  return true;
+}
+
+/**
+ * One member's identity and inlined geometry.
+ *
+ * Split out of `sameMembers` because the loop body carried the whole
+ * comparison and tripped the complexity limit. The split is also the honest
+ * shape: the loop is "same length, same members in the same order", and this is
+ * "same member".
+ */
+function sameMember(a: OsmRelationMember, b: OsmRelationMember): boolean {
+  if (a.type !== b.type || a.ref !== b.ref || a.role !== b.role) return false;
+  return (
+    sameOptionalPositions(a.geometry, b.geometry) &&
+    sameOptionalPosition(a.position, b.position)
+  );
+}
+
+/** Both absent, or both present and equal. Present-vs-absent is a change. */
+function sameOptionalPositions(
+  a: readonly LatLng[] | undefined,
+  b: readonly LatLng[] | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return samePositions(a, b);
+}
+
+/** Both absent, or both present and equal. */
+function sameOptionalPosition(
+  a: LatLng | undefined,
+  b: LatLng | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return positionsEqual(a, b);
+}
+
+/**
+ * ORDER MATTERS, and not only for tidiness: a ring reversed is the same set of
+ * positions and a different geometry, and `multipolygon-builder` stitches on
+ * endpoint order.
+ */
+function sameMembers(
+  a: readonly OsmRelationMember[],
+  b: readonly OsmRelationMember[],
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i];
+    const right = b[i];
+    if (left === undefined || right === undefined) return false;
+    if (!sameMember(left, right)) return false;
+  }
+  return true;
+}

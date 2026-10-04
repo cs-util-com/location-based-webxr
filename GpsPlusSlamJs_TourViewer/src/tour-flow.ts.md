@@ -56,6 +56,15 @@ DOM-free and string-exact under test, instead of inline in `main.ts`.
   stored" for 0). `removed` is the store's index length read BEFORE the
   open session's eviction (flows plan M2).
 
+## A code the moved-code check ignores (D20, M5c)
+
+`ArStatusInput.qr.ignoredCode` reaches `viewerStatusLine`, which then says
+"This code seems to have been moved, so its position is not used. Showing
+the tour by GPS." With the gate passed via `ignored`, that sentence stands
+for both (the gate's short pass is dropped); without a code to name (a
+re-entry) the gate's "Code ignored - placing the tour by GPS." replaces the
+generic scanning line.
+
 ## Invariants & assumptions
 
 - **The running prefix is a contract:** `"<mode> — AR running · N camera
@@ -98,6 +107,14 @@ arStatusLine({
 // (the decline on a code-less tour is DERIVED to nothing-to-place: a ring
 // needs a code, so "photo ring (…)" would promise one forever - review #1)
 ```
+
+- `ArStatusInput.qr.fusedHint` carries the visitor hint through to
+  `viewerStatusLine` (plan §66); it sits beside the gate's "Code
+  recognised" line, which is why it reads as fine-tuning (§67 #6).
+- `ArStatusInput.qr.hold` carries the code keep-alive's phase (authoring
+  plan M2b) to `viewerStatusLine`: once the budget is spent the line says
+  whether the code still holds the placement (with the seconds left), is
+  fading, or has ended - never the old unconditional "placement holds".
 
 ## Tests
 

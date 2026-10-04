@@ -21,11 +21,11 @@
 
 import type { LoopClosureHandler } from 'gps-plus-slam-app-framework/core';
 import type { QrSightingFeeder } from '../qr/qr-sighting-feeder';
-import type { RgbaImage } from 'gps-plus-slam-app-framework/ar/qr/qr-frontend';
+import type { CapturedCameraFrame } from 'gps-plus-slam-app-framework/ar/captured-camera-frame';
 
 /** The frame-consuming surface both QR controllers share. */
 export interface QrFrameSink {
-  offerFrame(image: RgbaImage): void;
+  offerFrame(frame: CapturedCameraFrame): void;
   reset(): void;
 }
 import type { LeafletMapOverlay } from 'gps-plus-slam-app-framework/visualization/leaflet-map-overlay';

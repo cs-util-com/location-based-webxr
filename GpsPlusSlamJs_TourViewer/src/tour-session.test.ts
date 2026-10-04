@@ -1,4 +1,5 @@
 import { TextReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -14,6 +15,7 @@ import {
   archiveFileName,
   openTourSession,
   readArchiveInSlices,
+  tourLabel,
 } from "./tour-session.js";
 
 /**
@@ -552,5 +554,100 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
     const viaSession = await session.readWholeArchive();
     expect(viaSession.size).toBe(session.archive.size);
     await session.close();
+  });
+});
+
+describe("tourLabel (scan-to-open plan §9 #11)", () => {
+  // Why this matters: the panel names the tour a scan opened, so the
+  // creator can see it is the RIGHT one. archiveFileName's fallback calls
+  // every Drive tour "tour.zip", and a Drive link's last segment is "view"
+  // or "open" - neither tells two tours apart.
+  const ID = "1AbCdEfGhIjKlMnOpQ";
+  it("uses a real .zip name when the link has one", () => {
+    expect(tourLabel("https://h.test/ranges-ok/My%20Tour.zip")).toBe(
+      "My Tour.zip",
+    );
+  });
+
+  it("names a Drive tour by the start of its file id, in every spelling", () => {
+    for (const url of [
+      `https://drive.google.com/file/d/${ID}/view?usp=sharing`,
+      `https://drive.google.com/open?id=${ID}`,
+      `/api/drive-proxy?id=${ID}`,
+      `https://gps.csutil.com/api/drive-proxy?id=${ID}`,
+    ]) {
+      expect(tourLabel(url), url).toBe("Google Drive file 1AbCdEfGhI…");
+    }
+    expect(tourLabel("https://drive.google.com/open?id=short")).toBe(
+      "Google Drive file short",
+    );
+  });
+
+  it("otherwise, the host and the start of the last path segment", () => {
+    expect(tourLabel("https://h.test/files/abcdefghijklmnopq")).toBe(
+      "h.test/abcdefghijkl…",
+    );
+    expect(tourLabel("https://h.test/")).toBe("h.test");
+  });
+
+  it("never throws and stays short, whatever it is given", () => {
+    fc.assert(
+      fc.property(fc.oneof(fc.string(), fc.webUrl()), (url) => {
+        const label = tourLabel(url);
+        expect(label.length).toBeGreaterThan(0);
+        expect(label.length).toBeLessThanOrEqual(80);
+      }),
+    );
+  });
+});
+
+describe("hostedFileName (Drive replace plan §5 #8)", () => {
+  // Why this matters: Drive offers "Replace" only for the SAME name, and a
+  // Drive link carries no name - only the host's content-disposition does.
+  // The name is read from the requests the open already makes (no extra
+  // request against the proxy's free-tier cap), so it also closes with the
+  // session instead of leaking into the next tour.
+  function named(server: FetchImpl, header: string | null): FetchImpl {
+    return async (input, init) => {
+      const response = await server(input, init);
+      if (header === null) return response;
+      const headers = new Headers(response.headers);
+      headers.set("content-disposition", header);
+      return new Response(response.body, { status: response.status, headers });
+    };
+  }
+
+  it("carries the name the host sends, without an extra request", async () => {
+    let requests = 0;
+    const server = named(
+      rangeServer(await buildZip()),
+      `attachment; filename*=UTF-8''My%20tour.zip`,
+    );
+    const counted: FetchImpl = (input, init) => {
+      requests += 1;
+      return server(input, init);
+    };
+    const plain = rangeServer(await buildZip());
+    let plainRequests = 0;
+    await openTourSession("https://x/tour.zip", {
+      fetchImpl: (input, init) => {
+        plainRequests += 1;
+        return plain(input, init);
+      },
+    });
+    const session = await openTourSession("https://x/tour.zip", {
+      fetchImpl: counted,
+    });
+    expect(session.hostedFileName()).toBe("My tour.zip");
+    expect(requests, "the same requests as an open without a name").toBe(
+      plainRequests,
+    );
+  });
+
+  it("has none when the host sends none", async () => {
+    const session = await openTourSession("https://x/tour.zip", {
+      fetchImpl: rangeServer(await buildZip()),
+    });
+    expect(session.hostedFileName()).toBeNull();
   });
 });

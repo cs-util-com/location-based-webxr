@@ -186,6 +186,20 @@ export interface SlamAppStoreOptions<
   onWriteFailure?: (error: Error) => void;
 
   /**
+   * Replaces the persistence gate (`recording.isRecording`) with this
+   * predicate, for a recording that outlives the app's sessions. Absent =
+   * today's gate. See `PersistenceMiddlewareOptions.persistWhile`.
+   */
+  persistWhile?: () => boolean;
+
+  /**
+   * Keep numbering persisted actions across `startSession`s instead of
+   * restarting at `000001.json`. Default `false`. See
+   * `PersistenceMiddlewareOptions.continuousActionIndex`.
+   */
+  continuousActionIndex?: boolean;
+
+  /**
    * Disables RTK's expensive dev-only middleware (Serializable / Immutable
    * checks). Default `true`; set `false` for high-throughput replay scenarios.
    */
@@ -397,6 +411,8 @@ export function createSlamAppStore<
     extraMiddleware,
     persistedExtraPrefixes,
     onWriteFailure,
+    persistWhile,
+    continuousActionIndex,
     enableDevChecks = true,
     licenseKey = COMMUNITY_LICENSE_KEY,
     trackingQualityOptions,
@@ -620,6 +636,8 @@ export function createSlamAppStore<
   const persistenceMiddleware = createPersistenceMiddleware({
     storageBackend,
     onWriteFailure,
+    persistWhile,
+    continuousActionIndex,
     persistedPrefixes: [
       ...BUILTIN_PERSISTED_PREFIXES,
       ...(persistedExtraPrefixes ?? []),

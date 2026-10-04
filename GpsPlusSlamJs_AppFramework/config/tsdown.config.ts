@@ -26,6 +26,7 @@ const entryFiles = [
   'src/ar/ar-scene-hierarchy.ts',
   'src/ar/bresenham3d.ts',
   'src/ar/camera-blit-capture.ts',
+  'src/ar/captured-camera-frame.ts',
   'src/ar/capability-checker.ts',
   'src/ar/capture-failure-tracker.ts',
   // Motion-filter config types + defaults — deep-imported by the recorder's
@@ -74,6 +75,11 @@ const entryFiles = [
   'src/ar/image-quality.ts',
   'src/ar/replay-scene.ts',
   'src/ar/scene-node-names.ts',
+  // The recorder ties its sun-check HUD to the session's end with it.
+  'src/ar/session-disposers.ts',
+  'src/ar/sun-check.ts',
+  'src/ar/sun-check-geometry.ts',
+  'src/ar/sun-marker.ts',
   // Curated re-export of the library's NUE↔WebXR conversions, so consumer apps
   // (the recorder's replay path) reach them without a direct gps-plus-slam-js
   // dependency. Deep-imported via the `./ar/*` wildcard → per-file entry.
@@ -93,6 +99,7 @@ const entryFiles = [
   // wildcard matches multi-segment subpaths, so `./ar/qr/<file>` is already
   // advertised and each must be built per-file.
   'src/ar/qr/planar-pnp.ts',
+  'src/ar/qr/qr-capture-cadence.ts',
   'src/ar/qr/qr-debug-view.ts',
   'src/ar/qr/qr-derived-pose.ts',
   'src/ar/qr/qr-detection-controller.ts',
@@ -114,6 +121,9 @@ const entryFiles = [
 
   'src/geo/index.ts',
   'src/geo/h3-proximity.ts',
+  // The real sun (plan 2026-09-23-2149) — deep-imported by OsmDemo's sun clock
+  // via `./geo/*`; kept out of the geo barrel (it feeds the root export).
+  'src/geo/solar-position.ts',
 
   // sensors/
   'src/sensors/index.ts',
@@ -150,6 +160,8 @@ const entryFiles = [
   'src/state/replay-occupancy-subscriber.ts',
   'src/state/store-subscribers.ts',
   'src/state/subscribe-to-selector.ts',
+  // The session GPS extent the Recorder's QR mint reads (D28 revised).
+  'src/state/gps-extent-tracker.ts',
 
   // storage/
   'src/storage/index.ts',
@@ -185,6 +197,9 @@ const entryFiles = [
   // coverage-backfill). The `./storage/*` exports wildcard advertises this
   // subpath, so it must be built per-file.
   'src/storage/write-file-or-abort.ts',
+  // The `session.json` builder the Recorder and the Tour Viewer's
+  // troubleshooting recording share (deep-imported, 2026-09-28).
+  'src/storage/session-metadata-record.ts',
 
   // test-utils/ (advertised in `exports`; consumed by RecorderApp tests)
   'src/test-utils/browser-mocks.ts',
@@ -195,6 +210,13 @@ const entryFiles = [
   // floor-estimate → offset chain against a demo-owned grid. Advertised by the
   // `./test-utils/*` wildcard, so it must be built per-file like the rest.
   'src/test-utils/synthetic-depth-samples.ts',
+  // The STORE-mode central-directory reader - it reads an archive back
+  // with a parser independent of the library that wrote it, so a shared
+  // misreading of the zip format cannot cancel itself out. Consumed by
+  // the Tour Viewer's finish tests, which assert the PATHS a published
+  // archive actually carries. Advertised by the wildcard export and
+  // documented, but never built, so no sibling could import it.
+  'src/test-utils/zip-central-directory.ts',
 
   // types/
   'src/types/index.ts',
@@ -203,13 +225,25 @@ const entryFiles = [
 
   // utils/
   'src/utils/index.ts',
+  // The build-stamp reader, deep-imported by the RecorderApp and the Tour
+  // Viewer (moved from the RecorderApp 2026-09-28, DEC-H3).
+  'src/utils/build-info.ts',
   'src/utils/concurrency.ts',
+  // The apps' ?debug=1 reader, deep-imported by the RecorderApp and the
+  // TourViewer (QR near-frontal pose plan §67 #3).
+  'src/utils/debug-flag.ts',
   'src/utils/failure-tracker.ts',
   'src/utils/escape-html.ts',
   'src/utils/format-file-size.ts',
   'src/utils/fused-path.ts',
   'src/utils/list-formatter.ts',
   'src/utils/logger.ts',
+  // The OSM basemap's URL, attribution and zoom ceiling — deep-imported by the
+  // recorder's map views and by the OSM demo (NOT via the `/utils` barrel,
+  // which feeds `src/index.ts`'s `export *` and would put three basemap
+  // constants on the package's root export surface). The `./utils/*` exports
+  // wildcard advertises this subpath, so it must be built per-file.
+  'src/utils/osm-tiles.ts',
   // Persisted-options validation primitive — deep-imported by the recorder's
   // recording-options catalog (NOT via the `/utils` barrel, which would pull in
   // the logger and friends). The `./utils/*` exports wildcard advertises this
@@ -231,6 +265,10 @@ const entryFiles = [
   // Shared rather than copied because the early return is a CONTRACT: without
   // it `360 − ε` snaps to 0, a full turn that never happened.
   'src/utils/bearing-degrees.ts',
+  // NUE direction → geographic bearing, deep-imported by the OSM demo's AR
+  // HUD and used by the AR sun check (lifted from OsmDemo 2026-09-24,
+  // DEC-H3). Built per-file for the `./utils/*` wildcard, like the above.
+  'src/utils/nue-bearing.ts',
   // CSS cubic-bezier timing functions — deep-imported by the wayfinding
   // HUD's diamond entrance (NOT via the `/utils` barrel, which would pull in
   // the logger and friends). The `./utils/*` exports wildcard advertises
@@ -242,7 +280,25 @@ const entryFiles = [
   // tsc and vitest resolve it while Vite in the browser does not (found by
   // the recorder e2e stage, 26 minutes into a cascade).
   'src/utils/median.ts',
+  // The nearest-rank percentile (DEC-H3) - deep-imported by QrTrackingDemo's
+  // ?qrperf tallies and by the frame-time helpers below; per-file for the
+  // './utils/*' wildcard, like median.ts.
+  'src/utils/percentile.ts',
+  // The frame-time ring (moved from OsmDemo 2026-10-03, DEC-H3) -
+  // deep-imported by OsmDemo's AR sun shadow session and served to the
+  // globe lab's recorder; per-file for the './utils/*' wildcard.
+  'src/utils/frame-times.ts',
+  // The locate buttons' shared behaviour (labels, error mapping, the fix
+  // each failure names, one request) - deep-imported by the OSM demo's
+  // locate control and served to the globe lab's pin (round-2 plan
+  // 2026-09-26-2055 M3g, DEC-H3). Built per-file for the `./utils/*`
+  // wildcard, like the above.
+  'src/utils/locate-state.ts',
   'src/utils/toast-core.ts',
+  // Both GPS actions' payloads (core 1.26's recordGpsEventBatch beside
+  // recordGpsEvent) - deep-imported by the Tour Viewer's recording folders
+  // and the recorder's timing page, so per-file for the `./utils/*` wildcard.
+  'src/utils/gps-event-actions.ts',
   // QR launch payload codec — deep-imported by the TourViewer app: the decode
   // side (codec-dictionary) implements the ?qr= launch-handler dispatch, and
   // the encode side (qr-launch-url) is the authoring counterpart that builds
@@ -277,16 +333,33 @@ const entryFiles = [
   'src/ar/qr/qr-mint-level.ts',
   'src/ar/qr/qr-sighting-accumulator.ts',
   'src/ar/qr/qr-anchor-mint.ts',
+  // Which alignment the Recorder mints a code through (D28 revised).
+  'src/ar/qr/qr-mint-alignment-tracker.ts',
   'src/ar/qr/qr-gps-vote.ts',
   // Shared per-code vote budget: both the TourViewer and the RecorderApp
   // gate their dispatchVotes on it (DEC-H3), so it must be deep-importable.
   'src/ar/qr/qr-vote-budget.ts',
   'src/ar/qr/qr-tracking-controller.ts',
+  // The fused QR pose per code (QR near-frontal pose plan §60, b4b-3): the
+  // TourViewer votes and mints with it, deep-imported like the controller.
+  'src/ar/qr/qr-fused-pose-source.ts',
+  'src/ar/qr/qr-fused-pose.ts',
 
   // visualization/
   'src/visualization/index.ts',
   'src/visualization/accuracy-circles.ts',
+  // The physical sky (plan 2026-09-23-0048, M3) — deep-imported by OsmDemo
+  // via `./visualization/*` (the wildcard spans the `atmosphere/` folder).
+  // The auto-exposure's parameters: OsmDemo's light dialog starts from
+  // them (plan 2026-09-24-2140).
+  'src/visualization/atmosphere/atmosphere-exposure.ts',
+  'src/visualization/atmosphere/atmosphere-fallback.ts',
+  'src/visualization/atmosphere/atmosphere-haze.ts',
+  'src/visualization/atmosphere/sky-atmosphere.ts',
   'src/visualization/alignment-lerper.ts',
+  // AR shadows on the room mesh (plan 2026-09-26-0549), deep-imported by the
+  // PhysicsDemo via `./visualization/*`.
+  'src/visualization/ar-shadows.ts',
   'src/visualization/ar-world-group-alignment.ts',
   'src/visualization/camera-follower.ts',
   'src/visualization/css3d-renderer-manager.ts',
@@ -317,6 +390,11 @@ const entryFiles = [
   'src/visualization/lerp-utils.ts',
   'src/visualization/map-data.ts',
   'src/visualization/map-overlay-draw.ts',
+  // The summary map's shell and the OSM basemap layer (moved from the
+  // RecorderApp 2026-10-01, DEC-H3) - deep-imported by the Recorder and,
+  // dynamically, by the Tour Viewer's summary via `./visualization/*`.
+  'src/visualization/osm-tile-layer.ts',
+  'src/visualization/summary-map-shell.ts',
   // Engine-free desktop pointer raycast helper (2026-07-15 replay-harness Part B)
   // — deep-imported by consumer apps (PhysicsDemo) via `./visualization/*`.
   'src/visualization/pointer-picking.ts',
@@ -325,6 +403,10 @@ const entryFiles = [
   // must be a per-file dist entry (a missing entry breaks Vite resolution at
   // runtime — see 2026-04-29-recorder-e2e-import-resolution-failure.md).
   'src/visualization/perf-stats-overlay.ts',
+  // The AR sun shadow prototype (plan 2026-09-23-2343): the shadow-casting
+  // sun light (M2) and its pure rig (M1).
+  'src/visualization/sun-shadow.ts',
+  'src/visualization/sun-shadow-rig.ts',
   // Shared canvas-text sprite helper (2026-07-17 wayfinding graduation).
   'src/visualization/text-sprite.ts',
   'src/visualization/three-dispose.ts',

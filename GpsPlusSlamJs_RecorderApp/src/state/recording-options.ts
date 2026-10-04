@@ -39,6 +39,10 @@ import {
   DEFAULT_RECONSTRUCTION_DEPTH_INTERVAL_MS,
 } from 'gps-plus-slam-app-framework/ar/depth-sampler';
 import {
+  DEFAULT_QR_CAPTURE_INTERVAL_MS,
+  QR_CAPTURE_INTERVAL_CONSTRAINTS,
+} from 'gps-plus-slam-app-framework/ar/qr/qr-capture-cadence';
+import {
   DEFAULT_MOTION_FILTER,
   validateMotionFilterConfig,
   type MotionFilterConfig,
@@ -222,13 +226,6 @@ export interface ImageCaptureOptions {
 }
 
 /**
- * Configuration for the derived AR-space occupancy grid (the voxelization of
- * the depth samples, port plan 2026-06-11). These settings do NOT change what
- * is recorded — they govern the grid derived from the recorded depth points,
- * so they also apply when replaying an existing recording, letting the same
- * session be re-quantized at a different resolution.
- */
-/**
  * Mesher strategy for the **persistent occluder** mesh, exposed as a recorder
  * setting (2026-06-30 occluder-tuning, F2/F2b) so the two surface-hugging
  * approaches can be A/B-tested on-device against the blocky baseline:
@@ -245,6 +242,13 @@ export interface ImageCaptureOptions {
 const OCCLUDER_MESH_MODES = ['greedy', 'corner-fit', 'smooth'] as const;
 export type OccluderMeshMode = (typeof OCCLUDER_MESH_MODES)[number];
 
+/**
+ * Configuration for the derived AR-space occupancy grid (the voxelization of
+ * the depth samples, port plan 2026-06-11). These settings do NOT change what
+ * is recorded — they govern the grid derived from the recorded depth points,
+ * so they also apply when replaying an existing recording, letting the same
+ * session be re-quantized at a different resolution.
+ */
 export interface OccupancyOptions {
   /**
    * Voxel edge length in metres. Drives the occupancy-grid quantization, the
@@ -595,7 +599,7 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     // OFF by default (§0): QR capture/detection is opt-in so existing
     // recordings pay nothing (performance must not regress).
     enabled: false,
-    intervalMs: 125, // ~8 Hz — the QR demo's DETECT_INTERVAL_MS
+    intervalMs: DEFAULT_QR_CAPTURE_INTERVAL_MS, // 125, ~8 Hz - shared with the QR demo
     captureSize: 1024, // long-edge px — the on-device-verified default
     useLevels: false,
   },
@@ -707,14 +711,14 @@ export const FRAME_TILE_DISPLAY_CONSTRAINTS = {
 /**
  * Validation constraints for QR-capture options.
  *
- * `intervalMs` is clamped to 50–1000 ms (20 Hz down to 1 Hz): below ~50 ms the
- * detector cannot keep up and frames just queue; above 1 s tracking feels dead.
+ * `intervalMs` is clamped to the framework's QR capture bounds (50-1000 ms,
+ * `ar/qr/qr-capture-cadence`; the QR demo's `?interval=` reads the same ones).
  * `captureSize` is clamped to 256–2048 px: under 256 even a near QR loses its
  * modules; over 2048 the blit + decode cost is not worth it on a phone. Both
  * back a settings slider so a corrupt stored value can never break capture.
  */
 export const QR_CONSTRAINTS = {
-  intervalMs: { min: 50, max: 1000, step: 25 },
+  intervalMs: QR_CAPTURE_INTERVAL_CONSTRAINTS,
   captureSize: { min: 256, max: 2048, step: 128 },
 } as const;
 
@@ -944,26 +948,6 @@ export function validateImageOptions(
 }
 
 /**
- * Validate and normalize occupancy options.
- * Invalid values are clamped to valid ranges.
- *
- * Note why the `num` rule's finiteness check matters here specifically:
- * `OccupancyGrid` throws a `RangeError` on a non-finite cell size, and a bare
- * clamp would pass `NaN` straight through (it is `typeof 'number'`). Falling
- * back to the default keeps a corrupted stored value from crashing grid
- * construction.
- *
- * **Backward-compat migration:** the occlusion options were a single
- * `occlusionMeshEnabled` boolean before 2026-06-29; they are now the two
- * composable booleans `persistentOcclusion` + `liveOcclusion`. A persisted
- * object that predates the split carries only the legacy field, so when the new
- * `persistentOcclusion` is absent we read `occlusionMeshEnabled` and map
- * `true → persistentOcclusion: true` (the old mesh occluder is the persistent
- * one); the legacy shape never enabled a live occluder, so `liveOcclusion`
- * stays at its default. A present new field always wins over the legacy one.
- * See `2026-06-29-1414-occupancy-mesh-followups.md`.
- */
-/**
  * Resolve `persistentOcclusion` with legacy migration. A **present** new field
  * always wins over the legacy `occlusionMeshEnabled` — even when its value is
  * invalid: a present-but-corrupt value falls back to the default, never to the
@@ -1013,6 +997,26 @@ function resolveOccluderDebugStyle(
   return defaultValue;
 }
 
+/**
+ * Validate and normalize occupancy options.
+ * Invalid values are clamped to valid ranges.
+ *
+ * Note why the `num` rule's finiteness check matters here specifically:
+ * `OccupancyGrid` throws a `RangeError` on a non-finite cell size, and a bare
+ * clamp would pass `NaN` straight through (it is `typeof 'number'`). Falling
+ * back to the default keeps a corrupted stored value from crashing grid
+ * construction.
+ *
+ * **Backward-compat migration:** the occlusion options were a single
+ * `occlusionMeshEnabled` boolean before 2026-06-29; they are now the two
+ * composable booleans `persistentOcclusion` + `liveOcclusion`. A persisted
+ * object that predates the split carries only the legacy field, so when the new
+ * `persistentOcclusion` is absent we read `occlusionMeshEnabled` and map
+ * `true → persistentOcclusion: true` (the old mesh occluder is the persistent
+ * one); the legacy shape never enabled a live occluder, so `liveOcclusion`
+ * stays at its default. A present new field always wins over the legacy one.
+ * See `2026-06-29-1414-occupancy-mesh-followups.md`.
+ */
 export function validateOccupancyOptions(
   options: Partial<OccupancyOptions>
 ): OccupancyOptions {

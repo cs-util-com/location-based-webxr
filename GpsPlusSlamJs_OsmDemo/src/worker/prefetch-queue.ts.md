@@ -6,11 +6,30 @@ Pulls the six neighbouring res-7 fetch tiles in the background, one at a time,
 and drops them the moment the user leaves (W8, DEC-R2-6) — so crossing a tile
 boundary stops being an unpredictable ~15–90 s stall.
 
+## Why there are TWO ways to drop
+
+`replace` both drops and starts, so it can only run AFTER the foreground
+fetch - a background request issued before one is the sin this module exists to
+prevent. That put the dropping too late as well: until 2026-09-21 the previous
+position's prefetch held one of the two slots for the whole of the next click's
+fetch. `OverpassSlotBudget.tryAcquire` refuses rather than queues, the refusal
+lands in `demo-pipeline`'s per-tile catch, and the tile becomes a
+`missingTiles` entry - **silently missing geometry, no error anywhere**, on the
+18.5% of positions whose first ring needs two tiles.
+
+`retain` is the dropping half alone. It runs before the fetch and starts
+nothing. A prefetch the new position still wants is KEPT rather than abandoned,
+because discarding a 15-90 s background fetch on every click would mean it never
+completes - which is what calling `stop()` there would have cost.
+
 ## Public API
 
 - `createPrefetchQueue({ fetchTile, isLoaded?, onSettled? }): PrefetchQueue`
   - `replace(tiles)` — states the **whole** desired set. Anything not in it is
     abandoned, including the request in flight.
+  - `retain(tiles)` — the DROPPING half of `replace`, on its own. Aborts the
+    in-flight tile if the new set does not want it, filters the queue, and
+    **starts nothing**.
   - `stop()` — abandons everything, for teardown.
   - `inFlight` / `pending` — what it is doing, for tests and for a status line.
 
@@ -24,6 +43,12 @@ boundary stops being an unpredictable ~15–90 s stall.
 - **`replace`, not `enqueue`.** Stating the whole set is what makes "dropped for
   areas the user has left" structural rather than a rule someone has to
   remember.
+- **This queue's tiles are SPECULATIVE, and the wiring is what says so.** Every
+  tile here is a ring warm nobody is waiting on, so `demo-worker` passes
+  `{ speculative: true }` and `OverpassSource` declines to race it — one request
+  per tile rather than two. The flag deliberately lives at the CALL SITE rather
+  than inside this module: the queue has no opinion about how a source fetches,
+  and should not grow one. See `osm-data-source.ts.md`.
 - **The abort is real.** `fetchTile(tile, signal)` is honoured all the way down
   to `fetch`, so an abandoned tile stops transferring. DEC-R2-6 singles this out
   as the part that must genuinely work rather than be nominal, and it is asserted
@@ -47,11 +72,16 @@ boundary stops being an unpredictable ~15–90 s stall.
 
 ```ts
 const prefetch = createPrefetchQueue({
-  fetchTile: (tile, signal) => source.fetchTile(tile, signal),
+  fetchTile: (tile, signal) =>
+    source.fetchTile(tile, { signal, speculative: true }),
   isLoaded: (tile) => pipeline.hasTile(tile),
 });
 
 // After the user-visible work of each pass:
+// BEFORE the user's own fetch: free the slot, start nothing.
+prefetch.retain(pipeline.neighbourTilesFor(position));
+const snapshot = await pipeline.update(position, category, signal, radius);
+// AFTER it: state the new desired set, which starts the background work.
 prefetch.replace(pipeline.neighbourTilesFor(position));
 ```
 

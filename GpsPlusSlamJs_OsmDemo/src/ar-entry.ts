@@ -1,9 +1,10 @@
 /**
  * What the AR button's press should do, and when to offer entry.
  *
- * Pure decisions, no DOM and no session — the same split `locate-state.ts` has
- * from `locate-control.ts`, and for the same reason: this is the part worth
- * testing exhaustively, and none of it needs a browser.
+ * Pure decisions, no DOM and no session — the same split the framework's
+ * `utils/locate-state.ts` has from `locate-control.ts`, and for the same
+ * reason: this is the part worth testing exhaustively, and none of it needs
+ * a browser.
  *
  * WHY THE PRESS DECIDES RATHER THAN THE BUTTON DISABLING ITSELF (DEC-W2). The
  * thirteenth session reported that the AR button "does nothing" before Location

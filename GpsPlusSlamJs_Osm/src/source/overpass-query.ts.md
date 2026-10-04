@@ -11,7 +11,7 @@ the bounding box it needs.
 - `BoundingBox` — `{ south, west, north, east }`.
 - `cellToBoundingBox(cell)` → `BoundingBox`. **Throws `AntimeridianCellError`**
   for a cell spanning ±180°.
-- `buildTileQuery(bbox, timeoutSeconds?)` → Overpass QL string.
+- `buildTileQuery(bbox, timeoutSeconds?, keys?)` → Overpass QL string.
 - `AntimeridianCellError`.
 
 ## Invariants & assumptions
@@ -26,6 +26,27 @@ the bounding box it needs.
   Failing loudly beats emitting a bbox that silently covers the whole globe the
   wrong way round. Detection uses a >180° longitude span, which cannot occur for
   a genuine res-8 hexagon (~1 km across).
+- **The relation selector stays KEYED, and a field test paid for that
+  knowledge (2026-09-20).** These 32 keyed relation statements were briefly
+  replaced by a single `relation["type"~"^(multipolygon|boundary)$"]`,
+  benchmarked at 1.7-2.2x faster over two cities and two resolutions, with the
+  surplus relations filtered client-side so the delivered element set was
+  provably unchanged. It shipped, and a field report of "it barely loads any
+  more" followed within the hour.
+  - A counterbalanced run over **all five pool endpoints**, one res-7 Manhattan
+    tile, three rounds: the 32 keyed statements succeeded **10 of 15**, the
+    single unqualified statement **5 of 15**. `maps.mail.ru` went 3/3 to 0/3
+    and holds weight 3 of 8 in the operator draw, so over a third of requests
+    began failing over — costing far more wall clock than the query saved.
+  - **The whole speedup had been measured on `z.overpass-api.de` alone**, which
+    is also the one host that returned 12/12 in the 2026-08-01 sweep while five
+    others 504'd. One endpoint is not the pool.
+  - The mechanism was already known here: **a regex on a selector Overpass
+    cannot index first is what 504s** (2026-07-28). `relation["k"]["type"~R]`
+    starts from the key index; `relation["type"~R]` has nothing to start from.
+  - Worth measuring if anyone returns to it: two exact-value statements,
+    `relation["type"="multipolygon"];relation["type"="boundary"];` — no regex,
+    both index-usable. **On every pool endpoint, before believing it.**
 - **`OVERPASS_SCHEMA_VERSION` must be bumped whenever the query changes shape**
   in a way that makes cached tiles non-equivalent — narrowing the tag filter,
   changing `out` mode. Forgetting is a silent-wrong-data bug: a narrowed query

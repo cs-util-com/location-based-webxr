@@ -275,6 +275,36 @@ function addBuildings(
 const BANK_THICKNESS_M = 0.5;
 
 /**
+ * The centrelines of every ground-level bridge deck in the extract.
+ *
+ * **These become PASSAGES on the water obstacles, not cuts in their bank
+ * rings**, and that is forced rather than chosen: `segmentCrossesRing` treats a
+ * ring as closed whether or not the caller repeated the first vertex, so a bank
+ * ring cannot be opened the way `barrier-gates.ts` opens a barrier centreline.
+ * The passage corridor `blockedDespitePassages` already implements is exactly
+ * the right shape for a deck — "admitted exactly when the step runs along it".
+ *
+ * `isBridgeCrossing` carries the selector and its corpus evidence: at
+ * `london-tower-bridge`, 14 of the 18 `bridge`-tagged ways are ground-level
+ * decks. The 4 it rejects are structural areas and ways 43 m up behind a
+ * turnstile — opening a bank along one of those would walk an agent onto a wall.
+ *
+ * Computed ONCE per index build, like `gateOpenings`, because it is a property
+ * of the extract rather than of any one water feature.
+ */
+function bridgeDeckLines(
+  features: readonly OsmFeature[],
+): readonly (readonly PlanarPoint[])[] {
+  const lines: (readonly PlanarPoint[])[] = [];
+  for (const feature of features) {
+    if (feature.type !== "way" || !isBridgeCrossing(feature)) continue;
+    if (feature.geometry.length < 2) continue;
+    lines.push(feature.geometry.map((p) => ({ x: p.lng, y: p.lat })));
+  }
+  return lines;
+}
+
+/**
  * Water, as thin bands along its BANKS — never as a filled surface.
  *
  * Measured: filled-and-clipped costs 13 966–18 246 covered cells per site
@@ -311,36 +341,6 @@ const BANK_THICKNESS_M = 0.5;
  * "bridges unroutable" for "agents walk on rivers". That fix is now in place, so
  * a river is a hard barrier to any agent EXCEPT along a ground-level deck.
  */
-/**
- * The centrelines of every ground-level bridge deck in the extract.
- *
- * **These become PASSAGES on the water obstacles, not cuts in their bank
- * rings**, and that is forced rather than chosen: `segmentCrossesRing` treats a
- * ring as closed whether or not the caller repeated the first vertex, so a bank
- * ring cannot be opened the way `barrier-gates.ts` opens a barrier centreline.
- * The passage corridor `blockedDespitePassages` already implements is exactly
- * the right shape for a deck — "admitted exactly when the step runs along it".
- *
- * `isBridgeCrossing` carries the selector and its corpus evidence: at
- * `london-tower-bridge`, 14 of the 18 `bridge`-tagged ways are ground-level
- * decks. The 4 it rejects are structural areas and ways 43 m up behind a
- * turnstile — opening a bank along one of those would walk an agent onto a wall.
- *
- * Computed ONCE per index build, like `gateOpenings`, because it is a property
- * of the extract rather than of any one water feature.
- */
-function bridgeDeckLines(
-  features: readonly OsmFeature[],
-): readonly (readonly PlanarPoint[])[] {
-  const lines: (readonly PlanarPoint[])[] = [];
-  for (const feature of features) {
-    if (feature.type !== "way" || !isBridgeCrossing(feature)) continue;
-    if (feature.geometry.length < 2) continue;
-    lines.push(feature.geometry.map((p) => ({ x: p.lng, y: p.lat })));
-  }
-  return lines;
-}
-
 function addWater(
   features: readonly OsmFeature[],
   resolution: number,
@@ -474,37 +474,6 @@ export function obstacleLevelsAt(
 }
 
 /**
- * Whether a step from `fromCell` to `toCell` passes through solid geometry.
- *
- * **THIS IS WHAT MAKES A WALL BLOCK, and until it existed nothing did.**
- * `obstacleLevelsAt` only ever ADDS a standable level, so a walled cell offered
- * the ground and the wall top, and an agent walked along the ground straight
- * through the wall — `obstacles.test.ts` said as much in its header and called
- * this the next slice.
- *
- * **Blocking is a property of the STEP, not of the cell**, which is also how the
- * design phrases it ("does the segment between two points cross a wall?"). The
- * alternative — refusing to stand in a cell whose centre falls inside an
- * obstacle — cannot work at this resolution: a res-13 cell is ~8 m across and a
- * wall is ~0.5 m thick, so a wall contains a cell centre roughly one time in
- * sixteen and would be transparent to pathfinding the rest of the time.
- *
- * The segment runs between the two CELL CENTRES, which is the position an agent
- * in a cell is taken to occupy everywhere else in this module.
- *
- * **Obstacles are gathered from the whole `gridDisk(fromCell, 1)`, not from the
- * two cells.** A thin wall's footprint covers the cells the BAND passes
- * through, which need not be either endpoint: two neighbouring cells either
- * side of a wall can both be clear while the wall sits in the sliver between
- * their centres. Asking only the endpoints missed exactly that, and the miss
- * was silent — the wall indexed correctly and blocked nothing.
- *
- * **Defined for NEIGHBOURING cells**, which is all the search ever asks: every
- * candidate `columnSpace` generates comes from `gridDisk(state.cell, 1)`. For
- * cells further apart the segment can leave the disk and the answer is a lower
- * bound rather than a guarantee.
- */
-/**
  * Cell centres, memoised — the search asks for the same ones over and over.
  *
  * **Measured, not assumed.** `obstacles.bench.ts` prices a step at ~6.2 µs on
@@ -542,6 +511,37 @@ function centreOf(cell: string): PlanarPoint {
   return point;
 }
 
+/**
+ * Whether a step from `fromCell` to `toCell` passes through solid geometry.
+ *
+ * **THIS IS WHAT MAKES A WALL BLOCK, and until it existed nothing did.**
+ * `obstacleLevelsAt` only ever ADDS a standable level, so a walled cell offered
+ * the ground and the wall top, and an agent walked along the ground straight
+ * through the wall — `obstacles.test.ts` said as much in its header and called
+ * this the next slice.
+ *
+ * **Blocking is a property of the STEP, not of the cell**, which is also how the
+ * design phrases it ("does the segment between two points cross a wall?"). The
+ * alternative — refusing to stand in a cell whose centre falls inside an
+ * obstacle — cannot work at this resolution: a res-13 cell is ~8 m across and a
+ * wall is ~0.5 m thick, so a wall contains a cell centre roughly one time in
+ * sixteen and would be transparent to pathfinding the rest of the time.
+ *
+ * The segment runs between the two CELL CENTRES, which is the position an agent
+ * in a cell is taken to occupy everywhere else in this module.
+ *
+ * **Obstacles are gathered from the whole `gridDisk(fromCell, 1)`, not from the
+ * two cells.** A thin wall's footprint covers the cells the BAND passes
+ * through, which need not be either endpoint: two neighbouring cells either
+ * side of a wall can both be clear while the wall sits in the sliver between
+ * their centres. Asking only the endpoints missed exactly that, and the miss
+ * was silent — the wall indexed correctly and blocked nothing.
+ *
+ * **Defined for NEIGHBOURING cells**, which is all the search ever asks: every
+ * candidate `columnSpace` generates comes from `gridDisk(state.cell, 1)`. For
+ * cells further apart the segment can leave the disk and the answer is a lower
+ * bound rather than a guarantee.
+ */
 export function crossesObstacle(
   index: ObstacleIndex,
   fromCell: string,

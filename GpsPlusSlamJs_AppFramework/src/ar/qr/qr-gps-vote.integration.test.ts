@@ -17,6 +17,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  GPS_POINT_SOURCE_SYNTHETIC_QR,
+  gpsPointSourceOf,
   recordGpsEvent,
   getAlignmentMatrix,
   setZeroPos,
@@ -60,6 +62,29 @@ describe('QR votes through the real GPS fusion', () => {
     expect(alignment).not.toBeNull();
     expect(alignment!.length).toBe(16);
     expect(alignment!.every((n) => Number.isFinite(n))).toBe(true);
+  });
+
+  // Why this test matters: a store listener only ever sees the STORED point,
+  // never the payload - so the provenance stamp is useful only if the
+  // reducer keeps it. Pinned against the real store of the published core.
+  it('keeps the synthetic-QR source on the stored points', () => {
+    const store = freshStore();
+    const votes = buildQrGpsVotes({
+      qrPoseWorld,
+      sizeM,
+      qrGeo,
+      syntheticAccuracyM: 5,
+      baselineM: 30,
+      count: 8,
+      timestamp: 1000,
+    });
+    for (const v of votes) store.dispatch(recordGpsEvent(v));
+
+    const stored = store.getState().gpsData?.gpsEvents?.gpsPositions ?? [];
+    expect(stored).toHaveLength(8);
+    for (const point of stored) {
+      expect(gpsPointSourceOf(point)).toBe(GPS_POINT_SOURCE_SYNTHETIC_QR);
+    }
   });
 
   it('does not produce a non-finite alignment when a grossly-wrong vote is added', () => {

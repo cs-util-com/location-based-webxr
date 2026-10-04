@@ -7,6 +7,11 @@
  */
 
 import type { QrSizeEstimate } from "gps-plus-slam-app-framework/ar";
+import type {
+  QrFusedPose,
+  QrMotion,
+  QrMotionState,
+} from "gps-plus-slam-app-framework/ar/qr";
 
 export type DemoStatus = "idle" | "scanning" | "tracking";
 
@@ -21,7 +26,34 @@ export interface HudView {
   spreadLabel: string;
   /** Size lifecycle stage (`unknown` | `measuring` | `estimated`). */
   lifecycleLabel: string;
+  /**
+   * What the overlay shows (QR near-frontal pose plan M3b b5, b5 review #7):
+   * the fused pose while it is stable (`fused joint · 7 views · fit 0.6 px`),
+   * else the raw frame pose with the fused state in brackets
+   * (`raw (fused measuring · 3 views · fit 0.6 px)`,
+   * `raw (views disagree · fit 12.3 px)`), or `—` before any.
+   */
+  poseLabel: string;
+  /**
+   * The code's motion mode (plan §26) with its speeds, e.g.
+   * `moving · 12 cm/s`, `still`, or `—` before any reading.
+   */
+  motionLabel: string;
+  /** The mode's colour (`MOTION_COLORS`), or null for the default text colour. */
+  motionColor: string | null;
 }
+
+/**
+ * One colour per motion mode, shared by the HUD label and the 3D trail
+ * (plan §26). Bright and saturated, to stay readable on the translucent
+ * plate outdoors; "still" keeps the design system's own text colour.
+ */
+export const MOTION_COLORS: Record<QrMotionState, string | null> = {
+  still: null,
+  moving: "#ffb020",
+  turning: "#33ddff",
+  "moving+turning": "#ff5ad2",
+};
 
 const STATUS_LABELS: Record<DemoStatus, string> = {
   idle: "Point at a QR code",
@@ -47,9 +79,46 @@ function formatSpread(spreadM: number): string {
   return mm < 0.5 ? "<1 mm" : `±${Math.round(mm)} mm`;
 }
 
+/**
+ * The pose line: what the overlay shows first. The overlay takes the fused
+ * pose only while it is stable (which the averaged fallback never is);
+ * otherwise it shows the raw frame pose.
+ */
+function formatPose(fused: QrFusedPose | null | undefined): string {
+  if (!fused || fused.status === "unknown" || !fused.method) return "—";
+  const fit = Number.isFinite(fused.fitPx)
+    ? `fit ${fused.fitPx.toFixed(1)} px`
+    : "fit —";
+  if (fused.method === "averaged") return `raw (views disagree · ${fit})`;
+  const views = `${fused.views} view${fused.views === 1 ? "" : "s"}`;
+  if (fused.status === "stable") return `fused joint · ${views} · ${fit}`;
+  return `raw (fused ${fused.status} · ${views} · ${fit})`;
+}
+
+const MOTION_NAMES: Record<QrMotionState, string> = {
+  still: "still",
+  moving: "moving",
+  turning: "turning",
+  "moving+turning": "moving + turning",
+};
+
+/** The motion line: the mode, then the speeds of what is moving. */
+function formatMotion(motion: QrMotion | null | undefined): string {
+  if (!motion) return "—";
+  const parts = [MOTION_NAMES[motion.state]];
+  if (motion.moving && motion.speedMps !== null) {
+    parts.push(`${Math.round(motion.speedMps * 100)} cm/s`);
+  }
+  if (motion.turning && motion.turnRateDegPerS !== null) {
+    parts.push(`${Math.round(motion.turnRateDegPerS)}°/s`);
+  }
+  return parts.join(" · ");
+}
+
 export function toHudView(
   status: DemoStatus,
   size: QrSizeEstimate | undefined,
+  fused?: QrFusedPose | null,
 ): HudView {
   const sizeEstimate = size ?? {
     status: "unknown" as const,
@@ -66,5 +135,8 @@ export function toHudView(
     sampleLabel: `${sizeEstimate.sampleCount} sample${sizeEstimate.sampleCount === 1 ? "" : "s"}`,
     spreadLabel: formatSpread(sizeEstimate.spreadM),
     lifecycleLabel: sizeEstimate.status,
+    poseLabel: formatPose(fused),
+    motionLabel: formatMotion(fused?.motion),
+    motionColor: fused?.motion ? MOTION_COLORS[fused.motion.state] : null,
   };
 }

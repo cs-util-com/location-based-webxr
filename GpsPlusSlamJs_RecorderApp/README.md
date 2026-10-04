@@ -801,7 +801,7 @@ GpsPlusSlamJs_RecorderApp/
     ├── ui/                 # HUD (split across hud-*.ts), settings modal, navigation,
     │                       # map-browser, session-summary, ref-point-picker, dialogs
     ├── global.d.ts         # WebXR & File System Access type declarations
-    ├── utils/              # ar-session-scope, build-info, dom-helpers, sentry
+    ├── utils/              # ar-session-scope, dom-helpers, sentry
     ├── visualization/      # ref-point-visualizer, frame tiles, occluder sink/worker client
     ├── workers/            # occlusion-mesher.worker.ts
     └── test-utils/         # e2e-hooks, html-fixtures

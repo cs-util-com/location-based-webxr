@@ -43,6 +43,13 @@ test.describe("the 3D view", () => {
     await test.step("actually draws pixels, not just a canvas element", async () => {
       const canvas = page.locator("#scene canvas");
       await expect(canvas).toBeVisible();
+      // THE PHYSICAL SKY, not the fallback (plan 2026-09-23-0048, M3 review
+      // finding 4): every lighting claim in this suite, the DEC-R4-5 margin
+      // above all, was measured under it, and the fallback is silent.
+      await expect(page.locator("#scene")).toHaveAttribute(
+        "data-sky",
+        "physical",
+      );
 
       // THE PIXEL PROOF. A present canvas of the right size proves nothing: a
       // scene with the camera inside a wall, a mesh with no geometry, or a render
@@ -737,8 +744,15 @@ test.describe("the 3D view", () => {
   }) => {
     // THREE BEHAVIOURS ON ONE BOOT, with the camera drag last: it is the only
     // one of the three that leaves the view somewhere else.
+    //
+    // AT THE GOLDEN HOUR THE SKY ASSERTION WAS CALIBRATED AT, pinned by
+    // `?time=` since the boot moved to the 20° afternoon (plan 2026-09-24-0706,
+    // DEC-SUN-13). Measured there at the top-left sample: 63,57,50, a pale
+    // hazy sky with a spread of 13, the same with or without clouds; the
+    // golden hour's warm sky is what the "chromatic, not a grey wash" claim
+    // below was calibrated against, so it keeps its threshold there.
     await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
+    await page.goto(`${AT_FIXTURE}&time=17:36`);
     await waitForRefresh(page);
 
     await test.step("a building stays unpickable, which W12 must not have undone", async () => {
@@ -1335,61 +1349,247 @@ test.describe("the POI model gallery", () => {
 });
 
 /**
+ * Mean absolute chroma of the 3D canvas.
+ *
+ * MEAN ABSOLUTE CHROMA, NOT HSV SATURATION, and the first attempt got this
+ * wrong in a way worth recording. HSV saturation is a RATIO, so the dark
+ * blue-grey ground (0x3a4356 -> chroma 28 on a max of 86) scores 0.33 and
+ * reads as "saturated" while looking entirely neutral; the measurement then
+ * reported that switching the heat grid ON made the frame LESS saturated,
+ * which is true of the ratio and false of the picture.
+ *
+ * Absolute chroma separates the two cleanly, because that is what "loud"
+ * means here: the viridis ramp runs 80-216 levels of chroma (deep purple to
+ * yellow), the ground is 28 and the buildings are 16.
+ */
+const meanChroma = (page) =>
+  page.evaluate(() => {
+    const el = document.querySelector("#scene canvas");
+    if (!(el instanceof HTMLCanvasElement)) return -1;
+    const probe = document.createElement("canvas");
+    probe.width = el.width;
+    probe.height = el.height;
+    const ctx = probe.getContext("2d");
+    if (ctx === null) return -1;
+    ctx.drawImage(el, 0, 0);
+    const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+    let sum = 0;
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i] ?? 0;
+      const g = data[i + 1] ?? 0;
+      const b = data[i + 2] ?? 0;
+      sum += Math.max(r, g, b) - Math.min(r, g, b);
+      count += 1;
+    }
+    return count === 0 ? -1 : sum / count;
+  });
+
+/** Mean luma of the warm, low-saturation pixels: the lit buildings and roads. */
+const litSurfaceLuma = (page) =>
+  page.evaluate(() => {
+    const el = document.querySelector("#scene canvas");
+    if (!(el instanceof HTMLCanvasElement)) return -1;
+    const probe = document.createElement("canvas");
+    probe.width = el.width;
+    probe.height = el.height;
+    const ctx = probe.getContext("2d");
+    if (ctx === null) return -1;
+    ctx.drawImage(el, 0, 0);
+    const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+    let sum = 0;
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i] ?? 0;
+      const g = data[i + 1] ?? 0;
+      const b = data[i + 2] ?? 0;
+      if (r >= b && Math.max(r, g, b) - Math.min(r, g, b) < 60) {
+        sum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        count += 1;
+      }
+    }
+    return count === 0 ? -1 : sum / count;
+  });
+/** Mean Rec. 709 luma of the 3D canvas (recorded beside each margin). */
+const meanLuma = (page) =>
+  page.evaluate(() => {
+    const el = document.querySelector("#scene canvas");
+    if (!(el instanceof HTMLCanvasElement)) return -1;
+    const probe = document.createElement("canvas");
+    probe.width = el.width;
+    probe.height = el.height;
+    const ctx = probe.getContext("2d");
+    if (ctx === null) return -1;
+    ctx.drawImage(el, 0, 0);
+    const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+    let sum = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      sum +=
+        0.2126 * (data[i] ?? 0) +
+        0.7152 * (data[i + 1] ?? 0) +
+        0.0722 * (data[i + 2] ?? 0);
+    }
+    return sum / (data.length / 4);
+  });
+
+/**
+ * POLLED, NOT READ ONCE. The view renders on demand (DEC-R3-9), so a
+ * measurement taken immediately after a toggle reads the PREVIOUS frame — the
+ * first version of this did exactly that and reported a difference of exactly
+ * zero, which looks like a real answer.
+ */
+const settledChroma = async (page) => {
+  let previous = -1;
+  for (let i = 0; i < 40; i++) {
+    const now = await meanChroma(page);
+    if (Math.abs(now - previous) < 0.01) return now;
+    previous = now;
+    await page.waitForTimeout(50);
+  }
+  return previous;
+};
+
+/**
+ * How much chroma the heat grid ADDS, against one named ground mode.
+ *
+ * STARTS FROM A KNOWN STATE rather than inheriting one. An earlier version
+ * measured "before" first and restored the layer to ON at the end, so the
+ * SECOND call's baseline was already the with-cells picture, the toggle was a
+ * no-op, and the chroma never moved. Unchecking first makes each call
+ * self-contained and the two measurements unambiguous.
+ */
+const marginFor = async (page, mode) => {
+  await page.locator("#ground-mode").selectOption(mode);
+
+  await page.locator("#layer-cells").uncheck();
+  const withoutCells = await settledChroma(page);
+
+  // THE CELLS NOW ARRIVE ASYNCHRONOUSLY (round 10, stage B): the snapshot
+  // omits the array while the layer is off, so switching it on is a refresh
+  // rather than a redraw.
+  //
+  // AND THE MAP IS THE WRONG SURFACE TO WAIT ON, which cost a gate run to
+  // learn: `enableCellLayer` waits for Leaflet `.affordance-cell` paths, but
+  // everything measured here is the 3D CANVAS, whose grid comes from a
+  // separate async `buildGrid` worker call. Map cells present does not mean
+  // the scene has redrawn, so `settledChroma` could still read the
+  // without-cells picture -- and the margin came out exactly 0.
+  //
+  // Waiting for the SCENE CHROMA TO MOVE is the non-circular signal: it says
+  // the scene incorporated the toggle, without assuming which way. 30 s rather
+  // than `REPAINT`'s 15 s: this waits on a full refresh -- fetch loop, three
+  // progressive rings, a worker mesh build -- not on a repaint. 15 s passed
+  // 3/3 standalone and failed under full-suite load.
+  const settle = { timeout: 30000 };
+  await enableCellLayer(page);
+  await expect.poll(() => meanChroma(page), settle).not.toBe(withoutCells);
+  const withCells = await settledChroma(page);
+
+  expect(withCells, `${mode}: frame has chroma with cells`).toBeGreaterThan(0);
+  expect(
+    withoutCells,
+    `${mode}: frame has chroma without cells`,
+  ).toBeGreaterThan(0);
+  return withCells - withoutCells;
+};
+
+/**
  * The time-of-day control and the constraint it is most likely to breach
  * (§1, DEC-R6-3, DEC-R6-4, DEC-R4-5).
  *
  * TWO CLAIMS, AND THE SECOND IS THE IMPORTANT ONE.
  *
- * The first is that the hotkey reaches the sun at all. `setTimeOfDay` is unit
- * tested and `sunAt` is unit tested, but nothing until now connected a keypress
- * to a repaint — and a control that exists in the class and not on the page is
- * the exact shape of "the data is right and the picture never changed".
+ * The first is that the hotkey reaches the sun at all: nothing but this
+ * connects a keypress to a repaint — and a control that exists in the class
+ * and not on the page is the exact shape of "the data is right and the
+ * picture never changed".
  *
- * The second is DEC-R4-5: **the affordance heat ramp must stay the loudest thing
- * on screen.** Round 6 pushes on that from four directions at once — ACES
- * re-maps every colour, the environment map lifts every surface, §2 will tint
- * the ground and §6 will multiply the grid's share of the frame by six. Until
- * now that constraint has been enforced by looking at screenshots, which means
- * it has never actually been enforced. This is the durable form of it.
+ * The second is DEC-R4-5: **the affordance heat ramp must stay the loudest
+ * thing on screen.** Until round 6 that constraint was enforced by looking at
+ * screenshots, which means it had never actually been enforced. This is the
+ * durable form of it.
+ *
+ * THE SUN IS REAL SINCE plan 2026-09-23-2149 (M2): a place, a date (pinned
+ * suite-wide to 23 Sep, see `SUN_PIN_DATE`) and a time, stepped through a
+ * per-day stop list that is fine near the horizon. The DEC-R4-5 points are
+ * booted by URL pin (`?time=`, apparent solar HH:MM) rather than reached by
+ * counting key presses: a count ties the test to the step design, and it
+ * already went wrong once (a focused <select> swallowed the keys and one sun
+ * was "measured" four times).
  */
 test.describe("the time of day", () => {
-  test("moves the sun from a hotkey, and the heat ramp stays the loudest thing", async ({
+  test("moves the sun from a hotkey, and stepping back returns", async ({
     page,
   }) => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
+    // The boot readout: the afternoon sun at 20° of the pinned date
+    // (DEC-SUN-13), in labelled apparent solar time without the date the
+    // field shows (DEC-SUN-8; plan 2026-09-24-0706).
+    await expect(page.locator("#sun-readout")).toHaveText("15:47 solar time");
+    await expect(page.locator("#sun-date")).toHaveValue("2026-09-23");
+    // THE EXACT TEXT, kept for the return trip (M2 review finding 5): the
+    // regex alone cannot tell the golden hour from the stop half a degree
+    // away, both read 17:3x.
+    const bootReadout = await page.locator("#sun-readout").textContent();
 
-    await test.step("a keypress repaints the scene with a different sun", async () => {
-      // The whole point of the control. Measured as a difference count, so it
-      // says nothing about which colours the sky happens to take at either time
-      // — only that pressing the key changed the picture.
+    await test.step("four presses take the afternoon sun toward the evening, and repaint", async () => {
+      // FOUR: from the 20° boot, two 30-min clock stops (above 12°) and two
+      // fine 1.5° stops near the horizon (DEC-SUN-7) take the sun to ~10°,
+      // a clearly different picture.
       await installFrameProbe(page);
       await stashStableFrame(page);
-
       // Focus the body rather than a field: the registry deliberately ignores
       // keys typed into inputs, and the site picker is a `<select>`.
       await page.locator("#scene").click({ position: { x: 5, y: 5 } });
-      await page.keyboard.press("t");
-
+      for (let k = 0; k < 4; k++) await page.keyboard.press("t");
       await expect
         .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
         .toBeGreaterThan(1000);
     });
 
     await test.step("stepping back returns to where it started", async () => {
-      // Determinism, visibly. The sun is a pure function of the time of day, so
-      // forward-then-back must be the identity — if it drifted, the control
-      // would be accumulating error and nobody would notice for a while.
-      await stashStableFrame(page);
+      // Determinism, visibly: the stop list makes forward-then-back the
+      // identity (unit-tested in sun-clock.test.ts); this proves the page
+      // agrees.
+      for (let k = 0; k < 4; k++) await page.keyboard.press("T");
+      await expect(page.locator("#sun-readout")).toHaveText(bootReadout ?? "");
+    });
+
+    await test.step("the date field keeps focus while edited, and Enter hands it back", async () => {
+      // M2 review finding 4: the field once blurred on every "change", which
+      // fires per edited segment, so typing a year or stepping with ↑/↓ lost
+      // focus after the first edit. It now keeps focus until Enter or Escape,
+      // and must then give it back, or "t" would be swallowed as typing.
+      const input = page.locator("#sun-date");
+      await input.fill("2026-12-21");
+      await expect(input).toHaveValue("2026-12-21");
+      // The boot's phase (20° in the afternoon) does not exist on 21 Dec at
+      // the fixture (15.6° at noon), so the sun lands on that day's noon.
+      await expect(page.locator("#sun-readout")).toHaveText("12:00 solar time");
+      await expect(input).toBeFocused();
+      await input.press("Enter");
+      await expect(input).not.toBeFocused();
+      const before = await page.locator("#sun-readout").textContent();
       await page.keyboard.press("t");
-      await expect
-        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
-        .toBeGreaterThan(1000);
-      await page.keyboard.press("T");
-      await expect
-        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
-        .toBeLessThan(2000);
+      await expect(page.locator("#sun-readout")).not.toHaveText(before ?? "");
+    });
+
+    await test.step("the time slider moves the sun, and the keys still work after it", async () => {
+      // DEC-SUN-15 (plan 2026-09-24-0706): a dawn-to-dusk slider. A range
+      // input takes no typed text, so "t" must still step the sun while it
+      // has focus (the hotkey registry exempts non-text inputs).
+      const slider = page.locator("#sun-time");
+      const readout = page.locator("#sun-readout");
+      const before = await readout.textContent();
+      await slider.fill("150");
+      await expect(readout).not.toHaveText(before ?? "");
+      const afterSlider = await readout.textContent();
+      await slider.focus();
+      await page.keyboard.press("t");
+      await expect(readout).not.toHaveText(afterSlider ?? "");
+      await expect(slider).not.toHaveValue("150");
     });
 
     await test.step("the shortcut list is discoverable and matches the bindings", async () => {
@@ -1400,207 +1600,88 @@ test.describe("the time of day", () => {
       // Rendered FROM the registry, so this also catches a binding added
       // without a description.
       await expect(help).toContainText("step the sun forward");
+      await expect(help).toContainText("step the sun back");
       await expect(help.locator("kbd")).not.toHaveCount(0);
       await page.keyboard.press("?");
       await expect(help).toBeHidden();
     });
-
-    await test.step("DEC-R4-5: the heat ramp is still the most saturated thing on screen", async () => {
-      // THE CONSTRAINT ROUND 6 IS MOST LIKELY TO BREACH, and until now it has
-      // only ever been checked by looking.
-      //
-      // Stated as a comparison rather than as an absolute: the grid's pixels
-      // must be more saturated than the rest of the frame by a clear margin.
-      // That survives tone mapping, an environment map and a palette change,
-      // because it is a claim about the RELATIONSHIP between the data layer and
-      // the backdrop rather than about any colour.
-      //
-      // MEAN ABSOLUTE CHROMA, NOT HSV SATURATION, and the first attempt got this
-      // wrong in a way worth recording. HSV saturation is a RATIO, so the dark
-      // blue-grey ground (0x3a4356 -> chroma 28 on a max of 86) scores 0.33 and
-      // reads as "saturated" while looking entirely neutral; the measurement
-      // then reported that switching the heat grid ON made the frame LESS
-      // saturated, which is true of the ratio and false of the picture.
-      //
-      // Absolute chroma separates the two cleanly, because that is what "loud"
-      // means here: the viridis ramp runs 80-216 levels of chroma (deep purple
-      // to yellow), the ground is 28 and the buildings are 16.
-      const meanChroma = () =>
-        page.evaluate(() => {
-          const el = document.querySelector("#scene canvas");
-          if (!(el instanceof HTMLCanvasElement)) return -1;
-          const probe = document.createElement("canvas");
-          probe.width = el.width;
-          probe.height = el.height;
-          const ctx = probe.getContext("2d");
-          if (ctx === null) return -1;
-          ctx.drawImage(el, 0, 0);
-          const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
-          let sum = 0;
-          let count = 0;
-          for (let i = 0; i < data.length; i += 4) {
-            const r = data[i] ?? 0;
-            const g = data[i + 1] ?? 0;
-            const b = data[i + 2] ?? 0;
-            sum += Math.max(r, g, b) - Math.min(r, g, b);
-            count += 1;
-          }
-          return count === 0 ? -1 : sum / count;
-        });
-
-      // POLLED, NOT READ ONCE. The view renders on demand (DEC-R3-9), so a
-      // measurement taken immediately after a toggle reads the PREVIOUS frame —
-      // the first version of this did exactly that and reported a difference of
-      // exactly zero, which looks like a real answer.
-      const settledChroma = async () => {
-        let previous = -1;
-        for (let i = 0; i < 40; i++) {
-          const now = await meanChroma();
-          if (Math.abs(now - previous) < 0.01) return now;
-          previous = now;
-          await page.waitForTimeout(50);
-        }
-        return previous;
-      };
-
-      // How much chroma the heat grid ADDS, against one named ground mode.
-      //
-      // STARTS FROM A KNOWN STATE rather than inheriting one. An earlier version
-      // measured "before" first and restored the layer to ON at the end, so the
-      // SECOND call's baseline was already the with-cells picture, the toggle
-      // was a no-op, and the chroma never moved. Unchecking first makes each
-      // call self-contained and the two measurements unambiguous.
-      const marginFor = async (mode) => {
-        await page.locator("#ground-mode").selectOption(mode);
-
-        await page.locator("#layer-cells").uncheck();
-        const withoutCells = await settledChroma();
-
-        // THE CELLS NOW ARRIVE ASYNCHRONOUSLY (round 10, stage B): the snapshot
-        // omits the array while the layer is off, so switching it on is a
-        // refresh rather than a redraw.
-        //
-        // AND THE MAP IS THE WRONG SURFACE TO WAIT ON, which cost a gate run to
-        // learn: `enableCellLayer` waits for Leaflet `.affordance-cell` paths,
-        // but everything measured here is the 3D CANVAS, whose grid comes from a
-        // separate async `buildGrid` worker call. Map cells present does not
-        // mean the scene has redrawn, so `settledChroma` could still read the
-        // without-cells picture -- and the margin came out exactly 0.
-        //
-        // Waiting for the SCENE CHROMA TO MOVE is the non-circular signal: it
-        // says the scene incorporated the toggle, without assuming which way.
-        // `meanChroma` rather than a canvas dataURL, because an image
-        // comparison answers the same question but dumps ~440 KB of base64 into
-        // the failure message, which made the first attempt's own failure
-        // unreadable.
-        //
-        // 30 s rather than `REPAINT`'s 15 s: this waits on a full refresh --
-        // fetch loop, three progressive rings, a worker mesh build -- not on a
-        // repaint. 15 s passed 3/3 standalone and failed under full-suite load.
-        const settle = { timeout: 30000 };
-        await enableCellLayer(page);
-        await expect.poll(meanChroma, settle).not.toBe(withoutCells);
-        const withCells = await settledChroma();
-
-        expect(
-          withCells,
-          `${mode}: frame has chroma with cells`,
-        ).toBeGreaterThan(0);
-        expect(
-          withoutCells,
-          `${mode}: frame has chroma without cells`,
-        ).toBeGreaterThan(0);
-        return withCells - withoutCells;
-      };
-
-      // BOTH THE ISOLATED BACKDROP AND THE ONE A USER ACTUALLY SEES (F49), and
-      // asserting only one of them is how this gate grew a hole.
-      //
-      // `cpu` is the plain lit ground. It isolates the relationship DEC-R4-5 is
-      // about — data against BACKDROP — with every competing element switched
-      // off, and it is what the first version of this test measured.
-      //
-      // WHY IT WAS NOT MEASURED AGAINST THE DEFAULT, originally, and the reason
-      // is a finding rather than a convenience: run against round 5's default —
-      // the height ramp (DEC-R5-4) — switching the cells ON *reduces* mean frame
-      // chroma by 0.05. The ramp is a deliberately loud blue-to-white scale with
-      // magenta for missing DEM, and it out-saturates the data layer DEC-R4-5
-      // says must be loudest. **That constraint was ALREADY breached, by the
-      // diagnostic, before round 6 touched anything** — which is direct evidence
-      // for DEC-R6-5 demoting the ramp to a mode.
-      //
-      // THE HOLE THAT LEFT, AND WHY IT IS NOT ALLOWED BACK. The original carried
-      // a comment promising "when §2 lands, the default ground becomes the one
-      // measured here". §2 landed and made the default `cpu-slope`, not `cpu`,
-      // so for one round the only durable defence of DEC-R4-5 measured a
-      // configuration nobody sees. The slope treatment adds an aspect tint,
-      // isoclines and a rim light, all of which put chroma into the backdrop.
-      // A promise about a future default cannot live in a comment; it has to be
-      // an assertion, so both modes are now named and a future default change
-      // that breaks the constraint goes red instead of quietly stepping outside
-      // the measurement.
-      //
-      // The default is spelled as a LITERAL, matching the rest of this suite,
-      // and it is not floating free: `ground-mode.test.ts` pins
-      // `DEFAULT_GROUND_MODE`, and the ground-mode picker spec above asserts the
-      // control boots showing `cpu-slope`. A default change that missed this
-      // line would fail there first.
-      const DEFAULT_MODE = "cpu-slope";
-      const plainMargin = await marginFor("cpu");
-      const defaultMargin = await marginFor(DEFAULT_MODE);
-
-      // The grid must ADD chroma, substantially, in BOTH. If a future exposure,
-      // palette or ground-appearance change ever made the backdrop as colourful
-      // as the data, this goes red — which is the whole point, because that is
-      // the moment DEC-R4-5 is breached and it is otherwise invisible.
-      //
-      // MEASURED, by mutating each bound to an unreachable value and reading
-      // what came back — an assertion nobody has watched fail is worth nothing,
-      // and this suite has already shipped one vacuous test (§14.5's isocline
-      // check, which asserted a constant against an argument it never took):
-      //
-      //   plain `cpu`   -> 9.285  ->  6.351 after DEC-H5
-      //   `cpu-slope`   -> 9.302  ->  6.435 after DEC-H5  (the default)
-      //
-      // **THE FIXED COLOUR CAP COST A THIRD OF THE MARGIN, and that was the
-      // acceptance criterion for making the change.** Anchoring the ramp at a
-      // constant 1e4 instead of at the brightest cell on screen means the
-      // typical cell no longer reaches the yellow end — which is precisely what
-      // "the data layer is less loud" means, measured. It was predicted before
-      // the change and measured after.
-      //
-      // The margin still clears the bound, at ~127 % of it rather than ~186 %.
-      // **That is a real loss of headroom and it is accepted knowingly**: the
-      // thing bought is that a cell's colour no longer depends on cells the user
-      // cannot see. A future backdrop change has a third less room than it had,
-      // and the rule below applies to it unchanged.
-      //
-      // **The two agree to within 0.02, and that is the honest reading of F49:
-      // the gate WAS sound at the default — by accident.** The aspect tint is
-      // blended proportionally to steepness and the fixture site (Cologne) is
-      // nearly flat, so the slope treatment puts almost no chroma into the
-      // backdrop HERE. On a site with real relief, or after a default change, it
-      // need not be. The second assertion costs one more measurement and removes
-      // the accident; it is not carrying its weight in this number today, and
-      // that is fine — it is carrying it against the change nobody has made yet.
-      //
-      // The bound of 5 sat at ~54 % of the observed margin in both before the
-      // colour cap; it now sits at ~78 %.
-      //
-      // **The wrong response to a red here is lowering the margin.** It is
-      // either fixing the backdrop or re-judging the decision that made it the
-      // default (DEC-R6-5 for `cpu-slope`), which is exactly the call the ramp
-      // measurement above already forced once.
-      expect(
-        plainMargin,
-        "plain ground: heat grid adds chroma",
-      ).toBeGreaterThan(5);
-      expect(
-        defaultMargin,
-        `${DEFAULT_MODE} (the default): heat grid adds chroma`,
-      ).toBeGreaterThan(5);
-    });
   });
+
+  /**
+   * DEC-R4-5 AT EVERY SUN THE USER CAN REACH, one test per point, each booted
+   * by URL pin at the fixture: the evening golden hour (the boot), a 3.6°
+   * morning, 24°, the September noon (38.9°), the JUNE noon (62.5°, the
+   * highest sun at the fixture; the margin falls as the sun rises, plan
+   * 2026-09-23-2149 review finding 5), and civil twilight at −2.9° and −5.9°.
+   * The labels are the elevations the pinned minutes actually give (M2 review
+   * finding 6, computed with the framework's solar position).
+   *
+   * BOTH THE ISOLATED BACKDROP AND THE ONE A USER ACTUALLY SEES (F49), and
+   * asserting only one of them is how this gate grew a hole: `cpu` is the plain
+   * lit ground, which isolates the relationship DEC-R4-5 is about; `cpu-slope`
+   * is the default (pinned in `ground-mode.test.ts`), which adds an aspect
+   * tint, isoclines and a rim light. A promise about a future default cannot
+   * live in a comment, so both are asserted.
+   *
+   * **The wrong response to a red here is lowering the bound.** It is either
+   * fixing the backdrop or re-judging the decision that made it so (the
+   * natural-light EV in `atmosphere-rig.ts` is exactly that, measured).
+   *
+   * **AND THE CITY MUST STAY VISIBLE, because the margin alone rewards
+   * darkness** (real-sun plan 2026-09-23-2149 §10.1). A darker backdrop always
+   * raises the heat grid's margin, so the first Khronos Neutral retune chose
+   * −4.5 EV for a 150 % margin and turned the lit buildings near black; the
+   * luma recorded then was measured with the cells ON and could not show it.
+   * So each point also holds the LIT SURFACES (the warm, low-saturation
+   * pixels: buildings and roads; not the blue sky, not the cyan plates, which
+   * ignore the scene light), heat grid OFF, to at least HALF their brightness
+   * under the owner-approved ACES −2 EV look (measured 2026-09-24, below). It
+   * passes Neutral −2.75 at every point (~1.4× the floor) and fails −3.75 at
+   * every point. The owner's light defaults (−3.15 EV, adaptation 0.83, sky
+   * light 1.4, gain 1.8 from 18° to 40°; light dialog plan 2026-09-24-2140
+   * §15) pass every point, the 3.6° morning with the least to spare (17.6
+   * against 16.8).
+   */
+  const SUN_POINTS = [
+    // [label, date, apparent solar time, lit-surface luma under ACES −2 EV,
+    //  the share of it the point must reach (half by default)]
+    ["the golden hour (3.6°)", "2026-09-23", "17:36", 42.6],
+    ["a 3.6° morning", "2026-09-23", "06:23", 33.6],
+    ["a 24° morning", "2026-09-23", "08:41", 96.8],
+    ["the September noon (38.9°)", "2026-09-23", "12:00", 75.1],
+    // THE NOON BRIGHTENING (plan 2026-09-24-0901): at a sun above 45° the
+    // buildings and roads are lifted to the approved noon brightness, so this
+    // point must reach 95 % of it (a ×1.3 lift measured 59.6, short of 61.5).
+    ["the June noon (62.5°)", "2026-06-21", "12:00", 64.7, 0.95],
+    ["civil twilight at −2.9°", "2026-09-23", "18:17", 20.8],
+    ["civil twilight at −5.9°", "2026-09-23", "18:36", 16.5],
+  ];
+  for (const [label, date, time, approvedLit, share = 0.5] of SUN_POINTS) {
+    test(`DEC-R4-5: the heat ramp stays the loudest thing at ${label}`, async ({
+      page,
+    }) => {
+      await stubNetwork(page);
+      const pin =
+        time === null ? `&date=${date}` : `&date=${date}&time=${time}`;
+      await page.goto(`/?lat=${50.9231}&lng=${6.9445}${pin}`);
+      await waitForRefresh(page);
+      const DEFAULT_MODE = "cpu-slope";
+      // The lit city first, heat grid off, in the default ground mode.
+      await page.locator("#layer-cells").uncheck();
+      await settledChroma(page);
+      const lit = await litSurfaceLuma(page);
+      const plain = await marginFor(page, "cpu");
+      const byDefault = await marginFor(page, DEFAULT_MODE);
+      console.log(
+        `DEC-R4-5 ${label}: plain ${plain.toFixed(2)}, ${DEFAULT_MODE} ${byDefault.toFixed(2)}, lit surfaces ${lit.toFixed(1)} (approved ${approvedLit}), luma with cells ${(await meanLuma(page)).toFixed(1)}`,
+      );
+      expect(plain, `plain ground at ${label}`).toBeGreaterThan(5);
+      expect(byDefault, `${DEFAULT_MODE} at ${label}`).toBeGreaterThan(5);
+      expect(lit, `lit surfaces at ${label}`).toBeGreaterThan(
+        approvedLit * share,
+      );
+    });
+  }
 });
 
 /**
@@ -2129,5 +2210,203 @@ test.describe("the NPC agent", () => {
         timeout: 15_000,
       })
       .toBeGreaterThan(10_000);
+  });
+});
+
+/**
+ * The desktop shadow COMPILE CHECK (`?shadowCheck=1`, shadow plan
+ * 2026-09-23-2343 §7 item 8, §10 M3d).
+ *
+ * WHY THIS EXISTS. The AR sun shadow turns shadow maps on, and three then
+ * recompiles EVERY lit material with `USE_SHADOWMAP`, the demo's patched
+ * ones included. A chunk that no longer compiles fails silently in AR: a
+ * console error and a missing object, on a phone, mid-session. No e2e can
+ * enter AR (the suite rejects `requestSession`), so this is the desktop half
+ * of the same switch, on the same materials. Nothing receives a shadow on
+ * the desktop, so the picture is the ordinary one and each layer is proven
+ * the usual way: switching it changes the frame.
+ */
+test.describe("with shadow maps on (?shadowCheck=1)", () => {
+  test("still draws buildings, cells and beacons, and the console stays clean", async ({
+    page,
+  }) => {
+    const errors = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    page.on("pageerror", (error) => errors.push(String(error)));
+    await pinQuestClock(page);
+    await stubNetwork(page);
+    await page.goto(`${AT_FIXTURE}&shadowCheck=1`);
+    await waitForRefresh(page);
+
+    // NOT VACUOUS: the switch took effect and a shadow map was really drawn
+    // (three allocates it on the first shadow pass). Without this the rest
+    // would pass on a build that never turned shadows on.
+    await expect(page.locator("#scene")).toHaveAttribute(
+      "data-shadow-check",
+      "rendered",
+    );
+    await installFrameProbe(page);
+
+    await test.step("the cells draw", async () => {
+      await stashStableFrame(page);
+      await enableCellLayer(page);
+      // MEASURED 2026-09-24 at the fixture: 132 411 differing pixels. The
+      // failure that matters reads 0 (a mutant whose cell shader breaks only
+      // under USE_SHADOWMAP drew nothing), so any floor between a few hundred
+      // and a third of the measurement gives the same verdict.
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, {
+          timeout: 15_000,
+        })
+        .toBeGreaterThan(40_000);
+    });
+
+    await test.step("the buildings draw", async () => {
+      await stashStableFrame(page);
+      await page.locator("#layer-buildings").uncheck();
+      // MEASURED: 6 776 differing pixels; the floor is about a third.
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, {
+          timeout: 15_000,
+        })
+        .toBeGreaterThan(2_000);
+      await page.locator("#layer-buildings").check();
+    });
+
+    await test.step("a quest beacon draws", async () => {
+      await page.locator("#geo-event").click();
+      await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
+      await stashStableFrame(page);
+      // Clearing moves nothing but the marker (the sibling beacon test);
+      // measured 248 differing pixels, and the sibling's floor of 100 holds.
+      await page.locator("#geo-event-clear").click();
+      await expect(page.locator("#map .geo-winner")).toHaveCount(0);
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, {
+          timeout: 15_000,
+        })
+        .toBeGreaterThan(100);
+    });
+
+    // A shader that fails to compile logs here (THREE.WebGLProgram).
+    const noise =
+      /Rule table fetch failed|net::ERR_FAILED|Failed to load resource/;
+    expect(errors.filter((text) => !noise.test(text))).toEqual([]);
+  });
+});
+
+/**
+ * THE LIGHT DIALOG (plan 2026-09-24-2140). The owner tunes the noon by it,
+ * so each claim is a pixel claim at a pinned high sun (the boot sun is 20°,
+ * where the gain is 1 whatever its maximum: plan §7 item 4), and the
+ * dialog's readouts are held to the sweep's own independent measures on the
+ * same frame.
+ */
+test.describe("the light dialog", () => {
+  const JUNE_NOON = `/?lat=${50.9231}&lng=${6.9445}&date=2026-06-21&time=12:00`;
+  const readoutLuma = async (page) => {
+    const text = (await page.locator("#light-readout").textContent()) ?? "";
+    return Number(/Lit surfaces (\d+(?:\.\d+)?)/.exec(text)?.[1] ?? Number.NaN);
+  };
+  /** Sets a slider as a user does: input while dragging, change on release. */
+  const slide = (page, field, value) =>
+    page.locator(`#light-${field}`).evaluate((input, v) => {
+      input.value = String(v);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }, value);
+
+  test("opens from its button and the l key, and closes with Escape", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+    const dialog = page.locator("#light-dialog");
+    await expect(dialog).toBeHidden();
+    await page.locator("#light-open").click();
+    await expect(dialog).toBeVisible();
+    await page.locator("#light-gainMax").press("Escape");
+    await expect(dialog).toBeHidden();
+    await page.locator("body").press("l");
+    await expect(dialog).toBeVisible();
+  });
+
+  // WHY: each lever the owner tunes must move the lit surfaces the way the
+  // M0 spike measured, and the URL must keep the pick through a reload. From
+  // the owner's defaults (gain 1.8, sky light 1.4, EV -3.15; DEC-LIGHT-9) each
+  // lever is taken to its slider's end, so the step stays well above the
+  // threshold whatever the default.
+  test("brightens noon with the gain, the sky light and the EV, and keeps it in the URL", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(JUNE_NOON);
+    await waitForRefresh(page);
+    await page.locator("#light-open").click();
+    const base = await readoutLuma(page);
+    expect(base).toBeGreaterThan(50);
+    await slide(page, "gainMax", 2.5);
+    await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 10);
+    await page.locator("#light-reset").click();
+    await slide(page, "buildingSkyLight", 3);
+    await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 5);
+    await page.locator("#light-reset").click();
+    await slide(page, "exposureEv", -2.25);
+    await expect.poll(() => readoutLuma(page)).toBeGreaterThan(base + 10);
+    await slide(page, "gainMax", 2);
+    // Sampled (400 ms, like the camera), so polled rather than read at once.
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("light"))
+      .toBe("v1:gain=2,ev=-2.25");
+    const tuned = await readoutLuma(page);
+    await page.reload();
+    await waitForRefresh(page);
+    await page.locator("#light-open").click();
+    await expect(page.locator("#light-gainMax")).toHaveValue("2");
+    // WHY (review, 2026-09-24): the sliders showing the values is not the
+    // claim; the VIEW must boot in the tuned look, or the dialog would show
+    // tuned values over the shipped look. The same brightness as before the
+    // reload: within 2, which is ten times the drift between page loads
+    // (measured 0.2 once, 2026-09-24) and a tenth of what the tuned look adds
+    // (about 20 at EV -2.25, plan §8), so any value from about 0.5 to 10
+    // gives the same verdict.
+    expect(Math.abs((await readoutLuma(page)) - tuned)).toBeLessThan(2);
+    expect(tuned).toBeGreaterThan(base + 10);
+    await expect(page.locator("#light-exposureEv")).toHaveValue("-2.25");
+  });
+
+  // WHY (plan §7 item 4): the dialog's readouts must equal the sweep's own
+  // measures on the same view, or the owner would tune by a number the gate
+  // does not use. The margin is compared in the default ground mode.
+  test("reads the same brightness and heat-grid margin as the sweep", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(JUNE_NOON);
+    await waitForRefresh(page);
+    await page.locator("#layer-cells").uncheck();
+    await settledChroma(page);
+    const inlineLit = await litSurfaceLuma(page);
+    await page.locator("#light-open").click();
+    // Tolerances from the measurement (2026-09-24: 65.0 vs 65.0, margin 5.31
+    // vs 5.31 on the same view): the readout rounds to 0.1 and 0.01, so a
+    // real divergence in either measure shows well above them.
+    expect(Math.abs((await readoutLuma(page)) - inlineLit)).toBeLessThan(0.2);
+    const inlineMargin = await marginFor(page, "cpu-slope");
+    await page.locator("#light-check").click();
+    await expect(page.locator("#light-readout")).toContainText(
+      "Heat grid adds",
+    );
+    const text = (await page.locator("#light-readout").textContent()) ?? "";
+    const margin = Number(/adds ([\d.-]+)/.exec(text)?.[1]);
+    console.log(
+      `light dialog parity: lit ${inlineLit.toFixed(1)} vs ${(await readoutLuma(page)).toFixed(1)}; margin ${inlineMargin.toFixed(2)} vs ${margin.toFixed(2)}`,
+    );
+    expect(Math.abs((await readoutLuma(page)) - inlineLit)).toBeLessThan(0.2);
+    expect(Math.abs(margin - inlineMargin)).toBeLessThan(0.05);
+    expect(text).toContain(margin >= 5 ? "ok" : "below the bound");
   });
 });

@@ -10,9 +10,17 @@ export {
   validateArCrashIsolationOptions,
 } from './ar-crash-isolation.js';
 
+// --- captured-camera-frame ---
+export {
+  type CapturedCameraFrame,
+  capturedCameraFrame,
+  poseFromArPose,
+} from './captured-camera-frame.js';
+
 // --- camera-blit-capture ---
 export {
   type CameraBlitCaptureConfig,
+  type CaptureTiming,
   DEFAULT_BLIT_CONFIG,
   computeCaptureSize,
   computeAspectFitSize,
@@ -140,6 +148,7 @@ export {
 export {
   type HitTestReticleHandle,
   type HitTestReticleArgs,
+  type SelectTargetRay,
   startHitTestReticle,
 } from './hit-test-reticle-driver.js';
 

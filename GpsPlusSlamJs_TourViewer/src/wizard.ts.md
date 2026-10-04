@@ -21,8 +21,10 @@ so they live inside it now and `creator-setup.ts` reveals them.
     and changes nothing else (see the invariants).
   - `Wizard.presentTour(url, { prefer? })` sets and shows the launch link
     (raw form) and, for a creator, opens a step: the one remembered for
-    this tour, else `prefer` (step 4's own "paste the link" form asks for
-    `measure`), else the print step.
+    this tour, else `prefer` (step 4's scan asks for `measure`), else
+    the print step. A tour opened while an AR session runs is remembered
+    as reached in step 4 even though the page does not change
+    (scan-to-open plan §9 #12).
   - `Wizard.presentLaunchUrl(launchUrl)` re-points the link at the PRINTED
     payload once a code is generated (`launchHrefFromPrintedUrl`: the
     printed URL's query on the viewer's origin), so the tester decodes what
@@ -40,9 +42,13 @@ so they live inside it now and `creator-setup.ts` reveals them.
   `parseWizardStep`, which rejects anything outside `WIZARD_STEPS`: a remap
   on the other side of the parse could never fire, and every creator who
   had reached step 5 would silently restart at step 2.
-- `visitorLaunchHref(url)` → `?qr=<encoded url>`;
-  `launchHrefFromPrintedUrl(launchUrl)` → the printed URL's `?qr=…&n=…`
-  query, or null for a URL without `qr`.
+- `visitorLaunchHref(url, debug?)` → `?qr=<encoded url>`;
+  `launchHrefFromPrintedUrl(launchUrl, debug?)` → the printed URL's
+  `?qr=…&n=…` query, or null for a URL without `qr`. With `debug` (the
+  page's `?debug=1`, `wireWizard`'s `debug` dep) both append `&debug=1`,
+  so the visitor opened from the creator page keeps the QR readout (plan
+  §67 #2: `presentLaunchUrl` overwrites the link once a code is generated,
+  so both producers carry it).
 - `STARTER_LABELS` - the starter button's idle/busy/done/cancelled/failed
   labels, and the SHARE route's own four (`idleShare`, `busyShare`,
   `doneShare`, `notShared`). Two sets rather than one, because "downloaded"

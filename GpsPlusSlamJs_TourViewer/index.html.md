@@ -30,19 +30,25 @@ screen. Everything marked `.creator-only` is hidden for a visitor
      be steps 5 and 6 - `#finish-block` (the rebuilt zip's status and
      download) and `#replace-help` inside it - because those describe the
      END of this step rather than steps of their own (F10). And
-     `#tour-missing`, the form that asks for the tour link on a device
-     that does not have it (F12), and `#draft-offer` - unsaved work this
+     `#draft-offer` - unsaved work this
      device still holds for this tour, offered with three answers rather
-     than applied (F13).
+     than applied (F13). The paste form F12 added here (`#tour-missing`) is gone: the
+     printed code carries the tour's link, so reading it in AR opens the
+     tour (scan-to-open plan §2).
 - The visitor screen (`#visitor-screen`): the consent copy above the AR
   section; the Start button is `#enter-ar`.
 - Below the steps, creator-only: the Storage section (`#storage-panel`,
   summary "Other settings" - something you normally do not open, F9).
 - Shared: `#error`, `#ar-root` (the DOM-overlay root: hint, status line,
   button, the setup panel `#setup-panel` with `setup-status` and, inside
-  `#setup-controls`, `setup-mint`, the placement controls `setup-pin` /
-  `pin-label` / `pin-save` / `pin-cancel` / `setup-photo`, and
-  `setup-finish`; the visitor's `scan-escape`), `#stats`, `#gallery`.
+  `#setup-controls`, `setup-mint`, the explicit replace `replace-code`
+  with its confirm `replace-code-confirm` (authoring plan 2026-09-28-0953
+  M4), the placement controls `setup-pin` / `pin-label` / `pin-save` /
+  `pin-cancel` / `setup-photo`; then `setup-finish`, and LAST, outside
+  the controls because it works on the page too, the object list
+  `#object-list` (drawn by `object-list.ts`, M4; last so that in AR it
+  never pushes Finish off the first screen); the visitor's
+  `scan-escape`), `#stats`, `#gallery`.
 
 Behaviour lives in the wiring modules composed by `src/main.ts` (see
 `main.ts.md`); the page carries only structure and its inline CSS
@@ -57,16 +63,63 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `print-url-shown`, `author-size`, `author-c`, `print-generate`,
 `print-info`, `print-canvas`, `print-button`, `print-url-out`,
 `print-count`, `print-paper`, `print-pdf`, `visitor-link`), `step-hang`, `hang-done`, `step-measure` (owns
-`tour-missing`, `tour-missing-link`, `tour-missing-open`, `draft-offer`,
+`draft-offer`,
 `draft-offer-text`, `draft-restore`, `draft-dismiss`, `draft-discard`,
 `finish-block`,
-`finish-status`, `finish-download`, `replace-help`), `visitor-screen`,
-`stats`, `error`, `gallery`, `ar-hint`, `ar-status`, `enter-ar`,
-`setup-panel`, `setup-status`, `setup-controls`, `setup-mint`,
+`finish-status`, `finish-download`, `summary` (the summary after Finish,
+authoring plan 2026-09-28-0953 M3b: owns `summary-codes`, `summary-map`,
+`summary-map-status`, `summary-start-ar`; written by `summary-panel.ts`,
+its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns
+`replace-help-generic`, `replace-help-drive`, `replace-help-share`)), `visitor-screen`,
+`stats`, `error`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`,
+`setup-panel`, `setup-status`, `size-offer`, `size-offer-text`,
+`size-offer-use`, `size-offer-keep`, `setup-controls`, `setup-mint`,
+`replace-code`, `replace-code-confirm` (owns `replace-code-confirm-text`,
+`replace-code-yes`, `replace-code-no`), `object-list` (its rows carry
+`object-row`, `object-title`, `object-detail`, `object-edit`,
+`object-move`, `object-delete`, `object-edit-input`,
+`object-edit-save`, `object-edit-cancel`, `object-busy`, and the list
+`setup-status` carries `data-clamped` (two lines in AR, whole on a tap;
+whole on the page), `object-list-heading`, `object-list-hint`, `object-list-note` and,
+beside it after a delete, `object-undo`; in AR the chooser
+`object-chooser` with `object-previous`, `object-position`,
+`object-next`),
 `setup-pin`, `pin-label`, `pin-save`, `pin-cancel`, `setup-photo`,
-`setup-finish`, `scan-escape`.
+`setup-finish`, `scan-escape`, `recording-block` (owns `recording-offer`
+with `recording-offer-text`, `recording-offer-save`,
+`recording-offer-dismiss`, `recording-offer-discard`; `record-session`,
+`recording-privacy`, `recording-notice`, `recording-save`,
+`recording-status`), `recording-marker`.
+`#recording-offer` (M1b, `recording-offer.ts`) offers a recording a killed
+tab left unsaved - the draft offer's three answers and its CSS rule, but its
+own element (it appears at page open, not when a tour opens). The block
+carries `data-housekeeping="done"` once the page-open check of the recording
+folders finished, found something or not (the e2e waits for it before it
+asserts that nothing is offered).
+`recording-privacy` is a static line saying the recording holds the tour
+link and the GPS track (M1a review finding 5); `recording-notice` carries
+"Reload the page to record." once an unrecorded AR session has run, or the
+low-storage warning after the box is ticked (`recording-panel.ts`).
+The troubleshooting recording (authoring recording plan 2026-09-28-0953,
+M1a): `#recording-block` sits in step 4 BEFORE `#ar-root` - its switch
+arms the recording before AR starts and Save is a page action, so neither
+belongs over the camera. It is NOT `.creator-only` since M1b: `main.ts` shows
+it for a creator, and for a visitor only with `?debug=1` (the viewer
+recording, contextTag `tour-viewing`). `#recording-marker` is
+inside `#ar-root`, so the marker is composited over the camera for the
+whole recorded session and shows on the page too; `ar-layout.spec.js`
+measures the overlay with it visible.
+The framework's AR canvas (window-sized, `#ar-root`'s first child after
+`initAR`) is taken out of the flow (`#ar-root > canvas { position: absolute }`,
+the RecorderApp's rule): in the flow it pushed the whole panel a screen
+height down, below the overlay's edge (owner's r750 field test;
+`playwright-tests/ar-layout.spec.js` pins every panel control on screen at
+360x640, 360x800 and 390x844). `#size-offer` is the panel's FIRST child,
+above `#setup-status`.
+`#ar-debug` (a `<pre>` in `#ar-root`, hidden unless `?debug=1`) holds the
+QR readout (QR near-frontal pose plan §66).
 Renaming one is an e2e-breaking change. `#ar-hint`, `#ar-status`,
-`#enter-ar` and `#setup-panel` must stay children of `#ar-root` (WebXR
+`#ar-debug`, `#enter-ar` and `#setup-panel` must stay children of `#ar-root` (WebXR
 DOM overlay composites only that subtree; enforced by
 `tests/repo-config/hud-overlay-nesting.test.js`). The `#ar-hint` copy is
 the creator's; `visitor-screen.ts` re-words it for a visitor.
@@ -93,9 +146,7 @@ the creator's; `visitor-screen.ts` re-words it for a visitor.
   grid/flex display values.
 - `#finish-block` is authored `hidden` and is NOT `.creator-only`: the
   class would un-hide it on a creator's load, and it must appear only once
-  a finish has produced a zip. `#tour-missing` is the opposite - it IS
-  `.creator-only` (a visitor never pastes a link) and is authored hidden
-  like every creator-only section, so a visitor cannot see it flash.
+  a finish has produced a zip.
 - `#author-size`'s `value` attribute must equal `AUTHOR_DEFAULT_SIZE_M`,
   which `creator-setup.ts` writes into the field on every load. A
   differing attribute is dead text that reads like a decision

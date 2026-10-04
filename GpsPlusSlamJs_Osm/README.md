@@ -86,6 +86,22 @@ share one client identity, so rotating between them buys failover, not quota.
 
 ## Using it
 
+### Comparing Overpass query performance
+
+The on-demand benchmark now supports matched map3d/production queries and
+unfiltered spatial selection. Preview the exact requests without network I/O:
+
+```sh
+node scripts/benchmark-endpoints.mjs --compare-map3d --site cologne --res 10 --profiles full-production180,everything,everything-areal --repeats 2 --dry-run
+```
+
+Remove `--dry-run` and supply a new `--out <dated-name>.json` to run it. Requests
+are serial, spaced per operator, and bounded by time and decoded-body budgets.
+Failure rows are retained separately from valid payloads; network failures do
+not measure query execution speed. See the [benchmark guide](scripts/benchmark-endpoints.mjs.md)
+for parameter-isolation arms and the exact Manhattan rectangle. Offline tests
+run through `pnpm run test:unit scripts/`; live requests never run in the gate.
+
 The whole pipeline, end to end:
 
 ```ts
@@ -186,6 +202,14 @@ pnpm run build         # tsdown -> dist/
 `pnpm run test:unit` alone is **not** sufficient to call work done: vitest
 transpiles without type-checking, so `tsc`-only errors pass locally and fail CI.
 Run the full `pnpm test`.
+
+**The source is served without a build, too.** The design system's labs import
+it as TypeScript under `/osm-lib/`, through Node's type stripper, which only
+erases types. So `tsconfig.app.json` sets `erasableSyntaxOnly` (no parameter
+properties, enums or namespaces) and `verbatimModuleSyntax` (a type is
+imported with `type`, or the stripped import asks the browser for a name that
+does not exist), and relative imports carry `.js`. The labs' route table is
+`GpsPlusSlamJs_DesignSystem/serve-routes.mjs`.
 
 ## License
 

@@ -30,11 +30,9 @@ const FORWARDED_REQUEST_HEADERS = [
   "if-modified-since",
 ] as const;
 
-/** Response headers copied back; also the Expose list, so browser JS can
- *  actually read them (richer than GitHub raw, which omits the Expose
- *  header and forces the transport to limp around it). */
+/** Response headers copied back unchanged. Not `content-type`: it is
+ *  replaced (see `handleDriveProxy`). */
 const FORWARDED_RESPONSE_HEADERS = [
-  "content-type",
   "content-length",
   "content-range",
   "accept-ranges",
@@ -42,8 +40,26 @@ const FORWARDED_RESPONSE_HEADERS = [
   "last-modified",
 ] as const;
 
-const EXPOSE_HEADERS =
-  "Content-Type, Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified";
+/** What browser JS on a dev host may read (production is same-origin):
+ *  every forwarded header, richer than GitHub raw, which omits the Expose
+ *  header and forces the transport to limp around it - plus the file name,
+ *  which the TourViewer gives the rebuilt zip so Drive offers "Replace"
+ *  (Drive replace plan §2 decision 3). Derived, so the two lists cannot
+ *  drift apart. */
+const EXPOSE_HEADERS = [...FORWARDED_RESPONSE_HEADERS, "content-disposition"]
+  .map(canonicalHeaderName)
+  .join(", ");
+
+/** `content-length` -> `Content-Length`, `etag` -> `ETag`: the spelling the
+ *  Expose list has always carried (names are case-insensitive, readers of
+ *  the raw header are not always). */
+function canonicalHeaderName(name: string): string {
+  if (name === "etag") return "ETag";
+  return name.replace(
+    /(^|-)([a-z])/g,
+    (_match, dash: string, letter: string) => `${dash}${letter.toUpperCase()}`,
+  );
+}
 
 /** Dev servers only — production is same-origin with the worker and never
  *  needs CORS. Covers the repo's documented device-test flows too (vite
@@ -116,6 +132,22 @@ export async function handleDriveProxy(
     if (value !== null) headers.set(name, value);
   }
   headers.set("access-control-expose-headers", EXPOSE_HEADERS);
+  // Never a page of this site (Drive replace plan §5 #11): the proxy serves
+  // any public Drive file from our origin, so a crafted one - an SVG with a
+  // script - opened directly would run as gps.csutil.com. A download, never
+  // sniffed, sandboxed; Drive's file name is kept. `fetch` readers (the
+  // TourViewer) are unaffected by all three.
+  headers.set(
+    "content-disposition",
+    asAttachment(upstream.headers.get("content-disposition")),
+  );
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("content-security-policy", "sandbox");
+  // And never Drive's own type: `sandbox` does not bind worker scripts and
+  // `nosniff` does not block a correct script type, so a file served as
+  // JavaScript could still run here via `new Worker` (milestone review #8).
+  // Every reader uses fetch and none reads the type.
+  headers.set("content-type", "application/octet-stream");
   // HEAD must answer body-less WITH the explicit content-length: the
   // Workers runtime chunk-encodes streamed bodies and drops the length, and
   // the transport sizes the archive from this probe — a lost size silently
@@ -131,6 +163,13 @@ export async function handleDriveProxy(
   // review). HEAD keeps the length: body-less-with-length is its contract.
   if (isHtml && !isHeadRequest) headers.set("content-length", "0");
   return new Response(body, { status: upstream.status, headers });
+}
+
+/** Drive's `content-disposition` with its type forced to `attachment` and
+ *  its parameters (the file name) kept; plain `attachment` without one. */
+function asAttachment(upstream: string | null): string {
+  if (upstream === null || upstream.trim() === "") return "attachment";
+  return upstream.replace(/^\s*[^;]*/, "attachment");
 }
 
 /** CORS response headers for this request: the echoed dev origin, or none.

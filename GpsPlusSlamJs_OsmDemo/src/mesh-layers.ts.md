@@ -100,9 +100,30 @@ export const DRAWN_BY_MESH = ["buildings", "trees", "plates", "roads"] as const;
 
 No change to `BuildingView.render` and none to `main.ts`.
 
+## The noon brightening
+
+`applyBuildingSkyLight(root, environment, environmentIntensity, k)` is the
+light dialog's sky light on buildings (plan 2026-09-24-2140): the building
+materials (the `aHeight01` geometry) get the scene's environment as their
+OWN envMap at `environmentIntensity × k`, because three overwrites a
+material's `envMapIntensity` with the scene's whenever it has no envMap of
+its own. Called before every render (a sun change re-bakes the environment
+into a new texture); `k = 1` or no environment restores three's own path;
+only adding or removing the envMap recompiles; `RangeError` for a `k` that
+is not positive and finite.
+
+The building and road materials carry `userData.neutralSurface`, and
+`applySurfaceGain(root, gain)` sets their colour factor (absolute, so a
+re-apply after a rebuild is idempotent; `RangeError` for a gain that is not
+positive and finite). Only those two layers: they are nearly grey, so a lift
+adds brightness without the colour that competes with the heat grid (plan
+2026-09-24-0901). A mesh wearing a swapped material (the AR shell) is
+skipped, since the tag is on the desktop material.
+
 ## Tests
 
-`mesh-layers.test.ts` — 13 tests in four groups:
+`mesh-layers.test.ts` — the groups below, plus the noon brightening (only
+the two tagged materials scale, idempotent, bad gains refused):
 
 - **the table itself** — coverage against `DRAWN_BY_MESH`, ids are real registry
   members, no duplicate rows, defaults reproduce W10's baseline.
@@ -115,6 +136,10 @@ No change to `BuildingView.render` and none to `main.ts`.
   keys.
 - **`meshLayerSelection`** — picks exactly the mesh layers out of the full set.
 
+- **The AR sun shadow's caster tag** (shadow plan M3): a GROUND POI bucket is
+  tagged `markArShadowCaster` where it is built; a roof-hosted (`@host`)
+  bucket is not, because its real building casts the real shadow. Tested in
+  `poi-host-placement.test.ts`.
 - **The instanced trees (W6)** — one `InstancedMesh` per variant rather than one
   `Mesh` per tree, distinct geometry per variant, the instance matrix's position
   and scale, and the `sharedResources` flag that stops `clear()` disposing a

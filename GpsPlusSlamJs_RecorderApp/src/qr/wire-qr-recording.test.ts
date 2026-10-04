@@ -17,7 +17,13 @@ const {
   capturedProducerDeps,
   fakeProducer,
 } = vi.hoisted(() => {
-  const fakeProducer = { offerFrame: vi.fn(), reset: vi.fn(), status: 'idle' };
+  const fakeProducer = {
+    offerFrame: vi.fn(),
+    reset: vi.fn(),
+    dispose: vi.fn(),
+    isBusy: vi.fn(() => false),
+    status: 'idle',
+  };
   const capturedProducerDeps: { current: Record<string, unknown> | null } = {
     current: null,
   };
@@ -62,7 +68,11 @@ const {
     current: Record<string, unknown> | null;
   } = { current: null };
   const capturedTrackingInstance: {
-    current: { reset: ReturnType<typeof vi.fn> } | null;
+    current: {
+      reset: ReturnType<typeof vi.fn>;
+      dispose: ReturnType<typeof vi.fn>;
+      isBusy: ReturnType<typeof vi.fn>;
+    } | null;
   } = { current: null };
   return {
     capturedTrackingConfig,
@@ -72,6 +82,8 @@ const {
       const instance = {
         offerFrame: vi.fn(),
         reset: vi.fn(),
+        dispose: vi.fn(),
+        isBusy: vi.fn(() => false),
         status: 'idle',
       };
       capturedTrackingInstance.current = instance;
@@ -281,9 +293,14 @@ describe('wireQrRecording', () => {
     expect(store.dispatch).toHaveBeenCalledTimes(MAX_VOTED_LOCKS_PER_CODE * 4);
   });
 
-  it('creates the producer with an EPOCH-ms clock matching the depth stream (the as-of join)', () => {
-    const store = makeStore();
-    const { ref } = makeStoreRef(store);
+  it('lets the frame stamp the record and the frame source own the cadence', () => {
+    // Why this test matters: since QR perf plan M4 the record's timestamp is the
+    // FRAME's epoch capture time (performance.timeOrigin + xrTime, the depth
+    // stream's clock - see captured-camera-frame.test.ts), which is what the
+    // as-of size join keys on. A clock override on the producer would only
+    // drive its scheduler, which never throttles at minIntervalMs 0, so none is
+    // passed (M4 review finding 7).
+    const { ref } = makeStoreRef(makeStore());
     wireQrRecording({
       storeRef: ref as never,
       getArWorldGroup: () => null,
@@ -291,19 +308,8 @@ describe('wireQrRecording', () => {
       setProducer: vi.fn(),
       readAlignment: NO_ALIGNMENT,
     });
-
     const deps = capturedProducerDeps.current!;
-    expect(deps).toBeTruthy();
-    const now = deps.now as () => number;
-    // `DepthSample.timestamp` is EPOCH ms (`performance.timeOrigin + frameTs`,
-    // depth-sampler.ts). The as-of size join keys QR detections by the SAME
-    // timestamp, so the producer MUST stamp epoch ms — `performance.now()`
-    // (relative, ~1e5) would never satisfy `depth.ts <= detection.ts` and the
-    // cube would never appear. Assert same domain as `timeOrigin + now()`.
-    const epochApprox = performance.timeOrigin + performance.now();
-    expect(now()).toBeGreaterThan(1e12); // epoch, not relative perf-now
-    expect(Math.abs(now() - epochApprox)).toBeLessThan(2000);
-    // The frame source is the single cadence owner.
+    expect(deps).not.toHaveProperty('now');
     expect(deps.minIntervalMs).toBe(0);
   });
 
@@ -319,7 +325,32 @@ describe('wireQrRecording', () => {
     expect(mockStartCapture).toHaveBeenCalledWith({
       intervalMs: 125,
       captureSize: 1024,
+      wantsFrame: expect.any(Function),
     });
+  });
+
+  /**
+   * Why this test matters (QR perf plan 2026-09-23, M3): while the producer is
+   * still detecting, a captured frame would be read back from the GPU, copied
+   * and dropped. The capture veto must follow the producer's busy state.
+   */
+  it('vetoes captures while the RAW producer is busy', () => {
+    const { ref } = makeStoreRef(makeStore());
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr,
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+    });
+    const { wantsFrame } = mockStartCapture.mock.calls[0]![0] as {
+      wantsFrame: () => boolean;
+    };
+    fakeProducer.isBusy.mockReturnValue(false);
+    expect(wantsFrame()).toBe(true);
+    fakeProducer.isBusy.mockReturnValue(true);
+    expect(wantsFrame()).toBe(false);
+    fakeProducer.isBusy.mockReturnValue(false);
   });
 
   it('hands the created producer to setProducer (for the pre-initAR frame callback)', () => {
@@ -335,10 +366,13 @@ describe('wireQrRecording', () => {
     expect(setProducer).toHaveBeenCalledWith(fakeProducer);
   });
 
-  it('reads camera pose from the CURRENT XR frame (Option A), not the depth sample', () => {
-    // The depth sample carries a DIFFERENT pose; getCameraPose must ignore it and
-    // return the fresh per-frame pose from getCurrentArPose() (converted to the
-    // Pose tuple shape), so a 1 Hz-stale depth pose never lands in the recording.
+  it('leaves the camera pose to each captured frame; projection still comes from the depth sample', () => {
+    // Why this test matters (QR perf plan 2026-09-23, M4): the pose a detection
+    // is solved against must be the camera pose of the frame its pixels came
+    // from. The framework now pairs every captured frame with that pose, so the
+    // Recorder must NOT hand the producer a "pose now" reader (the old Option A
+    // read happened after the async decode and trailed the pixels). The
+    // projection is per-session and still comes from the depth sample.
     const sample = {
       timestamp: 5,
       cameraPos: [1, 2, 3],
@@ -355,29 +389,10 @@ describe('wireQrRecording', () => {
       readAlignment: NO_ALIGNMENT,
     });
     const deps = capturedProducerDeps.current!;
-    // From getCurrentArPose() = {position:{7,8,9}, orientation:{0,0,0,1}}.
-    expect((deps.getCameraPose as () => unknown)()).toEqual({
-      position: [7, 8, 9],
-      rotation: [0, 0, 0, 1],
-    });
-    // Projection still comes from the depth sample (near-constant FOV).
+    expect(deps).not.toHaveProperty('getCameraPose');
     expect((deps.getProjectionMatrix as () => unknown)()).toBe(
       sample.projectionMatrix
     );
-  });
-
-  it('returns a null camera pose when no XR frame pose is available yet', () => {
-    mockGetCurrentArPose.mockReturnValueOnce(null);
-    const { ref } = makeStoreRef(makeStore());
-    wireQrRecording({
-      storeRef: ref as never,
-      getArWorldGroup: () => null,
-      qr,
-      setProducer: vi.fn(),
-      readAlignment: NO_ALIGNMENT,
-    });
-    const deps = capturedProducerDeps.current!;
-    expect((deps.getCameraPose as () => unknown)()).toBeNull();
   });
 
   it('dispatches RAW recordQrDetection into the CURRENT store', () => {
@@ -435,7 +450,85 @@ describe('wireQrRecording', () => {
     expect(mockDebugController.update).toHaveBeenCalledTimes(5);
   });
 
-  it('dispose() stops capture, resets the producer, clears it, and disposes the viz', () => {
+  /**
+   * Why this test matters (QR perf plan 2026-09-23, M3 review finding 6): the
+   * capture veto pauses camera frames while a detect - in level mode a level
+   * fetch of up to 15 s - is in flight, and the HUD's QR row used to refresh
+   * only per camera frame. A recorded detection is a STORE change, so the row
+   * must follow the store (coalesced per animation frame) instead.
+   */
+  it('refreshes the QR state on store changes, once per animation frame', () => {
+    const store = makeStore();
+    const { ref } = makeStoreRef(store);
+    const onQrStateChanged = vi.fn();
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr,
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+      onQrStateChanged,
+    });
+    store.emit();
+    store.emit();
+    expect(onQrStateChanged).not.toHaveBeenCalled();
+    flushRaf();
+    expect(onQrStateChanged).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Why this test matters (D28 revised, 2026-10-02): a code is minted
+   * through the first alignment at or after its sighting whose GPS extent
+   * reaches 80 m. The store keeps no alignment history, so the feeder must
+   * hear of every alignment change - a GPS fix is a store change - or a code
+   * left behind is frozen at whatever the save sees, which is the drift the
+   * rule exists to avoid. Once per animation frame is enough.
+   */
+  it('reports store changes to the sighting feeder as alignment changes', () => {
+    const live = { count: 5, extentM: 2 };
+    let feeder: {
+      alignmentFor: (text: string) => { alignmentSampleCount: number };
+    } | null = null;
+    const store = makeStore();
+    const { ref } = makeStoreRef(store);
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr,
+      setProducer: vi.fn(),
+      readAlignment: () => ({
+        alignmentMatrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+        zero: { lat: 48, lon: 11 },
+        alignmentSampleCount: live.count,
+        gpsExtentM: live.extentM,
+      }),
+      setSightingFeeder: (f) => {
+        feeder = f;
+      },
+    });
+    const onPlacement = capturedDebugDeps.current!.onPlacement as (
+      text: string,
+      placement: unknown,
+      timestampMs: number
+    ) => void;
+    const text = 'https://gps.csutil.com/?qr=x';
+    onPlacement(
+      text,
+      { pose: { position: [1, 2, 3], rotation: [0, 0, 0, 1] }, sizeM: 0.16 },
+      1000
+    );
+
+    live.count = 50;
+    live.extentM = 90;
+    store.emit();
+    flushRaf();
+    live.count = 999;
+    live.extentM = 500;
+
+    expect(feeder!.alignmentFor(text).alignmentSampleCount).toBe(50);
+  });
+
+  it('dispose() stops capture, disposes the producer, clears it, and disposes the viz', () => {
     const setProducer = vi.fn();
     const { ref } = makeStoreRef(makeStore());
     const dispose = wireQrRecording({
@@ -448,7 +541,7 @@ describe('wireQrRecording', () => {
 
     dispose();
     expect(mockStopCapture).toHaveBeenCalledTimes(1);
-    expect(fakeProducer.reset).toHaveBeenCalledTimes(1);
+    expect(fakeProducer.dispose).toHaveBeenCalledTimes(1);
     expect(setProducer).toHaveBeenLastCalledWith(null);
     expect(mockDebugController.dispose).toHaveBeenCalledTimes(1);
   });
@@ -507,6 +600,24 @@ describe('wireQrRecording — level-consuming mode', () => {
       readAlignment: NO_ALIGNMENT,
     });
     expect(mockStartCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it('vetoes captures while the level-consuming controller is busy (incl. its level fetch)', () => {
+    const { ref } = makeStoreRef(makeStore());
+    wireQrRecording({
+      storeRef: ref as never,
+      getArWorldGroup: () => null,
+      qr: { ...qr, useLevels: true },
+      setProducer: vi.fn(),
+      readAlignment: NO_ALIGNMENT,
+    });
+    const { wantsFrame } = mockStartCapture.mock.calls[0]![0] as {
+      wantsFrame: () => boolean;
+    };
+    const tracking = capturedTrackingInstance.current!;
+    expect(wantsFrame()).toBe(true);
+    tracking.isBusy.mockReturnValue(true);
+    expect(wantsFrame()).toBe(false);
   });
 });
 
@@ -571,6 +682,34 @@ describe('wireQrRecording — the level-consuming callbacks', () => {
     });
     expect(store.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'qrDetected/recordQrDetection' })
+    );
+  });
+
+  // Why this test matters (QR near-frontal pose plan §60, b4b-2): the fused
+  // window ignores a native-order frame of a code whose order is known, but
+  // a replay can apply that rule only if the recording kept each
+  // detection's order source. Old recordings cannot be backfilled.
+  it('keeps the corner-order source in the recorded observation', () => {
+    const { store, config } = wireWithLevels(depthSample);
+    const onRawDetection = config.onRawDetection as (e: unknown) => void;
+    onRawDetection({
+      text: 'code',
+      timestamp: 1234,
+      corners: [
+        { x: 1, y: 1 },
+        { x: 2, y: 1 },
+        { x: 2, y: 2 },
+        { x: 1, y: 2 },
+      ],
+      cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      imageWidth: 640,
+      imageHeight: 480,
+      orderSource: 'memory',
+    });
+    expect(store.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({ orderSource: 'memory' }),
+      })
     );
   });
 
@@ -679,7 +818,7 @@ describe('wireQrRecording — level mode seams', () => {
     ).resolves.toEqual({ version: 1, qr: {} });
   });
 
-  it('reads the camera pose live, not once at wiring time', () => {
+  it('gives the level-consuming controller no pose reader either (the frame carries it)', () => {
     const { ref } = makeStoreRef(makeStore());
     wireQrRecording({
       storeRef: ref as never,
@@ -688,14 +827,7 @@ describe('wireQrRecording — level mode seams', () => {
       setProducer: vi.fn(),
       readAlignment: NO_ALIGNMENT,
     });
-    const config = capturedTrackingConfig.current!;
-    const getCameraPose = config.getCameraPose as () => unknown;
-    expect(getCameraPose()).toEqual({
-      position: [7, 8, 9],
-      rotation: [0, 0, 0, 1],
-    });
-    mockGetCurrentArPose.mockReturnValueOnce(null);
-    expect(getCameraPose()).toBeNull();
+    expect(capturedTrackingConfig.current!).not.toHaveProperty('getCameraPose');
   });
 
   it('stops the frame source and the level source on dispose', () => {
@@ -811,14 +943,14 @@ describe('wireQrRecording — teardown in level-consuming mode', () => {
     capturedTrackingInstance.current = null;
   });
 
-  it('resets the tracking controller, not just the thin producer', () => {
+  it('disposes the tracking controller, not just the thin producer', () => {
     // Why this test matters: in level mode the thin producer is never built,
-    // so the teardown's `producer?.reset()` was a no-op and the tracking
-    // controller's own reset never ran. That reset is what clears `active`,
-    // and `active` is what makes a detection already awaiting its level fetch
-    // return early instead of dispatching into whatever store is current
-    // AFTER the AR session ended. stopCameraFrameCapture() stops new frames;
-    // it cannot recall one already in flight across a network round trip.
+    // so the teardown must reach the tracking controller. A detection already
+    // awaiting its level fetch (a network round trip) must not dispatch
+    // detections or UNGATED votes into whatever store is current after the
+    // AR session ended. reset() cannot stop it - the pending decode sets its
+    // lock state again afterwards; dispose() can (QR near-frontal pose plan
+    // §61). stopCameraFrameCapture() stops new frames only.
     const { ref } = makeStoreRef(makeStore());
     const dispose = wireQrRecording({
       storeRef: ref as never,
@@ -829,16 +961,16 @@ describe('wireQrRecording — teardown in level-consuming mode', () => {
     });
 
     const tracking = capturedTrackingInstance.current!;
-    expect(tracking.reset).not.toHaveBeenCalled();
+    expect(tracking.dispose).not.toHaveBeenCalled();
 
     dispose();
 
-    expect(tracking.reset).toHaveBeenCalledTimes(1);
+    expect(tracking.dispose).toHaveBeenCalledTimes(1);
   });
 
-  it('still resets the thin producer when levels are off', () => {
+  it('still disposes the thin producer when levels are off', () => {
     // Why this test matters: the fix must not trade one mode's teardown for
-    // the other's. Both modes own a frame sink; both must reset it.
+    // the other's. Both modes own a frame sink; both must dispose it.
     const { ref } = makeStoreRef(makeStore());
     const dispose = wireQrRecording({
       storeRef: ref as never,
@@ -850,7 +982,7 @@ describe('wireQrRecording — teardown in level-consuming mode', () => {
 
     dispose();
 
-    expect(fakeProducer.reset).toHaveBeenCalledTimes(1);
+    expect(fakeProducer.dispose).toHaveBeenCalledTimes(1);
   });
 });
 

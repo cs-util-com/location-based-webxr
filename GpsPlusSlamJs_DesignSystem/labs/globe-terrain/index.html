@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Globe terrain carrier</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/vendor/three/build/three.module.js",
+          "three/addons/": "/vendor/three/examples/jsm/",
+          "3d-tiles-renderer": "/vendor/3d-tiles-renderer/build/index.js",
+          "3d-tiles-renderer/plugins": "/vendor/3d-tiles-renderer/build/index.plugins.js"
+        }
+      }
+    </script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        color: #ccc;
+        font:
+          12px/1.4 system-ui,
+          sans-serif;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      #terrain-credits {
+        position: fixed;
+        left: 8px;
+        bottom: 6px;
+        right: 8px;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="terrain-canvas"></canvas>
+    <div id="terrain-credits"></div>
+    <script type="module" src="./globe-terrain-lab.js"></script>
+  </body>
+</html>

@@ -27,6 +27,7 @@
  */
 
 import type { Matrix4 } from 'gps-plus-slam-js';
+import type { CornerOrderSource } from './qr-corner-order.js';
 import {
   intrinsicsFromProjection,
   solveQrPose,
@@ -63,10 +64,16 @@ export interface RawQrObservation {
    * Detection time in the producer's injected clock — the depth as-of join key.
    * MUST share the depth stream's clock, which is EPOCH ms
    * (`DepthSample.timestamp = performance.timeOrigin + frameTs`); the RAW recorder
-   * path stamps `Date.now()` (epoch), NOT relative `performance.now()`, or the
+   * path stamps the frame's epoch capture time (`performance.timeOrigin +
+   * xrTime`, QR perf plan M4), NOT relative `performance.now()`, or the
    * `≤` join in {@link deriveQrSizeM} never matches. See open topic A.
    */
   timestamp: number;
+  /**
+   * Where the corner order came from, when the producer said (plan §60,
+   * b4b-2); absent in recordings made before it.
+   */
+  orderSource?: CornerOrderSource;
 }
 
 /** Injected dependencies for the derive-on-read pose. */

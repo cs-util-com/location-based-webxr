@@ -150,8 +150,9 @@ coverage is on the order of 10¹⁰ cells. Filtering after covering is not slow,
 is non-terminating in practice. See
 [`h3-feature-index.ts.md`](./src/spatial/h3-feature-index.ts.md).
 
-🟦 **Progressive rings.** The demo scores radius 2, then 3, then 4, publishing a
-usable answer after each. Two traps this creates for any consumer that copies it,
+🟦 **Progressive rings.** The demo scores radius 2, then 3, and on up to 6
+(`PROGRESSIVE_RADII`, from `SCORE_DISK_RADIUS` to `SCORE_DISK_MAX_RADIUS` in
+`resolutions.ts`), publishing a usable answer after each. Two traps this creates for any consumer that copies it,
 both learned the hard way: every publish sets `loading: idle`, so "is this
 final?" must be asked of the snapshot's **radius**, never of the loading flag;
 and the ring reach must match what was fetched. See

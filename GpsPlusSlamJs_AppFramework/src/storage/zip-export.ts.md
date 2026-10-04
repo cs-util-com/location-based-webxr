@@ -98,7 +98,7 @@ const handle = await window.showSaveFilePicker({ ... });
 const { blob, fileCount } = await syncToExternalZip(handle, 'recording-...');
 ```
 
-This is used by [sync-manager.ts](sync-manager.ts) for periodic crash-safe syncing.
+**This has no production caller.** It was written for periodic crash-safe syncing and the recorder's `storage/sync-manager.ts` never adopted it - that module imports only a logger. The sibling `downloadZip` is in the same position and says so a few lines above; both are kept for now as a deliberate decision to record rather than a live path to rely on.
 
 ## ZIP Structure
 

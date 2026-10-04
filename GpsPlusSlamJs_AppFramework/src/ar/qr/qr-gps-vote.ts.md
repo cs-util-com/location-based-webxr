@@ -1,17 +1,24 @@
 # qr-gps-vote.ts
 
-**Purpose:** Turn a solved QR pose into synthetic high-weight GPS observation(s)
-for the existing weighted alignment + outlier-rejection fusion — Phase 5 / §6 of the
+**Purpose:** Turn a solved QR pose into synthetic GPS observation(s) for the
+existing weighted alignment + outlier-rejection fusion — Phase 5 / §6 of the
 [QR-code detection & tracking plan](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-15-0806-qr-code-detection-tracking-plan.md).
-A QR does **not** rigidly re-anchor the scene; it votes (heavily) via the normal
-`recordGpsEvent` path, so a bad detection is still rejectable as an outlier.
+A QR does **not** rigidly re-anchor the scene; it votes via the normal
+`recordGpsEvent` path, so under the core's default hard outlier trim a bad
+detection is still rejectable as an outlier. Each vote weighs about as much as
+one GPS fix (see "Invariants"); a code's pull comes from the number, spread and
+recency of its votes.
 
 ## Public API
 
 - `buildQrGpsVotes(input): RecordGpsEventPayload[]` — the payloads for one
   detection. 4 corner correspondences by default (`multiCorrespondence`), or 1
   center correspondence. Each pairs the corner's odom position (solved pose) with
-  its absolute geo position (level file), stamped with `syntheticAccuracyM`.
+  its absolute geo position (level file), stamped with `syntheticAccuracyM` and
+  `source: GPS_POINT_SOURCE_SYNTHETIC_QR` (the core's provenance field, kept on
+  the stored point: without it the core, a recording and every GPS listener
+  read a vote as a device fix - the Tour Viewer's keep-alive, which re-votes on
+  device fixes, would feed on its own votes).
   Throws `RangeError` on non-positive `sizeM` / `syntheticAccuracyM`.
   - **Wide-baseline mode (Note 2):** `baselineM > 0` switches to `count` (≥3)
     correspondences on a regular polygon of that radius in the QR plane instead
@@ -49,10 +56,13 @@ A QR does **not** rigidly re-anchor the scene; it votes (heavily) via the normal
 
 ## Invariants & assumptions
 
-- **`weight = 1/accuracy^gpsAccuracyExponent`** is computed by the core library
-  from `latLongAccuracy`; this module only sets the tiny `syntheticAccuracyM`
-  (e.g. 0.05 m → ≈10× a normal 5 m fix). Pick & validate it against the fusion,
-  don't hardcode blindly.
+- **`weight = 1/max(accuracy, 1 m)^gpsAccuracyExponent`** is computed by the
+  core from `latLongAccuracy`, with a default exponent of 0.1: a 5 m vote weighs
+  0.85, a 3 m fix 0.90, and a 0.05 m vote is clamped to 1.0 - about 1.17x a
+  5 m fix, not the ~10x an earlier version of this page claimed. The accuracy
+  therefore cannot make a vote dominant; the Tour Viewer's measurement of what
+  does (ring radius, votes per lock, a keep-alive) is in
+  [the vote-strength results](../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-09-28-1433-viewer-vote-strength-results.md).
 - **4 corners are coplanar.** They constrain the in-plane axes and translation
   well; the QR-normal (depth) DOF stays weakest — exactly what
   [qr-occupancy-check.ts.md](qr-occupancy-check.ts.md) guards. Do not treat the
@@ -72,7 +82,9 @@ const votes = buildQrGpsVotes({
   qrPoseWorld: solution.qrPoseWorld,
   sizeM: level.qr.physicalSizeM,
   qrGeo: level.qr.geo,
-  syntheticAccuracyM: 0.05,
+  syntheticAccuracyM: 5,
+  baselineM: 30, // the Tour Viewer's ring (M0b/M0c)
+  count: 8,
 });
 for (const v of votes) store.dispatch(recordGpsEvent(v));
 ```
@@ -81,7 +93,7 @@ for (const v of votes) store.dispatch(recordGpsEvent(v));
 
 - `qr-gps-vote.test.ts` — ENU/geo conversions, 4-vs-1 correspondence, odom
   positions match the transformed object points, altitude spread, accuracy
-  stamping, rotation override, input validation.
+  and source stamping (every mode), rotation override, input validation.
 - `qr-gps-vote.property.test.ts` — for any size/heading/location the geo corners
   back-convert to a centered square of side `sizeM` whose centroid is the QR
   center (so the fusion sees the same rigid square in both frames); and for any
@@ -89,7 +101,7 @@ for (const v of votes) store.dispatch(recordGpsEvent(v));
   every point at `baselineM` from the center.
 - `qr-gps-vote.integration.test.ts` — the votes flow through the real
   `createSlamAppStore` + `recordGpsEvent` fusion and yield a finite alignment;
-  a lone grossly-wrong high-weight vote does not produce a non-finite alignment
+  the stored points keep the synthetic-QR source; a lone grossly-wrong high-weight vote does not produce a non-finite alignment
   (outlier-rejection robustness — the magnitude of the "shift toward QR" is
   validated by the Phase 6 demonstrator).
 

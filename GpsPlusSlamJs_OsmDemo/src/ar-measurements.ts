@@ -65,6 +65,11 @@ function pair(left: string, right: string): string[] {
 
 /** Everything the AR readout can show. Every field optional and independent. */
 export interface ArMeasurements {
+  /**
+   * The AR sun shadow prototype's line (`?sunShadow=1`, shadow plan M3):
+   * its state or why it is off, and the frame times. Absent: no line.
+   */
+  readonly sunShadowLine?: string | undefined;
   /** From the AR renderer's `info.render` — NOT the desktop view's. */
   readonly drawCost?: DrawCost | undefined;
   /**
@@ -606,6 +611,10 @@ export function describeArMeasurements(
     lines.push(
       `auto ${signed(measurements.autoOffsetM)} m${detail}${autoSource}`,
     );
+  }
+
+  if (measurements.sunShadowLine !== undefined) {
+    lines.push(measurements.sunShadowLine);
   }
 
   if (isSignedReading(measurements.geoidUndulationM)) {

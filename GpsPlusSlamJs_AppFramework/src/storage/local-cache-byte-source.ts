@@ -37,7 +37,7 @@ export class LocalCacheByteSource implements ByteSource {
  *  what a revalidating open compares against the live file. */
 export interface CachedArchive {
   readonly blob: Blob;
-  readonly validators?: ArchiveValidators;
+  readonly validators?: ArchiveValidators | undefined;
 }
 
 /** Persistent store of complete archives, keyed by URL. */

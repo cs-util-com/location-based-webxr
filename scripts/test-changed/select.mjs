@@ -20,6 +20,18 @@
  *   | { mode: 'packages', packages: string[] }} Selection
  */
 
+/**
+ * The served-by edge: packages the design system SERVES through its routes
+ * (it does not depend on them, so pnpm's graph never selects it). A change
+ * in one also selects the design system, in full, since its lab smoke is the
+ * served code's only browser check (globe plan 2026-09-26-0539 §8). The
+ * framework and OsmDemo are served too but are NOT listed: that would put
+ * the design system's ~11 min e2e on every framework commit, an owner
+ * decision filed with the W7 M0 record.
+ */
+const SERVED_BY_DESIGN_SYSTEM = ['GpsPlusSlamJs_Globe'];
+const DESIGN_SYSTEM = 'GpsPlusSlamJs_DesignSystem';
+
 /** Matches the generated timings file at the root or in any package dir. */
 const GENERATED_TIMINGS_RE = /^(?:[^/]+\/)?docs\/test-timings\.md$/;
 
@@ -54,6 +66,12 @@ export function selectPackages({ trackedChanges, untracked, packageDirs }) {
       continue;
     }
     return { mode: 'all', reason: path };
+  }
+  if (
+    packageDirs.includes(DESIGN_SYSTEM) &&
+    SERVED_BY_DESIGN_SYSTEM.some((dir) => selected.has(dir))
+  ) {
+    selected.add(DESIGN_SYSTEM);
   }
   return { mode: 'packages', packages: [...selected].sort() };
 }

@@ -7,7 +7,7 @@ import {
   setZeroPos,
 } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
-import type { RgbaImage } from "gps-plus-slam-app-framework/ar";
+import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar";
 import type { Object3D } from "three";
 
 import {
@@ -69,17 +69,42 @@ describe("buildArEnableConfig", () => {
     ).toBe(false);
   });
 
+  it("turns depth on ONLY for a recorded entry, with the samples wired to the hook (decision D4)", () => {
+    // Why: a troubleshooting recording carries depth instead of camera
+    // pictures (authoring recording plan 2026-09-28-0953, D4). The feature
+    // is requested at session start, so it rides in here - and without a
+    // recording it must stay off, as the isolation flags above pin, so a
+    // visitor never pays for it.
+    expect(fakeHooks().onDepthSample).toBeUndefined();
+    expect(buildArEnableConfig(fakeHooks()).callbacks?.depth).toBeUndefined();
+
+    const onDepthSample = vi.fn();
+    const config = buildArEnableConfig({ ...fakeHooks(), onDepthSample });
+
+    expect(config.isolationOptions).toEqual({
+      enableCameraAccess: true,
+      enableDepthSensingFeature: true,
+      enableCameraTextureAcquisition: true,
+    });
+    // Still no depth PERMISSION probe: that one fails the whole entry on a
+    // phone without depth, where the recording should simply have none.
+    expect(config.requestDepth).toBeUndefined();
+    const sample = { timestamp: 1, points: [] };
+    config.callbacks?.depth?.onCaptured(sample as never);
+    expect(onDepthSample).toHaveBeenCalledWith(sample);
+  });
+
   it("wires the camera-frame callback into the initAR callbacks", () => {
     const hooks = fakeHooks();
     const config = buildArEnableConfig(hooks);
 
-    const image: RgbaImage = {
-      data: new Uint8ClampedArray(4),
-      width: 1,
-      height: 1,
+    const frame: CapturedCameraFrame = {
+      image: { data: new Uint8ClampedArray(4), width: 1, height: 1 },
+      cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      capturedAtMs: 0,
     };
-    config.callbacks?.cameraFrame?.onFrame(image);
-    expect(hooks.onFrame).toHaveBeenCalledWith(image);
+    config.callbacks?.cameraFrame?.onFrame(frame);
+    expect(hooks.onFrame).toHaveBeenCalledWith(frame);
   });
 
   it("carries the tracking store so initAR feeds the tracking slice (flows plan M4)", () => {

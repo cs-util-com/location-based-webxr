@@ -112,7 +112,31 @@ export interface PersistenceMiddlewareOptions {
    * Callback invoked when a write operation fails during persistence.
    * User Feedback Issue #1 Part B: Used to show toast notifications.
    */
-  onWriteFailure?: (error: Error) => void;
+  onWriteFailure?: ((error: Error) => void) | undefined;
+
+  /**
+   * When given, REPLACES the recording gate: an action is persisted exactly
+   * when this returns true after the reducer ran (the `endSession` special
+   * case goes with the gate it patches). Absent, the gate is
+   * `state.recording.isRecording` as always.
+   *
+   * For an app whose own recording outlives its sessions: the Tour Viewer
+   * dispatches `startSession` on every AR entry and `endSession` then
+   * `resetGpsSessionData` on every exit, so under the default gate the reset
+   * is never written (a replay then solves a later entry over both entries'
+   * odometry pairs, which live it never did) and nothing dispatched on the
+   * page outside AR is written at all.
+   */
+  persistWhile?: (() => boolean) | undefined;
+
+  /**
+   * Do NOT restart the action numbering at `startSession`: the index runs for
+   * the middleware's whole life. Default `false` (each session starts at
+   * `000001.json`). Needed with {@link persistWhile} when one recording spans
+   * several sessions, or the second session would overwrite the first one's
+   * files.
+   */
+  continuousActionIndex?: boolean | undefined;
 }
 
 /**
@@ -166,19 +190,6 @@ function isInPersistableSession(
 // ---------------------------------------------------------------------------
 
 /**
- * Create a Redux middleware that persists qualifying actions to storage
- * during active recording sessions.
- *
- * Persistence rules:
- * - Only persists when `state.recording.isRecording` is true (checked AFTER
- *   the action is reduced, so `startSession` itself is included).
- * - Persists actions whose slice prefix is listed in `persistedPrefixes`.
- * - Excludes `recording/recordWriteFailure` to prevent recursive persistence.
- * - Excludes `routing/*` and any other non-whitelisted actions.
- * - Uses 1-based indexing for action files (000001.json, 000002.json, …).
- * - Each middleware instance maintains its own action index (Bug 10 fix).
- */
-/**
  * The persistence middleware plus its drain hook: `flushPendingWrites`
  * resolves once every queued action write has settled. The stop flow MUST
  * await it before anything reads the session's `actions/` (final sync, ZIP
@@ -189,10 +200,31 @@ export type PersistenceMiddleware = Middleware & {
   flushPendingWrites: () => Promise<void>;
 };
 
+/**
+ * Create a Redux middleware that persists qualifying actions to storage
+ * during active recording sessions.
+ *
+ * Persistence rules:
+ * - Only persists when `state.recording.isRecording` is true (checked AFTER
+ *   the action is reduced, so `startSession` itself is included) - or, when
+ *   `persistWhile` is given, exactly when it returns true.
+ * - Persists actions whose slice prefix is listed in `persistedPrefixes`.
+ * - Excludes `recording/recordWriteFailure` to prevent recursive persistence.
+ * - Excludes `routing/*` and any other non-whitelisted actions.
+ * - Uses 1-based indexing for action files (000001.json, 000002.json, …),
+ *   restarted at each `startSession` unless `continuousActionIndex`.
+ * - Each middleware instance maintains its own action index (Bug 10 fix).
+ */
 export function createPersistenceMiddleware(
   options: PersistenceMiddlewareOptions
 ): PersistenceMiddleware {
-  const { storageBackend, onWriteFailure, persistedPrefixes } = options;
+  const {
+    storageBackend,
+    onWriteFailure,
+    persistedPrefixes,
+    persistWhile,
+    continuousActionIndex = false,
+  } = options;
 
   // Normalize each whitelisted slice name to its `name/` form once, so the
   // per-action check is a cheap `startsWith`. Deriving the excluded type from
@@ -202,6 +234,14 @@ export function createPersistenceMiddleware(
     prefix.endsWith('/') ? prefix : `${prefix}/`
   );
   const excludedActionType = recordWriteFailure.type;
+
+  // The two session-spanning options are resolved once, here, so the
+  // per-action handler below stays a straight line.
+  const persistsAfterReduce: typeof isInPersistableSession = persistWhile
+    ? (): boolean => persistWhile()
+    : isInPersistableSession;
+  const restartsNumbering = (actionType: string): boolean =>
+    !continuousActionIndex && actionType === startSession.type;
 
   // Per-middleware-instance action index (Bug 10: was module-level)
   let actionIndex = 0;
@@ -242,10 +282,11 @@ export function createPersistenceMiddleware(
         return result;
       }
 
-      // Reset action index when a new session starts (Issue 4). The type is
-      // derived from the imported action creator (`startSession.type`) so a
-      // slice/action rename can't silently disable the per-session reset.
-      if (actionType === startSession.type) {
+      // Reset action index when a new session starts (Issue 4), unless the
+      // numbering is continuous. The type is derived from the imported action
+      // creator (`startSession.type`) so a slice/action rename can't silently
+      // disable the per-session reset.
+      if (restartsNumbering(actionType)) {
         actionIndex = 0;
       }
 
@@ -255,8 +296,9 @@ export function createPersistenceMiddleware(
       const isRecording = readIsRecording(store.getState());
 
       // Persist if actively recording, or if this is the endSession action
-      // that just flipped isRecording to false (Issue 5).
-      if (!isInPersistableSession(wasRecording, isRecording, actionType)) {
+      // that just flipped isRecording to false (Issue 5) - or, with
+      // `persistWhile`, exactly when that predicate holds.
+      if (!persistsAfterReduce(wasRecording, isRecording, actionType)) {
         return result;
       }
 

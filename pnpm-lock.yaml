@@ -9,6 +9,9 @@ overrides:
 
 pnpmfileChecksum: sha256-QB/agqJsEaZdRVjrmsw7NmPinLhfZdj71hbw5fKsmgQ=
 
+patchedDependencies:
+  3d-tiles-renderer@0.5.3: 3d54671051af8e55c8c25e5147530a3fe6daaaf49fb746e2daadd5a34b0f1725
+
 importers:
 
   .:
@@ -108,8 +111,8 @@ importers:
         specifier: 3.4.4
         version: 3.4.4
       gps-plus-slam-js:
-        specifier: ^1.25.0
-        version: 1.25.0
+        specifier: ^1.26.0
+        version: 1.26.0
       redux:
         specifier: ^5.0.1
         version: 5.0.1
@@ -141,6 +144,9 @@ importers:
       '@zip.js/zip.js':
         specifier: ^2.11.2
         version: 2.11.2
+      astronomy-engine:
+        specifier: 2.1.19
+        version: 2.1.19
       dpdm:
         specifier: ^4.3.0
         version: 4.3.0
@@ -186,6 +192,9 @@ importers:
       vitest:
         specifier: ^5.0.0
         version: 5.0.0(@types/node@25.9.5)(@vitest/coverage-v8@5.0.0)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
+      zxing-wasm:
+        specifier: 3.1.4
+        version: 3.1.4(@types/emscripten@1.41.6)
 
   GpsPlusSlamJs_DesignSystem:
     devDependencies:
@@ -198,12 +207,67 @@ importers:
       prettier:
         specifier: ^3.9.6
         version: 3.9.6
+      sharp:
+        specifier: 0.35.2
+        version: 0.35.2
       stylelint:
         specifier: ^17.15.0
         version: 17.15.0(typescript@6.0.3)
       stylelint-config-standard:
         specifier: ^40.0.0
         version: 40.0.0(stylelint@17.15.0(typescript@6.0.3))
+
+  GpsPlusSlamJs_Globe:
+    dependencies:
+      3d-tiles-renderer:
+        specifier: 0.5.3
+        version: 0.5.3(patch_hash=3d54671051af8e55c8c25e5147530a3fe6daaaf49fb746e2daadd5a34b0f1725)(three@0.185.1)
+    devDependencies:
+      '@eslint/js':
+        specifier: ^10.0.1
+        version: 10.0.1(eslint@10.10.0(jiti@2.7.0))
+      '@types/node':
+        specifier: ^25.9.5
+        version: 25.9.5
+      '@types/three':
+        specifier: ^0.185.4
+        version: 0.185.4
+      '@vitest/eslint-plugin':
+        specifier: ^1.6.27
+        version: 1.6.27(@typescript-eslint/eslint-plugin@8.69.0(@typescript-eslint/parser@8.69.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3)(vitest@5.0.0)
+      dpdm:
+        specifier: ^4.3.0
+        version: 4.3.0
+      eslint:
+        specifier: ^10.10.0
+        version: 10.10.0(jiti@2.7.0)
+      eslint-config-prettier:
+        specifier: ^10.1.8
+        version: 10.1.8(eslint@10.10.0(jiti@2.7.0))
+      fast-check:
+        specifier: ^4.9.0
+        version: 4.9.0
+      globals:
+        specifier: ^17.12.0
+        version: 17.12.0
+      prettier:
+        specifier: ^3.9.6
+        version: 3.9.6
+      sharp:
+        specifier: 0.35.2
+        version: 0.35.2
+      three:
+        specifier: ^0.185.1
+        version: 0.185.1
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      typescript-eslint:
+        specifier: ^8.69.0
+        version: 8.69.0(eslint@10.10.0(jiti@2.7.0))(typescript@6.0.3)
+      vitest:
+        specifier: ^5.0.0
+        version: 5.0.0(@types/node@25.9.5)(@vitest/coverage-v8@5.0.0)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
 
   GpsPlusSlamJs_Landing:
     dependencies:
@@ -499,6 +563,9 @@ importers:
       eslint-config-prettier:
         specifier: ^10.1.8
         version: 10.1.8(eslint@10.10.0(jiti@2.7.0))
+      fast-check:
+        specifier: ^4.9.0
+        version: 4.9.0
       globals:
         specifier: ^17.12.0
         version: 17.12.0
@@ -538,6 +605,9 @@ importers:
       three:
         specifier: ^0.185.1
         version: 0.185.1
+      zxing-wasm:
+        specifier: 3.1.4
+        version: 3.1.4(@types/emscripten@1.41.6)
     devDependencies:
       '@carlosjeurissen/stylelint-csstree-validator':
         specifier: ^3.3.1
@@ -738,6 +808,9 @@ importers:
       gps-plus-slam-app-framework:
         specifier: workspace:*
         version: link:../GpsPlusSlamJs_AppFramework
+      leaflet:
+        specifier: ^1.9.4
+        version: 1.9.4
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -754,6 +827,9 @@ importers:
       '@playwright/test':
         specifier: ^1.63.0
         version: 1.63.0
+      '@types/leaflet':
+        specifier: ^1.9.22
+        version: 1.9.22
       '@types/node':
         specifier: ^25.9.5
         version: 25.9.5
@@ -883,6 +959,29 @@ importers:
         version: 5.0.0(@types/node@25.9.5)(@vitest/coverage-v8@5.0.0)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
 
 packages:
+
+  3d-tiles-renderer@0.5.3:
+    resolution: {integrity: sha512-i2TEtsboVa7C5pCpNKO3ctAopK0NlIReRb/CJKpvXDrwjWYL1M2oaKRZddvGDHE5udx7OyGN04glotqNruQYmQ==}
+    peerDependencies:
+      '@babylonjs/core': '>=8.0.0'
+      '@babylonjs/loaders': '>=8.0.0'
+      '@react-three/fiber': ^8.17.9 || ^9.0.0
+      react: ^18.3.1 || ^19.0.0
+      react-dom: ^18.3.1 || ^19.0.0
+      three: '>=0.167.0'
+    peerDependenciesMeta:
+      '@babylonjs/core':
+        optional: true
+      '@babylonjs/loaders':
+        optional: true
+      '@react-three/fiber':
+        optional: true
+      react:
+        optional: true
+      react-dom:
+        optional: true
+      three:
+        optional: true
 
   '@asamuzakjp/css-color@5.1.11':
     resolution: {integrity: sha512-KVw6qIiCTUQhByfTd78h2yD1/00waTmm9uy/R7Ck/ctUyAPj+AEDLkQIdJW0T8+qGgj3j5bpNKK7Q3G+LedJWg==}
@@ -1601,6 +1700,12 @@ packages:
   '@mapbox/geojson-rewind@0.5.2':
     resolution: {integrity: sha512-tJaT+RbYGJYStt7wI3cq4Nl4SXxG8W7JDG5DMJu97V25RnbNg3QtQtf+KD+VLjNpWKYsRvXDNmNrBgEETr1ifA==}
     hasBin: true
+
+  '@mapbox/point-geometry@1.1.0':
+    resolution: {integrity: sha512-YGcBz1cg4ATXDCM/71L9xveh4dynfGmcLDqufR+nQQy3fKwsAZsWd/x4621/6uJaeB9mwOHE6hPeDgXz9uViUQ==}
+
+  '@mapbox/vector-tile@2.0.5':
+    resolution: {integrity: sha512-pXj8m7KTsqZt+1jsE0xIpGvqTSbblfkuEJL/NJmNePMtEwxO8V3XMDo9WMSfDeqHvCtBI9Lmt4mGcGR10zecmw==}
 
   '@napi-rs/wasm-runtime@1.1.4':
     resolution: {integrity: sha512-3NQNNgA1YSlJb/kMH1ildASP9HW7/7kYnRI2szWJaofaS1hWmbGI4H+d3+22aGzXXN9IJ+n+GiFVcGipJP18ow==}
@@ -2414,6 +2519,9 @@ packages:
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
 
+  '@types/emscripten@1.41.6':
+    resolution: {integrity: sha512-uN+9i8bFT5CUcZfyIEYDrSueACEyKGbUs5kC/72DGlZZoinh84sJfVV0i8UOJD1asdzkvLPBRrKs41kZ8MdEXg==}
+
   '@types/esrecurse@4.3.1':
     resolution: {integrity: sha512-xJBAbDifo5hpffDBuHl0Y8ywswbiAp/Wi7Y/GtAgSlZyIABppyurxVueOPE8LUQOxdlgi6Zqce7uoEpqNTeiUw==}
 
@@ -2672,6 +2780,9 @@ packages:
   astral-regex@2.0.0:
     resolution: {integrity: sha512-Z7tMw1ytTXt5jqMcOP+OQteU1VuNK9Y02uuJtKQ1Sv69jXQKKg5cibLwGJow8yzZP+eAc18EmLGPal0bp36rvQ==}
     engines: {node: '>=8'}
+
+  astronomy-engine@2.1.19:
+    resolution: {integrity: sha512-8yWKNf7UeNbH458h3sAJ6ZgAjE5jTXp/mNNRFoC20j2SHwZIjAQeEsBB2Q3uCFRaTCCJRv33K2XhkhZQMXoX6w==}
 
   babel-walk@3.0.0-canary-5:
     resolution: {integrity: sha512-GAwkz0AihzY5bkwIY5QDR+LvsRQgB/B+1foMPvi0FZPMl5fjD7ICiznUiBdLYMH1QYe6vqu4gWYytZOccLouFw==}
@@ -3257,8 +3368,8 @@ packages:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
     engines: {node: '>= 0.4'}
 
-  gps-plus-slam-js@1.25.0:
-    resolution: {integrity: sha512-ezVukMTrmHNXRCotgR41iNNIQuufTqpdEAddYp6D8H5LjBq3I8Sj2FswiakVokTcawi8ERK4bY6xrqYS6bjFxg==}
+  gps-plus-slam-js@1.26.0:
+    resolution: {integrity: sha512-SDQWp6I0cafHRFyceazRFiXJYy9vgtCFnnne/XdD2mn+IrE3FPHWHC+oSiOohW6ldn535GQGwNnXs6qTlOHNjw==}
     engines: {node: '>=26.0.0'}
 
   graceful-fs@4.2.11:
@@ -3939,6 +4050,10 @@ packages:
     resolution: {integrity: sha512-XDF38WCH3z5OV/OVa8GKUNtLAyneuzbCisx7QUCF8Q6Nutx0WnJrQe5O+kOtBlLfRNUws98Y58Lblp+NJG5T4Q==}
     hasBin: true
 
+  pbf@4.0.2:
+    resolution: {integrity: sha512-J0ajxARhZfpUEebxYs1vhMGMuLSXtBe1e+fFPDrf2uA2hgo+UshKfNUWOz92HJNz6/NFEXseQPddnHkTreWRqg==}
+    hasBin: true
+
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
@@ -3963,6 +4078,9 @@ packages:
     resolution: {integrity: sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg==}
     engines: {node: '>=20'}
     hasBin: true
+
+  pmtiles@4.5.0:
+    resolution: {integrity: sha512-CBeD4SoUluFziGdy/8k7FOjQxQy486n+929W/tWophauvMICpkZ26vGBWhDt/6b1FZQWNaf4jFdT/5+q0Wii5w==}
 
   pngjs@5.0.0:
     resolution: {integrity: sha512-40QW5YalBNfQo5yRYmiw7Yz6TKKVr3h6970B2YE+3fQpsWcrbj1PzJgxeJ19DRQjhMbKPIuMY8rFaXc8moolVw==}
@@ -4375,6 +4493,10 @@ packages:
     resolution: {integrity: sha512-9kY+CygyYM6j02t5YFHbNz2FN5QmYGv9zAjVp4lCDjlCw7amdckXlEt/bjMhUIfj4ThGRE4gCUH5+yGnNuPo5A==}
     engines: {node: '>=10.0.0'}
 
+  tagged-tag@1.0.0:
+    resolution: {integrity: sha512-yEFYrVhod+hdNyx7g5Bnkkb0G6si8HJurOoOEgC8B/O0uXLHlaey/65KRv6cuWBNhBgHKAROVpc7QyYqE5gFng==}
+    engines: {node: '>=20'}
+
   tailwindcss@4.3.3:
     resolution: {integrity: sha512-gOhV3P7ufE62QDGg1zVaTgCR+EtPv92k2nIhVcVKcLmxT1sUBsQGhnZj175j+MqRt4zLF7ic+sCYjfhxMxj7YQ==}
 
@@ -4501,6 +4623,10 @@ packages:
   type-check@0.4.0:
     resolution: {integrity: sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew==}
     engines: {node: '>= 0.8.0'}
+
+  type-fest@5.10.0:
+    resolution: {integrity: sha512-NoSdpq/WEiAg5sjmBkmV/hfxv6HJH4NqPNrqjtSO5CwRmpsDfaf4begxW34KdJykH/l1yHtwBWQkCRdoXO8mPA==}
+    engines: {node: '>=20'}
 
   typedarray@0.0.6:
     resolution: {integrity: sha512-/aCDEGatGvZ2BIk+HmLf4ifCJFwvKFNb9/JeZPMulfgFracn9QFcAf5GO8B/mweUjSoblS5In0cWhqpfs/5PQA==}
@@ -4830,7 +4956,20 @@ packages:
   zod@4.5.4:
     resolution: {integrity: sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA==}
 
+  zxing-wasm@3.1.4:
+    resolution: {integrity: sha512-1+v8p7sauddySVNG+ye7GD/0TS95BG2ycdkrC+EnBrFBFkHeIghzUt2yVjtx3NucJeNrQnhT8yGAIz60Vx9o0w==}
+    peerDependencies:
+      '@types/emscripten': '>=1.39.6'
+
 snapshots:
+
+  3d-tiles-renderer@0.5.3(patch_hash=3d54671051af8e55c8c25e5147530a3fe6daaaf49fb746e2daadd5a34b0f1725)(three@0.185.1):
+    dependencies:
+      '@mapbox/vector-tile': 2.0.5
+      pbf: 4.0.2
+      pmtiles: 4.5.0
+    optionalDependencies:
+      three: 0.185.1
 
   '@asamuzakjp/css-color@5.1.11':
     dependencies:
@@ -5442,6 +5581,14 @@ snapshots:
       get-stream: 6.0.1
       minimist: 1.2.8
 
+  '@mapbox/point-geometry@1.1.0': {}
+
+  '@mapbox/vector-tile@2.0.5':
+    dependencies:
+      '@mapbox/point-geometry': 1.1.0
+      '@types/geojson': 7946.0.16
+      pbf: 4.0.2
+
   '@napi-rs/wasm-runtime@1.1.4(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:
       '@emnapi/core': 1.10.0
@@ -5982,6 +6129,8 @@ snapshots:
 
   '@types/deep-eql@4.0.2': {}
 
+  '@types/emscripten@1.41.6': {}
+
   '@types/esrecurse@4.3.1': {}
 
   '@types/estree@1.0.9': {}
@@ -6253,6 +6402,8 @@ snapshots:
       js-tokens: 10.0.0
 
   astral-regex@2.0.0: {}
+
+  astronomy-engine@2.1.19: {}
 
   babel-walk@3.0.0-canary-5:
     dependencies:
@@ -6888,7 +7039,7 @@ snapshots:
 
   gopd@1.2.0: {}
 
-  gps-plus-slam-js@1.25.0:
+  gps-plus-slam-js@1.26.0:
     dependencies:
       '@noble/curves': 2.4.0
       '@reduxjs/toolkit': 2.12.0
@@ -7535,6 +7686,10 @@ snapshots:
       ieee754: 1.2.1
       resolve-protobuf-schema: 2.1.0
 
+  pbf@4.0.2:
+    dependencies:
+      resolve-protobuf-schema: 2.1.0
+
   picocolors@1.1.1: {}
 
   picomatch@2.3.2: {}
@@ -7548,6 +7703,10 @@ snapshots:
   playwright@1.63.0:
     dependencies:
       playwright-core: 1.63.0
+
+  pmtiles@4.5.0:
+    dependencies:
+      fflate: 0.8.3
 
   pngjs@5.0.0: {}
 
@@ -8087,6 +8246,8 @@ snapshots:
       string-width: 4.2.3
       strip-ansi: 6.0.1
 
+  tagged-tag@1.0.0: {}
+
   tailwindcss@4.3.3: {}
 
   tapable@2.3.3: {}
@@ -8192,6 +8353,10 @@ snapshots:
   type-check@0.4.0:
     dependencies:
       prelude-ls: 1.2.1
+
+  type-fest@5.10.0:
+    dependencies:
+      tagged-tag: 1.0.0
 
   typedarray@0.0.6: {}
 
@@ -8458,3 +8623,8 @@ snapshots:
       youch-core: 0.3.3
 
   zod@4.5.4: {}
+
+  zxing-wasm@3.1.4(@types/emscripten@1.41.6):
+    dependencies:
+      '@types/emscripten': 1.41.6
+      type-fest: 5.10.0

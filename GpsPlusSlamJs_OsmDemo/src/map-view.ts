@@ -17,6 +17,10 @@
  */
 
 import L from "leaflet";
+import {
+  OSM_TILE_MAX_ZOOM,
+  OSM_TILE_URL,
+} from "gps-plus-slam-app-framework/utils/osm-tiles";
 
 import { AttributionView, type AttributionEntry } from "./attribution-view.js";
 import { cellToBoundary } from "h3-js";
@@ -222,8 +226,8 @@ export class MapView {
     // NO `attribution` OPTION HERE ANY MORE. It fed Leaflet's control, which is
     // switched off above, so leaving it would be a credit that looks declared
     // and renders nowhere. `OSM_ENTRY` is where the obligation is actually met.
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
+    L.tileLayer(OSM_TILE_URL, {
+      maxZoom: OSM_TILE_MAX_ZOOM,
     }).addTo(this.map);
 
     // Region outlines are drawn OVER the cells, and the group order here is

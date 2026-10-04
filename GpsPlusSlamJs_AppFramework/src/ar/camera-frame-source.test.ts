@@ -218,4 +218,95 @@ describe('CameraFrameSource', () => {
       expect(src.getConfig().intervalMs).toBe(125);
     });
   });
+
+  /**
+   * Why these tests matter (QR perf plan 2026-09-23, M3): a frame captured
+   * while the detector is still busy is read back from the GPU, copied and then
+   * thrown away by the scheduler. The consumer's wantsFrame predicate lets the
+   * source skip that work - and because a skip does NOT consume the interval,
+   * the first frame after the detector frees up is captured at once instead of
+   * waiting out the rest of the slot.
+   */
+  describe('wantsFrame', () => {
+    function source(wants: () => boolean) {
+      const capture = vi.fn(() => fakeImage());
+      const onCapture = vi.fn();
+      const src = new CameraFrameSource(
+        { capture, onCapture },
+        { intervalMs: 125 }
+      );
+      src.setWantsFrame(wants);
+      src.start();
+      return { src, capture, onCapture };
+    }
+
+    it('skips the capture entirely while the consumer does not want a frame', () => {
+      const { src, capture, onCapture } = source(() => false);
+      src.onFrame(0);
+      src.onFrame(200);
+      expect(capture).not.toHaveBeenCalled();
+      expect(onCapture).not.toHaveBeenCalled();
+      expect(src.getFrameCount()).toBe(0);
+    });
+
+    it('does not consume the interval, so the first frame after busy is captured at once', () => {
+      let busy = false;
+      const { src, capture } = source(() => !busy);
+      src.onFrame(0); // captured
+      busy = true;
+      src.onFrame(130); // due, but busy -> skipped, slot NOT consumed
+      busy = false;
+      src.onFrame(146); // 16 ms later: still due -> captured now
+      expect(capture).toHaveBeenCalledTimes(2);
+    });
+
+    it('never captures more often than the interval, whatever the predicate says', () => {
+      const { src, capture } = source(() => true);
+      for (let t = 0; t < 1000; t += 16) src.onFrame(t);
+      expect(capture.mock.calls.length).toBeLessThanOrEqual(9);
+    });
+
+    it('treats a throwing predicate as wanting a frame (never throws into the XR loop)', () => {
+      const { src, capture } = source(() => {
+        throw new Error('app bug');
+      });
+      expect(() => src.onFrame(0)).not.toThrow();
+      expect(capture).toHaveBeenCalledTimes(1);
+    });
+
+    it('goes back to capturing every interval when the predicate is cleared', () => {
+      const { src, capture } = source(() => false);
+      src.onFrame(0);
+      src.setWantsFrame(null);
+      src.onFrame(16);
+      expect(capture).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+/**
+ * Why this test matters (QR perf plan 2026-09-23, M4): the session stamps each
+ * captured frame with the XR frame time it was captured in, so `capture`
+ * receives that timestamp - and a source can carry any frame type (the session
+ * delivers a pose-paired `CapturedCameraFrame`, not a bare image).
+ */
+describe('CameraFrameSource frame timestamp', () => {
+  it('passes the XR frame timestamp to capture and delivers whatever capture built', () => {
+    const seen: number[] = [];
+    const delivered: { at: number }[] = [];
+    const src = new CameraFrameSource<{ at: number }>(
+      {
+        capture: (timestamp) => {
+          seen.push(timestamp);
+          return { at: timestamp };
+        },
+        onCapture: (frame) => delivered.push(frame),
+      },
+      { intervalMs: 125 }
+    );
+    src.start();
+    src.onFrame(1000);
+    expect(seen).toEqual([1000]);
+    expect(delivered).toEqual([{ at: 1000 }]);
+  });
 });

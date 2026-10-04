@@ -104,6 +104,12 @@
        radar-HUD reference. Used only for: the plate strip, engaged
        state, warnings, anchor dots, the radar you-dot. */
     --accent: #f2971f;
+    /* The accent as FOREGROUND, for the places it paints text or a glyph
+       ON the ground rather than filling a shape. Identical on dark, where
+       it measures 6.5:1 on --paper; the light block darkens it, because
+       "readable on the ground" is a function of the ground and the fill
+       uses (which pair with --ink-on-accent) are not (PR #463 review). */
+    --accent-ink: var(--accent);
     /* black ink for text ON the accent, and the radar's quiet ring */
     --ink-on-accent: #000;
     /* SEMANTIC state colors (research round 2026-08-27). The accent
@@ -256,6 +262,11 @@
     /* appearance/disappearance: slow on purpose - XR guidance says
        things arriving over a moving camera get lost in motion blur */
     --t-enter: 400ms;
+    /* how long the loading overlay bar takes to drain. It is NOT a
+       lifetime: the overlay stays until its host says the content is on
+       screen. This is the "about this long" claim, after which the fill
+       switches to a sweep rather than pretending to know more. */
+    --t-loading-bar: 15s;
     --ease-out: cubic-bezier(0, 0, 0.2, 1);
     --ease-in: cubic-bezier(0.4, 0, 1, 1);
   }
@@ -272,6 +283,146 @@
       --surface-inverse: rgb(255 255 255 / 0.92);
       --surface-knob: rgb(255 255 255 / 0.8);
       --veil: rgb(10 12 18 / 0.6);
+    }
+  }
+
+  /* LIGHT, and only for a DOCUMENT. Gated on `.page` - the atom an app
+     sets when its ground is a page rather than the camera - so the five
+     camera apps are inert here by construction rather than by discipline.
+     Dark stays the default everywhere (owner answer 1); this is what a
+     device ASKS for, nothing more, which is why there is no switcher and
+     no `data-theme` attribute: neither was requested, and each would be
+     a second copy of this block to keep in step.
+
+     ON `:root`, GATED BY `:has(.page)` - not on `.page` itself, which
+     is what the first version did and what broke it (PR #462 review).
+     A `var()` inside a custom property is substituted at computed-value
+     time ON THE ELEMENT THAT DECLARES IT. `--surface-gradient` is
+     declared on `:root` from `--surface-hi`/`--surface-lo`, so
+     overriding those two on a DESCENDANT cannot reach back into it: the
+     page inherited a gradient with the dark values already baked in, and
+     every plate, button and badge painted dark over light paper. Setting
+     the same tokens on `:root` puts them on the element that composes
+     them, and the composite follows for free - which is also why this
+     needs no list of derived tokens to keep in step.
+
+     Owner decision 2026-09-10; the plan's §8a-2. */
+  @media (prefers-color-scheme: light) {
+    /* `color-scheme` is NOT set here, and that is a correction rather
+       than an omission. It was on `.page`, which reaches form controls by
+       inheritance but NOT the viewport scrollbar - per CSS Color Adjust
+       the viewport takes its used value from the ROOT element, and a page
+       carries its own unlayered `:root { color-scheme: dark }` that no
+       layered rule here can outrank. So the claim was two-thirds true and
+       the remedy belongs where the blocker is: the app branches its own
+       `:root` declaration (PR #463 review). */
+    :root:has(.page) {
+      /* The two poles, and the dim step between. Values are
+         GpsPlusSlamJs_Landing's proven light palette (index.html:104-125)
+         rather than newly invented ones. */
+      --ink: #1b1b20;
+      --ink-dim: #5a5a63;
+      --paper: #f2f1ed;
+
+      /* The brand hue, dark enough to be READ on paper: 6.0:1 against
+         --paper where the undarkened accent measures 2.0:1, which is a
+         WCAG 1.4.3 AA failure for real text and was one on this page's
+         only link. The FILL uses keep the bright accent - they pair with
+         --ink-on-accent, which works on either ground. */
+      --accent-ink: #8a4b00;
+
+      /* Surfaces invert: translucent WHITE over a light ground, with the
+         low surface becoming a faint darkening rather than a lightening.
+         --surface-gradient derives from -hi and -lo, so it follows. */
+      --surface: rgb(255 255 255 / 0.55);
+      --surface-hi: rgb(255 255 255 / 0.78);
+      --surface-lo: rgb(0 0 0 / 0.05);
+      /* "inverse" means "opposite of the ground", so on light it is dark */
+      --surface-inverse: rgb(27 27 32 / 0.72);
+      --surface-knob: rgb(27 27 32 / 0.32);
+      --veil: rgb(242 241 237 / 0.6);
+      --surface-read-gradient: linear-gradient(
+        160deg,
+        rgb(255 255 255 / 0.9),
+        rgb(255 255 255 / 0.72)
+      );
+
+      /* The accent and the danger colour keep their hue - they are the
+         brand, not a function of the ground - and black stays the ink on
+         both, which is what they were chosen against. */
+
+      /* A white edge highlight is invisible on light paper, so the edge
+         becomes a dark hairline, same 160deg light direction. */
+      --edge-gradient: linear-gradient(
+        160deg,
+        rgb(0 0 0 / 0.16),
+        rgb(0 0 0 / 0.04) 55%
+      );
+      --ring: #8a8f9c;
+      /* NOT --hatch. It is the one token here that never touches the
+         ground: its only consumer alternates it with --state-warn inside
+         a progress bar, and that fill is deliberately unchanged by this
+         block - so lightening the stripe weakens it against a colour that
+         did not move, from ~1.80:1 to ~1.41:1, and that stripe is the
+         SHAPE half of "never colour alone" (PR #463 review). --cone is
+         the opposite case and does change: it paints on the radar plate,
+         which follows the ground. */
+      --cone: rgb(0 0 0 / 0.12);
+
+      /* The neumorphic family needs no invention: the file already says
+         --raise-light carries the owner's original sample values, which
+         were drawn FOR a light ground. The raised pair adopts them and
+         the big one keeps its extra weight. */
+      --raise:
+        2px 2px 2px rgb(0 0 0 / 0.16), -2px -2px 2px rgb(255 255 255 / 0.9);
+      --raise-big:
+        3px 3px 4px rgb(0 0 0 / 0.2), -3px -3px 4px rgb(255 255 255 / 0.95);
+      --raise-light:
+        2px 2px 2px rgb(0 0 0 / 0.12), -2px -2px 2px rgb(255 255 255 / 0.95);
+      --shadow-pressed: 0 1px 3px rgb(0 0 0 / 0.18);
+      --carve:
+        inset 3px 3px 9px rgb(0 0 0 / 0.12),
+        inset -3px -3px 9px rgb(255 255 255 / 0.85);
+      --carve-deep:
+        inset 5px 5px 12px rgb(0 0 0 / 0.18),
+        inset -5px -5px 12px rgb(255 255 255 / 0.9);
+
+      /* A halo separates a mark from its ground, so on a light ground it
+         is a LIGHT halo. It IS reached by a document, and the first
+         version of this comment said it was not (PR #468 review): the
+         Tour Viewer is the one app that is both light-eligible
+         (`body.page`) and an AR host, and its `#ar-status` wears this
+         halo INSIDE `#ar-root` - the subtree that composites over the
+         camera. That is survivable rather than broken: each pairing
+         contrasts with its OWN halo (white glyph on black, near-black
+         glyph on white - about 21:1 and 17:1), which is what legibility
+         over arbitrary video actually depends on. Whether the HUD should
+         follow the page's scheme at all is an open design question that
+         needs a device, so the e2e pair pins what it does today in both
+         schemes rather than deciding it here. The radar's `--cone` above
+         reaches the camera by the same route. */
+      --halo-text:
+        0 0 2px rgb(255 255 255 / 0.95), 0 0 5px rgb(255 255 255 / 0.85),
+        0 1px 14px rgb(255 255 255 / 0.65);
+      --halo-drop: drop-shadow(0 1px 2px rgb(255 255 255 / 0.8));
+      --halo-ring: 0 0 4px rgb(255 255 255 / 0.6);
+    }
+
+    /* The same preference as the block above, answered for a light
+       ground. It has to be repeated INSIDE here: `:root:has(.page)`
+       outranks that block's plain `:root`, so a light page would
+       otherwise keep translucent surfaces for a reader who asked for
+       solid ones - the accessibility setting silently losing to a colour
+       scheme (PR #462 review). */
+    @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+      :root:has(.page) {
+        --surface: rgb(255 255 255 / 0.94);
+        --surface-hi: rgb(255 255 255 / 0.97);
+        --surface-lo: rgb(0 0 0 / 0.1);
+        --surface-inverse: rgb(27 27 32 / 0.94);
+        --surface-knob: rgb(27 27 32 / 0.7);
+        --veil: rgb(242 241 237 / 0.85);
+      }
     }
   }
 }
@@ -380,11 +531,19 @@
     /* no outline: the translucent dark surface + rounded clip IS the
        box; the soft shadow alone separates it from the camera */
     overflow: hidden;
-    /* two paint layers: the surface fills the padding box, the edge
-       gradient paints only the transparent 1px border ring */
+    /* three paint layers: the accent strip flush with the right edge
+       (the signature), the surface filling the padding box, and the
+       edge gradient painting only the transparent 1px border ring. The
+       strip is a BACKGROUND layer, not an absolutely positioned ::after:
+       a background stays put while a scrolling plate's content moves,
+       where the ::after was one box high and scrolled away with it
+       (programme plan 2026-09-26-0539, W1 M1). The overflow:hidden
+       crops it to the rounded corners. */
     border: 1px solid transparent;
     background:
-      var(--surface-gradient) padding-box,
+      linear-gradient(var(--accent-signature) 0 0) right / var(--strip) 100%
+        no-repeat padding-box,
+      var(--plate-surface, var(--surface-gradient)) padding-box,
       var(--edge-gradient) border-box;
     border-radius: var(--radius);
     box-shadow: var(--raise);
@@ -392,18 +551,6 @@
     padding: var(--space-2) calc(var(--space-3) + var(--strip) + var(--space-1))
       var(--space-2) var(--space-3);
   }
-  /* the signature: a full-height accent strip flush with the right
-     edge; the plate's overflow:hidden crops it to the rounded corners */
-  .plate::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    right: 0;
-    width: var(--strip);
-    background: var(--accent-signature);
-  }
-
   /* --- button --- */
   .btn {
     background: var(--surface-gradient);
@@ -591,9 +738,13 @@
     border-radius: 4px;
   }
   /* accent text, for the one highlighted value (reference: the
-     yellow "Paris, France" / date lines) */
+     yellow "Paris, France" / date lines). --accent-INK, because this is
+     accent as TEXT: the bright accent measures 2.0:1 on light paper. Not
+     reachable today (no .page document uses this atom), fixed on the same
+     "wrong is wrong" reasoning as the halo family - a token left bright
+     here is a trap for the first light app that needs it. */
   .num--accent {
-    color: var(--accent);
+    color: var(--accent-ink);
   }
 
   /* --- toast --- */
@@ -633,6 +784,104 @@
     width: max-content;
   }
 
+  /* --- the loading overlay: a waiting surface centred on a view ---
+     For a wait the user is watching a specific pane for - the OSM demo
+     centres this on its 3D scene. It is NOT a toast: a toast lives in a
+     page corner and dismisses itself, and both of those were wrong for
+     a wait that regularly outlasts any linger (owner verdict, 2026-09-22).
+     The host must be positioned; `#scene` already is.
+     The bar drains once over --t-loading-bar and then STOPS. If the load
+     is still going, `data-overrun` switches the fill to a sweep - the
+     change itself is the message ("slower than usual"), where a
+     restarting drain would promise another fifteen seconds nothing can
+     keep. */
+  .loading-overlay {
+    position: absolute;
+    /* CENTRED WITHOUT `transform`, deliberately. The obvious form is
+       `left/top: 50%` plus `translate(-50%, -50%)` - but this element
+       also wears `enter-rise`, which animates transform, and an
+       animation OWNS the property it animates for as long as it runs.
+       The two fought: for the first 400 ms the box sat with its left
+       edge on the centre line, off by half its own width. Caught by an
+       e2e that measured the box while the entry animation was still
+       playing, which is also when a user sees it.
+       `inset: 0` + `margin: auto` over an intrinsic size centres in both
+       axes and touches no property any animation wants. */
+    inset: 0;
+    margin: auto;
+    height: max-content;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    /* Snug around the message, wrapping rather than overflowing on a
+       phone-width pane. `min()` is rejected by the csstree validator this
+       package lints with, so the pair does the same job. */
+    width: max-content;
+    max-width: 80%;
+    text-align: center;
+    font-weight: var(--weight-strong);
+    animation: enter-rise var(--t-enter) var(--ease-out);
+  }
+  .loading-overlay-bar {
+    display: block;
+    height: 3px;
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .loading-overlay-fill {
+    display: block;
+    height: 100%;
+    background: var(--ink);
+    /* scaleX, not width: a transform animates off the main thread, and
+       this runs while the page is waiting on a worker reply. */
+    transform-origin: left center;
+    animation: loading-drain var(--t-loading-bar) linear forwards;
+  }
+  @keyframes loading-drain {
+    to {
+      transform: scaleX(0);
+    }
+  }
+  /* Overrun: a slow sweep, sized narrow so it reads as "searching"
+     rather than as progress. An ongoing-and-unresolved state, so the
+     loop is the allowed kind under the transient-by-default policy. */
+  .loading-overlay[data-overrun="true"] .loading-overlay-fill {
+    width: 30%;
+    transform-origin: center;
+    animation: overlay-sweep 1.6s ease-in-out infinite;
+  }
+  @keyframes overlay-sweep {
+    from {
+      transform: translateX(-120%);
+    }
+    to {
+      transform: translateX(400%);
+    }
+  }
+
+  /* --- is-loading: a pulsing dot in front of a line of text ---
+     For a wait whose length nobody can predict, on a line that already
+     says WHAT is being waited for. An ongoing-and-unresolved state, so
+     the loop is the allowed kind.
+     A PSEUDO-ELEMENT ON PURPOSE. The one line this is for rewrites its
+     own `textContent` on every update, which deletes child nodes; a dot
+     that was a real element would vanish the first time the text
+     changed, and the class survives. */
+  .is-loading::before {
+    content: "";
+    display: inline-block;
+    width: 0.5em;
+    height: 0.5em;
+    margin-right: 0.45em;
+    border-radius: var(--radius-pill);
+    background: currentcolor;
+    /* `waiting-pulse`, the sheet's one waiting loop - see the locate
+       button, which is where it is defined and what it was named for. */
+    animation: waiting-pulse 1.2s ease-in-out infinite;
+  }
+
   /* --- modal / confirm dialog ---
      The dialog itself is a plate; what makes it a modal is the
      veil behind it, which pauses the world. Cancel stays a plain
@@ -657,8 +906,10 @@
     /* arrives by settling onto its own shadow */
     animation: modal-settle var(--t-enter) var(--ease-out);
     /* stronger than --surface-gradient on purpose (owner feedback):
-       a modal is read, not glanced past, so it gives up translucency */
-    background: var(--surface-read-gradient);
+       a modal is read, not glanced past, so it gives up translucency.
+       Set as the plate's surface layer, so the plate's strip and edge
+       ring stay (replacing the whole background dropped them). */
+    --plate-surface: var(--surface-read-gradient);
     /* stylelint-disable-next-line csstree/validator -- csstree does not know min() */
     width: min(320px, 100%);
     display: flex;
@@ -676,8 +927,9 @@
   }
 
   /* --- locate button ---
-     The six-state GPS control from OsmDemo (locate-state.ts): idle /
-     locating / located / denied / timeout / unavailable. An icon
+     The six-state GPS control of OsmDemo and the globe lab's pin (the
+     states: the framework's utils/locate-state.ts): idle / locating /
+     located / denied / timeout / unavailable. An icon
      button; the wording lives in title + aria-label (the shipped
      three-channel model), so the VISIBLE states are: pulsing while
      locating, engaged accent when located, and an accent warning dot
@@ -685,9 +937,16 @@
      remedy text is the differing part and that text is not on the
      button. */
   .btn--locate[data-state="locating"] {
-    animation: locate-pulse 1.2s ease-in-out infinite;
+    animation: waiting-pulse 1.2s ease-in-out infinite;
   }
-  @keyframes locate-pulse {
+  /* THE ONE "we are waiting" LOOP IN THIS SHEET, and it is shared on
+     purpose. It was `locate-pulse`, and the loading dot below arrived
+     with a second keyframe of identical duration, easing and shape
+     differing only in its opacity floor - two slightly different
+     renderings of the same idea, which is this workspace's most
+     frequently recorded review finding. Renamed for what it means
+     rather than for the first control that used it. */
+  @keyframes waiting-pulse {
     50% {
       opacity: 0.35;
     }
@@ -710,6 +969,23 @@
     .progress[data-tone="lost"] .progress-fill,
     [data-leaving][data-leaving] {
       animation: none;
+    }
+    /* THEIR OWN ENTRY, because `animation: none` on `.toast` does not
+       reach a pseudo-element of it - the bar and the dot would keep
+       animating under a rule that looks like it covers them. Both stay
+       VISIBLE: the bar full, the dot solid. They still say "waiting";
+       they just stop moving. */
+    .is-loading::before,
+    .loading-overlay,
+    .loading-overlay-fill,
+    .loading-overlay[data-overrun="true"] .loading-overlay-fill {
+      animation: none;
+    }
+    /* With the sweep stopped, a 30%-wide bar parked at the left edge
+       reads as "12% done" rather than "unknown". Full width says the
+       honest thing: still waiting, no estimate. */
+    .loading-overlay[data-overrun="true"] .loading-overlay-fill {
+      width: 100%;
     }
     * {
       transition-duration: 1ms !important;
@@ -1325,7 +1601,7 @@
     justify-content: center;
     width: var(--space-4);
     height: var(--space-4);
-    color: var(--accent);
+    color: var(--accent-ink);
   }
 
   .step-body {

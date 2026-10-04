@@ -7,7 +7,17 @@ reversible, and the only interface everything downstream consumes.
 
 ## Public API
 
-- `OsmDataSource` — `{ attribution, sourceId, fetchTile(tile, signal?) }`.
+- `OsmDataSource` — `{ attribution, sourceId, fetchTile(tile, options?) }`.
+- `FetchTileOptions` — what a caller can say about ONE fetch.
+  - `signal?` — aborts in-flight work when the user leaves the area. Took this
+    position as a bare `AbortSignal` until 2026-09-22.
+  - `speculative?` — true when NOBODY is waiting on the tile, i.e. a background
+    ring warm. Defaults to false, so every existing caller keeps its behaviour.
+    **It is a hint about urgency, never about correctness**: the same tile comes
+    back by the same route, and a source is free to ignore it. `OverpassSource`
+    does not — it declines to race a speculative tile, which halves what a ring
+    warm costs the donated servers (7 requests rather than 14). Only the demo's
+    prefetch wiring sets it.
 - `OsmTileResult` — `{ tile, features, fetchedAt, sourceId, schemaVersion, skipped, osmBaseTimestamp?, timings? }`.
 - `OsmTileTimings` — what ONE DELIVERY of a tile cost.
   - `servedBy` — `"network" | "cache" | "joined" | "stale-on-rate-limit"`. Four

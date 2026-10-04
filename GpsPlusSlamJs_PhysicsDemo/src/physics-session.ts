@@ -99,6 +99,8 @@ export function createPhysicsSession(
       const mesh = new THREE.Mesh(geometry, material);
       mesh.scale.setScalar(radius);
       mesh.position.set(position.x, position.y, position.z);
+      // The balls are the AR shadows' casters (W4 plan 2026-09-26-0549 §11).
+      mesh.castShadow = true;
       ballParent.add(mesh);
       balls.push({ body, mesh, bornAtStep: stepCount });
     },

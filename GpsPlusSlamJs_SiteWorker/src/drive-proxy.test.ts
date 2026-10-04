@@ -307,3 +307,102 @@ describe("handleDriveProxy — CORS", () => {
     );
   });
 });
+
+describe("handleDriveProxy — a proxied file never runs as a page on the site", () => {
+  // Why this matters (Drive replace plan §5 #11, a pre-existing security
+  // gap): the proxy serves ANY public Drive file from the site's own origin
+  // with Drive's content type. Opened directly, a crafted file - an SVG
+  // with a script in it - would run as a page of gps.csutil.com. Every
+  // proxied answer is a download, never sniffed, and sandboxed; the
+  // TourViewer reads it with fetch, which none of this affects.
+  it("marks a file as a download, keeping Drive's file name", async () => {
+    const { fetchImpl } = recordingFetch(
+      upstreamResponse(200, {
+        "content-type": "image/svg+xml",
+        "content-disposition": 'inline; filename="evil.svg"',
+      }),
+    );
+    const response = await handleDriveProxy(request("?id=file123"), {
+      fetchImpl,
+    });
+    expect(response.headers.get("content-disposition")).toBe(
+      'attachment; filename="evil.svg"',
+    );
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("content-security-policy")).toBe("sandbox");
+  });
+
+  it("marks a file without a name as a download too, on GET and HEAD", async () => {
+    for (const method of ["GET", "HEAD"]) {
+      const { fetchImpl } = recordingFetch(
+        upstreamResponse(200, { "content-type": "application/zip" }, null),
+      );
+      const response = await handleDriveProxy(
+        request("?id=file123", { method }),
+        { fetchImpl },
+      );
+      expect(response.headers.get("content-disposition"), method).toBe(
+        "attachment",
+      );
+      expect(response.headers.get("x-content-type-options"), method).toBe(
+        "nosniff",
+      );
+    }
+  });
+
+  it("never serves Drive's content type, so a proxied file cannot load as a script", async () => {
+    // Milestone review #8: `sandbox` does not bind worker scripts and
+    // `nosniff` does not block a CORRECT script type, so a Drive file served
+    // as JavaScript could still run on the site's origin via `new Worker`
+    // or `serviceWorker.register`. Every reader uses fetch and none reads
+    // the type, so every proxied answer is plain bytes.
+    for (const method of ["GET", "HEAD"]) {
+      const { fetchImpl } = recordingFetch(
+        upstreamResponse(200, { "content-type": "text/javascript" }),
+      );
+      const response = await handleDriveProxy(
+        request("?id=file123", { method }),
+        { fetchImpl },
+      );
+      expect(response.headers.get("content-type"), method).toBe(
+        "application/octet-stream",
+      );
+    }
+  });
+});
+
+describe("handleDriveProxy — the file name reaches the page", () => {
+  // Why this matters (Drive replace plan §2 decision 3, §5 #2): the
+  // TourViewer names the rebuilt zip after the Drive file, because Drive
+  // offers "Replace" only for the same name. A dev host calls the proxy
+  // cross-origin, and a header that is not EXPOSED is invisible to its
+  // JavaScript - forwarding alone is not enough.
+  it("exposes content-disposition on a ranged GET and on a HEAD", async () => {
+    for (const method of ["GET", "HEAD"]) {
+      const { fetchImpl } = recordingFetch(
+        upstreamResponse(
+          method === "GET" ? 206 : 200,
+          {
+            "content-type": "application/zip",
+            "content-disposition": 'attachment; filename="My tour.zip"',
+          },
+          null,
+        ),
+      );
+      const response = await handleDriveProxy(
+        request("?id=file123", {
+          method,
+          headers: { Range: "bytes=0-99", Origin: "http://localhost:5187" },
+        }),
+        { fetchImpl },
+      );
+      expect(response.headers.get("content-disposition"), method).toBe(
+        'attachment; filename="My tour.zip"',
+      );
+      expect(
+        response.headers.get("access-control-expose-headers")?.toLowerCase(),
+        method,
+      ).toContain("content-disposition");
+    }
+  });
+});

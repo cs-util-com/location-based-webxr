@@ -127,6 +127,20 @@ describe('createSceneHierarchy', () => {
     expect(arLights.length).toBe(0);
   });
 
+  /**
+   * Why this test matters (AR sun shadow plan 2026-09-23-2343, §7 item 11):
+   * the shadow prototype swaps the fixed shading light for the sun and must
+   * find it by NAME, not by being the first DirectionalLight in the scene.
+   */
+  it('names the two lights', () => {
+    const { scene } = createSceneHierarchy();
+    const ambient = scene.getObjectByName(SCENE_NODE.AMBIENT_LIGHT);
+    const sun = scene.getObjectByName(SCENE_NODE.SUN_LIGHT);
+    expect(ambient?.type).toBe('AmbientLight');
+    expect(sun?.type).toBe('DirectionalLight');
+    expect(sun?.parent).toBe(scene);
+  });
+
   // -----------------------------------------------------------------------
   // 6.1: arpose intermediate Object3D
   // -----------------------------------------------------------------------

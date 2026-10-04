@@ -21,6 +21,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as THREE from "three";
+import { SCENE_NODE } from "gps-plus-slam-app-framework/ar/scene-node-names";
 import {
   DESCENT_ESTIMATE_WAIT_S,
   DESCENT_FALL_S,
@@ -142,7 +143,7 @@ import {
 } from "./ar-entry-dom-veil.js";
 import { ENTRY_VEIL_FADE_S } from "./ar-entry-veil.js";
 import { AR_DEPTH_SAMPLER_CONFIG } from "./ar-depth-pipeline.js";
-import { nueBearingDeg } from "./ar-origin.js";
+import { nueBearingDeg } from "gps-plus-slam-app-framework/utils/nue-bearing";
 import { AR_CAMERA_FAR_M, AR_CAMERA_NEAR_M } from "./ar-scene-environment.js";
 
 const COLOGNE = { lat: 50.9413, lon: 6.9583 };
@@ -175,8 +176,18 @@ function fakeView() {
     offset: { north: number; up: number; east: number } | undefined;
   }[] = [];
   const shellCalls: (THREE.Material | undefined)[] = [];
+  // The desktop sky's distance haze: RECORDED like the shell, because a
+  // session that leaves it on stock fog leaves the desktop view unhazed.
+  const haze = {
+    mode: "atmosphere" as "atmosphere" | "fog",
+    setMode(mode: "atmosphere" | "fog") {
+      this.mode = mode;
+    },
+  };
   return {
     localRoot,
+    haze,
+    distanceHaze: () => haze,
     attachedTo,
     // THE OFFSET IS RECORDED, because dropping it is a silent failure: the city
     // renders at the right orientation and the wrong place, and a fixture that
@@ -982,12 +993,17 @@ describe("when AR cannot start", () => {
   it("grades the session's renderer to match the desktop view", async () => {
     // Also a wiring assertion rather than a behaviour one: `getRenderer()` is a
     // framework accessor added for this, and forgetting to CALL it would leave
-    // AR at `NoToneMapping` — every colour in the demo authored under ACES at
-    // 0.5, rendered at exposure 1.0.
+    // AR at `NoToneMapping` at exposure 1.0 instead of the demo's grade.
+    // The grade itself is Khronos Neutral since plan 2026-09-23-2149 M3
+    // (DEC-SUN-9, and DEC-SUN-11: AR follows desktop), at 0.5 / 0.6: ACES
+    // divided the exposure by 0.6 and Neutral does not, so this keeps the
+    // value entering the curve (DEC-SUN-12); Neutral has no filmic shoulder,
+    // so AR mids and highlights render brighter than under ACES (a phone
+    // field-test item, plan 2026-09-23-2149 §10).
     await startArMode(deps());
 
-    expect(renderer.toneMapping).toBe(THREE.ACESFilmicToneMapping);
-    expect(renderer.toneMappingExposure).toBe(0.5);
+    expect(renderer.toneMapping).toBe(THREE.NeutralToneMapping);
+    expect(renderer.toneMappingExposure).toBeCloseTo(0.5 / 0.6, 12);
   });
 
   it("samples the AR renderer's OWN draw cost, not the desktop view's", async () => {
@@ -1600,6 +1616,19 @@ describe("the AR building shell", () => {
     mode.dispose();
     // The LAST call must be the restore, whatever happened in between.
     expect(view.shellCalls.at(-1)).toBeUndefined();
+  });
+
+  // Same pairing for the desktop sky's haze (plan 2026-09-23-0048, M3): stock
+  // fog while the session runs, the physical haze back after it, on either
+  // way out.
+  it("puts the distance haze on stock fog for the session, and back", async () => {
+    const view = fakeView();
+    const mode = await startArMode(
+      deps({ buildingView: view as unknown as ArModeDeps["buildingView"] }),
+    );
+    expect(view.haze.mode).toBe("fog");
+    mode.dispose();
+    expect(view.haze.mode).toBe("atmosphere");
   });
 
   it("restores on a SYSTEM-initiated end too, not just dispose()", async () => {
@@ -2508,5 +2537,160 @@ describe("the AR entry fly-down (H5, Q5)", () => {
       mode.dispose();
       expect(veilIn(container)).toBeNull();
     });
+  });
+});
+
+describe("the AR sun shadow (?sunShadow=1, shadow plan 2026-09-23-2343 M3)", () => {
+  type FrameFn = (ctx: { dt: number; elapsed: number }) => void;
+
+  /** The view with the shadow seams recorded. */
+  const shadowView = () => {
+    const casting: boolean[] = [];
+    const props: THREE.Object3D[] = [];
+    return Object.assign(fakeView(), {
+      casting,
+      props,
+      setArShadowCasting: (on: boolean) => {
+        casting.push(on);
+      },
+      addArShadowProps: (...objects: THREE.Object3D[]) => {
+        props.push(...objects);
+      },
+      removeArShadowProps: (...objects: THREE.Object3D[]) => {
+        for (const o of objects) props.splice(props.indexOf(o), 1);
+      },
+      arShadowCasterSignature: "0:0",
+    });
+  };
+  const namedSunLight = () => {
+    const light = new THREE.DirectionalLight();
+    light.name = SCENE_NODE.SUN_LIGHT;
+    scene.add(light);
+    return light;
+  };
+  const withShadowMap = () => {
+    const shadowMap = { enabled: false, type: THREE.BasicShadowMap };
+    (renderer as unknown as { shadowMap: typeof shadowMap }).shadowMap =
+      shadowMap;
+    return shadowMap;
+  };
+
+  // WHY: absent, the prototype must leave a session exactly as it was: no
+  // shadow maps (a recompile of every material), no props, no casting.
+  it("leaves a session without the switch alone", async () => {
+    const shadowMap = withShadowMap();
+    namedSunLight();
+    const view = shadowView();
+    await startArMode(
+      deps({ buildingView: view as unknown as ArModeDeps["buildingView"] }),
+    );
+    expect(shadowMap.enabled).toBe(false);
+    expect(view.props).toHaveLength(0);
+    expect(view.casting).toEqual([]);
+  });
+
+  // WHY: shadow maps must be on before the first XR frame, the HUD must say
+  // why there is no shadow yet, and the teardown must take the props and the
+  // casting back before the city returns to the desktop view.
+  //
+  // AND THE FRAME CONVERSION (M3 review M4): the camera's world position is
+  // NUE about `zero`; the DEM is sampled in anchor ENU, which is that minus
+  // the geometric offset (north 111.32 m, east 70 m in this fixture). A
+  // swapped axis or a dropped offset samples the ground somewhere else,
+  // which no e2e can see because none can enter AR. Every sample must be at
+  // the one point (the estimator shares the conversion and the sampler).
+  it("starts before the first frame, samples the DEM under the camera, reports on the HUD, and tears down", async () => {
+    const shadowMap = withShadowMap();
+    namedSunLight();
+    const view = shadowView();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const sampled: { x: number; y: number }[] = [];
+    const mode = await startArMode(
+      deps({
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+        container,
+        sunShadow: true,
+        autoElevation: {
+          terrainHeightM: (enu) => {
+            sampled.push({ x: enu.x, y: enu.y });
+            return 100;
+          },
+        },
+      }),
+    );
+    expect(shadowMap.enabled).toBe(true);
+    expect(view.props.map((p) => p.name).sort()).toEqual([
+      "ar-shadow-plane",
+      "ar-shadow-pole",
+    ]);
+    expect(view.casting).toEqual([true]);
+    // The fixture's alignment has landed (a yaw), so the frame is aligned;
+    // the camera stands 30 m north and 40 m east of `zero`.
+    camera.position.set(30, 1.6, 40);
+    const frame = registerXrFrameUpdate.mock.calls[0]?.[0] as FrameFn;
+    for (let t = 1; t <= 3; t += 0.25) frame({ dt: 0.25, elapsed: t });
+    // No depth samples, so the floor estimate never engages.
+    expect(container.textContent).toContain("shadow: waiting for floor");
+    expect(sampled.length).toBeGreaterThan(0);
+    for (const p of sampled) {
+      expect(p.x).toBeCloseTo(40 - 70, 6);
+      expect(p.y).toBeCloseTo(30 - 111.32, 6);
+    }
+    mode.dispose();
+    expect(view.casting.at(-1)).toBe(false);
+    expect(view.props).toHaveLength(0);
+  });
+
+  // WHY (M3 review L1): without the auto-elevation group there is no floor
+  // estimate, so the shadow could never come on. It must not start, touch
+  // nothing, and say so, not "waiting for position" for good.
+  it("does not start without auto elevation, and says so", async () => {
+    const shadowMap = withShadowMap();
+    namedSunLight();
+    const view = shadowView();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const mode = await startArMode(
+      deps({
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+        container,
+        sunShadow: true,
+      }),
+    );
+    expect(shadowMap.enabled).toBe(false);
+    expect(view.props).toHaveLength(0);
+    expect(view.casting).toEqual([]);
+    const frame = registerXrFrameUpdate.mock.calls[0]?.[0] as FrameFn;
+    for (let t = 1; t <= 3; t += 0.25) frame({ dt: 0.25, elapsed: t });
+    expect(container.textContent).toContain(
+      "shadow: unavailable (auto elevation is off)",
+    );
+    mode.dispose();
+  });
+
+  // WHY: the prototype must never cost the session. A scene without the
+  // named light (an older framework) runs on, without a shadow.
+  it("runs on without a shadow when the scene has no named sun light", async () => {
+    withShadowMap();
+    const view = shadowView();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const mode = await startArMode(
+      deps({
+        buildingView: view as unknown as ArModeDeps["buildingView"],
+        container,
+        sunShadow: true,
+        autoElevation: { terrainHeightM: () => 100 },
+      }),
+    );
+    expect(mode.started).toBe(true);
+    expect(view.props).toHaveLength(0);
+    const frame = registerXrFrameUpdate.mock.calls[0]?.[0] as FrameFn;
+    for (let t = 1; t <= 3; t += 0.25) frame({ dt: 0.25, elapsed: t });
+    expect(container.textContent).toMatch(
+      /shadow: unavailable (.*sun light.*)/,
+    );
+    mode.dispose();
   });
 });

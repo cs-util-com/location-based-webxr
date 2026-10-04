@@ -31,6 +31,7 @@
  */
 
 import * as THREE from "three";
+import { markArShadowCaster } from "./ar-sun-shadow.js";
 import {
   packInstances,
   POI_FALLBACK_MODEL,
@@ -229,7 +230,7 @@ export function poiMarkerPosition(
   return [marker.position.x, marker.groundHeightM + liftM, -marker.position.y];
 }
 
-/**
+/*
  * The FALLBACK marker for the long tail — now built in the package (DEC-S19).
  *
  * IT WAS A 6 m ORANGE CONE HERE, and the symbol port is what made that wrong.
@@ -353,20 +354,18 @@ function unitTreeGeometries(): Record<TreeVariant, THREE.BufferGeometry> {
 
 const TREE_GEOMETRY = unitTreeGeometries();
 
-/** ONE material for every tree, shared like the geometries. */
+/**
+ * ONE material for every tree, shared like the geometries.
+ *
+ * Shared, so `clear()` must not dispose it — see the note in
+ * `building-view.ts`. That sentence used to sit on a pin geometry/material
+ * pair this file no longer has; the tree pair is what it is about now.
+ */
 const TREE_MATERIAL = new THREE.MeshStandardMaterial({
   color: 0x3f7d4a,
   flatShading: true,
   roughness: 0.8,
 });
-
-/**
- * ONE geometry and ONE material, SHARED by every pin.
- *
- * Markers are numerous and identical, which is the whole reason the package emits
- * placements rather than geometry. Sharing here is also why `clear()` must not
- * dispose them — see the note in `building-view.ts`.
- */
 
 /**
  * Triangles across a layer's chunks (W20).
@@ -463,6 +462,8 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
             // reason W20 had to come first. A non-white base would tint every
             // colour in the palette by itself.
             color: 0xffffff,
+            // The noon brightening's target (`applySurfaceGain`).
+            userData: { neutralSurface: true },
             vertexColors: true,
             // SINGLE-SIDED SINCE W24 (R4-17). It was `DoubleSide`, and the
             // reason was honest: OSM volumes are not reliably closed, so a
@@ -713,6 +714,8 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
             // so that measurement is now enforced for the WHOLE palette by
             // `feature-colours.test.ts`, rather than for one constant here.
             color: 0xffffff,
+            // The noon brightening's target (`applySurfaceGain`).
+            userData: { neutralSurface: true },
             roughness: 0.9,
             // OPAQUE, and DEC-R2-13 depends on it. The disc at each vertex overlaps
             // the segment quads it joins; in translucent geometry that overlap would
@@ -853,6 +856,10 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
         // it and every later frame silently draws nothing — three.js does not
         // throw for a disposed geometry.
         pins.userData = { poiInstances: markers, sharedResources: true };
+        // Ground pins cast the AR sun shadow; a symbol on a roof does not (its
+        // real building casts the real one). Tagged here, where the placement
+        // is known (shadow plan 2026-09-23-2343, §10).
+        if (!onHost) markArShadowCaster(pins);
         objects.push(pins);
       }
       return objects;
@@ -925,4 +932,65 @@ export function meshLayerSelection(layers: LayerSet): MeshLayers {
 /** Whether any mesh layer is on — i.e. whether `render` has anything to do. */
 export function wantsAnyMeshLayer(layers: LayerSet): boolean {
   return MESH_LAYERS.some((descriptor) => layers[descriptor.layer]);
+}
+
+/**
+ * The light dialog's sky light on buildings (plan 2026-09-24-2140): the
+ * building materials (the `aHeight01` geometry, the identity the AR shell
+ * swap uses) get the scene's environment as their OWN envMap, at
+ * `environmentIntensity × k`. three overwrites a material's
+ * `envMapIntensity` with the scene's whenever it has no envMap of its own,
+ * so a multiplier alone does nothing (cold review B1). Called every frame:
+ * the environment is re-baked (a new texture) on every sun change, and a
+ * material holding the old one would draw a disposed texture. `k = 1` or no
+ * environment restores three's own path exactly. Only adding or removing the
+ * envMap recompiles.
+ *
+ * @throws RangeError for a multiplier that is not a positive finite number.
+ */
+export function applyBuildingSkyLight(
+  root: THREE.Object3D,
+  environment: THREE.Texture | null,
+  environmentIntensity: number,
+  k: number,
+): void {
+  if (!(Number.isFinite(k) && k > 0)) {
+    throw new RangeError(`sky light must be positive and finite, got ${k}`);
+  }
+  const own = k === 1 ? null : environment;
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const geometry = object.geometry as THREE.BufferGeometry;
+    if (geometry.getAttribute("aHeight01") === undefined) return;
+    const material = object.material as THREE.Material | THREE.Material[];
+    for (const m of Array.isArray(material) ? material : [material]) {
+      if (!(m instanceof THREE.MeshStandardMaterial)) continue;
+      if ((m.envMap === null) !== (own === null)) m.needsUpdate = true;
+      m.envMap = own;
+      m.envMapIntensity = own === null ? 1 : environmentIntensity * k;
+    }
+  });
+}
+
+/**
+ * Sets the colour factor of the NEUTRAL SURFACES (the building and road
+ * materials, tagged `userData.neutralSurface`) under `root`: the noon
+ * brightening (plan 2026-09-24-0901; the factor from `surfaceGainAt`).
+ * Absolute, so re-applying after a rebuild is idempotent. A mesh wearing a
+ * swapped material (the AR shell) is skipped: the tag is on the desktop one.
+ */
+export function applySurfaceGain(root: THREE.Object3D, gain: number): void {
+  if (!(Number.isFinite(gain) && gain > 0)) {
+    throw new RangeError(
+      `surface gain must be positive and finite, got ${gain}`,
+    );
+  }
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const material = object.material as THREE.Material | THREE.Material[];
+    for (const m of Array.isArray(material) ? material : [material]) {
+      if (m.userData["neutralSurface"] !== true) continue;
+      if (m instanceof THREE.MeshStandardMaterial) m.color.setScalar(gain);
+    }
+  });
 }

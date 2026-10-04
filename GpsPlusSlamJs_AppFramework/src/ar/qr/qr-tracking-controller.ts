@@ -22,6 +22,8 @@ import type {
   QrPoseSolution,
 } from './qr-pose.js';
 import type { QrFrontEnd, RgbaImage } from './qr-frontend.js';
+import type { CornerOrderSource } from './qr-corner-order.js';
+import type { CapturedCameraFrame } from '../captured-camera-frame.js';
 import type { QrLevel } from './qr-level.js';
 import { buildQrGpsVotes } from './qr-gps-vote.js';
 import { validateQuad } from './qr-pose.js';
@@ -58,6 +60,12 @@ interface QrRawDetection {
   readonly imageWidth: number;
   readonly imageHeight: number;
   readonly timestamp: number;
+  /**
+   * Where the corner order came from (the front end's
+   * `QrDetection.orderSource`), when it says - recorded so a replay can
+   * ignore native-order frames of an ordered code (plan §60, b4b-2).
+   */
+  readonly orderSource?: CornerOrderSource;
 }
 
 export interface QrDetectionEvent {
@@ -78,6 +86,21 @@ export interface QrDetectionEvent {
   readonly cameraPose: Pose;
   readonly imageWidth: number;
   readonly imageHeight: number;
+  /**
+   * The intrinsics of the exact buffer the corners came from (what
+   * `getIntrinsics(image)` returned for the solve). The fused QR window
+   * re-solves the corners of several detections jointly and needs them
+   * (QR near-frontal pose plan M3b b3). Required, so a producer cannot
+   * silently leave the fused path.
+   */
+  readonly intrinsics: CameraIntrinsics;
+  /**
+   * Where the corners' order came from (the front end's
+   * `QrDetection.orderSource`), when it says. The fused window ignores a
+   * `native` detection of a code whose order is known (QR near-frontal
+   * pose plan §54-§55).
+   */
+  readonly orderSource?: CornerOrderSource;
   /** Decoded payload (text/URL) — the marker key. */
   text: string;
   qrPoseWorld: Pose;
@@ -94,7 +117,11 @@ export interface QrTrackingControllerConfig {
   solvePose: (input: QrSolvePoseInput) => QrPoseSolution | null;
   /** Fetch + validate a level file from the decoded URL (cached by the controller). */
   fetchLevel: (url: string) => Promise<QrLevel>;
-  /** Dispatch the synthetic GPS votes (production: `recordGpsEvent` per payload). */
+  /**
+   * Dispatch the synthetic GPS votes (production: the Recorder dispatches
+   * `recordGpsEvent` per payload, the Tour Viewer one `recordGpsEventBatch`
+   * per lock).
+   */
   dispatchVotes: (votes: RecordGpsEventPayload[]) => void;
   /**
    * Emitted on every lock, independent of the vote (Note 3). Apps wire this to
@@ -130,19 +157,21 @@ export interface QrTrackingControllerConfig {
    */
   resolveSizeM?: (text: string, level: QrLevel) => number | null;
   /**
-   * Resolve the STABLE (sliding-window filtered) world pose for the vote — e.g.
+   * Resolve the STABLE world pose for the vote — e.g. the fused pose,
+   * `createFusedQrPoseSource(...).resolve(text)` (QR near-frontal pose plan
+   * §60; the TourViewer and the QR demo, and the recorder since b6a, §71),
+   * or the older average
    * `selectStableQrPose(store.getState(), text)`. Returns `null` until the pose
    * has converged, which GATES the high-weight vote (the detection emission is
    * unconditional; only the vote waits for stability). When omitted (back-compat)
    * the raw single-frame solve pose drives the vote.
    *
-   * Ordering: the `onDetection` emission above feeds this frame's RAW pose into
-   * the slice synchronously, so the window this reads already includes it. See
+   * Ordering: the window this reads already includes this frame's detection -
+   * fed by the `onDetection` emission above (the TourViewer, the demo) or,
+   * earlier still, by `onRawDetection` during the decode (the recorder). See
    * the sliding-window stabilization design doc.
    */
   resolveStablePose?: (text: string) => Pose | null;
-  /** Current camera pose in raw-WebXR/odom space, or `null` if unavailable. */
-  getCameraPose: () => Pose | null;
   /** Intrinsics for the exact frame buffer, or `null` if unavailable. */
   getIntrinsics: (image: RgbaImage) => CameraIntrinsics | null;
   /** Synthetic GPS accuracy (m) → vote weight. */
@@ -171,12 +200,28 @@ export interface QrTrackingControllerConfig {
 }
 
 export interface QrTrackingController {
-  /** Offer the latest camera frame; throttled/coalesced internally. */
-  offerFrame(image: RgbaImage): void;
+  /**
+   * Offer the latest captured frame; throttled/coalesced internally. The
+   * solve and the raw record use the frame's own capture pose and time.
+   */
+  offerFrame(frame: CapturedCameraFrame): void;
+  /**
+   * True while a detect is in flight (the scheduler would drop a new frame).
+   * The camera source's `wantsFrame` veto: skip the readback while busy.
+   */
+  isBusy(): boolean;
   /** Current status. */
   readonly status: QrTrackingStatus;
   /** Stop tracking and reset to `idle` (clears the level cache). */
   reset(): void;
+  /**
+   * Stop for good, e.g. at the end of an AR session (QR near-frontal pose
+   * plan §61): no new frame is taken, and a decode or level fetch still in
+   * flight reaches no callback - no raw record, detection, vote, status,
+   * lock or error. `reset()` alone cannot do this: a pending decode would
+   * set its lock state again afterwards.
+   */
+  dispose(): void;
 }
 
 export function createQrTrackingController(
@@ -192,7 +237,6 @@ export function createQrTrackingController(
     shouldCacheLevel,
     resolveSizeM,
     resolveStablePose,
-    getCameraPose,
     getIntrinsics,
     syntheticAccuracyM,
     voteBaselineM,
@@ -223,7 +267,13 @@ export function createQrTrackingController(
     cameraPose: Pose;
     imageWidth: number;
     imageHeight: number;
+    intrinsics: CameraIntrinsics;
+    orderSource: CornerOrderSource | undefined;
   } | null = null;
+
+  // Set by dispose(): every await in detect() checks it on resuming, and
+  // the scheduler runs no callback after it.
+  let disposed = false;
 
   function setStatus(next: QrTrackingStatus): void {
     if (status === next) return;
@@ -246,10 +296,14 @@ export function createQrTrackingController(
     return level;
   }
 
-  async function detect(image: RgbaImage): Promise<QrPoseSolution | null> {
+  async function detect(
+    frame: CapturedCameraFrame
+  ): Promise<QrPoseSolution | null> {
+    const { image, cameraPose } = frame;
     if (status === 'idle' || status === 'error') setStatus('scanning');
 
     const detection = await frontEnd.detect(image);
+    if (disposed) return null;
     if (!detection) {
       active = null;
       return null;
@@ -265,19 +319,22 @@ export function createQrTrackingController(
     //
     // `validateQuad` mirrors the thin producer: keep a mirrored or degenerate
     // read out of the recording.
-    const rawCameraPose = getCameraPose();
-    if (onRawDetection && rawCameraPose && validateQuad(detection.corners).ok) {
+    if (onRawDetection && validateQuad(detection.corners).ok) {
       onRawDetection({
         text: detection.text,
         corners: detection.corners,
-        cameraPose: rawCameraPose,
+        cameraPose,
         imageWidth: image.width,
         imageHeight: image.height,
-        timestamp: timestampNow(),
+        timestamp: frame.capturedAtMs,
+        ...(detection.orderSource
+          ? { orderSource: detection.orderSource }
+          : {}),
       });
     }
 
     const level = await ensureLevel(detection.text);
+    if (disposed) return null;
 
     // Size lifecycle gate (Note 3): authored size wins; else ask the resolver
     // (e.g. a depth-measured median). A `null`/absent size blocks the solve —
@@ -298,27 +355,15 @@ export function createQrTrackingController(
       return null;
     }
 
-    // The DECODE-TIME sample: taken once, above, and used for BOTH the raw
-    // record and the solve - not re-sampled after the level fetch.
-    // `qrPoseWorld` is `cameraPose o qrPoseInCamera` and `qrPoseInCamera`
-    // derives from `image`'s corners, so re-sampling here paired the old
-    // frame's corners with a pose from AFTER `ensureLevel`; on a code's
-    // first sighting that await is a real network round trip (the level
-    // source opens a remote archive under a 15 s deadline), so the code got
-    // anchored wherever the phone had moved to (PR #379 review). It also
-    // made the raw record and the solved pose describe one detection with
-    // two different poses.
-    //
-    // NOT "sampled with the frame", and the distinction is deliberate (PR
-    // #380 review): `rawCameraPose` is read after `await frontEnd.detect`,
-    // so it still trails the frame by one decode latency - the same class of
-    // error, three orders of magnitude smaller. Closing it needs a seam
-    // change (`RgbaImage` carries no timestamp or pose, and `offerFrame`
-    // passes only the image), filed rather than done here. See
+    // The FRAME's pose, captured with the pixels, serves BOTH the raw record
+    // and the solve. `qrPoseWorld` is `cameraPose o qrPoseInCamera` and
+    // `qrPoseInCamera` derives from these pixels, so any later sample - after
+    // the decode, or after the level fetch (a network round trip on a first
+    // sighting, PR #379) - anchored the code wherever the phone had moved to.
+    // QR perf plan 2026-09-23 M4 closes
     // ../../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-08-30-0620-qr-pose-frame-pairing-followup.md
-    const cameraPose = rawCameraPose;
     const intrinsics = getIntrinsics(image);
-    if (!cameraPose || !intrinsics) {
+    if (!intrinsics) {
       active = null;
       return null;
     }
@@ -346,12 +391,14 @@ export function createQrTrackingController(
       cameraPose,
       imageWidth: image.width,
       imageHeight: image.height,
+      intrinsics,
+      orderSource: detection.orderSource,
     };
     return solution;
   }
 
-  const scheduler: DetectionScheduler =
-    createDetectionScheduler<QrPoseSolution>({
+  const scheduler: DetectionScheduler<CapturedCameraFrame> =
+    createDetectionScheduler<QrPoseSolution, CapturedCameraFrame>({
       detect,
       minIntervalMs,
       requiredLockCount,
@@ -373,6 +420,8 @@ export function createQrTrackingController(
           cameraPose: current.cameraPose,
           imageWidth: current.imageWidth,
           imageHeight: current.imageHeight,
+          intrinsics: current.intrinsics,
+          ...(current.orderSource ? { orderSource: current.orderSource } : {}),
         });
 
         // The GPS vote is CONDITIONAL on geo: geo-less levels (debug/observe,
@@ -414,8 +463,11 @@ export function createQrTrackingController(
     });
 
   return {
-    offerFrame(image: RgbaImage): void {
-      scheduler.offerFrame(image);
+    offerFrame(frame: CapturedCameraFrame): void {
+      scheduler.offerFrame(frame);
+    },
+    isBusy(): boolean {
+      return scheduler.inFlight;
     },
     get status() {
       return status;
@@ -424,6 +476,12 @@ export function createQrTrackingController(
       levelCache.clear();
       active = null;
       setStatus('idle');
+    },
+    dispose(): void {
+      disposed = true;
+      scheduler.dispose();
+      levelCache.clear();
+      active = null;
     },
   };
 }

@@ -12,8 +12,10 @@
 import type { EnableGpsArState } from "gps-plus-slam-app-framework/ar";
 import type { GpsPosition } from "gps-plus-slam-app-framework/sensors";
 import {
+  type DepthSample,
   clearAllQrMarkers,
   computeOnboardingGuidance,
+  recordDepthSample,
   selectGpsPositions,
   selectTrackingQuality,
   updateDeviceOrientation,
@@ -22,19 +24,24 @@ import {
 import {
   arButtonView,
   buildArEnableConfig,
+  type ArEnableHooks,
   endTourArRuntime,
   startTourArRuntime,
 } from "./ar-mode.js";
+import { RECORDING_DEPTH } from "./authoring-recording.js";
 import type { ViewerMode } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
+import { debugReadoutLines, visitorFusedHint } from "./qr-debug-readout.js";
 import type { TourViewerSeams } from "./seams.js";
 import { arStatusLine } from "./tour-flow.js";
 import type { LocationGate } from "./visitor-screen.js";
-import type {
-  ArController,
-  TourViewerHooks,
-  TourViewerSession,
-  TourViewerStore,
+import type { RecordingPanel } from "./recording-panel.js";
+import {
+  endQrPipeline,
+  type ArController,
+  type TourViewerHooks,
+  type TourViewerSession,
+  type TourViewerStore,
 } from "./tour-viewer-session.js";
 
 export interface ArEntryDom {
@@ -48,6 +55,8 @@ export interface ArEntryDom {
   errorBox: HTMLElement;
   /** The scan gate's escape (inside the overlay); hidden until offered. */
   escapeButton: HTMLButtonElement;
+  /** The `?debug=1` QR readout (plan §66); written only while `ctx.debug`. */
+  arDebug?: HTMLElement;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -67,6 +76,9 @@ export function wireArEntry(deps: {
   locationGate: LocationGate;
   dom: ArEntryDom;
   hooks: TourViewerHooks;
+  /** The creator's troubleshooting recording (authoring recording plan
+   *  2026-09-28-0953, M1a): asked at each entry whether it records. */
+  recording?: Pick<RecordingPanel, "beginOnArEntry">;
 }): ArEntry {
   const {
     ctx,
@@ -80,8 +92,37 @@ export function wireArEntry(deps: {
     hooks,
   } = deps;
   const authorMode = mode === "creator";
+  /** Whether THIS session's depth sampler was started (a recorded entry). */
+  let depthRunning = false;
+
+  /**
+   * The recording's part of an AR entry (authoring recording plan
+   * 2026-09-28-0953, M1a): asked BEFORE the session is requested, so the
+   * recording (when the creator opted in) holds this entry's `startSession`
+   * as its first action, and depth - a feature the session asks for up front
+   * (decision D4) - is requested only for a recorded entry. Its samples are
+   * dispatched as the Recorder dispatches them: as-is, into the stream.
+   */
+  function recordedEntryHooks(): Pick<ArEnableHooks, "onDepthSample"> {
+    if (deps.recording?.beginOnArEntry() !== true) return {};
+    return {
+      onDepthSample: (sample: DepthSample) => {
+        arStore.dispatch(recordDepthSample(sample));
+      },
+    };
+  }
+
+  /** Once the runtime runs: start the sampler a recorded entry asked for. */
+  function startRecordedDepth(
+    depthHooks: Pick<ArEnableHooks, "onDepthSample">,
+  ): void {
+    if (depthHooks.onDepthSample === undefined) return;
+    seams.startDepthCapture(RECORDING_DEPTH);
+    depthRunning = true;
+  }
 
   function renderArStatus(): void {
+    renderDebugReadout();
     dom.arStatus.textContent = arStatusLine({
       mode,
       arStatus: arController.getState().status,
@@ -100,6 +141,19 @@ export function wireArEntry(deps: {
         votedLocks: ctx.viewerVotedLocks,
         lockedText: ctx.viewerLockedText,
         reprojectionErrorPx: ctx.viewerReprojectionPx,
+        // The code keep-alive's phase at render time (it counts down).
+        hold: ctx.viewerKeepAlive?.phase(Date.now()) ?? null,
+        // A code the moved-code check ignores (D20, M5c).
+        ignoredCode: ctx.viewerIgnoredText,
+        // Read from the last evaluation, never re-evaluated here: this runs
+        // per camera frame, past the budget's short-circuit (plan §67 #5).
+        fusedHint: authorMode
+          ? null
+          : visitorFusedHint({
+              last: ctx.viewerLastEvaluation,
+              status: ctx.viewerQrStatus,
+              nowMs: performance.now(),
+            }),
       },
       // The onboarding mapping of the tracking-quality report - `null`
       // before the slice reports maps to the `initializing` hint, which is
@@ -120,6 +174,21 @@ export function wireArEntry(deps: {
               skipped: ctx.contentRendered.skipped.length,
             },
     });
+  }
+
+  /** The ?debug=1 block: the controller state and each code's counts. */
+  function renderDebugReadout(): void {
+    if (!ctx.debug || dom.arDebug === undefined) return;
+    dom.arDebug.textContent = debugReadoutLines({
+      // The controller's own status: the creator pipeline never writes
+      // `viewerQrStatus` (milestone review of b4c #2).
+      status: ctx.qrController?.status ?? null,
+      unknownCode: ctx.viewerUnknownCode,
+      unusableCode: ctx.viewerUnusableCode,
+      tallies: ctx.fusedTallies,
+      movedCodeChecks: ctx.movedCodeChecks?.snapshot() ?? [],
+      ignoredCodes: [...ctx.ignoredCodes.values()].map((c) => c.text),
+    }).join("\n");
   }
 
   function renderArState(state: EnableGpsArState): void {
@@ -158,16 +227,23 @@ export function wireArEntry(deps: {
   }
 
   function onSessionEnd(): void {
+    // FIRST, while the visit is still the current one and the store still
+    // holds its alignment: the creator's settle reads both, and the
+    // teardown at the end of this function resets the alignment
+    // (authoring plan 2026-09-28-0953 §3.2, M2c; a test pins the order).
+    if (authorMode) hooks.endAuthorVisit();
     ctx.arSessionGeneration += 1;
     // Full teardown, not just capture stop: the AR entry is re-enterable,
     // and an open recording would blend the dead session's odom frame into
     // the next alignment (PR #359 review). The QR window and its tracked
     // text are session state too — a re-entry must not mint from the dead
-    // session's odom-frame poses (milestone review #2).
-    ctx.qrController = null;
+    // session's odom-frame poses (milestone review #2). Disposed, not just
+    // dropped: a lock still in flight must not land in the next session.
+    endQrPipeline(ctx);
     ctx.qrDebugView?.dispose();
     ctx.qrDebugView = null;
     ctx.lastDetectedText = null;
+    ctx.printSizeCheck?.reset();
     ctx.authorErrorText = null;
     // The measured level SURVIVES the session end on purpose: finishing
     // ends the session itself (the download is a page-side tap). A new
@@ -177,8 +253,8 @@ export function wireArEntry(deps: {
     ctx.reticle?.dispose();
     ctx.reticle = null;
     ctx.latestFrame = null;
-    for (const preview of ctx.placedPreviews) preview.dispose();
-    ctx.placedPreviews = [];
+    for (const preview of ctx.placedPreviews.values()) preview.dispose();
+    ctx.placedPreviews.clear();
     // The gate and the placed content are session state (M5).
     ctx.cancelEscapeClock?.();
     ctx.cancelEscapeClock = null;
@@ -194,6 +270,7 @@ export function wireArEntry(deps: {
     ctx.viewerVotedLocks = 0;
     ctx.viewerLockedText = null;
     ctx.viewerReprojectionPx = null;
+    ctx.viewerLastEvaluation = null;
     ctx.placement = { kind: "idle" };
     ctx.viewerPlanesError = null;
     ctx.imagePlanesLoading = false;
@@ -211,6 +288,10 @@ export function wireArEntry(deps: {
     // tens-of-seconds decode turned this race from theoretical into
     // expected).
     ctx.planesRunGeneration += 1;
+    if (depthRunning) {
+      seams.stopDepthCapture();
+      depthRunning = false;
+    }
     arStore.dispatch(clearAllQrMarkers());
     endTourArRuntime(arStore, {
       stopCameraFrameCapture: () => {
@@ -235,18 +316,20 @@ export function wireArEntry(deps: {
     // session is plain AR.
     if (authorMode && !hooks.startAuthorPipeline()) return;
     if (!authorMode) hooks.startViewerPipeline();
+    const depth = recordedEntryHooks();
     const result = await arController.enable(
       buildArEnableConfig({
         container: dom.arRoot,
         requestHitTest: mode === "creator",
         trackingStore: arStore,
-        onFrame: (image) => {
+        onFrame: (frame) => {
           ctx.cameraFrameCount += 1;
           // The most recent frame is what "Capture a photo" encodes (M4).
           // The source hands out a fresh copy per frame (camera-blit-capture
-          // `flippedPixelCopy`), so keeping the reference is safe.
-          ctx.latestFrame = image;
-          ctx.qrController?.offerFrame(image);
+          // `flippedPixelCopy`), so keeping the reference is safe. The frame
+          // carries its own capture pose, which the photo is placed with.
+          ctx.latestFrame = frame;
+          ctx.qrController?.offerFrame(frame);
           renderArStatus();
         },
         onSessionEnd,
@@ -256,6 +339,7 @@ export function wireArEntry(deps: {
         onOrientation: (orientation) => {
           updateDeviceOrientation(orientation);
         },
+        ...depth,
       }),
     );
     // Failure states surface via the subscribed button view (Retry — <reason>).
@@ -274,6 +358,7 @@ export function wireArEntry(deps: {
       await arController.disable();
       return;
     }
+    startRecordedDepth(depth);
     // The world group exists only AFTER initAR built the scene graph —
     // creating the glue check earlier made it dead code in production
     // (PR #360 review). The snapshot for the alignment gate belongs to the
@@ -287,9 +372,16 @@ export function wireArEntry(deps: {
     if (worldGroup !== null) {
       ctx.qrDebugView = seams.createQrDebugView(worldGroup);
       // The creator's reticle (M4): under the world group, so its world
-      // position is GPS-world NUE once the alignment lands.
-      if (authorMode) ctx.reticle = seams.startHitTestReticle(worldGroup);
+      // position is GPS-world NUE once the alignment lands. A tap in AR
+      // selects the object under it (authoring plan 2026-09-28-0953 M4;
+      // taps on the panel are cancelled there, `beforexrselect`).
+      if (authorMode) {
+        ctx.reticle = seams.startHitTestReticle(worldGroup, (tap) => {
+          hooks.selectInView(tap);
+        });
+      }
     }
+    if (authorMode) hooks.beginAuthorVisit();
     // The scan gate first (M5): a creator's is `not-required/creator` (a
     // real state, M5 review #11), a visitor's holds placement back until
     // the code locks; the subscription below re-attempts on every dispatch

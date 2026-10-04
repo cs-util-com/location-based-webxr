@@ -24,13 +24,9 @@
 // that specific, formally-removed behaviours are not stated as current. A NEW
 // wrong description is still invisible here, and no automated check fixes that.
 
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+import { readTracked, trackedFiles } from './tracked-tree.js';
 
 /**
  * Behaviours this repo has removed, each with the sentences that actually
@@ -136,11 +132,7 @@ const MARKERS =
 
 /** @returns {string[]} tracked .md and .ts files, excluding this guard itself */
 function trackedDocs() {
-  return execFileSync('git', ['ls-files', '*.md', '*.ts'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  })
-    .split('\n')
+  return trackedFiles('*.md', '*.ts')
     .map((line) => line.trim())
     .filter(Boolean)
     .filter((file) => !file.endsWith('retracted-behaviour-claims.test.js'));
@@ -168,7 +160,7 @@ function scanTree() {
   for (const file of trackedDocs()) {
     let text;
     try {
-      text = readFileSync(resolve(repoRoot, file), 'utf8');
+      text = readTracked(file);
     } catch {
       continue; // deleted-but-tracked during a rebase; not this gate's job
     }
@@ -219,6 +211,14 @@ describe('removed behaviour is not described as current', () => {
       }
     }
   );
+
+  it('lists a non-trivial number of files (the scan below is not vacuous)', () => {
+    // Why this test matters: an empty listing (a wrong cwd, a broken git, a
+    // pathspec that stopped matching) makes the scan below pass having read
+    // nothing. `git ls-files` run from a subdirectory lists paths relative
+    // to it, and a filter anchored at the package level then matches none.
+    expect(trackedDocs().length).toBeGreaterThan(1000);
+  });
 
   it('accepts a corrected sentence that names the removal', () => {
     // The replacement text must pass, or the guard blocks its own fix.

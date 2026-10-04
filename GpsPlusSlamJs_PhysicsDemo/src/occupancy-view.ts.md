@@ -27,7 +27,23 @@ debugStyle='depth-shaded-wireframe' }`. The voxel size + noise floor come from t
   - `setMeshMode(mode)` — `MeshMode` (`'smooth'` Surface nets / `'greedy'` Cubes /
     `'corner-fit'`). Since the mode is an `OcclusionMesh` CONSTRUCTION option, this
     **recreates** the occluder and re-meshes from the persisted grid.
+  - `getOcclusionMesh(): OcclusionMesh` — the CURRENT occluder itself, for the
+    AR shadows, which give it their receiver every frame (a new one after
+    `setMeshMode`).
   - `setDebugStyle(style)` — live `OccluderDebugStyle` skin switch.
+  - `remesh()` - re-mesh the CURRENT occluder from the grid now, the call a
+    depth refresh makes, without adding a sample. For the shadow probe: the
+    paused replay has no depth stream, and a skin switch reaches the
+    receiver's geometry only through a re-mesh (round 3, 2026-09-27).
+  - `rebuild()` - the Mesh dropdown's path without a mode change: dispose the
+    occluder, build a new one in the same mode and skin (so the shadows give
+    it a new receiver on their next update), and re-mesh it from the grid at
+    once. `setMeshMode` uses it. For the first-visit rebuild (r753 report).
+  - `depthStats()` - `{ samples, lastSampleAtMs }`: the depth samples folded
+    into the grid so far and when the last one arrived (`options.now`,
+    default `performance.now`), for the status line's diagnostics. Neither a
+    mesh-mode nor a skin change touches the grid or the depth stream: they
+    re-mesh or restyle only.
   - `dispose()`.
 
 ## Invariants & assumptions
@@ -50,5 +66,6 @@ debugStyle='depth-shaded-wireframe' }`. The voxel size + noise floor come from t
 - `occupancy-view.test.ts` (real framework objects + fake store) — each depth
   sample folds into the grid and re-meshes the occluder; defaults to Surface nets +
   the combined shader; `setDebugStyle` switches live; `setMeshMode` yields a NEW
-  `getMesh()` handle and re-meshes; the confidence guard keeps an established
+  `getMesh()` handle and re-meshes; `remesh` re-meshes the current occluder and
+  adds no sample; the confidence guard keeps an established
   cell against a deeper reading (identity-projection rays); dispose detaches.

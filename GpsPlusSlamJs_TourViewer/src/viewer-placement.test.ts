@@ -49,7 +49,6 @@ function harness(input: {
         ? { kind: "barcode-detector", detect: () => Promise.resolve(null) }
         : null,
     solveQrPose: () => null,
-    getCameraPose: () => null,
     getIntrinsics: () => null,
     getScene: () => null,
   } as unknown as TourViewerSeams;

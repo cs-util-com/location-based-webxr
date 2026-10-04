@@ -33,6 +33,7 @@ import {
   MAPTERHORN_ATTRIBUTION,
   MAPTERHORN_URL_TEMPLATE,
   TERRARIUM_ATTRIBUTION,
+  TERRARIUM_URL_TEMPLATE,
   TerrariumProvider,
   createCachingTileFetch,
   racingProvider,
@@ -171,6 +172,19 @@ export const FALLBACK_DEM_TIMEOUT_MS = 8_000;
  */
 export const PUBLISH_DEADLINE_MS = 12_000;
 
+/**
+ * The two arms' tile URLs, the preferred (Mapterhorn) and the fast (AWS).
+ *
+ * Named here, and used by {@link createDemProvider} itself, because the
+ * globe's arrival prefetch (round-5 plan 2026-10-01-0945 §3.6) warms the
+ * cache with exactly these URLs: the cache key IS the URL, so a template
+ * that drifted between the two would warm entries nobody reads.
+ */
+export const DEM_URL_TEMPLATES = {
+  preferred: MAPTERHORN_URL_TEMPLATE,
+  fast: TERRARIUM_URL_TEMPLATE,
+} as const;
+
 export interface DemProviderOptions {
   /** Where tile bytes persist — the same blob store the OSM tiles use. */
   readonly store: OsmBlobStore;
@@ -227,12 +241,13 @@ export function createDemProvider(
   return racingProvider(
     new TerrariumProvider({
       ...shared,
-      urlTemplate: MAPTERHORN_URL_TEMPLATE,
+      urlTemplate: DEM_URL_TEMPLATES.preferred,
       requestTimeoutMs: options.primaryTimeoutMs ?? PRIMARY_DEM_TIMEOUT_MS,
       sourceId: PREFERRED_DEM_SOURCE_ID,
     }),
     new TerrariumProvider({
       ...shared,
+      urlTemplate: DEM_URL_TEMPLATES.fast,
       requestTimeoutMs: options.fallbackTimeoutMs ?? FALLBACK_DEM_TIMEOUT_MS,
       sourceId: FAST_DEM_SOURCE_ID,
     }),

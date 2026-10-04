@@ -56,4 +56,4 @@ Covered by `subscribe-to-selector.test.ts` (12 test cases):
 
 - [store-subscribers.ts](store-subscribers.ts) — primary consumer
 - [app-selectors.ts](app-selectors.ts) — selectors used with this utility
-- [store.ts](store.ts) — `CombinedRootState` type definition
+- [combined-root-state.ts](combined-root-state.ts) — `CombinedRootState` type definition

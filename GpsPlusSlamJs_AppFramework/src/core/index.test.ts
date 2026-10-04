@@ -29,6 +29,13 @@ describe('core re-export surface', () => {
     expect(core.createGpsSlamStore).toBe(lib.createGpsSlamStore);
     // License activation (used by app tests that exercise licensed math)
     expect(core.validateLicenseKey).toBe(lib.validateLicenseKey);
+    // GPS point provenance (the Tour Viewer's keep-alive re-votes on device
+    // fixes only, never on its own synthetic votes)
+    expect(core.gpsPointSourceOf).toBe(lib.gpsPointSourceOf);
+    expect(core.GPS_POINT_SOURCE_DEVICE).toBe(lib.GPS_POINT_SOURCE_DEVICE);
+    expect(core.GPS_POINT_SOURCE_SYNTHETIC_QR).toBe(
+      lib.GPS_POINT_SOURCE_SYNTHETIC_QR
+    );
   });
 
   it('re-exports the type aliases apps depend on (compile-time check)', () => {

@@ -25,6 +25,18 @@
         color-scheme: dark;
       }
 
+      /* And light when the device asks, which has to be declared HERE
+         rather than in the sheet: the viewport scrollbar takes its used
+         value from the ROOT element, and this unlayered rule outranks
+         any layered one the sheet could write, whatever its specificity.
+         The sheet answers the same query for the tokens (PR #463
+         review). */
+      @media (prefers-color-scheme: light) {
+        :root {
+          color-scheme: light;
+        }
+      }
+
       /* Everything below is layout the shared sheet has no atom for, or a
          contract that belongs to this page. Anything an atom covers was
          DELETED rather than left to win under L1. */
@@ -35,7 +47,6 @@
         flex-wrap: wrap;
       }
       #link,
-      #tour-missing-link,
       #print-url {
         flex: 1 1 20rem;
       }
@@ -137,21 +148,193 @@
       }
       #setup-panel,
       #setup-controls,
-      #tour-missing,
+      #object-list,
+      #replace-code-confirm,
+      #move-prompt,
+      #move-undo,
       #draft-offer,
-      #finish-block {
+      #recording-offer,
+      #finish-block,
+      #recording-block {
         display: grid;
         gap: var(--space-2);
         max-width: 26rem;
       }
       #setup-panel,
-      #tour-missing,
       #draft-offer,
-      #finish-block {
+      #finish-block,
+      #recording-block {
         margin-top: var(--space-3);
+      }
+      /* The object list (authoring plan 2026-09-28-0953 M4): one row per
+         object, its words over its buttons. Over the camera in AR, so the
+         text wears the status line's halo. The selected row (a tap in AR)
+         is marked by weight and an accent rule, never a border (the
+         sheet's brief). */
+      .object-rows {
+        display: grid;
+        gap: var(--space-2);
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .object-row {
+        display: grid;
+        gap: var(--space-1);
+        text-shadow: var(--halo-text);
+      }
+      .object-title {
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .object-row[data-selected="true"] .object-title {
+        color: var(--accent-ink);
+        font-weight: 700;
+      }
+      .object-detail,
+      .object-busy {
+        font-size: var(--size-hint);
+      }
+      .object-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+      }
+      /* In AR the selected row's five buttons (‹ Edit Move Delete ›) share
+         ONE line: with the sheet's padding they measured wider than a
+         360 px screen and "›" wrapped below the first screen
+         (ar-layout.spec.js). Tighter padding only - the tap minimum
+         (min-width / min-height) stays. */
+      .object-row-compact .btn {
+        padding: 0 var(--space-2);
+      }
+      /* Empty until an action ends: no margin, so it costs no height over
+         the camera meanwhile. */
+      .object-list-note,
+      .object-list-heading {
+        margin: 0;
+      }
+      /* The live status in AR: two lines, the whole of it on a tap
+         (creator-setup.ts statusExpanded) - five joined sentences above
+         the controls pushed the last of them below a 360x640 screen. */
+      #setup-status[data-clamped="true"] {
+        -webkit-box-orient: vertical;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        overflow: hidden;
+        cursor: pointer;
+      }
+      /* The outcome and, after a delete, its Undo on one line: the Undo
+         adds no row over the camera. The AR chooser (Previous, "2 of 5",
+         Next) is one such line too. */
+      .object-list-note-line,
+      .object-chooser,
+      .object-line {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        text-shadow: var(--halo-text);
+      }
+      /* The troubleshooting recording's marker: inside #ar-root, so it is
+         composited over the camera for the whole recorded session - never
+         writing behind the creator's back - and it wears the status line's
+         halo for the same reason. */
+      #recording-marker {
+        font-size: var(--size-hint);
+        font-weight: 600;
+        margin: 0 0 var(--space-2);
+        text-shadow: var(--halo-text);
+      }
+      /* The Drive steps arrive as one numbered line each (textContent, so
+         creator-setup stays DOM-free for its node tests). */
+      #replace-help-drive {
+        white-space: pre-line;
+      }
+      /* The summary after Finish (authoring plan 2026-09-28-0953 M3b):
+         one row per code, its verdict, the numbers folded away, then the
+         map. Written by summary-panel.ts; the map's layers are Leaflet's
+         (loaded only here, on demand). */
+      #summary {
+        display: grid;
+        gap: var(--space-2);
+      }
+      .summary-codes {
+        display: grid;
+        gap: var(--space-2);
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .summary-code {
+        display: grid;
+        gap: var(--space-1);
+      }
+      .summary-code-title {
+        font-weight: 600;
+      }
+      .summary-code[data-verdict="good"] .summary-verdict {
+        color: var(--accent-ink);
+        font-weight: 600;
+      }
+      /* What the visits now suggest: secondary to what visitors get. */
+      .summary-estimate {
+        font-size: var(--size-hint);
+      }
+      .summary-numbers {
+        font-size: var(--size-hint);
+      }
+      .summary-line {
+        margin: var(--space-1) 0 0;
+      }
+      #summary-map {
+        block-size: 18rem;
+        border-radius: var(--radius);
+        overflow: hidden;
+        /* Declared, so neither Leaflet's _initLayout nor the framework's
+           summary map shell sets an INLINE position: relative on the
+           container - an inline style beats the fullscreen rule below,
+           and "Enlarge" collapsed the map to 0 px. */
+        position: relative;
+      }
+      /* Fullscreen: the shell swaps this class in (summary-map-view.ts). */
+      #summary-map.summary-map-expanded {
+        border-radius: 0;
+        block-size: auto;
+        inset: 0;
+        position: fixed;
+        z-index: 60;
+      }
+      /* Above Leaflet's panes and controls. */
+      .summary-map-toggle {
+        position: absolute;
+        right: var(--space-2);
+        top: var(--space-2);
+        z-index: 1000;
+      }
+      .summary-map-toggle-hidden {
+        display: none;
+      }
+      #summary-map-status {
+        font-size: var(--size-hint);
+        margin: 0;
       }
       #ar-root {
         margin: var(--space-4) 0;
+        position: relative;
+      }
+      /* The framework's AR canvas (window-sized, inserted as #ar-root's
+         first child by initAR) must be out of the flow: in it, it pushed
+         the whole panel a screen height down, below the edge of the DOM
+         overlay - every control unreachable (owner's r750 field test;
+         the RecorderApp's #app > canvas rule, app.css). The XR layer
+         draws the camera; this canvas only needs to exist. */
+      #ar-root > canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: none;
       }
       /* Composited over the camera during the session, so it wears the
          sheet's plateless-legibility halo. It used to be #333 with a WHITE
@@ -160,6 +343,13 @@
       #ar-status {
         font-size: var(--size-hint);
         margin-bottom: var(--space-2);
+        text-shadow: var(--halo-text);
+      }
+      /* The ?debug=1 QR readout: one wrapped line per code, same halo. */
+      #ar-debug {
+        font-size: var(--size-hint);
+        white-space: pre-wrap;
+        margin: 0 0 var(--space-2);
         text-shadow: var(--halo-text);
       }
       /* The gate's escape: the secondary, quality-degrading choice. The
@@ -177,7 +367,12 @@
       /* The one link on the page. The UA default is a blue that belongs to
          no palette here and reads as an artefact on the dark ground. */
       #visitor-link {
-        color: var(--accent);
+        /* --accent-ink, not --accent: this is TEXT on the ground, and the
+           bright accent measures 2.0:1 on the light paper - a WCAG AA
+           failure this page introduced with light mode (PR #463
+           review). The ink role is the accent hue darkened to 6.0:1 on
+           light and unchanged on dark. */
+        color: var(--accent-ink);
       }
       #print-url-shown,
       #print-url-out {
@@ -358,9 +553,10 @@
               </li>
               <li>
                 <p class="step-copy hint--dim">
-                  Upload it to Google Drive, Dropbox, GitHub or OneDrive and
-                  copy its share link. The printed code will point at this link,
-                  so keep the file where it is.
+                  Upload it to Google Drive, Dropbox, GitHub or OneDrive - into
+                  a folder of its own (e.g. "My tour"), so you can find it again
+                  - and copy its share link. The printed code will point at this
+                  link, so keep the file where it is.
                 </p>
               </li>
               <li>
@@ -447,7 +643,7 @@
                   class="input"
                   data-testid="author-size"
                   type="number"
-                  step="0.01"
+                  step="0.001"
                   min="0.01"
                   value="0.16"
                 />
@@ -627,46 +823,97 @@
           <h2>4 · Measure the code and place content</h2>
         </summary>
         <p class="step-copy hint--dim creator-only" hidden>
-          Stand at the hung code and start the AR setup. Hold the phone on the
-          code until it is measured, then place text pins and photos where the
-          tour should show them. Finish inside AR when you are done - the
-          rebuilt zip appears here afterwards.
+          Stand at the hung code and start the AR setup - the code carries the
+          tour's link, so the tour opens on this device the moment the camera
+          reads it. Hold the phone on the code until it is measured, then place
+          text pins and photos where the tour should show them. Finish inside AR
+          when you are done - the rebuilt zip appears here afterwards.
         </p>
-        <!-- The tour link, asked for HERE when this device does not have it
-             (F12). A creator walks to the poster with their phone, and the
-             reached step is remembered per device, so the phone opens at
-             step 1 with an empty field and no way to be handed the tour.
-             This is the same control over the same state as step 1's, not a
-             second one: it writes into that input and runs that open path,
-             and it is gone the moment a tour is open. -->
-        <form
-          id="tour-missing"
-          class="creator-only"
-          data-testid="tour-missing"
-          hidden
-        >
-          <p class="step-copy hint--dim">
-            This device does not have the tour open yet. Paste the link from
-            step 1 - on your phone, that usually means sending it to yourself.
+        <!-- The troubleshooting recording (authoring recording plan
+             2026-09-28-0953, M1a). OPT-IN and page-side: the switch arms it
+             before AR starts (it then runs for the rest of the page's
+             life, and the switch locks on), and Save hands the recording
+             over as its own zip - never inside the tour zip. A creator's,
+             and a visitor's only with ?debug=1 (M1b): main.ts unhides it,
+             so it is not .creator-only. -->
+        <div id="recording-block" data-testid="recording-block" hidden>
+          <!-- A recording a killed tab left unsaved (M1b,
+               recording-offer.ts). OFFERED, never applied, with the draft
+               offer's three choices: "Not now" keeps it for the next open,
+               and "Delete it" is the only way an unsaved recording is
+               removed. -->
+          <div id="recording-offer" data-testid="recording-offer" hidden>
+            <p
+              id="recording-offer-text"
+              class="step-copy hint--dim"
+              data-testid="recording-offer-text"
+            ></p>
+            <button
+              type="button"
+              class="btn btn--prose"
+              id="recording-offer-save"
+              data-testid="recording-offer-save"
+            >
+              Save it
+            </button>
+            <button
+              type="button"
+              class="btn btn--prose"
+              id="recording-offer-dismiss"
+              data-testid="recording-offer-dismiss"
+            >
+              Not now
+            </button>
+            <button
+              type="button"
+              class="btn btn--prose"
+              id="recording-offer-discard"
+              data-testid="recording-offer-discard"
+            >
+              Delete it
+            </button>
+          </div>
+          <label class="switch">
+            <input
+              type="checkbox"
+              id="record-session"
+              data-testid="record-session"
+            />
+            <span class="switch-track"></span>
+            Record this session for troubleshooting
+          </label>
+          <!-- What leaves the phone with the zip (M1a review finding 5,
+               M1b review #6): the tour link (in the recorded QR texts), the
+               GPS track, and the depth samples. Why the link is kept:
+               authoring-recording.ts.md, "Privacy". -->
+          <p class="hint--dim" data-testid="recording-privacy">
+            The recording holds the tour link, your GPS track and the 3D shape
+            of the surroundings.
           </p>
-          <input
-            id="tour-missing-link"
-            name="tour-missing-link"
-            class="input"
-            type="text"
-            placeholder="https://… link to the .zip"
-            autocomplete="off"
-            data-testid="tour-missing-link"
-          />
+          <!-- "Reload the page to record" once an unrecorded AR session has
+               run, or the low-storage warning after ticking the box
+               (recording-panel.ts). -->
+          <p
+            id="recording-notice"
+            data-testid="recording-notice"
+            aria-live="polite"
+            hidden
+          ></p>
           <button
-            type="submit"
-            id="tour-missing-open"
+            type="button"
+            id="recording-save"
             class="btn btn--prose"
-            data-testid="tour-missing-open"
+            data-testid="recording-save"
+            hidden
           >
-            Open the tour here
+            Save the recording
           </button>
-        </form>
+          <div
+            id="recording-status"
+            data-testid="recording-status"
+            aria-live="polite"
+          ></div>
+        </div>
         <section id="ar-root">
           <p id="ar-hint" class="hint--dim" data-testid="ar-hint">
             AR opens the camera. Keep the printed code in view until the page
@@ -674,6 +921,12 @@
             the phone align to the map.
           </p>
           <div id="ar-status" data-testid="ar-status" aria-live="polite"></div>
+          <!-- Up while the troubleshooting recording runs: over the camera,
+               and on the page (recording-panel.ts). -->
+          <p id="recording-marker" data-testid="recording-marker" hidden></p>
+          <!-- The ?debug=1 QR readout (main.ts shows it; plan §66). Never for
+               visitors without the flag. -->
+          <pre id="ar-debug" data-testid="ar-debug" hidden></pre>
           <button
             type="button"
             class="btn"
@@ -707,8 +960,80 @@
                that is session-only: on a desktop they sat greyed out under
                an "AR not supported" button, which is what F11 reports. -->
           <div id="setup-panel" hidden data-testid="setup-panel">
+            <!-- The print-size offer (QR size consensus plan S3a): the phone
+                 measured the printed code; its own element because
+                 #setup-status is rewritten on every store change. FIRST in the
+                 panel, above the status (owner, 2026-09-27). -->
+            <div id="size-offer" data-testid="size-offer" hidden>
+              <p id="size-offer-text" data-testid="size-offer-text"></p>
+              <button
+                type="button"
+                id="size-offer-use"
+                class="btn btn--prose"
+                data-testid="size-offer-use"
+                hidden
+              ></button>
+              <button
+                type="button"
+                id="size-offer-keep"
+                class="btn btn--prose"
+                data-testid="size-offer-keep"
+                hidden
+              ></button>
+            </div>
             <div id="setup-status" data-testid="setup-status"></div>
+            <!-- Undo of a replace of the code's saved position (authoring
+                 plan 2026-09-28-0953 §3.6, M5b): until Finish, in AR and
+                 on the page, so outside #setup-controls. -->
+            <div id="move-undo" data-testid="move-undo" hidden>
+              <p id="move-undo-text" data-testid="move-undo-text"></p>
+              <button
+                type="button"
+                id="move-undo-button"
+                class="btn btn--prose"
+                data-testid="move-undo-button"
+              >
+                Undo
+              </button>
+            </div>
             <div id="setup-controls" data-testid="setup-controls" hidden>
+              <!-- The moved-code prompt (authoring plan 2026-09-28-0953
+                   §3.6, D20, M5b): asked once a refusal of the code in hand
+                   has lasted; creator-setup.ts decides when it shows. -->
+              <div
+                id="move-prompt"
+                data-testid="move-prompt"
+                role="group"
+                aria-live="polite"
+                hidden
+              >
+                <p id="move-prompt-text" data-testid="move-prompt-text"></p>
+                <button
+                  type="button"
+                  id="move-prompt-use"
+                  class="btn btn--prose"
+                  data-testid="move-prompt-use"
+                  disabled
+                >
+                  Use the new spot
+                </button>
+                <button
+                  type="button"
+                  id="move-prompt-copy"
+                  class="btn"
+                  data-testid="move-prompt-copy"
+                >
+                  It's a second copy
+                </button>
+                <button
+                  type="button"
+                  id="move-prompt-later"
+                  class="btn"
+                  data-testid="move-prompt-later"
+                >
+                  Not now
+                </button>
+              </div>
               <button
                 type="button"
                 id="setup-mint"
@@ -718,6 +1043,48 @@
               >
                 Save the measured position
               </button>
+              <!-- The explicit replace of a STORED code pose (authoring plan
+                   2026-09-28-0953 §3.4, M4): without it a new measurement
+                   of a stored code only corrects this visit (D10b). A
+                   confirm step first - it moves the code for every
+                   visitor. creator-setup.ts decides when it shows. -->
+              <button
+                type="button"
+                id="replace-code"
+                class="btn btn--prose"
+                data-testid="replace-code"
+                hidden
+                disabled
+              >
+                Replace the code's saved position
+              </button>
+              <div
+                id="replace-code-confirm"
+                data-testid="replace-code-confirm"
+                hidden
+              >
+                <p
+                  id="replace-code-confirm-text"
+                  data-testid="replace-code-confirm-text"
+                ></p>
+                <button
+                  type="button"
+                  id="replace-code-yes"
+                  class="btn btn--prose"
+                  data-testid="replace-code-yes"
+                  disabled
+                >
+                  Replace the saved position
+                </button>
+                <button
+                  type="button"
+                  id="replace-code-no"
+                  class="btn"
+                  data-testid="replace-code-no"
+                >
+                  Keep the saved position
+                </button>
+              </div>
               <!-- Placement (M4): a pin at the reticle with a typed label
                    (the input is an overlay control: window.prompt is
                    unavailable in an XR session), a photo of the current
@@ -782,6 +1149,19 @@
             >
               Finish - rebuild the zip
             </button>
+            <!-- The tour's objects with Edit text, Move to the reticle and
+                 Delete (authoring plan 2026-09-28-0953 §3.4, M4). OUTSIDE
+                 #setup-controls: listing, editing and deleting need no AR,
+                 so it shows on the page too. LAST in the panel: in AR every
+                 line over the camera pushes the controls above it down, and
+                 Finish must stay on the first screen. Drawn by
+                 object-list.ts; in AR it shows the tapped object first. -->
+            <section
+              id="object-list"
+              data-testid="object-list"
+              aria-label="Objects in this tour"
+              hidden
+            ></section>
           </div>
         </section>
         <!-- Unsaved work found on this device (F13). OFFERED, never applied
@@ -842,16 +1222,61 @@
           >
             Download the rebuilt zip
           </button>
-          <div id="replace-help" data-testid="replace-help" hidden>
-            <p class="step-copy hint--dim">
-              Last thing: upload this zip over the one from step 1, so the link
-              - and with it the printed code - stays the same. Google Drive: on
-              drive.google.com in a browser, right-click the file, "Manage
-              versions", "Upload new version" (the Drive phone app cannot do
-              this). Dropbox: upload the file with the same name into the same
-              folder. GitHub: commit it over the same path. OneDrive: upload
-              with the same name and choose "Replace".
+          <!-- The summary after Finish (authoring plan 2026-09-28-0953 §3.3,
+               M3b): each code's verdict, then a map of the visits, the
+               codes with their facing lines, and the pins and photos -
+               so the creator can judge whether to scan more before
+               uploading. Written by summary-panel.ts. -->
+          <section id="summary" data-testid="summary" hidden>
+            <p class="step-copy">
+              Where your codes are, and whether to scan more before you upload:
             </p>
+            <ul
+              id="summary-codes"
+              class="summary-codes"
+              data-testid="summary-codes"
+            ></ul>
+            <div id="summary-map" data-testid="summary-map"></div>
+            <p
+              id="summary-map-status"
+              class="hint--dim"
+              data-testid="summary-map-status"
+              aria-live="polite"
+            ></p>
+            <p class="step-copy hint--dim">
+              To scan more, go back into AR, then Finish again.
+            </p>
+            <button
+              type="button"
+              id="summary-start-ar"
+              class="btn btn--prose"
+              data-testid="summary-start-ar"
+            >
+              Start AR setup
+            </button>
+          </section>
+          <div id="replace-help" data-testid="replace-help" hidden>
+            <p
+              id="replace-help-generic"
+              data-testid="replace-help-generic"
+              class="step-copy hint--dim"
+            >
+              Last thing: upload this zip over the one from step 1, so the link
+              - and with it the printed code - stays the same. Dropbox: upload
+              the file with the same name into the same folder. GitHub: commit
+              it over the same path. OneDrive: upload with the same name and
+              choose "Replace".
+            </p>
+            <!-- A Drive tour's steps (Drive replace plan §2): written by
+                 creator-setup (driveReplaceSteps), one numbered line each,
+                 with the zip's own name - the Drive app and "Manage
+                 versions" cannot replace a file from a phone. -->
+            <p
+              id="replace-help-drive"
+              data-testid="replace-help-drive"
+              class="step-copy hint--dim"
+              hidden
+            ></p>
             <p
               id="replace-help-share"
               data-testid="replace-help-share"

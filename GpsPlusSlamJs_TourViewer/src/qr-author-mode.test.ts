@@ -1,3 +1,4 @@
+import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr";
 import { describe, expect, it, vi } from "vitest";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
@@ -11,6 +12,7 @@ import {
   finishBlockedHint,
   finishReadiness,
   setupHint,
+  entryHint,
   codeIndexFromInput,
   buildAuthorControllerConfig,
   syntheticAuthorLevel,
@@ -20,6 +22,13 @@ import {
   finishHelpVisibility,
   finishIdleLabel,
   finishBusyLabel,
+  finishRoute,
+  driveReplaceSteps,
+  sizeOfferView,
+  adoptedSizeNote,
+  codeTourLine,
+  correctionRefusedLine,
+  replaceCodeConfirmText,
   type AuthorPipelineDeps,
 } from "./qr-author-mode";
 
@@ -57,7 +66,6 @@ function fakeDeps(): AuthorPipelineDeps {
       detect: () => Promise.resolve(null),
     },
     solvePose: () => null,
-    getCameraPose: () => null,
     getIntrinsics: () => null,
     recordDetection: vi.fn(),
     onError: vi.fn(),
@@ -106,27 +114,72 @@ describe("buildAuthorControllerConfig", () => {
 // The status line is the author's only view into the mint gate; the mint
 // itself now lives in the framework (qr-mint-level.test.ts) because a
 // second authoring surface needs it.
+describe("the print-size check's copy (QR size consensus plan S3a)", () => {
+  // Plan §12 #3: the mint usually comes before the size check has an
+  // answer, since nothing asked for the sideways step it needs.
+  it("asks for a sideways step on the ready line while the check is pending", () => {
+    const align = { hasMatrix: true, sampleCount: 5 };
+    const stable = {
+      status: "stable",
+      notStableReason: null,
+    } as unknown as QrFusedPose;
+    const ready = authorStatusLine("A", stable, align);
+    expect(ready.text).toBe("Measured and stable — save the position.");
+    const pending = authorStatusLine("A", stable, align, true);
+    expect(pending.text).toBe(
+      "Measured and stable — save the position. Take a step sideways to check the print size.",
+    );
+    // The mint is not held (plan §12 #3).
+    expect(pending.canMint).toBe(true);
+  });
+
+  // Plan §12 #1, #9, #10: an approximate figure, the ruler as the arbiter,
+  // and the field's own unit beside the centimetres.
+  it("offers the measured size in plain words, with a ruler check", () => {
+    expect(sizeOfferView(0.155, 0.16)).toEqual({
+      text: "Print measures ~15.5 cm, the size field says 16.0 cm. Check it with a ruler.",
+      useLabel: "Use 15.5 cm",
+      keepLabel: "Keep 16.0 cm",
+    });
+  });
+
+  it("confirms an adopted size and says what to do next", () => {
+    expect(adoptedSizeNote(0.155)).toBe(
+      "Now using 15.5 cm (0.155 m) - walk slowly around the code again, then save the position.",
+    );
+  });
+});
+
 describe("authorStatusLine", () => {
+  /** A fused result (QR near-frontal pose plan §60: the mint uses the fused pose). */
+  const fused = (over: Partial<QrFusedPose> = {}): QrFusedPose => ({
+    status: "stable",
+    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+    method: "joint",
+    views: 7,
+    droppedViews: 0,
+    fitPx: 0.6,
+    windowEntries: 7,
+    averagedRotationDeltaDeg: 1,
+    frameEpoch: 0,
+    oldestTimestamp: 0,
+    newestTimestamp: 0,
+    motion: null,
+    edgePx: 180,
+    notStableReason: null,
+    nativeIgnored: 0,
+    ...over,
+  });
+
   it("gates the mint button on BOTH a stable pose and a live alignment", () => {
     // Why this matters: minting with either half missing writes a garbage
     // anchor into the printed code. The readout is the author's only view
     // into the gate, so each blocked state must say WHAT is missing.
-    const stable = {
-      status: "stable" as const,
-      pose: {
-        position: [0, 0, 0] as [number, number, number],
-        rotation: [0, 0, 0, 1] as [number, number, number, number],
-      },
-      translationSpreadM: 0.01,
-      rotationSpreadDeg: 1.2,
-      inlierCount: 8,
-      sampleCount: 8,
-    };
     const noAlign = { hasMatrix: false, sampleCount: 0 };
     expect(authorStatusLine(null, null, noAlign).canMint).toBe(false);
     const measuring = authorStatusLine(
       "text",
-      { ...stable, status: "measuring" as const },
+      fused({ status: "measuring", notStableReason: "views", views: 3 }),
       GOOD_ALIGNMENT_INFO,
     );
     expect(measuring.canMint).toBe(false);
@@ -135,7 +188,7 @@ describe("authorStatusLine", () => {
     // the very first GPS fix (the store ships identity), so a matrix-only
     // gate is vacuous and would mint a heading wrong by the session's
     // arbitrary WebXR yaw. The gate must count solved-in fixes.
-    const identityOnly = authorStatusLine("text", stable, {
+    const identityOnly = authorStatusLine("text", fused(), {
       hasMatrix: true,
       sampleCount: 1,
     });
@@ -145,9 +198,68 @@ describe("authorStatusLine", () => {
     expect(identityOnly.text).toMatch(
       new RegExp(String.raw`1 of ${MIN_ALIGNMENT_SAMPLES} fixes`),
     );
-    const ready = authorStatusLine("text", stable, GOOD_ALIGNMENT_INFO);
+    const ready = authorStatusLine("text", fused(), GOOD_ALIGNMENT_INFO);
     expect(ready.canMint).toBe(true);
     expect(ready.text).toMatch(/save the position/i);
+  });
+
+  // Plan §60-§61 #11: the readout says what actually gates the fused pose,
+  // in plain words per reason, and never restates the view threshold (a
+  // private tuning value) or asks the author to hold the phone still -
+  // camera movement is what resolves the code's tilt.
+  it("names what the fused pose is waiting for, per reason", () => {
+    const line = (over: Partial<QrFusedPose>) =>
+      authorStatusLine(
+        "text",
+        fused({ status: "measuring", ...over }),
+        GOOD_ALIGNMENT_INFO,
+      ).text;
+    expect(line({ notStableReason: "views", views: 2 })).toMatch(
+      /walk slowly around the code/i,
+    );
+    expect(line({ notStableReason: "fit" })).toMatch(/keep moving slowly/i);
+    expect(line({ notStableReason: "fallback" })).toMatch(/views disagree/i);
+    // A wall code the author cannot hold: "motion" there is mostly a false
+    // "turning" from a relabelled frame (milestone review of b4b #11).
+    expect(line({ notStableReason: "motion" })).toMatch(/seemed to move/i);
+    expect(line({ notStableReason: "order" })).toMatch(/move closer/i);
+    const unknown = authorStatusLine(
+      "text",
+      fused({
+        status: "unknown",
+        pose: null,
+        views: 0,
+        notStableReason: "views",
+      }),
+      GOOD_ALIGNMENT_INFO,
+    );
+    expect(unknown.canMint).toBe(false);
+    for (const reason of [
+      "views",
+      "fit",
+      "fallback",
+      "motion",
+      "order",
+    ] as const) {
+      const text = line({ notStableReason: reason, views: 2 });
+      expect(text).not.toMatch(/hold steady/i);
+      expect(text).not.toMatch(/of 5/);
+    }
+  });
+});
+
+describe("entryHint (authoring plan 2026-09-28-0953 §3.2a, decision D5)", () => {
+  it("asks for the code first while a tour is open and the code was not seen in this AR visit", () => {
+    // Why this matters: a later visit's notes are only corrected through
+    // the code when the code was seen in THAT visit (D10b). The owner chose
+    // a hint over a rule: nothing blocks placing, so the hint is all that
+    // tells the author what to do first.
+    expect(entryHint({ tourOpen: true, codeSeen: false })).toBe(
+      "First, point the camera at the code you scanned to open this tour.",
+    );
+    expect(entryHint({ tourOpen: true, codeSeen: true })).toBe("");
+    // No tour open: there is no "code of this tour" to point at yet.
+    expect(entryHint({ tourOpen: false, codeSeen: false })).toBe("");
   });
 });
 
@@ -159,15 +271,31 @@ describe("setupHint / finishReadiness", () => {
     expect(
       setupHint({ measured: false, tourOpen: true, hadLevel: false }),
     ).toBe("");
+    // With no tour open the code-status line says what is happening to the
+    // code's tour (scan-to-open plan §9 #9); "open it in step 1" pointed at
+    // a form a creator holding the phone at the poster cannot reach.
     expect(
       setupHint({ measured: true, tourOpen: false, hadLevel: false }),
-    ).toMatch(/step 1/);
+    ).toBe("Position saved.");
     expect(
       setupHint({ measured: true, tourOpen: true, hadLevel: true }),
     ).toMatch(/replaces/);
     expect(
       setupHint({ measured: true, tourOpen: true, hadLevel: false }),
     ).toMatch(/Finish/);
+    // A stored pose in hand (the hosted zip's, a draft's, an earlier
+    // visit's kept through a new measurement) is NOT replaced (D10b, M2c
+    // review #5): saying "replaces" there would contradict what the zip
+    // gets.
+    const kept = setupHint({
+      measured: true,
+      tourOpen: true,
+      hadLevel: true,
+      keptStored: true,
+    });
+    expect(kept).not.toMatch(/replaces/);
+    expect(kept).toMatch(/Saved position kept/);
+    expect(kept).toMatch(/Finish/);
     const settled = "settled" as const;
     expect(
       finishReadiness({ measured: false, tourOpen: true, manifest: settled }),
@@ -436,5 +564,234 @@ describe("the ready line names the action the button will take", () => {
     expect(FINISH_LABELS.ready(1_000_000, true)).not.toContain("Download it");
     expect(FINISH_LABELS.ready(1_000_000, false)).toContain("Download it");
     expect(FINISH_LABELS.ready(1_000_000, false)).not.toContain("Share it");
+  });
+});
+
+describe("codeTourLine (scan-to-open plan §9 #9)", () => {
+  // Why this matters: in step 4 the creator holds the phone at the poster;
+  // this line is the only place they learn that the code is opening its
+  // tour, that the open failed and why, or that the code belongs to another
+  // tour - and whether waiting will help.
+  it("says nothing when there is nothing to say", () => {
+    expect(codeTourLine({ kind: "quiet" })).toBe("");
+  });
+
+  it("names each state in plain words", () => {
+    expect(codeTourLine({ kind: "opening" })).toMatch(/Opening the tour/);
+    expect(codeTourLine({ kind: "not-a-tour" })).toMatch(
+      /does not point to a tour/,
+    );
+    expect(codeTourLine({ kind: "not-a-tour" })).toMatch(/step 2/);
+    expect(
+      codeTourLine({ kind: "measured-for-another", label: "a.zip" }),
+    ).toMatch(/You measured the code of a.zip/);
+    // Plan §13: another tour's code joins the open tour - the line says so.
+    expect(codeTourLine({ kind: "added-to-open-tour" })).toMatch(
+      /added to the open tour/,
+    );
+    expect(codeTourLine({ kind: "unknown" })).toMatch(/Cannot tell/);
+  });
+
+  it("says whether keeping the code in view will retry", () => {
+    const retrying = codeTourLine({
+      kind: "failed",
+      cause: "missing",
+      retrying: true,
+    });
+    expect(retrying).toMatch(/not found/);
+    expect(retrying).toMatch(/in view to try again/);
+    const final = codeTourLine({
+      kind: "failed",
+      cause: "corrupt",
+      retrying: false,
+    });
+    expect(final).toMatch(/not a readable tour/);
+    expect(final).not.toMatch(/try again/);
+    expect(final, "and what to do instead").toMatch(/restart AR/);
+  });
+
+  it("stays short enough for the phone panel", () => {
+    // The longest line shares the panel with the live readout at 360 px;
+    // describeOpenError's 200-character Drive text was the review's worst
+    // case (plan §9 #14).
+    const causes = [
+      "missing",
+      "cors",
+      "corrupt",
+      "unusable-link",
+      "other",
+    ] as const;
+    for (const cause of causes) {
+      for (const retrying of [true, false]) {
+        expect(
+          codeTourLine({ kind: "failed", cause, retrying }).length,
+        ).toBeLessThanOrEqual(110);
+      }
+    }
+    // A tour label is cut at 24 characters (tourLabel).
+    const label = "x".repeat(24) + "…";
+    expect(
+      codeTourLine({ kind: "measured-for-another", label }).length,
+    ).toBeLessThanOrEqual(110);
+  });
+});
+
+describe("the finish copy points at steps that exist", () => {
+  it("never names a step beyond 4", () => {
+    // Why this matters (Drive replace plan §5 #5, a pre-existing bug): the
+    // download and the replace instructions were steps 5 and 6 until the
+    // flow rework folded them into the end of step 4 (F10). The finish
+    // messages kept saying "step 6" - the line a creator reads right after
+    // saving the zip sent them to a step that is not on the page.
+    const lines = [
+      FINISH_LABELS.ready(1_000_000, false),
+      FINISH_LABELS.ready(1_000_000, true),
+      FINISH_LABELS.saved("tour.zip"),
+      FINISH_LABELS.shared("tour.zip"),
+      FINISH_LABELS.readyDrive(1_000_000, "tour.zip"),
+      FINISH_LABELS.savedToPhone("tour.zip"),
+    ];
+    for (const line of lines) expect(line).not.toMatch(/step [5-9]/i);
+  });
+});
+
+describe("the finish on a Drive-hosted tour (Drive replace plan §2, §5)", () => {
+  // Why these matter: on a phone the only way the owner found to put the
+  // rebuilt zip in place of the hosted one is the Drive WEBSITE's upload,
+  // which needs the zip saved on the phone (decision 4) and asks "Replace
+  // existing file" only for the SAME name. A share hands the zip to another
+  // app instead, and the Drive app cannot replace.
+  it("saves to the phone for a Drive tour, shares elsewhere where it can", () => {
+    expect(finishRoute({ canShare: true, drive: true })).toBe("download");
+    expect(finishRoute({ canShare: false, drive: true })).toBe("download");
+    expect(finishRoute({ canShare: true, drive: false })).toBe("share");
+    expect(finishRoute({ canShare: false, drive: false })).toBe("download");
+  });
+
+  it("labels the Drive save as a save to the phone", () => {
+    expect(finishIdleLabel(false, true)).toBe("Save the zip to this phone");
+    expect(finishIdleLabel(false)).toBe("Download the rebuilt zip");
+  });
+
+  it("gives the owner's working steps, with the file's own name", () => {
+    const { rename, steps } = driveReplaceSteps("My tour.zip");
+    expect(rename).toBeNull();
+    const text = steps.join(" ");
+    // Decision 2: typed into a NEW tab (review #6), then Desktop site.
+    expect(text).toMatch(/new tab/i);
+    expect(text).toContain("drive.google.com");
+    expect(text).toMatch(/Desktop site/);
+    expect(text).toMatch(/File upload/);
+    expect(text).toMatch(/Replace existing file/);
+    expect(text).toContain("My tour.zip");
+    // Review #1: a repeat download is saved as "name (1).zip". These steps
+    // appear only AFTER the save, so they cannot prevent it - they check
+    // for it, and send the creator back to the button (milestone review
+    // #1: "pick X" would otherwise pick the OLD zip).
+    expect(steps[0]).toContain("My tour (1).zip");
+    expect(steps[0]).toMatch(/delete every copy/i);
+    expect(steps[0]).toMatch(/Save the zip to this phone.*again/);
+    expect(text, "and what to do if Drive does not ask").toMatch(
+      /does not ask/i,
+    );
+    expect(text).not.toMatch(/Manage versions/);
+  });
+
+  it("asks to rename a Drive file whose name a phone would change", () => {
+    // Review #7: without .zip (Chrome may append one) or with characters a
+    // file system refuses, the saved name differs and Drive offers no
+    // "Replace".
+    expect(driveReplaceSteps("Altstadt Tour").rename).toBe("Altstadt Tour.zip");
+    expect(driveReplaceSteps("what?.zip").rename).toBe("what-.zip");
+    expect(driveReplaceSteps("tour.zip").rename).toBeNull();
+    expect(driveReplaceSteps("Altstadt Tour").steps[0]).toMatch(
+      /rename the file on Drive to "Altstadt Tour\.zip"/,
+    );
+  });
+
+  it("asks to check the name when the host sent none", () => {
+    // Plan §4: without the header the page can only guess (tour.zip), so
+    // the creator checks the Drive file carries that name.
+    expect(driveReplaceSteps("tour.zip", false).steps[0]).toMatch(
+      /Check that the file on Drive is named "tour\.zip"/,
+    );
+    expect(driveReplaceSteps("tour.zip").steps[0]).not.toMatch(/Check that/);
+  });
+
+  it("warns about an older copy BEFORE the save, in the button's words", () => {
+    // Why (milestone review #1): Chrome names a repeat download
+    // "name (1).zip", and Drive then offers no "Replace". Only a warning
+    // read before the tap can prevent that; the ready line is the sentence
+    // the creator reads right before pressing "Save the zip to this phone".
+    const line = FINISH_LABELS.readyDrive(1_000_000, "My tour.zip");
+    expect(line).toMatch(/Before you save/);
+    expect(line).toContain("My tour.zip");
+    expect(line).toContain("My tour (1).zip");
+    expect(line).toMatch(/Save the zip to this phone/);
+    expect(line).not.toMatch(/Download it|Share it/);
+  });
+
+  it("says where a Drive save went and what comes next", () => {
+    // Plan §5 #5: the file is in Downloads, and the Drive steps follow.
+    const outcome = { route: "download", delivered: true } as const;
+    const status = finishHandoffStatus(outcome, "My tour.zip", true);
+    expect(status).toBe(FINISH_LABELS.savedToPhone("My tour.zip"));
+    expect(status).toMatch(/Downloads/);
+    expect(status).toMatch(/Drive steps below/);
+    expect(finishHandoffStatus(outcome, "My tour.zip")).toBe(
+      FINISH_LABELS.saved("My tour.zip"),
+    );
+  });
+});
+
+describe("correctionRefusedLine (M2c review #2)", () => {
+  it("names the distance, or the turn when only the yaw broke the bound, and says the visit follows GPS", () => {
+    // Why this matters: a refused correction changes where this visit's
+    // notes go; the author must see why in one line, in plain words.
+    const far = correctionRefusedLine({
+      horizontalM: 61.4,
+      yawDeg: 3,
+      maxHorizontalM: 26,
+    });
+    expect(far).toMatch(/^Code seen 61 m from its saved position/);
+    expect(far).toMatch(/this visit follows GPS/);
+    expect(
+      correctionRefusedLine({
+        horizontalM: 2,
+        yawDeg: 150.2,
+        maxHorizontalM: 26,
+      }),
+    ).toMatch(/^Code seen turned 150° from its saved position/);
+  });
+});
+
+describe("replaceCodeConfirmText (M4 review #3)", () => {
+  // Why this matters: the explicit replace moves the code for every
+  // visitor, and visitors are lined up with the code - so notes placed
+  // against the OLD position keep their stored geo but appear shifted by
+  // about the replace's size. "Objects already placed keep their own
+  // positions" was true of the stored numbers and misleading about what a
+  // visitor sees; the creator has to know the size before confirming.
+  it("says how far the code moves and turns, and that earlier notes will appear shifted by about that much", () => {
+    const text = replaceCodeConfirmText({ horizontalM: 3.44, yawDeg: 4.2 });
+    expect(text).toMatch(/Everyone who opens the tour/);
+    expect(text).toMatch(/about 3\.4 m/);
+    expect(text).toMatch(/4°/);
+    expect(text).toMatch(/keep their saved positions/);
+    expect(text).toMatch(/appear shifted by about that much/);
+    expect(text).not.toMatch(/keep their own positions\.$/);
+  });
+
+  it("rounds a large move to whole metres and leaves out a negligible turn", () => {
+    const text = replaceCodeConfirmText({ horizontalM: 23.6, yawDeg: 0.2 });
+    expect(text).toMatch(/about 24 m/);
+    expect(text).not.toMatch(/°/);
+  });
+
+  it("still says what happens to earlier notes when the size is unknown", () => {
+    const text = replaceCodeConfirmText(null);
+    expect(text).toMatch(/Everyone who opens the tour/);
+    expect(text).toMatch(/appear shifted/);
+    expect(text).not.toMatch(/ m /);
   });
 });

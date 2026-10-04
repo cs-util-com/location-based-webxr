@@ -1,0 +1,76 @@
+// @ts-check
+import { defineConfig, devices } from "@playwright/test";
+
+import { browserLaunchArgs } from "../../scripts/e2e/browser-launch.mjs";
+// The lab specs import lab modules that import another package's source by
+// its page path (`/globe/sky-level.js`); the runner and its workers load this
+// config, so the hook resolves those paths as `test:unit` does.
+import "../test-route-loader.mjs";
+
+/**
+ * The 3D look-dev page's smoke test and the lab pages' specs (the design
+ * system's `test:e2e` stage).
+ *
+ * Port 5198 is allocated in docs/dev-server-ports.md (aux range). The server
+ * is NEVER reused: `pnpm run serve` for a phone round listens on 4173 on all
+ * interfaces, and a smoke that attached to a stale server would test old code
+ * (the port-5182 incident recorded in that file).
+ *
+ * One worker: headless Chromium rasterises WebGL on the CPU, and parallel
+ * SwiftShader instances measure queueing, not work (lessons-learned).
+ *
+ * `DS_E2E_PORT` overrides the port for a second checkout (a git worktree)
+ * running its own smoke at the same time; the default stays the allocated
+ * 5198. Still never reused, so a clash fails loudly instead of testing the
+ * other checkout's code.
+ */
+const PORT = process.env.DS_E2E_PORT ?? "5198";
+// No leading zero: the browser would normalise "05210" to 5210 while the
+// globe smoke's allow-list kept ":05210" and blocked every request.
+if (!/^[1-9]\d{3,4}$/.test(PORT)) {
+  throw new Error(`DS_E2E_PORT must be a port number, got ${PORT}`);
+}
+
+/**
+ * Two tiers (plan 2026-10-04-1002, DEC-DSE-1/2). By default only the fast
+ * tier runs (`*.fast.spec.mjs`: every page boots, compiles and draws,
+ * minutes). The measurements (`*.smoke.spec.mjs`: looks, costs, sweeps,
+ * hours on SwiftShader) run with `DS_E2E_TIER=full`, or when a smoke spec
+ * is named on the command line (`pnpm run test:e2e labs/globe/x.smoke.spec.mjs`),
+ * so a targeted run needs no extra flag.
+ */
+const FULL =
+  process.env.DS_E2E_TIER === "full" ||
+  process.argv.some((a) => a.endsWith(".smoke.spec.mjs"));
+const FAST_SPECS = ["3d/*.fast.spec.mjs"];
+const SMOKE_SPECS = ["3d/*.smoke.spec.mjs", "labs/*/*.smoke.spec.mjs"];
+
+export default defineConfig({
+  // The package root, so the lab pages' specs (programme DEC-PRG-2:
+  // `labs/<name>/`) run in the same stage as the main page's.
+  testDir: "..",
+  testMatch: FULL ? [...FAST_SPECS, ...SMOKE_SPECS] : FAST_SPECS,
+  workers: 1,
+  // A cold SwiftShader boot plus the CPU parity oracle (a few million
+  // scattering evaluations) is slow by design, not by defect.
+  timeout: 180_000,
+  reporter: [["list"]],
+  use: {
+    ...devices["Desktop Chrome"],
+    baseURL: `http://127.0.0.1:${PORT}`,
+    viewport: { width: 1280, height: 800 },
+    // A browser stage that run-stage lowered below normal priority (Windows)
+    // renders in the browser process, which inherits that priority, instead
+    // of a GPU process Chromium raises itself. See
+    // scripts/e2e/browser-launch.mjs.md.
+    launchOptions: { args: browserLaunchArgs(process.env) },
+  },
+  webServer: {
+    command: "node serve.mjs",
+    cwd: "..",
+    env: { PORT, HOST: "127.0.0.1" },
+    url: `http://127.0.0.1:${PORT}/3d/`,
+    reuseExistingServer: false,
+    timeout: 30_000,
+  },
+});

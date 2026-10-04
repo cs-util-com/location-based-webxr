@@ -24,6 +24,8 @@
  * @see occlusion-mesh.ts.md for detailed documentation
  */
 
+import { glslFloat } from '../utils/glsl-float.js';
+import { smoothstep } from '../utils/smoothstep.js';
 import * as THREE from 'three';
 import type { GridCell } from '../ar/bresenham3d.js';
 import {
@@ -34,6 +36,12 @@ import {
 } from '../ar/occupancy-mesher.js';
 import { WEBXR_TO_NUE } from '../ar/webxr-nue-basis.js';
 import type { Vector3 } from 'gps-plus-slam-js';
+import {
+  applyShadowReceiverOptions,
+  assertShadowReceiverOptions,
+  createShadowReceiverMaterial,
+  type ShadowReceiverOptions,
+} from './shadow-receiver.js';
 
 /**
  * Debug-visualization style for the **persistent occluder** mesh (2026-07-02
@@ -65,6 +73,11 @@ export type OccluderDebugStyle = (typeof OCCLUDER_DEBUG_STYLES)[number];
 const MESH_NAME = 'occupancy-occluder';
 const DEBUG_MESH_NAME = 'occupancy-occluder-debug';
 const DEBUG_WIREFRAME_MESH_NAME = 'occupancy-occluder-debug-wireframe';
+const SHADOW_RECEIVER_MESH_NAME = 'occupancy-occluder-shadow-receiver';
+
+/** The receiver draws after the debug skins (0 and 1), so a shadow also
+ *  darkens the visible debug surface. */
+const SHADOW_RECEIVER_RENDER_ORDER = 2;
 
 /**
  * Mesher used when the caller names none. `'greedy'` merges coplanar faces for
@@ -87,7 +100,8 @@ const WIREFRAME_COLOR = 0xaaeeff;
 const WIREFRAME_OPACITY = 0.35;
 
 /** Which styles shade with the matcap (and therefore need vertex normals —
- *  pure 'wireframe' is unlit and keeps the remesh path normal-free). */
+ *  pure 'wireframe' is unlit and keeps the remesh path normal-free, unless a
+ *  shadow receiver is attached, which needs normals in every style). */
 function styleNeedsNormals(style: OccluderDebugStyle): boolean {
   return (
     style === 'matcap' ||
@@ -126,21 +140,6 @@ export const OCCLUDER_DEPTH_SHADE = {
 const FADE_TARGET_RGB = [0.03, 0.07, 0.12] as const;
 
 /**
- * GLSL `smoothstep` (clamped Hermite), mirrored exactly for the TS curves.
- *
- * DELIBERATELY NOT THE SAME FUNCTION as `GpsPlusSlamJs_OsmDemo`'s
- * `easing.ts`, which is the one-argument form on `[0, 1]`. This one takes two
- * edges and clamps, because its whole job is to match the shader beside it line
- * for line; folding the two together would make one of them read wrongly for
- * its own context. Recorded here so the duplicate-helper guard's exemption for
- * this name has its reason next to the code (DEC-H3, 2026-08-24).
- */
-function smoothstep(edge0: number, edge1: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
-}
-
-/**
  * Pure TS mirror of the shader's **distance fade**: 1 at/inside FADE_START_M,
  * smoothly down to FADE_MIN_BRIGHTNESS at/after FADE_END_M. The fragment color
  * is `mix(darkBlue, matcapColor, fade)` — near = bright cyan, far = dark blue.
@@ -167,11 +166,6 @@ export function occluderDepthFade(distanceM: number): number {
 export function occluderFresnelRim(cosViewAngle: number): number {
   const { RIM_POWER, RIM_STRENGTH } = OCCLUDER_DEPTH_SHADE;
   return RIM_STRENGTH * Math.pow(1 - Math.abs(cosViewAngle), RIM_POWER);
-}
-
-/** A number as a GLSL float literal (fixed decimals so it never reads as int). */
-function glslFloat(value: number): string {
-  return value.toFixed(4);
 }
 
 /**
@@ -263,6 +257,13 @@ export interface OcclusionMeshOptions {
    * exists, sits between this and content — plan §5.)
    */
   readonly renderOrder?: number;
+  /**
+   * Receive shadows on the reconstructed surface from construction on (W4
+   * AR shadows plan): one more skin sharing the geometry, drawing only the
+   * shadow over the camera image. A construction option because PhysicsDemo
+   * recreates the occluder on every mesh-mode change. Absent: no receiver.
+   */
+  readonly shadowReceiver?: ShadowReceiverOptions;
 }
 
 /**
@@ -293,12 +294,24 @@ export class OcclusionMesh {
   private matcapMaterial: THREE.MeshMatcapMaterial | null = null;
   private depthShadedMaterial: THREE.MeshMatcapMaterial | null = null;
   private wireframeMaterial: THREE.MeshBasicMaterial | null = null;
+  // Shadow receiver (off unless asked): like the skins, additive and sharing
+  // the geometry. Its material is cached across setShadowReceiver(null) so
+  // switching it back on compiles nothing; released only in dispose().
+  private receiverSkin: THREE.Mesh | null = null;
+  private receiverMaterial: THREE.ShadowMaterial | null = null;
+  /** The last setVisible: a receiver added later must honour it. */
+  private visible = true;
 
   /**
    * @param arSpaceNode the AR-odometry-NUE node that receives the alignment
    *   matrix (`arWorldGroup` live, `replaySceneState.arWorldGroup` in replay).
+   * @throws RangeError for invalid `shadowReceiver` options, before anything
+   *   is attached to `arSpaceNode`.
    */
   constructor(arSpaceNode: THREE.Object3D, options: OcclusionMeshOptions = {}) {
+    if (options.shadowReceiver) {
+      assertShadowReceiverOptions(options.shadowReceiver);
+    }
     this.arSpaceNode = arSpaceNode;
     this.mode = options.mode ?? DEFAULT_MESH_MODE;
     this.geometry = new THREE.BufferGeometry();
@@ -315,7 +328,13 @@ export class OcclusionMesh {
     // Raw-WebXR positions; the mesh node converts to the parent's NUE frame.
     this.mesh.matrixAutoUpdate = false;
     this.mesh.matrix.copy(WEBXR_TO_NUE);
+    // Explicit, not the default: `colorWrite:false` does NOT keep a mesh out
+    // of three's shadow pass, so a casting occluder would shadow the receiver
+    // across the whole room.
+    this.mesh.castShadow = false;
+    this.mesh.receiveShadow = false;
     this.arSpaceNode.add(this.mesh);
+    if (options.shadowReceiver) this.setShadowReceiver(options.shadowReceiver);
   }
 
   /** The number of triangles currently drawn. */
@@ -351,9 +370,64 @@ export class OcclusionMesh {
    */
   setVisible(visible: boolean): void {
     if (this.disposed) return;
+    this.visible = visible;
     this.mesh.visible = visible;
     if (this.shadedSkin) this.shadedSkin.visible = visible;
     if (this.wireframeSkin) this.wireframeSkin.visible = visible;
+    if (this.receiverSkin) this.receiverSkin.visible = visible;
+  }
+
+  /**
+   * Turn the shadow receiver on (or retune it) with `options`, or off with
+   * `null` (W4 AR shadows plan). The receiver is a `ShadowMaterial` skin on
+   * the shared geometry: it draws only where the reconstructed surface is
+   * the nearest thing and darkens the camera image there by `opacity`. It
+   * follows `update` / `applyMeshData` / `clear` / `setVisible` / `dispose`,
+   * is added hidden while the occluder is hidden, and never casts.
+   *
+   * Idempotent. Off keeps the material cached, so on again recompiles
+   * nothing (the session off switch, review §6). No-op after dispose.
+   *
+   * While it is on, the shared geometry carries normals in every debug
+   * style (round 3, owner phone test on r749). three picks the receiver's
+   * program once, with or without normals, from the geometry it first
+   * draws, and never recompiles when a remesh later drops them; a program
+   * compiled with normals then reads (0, 0, 0), its shadow coordinates turn
+   * NaN and no shadow is drawn. Only the shaded skins used to compute them,
+   * so the shadow vanished under Wireframe and Off.
+   *
+   * @throws RangeError for an opacity outside [0, 1] or a positive offset.
+   */
+  setShadowReceiver(options: ShadowReceiverOptions | null): void {
+    if (this.disposed) return;
+    if (options === null) {
+      if (this.receiverSkin) {
+        this.arSpaceNode.remove(this.receiverSkin);
+        this.receiverSkin = null;
+      }
+      return;
+    }
+    if (this.receiverMaterial) {
+      applyShadowReceiverOptions(this.receiverMaterial, options);
+    } else {
+      this.receiverMaterial = createShadowReceiverMaterial(
+        options,
+        SHADOW_RECEIVER_MESH_NAME
+      );
+    }
+    if (!this.receiverSkin) {
+      this.receiverSkin = this.createSkinMesh(
+        SHADOW_RECEIVER_MESH_NAME,
+        SHADOW_RECEIVER_RENDER_ORDER,
+        this.receiverMaterial
+      );
+      this.receiverSkin.receiveShadow = true;
+      this.receiverSkin.visible = this.visible;
+      if (!this.geometry.hasAttribute('normal')) {
+        this.geometry.computeVertexNormals();
+      }
+      this.arSpaceNode.add(this.receiverSkin);
+    }
   }
 
   /**
@@ -415,10 +489,14 @@ export class OcclusionMesh {
     next.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     next.setIndex(new THREE.BufferAttribute(indices, 1));
     // Matcap shading needs per-vertex normals; the mesher emits none. Compute
-    // them only when a matcap-based debug skin is showing, so the default
-    // occluder path (invisible — normals unused) and the pure wireframe style
-    // stay cheap.
-    if (styleNeedsNormals(this.debugStyle)) next.computeVertexNormals();
+    // them only when a matcap-based debug skin or the shadow receiver draws,
+    // so the default occluder path (invisible — normals unused) and the pure
+    // wireframe style stay cheap. The receiver needs them in EVERY style:
+    // three compiles its program once, and one compiled with normals draws
+    // no shadow once a remesh drops them (see setShadowReceiver).
+    if (styleNeedsNormals(this.debugStyle) || this.receiverSkin) {
+      next.computeVertexNormals();
+    }
     this.geometry.dispose();
     this.geometry = next;
     this.mesh.geometry = next;
@@ -429,6 +507,7 @@ export class OcclusionMesh {
   private rebindSkinGeometry(geometry: THREE.BufferGeometry): void {
     if (this.shadedSkin) this.shadedSkin.geometry = geometry;
     if (this.wireframeSkin) this.wireframeSkin.geometry = geometry;
+    if (this.receiverSkin) this.receiverSkin.geometry = geometry;
   }
 
   /**
@@ -449,7 +528,8 @@ export class OcclusionMesh {
    *
    * Vertex normals (the mesher emits none) are computed only for the
    * matcap-based styles — `'wireframe'` is unlit, so like `'off'` it keeps the
-   * remesh path normal-free.
+   * remesh path normal-free, unless a shadow receiver is attached (its
+   * program may have been compiled with normals; see `setShadowReceiver`).
    *
    * Only meaningful when this occluder is actually meshing the grid (it is the
    * persistent occluder's mesh); setting a style on an empty/disabled occluder
@@ -523,6 +603,7 @@ export class OcclusionMesh {
     skin.frustumCulled = false;
     skin.matrixAutoUpdate = false;
     skin.matrix.copy(WEBXR_TO_NUE); // same raw-WebXR → NUE basis as the occluder
+    skin.castShadow = false; // infrastructure never casts
     return skin;
   }
 
@@ -613,6 +694,12 @@ export class OcclusionMesh {
       this.arSpaceNode.remove(this.wireframeSkin);
       this.wireframeSkin = null;
     }
+    if (this.receiverSkin) {
+      this.arSpaceNode.remove(this.receiverSkin);
+      this.receiverSkin = null;
+    }
+    this.receiverMaterial?.dispose();
+    this.receiverMaterial = null;
     this.matcapTexture?.dispose();
     this.matcapTexture = null;
     this.matcapMaterial?.dispose();

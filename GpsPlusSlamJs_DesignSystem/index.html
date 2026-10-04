@@ -174,6 +174,52 @@
       </section>
 
       <section>
+        <h3>Loading overlay — waiting, and waiting longer than usual</h3>
+        <!-- NOT a toast, and the difference is the whole atom: it centres
+             on the VIEW whose content is being waited for, and it never
+             dismisses itself. Real string from the OsmDemo, whose cold
+             tiles take ~32 s against this bar's 15 s - which is exactly
+             why the second one below exists.
+             The host box stands in for `#scene`; any positioned element
+             works. Shown here so a screenshot catches both states, since
+             the drained one is otherwise only visible on a slow day. -->
+        <div class="col">
+          <div style="position: relative; height: 7rem">
+            <div class="loading-overlay plate">
+              <span class="loading-overlay-text"
+                >Loading OpenStreetMap data…</span
+              >
+              <span class="loading-overlay-bar"
+                ><span class="loading-overlay-fill"></span
+              ></span>
+            </div>
+          </div>
+          <div style="position: relative; height: 7rem">
+            <div class="loading-overlay plate" data-overrun="true">
+              <span class="loading-overlay-text"
+                >Loading OpenStreetMap data…</span
+              >
+              <span class="loading-overlay-bar"
+                ><span class="loading-overlay-fill"></span
+              ></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h3>Waiting — a line that is still working</h3>
+        <!-- `.is-loading` is a PSEUDO-ELEMENT dot, because the line it
+             was built for rewrites its own textContent on every update
+             and would delete a real child. Its loop is
+             `waiting-pulse`, shared with the locate button: one
+             rendering of "waiting" in this sheet, not two. -->
+        <span class="is-loading"
+          >Fetching and scoring around 50.92310, 6.94450…</span
+        >
+      </section>
+
+      <section>
         <h3>Modal — confirm dialog</h3>
         <!-- real strings from the RecorderApp stop-recording confirm
              (recording-session-handlers.ts). KEPT IN SYNC with the
@@ -324,8 +370,9 @@
           Locate button — idle / locating / located / denied / timeout /
           unavailable
         </h3>
-        <!-- states and labels from OsmDemo locate-state.ts; the pin is
-             its verbatim MAP_PIN_SVG; wording rides in title/aria-label
+        <!-- states and labels from the framework's utils/locate-state.ts
+             (moved there from OsmDemo); the pin is OsmDemo's verbatim
+             MAP_PIN_SVG; wording rides in title/aria-label
              per its three-channel model -->
         <div class="row">
           <button

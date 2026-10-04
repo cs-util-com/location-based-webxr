@@ -7,22 +7,32 @@
  * plan M6.
  */
 
-import type { BoundedLocalCacheStore } from "gps-plus-slam-app-framework/storage";
+import {
+  OpenRemoteArchiveError,
+  type BoundedLocalCacheStore,
+} from "gps-plus-slam-app-framework/storage";
 import { resolveQrPayload } from "gps-plus-slam-app-framework/utils/qr-payload/qr-launch-dispatch";
 
+import { DEFAULT_ASSET_PREFIX } from "./code-tour.js";
 import { describeOpenError } from "./open-errors.js";
 import { toStatsView } from "./stats-view.js";
 import { clearCacheLabel } from "./tour-flow.js";
-import { openTourSession, type TourSession } from "./tour-session.js";
-import type {
-  TourViewerHooks,
-  TourViewerSession,
+import {
+  codeResolver,
+  createScanOpen,
+  type OpenOutcome,
+  type ScanOpen,
+} from "./scan-open.js";
+import {
+  openTourSession,
+  tourLabel,
+  type TourSession,
+} from "./tour-session.js";
+import {
+  endTourCodeVotes,
+  type TourViewerHooks,
+  type TourViewerSession,
 } from "./tour-viewer-session.js";
-
-/** Bare-name `?qr=` payloads resolve under this prefix — the convention the
- *  QR builder's `defaultAssetPrefix` example documents. */
-const DEFAULT_ASSET_PREFIX =
-  "https://raw.githubusercontent.com/cs-util-com/GeoTales/refs/heads/main/";
 
 /** The label on every button that opens a tour. "Open" until the second
  *  testing session (F6): nobody wants to open the zip, they want to know
@@ -30,22 +40,10 @@ const DEFAULT_ASSET_PREFIX =
  *  carry. */
 const OPEN_BUTTON_LABEL = "Test link";
 
-/** Step 4's own open button. A different label on purpose: by then the
- *  creator is not testing a link, they are getting the tour onto the
- *  device they are holding. */
-const MISSING_OPEN_LABEL = "Open the tour here";
-
 export interface ArchiveOpenDom {
   form: HTMLFormElement;
   linkInput: HTMLInputElement;
   openButton: HTMLButtonElement;
-  /** Step 4's "this device does not have the tour" form (F12) - the SAME
-   *  control over the SAME state, surfaced where the link is missing. Its
-   *  input mirrors into `linkInput` before the open, so the page keeps one
-   *  link of record and one open path. */
-  missingForm: HTMLFormElement & { hidden: boolean };
-  missingInput: HTMLInputElement;
-  missingButton: HTMLButtonElement;
   statsPanel: HTMLDivElement;
   statsHeadline: HTMLDivElement;
   statsDetail: HTMLDivElement;
@@ -62,6 +60,8 @@ export interface ArchiveOpen {
   /** The `?qr=` launch: resolve the payload and open. Rejections reach the
    *  error box - a printed code is the one flow with no retry. */
   boot: () => Promise<void>;
+  /** Step 4's scan-to-open, fed by the creator's AR pipeline (plan §9). */
+  scanOpen: ScanOpen;
 }
 
 export function wireArchiveOpen(deps: {
@@ -74,17 +74,29 @@ export function wireArchiveOpen(deps: {
 }): ArchiveOpen {
   const { ctx, dom, cacheStore, corsProxyBaseUrl, hooks } = deps;
   let objectUrls: string[] = [];
+  /** An open is in flight (a real flag, cleared by the open that owns it):
+   *  scan-to-open starts none meanwhile (plan §9 #6). */
+  let opening = false;
 
   async function teardownSession(): Promise<void> {
     for (const url of objectUrls) URL.revokeObjectURL(url);
     objectUrls = [];
     dom.gallery.replaceChildren();
+    ctx.tourManifestStatus = "settled";
+    // Everything below belongs to a CLOSING tour, and without one there is
+    // none of it: every writer of tour state runs after `ctx.session =
+    // opened` and is guarded by it. What exists with no tour open is the
+    // creator's own work - a measurement, placements, the print-size check -
+    // made before any tour opened; the open about to run takes it, and a
+    // retried open must not wipe it (scan-to-open plan §5 #1, §9 #1).
+    const closing = ctx.session;
+    if (closing === null) return;
     // The viewer pipeline's level source and the placed planes belong to the
     // closing tour — a newly opened tour must not relocalize against them.
     ctx.currentLevels = null;
     ctx.tourManifest = null;
-    ctx.tourManifestStatus = "settled";
     ctx.rebuiltZip = null;
+    ctx.tourLabel = null;
     // The measured level belongs to the CLOSING tour. It survives a SESSION
     // end on purpose (finishing ends the session), but it must not survive
     // the TOUR: M5 persists it into a draft, so carrying it over would
@@ -92,19 +104,28 @@ export function wireArchiveOpen(deps: {
     // into its zip (M5 review #9). The generation bump makes any mint hash
     // still in flight land on nothing.
     ctx.mintedLevel = null;
+    ctx.codeMeasurement = null;
     ctx.mintGeneration += 1;
+    // A failed finish is the closing tour's too: it keeps Save off, and only
+    // a finish - which needs a measured level - clears it (scan-to-open
+    // plan §9 #8).
+    ctx.finishError = null;
     hooks.resetFinishStep();
     // From here until an open SUCCEEDS there is no tour, and the page has
     // to say so: the print step goes back to asking for a link and step 4
     // offers to open one again. Both are hidden again below on success, so
     // the visible effect is only on the paths that end without a tour.
     hooks.presentNoTour();
-    dom.missingForm.hidden = false;
     // Same cache: the closed tour's levels must stop voting (M4 review #1),
     // and the per-text level cache belongs to the closed tour too (M6
     // review #8).
     ctx.qrController?.reset();
     ctx.levelByText.clear();
+    ctx.levelIdByText.clear();
+    // The code keep-alive holds a closing tour's code for up to ~4 min,
+    // and the vote budget remembers which codes voted; the pipeline
+    // outlives the switch, so both end with the tour here (M2b; review #6).
+    endTourCodeVotes(ctx);
     ctx.imagePlanes?.dispose();
     ctx.imagePlanes = null;
     ctx.contentRendered?.dispose();
@@ -119,8 +140,11 @@ export function wireArchiveOpen(deps: {
     // and into the same tour re-opened after a finish they would duplicate
     // their own ids and break every later finish.
     ctx.placedObjects = [];
-    for (const preview of ctx.placedPreviews) preview.dispose();
-    ctx.placedPreviews = [];
+    // ...and so do its deletions (authoring plan 2026-09-28-0953 §3.4):
+    // an id deleted from one tour means nothing in another.
+    ctx.deletedObjectIds = [];
+    for (const preview of ctx.placedPreviews.values()) preview.dispose();
+    ctx.placedPreviews.clear();
     ctx.placementNote = null;
     // Clear the latch HERE too (PR #367 review): the stale run's finally is
     // generation-guarded and cannot clear it any more, and a latched
@@ -141,13 +165,17 @@ export function wireArchiveOpen(deps: {
     ctx.viewerReprojectionPx = null;
     ctx.viewerUnknownCode = null;
     ctx.viewerUnusableCode = null;
+    // The fused pose's hint and ?debug=1 counts too (PR #508 review): the
+    // pipeline outlives a tour switch, so the counts are emptied IN PLACE -
+    // it keeps writing into the same map for the new tour's codes.
+    ctx.viewerLastEvaluation = null;
+    ctx.fusedTallies?.clear();
+    // The print-size check measured the closing tour's codes (S3a).
+    ctx.printSizeCheck?.reset();
     ctx.viewerPlanesError = null;
     ctx.placement = { kind: "idle" };
-    if (ctx.session !== null) {
-      const closing = ctx.session;
-      ctx.session = null;
-      await closing.close().catch(() => undefined);
-    }
+    ctx.session = null;
+    await closing.close().catch(() => undefined);
   }
 
   function renderStats(): void {
@@ -193,22 +221,21 @@ export function wireArchiveOpen(deps: {
     }
   }
 
-  /** Every button that can start an open. Both must show the in-progress
-   *  state: a live, unlabelled second button through a whole open is the
-   *  async-UI rule broken in the file that documents it most carefully
-   *  (M3 review #11). */
+  /** Every button that can start an open, with its idle label: each must
+   *  show the in-progress state (M3 review #11). Step 4's paste form is gone
+   *  (scan-to-open plan §2) - a scan opens without a button of its own. */
   const openButtons = (): { button: HTMLButtonElement; idle: string }[] => [
     { button: dom.openButton, idle: OPEN_BUTTON_LABEL },
-    { button: dom.missingButton, idle: MISSING_OPEN_LABEL },
   ];
 
   async function openUrl(
     url: string,
-    /** Where the creator submitted from - step 4's form asks the wizard to
+    /** Where the open came from - a step-4 scan asks the wizard to
      *  stay there rather than jump to step 2 (M3 review #1). */
     origin: "host-step" | "measure-step" = "host-step",
-  ): Promise<void> {
+  ): Promise<OpenOutcome> {
     const generation = ++ctx.openGeneration;
+    opening = true;
     dom.errorBox.textContent = "";
     // Async-UI rule: the in-progress state engages BEFORE the first await —
     // teardown of a previous session is async, and a second submission
@@ -234,9 +261,10 @@ export function wireArchiveOpen(deps: {
         // A newer open superseded this one while it was in flight (e.g. a
         // click racing the ?qr= boot) — the loser cleans itself up.
         await opened.close().catch(() => undefined);
-        return;
+        return { kind: "superseded" };
       }
       ctx.session = opened;
+      ctx.tourLabel = tourLabel(url);
       renderStats();
       void fillGallery(opened);
       // A tour opened AFTER entering AR places itself from the open path
@@ -244,11 +272,6 @@ export function wireArchiveOpen(deps: {
       // below, whose rejection would otherwise silently cancel a GPS-only
       // feature.
       hooks.tryPlaceTour();
-      // Step 4's "this device has no tour" block has served its purpose -
-      // and only NOW, on a successful open (M3 review #13). A pasted link
-      // fails often on a phone, and a block that hid on submit would take
-      // the retry away at the moment it is needed.
-      dom.missingForm.hidden = true;
       hooks.presentTourForPrint(url, origin);
       // The placed content (guided-setup plan M3): the finish step writes
       // it back, so a re-measure never drops what an earlier session placed.
@@ -312,15 +335,22 @@ export function wireArchiveOpen(deps: {
           // its own line names the failure inside the overlay.
           hooks.reconsiderScanGate("unavailable");
         });
+      return { kind: "opened" };
     } catch (err) {
-      if (generation === ctx.openGeneration) {
-        dom.errorBox.textContent = describeOpenError(err, url);
-      }
+      if (generation !== ctx.openGeneration) return { kind: "superseded" };
+      dom.errorBox.textContent = describeOpenError(err, url);
+      // The scan-to-open retry policy reads the cause (plan §9 #7).
+      return {
+        kind: "failed",
+        cause:
+          err instanceof OpenRemoteArchiveError ? err.rejectCause : "other",
+      };
     } finally {
       // Guarded like every other effect in this function: a superseded
       // open's finally must not undo the newer open's in-progress state
       // (PR #357 review).
       if (generation === ctx.openGeneration) {
+        opening = false;
         for (const { button, idle } of openButtons()) {
           button.disabled = false;
           button.textContent = idle;
@@ -329,25 +359,33 @@ export function wireArchiveOpen(deps: {
     }
   }
 
+  // Step 4's scan-to-open (plan §2, §9): the first code the creator's
+  // camera reads opens the tour it names. The link of record follows the
+  // open, as for a ?qr= boot (§9 #15).
+  const scanOpen = createScanOpen({
+    ctx,
+    resolve: codeResolver(corsProxyBaseUrl),
+    open: (url) => {
+      dom.linkInput.value = url;
+      return openUrl(url, "measure-step");
+    },
+    isOpening: () => opening,
+    now: () => performance.now(),
+    render: () => {
+      hooks.renderAuthorReadout();
+    },
+  });
+
   dom.form.addEventListener("submit", (event) => {
     event.preventDefault();
     const url = dom.linkInput.value.trim();
     if (url !== "") void openUrl(url);
   });
 
-  // Step 4's form (F12). It writes into the ONE link of record first, so
-  // there is never a second value that could disagree with step 1's.
-  dom.missingForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const url = dom.missingInput.value.trim();
-    if (url === "") return;
-    dom.linkInput.value = url;
-    void openUrl(url, "measure-step");
-  });
-
   wireClearCache(ctx, dom, cacheStore);
 
   return {
+    scanOpen,
     boot: async () => {
       const payload = new URLSearchParams(location.search).get("qr");
       if (payload === null) return;

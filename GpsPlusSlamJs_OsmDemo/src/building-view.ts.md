@@ -40,6 +40,26 @@ map scored.
   scene reflection comes from the package's `packInstances`, which is tested where
   it lives.)
 
+- **The light dialog** (plan 2026-09-24-2140): `setLightSettings(settings)`
+  holds the settings (`light-settings.ts`) and applies them: the surface
+  gain's ramp through `aimSun`, the exposure through the rig's
+  `setExposure`, and the sky light on buildings before every render (one
+  private `prepareFrame` for every render path).
+  `measureLight({ withMargin = true })` renders and reads with
+  `gl.readPixels` straight after each render, so each read is the frame just
+  drawn with the grid as set: the lit-surface brightness with the heat grid's
+  mesh and outlines hidden, and the chroma they add (`null` when no grid is
+  drawn or `withMargin` is false, which skips the second render). The grid
+  is restored as found, also when a render throws.
+- **The sun:** `initialSun` (constructor option, the angles the sky is built
+  for) and `setSunAngles(angles)`. The view only draws
+  the angles it is given; WHERE the sun is (the real sun for a place and a
+  date) is `sun-clock.ts`'s job, owned by `main.ts` (plan 2026-09-23-2149).
+  Replaced `setTimeOfDay` / `timeOfDayValue` (the retired plausible day).
+  Each sun change also sets the noon brightening (`surfaceGainAt`, plan
+  2026-09-24-0901), HELD on the view and re-applied after every rebuild,
+  because new meshes arrive at factor 1.
+
 ## Invariants & assumptions
 
 - **`TERRAIN_EXTENT_M` is imported from `heightfield.ts`, not owned here.** It
@@ -164,6 +184,20 @@ map scored.
   buffer sat **109 px taller than its container** for the whole session, on a
   stale camera aspect. The observer covers window resize, rotation, the sheet
   drag and the header collapse in one place.
+- **The sky is the framework's physical atmosphere, through
+  [`atmosphere-rig.ts`](atmosphere-rig.ts.md)** (plan 2026-09-23-0048, M3). It
+  owns the visible sky, `scene.environment` (a PMREM bake of the sky), the sun
+  light's colour and intensity, the fog colour (the sky's horizon, re-read at
+  every sun change) and the physical distance haze, which `prepareFrame`
+  re-applies before every render so rebuilt materials and re-assigned
+  `onBeforeCompile` installers keep it. Grading: Khronos Neutral at
+  0.5 / 0.6 since plan 2026-09-23-2149 M3 (ACES at 0.5 before); the sky's
+  natural light gets −3.15 EV with adaptation 0.83 (the owner's light
+  defaults, DEC-LIGHT-9/10), a data view measured against both DEC-R4-5's
+  margin and the lit city's brightness (`atmosphere-rig.ts`), the fixed ambient light is gone,
+  and a device without float render targets gets the rig's CPU fallback. The
+  bullet below is the HISTORY of how `scene.environment` came to be used at
+  all, kept because its failure mode (a silent non-draw) still applies.
 - **The sky texture is a BACKGROUND only. Never assign it to
   `scene.environment`.** W20 did, and it took the entire scene down: three.js
   routes any environment map through its CubeUV path, which expects a
@@ -248,6 +282,31 @@ map scored.
   observer that outlives disposal calls `setSize()` /
   `updateProjectionMatrix()` on a renderer whose GL context has been released.
   Harmless while nothing calls `dispose()`, but the method exists to be called.
+
+## The AR sun shadow's casting (shadow plan 2026-09-23-2343, M3)
+
+- `setArShadowCasting(on)`: while on, every object tagged at build time
+  (`ar-sun-shadow.ts`'s `markArShadowCaster`: ground POI pins, quest beacons,
+  the test pole) casts, and nothing else does. HELD and re-applied after
+  `render()` and `setQuestBeacons()`, because rebuilt objects are born not
+  casting (a source-text test pins both re-applies).
+- `arShadowCasterSignature`: `generation:count`, bumped on every re-apply;
+  the shadow map's `casterGeneration`.
+- `enableShadowCheck()`: the desktop shadow COMPILE CHECK (`?shadowCheck=1`,
+  M3d). It turns shadow maps on, makes the view's sun cast and turns the
+  tagged casters on. three then compiles every lit material with
+  `USE_SHADOWMAP` (whatever the object's `receiveShadow`), which is what
+  the AR sun shadow does to the same materials in a session no e2e can
+  enter. Nothing receives, so the picture is unchanged. The container reads
+  `data-shadow-check="on"`, then `"rendered"` once the first shadow map
+  exists. The e2e `with shadow maps on (?shadowCheck=1)` in
+  `scene-3d.spec.js` asserts that marker, the cells, the buildings, a
+  beacon and a clean console. Two mutants turned it red: a cell shader
+  broken only under `USE_SHADOWMAP` (0 cell pixels plus a shader error),
+  and a sun that never casts (the marker stays `"on"`).
+- `addArShadowProps(...)` / `removeArShadowProps(...)`: the pole and the
+  shadow plane go into the placed content (`this.content`), so they inherit
+  the composed vertical offset like every other object.
 
 ## Examples
 

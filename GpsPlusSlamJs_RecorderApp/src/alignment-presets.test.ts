@@ -35,27 +35,68 @@ describe('ALIGNMENT_PRESETS', () => {
     }
   });
 
-  it('carries the three scorecard candidates with their measured knobs', () => {
-    expect(findAlignmentPreset('f100')?.overrides).toEqual({
-      timeWeightFactor: 100,
-    });
-    expect(findAlignmentPreset('f100-exp075')?.overrides).toEqual({
-      timeWeightFactor: 100,
-      gpsAccuracyExponent: 0.75,
-    });
-    expect(findAlignmentPreset('f25-exp075')?.overrides).toEqual({
-      timeWeightFactor: 25,
-      gpsAccuracyExponent: 0.75,
+  /**
+   * Why this test matters: the ladder is the field test. If two rungs differ in
+   * anything but the window length, an impression formed in the street cannot be
+   * attributed - which is exactly how the offline programme wasted a comparison
+   * on a "90 s window" arm that still had recency decay running underneath it.
+   */
+  it('is one ladder: every rung varies only the window, and only downward from whole-session', () => {
+    const rungs = ALIGNMENT_PRESETS.filter((p) => p.id.startsWith('w'));
+    expect(rungs.map((p) => p.id)).toEqual([
+      'w45',
+      'w90',
+      'w180',
+      'w300',
+      'wall',
+    ]);
+
+    const allowedRungKeys = new Set([
+      'timeWeightEnabled',
+      'recentWindowSeconds',
+    ]);
+    for (const p of rungs) {
+      for (const key of Object.keys(p.overrides ?? {})) {
+        expect(allowedRungKeys.has(key), `${p.id}: ${key}`).toBe(true);
+      }
+      // Without this, the oldest fix inside the window is still weighted 251x
+      // lighter than the newest and the window is not the variable under test.
+      expect(p.overrides?.timeWeightEnabled, p.id).toBe(false);
+    }
+
+    const bounded = rungs.filter(
+      (p) => typeof p.overrides?.recentWindowSeconds === 'number'
+    );
+    expect(bounded.map((p) => p.overrides!.recentWindowSeconds)).toEqual([
+      45, 90, 180, 300,
+    ]);
+
+    // The unbounded rung carries NO window key at all. It cannot: there is no
+    // public override that sets useOnlyRecentData back to false, so it depends
+    // on the shipped default plus setAlignmentOverrides replacing rather than
+    // merging. If that ever became a merge, this rung would silently inherit
+    // the previously selected rung's window - see the plan, section 3.3.
+    expect(findAlignmentPreset('wall')?.overrides).toEqual({
+      timeWeightEnabled: false,
     });
     expect(findAlignmentPreset('nope')).toBeUndefined();
   });
 
-  it('carries the stage-2 field-judgement rows and the robust arm, in dropdown order', () => {
-    // The order is the order of the dropdown: the shipped default, the two
-    // stage-2 survivors, then the rows that failed the cross-session guardrail
-    // and say so in their label, then the robust-solver arm.
+  it('keeps the shipped baseline and the robust arm, and nothing from the confounded scorecard', () => {
     expect(ALIGNMENT_PRESETS.map((p) => p.id)).toEqual([
       'shipped',
+      'w45',
+      'w90',
+      'w180',
+      'w300',
+      'wall',
+      'f50-robust-exp1',
+    ]);
+    // Removed 2026-09-12: every one of these was built on the scorecard whose
+    // exponent axis is confounded (raising gpsAccuracyExponent also squashes
+    // the recency span, because the kernel ADDS the two terms), and each varied
+    // two or three knobs at once.
+    for (const gone of [
       'f100',
       'f100-exp075',
       'f25-exp075',
@@ -63,25 +104,8 @@ describe('ALIGNMENT_PRESETS', () => {
       'calm-none-exp075',
       'f25-none-exp1',
       'f25-thr7-ret04-exp1',
-      'f50-robust-exp1',
-    ]);
-    expect(findAlignmentPreset('calm-ret04')?.overrides).toEqual({
-      timeWeightEnabled: false,
-      outlierRetainRatio: 0.4,
-    });
-    expect(findAlignmentPreset('calm-none-exp075')?.overrides).toEqual({
-      timeWeightEnabled: false,
-      outlierRejectionEnabled: false,
-      gpsAccuracyExponent: 0.75,
-    });
-    for (const id of [
-      'f25-exp075',
-      'calm-ret04',
-      'calm-none-exp075',
-      'f25-none-exp1',
-      'f25-thr7-ret04-exp1',
     ]) {
-      expect(findAlignmentPreset(id)?.label, id).toMatch(/agreement −\d\.\d°/);
+      expect(findAlignmentPreset(gone), gone).toBeUndefined();
     }
   });
 
@@ -112,9 +136,16 @@ describe('ALIGNMENT_PRESETS', () => {
     for (const p of noRecency) {
       expect(p.label, p.id).toMatch(/^no recency/);
     }
-    expect(findAlignmentPreset('f100')?.label).toContain('longer memory');
-    expect(findAlignmentPreset('f100-exp075')?.label).toContain(
-      'longer memory'
-    );
+    // The ladder rungs are all timeWeightEnabled:false, so the "no recency"
+    // prefix rule above covers every one of them. That guard exists because the
+    // owner once misread a label's direction, which is why the rungs are not
+    // called "flat" however much shorter that would read.
+    expect(noRecency.map((p) => p.id)).toEqual([
+      'w45',
+      'w90',
+      'w180',
+      'w300',
+      'wall',
+    ]);
   });
 });

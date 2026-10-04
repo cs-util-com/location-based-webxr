@@ -25,6 +25,42 @@ export const RULE_TABLE_CSV_URL =
 /** Matches the C# reference's cache lifetime. */
 export const DEFAULT_TTL_MS = 100 * 60 * 1000;
 
+/**
+ * Deadline for the live sheet fetch.
+ *
+ * **THIS FETCH IS ON AN APPLICATION'S COLD-START PATH**, which is the whole
+ * reason it is bounded. In the OSM demo it is awaited inside the worker's
+ * `init`, which the main thread awaits before it builds anything - so until
+ * this settles, not one Overpass request has been dispatched. Until 2026-09-21
+ * it was a bare `await fetchImpl(url)`: a `docs.google.com` that accepted the
+ * connection and then went quiet stalled the entire app for whatever the OS
+ * timeout happened to be, with no error anywhere. That is the same defect the
+ * Overpass transport deadline closed a day earlier, in a place nobody had
+ * looked.
+ *
+ * **The trade is one-sided, which is why a flat constant is honest here rather
+ * than a tuned one.** Expiring costs a degradation to tier 2 or 3 - a cached or
+ * checked-in table, of tuning data that moves on a scale of months, announced
+ * through `degradedBecause`. Not expiring costs the user the whole application.
+ * Every value from a couple of seconds to ~15 s gives the same verdict; within
+ * that range the choice only trades a rare unnecessary degradation against a
+ * rare long stall, and 8 s sits far enough above a normal sheet fetch that the
+ * happy path never sees it.
+ *
+ * Spelled `AbortSignal.timeout`, so the request is genuinely cancelled rather
+ * than merely stopped being waited for - an abandoned socket still holds a
+ * connection and still finishes downloading.
+ *
+ * **It is a TOTAL deadline, not a headers deadline**, and that distinction is
+ * the whole point: the signal goes to `fetch`, and the spec makes an abort
+ * error the response's body stream too, so a server that sends headers
+ * promptly and then stalls the body is covered as well. That rests on platform
+ * behaviour rather than on anything in this file, which is why it is written
+ * down here instead of asserted in a test that would only exercise its own
+ * mock.
+ */
+export const DEFAULT_FETCH_TIMEOUT_MS = 8_000;
+
 const CACHE_KEY = "rules/v1/table.csv";
 
 /**
@@ -46,6 +82,12 @@ export interface RuleTableLoaderOptions {
   readonly url?: string;
   readonly ttlMs?: number;
   readonly maxRuleDrift?: number;
+  /**
+   * Deadline for the live fetch. Defaults to {@link DEFAULT_FETCH_TIMEOUT_MS};
+   * pass `undefined` explicitly only for a caller that genuinely wants to wait
+   * forever, and read that constant's rationale before you do.
+   */
+  readonly timeoutMs?: number;
   /** Diagnostics sink. Defaults to `console.warn`. */
   readonly onWarn?: (message: string) => void;
 }
@@ -259,8 +301,16 @@ async function fetchLive(
   const fetchImpl = options.fetchImpl ?? globalThis.fetch?.bind(globalThis);
   if (fetchImpl === undefined) return undefined;
   const url = options.url ?? RULE_TABLE_CSV_URL;
+  const timeoutMs = Object.hasOwn(options, "timeoutMs")
+    ? options.timeoutMs
+    : DEFAULT_FETCH_TIMEOUT_MS;
   try {
-    const response = await fetchImpl(url);
+    const response = await fetchImpl(url, {
+      // An expiry lands in the catch below and degrades exactly like any other
+      // failed fetch, which is why this needs no branch of its own.
+      signal:
+        timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs),
+    });
     if (!response.ok) {
       warn(`Rule table fetch returned ${response.status}`);
       return undefined;

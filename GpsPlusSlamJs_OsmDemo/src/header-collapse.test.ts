@@ -3,7 +3,7 @@
  *
  * WHY THIS FILE OPTS INTO jsdom AND THE REST OF THE SUITE DOES NOT. The house
  * pattern here is to split pure decisions out and unit-test those, leaving DOM
- * wiring to the e2e suite — `sheet-drag.ts`, `locate-state.ts` and
+ * wiring to the e2e suite — `sheet-drag.ts`, `locate-state.ts` (now the framework's) and
  * `building-view.ts` all do exactly that, and the project consequently has no test
  * environment configured at all.
  *

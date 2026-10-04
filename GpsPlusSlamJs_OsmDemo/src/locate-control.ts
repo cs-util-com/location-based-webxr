@@ -5,15 +5,21 @@
  * is built in and wraps `navigator.geolocation` with the events below — so the
  * control is a div, a click handler and two listeners rather than a plugin.
  *
- * All the decisions live in `locate-state.ts` and are tested without a browser.
- * This file is the DOM and the Leaflet wiring.
+ * All the decisions live in the framework's `utils/locate-state.ts` (shared
+ * with the globe lab's pin since round-2 plan 2026-09-26-2055 M3g, DEC-H3)
+ * and are tested there without a browser. This file is the DOM and the
+ * Leaflet wiring.
  *
  * @see locate-control.ts.md
  */
 
 import L from "leaflet";
 
-import { labelFor, stateForError, type LocateState } from "./locate-state.js";
+import {
+  labelFor,
+  stateForError,
+  type LocateState,
+} from "gps-plus-slam-app-framework/utils/locate-state";
 
 export interface LocateControlOptions {
   readonly map: L.Map;

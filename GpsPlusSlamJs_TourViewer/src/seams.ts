@@ -22,10 +22,13 @@ import {
   getScene,
   rgbaImageToJpegBlob,
   startCameraFrameCapture,
+  startDepthCapture,
   startHitTestReticle,
   stopCameraFrameCapture,
+  stopDepthCapture,
   type EnableGpsArDeps,
   type HitTestReticleHandle,
+  type SelectTargetRay,
 } from "gps-plus-slam-app-framework/ar";
 import { createTextSprite } from "gps-plus-slam-app-framework/visualization/text-sprite";
 import {
@@ -37,10 +40,14 @@ import {
   intrinsicsFromProjection,
   solveQrPose,
   type CameraIntrinsics,
-  type Pose,
   type QrPoseSolution,
 } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import type { QrSolvePoseInput } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
+import {
+  estimateQrSizeFromParallax,
+  type QrFusedEntry,
+  type QrParallaxSizeWindow,
+} from "gps-plus-slam-app-framework/ar/qr";
 import { PlanarPnpSquare } from "gps-plus-slam-app-framework/ar/qr/planar-pnp";
 import {
   createQrDebugView,
@@ -58,7 +65,10 @@ import {
   type ShareOrDownloadResult,
   PDF_FILE_TYPE,
 } from "gps-plus-slam-app-framework/storage";
+import type { DepthSamplerConfig } from "gps-plus-slam-app-framework/ar/depth-sampler";
 import type { Object3D } from "three";
+
+import { ndcOfTargetRay, pickObject } from "./object-pick.js";
 
 import type {
   LocationPermission,
@@ -81,13 +91,23 @@ export interface TourViewerSeams {
   }): unknown;
   startCameraFrameCapture(config?: { intervalMs?: number }): void;
   stopCameraFrameCapture(): void;
+  /** Start / stop the depth sampler of a recorded entry (the sampler
+   *  exists only when the entry asked for depth). */
+  startDepthCapture(config: Partial<DepthSamplerConfig>): void;
+  stopDepthCapture(): void;
   /** BarcodeDetector-backed detect+decode, or `null` where unavailable
    *  (desktop Chromium — there is no fallback detector by design). */
   createQrFrontEnd(): QrFrontEnd | null;
   /** The planar-PnP square solver (pure JS, OpenCV-free). */
   solveQrPose(input: QrSolvePoseInput): QrPoseSolution | null;
-  /** Current XR-frame camera pose in RAW WebXR/odom space, as tuples. */
-  getCameraPose(): Pose | null;
+  /**
+   * The printed code's size from parallax over a code's entries (QR size
+   * consensus plan S3a) - a seam because the e2e fakes deliver one camera
+   * pose, which carries no parallax, and the offer's layout must be tested.
+   */
+  estimateQrPrintSize(
+    entries: readonly QrFusedEntry[],
+  ): QrParallaxSizeWindow | null;
   /** PnP intrinsics from the in-session camera projection, scaled to the
    *  DETECTOR buffer's dimensions (buffer mismatch is the #1 PnP risk). */
   getIntrinsics(image: RgbaImage): CameraIntrinsics | null;
@@ -99,6 +119,11 @@ export interface TourViewerSeams {
    *  (the framework's parenting rule; `arWorldGroup` children would need
    *  alignment-inverse coordinates instead). */
   getScene(): Object3D | null;
+  /** The latest AR pose - what each device GPS fix is paired with
+   *  (`createGpsPositionHandler`'s `getArPose`). A seam so the e2e, which
+   *  has no XR frames, can deliver GPS fixes through the page's own path
+   *  (Tour Viewer authoring plan 2026-09-28-0953 D20, M5c). */
+  getArPose(): ReturnType<typeof getCurrentArPose>;
   /** The geolocation permission state, "unknown" without the Permissions
    *  API - the visitor screen's location gate reads it once at boot. */
   queryGeolocationPermission(): Promise<LocationPermission>;
@@ -119,6 +144,11 @@ export interface TourViewerSeams {
     blob: Blob,
     filename: string,
   ): Promise<ShareOrDownloadResult>;
+  /** SAVE a zip, never share it: a Drive-hosted tour's route (Drive
+   *  replace plan §2 decision 4) - the Drive website's upload needs the
+   *  file in Downloads, and a share hands it to another app. Resolves
+   *  whether anything was saved (false: a dismissed save picker). */
+  downloadZip(blob: Blob, filename: string): Promise<boolean>;
   /** Should this device get the share sheet rather than the save path?
    *  Read once at wire time to label the button, because "Share" where
    *  nothing can be shared is a lie and "Download" on a phone that will
@@ -133,8 +163,22 @@ export interface TourViewerSeams {
   /** The screen-centre hit-test reticle under the world group (its world
    *  position is GPS-world NUE once the group carries the alignment) -
    *  the pin's position (guided-setup plan M4). Needs the session feature
-   *  (`requestHitTest`). */
-  startHitTestReticle(arWorldGroup: Object3D): HitTestReticleHandle;
+   *  (`requestHitTest`). `onSelect` hears every XR `select` the DOM
+   *  overlay did not cancel (a tap in AR, authoring plan 2026-09-28-0953
+   *  M4) through the framework driver's own option. */
+  startHitTestReticle(
+    arWorldGroup: Object3D,
+    onSelect?: (tap: SelectTargetRay | null) => void,
+  ): HitTestReticleHandle;
+  /** The id of the object under the tap - through the tap's target ray,
+   *  or the screen centre when `tap` is null - by a camera-ray raycast
+   *  against each object's rendered root with an angular tolerance
+   *  (`object-pick.ts`), or null. A seam because the e2e scene is a stub
+   *  with no geometry to hit. */
+  pickObjectInView(
+    targets: ReadonlyMap<string, Object3D>,
+    tap: SelectTargetRay | null,
+  ): string | null;
   /** Encode a camera frame (top-left RGBA) as a JPEG for a placed photo.
    *  Rejects when the frame is not opaque: the canvas would composite it
    *  over its ground and the JPEG would come out dark (plan review #15). */
@@ -171,23 +215,11 @@ export const realSeams: TourViewerSeams = {
   enableArWorldGroupAlignment,
   startCameraFrameCapture,
   stopCameraFrameCapture,
+  startDepthCapture,
+  stopDepthCapture,
   createQrFrontEnd: () => createBarcodeDetectorFrontEnd(),
   solveQrPose: (input) => solveQrPose({ ...input, solver: pnpSolver }),
-  // The CURRENT XR-frame pose, reshaped from ARPose objects to Pose tuples —
-  // the RecorderApp's documented recipe (raw WebXR/odom space).
-  getCameraPose: () => {
-    const arPose = getCurrentArPose();
-    if (!arPose) return null;
-    return {
-      position: [arPose.position.x, arPose.position.y, arPose.position.z],
-      rotation: [
-        arPose.orientation.x,
-        arPose.orientation.y,
-        arPose.orientation.z,
-        arPose.orientation.w,
-      ],
-    };
-  },
+  estimateQrPrintSize: (entries) => estimateQrSizeFromParallax(entries),
   // Depth is OFF in this app (QD-5), so the projection comes from the
   // in-session three camera — WebXR owns its projectionMatrix during an
   // immersive session (the wayfinding-placement precedent) — scaled to the
@@ -203,11 +235,33 @@ export const realSeams: TourViewerSeams = {
   },
   createQrDebugView,
   getScene,
+  getArPose: getCurrentArPose,
   shareOrDownloadZip: (blob, filename) =>
     shareOrDownloadBlob(blob, filename, ZIP_FILE_TYPE),
+  downloadZip: (blob, filename) => downloadBlob(blob, filename, ZIP_FILE_TYPE),
   canShareZip: () => prefersFileShare(ZIP_FILE_TYPE),
   downloadPdf: (blob, filename) => downloadBlob(blob, filename, PDF_FILE_TYPE),
-  startHitTestReticle: (arWorldGroup) => startHitTestReticle({ arWorldGroup }),
+  startHitTestReticle: (arWorldGroup, onSelect) =>
+    startHitTestReticle(
+      onSelect === undefined
+        ? { arWorldGroup }
+        : {
+            arWorldGroup,
+            // The driver's second argument is where the tap pointed
+            // (M4 review #4); its first, the reticle's surface point, is
+            // not what a selection is about.
+            onSelect: (_surface, tap) => {
+              onSelect(tap);
+            },
+          },
+    ),
+  pickObjectInView: (targets, tap) => {
+    const camera = getCamera();
+    if (!camera) return null;
+    const ndc =
+      tap === null ? null : ndcOfTargetRay(camera, tap.targetRayInViewer);
+    return pickObject(camera, targets, ndc === null ? {} : { ndc });
+  },
   schedule: (fn, ms) => {
     const handle = setTimeout(fn, ms);
     return () => {

@@ -48,6 +48,16 @@ export interface HitTestReticleHandle {
   dispose(): void;
 }
 
+/**
+ * Where a tap pointed: the input source's target ray as a column-major 4x4
+ * pose RELATIVE TO THE VIEWER (the camera's own frame; the ray runs along
+ * the pose's -Z). For a screen tap it starts at the viewer and passes
+ * through the tapped point.
+ */
+export interface SelectTargetRay {
+  readonly targetRayInViewer: readonly number[];
+}
+
 /** Arguments for {@link startHitTestReticle}. */
 export interface HitTestReticleArgs {
   /**
@@ -61,8 +71,16 @@ export interface HitTestReticleArgs {
    * Surface-less taps are reported too so the app can react (GPS gating,
    * "point at the floor" hints); the placement decision stays app-side.
    * When omitted, no `select` listener is registered at all.
+   *
+   * The second argument is where the tap pointed ({@link SelectTargetRay}),
+   * or `null` when the event carried no readable pose - read inside the
+   * event, the only moment WebXR offers it. A handler that declares one
+   * parameter is unaffected.
    */
-  onSelect?: (worldPosition: Vector3 | null) => void;
+  onSelect?: (
+    worldPosition: Vector3 | null,
+    targetRay: SelectTargetRay | null
+  ) => void;
 }
 
 /**
@@ -71,11 +89,37 @@ export interface HitTestReticleArgs {
  * builds); the caller keeps the reticle hidden in that case.
  */
 async function requestHitTestSource(
-  session: XRSession
+  session: XRSession,
+  viewerSpace: XRReferenceSpace
 ): Promise<XRHitTestSource | null> {
-  const viewerSpace = await session.requestReferenceSpace('viewer');
   const source = await session.requestHitTestSource?.({ space: viewerSpace });
   return source ?? null;
+}
+
+/**
+ * The tap's target ray relative to `viewerSpace`, read from a `select`
+ * event - or null when the event, its frame or the pose is missing, or the
+ * frame refuses (it is only active while the event is dispatched).
+ */
+function targetRayOf(
+  event: unknown,
+  viewerSpace: XRReferenceSpace | null
+): SelectTargetRay | null {
+  if (viewerSpace === null || typeof event !== 'object' || event === null) {
+    return null;
+  }
+  const { frame, inputSource } = event as Partial<XRInputSourceEvent>;
+  if (typeof frame?.getPose !== 'function' || inputSource === undefined) {
+    return null;
+  }
+  try {
+    const pose = frame.getPose(inputSource.targetRaySpace, viewerSpace);
+    return pose
+      ? { targetRayInViewer: Array.from(pose.transform.matrix) }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -112,10 +156,14 @@ export function startHitTestReticle(
   // generation it was issued under, so a source (or failure) arriving after
   // its session died is recognized as stale — see the request block below.
   let sessionGeneration = 0;
+  /** The session's 'viewer' space, once requested: the hit-test's source
+   *  space and the frame a tap's target ray is read in. Reset per session. */
+  let viewerSpace: XRReferenceSpace | null = null;
 
-  const handleSelect = () => {
+  const handleSelect = (event?: unknown) => {
     args.onSelect?.(
-      reticle.visible ? reticle.getWorldPosition(new Vector3()) : null
+      reticle.visible ? reticle.getWorldPosition(new Vector3()) : null,
+      targetRayOf(event, viewerSpace)
     );
   };
 
@@ -130,6 +178,7 @@ export function startHitTestReticle(
     hitTestSource = null;
     hitTestSourceRequested = false;
     removeSessionListeners = null;
+    viewerSpace = null;
   };
 
   const unregister = registerXrFrameUpdate(
@@ -153,8 +202,17 @@ export function startHitTestReticle(
       if (!hitTestSourceRequested) {
         hitTestSourceRequested = true;
         const requestGeneration = sessionGeneration;
-        requestHitTestSource(session)
+        session
+          .requestReferenceSpace('viewer')
+          .then((space) => {
+            if (disposed || requestGeneration !== sessionGeneration) {
+              return null;
+            }
+            viewerSpace = space;
+            return requestHitTestSource(session, space);
+          })
           .then((source) => {
+            if (source === null) return;
             // Guard the races where the request outlived its context: after
             // dispose(), or after the issuing session ended (a stale source
             // adopted here would shadow the NEXT session's own source).

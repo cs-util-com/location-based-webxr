@@ -82,7 +82,7 @@ export function createMockPose(
       matrix: new Float32Array(16),
       position: viewTransform.position as unknown as DOMPointReadOnly,
       orientation: viewTransform.orientation as unknown as DOMPointReadOnly,
-      inverse: null as unknown as XRRigidTransform,
+      inverse: null,
     },
     emulatedPosition: false,
   };

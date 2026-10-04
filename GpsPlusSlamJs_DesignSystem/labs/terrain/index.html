@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lab: terrain relief</title>
+    <link rel="stylesheet" href="../../design.css" />
+    <link rel="stylesheet" href="../../3d/lookdev.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/vendor/three/build/three.module.js",
+          "three/addons/": "/vendor/three/examples/jsm/"
+        }
+      }
+    </script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #e4e8ec;
+      }
+
+      #terrain-canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+      }
+
+      #terrain-error {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        right: 380px;
+        color: #8a1f11;
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
+      }
+
+      #terrain-error:empty {
+        display: none;
+      }
+
+      #terrain-loading {
+        position: fixed;
+        top: 36px;
+        left: 12px;
+        color: #30404f;
+        font:
+          13px/1.4 system-ui,
+          sans-serif;
+      }
+
+      /* The plate on the right: the error and loading lines are top left. */
+      .lookdev-panel {
+        left: auto;
+        right: 12px;
+      }
+
+      /* On a phone the status lines move below the folded plate's header. */
+      @media (max-width: 600px) {
+        #terrain-error {
+          top: 72px;
+          right: 12px;
+        }
+
+        #terrain-loading {
+          top: 96px;
+        }
+      }
+
+      #terrain-credits {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: 10px;
+        color: #30404f;
+        font:
+          12px/1.4 system-ui,
+          sans-serif;
+      }
+
+      /*
+       * The location pin (DEC-TR-3's GPS place), bottom right above the
+       * credits, as the globe lab's; its line to its left says what it is
+       * doing, what to press, or why it failed and how to fix it.
+       */
+      #terrain-pin {
+        position: fixed;
+        right: 12px;
+        bottom: 64px;
+      }
+
+      #terrain-pin-status {
+        position: fixed;
+        right: 68px;
+        bottom: 70px;
+        max-width: min(60vw, 420px);
+        color: #30404f;
+        text-align: right;
+        font:
+          13px/1.4 system-ui,
+          sans-serif;
+      }
+
+      #terrain-credits a {
+        color: inherit;
+      }
+    </style>
+    <script type="module" src="./terrain-lab.js"></script>
+    <script type="module" src="../../3d/panel.js"></script>
+  </head>
+  <body>
+    <canvas id="terrain-canvas"></canvas>
+    <output id="terrain-error" role="alert"></output>
+    <output id="terrain-loading" aria-live="polite" hidden></output>
+    <aside class="lookdev-panel plate col" aria-label="Terrain controls">
+      <button
+        type="button"
+        class="lookdev-head"
+        aria-expanded="true"
+        aria-controls="lookdev-body"
+      >
+        <span class="lookdev-title">Terrain relief</span>
+        <span class="lookdev-chevron" aria-hidden="true"></span>
+      </button>
+      <div id="lookdev-body" class="lookdev-body col">
+        <details class="lookdev-section" data-section="terrain-view" open>
+          <summary>Place and style</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint">Place</span>
+              <select class="select" data-hash-key="place">
+                <option value="appalachians">Appalachians (Blue Ridge)</option>
+                <option value="alps">Alps (Valais to Bernina)</option>
+                <option value="germany">
+                  Northern Germany (Elbe and coast)
+                </option>
+                <option value="gps">My position (press the pin)</option>
+              </select>
+            </label>
+            <label class="lookdev-field">
+              <span class="hint">Style</span>
+              <select class="select" data-hash-key="style">
+                <option value="pastel">A: Pastel atlas</option>
+                <option value="natural">B: Natural colour</option>
+                <option value="globe">C: Globe blend</option>
+                <option value="swiss">D: Swiss classic</option>
+                <option value="clay">E: Clay</option>
+                <option value="globe-albedo">
+                  C1: Globe albedo (Blue Marble under the sun)
+                </option>
+                <option value="globe-classes">
+                  C2: Globe classes (Blue Marble cover, placed by relief)
+                </option>
+                <option value="globe-bands">
+                  C3: Globe bands (Blue Marble per height band)
+                </option>
+              </select>
+            </label>
+          </div>
+        </details>
+        <details class="lookdev-section" data-section="terrain-relief" open>
+          <summary>Exaggeration</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint"
+                >Exaggeration <output data-for="exag"></output>x</span
+              >
+              <input
+                class="slider"
+                type="range"
+                step="0.1"
+                data-hash-key="exag"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint">Auto (grows with the view's width)</span>
+              <select class="select" data-hash-key="auto">
+                <option value="0">Off</option>
+                <option value="1">On</option>
+              </select>
+            </label>
+            <output
+              id="terrain-readout"
+              class="hint"
+              aria-live="polite"
+            ></output>
+          </div>
+        </details>
+        <details class="lookdev-section" data-section="terrain-look" open>
+          <summary>Look</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field" data-styles="pastel globe">
+              <span class="hint"
+                >Relief green <output data-for="green"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="0.05"
+                data-hash-key="green"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Shadow <output data-for="shadow"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="0.05"
+                data-hash-key="shadow"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Slope gain <output data-for="shade"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="0.05"
+                data-hash-key="shade"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint">Light</span>
+              <select class="select" data-hash-key="light">
+                <option value="0">Map lights</option>
+                <option value="1">The sun (the globe's, at #time=)</option>
+              </select>
+            </label>
+            <label
+              class="lookdev-field"
+              data-styles="globe-albedo globe-bands globe-classes"
+            >
+              <span class="hint"
+                >Sky fill at a low sun <output data-for="sky"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="0.05"
+                data-hash-key="sky"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint">Sky view (directions)</span>
+              <select class="select" data-hash-key="svf">
+                <option value="0">Off</option>
+                <option value="8">8</option>
+                <option value="16">16</option>
+              </select>
+            </label>
+          </div>
+        </details>
+        <details
+          class="lookdev-section"
+          data-section="terrain-natural"
+          data-styles="natural globe-classes"
+          open
+        >
+          <summary>B: Natural colour (its lines place C2's classes)</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint"
+                >Tree line offset (m) <output data-for="tree"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="50"
+                data-hash-key="tree"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Snow line offset (m) <output data-for="snow"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="50"
+                data-hash-key="snow"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Poleward snow (m) <output data-for="aspect"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="25"
+                data-hash-key="aspect"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Rock slope (°) <output data-for="rock"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="1"
+                data-hash-key="rock"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Lift toward white <output data-for="lift"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="0.02"
+                data-hash-key="lift"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint">Show</span>
+              <select class="select" data-hash-key="snowMask">
+                <option value="0">Colours</option>
+                <option value="1">Snow mask</option>
+              </select>
+            </label>
+            <output id="terrain-lines" class="hint"></output>
+          </div>
+        </details>
+        <details
+          class="lookdev-section"
+          data-section="terrain-globe-albedo"
+          data-styles="globe-albedo"
+          open
+        >
+          <summary>C1: Globe albedo</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint"
+                >Detail from style B <output data-for="detail"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="0.05"
+                data-hash-key="detail"
+              />
+            </label>
+          </div>
+        </details>
+        <details
+          class="lookdev-section"
+          data-section="terrain-globe-classes"
+          data-styles="globe-classes"
+          open
+        >
+          <summary>C2: Globe classes</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint"
+                >Colour width (ΔE) <output data-for="classWidth"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="1"
+                data-hash-key="classWidth"
+              />
+            </label>
+          </div>
+        </details>
+        <details
+          class="lookdev-section"
+          data-section="terrain-globe-bands"
+          data-styles="globe-bands"
+          open
+        >
+          <summary>C3: Globe bands</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint"
+                >Band width (m) <output data-for="band"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="50"
+                data-hash-key="band"
+              />
+            </label>
+          </div>
+        </details>
+        <details
+          class="lookdev-section"
+          data-section="terrain-swiss"
+          data-styles="swiss"
+          open
+        >
+          <summary>D: Swiss classic</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint"
+                >Exposure colour <output data-for="exposure"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="0.05"
+                data-hash-key="exposure"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Lowland contrast <output data-for="contrast"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="0.05"
+                data-hash-key="contrast"
+              />
+            </label>
+          </div>
+        </details>
+        <details class="lookdev-section" data-section="terrain-far" open>
+          <summary>Globe far field</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint">Far field (always on in style C)</span>
+              <select class="select" data-hash-key="far">
+                <option value="0">Off</option>
+                <option value="1">On</option>
+              </select>
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Globe only above (km) <output data-for="farHigh"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="50"
+                data-hash-key="farHigh"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint"
+                >Style only below (km) <output data-for="farLow"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                step="10"
+                data-hash-key="farLow"
+              />
+            </label>
+          </div>
+        </details>
+        <details class="lookdev-section" data-section="terrain-camera" open>
+          <summary>Camera</summary>
+          <div class="lookdev-section-body col">
+            <button type="button" class="btn" data-preset="top">
+              Top-down, 250 km
+            </button>
+            <button type="button" class="btn" data-preset="oblique">
+              Oblique (diorama)
+            </button>
+            <button type="button" class="btn" data-preset="low">
+              Low oblique, 20 km
+            </button>
+            <button type="button" class="btn" data-preset="fly">
+              Fly in from 600 km
+            </button>
+            <output id="terrain-cost" class="hint"></output>
+          </div>
+        </details>
+      </div>
+    </aside>
+    <button
+      id="terrain-pin"
+      type="button"
+      class="btn btn--icon btn--locate"
+      data-state="idle"
+      aria-label="Load the terrain around my location"
+      title="Load the terrain around my location"
+    >
+      <svg
+        viewBox="5 2 14 20"
+        width="18"
+        height="18"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <path
+          fill="currentColor"
+          d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Z"
+        />
+        <circle cx="12" cy="9" r="2.6" fill="#171b26" />
+      </svg>
+    </button>
+    <output id="terrain-pin-status" aria-live="polite"></output>
+    <footer id="terrain-credits"></footer>
+  </body>
+</html>

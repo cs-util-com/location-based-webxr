@@ -86,9 +86,9 @@ const LIVE_SCENE_SOURCE: GpsMarkerSceneSource = { getScene, getArWorldGroup };
  */
 export interface GpsEventAccuracy {
   /** Horizontal 1σ accuracy in metres (applied to both X and Z axes). */
-  horizontal?: number;
+  horizontal?: number | undefined;
   /** Vertical 1σ accuracy in metres (applied to the Y axis). */
-  vertical?: number;
+  vertical?: number | undefined;
 }
 
 /**

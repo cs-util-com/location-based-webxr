@@ -39,6 +39,24 @@ the two are one decision.
     switch a real field A/B. Its `terrainHeightM` is the AR-datum-gated DEM
     sampler (`terrainReadout`'s height — the same two gates the HUD's terrain
     line uses).
+  - `sunShadow?` - the AR sun shadow prototype (`?sunShadow=1`, plan
+    `GpsPlusSlamJs_Docs/docs/2026-09-23-2343-ar-sun-shadow-prototype-plan.md`
+    §10, M3c; review fixes §11.1). **Absent or false leaves the session as it
+    was:** no shadow maps, no props, no casting (the view still re-applies a
+    casting of "off" after each rebuild, which writes `castShadow = false`
+    on meshes that never cast). True calls
+    [`ar-sun-shadow-session.ts`](ar-sun-shadow-session.ts.md)'s
+    `tryStartArSunShadow` in the synchronous setup, right after the scene
+    environment.
+    - Shadow maps go on there, but every lit material still recompiles when
+      the shadow first comes on and at each later switch-on: three keys its
+      programs on a CASTING light.
+    - It needs `autoElevation` (the floor estimate and the gated DEM
+      sampler, which the session takes as `demAt`). Without it, and without
+      a renderer, a fix or the framework's named sun light, the shadow does
+      not start and the HUD reads "shadow: unavailable (reason)".
+    - A throw in a later frame fails the shadow once, gives the light back
+      and puts its message on the same line.
   - `store` is the INTERSECTION `TrackingSubscribableStore & SubscribableStore`, because `initAR` and the alignment wiring want different `getState` shapes and neither subsumes the other. Stated as an intersection rather than as the concrete `SlamAppStore`, whose shape changes with the demo's `extraReducers`.
   - `sceneAnchor` and `enuFrameAt` are how the city's own ENU origin is reconciled with the GPS one. The mesh is authored about the demo's anchor and the GPS-world frame is about `zero`; without the offset the city renders at the right orientation and the wrong place.
   - `origin` is the framework's `zero`, read by the caller. `null` means no fix.
@@ -329,6 +347,20 @@ The environment assertions are duplicated on purpose:
 prove it is **called**. M1 shipped three modules that were each correct in
 isolation with nothing asserting they were connected, and four green gates
 passed all three.
+
+The AR sun shadow wiring has four tests of its own:
+
+- without the switch, the renderer's shadow maps, the view's props and its
+  casting are untouched;
+- with it, shadow maps are on before any frame, the plane and the pole are
+  added and casting is on, every DEM sample is at the camera's anchor-ENU
+  point (the frame conversion: NUE minus the geometric offset; a swapped
+  axis turns it red), the HUD reads "shadow: waiting for floor", and
+  `dispose()` turns casting off and removes the props;
+- without auto elevation nothing starts and the HUD says so;
+- a scene without the named sun light still starts the session, with the
+  light's message on the HUD. The session's own
+  decisions are in `ar-sun-shadow-session.test.ts`.
 
 The auto-elevation wiring is split across two files because `vi.mock` is
 file-wide: `ar-mode.test.ts` keeps the REAL `ar-depth-pipeline` and drives the

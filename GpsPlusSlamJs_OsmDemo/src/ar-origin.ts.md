@@ -89,33 +89,12 @@ far apart and differently signed, so a transposition cannot pass), the datum
 sign, the composed `DEM + N` arithmetic, `ZERO_GEOID` passing through as a
 no-op, and Null Island being allowed rather than refused.
 
-## `nueBearingDeg` — the geographic bearing of a direction
+## `nueBearingDeg` — moved to the framework
 
-Degrees clockwise from north, given a direction's **north** (`x`) and **east**
-(`z`) components in the GPS-world NUE frame. `undefined` for a degenerate
-(vertical) direction, because reporting `0` there would be a confident "facing
-north" while the phone points at the ground.
-
-⚠️ **Take the direction in WORLD space.** The hierarchy is
-`scene (GPS-world NUE) → arWorldGroup (receives the alignment) → basisChangeNode
-→ arpose → camera`, so the camera is a **descendant** of the aligned group and
-its world transform already carries the alignment. A direction taken _relative
-to_ `arWorldGroup` is in the AR-odometry frame — the alignment's **domain**, i.e.
-un-aligned — and yields a plausible number that is not north.
-`ar-scene-hierarchy.ts` records two earlier readers getting this backwards, and
-an AR HUD review draft made it three; the function exists so the next reader
-inherits the answer instead of the trap.
-
-Tests cover the four cardinals, a **clockwise**-from-north case at 45° (a
-swapped `atan2` passes N/S/E/W and fails only off-axis), the `[0, 360)` range,
-and the degenerate refusals.
-
-The `[0, 360)` wrap itself is **not implemented here** — it comes from the
-framework's `utils/bearing-degrees`, deep-imported. This file carried its own
-`((deg % 360) + 360) % 360` until 2026-08-29, as did `event-label.ts` twice
-over; the shared version adds an early return for already-in-range input, which
-is a correctness contract rather than a shortcut (without it `360 − ε` re-enters
-the double-mod and snaps to `0`, a full turn that never happened).
+Lifted on 2026-09-24 to `gps-plus-slam-app-framework/utils/nue-bearing`
+(DEC-H3), with its tests, when the AR sun check needed the same conversion.
+The AR HUD's compass (`ar-mode.ts`) imports it from there. The warning
+stands: take the direction in WORLD space (see that module's sidecar).
 
 ## `fieldMatchesArDatum` — is the held terrain AR's, or still the desktop's?
 

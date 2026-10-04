@@ -68,6 +68,10 @@ metres and cost nothing to fetch.
   picks and replaces all of them at once, so a diff would be more code guarding a
   case that does not arise.
 
+- **Every beacon mesh casts the AR sun shadow** (shadow plan M3): `set` tags
+  bar, dot and stalk with `markArShadowCaster` as it builds them; BuildingView
+  decides whether casting is on.
+
 ## Known limits
 
 ### ~~A quest search moves the MAP but not the 3D CAMERA~~ — FIXED 2026-08-23

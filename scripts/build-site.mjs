@@ -25,6 +25,7 @@
  *     osm/              ← OsmDemo, base=/osm/
  *     tour/             ← TourViewer, base=/tour/
  *     blog/             ← rendered from the project WIKI repo (not a Vite app)
+ *     lookdev/          ← the design system's 3D look-dev page (not a Vite app)
  *
  * `base` and `outDir` are passed as build-time CLI flags so the committed app
  * vite configs stay at their `/` + `dist` defaults (dev/USB-debugging unchanged).
@@ -53,6 +54,8 @@ import {
 } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
+
+import { buildLookdev } from '../GpsPlusSlamJs_DesignSystem/build-lookdev.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const distSite = join(repoRoot, 'dist-site');
@@ -185,6 +188,9 @@ function assertSiteTree() {
     // published yet"), so its absence means the blog step did not run at all.
     'blog/index.html',
     'blog/sitemap.xml',
+    // The 3D look-dev page and the index that forwards /lookdev/ to it.
+    'lookdev/index.html',
+    'lookdev/3d/index.html',
     // Carries the `Sitemap:` line that points crawlers at blog/sitemap.xml.
     'robots.txt',
   ];
@@ -370,6 +376,15 @@ run('node', [
   '--out',
   distSite,
 ]);
+
+// The 3D look-dev page (private repo plan 2026-09-23-0048, DEC-SKY-2) is not
+// a Vite app either: it is the design system's no-build page, assembled by
+// following its import graph through the same route table its dev server
+// uses. Deployed so a PR preview can be opened on a phone; not linked from
+// the landing page, because it is a developer tool, not a demo.
+console.log('• Building 3D look-dev page (base=/lookdev/)');
+buildLookdev({ outDir: join(distSite, 'lookdev'), base: '/lookdev/' });
+assertNoBareAbsoluteUrlsInDir(join(distSite, 'lookdev'), '/lookdev/');
 
 assertLandingHtml(join(distSite, 'index.html'));
 

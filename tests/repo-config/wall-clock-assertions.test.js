@@ -23,13 +23,9 @@
 // Plan: GpsPlusSlamJs_Docs/docs/2026-08-20-1520-wall-clock-bounds-out-of-the-gate-plan.md
 // (closed repo). Argument: ...-0847-wall-clock-assertions-in-the-unit-gate-followup.md
 
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+import { readTracked, trackedFiles } from './tracked-tree.js';
 
 /**
  * Clock ARITHMETIC, not merely a clock read.
@@ -86,6 +82,14 @@ const ALLOWLIST = new Map([
   [
     'GpsPlusSlamJs_Osm/src/score/merge-and-score-cost.test.ts',
     'Asserts the timing is FINITE rather than positive, because ">0" is itself a clock comparison on a coarse timer. The exemplar for this shape.',
+  ],
+  [
+    'GpsPlusSlamJs_AppFramework/src/ar/qr/qr-zxing.sweep.test.ts',
+    'Opt-in sweep (QR_SWEEP=1, skipped in every gate). The empty-frame decode time is measured and printed only; the numeric assertions are on row counts.',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/src/viewer-vote-strength.test.ts',
+    'Opt-in sweeps (VOTE_STRENGTH_SWEEP, skipped in every gate). Each arm run time is measured and printed only, as a cost column; the numeric assertions are on alignment error in metres and degrees.',
   ],
   [
     'GpsPlusSlamJs_OsmDemo/src/refresh-cycle.test.ts',
@@ -166,12 +170,7 @@ const ALLOWLIST = new Map([
 
 /** @returns {string[]} tracked test files that could run in a gate */
 function trackedTestFiles() {
-  const listed = execFileSync(
-    'git',
-    ['ls-files', '*.test.ts', '*.test.js', '*.test.mjs', '*.spec.js'],
-    { cwd: repoRoot, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }
-  )
-    .split('\n')
+  const listed = trackedFiles('*.test.ts', '*.test.js', '*.test.mjs', '*.spec.js')
     .map((line) => line.trim())
     .filter(Boolean);
 
@@ -189,7 +188,7 @@ function filesWithClockAssertions() {
   for (const file of trackedTestFiles()) {
     let text;
     try {
-      text = readFileSync(resolve(repoRoot, file), 'utf8');
+      text = readTracked(file);
     } catch {
       continue; // deleted-but-tracked mid-rebase; not this gate's job
     }

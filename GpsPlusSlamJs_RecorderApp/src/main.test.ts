@@ -309,7 +309,7 @@ vi.mock('./ui/navigation', () => ({
   replaceScreenState: vi.fn(),
 }));
 
-vi.mock('./utils/build-info', () => ({
+vi.mock('gps-plus-slam-app-framework/utils/build-info', () => ({
   getBuildInfo: vi.fn().mockReturnValue({
     commitHash: 'test123',
     appVersion: '0.1.0',

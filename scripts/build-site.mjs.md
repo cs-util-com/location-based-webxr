@@ -10,7 +10,17 @@ output directory (`dist-site/`) that Cloudflare serves as static assets:
 - `dist-site/recorder/` — `GpsPlusSlamJs_RecorderApp`, built with `base=/recorder/`.
 - `dist-site/starter/` — `GpsPlusSlamJs_AnchorStarter`, built with `base=/starter/`.
 - `dist-site/minimal/` — `GpsPlusSlamJs_MinimalExample`, built with `base=/minimal/`.
+- `dist-site/tour/` — `GpsPlusSlamJs_TourViewer`, built with `base=/tour/`.
 - `dist-site/qr-demo/` — `GpsPlusSlamJs_QrTrackingDemo`, built with `base=/qr-demo/`.
+- `dist-site/physics/` — `GpsPlusSlamJs_PhysicsDemo`, built with `base=/physics/`.
+- `dist-site/wayfinding/` — `GpsPlusSlamJs_WayfindingHudDemo`, built with
+  `base=/wayfinding/`.
+- `dist-site/osm/` — `GpsPlusSlamJs_OsmDemo`, built with `base=/osm/` (a map
+  beside a three.js scene, not an AR app).
+- `dist-site/blog/` — the project wiki rendered to static HTML (not a Vite app).
+- `dist-site/lookdev/` — the design system's no-build 3D look-dev page
+  (`GpsPlusSlamJs_DesignSystem/build-lookdev.mjs`); deployed for phone
+  previews, not linked from the landing page.
 
 Invoked via the root script `pnpm run build:site`. This is the command the
 Cloudflare Git integration runs. See
@@ -28,16 +38,22 @@ sub-build fails or any post-build assertion fails.
 1. Wipe and recreate `dist-site/`.
 2. Typecheck + `vite build` the **Landing app FIRST** with `--base=/
    --outDir <dist-site>` (no `--emptyOutDir`: the root was just cleaned).
-3. Build the framework once (`pnpm run build:framework`).
-4. Typecheck + `vite build` each subpath app (recorder, starter, minimal,
-   qr-demo) with `--base=/<sub>/ --outDir <dist-site/sub> --emptyOutDir`,
-   asserting no bare root-absolute URLs after each.
+3. Build the two workspace libraries once (`pnpm run build:framework`, then
+   `pnpm run build:osm`): consumers resolve both through `dist`.
+4. Typecheck + `vite build` each subpath app (recorder, starter, tour,
+   minimal, qr-demo, physics, wayfinding, osm) with
+   `--base=/<sub>/ --outDir <dist-site/sub> --emptyOutDir`, asserting no bare
+   root-absolute URLs after each.
 5. Build `blog/` from the project **wiki repository** (not a Vite app — see
-   `GpsPlusSlamJs_Landing/scripts/blog/`). Last, because it depends on nothing
-   else in the tree.
-6. Assert the landing HTML still links all four demo apps and that every
-   local asset URL it references exists (`assertLandingHtml`).
-7. Assert the combined tree contains the required files (`assertSiteTree`).
+   `GpsPlusSlamJs_Landing/scripts/blog/`); it depends on nothing else in the
+   tree.
+6. Build `lookdev/` with the design system's `buildLookdev` (no Vite), with
+   the same no-bare-absolute-URL assertion.
+7. Assert the landing HTML still links every demo app (`/starter/`,
+   `/minimal/`, `/qr-demo/`, `/recorder/`, `/physics/`, `/wayfinding/`,
+   `/osm/`, `/tour/`) and `/blog/`, and that every local asset URL it
+   references exists (`assertLandingHtml`).
+8. Assert the combined tree contains the required files (`assertSiteTree`).
 
 `base` and `outDir` are passed as **CLI flags**, so the committed app vite
 configs stay at their `/` + `dist` defaults — local `vite dev` and the USB

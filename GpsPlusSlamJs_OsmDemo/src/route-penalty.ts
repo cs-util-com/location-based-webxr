@@ -106,25 +106,6 @@ export const MAX_PENALTY = 3;
 const LN_PATH_SCORE = Math.log(PATH_SCORE);
 
 /**
- * The multiplier a cell's metres are charged at, from its walkable score.
- *
- * `undefined` means the cell is unscored — outside the ~250 m scoring disk, or
- * inside a rule table with no `walkable` column — and prices as neutral ground.
- *
- * **ALWAYS BETWEEN 1 AND {@link MAX_PENALTY}, for every input including `NaN`,
- * negative and unbounded ones.** The score is external data, and the A\*
- * heuristic stays a lower bound only while this cannot dip below 1.
- *
- * Log-linear between the two anchors, because the scores span five orders of
- * magnitude (0.2 … 24 000 in the session's own examples) and a linear map would
- * put every ordinary cell in the same bucket:
- *
- * ```
- * penalty(NEUTRAL_SCORE) = PATH_PREFERENCE     // ln 1 = 0
- * penalty(PATH_SCORE)    = 1
- * ```
- */
-/**
  * What non-path ground costs relative to a path, on top of its score penalty
  * (DEC-R2).
  *
@@ -157,6 +138,25 @@ export function pathFactor(onPath: boolean | undefined): number {
   return onPath === true ? 1 : NON_PATH_PENALTY;
 }
 
+/**
+ * The multiplier a cell's metres are charged at, from its walkable score.
+ *
+ * `undefined` means the cell is unscored — outside the ~250 m scoring disk, or
+ * inside a rule table with no `walkable` column — and prices as neutral ground.
+ *
+ * **ALWAYS BETWEEN 1 AND {@link MAX_PENALTY}, for every input including `NaN`,
+ * negative and unbounded ones.** The score is external data, and the A\*
+ * heuristic stays a lower bound only while this cannot dip below 1.
+ *
+ * Log-linear between the two anchors, because the scores span five orders of
+ * magnitude (0.2 … 24 000 in the session's own examples) and a linear map would
+ * put every ordinary cell in the same bucket:
+ *
+ * ```
+ * penalty(NEUTRAL_SCORE) = PATH_PREFERENCE     // ln 1 = 0
+ * penalty(PATH_SCORE)    = 1
+ * ```
+ */
 export function penaltyFor(score: number | undefined): number {
   // NON-FINITE IS UNKNOWN, NOT TERRIBLE. `NaN` here means the score pipeline
   // produced something uninterpretable; bending routes around a data fault

@@ -69,9 +69,13 @@ import {
   CameraBlitCapture,
   computeCaptureSize,
   computeAspectFitSize,
+  type CaptureTiming,
 } from './camera-blit-capture';
 import { CameraFrameSource } from './camera-frame-source';
-import type { RgbaImage } from './qr/qr-frontend';
+import {
+  capturedCameraFrame,
+  type CapturedCameraFrame,
+} from './captured-camera-frame';
 import { createRgbLookup, type RgbLookup } from './depth-rgb-lookup';
 import { acquireCameraTexture } from './xr-camera-texture';
 import { clearFrameUpdates, runFrameUpdates } from './frame-loop';
@@ -366,17 +370,26 @@ interface ArSessionHandle {
    * session-owned aspect-preserving blit (lazy, longer edge = `captureSize`).
    */
   cameraFrame: {
-    source: CameraFrameSource | null;
+    source: CameraFrameSource<CapturedCameraFrame> | null;
     blit: CameraBlitCapture | null;
     /** Longer-edge resolution (px) of the camera-frame blit. */
     captureSize: number;
-    onFrame: ((image: RgbaImage) => void) | null;
+    onFrame: ((frame: CapturedCameraFrame) => void) | null;
+    /** Opt-in per-capture stage timings (QR perf instrument); null = off. */
+    onCaptureTiming: ((timing: CaptureTiming) => void) | null;
+    /**
+     * THIS tick's viewer pose (null when the tick has none), set immediately
+     * before the source is ticked. The capture pairs its pixels with this -
+     * never with `latestArPose`, which keeps the last NON-null pose for other
+     * consumers (QR perf plan M4 review #1).
+     */
+    tickArPose: ARPose | null;
   };
   /**
    * Tracking-state pipeline (Stage 2). Store + host callbacks arrive TOGETHER
    * via initAR `callbacks.tracking`; `phaseUnsubscribe` is the store phase
-   * subscription opened by `initAR` (torn down by teardown/rebind so no
-   * dangling listener outlives its store). `store` is the ONE handle field
+   * subscription opened by `initAR` (torn down by teardown so no dangling
+   * listener outlives its store; MOVED to the new store by a rebind). `store` is the ONE handle field
    * mutated mid-session — {@link rebindTrackingStore}, the recorder's
    * per-recording store swap.
    */
@@ -472,6 +485,8 @@ function createCameraFrameCluster(
     blit: null,
     captureSize: DEFAULT_CAMERA_FRAME_CAPTURE_SIZE,
     onFrame: orNull(cb?.onFrame),
+    onCaptureTiming: null,
+    tickArPose: null,
   };
 }
 
@@ -634,16 +649,22 @@ function acquireDepthRgbLookup(): RgbLookup | null {
 }
 
 /**
- * Capture the current XR frame as top-left RGBA for CV detection (the
+ * Capture the current XR frame as top-left RGBA for CV detection, paired with
+ * the camera pose of the SAME XR frame and its epoch-ms capture time (the
  * `capture` injected into {@link CameraFrameSource}; called at most once per
- * detection interval). Returns null — no frame this tick — when camera access
- * or the texture is unavailable; the lazy blit makes a disposal elsewhere
- * self-healing. Reuses `latestCameraTexture`, exactly like the depth-RGB path.
+ * detection interval). Returns null — no frame this tick — when camera access,
+ * the texture or the pose is unavailable (checked before the blit, so an
+ * unpairable frame costs no readback); the lazy blit makes a disposal
+ * elsewhere self-healing. Reuses `latestCameraTexture`, like the depth-RGB path.
+ *
+ * The pose is `cameraFrame.tickArPose`, set by `onXRFrame` immediately before it
+ * ticks the source - this frame's viewer pose, or null (QR perf plan M4).
  */
-function acquireCameraFrameRgba(): RgbaImage | null {
+function acquireCameraFrame(xrTimeMs: number): CapturedCameraFrame | null {
   const { latestCameraTexture, cameraFrame } = activeSession;
+  const { tickArPose } = cameraFrame;
   const { renderer } = activeSession.sceneGraph;
-  if (!renderer || !latestCameraTexture) {
+  if (!renderer || !latestCameraTexture || !tickArPose) {
     return null;
   }
   // Size the readback to the camera ASPECT with the longer edge =
@@ -662,7 +683,18 @@ function acquireCameraFrameRgba(): RgbaImage | null {
   } else {
     cameraFrame.blit.resizeIfNeeded(target.width, target.height);
   }
-  return cameraFrame.blit.captureToRgba(renderer, latestCameraTexture);
+  const image = cameraFrame.blit.captureToRgba(
+    renderer,
+    latestCameraTexture,
+    cameraFrame.onCaptureTiming ?? undefined
+  );
+  if (!image) return null;
+  return capturedCameraFrame(
+    image,
+    tickArPose,
+    xrTimeMs,
+    performance.timeOrigin
+  );
 }
 
 /**
@@ -691,7 +723,7 @@ export interface SessionFeatureOptions {
    * code can drive a reticle via `registerXrFrameUpdate`. Default `false` —
    * existing recorder/anchor sessions are unaffected.
    */
-  requestHitTest?: boolean;
+  requestHitTest?: boolean | undefined;
   /**
    * Request `depth-sensing` (cpu-optimized) for the **live depth occluder**
    * even when crash-isolation's `enableDepthSensingFeature` is off. Consumer
@@ -870,8 +902,11 @@ export interface ArSessionCallbacks {
    * what begins delivering frames.
    */
   cameraFrame?: {
-    /** Called with each throttled top-left-origin RGBA frame. */
-    onFrame: (image: RgbaImage) => void;
+    /**
+     * Called with each throttled frame: top-left-origin RGBA plus the camera
+     * pose and epoch-ms time of the XR frame it was captured in.
+     */
+    onFrame: (frame: CapturedCameraFrame) => void;
   };
   /**
    * Per-frame callback, invoked every XR frame after pose updates but before
@@ -1026,7 +1061,11 @@ export async function initAR(
         const transformData = extractResetTransformData(
           event as unknown as Record<string, unknown>
         );
-        store.dispatch(originResetAction(transformData));
+        // The CURRENT store, not the one captured at init: the recorder
+        // rebinds mid-session, and the old store is orphaned by then.
+        (activeSession.tracking.store ?? store).dispatch(
+          originResetAction(transformData)
+        );
         log.warn(
           'XR reference space reset detected',
           transformData ? '(transform available)' : '(no transform)'
@@ -1052,14 +1091,15 @@ export async function initAR(
 
   // Initialize the camera frame source if a frame callback is set (B2). The
   // source owns the detection-cadence throttle; the session owns the blit
-  // (acquireCameraFrameRgba reuses `latestCameraTexture`), exactly like the
+  // (acquireCameraFrame reuses `latestCameraTexture`), exactly like the
   // depth-RGB path. `startCameraFrameCapture` is what begins delivering frames.
   const deliverCameraFrame = activeSession.cameraFrame.onFrame;
   if (deliverCameraFrame) {
-    activeSession.cameraFrame.source = new CameraFrameSource({
-      capture: acquireCameraFrameRgba,
-      onCapture: (image) => deliverCameraFrame(image),
-    });
+    activeSession.cameraFrame.source =
+      new CameraFrameSource<CapturedCameraFrame>({
+        capture: acquireCameraFrame,
+        onCapture: (frame) => deliverCameraFrame(frame),
+      });
   }
 
   // Start render loop
@@ -1127,8 +1167,8 @@ function subscribeToTrackingPhase(
 ): () => void {
   // `prev` is closure-local so the mirror state is naturally scoped to a
   // single subscription. Disposing the subscription (or replacing the
-  // store via `rebindTrackingStore`) discards this closure, so the next
-  // subscription always starts fresh at 'initializing'.
+  // store via `rebindTrackingStore`, which subscribes afresh) discards this
+  // closure, so the next subscription always starts fresh at 'initializing'.
   let prev: TrackingPhase = 'initializing';
   return store.subscribe(() => {
     const next = selectTrackingPhase(store.getState());
@@ -1329,6 +1369,7 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
   // every render frame. Must run after `latestCameraTexture` is set above.
   const { source: cameraFrameSource } = activeSession.cameraFrame;
   if (cameraFrameSource) {
+    activeSession.cameraFrame.tickArPose = arPose;
     cameraFrameSource.onFrame(time);
   }
 
@@ -1754,16 +1795,25 @@ export function getImageCaptureFrameCount(): number {
  * @param store — any store satisfying {@link TrackingSubscribableStore}.
  */
 export function rebindTrackingStore(store: TrackingSubscribableStore): void {
-  // If we already have an active phase subscription to a different store,
-  // tear it down before swapping. The new subscription is established
-  // inside `initAR`, not here, because we also want it to survive
-  // `resetWebXRState`-then-`initAR` cycles cleanly.
+  // A live phase subscription MOVES to the new store: the recorder swaps its
+  // store on every Start Recording, and a subscription that was only torn
+  // down left the host's onLost / onRestarted / onRecovered dormant for the
+  // rest of the session (no restart recorded, no QR frame epoch, no
+  // alignment re-basing - 2026-07-11-1811-tracking-rebind-dormant-phase-
+  // subscription-followup.md). Without a live subscription (no session, or
+  // no `tracking` group) there is nothing to move: `initAR` subscribes.
+  // The new store's slice is not reset: the new subscription starts from
+  // 'initializing', and an initializing -> tracking step fires no callback.
   const { tracking } = activeSession;
+  const wasSubscribed = tracking.phaseUnsubscribe !== null;
   if (tracking.phaseUnsubscribe) {
     tracking.phaseUnsubscribe();
     tracking.phaseUnsubscribe = null;
   }
   tracking.store = store;
+  if (wasSubscribed) {
+    tracking.phaseUnsubscribe = subscribeToTrackingPhase(store);
+  }
 }
 
 /**
@@ -1824,6 +1874,32 @@ export interface CameraFrameCaptureConfig {
    * only at very close range). Applied before the first capture.
    */
   captureSize?: number;
+  /**
+   * Opt-in per-capture stage timings (blit + synchronous readback, JS flip
+   * copy) for performance instruments such as the QR demo's `?qrperf` flag.
+   * Omitted = the capture path never reads the clock.
+   */
+  onCaptureTiming?: (timing: CaptureTiming) => void;
+  /**
+   * The consumer's veto: return `false` while a capture would be wasted (e.g.
+   * the detector is still busy). A vetoed tick skips the blit + readback
+   * without consuming the interval (see `CameraFrameSource.setWantsFrame`).
+   * Omitted = capture every interval, as before.
+   */
+  wantsFrame?: () => boolean;
+}
+
+/**
+ * The per-start consumer hooks (perf timings, busy veto). Reset on every start,
+ * so a hook never outlives the capture run it was passed to.
+ */
+function applyCameraFrameHooks(
+  cameraFrame: ArSessionHandle['cameraFrame'],
+  source: CameraFrameSource<CapturedCameraFrame>,
+  { onCaptureTiming, wantsFrame }: CameraFrameCaptureConfig
+): void {
+  cameraFrame.onCaptureTiming = onCaptureTiming ?? null;
+  source.setWantsFrame(wantsFrame ?? null);
 }
 
 /**
@@ -1860,6 +1936,7 @@ export function startCameraFrameCapture(
   if (config?.intervalMs !== undefined) {
     cameraFrame.source.updateConfig({ intervalMs: config.intervalMs });
   }
+  applyCameraFrameHooks(cameraFrame, cameraFrame.source, config ?? {});
   cameraFrame.source.start();
   log.info(
     `Camera frame capture started (interval: ${cameraFrame.source.getConfig().intervalMs}ms, long edge ${cameraFrame.captureSize}px, aspect-preserved)`

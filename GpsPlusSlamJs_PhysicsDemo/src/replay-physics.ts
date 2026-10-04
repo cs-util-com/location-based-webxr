@@ -21,6 +21,18 @@ import { pointerToNdc } from "gps-plus-slam-app-framework/visualization/pointer-
 import type { OccluderDebugStyle } from "gps-plus-slam-app-framework/visualization/occlusion-mesh";
 import type { MeshMode } from "gps-plus-slam-app-framework/ar/occupancy-mesher";
 import type { ReplaySessionController } from "gps-plus-slam-app-framework/state/replay-session";
+import {
+  bindShadowSwitch,
+  shadowsLabel,
+  startDemoShadows,
+  type DemoShadows,
+} from "./ar-shadows-wiring";
+import { createShadowProbe, installShadowProbe } from "./shadow-probe";
+import { createBallStatus, diagnosticsText, statsText } from "./ball-status";
+import { createEvery, createReceiverFlagsReader } from "./shadow-diagnostics";
+
+/** The diagnostics line's rate: about 4 Hz. */
+const DIAGNOSTICS_INTERVAL_MS = 250;
 import { createOccupancyView } from "./occupancy-view";
 import { createPhysicsRuntime } from "./physics-runtime";
 import { shootBallFromCamera } from "./shoot-ball";
@@ -33,8 +45,19 @@ export interface ReplayPhysicsControls {
   readonly meshShaderSelect: HTMLSelectElement;
   /** Element that shows the `balls N · collider N tris` line. */
   readonly statsEl: HTMLElement;
+  /** The diagnostics line's element (first-visit reports), when present. */
+  readonly diagnosticsEl?: HTMLElement;
   /** Advance the always-on perf panel once per frame. */
   readonly onFrame: () => void;
+  /** AR shadows from the thrown balls (off with `?shadows=0`). Default on. */
+  readonly shadows?: boolean;
+  /** The panel's Shadows switch (round-2 plan M1), when the page has one. */
+  readonly shadowToggle?: HTMLInputElement;
+  /**
+   * `?shadowProbe=1`: expose `window.__physicsShadowProbe` for the shadow
+   * pixel e2e (round-2 plan M1). Default off.
+   */
+  readonly shadowProbe?: boolean;
 }
 
 /** Injectable rAF scheduler so the step loop is unit-testable without a browser. */
@@ -47,6 +70,7 @@ export interface FrameScheduler {
 export interface ReplayPhysicsFactories {
   readonly createOccupancyView: typeof createOccupancyView;
   readonly createPhysicsRuntime: typeof createPhysicsRuntime;
+  readonly startDemoShadows: typeof startDemoShadows;
 }
 
 /**
@@ -63,6 +87,7 @@ const defaultScheduler: FrameScheduler = {
 const defaultFactories: ReplayPhysicsFactories = {
   createOccupancyView,
   createPhysicsRuntime,
+  startDemoShadows,
 };
 
 /**
@@ -100,23 +125,113 @@ export function startReplayPhysics(
   controls.meshStyleSelect.addEventListener("change", onMeshStyleChange);
   controls.meshShaderSelect.addEventListener("change", onMeshShaderChange);
 
+  let shadows: DemoShadows | null = null;
+  let probe: ReturnType<typeof createShadowProbe> | null = null;
+  /**
+   * The viewer, AR's phone: the recorded phone pose (`arpose`), or the
+   * probe's standing view once it has one. Never the orbit camera, which
+   * hangs 5-200 m above the room: the shadow square follows the viewer 1.4 m
+   * below it, and resting balls would read as fallen through (M1 review).
+   */
+  const viewerOf = (): THREE.Object3D => probe?.viewCamera() ?? scene.arpose;
+  const ballStatus = createBallStatus();
+  // The receiver's program flags on the status line (first-visit report).
+  const readReceiver = createReceiverFlagsReader(
+    scene.renderer,
+    scene.arWorldGroup,
+  );
+  const viewerPosition = new THREE.Vector3();
   const runtime = factories.createPhysicsRuntime(
     scene.arWorldGroup,
     occupancyView,
     {
-      onStats: (balls, tris) => {
-        controls.statsEl.textContent = `balls ${balls} · collider ${tris} tris`;
+      // The status line (round-2 plan M1): resting and fallen balls, the
+      // collider, and the shadows' state.
+      onStats: (_balls, tris) => {
+        const viewer = viewerOf().getWorldPosition(viewerPosition);
+        const status = ballStatus.update(
+          runtime.balls(),
+          viewer.y,
+          (p) => shadows?.inRange(p) ?? false,
+        );
+        controls.statsEl.textContent = statsText(
+          status,
+          tris,
+          shadowsLabel(shadows),
+        );
       },
     },
   );
+  // The replay renderer's own loop draws a frame later than this tick, so a
+  // flying ball's shadow can trail it by one frame on the desktop (AR has no
+  // such lag: there the update runs before the render).
+  // Started even with ?shadows=0 (then switched off): enabling the shadow
+  // map later would recompile every lit material mid-session.
+  shadows = factories.startDemoShadows({
+    renderer: scene.renderer,
+    scene: scene.scene,
+    arWorldGroup: scene.arWorldGroup,
+    getOccluder: () => occupancyView.getOcclusionMesh(),
+    ballCount: () => runtime.ballCount(),
+    // The shadow square follows the viewer (see viewerOf).
+    getCamera: viewerOf,
+  });
+  const releaseSwitch = bindShadowSwitch(
+    shadows,
+    controls.shadows ?? true,
+    controls.shadowToggle,
+  );
+
+  if (controls.shadowProbe) {
+    probe = createShadowProbe({
+      pause: () => session.pause(),
+      renderer: scene.renderer,
+      scene: scene.scene,
+      runtime,
+      getFloorMesh: () => occupancyView.getMesh(),
+      shadows,
+      remesh: () => occupancyView.remesh(),
+      now: () => performance.now(),
+    });
+  }
+  const removeProbe = probe
+    ? installShadowProbe(
+        window as {
+          __physicsShadowProbe?: ReturnType<typeof createShadowProbe>;
+        },
+        probe,
+      )
+    : () => {};
 
   // Desktop replay is driven by window rAF. `active` guards the straggler frame
   // that can still fire after the pending handle is cancelled.
   let active = true;
   let frameHandle = 0;
+  // The diagnostics line (first-visit reports, 2026-09-27), the same as in
+  // AR but for the XR and start parts, at about 4 Hz. The rAF timestamp
+  // the collider is stamped with shares performance.now's clock.
+  const diagnosticsDue = createEvery(DIAGNOSTICS_INTERVAL_MS);
+  const writeDiagnostics = (t: number): void => {
+    if (!controls.diagnosticsEl || !diagnosticsDue(t)) return;
+    const depth = occupancyView.depthStats();
+    const builtAt = runtime.colliderBuiltAtMs();
+    controls.diagnosticsEl.textContent = diagnosticsText({
+      depthSamples: depth.samples,
+      depthAgeMs:
+        depth.lastSampleAtMs === null ? null : t - depth.lastSampleAtMs,
+      meshTris: occupancyView.getOcclusionMesh().getTriangleCount(),
+      colliderAgeMs: builtAt === null ? null : t - builtAt,
+      ...(shadows
+        ? { shadow: { receiver: readReceiver(), ...shadows.diagnostics() } }
+        : {}),
+    });
+  };
+
   const tick = (t: number): void => {
     if (!active) return;
     runtime.step(t);
+    shadows?.update();
+    writeDiagnostics(t);
     controls.onFrame();
     frameHandle = scheduler.request(tick);
   };
@@ -173,6 +288,9 @@ export function startReplayPhysics(
     canvas.removeEventListener("pointerup", onPointerUp);
     controls.meshStyleSelect.removeEventListener("change", onMeshStyleChange);
     controls.meshShaderSelect.removeEventListener("change", onMeshShaderChange);
+    removeProbe();
+    releaseSwitch();
+    shadows?.dispose();
     runtime.dispose();
     occupancyView.dispose();
   };

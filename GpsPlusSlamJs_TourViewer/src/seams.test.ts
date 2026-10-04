@@ -23,12 +23,16 @@ describe("getSeams", () => {
     expect(typeof realSeams.enableArWorldGroupAlignment).toBe("function");
     expect(typeof realSeams.startCameraFrameCapture).toBe("function");
     expect(typeof realSeams.stopCameraFrameCapture).toBe("function");
+    expect(typeof realSeams.startDepthCapture).toBe("function");
+    expect(typeof realSeams.stopDepthCapture).toBe("function");
     expect(typeof realSeams.createQrFrontEnd).toBe("function");
     expect(typeof realSeams.solveQrPose).toBe("function");
-    expect(typeof realSeams.getCameraPose).toBe("function");
     expect(typeof realSeams.getIntrinsics).toBe("function");
     expect(typeof realSeams.createQrDebugView).toBe("function");
     expect(typeof realSeams.getScene).toBe("function");
+    // The pose every device GPS fix is paired with (D20 M5c: the e2e
+    // delivers fixes through the page's own GPS path).
+    expect(typeof realSeams.getArPose).toBe("function");
     expect(typeof realSeams.queryGeolocationPermission).toBe("function");
     expect(typeof realSeams.requestLocationOnce).toBe("function");
     expect(typeof realSeams.shareOrDownloadZip).toBe("function");

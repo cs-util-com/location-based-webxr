@@ -376,6 +376,32 @@ describe("opening a tour from step 4 (M3 review #1)", () => {
   });
 });
 
+describe("a tour opened during an AR session (scan-to-open plan §9 #12)", () => {
+  it("remembers step 4, though a session keeps the page from changing", () => {
+    // Why this matters: step 4 opens the tour its printed code names, so
+    // the open now happens INSIDE a session - where openStep keeps step 4
+    // open and remembers nothing. A reload after that session then landed
+    // on step 2 of a tour the creator measured in step 4.
+    const store = new Map<string, string>();
+    const { dom } = fakeDom();
+    wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: savedDownload,
+      arSessionActive: () => true,
+      stepStore: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => {
+          store.set(k, v);
+        },
+      },
+    }).presentTour("https://h/t.zip", { prefer: "measure" });
+    expect(store.get(wizardStepKey("https://h/t.zip"))).toBe("measure");
+    expect(dom.steps.measure?.open).toBe(true);
+  });
+});
+
 describe("the remembered step (M6)", () => {
   it("lands on the step the creator reached with this tour, and step 2 for a new one; a broken store is harmless", () => {
     // Why this matters (plan §2.7): the AR session and the print dialog
@@ -643,6 +669,48 @@ describe("visitorLaunchHref / launchHrefFromPrintedUrl", () => {
         expect(launchHrefFromPrintedUrl(base.split("?")[0] ?? base)).toBeNull();
       }),
     );
+  });
+});
+
+// Plan §66-§67 #2: the owner opens the creator page with ?debug=1 once;
+// the visitor link must keep it, from BOTH producers - presentLaunchUrl
+// overwrites the link as soon as a code is generated, which is the path a
+// field session takes. Without the flag the link is unchanged.
+describe("the visitor link carries ?debug=1", () => {
+  it("adds the flag to both hrefs only when asked, keeping the qr parameter (property)", () => {
+    fc.assert(
+      fc.property(fc.webUrl(), fc.boolean(), (url, debug) => {
+        for (const href of [
+          visitorLaunchHref(url, debug),
+          launchHrefFromPrintedUrl(
+            `https://gps.example/?qr=${encodeURIComponent(url)}`,
+            debug,
+          ),
+        ]) {
+          const params = new URLSearchParams(href ?? "");
+          expect(params.get("qr")).toBe(url);
+          expect(params.get("debug")).toBe(debug ? "1" : null);
+        }
+      }),
+    );
+  });
+
+  it("keeps the flag when a generated code replaces the link", () => {
+    const { dom } = fakeDom();
+    const wizard = wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: savedDownload,
+      debug: true,
+    });
+    wizard.presentTour("https://example.com/t.zip");
+    expect(new URLSearchParams(dom.visitorLink.href).get("debug")).toBe("1");
+    wizard.presentLaunchUrl("https://gps.example/?qr=~abc&n=2");
+    const params = new URLSearchParams(dom.visitorLink.href);
+    expect(params.get("qr")).toBe("~abc");
+    expect(params.get("n")).toBe("2");
+    expect(params.get("debug")).toBe("1");
   });
 });
 

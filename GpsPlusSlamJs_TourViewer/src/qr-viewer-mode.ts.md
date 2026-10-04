@@ -8,26 +8,90 @@ carrying the two review-ordered guardrails and the deferred negative cache.
 
 ## Public API
 
-- `VIEWER_SYNTHETIC_ACCURACY_M = 5`, `VIEWER_VOTE_BASELINE_M = 2` (delta
-  #6 cap — only M5's measurements may raise it), `VIEWER_VOTE_COUNT = 4`,
-  `MAX_VOTED_LOCKS_PER_CODE = 10` (review #6 budget; M5 tunes).
-- `buildViewerControllerConfig(deps: ViewerPipelineDeps)` — `onLocked(level)`
-  is forwarded from the controller's lock as is (no detected-text guard,
-  M5 review #4); the framework reports the lock AFTER the frame's votes,
-  so `onVotedLock` may precede it. Deps: the QR
-  device quartet plus `getLevels` (live, from the open tour),
-  `dispatchVote` (one payload → `recordGpsEvent`), `canAcceptVotes` (the
+- The measured vote geometry (authoring plan 2026-09-28-0953, M0b/M0c/M2a;
+  [results](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-09-28-1433-viewer-vote-strength-results.md)):
+  `VIEWER_VOTE_BASELINE_M = 30` (ring radius in the code's plane),
+  `VIEWER_VOTE_COUNT = 16` (votes per lock and per keep-alive fix at full
+  strength; owner decision D13 on M2a's count lever: 8 left the code
+  0.31-0.58 m off after 8+ minutes of GPS before the scan, 16 met the rule
+  on every measured arm up to a 15-minute walk), `VIEWER_SYNTHETIC_ACCURACY_M = 5`
+  (barely matters: the core weighs `1/max(acc, 1 m)^0.1`), and
+  `MAX_VOTED_LOCKS_PER_CODE = 10` (review #6 budget). The ring used to be
+  capped at 2 m (delta #6: "a wide ring amplifies the saved code's heading
+  error"); M0b measured that it does not, and that the 2 m ring left the
+  heading 6-31° off after a scan. `VIEWER_KEEP_ALIVE_HOLD_MS = 120000` and
+  `VIEWER_KEEP_ALIVE_FADE_MS = 120000` (the owner's "about two minutes, then
+  fade", M0c). Each constant's doc comment names what would reverse it.
+- `createViewerKeepAlive()` - the code keep-alive (`qr-vote-keep-alive.ts`)
+  with these constants.
+- `buildViewerControllerConfig(deps: ViewerPipelineDeps)` — `onLocked(level,
+hasVoted)` is forwarded from every controller lock (no detected-text
+  guard, M5 review #4), with whether the locked code has cast votes in
+  this AR entry (the scan gate passes only then; authoring plan
+  2026-09-28-0953 §2.2 B3); the framework reports the lock AFTER the
+  frame's votes, so `onVotedLock` may precede it. Deps: the QR
+  device trio (`frontEnd`, `solvePose`, `getIntrinsics` - no pose reader since
+  QR perf plan 2026-09-23 M4; each frame carries its capture pose) plus `getLevels` (live, from the open tour),
+  `dispatchVotes` (one voted lock's whole ring at once - the viewer stores
+  it as ONE `recordGpsEventBatch`, one solve per lock, D18 / M2e),
+  `canAcceptVotes` (the
   budget must NOT be charged while the store drops votes — before the
   first GPS fix), `resolveStablePose` (the same convergence gate minting
-  uses; the controller skips unconverged votes with the budget untouched),
+  uses - the fused pose since plan §60; the controller skips unconverged
+  votes with the budget untouched, and the config stops asking once the
+  code's vote budget is spent - ~10 ms per lock saved, §61 #6),
   `recordDetection`, `onError`, and the optional `onStatus` /
   `onUnknownCode` / `onUnusableLevel` (a level with geo but no printed
-  size) / `onVotedLock` UI hooks.
+  size) / `onVotedLock` UI hooks, and the optional `keepAlive`: each lock
+  that dispatched votes - from the FIRST, not only once the budget is
+  spent (M2b review #7) - hands it the stable pose the controller resolved
+  for that frame (with the level's geo and size); after the budget the
+  config no longer resolves a pose, so this is the only place it can be
+  kept. Every other lock of a code is a re-scan (`relock`, which restarts
+  the hold only from a fresh pose). A detection of a SPENT code that the
+  keep-alive does not hold from a fresh pose (`holdsFreshPose` false: the
+  pose outlived the hold window, another code took over, or the keep-alive
+  was stopped at a frame change) re-arms that code's budget
+  (`QrVoteBudget.forget`) before the frame's stable-pose check, so the
+  re-scan's own frame votes from the code's current pose (M2b review #1).
+  Without a keep-alive a spent code stays spent. The optional `voteBudget`
+  is the budget when the app resets it itself (the viewer, per tour: M2b
+  review #6); absent, the config owns one. The optional `now` is the
+  controller's detection clock (`Date.now` when absent), which the
+  keep-alive's hold runs on. `onLocked` is present when the app listens or
+  a keep-alive is given.
 - `viewerStatusLine({...}): string` — the visitor-facing line, pure;
   carries the last lock's reprojection error (px) as the placement-quality
-  number M5's probe reads.
+  number M5's probe reads. Its optional `fusedHint` (from
+  `qr-debug-readout.ts`'s `visitorFusedHint`, plan §66) is shown before the
+  first vote instead of "Scanning for the printed code…"; an unknown or
+  unusable code still wins, and the vote states replace it. Its optional
+  `hold` (the keep-alive's phase) decides the spent-budget line: "the code
+  holds the placement for N s more", "the code's hold is fading; GPS takes
+  over gradually", or "the code's hold has ended - GPS places the tour now";
+  without a phase for the locked code it only says the batches were cast.
+  It used to say "placement holds" unconditionally while the votes faded
+  out of the solve (authoring plan §2.2 B1).
 - `imagePlaneRingNue(centerNue, count, radiusM?)` — ring positions in
   GPS-world NUE at the anchor's height.
+
+## A code the moved-code check ignores (D20, M5c)
+
+- `ViewerPipelineDeps.isIgnored(text)` is read FIRST on every lock (§7j
+  #16): an ignored code's `resolveStablePose` returns null without asking
+  the fused pose (about 10 ms a lock on the phone), `dispatchVotes` drops
+  anything, a spent budget is not re-armed, and its lock goes to
+  `onIgnoredLock(text, level)` instead of `onLocked` - so no keep-alive
+  restart and no gate pass "via code".
+- `onVotedPose({ text, qrPoseWorld, level }, atMs)` - every voted lock's
+  stable pose, the one its votes (and the keep-alive) were built from: what
+  the moved-code check pins the code on.
+- `onLevelResolved(text, level, levelId)` now carries the level id (null
+  when the text could not be hashed): the veto memory is keyed by it.
+- `IGNORED_CODE_LINE` and `viewerStatusLine({ ..., ignoredCode })`: "This
+  code seems to have been moved, so its position is not used. Showing the
+  tour by GPS." replaces every lock and hold line (no "Relocalized", no
+  "Scan the code again", which the veto would ignore).
 
 ## Invariants & assumptions
 
@@ -65,7 +129,8 @@ const controller = createQrTrackingController(
   buildViewerControllerConfig({
     ...deviceQuartet,
     getLevels: () => currentLevels,
-    dispatchVote: (p) => store.dispatch(recordGpsEvent(p)),
+    dispatchVotes: (ps) =>
+      store.dispatch(recordGpsEventBatch({ events: [...ps] })),
     ...uiHooks,
   }),
 );
@@ -73,7 +138,13 @@ const controller = createQrTrackingController(
 
 ## Tests
 
-`qr-viewer-mode.test.ts` — the 2 m baseline pin, level resolution by
+`qr-viewer-mode.test.ts` — the measured-geometry pin (30 m, 16 votes), the
+`hasVoted` lock adapter, the keep-alive hand-over (a voted lock keeps its
+pose past the budget, armed from the first voted lock, a lock without votes
+keeps nothing, a re-scan inside the hold window restarts the hold without
+votes, one 20 minutes later votes afresh from the current pose, a spent
+code re-arms after a stop and after another code took over, and stays
+spent without a keep-alive), the hold and fade pins, the hold lines, level resolution by
 detected code, the placeholder + `onUnknownCode`, the per-code budget
 (stops exactly at the cap, other codes unaffected, detections keep
 recording), the status-line table, and the ring geometry. The composed

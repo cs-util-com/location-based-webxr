@@ -44,6 +44,9 @@ integration over `createEnableGpsArController` + `registerXrFrameUpdate`.
   starts (recording must be active), forwards every fix through
   `createGpsPositionHandler` and every orientation sample through
   `updateDeviceOrientation`, so the alignment matrix the anchor reads is live.
+  The handler also starts the compass cold start's `AbsoluteOrientationSensor`
+  at the first recorded fix (framework default since 2026-10-02, D30; a clean
+  no-op off Chrome Android), with no code here.
 - On a valid tap, `placeContrastPair` co-spawns (via [co-spawn.ts](co-spawn.ts))
   the deliberate floater cube under the scene root and an anchored marker under
   `arWorldGroup` at the same world pose, then hands the marker to

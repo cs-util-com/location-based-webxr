@@ -27,7 +27,12 @@ Not applicable — declarative config consumed by Cloudflare's build pipeline.
   alone is not enough — without the dashboard change the `dist-site` directory
   would be empty and the deploy fails fast.
 - The deployed URL map is: `/` → landing page, `/recorder/` → RecorderApp,
-  `/starter/` → AnchorStarter, `/minimal/` → MinimalExample. See
+  `/starter/` → AnchorStarter, `/tour/` → TourViewer, `/minimal/` →
+  MinimalExample, `/qr-demo/` → QrTrackingDemo, `/physics/` → PhysicsDemo,
+  `/wayfinding/` → WayfindingHudDemo, `/osm/` → OsmDemo, `/blog/` → the wiki
+  blog, `/lookdev/` → the design system's look-dev page, and `/api/*` → the
+  site worker (`main`). `scripts/build-site.mjs.md` is the source for what
+  each path is built from. See
   [2026-06-01-0424-multi-app-subpath-deployment-plan.md](../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-01-0424-multi-app-subpath-deployment-plan.md).
 - `compatibility_date` is bumped to deploy date when Cloudflare APIs change.
 - `main` points at the site worker's TypeScript entry — wrangler bundles it

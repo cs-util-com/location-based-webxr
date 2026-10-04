@@ -371,6 +371,104 @@ describe('rebuildZipWithEntries', () => {
     ]);
   });
 
+  describe('the removal list (Tour Viewer authoring plan 2026-09-28-0953, M4)', () => {
+    // Why these tests matter: a creator who deletes a placed photo expects
+    // its bytes to leave the published zip with its record. Without a
+    // removal list the rebuild could only add or replace, so every deleted
+    // photo left an orphaned `content/<id>.jpg` behind - in a zip the
+    // creator uploads over the hosted one, where nothing would ever
+    // collect it.
+    it('drops the named entries and keeps every other entry byte-identical', async () => {
+      const input = await recordingLikeZip();
+      const out = await rebuildZipWithEntries(
+        input,
+        [{ path: 'tour.json', data: '{}' }],
+        { remove: ['images/frame_000001.jpg'] }
+      );
+      const before = await entryBytes(input);
+      const after = await entryBytes(out);
+      expect([...after.keys()].sort()).toEqual([
+        'actions/000001.json',
+        'session.json',
+        'tour.json',
+      ]);
+      expect(after.get('session.json')).toEqual(before.get('session.json'));
+    });
+
+    it("matches a removal under the archive's own ./ convention", async () => {
+      // The finish names a photo by the prefix it found the manifest at;
+      // in a `./`-written archive either spelling is the same file.
+      const writer = new ZipWriter(new BlobWriter('application/zip'), {
+        level: 0,
+      });
+      await writer.add('./tour.json', new TextReader('{"version":1}'));
+      await writer.add('./content/gone.jpg', new TextReader('gone'));
+      await writer.add('./content/kept.jpg', new TextReader('kept'));
+      const input = await writer.close();
+      const out = await rebuildZipWithEntries(input, [], {
+        remove: ['content/gone.jpg'],
+      });
+      expect([...(await entryBytes(out)).keys()].sort()).toEqual([
+        './content/kept.jpg',
+        './tour.json',
+      ]);
+    });
+
+    it('ignores a removal the archive does not carry (a photo that never reached it)', async () => {
+      const input = await recordingLikeZip();
+      const out = await rebuildZipWithEntries(input, [], {
+        remove: ['content/never-uploaded.jpg'],
+      });
+      expect([...(await entryBytes(out)).keys()].sort()).toEqual([
+        'actions/000001.json',
+        'images/frame_000001.jpg',
+        'session.json',
+      ]);
+    });
+
+    it('refuses a path that is both removed and written - the call contradicts itself', async () => {
+      const writer = new ZipWriter(new BlobWriter('application/zip'), {
+        level: 0,
+      });
+      await writer.add('./session.json', new TextReader('{}'));
+      const input = await writer.close();
+      await expect(
+        rebuildZipWithEntries(
+          input,
+          [{ path: 'session.json', data: '{"new":true}' }],
+          { remove: ['./session.json'] }
+        )
+      ).rejects.toThrow(/both removed and written/);
+    });
+
+    it('refuses the contradiction on a FLAT archive too, when only the removal carries the ./ (PR #531 review)', async () => {
+      // Why this test matters: a review read the two sides' `./` rules as
+      // disagreeing on a flat archive, so this exact call would pass
+      // silently. Both spellings name one file to every reader, so it must
+      // be refused. (A NEW `./` entry on a flat archive never gets here: it
+      // is refused earlier as an unsafe path.)
+      const input = await recordingLikeZip();
+      await expect(
+        rebuildZipWithEntries(input, [{ path: 'content/a.jpg', data: 'x' }], {
+          remove: ['./content/a.jpg'],
+        })
+      ).rejects.toThrow(/both removed and written/);
+    });
+
+    it('counts removed entries out of the progress total', async () => {
+      const seen: [number, number][] = [];
+      await rebuildZipWithEntries(await recordingLikeZip(), [], {
+        remove: ['images/frame_000001.jpg'],
+        onProgress: (done, total) => seen.push([done, total]),
+      });
+      expect(seen).toEqual([
+        [1, 2],
+        [2, 2],
+        [2, 2],
+      ]);
+    });
+  });
+
   it('THROWS on an unsafe new path, an unwritable payload, and a non-zip input - never returns the input', async () => {
     const input = await recordingLikeZip();
     await expect(

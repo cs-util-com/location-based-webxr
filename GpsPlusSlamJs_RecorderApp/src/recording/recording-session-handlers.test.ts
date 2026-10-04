@@ -358,7 +358,7 @@ vi.mock('gps-plus-slam-app-framework/core', () => ({
   magneticHeadingFromEnuQuat: vi.fn().mockReturnValue(0),
 }));
 
-vi.mock('../utils/build-info', () => ({
+vi.mock('gps-plus-slam-app-framework/utils/build-info', () => ({
   getBuildInfo: mockGetBuildInfo,
 }));
 
@@ -1416,6 +1416,27 @@ describe('handleStopRecording', () => {
     await handlers.handleStopRecording();
 
     expect(mockSetStopButtonBusy).toHaveBeenCalledWith(true);
+  });
+
+  it('reports a stop in progress for its whole duration, and not before or after', async () => {
+    // WHY: Stop flushes the action writes BEFORE the zip export and ends the
+    // session only after it, so a note dispatched in between passes the
+    // isRecording gate yet can miss the zip. The sun check's note recorder
+    // reads this getter to refuse that window (sun-sighting-note.ts).
+    mockGetSaveFileHandle.mockReturnValue(null);
+    await handlers.handleStartRecording();
+    vi.clearAllMocks();
+    const seenDuringStop: boolean[] = [];
+    mockComputeFusedPath.mockImplementationOnce(() => {
+      seenDuringStop.push(handlers.isStopInProgress());
+      return undefined;
+    });
+    expect(handlers.isStopInProgress()).toBe(false);
+
+    await handlers.handleStopRecording().catch(() => {});
+
+    expect(seenDuringStop).toEqual([true]);
+    expect(handlers.isStopInProgress()).toBe(false);
   });
 
   it('restores the Stop button to idle when performStop throws, so the UI is not bricked', async () => {

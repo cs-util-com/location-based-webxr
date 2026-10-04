@@ -18,9 +18,13 @@ code outside `main.ts` can create and tear them down.
     once per rendered XR frame.
   - `loopClosureHandler: LoopClosureHandler | null` — rebound to the current
     store inside the per-frame callback.
-  - `qrProducer: QrDetectionController | null` — RAW QR producer fed by the
-    framework's camera-frame callback.
+  - `qrProducer: QrFrameSink | null` - the QR producer (the thin RAW
+    `QrDetectionController`, or the level-consuming `QrTrackingController`) fed
+    by the framework's camera-frame callback.
   - `refPointViews: RefPointViewWiring | null` — 3D spheres + live-map markers.
+- `QrFrameSink` - the frame-consuming surface both QR controllers share:
+  `offerFrame(frame: CapturedCameraFrame)` (pixels paired with their capture
+  pose and time by the framework, QR perf plan 2026-09-23 M4) and `reset()`.
 - `createArSessionResources(): ArSessionResources` — a record with every slot
   `null`. No error modes; it is a plain object literal.
 

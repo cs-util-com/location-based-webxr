@@ -22,6 +22,9 @@ Re-exports from `gps-plus-slam-js`:
 | `createLoopClosureHandler`                       | factory  | RecorderApp live loop-closure detection (operator-gated, default OFF)              |
 | `createGpsSlamStore`                             | factory  | RecorderApp `recording-replay.integration.test.ts`                                 |
 | `validateLicenseKey`                             | function | RecorderApp tests that exercise licensed math (e.g. visualization)                 |
+| `gpsPointSourceOf`                               | function | TourViewer keep-alive: re-votes on device fixes only (`qr-vote-keep-alive.ts`)     |
+| `GPS_POINT_SOURCE_DEVICE`                        | constant | The same check's device value                                                      |
+| `GPS_POINT_SOURCE_SYNTHETIC_QR`                  | constant | The stamp `buildQrGpsVotes` writes; TourViewer tests                               |
 | `Vector3`, `Quaternion`                          | type     | RecorderApp ref-point handlers + tests                                             |
 | `Matrix4`                                        | type     | RecorderApp recording-session handlers                                             |
 | `LatLong`                                        | type     | RecorderApp main.ts, recording-session handlers, action-schema test                |

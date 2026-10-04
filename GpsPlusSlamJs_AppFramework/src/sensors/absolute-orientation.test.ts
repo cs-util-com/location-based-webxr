@@ -14,6 +14,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   startAbsoluteOrientationWatch,
+  ensureAbsoluteOrientationWatch,
   stopAbsoluteOrientationWatch,
   getLatestAbsoluteOrientation,
   isAbsoluteOrientationAvailable,
@@ -361,6 +362,78 @@ describe('AbsoluteOrientationSensor capture', () => {
       // The stale start must not have installed a sensor.
       expect(FakeAbsoluteOrientationSensor.lastInstance).toBeNull();
       expect(getLatestAbsoluteOrientation()).toBeNull();
+    });
+  });
+
+  // Why these tests matter (compass cold start default, D30, 2026-10-02):
+  // `createGpsPositionHandler` now starts the watch on its own. An app that
+  // already started it (the Recorder passes its HUD status callback) must NOT
+  // be restarted underneath: a restart stops the live sensor, clears the
+  // cached reading and silently swaps the app's `onStatus` for the
+  // handler's. `ensure` is the start that leaves a requested watch alone.
+  describe('ensureAbsoluteOrientationWatch', () => {
+    beforeEach(() => {
+      installSensor();
+      setPermissions('granted');
+      setScreenAngle(0);
+    });
+
+    it('starts the watch when none was requested', async () => {
+      await ensureAbsoluteOrientationWatch();
+      expect(FakeAbsoluteOrientationSensor.lastInstance?.started).toBe(true);
+    });
+
+    it('leaves a watch the app already started alone (sensor, reading and status callback kept)', async () => {
+      const appStatus = vi.fn();
+      await startAbsoluteOrientationWatch(appStatus);
+      const appSensor = FakeAbsoluteOrientationSensor.lastInstance!;
+      appSensor.quaternion = [0, 0, 0, 1];
+      appSensor.emit('reading');
+
+      const handlerStatus = vi.fn();
+      await ensureAbsoluteOrientationWatch(handlerStatus);
+
+      expect(FakeAbsoluteOrientationSensor.lastInstance).toBe(appSensor);
+      expect(appSensor.stopped).toBe(false);
+      expect(getLatestAbsoluteOrientation()).not.toBeNull();
+      appSensor.emit('activate');
+      expect(appStatus).toHaveBeenCalledWith({ state: 'active' });
+      expect(handlerStatus).not.toHaveBeenCalled();
+    });
+
+    it('does not restart a start that is still awaiting its permission gate', async () => {
+      const query = vi.fn().mockResolvedValue({ state: 'granted' });
+      Object.defineProperty(navigator, 'permissions', {
+        value: { query },
+        configurable: true,
+      });
+      const pending = startAbsoluteOrientationWatch();
+      await ensureAbsoluteOrientationWatch();
+      await pending;
+      // One start = one query per underlying sensor (3), and one sensor.
+      expect(query).toHaveBeenCalledTimes(3);
+      expect(FakeAbsoluteOrientationSensor.lastInstance?.started).toBe(true);
+    });
+
+    it('starts again after an explicit stop (an app teardown ends the request)', async () => {
+      await startAbsoluteOrientationWatch();
+      const first = FakeAbsoluteOrientationSensor.lastInstance!;
+      stopAbsoluteOrientationWatch();
+      await ensureAbsoluteOrientationWatch();
+      expect(FakeAbsoluteOrientationSensor.lastInstance).not.toBe(first);
+      expect(FakeAbsoluteOrientationSensor.lastInstance?.started).toBe(true);
+    });
+
+    it('does not retry an unavailable platform on every call', async () => {
+      delete (window as unknown as Record<string, unknown>)
+        .AbsoluteOrientationSensor;
+      const onStatus = vi.fn();
+      await ensureAbsoluteOrientationWatch(onStatus);
+      await ensureAbsoluteOrientationWatch(onStatus);
+      expect(onStatus).toHaveBeenCalledTimes(1);
+      expect(onStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ state: 'unavailable' })
+      );
     });
   });
 });

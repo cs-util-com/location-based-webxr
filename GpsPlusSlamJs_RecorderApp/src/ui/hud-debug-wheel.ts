@@ -38,6 +38,7 @@
  */
 
 import {
+  recordDiagnostic,
   setAlignmentOverrides,
   setColdStartOverrideEnabled,
   setCompassPairSelectionEnabled,
@@ -129,6 +130,21 @@ export function dispatchWheelSettings(
   if (controls.has('presetId')) {
     const preset = findAlignmentPreset(s.presetId);
     store.dispatch(setAlignmentOverrides(preset?.overrides ?? null));
+    // WHY a note as well as the setting. The override PAYLOAD reaches the
+    // recording, but nothing in it says which preset the tester tapped, and a
+    // preset removed later cannot be reverse-matched from its payload at all.
+    // `diagnostics/note` has no reducer and changes nothing; it exists to be
+    // recorded. It is dispatched HERE rather than captured at session start
+    // because the wheel's whole purpose is switching mid-walk, and a
+    // start-of-session snapshot would confidently assert a preset that was
+    // active for the first thirty seconds.
+    store.dispatch(
+      recordDiagnostic({
+        kind: 'alignment-preset',
+        atMs: Date.now(),
+        detail: { presetId: s.presetId, known: preset !== undefined },
+      })
+    );
   }
   if (controls.has('compassInfluence')) {
     const compass = compassSettingsFor(s.compassInfluence, {
@@ -339,6 +355,13 @@ export interface DebugWheelDeps {
   readonly controlsRoot: HTMLElement;
   /** Where the panel goes (the `#app` DOM-overlay root, so it composites in AR). */
   readonly overlayRoot: HTMLElement;
+  /**
+   * The AR sun check's switch (sun-overlay plan M3). Local UI state, not a
+   * store setting: never dispatched, never replayed onto a new store.
+   * Resolves to the state actually reached (the safety note can be
+   * declined). Absent: no switch is shown.
+   */
+  readonly onSunCheckChange?: (enabled: boolean) => Promise<boolean>;
 }
 
 export interface DebugWheel {
@@ -354,6 +377,11 @@ export interface DebugWheel {
   suspend(): void;
   /** Drive stores again; held changes reach the current store if decided. */
   resume(): void;
+  /**
+   * Show the sun check's state when the APP changed it (the check turned
+   * itself off on attach); a no-op without the box.
+   */
+  showSunCheck(enabled: boolean): void;
 }
 
 export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
@@ -453,6 +481,13 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
   penalty.type = 'checkbox';
   penalty.id = 'debug-wheel-heading-penalty';
   penalty.checked = current.headingPenalty > 0;
+  const sunCheck = deps.onSunCheckChange
+    ? document.createElement('input')
+    : null;
+  if (sunCheck) {
+    sunCheck.type = 'checkbox';
+    sunCheck.id = 'debug-wheel-sun-check';
+  }
   const penaltyHint = document.createElement('span');
   penaltyHint.id = 'debug-wheel-heading-penalty-hint';
   penaltyHint.className = 'text-xs text-gray-400';
@@ -504,6 +539,7 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
     row('pairs need trust', requireTrust),
     row('heading penalty', penalty)
   );
+  if (sunCheck) panel.append(row('sun check (AR)', sunCheck));
   penalty.parentElement?.append(penaltyHint);
   pairSelect.parentElement?.append(pairHint);
 
@@ -574,6 +610,21 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
     })
   );
 
+  sunCheck?.addEventListener('change', () => {
+    const wanted = sunCheck.checked;
+    sunCheck.disabled = true;
+    void deps
+      .onSunCheckChange?.(wanted)
+      .catch((err: unknown) => {
+        log.error('sun check toggle failed', err);
+        return false;
+      })
+      .then((reached) => {
+        sunCheck.checked = reached;
+        sunCheck.disabled = false;
+      });
+  });
+
   const setOpen = (next: boolean): void => {
     open = next;
     panel.hidden = !next;
@@ -635,6 +686,9 @@ export function createDebugWheel(deps: DebugWheelDeps): DebugWheel {
   };
 
   return {
+    showSunCheck(enabled) {
+      if (sunCheck) sunCheck.checked = enabled;
+    },
     attach() {
       if (attached) return;
       deps.controlsRoot.append(gear);

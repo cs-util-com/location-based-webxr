@@ -314,3 +314,37 @@ describe('resolveGateMode', () => {
     }
   });
 });
+
+// WHY (globe plan 2026-09-26-0539 §8, the new-package checklist): a package
+// added to pnpm-workspace.yaml but not to projects.mjs has no gate at all,
+// and one missing from the root chain is skipped by the full cascade and by
+// CI. Adding GpsPlusSlamJs_Globe was the occasion; the rule holds for all.
+describe('every workspace package is gated', () => {
+  const workspace = readFileSync(
+    path.join(WORKSPACE_ROOT, 'pnpm-workspace.yaml'),
+    'utf8'
+  );
+  const dirs = [
+    ...workspace.split(/^overrides:/m)[0].matchAll(/^\s+-\s+(\S+)\s*$/gm),
+  ].map((m) => m[1]);
+  const root = PROJECTS.find((p) => p.dir === '.');
+
+  it('reads the workspace package list', () => {
+    expect(dirs).toContain('GpsPlusSlamJs_AppFramework');
+    expect(dirs).toContain('GpsPlusSlamJs_Globe');
+  });
+
+  it.each(dirs.map((d) => [d]))(
+    '%s has a projects.mjs entry and a stage in the root chain',
+    (dir) => {
+      expect(PROJECTS.map((p) => p.dir)).toContain(dir);
+      const manifest = JSON.parse(
+        readFileSync(path.join(WORKSPACE_ROOT, dir, 'package.json'), 'utf8')
+      );
+      const stage = root.stages.find(
+        (s) => s.command === `pnpm --filter ${manifest.name} test`
+      );
+      expect(stage, `no root stage runs ${manifest.name}`).toBeDefined();
+    }
+  );
+});

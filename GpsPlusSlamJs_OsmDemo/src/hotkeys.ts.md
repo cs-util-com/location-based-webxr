@@ -21,6 +21,9 @@ independent stages cannot silently claim the same key.
   "step forward" / "step back" is the obvious pair.
 - **Nothing fires while the user is typing** — `<input>`, `<textarea>`,
   `<select>` (native type-to-jump is typing) or any `contenteditable`.
+  **Except non-text inputs** (range, checkbox, radio, buttons, colour): they
+  take no typed text, so a shortcut still works after the sun's time slider
+  or a layer checkbox took focus (plan 2026-09-24-0706).
 - **Modified presses belong to the browser.** Ctrl/Meta/Alt combinations are
   ignored so `Ctrl+T` still opens a tab.
 - **A throwing handler is logged, not propagated.** An exception escaping a DOM
@@ -40,7 +43,7 @@ const hotkeys = new HotkeyRegistry(document);
 hotkeys.add({
   key: "t",
   description: "step the sun forward",
-  handler: () => view.setTimeOfDay(view.timeOfDayValue() + 0.05),
+  handler: () => moveSun(stepSun(sunInstant, sunPlace, 1)),
 });
 ```
 

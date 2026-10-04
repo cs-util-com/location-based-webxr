@@ -18,6 +18,7 @@ import {
   type RawObservationSink,
 } from './qr-detection-controller.js';
 import type { RawQrObservation } from './qr-derived-pose.js';
+import type { CapturedCameraFrame } from '../captured-camera-frame.js';
 
 const IMG: RgbaImage = {
   data: new Uint8ClampedArray(4),
@@ -48,6 +49,13 @@ const projectionMatrix = [
   1.875, 0, 0, 0, 0, 2.5, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0,
 ] as unknown as Matrix4;
 
+/** The frame every test offers: pixels + the pose/time of their capture. */
+const FRAME: CapturedCameraFrame = {
+  image: IMG,
+  cameraPose,
+  capturedAtMs: 42,
+};
+
 function makeController(
   detect: (image: RgbaImage) => Promise<QrDetection | null>,
   overrides: Partial<Parameters<typeof createQrDetectionController>[0]> = {}
@@ -59,7 +67,6 @@ function makeController(
   const recordDetection: RawObservationSink = (o) => recorded.push(o);
   const controller = createQrDetectionController({
     detect,
-    getCameraPose: () => cameraPose,
     getProjectionMatrix: () => projectionMatrix,
     recordDetection,
     requiredLockCount: 2,
@@ -85,11 +92,11 @@ describe('createQrDetectionController', () => {
     );
     const { controller, recorded } = makeController(detect);
 
-    controller.offerFrame(IMG);
+    controller.offerFrame(FRAME);
     await flush();
     expect(recorded).toHaveLength(0); // 1 of 2 locks
 
-    controller.offerFrame(IMG);
+    controller.offerFrame(FRAME);
     await flush();
     expect(recorded).toHaveLength(1);
     expect(controller.status).toBe('tracking');
@@ -115,41 +122,132 @@ describe('createQrDetectionController', () => {
     );
     const { controller, recorded } = makeController(detect);
 
-    controller.offerFrame(IMG);
+    controller.offerFrame(FRAME);
     await flush();
-    controller.offerFrame(IMG);
+    controller.offerFrame(FRAME);
     await flush();
 
     expect(recorded).toHaveLength(0);
     expect(controller.status).toBe('scanning');
   });
 
-  it('skips recording when the camera pose or projection is unavailable', async () => {
+  it('skips recording when the projection is unavailable', async () => {
     const detect = vi.fn(() =>
       Promise.resolve({ corners: VALID_CORNERS, text: 'https://x/y' })
     );
     const { controller, recorded } = makeController(detect, {
-      getCameraPose: () => null,
+      getProjectionMatrix: () => null,
     });
 
-    controller.offerFrame(IMG);
+    controller.offerFrame(FRAME);
     await flush();
-    controller.offerFrame(IMG);
+    controller.offerFrame(FRAME);
     await flush();
 
     expect(recorded).toHaveLength(0);
+  });
+
+  it('records the pose and time of the FRAME, not of the moment the decode resolved', async () => {
+    // Why this test matters (QR perf plan 2026-09-23, M4): the raw record is
+    // solved later against its corners; a pose sampled after the async decode
+    // would describe a different moment than the pixels.
+    const capturePose: Pose = { position: [4, 5, 6], rotation: [0, 0, 0, 1] };
+    const detect = vi.fn(() =>
+      Promise.resolve({ corners: VALID_CORNERS, text: 'https://x/y' })
+    );
+    const { controller, recorded } = makeController(detect);
+    const captured: CapturedCameraFrame = {
+      image: IMG,
+      cameraPose: capturePose,
+      capturedAtMs: 1234,
+    };
+    controller.offerFrame(captured);
+    await flush();
+    controller.offerFrame(captured);
+    await flush();
+    expect(recorded[0]).toMatchObject({
+      cameraPose: capturePose,
+      timestamp: 1234,
+    });
   });
 
   it('records nothing and stays scanning when no QR is decoded', async () => {
     const detect = vi.fn(() => Promise.resolve(null));
     const { controller, recorded } = makeController(detect);
 
-    controller.offerFrame(IMG);
+    controller.offerFrame(FRAME);
     await flush();
-    controller.offerFrame(IMG);
+    controller.offerFrame(FRAME);
     await flush();
 
     expect(recorded).toHaveLength(0);
     expect(controller.status).toBe('scanning');
+  });
+});
+
+/**
+ * Why this test matters (QR perf plan 2026-09-23, M3): isBusy is the camera
+ * source's wantsFrame veto - true exactly while a detect is in flight, so the
+ * session skips the GPU readback of a frame the scheduler would drop anyway.
+ */
+describe('createQrDetectionController isBusy', () => {
+  it('is busy exactly while a detect is in flight', async () => {
+    let resolveDetect: (d: QrDetection | null) => void = () => {};
+    const { controller } = makeController(
+      () => new Promise((resolve) => (resolveDetect = resolve))
+    );
+    expect(controller.isBusy()).toBe(false);
+    controller.offerFrame(FRAME);
+    expect(controller.isBusy()).toBe(true);
+    resolveDetect(null);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(controller.isBusy()).toBe(false);
+  });
+
+  // Why this test matters (plan §61, b4b-1): the recorder tears its producer
+  // down at session end; a decode in flight then must record nothing.
+  it('records nothing and reports no status for a decode that settles after dispose()', async () => {
+    let resolveDetect: (d: QrDetection | null) => void = () => {};
+    let calls = 0;
+    const detect = vi.fn(() =>
+      ++calls === 1
+        ? Promise.resolve<QrDetection | null>({
+            corners: VALID_CORNERS,
+            text: 'https://x/y',
+          })
+        : new Promise<QrDetection | null>((r) => (resolveDetect = r))
+    );
+    const statuses: string[] = [];
+    const { controller, recorded } = makeController(detect, {
+      onStatus: (st) => statuses.push(st),
+    });
+    controller.offerFrame(FRAME);
+    await flush();
+    controller.offerFrame(FRAME); // the lock-completing decode, held in flight
+    const before = statuses.length;
+    controller.dispose();
+    resolveDetect({ corners: VALID_CORNERS, text: 'https://x/y' });
+    await flush();
+    expect(recorded).toHaveLength(0);
+    expect(statuses).toHaveLength(before);
+  });
+
+  // Why this test matters (plan §60, b4b-2): the recorder's default path
+  // records this observation as is; a replay can ignore native-order frames
+  // only if it carries where the corner order came from.
+  it("records the decode's corner-order source", async () => {
+    const detect = vi.fn(() =>
+      Promise.resolve<QrDetection | null>({
+        corners: VALID_CORNERS,
+        text: 'https://x/y',
+        orderSource: 'native',
+      })
+    );
+    const { controller, recorded } = makeController(detect);
+    controller.offerFrame(FRAME);
+    await flush();
+    controller.offerFrame(FRAME);
+    await flush();
+    expect(recorded[0]!.orderSource).toBe('native');
   });
 });

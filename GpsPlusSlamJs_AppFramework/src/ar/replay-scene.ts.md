@@ -47,8 +47,8 @@ scene (GPS world frame — NUE: X=North, Y=Up, Z=East)
 ├── arWorldGroup (NUE local space)   ← alignment matrix written directly here
 │   ├── basisChangeNode ('webxr-to-nue', constant WEBXR_TO_NUE, matrixAutoUpdate=false)
 │   │   └── arpose (Object3D)        ← receives recorded odom position/rotation (WebXR space)
-├── AmbientLight
-└── DirectionalLight
+├── AmbientLight ('ar-ambient-light', SCENE_NODE.AMBIENT_LIGHT)
+└── DirectionalLight ('ar-sun-light', SCENE_NODE.SUN_LIGHT, fixed at (0, 10, 5))
 ```
 
 ## Camera Modes

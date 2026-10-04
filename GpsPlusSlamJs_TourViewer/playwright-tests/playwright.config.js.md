@@ -16,6 +16,7 @@ readiness.
 
 ## Invariants & assumptions
 
+- Chromium is launched with `browserLaunchArgs(process.env)` from `scripts/e2e/browser-launch.mjs`: `--in-process-gpu` when run-stage lowered the browser stage (Windows), so the WebGL work inherits the lowered priority; nothing otherwise.
 - Shares the workspace `playwright-global-setup.mjs` dev-server freshness
   guard: a dev server older than the last framework build is refused (a
   stale server 404s content-hashed imports and every spec times out looking

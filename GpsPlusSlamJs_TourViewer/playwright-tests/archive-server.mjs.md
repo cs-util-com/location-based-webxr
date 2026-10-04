@@ -15,7 +15,12 @@ which serves ranges normally but HOLDS a range-less GET (the background warm
 download) while the warm gate is closed (`/warm-gate?state=hold` /
 `?state=release`), the deterministic in-flight-warm window the
 clear-cache-during-warm spec needs. `release` is idempotent and answers
-already-queued requests, so call ordering cannot deadlock.
+already-queued requests, so call ordering cannot deadlock. And
+`/api/drive-proxy?id=…` - the standard zip with ranges, on the Drive
+proxy's own path so the app treats it as a Drive tour without a Google host
+(Drive replace plan §5 #12): `id=e2e-drive` sends `content-disposition`
+with the file name "My tour.zip", any other id sends none (the fallback).
+`content-disposition` is in the exposed headers, because the app (port 5187) reads this server (port 5197) cross-origin.
 
 ## Public API
 

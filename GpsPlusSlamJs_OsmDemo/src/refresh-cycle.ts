@@ -182,6 +182,21 @@ export interface RefreshCycleOptions extends StoreAccess {
    * whole instrument was built after missing.
    */
   readonly onClickSummary?: (summary: ClickSummary) => void;
+
+  /**
+   * Called when this cycle starts running and when it stops.
+   *
+   * **The only honest "a refresh is in progress" the demo has.** The obvious
+   * alternative is the store's `loading.phase`, and it is not one: this cycle
+   * dispatches `fetchStarted` ONCE, above the ring loop, while every ring's
+   * `snapshotReady` puts the phase back to idle — so the phase is idle for most
+   * of a wait that can run to a minute. An indicator driven by it switches
+   * itself off in the middle of the thing it exists to describe.
+   *
+   * Passed straight to `latestOnly`, so it fires on transitions only and a
+   * supersession is silent. See `latest-only.ts`.
+   */
+  readonly onBusyChange?: (busy: boolean) => void;
 }
 
 /** `Error` messages when we have one, the value's text when we do not. */
@@ -203,195 +218,200 @@ export function createRefreshCycle(
   const { store, actions, worker, onMesh, anchors, onTimings, onClickSummary } =
     options;
 
-  return latestOnly(async (_input: void, signal) => {
-    const { position, category } = selectOsmView(store.getState());
-    // READ, NOT DECIDED. The holder was advanced by whoever handled the position
-    // change, before the camera and the terrain load read it — see
-    // `scene-anchor.ts` for why that ordering is structural rather than a rule.
-    // A refresh with no position change (a category switch, a layer toggle, the
-    // initial load) reads the same origin it read last time, which is exactly
-    // right: the ENU frame belongs to the scene, not to this call.
-    const frameOrigin = anchors.origin;
+  return latestOnly(
+    async (_input: void, signal) => {
+      const { position, category } = selectOsmView(store.getState());
+      // READ, NOT DECIDED. The holder was advanced by whoever handled the position
+      // change, before the camera and the terrain load read it — see
+      // `scene-anchor.ts` for why that ordering is structural rather than a rule.
+      // A refresh with no position change (a category switch, a layer toggle, the
+      // initial load) reads the same origin it read last time, which is exactly
+      // right: the ENU frame belongs to the scene, not to this call.
+      const frameOrigin = anchors.origin;
 
-    // THE CLICK-LEVEL WALL CLOCK, OPENED BEFORE THE DISPATCH (r504 review).
-    // It used to open twenty-two lines below, after `fetchStarted` — while
-    // three separate places (this file's `onClickSummary` doc, `ClickSummary`
-    // in `click-timings.ts`, and `main.ts`) all said `pageResidualMs` covers
-    // "the `fetchStarted` dispatch and its subscriber renders".
-    //
-    // A synchronous store dispatch with subscriber renders behind it is
-    // EXACTLY the page-side stage this summary exists to make visible, and it
-    // was the one page-side stage the docs named by hand while measuring none
-    // of it. Since `pageResidualMs` is the only clock in the instrument that
-    // can ever see page time — the per-ring algebra cancels it — an unmeasured
-    // page stage here is invisible everywhere.
-    const clickStart = nowMs();
-    store.dispatch(
-      actions.fetchStarted(
-        `Fetching and scoring around ${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}…`,
-      ),
-    );
-
-    try {
-      // RING BY RING (W16). Each pass widens the scored disk and publishes what
-      // it has, so the map fills outward instead of appearing all at once after
-      // the widest pass. `AffordanceIndex.update` sorts nearest-first precisely
-      // so an interrupted run has done the most useful work first; this is the
-      // interruption it was written for.
+      // THE CLICK-LEVEL WALL CLOCK, OPENED BEFORE THE DISPATCH (r504 review).
+      // It used to open twenty-two lines below, after `fetchStarted` — while
+      // three separate places (this file's `onClickSummary` doc, `ClickSummary`
+      // in `click-timings.ts`, and `main.ts`) all said `pageResidualMs` covers
+      // "the `fetchStarted` dispatch and its subscriber renders".
       //
-      // THE MESH IS BUILT ONCE PER CLICK (W6), not once per pass. Only the
-      // region slabs change with the radius; the buildings, trees, POI markers,
-      // roads and plates depend on the features, the terrain and the ENU frame
-      // origin, none of which a widening ring touches. The worker decides which
-      // kind of reply to send and the callback merges it — see `MeshUpdate`.
-      // This was recorded here as a known cost for one round.
-      const rings: ClickTimings[] = [];
-      for (const radius of PROGRESSIVE_RADII) {
-        // THE CELL ARRAY ONLY TRAVELS IF SOMETHING DRAWS IT (round 10, stage B).
-        // Read per ring rather than captured once, so toggling the layer
-        // mid-widening takes effect on the next ring instead of being decided by
-        // whatever was true when the click landed.
-        const includeCells = isLayerEnabled(
-          selectLayers(store.getState()),
-          "cells",
-        );
-        // Read per ring for the same reason `includeCells` is: intent belongs to
-        // the moment it is used, not to the moment the run was queued.
-        const includeUnderground = isLayerEnabled(
-          selectLayers(store.getState()),
-          "underground",
-        );
-        // STAGE 8's ANCHOR. Clocked wholly on THIS side, and paired with the
-        // worker's own `workerTotalMs` clocked wholly on that side, so the
-        // clone cost is a difference of two durations rather than of two
-        // timestamps. A dedicated worker has its own `performance.timeOrigin`,
-        // which makes a cross-boundary timestamp subtraction an offset rather
-        // than an elapsed time — and every existing timing in this demo is
-        // taken inside the worker, so nothing here warned about it.
-        const datum = options.geoidUndulationM?.();
-        const callStart = nowMs();
-        const { snapshot, mesh, workerTimings } = await worker.call(
-          "update",
-          {
-            position,
-            frameOrigin,
-            category,
+      // A synchronous store dispatch with subscriber renders behind it is
+      // EXACTLY the page-side stage this summary exists to make visible, and it
+      // was the one page-side stage the docs named by hand while measuring none
+      // of it. Since `pageResidualMs` is the only clock in the instrument that
+      // can ever see page time — the per-ring algebra cancels it — an unmeasured
+      // page stage here is invisible everywhere.
+      const clickStart = nowMs();
+      store.dispatch(
+        actions.fetchStarted(
+          `Fetching and scoring around ${position.lat.toFixed(5)}, ${position.lng.toFixed(5)}…`,
+        ),
+      );
+
+      try {
+        // RING BY RING (W16). Each pass widens the scored disk and publishes what
+        // it has, so the map fills outward instead of appearing all at once after
+        // the widest pass. `AffordanceIndex.update` sorts nearest-first precisely
+        // so an interrupted run has done the most useful work first; this is the
+        // interruption it was written for.
+        //
+        // THE MESH IS BUILT ONCE PER CLICK (W6), not once per pass. Only the
+        // region slabs change with the radius; the buildings, trees, POI markers,
+        // roads and plates depend on the features, the terrain and the ENU frame
+        // origin, none of which a widening ring touches. The worker decides which
+        // kind of reply to send and the callback merges it — see `MeshUpdate`.
+        // This was recorded here as a known cost for one round.
+        const rings: ClickTimings[] = [];
+        for (const radius of PROGRESSIVE_RADII) {
+          // THE CELL ARRAY ONLY TRAVELS IF SOMETHING DRAWS IT (round 10, stage B).
+          // Read per ring rather than captured once, so toggling the layer
+          // mid-widening takes effect on the next ring instead of being decided by
+          // whatever was true when the click landed.
+          const includeCells = isLayerEnabled(
+            selectLayers(store.getState()),
+            "cells",
+          );
+          // Read per ring for the same reason `includeCells` is: intent belongs to
+          // the moment it is used, not to the moment the run was queued.
+          const includeUnderground = isLayerEnabled(
+            selectLayers(store.getState()),
+            "underground",
+          );
+          // STAGE 8's ANCHOR. Clocked wholly on THIS side, and paired with the
+          // worker's own `workerTotalMs` clocked wholly on that side, so the
+          // clone cost is a difference of two durations rather than of two
+          // timestamps. A dedicated worker has its own `performance.timeOrigin`,
+          // which makes a cross-boundary timestamp subtraction an offset rather
+          // than an elapsed time — and every existing timing in this demo is
+          // taken inside the worker, so nothing here warned about it.
+          const datum = options.geoidUndulationM?.();
+          const callStart = nowMs();
+          const { snapshot, mesh, workerTimings } = await worker.call(
+            "update",
+            {
+              position,
+              frameOrigin,
+              category,
+              radius,
+              includeCells,
+              includeUnderground,
+              // ON AN ABSOLUTE TIMELINE, so the worker can subtract it from its
+              // own reading and get the QUEUE WAIT. That is the one duration
+              // neither side can measure alone: the page sees post-to-reply, the
+              // worker sees handler-start-to-end, and the gap between them is
+              // where a busy worker hides. See `monotonic-clock.ts`.
+              postedAtEpochMs: nowEpochMs(),
+              // THE DATUM THIS BUILD REQUIRES. Read at post time, not captured at
+              // construction: the cycle outlives an AR session and the datum
+              // changes with the mode. Spread conditionally because
+              // `exactOptionalPropertyTypes` distinguishes absent from undefined,
+              // and the protocol means ABSENT by "desktop datum".
+              ...(datum === undefined ? {} : { geoidUndulationM: datum }),
+            },
+            { signal },
+          );
+          const roundTripMs = Math.max(0, nowMs() - callStart);
+          // NOTHING IS APPLIED FOR A SUPERSEDED RUN. Normally the abort rejects the
+          // call before it resolves, but there is a real race: if the worker's reply
+          // has already landed when the newer input arrives, the promise is already
+          // settled and the cancellation has nothing left to cancel. Without this
+          // guard that snapshot would be dispatched — a visible flash of the previous
+          // position before the current one replaces it.
+          //
+          // It also ENDS THE LOOP, which is the other half of the guarantee: the
+          // remaining rings belong to a place the user has left, and scoring them
+          // would spend the worker on ground nobody is looking at.
+          if (signal.aborted) return;
+          // AN ERROR ON SCREEN STOPS THE WIDENING, and this is a defect W16
+          // introduced rather than defensive tidiness. Publishing a snapshot
+          // returns the loading phase to `idle`, which erases whatever message is
+          // showing. With one emission per refresh that window was negligible;
+          // with three it spans the whole widening, so an error arriving in the
+          // middle of it — a refused geolocation permission was the real case —
+          // was wiped off the status line by the next ring, and the demo looked
+          // like it had done nothing at all.
+          //
+          // CHECKED HERE, immediately before publishing, rather than at the top of
+          // the pass. An error can arrive while a ring is already in flight, and
+          // that ring's own dispatch is then what erases it — a top-of-loop check
+          // runs too early to see it.
+          //
+          // `fetchStarted` clears any earlier error at the top of the run, so an
+          // error visible here always belongs to THIS run.
+          if (selectOsmView(store.getState()).loading.phase === "error") return;
+          // Mesh FIRST, then dispatch. The 3D view draws from a snapshot
+          // subscription, so a dispatch before the mesh is in place would draw the
+          // new snapshot's cells over the PREVIOUS mesh — one frame of buildings
+          // belonging to somewhere else, which is the class of disagreement the
+          // store was introduced to make impossible.
+          // STAGE 9 — the three.js upload and the store dispatch that drives the
+          // status line. Clocked around BOTH, because the ordering constraint
+          // above means they are one indivisible step from the user's point of
+          // view: the frame the user sees is the one after this pair.
+          const drawStart = nowMs();
+          onMesh(mesh);
+          store.dispatch(actions.snapshotReady(snapshot));
+          const drawMs = Math.max(0, nowMs() - drawStart);
+
+          // REPORTED AFTER THE PUBLISH, so measuring never delays what the user
+          // is waiting for. Always computed, even with no listener: a breakdown
+          // that only exists when someone is watching is one that is broken when
+          // they start watching.
+          const ring = composeClickTimings({
             radius,
-            includeCells,
-            includeUnderground,
-            // ON AN ABSOLUTE TIMELINE, so the worker can subtract it from its
-            // own reading and get the QUEUE WAIT. That is the one duration
-            // neither side can measure alone: the page sees post-to-reply, the
-            // worker sees handler-start-to-end, and the gap between them is
-            // where a busy worker hides. See `monotonic-clock.ts`.
-            postedAtEpochMs: nowEpochMs(),
-            // THE DATUM THIS BUILD REQUIRES. Read at post time, not captured at
-            // construction: the cycle outlives an AR session and the datum
-            // changes with the mode. Spread conditionally because
-            // `exactOptionalPropertyTypes` distinguishes absent from undefined,
-            // and the protocol means ABSENT by "desktop datum".
-            ...(datum === undefined ? {} : { geoidUndulationM: datum }),
-          },
-          { signal },
-        );
-        const roundTripMs = Math.max(0, nowMs() - callStart);
-        // NOTHING IS APPLIED FOR A SUPERSEDED RUN. Normally the abort rejects the
-        // call before it resolves, but there is a real race: if the worker's reply
-        // has already landed when the newer input arrives, the promise is already
-        // settled and the cancellation has nothing left to cancel. Without this
-        // guard that snapshot would be dispatched — a visible flash of the previous
-        // position before the current one replaces it.
+            pipeline: snapshot.timings,
+            worker: workerTimings,
+            roundTripMs,
+            drawMs,
+          });
+          rings.push(ring);
+          onTimings?.(ring);
+        }
+        // AFTER THE LOOP, so it covers the gaps between passes and the per-ring
+        // bookkeeping. Reported only when at least one ring published: a run that
+        // was superseded before publishing anything has no click to summarise,
+        // and a "0 ms across 0 rings" line would be noise on every abort — of
+        // which there is one per click the user makes while a fetch is in
+        // flight, i.e. the common case on a slow network.
+        if (rings.length > 0) {
+          onClickSummary?.(
+            composeClickSummary(Math.max(0, nowMs() - clickStart), rings),
+          );
+        }
+      } catch (error) {
+        // A SUPERSEDED RUN IS NOT A FAILURE, and treating it as one was the
+        // reported "the scene resets" bug (finding R3-5).
         //
-        // It also ENDS THE LOOP, which is the other half of the guarantee: the
-        // remaining rings belong to a place the user has left, and scoring them
-        // would spend the worker on ground nobody is looking at.
+        // A newer click or a category change aborts the run in flight
+        // (`latest-only.ts`), the RPC rejects with `RpcAbortError`
+        // (`worker/rpc-client.ts`), and this `catch` used to hand that to
+        // `fetchFailed` — which clears the snapshot, the selected cell and the
+        // selected feature by design, because a DATA failure means nothing new was
+        // produced and anything still drawn is unsupported. None of that is true
+        // of an abort: the data is fine, a newer run is already queued, and the
+        // only thing that happened is that this one stopped early.
+        //
+        // Both views are snapshot subscribers, so the dispatch blanked the map and
+        // the 3D scene and closed the details panel — on nearly every second
+        // click, because three progressive rings over a 2.8 km mesh build leave a
+        // wide window in which to be superseded.
+        //
+        // KEYED ON `signal.aborted`, NOT ON THE ERROR TYPE. Only this demo's own
+        // coalescing aborts these calls, so the signal is the authoritative fact;
+        // matching `RpcAbortError` would need an import across the worker boundary
+        // and would still miss an abort that surfaces as some other error on the
+        // way out (the worker's own `DOMException("Aborted")`, for one).
+        //
+        // The two guards further up do NOT cover this: they check the signal after
+        // an await RESOLVES, and an aborted call rejects instead.
         if (signal.aborted) return;
-        // AN ERROR ON SCREEN STOPS THE WIDENING, and this is a defect W16
-        // introduced rather than defensive tidiness. Publishing a snapshot
-        // returns the loading phase to `idle`, which erases whatever message is
-        // showing. With one emission per refresh that window was negligible;
-        // with three it spans the whole widening, so an error arriving in the
-        // middle of it — a refused geolocation permission was the real case —
-        // was wiped off the status line by the next ring, and the demo looked
-        // like it had done nothing at all.
-        //
-        // CHECKED HERE, immediately before publishing, rather than at the top of
-        // the pass. An error can arrive while a ring is already in flight, and
-        // that ring's own dispatch is then what erases it — a top-of-loop check
-        // runs too early to see it.
-        //
-        // `fetchStarted` clears any earlier error at the top of the run, so an
-        // error visible here always belongs to THIS run.
-        if (selectOsmView(store.getState()).loading.phase === "error") return;
-        // Mesh FIRST, then dispatch. The 3D view draws from a snapshot
-        // subscription, so a dispatch before the mesh is in place would draw the
-        // new snapshot's cells over the PREVIOUS mesh — one frame of buildings
-        // belonging to somewhere else, which is the class of disagreement the
-        // store was introduced to make impossible.
-        // STAGE 9 — the three.js upload and the store dispatch that drives the
-        // status line. Clocked around BOTH, because the ordering constraint
-        // above means they are one indivisible step from the user's point of
-        // view: the frame the user sees is the one after this pair.
-        const drawStart = nowMs();
-        onMesh(mesh);
-        store.dispatch(actions.snapshotReady(snapshot));
-        const drawMs = Math.max(0, nowMs() - drawStart);
-
-        // REPORTED AFTER THE PUBLISH, so measuring never delays what the user
-        // is waiting for. Always computed, even with no listener: a breakdown
-        // that only exists when someone is watching is one that is broken when
-        // they start watching.
-        const ring = composeClickTimings({
-          radius,
-          pipeline: snapshot.timings,
-          worker: workerTimings,
-          roundTripMs,
-          drawMs,
-        });
-        rings.push(ring);
-        onTimings?.(ring);
+        store.dispatch(actions.fetchFailed(messageOf(error)));
       }
-      // AFTER THE LOOP, so it covers the gaps between passes and the per-ring
-      // bookkeeping. Reported only when at least one ring published: a run that
-      // was superseded before publishing anything has no click to summarise,
-      // and a "0 ms across 0 rings" line would be noise on every abort — of
-      // which there is one per click the user makes while a fetch is in
-      // flight, i.e. the common case on a slow network.
-      if (rings.length > 0) {
-        onClickSummary?.(
-          composeClickSummary(Math.max(0, nowMs() - clickStart), rings),
-        );
-      }
-    } catch (error) {
-      // A SUPERSEDED RUN IS NOT A FAILURE, and treating it as one was the
-      // reported "the scene resets" bug (finding R3-5).
-      //
-      // A newer click or a category change aborts the run in flight
-      // (`latest-only.ts`), the RPC rejects with `RpcAbortError`
-      // (`worker/rpc-client.ts`), and this `catch` used to hand that to
-      // `fetchFailed` — which clears the snapshot, the selected cell and the
-      // selected feature by design, because a DATA failure means nothing new was
-      // produced and anything still drawn is unsupported. None of that is true
-      // of an abort: the data is fine, a newer run is already queued, and the
-      // only thing that happened is that this one stopped early.
-      //
-      // Both views are snapshot subscribers, so the dispatch blanked the map and
-      // the 3D scene and closed the details panel — on nearly every second
-      // click, because three progressive rings over a 2.8 km mesh build leave a
-      // wide window in which to be superseded.
-      //
-      // KEYED ON `signal.aborted`, NOT ON THE ERROR TYPE. Only this demo's own
-      // coalescing aborts these calls, so the signal is the authoritative fact;
-      // matching `RpcAbortError` would need an import across the worker boundary
-      // and would still miss an abort that surfaces as some other error on the
-      // way out (the worker's own `DOMException("Aborted")`, for one).
-      //
-      // The two guards further up do NOT cover this: they check the signal after
-      // an await RESOLVES, and an aborted call rejects instead.
-      if (signal.aborted) return;
-      store.dispatch(actions.fetchFailed(messageOf(error)));
-    }
-  });
+    },
+    options.onBusyChange === undefined
+      ? {}
+      : { onBusyChange: options.onBusyChange },
+  );
 }
 
 /**
