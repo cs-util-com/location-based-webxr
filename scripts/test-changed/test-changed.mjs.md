@@ -27,6 +27,10 @@
     prefix adds all dependents (the safety closure) from pnpm's workspace
     graph — with `--workspace-concurrency=1` (parallel gates would race e2e
     ports; parallelization is a separate, measured plan item B.3).
+  - The machine slot ([machine-slot.mjs](../test-timing/machine-slot.mjs.md))
+    is taken once for the WHOLE run (not on `--dry-run`); every gate it
+    spawns inherits the token and re-enters, so no other session slips in
+    between the repo-config tests and the last dependent.
   - Root repo-config tests always run first (seconds-cheap, guard the root
     config the selection itself depends on).
   - Then, whenever a package gate runs (and before the full cascade too),

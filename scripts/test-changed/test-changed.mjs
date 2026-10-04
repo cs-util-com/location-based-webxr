@@ -41,6 +41,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { holdMachineSlotForProcess } from '../test-timing/machine-slot.mjs';
 import { SKIP_BROWSER_ENV } from '../test-timing/projects.mjs';
 import { cascadeCommands, gateCommands, selectPackages } from './select.mjs';
 
@@ -118,6 +119,13 @@ if (linkOverride) {
   console.warn(
     'test-changed: ⚠ gps-plus-slam-js is link-overridden to the sibling repo — library changes are INVISIBLE to this selection.'
   );
+}
+
+// The machine slot for the WHOLE run (machine-slot.mjs): every gate this
+// spawns inherits the token and re-enters, so another session cannot slip in
+// between the repo-config tests and the last dependent. A dry run takes nothing.
+if (!dryRun) {
+  await holdMachineSlotForProcess(`test:changed in ${WORKSPACE_ROOT}`);
 }
 
 if (runAll) {
