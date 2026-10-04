@@ -570,10 +570,11 @@ describe("an AR visit's log is its own file (authoring plan 2026-09-28-0953 M3b)
 describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", () => {
   // Why this matters: drafts live on the creator's phone across app
   // updates. A draft written by the pre-K1 app (format version 1) must load
-  // with every object and photo, and its Finish must write version 2 - a
-  // draft that silently stopped loading after an update would cost the
-  // creator a walk they cannot repeat.
-  it("loads a v1 draft from the files the old app wrote, and finishes it as version 2", async () => {
+  // with every object and photo - a draft that silently stopped loading
+  // after an update would cost the creator a walk they cannot repeat. Its
+  // Finish holds pins and photos only, so it is written as version 1, which
+  // pre-K1 builds still open (K1 milestone review R10).
+  it("loads a v1 draft from the files the old app wrote, and finishes it as version 1", async () => {
     const store = memoryStore();
     // The files exactly as the pre-K1 app wrote them (literal keys and
     // records, not this version's writers).
@@ -617,7 +618,7 @@ describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", (
         objects: [...(stored?.draft.objects ?? [])],
       }),
     );
-    expect(finished).toMatchObject({ version: 2, minor: 0 });
+    expect(finished).toMatchObject({ version: 1 });
     expect(parseTourManifest(finished).objects).toEqual(stored?.draft.objects);
   });
 });

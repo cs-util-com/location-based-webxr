@@ -216,9 +216,33 @@ describe('the version policy (tour kit plan K1, §8 D7)', () => {
     });
   });
 
-  it('a migrated v1 tour is written back as version 2', () => {
+  it('a tour with nothing version 2 needs is WRITTEN as version 1, which builds before K1 open (K1 milestone review R10)', () => {
+    // Why: the deployed main and older previews read only version 1, and
+    // refuse anything else. A Finish of a pins-and-photos tour must stay
+    // openable there; only a tour that USES version 2 needs the new number.
     const text = serializeTourManifest(
-      parseTourManifest({ version: 1, objects: [pin] })
+      parseTourManifest({ version: 1, objects: [pin, photo] })
+    );
+    const written = JSON.parse(text) as Record<string, unknown>;
+    // Exactly the shape the pre-K1 reader checks: version 1 and objects.
+    expect(Object.keys(written).sort()).toEqual(['objects', 'version']);
+    expect(written['version']).toBe(1);
+    expect(parseTourManifest(written)).toEqual(
+      parseTourManifest({ version: 2, objects: [pin, photo] })
+    );
+    expect(
+      JSON.parse(serializeTourManifest(createEmptyTourManifest()))
+    ).toEqual({ version: 1, objects: [] });
+  });
+
+  it.each([
+    ['a title', { title: 'Castle walk' }],
+    ['an order other than fixed', { order: 'any' }],
+    ['an asset', { assets: [{ id: 'knight', path: 'content/knight.png' }] }],
+    ['a station', { stations: [station] }],
+  ])('a tour with %s is written as version 2', (_label, extra) => {
+    const text = serializeTourManifest(
+      parseTourManifest({ version: 2, objects: [pin], ...extra })
     );
     expect(JSON.parse(text)).toMatchObject({ version: 2, minor: 0 });
   });
@@ -265,6 +289,86 @@ describe('the version policy (tour kit plan K1, §8 D7)', () => {
     expect(manifest).not.toHaveProperty('futureField');
     expect(manifest.objects[0]).not.toHaveProperty('futureObjectField');
     expect(manifest.stations[0]).not.toHaveProperty('futureStationField');
+  });
+
+  describe('unknown values of a closed list (K1 milestone review R4)', () => {
+    // Why: "minor versions are additive" is only true if a reader of an
+    // older minor survives what a newer one ADDS - a new block kind, a new
+    // hint, a new quiz type. Such a value degrades (the step is skipped,
+    // the hint is the arrow) when the file says it is newer; at this
+    // reader's own minor or below the same value is a broken file.
+    const newer = TOUR_MANIFEST_MINOR + 1;
+    const knight = { id: 'knight', path: 'content/knight.png' };
+    const steps = [
+      { id: 'hi', block: { kind: 'text', text: 'Hello' } },
+      { id: 'hologram', block: { kind: 'hologram', asset: 'knight' } },
+      {
+        id: 'q',
+        block: {
+          kind: 'quiz',
+          question: 'Which way?',
+          points: 1,
+          answer: { type: 'map-pick', area: 3 },
+        },
+      },
+      {
+        id: 'see',
+        block: { kind: 'image', asset: 'scan' },
+        advance: { mode: 'gaze' },
+      },
+      {
+        id: 'pick',
+        block: {
+          kind: 'choice',
+          prompt: 'Next?',
+          options: [
+            { id: 'a', label: 'Hello again', goto: 'hi' },
+            { id: 'b', label: 'The hologram', goto: 'hologram' },
+          ],
+        },
+      },
+      {
+        id: 'bye',
+        block: { kind: 'text', text: 'Bye' },
+        advance: { mode: 'gaze' },
+      },
+    ];
+    const tour = (minor: number) => ({
+      version: 2,
+      minor,
+      order: 'spiral',
+      objects: [pin, { ...pin, id: 'p9', kind: 'sticker' }],
+      assets: [knight, { id: 'scan', path: 'content/scan.splat' }],
+      stations: [{ ...station, hint: 'compass', steps }],
+    });
+
+    it('a newer minor opens: the steps it cannot show are skipped, the rest degrades', () => {
+      const manifest = parseTourManifest(tour(newer));
+      expect(manifest.minor).toBe(newer);
+      // An unknown order offers every station: nothing can deadlock.
+      expect(manifest.order).toBe('any');
+      expect(manifest.objects.map((o) => o.id)).toEqual(['p1']);
+      expect(manifest.assets.map((a) => a.id)).toEqual(['knight']);
+      const [gate] = manifest.stations;
+      expect(gate?.hint).toBe('arrow');
+      // Skipped: the unknown block, the unknown quiz type, the block whose
+      // asset is of a type this reader does not know, and the choice that
+      // was left with one option once its target was skipped.
+      expect(gate?.steps.map((s) => s.id)).toEqual(['hi', 'bye']);
+      expect(gate?.steps[1]?.advance).toEqual({ mode: 'tap' });
+    });
+
+    it("the same file at this reader's own minor is refused", () => {
+      expect(() => parseTourManifest(tour(TOUR_MANIFEST_MINOR))).toThrow(
+        TourManifestValidationError
+      );
+    });
+
+    it('a degraded tour can never be written back', () => {
+      expect(() =>
+        serializeTourManifest(parseTourManifest(tour(newer)))
+      ).toThrow(/made with a newer version of the app/);
+    });
   });
 
   it('refuses to WRITE a tour of a newer minor: saving would drop what this version cannot read', () => {

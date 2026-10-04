@@ -117,6 +117,100 @@ function parseAll(data: unknown) {
   return parseTourStations(data, { assets, fail });
 }
 
+/** Replace one value of a closed list somewhere in `data` (picked by
+ *  `pick`) with a value no reader knows. */
+function injectUnknown(
+  data: { hint?: unknown; steps: Record<string, unknown>[] }[],
+  pick: number
+): void {
+  const sites: (() => void)[] = [];
+  for (const station of data) {
+    sites.push(() => {
+      station.hint = 'compass';
+    });
+    for (const step of station.steps) {
+      const block = step['block'] as Record<string, unknown>;
+      sites.push(() => {
+        block['kind'] = 'hologram';
+      });
+      sites.push(() => {
+        step['advance'] = { mode: 'gaze' };
+      });
+      if (block['kind'] === 'quiz') {
+        sites.push(() => {
+          (block['answer'] as Record<string, unknown>)['type'] = 'map-pick';
+        });
+      }
+      if ('asset' in block) {
+        sites.push(() => {
+          block['asset'] = 'splat';
+        });
+      }
+    }
+  }
+  sites[pick % sites.length]!();
+}
+
+describe('unknown values of a newer minor (properties, K1 milestone review R4)', () => {
+  // Why this matters: a file of a newer minor may use any value a later
+  // app adds to a closed list. With the lenient flag the parse must never
+  // fail on one, and every reference that survives must still resolve -
+  // the renderer's promise that it never meets a dangling id. Without the
+  // flag (this reader's own minor) the same file is refused.
+  const assetsWithUnknown = [
+    ...ASSETS,
+    { id: 'splat', path: 'content/splat.splat' },
+  ];
+  it('lenient: never fails, and what survives resolves; strict: refused', () => {
+    fc.assert(
+      fc.property(stations, fc.nat(), (data, pick) => {
+        const copy = JSON.parse(JSON.stringify(data)) as Parameters<
+          typeof injectUnknown
+        >[0];
+        injectUnknown(copy, pick);
+        const assets = parseTourAssets(assetsWithUnknown, {
+          objectIds: new Set(),
+          fail,
+          lenient: true,
+        });
+        expect(assets.map((a) => a.id)).not.toContain('splat');
+        const parsed = parseTourStations(copy, { assets, fail, lenient: true });
+        const assetIds = new Set(assets.map((a) => a.id));
+        for (const station of parsed) {
+          expect(station.hint).toBe('arrow');
+          const stepIds = new Set(station.steps.map((s) => s.id));
+          const modes = station.steps.map((s) => s.advance.mode);
+          expect(modes.every((m) => m === 'tap' || m === 'auto')).toBe(true);
+          const assetRefs = station.steps.flatMap((s) => {
+            const asset = (s.block as unknown as Record<string, unknown>)[
+              'asset'
+            ];
+            return typeof asset === 'string' ? [asset] : [];
+          });
+          expect(assetRefs.every((a) => assetIds.has(a))).toBe(true);
+          const choices = station.steps.flatMap((s) =>
+            s.block.kind === 'choice' ? [s.block] : []
+          );
+          expect(
+            choices.every(
+              (c) =>
+                c.options.length >= 2 &&
+                c.options.every((o) => stepIds.has(o.goto))
+            )
+          ).toBe(true);
+        }
+        expect(() =>
+          parseTourStations(copy, {
+            assets: parseTourAssets(ASSETS, { objectIds: new Set(), fail }),
+            fail,
+          })
+        ).toThrow(Invalid);
+      }),
+      { numRuns: 200 }
+    );
+  });
+});
+
 describe('tour stations (properties)', () => {
   it('every well-formed station set survives a JSON round trip unchanged', () => {
     fc.assert(

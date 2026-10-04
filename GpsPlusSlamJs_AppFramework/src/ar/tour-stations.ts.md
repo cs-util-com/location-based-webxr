@@ -66,6 +66,18 @@ tolerance >= 0, unit? }`.
 
 - Unknown fields are ignored (the version policy lives in
   `tour-manifest.ts`).
+- **`lenient` (a file of a newer minor, K1 milestone review R4).** The
+  closed lists - block kind, quiz answer type, advance mode, hint, an
+  asset's media type - are what a later minor extends. With `lenient` an
+  unknown value degrades instead of failing: an asset of an unknown type
+  is left out; a step whose block kind or quiz type is unknown, or whose
+  asset is missing or of another kind, is SKIPPED; a scene choice keeps
+  only options whose target step is still there, and is skipped itself
+  below two (repeated until nothing changes); an unknown advance mode is
+  `tap`, an unknown hint `arrow`. A station whose every step was skipped
+  stays, with no steps (routes may name it; finding it completes it).
+  Without `lenient` every one of these fails, as before. Never lenient:
+  a malformed value of a KNOWN kind (a quiz without options, a bad id).
 - Not checked here, by design: whether every station is reachable under
   `branch` order (K5's reachability check), and whether radii fit the
   measured accuracy (K4, §8 D9).
@@ -79,6 +91,8 @@ tolerance >= 0, unit? }`.
 ```ts
 const assets = parseTourAssets(json.assets, { objectIds, fail });
 const stations = parseTourStations(json.stations, { assets, fail });
+// A file of a newer minor: what this reader cannot show is skipped.
+parseTourStations(json.stations, { assets, fail, lenient: true });
 ```
 
 ## Tests
@@ -88,4 +102,6 @@ const stations = parseTourStations(json.stations, { assets, fail });
   rejection per rule.
 - `tour-stations.property.test.ts` - generated station sets survive a JSON
   round trip unchanged; breaking any one asset reference or a choice
-  target is refused.
+  target is refused; one unknown closed-list value anywhere never fails a
+  lenient parse, everything that survives still resolves, and the same
+  input fails a strict parse.

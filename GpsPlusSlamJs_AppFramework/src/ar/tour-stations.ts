@@ -19,6 +19,17 @@
  * is the version policy of `tour-manifest.ts`. The caller's `fail` throws
  * its own validation error (the manifest's), so this module needs no error
  * class and no import of its parent (`check:cycles`).
+ *
+ * LENIENT for a NEWER MINOR (K1 milestone review R4): the closed lists here
+ * - block kind, quiz type, advance mode, hint, an asset's media type - are
+ * what a later additive minor extends. When the caller says the file is of
+ * a newer minor (`lenient`), an unknown value degrades instead of failing
+ * the tour: an asset of an unknown type is left out, a step whose block,
+ * quiz type or asset this reader cannot show is skipped (a scene choice
+ * left with fewer than two reachable options is skipped with it), an
+ * unknown advance mode is "tap", an unknown hint the arrow. Everything a
+ * renderer meets still resolves. At the reader's own minor or below the
+ * same value is a broken file and fails.
  */
 
 import { isFiniteNumber, isRecord } from '../utils/json-guards.js';
@@ -28,6 +39,17 @@ import type { QrGeoPose } from './qr/qr-gps-vote.js';
 import { tourMediaTypeOf } from './tour-media.js';
 
 type Fail = (message: string) => never;
+
+/** Thrown inside a step's parse when a lenient reader cannot show it; the
+ *  step catches it and is left out (R4). Never escapes this module. */
+class SkippedStep extends Error {}
+
+/** An unknown value of a closed list: skips the step for a lenient reader,
+ *  fails the file for a strict one. */
+function unknownValue(ctx: BlockContext, message: string): never {
+  if (ctx.lenient) throw new SkippedStep();
+  return ctx.fail(message);
+}
 
 /** What an asset is, from its file's extension (the media allowlist). */
 export type TourAssetKind = 'image' | 'model' | 'audio' | 'video';
@@ -231,22 +253,45 @@ function parseAssetSize(
   return { width, height };
 }
 
-function parseAsset(value: unknown, at: string, fail: Fail): TourAsset {
+/** An asset's path `content/<id>.<ext>` with its media type; `unknown-type`
+ *  for a well-formed path of a type not on the allowlist; null otherwise. */
+function assetMediaOf(
+  value: unknown,
+  id: string
+):
+  | { path: string; type: NonNullable<ReturnType<typeof tourMediaTypeOf>> }
+  | 'unknown-type'
+  | null {
+  if (typeof value !== 'string') return null;
+  const extension = ASSET_PATH.exec(value)?.[1];
+  if (extension === undefined || value !== `content/${id}.${extension}`) {
+    return null;
+  }
+  const type = tourMediaTypeOf(extension);
+  return type === null ? 'unknown-type' : { path: value, type };
+}
+
+/** An asset, or null when a lenient reader does not know its media type
+ *  (a well-formed `content/<id>.<ext>` of a type a newer app added). */
+function parseAsset(
+  value: unknown,
+  at: string,
+  fail: Fail,
+  lenient: boolean
+): TourAsset | null {
   if (!isRecord(value)) fail(`"${at}" must be an object`);
   const id = requireId(value.id, `${at}.id`, fail);
-  const extension =
-    typeof value.path === 'string'
-      ? ASSET_PATH.exec(value.path)?.[1]
-      : undefined;
-  const type = extension === undefined ? null : tourMediaTypeOf(extension);
-  if (type === null || value.path !== `content/${id}.${String(extension)}`) {
+  const media = assetMediaOf(value.path, id);
+  if (media === 'unknown-type' && lenient) return null;
+  if (media === null || media === 'unknown-type') {
     fail(
       `"${at}.path" must be content/${id}.<ext> (an allowlisted media type)`
     );
   }
+  const { path, type } = media;
   return {
     id,
-    path: value.path,
+    path,
     kind: type.kind,
     ...parseAssetSize(value, type.kind, at, fail),
   };
@@ -256,16 +301,19 @@ function parseAsset(value: unknown, at: string, fail: Fail): TourAsset {
  * Validate the tour's media assets. An asset id must not repeat, and must
  * not be an object id: both name a content file by id
  * (`content/<id>.<ext>`), so a shared id could make two records claim one
- * file.
+ * file. `lenient` (a newer minor) leaves out an asset of an unknown media
+ * type; a step that names it is then skipped.
  */
 export function parseTourAssets(
   value: unknown,
-  options: { objectIds: ReadonlySet<string>; fail: Fail }
+  options: { objectIds: ReadonlySet<string>; fail: Fail; lenient?: boolean }
 ): TourAsset[] {
   const { fail } = options;
-  const assets = requireArray(value, 'assets', fail).map((a, i) =>
-    parseAsset(a, `assets[${String(i)}]`, fail)
-  );
+  const lenient = options.lenient === true;
+  const assets = requireArray(value, 'assets', fail).flatMap((a, i) => {
+    const asset = parseAsset(a, `assets[${String(i)}]`, fail, lenient);
+    return asset === null ? [] : [asset];
+  });
   assertUnique(
     assets.map((a) => a.id),
     'asset',
@@ -285,6 +333,8 @@ export function parseTourAssets(
 interface BlockContext {
   readonly assets: ReadonlyMap<string, TourAsset>;
   readonly fail: Fail;
+  /** A newer minor: what this reader cannot show is skipped (R4). */
+  readonly lenient: boolean;
 }
 
 function requireAsset(
@@ -295,6 +345,9 @@ function requireAsset(
 ): string {
   const asset = typeof value === 'string' ? ctx.assets.get(value) : undefined;
   if (asset?.kind !== kind) {
+    // A newer minor may name an asset this reader left out, or allow
+    // another kind here: the step cannot be shown, so it is skipped.
+    if (ctx.lenient) throw new SkippedStep();
     const article = kind === 'image' || kind === 'audio' ? 'an' : 'a';
     ctx.fail(`"${at}" must name ${article} ${kind} asset`);
   }
@@ -389,9 +442,10 @@ function parseBlock(value: unknown, at: string, ctx: BlockContext): TourBlock {
     case 'choice':
       return parseChoice(value, at, ctx.fail);
     case 'quiz':
-      return parseQuiz(value, at, ctx.fail);
+      return parseQuiz(value, at, ctx);
     default:
-      return ctx.fail(
+      return unknownValue(
+        ctx,
         `"${at}.kind" must be text, image, character, audio, video, model, choice or quiz`
       );
   }
@@ -482,7 +536,12 @@ function parseNumberAnswer(
   };
 }
 
-function parseAnswer(value: unknown, at: string, fail: Fail): TourQuizAnswer {
+function parseAnswer(
+  value: unknown,
+  at: string,
+  ctx: BlockContext
+): TourQuizAnswer {
+  const fail: Fail = ctx.fail;
   if (!isRecord(value)) fail(`"${at}" must be an object`);
   switch (value.type) {
     case 'single':
@@ -494,7 +553,8 @@ function parseAnswer(value: unknown, at: string, fail: Fail): TourQuizAnswer {
     case 'number':
       return parseNumberAnswer(value, at, fail);
     default:
-      return fail(
+      return unknownValue(
+        ctx,
         `"${at}.type" must be single, multiple, text, number or code`
       );
   }
@@ -552,13 +612,14 @@ function parseByOption(
 function parseQuiz(
   v: Record<string, unknown>,
   at: string,
-  fail: Fail
+  ctx: BlockContext
 ): TourBlock {
+  const fail: Fail = ctx.fail;
   const { points } = v;
   if (!isFiniteNumber(points) || !Number.isInteger(points) || points < 0) {
     fail(`"${at}.points" must be an integer >= 0`);
   }
-  const answer = parseAnswer(v.answer, `${at}.answer`, fail);
+  const answer = parseAnswer(v.answer, `${at}.answer`, ctx);
   const route =
     v.route === undefined
       ? {}
@@ -574,24 +635,71 @@ function parseQuiz(
 
 // --- steps and stations ------------------------------------------------
 
-function parseAdvance(value: unknown, at: string, fail: Fail): TourStepAdvance {
+function parseAdvance(
+  value: unknown,
+  at: string,
+  ctx: BlockContext
+): TourStepAdvance {
+  const fail: Fail = ctx.fail;
   if (value === undefined) return { mode: 'tap' };
   if (!isRecord(value)) fail(`"${at}" must be an object`);
   if (value.mode === 'tap') return { mode: 'tap' };
-  if (value.mode !== 'auto') fail(`"${at}.mode" must be "tap" or "auto"`);
+  if (value.mode !== 'auto') {
+    // A newer minor's mode: the visitor taps on, as with no rule at all.
+    if (ctx.lenient) return { mode: 'tap' };
+    fail(`"${at}.mode" must be "tap" or "auto"`);
+  }
   if (!isFiniteNumber(value.afterS) || value.afterS <= 0) {
     fail(`"${at}.afterS" must be a number of seconds > 0`);
   }
   return { mode: 'auto', afterS: value.afterS };
 }
 
-function parseStep(value: unknown, at: string, ctx: BlockContext): TourStep {
+/** A step, or null when a lenient reader cannot show its block. */
+function parseStep(
+  value: unknown,
+  at: string,
+  ctx: BlockContext
+): TourStep | null {
   if (!isRecord(value)) ctx.fail(`"${at}" must be an object`);
+  const id = requireId(value.id, `${at}.id`, ctx.fail);
+  let block: TourBlock;
+  try {
+    block = parseBlock(value.block, `${at}.block`, ctx);
+  } catch (err) {
+    if (err instanceof SkippedStep) return null;
+    throw err;
+  }
   return {
-    id: requireId(value.id, `${at}.id`, ctx.fail),
-    block: parseBlock(value.block, `${at}.block`, ctx),
-    advance: parseAdvance(value.advance, `${at}.advance`, ctx.fail),
+    id,
+    block,
+    advance: parseAdvance(value.advance, `${at}.advance`, ctx),
   };
+}
+
+/**
+ * After a lenient reader skipped steps: a scene choice keeps only the
+ * options whose target step is still there, and a choice left with fewer
+ * than two is skipped too - repeated, because skipping a choice can strand
+ * another choice that jumped to it. Ends: every round removes something.
+ */
+function withoutStrandedChoices(steps: readonly TourStep[]): TourStep[] {
+  let kept = [...steps];
+  for (;;) {
+    const ids = new Set(kept.map((s) => s.id));
+    let changed = false;
+    const next = kept.flatMap((step): TourStep[] => {
+      if (step.block.kind !== 'choice') return [step];
+      const options = step.block.options.filter((o) => ids.has(o.goto));
+      if (options.length === step.block.options.length) return [step];
+      changed = true;
+      return options.length < 2
+        ? []
+        : [{ ...step, block: { ...step.block, options } }];
+    });
+    if (!changed) return next;
+    kept = next;
+  }
 }
 
 function parseAnchor(
@@ -642,11 +750,16 @@ function parseStation(
 ): TourStation {
   const fail: Fail = ctx.fail;
   if (!isRecord(value)) fail(`"${at}" must be an object`);
-  if (value.hint !== undefined && value.hint !== 'arrow') {
+  // A newer minor's hint mode falls back to the arrow (R4).
+  if (value.hint !== undefined && value.hint !== 'arrow' && !ctx.lenient) {
     fail(`"${at}.hint" must be "arrow"`);
   }
   const steps = requireArray(value.steps, `${at}.steps`, fail);
   if (steps.length === 0) fail(`"${at}.steps" must be a non-empty array`);
+  const parsed = steps.flatMap((s, i) => {
+    const step = parseStep(s, `${at}.steps[${String(i)}]`, ctx);
+    return step === null ? [] : [step];
+  });
   const title = textOf(value.title);
   return {
     id: requireId(value.id, `${at}.id`, fail),
@@ -654,7 +767,9 @@ function parseStation(
     anchor: parseAnchor(value.anchor, `${at}.anchor`, fail),
     ...parseRadii(value, at, fail),
     hint: 'arrow',
-    steps: steps.map((s, i) => parseStep(s, `${at}.steps[${String(i)}]`, ctx)),
+    // Lenient: a station whose every step was skipped keeps no steps, so
+    // finding it completes it; it stays, because routes may name it.
+    steps: ctx.lenient ? withoutStrandedChoices(parsed) : parsed,
     ...(value.next === undefined
       ? {}
       : { next: requireId(value.next, `${at}.next`, fail) }),
@@ -719,16 +834,18 @@ function checkStepReferences(
  * Validate the tour's stations against its (already validated) assets.
  * Station ids are unique; step ids are unique per station; every asset a
  * block names exists and is of the block's kind; every choice target, next
- * station and route target resolves.
+ * station and route target resolves. `lenient` (a newer minor) skips what
+ * this reader cannot show instead of failing (see the module comment).
  */
 export function parseTourStations(
   value: unknown,
-  options: { assets: readonly TourAsset[]; fail: Fail }
+  options: { assets: readonly TourAsset[]; fail: Fail; lenient?: boolean }
 ): TourStation[] {
   const { fail } = options;
   const ctx: BlockContext = {
     assets: new Map(options.assets.map((a) => [a.id, a])),
     fail,
+    lenient: options.lenient === true,
   };
   const stations = requireArray(value, 'stations', fail).map((s, i) =>
     parseStation(s, `stations[${String(i)}]`, ctx)

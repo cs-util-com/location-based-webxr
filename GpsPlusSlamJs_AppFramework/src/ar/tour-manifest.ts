@@ -33,6 +33,16 @@
  *   optional field reads as absent - but the WRITER refuses a tour of a
  *   newer minor than its own: rewriting it would silently drop what this
  *   version cannot read.
+ * - A newer minor may also add VALUES to a closed list (K1 milestone
+ *   review R4): an object kind, an order, and the lists of
+ *   `tour-stations.ts`. Read from a file of a newer minor, an unknown value
+ *   degrades - the object or step is left out, an unknown order offers
+ *   every station (`any`, which can never deadlock) - instead of failing
+ *   the tour; at this reader's own minor or below it is a broken file.
+ * - The writer writes VERSION 1 when the tour uses nothing of version 2 (no
+ *   title, assets or stations, the default order, minor 0): builds from
+ *   before K1 read only version 1, and a pins-and-photos tour must keep
+ *   opening there (K1 milestone review R10).
  * Series id and version number do not live here: `manifest.json` is their
  * one place (§8 G7, `tour-signed-manifest.ts`).
  */
@@ -215,22 +225,42 @@ function parsePhoto(value: Record<string, unknown>, at: string): TourPhoto {
   };
 }
 
-function parseObject(value: unknown, index: number): TourObject {
+/** A photo whose image is of a media type this reader does not know: a
+ *  newer minor's, so a lenient reader leaves the object out (R4). */
+function isUnknownImageType(value: Record<string, unknown>): boolean {
+  const extension =
+    typeof value.image === 'string'
+      ? IMAGE_ENTRY.exec(value.image)?.[1]
+      : undefined;
+  return extension !== undefined && tourMediaTypeOf(extension) === null;
+}
+
+/** An object, or null when a lenient reader cannot show it (R4). */
+function parseObject(
+  value: unknown,
+  index: number,
+  lenient: boolean
+): TourObject | null {
   const at = `objects[${String(index)}]`;
   if (!isRecord(value)) fail(`"${at}" must be an object`);
   switch (value.kind) {
     case 'pin':
       return parsePin(value, at);
     case 'photo':
+      if (lenient && isUnknownImageType(value)) return null;
       return parsePhoto(value, at);
     default:
+      if (lenient) return null;
       return fail(`"${at}.kind" must be "pin" or "photo"`);
   }
 }
 
-function parseObjects(value: unknown): TourObject[] {
+function parseObjects(value: unknown, lenient: boolean): TourObject[] {
   if (!Array.isArray(value)) fail('"objects" must be an array');
-  const objects = value.map((o, i) => parseObject(o, i));
+  const objects = value.flatMap((o, i) => {
+    const object = parseObject(o, i, lenient);
+    return object === null ? [] : [object];
+  });
   const ids = new Set<string>();
   for (const object of objects) {
     if (ids.has(object.id)) fail(`duplicate object id "${object.id}"`);
@@ -265,9 +295,12 @@ function minorOf(value: unknown): number {
   return value as number;
 }
 
-function orderOf(value: unknown): TourOrder {
+function orderOf(value: unknown, lenient: boolean): TourOrder {
   if (value === undefined) return 'fixed';
   if (typeof value !== 'string' || !ORDERS.has(value)) {
+    // A newer minor's order: offer every station, which never deadlocks
+    // (a stricter guess could leave a station nobody can reach).
+    if (lenient) return 'any';
     fail('"order" must be "fixed", "any" or "branch"');
   }
   return value as TourOrder;
@@ -277,19 +310,26 @@ function orderOf(value: unknown): TourOrder {
  *  it takes every default (its own fields beyond `objects` are ignored). */
 function parseV2Parts(
   data: Record<string, unknown>,
-  objects: readonly TourObject[]
+  objects: readonly TourObject[],
+  minor: number
 ): Omit<TourManifest, 'version' | 'objects'> {
+  const lenient = minor > TOUR_MANIFEST_MINOR;
   const assets = parseTourAssets(data.assets ?? [], {
     objectIds: new Set(objects.map((o) => o.id)),
     fail,
+    lenient,
   });
   const title = nonEmptyLabel(data.title);
   return {
-    minor: minorOf(data.minor),
+    minor,
     ...(title === undefined ? {} : { title }),
-    order: orderOf(data.order),
+    order: orderOf(data.order, lenient),
     assets,
-    stations: parseTourStations(data.stations ?? [], { assets, fail }),
+    stations: parseTourStations(data.stations ?? [], {
+      assets,
+      fail,
+      lenient,
+    }),
   };
 }
 
@@ -301,8 +341,10 @@ function parseV2Parts(
 export function parseTourManifest(data: unknown): TourManifest {
   if (!isRecord(data)) fail('manifest must be a JSON object');
   const version = formatVersionOf(data.version);
-  const objects = parseObjects(data.objects);
-  const parts = parseV2Parts(version === LEGACY_VERSION ? {} : data, objects);
+  const v2 = version === LEGACY_VERSION ? {} : data;
+  const minor = minorOf(v2.minor);
+  const objects = parseObjects(data.objects, minor > TOUR_MANIFEST_MINOR);
+  const parts = parseV2Parts(v2, objects, minor);
   return {
     version: TOUR_MANIFEST_VERSION,
     minor: parts.minor,
@@ -314,12 +356,25 @@ export function parseTourManifest(data: unknown): TourManifest {
   };
 }
 
+/** True when the manifest uses anything only version 2 can carry. */
+function needsVersion2(manifest: TourManifest): boolean {
+  return (
+    manifest.minor !== 0 ||
+    manifest.title !== undefined ||
+    manifest.order !== 'fixed' ||
+    manifest.assets.length > 0 ||
+    manifest.stations.length > 0
+  );
+}
+
 /**
  * Serialize a manifest to the JSON document `parseTourManifest` reads. The
  * input is re-validated first so a programming error fails LOUD here
  * instead of producing a broken file a creator uploads. A manifest of a
  * NEWER minor than {@link TOUR_MANIFEST_MINOR} is refused: it was read with
- * its unknown fields dropped, and writing it back would lose them.
+ * its unknown fields dropped, and writing it back would lose them. A
+ * manifest that uses nothing of version 2 is written as VERSION 1
+ * (`{ version: 1, objects }`), which builds from before K1 open (R10).
  */
 export function serializeTourManifest(manifest: TourManifest): string {
   const parsed = parseTourManifest(manifest);
@@ -328,5 +383,11 @@ export function serializeTourManifest(manifest: TourManifest): string {
       `this tour was made with a newer version of the app (format ${String(TOUR_MANIFEST_VERSION)}.${String(parsed.minor)}); saving it here would drop what this version cannot read`
     );
   }
-  return JSON.stringify(parsed, null, 2);
+  return JSON.stringify(
+    needsVersion2(parsed)
+      ? parsed
+      : { version: LEGACY_VERSION, objects: parsed.objects },
+    null,
+    2
+  );
 }
