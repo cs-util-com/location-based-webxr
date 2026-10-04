@@ -6,7 +6,7 @@ import {
   BAND_ACCURACY_FACTOR,
   FOUND_ACCURACY_FACTOR,
   HUD_ARRIVAL_BAND_M,
-  HUD_ARRIVAL_MIN_M,
+  STATION_POSE_FLOOR_M,
   stationBands,
 } from "./station-bands";
 
@@ -37,10 +37,21 @@ describe("stationBands", () => {
   it("is the HUD's arrival deadband: the arrow hides at foundM and comes back at foundExitM", () => {
     const b = stationBands({ activateRadiusM: 30, foundRadiusM: 10 }, 4);
     expect(b.foundExitM - b.foundM).toBe(4 * BAND_ACCURACY_FACTOR);
-    // The field-validated HUD deadband (1.5 m / 3.0 m) is the floor of both.
+    // The band's floor is the HUD's field-validated deadband (1.5 m).
     const tiny = stationBands({ activateRadiusM: 0.5, foundRadiusM: 0.2 }, 0.5);
-    expect(tiny.foundM).toBe(HUD_ARRIVAL_MIN_M);
     expect(tiny.foundExitM - tiny.foundM).toBe(HUD_ARRIVAL_BAND_M);
+  });
+
+  it("never finds a station tighter than its own pose is known (K4 review R7)", () => {
+    // Why this test matters (K4 review R7): station poses are off by up to
+    // 3.6 m at p90 (D34), so a 1.5 m found radius could leave a visitor on
+    // the real spot unfound for minutes.
+    expect(STATION_POSE_FLOOR_M).toBe(5);
+    const tiny = stationBands({ activateRadiusM: 0.5, foundRadiusM: 0.2 }, 0.5);
+    expect(tiny.foundM).toBe(STATION_POSE_FLOOR_M);
+    expect(
+      stationBands({ activateRadiusM: 30, foundRadiusM: 3 }, 3).foundM,
+    ).toBe(STATION_POSE_FLOOR_M);
   });
 
   it("puts the activation radius no closer than one band outside the found radius, and has no exit radius of its own (R10)", () => {
@@ -89,7 +100,7 @@ describe("stationBands", () => {
             accuracy,
           );
           expect(b.foundM).toBeGreaterThanOrEqual(found);
-          expect(b.foundM).toBeGreaterThanOrEqual(HUD_ARRIVAL_MIN_M);
+          expect(b.foundM).toBeGreaterThanOrEqual(STATION_POSE_FLOOR_M);
           expect(b.foundExitM).toBeGreaterThan(b.foundM);
           expect(b.activateM).toBeGreaterThanOrEqual(b.foundExitM);
           expect(b.activateM).toBeGreaterThanOrEqual(activate);

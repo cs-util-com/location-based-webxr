@@ -16,7 +16,7 @@
  * - APPROACH: from beyond the prefetch radius straight to a station (the
  *   first station, or the next after a skip). Swept: the lead 20-100 m,
  *   speed 0.8 / 1.4 / 1.8 m/s, 1 / 5 / 20 Mbit/s, the tightest station the
- *   bands allow at 3 m accuracy (activation 6 m, found 3 m) and a typical
+ *   bands allow at 3 m accuracy (activation 8 m, found 5 m) and a typical
  *   one (activation 30 m, found 5 m).
  * - CASTLE (R5): the visitor has found station k, its story plays for
  *   0 / 30 / 60 / 120 s, then they walk 30 m or 60 m to station k+1 (found
@@ -67,7 +67,7 @@ const DT_S = 1;
 const MB = 1024 * 1024;
 /** [activateM, foundM]: the tightest bands at 3 m accuracy, and a typical station. */
 const GEOMETRIES: readonly (readonly [number, number])[] = [
-  [6, 3],
+  [8, 5],
   [30, 5],
 ];
 const OUT = process.env["STATION_PREFETCH_SWEEP_OUT"];
