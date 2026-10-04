@@ -13,7 +13,8 @@ cloudOpacity: 0.8, skyShare: 0.2 }`, the defaults (lab parameters `#nightGain=`,
     `#waterRoughness=`, `#cloudOpacity=`; the phone round sets them).
     `skyShare` is the sky fill's share of the diffuse light, 1 - the
     relief's direct share (the terrain lab's 0.8, DEC-GL5-5).
-  - `GLOBE_CLOUD_DRIFT_DEG_PER_S` - 0.5, the clouds' default drift in
+  - `GLOBE_CLOUD_DRIFT_DEG_PER_S` - 0.375 (0.75 x the first 0.5, the
+    owner's choice, round-6 plan DEC-G6-5), the clouds' default drift in
     degrees of longitude per scene second (lab `#cloudDrift=`, 0-10): sized
     to move visibly within a few seconds at real time (about 1 px/s on a
     phone-sized globe); real weather moves about a degree an hour.

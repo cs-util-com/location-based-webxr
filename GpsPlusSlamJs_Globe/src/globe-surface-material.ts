@@ -33,10 +33,11 @@ export const GLOBE_SURFACE_TUNING = {
 /**
  * The clouds' eastward drift, in degrees of longitude per scene second: a
  * lab parameter, sized so the layer visibly moves within a few seconds at
- * real time (about 1 px/s on a phone-sized globe). Real weather moves about
+ * real time (about 1 px/s on a phone-sized globe; 0.75 x the first 0.5 by
+ * the owner's choice, round-6 plan DEC-G6-5). Real weather moves about
  * a degree an hour; this is for reading the clouds as a layer, not physics.
  */
-export const GLOBE_CLOUD_DRIFT_DEG_PER_S = 0.5;
+export const GLOBE_CLOUD_DRIFT_DEG_PER_S = 0.375;
 
 /** Every tile's program is the same one: three shares it by this key. */
 export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v8";
