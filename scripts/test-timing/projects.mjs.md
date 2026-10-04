@@ -29,6 +29,10 @@
     `projects.test.mjs` and, at runtime, `chain-guard.mjs`).
   - Commands are the FULL-SUITE form; forwarded args mark a run filtered
     (never recorded). `filteredRunArgs` are inserted only on filtered runs.
+  - Every Prettier format command uses `--cache --cache-strategy content`
+    (content-hashed, so a cached run formats exactly what an uncached one
+    would; gate-speed plan 2026-10-04, G5). ESLint's cache is not used: it
+    is unsafe with typed rules. Both are pinned in `projects.test.mjs`.
   - Commands run with cwd = the package dir and the package + workspace-root
     `node_modules/.bin` on PATH.
   - knip cannot see binaries referenced only here — keep root `knip.json`

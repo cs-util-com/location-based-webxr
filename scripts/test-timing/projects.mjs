@@ -89,6 +89,12 @@ const BUILD_OSM_STAGE = Object.freeze({
 });
 
 /** Format command shared by the app packages (framework differs). */
+// Every format command here runs Prettier with `--cache --cache-strategy
+// content` (gate-speed plan 2026-10-04, G5): a file whose content it already
+// formatted is skipped, keyed on a hash of the content, never on mtimes.
+// Measured warm: framework 14.8 / 16.4 s -> 2.7 / 2.6 s, Recorder 8.0 /
+// 7.3 s -> 1.9 / 1.8 s; the first, cold run costs about the same as before.
+// NOT ESLint's cache, which is unsafe with typed rules.
 // `"scripts"` is in the list because it was NOT, and that was a hole: the
 // Landing package grew node-side build tooling under `scripts/blog/` that no
 // format stage could see, so 15 files drifted out of style with a green gate.
@@ -96,7 +102,7 @@ const BUILD_OSM_STAGE = Object.freeze({
 // command match. `--no-error-on-unmatched-pattern` keeps it a no-op for the
 // packages that have no `scripts/` directory.
 const APP_FORMAT_COMMAND =
-  'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "playwright-tests" "scripts" index.html README.md package.json';
+  'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "playwright-tests" "scripts" index.html README.md package.json';
 
 /**
  * The stage set shared verbatim by the four uniform demo apps (AnchorStarter,
@@ -260,7 +266,7 @@ export const PROJECTS = [
       {
         name: "format",
         command:
-          'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" package.json README.md',
+          'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown --no-error-on-unmatched-pattern "src" "config" package.json README.md',
         counts: null,
       },
       {
@@ -323,7 +329,7 @@ export const PROJECTS = [
         // added after it was written (the split's design.css/catalog.css
         // would never have been formatted while the gate stayed green)
         command:
-          'prettier --log-level warn --write --ignore-unknown "*.css" "*.html" "*.mjs" "*.md" "config/*.mjs" "3d/**/*" "labs/**/*" package.json',
+          'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown "*.css" "*.html" "*.mjs" "*.md" "config/*.mjs" "3d/**/*" "labs/**/*" package.json',
         counts: null,
       },
       {
@@ -372,7 +378,7 @@ export const PROJECTS = [
       {
         name: "format",
         command:
-          'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "scripts" package.json README.md',
+          'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "scripts" package.json README.md',
         counts: null,
       },
       {
@@ -417,7 +423,7 @@ export const PROJECTS = [
       {
         name: "format",
         command:
-          'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" package.json README.md',
+          'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown --no-error-on-unmatched-pattern "src" "config" package.json README.md',
         counts: null,
       },
       {
@@ -542,7 +548,7 @@ export const PROJECTS = [
       {
         name: "format",
         command:
-          'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" package.json README.md',
+          'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown --no-error-on-unmatched-pattern "src" package.json README.md',
         counts: null,
       },
       {

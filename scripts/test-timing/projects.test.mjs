@@ -388,3 +388,34 @@ describe('gateBaseCommand (fast per-commit command)', () => {
     );
   });
 });
+
+// Why this test matters (gate-speed plan 2026-10-04, G5): Prettier's cache
+// skips files whose content it has already formatted. `content` keys it on a
+// hash of the file, never on mtimes (which every checkout and format run
+// rewrites), so a cached run formats exactly what an uncached run would.
+// ESLint's cache is deliberately NOT used: it is unsafe with typed rules.
+describe('format stages use Prettier\'s content cache', () => {
+  const formatStages = PROJECTS.flatMap((project) =>
+    project.stages
+      .filter((stage) => /(^|\s)prettier\s/.test(stage.command))
+      .map((stage) => ({ project: project.name, stage }))
+  );
+
+  it('finds the format stages (so the check is not vacuous)', () => {
+    expect(formatStages.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it.each(formatStages)('$project $stage.name', ({ stage }) => {
+    expect(stage.command).toContain('--cache --cache-strategy content');
+  });
+
+  it('no lint stage uses ESLint\'s cache', () => {
+    for (const project of PROJECTS) {
+      for (const stage of project.stages) {
+        if (/(^|\s)eslint\s/.test(stage.command)) {
+          expect(stage.command).not.toContain('--cache');
+        }
+      }
+    }
+  });
+});
