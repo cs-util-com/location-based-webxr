@@ -19,7 +19,21 @@ DEC-H3).
     new path is unsafe or duplicated, or when writing fails. It NEVER
     returns the input: a caller about to upload the result must not be
     handed the old archive as if it were new.
-- `interface RebuildZipOptions { onProgress?(done, total); remove?: readonly string[] }`
+- `interface RebuildZipOptions { onProgress?(done, total); remove?: readonly string[]; budget?: DecompressionBudget; maxEntries?: number }`
+  - `budget` / `maxEntries` (K0 milestone review R1): the input is
+    untrusted (the Tour Viewer's is a tour from any link or a file), so
+    the directory is read through the single-read cap
+    (`DEFAULT_ARCHIVE_LIMITS.maxDirectoryBytes`), listed under
+    `maxEntries` (default `DEFAULT_ARCHIVE_LIMITS.maxEntries`), and every
+    carried entry is inflated through `readZipEntryBlob` under `budget`
+    (default `DecompressionBudget.forArchive(zip.size)`). The Tour
+    Viewer passes its open session's budget when the input IS that
+    session's archive, so the Finish shares the tour's total; for a
+    previous Finish's zip (its own stored output) the default applies. A
+    cap the input passes surfaces as `ZipPackagingError` ("reading the
+    archive failed: ...") with the `ArchiveLimitError` as its `cause`.
+    The same caps reach `embedCoverageInSessionJson`'s re-emit (whose
+    failure contract returns the input untouched).
   - `remove` (Tour Viewer authoring plan 2026-09-28-0953, M4): archive
     paths left OUT of the output - a deleted photo's `content/<id>.jpg`.
     Matched under the archive's `./` convention like a replacement (either

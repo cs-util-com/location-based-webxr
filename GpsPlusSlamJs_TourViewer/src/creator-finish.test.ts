@@ -30,7 +30,10 @@
  */
 import { describe, expect, it } from "vitest";
 import { Matrix4, Quaternion, Vector3 } from "three";
-import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
+import {
+  DecompressionBudget,
+  packFilesAsZip,
+} from "gps-plus-slam-app-framework/storage";
 import {
   readStoredCentralDirectory,
   readStoredEntryBytes,
@@ -170,8 +173,13 @@ async function hostedArchive(
 }
 
 /** The slice of an open session the finish handler actually reaches for. */
-function fakeSession(blob: Blob, hostedName: string | null = null): unknown {
+function fakeSession(
+  blob: Blob,
+  hostedName: string | null = null,
+  budget?: DecompressionBudget,
+): unknown {
   return {
+    budget,
     archive: { url: "https://example.test/mytour.zip", size: blob.size },
     hostedFileName: () => hostedName,
     entries: [
@@ -181,6 +189,7 @@ function fakeSession(blob: Blob, hostedName: string | null = null): unknown {
     manifestWrap: WRAP,
     readWholeArchive: () => Promise.resolve(blob),
     loadEntry: () => Promise.resolve(new Blob([])),
+    loadEntryText: () => Promise.resolve(""),
   };
 }
 
@@ -228,6 +237,8 @@ async function wireFinishable(options: {
   onDisable?: (ctx: ReturnType<typeof createTourViewerSession>) => void;
   /** The store's alignment as 16 numbers (enables the settle). */
   alignment?: number[];
+  /** The open session's decompression budget (K0 milestone review R1). */
+  budget?: DecompressionBudget;
   /** Objects placed in the RUNNING visit (0), at these odometry spots. */
   placedInVisit?: readonly {
     object: TourObject;
@@ -237,7 +248,11 @@ async function wireFinishable(options: {
   const blob = await hostedArchive(options.hosted, options.hostedContent);
   const dom = fakeDom();
   const ctx = createTourViewerSession();
-  ctx.session = fakeSession(blob, options.hostedName ?? null) as never;
+  ctx.session = fakeSession(
+    blob,
+    options.hostedName ?? null,
+    options.budget,
+  ) as never;
   ctx.mintedLevel = { id: LEVEL_ID, json: '{"measured":true}' };
   ctx.tourManifestStatus = "settled";
   ctx.tourManifest = {
@@ -302,6 +317,28 @@ async function entryNamesOf(blob: Blob): Promise<string[]> {
   const bytes = new Uint8Array(await blob.arrayBuffer());
   return readStoredCentralDirectory(bytes).map((e) => e.name);
 }
+
+describe("the finish rebuilds the open archive under its session's budget (K0 milestone review R1)", () => {
+  it("fails the finish with the cap's sentence when the hosted zip passes the session's budget", async () => {
+    // A tour from any link can carry a deflate bomb; the Finish used to
+    // inflate every carried entry with no limit. A budget too small for
+    // the archive stands in for one, so the test needs no bomb.
+    const { dom, ctx } = await wireFinishable({
+      hosted: [pin("already-there")],
+      placed: [pin("new-one")],
+      // A carried entry: the finish replaces tour.json and the level, so
+      // only a file it keeps is inflated from the hosted zip.
+      hostedContent: [{ path: `${WRAP}content/kept.jpg`, data: "0123456789" }],
+      budget: new DecompressionBudget({ maxEntryBytes: 4, maxTotalBytes: 4 }),
+    });
+
+    dom.finishButton.click();
+    await settle(ctx);
+
+    expect(ctx.rebuiltZip).toBeNull();
+    expect(ctx.finishError).toMatch(/too large once unpacked/);
+  });
+});
 
 describe("what the finish actually writes into the published zip", () => {
   it("keeps the manifest and the level INSIDE the wrap, adding no root copies", async () => {

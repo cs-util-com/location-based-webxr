@@ -11,13 +11,15 @@ import {
   type FileEntry,
 } from '@zip.js/zip.js';
 
-import { ArchiveLimitError } from './archive-limits.js';
+import { ArchiveLimitError, DEFAULT_ARCHIVE_LIMITS } from './archive-limits.js';
+import type { ByteSource } from './byte-source.js';
 import {
   DecompressionBudget,
   listZipEntriesCapped,
   readZipEntryBlob,
   readZipEntryText,
 } from './capped-zip-entries.js';
+import { ByteSourceReader } from './zip-byte-source-reader.js';
 
 /**
  * Why these tests matter (tour kit plan K0, review F1): a tour zip from
@@ -338,5 +340,65 @@ describe('the uncapped read this module replaces', () => {
       await deflatedZip({ bomb: new Uint8Array(4 * MiB) })
     );
     expect((await entry!.getData(new BlobWriter())).size).toBe(4 * MiB);
+  });
+});
+describe('a crafted end record declaring a huge central directory (K0 milestone review R4)', () => {
+  // A 64 MiB "file" that is all zeros except its end record, which declares
+  // one entry and a 32 MiB directory right before it. zip.js reads a
+  // declared directory in ONE read before yielding a single entry, so the
+  // entry-count cap never gets a say; the reader's single-read cap must.
+  const SIZE = 64 * MiB;
+  const DECLARED = 32 * MiB;
+  function craftedSource(): { source: ByteSource; largestRead: () => number } {
+    const eocd = new Uint8Array(22);
+    const view = new DataView(eocd.buffer);
+    view.setUint32(0, 0x06054b50, true);
+    view.setUint16(8, 1, true); // entries on this disk
+    view.setUint16(10, 1, true); // entries in total
+    view.setUint32(12, DECLARED, true); // directory size
+    view.setUint32(16, SIZE - 22 - DECLARED, true); // directory offset
+    let largest = 0;
+    return {
+      largestRead: () => largest,
+      source: {
+        size: SIZE,
+        read: (offset, length) => {
+          largest = Math.max(largest, length);
+          const out = new Uint8Array(length);
+          const tail = SIZE - 22;
+          if (offset + length > tail) {
+            const from = Math.max(offset, tail);
+            out.set(
+              eocd.subarray(from - tail, offset + length - tail),
+              from - offset
+            );
+          }
+          return Promise.resolve(out);
+        },
+      },
+    };
+  }
+
+  it('refuses it before the directory is read', async () => {
+    const crafted = craftedSource();
+    const reader = new ZipReader(
+      new ByteSourceReader(
+        crafted.source,
+        DEFAULT_ARCHIVE_LIMITS.maxDirectoryBytes
+      )
+    );
+    const err = await listZipEntriesCapped(reader).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveLimitError);
+    expect((err as ArchiveLimitError).kind).toBe('directory-bytes');
+    expect(crafted.largestRead()).toBeLessThanOrEqual(
+      DEFAULT_ARCHIVE_LIMITS.maxDirectoryBytes
+    );
+  });
+
+  it('is what zip.js would otherwise read in one piece (the uncapped reader)', async () => {
+    const crafted = craftedSource();
+    const reader = new ZipReader(new ByteSourceReader(crafted.source));
+    await listZipEntriesCapped(reader).catch(() => undefined);
+    expect(crafted.largestRead()).toBeGreaterThanOrEqual(DECLARED);
   });
 });

@@ -747,6 +747,37 @@ describe("the zip-bomb caps (K0)", () => {
     await session.close();
   });
 
+  it("refuses an archive whose directory read passes the directory cap (K0 milestone review R4)", async () => {
+    // zip.js reads a declared central directory in one piece before any
+    // entry is counted; the session's reader refuses a read over the cap.
+    const zip = await deflatedZip({ a: "a", b: "b", c: "c" });
+    expect(zip.length).toBeGreaterThan(100);
+    const err = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxDirectoryBytes: 100 },
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveLimitError);
+    expect((err as ArchiveLimitError).kind).toBe("directory-bytes");
+  });
+
+  it("reads an entry as text under the text cap (K0 milestone review R10)", async () => {
+    const zip = await deflatedZip({
+      "qr/big.json": LEVEL_JSON + " ".repeat(5000),
+      "qr/ok.json": LEVEL_JSON,
+    });
+    const session = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxTextEntryBytes: 1000 },
+    });
+    expect(await session.loadEntryText("qr/ok.json")).toBe(LEVEL_JSON);
+    const err = await session
+      .loadEntryText("qr/big.json")
+      .catch((e: unknown) => e);
+    expect((err as ArchiveLimitError).kind).toBe("entry-bytes");
+    expect((err as ArchiveLimitError).limit).toBe(1000);
+    await session.close();
+  });
+
   it("degrades a level file over the text cap to no level, as a corrupt one", async () => {
     const zip = await deflatedZip({
       "qr/big.json": LEVEL_JSON + " ".repeat(5000),
@@ -895,6 +926,13 @@ describe("openTourFile (K0)", () => {
     }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(OpenRemoteArchiveError);
     expect((err as OpenRemoteArchiveError).rejectCause).toBe("too-large");
+  });
+
+  it("holds the directory cap while reading the key (K0 milestone review R4)", async () => {
+    const err = await openTourFile(await tourFile("t.zip"), {
+      limits: { maxDirectoryBytes: 100 },
+    }).catch((e: unknown) => e);
+    expect((err as ArchiveLimitError).kind).toBe("directory-bytes");
   });
 
   it("holds the entry cap while reading the key", async () => {

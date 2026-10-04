@@ -624,7 +624,9 @@ export function wireCreatorSetup(deps: {
     );
     if (entry === undefined) return null;
     try {
-      return await (await session.loadEntry(entry.filename)).text();
+      // Under the text cap, like every JSON the session reads (K0
+      // milestone review R10): a level file is text on the JS heap.
+      return await session.loadEntryText(entry.filename);
     } catch {
       // Unreadable is not proof of anything, and the safe direction is to
       // KEEP the draft.
@@ -2749,11 +2751,16 @@ export function wireCreatorSetup(deps: {
         // contain (PR #435 review, the second half of the second-finish
         // bug). A tour close clears the rebuilt zip, so a re-opened tour
         // starts from what is actually hosted.
-        const input =
-          ctx.rebuiltZip?.blob ?? (await current.readWholeArchive());
+        const previous = ctx.rebuiltZip;
+        const input = previous?.blob ?? (await current.readWholeArchive());
         if (ctx.session !== current) return; // re-opened meanwhile
         const blob = await rebuildZipWithEntries(input, entries, {
           remove: removed,
+          // The open archive is untrusted, so its rebuild inflates under
+          // the session's own budget (K0 milestone review R1). A previous
+          // Finish's zip is this page's own output, stored and bounded:
+          // the rebuild sizes a budget for it itself.
+          ...(previous === null ? { budget: current.budget } : {}),
           onProgress: (done, total) => {
             ctx.finishProgress = FINISH_LABELS.rebuilding(done, total);
             renderAuthorReadout();

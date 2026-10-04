@@ -23,6 +23,8 @@ const CORPUS = {
   mostEntries: 3_465,
   largestEntryBytes: 7_878_987,
   largestJsonEntryBytes: 210_420,
+  /** Measured 2026-10-04 over 254 zips (central directories only). */
+  largestDirectoryBytes: 382_065,
   /** Total decompressed / archive size: 1.0 as written (stored entries),
    *  3.78 for the largest recording re-zipped with deflate throughout. */
   worstWholeArchiveRatio: 3.78,
@@ -35,6 +37,9 @@ describe('DEFAULT_ARCHIVE_LIMITS against the measured corpus', () => {
     );
     expect(DEFAULT_ARCHIVE_LIMITS.maxEntries).toBeGreaterThanOrEqual(
       3 * CORPUS.mostEntries
+    );
+    expect(DEFAULT_ARCHIVE_LIMITS.maxDirectoryBytes).toBeGreaterThanOrEqual(
+      3 * CORPUS.largestDirectoryBytes
     );
     expect(DEFAULT_ARCHIVE_LIMITS.maxEntryBytes).toBeGreaterThanOrEqual(
       3 * CORPUS.largestEntryBytes
@@ -141,6 +146,7 @@ describe('ArchiveLimitError', () => {
     const kinds = [
       'archive-bytes',
       'entry-count',
+      'directory-bytes',
       'entry-bytes',
       'total-bytes',
     ] as const;

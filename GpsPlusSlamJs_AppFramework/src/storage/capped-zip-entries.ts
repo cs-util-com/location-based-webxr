@@ -30,7 +30,11 @@ import { byteCountingStream } from './byte-counting-stream.js';
 /**
  * The central directory's entries, walked one at a time and refused once
  * there are more than `maxEntries` (a crafted directory can list millions;
- * the walk stops one past the cap instead of materialising all of them).
+ * the walk stops one past the cap instead of building an object for each).
+ * zip.js has read the directory's BYTES whole by then - the size its end
+ * record declares, in one read - so this cap does not bound them: a reader
+ * with a single-read cap does (`new ByteSourceReader(source,
+ * limits.maxDirectoryBytes)`, K0 milestone review R4).
  */
 export async function listZipEntriesCapped(
   reader: ZipReader<unknown>,

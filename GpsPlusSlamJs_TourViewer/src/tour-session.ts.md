@@ -28,10 +28,16 @@ loading with MIME types, and the poisoned-cache recovery loop.
   tests; the page always opens with the defaults.
 - `openTourFile(file, options?): Promise<TourSession>` (tour kit plan K0)
   - a tour zip on the device, `options.limits` as above.
-- `TourSession { entries; archive; fromFile; hasRecording; manifestWrap; stats(); loadEntry(filename); loadContentEntry(image); close() }`
-  — `hasRecording` is the synchronous `actions/` pre-check
-  `loadRecordingActions()` applies (a wrapping folder tolerated), exposed
-  for the page's flow copy (`tour-flow.ts`, flows plan M1).
+- `TourSession { entries; archive; fromFile; hasRecording; manifestWrap; budget; stats(); loadEntry(filename); loadEntryText(filename); loadContentEntry(image); close() }`
+  - `budget` - the archive's one `DecompressionBudget`; the creator's
+    Finish passes it to `rebuildZipWithEntries` when the rebuild's input
+    is this archive (K0 milestone review R1).
+  - `loadEntryText(filename)` - one entry as UTF-8 under the text cap
+    (`maxTextEntryBytes`), for JSON a caller parses itself (the hosted
+    level file, K0 milestone review R10).
+    — `hasRecording` is the synchronous `actions/` pre-check
+    `loadRecordingActions()` applies (a wrapping folder tolerated), exposed
+    for the page's flow copy (`tour-flow.ts`, flows plan M1).
 - `TourEntry { filename; size; isImage }` (reached via `TourSession.entries`, not separately exported),
   `StreamStats { networkRequests; networkBytes; cacheReads; cacheBytes; origin }`
   — `origin` tracks the LATEST read, flipping to `'cache'` once the warm
@@ -94,8 +100,11 @@ loading with MIME types, and the poisoned-cache recovery loop.
 - **The zip-bomb caps (tour kit plan K0, K-D1, review F1).** A tour comes
   from any link (or file), so it is read as untrusted input: the open
   carries the transport cap (`maxArchiveBytes`, cause `'too-large'`), the
-  directory is walked with `listZipEntriesCapped` (an `ArchiveLimitError`
-  past `maxEntries` fails the open), and EVERY entry the page reads -
+  directory is read through `ByteSourceReader`'s single-read cap
+  (`maxDirectoryBytes`: zip.js reads a declared directory in one piece,
+  K0 milestone review R4; the action stream's second reader carries it
+  too) and walked with `listZipEntriesCapped` (an `ArchiveLimitError`
+  past either cap fails the open), and EVERY entry the page reads -
   `loadEntry`, `loadContentEntry`, `tour.json`, the levels, `session.json`
   and the action stream - is inflated under ONE `DecompressionBudget` per
   archive that counts the bytes actually produced (per entry, the text

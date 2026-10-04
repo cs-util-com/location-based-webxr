@@ -370,7 +370,8 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
   - **A stored pose stays the reference** (D10b, M2c review #5): the level
     in hand before the tap is captured, and once the id lands
     `measurementRole` (`visit-settle.ts`) decides - with the hosted zip's
-    `qr/<id>.json` read through `hostedLevelJson` when nothing of this code
+    `qr/<id>.json` read through `hostedLevelJson` (`session.loadEntryText`,
+    under the text cap, K0 milestone review R10) when nothing of this code
     is in hand (ignored if another tour was opened meanwhile). A kept
     reference stays `mintedLevel` (so Finish writes the hosted file back
     byte for byte), the measurement becomes this visit's sighting, the
@@ -398,7 +399,11 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
   `session.manifestWrap` (the session's own prefix, never re-derived).
   The input is the **newest bytes for this tour**: `ctx.rebuiltZip` when a
   previous finish produced one, else `session.readWholeArchive()` (the
-  warmed copy, else range slices). On success `ctx.rebuiltZip` is set,
+  warmed copy, else range slices). The hosted archive is untrusted, so its
+  rebuild inflates under the session's own budget (`session.budget`, K0
+  milestone review R1) and a deflate bomb fails the Finish with the cap's
+  sentence; a previous Finish's zip is this page's own stored output and
+  gets the rebuild's default budget. On success `ctx.rebuiltZip` is set,
   `ctx.tourManifest` **advances to what was just written** and
   `ctx.placedObjects` is cleared, the AR session is ended through the
   controller (the framework's session-end path runs the app teardown) and

@@ -1018,6 +1018,8 @@ async function openFinishableTour(
       Promise.resolve(
         new Blob([levels.find((l) => l.path === filename)?.data ?? ""]),
       ),
+    loadEntryText: (filename: string) =>
+      Promise.resolve(levels.find((l) => l.path === filename)?.data ?? ""),
   } as never;
   a.ctx.tourManifestStatus = "settled";
   a.ctx.tourManifest = createEmptyTourManifest();

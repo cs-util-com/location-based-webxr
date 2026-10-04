@@ -12,7 +12,11 @@ session readers count through it too.
 - `listZipEntriesCapped(reader, maxEntries?)`: the central directory's
   entries, walked with zip.js's `getEntriesGenerator` and refused with
   `ArchiveLimitError('entry-count')` one entry past the cap (default
-  `DEFAULT_ARCHIVE_LIMITS.maxEntries`).
+  `DEFAULT_ARCHIVE_LIMITS.maxEntries`). zip.js has read the directory's
+  bytes whole by then, so the count bounds entry OBJECTS, not those bytes:
+  build the reader with the single-read cap
+  (`new ByteSourceReader(source, limits.maxDirectoryBytes)`, K0 milestone
+  review R4).
 - `class DecompressionBudget`
   - `new DecompressionBudget({ maxEntryBytes, maxTotalBytes })` -
     `RangeError` for a cap that is not a positive safe integer.
@@ -82,6 +86,8 @@ lies (understated above the cap: the cap fires before zip.js's own check
 would; understated below it: zip.js's check fires first, pinned so an
 upgrade that drops it is noticed; huge), a tighter per-call cap, many small bombs stopped at
 the total, duplicate NAMES charged separately, two records at one offset
-refused, re-reads not double-charged, `forArchive`, cap validation, and
+refused, a crafted end record declaring a 32 MiB directory refused before
+it is read (and the 32 MiB read the uncapped reader makes), re-reads not
+double-charged, `forArchive`, cap validation, and
 the uncapped zip.js read it replaces inflating the whole bomb.
 `zip-reader.test.ts` covers `loadActionsFromZip` under a budget.

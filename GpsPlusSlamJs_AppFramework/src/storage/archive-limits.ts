@@ -9,7 +9,10 @@
  *   fetched, and counted while a body streams when the header is missing
  *   or lies;
  * - the ENTRY-COUNT cap (`maxEntries`): entries listed in the central
- *   directory, counted while it is walked;
+ *   directory, counted while it is walked - after zip.js has read the
+ *   directory its end record DECLARES in one piece, which the
+ *   DIRECTORY cap (`maxDirectoryBytes`, the largest single read the zip
+ *   reader may make) bounds first;
  * - the DECOMPRESSED cap (`maxEntryBytes`, `maxTextEntryBytes` and the
  *   per-archive total): bytes ACTUALLY produced by inflating, counted while
  *   they stream. The size an entry DECLARES is never trusted - a crafted
@@ -26,6 +29,12 @@ export interface ArchiveLimits {
   readonly maxArchiveBytes: number;
   /** Entries in the central directory (files and folders). */
   readonly maxEntries: number;
+  /** The largest single read the zip reader may make. zip.js reads the
+   *  central directory (and each zip64 record) in ONE read of the size the
+   *  end record declares, before any entry is counted; entry data comes in
+   *  64 KiB chunks. So this bounds the directory a crafted end record can
+   *  make the page read (K0 milestone review R4). */
+  readonly maxDirectoryBytes: number;
   /** Bytes one entry may inflate to, counted while streaming. */
   readonly maxEntryBytes: number;
   /** Tighter per-entry cap for entries parsed as text (`tour.json`,
@@ -45,10 +54,13 @@ const MiB = 1024 * 1024;
  * the most entries 3,465, the largest entry 7.9 MB, the largest JSON entry
  * 210 KB, and the whole-archive inflation ratio 1.0 as recorded (stored
  * entries) or 3.78 for the largest recording re-zipped with deflate.
+ * Measured 2026-10-04 (254 zips, central directories only): the largest
+ * directory is 382,065 bytes (3,465 entries, 110 bytes each).
  */
 export const DEFAULT_ARCHIVE_LIMITS: ArchiveLimits = Object.freeze({
   maxArchiveBytes: 1024 * MiB,
   maxEntries: 20_000,
+  maxDirectoryBytes: 16 * MiB,
   maxEntryBytes: 256 * MiB,
   maxTextEntryBytes: 16 * MiB,
   totalRatio: 10,
@@ -96,7 +108,11 @@ export function totalBytesAllowance(
 }
 
 export type ArchiveLimitKind =
-  'archive-bytes' | 'entry-count' | 'entry-bytes' | 'total-bytes';
+  | 'archive-bytes'
+  | 'entry-count'
+  | 'directory-bytes'
+  | 'entry-bytes'
+  | 'total-bytes';
 
 function describeLimit(kind: ArchiveLimitKind, limit: number): string {
   switch (kind) {
@@ -104,6 +120,8 @@ function describeLimit(kind: ArchiveLimitKind, limit: number): string {
       return `The file is too large to open here (the limit is ${formatFileSize(limit)}).`;
     case 'entry-count':
       return `The file holds too many files to open here (the limit is ${String(limit)}).`;
+    case 'directory-bytes':
+      return `The zip's list of contents is too large to open here (the limit is ${formatFileSize(limit)}).`;
     case 'entry-bytes':
       return `A file inside the zip is too large once unpacked (the limit is ${formatFileSize(limit)}).`;
     case 'total-bytes':

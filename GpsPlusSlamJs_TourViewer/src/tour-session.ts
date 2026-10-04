@@ -106,9 +106,20 @@ export interface TourSession {
    * `loadContentEntry` reads them back through it (PR #435 review).
    */
   readonly manifestWrap: string;
+  /**
+   * The archive's one decompression allowance (tour kit plan K0). Every
+   * read below charges it; the creator's Finish passes it to the rebuild
+   * when the rebuild's input is this archive, so the whole session -
+   * reads and rebuild - shares one total (K0 milestone review R1).
+   */
+  readonly budget: DecompressionBudget;
   stats(): Readonly<StreamStats>;
   /** Decompress one entry to a Blob (images get their MIME type). */
   loadEntry(filename: string): Promise<Blob>;
+  /** Decompress one entry as UTF-8 text under the text cap
+   *  (`maxTextEntryBytes`): text lives on the JS heap, a Blob need not
+   *  (K0 milestone review R10). */
+  loadEntryText(filename: string): Promise<string>;
   /**
    * One `content/<id>.<ext>` entry named the way the MANIFEST names it.
    * The manifest can only carry the unwrapped name (the parser pins that
@@ -398,7 +409,10 @@ export async function openTourFile(
  *  plain words. */
 async function fileKeyOf(file: File, limits: ArchiveLimits): Promise<string> {
   const reader = new ZipReader(
-    new ByteSourceReader(new LocalCacheByteSource(file)),
+    new ByteSourceReader(
+      new LocalCacheByteSource(file),
+      limits.maxDirectoryBytes,
+    ),
   );
   try {
     return await tourFileKey(
@@ -450,16 +464,27 @@ async function buildSession(
   /** The whole archive when it is a file on this device (`openTourFile`). */
   localFile?: Blob,
 ): Promise<TourSession> {
-  const reader = new ZipReader(new ByteSourceReader(archive.source));
-  // The tour is untrusted input (tour kit plan K0): the directory walk stops
-  // at its entry cap, and every entry below is inflated under ONE budget
-  // for this archive that counts the bytes actually produced.
+  // The tour is untrusted input (tour kit plan K0): no single read may pass
+  // the directory cap (zip.js reads a declared directory in one piece, K0
+  // milestone review R4), the directory walk stops at its entry cap, and
+  // every entry below is inflated under ONE budget for this archive that
+  // counts the bytes actually produced.
+  const reader = new ZipReader(
+    new ByteSourceReader(archive.source, limits.maxDirectoryBytes),
+  );
   const zipEntries = await listZipEntriesCapped(reader, limits.maxEntries);
   const budget = DecompressionBudget.forArchive(archive.size, limits);
   const readText = (entry: FileEntry): Promise<string> =>
     readZipEntryText(entry, budget, limits.maxTextEntryBytes);
   const byName = new Map<string, FileEntry>();
   const entries: TourEntry[] = [];
+  const entryNamed = (filename: string): FileEntry => {
+    const entry = byName.get(filename);
+    if (entry === undefined) {
+      throw new Error(`tour archive has no readable entry "${filename}"`);
+    }
+    return entry;
+  };
   for (const entry of zipEntries) {
     if (entry.directory) continue; // narrows Entry to FileEntry (discriminant)
     byName.set(entry.filename, entry);
@@ -488,22 +513,17 @@ async function buildSession(
     hasRecording,
     manifestWrap,
     hostedFileName: named.hostedFileName,
+    budget,
     stats: () => ({ ...stats }),
-    loadEntry: (filename) => {
-      const entry = byName.get(filename);
-      if (entry === undefined) {
-        return Promise.reject(
-          new Error(`tour archive has no readable entry "${filename}"`),
-        );
-      }
+    loadEntry: async (filename) =>
       // The media allowlist types the Blob (tour kit plan K0); anything
       // else is plain bytes, never a type a browser renders as a page.
-      return readZipEntryBlob(
-        entry,
+      readZipEntryBlob(
+        entryNamed(filename),
         budget,
         tourMediaTypeOfEntry(filename)?.mime ?? "application/octet-stream",
-      );
-    },
+      ),
+    loadEntryText: async (filename) => readText(entryNamed(filename)),
     loadQrLevels: () =>
       // The `qr/<id>.json` convention and its null-tolerance live in the
       // framework, because the recorder WRITES what this reads and the two
@@ -523,12 +543,15 @@ async function buildSession(
         // re-download) — re-implementing the index-ordered parse here
         // would be the DEC-H3 drift.
         const loaded = await loadActionsFromZip(
-          new ByteSourceReader(archive.source),
+          new ByteSourceReader(archive.source, limits.maxDirectoryBytes),
           undefined,
           budget,
         );
         return loaded.map((e) => e.action);
-      } catch {
+      } catch (err) {
+        // A cap's refusal is not "no recording": it reaches the visitor
+        // through the join's error line (K0 milestone review R9).
+        if (err instanceof ArchiveLimitError) throw err;
         return null; // corrupt stream → the join declines, the tour works
       }
     },
@@ -546,7 +569,8 @@ async function buildSession(
         return JSON.parse(await readText(entry)) as {
           odomCoordVersion?: unknown;
         };
-      } catch {
+      } catch (err) {
+        if (err instanceof ArchiveLimitError) throw err; // as above (R9)
         return null;
       }
     },
