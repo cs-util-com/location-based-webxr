@@ -82,6 +82,17 @@ lives here.
   under the world group as placed.
 - **Bounded enough.** One sighting entry per second of looking; an hour of
   looking is 3,600 small entries.
+- **One odometry frame per visit, by the caller's guarantee (review R8 of
+  D33).** The tracker has no odometry-segment notion: every pick maps the
+  visit's odometry, and the walked distances it stamps are one path. A
+  tracking restart or a loop closure would start a new segment, after which
+  older picks map the new odometry wrongly and the walked distance gains a
+  jump. It is safe only because the Tour Viewer never puts either into its
+  store: it neither dispatches `odometryTrackingRestarted` /
+  `arLoopClosureDetected` nor wires the hooks that would (`onRestarted`,
+  the framework's live loop-closure handler). Guarded by
+  `visit-alignment-picks.no-segments.test.ts` (a source scan); the day the
+  Tour Viewer handles either, the picks need segments first.
 
 ## Examples
 
@@ -107,3 +118,5 @@ picks.reset();
   `visit-settle.left-behind.test.ts` (the shipped path at three sweep
   cells, and the `SHIPPED` sweep columns).
 - `authoring-settle.test.ts` - the wiring through the real creator setup.
+- `visit-alignment-picks.no-segments.test.ts` - no Tour Viewer source
+  dispatches a tracking restart or loop closure or wires their hooks (R8).
