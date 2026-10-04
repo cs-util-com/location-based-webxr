@@ -54,6 +54,14 @@ const LOOK = Object.freeze({
   seamControl: params.get("seamControl") === "1",
   heightFormat: params.get("heightFormat") === "r32f" ? "r32f" : "r16f",
   seaM: num("sea", 0),
+  // The sky fill's share of the diffuse light (0-1), or null for the
+  // surface's own: the plain globe takes no fill outside the band
+  // (DEC-GL5-14) and the relief takes it in full, so a like-for-like look
+  // comparison sets 0 on both.
+  skyShare:
+    params.get("skyShare") === null
+      ? null
+      : Math.min(1, Math.max(0, num("skyShare", 0))),
 });
 const TARGET = { lat: num("lat", 46.5), lng: num("lng", 9.0) };
 
@@ -132,6 +140,9 @@ function start() {
     1e7,
   );
   const globe = createGlobeSurface();
+  if (LOOK.skyShare !== null) {
+    globe.surfaceUniforms.uSkyShare.value = LOOK.skyShare;
+  }
   scene.add(globe.group);
   globe.setSun(sunEcefAt(LOOK.hourUtc));
   let terrain = null;

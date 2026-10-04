@@ -130,6 +130,11 @@ const readGrid = (grid) => async (page) => ({
 // From 1,000 and 5,000 km the two are MEASURED, not held to the bound:
 // there the globe's own surface draws (the altitude band, one-scene plan
 // §3.2; globe-relief.smoke.spec.mjs holds the cross-fade continuous).
+// Both pages draw with the sky fill off (skyShare=0): since DEC-GL5-14 the
+// plain globe takes no fill outside the band while the relief takes it in
+// full, so the fill is the one intended difference (19.9 levels at dusk
+// in the 2026-10-04 run with the fill on); the globe lab's sky-fill smokes
+// check the fill itself.
 // The F1 measurement that set the band: at noon from 1,000 km mean 4.31
 // levels, the carrier's library tiles coarser over part of the frame
 // (levels 2-6, 40 tiles, against the globe's 2-5, 115 tiles).
@@ -157,12 +162,12 @@ test("the carrier wears the globe's look at the hold by day, dusk, night and at 
   ]) {
     const globe = await measured(
       browser,
-      `carrier=globe&${view}`,
+      `carrier=globe&${view}&skyShare=0`,
       readGrid(grid),
     );
     const flat = await measured(
       browser,
-      `carrier=terrain&${view}&heightScale=0`,
+      `carrier=terrain&${view}&heightScale=0&skyShare=0`,
       readGrid(grid),
     );
     const c = compare(globe.px, flat.px);

@@ -19,6 +19,10 @@
   leaves 127.0.0.1; or `terrarium`, the live AWS tiles from the Osm
   library's `TERRARIUM_URL_TEMPLATE`, with its credit shown); `sea` (m,
   lowers the synthetic heights: a coast for the bathymetry check);
+  `skyShare` (0-1, the sky fill's share of the diffuse light on both
+  carriers; unset keeps the surface's own. The plain globe takes no fill
+  outside the band, DEC-GL5-14, and the relief takes it in full, so the
+  look smoke compares the two with 0);
   `hideFloatLinear=1` (hides OES_texture_float_linear from the page, as
   on a device without it); `heightFormat=r32f` (undoes the half-float
   patch, for the R16F against R32F shading comparison); `debug=height`
