@@ -88,6 +88,7 @@ import {
 import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
+import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import { Group, Vector3, type Object3D } from "three";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
@@ -1591,7 +1592,10 @@ export function wireCreatorSetup(deps: {
         // through the session (it knows the folder the manifest sits in).
         if (blob !== undefined) return decodeFrameTexture(blob, 2);
         if (session === null) return null;
-        return decodeFrameTexture(await session.loadContentEntry(image), 2);
+        // A tour image is measured before it is decoded (K4 review R2).
+        return decodeFrameTexture(await session.loadContentEntry(image), 2, {
+          maxPixels: TOUR_MAX_IMAGE_PIXELS,
+        });
       },
     }).then(
       (rendered) => {

@@ -301,6 +301,9 @@ const entryFiles = [
   // wildcard, like the above.
   'src/utils/locate-state.ts',
   'src/utils/toast-core.ts',
+  // An image's size from its header (tour kit K4 review R2): the Tour
+  // Viewer measures a figure before it decodes it.
+  'src/utils/image-header.ts',
   // Both GPS actions' payloads (core 1.26's recordGpsEventBatch beside
   // recordGpsEvent) - deep-imported by the Tour Viewer's recording folders
   // and the recorder's timing page, so per-file for the `./utils/*` wildcard.

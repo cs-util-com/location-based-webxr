@@ -522,7 +522,8 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
     (`previewKey`) is replaced, one whose object is gone is disposed, the
     rest are left alone. Each visit starts with a fresh render into its
     frames. A hosted photo's bytes come from the zip
-    (`session.loadContentEntry`); a photo a Finish took out of
+    (`session.loadContentEntry`), decoded under the tour pixel cap
+    (`maxPixels`, tour kit K4 review R2); a photo a Finish took out of
     `placedObjects` keeps its bytes in `finishedPhotoBlobs` until the tour
     closes, since the hosted zip lacks them until the upload.
   - **The Finish replaces and filters** (`applyObjectChanges`), removes

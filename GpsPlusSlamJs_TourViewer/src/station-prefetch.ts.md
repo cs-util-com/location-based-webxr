@@ -30,8 +30,13 @@ far the visitor is from each offered station. Plan:
 - `stationAssetIds(station)` - the asset ids a story reads, in step order,
   once each (figures and voices, pictures, sounds, models; never a video,
   K4 review R3).
-- `decodeDivisor(size?)` - the divisor that brings a figure within
-  `MAX_DECODE_SIDE_PX` (1 when the size is not stated).
+- `decodeDivisor(size)` - the divisor that brings a figure of this size
+  within `MAX_DECODE_SIDE_PX` (a size is required: K4 review R17 removed
+  the "no size: 1" case).
+- `decodeFigure(blob, decode)` - the figure's size read from its own
+  header (`imageInfoOfBlob`), never from the size the tour declares; null
+  without decoding over `TOUR_MAX_IMAGE_PIXELS` or when the size cannot be
+  read; else `decode(blob, decodeDivisor(size))` (K4 review R2).
 - `PREFETCH_LEAD_M` (80), the module-internal byte budget (64 MiB),
   `MAX_DECODE_SIDE_PX` (2048).
 
@@ -53,11 +58,14 @@ far the visitor is from each offered station. Plan:
   afterwards is not kept. A session end keeps the cache; the page calls
   `sync()` when it stops the stations, so a close frees it at once (the
   cache is keyed by entry path, which the next tour reuses).
-- The decode cap: `visitor-stations.ts` runs figure decodes through one
-  `keyed-chain` key (one at a time, the photo planes' rule) at
-  `decodeDivisor(asset size)`. `decodeFrameTexture` decodes at full size and
-  then resamples, so the peak is one full decode at a time; the GPU texture
-  is at most 2048 px along its longer side (16 MB).
+- The decode cap (K4 review R2): `visitor-stations.ts` runs figure
+  decodes through one `keyed-chain` key (one at a time, the photo planes'
+  rule) via `decodeFigure`: the size comes from the image's header, an
+  image over the tour pixel cap (4096 x 4096) is never decoded, and the
+  decoder holds the same cap again (`decodeFrameTexture`'s `maxPixels`).
+  `decodeFrameTexture` decodes at full size and then resamples, so the
+  peak is one full decode at a time, at most 64 MiB; the GPU texture is at
+  most 2048 px along its longer side (16 MB).
 
 ## Evidence (`station-prefetch.sweep.test.ts`)
 
@@ -96,7 +104,9 @@ const blob = await prefetch.load(asset.path); // a hit when it was prefetched
 
 ## Tests
 
-- `station-prefetch.test.ts` - the asset list, the decode divisor, the
+- `station-prefetch.test.ts` - `decodeFigure` by the header's size, and
+  never over the cap or unmeasured (R2); the asset list, the decode
+  divisor, the
   radius, one read at a time, joining and hitting, a story-only read not
   kept, a failed read not kept, never a video (R3), offline not retried for
   the same station (R4), a shared asset held until both stations are done

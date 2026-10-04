@@ -31,8 +31,14 @@ time. Plan:
 
 ## Invariants & assumptions
 
-- A character's figure goes to the stage with its asset's stated pixel
-  size (the decode cap, `station-prefetch.ts`).
+- A character's figure goes to the stage as it is; the stage's decoder
+  measures it from its own header (the decode cap, `station-prefetch.ts`
+  `decodeFigure`).
+- **A picture is measured before the `<img>` decodes it (K4 review R2):**
+  `checkPicture(blob)` (`image-cap.ts` `pictureProblem` in the page) names
+  a picture over the tour pixel cap or one whose size cannot be read; it
+  is then not shown, and the status says "The picture is too large to show
+  here - the words are below."
 - **Captions always** (plan §4.1): every step puts words in `text` - the
   text, the image's or model's caption, the character's caption, the
   audio's or video's transcript. A character also shows its name.

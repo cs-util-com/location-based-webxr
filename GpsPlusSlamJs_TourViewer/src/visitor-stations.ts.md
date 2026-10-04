@@ -32,9 +32,12 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
   same cache). The cache lives with the open tour's manifest
   (`ctx.tourManifest`, by identity): kept across AR sessions, dropped when
   the tour closes or another opens (K4 review R15). A figure is decoded by the framework's
-  `decodeFrameTexture`, one at a time through a `keyed-chain` key and at
-  `decodeDivisor(asset size)` (the decode cap); a model by
-  `seams.loadGlbModel`.
+  `decodeFrameTexture`, one at a time through a `keyed-chain` key, via
+  `decodeFigure` (its size read from its own header, refused over the tour
+  pixel cap, scaled to 2048 px; K4 review R2); a story picture is checked
+  by `pictureProblem` before its `<img>`; a model by `seams.loadGlbModel`
+  after `loadContentEntry`'s `checkGlbInert`, which also measures every
+  image inside it.
 - The breadcrumbs (`breadcrumbs.ts`) follow the guide's `onGuide`, one
   trail for the page.
 - The assets by id are built once per manifest (K4 review R13).

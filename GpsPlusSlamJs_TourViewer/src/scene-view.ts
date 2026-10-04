@@ -49,11 +49,7 @@ export interface SceneAudio {
 
 /** What a step shows in AR at its station. */
 interface SceneStage {
-  showCharacter(
-    stationId: string,
-    image: Blob,
-    size?: { readonly width?: number; readonly height?: number },
-  ): Promise<void>;
+  showCharacter(stationId: string, image: Blob): Promise<void>;
   showModel(stationId: string, model: Blob): Promise<void>;
   clear(): void;
 }
@@ -65,6 +61,10 @@ export interface SceneViewDeps {
   loadAsset(path: string): Promise<Blob>;
   readonly audio: SceneAudio;
   readonly stage: SceneStage;
+  /** Why a picture may not be shown (its header states more pixels than
+   *  the tour cap, or cannot be read; K4 review R2), or null. Measured
+   *  before the browser decodes it in the <img>. */
+  checkPicture(blob: Blob): Promise<string | null>;
   /** A choice button; the view wires nothing else into it. */
   createChoiceButton(label: string, onClick: () => void): Node;
   /** A one-shot clock (an auto step): returns the cancel. */
@@ -172,22 +172,24 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         return;
       case "image":
         dom.text.textContent = block.caption ?? "";
-        withAsset(block.asset, "picture", (blob) => {
+        withAsset(block.asset, "picture", async (blob) => {
+          const token = renderToken;
+          if ((await deps.checkPicture(blob)) !== null) {
+            return "The picture is too large to show here - the words are below.";
+          }
+          if (token !== renderToken) return undefined;
           liveUrl = deps.objectUrls.create(blob);
           dom.image.src = liveUrl;
           dom.image.alt = block.caption ?? "";
           dom.image.hidden = false;
+          return undefined;
         });
         return;
       case "character":
         dom.text.textContent = block.caption;
-        withAsset(block.image, "figure", (blob) => {
-          const asset = deps.assets.get(block.image);
-          return deps.stage.showCharacter(station.id, blob, {
-            ...(asset?.width === undefined ? {} : { width: asset.width }),
-            ...(asset?.height === undefined ? {} : { height: asset.height }),
-          });
-        });
+        withAsset(block.image, "figure", (blob) =>
+          deps.stage.showCharacter(station.id, blob),
+        );
         if (block.voice !== undefined) playSound(block.voice);
         return;
       case "audio":

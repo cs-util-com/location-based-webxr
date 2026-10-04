@@ -12,9 +12,9 @@ tour's other content (`content-placement.ts`). Plan:
 ## Public API
 
 - `createSceneStage(deps): SceneStage`
-  - `showCharacter(stationId, imageBlob, size?)` / `showModel(stationId, glbBlob)`
-    (`size` is the asset's stated pixel size, handed to `decodeTexture` for
-    the decode cap)
+  - `showCharacter(stationId, imageBlob)` / `showModel(stationId, glbBlob)`
+    (`decodeTexture` measures the figure from its own header: the size the
+    tour declares is no longer passed, K4 review R2)
     - replace what is shown; reject when the figure does not decode (so the
       story can say so); settle once mounted. A station with no position
       yet (no GPS zero, or a code-only station before the visitor's height

@@ -75,6 +75,7 @@ function harness(
   overrides: {
     loadAsset?: (path: string) => Promise<Blob>;
     play?: () => Promise<void>;
+    checkPicture?: (blob: Blob) => Promise<string | null>;
   } = {},
 ) {
   const { dom, lastChoices } = fakeDom();
@@ -97,6 +98,7 @@ function harness(
       overrides.loadAsset ?? ((path) => Promise.resolve(new Blob([path]))),
     audio,
     stage,
+    checkPicture: overrides.checkPicture ?? (() => Promise.resolve(null)),
     createChoiceButton: (label, click) => ({ label, click }) as unknown as Node,
     schedule: (fn, ms) => {
       const t = { fn, ms, cancelled: false };
@@ -166,10 +168,11 @@ describe("createSceneView", () => {
     expect(h.dom.text.textContent).toBe("Welcome, traveller.");
     expect(h.dom.status.textContent).toMatch(/Loading/);
     await settle();
+    // The figure is measured from its own header by the stage's decoder
+    // (K4 review R2), never by the size the tour declares.
     expect(h.stage.showCharacter).toHaveBeenCalledWith(
       "gate",
       expect.any(Blob),
-      { width: 300, height: 600 },
     );
     expect(h.audio.play).toHaveBeenCalledTimes(1);
     expect(h.dom.status.textContent).toBe("");
@@ -244,6 +247,31 @@ describe("createSceneView", () => {
     expect(shown.dom.image).toMatchObject({ hidden: false, src: "blob:0" });
     shown.view.continueTapped();
     expect(shown.urls.revoked).toEqual(["blob:0"]);
+  });
+
+  it("never shows a picture over the pixel cap: says so, and keeps the words (R2)", async () => {
+    // Why this test matters (K4 review R2): a story picture went straight
+    // into an <img>, which the browser decodes at whatever size the file
+    // states.
+    const h = harness({
+      checkPicture: () => Promise.resolve("it is 20000 x 20000 pixels"),
+    });
+    h.view.offer(
+      station("s", [
+        {
+          id: "i",
+          block: { kind: "image", asset: "knight", caption: "The knight" },
+          advance: { mode: "tap" },
+        },
+      ]),
+    );
+    await settle();
+    expect(h.urls.created).toEqual([]);
+    expect(h.dom.image.hidden).toBe(true);
+    expect(h.dom.text.textContent).toBe("The knight");
+    expect(h.dom.status.textContent).toBe(
+      "The picture is too large to show here - the words are below.",
+    );
   });
 
   it("an auto step advances on its timer; a tap first cancels the timer", () => {

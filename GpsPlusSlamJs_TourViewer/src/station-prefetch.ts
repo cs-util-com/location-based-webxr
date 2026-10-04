@@ -33,6 +33,8 @@ import type {
   TourStation,
   TourStep,
 } from "gps-plus-slam-app-framework/ar/tour-stations";
+import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
+import { imageInfoOfBlob } from "gps-plus-slam-app-framework/utils/image-header";
 
 /**
  * Start prefetching this far beyond the station's activation radius:
@@ -59,17 +61,34 @@ const PREFETCH_BUDGET_BYTES = 64 * 1024 * 1024;
  */
 export const MAX_DECODE_SIDE_PX = 2048;
 
-/** The decode divisor that brings a figure within the cap (1 when its size
- *  is not stated: the tour's asset record is the only size known before
- *  decoding). */
-export function decodeDivisor(size?: {
-  readonly width?: number;
-  readonly height?: number;
+/** The decode divisor that brings a figure of this size within
+ *  `MAX_DECODE_SIDE_PX` along its longer side. */
+export function decodeDivisor(size: {
+  readonly width: number;
+  readonly height: number;
 }): number {
-  const side = Math.max(size?.width ?? 0, size?.height ?? 0);
+  const side = Math.max(size.width, size.height);
   return Number.isFinite(side) && side > MAX_DECODE_SIDE_PX
     ? Math.ceil(side / MAX_DECODE_SIDE_PX)
     : 1;
+}
+
+/**
+ * Decode a figure within the caps (K4 review R2): its size read from its
+ * own header, never from the size the tour declares; never decoded over
+ * the tour pixel cap (`TOUR_MAX_IMAGE_PIXELS`) or when its size cannot be
+ * read (null); otherwise decoded at the divisor that brings it within
+ * `MAX_DECODE_SIDE_PX`.
+ */
+export async function decodeFigure<T>(
+  blob: Blob,
+  decode: (blob: Blob, divisor: number) => Promise<T | null>,
+): Promise<T | null> {
+  const info = await imageInfoOfBlob(blob);
+  if (info === null || info.width * info.height > TOUR_MAX_IMAGE_PIXELS) {
+    return null;
+  }
+  return decode(blob, decodeDivisor(info));
 }
 
 /** The asset ids a station's story reads, in step order, deduplicated.

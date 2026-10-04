@@ -13,9 +13,11 @@ import {
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
 import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-stations";
+import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 
 import type { ViewerMode } from "./mode.js";
+import { pictureProblem } from "./image-cap.js";
 import { createKeyedChain } from "./keyed-chain.js";
 import { checkHadItsWindow } from "./moved-code-check.js";
 import { createBreadcrumbTrail } from "./breadcrumbs.js";
@@ -25,7 +27,7 @@ import { createSceneStage } from "./scene-stage.js";
 import { createSceneView, type SceneViewDom } from "./scene-view.js";
 import type { TourViewerSeams } from "./seams.js";
 import { wireStationGuide, type StationGuideDom } from "./station-guide.js";
-import { createStationPrefetch, decodeDivisor } from "./station-prefetch.js";
+import { createStationPrefetch, decodeFigure } from "./station-prefetch.js";
 import type {
   TourViewerSession,
   TourViewerStore,
@@ -115,9 +117,15 @@ export function wireVisitorStations(deps: {
   const stage = createSceneStage({
     getScene: () => seams.getScene(),
     poseOf: (id) => poseOf(id),
-    decodeTexture: (blob, size) =>
+    // The figure measured from its own header (K4 review R2), and the
+    // decoder holds the same cap again.
+    decodeTexture: (blob) =>
       decodes.run("figure", () =>
-        decodeFrameTexture(blob, decodeDivisor(size)),
+        decodeFigure(blob, (b, divisor) =>
+          decodeFrameTexture(b, divisor, {
+            maxPixels: TOUR_MAX_IMAGE_PIXELS,
+          }),
+        ),
       ),
     loadModel: (blob) => seams.loadGlbModel(blob),
   });
@@ -130,6 +138,7 @@ export function wireVisitorStations(deps: {
     loadAsset: (path) => prefetch.load(path),
     audio,
     stage,
+    checkPicture: (blob) => pictureProblem(blob),
     createChoiceButton: (label, onClick) => {
       const button = dom.doc.createElement("button");
       button.type = "button";
