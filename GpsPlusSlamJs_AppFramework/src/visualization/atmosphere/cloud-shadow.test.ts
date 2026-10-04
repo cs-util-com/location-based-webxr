@@ -228,7 +228,7 @@ describe('CloudShadow uniforms', () => {
   // a low sun (the crossing ~22 km out, past the far fade) every ground
   // shadow vanished, and came back when the camera moved toward the sun.
   // The ground shadow is the column itself, the same from every viewpoint.
-  it("shades by the column alone, with no camera-dependent weight", () => {
+  it('shades by the column alone, with no camera-dependent weight', () => {
     const material = new THREE.MeshStandardMaterial();
     new CloudShadow().apply(material);
     const f = compileWith(material, 'standard').fragmentShader;

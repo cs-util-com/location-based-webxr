@@ -1032,7 +1032,11 @@ describe('SkyAtmosphere.cloudTransmittanceToward (round-3 DEC-FB3-7)', () => {
     const { atmosphere } = setup();
     const el = (5 * Math.PI) / 180;
     const sun = { x: Math.cos(el), y: Math.sin(el), z: 0 };
-    atmosphere.configure({ sunDirection: sun, cloudCover: 0.9, cloudMode: 'slab' });
+    atmosphere.configure({
+      sunDirection: sun,
+      cloudCover: 0.9,
+      cloudMode: 'slab',
+    });
     const u = atmosphere.cloudUniforms;
     const data = cloudNoise(CLOUD_TEXTURE_SIZE, 1);
     const points: [number, number, number][] = [];
