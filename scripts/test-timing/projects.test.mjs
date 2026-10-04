@@ -21,6 +21,7 @@ import {
   gateStages,
   isBrowserStage,
   resolveGateMode,
+  gateBaseCommand,
   SKIP_BROWSER_ENV,
 } from './projects.mjs';
 
@@ -347,4 +348,43 @@ describe('every workspace package is gated', () => {
       expect(stage, `no root stage runs ${manifest.name}`).toBeDefined();
     }
   );
+});
+
+// Why this test matters (gate-speed plan 2026-10-04, G4 / TS-2): coverage
+// cost 29 % of the framework's unit stage (106.4 / 103.9 s with it, 74.2 /
+// 74.8 s without, two quiet runs each at 4 workers), against a 15 % bar set
+// before measuring. So the PER-COMMIT gate (GATE_SKIP_BROWSER_STAGES set)
+// runs it without coverage, while CI, the milestone run and every recorded
+// timing run keep the canonical command. The framework has no coverage
+// thresholds; the Recorder has (87/75/87/88), so it must keep coverage on
+// every run, and that is pinned here too.
+describe('gateBaseCommand (fast per-commit command)', () => {
+  const framework = getStage(getProject('GpsPlusSlamJs_AppFramework'), 'test:unit');
+  const recorder = getStage(getProject('GpsPlusSlamJs_RecorderApp'), 'test:unit');
+
+  it('drops coverage from the framework unit stage in the per-commit gate only', () => {
+    expect(framework.command).toContain('--coverage');
+    expect(gateBaseCommand(framework, { [SKIP_BROWSER_ENV]: '1' })).not.toContain(
+      '--coverage'
+    );
+    expect(gateBaseCommand(framework, {})).toBe(framework.command);
+  });
+
+  it('keeps the Recorder on coverage in every mode: its thresholds gate', () => {
+    expect(gateBaseCommand(recorder, { [SKIP_BROWSER_ENV]: '1' })).toBe(
+      recorder.command
+    );
+    expect(recorder.command).toContain('--coverage');
+  });
+
+  it('is the canonical command for a stage with no fast form', () => {
+    const lint = getStage(getProject('GpsPlusSlamJs_AppFramework'), 'lint');
+    expect(gateBaseCommand(lint, { [SKIP_BROWSER_ENV]: '1' })).toBe(lint.command);
+  });
+
+  it('differs from the canonical command only by the coverage flag', () => {
+    expect(framework.fastGateCommand).toBe(
+      framework.command.replace(' --coverage', '')
+    );
+  });
 });

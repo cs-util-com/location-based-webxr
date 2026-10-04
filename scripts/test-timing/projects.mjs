@@ -31,6 +31,11 @@ import path from "node:path";
  * @property {string} [filteredRunCommand] - cheaper base command substituted
  *   ONLY on filtered runs (e.g. test:unit without --coverage — speedup plan
  *   C.1); recorded full-suite and CI runs always use `command`.
+ * @property {string} [fastGateCommand] - cheaper base command for the
+ *   PER-COMMIT gate only (`GATE_SKIP_BROWSER_STAGES` set, see
+ *   `gateBaseCommand`); CI, the milestone run and every recorded run keep
+ *   `command`. The framework's unit stage drops `--coverage` this way
+ *   (gate-speed plan 2026-10-04, G4).
  * @property {boolean} [wrapperScript] - default true. false = the package.json
  *   script of the same name intentionally does NOT route through
  *   timed-stage.mjs (e.g. build:framework: dev flows and Playwright
@@ -289,6 +294,13 @@ export const PROJECTS = [
         // plan C.1): repo-wide coverage of a one-file run is meaningless
         // and expensive. Full-suite and CI runs keep `command`.
         filteredRunCommand: "vitest run --config=config/vitest.config.ts",
+        // The per-commit gate skips it too (gate-speed plan 2026-10-04, G4 /
+        // TS-2): coverage cost 29 % of this stage (106.4 / 103.9 s against
+        // 74.2 / 74.8 s, two quiet runs each at 4 workers) against a 15 %
+        // bar set before measuring, and the framework has no coverage
+        // thresholds. CI and the milestone run keep `command`. NOT for the
+        // Recorder, whose thresholds gate.
+        fastGateCommand: "vitest run --config=config/vitest.config.ts",
       },
     ],
   },
@@ -762,6 +774,22 @@ export function gateStages(project, { skipBrowser = false } = {}) {
   return skipBrowser
     ? project.stages.filter((stage) => !isBrowserStage(stage))
     : project.stages;
+}
+
+/**
+ * The base command a stage runs with: its `fastGateCommand` in the
+ * per-commit gate (`GATE_SKIP_BROWSER_STAGES` set) when it has one, else its
+ * canonical `command`. Filtered runs substitute `filteredRunCommand` later,
+ * in `buildStageCommand`.
+ *
+ * @param {StageConfig} stage
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {string}
+ */
+export function gateBaseCommand(stage, env = {}) {
+  return resolveGateMode(env).skipBrowser && stage.fastGateCommand
+    ? stage.fastGateCommand
+    : stage.command;
 }
 
 /** Env var that puts a gate run in DEC-G2's dependent mode. */

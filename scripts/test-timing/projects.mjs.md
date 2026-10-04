@@ -15,6 +15,14 @@
     lookup; `resolveProject` keys on cwd basename (root by path equality) and
     returns `undefined` for unknown dirs (callers fail loudly).
   - `getStage(project, name)`, `stageOrder(project)`.
+  - `gateBaseCommand(stage, env)` - the stage's `fastGateCommand` in the
+    per-commit gate (`GATE_SKIP_BROWSER_STAGES` set), else its `command`.
+    Only the framework's `test:unit` has one: it drops `--coverage`, which
+    cost 29 % of that stage (106.4 / 103.9 s against 74.2 / 74.8 s, two quiet
+    runs each at 4 workers) against a 15 % bar set before measuring
+    (gate-speed plan 2026-10-04, G4 / TS-2). CI, the milestone run and every
+    recorded run keep coverage. The Recorder keeps it in every mode: its
+    coverage thresholds gate.
 - Invariants & assumptions:
   - Stage `name` === the package.json script name === the md row label; the
     package.json script must invoke `timed-stage.mjs <name>` (enforced by
