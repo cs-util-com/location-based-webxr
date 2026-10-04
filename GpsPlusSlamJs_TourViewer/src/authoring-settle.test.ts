@@ -1467,7 +1467,7 @@ describe(
     ) {
       const a = authoring(store === undefined ? {} : { store });
       await openFinishableTour(a);
-      a.ctx.tourManifest = { version: 1, objects };
+      a.ctx.tourManifest = { ...createEmptyTourManifest(), objects };
       a.setup.presentDraftForTour("https://example.test/tour.zip");
       await flush();
       a.beginVisit();

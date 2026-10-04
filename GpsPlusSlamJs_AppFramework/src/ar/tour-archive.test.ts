@@ -16,6 +16,7 @@ import {
   tourManifestEntryOf,
 } from './tour-archive';
 import {
+  createEmptyTourManifest,
   parseTourManifest,
   TourManifestValidationError,
 } from './tour-manifest';
@@ -93,7 +94,8 @@ describe('readTourManifestFromEntries', () => {
         },
         parseTourManifest
       )
-    ).resolves.toEqual({ version: 1, objects: [] });
+      // A version 1 file is read MIGRATED to version 2 (tour kit plan K1).
+    ).resolves.toEqual(createEmptyTourManifest());
   });
 
   it('REJECTS a manifest that exists but is broken - never a silently empty tour', async () => {

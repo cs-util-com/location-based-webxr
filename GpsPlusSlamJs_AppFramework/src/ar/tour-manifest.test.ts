@@ -13,6 +13,7 @@ import {
   createEmptyTourManifest,
   parseTourManifest,
   serializeTourManifest,
+  TOUR_MANIFEST_MINOR,
   TOUR_MANIFEST_VERSION,
   TourManifestValidationError,
 } from './tour-manifest';
@@ -55,14 +56,64 @@ describe('parseTourManifest', () => {
 
   it('an empty manifest is valid and is what the starter zip carries', () => {
     expect(parseTourManifest(createEmptyTourManifest())).toEqual({
-      version: 1,
+      version: 2,
+      minor: 0,
+      order: 'fixed',
       objects: [],
+      assets: [],
+      stations: [],
     });
   });
 
   it.each([
     ['a non-object', null, /JSON object/],
-    ['a wrong version', { version: 2, objects: [] }, /"version"/],
+    [
+      'a version that is not a format number',
+      { version: '2', objects: [] },
+      /"version" must be 1 or 2/,
+    ],
+    ['version 0', { version: 0, objects: [] }, /"version" must be 1 or 2/],
+    [
+      'a version from a newer app',
+      { version: 3, objects: [] },
+      /made with a newer version of the app \(format 3\)/,
+    ],
+    [
+      'a minor that is not a whole number',
+      { version: 2, minor: 1.5, objects: [] },
+      /"minor" must be an integer >= 0/,
+    ],
+    [
+      'an unknown order',
+      { version: 2, order: 'random', objects: [] },
+      /"order"/,
+    ],
+    [
+      'an asset whose id an object already uses',
+      {
+        version: 2,
+        objects: [pin],
+        assets: [{ id: 'p1', path: 'content/p1.jpg' }],
+      },
+      /already an object id/,
+    ],
+    [
+      'a station naming a missing asset',
+      {
+        version: 2,
+        objects: [],
+        stations: [
+          {
+            id: 's',
+            anchor: { code: 'abc' },
+            activateRadiusM: 20,
+            foundRadiusM: 5,
+            steps: [{ id: 'a', block: { kind: 'image', asset: 'nope' } }],
+          },
+        ],
+      },
+      /stations\[0\]\.steps\[0\]\.block\.asset/,
+    ],
     ['objects not an array', { version: 1, objects: {} }, /"objects"/],
     [
       'an unknown kind',
@@ -142,9 +193,98 @@ describe('parseTourManifest', () => {
   });
 });
 
+describe('the version policy (tour kit plan K1, §8 D7)', () => {
+  const station = {
+    id: 'gate',
+    title: 'The gate',
+    anchor: { code: 'a1b2c3d4e5f6' },
+    activateRadiusM: 25,
+    foundRadiusM: 4,
+    steps: [{ id: 'hi', block: { kind: 'text', text: 'Hello' } }],
+  };
+
+  it('migrates a version 1 tour: its pins and photos stay as free objects, with the v2 defaults', () => {
+    const migrated = parseTourManifest({ version: 1, objects: [pin, photo] });
+    expect(TOUR_MANIFEST_VERSION).toBe(2);
+    expect(migrated).toEqual({
+      version: 2,
+      minor: 0,
+      order: 'fixed',
+      objects: parseTourManifest({ version: 2, objects: [pin, photo] }).objects,
+      assets: [],
+      stations: [],
+    });
+  });
+
+  it('a migrated v1 tour is written back as version 2', () => {
+    const text = serializeTourManifest(
+      parseTourManifest({ version: 1, objects: [pin] })
+    );
+    expect(JSON.parse(text)).toMatchObject({ version: 2, minor: 0 });
+  });
+
+  it('reads a full v2 tour: title, order, assets and stations', () => {
+    const manifest = parseTourManifest({
+      version: 2,
+      title: 'Castle walk',
+      order: 'branch',
+      objects: [pin],
+      assets: [{ id: 'knight', path: 'content/knight.png' }],
+      stations: [
+        {
+          ...station,
+          steps: [
+            {
+              id: 'hi',
+              block: {
+                kind: 'character',
+                name: 'Kurt',
+                image: 'knight',
+                caption: 'Hi',
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(manifest.title).toBe('Castle walk');
+    expect(manifest.order).toBe('branch');
+    expect(manifest.assets[0]?.kind).toBe('image');
+    expect(manifest.stations[0]?.steps[0]?.block.kind).toBe('character');
+  });
+
+  it('opens a tour of a NEWER minor, ignoring the fields it does not know', () => {
+    const manifest = parseTourManifest({
+      version: 2,
+      minor: 7,
+      futureField: { anything: true },
+      objects: [{ ...pin, futureObjectField: 1 }],
+      stations: [{ ...station, futureStationField: 'x' }],
+    });
+    expect(manifest.minor).toBe(7);
+    expect(manifest).not.toHaveProperty('futureField');
+    expect(manifest.objects[0]).not.toHaveProperty('futureObjectField');
+    expect(manifest.stations[0]).not.toHaveProperty('futureStationField');
+  });
+
+  it('refuses to WRITE a tour of a newer minor: saving would drop what this version cannot read', () => {
+    const newer = parseTourManifest({
+      version: 2,
+      minor: TOUR_MANIFEST_MINOR + 1,
+      objects: [],
+    });
+    expect(() => serializeTourManifest(newer)).toThrow(
+      /made with a newer version of the app/
+    );
+    expect(() =>
+      serializeTourManifest({ ...newer, minor: TOUR_MANIFEST_MINOR })
+    ).not.toThrow();
+  });
+});
+
 describe('serializeTourManifest', () => {
   it('round-trips through parseTourManifest', () => {
-    const manifest = parseTourManifest({ version: 1, objects: [pin, photo] });
+    const manifest = parseTourManifest({ version: 2, objects: [pin, photo] });
     expect(
       parseTourManifest(JSON.parse(serializeTourManifest(manifest)))
     ).toEqual(manifest);
@@ -153,7 +293,7 @@ describe('serializeTourManifest', () => {
   it('refuses to write a manifest the reader would reject', () => {
     expect(() =>
       serializeTourManifest({
-        version: 1,
+        ...createEmptyTourManifest(),
         objects: [{ ...pin, label: '' } as never],
       })
     ).toThrow(TourManifestValidationError);

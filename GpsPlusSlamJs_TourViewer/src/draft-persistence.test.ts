@@ -14,7 +14,12 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  createEmptyTourManifest,
+  parseTourManifest,
+  serializeTourManifest,
+  type TourObject,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import {
   deletedKey,
@@ -559,5 +564,60 @@ describe("an AR visit's log is its own file (authoring plan 2026-09-28-0953 M3b)
     await writeDraftMeta(store, META);
     await writeDraftObject(store, pin("a"));
     expect((await readDraft(store))?.visits).toEqual([]);
+  });
+});
+
+describe("a draft written before format version 2 (tour kit plan K1, §8 D7)", () => {
+  // Why this matters: drafts live on the creator's phone across app
+  // updates. A draft written by the pre-K1 app (format version 1) must load
+  // with every object and photo, and its Finish must write version 2 - a
+  // draft that silently stopped loading after an update would cost the
+  // creator a walk they cannot repeat.
+  it("loads a v1 draft from the files the old app wrote, and finishes it as version 2", async () => {
+    const store = memoryStore();
+    // The files exactly as the pre-K1 app wrote them (literal keys and
+    // records, not this version's writers).
+    store.files.set(
+      "meta",
+      JSON.stringify({
+        tourUrl: "https://host/tour.zip",
+        sizeM: 0.2,
+        level: null,
+      }),
+    );
+    store.files.set(
+      "object:p1",
+      JSON.stringify({
+        id: "p1",
+        kind: "pin",
+        label: "The old gate",
+        createdAtIso: "2026-09-20T10:00:00.000Z",
+        geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 12 },
+      }),
+    );
+    store.files.set(
+      "object:f1",
+      JSON.stringify({
+        id: "f1",
+        kind: "photo",
+        image: "content/f1.jpg",
+        imageWidth: 640,
+        imageHeight: 480,
+        createdAtIso: "2026-09-20T10:01:00.000Z",
+        geo: { lat: 47.5, lon: 8.7, alt: 401, rotation: [0, 0, 0, 1] },
+      }),
+    );
+    store.files.set("photo:f1", new Blob(["jpeg"]));
+    const stored = await readDraft(store);
+    expect(stored?.draft.objects.map((o) => o.id)).toEqual(["p1", "f1"]);
+    expect(stored?.photos.has("f1")).toBe(true);
+    const finished: unknown = JSON.parse(
+      serializeTourManifest({
+        ...createEmptyTourManifest(),
+        objects: [...(stored?.draft.objects ?? [])],
+      }),
+    );
+    expect(finished).toMatchObject({ version: 2, minor: 0 });
+    expect(parseTourManifest(finished).objects).toEqual(stored?.draft.objects);
   });
 });

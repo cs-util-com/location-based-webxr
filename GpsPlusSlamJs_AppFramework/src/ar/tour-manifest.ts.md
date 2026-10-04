@@ -3,23 +3,56 @@
 **Purpose:** the schema, reader and writer of `tour.json` - what a creator
 placed in a tour (text pins, captured photos), each with an exact geo pose
 (lat, lon, absolute altitude, rotation against north) minted the way the
-printed code's pose is. Guided-setup plan DEC-N7/N8/N9
-(`GpsPlusSlamJs_Docs/docs/2026-09-08-tour-viewer-improvements/2026-09-08-1459-tour-viewer-guided-setup-and-mandatory-code-plan.md`).
+printed code's pose is, and from format version 2 the tour kit's game
+content (title, station order, media assets, stations). Guided-setup plan
+DEC-N7/N8/N9
+(`GpsPlusSlamJs_Docs/docs/2026-09-08-tour-viewer-improvements/2026-09-08-1459-tour-viewer-guided-setup-and-mandatory-code-plan.md`);
+tour kit plan K1 and §8 D7
+(`GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`).
 
 ## Public API
 
-- `TOUR_MANIFEST_VERSION = 1`.
+- `TOUR_MANIFEST_VERSION = 2` (the format's major number) and
+  `TOUR_MANIFEST_MINOR = 0` (the newest additive revision this module
+  knows).
 - `parseTourManifest(data: unknown): TourManifest` - validates every field;
   throws `TourManifestValidationError` naming the object
-  (`"objects[3].geo.lat" …`). Unknown kinds and duplicate ids reject.
+  (`"objects[3].geo.lat" …`, `"stations[0].steps[2].block.asset" …`).
+  Unknown kinds and duplicate ids reject. A version 1 document MIGRATES.
 - `serializeTourManifest(manifest): string` - re-validates through the
-  reader, then pretty-prints.
-- `createEmptyTourManifest(): TourManifest` - `{ version: 1, objects: [] }`,
-  the starter zip's content.
-- Types `TourManifest` (`version: 1` as a literal), `TourObject =
-TourPin | TourPhoto` (a discriminated union on `kind`, so a renderer
-  never asserts a field the parser guaranteed), `TourObjectKind`;
-  `TourManifestValidationError`.
+  reader, refuses a manifest of a newer minor, then pretty-prints.
+- `createEmptyTourManifest(): TourManifest` - `{ version: 2, minor: 0,
+order: "fixed", objects: [], assets: [], stations: [] }`, the starter
+  zip's content.
+- Types `TourManifest`, `TourObject = TourPin | TourPhoto` (a
+  discriminated union on `kind`, so a renderer never asserts a field the
+  parser guaranteed), `TourObjectKind`; `TourManifestValidationError`; and
+  re-exported from `tour-stations.ts`: `TourAsset`, `TourAssetKind`,
+  `TourOrder`, `TourStation`, `TourStationAnchor`, `TourStep`,
+  `TourStepAdvance`, `TourBlock`, `TourChoiceOption`, `TourQuizOption`,
+  `TourQuizAnswer`, `TourQuizRoute`.
+
+## The version policy (K1)
+
+- **Major (`version`).** 2 is read as is; 1 MIGRATES: its pins and photos
+  stay as free objects, `minor` 0, `order` `"fixed"`, no assets, no
+  stations (its own fields beyond `objects` are ignored). Every write is
+  version 2. A higher integer is refused as "made with a newer version of
+  the app (format N)"; anything else as not a format number.
+- **Minor (`minor`, default 0).** Additive revisions of version 2. A
+  reader opens any minor; unknown fields are IGNORED at every level and at
+  every minor (so a typo in a hand-edited optional field reads as absent:
+  the cost of being forward compatible). The writer refuses a manifest
+  whose minor is newer than `TOUR_MANIFEST_MINOR`: it was read with fields
+  dropped, and writing it back would lose them silently. A creator's
+  Finish on such a tour therefore fails with that message instead of
+  destroying content.
+- **Drafts.** A draft object is validated by wrapping it in a manifest of
+  the CURRENT version (`draft-persistence.ts`), and the object shapes did
+  not change between 1 and 2, so a draft written by a pre-K1 app reads
+  and finishes as version 2 (the Tour Viewer's draft test loads one).
+- The series id and version number of a tour are NOT here:
+  `manifest.json` is their one place (§8 G7, `tour-signed-manifest.ts`).
 
 ## Invariants & assumptions
 
@@ -35,8 +68,10 @@ TourPin | TourPhoto` (a discriminated union on `kind`, so a renderer
   the error is the manifest's own) and positive integer `imageWidth`/
   `imageHeight` (the plane's aspect without decoding), and may carry a
   label. `createdAtIso` must parse as a date.
-- `version` must equal `TOUR_MANIFEST_VERSION`: a later reader keys a
-  migration on it; this one rejects anything else.
+- `title` is optional and non-blank; `order` is `fixed | any | branch`.
+- Assets and stations are validated by `tour-stations.ts`, with the
+  object ids passed in (an asset id must not be an object id: both name a
+  content file by id).
 - Defensive at the boundary like `qr-level.ts`: hand-editable data, every
   field checked, the writer re-validates.
 
@@ -46,12 +81,17 @@ TourPin | TourPhoto` (a discriminated union on `kind`, so a renderer
 const manifest = createEmptyTourManifest();
 manifest.objects.push({ id, kind: 'pin', geo, createdAtIso, label: 'Gate' });
 const text = serializeTourManifest(manifest); // throws if any object is wrong
+parseTourManifest({ version: 1, objects: [] }).version; // 2 (migrated)
 ```
 
 ## Tests
 
 - `tour-manifest.test.ts` - accepts pins/photos, the empty manifest, one
   rejection per rule with the object named, write/read round trip, the
-  writer's refusal.
+  writer's refusal; the version policy: v1 migration and write-back as 2,
+  a full v2 tour, a newer minor read with unknown fields ignored and
+  refused on write, a newer major and a malformed version refused.
 - `tour-manifest.property.test.ts` - serialize→parse is the identity and
-  parse is idempotent over generated manifests.
+  parse is idempotent over generated manifests; a generated v1 manifest
+  migrates to the v2 manifest with the same objects, and migrating is
+  idempotent.

@@ -384,10 +384,10 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
         await buildZip({ "tour.json": '{"version":1,"objects":[]}' }),
       ),
     });
-    await expect(withManifest.loadTourManifest()).resolves.toEqual({
-      version: 1,
-      objects: [],
-    });
+    // A version 1 file is read migrated to version 2 (tour kit plan K1).
+    await expect(withManifest.loadTourManifest()).resolves.toEqual(
+      createEmptyTourManifest(),
+    );
     await withManifest.close();
 
     const broken = await openTourSession("https://x/tour.zip", {
@@ -481,10 +481,9 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
     });
     expect(session.entries.map((e) => e.filename)).toEqual(["tour.json"]);
     expect(session.hasRecording).toBe(false);
-    await expect(session.loadTourManifest()).resolves.toEqual({
-      version: 1,
-      objects: [],
-    });
+    await expect(session.loadTourManifest()).resolves.toEqual(
+      createEmptyTourManifest(),
+    );
     await expect(session.loadQrLevels()).resolves.toEqual(new Map());
     await session.close();
   });
