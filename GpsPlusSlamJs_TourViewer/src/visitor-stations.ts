@@ -12,6 +12,7 @@ import {
   selectGpsPositions,
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
+import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-stations";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 
 import type { ViewerMode } from "./mode.js";
@@ -76,8 +77,20 @@ export function wireVisitorStations(deps: {
     createElement: () => seams.createAudioElement(),
     objectUrls,
   });
-  const assetsById = () =>
-    new Map((ctx.tourManifest?.assets ?? []).map((asset) => [asset.id, asset]));
+  // The open tour's assets by id, built once per manifest (K4 review R13:
+  // it was rebuilt on every read).
+  let indexed: { manifest: unknown; byId: Map<string, TourAsset> } | null =
+    null;
+  const assetsById = (): ReadonlyMap<string, TourAsset> => {
+    const manifest = ctx.tourManifest;
+    if (indexed?.manifest !== manifest) {
+      indexed = {
+        manifest,
+        byId: new Map((manifest?.assets ?? []).map((a) => [a.id, a])),
+      };
+    }
+    return indexed.byId;
+  };
   // Media are read ahead as the visitor approaches (`station-prefetch.ts`),
   // and the story's own reads go through the same cache. The cache lives
   // with the open tour's manifest: kept across AR sessions, dropped when

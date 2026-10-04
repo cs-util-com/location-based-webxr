@@ -63,8 +63,14 @@ activateM)` (each tick, each offered station with a distance: the
   playing.", "Tour complete - every station visited." or "- N skipped.";
   under branch order "Tour complete - you reached the end of your path."
   (with ", N skipped."), since the other branches were never offered.
-  Distances are measured again from the last known position whenever the
-  offer changes, so the next station's distance shows at once.
+  The line and the skip are written only when their text changes (the
+  line is a polite live region: a rewrite is announced again).
+- **Measured once per tick (K4 review R13):** each tick reads the visitor
+  and the zero once, computes every station's pose once (cached until the
+  next measurement; the stage and the HUD read the cache) and every
+  placeable station's horizontal distance, so an offer that changes
+  between ticks (a skip, a story's end) has its distance at once. A code
+  lock before any tick measures first.
 
 ## Examples
 

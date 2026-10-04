@@ -127,17 +127,32 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   let skipArmedFor: string | null = null;
   /** A one-line note of what just happened ("Skipped the well."). */
   let note: string | null = null;
+  /** The last measurement: the visitor, and every placeable station's
+   *  horizontal distance (all stations, so an offer that changes between
+   *  ticks has its distances already). Taken once per tick (K4 review R13). */
   let last: {
     visitor: VisitorPosition;
     distances: Map<string, number>;
   } | null = null;
+  /** Station poses at the last measurement's zero, computed once each per
+   *  measurement (R13: the geodesy ran several times per station a tick). */
+  const poseCache = new Map<string, StagePose | null>();
+  let measuredZero: LatLong | null | undefined;
 
   function stationById(id: string): TourStation | undefined {
     return runStations?.find((s) => s.id === id);
   }
 
   function poseOf(stationId: string): StagePose | null {
-    const zero = deps.zero();
+    const cached = poseCache.get(stationId);
+    if (cached !== undefined) return cached;
+    const pose = computePose(stationId);
+    poseCache.set(stationId, pose);
+    return pose;
+  }
+
+  function computePose(stationId: string): StagePose | null {
+    const zero = measuredZero === undefined ? deps.zero() : measuredZero;
     const station = stationById(stationId);
     if (zero === null || station === undefined) return null;
     const geo =
@@ -146,6 +161,15 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         ? undefined
         : deps.tour()?.levels?.get(station.anchor.code)?.qr.geo);
     return geo === undefined ? null : objectPoseNue(geo, zero);
+  }
+
+  /** Measure once: the visitor, the zero, every station's pose and
+   *  horizontal distance. */
+  function measure(): void {
+    poseCache.clear();
+    measuredZero = deps.zero();
+    const visitor = deps.visitor();
+    last = { visitor, distances: horizontalDistances(visitor.nue) };
   }
 
   /** The run for the open tour, created once the tour may be placed. */
@@ -174,8 +198,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     nue: readonly [number, number, number] | null,
   ): Map<string, number> {
     const out = new Map<string, number>();
-    if (nue === null || run === null) return out;
-    for (const id of run.offered()) {
+    if (nue === null || runStations === null) return out;
+    for (const { id } of runStations) {
       const pose = poseOf(id);
       if (pose === null) continue;
       out.set(
@@ -202,10 +226,11 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     distances: ReadonlyMap<string, number>,
     accuracyM: number | null,
   ): void {
-    if (deps.onApproach === undefined) return;
-    for (const [id, d] of distances) {
+    if (deps.onApproach === undefined || run === null) return;
+    for (const id of run.offered()) {
+      const d = distances.get(id);
       const station = stationById(id);
-      if (station === undefined) continue;
+      if (d === undefined || station === undefined) continue;
       deps.onApproach(station, d, stationBands(station, accuracyM).activateM);
     }
   }
@@ -288,12 +313,21 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     return `${lead}${waiting}, ${distanceText(d)}`;
   }
 
+  /** Write a text only when it changed (R13: the line is a polite live
+   *  region, and a rewrite is announced again). */
+  function show(
+    el: Pick<HTMLElement, "textContent" | "hidden">,
+    text: string,
+  ): void {
+    if (el.textContent !== text) el.textContent = text;
+    const hidden = text === "";
+    if (el.hidden !== hidden) el.hidden = hidden;
+  }
+
   function render(): void {
-    // Measured now, not at the last tick: the offer may have changed since
-    // (a skip, a story's end), and a code lock can find a station before
-    // the guide has ticked at all.
-    const visitor = deps.visitor();
-    last = { visitor, distances: horizontalDistances(visitor.nue) };
+    // A code lock can find a station before the guide has ticked at all.
+    if (last === null) measure();
+    const visitor = last!.visitor;
     deps.onGuide?.(visitor.nue, guideTarget());
     const upcoming = run?.upcoming() ?? null;
     const next = upcoming === null ? undefined : stationById(upcoming);
@@ -306,21 +340,21 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       // Whichever action brought the run here (a tick, a code lock).
       ensureHud();
     }
-    const text = lineText();
-    dom.line.textContent = text;
-    dom.line.hidden = text === "";
+    show(dom.line, lineText());
     const focus = focusStation();
     if (run === null || focus === null) {
-      dom.skip.hidden = true;
+      show(dom.skip, "");
       skipArmedFor = null;
       return;
     }
     if (skipArmedFor !== null && skipArmedFor !== focus) skipArmedFor = null;
     const ripe = skipArmedFor === focus || run.skipSuggested(focus, deps.now());
-    dom.skip.hidden = false;
-    dom.skip.textContent = ripe
-      ? `Skip ${stationTitle(stationById(focus)!)} - I can't get there`
-      : "Can't get there?";
+    show(
+      dom.skip,
+      ripe
+        ? `Skip ${stationTitle(stationById(focus)!)} - I can't get there`
+        : "Can't get there?",
+    );
   }
 
   /** The breadcrumbs' target: the station in focus, by its spot. */
@@ -364,9 +398,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
           }
         }
       }
-      const visitor = deps.visitor();
-      const distances = horizontalDistances(visitor.nue);
-      last = { visitor, distances };
+      measure();
+      const { visitor, distances } = last!;
       if (visitor.nue !== null) deps.onVisitor?.(visitor.nue);
       approach(distances, visitor.accuracyM);
       handle(

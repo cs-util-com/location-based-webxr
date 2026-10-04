@@ -64,8 +64,20 @@ function harness(tourValue: StationTour) {
   const guides: (string | null)[] = [];
   const huds: { getTargets: () => WayfindingTarget[]; disposed: boolean }[] =
     [];
+  /** How often the guide wrote the line and read its inputs (R13). */
+  const calls = { lineWrites: 0, visitor: 0, zero: 0 };
+  let lineText = "";
   const dom = {
-    line: { textContent: "" as string, hidden: true },
+    line: {
+      get textContent(): string {
+        return lineText;
+      },
+      set textContent(v: string) {
+        calls.lineWrites += 1;
+        lineText = v;
+      },
+      hidden: true,
+    },
     skip: { textContent: "" as string, hidden: true },
   };
   let tour: StationTour | null = tourValue;
@@ -73,8 +85,14 @@ function harness(tourValue: StationTour) {
     dom,
     tour: () => tour,
     placementAllowed: () => allowed,
-    zero: () => zero,
-    visitor: () => visitor,
+    zero: () => {
+      calls.zero += 1;
+      return zero;
+    },
+    visitor: () => {
+      calls.visitor += 1;
+      return visitor;
+    },
     isIgnoredCode: (id) => ignored.has(id),
     startHud: (getTargets) => {
       const h = { getTargets, disposed: false };
@@ -100,6 +118,7 @@ function harness(tourValue: StationTour) {
     approaches,
     dones,
     upcomings,
+    calls,
     guides,
     huds,
     ignored,
@@ -405,6 +424,26 @@ describe("wireStationGuide", () => {
     expect(h.guides.at(-1)).toBeNull();
     h.guide.endSession();
     expect(h.guides.at(-1)).toBeNull();
+  });
+
+  it("per tick: measures the visitor once, reads the zero once, and writes the line only when its text changes (R13)", () => {
+    // Why this test matters (K4 review R13): every tick rewrote the polite
+    // live region, so a screen reader re-announced the line on every
+    // camera frame, and each tick repeated the geodesy several times per
+    // offered station.
+    const h = harness({
+      stations: [station("gate", 50, 0), station("well", -30, 0)],
+      order: "any",
+      levels: null,
+    });
+    h.at(0, 0);
+    const before = { ...h.calls };
+    for (let i = 0; i < 10; i += 1) h.at(0, 0);
+    expect(h.calls.visitor - before.visitor).toBe(10);
+    expect(h.calls.zero - before.zero).toBe(10);
+    expect(h.calls.lineWrites - before.lineWrites).toBe(0);
+    h.at(-10, 0); // 20 m from the well now: the line changes once
+    expect(h.calls.lineWrites - before.lineWrites).toBe(1);
   });
 
   it("finds nothing that is not offered, and calls onFound once per station", () => {

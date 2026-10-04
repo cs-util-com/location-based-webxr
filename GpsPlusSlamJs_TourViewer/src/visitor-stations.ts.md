@@ -34,6 +34,7 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
   `seams.loadGlbModel`.
 - The breadcrumbs (`breadcrumbs.ts`) follow the guide's `onGuide`, one
   trail for the page.
+- The assets by id are built once per manifest (K4 review R13).
 - A choice button is a `.btn` with `data-testid="scene-choice"`.
 - `stop()` stops the story and the HUD; the guide keeps the progress with
   the open tour, and the prefetch its cache unless the tour closed.
