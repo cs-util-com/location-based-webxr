@@ -458,12 +458,27 @@ describe('acquireMachineSlot', () => {
     expect(readSlot(dir).existing?.token).toBe('next');
   });
 
+  // A fixed instant, not the machine clock: the repo's wall-clock guard
+  // (tests/repo-config/wall-clock-assertions.test.js) keeps verdicts off
+  // `Date.now()` arithmetic, and the claim needs no clock.
   it('ages a record-less slot by its directory mtime', async () => {
     const dir = freshDir();
     mkdirSync(dir, { recursive: true });
-    const old = new Date(Date.now() - 2 * MIN_STALE_AGE_MS);
-    utimesSync(dir, old, old);
-    expect(readSlot(dir).dirMtimeMs).toBeLessThan(Date.now() - MIN_STALE_AGE_MS);
+    const set = 1_700_000_000_000;
+    utimesSync(dir, new Date(set), new Date(set));
+    const seen = readSlot(dir);
+    expect(seen.existing).toBeNull();
+    expect(Math.abs(/** @type {number} */ (seen.dirMtimeMs) - set)).toBeLessThan(
+      1_000
+    );
+    expect(
+      decideMachineSlot({
+        ...seen,
+        inheritedToken: undefined,
+        isAlive: alive,
+        now: set + 2 * MIN_STALE_AGE_MS,
+      }).action
+    ).toBe('steal');
   });
 });
 
