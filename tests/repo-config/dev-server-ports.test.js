@@ -27,32 +27,24 @@
 // in this repo is a literal, and a new package that breaks the convention is a
 // bigger conversation than a port number.
 
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve, join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-import { readTracked, trackedFiles } from './tracked-tree.js';
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** `{ package, port }` for every package that pins a dev-server port. */
 function configuredPorts() {
-  // Through the shared tracked tree (tracked-tree.js; gate-speed plan
-  // 2026-10-04, G6): the tracked depth-1 configs, filtered from the
-  // whole-repo listing the other guards already memoise (a pathspec would
-  // cost one more `git` process). A package's untracked config is invisible
-  // until it is added.
-  return trackedFiles()
-    .filter((rel) => /^GpsPlusSlamJs_[^/]*\/vite\.config\.ts$/.test(rel))
-    .map((rel) => {
-      let text;
-      try {
-        text = readTracked(rel);
-      } catch {
-        return undefined; // tracked but deleted in the working tree
-      }
+  return readdirSync(repoRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith('GpsPlusSlamJs_'))
+    .map((entry) => {
+      const config = join(repoRoot, entry.name, 'vite.config.ts');
+      if (!existsSync(config)) return undefined;
       // The `server.port` literal. Anchored on `port:` rather than on any
       // four-digit number, so a version or a timeout cannot be mistaken for one.
-      const match = /\bport:\s*(\d{4})\b/.exec(text);
-      return match === null
-        ? undefined
-        : { pkg: rel.split('/')[0], port: Number(match[1]) };
+      const match = /\bport:\s*(\d{4})\b/.exec(readFileSync(config, 'utf8'));
+      return match === null ? undefined : { pkg: entry.name, port: Number(match[1]) };
     })
     .filter((found) => found !== undefined);
 }
