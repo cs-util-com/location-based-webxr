@@ -15,7 +15,11 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { routeCityData, withPreRound4Look } from "./globe-smoke-helpers.mjs";
+import {
+  plainGlobe,
+  routeCityData,
+  withPreRound4Look,
+} from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const COLOGNE = { latitude: 50.94128, longitude: 6.95817 };
@@ -35,7 +39,7 @@ async function boot(page, context, hash = VIEW) {
   page.on("request", (r) => requests.push(r.url()));
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(COLOGNE);
-  await page.goto(`/labs/globe/#${hash}`);
+  await page.goto(`/labs/globe/#${plainGlobe(hash)}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
     null,

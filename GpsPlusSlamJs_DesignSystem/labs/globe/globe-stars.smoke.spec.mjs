@@ -13,7 +13,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { applyHash, luminance } from "./globe-smoke-helpers.mjs";
+import { applyHash, luminance, plainGlobe } from "./globe-smoke-helpers.mjs";
 
 /** The sun behind the Earth at the equinox noon: space is dark around it. */
 const VIEW =
@@ -25,7 +25,7 @@ async function boot(page, hash) {
     if (m.type() === "error") errors.push(m.text());
   });
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(`/labs/globe/#${hash}`);
+  await page.goto(`/labs/globe/#${plainGlobe(hash)}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
     null,

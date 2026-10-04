@@ -20,6 +20,7 @@ import {
   arriveAt,
   luminance,
   meanOf,
+  plainGlobe,
   routeCityData,
   withPreRound4Look,
 } from "./globe-smoke-helpers.mjs";
@@ -41,7 +42,7 @@ async function bootArrived(page, hash = VIEW) {
   page.on("pageerror", (e) => errors.push(e.message));
   // A pin press starts the arrival prefetch: its city data is answered here.
   await routeCityData(page);
-  await page.goto(`/labs/globe/#${hash}`);
+  await page.goto(`/labs/globe/#${plainGlobe(hash)}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
     null,

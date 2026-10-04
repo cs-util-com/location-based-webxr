@@ -22,6 +22,7 @@ import {
   gridAround,
   luminance,
   meanOf,
+  plainGlobe,
   withPreRound4Look,
 } from "./globe-smoke-helpers.mjs";
 
@@ -34,7 +35,7 @@ async function bootLab(page, hash) {
     if (m.type() === "error") errors.push(m.text());
   });
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(`/labs/globe/#${hash}`);
+  await page.goto(`/labs/globe/#${plainGlobe(hash)}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
     null,

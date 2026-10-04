@@ -12,6 +12,15 @@ import { expect } from "@playwright/test";
  * has arrived at its target, and returns the list the page's console
  * errors collect into.
  */
+/**
+ * The hash with `relief=0` added when it names no relief: the relief is the
+ * lab's default since F2a (DEC-GL5-15), and a smoke that does not ask for
+ * it measures the plain globe it was written for.
+ */
+export function plainGlobe(hash) {
+  return new URLSearchParams(hash).has("relief") ? hash : `relief=0&${hash}`;
+}
+
 export async function bootGlobe(page, hash, { phase = "arrived" } = {}) {
   const errors = [];
   page.on("console", (m) => {
@@ -20,7 +29,7 @@ export async function bootGlobe(page, hash, { phase = "arrived" } = {}) {
   page.on("pageerror", (e) => errors.push(e.message));
   // A pin press starts the arrival prefetch: its city data is answered here.
   await routeCityData(page);
-  await page.goto(`/labs/globe/#${hash}`);
+  await page.goto(`/labs/globe/#${plainGlobe(hash)}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
     null,
@@ -98,6 +107,9 @@ export async function applyHash(page, hash) {
  * rather than re-measuring against a brighter default.
  */
 const PRE_ROUND4_LOOK = {
+  // The plain globe: the relief is the default since F2a (DEC-GL5-15), and
+  // these floors were measured without it.
+  relief: "0",
   sunIntensity: String(Math.PI),
   nightGain: "1",
   sunSize: "0.533",

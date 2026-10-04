@@ -30,6 +30,7 @@ import {
 import {
   applyOrbitPose,
   clipPlanes,
+  GLOBE_CLIP,
   orbitDistanceToFit,
   orbitPose,
   smoothstep,
@@ -299,7 +300,8 @@ const PARAMS = {
   // surface, exaggerated by altitude (`exaggerationAt`), in place of the
   // generated globe tiles; 0 (the default until F2) keeps the globe as it
   // was. `reliefNear` is the near-ground exaggeration (3, DEC-GL5-5).
-  relief: { fallback: 0, min: 0, max: 1 },
+  // The default since F2a (DEC-GL5-15); 0 keeps the plain globe.
+  relief: { fallback: 1, min: 0, max: 1 },
   reliefNear: { fallback: GLOBE_FLIGHT.exaggerationNear, min: 1, max: 5 },
   // The altitude band (one-scene plan §3.2; km): above `bandHigh` the
   // globe's own surface draws alone, at and below `bandLow` the relief's
@@ -469,6 +471,9 @@ const PARAMS = {
 
 /** The sweeps the recorder knows (`/globe/globe-perf-sweep.js`). */
 const PERF_SWEEPS = ["quick", "full", "overhead"];
+
+/** The highest real peak (m, Everest rounded up): the far plane's reach (F2a, M4). */
+const RELIEF_PEAK_M = 8_850;
 
 /** The floor the relief keeps under its cache cap, as a fraction of it. */
 const RELIEF_FLOOR_RATIO =
@@ -912,26 +917,58 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
  * `update` and in `adjustCamera`); `adjustHeight = false` removes both
  * if they show.
  */
-function cameraControls(scene, camera, globe, onTake) {
+function cameraControls(
+  scene,
+  camera,
+  globe,
+  onTake,
+  reliefPlanes = () => ({}),
+) {
   const controls = new GlobeControls(scene, camera, canvas);
   controls.setEllipsoid(globe.tiles.ellipsoid, globe.tiles.group);
   controls.enableDamping = true;
   controls.addEventListener("start", onTake);
   const local = new THREE.Vector3();
+  let picking = scene;
+  /**
+   * The clip planes from the camera's height over the drawn ground and the
+   * highest drawn peak (F2 plan F2a, M4), whoever owns the camera: after
+   * the intro places it, and after the controls' own update (which sets
+   * planes of its own over the ellipsoid).
+   */
+  const fitPlanes = () => {
+    local.copy(camera.position);
+    globe.tiles.group.worldToLocal(local);
+    const { near, far } = clipPlanes(
+      globe.tiles.ellipsoid,
+      local,
+      reliefPlanes(),
+    );
+    if (camera.near !== near || camera.far !== far) {
+      camera.near = near;
+      camera.far = far;
+      camera.updateProjectionMatrix();
+    }
+  };
   return {
     followIntro() {
-      local.copy(camera.position);
-      globe.tiles.group.worldToLocal(local);
-      const { near, far } = clipPlanes(globe.tiles.ellipsoid, local);
-      if (camera.near !== near || camera.far !== far) {
-        camera.near = near;
-        camera.far = far;
-        camera.updateProjectionMatrix();
-      }
+      fitPlanes();
       controls.getCameraUpDirection(controls.up);
     },
     update() {
       controls.update();
+      fitPlanes();
+    },
+    /**
+     * What the controls' rays hit (F2a, M4; F1 review Major 5): the carrier
+     * drawing most of the frame, not the whole scene (the cloud shell, the
+     * other carrier).
+     */
+    pickFrom(object) {
+      if (picking !== object) {
+        picking = object;
+        controls.setScene(object);
+      }
     },
     /** The farthest the controls zoom out: a getter, metres from the centre. */
     limit(limitM) {
@@ -1640,10 +1677,41 @@ async function start() {
     camera.updateProjectionMatrix();
     if (camera.fov === params.fovY) fovReturn = null;
   };
-  const controls = cameraControls(scene, camera, globe, () => {
-    flight.yieldToUser(performance.now());
-    pin?.cameraTaken();
-  });
+  // The drawn ground and the highest drawn peak for the clip planes (F2a,
+  // M4): the relief's sampler at the camera's ground point and at eight
+  // points a near plane's width around it (a peak beside the camera is
+  // never clipped), and the highest real peak (8,850 m) times E.
+  const planeLocal = new THREE.Vector3();
+  const reliefPlanes = () => {
+    if (!terrain || bandShare <= 0) return {};
+    const ellipsoid = globe.tiles.ellipsoid;
+    globe.tiles.group.worldToLocal(planeLocal.copy(camera.position));
+    const c = ellipsoid.getPositionToCartographic(planeLocal, {});
+    const height = Math.max(1, ellipsoid.getPositionElevation(planeLocal));
+    const step = (GLOBE_CLIP.nearFraction * height) / radius;
+    const lonStep = step / Math.max(Math.cos(c.lat), 0.01);
+    let groundM = 0;
+    for (const dy of [-1, 0, 1]) {
+      for (const dx of [-1, 0, 1]) {
+        const g = terrain.plugin.sampleCartographicElevation(
+          c.lat + dy * step,
+          c.lon + dx * lonStep,
+        );
+        if (g !== null && g > groundM) groundM = g;
+      }
+    }
+    return { groundM, peakM: RELIEF_PEAK_M * terrain.plugin.heightScale };
+  };
+  const controls = cameraControls(
+    scene,
+    camera,
+    globe,
+    () => {
+      flight.yieldToUser(performance.now());
+      pin?.cameraTaken();
+    },
+    reliefPlanes,
+  );
   // A frame change moves the world under the controls' drag state.
   onFrameChange = () => controls.release();
   /**
@@ -1995,6 +2063,7 @@ async function start() {
     } else {
       // The user took the camera, perhaps mid-fly-in: ease back to fovY.
       returnFov(now);
+      controls.pickFrom(surfaceTiles().group);
       if (!heldView) controls.update();
     }
     pin.frame();

@@ -557,6 +557,18 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     latitude exactly found no tile, or at a tile corner the far side of the
     Earth (the cause, shared vertices or three's triangle test, is not
     established). A hit beyond the Earth's centre reads as null.
+- The relief is the default since F2a (DEC-GL5-15); `relief=0` keeps the
+  plain globe. The smokes that measure the plain globe pin it: the
+  pre-round-4 look pin (`withPreRound4Look`) carries `relief=0`, and
+  `bootGlobe` and every direct page load go through `plainGlobe(hash)`,
+  which adds `relief=0` to a hash that names no relief.
+- The clip planes over the relief (F2a, M4): `reliefPlanes()` gives
+  `clipPlanes` the highest drawn ground under the camera and at eight
+  points a near plane's width around it (the relief's sampler), and the
+  highest real peak (8,850 m) times E, whoever owns the camera: after the
+  intro places it and after the controls' own update. The controls' rays
+  hit only the carrier drawing most of the frame (`pickFrom`, the
+  library's `setScene`), not the cloud shell or the other carrier.
 - The world frame (F2 plan 2026-10-03-1922 F2a, M3; `/globe/globe-frame.js`):
   `globe.group` carries one matrix from ECEF to a local frame at the target
   (x east, y up, the origin on the ground), set at the pin's press and at
