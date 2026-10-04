@@ -38,7 +38,7 @@ export interface TrustRecord {
   readonly lastSeenMs: number;
 }
 
-export type TrustSourceKind = "link" | "code";
+type TrustSourceKind = "link" | "code";
 
 export type TrustWarning =
   | {

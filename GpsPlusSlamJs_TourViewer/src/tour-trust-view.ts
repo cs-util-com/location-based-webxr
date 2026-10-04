@@ -20,7 +20,7 @@ import {
 } from "./tour-trust.js";
 
 /** The signature state a tier-1 result shows. */
-export function signatureStateOf(integrity: TourIntegrity): SignatureState {
+function signatureStateOf(integrity: TourIntegrity): SignatureState {
   if (integrity.kind === "none") return { kind: "none" };
   const signature = integrity.signature;
   if (signature === null) return { kind: "listed" };

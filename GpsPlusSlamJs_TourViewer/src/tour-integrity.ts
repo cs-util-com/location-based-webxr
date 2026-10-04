@@ -183,7 +183,7 @@ export function integrityIdentity(integrity: TourIntegrity): string | null {
  *
  * @throws TourIntegrityError `hash-mismatch`.
  */
-export async function checkEntryBytes(
+async function checkEntryBytes(
   integrity: TourIntegrity,
   filename: string,
   bytes: Uint8Array,
@@ -212,7 +212,7 @@ export async function checkEntryBytes(
  * @throws TourIntegrityError for any mismatch; an `ArchiveLimitError` or a
  *   zip error when the copy cannot be read at all.
  */
-export async function checkWholeArchive(
+async function checkWholeArchive(
   blob: Blob,
   limits: ArchiveLimits,
 ): Promise<TourIntegrity> {

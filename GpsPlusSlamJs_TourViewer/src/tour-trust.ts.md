@@ -25,7 +25,7 @@ signature (the cold review's D2), which is why the sources come first.
 - `MAX_TRUST_RECORDS = 500`.
 - Types `TrustObservation`, `TrustRecord`, `TrustWarning`
   (`source-key-changed`, `source-lost-signature`, `series-key-changed`),
-  `TrustStorage`, `TrustSourceKind`.
+  `TrustStorage`.
 
 ## Invariants & assumptions
 

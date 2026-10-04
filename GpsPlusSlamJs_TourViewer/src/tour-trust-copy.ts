@@ -20,6 +20,7 @@ export type SignatureState =
 export interface TrustCopyInput {
   readonly signature: SignatureState;
   readonly warnings: readonly TrustWarning[];
+  /** The manifest's `links` (`SignedTourManifest.links`). */
   readonly links: readonly {
     readonly seriesId: string;
     readonly author: string;

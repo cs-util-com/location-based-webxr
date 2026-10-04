@@ -17,6 +17,7 @@ import { ed25519PublicKeyToDidKey } from '../utils/did-key';
 import {
   keyFingerprint,
   parseManifestSignature,
+  signedMessage,
   TOUR_SIGNATURE_CONTEXT,
   verifyManifestSignature,
 } from './tour-signature';
@@ -35,11 +36,11 @@ async function keyPair(): Promise<{ privateKey: CryptoKey; did: string }> {
 
 /** Sign exactly as the format says: the context prefix, then the bytes. */
 async function sign(privateKey: CryptoKey, bytes: Uint8Array): Promise<string> {
-  const context = new TextEncoder().encode(TOUR_SIGNATURE_CONTEXT);
-  const message = new Uint8Array(context.length + bytes.length);
-  message.set(context);
-  message.set(bytes, context.length);
-  const sig = await subtle.sign({ name: 'Ed25519' }, privateKey, message);
+  const sig = await subtle.sign(
+    { name: 'Ed25519' },
+    privateKey,
+    signedMessage(bytes)
+  );
   return encodeBase64Url(new Uint8Array(sig));
 }
 
@@ -65,6 +66,17 @@ async function kindOf(run: () => Promise<unknown>): Promise<string | null> {
     return err instanceof TourIntegrityError ? err.kind : 'other';
   }
 }
+
+describe('signedMessage', () => {
+  it('is the context prefix, then the manifest bytes exactly', () => {
+    // The format constant: a signer that put anything else first, or
+    // re-serialised the manifest, would sign bytes no reader checks.
+    const context = new TextEncoder().encode(TOUR_SIGNATURE_CONTEXT);
+    expect(signedMessage(MANIFEST)).toEqual(
+      Uint8Array.from([...context, ...MANIFEST])
+    );
+  });
+});
 
 describe('verifyManifestSignature', () => {
   it('a signature by the named key over the exact bytes is valid', async () => {

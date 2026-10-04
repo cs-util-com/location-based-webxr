@@ -12,7 +12,8 @@ worded by `tour-trust-copy.ts`, every key named by its fingerprint
 
 - `describeTourTrust({ integrity, sources, storage, nowMs }):
 Promise<string[]>` - judges, records the sight, and returns the lines.
-- `signatureStateOf(integrity): SignatureState`.
+- (module-private) `signatureStateOf(integrity)` - the tier-1 result as
+  the copy's `SignatureState`.
 
 ## Invariants & assumptions
 

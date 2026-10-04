@@ -27,11 +27,11 @@ manifest, manifestEntry, manifestSha256, records }`. Throws
     Ed25519 - shown as "not checked", never as valid. A signature that does
     not verify fails the open (`bad-signature`), and so does a signature
     with no manifest (`malformed-signature`: something was removed).
-- `checkEntryBytes(integrity, filename, bytes)` - TIER 2: one entry's
+- (module-private) `checkEntryBytes(integrity, filename, bytes)` - TIER 2: one entry's
   decompressed bytes against its size and SHA-256. Entries without a
   record (the manifest, its signature) and every entry of a tour without a
   manifest pass. Throws `hash-mismatch`.
-- `checkWholeArchive(blob, limits): Promise<TourIntegrity>` - TIER 3: a
+- (module-private) `checkWholeArchive(blob, limits)` - TIER 3: a
   complete copy opened through the same capped zip.js path, tier 1 run on
   it, then every listed entry hashed. Returns the copy's own tier-1 result.
 - `integrityIdentity(integrity): string | null` - the manifest's hash, or

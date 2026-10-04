@@ -13,8 +13,8 @@ Viewer's `tour-integrity.ts`.
 ## Public API
 
 - `SIGNED_MANIFEST_ENTRY = "manifest.json"`, `MANIFEST_SIGNATURE_ENTRY =
-"manifest.sig.json"`, `SIGNED_MANIFEST_FORMAT = 1`,
-  `MAX_SERIES_LINKS = 64`.
+"manifest.sig.json"`. The format number (1) and the links cap (64) are
+  module-private constants.
 - `parseSignedTourManifest(text): SignedTourManifest` - throws
   `TourIntegrityError` (`malformed-manifest`, or `newer-format` for a
   format above 1). Unknown fields are ignored (the signature covers them).
@@ -31,8 +31,9 @@ Map<filename, TourFileRecord>` - TIER 1; throws `TourIntegrityError`.
   `newer-format`, `malformed-signature`, `bad-signature`, `unsafe-name`,
   `duplicate-name`, `unlisted-file`, `missing-file`, `size-mismatch`,
   `hash-mismatch`. The message is the technical detail; the page words it.
-- Types `SignedTourManifest`, `TourFileRecord { sha256, size }`,
-  `TourSeriesLink { seriesId, author }`, `TourArchiveEntryInfo`,
+- Types `SignedTourManifest` (its `links` are `{ seriesId, author }`; the
+  link type itself is module-private), `TourFileRecord { sha256, size }`,
+  `TourArchiveEntryInfo`,
   `TourIntegrityKind`.
 
 ## The format

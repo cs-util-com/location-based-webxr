@@ -21,7 +21,6 @@ import {
   SIGNED_MANIFEST_ENTRY,
   type SignedTourManifest,
   type TourFileRecord,
-  type TourSeriesLink,
 } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
   ByteSourceReader,
@@ -41,7 +40,7 @@ export interface TourFixtureOptions {
   readonly wrap?: string;
   readonly seriesId?: string;
   readonly version?: number;
-  readonly links?: readonly TourSeriesLink[];
+  readonly links?: SignedTourManifest["links"];
   readonly recoveryKeyCommitment?: string;
 }
 

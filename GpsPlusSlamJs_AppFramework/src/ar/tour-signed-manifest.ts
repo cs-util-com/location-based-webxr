@@ -33,7 +33,7 @@ export const SIGNED_MANIFEST_ENTRY = 'manifest.json';
 /** The signature's entry name, next to the list. */
 export const MANIFEST_SIGNATURE_ENTRY = 'manifest.sig.json';
 /** The format of `manifest.json` this module reads. */
-export const SIGNED_MANIFEST_FORMAT = 1;
+const SIGNED_MANIFEST_FORMAT = 1;
 /**
  * Links to other series one manifest may carry. The castle example links
  * none to two; 64 is a list a phone screen can still show, and the bound
@@ -41,7 +41,7 @@ export const SIGNED_MANIFEST_FORMAT = 1;
  * creator who links more than 64 of their own series from one tour (none
  * exists yet: K2 creates the first keys).
  */
-export const MAX_SERIES_LINKS = 64;
+const MAX_SERIES_LINKS = 64;
 
 export interface TourFileRecord {
   /** Lowercase hex SHA-256 of the decompressed bytes. */
@@ -51,14 +51,15 @@ export interface TourFileRecord {
 }
 
 /** A link to another series (§1.2: a creator links their own tours). */
-export interface TourSeriesLink {
+interface TourSeriesLink {
   readonly seriesId: string;
   /** The linked series' author, as an Ed25519 `did:key`. */
   readonly author: string;
 }
 
 export interface SignedTourManifest {
-  readonly formatVersion: typeof SIGNED_MANIFEST_FORMAT;
+  /** `SIGNED_MANIFEST_FORMAT`, the one format this module reads. */
+  readonly formatVersion: 1;
   /** Random, stable across every version of one tour. */
   readonly seriesId: string;
   /** Grows with every published version (the rollback check is K3's). */
