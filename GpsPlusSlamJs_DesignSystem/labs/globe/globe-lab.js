@@ -326,6 +326,10 @@ const PARAMS = {
   // sharp imagery never gives way to the relief's coarse first tiles
   // (owner 2026-10-04). 0: as soon as its top tiles are loaded.
   bandSharp: { fallback: 1, min: 0, max: 1 },
+  // The relief's decoded heights kept past their tiles (MiB; owner decision
+  // 2026-10-04, DEC-N1), so a return into the band finds them; 0 keeps none,
+  // as before, for a before/after. Read at start.
+  keepHeightsMiB: { fallback: 16, min: 0, max: 256 },
   // 1 clears the frame magenta instead of black (with the sky off), so a
   // pixel no carrier drew is unambiguous: the hand-over smokes count holes
   // by it (dark water at an oblique view reads near black).
@@ -1443,9 +1447,12 @@ async function start() {
   // The relief (F1): the library's terrain tiles wearing the globe's look,
   // in the globe's group, in place of the generated tiles. Created once, on
   // the page's first relief=1; its heights are exaggerated by altitude.
-  if (startParams.relief === 1 && startParams.reliefHeights === "synthetic") {
-    installSyntheticHeights();
-  }
+  // The synthetic heights record each height tile requested: the smokes
+  // count a return into the band's fetches (DEC-N1).
+  const syntheticHeights =
+    startParams.relief === 1 && startParams.reliefHeights === "synthetic"
+      ? installSyntheticHeights()
+      : null;
   // The real heights' source is loaded only for the relief: the boot graph
   // stays free of the Osm library (build-lookdev.test.mjs).
   const terrarium =
@@ -1465,6 +1472,7 @@ async function start() {
           template: globe.template,
           heightScale: 1,
           lazyHeightScale: startParams.lazyE === 1,
+          keepHeightsBytes: startParams.keepHeightsMiB * 2 ** 20,
         })
       : null;
   if (terrain) globe.group.add(terrain.tiles.group);
@@ -2227,6 +2235,7 @@ async function start() {
       reliefVisible: terrain ? terrain.tiles.visibleTiles.size : null,
       reliefPending: rs ? rs.downloading + rs.parsing : null,
       reliefMiB: terrain ? terrain.tiles.lruCache.cachedBytes / 2 ** 20 : null,
+      keptHeights: terrain ? terrain.heightKeeperStats() : null,
       programs: renderer.info.programs?.length ?? null,
       textures: renderer.info.memory.textures,
       hash: location.hash.slice(1, 400),
@@ -2481,6 +2490,10 @@ async function start() {
             cachedBytes: terrain.tiles.lruCache.cachedBytes,
             globeCachedBytes: globe.tiles.lruCache.cachedBytes,
             releasedBytes: { ...released },
+            // The decoded heights kept past their tiles, and the height
+            // tiles requested so far (synthetic heights only; DEC-N1).
+            keptHeights: terrain.heightKeeperStats(),
+            heightRequests: syntheticHeights?.requests.length ?? null,
             lastRelease: {
               globe: outOfBand.globe.last,
               relief: outOfBand.relief.last,

@@ -108,6 +108,7 @@ export function createGlobeDebug({ log, live, device }) {
       `E ${fmt(s.e, 1)}  band share ${fmt(s.bandShare, 2)}`,
       `globe tiles ${s.globeLoaded ?? "?"} loaded, ${s.globePending ?? "?"} pending, ${fmt(s.globeMiB)} MiB`,
       `relief tiles ${s.reliefVisible ?? "-"} visible, ${s.reliefPending ?? "-"} pending, ${fmt(s.reliefMiB)} MiB`,
+      `heights kept ${s.keptHeights?.kept ?? "-"}, ${fmt((s.keptHeights?.keptBytes ?? Number.NaN) / 2 ** 20)} MiB`,
       `events ${log.total()}${rec.running() ? "  RECORDING" : ""}`,
     ].join("\n");
   };
