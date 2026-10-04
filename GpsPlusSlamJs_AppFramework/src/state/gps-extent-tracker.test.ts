@@ -84,4 +84,14 @@ describe('createGpsExtentTracker', () => {
     };
     expect(tracker.update([fix(0, 0), bad, fix(0, 3)])).toBeCloseTo(3, 9);
   });
+
+  // Why this test matters: the Tour Viewer folds the extent on every store
+  // change (the authoring settle's maturity, D33), and a GPS list is
+  // external data: a fix without coordinates (an older stored shape, a
+  // partial record) must be skipped, never throw out of a store listener.
+  it('skips a fix without coordinates instead of throwing', () => {
+    const tracker = createGpsExtentTracker();
+    const shapeless = { id: 'old', timestamp: 2 } as unknown as GpsExtentPoint;
+    expect(tracker.update([fix(0, 0), shapeless, fix(0, 4)])).toBeCloseTo(4, 9);
+  });
 });

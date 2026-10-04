@@ -239,12 +239,24 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   the store teardown resets the alignment) and a Finish tapped while the
   session is live run `settleVisit`: `planVisitSettle` (`visit-settle.ts`)
   recomputes the geo of the code measured in this visit and of every object
-  placed in it through one alignment; the records replace the tap-time ones
+  placed in it - since D33 each through the first mature alignment after its
+  own moment (`visit-alignment-picks.ts`, fed by `syncAlignmentPicks` on
+  every store change with the alignment, the zero, the session GPS extent
+  and the walked distance (`walked-distance-tracker.ts`, reviews R1 and R3 of
+  D33);
+  a pin at its Save, a photo at its tap, a move through
+  `object-editing.ts`'s `notePlaced`, the measurement when its level identity resolves (its `atMs` is the tap's), each
+  stable sighting of the code in hand; emptied at each visit's start and
+  end), and a note within `CODE_EVENT_REACH_M` walked of a code event of
+  the visit shares the code's alignment through the nearest event; the records
+  replace the tap-time ones
   in `ctx.placedObjects` and `ctx.mintedLevel`, each settled object's draft
   record and the meta are REWRITTEN (the per-object file design already
   keys by id; no format change - so a page reload keeps the settled geo,
   while a killed tab keeps the tap-time geo, accepted in the plan), and
-  `tourAuthoring/settled` is logged.
+  `tourAuthoring/settled` is logged. The input carries the end alignment's
+  GPS extent (`alignmentGpsExtentM`), the D31 heading marker of a code
+  re-minted through it (review R7 of D33).
   - **Each visit settles once, keyed by the visit the settle ran for**
     (`visitSettles`, M2c review #1): the record holds the basis, the
     alignment used, the store's alignment, the zero and the sighting. A
@@ -261,8 +273,9 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   - **Late arrivals join their visit's settle** (M2c review #6): the record
     is kept even for a visit with nothing to settle yet. A photo whose
     encode lands after its visit settled (the session ended, or a Finish
-    ran) is minted through the record's alignment and zero - which IS the
-    settle - and logged as `tourAuthoring/settled` with trigger
+    ran) is minted through the record's alignment and zero - the settle's
+    choice for an object placed at the visit's end, which a photo landing
+    late is (its capture a moment before the end) - and logged as `tourAuthoring/settled` with trigger
     `late-arrival`. Minting it through the store instead would use an
     alignment that belongs to no visit (the teardown resets it).
   - **A Finish removes from the list only what its zip carries** (the ids

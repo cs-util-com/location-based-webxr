@@ -30,10 +30,11 @@ const OTHER = 'https://example.invalid/?qr=b';
 const MATURE = QR_MINT_MATURE_GPS_EXTENT_M;
 
 describe('createQrMintAlignmentTracker (D28 revised: the first mature alignment at or after the last sighting)', () => {
-  // Why this test matters: the measured reason for the 80 m floor lives in
-  // the constant's doc; a silent edit would change every minted code.
-  it('names 80 m as the maturity floor', () => {
-    expect(QR_MINT_MATURE_GPS_EXTENT_M).toBe(80);
+  // Why this test matters: the reason for the 40 m floor (the owner's D34,
+  // lowered from 80 m) lives in the constant's doc; a silent edit would
+  // change every minted code.
+  it('names 40 m as the maturity floor', () => {
+    expect(QR_MINT_MATURE_GPS_EXTENT_M).toBe(40);
   });
 
   // Why this test matters: this is the rule. A code seen while the walk is

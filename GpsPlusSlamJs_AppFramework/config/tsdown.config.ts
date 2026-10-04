@@ -169,6 +169,9 @@ const entryFiles = [
   'src/state/subscribe-to-selector.ts',
   // The session GPS extent the Recorder's QR mint reads (D28 revised).
   'src/state/gps-extent-tracker.ts',
+  // The maturity floor and the first-mature-alignment pick (D28 revised,
+  // D33), deep-imported by the Tour Viewer's authoring settle.
+  'src/state/alignment-maturity.ts',
 
   // storage/
   'src/storage/index.ts',
@@ -224,6 +227,10 @@ const entryFiles = [
   // archive actually carries. Advertised by the wildcard export and
   // documented, but never built, so no sibling could import it.
   'src/test-utils/zip-central-directory.ts',
+  // The integrated SLAM drift and GPS noise models the Recorder's
+  // left-behind sweep measured D28 with, shared with the Tour Viewer's
+  // authoring-settle sweep so both measure the same drift.
+  'src/test-utils/integrated-slam-drift.ts',
 
   // types/
   'src/types/index.ts',

@@ -47,6 +47,7 @@ import {
   type CodeSighting,
   type CorrectionRefusal,
   type SettleBasis,
+  type SettleChoice,
 } from "./visit-settle.js";
 import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
@@ -99,6 +100,9 @@ import {
   type TourObjectRendererDeps,
 } from "./content-placement.js";
 import { odomNueFromWebXr } from "./visit-anchoring.js";
+import { createVisitAlignmentTracker } from "./visit-alignment-picks.js";
+import { createGpsExtentTracker } from "gps-plus-slam-app-framework/state/gps-extent-tracker";
+import { createWalkedDistanceTracker } from "./walked-distance-tracker.js";
 import { createKeyedChain } from "./keyed-chain.js";
 
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
@@ -438,6 +442,68 @@ export function wireCreatorSetup(deps: {
   /** Each decoded code text's level id (`qrCodeId`, a hash - async), so a
    *  detection can be matched to the level in hand synchronously. */
   const codeIds = new Map<string, string>();
+  /**
+   * The running visit's per-moment alignments (owner decision D33): each
+   * object placed or moved, the code measured and each sighting of the code
+   * in hand is settled through the first mature alignment after its own
+   * moment (`visit-alignment-picks.ts`), not the drifted end one. Fed on
+   * every store change and before every noted moment; emptied per visit.
+   * Nothing visible depends on it: the previews stay rigid as placed.
+   */
+  const alignmentPicks = createVisitAlignmentTracker();
+  /** The session's GPS extent, the picks' maturity (40 m, D34). */
+  const gpsExtent = createGpsExtentTracker();
+  /** How far the author has walked, each event's stamp (R1, R3 of D33). */
+  const walkedDistance = createWalkedDistanceTracker();
+  /** What the picks last saw: the alignment and zero references and the
+   *  fix count. */
+  let pickedFrom: readonly [unknown, unknown, number] | null = null;
+
+  /** Hand the picks the alignment as it stands now, when it changed. */
+  function syncAlignmentPicks(): void {
+    const state = arStore.getState();
+    const alignmentMatrix = selectAlignmentMatrix(state);
+    const zero = selectZeroReference(state);
+    const positions = selectGpsPositions(state);
+    if (
+      pickedFrom !== null &&
+      pickedFrom[0] === alignmentMatrix &&
+      pickedFrom[1] === zero &&
+      pickedFrom[2] === positions.length
+    ) {
+      return;
+    }
+    pickedFrom = [alignmentMatrix, zero, positions.length];
+    alignmentPicks.noteAlignment({
+      alignmentMatrix,
+      zero,
+      gpsExtentM: gpsExtent.update(positions),
+      walkedM: walkedDistance.update({
+        gpsPositions: positions,
+        odometryPositions: selectOdometryPositions(state),
+      }),
+      alignmentInfo: authorAlignmentInfo(),
+    });
+  }
+
+  /** An object placed or moved in the running visit, now. */
+  function notePlaced(id: string): void {
+    syncAlignmentPicks();
+    alignmentPicks.notePlacement(id, Date.now());
+  }
+
+  /** The visit's sighting of the code in hand changed. */
+  function setVisitSighting(sighting: CodeSighting): void {
+    ctx.visitCodeSighting = sighting;
+    syncAlignmentPicks();
+    alignmentPicks.noteSighting(sighting, Date.now());
+  }
+
+  /** A new visit's picks start empty. */
+  function resetAlignmentPicks(): void {
+    alignmentPicks.reset();
+    pickedFrom = null;
+  }
   /** The creator-facing url of the open tour, for later draft writes. */
   let draftTourUrl: string | null = null;
   /** What a draft is offering, until the creator answers. */
@@ -733,6 +799,9 @@ export function wireCreatorSetup(deps: {
     getArWorldGroup: () => seams.getArWorldGroup(),
     sessionLive,
     placementAllowed,
+    notePlaced: (id) => {
+      notePlaced(id);
+    },
     settleInputs: () => ({
       mintedLevel: ctx.mintedLevel,
       measurement: ctx.codeMeasurement,
@@ -784,6 +853,7 @@ export function wireCreatorSetup(deps: {
     // readout must follow the store, or "waiting for GPS alignment" sticks.
     // So does the zero, which the previews from geo wait for.
     arStore.subscribe(() => {
+      syncAlignmentPicks();
       if (
         previewsWaitForZero &&
         selectZeroReference(arStore.getState()) !== null
@@ -1858,6 +1928,7 @@ export function wireCreatorSetup(deps: {
             },
           },
     );
+    if (local !== null) notePlaced(pin.id);
     recordPlacement(pin);
     logPlacement(pin, { reticleWorld: position });
     dom.pinLabel.value = "";
@@ -1884,6 +1955,10 @@ export function wireCreatorSetup(deps: {
     // The visit the frame's odometry belongs to, taken at the tap: the
     // encode is async and the session may end meanwhile.
     const visit = ctx.arSessionGeneration;
+    // Its id now, so its pick opens at the capture (D33), not when the
+    // encode lands.
+    const photoId = newObjectId();
+    notePlaced(photoId);
     seams.encodeFrameJpeg(frame.image).then(
       (jpeg) => {
         // A visit that settled while this encoded (its session ended, or a
@@ -1892,7 +1967,7 @@ export function wireCreatorSetup(deps: {
         // to no visit at all (the teardown resets it).
         const settled = visitSettles.get(visit);
         const photo = mintPhoto({
-          id: newObjectId(),
+          id: photoId,
           cameraPose,
           alignmentMatrix:
             settled === undefined
@@ -1918,7 +1993,21 @@ export function wireCreatorSetup(deps: {
         recordPlacement(photo, jpeg.blob);
         logPlacement(photo, { cameraOdomPose: cameraPose });
         if (settled !== undefined) {
-          logSettle(visit, "late-arrival", settled, [photo], null);
+          logSettle(
+            visit,
+            "late-arrival",
+            settled,
+            [
+              {
+                object: photo,
+                basis: settled.basis,
+                alignment: settled.alignment,
+                refused: settled.refused,
+              },
+            ],
+            null,
+            null,
+          );
         }
         syncPreviews();
         // The plane sits at the capture spot, facing back at it: the
@@ -2176,7 +2265,7 @@ export function wireCreatorSetup(deps: {
       });
     }
     if (ctx.mintedLevel !== null && ctx.mintedLevel.id !== id) return;
-    ctx.visitCodeSighting = sighting;
+    setVisitSighting(sighting);
     placeEarlierObjects();
   }
 
@@ -2213,8 +2302,10 @@ export function wireCreatorSetup(deps: {
    *   between visits it already names the NEXT one (a page-side Finish once
    *   marked the next visit settled that way, so it never settled).
    * - A photo of the visit that lands AFTER its settle (the encode is
-   *   async) is minted through the same record when it lands, so every
-   *   object of a visit goes through one alignment.
+   *   async) is minted through the same record when it lands: the visit's
+   *   END choice. The visit's other objects went through their own picks
+   *   (D33), so a late photo can differ from them by the drift between its
+   *   capture and the visit's end.
    *
    * Recorded even for a visit with nothing to settle yet, for that photo.
    */
@@ -2223,7 +2314,9 @@ export function wireCreatorSetup(deps: {
   /**
    * Settle the running AR visit (authoring plan 2026-09-28-0953 §3.2, M2c):
    * the code measured in it and every object placed in it get their geo
-   * recomputed through ONE alignment (`visit-settle.ts` decides which), the
+   * recomputed from its odometry pose (`visit-settle.ts` decides through
+   * which alignment: each object's own pick, near a code event the
+   * code's, D33 and its review R1 and R3), the
    * draft is rewritten so a reload keeps it, and the troubleshooting
    * recording gets a `tourAuthoring/settled` action.
    *
@@ -2234,6 +2327,8 @@ export function wireCreatorSetup(deps: {
   function settleVisit(trigger: "visit-end" | "finish"): void {
     const visit = ctx.arSessionGeneration;
     if (visitSettles.has(visit)) return;
+    // The picks see the alignment as it stands at the end (the fallback).
+    syncAlignmentPicks();
     const state = arStore.getState();
     const visitAlignment = selectAlignmentMatrix(state);
     const zero = selectZeroReference(state);
@@ -2246,8 +2341,13 @@ export function wireCreatorSetup(deps: {
       measurement: ctx.codeMeasurement,
       sighting: ctx.visitCodeSighting,
       alignmentInfo: authorAlignmentInfo(),
+      // The end alignment's extent: the D31 marker of a code re-minted
+      // through it (R7 of D33).
+      alignmentGpsExtentM: gpsExtent.update(selectGpsPositions(state)),
       gpsAccuracyM: authorAlignmentInfo().gpsAccuracyM,
       nowIso: new Date().toISOString(),
+      // Each object at its own moment (D33).
+      picks: alignmentPicks.picks(),
     };
     const choice = settleAlignment(input);
     // Pure, so planned before the log: the log marks the pose this settle
@@ -2284,8 +2384,9 @@ export function wireCreatorSetup(deps: {
       visit,
       trigger,
       record,
-      plan.objects.map(({ object }) => object),
+      plan.objects,
       plan.level,
+      plan.levelAlignment,
     );
   }
 
@@ -2438,8 +2539,9 @@ export function wireCreatorSetup(deps: {
     visit: number,
     trigger: "visit-end" | "finish" | "late-arrival",
     record: VisitSettleRecord,
-    objects: readonly TourObject[],
+    objects: readonly ({ object: TourObject } & SettleChoice)[],
     level: { id: string; json: string } | null,
+    levelAlignment: number[] | null,
   ): void {
     arStore.dispatch(
       visitSettled({
@@ -2450,7 +2552,15 @@ export function wireCreatorSetup(deps: {
         visitAlignment: record.visitAlignment,
         usedAlignment: record.alignment,
         sighting: record.sighting,
-        objects: objects.map((object) => ({ id: object.id, geo: object.geo })),
+        // Each object's own choice (D33): its alignment, and why.
+        objects: objects.map(({ object, basis, alignment, refused }) => ({
+          id: object.id,
+          geo: object.geo,
+          basis,
+          usedAlignment: alignment,
+          refusedCorrection: refused,
+        })),
+        levelAlignment,
         level,
         referenceLevel: record.referenceLevel,
         zero: record.zero,
@@ -2618,11 +2728,18 @@ export function wireCreatorSetup(deps: {
       });
       codeIds.set(mintedText, id);
       if (measured.arVisitIndex === ctx.arSessionGeneration) {
-        ctx.visitCodeSighting = {
+        setVisitSighting({
           text: mintedText,
           levelId: id,
           odomPose: stablePose,
-        };
+        });
+        // The code measured in this visit: its pick opens NOW, when the
+        // level's identity has resolved (milliseconds, at most seconds after
+        // the tap), at the alignment current now; `atMs` stays the tap's.
+        if (role.kept === "measurement") {
+          syncAlignmentPicks();
+          alignmentPicks.noteMeasurement(measured.atMs);
+        }
         placeEarlierObjects();
       }
       ctx.mintedLevelTour = {
@@ -3054,6 +3171,7 @@ export function wireCreatorSetup(deps: {
       // visit, so they go into one frame that starts at the scene root -
       // placed from geo, like the viewer's content - and moves under the
       // world group once the code is seen (`placeEarlierObjects`).
+      resetAlignmentPicks();
       earlierFrame = new Group();
       earlierFrame.name = "earlier-visits";
       earlierFrame.matrixAutoUpdate = false;
@@ -3072,6 +3190,7 @@ export function wireCreatorSetup(deps: {
     endAuthorVisit: () => {
       if (!creator) return;
       settleVisit("visit-end");
+      resetAlignmentPicks();
       ctx.visitCodeSighting = null;
       storedCodeSightings.clear();
       liveRefusal = null;

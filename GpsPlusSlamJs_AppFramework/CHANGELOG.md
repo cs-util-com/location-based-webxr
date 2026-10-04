@@ -68,7 +68,9 @@
   1.3 m. The owner superseded DEC-3 for this on 2026-10-02.
   - **Which alignment to pass (owner decision D28, revised 2026-10-02):**
     the FIRST MATURE alignment at or after the code's last sighting,
-    maturity being 80 m of session GPS extent; before maturity the
+    maturity being 40 m of session GPS extent (owner decision D34,
+    2026-10-04, lowered from the 80 m first shipped: matures on short
+    walks, at 1-2 degrees more p90 heading at 2 % drift); before maturity the
     alignment at save; after a tracking restart the one the code's segment
     closed with. `createQrMintAlignmentTracker` (new) keeps that per code
     from the sightings and alignment changes a caller reports, and
@@ -130,6 +132,20 @@
   alignment re-basing, QR frame resets, loss warnings).
 
 ### Added
+
+- **`state/alignment-maturity`** (deep import, new; owner decisions D33,
+  D34), and the GPS anchor's `startup: 'mature-alignment'`: the floor
+  `MATURE_GPS_EXTENT_M` (40 m of session GPS extent) and the pure pick
+  "the first mature alignment at or after a moment"
+  (`openMatureAlignmentPick`, `advanceMatureAlignmentPick`,
+  `isMatureAlignment`, `checkMatureGpsExtentM`), shared by the QR mint
+  tracker (`QR_MINT_MATURE_GPS_EXTENT_M` is now its alias), the Tour
+  Viewer's authoring settle and `createGpsAnchor({ startup:
+  'mature-alignment', getGpsExtentM, matureGpsExtentM? })`, whose object
+  is fixed through that alignment and untouched while it waits
+  (`settleNow()` when the session ends first). `'median'` stays the
+  default. `createGpsExtentTracker` now skips a fix without coordinates
+  instead of throwing.
 
 - **A QR level marks a code whose heading is uncertain** (owner decision
   D31, 2026-10-02): `QrMintQuality` gains the optional

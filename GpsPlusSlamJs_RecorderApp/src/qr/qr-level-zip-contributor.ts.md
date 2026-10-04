@@ -38,7 +38,7 @@ Decision record:
   weight.
 - **It hands the mint the alignment the feeder picked for the code**
   (`feeder.alignmentFor(text)`, owner decision D28 revised 2026-10-02): the
-  FIRST MATURE alignment (80 m of session GPS extent) at or after the code's
+  FIRST MATURE alignment (40 m of session GPS extent since D34) at or after the code's
   last sighting; before maturity the alignment as it stands at THIS run; for
   a code waiting when a tracking restart or loop closure came, the alignment
   its odometry segment closed with. The mint places every sighting through
