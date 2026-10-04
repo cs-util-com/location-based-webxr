@@ -283,6 +283,29 @@
     band exists because further out the carriers differ (at noon from
     1,000 km by a mean 4.31 levels, the relief's tiles coarser over part
     of the frame).
+    - The hand-over is gated by readiness and filled through the stencil
+      (round-6 plan 2026-10-04-1050 G6-1, DEC-G6-2). The altitude gives the
+      target share; the drawn share moves toward it at most 1 a second
+      while both carriers are ready, jumps to the one that is ready when
+      only one is, and holds when neither is (`/globe/globe-band-gate.js`,
+      readiness by `topLevelReady`). Each carrier is updated wherever it
+      draws or the altitude wants it. The relief draws first and marks its
+      pixels; the globe, compiled without the discard (`fill`), draws
+      every pixel without a mark, coarse (`bandFillErrorTarget`) while the
+      relief has every pixel (`/globe/globe-stencil-fill.js`).
+      - `bandGate=0` and `bandFill=0` restore the old rule, for a
+        before/after. `bandFill` is read at start, since it needs a
+        stencil buffer.
+      - `holeColor=1` clears the frame magenta, so a pixel no carrier drew
+        is unambiguous. `__globeLab.hideRelief(on)` hides the relief's
+        tiles to check the fill.
+      - `globe-handover.smoke.spec.mjs` (on-demand tier) reads every frame
+        of a dive and of a zoom out: 0 holes with the gate and the fill,
+        and holes with the old rule (the positive controls). It also logs
+        the fill's cost at the hold (1.61-1.68 x under SwiftShader).
+      - A drain keeps a carrier's coarsest tiles (depth 1) and the tiles its
+        last update used, so the globe can fill at once when the view
+        widens.
     - When the camera has stayed out of the band on one side for
       `bandReleaseMs` (default 5 s), the other carrier's tile cache is
       released (`/globe/globe-tile-cache.js`), not only left undrawn

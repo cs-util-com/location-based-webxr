@@ -71,6 +71,8 @@ import {
   limitGlobeZoomOut,
 } from "/globe/globe-zoom-limit.js";
 import { GLOBE_TERRAIN, createGlobeTerrain } from "/globe/globe-terrain.js";
+import { nextDrawnShare, topLevelReady } from "/globe/globe-band-gate.js";
+import { asStencilFill, asStencilWriter } from "/globe/globe-stencil-fill.js";
 import { drainTileCache, releaseTileCache } from "/globe/globe-tile-cache.js";
 import { SKY_FILL } from "/globe/sky-level.js";
 import {
@@ -310,6 +312,25 @@ const PARAMS = {
   // is released (frame-hitch review 2026-10-03-2017 H4): a zoom that wobbles
   // over an edge never releases, so it never reloads or recompiles.
   bandReleaseMs: { fallback: 5_000, min: 0, max: 60_000 },
+  // 1 gates the band's share by readiness (round-6 plan G6-1, DEC-G6-2):
+  // a carrier takes pixels only once it can draw them, so no hole shows
+  // the background at the switch. 0 follows the altitude alone, as before,
+  // for a before/after.
+  bandGate: { fallback: 1, min: 0, max: 1 },
+  // 1 lets the globe fill every pixel the relief leaves (round-6 plan G6-1,
+  // the stencil fill): the relief marks its pixels, the globe draws only
+  // where none is, from the coarse tiles it keeps. 0 restores the dither
+  // alone, for a before/after. Read at start (it needs a stencil buffer).
+  bandFill: { fallback: 1, min: 0, max: 1 },
+  // 1 clears the frame magenta instead of black (with the sky off), so a
+  // pixel no carrier drew is unambiguous: the hand-over smokes count holes
+  // by it (dark water at an oblique view reads near black).
+  holeColor: { fallback: 0, min: 0, max: 1 },
+  /**
+   * The globe's error target while the relief has every pixel and the
+   * globe only fills its gaps: coarse, so it keeps to its top tiles.
+   */
+  bandFillErrorTarget: { fallback: 1e6, min: 1, max: 1e9 },
   // At most this many tiles a released carrier disposes per frame
   // (frame-hitch review 2026-10-03-2017 H4: one frame disposed 188); 0
   // releases the whole cache in one frame, as before, for a before/after.
@@ -1362,7 +1383,17 @@ async function start() {
   // The default log keeps 250 entries: fewer than the committed pyramid
   // (2,730 tiles with level 5).
   performance.setResourceTimingBufferSize(4000);
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  // The stencil fill (round-6 plan G6-1) needs a stencil buffer, only with
+  // a relief; three creates none by default.
+  const fillAtStart = (() => {
+    const p0 = readHashParams();
+    return p0.relief === 1 && p0.bandFill === 1;
+  })();
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: true,
+    stencil: fillAtStart,
+  });
   // Phase 1's exposure (§7.3): Neutral tone mapping (the look-dev
   // default), no ambient light, a black sky; the sun at the surface's own
   // intensity (5 since round 4, DEC-GL4-1; π in phase 1).
@@ -1393,6 +1424,9 @@ async function start() {
   // plain globe draws the program from before the relief.
   const globe = createGlobeSurface(undefined, {
     band: startParams.relief === 1,
+    // A globe that fills the relief's gaps never discards (round-6 plan
+    // G6-1): its program keeps the GPU's early stencil test.
+    fill: fillAtStart,
   });
   useSurfaceDefaults(globe);
   const { radius: radii } = globe.tiles.ellipsoid;
@@ -1430,6 +1464,20 @@ async function start() {
         })
       : null;
   if (terrain) globe.group.add(terrain.tiles.group);
+  // The stencil fill (round-6 plan G6-1): the relief draws first and marks
+  // its pixels; the globe fills every pixel without a mark.
+  const bandFill = Boolean(terrain) && fillAtStart;
+  if (bandFill) {
+    terrain.tiles.group.renderOrder = -1;
+    const roles = (tiles, role) =>
+      tiles.addEventListener("load-model", ({ scene: model }) => {
+        model.traverse((o) => {
+          if (o.isMesh) role(o.material);
+        });
+      });
+    roles(terrain.tiles, asStencilWriter);
+    roles(globe.tiles, asStencilFill);
+  }
   // The relief's detail colour, loaded only for the relief (its worker reads
   // the Osm library, which the boot graph must not).
   const detailRegion = terrain
@@ -1754,6 +1802,27 @@ async function start() {
   let debug = null;
   /** The band share last written to the debug log (steps of 0.1). */
   let loggedShare = null;
+  /** The altitude's share before the gate, and the gate's last frame. */
+  let bandTarget = 0;
+  let lastGateAt = null;
+  /** Whether the gate held the share back on the frame before. */
+  let bandHeld = false;
+  /**
+   * For the fill smoke: the relief's tiles hidden, as if none were loaded,
+   * so every pixel must come from the globe's fill (round-6 plan G6-1).
+   */
+  let reliefHidden = false;
+  /** A carrier's coarsest tiles, which a drain keeps (round-6 plan G6-1). */
+  const keepCoarsest = (tile) => (tile?.internal?.depth ?? Infinity) <= 1;
+  /**
+   * What a drain keeps of `tiles`: its coarsest tiles, and any tile its last
+   * update used (with the stencil fill the globe is updated while it fills,
+   * and draining what it draws would only reload it).
+   */
+  const keepFor = (tiles) => (tile) =>
+    keepCoarsest(tile) ||
+    (tile?.traversal?.used === true &&
+      tile.traversal.lastFrameVisited === tiles.frameCount);
   /**
    * The frame's recorder hooks, fanned out to the frame-hitch recorder and
    * the Debug panel; the rare events also go to the debug log.
@@ -1849,12 +1918,40 @@ async function start() {
         ),
       );
       const highM = params.bandHigh * 1000;
-      bandShare =
+      const targetShare =
         params.bandShare ??
         carrierShareAt(altitudeM, {
           highM,
           lowM: Math.min(params.bandLow * 1000, highM - 1),
         });
+      if (params.bandShare !== null || params.bandGate === 0) {
+        bandShare = targetShare;
+      } else {
+        // Each carrier's readiness from its last update (round-6 plan G6-1).
+        const reliefReady = topLevelReady(terrain.tiles);
+        const globeReady = topLevelReady(globe.tiles);
+        const held = !reliefReady || !globeReady;
+        if (held !== bandHeld) {
+          bandHeld = held;
+          debugLog.log(held ? "band.hold" : "band.go", {
+            reliefReady,
+            globeReady,
+            target: targetShare,
+            drawn: bandShare,
+          });
+        }
+        bandShare = nextDrawnShare({
+          // The first gated frame starts on the globe: it draws from orbit,
+          // and the relief takes over once it is ready.
+          drawn: lastGateAt === null ? 0 : bandShare,
+          target: targetShare,
+          reliefReady,
+          globeReady,
+          dtMs: lastGateAt === null ? 0 : Math.min(now - lastGateAt, 250),
+        });
+      }
+      lastGateAt = now;
+      bandTarget = targetShare;
       globe.surfaceUniforms.uCarrierShare.value = bandShare;
       if (bandShare > 0 !== lastShare > 0 || bandShare < 1 !== lastShare < 1) {
         hooks.mark("band.edge", { share: bandShare, altKm: altitudeM / 1000 });
@@ -1873,9 +1970,14 @@ async function start() {
       // released; a return before then cancels it. Not while frozen: the
       // smokes step the share over the same tiles.
       const frozen = params.bandFreeze === 1;
-      for (const [key, out, cache] of [
-        ["globe", bandShare >= 1, globe.tiles.lruCache],
-        ["relief", bandShare <= 0, terrain.tiles.lruCache],
+      for (const [key, out, cache, keep] of [
+        ["globe", bandShare >= 1, globe.tiles.lruCache, keepFor(globe.tiles)],
+        [
+          "relief",
+          bandShare <= 0,
+          terrain.tiles.lruCache,
+          keepFor(terrain.tiles),
+        ],
       ]) {
         const o = outOfBand[key];
         if (!out || frozen) {
@@ -1902,10 +2004,18 @@ async function start() {
             const t0 = performance.now();
             const items = cache.itemList.length;
             const step = params.bandDrainTiles;
-            const bytes =
-              step === 0
-                ? releaseTileCache(cache)
-                : drainTileCache(cache, step).freedBytes;
+            // The drain keeps the carrier's coarsest tiles (depth 1, the
+            // root's children): cheap, and what lets it draw again at once
+            // when the view returns (round-6 plan G6-1, the zoom-out holes).
+            let left = 0;
+            let bytes;
+            if (step === 0) {
+              bytes = releaseTileCache(cache);
+            } else {
+              const drained = drainTileCache(cache, step, keep);
+              bytes = drained.freedBytes;
+              left = drained.left;
+            }
             const ms = performance.now() - t0;
             const l = o.last;
             l.frames++;
@@ -1918,7 +2028,7 @@ async function start() {
             l.bytes += bytes;
             released[key] += bytes;
             hooks.mark(`drain.${key}`);
-            if (cache.itemList.length === 0) {
+            if (left === 0) {
               o.done = true;
               l.drainedAt = now;
               debugLog.log(`drained.${key}`, {
@@ -1954,10 +2064,23 @@ async function start() {
           clearanceLifts += 1;
         }
       }
-      globe.tiles.group.visible = bandShare < 1;
-      if (bandShare < 1 && !frozen) globe.update(camera, renderer);
-      terrain.tiles.group.visible = bandShare > 0;
-      if (bandShare > 0 && !frozen) {
+      // With the fill the globe always draws (only where the relief left a
+      // pixel) and is always updated, coarse while the relief has every
+      // pixel, so it keeps to its top tiles.
+      globe.tiles.group.visible = bandFill || bandShare < 1;
+      if (bandFill) {
+        globe.tiles.errorTarget =
+          bandShare >= 1 && bandTarget >= 1
+            ? params.bandFillErrorTarget
+            : params.errorTarget;
+      }
+      // A carrier is updated (so loads) where it draws or where the
+      // altitude wants it to: the gate waits for it to be ready.
+      if ((bandFill || bandShare < 1 || bandTarget < 1) && !frozen) {
+        globe.update(camera, renderer);
+      }
+      terrain.tiles.group.visible = bandShare > 0 && !reliefHidden;
+      if ((bandShare > 0 || bandTarget > 0) && !frozen) {
         terrain.tiles.setCamera(camera);
         renderer.getDrawingBufferSize(terrainResolution);
         terrain.tiles.setResolution(
@@ -1994,6 +2117,7 @@ async function start() {
     // The sky pass first, from the direction the Earth is lit from (the
     // light's position in the surface's group, turned into the world), with
     // no depth, so the Earth drawn next covers it.
+    renderer.setClearColor(params.holeColor === 1 ? 0xff00ff : 0x000000);
     renderer.clear();
     if (params.sky !== 0) {
       sky.setSun(
@@ -2075,6 +2199,8 @@ async function start() {
       pitchDeg:
         Math.asin(Math.max(-1, Math.min(1, debugForward.dot(enu.up)))) / DEG,
       fovDeg: camera.fov,
+      nearKm: camera.near / 1000,
+      farKm: camera.far / 1000,
       phase,
       e: terrain?.plugin.heightScale ?? null,
       bandShare: terrain ? bandShare : null,
@@ -2499,6 +2625,13 @@ async function start() {
         gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
         return [px[0], px[1], px[2], px[3]];
       });
+    },
+    /**
+     * Hides the relief's tiles (true) or shows them again, to check that
+     * the globe fills every pixel the relief leaves (round-6 plan G6-1).
+     */
+    hideRelief(on) {
+      reliefHidden = Boolean(on);
     },
     /** The frame-hitch recorder's smoke API once it is loaded, else null. */
     perf: null,
