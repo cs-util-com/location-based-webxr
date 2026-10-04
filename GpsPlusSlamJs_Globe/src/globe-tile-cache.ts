@@ -33,7 +33,7 @@ export interface TileCacheDrainStep {
   freedBytes: number;
   /** Items the call removed (each one's dispose callback ran). */
   removed: number;
-  /** Items still in the cache after the call. */
+  /** Items still in the cache after the call that `keep` does not name. */
   left: number;
 }
 
@@ -42,12 +42,15 @@ export interface TileCacheDrainStep {
  * unload first, and returns what it freed. Called once a frame it spreads a
  * release over frames (perf plan 2026-10-03-2017 H4: one frame disposed
  * 188 tiles); the caller stops calling when the carrier is back, and the
- * rest stay loaded. The cache's limits are never touched. RangeError
- * unless `maxTiles` is a positive integer.
+ * rest stay loaded. The cache's limits are never touched. Items `keep`
+ * names are never removed (a carrier's coarsest tiles, so it can draw
+ * again at once; round-6 plan G6-1). RangeError unless `maxTiles` is a
+ * positive integer.
  */
 export function drainTileCache(
   cache: TileCache,
   maxTiles: number,
+  keep: (item: unknown) => boolean = () => false,
 ): TileCacheDrainStep {
   if (!Number.isInteger(maxTiles) || maxTiles < 1) {
     throw new RangeError(
@@ -56,7 +59,7 @@ export function drainTileCache(
   }
   const before = cache.cachedBytes;
   const order = cache.unloadPriorityCallback ?? cache.defaultPriorityCallback;
-  const items = [...cache.itemList];
+  const items = cache.itemList.filter((item) => !keep(item));
   if (order) items.sort((a, b) => -order(a, b));
   let removed = 0;
   for (const item of items.slice(0, maxTiles)) {
@@ -65,7 +68,7 @@ export function drainTileCache(
   return {
     freedBytes: before - cache.cachedBytes,
     removed,
-    left: cache.itemList.length,
+    left: cache.itemList.filter((item) => !keep(item)).length,
   };
 }
 

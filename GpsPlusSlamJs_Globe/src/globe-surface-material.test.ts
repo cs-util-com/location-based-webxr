@@ -251,10 +251,15 @@ describe("patchGlobeSurfaceShader", () => {
     const plain = standardShader();
     patchGlobeSurfaceShader(plain, uniforms);
     expect(plain.fragmentShader).not.toContain("#define GLOBE_BAND");
+    // The sky fill's guard, and the discard's (which a page whose globe
+    // fills the relief's gaps also leaves out, round-6 plan G6-1).
     const guard = "#if defined( GLOBE_BAND ) || GLOBE_FADE_SIDE == 1";
-    expect(count(plain.fragmentShader, guard)).toBe(2);
+    const fadeGuard =
+      "#if ( defined( GLOBE_BAND ) && !defined( GLOBE_FILL ) ) || GLOBE_FADE_SIDE == 1";
+    expect(count(plain.fragmentShader, guard)).toBe(1);
+    expect(count(plain.fragmentShader, fadeGuard)).toBe(1);
     const at = (x: string) => plain.fragmentShader.indexOf(x);
-    expect(at(guard)).toBeLessThan(at("discard;"));
+    expect(at(fadeGuard)).toBeLessThan(at("discard;"));
     const band = standardShader();
     patchGlobeSurfaceShader(band, uniforms, { band: true });
     expect(band.fragmentShader.startsWith("#define GLOBE_BAND")).toBe(true);
@@ -293,6 +298,33 @@ describe("patchGlobeSurfaceShader", () => {
     );
     expect(at("if ( !globeFadeKeeps(")).toBeLessThan(
       at("#include <map_fragment>"),
+    );
+  });
+
+  // Why (round-6 plan G6-1, the stencil fill): where the globe fills the
+  // relief's gaps it never discards, and a discard in a shader turns off the
+  // GPU's early depth and stencil tests, so the globe's whole shader would
+  // run for every pixel the stencil then rejects (measured x1.68 a frame at
+  // the hold). With `fill` the globe's program has no discard (and its own
+  // key); the relief's side and the band's sky fill are unchanged.
+  it("compiles no discard into the globe's side when it fills the relief's gaps", () => {
+    const uniforms = createGlobeSurfaceUniforms(textures());
+    const filled = standardShader();
+    patchGlobeSurfaceShader(filled, uniforms, { band: true, fill: true });
+    const fs = filled.fragmentShader;
+    expect(fs).toContain("#define GLOBE_FILL");
+    expect(fs).toContain("#define GLOBE_BAND");
+    expect(fs).toContain(
+      "#if ( defined( GLOBE_BAND ) && !defined( GLOBE_FILL ) ) || GLOBE_FADE_SIDE == 1",
+    );
+    const material = new THREE.MeshStandardMaterial();
+    applyGlobeSurface(material, uniforms, { band: true, fill: true });
+    expect(material.customProgramCacheKey()).toBe(
+      `${GLOBE_SURFACE_CACHE_KEY}-band-fill`,
+    );
+    applyGlobeSurface(material, uniforms, { band: true });
+    expect(material.customProgramCacheKey()).toBe(
+      `${GLOBE_SURFACE_CACHE_KEY}-band`,
     );
   });
 

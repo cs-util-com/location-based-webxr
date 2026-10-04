@@ -16,13 +16,17 @@
       unloads.
     - The limits are then restored, so the carrier loads normally when it
       returns.
-  - `drainTileCache(cache, maxTiles)` -> `{ freedBytes, removed, left }`.
+  - `drainTileCache(cache, maxTiles, keep?)` -> `{ freedBytes, removed,
+left }`.
     Removes at most `maxTiles` items, the ones the library's own unload
     order (`unloadPriorityCallback`, else its default) would drop first,
     through the cache's public `remove` (each dispose callback runs). Called
     once a frame it spreads a release over frames: one frame disposed 188
     globe tiles (perf plan 2026-10-03-2017 H4). The cache's limits are never
     touched, and a caller that stops calling leaves the rest loaded.
+    Items `keep` names are never removed, and `left` counts only the others
+    (the globe lab keeps a carrier's coarsest tiles and the tiles its last
+    update used, so it can draw again at once; round-6 plan G6-1).
     RangeError unless `maxTiles` is a positive integer.
   - `TileCache`: the structural type of the library's `LRUCache` this
     uses. The library's typings omit `cachedBytes`, `itemList` and the

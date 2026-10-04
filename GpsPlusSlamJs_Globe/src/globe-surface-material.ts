@@ -88,9 +88,14 @@ export interface GlobeSurfaceUniforms {
   readonly uSunRadiance: { value: THREE.Vector3 };
 }
 
-/** How the patch is compiled: `band` for a page that draws a relief. */
+/**
+ * How the patch is compiled: `band` for a page that draws a relief;
+ * `fill` (with `band`) when the globe fills the relief's gaps through the
+ * stencil (round-6 plan G6-1), where it never discards.
+ */
 export interface GlobeSurfacePatchOptions {
   readonly band?: boolean;
+  readonly fill?: boolean;
 }
 
 /**
@@ -181,9 +186,14 @@ bool globeFadeKeeps( float d, float share ) {
  */
 const BAND_GUARD = "#if defined( GLOBE_BAND ) || GLOBE_FADE_SIDE == 1";
 
-/** First in the fragment's work: a pixel the other carrier owns is dropped. */
+/**
+ * First in the fragment's work: a pixel the other carrier owns is dropped.
+ * Not on a globe that fills the relief's gaps (`GLOBE_FILL`, round-6 plan
+ * G6-1): it keeps every pixel the stencil lets through, and a discard would
+ * turn off the GPU's early depth and stencil tests for its whole shader.
+ */
 const FRAGMENT_FADE = /* glsl */ `
-${BAND_GUARD}
+#if ( defined( GLOBE_BAND ) && !defined( GLOBE_FILL ) ) || GLOBE_FADE_SIDE == 1
 if ( !globeFadeKeeps( globeFadeDither(), uCarrierShare ) ) discard;
 #endif`;
 
@@ -329,7 +339,12 @@ export function patchGlobeSurfaceShader(
   fs = after(fs, "#include <emissivemap_fragment>", FRAGMENT_NIGHT);
   fs = after(fs, "#include <lights_fragment_end>", FRAGMENT_SKY_FILL);
   shader.vertexShader = vs;
-  shader.fragmentShader = options.band ? `#define GLOBE_BAND\n${fs}` : fs;
+  const defines = [
+    options.band ? "#define GLOBE_BAND" : "",
+    options.band && options.fill ? "#define GLOBE_FILL" : "",
+  ].filter(Boolean);
+  shader.fragmentShader =
+    defines.length > 0 ? `${defines.join("\n")}\n${fs}` : fs;
   Object.assign(shader.uniforms, uniforms);
 }
 
@@ -346,7 +361,7 @@ export function applyGlobeSurface(
   material.onBeforeCompile = (shader) =>
     patchGlobeSurfaceShader(shader, uniforms, options);
   const key = options.band
-    ? `${GLOBE_SURFACE_CACHE_KEY}-band`
+    ? `${GLOBE_SURFACE_CACHE_KEY}-band${options.fill ? "-fill" : ""}`
     : GLOBE_SURFACE_CACHE_KEY;
   material.customProgramCacheKey = () => key;
 }

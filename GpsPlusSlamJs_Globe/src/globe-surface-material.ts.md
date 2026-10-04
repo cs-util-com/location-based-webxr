@@ -25,7 +25,9 @@ cloudOpacity: 0.8, skyShare: 0.2 }`, the defaults (lab parameters `#nightGain=`,
   - `GLOBE_SURFACE_CACHE_KEY` - the program key every tile shares (`-v2`
     since the drift uniform joined the program, `-v6` since the sky fill,
     `-v8` since the fill follows the band). A page with a relief compiles
-    the band (`band: true`) under its own key, the same with `-band`.
+    the band (`band: true`) under its own key, the same with `-band`, and
+    a globe that fills the relief's gaps through the stencil (`band: true,
+fill: true`, round-6 plan G6-1) under `-band-fill`.
   - `createGlobeSurfaceUniforms({ night, clouds })` returns the one
     shared uniforms object: `uSunEcef` (unit, ECEF), `uSunWorld` (the
     same sun in world space, kept by the surface), `uNight`,
@@ -46,6 +48,10 @@ cloudOpacity: 0.8, skyShare: 0.2 }`, the defaults (lab parameters `#nightGain=`,
     fragment's first work, after `clipping_planes_fragment`.
   - The band's code (the discard and the sky fill) is compiled only where a
     relief exists: `#if defined( GLOBE_BAND ) || GLOBE_FADE_SIDE == 1`. The
+    discard is also left out of a globe that fills the relief's gaps
+    (`GLOBE_FILL`, from `fill: true`): it keeps every pixel the stencil lets
+    through, and a discard would turn off a GPU's early depth and stencil
+    tests for its whole shader (`globe-stencil-fill.ts`). The
     plain globe draws the program from before the relief (review
     2026-10-03-1835 minor 10). `patchGlobeSurfaceShader(shader, uniforms,
 { band })` and `applyGlobeSurface(material, uniforms, { band })` prefix

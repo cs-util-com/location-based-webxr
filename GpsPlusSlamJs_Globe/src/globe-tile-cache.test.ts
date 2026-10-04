@@ -114,6 +114,23 @@ describe("drainTileCache", () => {
     expect(cache.cachedBytes).toBe(24 * 2 ** 20);
   });
 
+  // Why (round-6 plan G6-1): zooming out after a release, the globe had
+  // no tile left, so neither carrier could draw the widening view and the
+  // background showed. A carrier keeps its coarsest tiles (cheap) so it is
+  // ready again at once; `keep` names them, and they are never drained.
+  it("never removes an item `keep` names, and counts only the others as left", () => {
+    const { cache, disposed } = filled(40);
+    const keep = (item: unknown) => (item as { id: number }).id < 5;
+    let left = Infinity;
+    for (let call = 0; call < 100 && left > 0; call++) {
+      left = drainTileCache(cache, 8, keep).left;
+    }
+    expect(left).toBe(0);
+    expect(disposed.length).toBe(35);
+    expect(disposed.every((id) => id >= 5)).toBe(true);
+    expect(cache.cachedBytes).toBe(5 * 2 ** 20);
+  });
+
   it("is a no-op on an empty cache, and refuses a step that is not a positive integer", () => {
     const cache = new LRUCache() as unknown as TileCache;
     expect(drainTileCache(cache, 8)).toEqual({
