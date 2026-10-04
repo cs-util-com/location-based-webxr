@@ -41,14 +41,18 @@ the panel should report about the code in view.
   session-end hook.
 - **Opens only with no tour open.** Once a tour is open, a code of another
   tour is `added-to-open-tour` and a link that cannot be compared is
-  `unknown`; both are measured into the open tour like its own codes. To
+  `unknown` - the relation reads the open tour's levels
+  (`ctx.currentLevels`) as well as its link, so a tour opened from a file
+  knows its own code and calls any other `unknown` (K0 milestone review
+  R6); both are measured into the open tour like its own codes. To
   edit another tour: step 1's link, or reload and scan its code first
   (plan §13, which superseded the switching rules of §9 #3, §11, §12 #1).
 - **One open at a time:** none starts while `isOpening()` (the open path's
   own flag, set before its first await). A code is acted on as soon as it
   is read, while it is still the code in view (milestone review #9).
-- **Retries (§9 #7):** only `missing` and `cors` (fixable while standing at
-  the poster), after 10 s, then 20, then every 30 s (milestone review #10).
+- **Retries (§9 #7):** only `missing`, `cors` and `offline` (fixable while
+  standing at the poster; `offline` was split out of `cors` by tour kit
+  plan K0), after 10 s, then 20, then every 30 s (milestone review #10).
   Anything else is final for the AR session.
 - **Work before any tour (§9 #4):** with no tour open, a level measured from
   a code that named tour X waits for X; a code of another tour is
@@ -65,7 +69,9 @@ the panel should report about the code in view.
 const scanOpen = createScanOpen({
   ctx,
   resolve: codeResolver(corsProxyBaseUrl),
-  open: (url) => openUrl(url, "measure-step"),
+  // The printed code's text rides along: it is the code's trust source
+  // (tour kit plan K1, §8 D2, `tour-trust.ts`).
+  open: (url, codeText) => openUrl(url, "measure-step", codeText),
   isOpening: () => opening,
   now: () => performance.now(),
   render: () => hooks.renderAuthorReadout(),
@@ -82,9 +88,11 @@ codeTourLine(scanOpen.status(ctx.lastDetectedText)); // in the readout
   while a step-1 open is in flight;
 - a code naming no tour, with and without a tour open;
 - the pre-open level bound to its tour, a stale binding, one bound to none;
-- retry with backoff (10 s, 20 s, then capped at 30 s), `cors` retried, no
+- retry with backoff (10 s, 20 s, then capped at 30 s), `cors` and `offline` retried, no
   retry for `corrupt`, a rejecting open, a superseded open not counted,
   afresh in a new AR session;
 - with a tour open: its own code quiet, a code of another tour added (never
   an open, however long in view), an uncomparable code `unknown`;
+- a tour opened from a file: its own code quiet once its levels are in, a
+  code whose level it does not carry `unknown` (K0 milestone review R6);
 - `tourOf`.

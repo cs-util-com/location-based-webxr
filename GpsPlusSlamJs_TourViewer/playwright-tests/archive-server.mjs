@@ -20,6 +20,13 @@
  *   (the background warm download) is HELD while the warm gate is closed
  *   (`/warm-gate?state=hold` / `?state=release`) — the deterministic
  *   in-flight-warm window the clear-cache-during-warm spec needs.
+ * - `/no-cors/tour.zip` - the archive WITHOUT CORS headers: a host that
+ *   blocks browsers, which the "download the file and open it here"
+ *   advice exists for (tour kit plan K0).
+ * - `/ranges-ok/stations-tour.zip` - a `tour.json` version 2 with three
+ *   stations (tour kit plan K4): one found by the fixture's printed code
+ *   (a knight with a voice and a scene choice), one by walking to it (a
+ *   `.glb` model), one far away for the skip.
  *
  * CORS: the app origin (the vite port) differs from this server's,
  * and `Range` is not a CORS-safelisted request header, so the preflight
@@ -34,7 +41,9 @@ import {
   ZipWriter,
 } from "@zip.js/zip.js";
 
-import { e2eQrLevelEntryName } from "./qr-fixture.mjs";
+import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
+
+import { E2E_QR_TEXT, e2eQrLevelEntryName } from "./qr-fixture.mjs";
 
 const port = Number(process.argv[2] ?? "5197");
 
@@ -104,6 +113,153 @@ async function buildZip({ withLevel = true } = {}) {
   // metadata+images session needs — the partial-fetch assertion depends on
   // the gap being wide.
   await writer.add("padding.bin", new TextReader("p".repeat(200_000)));
+  return writer.close();
+}
+
+/** The smallest valid binary glTF: one JSON chunk, an empty scene, no
+ *  buffers, images or extensions - inert by K0's check. */
+function minimalGlb() {
+  const json = new TextEncoder().encode(
+    JSON.stringify({ asset: { version: "2.0" }, scene: 0, scenes: [{}] }),
+  );
+  const padded = Math.ceil(json.length / 4) * 4;
+  const out = new Uint8Array(12 + 8 + padded).fill(0x20);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, 0x46546c67, true); // "glTF"
+  view.setUint32(4, 2, true);
+  view.setUint32(8, out.length, true);
+  view.setUint32(12, padded, true);
+  view.setUint32(16, 0x4e4f534a, true); // "JSON"
+  out.set(json, 20);
+  return out;
+}
+
+/** Metres to degrees at the spec's zero (47.5, 8.7). */
+const DEG_PER_M_LAT = 8.9832e-6;
+const DEG_PER_M_LON = 1.32966e-5;
+
+/**
+ * The stations tour (tour kit plan K4): fixed order; "The gate" anchored to
+ * the fixture's printed code (so the lock that passes the scan gate finds
+ * it), "The well" 30 m north (found by walking), "The tower" 300 m east
+ * (skipped).
+ */
+async function buildStationsZip() {
+  const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
+  await writer.add("session.json", new TextReader('{"kind":"e2e-stations"}'));
+  await writer.add(
+    await e2eQrLevelEntryName(),
+    new TextReader(
+      JSON.stringify({
+        version: 1,
+        qr: {
+          physicalSizeM: 0.2,
+          // Where the fakes' armed pose ([1, 1.5, -2] raw WebXR, so 2 m
+          // north and 1 m east) puts the code under the seeded alignment:
+          // its votes then agree with the walk instead of pulling it.
+          geo: {
+            lat: 47.5 + 2 * DEG_PER_M_LAT,
+            lon: 8.7 + 1 * DEG_PER_M_LON,
+            alt: 400,
+            rotation: [0, 0, 0, 1],
+          },
+        },
+      }),
+    ),
+  );
+  await writer.add(
+    "content/knight.png",
+    new Uint8ArrayReader(TINY_PNG.slice()),
+  );
+  await writer.add(
+    "content/voice.mp3",
+    new Uint8ArrayReader(new Uint8Array([0xff, 0xfb, 0x90, 0x00])),
+  );
+  await writer.add("content/arch.glb", new Uint8ArrayReader(minimalGlb()));
+  const geo = (north, east) => ({
+    lat: 47.5 + north * DEG_PER_M_LAT,
+    lon: 8.7 + east * DEG_PER_M_LON,
+    alt: 400,
+    headingDeg: 0,
+  });
+  await writer.add(
+    "tour.json",
+    new TextReader(
+      JSON.stringify({
+        version: 2,
+        title: "E2E castle",
+        order: "fixed",
+        objects: [],
+        assets: [
+          { id: "knight", path: "content/knight.png", width: 1, height: 1 },
+          { id: "voice", path: "content/voice.mp3" },
+          { id: "arch", path: "content/arch.glb" },
+        ],
+        stations: [
+          {
+            id: "gate",
+            title: "The gate",
+            anchor: { code: await qrCodeId(E2E_QR_TEXT) },
+            activateRadiusM: 30,
+            foundRadiusM: 5,
+            steps: [
+              {
+                id: "knight",
+                block: {
+                  kind: "character",
+                  name: "Sir Kay",
+                  image: "knight",
+                  caption: "Halt, traveller!",
+                  voice: "voice",
+                },
+              },
+              {
+                id: "ask",
+                block: {
+                  kind: "choice",
+                  prompt: "Enter the castle?",
+                  options: [
+                    { id: "no", label: "Not today", goto: "farewell" },
+                    { id: "yes", label: "Yes", goto: "welcome" },
+                  ],
+                },
+              },
+              { id: "farewell", block: { kind: "text", text: "Farewell." } },
+              {
+                id: "welcome",
+                block: { kind: "text", text: "Welcome inside." },
+              },
+            ],
+          },
+          {
+            id: "well",
+            title: "The well",
+            anchor: { geo: geo(30, 0) },
+            activateRadiusM: 20,
+            foundRadiusM: 5,
+            steps: [
+              {
+                id: "arch",
+                block: {
+                  kind: "model",
+                  asset: "arch",
+                  caption: "The old arch.",
+                },
+              },
+            ],
+          },
+          {
+            id: "tower",
+            title: "The tower",
+            anchor: { geo: geo(0, 300) },
+            activateRadiusM: 20,
+            foundRadiusM: 5,
+            steps: [{ id: "top", block: { kind: "text", text: "The top." } }],
+          },
+        ],
+      }),
+    ),
+  );
   return writer.close();
 }
 
@@ -195,6 +351,7 @@ async function buildRecordingZip() {
 const zipBytes = await buildZip();
 const plainZipBytes = await buildZip({ withLevel: false });
 const recordingZipBytes = await buildRecordingZip();
+const stationsZipBytes = await buildStationsZip();
 const ETAG = '"e2e-tour-v1"';
 
 /**
@@ -334,8 +491,20 @@ createServer((req, res) => {
     handleWarmGate(res, url);
     return;
   }
+  if (url.pathname === "/no-cors/tour.zip") {
+    // A host that blocks browsers (tour kit plan K0): the archive is there,
+    // but no answer carries CORS headers, so the browser refuses the read.
+    res
+      .writeHead(200, { "content-length": String(zipBytes.length) })
+      .end(req.method === "HEAD" ? undefined : Buffer.from(zipBytes));
+    return;
+  }
   if (url.pathname === "/ranges-ok/recording-tour.zip") {
     handleArchive(req, res, "ranges-ok", recordingZipBytes, '"e2e-rec-v1"');
+    return;
+  }
+  if (url.pathname === "/ranges-ok/stations-tour.zip") {
+    handleArchive(req, res, "ranges-ok", stationsZipBytes, '"e2e-stations-v1"');
     return;
   }
   if (url.pathname === "/ranges-ok/plain-tour.zip") {

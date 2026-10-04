@@ -36,7 +36,11 @@ recording. Its own module since the flows plan M6.
     could not be read) waives a scanning gate that cannot lock. The
     controller's `onLocked` with a lockable level whose code has cast
     votes in this entry (`hasVoted`; authoring plan M2b, §2.2 B3) passes
-    the gate - a lock that cast none corrected nothing; the
+    the gate - a lock that cast none corrected nothing (`gateOnLock`); AFTER
+    it, every such lock of a code with a known level id goes to
+    `hooks.stationCodeLocked` (tour kit plan K4: the lock that passes the
+    gate may also find the station the code anchors; an ignored code
+    reaches `onIgnoredLock` instead, D20); the
     escape button passes it as "skipped"; both place first and render the
     line after. Nothing is placed until the gate allows it (DEC-N3): the
     capture-spot join, the tour's content, AND the ring placed on a voted

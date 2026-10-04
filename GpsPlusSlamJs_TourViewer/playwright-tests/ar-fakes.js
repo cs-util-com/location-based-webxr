@@ -145,6 +145,17 @@ export async function installTourViewerArFakes(page, options = {}) {
         },
         /** Photos "encoded" by the fake (a 3-byte stand-in per capture). */
         encodedFrames: 0,
+        /** The stations' HUD (tour kit plan K4): the targets getter the
+         *  page handed the last HUD it started, how many it started, and
+         *  whether that one was disposed. */
+        hud: /** @type {null | { getTargets: () => any[], disposed: boolean }} */ (
+          null
+        ),
+        hudStarts: 0,
+        /** Every source the stories' one audio element was asked to play
+         *  (K4), and how many audio elements the page made. */
+        audioPlays: /** @type {string[]} */ ([]),
+        audioElements: 0,
         /** The scan gate's escape clock (M5): armed timers the spec fires. */
         timers:
           /** @type {{ fn: () => void, ms: number, cancelled: boolean }[]} */ ([]),
@@ -427,11 +438,38 @@ export async function installTourViewerArFakes(page, options = {}) {
             timer.cancelled = true;
           };
         },
-        createLabel: (text) => {
-          // A bare three Object3D stands in for the canvas-backed sprite.
-          const object = { name: `label:${text}`, position: { set() {} } };
-          return { object, dispose() {} };
+        // The stations' HUD (K4): no camera here, so the spec reads the
+        // targets the page would point at.
+        createWayfindingHud: (options) => {
+          test.hudStarts += 1;
+          const handle = { getTargets: options.getTargets, disposed: false };
+          test.hud = handle;
+          return {
+            dispose() {
+              handle.disposed = true;
+            },
+          };
         },
+        // The stories' audio element (K4): headless Chromium cannot play
+        // the fixture's bytes, so this records what would play.
+        createAudioElement: () => {
+          test.audioElements += 1;
+          return {
+            src: "",
+            onended: null,
+            play() {
+              test.audioPlays.push(this.src);
+              return Promise.resolve();
+            },
+            pause() {},
+          };
+        },
+        // No `loadGlbModel` fake: the real seam runs three's GLTFLoader on
+        // the fixture's minimal `.glb`.
+        // No `createLabel` fake: Chromium has the canvas the real text
+        // sprite needs. A plain-object stand-in was REFUSED by three's
+        // Object3D.add (only a console error), so no spec saw a pin label
+        // in the scene graph.
         stopCameraFrameCapture: () => {
           test.stopCaptureCalls += 1;
         },

@@ -35,13 +35,24 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
   `finish`, or `late-arrival` - a photo of an already settled visit, minted
   through that visit's settle when its encode landed), `basis` (`visit-settle.ts`), `visitAlignment` (the store's, read
   before the teardown), `usedAlignment` (what the geo went through),
-  `sighting` (the code pose a correction used, or null), `objects` (each
-  settled object's `id` and new `geo`), `level` (the re-minted code, or
-  null), `referenceLevel` (the level in hand when the settle ran, before any
+  `sighting` (the LATEST sighting of the level in hand when the end choice
+  was code-corrected, or null; since D33 each object is corrected through
+  the sighting nearest it, whose pose is not logged), `objects` (each
+  settled object's `id` and new `geo`, and since D33 its own `basis`,
+  `usedAlignment` and `refusedCorrection`: each object goes through the
+  first mature alignment after its own moment, so the top-level
+  `usedAlignment` is the choice for an object placed at the visit's end -
+  what a late arrival uses; these three are optional and absent in
+  recordings made before D33, and no reader parses them yet: the entry is
+  only checked for its place in the action order), `level` (the re-minted
+  code, or null) with `levelAlignment` (the measurement's own alignment,
+  D33; optional, absent before D33), `referenceLevel` (the level in hand when the settle ran, before any
   re-mint - the stored pose a code correction maps onto) and `zero` (M2c
-  review #7): with `visitAlignment` and `sighting` a replay recomputes a
-  code-corrected `usedAlignment` through `correctedAlignment` (pinned by the
-  cross-visit test in `authoring-settle.test.ts`), and `refusedCorrection`
+  review #7): with `visitAlignment` and `sighting` a replay recomputes the
+  END choice's code-corrected `usedAlignment` through `correctedAlignment`
+  (pinned by the cross-visit test in `authoring-settle.test.ts`), but not
+  the per-object choices of D33, whose picks and sightings are not logged:
+  a replay reads those from `objects[].usedAlignment`, and `refusedCorrection`
   (a code correction the plausibility bound refused - its horizontal size,
   yaw and the bounds - after which the visit settled through its plain
   alignment; null otherwise; M2c review #2). The tap-time geo of `objectPlaced`/`codeMeasured` is what a killed

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { ArchiveLimitError } from './archive-limits.js';
 import type { ByteSource } from './byte-source.js';
 import { ByteSourceReader } from './zip-byte-source-reader.js';
 
@@ -75,5 +76,39 @@ describe('ByteSourceReader', () => {
       new Uint8Array(0)
     );
     expect(reads).toEqual([]);
+  });
+});
+
+/**
+ * Why these tests matter (K0 milestone review R4): zip.js reads the WHOLE
+ * central directory its end record declares, in one read, before any entry
+ * is counted - so the entry-count cap could not stop a crafted end record
+ * declaring a directory of hundreds of megabytes. The reader refuses any
+ * single read above its cap BEFORE asking the source, whichever end record
+ * zip.js picked; entry data is read in 64 KiB chunks, far below it.
+ */
+describe('ByteSourceReader - the single-read cap', () => {
+  it('refuses a read longer than the cap without asking the source', async () => {
+    const { source, reads } = recordingSource(DATA);
+    const reader = new ByteSourceReader(source, 4);
+    const err = await reader.readUint8Array(0, 6).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveLimitError);
+    expect((err as ArchiveLimitError).kind).toBe('directory-bytes');
+    expect((err as ArchiveLimitError).limit).toBe(4);
+    expect(reads).toEqual([]);
+  });
+
+  it('measures the read after the EOF clamp, and serves one exactly at the cap', async () => {
+    const { source, reads } = recordingSource(DATA);
+    const reader = new ByteSourceReader(source, 4);
+    // 6 asked, 2 left before EOF: a 2-byte read, well under the cap.
+    await expect(reader.readUint8Array(6, 6)).resolves.toEqual(
+      new Uint8Array([16, 17])
+    );
+    await expect(reader.readUint8Array(0, 4)).resolves.toHaveLength(4);
+    expect(reads).toEqual([
+      [6, 2],
+      [0, 4],
+    ]);
   });
 });

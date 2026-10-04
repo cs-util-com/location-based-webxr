@@ -9,7 +9,9 @@
  * `'snap-every-tick'` + distance-scaled threshold gate), and 4
  * (`'snap-when-offscreen'` mode gate, with a one-time initial-placement
  * exemption for `skipBootstrap` anchors). Floor-Y correction is sub-step
- * 6 and remains deferred.
+ * 6 and remains deferred. The `'mature-alignment'` start-up (owner decision
+ * D33) fixes the point through the first mature alignment instead of a
+ * median of samples.
  */
 import * as THREE from 'three';
 import {
@@ -21,9 +23,30 @@ import { registerFrameUpdate } from '../ar/frame-loop.js';
 import { isObjectInCameraFrustum } from './frustum-visibility.js';
 import { nueToArLocal, worldNueToGps } from './frame-conversions.js';
 import { interpolatingMedian } from '../utils/median.js';
+import {
+  advanceMatureAlignmentPick,
+  checkMatureGpsExtentM,
+  isUsableAlignment,
+  openMatureAlignmentPick,
+  type AlignmentMoment,
+  type MatureAlignmentPick,
+} from '../state/alignment-maturity.js';
 
 export type GpsAnchorMode = 'snap-when-offscreen' | 'snap-every-tick';
 export type GpsAnchorPhase = 'bootstrap' | 'anchored';
+/**
+ * How the anchor's GPS point is first fixed (the `'bootstrap'` phase):
+ * - `'median'` (the default): the per-coordinate median of
+ *   `secondsToAccumulateGpsPose` 1 Hz samples (`getCurrentGpsPoint`, or the
+ *   object through the CURRENT alignment);
+ * - `'mature-alignment'` (owner decision D33): the object through the FIRST
+ *   MATURE alignment at or after its placement - the first whose session GPS
+ *   extent (`getGpsExtentM`) reaches `matureGpsExtentM`
+ *   (`state/alignment-maturity.ts`) - so SLAM drift walked after that never
+ *   reaches it; `settleNow()` fixes it through the latest usable alignment
+ *   when the session ends first.
+ */
+export type GpsAnchorStartup = 'median' | 'mature-alignment';
 
 /**
  * The minimum shape needed for the bootstrap median — a `LatLong` with
@@ -71,6 +94,17 @@ export interface GpsAnchorOptions {
   readonly secondsToAccumulateGpsPose?: number;
   /** Wait window (seconds) at phase entry during which no samples are taken. Default 0. */
   readonly settlingSeconds?: number;
+  /** See {@link GpsAnchorStartup}. Default `'median'`. */
+  readonly startup?: GpsAnchorStartup;
+  /**
+   * The session's GPS extent (m) now (`state/gps-extent-tracker.ts`), or
+   * null when unknown (never mature). Required by the `'mature-alignment'`
+   * start-up, ignored otherwise.
+   */
+  readonly getGpsExtentM?: () => number | null;
+  /** The maturity floor (m) of the `'mature-alignment'` start-up; default
+   *  `MATURE_GPS_EXTENT_M` (40). Positive and finite. */
+  readonly matureGpsExtentM?: number;
 }
 
 /**
@@ -110,6 +144,17 @@ export interface GpsAnchor {
   readonly gpsPoint: LatLong | LatLongAlt;
   markMovedExternally(): void;
   setGpsPoint(point: LatLong | LatLongAlt): void;
+  /**
+   * `'mature-alignment'` start-up only: fix the GPS point NOW, through the
+   * latest usable alignment the anchor has followed since the placement -
+   * the fallback when the session ends before the alignment matured. Fires
+   * `onBootstrapComplete` like a mature fix.
+   *
+   * @returns the committed point, or null when nothing was committed (the
+   *   point is already fixed, the start-up is `'median'`, or no usable
+   *   alignment was ever seen).
+   */
+  settleNow(): LatLong | LatLongAlt | null;
   dispose(): void;
   /** @internal — testing seam; exposed in lieu of pumping `runFrameUpdates`. */
   __tickForTests(dt: number, elapsed: number): void;
@@ -164,6 +209,64 @@ function isDescendantOf(
   return false;
 }
 
+/** The start-up and, for `'mature-alignment'`, its floor (0 otherwise).
+ *  Checked before the object is registered, so a refusal leaves nothing
+ *  behind. */
+function startupOf(options: GpsAnchorOptions): {
+  startup: GpsAnchorStartup;
+  matureFloorM: number;
+} {
+  const startup = options.startup ?? 'median';
+  if (startup === 'median') return { startup, matureFloorM: 0 };
+  return { startup, matureFloorM: checkMatureStartup(options) };
+}
+
+/** The `'mature-alignment'` start-up's own requirements; its floor. */
+function checkMatureStartup(options: GpsAnchorOptions): number {
+  if (options.getGpsExtentM === undefined) {
+    throw new Error(
+      "createGpsAnchor: the 'mature-alignment' start-up needs getGpsExtentM " +
+        '(the session GPS extent decides when the alignment is mature).'
+    );
+  }
+  if (options.skipBootstrap === true) {
+    throw new Error(
+      "createGpsAnchor: skipBootstrap skips the start-up, so it cannot be combined with the 'mature-alignment' start-up."
+    );
+  }
+  return checkMatureGpsExtentM(options.matureGpsExtentM);
+}
+
+/** What an alignment moment is read from: the alignment matrix, the zero
+ *  and the session GPS extent, as the anchor's getters return them. */
+type MomentInputs = readonly [
+  readonly number[] | null,
+  LatLong | null,
+  number | null,
+];
+
+function readMomentInputs(options: GpsAnchorOptions): MomentInputs {
+  return [
+    options.getAlignmentMatrix() ?? null,
+    options.getGpsZeroRef() ?? null,
+    options.getGpsExtentM?.() ?? null,
+  ];
+}
+
+function sameMomentInputs(a: MomentInputs | null, b: MomentInputs): boolean {
+  return a !== null && a[0] === b[0] && a[1] === b[1] && Object.is(a[2], b[2]);
+}
+
+/** The moment, with a COPY of the matrix: a pick must keep this alignment
+ *  even if the caller's array is reused. */
+function momentOf([matrix, zero, extent]: MomentInputs): AlignmentMoment {
+  return {
+    alignmentMatrix: matrix === null ? null : Array.from(matrix),
+    zero,
+    ...(extent === null ? {} : { gpsExtentM: extent }),
+  };
+}
+
 function medianPoint(
   samples: readonly GpsAnchorSamplePoint[]
 ): LatLong | LatLongAlt {
@@ -192,6 +295,7 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
         'anchor to the scene root defeats AR stability.'
     );
   }
+  const { startup, matureFloorM } = startupOf(options);
   anchoredObjects.add(options.object3D);
 
   const sampleCount = options.secondsToAccumulateGpsPose ?? 7;
@@ -239,12 +343,66 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
    */
   let firstCommitPending = options.skipBootstrap === true;
 
+  // The `'mature-alignment'` start-up: the alignment as it stands now, and
+  // the pick that follows it from the placement until it matures
+  // (`state/alignment-maturity.ts`). Re-read only when one of its three
+  // inputs changed, so a waiting anchor allocates nothing per frame.
+  let lastMomentInputs: MomentInputs | null = null;
+  /** The alignment moment now, or null when nothing changed since the last
+   *  read. */
+  const alignmentNow = (): AlignmentMoment | null => {
+    const inputs = readMomentInputs(options);
+    if (sameMomentInputs(lastMomentInputs, inputs)) return null;
+    lastMomentInputs = inputs;
+    return momentOf(inputs);
+  };
+  const openPick = (): MatureAlignmentPick<AlignmentMoment> | null => {
+    if (startup !== 'mature-alignment') return null;
+    lastMomentInputs = null;
+    const now = alignmentNow();
+    return now === null ? null : openMatureAlignmentPick(now, matureFloorM);
+  };
+  let maturePick = openPick();
+  const scratchFix = new THREE.Vector3();
+  const scratchAlignment = new THREE.Matrix4();
+
   const enterBootstrap = (): void => {
     phase = 'bootstrap';
     isFullyAnchored = false;
     phaseEnteredAtElapsed = null;
     lastSampleAtElapsed = null;
     samples.length = 0;
+  };
+
+  /** Fix the point: the object's position in `arWorldGroup`'s frame (raw
+   *  odometry NUE, whatever the group's lerped matrix is now) through the
+   *  picked alignment, as GPS. */
+  const commitThrough = (moment: AlignmentMoment): void => {
+    const { alignmentMatrix, zero } = moment;
+    if (alignmentMatrix === null || zero === null) return;
+    options.arWorldGroup.updateWorldMatrix(true, false);
+    options.object3D.getWorldPosition(scratchFix);
+    options.arWorldGroup.worldToLocal(scratchFix);
+    scratchFix.applyMatrix4(scratchAlignment.fromArray(alignmentMatrix));
+    gpsPoint = worldNueToGps(scratchFix, zero);
+    phase = 'anchored';
+    isFullyAnchored = true;
+    options.onBootstrapComplete?.(gpsPoint);
+  };
+
+  /** One frame of the `'mature-alignment'` start-up; true when it fixed
+   *  the point. */
+  const followMaturity = (): boolean => {
+    const now = alignmentNow();
+    if (now !== null) {
+      maturePick =
+        maturePick === null
+          ? openMatureAlignmentPick(now, matureFloorM)
+          : advanceMatureAlignmentPick(maturePick, now, matureFloorM);
+    }
+    if (maturePick?.mature !== true) return false;
+    commitThrough(maturePick.alignment);
+    return true;
   };
 
   const commitMedian = (): void => {
@@ -364,6 +522,10 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
       maybeCommitSteadyState();
       return;
     }
+    if (startup === 'mature-alignment') {
+      followMaturity();
+      return;
+    }
     if (phaseEnteredAtElapsed === null) {
       phaseEnteredAtElapsed = elapsed;
       lastSampleAtElapsed = elapsed - 1; // allow a sample on the next tick if no settling
@@ -396,9 +558,20 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
     },
     markMovedExternally(): void {
       enterBootstrap();
+      // A move is a new placement: the pick starts again from now.
+      maturePick = openPick();
     },
     setGpsPoint(point: LatLong | LatLongAlt): void {
       gpsPoint = point;
+    },
+    settleNow(): LatLong | LatLongAlt | null {
+      if (startup !== 'mature-alignment' || phase !== 'bootstrap') return null;
+      if (followMaturity()) return gpsPoint;
+      if (maturePick === null || !isUsableAlignment(maturePick.alignment)) {
+        return null;
+      }
+      commitThrough(maturePick.alignment);
+      return gpsPoint;
     },
     dispose(): void {
       unregister();
