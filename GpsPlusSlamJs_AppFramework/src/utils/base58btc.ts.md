@@ -15,7 +15,10 @@ Ed25519 `did:key` (`did-key.ts`, tour kit plan K1). Pure.
 - Leading zero bytes map to leading `1`s and back, so
   `decode(encode(b))` is the identity for every byte array.
 - Quadratic big-number conversion: fine for the 34-byte keys it serves,
-  not meant for megabytes.
+  not meant for long input (60,000 characters take about 3 s). The input
+  is untrusted (a tour names its author), so a CALLER bounds it before
+  decoding: `did-key.ts` refuses every length but the one an Ed25519 key
+  has (K1 milestone review R2).
 - Searched both roots 2026-10-04: no base58 existed (the core library's
   license key uses base64url, not base58).
 

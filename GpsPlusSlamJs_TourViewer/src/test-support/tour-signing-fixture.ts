@@ -154,6 +154,7 @@ export async function signManifestText(
     message,
   );
   return JSON.stringify({
+    formatVersion: 1,
     alg: "Ed25519",
     author: key.author,
     sig: encodeBase64Url(new Uint8Array(sig)),

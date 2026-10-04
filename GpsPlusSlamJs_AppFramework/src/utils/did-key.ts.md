@@ -35,6 +35,15 @@ Sources:
 
 ## Invariants & assumptions
 
+- **A fixed length, checked first (K1 milestone review R2).** Every
+  Ed25519 did:key has exactly 47 base58 characters after `did:key:z` (the
+  34 bytes start `0xed 0x01`, so the number lies between
+  `0xed01 * 2^256` and `0xed02 * 2^256 - 1`, both 47 digits). Any other
+  length is refused BEFORE base58 decoding, which is quadratic: a did:key
+  comes from any opened tour, and 60,000 characters took 2.8 s to decode
+  before the check (a longer string hangs the tab). The length is exact,
+  not a tuning value; only another multicodec prefix (another key type)
+  would change it.
 - Only Ed25519: that is the one curve WebCrypto verifies in every target
   browser (secp256k1, used by Nostr, is not in WebCrypto; plan §2).
 - The spec is a draft community report; the Ed25519 encoding has been
@@ -51,5 +60,8 @@ didKeyToEd25519PublicKey(did); // raw32
 
 - `did-key.test.ts` - both spec vectors both ways, refusals (another
   method, another multibase, a secp256k1 did:key, a truncated key, a
-  look-alike character, a non-string), the length guard, and a
-  round-trip property over random keys.
+  look-alike character, a non-string), the encoder's length guard, the
+  47-character body (spec vectors and the property), did:keys of
+  other lengths (one of 60,000 characters) refused without the decoder
+  being called (a spy, not a clock), and a round-trip property over random
+  keys.

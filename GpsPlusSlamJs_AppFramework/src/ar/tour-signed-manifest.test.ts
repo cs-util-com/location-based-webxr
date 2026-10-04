@@ -139,16 +139,6 @@ describe('parseSignedTourManifest', () => {
       /"links\[0\]\.author"/,
     ],
     [
-      'too many links',
-      {
-        links: Array.from({ length: 65 }, () => ({
-          seriesId: 'Z9yX8wV7uT6sR5qP4oN3mL',
-          author: AUTHOR,
-        })),
-      },
-      /"links" may list at most 64/,
-    ],
-    [
       'a recovery commitment that is not a SHA-256',
       { recoveryKeyCommitment: 'abc' },
       /"recoveryKeyCommitment"/,
@@ -162,6 +152,30 @@ describe('parseSignedTourManifest', () => {
     expect(() => manifest({ version: 0 })).toThrow(
       expect.objectContaining({ kind: 'malformed-manifest' })
     );
+  });
+
+  it('shows the first 64 links of a manifest that lists more, and stays valid (K1 milestone review R8)', () => {
+    // Why: a signed list with a 65th link is not a modified tour. Failing
+    // the whole manifest worded an honest (if long) list as tampering; the
+    // reader shows the first 64 and ignores the rest, unread.
+    const many = Array.from({ length: 70 }, (_, i) => ({
+      seriesId: `Series${String(i).padStart(16, '0')}`,
+      author: AUTHOR,
+    }));
+    many[66] = { seriesId: 'bad', author: 'not a did' }; // past the cap: never read
+    const parsed = manifest({ links: many });
+    expect(parsed.links).toHaveLength(64);
+    expect(parsed.links[63]?.seriesId).toBe(many[63]?.seriesId);
+  });
+
+  it('the writer refuses more than 64 links, so the app never writes a list it would cut', () => {
+    const tooMany = Array.from({ length: 65 }, () => ({
+      seriesId: 'Z9yX8wV7uT6sR5qP4oN3mL',
+      author: AUTHOR,
+    }));
+    expect(() =>
+      serializeSignedTourManifest({ ...manifest(), links: tooMany })
+    ).toThrow(/at most 64/);
   });
 
   it('serialize then parse is the identity', () => {

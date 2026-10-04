@@ -31,6 +31,8 @@
  * key is the fallback for every other tour.
  */
 
+import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
+
 /** The fields of a zip entry the key reads (zip.js `Entry` has them). */
 export interface TourFileKeyEntry {
   readonly filename: string;
@@ -97,12 +99,7 @@ export async function tourFileKey(
         `${name}\u0000${String(e.uncompressedSize)}\u0000${String(e.crc32 ?? "")}`,
     )
     .sort();
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(lines.join("\n")),
-  );
-  const hex = [...new Uint8Array(digest)]
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  // The framework's one SHA-256 (DEC-H3, K1 milestone review R14).
+  const hex = await sha256Hex(new TextEncoder().encode(lines.join("\n")));
   return `${TOUR_FILE_KEY_PREFIX}${hex.slice(0, 32)}`;
 }

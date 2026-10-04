@@ -6,7 +6,8 @@
  * Big-number arithmetic on bytes, the textbook way: leading zero bytes
  * become leading `1`s and back, everything else is a base conversion. The
  * inputs here are a few dozen bytes (a 34-byte multicodec key), so the
- * quadratic loop costs microseconds.
+ * quadratic loop costs microseconds - and only because the caller bounds
+ * the length first (`did-key.ts`): untrusted text of any length would hang.
  */
 
 const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';

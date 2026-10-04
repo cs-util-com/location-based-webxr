@@ -35,11 +35,14 @@ export const MANIFEST_SIGNATURE_ENTRY = 'manifest.sig.json';
 /** The format of `manifest.json` this module reads. */
 const SIGNED_MANIFEST_FORMAT = 1;
 /**
- * Links to other series one manifest may carry. The castle example links
- * none to two; 64 is a list a phone screen can still show, and the bound
- * keeps a crafted file from filling the page with links. Reverses for a
- * creator who links more than 64 of their own series from one tour (none
- * exists yet: K2 creates the first keys).
+ * Links to other series one manifest SHOWS, and the most the writer
+ * writes. The castle example links none to two; 64 is a list a phone
+ * screen can still show, and the bound keeps a crafted file from filling
+ * the page with links. A longer list is not a modified tour (K1 milestone
+ * review R8): the reader shows the first 64 and never reads the rest; the
+ * writer refuses to write more. Reverses for a creator who links more than
+ * 64 of their own series from one tour (none exists yet: K2 creates the
+ * first keys).
  */
 const MAX_SERIES_LINKS = 64;
 
@@ -173,10 +176,7 @@ function parseFiles(value: unknown): Record<string, TourFileRecord> {
 function parseLinks(value: unknown): TourSeriesLink[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) malformed('"links" must be an array');
-  if (value.length > MAX_SERIES_LINKS) {
-    malformed(`"links" may list at most ${String(MAX_SERIES_LINKS)} series`);
-  }
-  return value.map((link, i) => {
+  return value.slice(0, MAX_SERIES_LINKS).map((link, i) => {
     const at = `links[${String(i)}]`;
     if (!isRecord(link)) malformed(`"${at}" must be an object`);
     if (typeof link.seriesId !== 'string' || !SERIES_ID.test(link.seriesId)) {
@@ -250,10 +250,14 @@ export function parseSignedTourManifest(text: string): SignedTourManifest {
   };
 }
 
-/** The JSON text of a manifest, re-validated through the parser first. */
+/** The JSON text of a manifest, re-validated through the parser first.
+ *  Refuses more links than the reader shows (`MAX_SERIES_LINKS`). */
 export function serializeSignedTourManifest(
   manifest: SignedTourManifest
 ): string {
+  if (manifest.links.length > MAX_SERIES_LINKS) {
+    malformed(`"links" may list at most ${String(MAX_SERIES_LINKS)} series`);
+  }
   const text = JSON.stringify(manifest, null, 2);
   parseSignedTourManifest(text);
   return text;

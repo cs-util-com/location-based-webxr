@@ -51,6 +51,7 @@ async function signatureFile(
 ): Promise<{ text: string; did: string; privateKey: CryptoKey }> {
   const { privateKey, did } = await keyPair();
   const text = JSON.stringify({
+    formatVersion: 1,
     alg: 'Ed25519',
     author: did,
     sig: await sign(privateKey, bytes),
@@ -110,6 +111,7 @@ describe('verifyManifestSignature', () => {
     const { privateKey, did } = await keyPair();
     const bare = await subtle.sign({ name: 'Ed25519' }, privateKey, MANIFEST);
     const text = JSON.stringify({
+      formatVersion: 1,
       alg: 'Ed25519',
       author: did,
       sig: encodeBase64Url(new Uint8Array(bare)),
@@ -205,10 +207,13 @@ describe('parseManifestSignature', () => {
   const author = 'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK';
   const sig = encodeBase64Url(new Uint8Array(64).fill(7));
 
-  it('reads alg, author and the 64-byte signature', () => {
+  const v1 = { formatVersion: 1, alg: 'Ed25519' };
+
+  it('reads the format, alg, author and the 64-byte signature', () => {
     expect(
-      parseManifestSignature(JSON.stringify({ alg: 'Ed25519', author, sig }))
+      parseManifestSignature(JSON.stringify({ ...v1, author, sig }))
     ).toEqual({
+      formatVersion: 1,
       alg: 'Ed25519',
       author,
       sig,
@@ -217,18 +222,26 @@ describe('parseManifestSignature', () => {
 
   it.each([
     ['not JSON', '{'],
-    ['another algorithm', JSON.stringify({ alg: 'ES256', author, sig })],
+    ['no format version', JSON.stringify({ alg: 'Ed25519', author, sig })],
+    [
+      'a format version that is not a number',
+      JSON.stringify({ ...v1, formatVersion: '1', author, sig }),
+    ],
+    [
+      'an algorithm that is not a name',
+      JSON.stringify({ ...v1, alg: 42, author, sig }),
+    ],
     [
       'an author that is not an Ed25519 did:key',
-      JSON.stringify({ alg: 'Ed25519', author: 'me', sig }),
+      JSON.stringify({ ...v1, author: 'me', sig }),
     ],
     [
       'a signature of the wrong length',
-      JSON.stringify({ alg: 'Ed25519', author, sig: 'AAAA' }),
+      JSON.stringify({ ...v1, author, sig: 'AAAA' }),
     ],
     [
       'a signature that is not base64url',
-      JSON.stringify({ alg: 'Ed25519', author, sig: '+/==' }),
+      JSON.stringify({ ...v1, author, sig: '+/==' }),
     ],
   ])('refuses %s as malformed', (_label, text) => {
     expect(() => parseManifestSignature(text)).toThrow(TourIntegrityError);
@@ -236,17 +249,45 @@ describe('parseManifestSignature', () => {
       expect.objectContaining({ kind: 'malformed-signature' })
     );
   });
+
+  it.each([
+    [
+      'a newer format version',
+      JSON.stringify({ formatVersion: 2, alg: 'Ed25519', author, sig }),
+    ],
+    [
+      'a newer format version, whatever else it holds',
+      JSON.stringify({ formatVersion: 7, scheme: 'something new' }),
+    ],
+    [
+      'an algorithm this app does not know',
+      JSON.stringify({ ...v1, alg: 'ML-DSA-65', author, sig }),
+    ],
+  ])(
+    'reads %s as "made with a newer version of the app", never as tampering (K1 milestone review R9)',
+    (_label, text) => {
+      // Why: a signature format a later app writes must not tell a visitor
+      // the tour was modified. `newer-format` is the honest verdict.
+      expect(() => parseManifestSignature(text)).toThrow(
+        expect.objectContaining({ kind: 'newer-format' })
+      );
+    }
+  );
 });
 
 describe('keyFingerprint', () => {
-  it('is three groups of four hex digits, the same for the same key and different for another', async () => {
+  it('is five groups of four hex digits (80 bits), the same for the same key and different for another', async () => {
     const a = await keyFingerprint(
       'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK'
     );
     const b = await keyFingerprint(
       'did:key:z6Mkf5rGMoatrSj1f4CyvuHBeXJELe9RPdzo2PKGNCKVtZxP'
     );
-    expect(a).toMatch(/^[0-9a-f]{4} [0-9a-f]{4} [0-9a-f]{4}$/);
+    // Why 80 bits (K1 milestone review R11): a fingerprint is compared BY
+    // EYE, so an attacker only has to make a key whose shown part matches.
+    // 48 bits is about 2^48 hashes, within reach of one GPU; 80 bits is
+    // about 2^80, out of reach. Five groups of four stay readable.
+    expect(a).toMatch(/^[0-9a-f]{4}( [0-9a-f]{4}){4}$/);
     expect(
       await keyFingerprint(
         'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK'

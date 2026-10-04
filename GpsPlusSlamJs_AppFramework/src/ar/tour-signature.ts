@@ -35,8 +35,16 @@ export const TOUR_SIGNATURE_CONTEXT = 'tour-kit manifest.json signature v1\n';
 
 const ALG = 'Ed25519';
 const SIGNATURE_BYTES = 64;
+/**
+ * The format of `manifest.sig.json` this module reads (K1 milestone review
+ * R9). A newer number, or an algorithm this app does not know, is a file
+ * made by a newer app: it reads `newer-format` ("update the app"), never
+ * as tampering.
+ */
+const SIGNATURE_FORMAT = 1;
 
 export interface ManifestSignature {
+  readonly formatVersion: typeof SIGNATURE_FORMAT;
   readonly alg: typeof ALG;
   /** The signing key as an Ed25519 did:key. */
   readonly author: string;
@@ -60,8 +68,35 @@ function malformed(message: string): never {
   );
 }
 
-/** Parse `manifest.sig.json`. Throws {@link TourIntegrityError}
- *  (`malformed-signature`). Unknown fields are ignored. */
+function newerFormat(what: string): never {
+  throw new TourIntegrityError(
+    'newer-format',
+    `manifest.sig.json ${what} was made with a newer version of the app; update the app to check this tour`
+  );
+}
+
+/** The format version and algorithm, checked before anything else: a
+ *  newer one is `newer-format`, a missing or malformed one
+ *  `malformed-signature`. */
+function checkSignatureFormat(data: Record<string, unknown>): void {
+  const { formatVersion, alg } = data;
+  if (
+    Number.isSafeInteger(formatVersion) &&
+    (formatVersion as number) > SIGNATURE_FORMAT
+  ) {
+    newerFormat(`format ${String(formatVersion)}`);
+  }
+  if (formatVersion !== SIGNATURE_FORMAT) {
+    malformed(`"formatVersion" must be ${String(SIGNATURE_FORMAT)}`);
+  }
+  if (typeof alg !== 'string') malformed('"alg" must be an algorithm name');
+  if (alg !== ALG) newerFormat(`algorithm "${alg.slice(0, 32)}"`);
+}
+
+/** Parse `manifest.sig.json`. Throws {@link TourIntegrityError}:
+ *  `newer-format` for a newer format version or an algorithm this app does
+ *  not know (checked first, so a newer file's other fields are never
+ *  judged), else `malformed-signature`. Unknown fields are ignored. */
 export function parseManifestSignature(text: string): ManifestSignature {
   let data: unknown;
   try {
@@ -71,7 +106,7 @@ export function parseManifestSignature(text: string): ManifestSignature {
   }
   if (!isRecord(data) || Array.isArray(data))
     malformed('must be a JSON object');
-  if (data.alg !== ALG) malformed(`"alg" must be "${ALG}"`);
+  checkSignatureFormat(data);
   if (!isDidKeyEd25519(data.author)) {
     malformed('"author" must be an Ed25519 did:key');
   }
@@ -79,7 +114,12 @@ export function parseManifestSignature(text: string): ManifestSignature {
   if (sig?.length !== SIGNATURE_BYTES) {
     malformed('"sig" must be a 64-byte signature in base64url');
   }
-  return { alg: ALG, author: data.author, sig: data.sig as string };
+  return {
+    formatVersion: SIGNATURE_FORMAT,
+    alg: ALG,
+    author: data.author,
+    sig: data.sig as string,
+  };
 }
 
 /** The bytes a signature covers: the context, then the manifest. */
@@ -158,10 +198,21 @@ export async function verifyManifestSignature(
 }
 
 /**
+ * Hex digits of a key's fingerprint: 20, which is 80 bits (K1 milestone
+ * review R11). A fingerprint is compared by eye, so a look-alike key only
+ * has to match what is SHOWN: 48 bits is about 2^48 hashes, within reach of
+ * one GPU in days; 80 bits is about 2^80, out of reach. Reverses towards
+ * 128 bits if a well-funded attacker is in scope, and loses its point if
+ * visitors read only the first group or two (K2's nickname helps there).
+ */
+const FINGERPRINT_HEX_DIGITS = 20;
+
+/**
  * A short fingerprint of an author key for people to compare: the first
- * 48 bits of the SHA-256 of the raw public key, as three groups of four
- * hex digits (`3f2a 91c0 77de`). K2 pairs it with a nickname the player
- * gives the key. Rejects for a string that is not an Ed25519 did:key.
+ * 80 bits of the SHA-256 of the raw public key, as five groups of four
+ * hex digits (`3f2a 91c0 77de 5b10 e4a9`). K2 pairs it with a nickname
+ * the player gives the key. Rejects for a string that is not an Ed25519
+ * did:key.
  */
 export async function keyFingerprint(author: string): Promise<string> {
   const publicKey = didKeyToEd25519PublicKey(author);
@@ -169,5 +220,5 @@ export async function keyFingerprint(author: string): Promise<string> {
     throw new TypeError('keyFingerprint: not an Ed25519 did:key');
   }
   const hex = await sha256Hex(publicKey);
-  return `${hex.slice(0, 4)} ${hex.slice(4, 8)} ${hex.slice(8, 12)}`;
+  return (hex.slice(0, FINGERPRINT_HEX_DIGITS).match(/.{4}/g) ?? []).join(' ');
 }

@@ -15,6 +15,17 @@ const PREFIX = 'did:key:z';
 /** The multicodec varint of `ed25519-pub` (0xed). */
 const ED25519_MULTICODEC = [0xed, 0x01] as const;
 const KEY_BYTES = 32;
+/**
+ * The base58btc characters after `did:key:z` for EVERY Ed25519 key: the 34
+ * bytes start `0xed 0x01`, so the number they spell lies between
+ * `0xed01 * 2^256` and `0xed02 * 2^256 - 1`, and both ends are 47 digits
+ * (measured with a BigInt encoder; the two spec examples are 47 too). The
+ * length is exact, not a tuning value: base58 decoding is quadratic, and a
+ * did:key comes from any opened tour, so any other length is refused before
+ * the decoder runs (K1 milestone review R2). Only a multicodec prefix of
+ * another length would change it, which would be another key type.
+ */
+const BODY_CHARS = 47;
 
 /** The did:key for a raw 32-byte Ed25519 public key.
  *  @throws TypeError for a key of any other length. */
@@ -32,6 +43,7 @@ export function ed25519PublicKeyToDidKey(publicKey: Uint8Array): string {
  *  outside the alphabet). Total: never throws. */
 export function didKeyToEd25519PublicKey(did: unknown): Uint8Array | null {
   if (typeof did !== 'string' || !did.startsWith(PREFIX)) return null;
+  if (did.length !== PREFIX.length + BODY_CHARS) return null;
   const bytes = decodeBase58btc(did.slice(PREFIX.length));
   if (
     bytes === null ||

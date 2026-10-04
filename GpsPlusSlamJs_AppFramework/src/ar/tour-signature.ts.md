@@ -11,19 +11,34 @@ Key creation, signing and export for creators are K2's.
 - `TOUR_SIGNATURE_CONTEXT = "tour-kit manifest.json signature v1\n"` - a
   format constant: what is signed is these UTF-8 bytes followed by the
   manifest file's bytes as stored (`signedMessage(manifestBytes)`).
-- `parseManifestSignature(text): ManifestSignature` - `{ alg: "Ed25519",
-author: <Ed25519 did:key>, sig: <64 bytes, unpadded base64url> }`;
-  unknown fields ignored; throws `TourIntegrityError("malformed-signature")`.
+- `parseManifestSignature(text): ManifestSignature` - `{ formatVersion: 1,
+alg: "Ed25519", author: <Ed25519 did:key>, sig: <64 bytes, unpadded
+base64url> }`; unknown fields ignored. Throws `TourIntegrityError`:
+  `newer-format` for a format version above 1 or an algorithm other than
+  Ed25519 (checked first: "made with a newer version of the app", never
+  tampering - K1 milestone review R9), else `malformed-signature` (no
+  format version, an algorithm that is not a name, a bad author or
+  signature).
 - `verifyManifestSignature(manifestBytes, signatureText, subtle?)` ->
   `{ kind: "valid", author }` or `{ kind: "unsupported", author, reason }`;
   throws `TourIntegrityError` `malformed-signature` or `bad-signature`.
 - `signedMessage(manifestBytes)` - the bytes a signature covers.
-- `keyFingerprint(author): Promise<string>` - `"3f2a 91c0 77de"`: the
-  first 48 bits of the SHA-256 of the raw key, three groups of four hex
+- `keyFingerprint(author): Promise<string>` - `"3f2a 91c0 77de 5b10 e4a9"`:
+  the first 80 bits of the SHA-256 of the raw key, five groups of four hex
   digits, for people to compare (K2 adds a nickname). Rejects for a string
   that is not an Ed25519 did:key.
 
 ## Invariants & assumptions
+
+- **The fingerprint's 80 bits (K1 milestone review R11).** It is compared
+  by eye, so a look-alike key only has to match what is shown: 48 bits
+  (the K1 build) is about 2^48 hashes, within reach of one GPU; 80 bits is
+  about 2^80, out of reach. Reverses towards 128 bits if a well-funded
+  attacker is in scope, and stops helping if visitors read only the first
+  group or two (K2's nickname is the answer there).
+- **A format version (R9).** `formatVersion` (1) is required, so a later
+  format or algorithm is recognised as newer, not as a broken signature.
+  No signature without it exists: signing arrives with K2.
 
 - **Exact bytes, a context prefix.** No JSON canonicalisation has to agree
   between writer and reader; the prefix keeps a tour signature from being
@@ -78,4 +93,6 @@ signature; other bytes, a forged author line and a signature without the
 context prefix are bad; any single flipped byte of the manifest or of the
 signature fails (properties); a browser without Ed25519 and a page
 without WebCrypto read `unsupported`, a `DataError` reads bad; the parser's
-refusals; the fingerprint's shape and stability.
+refusals (no format version, a non-numeric one, a non-name algorithm);
+newer formats and unknown algorithms read `newer-format`; the
+fingerprint's 80-bit shape and stability.

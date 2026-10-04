@@ -56,7 +56,10 @@ Map<filename, TourFileRecord>` - TIER 1; throws `TourIntegrityError`.
 - `files`: keys are canonical paths RELATIVE TO THE MANIFEST'S FOLDER;
   values the SHA-256 (lowercase hex) and size of the DECOMPRESSED bytes,
   read through the same zip.js path the reader uses.
-- `links`: at most 64; each author an Ed25519 did:key.
+- `links`: each author an Ed25519 did:key. The reader keeps the FIRST 64
+  and never reads the rest; the writer refuses more than 64 (K1 milestone
+  review R8: a long list is not a modified tour, so it is never worded as
+  one).
 - `recoveryKeyCommitment` (reserved, K-D2/K-D8): the SHA-256 hex of the
   spare key's did:key, named in advance so a stolen main key can be
   replaced. Shape-checked, not acted on.
@@ -88,7 +91,8 @@ Map<filename, TourFileRecord>` - TIER 1; throws `TourIntegrityError`.
 - `MAX_SERIES_LINKS = 64`. Need: the castle example links 0-2 series; no
   creator has a key yet (K2). 64 still fits a phone list and bounds what a
   crafted file can make the page render. A creator who links more than 64
-  of their own series from one tour would reverse it.
+  of their own series from one tour would reverse it. Past the cap the
+  manifest stays valid and only the first 64 are shown (R8).
 
 ## Examples
 
