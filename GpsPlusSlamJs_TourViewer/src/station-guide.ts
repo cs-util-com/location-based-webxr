@@ -72,6 +72,15 @@ export interface StationGuideDeps {
   now(): number;
   /** A station was found: play its story. */
   onFound(station: TourStation): void;
+  /** Each tick, for each offered station with a distance: how far it is,
+   *  and its activation exit radius (the prefetch starts beyond it). */
+  onApproach?(
+    station: TourStation,
+    distanceM: number,
+    activateExitM: number,
+  ): void;
+  /** A station is done (its story ended, or it was skipped). */
+  onDone?(stationId: string): void;
   /** Every tick with a position: the stage turns its figure to the visitor. */
   onVisitor?(nue: readonly [number, number, number]): void;
 }
@@ -172,7 +181,26 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       if (event.kind === "found") {
         const station = stationById(event.id);
         if (station !== undefined) deps.onFound(station);
+      } else if (event.kind === "done") {
+        deps.onDone?.(event.id);
       }
+    }
+  }
+
+  /** The prefetch's view of the offer: each offered station's distance. */
+  function approach(
+    distances: ReadonlyMap<string, number>,
+    accuracyM: number | null,
+  ): void {
+    if (deps.onApproach === undefined) return;
+    for (const [id, d] of distances) {
+      const station = stationById(id);
+      if (station === undefined) continue;
+      deps.onApproach(
+        station,
+        d,
+        stationBands(station, accuracyM).activateExitM,
+      );
     }
   }
 
@@ -304,6 +332,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       const distances = horizontalDistances(visitor.nue);
       last = { visitor, distances };
       if (visitor.nue !== null) deps.onVisitor?.(visitor.nue);
+      approach(distances, visitor.accuracyM);
       handle(
         current.observe({
           distances,
@@ -321,7 +350,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     },
     storyEnded(stationId) {
       if (run === null) return;
-      run.finish(stationId, deps.now());
+      handle(run.finish(stationId, deps.now()));
       note = null;
       render();
     },
@@ -335,7 +364,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         return;
       }
       const title = stationTitle(stationById(focus)!);
-      run.skip(focus, deps.now());
+      handle(run.skip(focus, deps.now()));
       skipArmedFor = null;
       note = `Skipped ${title}.`;
       render();

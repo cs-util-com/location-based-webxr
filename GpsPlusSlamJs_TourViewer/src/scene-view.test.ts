@@ -57,7 +57,16 @@ function station(id: string, steps: TourStep[], title?: string): TourStation {
 }
 
 const assets = new Map<string, TourAsset>([
-  ["knight", { id: "knight", path: "content/knight.png", kind: "image" }],
+  [
+    "knight",
+    {
+      id: "knight",
+      path: "content/knight.png",
+      kind: "image",
+      width: 300,
+      height: 600,
+    },
+  ],
   ["voice", { id: "voice", path: "content/voice.mp3", kind: "audio" }],
   ["arch", { id: "arch", path: "content/arch.glb", kind: "model" }],
 ]);
@@ -160,6 +169,7 @@ describe("createSceneView", () => {
     expect(h.stage.showCharacter).toHaveBeenCalledWith(
       "gate",
       expect.any(Blob),
+      { width: 300, height: 600 },
     );
     expect(h.audio.play).toHaveBeenCalledTimes(1);
     expect(h.dom.status.textContent).toBe("");

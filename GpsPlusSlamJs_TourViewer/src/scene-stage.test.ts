@@ -64,6 +64,18 @@ describe("createSceneStage", () => {
     expect(feet).toBeCloseTo(400);
   });
 
+  it("hands the figure's pixel size to the decoder (the decode cap)", async () => {
+    const h = harness();
+    await h.stage.showCharacter("gate", new Blob(["png"]), {
+      width: 4096,
+      height: 2048,
+    });
+    expect(h.deps.decodeTexture).toHaveBeenCalledWith(expect.any(Blob), {
+      width: 4096,
+      height: 2048,
+    });
+  });
+
   it("turns the character to face the visitor, about the vertical only", async () => {
     const h = harness();
     await h.stage.showCharacter("gate", new Blob(["png"]));

@@ -37,13 +37,25 @@ export interface SceneStageDeps {
   /** The station's pose at the scene root, or null when it cannot be
    *  placed yet (no GPS zero). */
   poseOf(stationId: string): StagePose | null;
-  decodeTexture(blob: Blob): Promise<Texture | null>;
+  /** Decode a figure; `size` is its pixel size where the tour states it
+   *  (the decode cap scales a large one down). */
+  decodeTexture(blob: Blob, size?: PixelSize): Promise<Texture | null>;
   /** A `.glb` already checked inert (`checkGlbInert`, K0). */
   loadModel(blob: Blob): Promise<Object3D>;
 }
 
+/** An image's pixel size, as the tour's asset record states it. */
+export interface PixelSize {
+  readonly width?: number;
+  readonly height?: number;
+}
+
 export interface SceneStage {
-  showCharacter(stationId: string, image: Blob): Promise<void>;
+  showCharacter(
+    stationId: string,
+    image: Blob,
+    size?: PixelSize,
+  ): Promise<void>;
   showModel(stationId: string, model: Blob): Promise<void>;
   clear(): void;
   /** Turn a standing character towards the visitor (NUE). */
@@ -108,10 +120,10 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
   }
 
   return {
-    async showCharacter(stationId, image) {
+    async showCharacter(stationId, image, size) {
       clear();
       const mine = token;
-      const texture = await deps.decodeTexture(image);
+      const texture = await deps.decodeTexture(image, size);
       if (texture === null) throw new Error("the figure did not decode");
       const source = texture.image as
         { width?: number; height?: number } | undefined;

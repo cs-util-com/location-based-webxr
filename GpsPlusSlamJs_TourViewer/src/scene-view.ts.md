@@ -27,6 +27,8 @@ time. Plan:
 
 ## Invariants & assumptions
 
+- A character's figure goes to the stage with its asset's stated pixel
+  size (the decode cap, `station-prefetch.ts`).
 - **Captions always** (plan §4.1): every step puts words in `text` - the
   text, the image's or model's caption, the character's caption, the
   audio's or video's transcript. A character also shows its name.

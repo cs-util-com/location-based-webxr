@@ -23,7 +23,10 @@ can't get there" (§8 D5), and hands a found station to its story. Plan:
 - Deps: `dom` (`line`, `skip`), `tour()` (stations, order, levels),
   `placementAllowed()`, `zero()`, `visitor()` (`visitor-position.ts`),
   `isIgnoredCode(levelId)`, `startHud(getTargets)`, `now()`,
-  `onFound(station)`, `onVisitor?(nue)`.
+  `onFound(station)`, `onVisitor?(nue)`, `onApproach?(station, distanceM,
+activateExitM)` (each tick, each offered station with a distance: the
+  prefetch), `onDone?(stationId)` (a story's end or a skip: the prefetch may
+  release it).
 
 ## Invariants & assumptions
 

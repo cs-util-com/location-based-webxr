@@ -49,7 +49,11 @@ export interface SceneAudio {
 
 /** What a step shows in AR at its station. */
 export interface SceneStage {
-  showCharacter(stationId: string, image: Blob): Promise<void>;
+  showCharacter(
+    stationId: string,
+    image: Blob,
+    size?: { readonly width?: number; readonly height?: number },
+  ): Promise<void>;
   showModel(stationId: string, model: Blob): Promise<void>;
   clear(): void;
 }
@@ -172,9 +176,13 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
         return;
       case "character":
         dom.text.textContent = block.caption;
-        withAsset(block.image, "figure", (blob) =>
-          deps.stage.showCharacter(station.id, blob),
-        );
+        withAsset(block.image, "figure", (blob) => {
+          const asset = deps.assets.get(block.image);
+          return deps.stage.showCharacter(station.id, blob, {
+            ...(asset?.width === undefined ? {} : { width: asset.width }),
+            ...(asset?.height === undefined ? {} : { height: asset.height }),
+          });
+        });
         if (block.voice !== undefined) playSound(block.voice);
         return;
       case "audio":

@@ -15,12 +15,14 @@ import {
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 
 import type { ViewerMode } from "./mode.js";
+import { createKeyedChain } from "./keyed-chain.js";
 import { gateAllowsPlacement } from "./scan-gate.js";
 import { createSceneAudio } from "./scene-audio.js";
 import { createSceneStage } from "./scene-stage.js";
 import { createSceneView, type SceneViewDom } from "./scene-view.js";
 import type { TourViewerSeams } from "./seams.js";
 import { wireStationGuide, type StationGuideDom } from "./station-guide.js";
+import { createStationPrefetch, decodeDivisor } from "./station-prefetch.js";
 import type {
   TourViewerSession,
   TourViewerStore,
@@ -73,27 +75,38 @@ export function wireVisitorStations(deps: {
     createElement: () => seams.createAudioElement(),
     objectUrls,
   });
+  const assetsById = () =>
+    new Map((ctx.tourManifest?.assets ?? []).map((asset) => [asset.id, asset]));
+  // Media are read ahead as the visitor approaches (`station-prefetch.ts`),
+  // and the story's own reads go through the same cache.
+  const prefetch = createStationPrefetch({
+    assets: assetsById,
+    read: (path) => {
+      const session = ctx.session;
+      if (session === null) return Promise.reject(new Error("no tour open"));
+      return session.loadContentEntry(path);
+    },
+  });
+  // The decode cap: one figure decoded at a time, a large one scaled down.
+  const decodes = createKeyedChain();
   // The guide is created below; the stage reads its poses late.
   let poseOf: (id: string) => ReturnType<typeof guide.poseOf> = () => null;
   const stage = createSceneStage({
     getScene: () => seams.getScene(),
     poseOf: (id) => poseOf(id),
-    decodeTexture: (blob) => decodeFrameTexture(blob),
+    decodeTexture: (blob, size) =>
+      decodes.run("figure", () =>
+        decodeFrameTexture(blob, decodeDivisor(size)),
+      ),
     loadModel: (blob) => seams.loadGlbModel(blob),
   });
   const view = createSceneView({
     dom: dom.scene,
     // A getter: the open tour's assets, read when a step needs one.
     get assets() {
-      return new Map(
-        (ctx.tourManifest?.assets ?? []).map((asset) => [asset.id, asset]),
-      );
+      return assetsById();
     },
-    loadAsset: (path) => {
-      const session = ctx.session;
-      if (session === null) return Promise.reject(new Error("no tour open"));
-      return session.loadContentEntry(path);
-    },
+    loadAsset: (path) => prefetch.load(path),
     audio,
     stage,
     createChoiceButton: (label, onClick) => {
@@ -143,6 +156,12 @@ export function wireVisitorStations(deps: {
     onFound: (station) => {
       view.offer(station);
     },
+    onApproach: (station, distanceM, activateExitM) => {
+      prefetch.approach(station, distanceM, activateExitM);
+    },
+    onDone: (stationId) => {
+      prefetch.done(stationId);
+    },
     onVisitor: (nue) => {
       stage.faceVisitor(nue);
     },
@@ -172,6 +191,8 @@ export function wireVisitorStations(deps: {
     stop: () => {
       view.stopAll();
       guide.endSession();
+      // The cache is keyed by entry path, which the next tour reuses.
+      prefetch.clear();
     },
   };
 }

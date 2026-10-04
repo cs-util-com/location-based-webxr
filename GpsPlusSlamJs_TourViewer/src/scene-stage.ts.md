@@ -12,7 +12,9 @@ tour's other content (`content-placement.ts`). Plan:
 ## Public API
 
 - `createSceneStage(deps): SceneStage`
-  - `showCharacter(stationId, imageBlob)` / `showModel(stationId, glbBlob)`
+  - `showCharacter(stationId, imageBlob, size?)` / `showModel(stationId, glbBlob)`
+    (`size` is the asset's stated pixel size, handed to `decodeTexture` for
+    the decode cap)
     - replace what is shown; reject when the figure does not decode or the
       station cannot be placed (so the story can say so);
   - `clear()` - remove and dispose;

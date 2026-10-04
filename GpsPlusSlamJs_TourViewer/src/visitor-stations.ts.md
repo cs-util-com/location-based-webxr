@@ -24,8 +24,12 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
   (`gateAllowsPlacement`, DEC-N3): the stations wait behind the scan gate
   like the tour's other content.
 - Media are read through `ctx.session.loadContentEntry` (K0's allowlist and
-  `.glb` check, K1's per-entry hash check); a figure is decoded by the
-  framework's `decodeFrameTexture`, a model by `seams.loadGlbModel`.
+  `.glb` check, K1's per-entry hash check), ahead of time as the visitor
+  approaches (`station-prefetch.ts`; the story's own reads go through the
+  same cache, cleared by `stop()`). A figure is decoded by the framework's
+  `decodeFrameTexture`, one at a time through a `keyed-chain` key and at
+  `decodeDivisor(asset size)` (the decode cap); a model by
+  `seams.loadGlbModel`.
 - A choice button is a `.btn` with `data-testid="scene-choice"`.
 - `stop()` stops the story and the HUD; the guide keeps the progress with
   the open tour.

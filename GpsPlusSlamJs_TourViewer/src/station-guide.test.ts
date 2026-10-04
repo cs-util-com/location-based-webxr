@@ -58,6 +58,8 @@ function harness(tourValue: StationTour) {
   let allowed = true;
   const ignored = new Set<string>();
   const found: string[] = [];
+  const approaches: [string, number, number][] = [];
+  const dones: string[] = [];
   const huds: { getTargets: () => WayfindingTarget[]; disposed: boolean }[] =
     [];
   const dom = {
@@ -79,11 +81,15 @@ function harness(tourValue: StationTour) {
     },
     now: () => now,
     onFound: (s) => found.push(s.id),
+    onApproach: (s, d, exit) => approaches.push([s.id, Math.round(d), exit]),
+    onDone: (id) => dones.push(id),
   });
   return {
     guide,
     dom,
     found,
+    approaches,
+    dones,
     huds,
     ignored,
     at: (north: number, east: number, accuracyM: number | null = 4) => {
@@ -323,6 +329,25 @@ describe("wireStationGuide", () => {
     // ... and the HUD points at the well already.
     expect(h.huds).toHaveLength(1);
     expect(h.huds[0]!.getTargets().map((t) => t.id)).toEqual(["well"]);
+  });
+
+  it("tells the prefetch how far each offered station is, and which stations are done (skipped or finished)", () => {
+    const s = station("gate", 0, 0);
+    const h = harness({
+      stations: [s, station("well", 0, 80), station("tower", 0, 300)],
+      order: "fixed",
+      levels: null,
+    });
+    h.at(0, 0);
+    expect(h.approaches).toEqual([
+      ["gate", 0, stationBands(s, 4).activateExitM],
+    ]);
+    h.guide.storyEnded("gate");
+    h.at(0, 0);
+    expect(h.approaches.at(-1)?.slice(0, 2)).toEqual(["well", 80]);
+    h.guide.skipTapped();
+    h.guide.skipTapped();
+    expect(h.dones).toEqual(["gate", "well"]);
   });
 
   it("finds nothing that is not offered, and calls onFound once per station", () => {
