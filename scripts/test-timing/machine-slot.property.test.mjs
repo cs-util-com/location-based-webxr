@@ -3,9 +3,10 @@
 // one missed combination is either two sessions on the machine at once (the
 // load this slot exists to stop) or a slot that can never be taken again.
 //
-//   1. A live holder younger than the 3 h cap is NEVER stolen from, whatever
-//      its age, record or the waiter's inherited token.
-//   2. Nothing is ever stolen inside the one-minute grace.
+//   1. A holder with a fresh heartbeat, below the 3 h cap, is NEVER stolen
+//      from, whatever its record or the waiter's inherited token.
+//   2. A silent holder (no heartbeat past the limit) is ALWAYS reclaimed
+//      unless the waiter is part of its run: no pid can keep it (review R1).
 //   3. Re-entry happens only on an exact token match with the record on disk.
 //   4. A free slot is always acquired.
 
@@ -13,7 +14,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { MAX_LOCK_AGE_MS } from './gate-lock.mjs';
-import { MIN_STALE_AGE_MS, decideMachineSlot } from './machine-slot.mjs';
+import { HEARTBEAT_STALE_MS, decideMachineSlot } from './machine-slot.mjs';
 
 const arbRecord = fc.record({
   token: fc.option(fc.string({ minLength: 1, maxLength: 8 }), { nil: undefined }),
@@ -28,46 +29,46 @@ const arbToken = fc.option(fc.string({ minLength: 1, maxLength: 8 }), {
 });
 
 describe('machine slot invariants', () => {
-  it('a live holder below the 3 h cap is never stolen from', () => {
+  it('a beating holder below the 3 h cap is never stolen from', () => {
     fc.assert(
       fc.property(
         arbRecord,
+        fc.integer({ min: 0, max: HEARTBEAT_STALE_MS }),
         fc.integer({ min: 0, max: MAX_LOCK_AGE_MS }),
         arbToken,
-        (existing, age, inheritedToken) => {
+        (existing, silent, age, inheritedToken) => {
+          const now = existing.startedAt + age;
           const decision = decideMachineSlot({
             present: true,
             existing,
-            dirMtimeMs: existing.startedAt,
+            heartbeatMs: now - silent,
             inheritedToken,
-            isAlive: () => true,
-            now: existing.startedAt + age,
+            now,
           });
-          expect(decision.action).not.toBe('steal');
-          expect(decision.action).not.toBe('acquire');
+          expect(['wait', 'reenter']).toContain(decision.action);
         }
       )
     );
   });
 
-  it('nothing is stolen inside the one-minute grace, dead holder or not', () => {
+  it('a silent holder is always reclaimed unless the waiter is part of its run', () => {
     fc.assert(
       fc.property(
         fc.option(arbRecord, { nil: null }),
-        fc.integer({ min: 0, max: MIN_STALE_AGE_MS - 1 }),
-        fc.boolean(),
+        fc.integer({ min: HEARTBEAT_STALE_MS + 1, max: 100 * HEARTBEAT_STALE_MS }),
         fc.integer({ min: 0, max: 10_000_000 }),
-        (existing, age, alive, t0) => {
-          const startedAt = existing?.startedAt ?? t0;
+        arbToken,
+        (existing, silent, heartbeatMs, inheritedToken) => {
           const decision = decideMachineSlot({
             present: true,
             existing,
-            dirMtimeMs: startedAt,
-            inheritedToken: undefined,
-            isAlive: () => alive,
-            now: startedAt + age,
+            heartbeatMs,
+            inheritedToken,
+            now: heartbeatMs + silent,
           });
-          expect(decision.action).not.toBe('steal');
+          const ownRun =
+            inheritedToken !== undefined && existing?.token === inheritedToken;
+          expect(decision.action).toBe(ownRun ? 'reenter' : 'steal');
         }
       )
     );
@@ -78,15 +79,14 @@ describe('machine slot invariants', () => {
       fc.property(
         fc.option(arbRecord, { nil: null }),
         arbToken,
-        fc.boolean(),
+        fc.option(fc.integer({ min: 0, max: 20_000_000 }), { nil: null }),
         fc.integer({ min: 0, max: 20_000_000 }),
-        (existing, inheritedToken, alive, now) => {
+        (existing, inheritedToken, heartbeatMs, now) => {
           const decision = decideMachineSlot({
             present: true,
             existing,
-            dirMtimeMs: 0,
+            heartbeatMs,
             inheritedToken,
-            isAlive: () => alive,
             now,
           });
           if (decision.action === 'reenter') {
@@ -104,9 +104,8 @@ describe('machine slot invariants', () => {
         const decision = decideMachineSlot({
           present: false,
           existing: null,
-          dirMtimeMs: null,
+          heartbeatMs: null,
           inheritedToken: tok,
-          isAlive: () => true,
           now,
         });
         expect(decision.action).toBe('acquire');

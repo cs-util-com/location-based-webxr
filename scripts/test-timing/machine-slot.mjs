@@ -10,12 +10,21 @@
 // THE SLOT IS A DIRECTORY, `C:\gps\.e2e-slots\gate`, beside the slot dirs the
 // sessions' shell scripts already use. `mkdir` is atomic on every filesystem
 // we run on, so creating it IS the acquisition; `owner.json` inside records
-// who holds it (a Windows pid every tool can see, the start time, the command
-// and the cwd) for the queue line and the staleness rule.
+// who holds it (pid, start time, command, cwd) for the queue line.
+//
+// LIVENESS IS A HEARTBEAT, NOT A PID (milestone review R1). The holder touches
+// `owner.json` every HEARTBEAT_MS from a worker thread, and a slot whose
+// heartbeat is older than HEARTBEAT_STALE_MS is reclaimed whatever its pid
+// says. Windows reuses pids quickly, so a dead-pid check could keep a killed
+// gate's slot "alive" until the 3 h cap. The heartbeat runs in a WORKER because
+// a holder may block its main thread for the whole run (`test-changed.mjs`
+// spawns every gate with `spawnSync`); a main-thread timer would never fire.
+// The worker dies with the process, so a killed holder stops beating at once.
 //
 // Unlike the per-tree lock this one QUEUES. Two sessions wanting the machine
 // at once is the normal case, not a mistake, so the second one waits, saying
-// so, until the first is done or the timeout passes.
+// so, until the first is done or the timeout passes. A queue timeout exits
+// with QUEUE_TIMEOUT_EXIT (75), never with a test failure's code.
 //
 // Lock order: the machine slot is the OUTER lock and the per-tree lock the
 // inner one. The per-tree lock refuses and never waits, so the two cannot
@@ -25,8 +34,13 @@
 // Off where the convention does not exist: if `C:\gps\.e2e-slots` is absent
 // (CI runners, another machine) and `GATE_SLOT_DIR` is not set, every call is
 // a no-op. `GATE_SLOT_DIR=off` switches it off explicitly.
+//
+// CLI: `node scripts/test-timing/machine-slot.mjs run -- <command...>` takes
+// the slot with a proper record and heartbeat, runs the command through the
+// shell, frees the slot and exits with the command's code. It is the way for
+// shell jobs and sweeps to take the slot.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -37,8 +51,10 @@ import {
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { Worker } from 'node:worker_threads';
 
-import { decideGateLock, pidAlive } from './gate-lock.mjs';
+import { MAX_LOCK_AGE_MS } from './gate-lock.mjs';
 
 /** Env var carrying the holder's token down to the runs it spawns. */
 export const SLOT_HELD_ENV = 'GATE_MACHINE_SLOT_TOKEN';
@@ -58,23 +74,27 @@ export const SLOT_TIMEOUT_ENV = 'GATE_SLOT_TIMEOUT_MIN';
 /** The machine convention: the sessions' existing slot directory. */
 export const SLOTS_PARENT = 'C:\\gps\\.e2e-slots';
 
-/** File inside the slot directory naming the holder. */
+/** File inside the slot directory naming the holder; its mtime is the heartbeat. */
 export const OWNER_FILE = 'owner.json';
 
 /**
- * A dead holder's lock is reclaimed only once it is older than this. Below it
- * the record may still be mid-write (the holder made the directory a moment
- * ago), or the holder may be a shell script that recorded a pid other tools
- * cannot see yet. Agreed with the peer session (TS-3).
+ * How often the holder touches `owner.json`. See the sidecar's "Thresholds"
+ * for the measured jitter under load and what would reverse it.
  */
-export const MIN_STALE_AGE_MS = 60_000;
+export const HEARTBEAT_MS = 30_000;
+
+/**
+ * A slot whose heartbeat (the mtime of `owner.json`, or of the directory when
+ * there is no record yet) is older than this is reclaimed, whatever its pid.
+ * Six missed beats: a killed gate frees the machine within about 3 min.
+ */
+export const HEARTBEAT_STALE_MS = 3 * 60_000;
 
 /**
  * How long a run queues before giving up. Two hours: the longest holds that
  * take the slot whole are a full cascade (~23 min quiet) and OsmDemo's e2e
- * (~17-22 min), so a waiter behind two or three of them still gets through,
- * while a wedged holder does not keep a queue alive past the 3 h staleness
- * cap. Override per run with `GATE_SLOT_TIMEOUT_MIN`.
+ * (~17-22 min), so a waiter behind two or three of them still gets through.
+ * Override per run with `GATE_SLOT_TIMEOUT_MIN`.
  */
 export const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -85,10 +105,16 @@ export const DEFAULT_POLL_MS = 5_000;
 export const REMIND_EVERY_MS = 5 * 60_000;
 
 /**
+ * Exit code of a run that gave up in the queue: EX_TEMPFAIL, "try again
+ * later", so a script or an agent can tell it from a red test (exit 1).
+ */
+export const QUEUE_TIMEOUT_EXIT = 75;
+
+/**
  * @typedef {object} SlotRecord
  * @property {string} [token] unique id of the holding run (absent when a
  *   shell script wrote the record)
- * @property {number} pid Windows pid of the holder
+ * @property {number} pid pid of the holder, used only for the ancestor check
  * @property {number} startedAt epoch ms when the slot was taken
  * @property {string} [command] what the holder runs, for the queue line
  * @property {string} [cwd] where it runs
@@ -103,27 +129,25 @@ export const REMIND_EVERY_MS = 5 * 60_000;
 /**
  * Pure decision: what should a run do about the slot it found?
  *
- * The staleness rule is `decideGateLock`'s (dead pid, or past its 3 h cap
- * against pid reuse), not a second implementation; this adds only the
- * one-minute grace and turns its `refuse` into `wait`.
+ * Stale means no heartbeat for HEARTBEAT_STALE_MS, whatever the pid, or a
+ * record older than gate-lock's 3 h cap (MAX_LOCK_AGE_MS) even with a fresh
+ * heartbeat: a defence against a holder that is alive but wedged.
  *
  * @param {object} input
  * @param {boolean} input.present whether the slot directory exists
  * @param {SlotRecord | null} input.existing the record inside, if readable
- * @param {number | null} input.dirMtimeMs the directory's mtime, the age of a
- *   slot whose record is missing or unreadable
+ * @param {number | null} input.heartbeatMs the last heartbeat: the mtime of
+ *   `owner.json`, or of the directory when there is no record
  * @param {string | undefined} input.inheritedToken the token an ancestor run
  *   exported, if any
- * @param {(pid: number) => boolean} input.isAlive
  * @param {number} input.now epoch ms
  * @returns {SlotDecision}
  */
 export function decideMachineSlot({
   present,
   existing,
-  dirMtimeMs,
+  heartbeatMs,
   inheritedToken,
-  isAlive,
   now,
 }) {
   if (!present) {
@@ -136,37 +160,28 @@ export function decideMachineSlot({
   ) {
     return { action: 'reenter', reason: `part of run ${inheritedToken}` };
   }
-
-  const startedAt = Number.isFinite(existing?.startedAt)
-    ? /** @type {number} */ (existing?.startedAt)
-    : dirMtimeMs;
-  const age = Number.isFinite(startedAt) ? now - /** @type {number} */ (startedAt) : Number.NaN;
-  const pastGrace = Number.isFinite(age) && age >= MIN_STALE_AGE_MS;
-
-  if (existing === null) {
-    // No readable record: the holder is mid-write, or crashed between mkdir
-    // and write. Only the directory's age can tell which.
-    return pastGrace
-      ? { action: 'steal', reason: 'the machine slot has no readable owner record and is older than a minute - reclaiming it' }
-      : { action: 'wait', reason: 'the machine slot is being taken by another run' };
-  }
-
-  const lock = decideGateLock({
-    existing: {
-      runId: existing.token ?? `pid-${existing.pid}`,
-      pid: existing.pid,
-      project: existing.command ?? 'unknown',
-      startedAt: /** @type {number} */ (startedAt),
-    },
-    env: {},
-    isAlive,
-    now,
-  });
-  if (lock.action === 'steal' && pastGrace) {
+  const silentMs =
+    heartbeatMs !== null && Number.isFinite(heartbeatMs)
+      ? now - heartbeatMs
+      : Number.NaN;
+  if (silentMs > HEARTBEAT_STALE_MS) {
     return {
       action: 'steal',
-      reason: `the machine slot's holder (pid ${existing.pid}) is gone or past the 3 h cap - reclaiming it`,
+      reason: `the machine slot has had no heartbeat for ${formatWait(silentMs)}${existing ? ` (holder pid ${existing.pid})` : ''} - reclaiming it`,
     };
+  }
+  if (
+    existing !== null &&
+    Number.isFinite(existing.startedAt) &&
+    now - existing.startedAt > MAX_LOCK_AGE_MS
+  ) {
+    return {
+      action: 'steal',
+      reason: `the machine slot's holder (pid ${existing.pid}) is past the 3 h cap - reclaiming it`,
+    };
+  }
+  if (existing === null) {
+    return { action: 'wait', reason: 'the machine slot is being taken by another run' };
   }
   return { action: 'wait', reason: describeHolder(existing, now) };
 }
@@ -238,17 +253,19 @@ export function resolveSlotDir(env, exists = existsSync) {
  * Reads the slot, tolerating every way it can be unusable.
  *
  * @param {string} dir
- * @returns {{ present: boolean, existing: SlotRecord | null, dirMtimeMs: number | null }}
+ * @returns {{ present: boolean, existing: SlotRecord | null, heartbeatMs: number | null }}
  */
 export function readSlot(dir) {
   const stats = statSync(dir, { throwIfNoEntry: false });
   if (!stats) {
-    return { present: false, existing: null, dirMtimeMs: null };
+    return { present: false, existing: null, heartbeatMs: null };
   }
+  const owner = path.join(dir, OWNER_FILE);
+  const ownerStats = statSync(owner, { throwIfNoEntry: false });
   return {
     present: true,
-    existing: readRecord(path.join(dir, OWNER_FILE)),
-    dirMtimeMs: stats.mtimeMs,
+    existing: readRecord(owner),
+    heartbeatMs: ownerStats ? ownerStats.mtimeMs : stats.mtimeMs,
   };
 }
 
@@ -342,6 +359,38 @@ export function stealSlot(dir, judgedStale) {
   }
 }
 
+/** The heartbeat worker's code: touch the file every `ms`, swallow errors. */
+const HEARTBEAT_WORKER = `
+const { workerData } = require('node:worker_threads');
+const { utimesSync } = require('node:fs');
+setInterval(() => {
+  try {
+    const t = new Date();
+    utimesSync(workerData.file, t, t);
+  } catch {}
+}, workerData.ms);
+`;
+
+/**
+ * Starts the heartbeat: a worker thread that touches `file` every `ms`. A
+ * worker, not a main-thread timer, so a holder that blocks its main thread
+ * (`spawnSync`) keeps beating; `unref` so it never keeps a process alive.
+ *
+ * @param {string} file
+ * @param {number} [ms]
+ * @returns {() => void} stops the heartbeat
+ */
+export function startHeartbeat(file, ms = HEARTBEAT_MS) {
+  const worker = new Worker(HEARTBEAT_WORKER, {
+    eval: true,
+    workerData: { file, ms },
+  });
+  worker.unref();
+  return () => {
+    void worker.terminate();
+  };
+}
+
 /**
  * @typedef {object} HeldSlot
  * @property {'acquired' | 'reentered' | 'timed-out' | 'held-by-ancestor' | 'off'} outcome
@@ -361,13 +410,15 @@ export function stealSlot(dir, judgedStale) {
  * @param {(line: string) => void} options.log
  * @param {() => number} [options.now]
  * @param {(ms: number) => Promise<void>} [options.sleep]
- * @param {(pid: number) => boolean} [options.isAlive]
  * @param {number} [options.timeoutMs]
  * @param {number} [options.pollMs]
  * @param {number} [options.pid]
  * @param {string} [options.cwd]
  * @param {() => readonly number[]} [options.listAncestors] pids of this
  *   process's ancestors; asked once, only when the run would queue
+ * @param {(file: string) => () => void} [options.heartbeat] starts the
+ *   holder's heartbeat; returns its stop function
+ * @param {typeof stealSlot} [options.steal] injected for tests
  * @returns {Promise<HeldSlot>}
  */
 export async function acquireMachineSlot({
@@ -377,12 +428,13 @@ export async function acquireMachineSlot({
   log,
   now = Date.now,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-  isAlive = pidAlive,
   timeoutMs = timeoutFromEnv(env),
   pollMs = DEFAULT_POLL_MS,
   pid = process.pid,
   cwd = process.cwd(),
   listAncestors = ancestorPids,
+  heartbeat = startHeartbeat,
+  steal = stealSlot,
 }) {
   const noop = () => {};
   if (dir === null) {
@@ -392,15 +444,17 @@ export async function acquireMachineSlot({
   let lastReminder = Number.NEGATIVE_INFINITY;
   /** @type {readonly number[] | null} */
   let ancestors = null;
+  /** @type {SlotDecision | null} */
+  let lastDecision = null;
 
   for (;;) {
     const seen = readSlot(dir);
     const decision = decideMachineSlot({
       ...seen,
       inheritedToken: env[SLOT_HELD_ENV],
-      isAlive,
       now: now(),
     });
+    lastDecision = decision;
 
     if (decision.action === 'reenter') {
       return { outcome: 'reentered', release: noop };
@@ -413,44 +467,55 @@ export async function acquireMachineSlot({
           log(`machine slot: taken after ${formatWait(startedAt - start)} in the queue`);
         }
         env[SLOT_HELD_ENV] = token;
-        return { outcome: 'acquired', release: () => releaseSlot(dir, token) };
+        const stop = heartbeat(path.join(dir, OWNER_FILE));
+        return {
+          outcome: 'acquired',
+          release: () => {
+            stop();
+            releaseSlot(dir, token);
+          },
+        };
       }
-      continue;
+      continue; // lost the mkdir race; the next read sees the winner
     }
     if (decision.action === 'steal') {
-      const result = stealSlot(dir, seen.existing);
+      const result = steal(dir, seen.existing);
       if (result === 'stolen') {
         log(`machine slot: ${decision.reason}`);
-      } else if (result === 'displaced') {
+        continue; // the slot is free now: take it on the next pass
+      }
+      if (result === 'displaced') {
         log(`machine slot: WARNING - moved a live holder's slot aside and could not put it back; two runs may now share the machine`);
       }
-      continue;
-    }
-
-    // wait - unless the holder is one of our own ancestors: a shell that
-    // took the slot around this gate without exporting its token. Queueing
-    // would wait for our own parent until the timeout.
-    if (seen.existing !== null) {
+      // lost / restored / displaced: someone else is acting on the slot.
+      // Fall through to the timeout check and the sleep, never spin.
+    } else if (seen.existing !== null) {
+      // wait - unless the holder is one of our own ancestors: a shell that
+      // took the slot around this gate without exporting its token. Only
+      // reached with a FRESH heartbeat (a stale slot is stolen above), so a
+      // reused pid of a dead holder cannot produce this error.
       ancestors ??= safeAncestors(listAncestors);
       if (ancestors.includes(seen.existing.pid)) {
         log(
           `machine slot: ERROR - the slot is held by pid ${seen.existing.pid}, an ANCESTOR of this run, ` +
             `so waiting would wait for itself. A shell must not create ${dir} around a node gate; ` +
-            `the gate takes the slot itself. If it must, export ${SLOT_HELD_ENV} equal to the token it wrote.`
+            `take the slot with \`node scripts/test-timing/machine-slot.mjs run -- <command>\` instead.`
         );
         return { outcome: 'held-by-ancestor', release: noop };
       }
     }
+
     const t = now();
     const waited = t - start;
     if (waited >= timeoutMs) {
       log(
-        `machine slot: gave up after ${Math.round(timeoutMs / 60_000)} min in the queue; ${decision.reason}. ` +
+        `machine slot: QUEUE TIMEOUT (exit ${QUEUE_TIMEOUT_EXIT}) - this is NOT a test failure. ` +
+          `Gave up after ${Math.round(timeoutMs / 60_000)} min in the queue; ${lastDecision.reason}. ` +
           `Re-run later, or raise ${SLOT_TIMEOUT_ENV}.`
       );
       return { outcome: 'timed-out', release: noop };
     }
-    if (t - lastReminder >= REMIND_EVERY_MS) {
+    if (decision.action === 'wait' && t - lastReminder >= REMIND_EVERY_MS) {
       log(
         lastReminder === Number.NEGATIVE_INFINITY
           ? `machine slot: QUEUED (not hung) - "${command}" waits for ${dir}, ${decision.reason}; waiting up to ${Math.round(timeoutMs / 60_000)} min`
@@ -485,6 +550,50 @@ function safeAncestors(list) {
 }
 
 /**
+ * Parses a `<pid> <parent pid>` per line process listing (the PowerShell
+ * command below, or `ps -o pid=,ppid=`) into a child-to-parent map. Lines
+ * that are not two integers are skipped.
+ *
+ * @param {string} text
+ * @returns {Map<number, number>}
+ */
+export function parseProcessTable(text) {
+  /** @type {Map<number, number>} */
+  const parentOf = new Map();
+  for (const line of text.split(/\r?\n/)) {
+    const fields = line.trim().split(/\s+/);
+    if (fields.length !== 2 || !fields.every((f) => /^\d+$/.test(f))) {
+      continue;
+    }
+    parentOf.set(Number(fields[0]), Number(fields[1]));
+  }
+  return parentOf;
+}
+
+/**
+ * The ancestors of `pid` in a child-to-parent map, nearest first, stopping at
+ * a missing parent, pid 0 or a cycle.
+ *
+ * @param {Map<number, number>} parentOf
+ * @param {number} pid
+ * @returns {number[]}
+ */
+export function ancestorChain(parentOf, pid) {
+  /** @type {number[]} */
+  const chain = [];
+  let current = pid;
+  for (let i = 0; i < 64; i++) {
+    const parent = parentOf.get(current);
+    if (parent === undefined || parent <= 0 || parent === pid || chain.includes(parent)) {
+      break;
+    }
+    chain.push(parent);
+    current = parent;
+  }
+  return chain;
+}
+
+/**
  * The pids of this process's ancestors, nearest first. One process listing
  * (PowerShell on Windows, `ps` elsewhere), asked only when a run is about to
  * queue. On any failure, just the direct parent.
@@ -492,10 +601,9 @@ function safeAncestors(list) {
  * @returns {number[]}
  */
 export function ancestorPids() {
-  /** @type {Map<number, number>} */
-  const parentOf = new Map();
+  let text;
   try {
-    const text =
+    text =
       process.platform === 'win32'
         ? execFileSync(
             'powershell.exe',
@@ -508,26 +616,10 @@ export function ancestorPids() {
             { encoding: 'utf8', windowsHide: true, timeout: 30_000 }
           )
         : execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' });
-    for (const line of text.split(/\r?\n/)) {
-      const [child, parent] = line.trim().split(/\s+/).map(Number);
-      if (Number.isInteger(child) && Number.isInteger(parent)) {
-        parentOf.set(child, parent);
-      }
-    }
   } catch {
     return [process.ppid];
   }
-  /** @type {number[]} */
-  const chain = [];
-  let current = process.pid;
-  for (let i = 0; i < 64; i++) {
-    const parent = parentOf.get(current);
-    if (parent === undefined || parent <= 0 || chain.includes(parent)) {
-      break;
-    }
-    chain.push(parent);
-    current = parent;
-  }
+  const chain = ancestorChain(parseProcessTable(text), process.pid);
   return chain.length > 0 ? chain : [process.ppid];
 }
 
@@ -544,7 +636,7 @@ function timeoutFromEnv(env) {
 
 /**
  * Frees the slot only if this run still holds it: a slot reclaimed from under
- * a run (past the 3 h cap) now belongs to someone else.
+ * a run (no heartbeat, or past the 3 h cap) now belongs to someone else.
  *
  * @param {string} dir
  * @param {string} token
@@ -566,27 +658,116 @@ function releaseSlot(dir, token) {
 }
 
 /**
- * The CLI shells' one-liner: take the slot for this process, release it on
- * every way out, and exit 1 on a queue timeout.
+ * @typedef {object} ProcessLike
+ * @property {Record<string, string | undefined>} env
+ * @property {(event: string, listener: () => void) => unknown} on
+ * @property {(code: number) => never | void} exit
+ */
+
+/**
+ * The CLI shells' one-liner: take the slot for this process and free it on
+ * every way out.
+ *
+ * - Queue timeout: exit QUEUE_TIMEOUT_EXIT (75), not a test failure's code.
+ * - Ancestor holder: exit 1 (a wiring error, not a transient one).
+ * - SIGINT / SIGTERM: exit 130 and nothing else. The release happens in the
+ *   'exit' listener, AFTER the callers' own exit listeners that were
+ *   prepended (run-gate.mjs frees its per-tree lock that way), so the inner
+ *   lock is always freed before the outer slot (review R6).
  *
  * @param {string} command
- * @returns {Promise<void>}
+ * @param {object} [deps] injected for tests
+ * @param {ProcessLike} [deps.proc]
+ * @param {(options: Parameters<typeof acquireMachineSlot>[0]) => Promise<HeldSlot>} [deps.acquire]
+ * @returns {Promise<HeldSlot>}
  */
-export async function holdMachineSlotForProcess(command) {
-  const slot = await acquireMachineSlot({
-    dir: resolveSlotDir(process.env),
-    env: process.env,
+export async function holdMachineSlotForProcess(
+  command,
+  { proc = process, acquire = acquireMachineSlot } = {}
+) {
+  const slot = await acquire({
+    dir: resolveSlotDir(proc.env),
+    env: proc.env,
     command,
     log: (line) => console.error(line),
   });
-  if (slot.outcome === 'timed-out' || slot.outcome === 'held-by-ancestor') {
-    process.exit(1);
+  if (slot.outcome === 'timed-out') {
+    proc.exit(QUEUE_TIMEOUT_EXIT);
+    return slot;
   }
-  process.on('exit', slot.release);
-  for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
-    process.on(signal, () => {
-      slot.release();
-      process.exit(130);
+  if (slot.outcome === 'held-by-ancestor') {
+    proc.exit(1);
+    return slot;
+  }
+  proc.on('exit', slot.release);
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    proc.on(signal, () => {
+      proc.exit(130);
     });
   }
+  return slot;
+}
+
+/**
+ * Quotes one argument for the shell `spawn(..., { shell: true })` uses:
+ * double quotes for cmd.exe (inside them `& | < > ( )` are literal; an inner
+ * `"` becomes `\"`, which Node's own argv parser reads back), single quotes
+ * for a POSIX shell. Plain words pass unquoted.
+ *
+ * @param {string} arg
+ * @param {string} [platform]
+ * @returns {string}
+ */
+export function quoteForShell(arg, platform = process.platform) {
+  if (arg !== '' && !/[\s"'&|<>^()%!$`;*?\\{}[\]~#]/.test(arg)) {
+    return arg;
+  }
+  return platform === 'win32'
+    ? `"${arg.replaceAll('"', '\\"')}"`
+    : `'${arg.replaceAll("'", "'\\''")}'`;
+}
+
+/**
+ * The shell line for `run -- <command...>`: ONE argument is a raw shell line
+ * (so `&&` and pipes work); several are quoted one by one so each reaches the
+ * program exactly as given (a real run joined `node -e "()=>{}"` unquoted and
+ * the shell read `>` as a redirect).
+ *
+ * @param {readonly string[]} commandArgs
+ * @param {string} [platform]
+ * @returns {string}
+ */
+export function shellLine(commandArgs, platform = process.platform) {
+  return commandArgs.length === 1
+    ? commandArgs[0]
+    : commandArgs.map((arg) => quoteForShell(arg, platform)).join(' ');
+}
+
+/**
+ * `run -- <command...>`: take the slot, run the command through the shell
+ * with the slot's token in its environment (so gates inside it re-enter),
+ * free the slot, and return the command's exit code.
+ *
+ * @param {readonly string[]} argv the CLI arguments after the script path
+ * @returns {Promise<number>} the exit code to leave with
+ */
+export async function runCli(argv) {
+  const [verb, ...rest] = argv;
+  const commandArgs = rest[0] === '--' ? rest.slice(1) : rest;
+  if (verb !== 'run' || commandArgs.length === 0) {
+    console.error('usage: node scripts/test-timing/machine-slot.mjs run -- <command...>');
+    return 2;
+  }
+  const command = shellLine(commandArgs);
+  await holdMachineSlotForProcess(command);
+  return new Promise((resolve) => {
+    const child = spawn(command, { shell: true, stdio: 'inherit', env: process.env });
+    child.on('error', () => resolve(1));
+    child.on('exit', (code, signal) => resolve(code ?? (signal ? 130 : 1)));
+  });
+}
+
+// Run as a CLI only when executed directly, never when imported.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  process.exit(await runCli(process.argv.slice(2)));
 }
