@@ -27,6 +27,7 @@ offeredAtMs, offeredDistanceM }`.
     out.
 - `StationEvent`: `activated`, `deactivated`, `found` (`via: gps | code`),
   `done` (`skipped`), `offered` (the full new set), `complete`.
+- `stationTitle(station)` - the station's title, or "the next station".
 - `skipSuggestAfterMs(offeredDistanceM)`, `SKIP_SUGGEST_BASE_MS` (2 min),
   `SKIP_SUGGEST_SLOW_MPS` (0.5 m/s).
 

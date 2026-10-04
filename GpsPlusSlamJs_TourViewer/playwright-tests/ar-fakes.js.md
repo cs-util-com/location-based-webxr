@@ -69,7 +69,12 @@ camera, so `installTourViewerArFakes(page)` installs
   scene has no geometry, the real raycast is `object-pick.test.ts`'s);
   `timers` + `fireTimers()` are the scan
   gate's escape clock (the `schedule` seam), so a spec fires the 45 s
-  without waiting. The troubleshooting recording's depth (authoring
+  without waiting. The stations (tour kit plan K4): `createWayfindingHud`
+  keeps the page's targets getter as `hud` (`{ getTargets, disposed }`)
+  and counts `hudStarts`; `createAudioElement` returns a fake element
+  that records every source it is asked to play in `audioPlays` and counts
+  `audioElements`; `loadGlbModel` is NOT faked (the real GLTF loader
+  parses the fixture's minimal `.glb`). The troubleshooting recording's depth (authoring
   recording plan 2026-09-28-0953, D4): `initARCalls` records `hasDepth`,
   `depthCaptureCalls` / `stopDepthCalls` count the depth seams, and
   `emitDepthSample()` feeds one sample through the initAR depth callback

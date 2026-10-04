@@ -123,6 +123,8 @@ export function wireArchiveOpen(deps: {
     // closing tour — a newly opened tour must not relocalize against them.
     ctx.currentLevels = null;
     ctx.tourManifest = null;
+    // The closing tour's story and HUD (tour kit plan K4).
+    hooks.stopStations();
     ctx.rebuiltZip = null;
     ctx.tourLabel = null;
     // The measured level belongs to the CLOSING tour. It survives a SESSION

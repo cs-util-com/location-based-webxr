@@ -78,7 +78,9 @@ DOM glue, its own module since the flows plan M6.
   start (scan-to-open plan §9 #1): with none, nothing tour-scoped exists,
   and the creator's pre-open work (a measured level, placements, the
   print-size check) is kept for the tour about to open. When a tour closes,
-  it drops the creator's placed objects, their deletions
+  it stops the visitor's stations (`hooks.stopStations`, tour kit plan
+  K4: the story and the HUD; the next tour's stations start a new run),
+  drops the creator's placed objects, their deletions
   (`deletedObjectIds`, authoring plan 2026-09-28-0953 M4) and previews,
   resets the gate (`hooks.resetScanGate`), the seven
   viewer QR/line fields (a lock, its vote count, an unknown or unusable

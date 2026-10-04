@@ -28,6 +28,10 @@ listed in `index.html.md`. The concerns and their modules:
   (`createViewerPlacement`).
 - `ar-entry.ts` - the AR entry, the runtime start/end, the status line
   renderer (`wireArEntry`).
+- `visitor-stations.ts` - the visitor's stations and their stories (tour
+  kit plan K4, `wireVisitorStations`), wired after the viewer placement;
+  `main.ts` binds `hooks.tickStations`, `stationCodeLocked`,
+  `unlockStationAudio` and `stopStations`.
 - `archive-open.ts` - the open path, the gallery, the stats, the Storage
   section, the `?qr=` boot (`wireArchiveOpen`), and step 4's scan-to-open,
   which the setup panel reaches through a local late binding (the panel is

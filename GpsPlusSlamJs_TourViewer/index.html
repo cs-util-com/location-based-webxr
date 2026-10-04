@@ -369,6 +369,47 @@
         background: none;
         box-shadow: none;
       }
+      /* The visitor's stations (tour kit plan K4): over the camera, so the
+         line and the story's words wear the status line's halo. The skip
+         is the quiet choice, flat like the gate's escape. */
+      #station-line,
+      #scene-panel {
+        text-shadow: var(--halo-text);
+      }
+      #station-line {
+        font-weight: 600;
+        margin: 0 0 var(--space-2);
+      }
+      #station-skip {
+        background: none;
+        box-shadow: none;
+      }
+      #scene-panel {
+        display: grid;
+        gap: var(--space-2);
+        max-width: 26rem;
+        margin: var(--space-2) 0;
+      }
+      #scene-panel h3,
+      #scene-panel p {
+        margin: 0;
+      }
+      #scene-speaker {
+        font-weight: 600;
+      }
+      #scene-status {
+        font-size: var(--size-hint);
+      }
+      #scene-image {
+        max-width: 100%;
+        max-height: 40vh;
+        object-fit: contain;
+      }
+      #scene-choices {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+      }
       /* The one link on the page. The UA default is a blue that belongs to
          no palette here and reads as an artefact on the dark ground. */
       #visitor-link {
@@ -1002,6 +1043,53 @@
           >
             Continue with GPS only (less accurate)
           </button>
+          <!-- The visitor's stations (tour kit plan K4): the station line,
+               the labelled skip (§8 D5) and the story panel. Inside
+               #ar-root because the visitor stays in AR the whole tour
+               (K-D9); station-guide.ts and scene-view.ts show them. -->
+          <p
+            id="station-line"
+            data-testid="station-line"
+            aria-live="polite"
+            hidden
+          ></p>
+          <button
+            type="button"
+            id="station-skip"
+            class="btn btn--prose"
+            data-testid="station-skip"
+            hidden
+          >
+            Can't get there?
+          </button>
+          <section
+            id="scene-panel"
+            data-testid="scene-panel"
+            aria-live="polite"
+            hidden
+          >
+            <h3 id="scene-title" data-testid="scene-title"></h3>
+            <p id="scene-speaker" data-testid="scene-speaker" hidden></p>
+            <img id="scene-image" data-testid="scene-image" alt="" hidden />
+            <p id="scene-text" data-testid="scene-text"></p>
+            <p id="scene-status" data-testid="scene-status"></p>
+            <div id="scene-choices" data-testid="scene-choices"></div>
+            <button
+              type="button"
+              id="scene-continue"
+              class="btn"
+              data-testid="scene-continue"
+            >
+              Continue
+            </button>
+          </section>
+          <button
+            type="button"
+            id="scene-play-next"
+            class="btn btn--prose"
+            data-testid="scene-play-next"
+            hidden
+          ></button>
           <!-- The setup panel (guided-setup plan M3). Inside #ar-root on
                purpose: it must stay visible while the AR session composites
                the DOM overlay. Measure (save the code's position), then

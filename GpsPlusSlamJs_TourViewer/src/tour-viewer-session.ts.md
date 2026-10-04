@@ -66,6 +66,12 @@ lives here.
     `scanGate`, `cancelEscapeClock`, `contentRendered`, `contentAttempted`,
     `contentError`; the hooks `startScanGate` / `resetScanGate` /
     `reconsiderScanGate(levels | "unavailable")`;
+  - the visitor's stations (tour kit plan K4, `visitor-stations.ts`):
+    no session fields (the station run lives in the guide, keyed by the
+    open tour's stations); the hooks `tickStations` (a store change or a
+    camera frame), `stationCodeLocked(levelId)` (a trusted lock, after the
+    scan gate's part), `unlockStationAudio` (inside the start tap) and
+    `stopStations` (the session ended or the tour closed);
   - the viewer QR line and the placement (`viewer-placement.ts`): the six
     `viewer*` line inputs, `latestReprojectionPx`, `viewerKeepAlive` (the
     code keep-alive, created per AR entry by `startViewerPipeline`, stopped

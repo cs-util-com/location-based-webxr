@@ -26,8 +26,10 @@ function fakeDom() {
     status: { textContent: "" },
     image: { src: "", alt: "", hidden: true },
     choices: {
-      replaceChildren: (...nodes: unknown[]) => {
-        choices.push(nodes as { label: string; click: () => void }[]);
+      replaceChildren: (...nodes: (Node | string)[]) => {
+        choices.push(
+          nodes as unknown as { label: string; click: () => void }[],
+        );
       },
     },
     continueButton: { hidden: false },
@@ -86,7 +88,7 @@ function harness(
       overrides.loadAsset ?? ((path) => Promise.resolve(new Blob([path]))),
     audio,
     stage,
-    createChoiceButton: (label, click) => ({ label, click }),
+    createChoiceButton: (label, click) => ({ label, click }) as unknown as Node,
     schedule: (fn, ms) => {
       const t = { fn, ms, cancelled: false };
       timers.push(t);

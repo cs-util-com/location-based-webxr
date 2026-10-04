@@ -97,7 +97,10 @@ beside it after a delete, `object-undo`; in AR the chooser
 `object-chooser` with `object-previous`, `object-position`,
 `object-next`),
 `setup-pin`, `pin-label`, `pin-save`, `pin-cancel`, `setup-photo`,
-`setup-finish`, `scan-escape`, `recording-block` (owns `recording-offer`
+`setup-finish`, `scan-escape`, `station-line`, `station-skip`, `scene-panel`
+(owns `scene-title`, `scene-speaker`, `scene-image`, `scene-text`,
+`scene-status`, `scene-choices` with its `scene-choice` buttons,
+`scene-continue`), `scene-play-next`, `recording-block` (owns `recording-offer`
 with `recording-offer-text`, `recording-offer-save`,
 `recording-offer-dismiss`, `recording-offer-discard`; `record-session`,
 `recording-privacy`, `recording-notice`, `recording-save`,
@@ -128,6 +131,13 @@ height down, below the overlay's edge (owner's r750 field test;
 `playwright-tests/ar-layout.spec.js` pins every panel control on screen at
 360x640, 360x800 and 390x844). `#size-offer` is the panel's FIRST child,
 above `#setup-status`.
+The visitor's stations (tour kit plan K4): `#station-line` (the next
+station and its distance, `aria-live`), `#station-skip` (first "Can't get
+there?", then the labelled skip), the story panel `#scene-panel` and
+`#scene-play-next` ("Play: <title>", a station waiting behind the story
+playing) are inside `#ar-root`: the visitor stays in AR the whole tour
+(K-D9). All start hidden; `station-guide.ts` and `scene-view.ts` show
+them.
 `#ar-debug` (a `<pre>` in `#ar-root`, hidden unless `?debug=1`) holds the
 QR readout (QR near-frontal pose plan §66).
 Renaming one is an e2e-breaking change. `#ar-hint`, `#ar-status`,

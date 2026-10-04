@@ -171,6 +171,16 @@ export interface TourViewerHooks {
   reconsiderScanGate(
     levels: ReadonlyMap<string, QrLevel> | "unavailable",
   ): void;
+  /** The visitor's stations (tour kit plan K4): re-judge after a store
+   *  change or a camera frame. */
+  tickStations(): void;
+  /** A printed code locked in the visitor's AR (its level id). */
+  stationCodeLocked(levelId: string): void;
+  /** Inside the "Start the tour" tap: unlock the stories' sound. */
+  unlockStationAudio(): void;
+  /** The AR session ended or the tour closed: the story stops, the HUD
+   *  goes; the progress stays with the open tour. */
+  stopStations(): void;
 }
 
 export function createUnwiredHooks(): TourViewerHooks {
@@ -192,6 +202,10 @@ export function createUnwiredHooks(): TourViewerHooks {
     startScanGate: () => undefined,
     resetScanGate: () => undefined,
     reconsiderScanGate: () => undefined,
+    tickStations: () => undefined,
+    stationCodeLocked: () => undefined,
+    unlockStationAudio: () => undefined,
+    stopStations: () => undefined,
   };
 }
 

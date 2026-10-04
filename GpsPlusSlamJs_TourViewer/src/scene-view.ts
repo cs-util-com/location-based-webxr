@@ -26,18 +26,18 @@ import { stationTitle } from "./station-run.js";
 
 /** The story panel's elements, all inside `#ar-root` (the DOM overlay). */
 export interface SceneViewDom {
-  readonly panel: { hidden: boolean };
-  readonly title: { textContent: string | null };
+  readonly panel: Pick<HTMLElement, "hidden">;
+  readonly title: Pick<HTMLElement, "textContent">;
   /** A character's name; hidden for other steps. */
-  readonly speaker: { textContent: string | null; hidden: boolean };
+  readonly speaker: Pick<HTMLElement, "textContent" | "hidden">;
   /** Text, caption or transcript: every step has words (captions always). */
-  readonly text: { textContent: string | null };
+  readonly text: Pick<HTMLElement, "textContent">;
   /** Loading and failures of this step's media, `aria-live`. */
-  readonly status: { textContent: string | null };
-  readonly image: { src: string; alt: string; hidden: boolean };
-  readonly choices: { replaceChildren(...nodes: unknown[]): void };
-  readonly continueButton: { hidden: boolean };
-  readonly playNext: { hidden: boolean; textContent: string | null };
+  readonly status: Pick<HTMLElement, "textContent">;
+  readonly image: Pick<HTMLImageElement, "src" | "alt" | "hidden">;
+  readonly choices: Pick<HTMLElement, "replaceChildren">;
+  readonly continueButton: Pick<HTMLElement, "hidden">;
+  readonly playNext: Pick<HTMLElement, "textContent" | "hidden">;
 }
 
 /** The sound of a step (one channel: a new clip stops the previous). */
@@ -62,7 +62,7 @@ export interface SceneViewDeps {
   readonly audio: SceneAudio;
   readonly stage: SceneStage;
   /** A choice button; the view wires nothing else into it. */
-  createChoiceButton(label: string, onClick: () => void): unknown;
+  createChoiceButton(label: string, onClick: () => void): Node;
   /** A one-shot clock (an auto step): returns the cancel. */
   schedule(fn: () => void, ms: number): () => void;
   readonly objectUrls: {
