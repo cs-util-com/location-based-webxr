@@ -31,9 +31,13 @@ tour's other content (`content-placement.ts`). Plan:
 ## Invariants & assumptions
 
 - **The K4 build agent's choice, not the owner's** (the plan leaves it
-  open): a character is 1.7 m tall, its aspect kept, its feet on the
-  station's altitude, facing the visitor about the vertical only. A model
-  takes the station's own rotation and is never turned.
+  open; B-15 as revised by K4 review R6): a character is 1.7 m tall, its
+  aspect kept, its feet on the station's altitude, facing the visitor about
+  the vertical only. A model takes the station's own rotation and is never
+  turned. At a code-only station the guide's pose is already on the
+  estimated ground below the code and turned about the vertical only, so
+  the figure does not float at the poster's centre and a model takes the
+  code's yaw, not its tilt.
 - One thing at a time; a decode or model load that lands after `clear` or
   a newer show is disposed, never shown; so is one still waiting for its
   position (its show settles).

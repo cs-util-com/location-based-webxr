@@ -7,8 +7,10 @@
  * ends the session.
  *
  * - **Where a station is (D19, §8 D8):** its own geo pose; a station with
- *   only a code stands where that code's level was saved. Its pose was fixed
- *   when it was authored (D33's settle, K6a); the viewer only reads it.
+ *   only a code stands where that code's level was saved - on the estimated
+ *   ground below it, turned about the vertical only (K4 review R6). Its
+ *   pose was fixed when it was authored (D33's settle, K6a); the viewer
+ *   only reads it.
  * - **Found by its code:** a lock of the station's code counts, unless the
  *   moved-code check ignores that code (D20, §8 D8: a moved code is not a
  *   "found you").
@@ -28,9 +30,10 @@ import type {
 import type { LatLong } from "gps-plus-slam-app-framework/core";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 import { formatDistance } from "gps-plus-slam-app-framework/utils/format-distance";
-import { Vector3 } from "three";
+import { Quaternion, Vector3 } from "three";
 
-import { objectPoseNue } from "./content-placement.js";
+import { EYE_HEIGHT_M } from "./breadcrumbs.js";
+import { objectPoseNue, rotationFromHeading } from "./content-placement.js";
 import type { StagePose } from "./scene-stage.js";
 import { ACCURACY_CEILING_M, stationBands } from "./station-bands.js";
 import {
@@ -110,6 +113,30 @@ export interface StationGuide {
   poseOf(stationId: string): StagePose | null;
 }
 
+/**
+ * A code's turn about the vertical alone (K4 review R6: a model at a
+ * code-only station took the poster's tilt): its compat heading where the
+ * code has one, else the bearing of its rotated local +x (the heading's
+ * own definition), else of its local +z less 90 degrees; none: no turn.
+ */
+function yawOnly(geo: {
+  readonly headingDeg?: number;
+  readonly rotation?: readonly [number, number, number, number];
+}): readonly [number, number, number, number] {
+  if (geo.headingDeg !== undefined) return rotationFromHeading(geo.headingDeg);
+  if (geo.rotation === undefined) return [0, 0, 0, 1];
+  const q = new Quaternion(...geo.rotation);
+  const x = new Vector3(1, 0, 0).applyQuaternion(q);
+  if (Math.hypot(x.x, x.z) > 1e-6) {
+    return rotationFromHeading((Math.atan2(x.z, x.x) * 180) / Math.PI);
+  }
+  const z = new Vector3(0, 0, 1).applyQuaternion(q);
+  if (Math.hypot(z.x, z.z) > 1e-6) {
+    return rotationFromHeading((Math.atan2(z.z, z.x) * 180) / Math.PI - 90);
+  }
+  return [0, 0, 0, 1];
+}
+
 /** Whole metres: GPS-guided distances are not more precise than that. */
 function distanceText(m: number): string {
   return formatDistance(m, { metreDecimals: 0 });
@@ -138,6 +165,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
    *  measurement (R13: the geodesy ran several times per station a tick). */
   const poseCache = new Map<string, StagePose | null>();
   let measuredZero: LatLong | null | undefined;
+  let measuredVisitor: VisitorPosition | null = null;
 
   function stationById(id: string): TourStation | undefined {
     return runStations?.find((s) => s.id === id);
@@ -155,12 +183,29 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     const zero = measuredZero === undefined ? deps.zero() : measuredZero;
     const station = stationById(stationId);
     if (zero === null || station === undefined) return null;
-    const geo =
-      station.anchor.geo ??
-      (station.anchor.code === undefined
+    if (station.anchor.geo !== undefined) {
+      return objectPoseNue(station.anchor.geo, zero);
+    }
+    const code =
+      station.anchor.code === undefined
         ? undefined
-        : deps.tour()?.levels?.get(station.anchor.code)?.qr.geo);
-    return geo === undefined ? null : objectPoseNue(geo, zero);
+        : deps.tour()?.levels?.get(station.anchor.code)?.qr.geo;
+    if (code === undefined) return null;
+    // A code-only station (K4 review R6): on the estimated ground below the
+    // code - the visitor's height less the breadcrumbs' eye height - and
+    // turned about the vertical only. A poster's centre hangs 1-2 m up a
+    // wall, and its tilt is no way for a figure or a model to stand.
+    const eye = measuredVisitor?.nue ?? null;
+    if (eye === null) return null;
+    const at = objectPoseNue(code, zero);
+    return {
+      positionNue: [
+        at.positionNue[0],
+        eye[1] - EYE_HEIGHT_M,
+        at.positionNue[2],
+      ],
+      rotationNue: yawOnly(code),
+    };
   }
 
   /** Measure once: the visitor, the zero, every station's pose and
@@ -169,6 +214,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     poseCache.clear();
     measuredZero = deps.zero();
     const visitor = deps.visitor();
+    measuredVisitor = visitor;
     last = { visitor, distances: horizontalDistances(visitor.nue) };
   }
 

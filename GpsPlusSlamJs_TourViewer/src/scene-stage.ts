@@ -11,8 +11,11 @@
  * position yet does not fail the show: what was decoded waits for it.
  *
  * The character's size and placement are the K4 build agent's choice, not
- * the owner's (the plan leaves them open): 1.7 m tall, its feet at the
- * station's altitude, facing the visitor about the vertical only.
+ * the owner's (the plan leaves them open; revised by K4 review R6): 1.7 m
+ * tall, its feet at the station's altitude, facing the visitor about the
+ * vertical only. A code-only station's pose (from the guide) stands on the
+ * estimated ground below the code and is turned about the vertical only,
+ * so a model there takes the code's yaw, never its tilt.
  */
 
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";

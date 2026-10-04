@@ -47,8 +47,15 @@ activateM)` (each tick, each offered station with a distance: the
   session's end plays again on the first tick that has a position and the
   GPS zero (before them its figure had no pose).
 - **Where a station is (D19, §8 D8):** its own geo pose; a code-only
-  station stands where its code's level was saved; with neither, it has no
-  distance (found by its code only; the line asks for the printed code).
+  station stands where its code's level was saved, but on the estimated
+  ground below the code - the visitor's height less `EYE_HEIGHT_M` (1.5 m,
+  the breadcrumbs' rule; the framework's floor estimator needs a depth
+  grid the Tour Viewer does not build) - and turned about the vertical
+  only (the code's compat heading, else the bearing of its local +x): K4
+  review R6, so a figure does not float at a wall poster's centre and a
+  model does not take its tilt. Such a pose needs a visitor position (the
+  stage waits for one). With neither, a station has no distance (found by
+  its code only; the line asks for the printed code).
   The pose was fixed at authoring (D33's settle, K6a); the viewer reads it.
 - **Found by code:** only codes the moved-code check does not ignore (D20,
   §8 D8), checked again here although an ignored lock never reaches

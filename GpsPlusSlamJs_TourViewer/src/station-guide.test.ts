@@ -6,6 +6,10 @@ import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 
+import { Quaternion, Vector3 } from "three";
+
+import { EYE_HEIGHT_M } from "./breadcrumbs";
+import { rotationFromHeading } from "./content-placement";
 import { stationBands } from "./station-bands";
 import { skipSuggestAfterMs } from "./station-run";
 import { wireStationGuide, type StationTour } from "./station-guide";
@@ -205,6 +209,58 @@ describe("wireStationGuide", () => {
     expect(h.dom.line.textContent).toBe("Next: TOWER, 40 m");
     h.guide.codeLocked("lvl-a");
     expect(h.found).toEqual(["tower"]);
+  });
+
+  it("a code-only station stands on the estimated ground below its code, turned about the vertical only (R6)", () => {
+    // Why this test matters (K4 review R6): a code-only station stood at
+    // the poster's centre, so a figure floated 1-2 m up at a wall poster
+    // and a model took the poster's tilt.
+    const geo = calcGpsCoords(zero, [0, 0, 40]);
+    // A poster facing heading 90, tilted 30 degrees back (no compat
+    // heading: the mint omits one for a tilted code).
+    const tilted = new Quaternion(...rotationFromHeading(90)).multiply(
+      new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 6),
+    );
+    const levels = new Map<string, QrLevel>([
+      [
+        "lvl-a",
+        {
+          version: 1,
+          qr: {
+            physicalSizeM: 0.2,
+            geo: {
+              lat: geo.lat,
+              lon: geo.lon,
+              alt: 403.2,
+              rotation: [tilted.x, tilted.y, tilted.z, tilted.w],
+            },
+          },
+        },
+      ],
+    ]);
+    const s: TourStation = {
+      ...station("tower", 0, 0),
+      anchor: { code: "lvl-a" },
+    };
+    const h = harness({ stations: [s], order: "fixed", levels });
+    h.at(0, 38);
+    const pose = h.guide.poseOf("tower")!;
+    expect(pose.positionNue[0]).toBeCloseTo(0, 1);
+    expect(pose.positionNue[2]).toBeCloseTo(40, 1);
+    // The ground below the visitor's phone, not the poster's 403.2 m.
+    expect(pose.positionNue[1]).toBeCloseTo(401.5 - EYE_HEIGHT_M, 6);
+    const yaw = rotationFromHeading(90);
+    for (let i = 0; i < 4; i += 1) {
+      expect(Math.abs(pose.rotationNue[i]!)).toBeCloseTo(Math.abs(yaw[i]!), 6);
+    }
+    // A station with a spot of its own keeps its own altitude.
+    const own = harness({
+      stations: [station("gate", 10, 0)],
+      order: "fixed",
+      levels: null,
+    });
+    own.at(0, 0);
+    expect(own.guide.poseOf("gate")!.positionNue[1]).toBeCloseTo(400, 6);
   });
 
   it("a code the moved-code check ignores does not count as found (D20)", () => {

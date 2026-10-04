@@ -18,7 +18,8 @@ session's GPS-world NUE. Plan:
   the dots again only when the visitor moved `BREADCRUMB_RELAY_M` or the
   target changed; a null visitor or target clears them.
 - Constants: `BREADCRUMB_SPACING_M` (4), `BREADCRUMB_COUNT` (6),
-  `EYE_HEIGHT_M` (1.5); the relay distance (1 m) is module-internal.
+  `EYE_HEIGHT_M` (1.5; also the guide's ground rule for a code-only
+  station, K4 review R6); the relay distance (1 m) is module-internal.
 
 ## Invariants & assumptions
 
