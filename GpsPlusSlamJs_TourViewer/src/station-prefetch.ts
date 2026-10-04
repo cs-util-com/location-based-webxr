@@ -31,7 +31,7 @@ export const PREFETCH_LEAD_M = 80;
 
 /** Everything held at once: 64 MiB, a dozen castle stations of pictures
  *  and voice clips (about 5 MB each), far below a phone's tab budget. */
-export const PREFETCH_BUDGET_BYTES = 64 * 1024 * 1024;
+const PREFETCH_BUDGET_BYTES = 64 * 1024 * 1024;
 
 /**
  * The decode cap's size: a figure's texture is at most 2048 px along its

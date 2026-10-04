@@ -23,7 +23,7 @@ far the visitor is from each offered station. Plan:
   once each (figures and voices, pictures, sounds, video, models).
 - `decodeDivisor(size?)` - the divisor that brings a figure within
   `MAX_DECODE_SIDE_PX` (1 when the size is not stated).
-- `PREFETCH_LEAD_M` (80), `PREFETCH_BUDGET_BYTES` (64 MiB),
+- `PREFETCH_LEAD_M` (80), the module-internal byte budget (64 MiB),
   `MAX_DECODE_SIDE_PX` (2048).
 
 ## Invariants & assumptions

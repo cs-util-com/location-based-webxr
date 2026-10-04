@@ -45,7 +45,7 @@ export interface SceneStageDeps {
 }
 
 /** An image's pixel size, as the tour's asset record states it. */
-export interface PixelSize {
+interface PixelSize {
   readonly width?: number;
   readonly height?: number;
 }

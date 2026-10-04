@@ -29,7 +29,7 @@ export const BREADCRUMB_COUNT = 6;
 /** The phone's usual height above the ground while walking. */
 export const EYE_HEIGHT_M = 1.5;
 /** Laid again once the visitor moved this far (or the target changed). */
-export const BREADCRUMB_RELAY_M = 1;
+const BREADCRUMB_RELAY_M = 1;
 const DOT_RADIUS_M = 0.125;
 /** The design system's accent, as the HUD's indicators use it. */
 const DOT_COLOR = "#f2971f";

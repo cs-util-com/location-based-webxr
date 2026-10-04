@@ -17,7 +17,7 @@ as the wayfinding HUD's arrival deadband. Plan:
   - `foundExitM = foundM + band`;
   - `activateM = max(activateRadiusM, foundExitM)`, `activateExitM =
 activateM + band`.
-- `clampAccuracy(accuracyM): number` - null, non-finite or non-positive read
+- (module-internal) `clampAccuracy` - null, non-finite or non-positive read
   as `ACCURACY_CEILING_M`; above it clamped to it.
 - Constants: `FOUND_ACCURACY_FACTOR` (1.0), `BAND_ACCURACY_FACTOR` (1.0),
   `HUD_ARRIVAL_MIN_M` (1.5), `HUD_ARRIVAL_BAND_M` (1.5),

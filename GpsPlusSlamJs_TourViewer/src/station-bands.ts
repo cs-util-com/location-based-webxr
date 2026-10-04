@@ -59,7 +59,7 @@ export const HUD_ARRIVAL_BAND_M = 1.5;
 export const ACCURACY_CEILING_M = 25;
 
 /** A usable accuracy, or the ceiling. */
-export function clampAccuracy(accuracyM: number | null): number {
+function clampAccuracy(accuracyM: number | null): number {
   if (accuracyM === null || !Number.isFinite(accuracyM) || accuracyM <= 0) {
     return ACCURACY_CEILING_M;
   }

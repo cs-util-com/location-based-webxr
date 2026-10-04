@@ -48,7 +48,7 @@ export interface SceneAudio {
 }
 
 /** What a step shows in AR at its station. */
-export interface SceneStage {
+interface SceneStage {
   showCharacter(
     stationId: string,
     image: Blob,

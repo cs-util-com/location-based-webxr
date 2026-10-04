@@ -26,9 +26,9 @@ import type {
 
 import { ACCURACY_CEILING_M, stationBands } from "./station-bands.js";
 
-export type StationState = "inactive" | "active" | "found" | "done";
+type StationState = "inactive" | "active" | "found" | "done";
 
-export interface StationStatus {
+interface StationStatus {
   readonly id: string;
   readonly state: StationState;
   /** Done by the visitor's "skip, I can't get there". */
