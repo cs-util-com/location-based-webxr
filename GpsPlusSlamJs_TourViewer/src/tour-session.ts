@@ -26,7 +26,7 @@ import {
   OpenRemoteArchiveError,
   DEFAULT_ARCHIVE_LIMITS,
   listZipEntriesCapped,
-  loadActionsFromZip,
+  loadActionsFromEntries,
   readZipEntryBlob,
   type ArchiveLimits,
   openRemoteArchive,
@@ -55,6 +55,7 @@ import {
 import { fileNameFromContentDisposition } from "./content-disposition.js";
 import { tourFileKey, tourSeriesFileKey } from "./tour-file-key.js";
 import {
+  checkArchiveCopy,
   integrityIdentity,
   openTourIntegrity,
   TourIntegrityGuard,
@@ -646,6 +647,22 @@ async function buildSession(
   const manifestWrap = (
     tourManifestEntryOf([...byName.keys()]) ?? TOUR_MANIFEST_ENTRY
   ).slice(0, -TOUR_MANIFEST_ENTRY.length);
+  /** The whole archive as one Blob: the file itself, the cached copy, or
+   *  one range read of the full size. */
+  const wholeCopy = async (): Promise<Blob> => {
+    // A file IS the whole archive - no copy, no slices.
+    if (localFile !== undefined) return localFile;
+    // `warmed` resolves false without a store or after an abort; the
+    // range read below is then the honest path, not an error.
+    await archive.warmed.catch(() => undefined);
+    const cached = await cacheStore?.get(archive.url);
+    // A copy of the wrong size is not this archive (the same check every
+    // other consumer of a downloaded copy makes, M3 review #4).
+    if (cached !== undefined && cached.blob.size === archive.size) {
+      return cached.blob;
+    }
+    return readArchiveInSlices(archive);
+  };
   const session: TourSession = {
     entries,
     archive,
@@ -680,15 +697,14 @@ async function buildSession(
         return null; // a hand-built tour zip is normal, not an error
       }
       try {
-        // Reuses the framework parser over a SECOND reader on the same
-        // range-streaming source (a few extra directory reads, no
-        // re-download) — re-implementing the index-ordered parse here
-        // would be the DEC-H3 drift.
-        const loaded = await loadActionsFromZip(
-          new ByteSourceReader(archive.source, limits.maxDirectoryBytes),
-          undefined,
-          budget,
-          // The session's own read, so every action entry is hashed too.
+        // The framework's parse over THIS session's entry list - the one
+        // tier 1 checked. A second read of the directory from the live
+        // source could return another list (K1 milestone review R1), and
+        // re-implementing the index-ordered parse here would be the DEC-H3
+        // drift. Every action entry goes through the session's own read,
+        // so it is capped and hashed too.
+        const loaded = await loadActionsFromEntries(
+          zipEntries,
           (entry, maxBytes) => readText(entry, maxBytes),
         );
         return loaded.map((e) => e.action);
@@ -751,18 +767,19 @@ async function buildSession(
       ),
     readWholeArchive: async () => {
       guard.assertIntact();
-      // A file IS the whole archive - no copy, no slices.
-      if (localFile !== undefined) return localFile;
-      // `warmed` resolves false without a store or after an abort; the
-      // range read below is then the honest path, not an error.
-      await archive.warmed.catch(() => undefined);
-      const cached = await cacheStore?.get(archive.url);
-      // A copy of the wrong size is not this archive (the same check every
-      // other consumer of a downloaded copy makes, M3 review #4).
-      if (cached !== undefined && cached.blob.size === archive.size) {
-        return cached.blob;
+      const copy = await wholeCopy();
+      // A listed tour's copy is checked as a whole before anyone rebuilds
+      // from it (K1 milestone review R3): the creator's Finish republishes
+      // these bytes, and K2 will sign them. A failure is a late failure:
+      // latched, reported, the tour torn down; the Finish shows the error.
+      if (integrity.kind === "listed") {
+        try {
+          await checkArchiveCopy(copy, limits, integrity);
+        } catch (err) {
+          throw err instanceof TourIntegrityError ? guard.fail(err) : err;
+        }
       }
-      return readArchiveInSlices(archive);
+      return copy;
     },
     close: async () => {
       archive.dispose();

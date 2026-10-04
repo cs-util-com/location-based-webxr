@@ -143,18 +143,6 @@ function budgetFor(
       });
 }
 
-/** The caller's entry reader, or the capped default under `allowance`. */
-function actionTextReader(
-  readText:
-    ((entry: FileEntry, maxBytes: number) => Promise<string>) | undefined,
-  allowance: DecompressionBudget
-): (entry: FileEntry, maxBytes: number) => Promise<string> {
-  return (
-    readText ??
-    ((entry, maxBytes) => readZipEntryText(entry, allowance, maxBytes))
-  );
-}
-
 /**
  * Load all recorded Redux actions from a zip file.
  *
@@ -170,23 +158,42 @@ function actionTextReader(
  * @param budget - The archive's decompression allowance (`capped-zip-entries`); a
  *   caller reading several parts of one archive passes one budget to all of them.
  *   Defaults to one sized from the archive (`DecompressionBudget.forArchive`).
- * @param readText - Reads one action entry's text, given the per-file cap.
- *   Defaults to `readZipEntryText` under `budget`. A caller that must CHECK
- *   every entry it reads (the Tour Viewer hashes each entry of a signed tour,
- *   tour kit plan K1) passes its own reader; its rejection is the parse's.
  * @returns Array of action entries sorted by filename
  * @throws ArchiveLimitError when the inflated bytes pass a cap
  */
 export async function loadActionsFromZip(
   data: ZipSource,
   maxFileSize: number = MAX_ACTION_FILE_SIZE,
-  budget?: DecompressionBudget,
-  readText?: (entry: FileEntry, maxBytes: number) => Promise<string>
+  budget?: DecompressionBudget
 ): Promise<ZipActionEntry[]> {
   const entries = await readZipEntries(data);
   const allowance = budgetFor(data, budget);
-  const read = actionTextReader(readText, allowance);
+  return loadActionsFromEntries(
+    entries,
+    (entry, maxBytes) => readZipEntryText(entry, allowance, maxBytes),
+    maxFileSize
+  );
+}
 
+/**
+ * The parse of {@link loadActionsFromZip} over an entry list the caller
+ * ALREADY HOLDS, each action entry read through `readText`. For a caller
+ * that has checked its list and must not let a second read of the
+ * directory replace it: the Tour Viewer reads a signed tour's recording
+ * from the list tier 1 checked, each entry hashed by its own reader (tour
+ * kit plan K1, milestone review R1) - re-listing a live range source could
+ * return another directory than the one that was checked.
+ *
+ * @param entries - The archive's entries (directories are skipped)
+ * @param read - Reads one action entry's text, given the per-file cap;
+ *   its rejection is the parse's
+ * @param maxFileSize - As for {@link loadActionsFromZip}
+ */
+export async function loadActionsFromEntries(
+  entries: readonly Entry[],
+  read: (entry: FileEntry, maxBytes: number) => Promise<string>,
+  maxFileSize: number = MAX_ACTION_FILE_SIZE
+): Promise<ZipActionEntry[]> {
   // Filter to action JSON files only
   const actionEntries = entries
     .filter(

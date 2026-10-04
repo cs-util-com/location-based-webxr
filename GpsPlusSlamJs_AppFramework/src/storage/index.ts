@@ -89,6 +89,7 @@ export {
   type ZipActionEntry,
   readZipEntries,
   loadActionsFromZip,
+  loadActionsFromEntries,
   loadSessionMetadata as loadSessionMetadataFromZip,
   loadSessionMetadataFromBlob,
   type GpsPathCoord,

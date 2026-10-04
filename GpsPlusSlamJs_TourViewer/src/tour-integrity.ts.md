@@ -17,8 +17,8 @@ its canonicalisation rules live in the framework
   it reads the manifest's bytes through `readBytes` (the session's capped
   reader), decodes them as strict UTF-8, parses them and checks every file
   entry's name and declared size, returning `{ kind: "listed", signature,
-manifest, manifestEntry, manifestSha256, records }`. Throws
-  `TourIntegrityError`.
+manifest, manifestEntry, signatureEntry, manifestSha256, records }`.
+  Throws `TourIntegrityError`.
   - The SIGNATURE is checked first (`manifest.sig.json` in the manifest's
     own folder, `ar/tour-signature.ts`): nothing the manifest says is
     believed before it is known to be the signed one. `signature` is null
@@ -28,12 +28,21 @@ manifest, manifestEntry, manifestSha256, records }`. Throws
     not verify fails the open (`bad-signature`), and so does a signature
     with no manifest (`malformed-signature`: something was removed).
 - (module-private) `checkEntryBytes(integrity, filename, bytes)` - TIER 2: one entry's
-  decompressed bytes against its size and SHA-256. Entries without a
-  record (the manifest, its signature) and every entry of a tour without a
-  manifest pass. Throws `hash-mismatch`.
+  decompressed bytes against its size and SHA-256. Every entry of a tour
+  without a manifest passes. In a listed tour a name WITHOUT a record is
+  `unlisted-file` (K1 milestone review R1): tier 1 saw every file, so an
+  unknown name came from another directory. The two reserved names are the
+  only exceptions: the manifest must be the exact bytes tier 1 checked
+  (`manifestSha256`, else `hash-mismatch`), the signature was verified at
+  tier 1. Throws `unlisted-file` or `hash-mismatch`.
 - (module-private) `checkWholeArchive(blob, limits)` - TIER 3: a
   complete copy opened through the same capped zip.js path, tier 1 run on
   it, then every listed entry hashed. Returns the copy's own tier-1 result.
+- `checkArchiveCopy(blob, limits, integrity): Promise<void>` - TIER 3 on
+  demand: `blob` checked as a whole and required to carry the manifest
+  `integrity` came from (else `hash-mismatch`, "the archive changed").
+  The session runs it on what the creator's Finish rebuilds from (K1
+  milestone review R3).
 - `integrityIdentity(integrity): string | null` - the manifest's hash, or
   null without one: two copies of one tour have the same identity.
 - `class TourIntegrityGuard` - a session's latch for LATE failures:
@@ -46,7 +55,9 @@ manifest, manifestEntry, manifestSha256, records }`. Throws
   fails or cannot be read, so the copy is never used or cached;
   `bind(expected, onFailure)` hands it the session's tier-1 identity (a
   copy accepted before - an eager download is checked inside the open - is
-  compared then); `notChecked()` when no complete copy will come; `done`
+  compared then, and a copy that FAILED before is reported to `onFailure`
+  then: before `bind` nobody listens, so the failure is kept, K1 milestone
+  review R6); `notChecked()` when no complete copy will come; `done`
   resolves `checked | failed | not-checked`.
 - Types `TourIntegrity`, `WholeArchiveOutcome`.
 
@@ -87,12 +98,18 @@ manifest, manifestEntry, manifestSha256, records }`. Throws
 - tier 2: a changed entry fails its read, is reported once, and every
   later read fails too; honest entries read through; any single flipped
   byte fails (property); the recording's action entries are hashed;
+  the recording is read from the directory tier 1 checked, not from one
+  the host serves later (a switching source adds an action entry, R1); a
+  read of an unlisted name fails, the manifest re-read must be its checked
+  bytes;
 - tier 3: a matching warm copy is checked and cached; a mismatching one
   fails late, is never cached and stops every read; a whole download at
   open is checked inside the open and never cached; a saved copy is
   re-checked in the background and dropped; a file is checked as a whole;
   a tour without a manifest is `checked` with a cache and `not-checked`
-  without one.
+  without one; the whole archive handed to Finish is checked and refused
+  when a host now serves other bytes (R3), an honest one is handed over
+  unchanged; a failure found before `bind` is reported at `bind` (R6).
 
 Mutation check (2026-10-04): unhooking `acceptLocalCopy` turns four tier-3
 tests red; skipping the tier-2 hash turns three tier-2 tests red.

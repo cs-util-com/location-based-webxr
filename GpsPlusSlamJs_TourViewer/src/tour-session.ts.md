@@ -1,8 +1,9 @@
 # tour-session.ts
 
 > Geo-join addition (2026-08-26): `loadRecordingActions()` (the parsed
-> action stream via the framework parser over a second range-streaming
-> reader) and `loadSessionMeta()` (`session.json`, the era gate's input) —
+> action stream via the framework parser - since the K1 milestone review
+> R1 over the session's OWN entry list, `loadActionsFromEntries`, never a
+> second directory read) and `loadSessionMeta()` (`session.json`, the era gate's input) —
 > BOTH null-tolerant: a hand-built zip or a corrupt stream reads as "keep
 > the ring", never a broken archive.
 >
@@ -85,7 +86,11 @@ not-checked`): a link's complete copies are checked through
   cache copy under the archive's NORMALISED url when the store has it AND
   its size matches, else the archive in 4 MiB range slices gathered into
   one Blob (each request keeps the transport's per-slice timeout; the
-  slices are views, not copies).
+  slices are views, not copies). For a LISTED tour the copy is checked as
+  a whole first (`checkArchiveCopy`, K1 milestone review R3): a copy that
+  does not match is a late failure - latched, reported, the tour torn
+  down - and the call rejects, which the creator's Finish shows as its
+  error. Unchecked bytes are never republished.
 - `hostedFileName(): string | null` - the hosted file's name as its host
   sends it (`content-disposition`, parsed by `content-disposition.ts`), or
   null (an offline cache hit, a host that sends none). Recorded by a thin
@@ -126,8 +131,7 @@ not-checked`): a link's complete copies are checked through
   carries the transport cap (`maxArchiveBytes`, cause `'too-large'`), the
   directory is read through `ByteSourceReader`'s single-read cap
   (`maxDirectoryBytes`: zip.js reads a declared directory in one piece,
-  K0 milestone review R4; the action stream's second reader carries it
-  too) and walked with `listZipEntriesCapped` (an `ArchiveLimitError`
+  K0 milestone review R4) and walked with `listZipEntriesCapped` (an `ArchiveLimitError`
   past either cap fails the open), and EVERY entry the page reads -
   `loadEntry`, `loadContentEntry`, `tour.json`, the levels, `session.json`
   and the action stream - is inflated under ONE `DecompressionBudget` per

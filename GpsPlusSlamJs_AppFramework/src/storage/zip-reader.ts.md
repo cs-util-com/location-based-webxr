@@ -22,11 +22,11 @@ Opens a ZIP file and returns all entries (directories and files). Uses `@zip.js/
 - **Output:** Array of `Entry` objects from `@zip.js/zip.js`
 - **Errors:** Throws if the data is not a valid ZIP file
 
-### `loadActionsFromZip(data: ZipSource, maxFileSize?: number, budget?: DecompressionBudget, readText?: (entry, maxBytes) => Promise<string>): Promise<ZipActionEntry[]>`
+### `loadActionsFromZip(data: ZipSource, maxFileSize?: number, budget?: DecompressionBudget): Promise<ZipActionEntry[]>`
 
 Extracts all action JSON files from the `actions/` directory in the ZIP, parses them, and returns them sorted by filename — chronological because `formatActionFilename` zero-pads the index to six digits (see the invariant below).
 
-- **Input:** ZIP file bytes as `Uint8Array`; optional `maxFileSize` (defaults to `MAX_ACTION_FILE_SIZE` = 1 MB); optional `readText`, which reads each action entry in place of `readZipEntryText` under `budget` and is given `maxFileSize` - the Tour Viewer passes its own reader so every action entry of a signed tour is hashed (tour kit plan K1, tier 2); its rejection is the parse's
+- **Input:** ZIP file bytes as `Uint8Array`; optional `maxFileSize` (defaults to `MAX_ACTION_FILE_SIZE` = 1 MB). It lists the archive's entries itself and then runs `loadActionsFromEntries` over them, reading each action entry with `readZipEntryText` under `budget`.
 - **Output:** Array of `ZipActionEntry` objects, each containing:
   - `index` — 1-based numeric index from zero-padded filename (e.g., 1 from `000001.json`). Returns `NaN` for non-numeric filenames.
   - `filename` — original path within the ZIP (e.g., `actions/000001.json`)
@@ -34,6 +34,10 @@ Extracts all action JSON files from the `actions/` directory in the ZIP, parses 
 - **Warnings:** Logs a warning via `createLogger('ZipReader')` for any action file whose filename doesn't match the expected numeric pattern (e.g., `actions/my-notes.json`). The file is still processed and included in results. Also logs a warning for any action file that fails JSON parsing — the file is skipped, and remaining actions are still returned.
 - **Decompression caps (tour kit plan K0, 2026-10-03):** each action is inflated through `readZipEntryText` (`capped-zip-entries.ts`), which counts the bytes ACTUALLY produced against `maxFileSize` and charges them to `budget` - the archive's total allowance. The declared-size check below stays as the cheap early refusal, but a declared size is never the only guard: before K0 many entries each just under 1 MB declared (kilobytes deflated) added up without any limit. Without a `budget` one is sized from the archive (`DecompressionBudget.forArchive`, after the listing so a lazy Reader knows its size; a Reader still reporting no size gets the absolute ceiling, never the small-archive floor, which would refuse a real long recording - the largest measured action stream is 214 MB). The Tour Viewer passes its session's one budget, so the action stream and the content share a total.
 - **Errors:** Throws if any action entry's `uncompressedSize` exceeds `maxFileSize` (DoS protection), and `ArchiveLimitError` when the inflated bytes pass a cap. Malformed JSON in individual action files is handled gracefully (skip + warn) rather than aborting the entire load — consistent with `loadGpsPathFromBlob`'s error-handling pattern.
+
+### `loadActionsFromEntries(entries: readonly Entry[], read: (entry, maxBytes) => Promise<string>, maxFileSize?: number): Promise<ZipActionEntry[]>`
+
+The same parse over an entry list the caller ALREADY HOLDS, each action entry read through `read` (given `maxFileSize`; its rejection is the parse's). For a caller that has checked its list and must not let a second directory read replace it: the Tour Viewer reads a signed tour's recording from the list tier 1 checked, every entry through its own capped and hashing read (tour kit plan K1, milestone review R1 - re-listing a live range source could return another directory, with entries the check never saw). Directories in `entries` are skipped. It replaces the `readText` parameter `loadActionsFromZip` had during K1, which re-listed the archive.
 
 ### `loadSessionMetadata(data: Uint8Array, maxFileSize?: number): Promise<Record<string, unknown> | null>`
 

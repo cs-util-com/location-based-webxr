@@ -1,8 +1,5 @@
 /**
- * Why these tests matte  const repack = (entries: readonly ZipEntryInput[]) =>
-    writeStoreZip(entries, "test");
-
-r: a tour that carries `manifest.json` promises
+ * Why these tests matter: a tour that carries `manifest.json` promises
  * that its archive is exactly the listed files (tour kit plan K1, §8 D3).
  * The first tier of that promise runs at open, before anything is shown:
  * a file slipped in beside the listed ones, a size that changed, or the
@@ -17,6 +14,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
+  DEFAULT_ARCHIVE_LIMITS,
   InMemoryLocalCacheStore,
   writeStoreZip,
   type FetchImpl,
@@ -29,7 +27,11 @@ import {
   generateFixtureKey,
   signManifestText,
 } from "./test-support/tour-signing-fixture.js";
-import type { TourIntegrity } from "./tour-integrity.js";
+import {
+  TourIntegrityGuard,
+  WholeArchiveCheck,
+  type TourIntegrity,
+} from "./tour-integrity.js";
 import { openTourFile, openTourSession } from "./tour-session.js";
 
 const FILES = {
@@ -317,6 +319,104 @@ describe("tier 2: every entry read is hashed", () => {
   });
 });
 
+/** Serves 206 slices of `first` until `switchNow`, then of `later` (the
+ *  same length): a host that answers the open honestly and changes what it
+ *  serves afterwards. */
+function switchingServer(
+  first: Uint8Array,
+  later: Uint8Array,
+): { fetchImpl: FetchImpl; switchNow: () => void } {
+  let current = first;
+  const serve: FetchImpl = (input, init) => rangeServer(current)(input, init);
+  return {
+    fetchImpl: serve,
+    switchNow: () => {
+      current = later;
+    },
+  };
+}
+
+/** A store-mode zip of `entries` padded with one filler entry to exactly
+ *  `size` bytes (store mode adds a non-empty filler's bytes one for one). */
+async function zipOfSize(
+  size: number,
+  entries: readonly ZipEntryInput[],
+): Promise<Uint8Array> {
+  const zipWith = async (pad: number) =>
+    bytesOf(
+      await writeStoreZip(
+        [...entries, { path: "pad.bin", data: "x".repeat(pad) }],
+        "test",
+      ),
+    );
+  // From a one-byte filler: an empty entry is written without the data
+  // descriptor a non-empty one carries, so 0 is not on the same line.
+  const bare = await zipWith(1);
+  expect(bare.length).toBeLessThanOrEqual(size);
+  const padded = await zipWith(1 + size - bare.length);
+  expect(padded.length).toBe(size);
+  return padded;
+}
+
+describe("tier 2: no file the manifest does not list (K1 milestone review R1)", () => {
+  // Why this matters: tier 1 checks the directory the open read. A host
+  // can answer that read honestly and serve a DIFFERENT directory to a
+  // later read - one with an injected action entry. Such an entry has no
+  // record, and "no record, no check" let it reach the join unhashed while
+  // the page said the tour was unchanged.
+  it("the recording is read from the directory tier 1 checked, not one the host serves later", async () => {
+    const action = JSON.stringify({ type: "gps", t: 1 });
+    const honest = await bytesOf(
+      (
+        await buildListedTourFixture({
+          ...FILES,
+          "actions/000001.json": action,
+        })
+      ).zip,
+    );
+    const extended = await zipOfSize(honest.length, [
+      { path: "actions/000001.json", data: action },
+      {
+        path: "actions/000002.json",
+        data: JSON.stringify({ type: "injected" }),
+      },
+    ]);
+    const server = switchingServer(honest, extended);
+    const session = await openTourSession("https://host/t.zip", {
+      fetchImpl: server.fetchImpl,
+    });
+    expect(session.integrity.kind).toBe("listed");
+    server.switchNow();
+    const outcome = await session.loadRecordingActions().then(
+      (actions) => (actions ?? []).map((a) => a.type),
+      (err: unknown) =>
+        err instanceof TourIntegrityError
+          ? `refused: ${err.kind}`
+          : String(err),
+    );
+    expect(outcome).not.toContain("injected");
+    await session.close();
+  });
+
+  it("an entry read that the manifest does not list fails as unlisted; the manifest and its signature are the only exceptions", async () => {
+    const fixture = await buildListedTourFixture(FILES);
+    const session = await openLink(fixture.zip);
+    const guard = () =>
+      new TourIntegrityGuard(session.integrity, () => undefined);
+    await expect(
+      guard().checked("actions/000009.json", new Blob(["{}"])),
+    ).rejects.toMatchObject({ kind: "unlisted-file" });
+    // The manifest re-read is the one tier 1 checked, or it fails.
+    await expect(
+      guard().checked("manifest.json", new Blob([fixture.manifestText])),
+    ).resolves.toBeInstanceOf(Blob);
+    await expect(
+      guard().checked("manifest.json", new Blob([`${fixture.manifestText} `])),
+    ).rejects.toMatchObject({ kind: "hash-mismatch" });
+    await session.close();
+  });
+});
+
 describe("tier 3: the whole archive, once it is on the device", () => {
   it("checks the warm copy and caches it when it matches", async () => {
     const { zip } = await buildListedTourFixture(FILES);
@@ -399,6 +499,46 @@ describe("tier 3: the whole archive, once it is on the device", () => {
     await expect(session.wholeArchiveCheck).resolves.toBe("failed");
     expect(reported).toEqual(["hash-mismatch"]);
     await session.close();
+  });
+
+  it("the whole archive handed to the creator's Finish is checked first, and refused when it does not match (K1 milestone review R3)", async () => {
+    // Why this matters: Finish republishes what readWholeArchive returns
+    // (and K2 will sign it). Range reads of a host that now serves other
+    // bytes - same names and sizes, so tier 1 passed - must not become the
+    // creator's new tour.
+    const bad = await bytesOf(await tampered("content/gate.jpg", "JPEGDATB"));
+    const reported: string[] = [];
+    const session = await openTourSession("https://host/t.zip", {
+      fetchImpl: rangeServer(bad),
+      onIntegrityFailure: (err) => reported.push(err.kind),
+    });
+    expect(session.integrity.kind).toBe("listed");
+    expect(await failureKind(session.readWholeArchive())).toBe("hash-mismatch");
+    expect(reported).toEqual(["hash-mismatch"]);
+    await session.close();
+  });
+
+  it("an honest whole archive is handed to Finish unchanged", async () => {
+    const { zip } = await buildListedTourFixture(FILES);
+    const honest = await bytesOf(zip);
+    const session = await openTourSession("https://host/t.zip", {
+      fetchImpl: rangeServer(honest),
+    });
+    expect(await bytesOf(await session.readWholeArchive())).toEqual(honest);
+    await session.close();
+  });
+
+  it("a whole-archive failure found BEFORE tier 1 finished is reported when tier 1 binds (K1 milestone review R6)", async () => {
+    // Why this matters: a warm download can finish before the open's own
+    // checks do. Its failure was reported to nobody then - no teardown, no
+    // message, no eviction - and nothing replayed it later.
+    const bad = await tampered("content/gate.jpg", "JPEGDATB");
+    const check = new WholeArchiveCheck(DEFAULT_ARCHIVE_LIMITS);
+    await expect(check.accept(bad)).rejects.toBeInstanceOf(TourIntegrityError);
+    const reported: string[] = [];
+    check.bind("the-identity-tier-1-found", (err) => reported.push(err.kind));
+    expect(reported).toEqual(["hash-mismatch"]);
+    await expect(check.done).resolves.toBe("failed");
   });
 
   it("a tour without a manifest: checked with a cache (nothing to find), not checked without one", async () => {

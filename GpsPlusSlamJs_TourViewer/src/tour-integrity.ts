@@ -67,6 +67,8 @@ export type TourIntegrity =
       readonly manifest: SignedTourManifest;
       /** The archive name the manifest was read from. */
       readonly manifestEntry: string;
+      /** The archive name of `manifest.sig.json`, or null when unsigned. */
+      readonly signatureEntry: string | null;
       /** SHA-256 (hex) of the manifest's exact bytes: the identity of
        *  what was checked, compared again when the whole archive arrives. */
       readonly manifestSha256: string;
@@ -136,6 +138,7 @@ export async function openTourIntegrity(
     signature,
     manifest,
     manifestEntry,
+    signatureEntry: signatureEntry?.filename ?? null,
     manifestSha256: await sha256Hex(bytes),
     records,
   };
@@ -177,11 +180,14 @@ export function integrityIdentity(integrity: TourIntegrity): string | null {
 }
 
 /**
- * TIER 2. One entry's decompressed bytes against its record. An entry the
- * manifest does not list (the manifest itself, its signature) and every
- * entry of a tour without a manifest pass unchecked.
+ * TIER 2. One entry's decompressed bytes against its record. Every entry of
+ * a tour without a manifest passes unchecked. In a listed tour a file
+ * WITHOUT a record fails as unlisted (K1 milestone review R1: tier 1 saw
+ * every file, so a name it did not see came from somewhere else); the two
+ * reserved names are the only exceptions - the manifest, whose bytes must
+ * be the ones tier 1 checked, and its signature, which tier 1 verified.
  *
- * @throws TourIntegrityError `hash-mismatch`.
+ * @throws TourIntegrityError `unlisted-file` or `hash-mismatch`.
  */
 async function checkEntryBytes(
   integrity: TourIntegrity,
@@ -190,7 +196,10 @@ async function checkEntryBytes(
 ): Promise<void> {
   if (integrity.kind === "none") return;
   const record = integrity.records.get(filename);
-  if (record === undefined) return;
+  if (record === undefined) {
+    await checkReservedEntry(integrity, filename, bytes);
+    return;
+  }
   if (
     bytes.length !== record.size ||
     (await sha256Hex(bytes)) !== record.sha256
@@ -200,6 +209,27 @@ async function checkEntryBytes(
       `"${filename}" does not match the hash its manifest lists`,
     );
   }
+}
+
+/** A read of a name tier 1 gave no record: the manifest (its exact bytes)
+ *  or the signature pass, anything else is unlisted. */
+async function checkReservedEntry(
+  integrity: Extract<TourIntegrity, { kind: "listed" }>,
+  filename: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  if (filename === integrity.signatureEntry) return;
+  if (filename === integrity.manifestEntry) {
+    if ((await sha256Hex(bytes)) === integrity.manifestSha256) return;
+    throw new TourIntegrityError(
+      "hash-mismatch",
+      `"${filename}" is not the manifest the tour was opened with`,
+    );
+  }
+  throw new TourIntegrityError(
+    "unlisted-file",
+    `"${filename}" was read, but the archive's checked list does not hold it`,
+  );
 }
 
 /**
@@ -301,6 +331,35 @@ export class TourIntegrityGuard {
   }
 }
 
+/** The failure when a complete copy carries another manifest than the one
+ *  the session opened with. */
+function changedArchive(): TourIntegrityError {
+  return new TourIntegrityError(
+    "hash-mismatch",
+    "the archive changed while it was open: its complete copy carries another manifest",
+  );
+}
+
+/**
+ * TIER 3 on demand: `blob` checked as a whole, and it must carry the
+ * manifest `integrity` came from. What the creator's Finish rebuilds from
+ * passes this first (K1 milestone review R3), so unchecked bytes are never
+ * republished.
+ *
+ * @throws TourIntegrityError for any mismatch; an `ArchiveLimitError` or a
+ *   zip error when the copy cannot be read at all.
+ */
+export async function checkArchiveCopy(
+  blob: Blob,
+  limits: ArchiveLimits,
+  integrity: TourIntegrity,
+): Promise<void> {
+  const copy = await checkWholeArchive(blob, limits);
+  if (integrityIdentity(copy) !== integrityIdentity(integrity)) {
+    throw changedArchive();
+  }
+}
+
 /** How tier 3 ended for a session. */
 export type WholeArchiveOutcome = "checked" | "failed" | "not-checked";
 
@@ -312,7 +371,8 @@ export type WholeArchiveOutcome = "checked" | "failed" | "not-checked";
  * backs the session or is cached (`acceptLocalCopy`), so a copy that fails
  * is never cached. A copy can arrive before tier 1 has run (an eager
  * download is checked inside the open); its identity is then kept and
- * compared at `bind`.
+ * compared at `bind` - and a copy that FAILED before `bind` is reported
+ * there, when someone is listening (K1 milestone review R6).
  */
 export class WholeArchiveCheck {
   readonly done: Promise<WholeArchiveOutcome>;
@@ -323,6 +383,8 @@ export class WholeArchiveCheck {
   #expected: string | null | undefined = undefined;
   /** The identity of a copy accepted before `bind`. */
   #early: string | null | undefined = undefined;
+  /** A failure found before `bind`, replayed by it. */
+  #earlyFailure: TourIntegrityError | null = null;
   #onFailure: (err: TourIntegrityError) => void = () => undefined;
 
   constructor(limits: ArchiveLimits) {
@@ -358,6 +420,10 @@ export class WholeArchiveCheck {
   ): void {
     this.#expected = expected;
     this.#onFailure = onFailure;
+    if (this.#earlyFailure !== null) {
+      onFailure(this.#earlyFailure);
+      return;
+    }
     if (this.#early === undefined) return;
     try {
       this.#compare(this.#early);
@@ -376,17 +442,16 @@ export class WholeArchiveCheck {
       this.#finish("checked");
       return;
     }
-    const err = new TourIntegrityError(
-      "hash-mismatch",
-      "the archive changed while it was open: its complete copy carries another manifest",
-    );
+    const err = changedArchive();
     this.#failed(err);
     throw err;
   }
 
   #failed(err: TourIntegrityError): void {
     this.#finish("failed");
-    this.#onFailure(err);
+    // Before `bind` nobody listens yet: kept, and reported by `bind`.
+    if (this.#expected === undefined) this.#earlyFailure ??= err;
+    else this.#onFailure(err);
   }
 
   #finish(outcome: WholeArchiveOutcome): void {

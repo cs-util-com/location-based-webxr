@@ -53,6 +53,7 @@ function signed(
       links,
     },
     manifestEntry: "manifest.json",
+    signatureEntry: "manifest.sig.json",
     manifestSha256: "a".repeat(64),
     records: new Map(),
   };
