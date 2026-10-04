@@ -91,6 +91,18 @@ screenshots, `pnpm run measure:globe` for the globe lab's memory and
 download table, and the `test:e2e` gate stage compiles and checks every shader.
 Details: `3d/README.md`.
 
+### The browser tests: a fast tier and on-demand measurements
+
+`pnpm run test:e2e` runs the fast tier only (`3d/pages.fast.spec.mjs`,
+about 5 minutes): every deployable page opens, reaches its ready signal,
+compiles the shader variants its switches select and draws, with no page
+error, console error, missing file or network request. The measurements
+(every `*.smoke.spec.mjs`: looks, costs, sweeps, hours on a CPU rasteriser)
+run on demand: `DS_E2E_TIER=full pnpm run test:e2e` for all, or name one
+(`pnpm run test:e2e labs/globe/globe-relief.smoke.spec.mjs`). Run a lab's
+measurements when a change targets its look or its cost, and before a look
+decision. Plan: `2026-10-04-1002-design-system-fast-e2e-tier-plan.md`.
+
 ## Vendoring into an app
 
 Before the first copy lands, measure what the sheet would change on the

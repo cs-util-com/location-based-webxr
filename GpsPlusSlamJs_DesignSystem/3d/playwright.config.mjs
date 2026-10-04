@@ -31,11 +31,25 @@ if (!/^[1-9]\d{3,4}$/.test(PORT)) {
   throw new Error(`DS_E2E_PORT must be a port number, got ${PORT}`);
 }
 
+/**
+ * Two tiers (plan 2026-10-04-1002, DEC-DSE-1/2). By default only the fast
+ * tier runs (`*.fast.spec.mjs`: every page boots, compiles and draws,
+ * minutes). The measurements (`*.smoke.spec.mjs`: looks, costs, sweeps,
+ * hours on SwiftShader) run with `DS_E2E_TIER=full`, or when a smoke spec
+ * is named on the command line (`pnpm run test:e2e labs/globe/x.smoke.spec.mjs`),
+ * so a targeted run needs no extra flag.
+ */
+const FULL =
+  process.env.DS_E2E_TIER === "full" ||
+  process.argv.some((a) => a.endsWith(".smoke.spec.mjs"));
+const FAST_SPECS = ["3d/*.fast.spec.mjs"];
+const SMOKE_SPECS = ["3d/*.smoke.spec.mjs", "labs/*/*.smoke.spec.mjs"];
+
 export default defineConfig({
   // The package root, so the lab pages' specs (programme DEC-PRG-2:
   // `labs/<name>/`) run in the same stage as the main page's.
   testDir: "..",
-  testMatch: ["3d/*.smoke.spec.mjs", "labs/*/*.smoke.spec.mjs"],
+  testMatch: FULL ? [...FAST_SPECS, ...SMOKE_SPECS] : FAST_SPECS,
   workers: 1,
   // A cold SwiftShader boot plus the CPU parity oracle (a few million
   // scattering evaluations) is slow by design, not by defect.
