@@ -18,7 +18,9 @@ cold-review G3: "open a file" needs its own cache and draft key).
   own files (`tour.json`, `qr/<id>.json`, `content/*`) are left out
   whenever anything else remains. Rejects where WebCrypto is missing (an insecure
   origin); the open reports that like any failure.
-- `isTourFileKey(key)` - true for a key made here.
+- `tourSeriesFileKey(seriesId)` - `local-file:series:<seriesId>`, the key
+  of a file-opened tour that carries `manifest.json` (tour kit plan K1).
+- `isTourFileKey(key)` - true for a key made here (both forms).
 - The prefix (`"local-file:"`) is module-private; `isTourFileKey` reads it.
 - `interface TourFileKeyEntry { filename; directory?; uncompressedSize; crc32? }`
   (zip.js `Entry` satisfies it).
@@ -53,17 +55,31 @@ Consequences:
   Now the files a Finish writes or removes are left out, so the recording
   a tour is built on names it, and a re-zip into a wrapping folder keeps
   it too.
-- **No tour carries an identity of its own yet.** Searched 2026-10-04 in
-  both repos: `tour.json` v1 has `version` and `objects` only,
-  `session.json` carries timestamps but no id, and no `tourId` or
-  `seriesId` exists anywhere; K1's `seriesId` (in the signed
-  `manifest.json`, plan §8 G7) is the stable identity, and it replaces
-  this key when it lands. Until then:
+- **A tour with `manifest.json` is keyed by its series id** (tour kit
+  plan K1, the K0 review's R7 follow-up): `local-file:series:<seriesId>`
+  (`tourSeriesFileKey`), read in `tour-session.ts` before the session is
+  built. The series id is the same for every version, every Finish and
+  every re-zip, so the creator's draft stays attached across all of them.
+  It is not verified at that moment; tier 1 checks the manifest (and its
+  signature) when the session is built and fails the open if it lies. A
+  manifest that does not parse falls back to the content key (tier 1 then
+  reports it).
+  - **One gap until K2:** a Finish drops `manifest.json` (the rewritten
+    files would no longer match it), so the FINISHED zip opened from a
+    file is keyed by content, and the draft made under the series key is
+    not offered for it. K2's signed export writes the manifest again and
+    closes the gap; until then this is one lost reattachment per Finish of
+    a listed tour, and no listed tours exist outside the test fixtures.
+- **Every other tour keeps the content key.** `manifest.json` and
+  `manifest.sig.json` are among the tour kit's own files (a Finish drops
+  them, K1), so the content key does not move when they come or go.
   - a hand-built tour (nothing but the tour kit's files) falls back to
     every entry, so a Finish still changes its key;
   - two tours built from the SAME recording on one device share a draft
     namespace. The draft is offered against the open manifest (only
     objects it does not already carry), never applied silently.
+  - two tours that claim the same series id share one too; a forged
+    claim is local (this device's own drafts) and tier 1 still has to pass.
 - No cache entry: a file is already on the device (saved tours are K3).
 - The Drive replace step reads `hostedFileName()`, which for a file is the
   file's own name; `isDriveUrl` is false for a `local-file:` key, so the

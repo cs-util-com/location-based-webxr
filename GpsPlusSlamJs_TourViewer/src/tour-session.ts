@@ -12,8 +12,12 @@
  * network-served archive is reported as-is: the file itself is broken.
  */
 
-import { ZipReader, type FileEntry } from "@zip.js/zip.js";
-import { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
+import { ZipReader, type Entry, type FileEntry } from "@zip.js/zip.js";
+import {
+  parseSignedTourManifest,
+  signedManifestEntryOf,
+  TourIntegrityError,
+} from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
   ArchiveLimitError,
   ByteSourceReader,
@@ -49,7 +53,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-media";
 
 import { fileNameFromContentDisposition } from "./content-disposition.js";
-import { tourFileKey } from "./tour-file-key.js";
+import { tourFileKey, tourSeriesFileKey } from "./tour-file-key.js";
 import {
   integrityIdentity,
   openTourIntegrity,
@@ -472,9 +476,11 @@ async function fileKeyOf(file: File, limits: ArchiveLimits): Promise<string> {
     ),
   );
   try {
-    return await tourFileKey(
-      await listZipEntriesCapped(reader, limits.maxEntries),
-    );
+    const entries = await listZipEntriesCapped(reader, limits.maxEntries);
+    const seriesId = await seriesIdOf(entries, file.size, limits);
+    return seriesId === null
+      ? await tourFileKey(entries)
+      : tourSeriesFileKey(seriesId);
   } catch (err) {
     if (err instanceof ArchiveLimitError) throw err;
     throw new Error(
@@ -483,6 +489,37 @@ async function fileKeyOf(file: File, limits: ArchiveLimits): Promise<string> {
     );
   } finally {
     await reader.close();
+  }
+}
+
+/**
+ * The series id in a file's `manifest.json`, or null without a readable
+ * one (tour kit plan K1, R7). Read under the text cap with a budget of its
+ * own; it is NOT verified here - tier 1 checks the manifest (and its
+ * signature) when the session is built, and fails the open if it lies.
+ * A manifest that does not parse falls back to the content key, and tier
+ * 1 then reports it.
+ */
+async function seriesIdOf(
+  entries: readonly Entry[],
+  archiveSize: number,
+  limits: ArchiveLimits,
+): Promise<string | null> {
+  const name = signedManifestEntryOf(entries.map((e) => e.filename));
+  const entry = entries.find((e) => e.filename === name);
+  if (entry === undefined || entry.directory) return null;
+  const budget = DecompressionBudget.forArchive(archiveSize, limits);
+  try {
+    const blob = await readZipEntryBlob(
+      entry,
+      budget,
+      "application/json",
+      limits.maxTextEntryBytes,
+    );
+    return parseSignedTourManifest(await blob.text()).seriesId;
+  } catch (err) {
+    if (err instanceof ArchiveLimitError) throw err;
+    return null;
   }
 }
 

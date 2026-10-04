@@ -23,8 +23,12 @@
  * attached. Names are taken relative to a folder every entry shares, so a
  * re-zip that adds or drops a wrapping folder keeps the key too. A
  * hand-built tour has nothing but those files; its key falls back to every
- * entry, and a Finish then changes it. No tour carries an identity of its
- * own yet; K1's `seriesId` (the signed `manifest.json`) replaces this.
+ * entry, and a Finish then changes it.
+ *
+ * A tour WITH `manifest.json` (tour kit plan K1) carries an identity of its
+ * own, its series id - the same for every version, every Finish, every
+ * re-zip - and is keyed by it instead (`tourSeriesFileKey`); this content
+ * key is the fallback for every other tour.
  */
 
 /** The fields of a zip entry the key reads (zip.js `Entry` has them). */
@@ -39,10 +43,18 @@ export interface TourFileKeyEntry {
 const TOUR_FILE_KEY_PREFIX = "local-file:";
 
 /** What a creator's Finish writes or removes, relative to the archive's
- *  wrapping folder: the manifest, the level files, the placed media. */
-const AUTHORED_ENTRY = /^(?:tour\.json|qr\/[^/]+\.json|content\/[^/]+)$/;
+ *  wrapping folder: the manifest, the level files, the placed media - and
+ *  the signed list with its signature, which a Finish drops (K1). */
+const AUTHORED_ENTRY =
+  /^(?:tour\.json|manifest\.json|manifest\.sig\.json|qr\/[^/]+\.json|content\/[^/]+)$/;
 
-/** True for a key made by {@link tourFileKey}. */
+/** The key of a file-opened tour that carries `manifest.json`: its series
+ *  id (tour kit plan K1, the K0 review's R7 follow-up). */
+export function tourSeriesFileKey(seriesId: string): string {
+  return `${TOUR_FILE_KEY_PREFIX}series:${seriesId}`;
+}
+
+/** True for a key made by {@link tourFileKey} or {@link tourSeriesFileKey}. */
 export function isTourFileKey(key: string): boolean {
   return typeof key === "string" && key.startsWith(TOUR_FILE_KEY_PREFIX);
 }

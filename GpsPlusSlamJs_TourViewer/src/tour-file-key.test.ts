@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   isTourFileKey,
   tourFileKey,
+  tourSeriesFileKey,
   type TourFileKeyEntry,
 } from "./tour-file-key.js";
 
@@ -123,5 +124,33 @@ describe("tourFileKey - stable across a Finish and a re-zip", () => {
       { filename: "tour.json", uncompressedSize: 41, crc32: 1 },
     ]);
     expect(a).not.toBe(b);
+  });
+});
+
+describe("the series key (tour kit plan K1, the K0 review's R7 follow-up)", () => {
+  // Why this matters: a file-opened tour's draft hangs on this key. A tour
+  // that carries manifest.json has an identity of its own - its series id,
+  // the same for every version - so its key is that id: a Finish, a new
+  // version or a re-zip keeps the creator's draft attached. Without a
+  // manifest the content key stays the fallback.
+  it("is a file key carrying the series id", () => {
+    const key = tourSeriesFileKey("K7fQ2mX9pL4sT8vB1nR6wA");
+    expect(key).toBe("local-file:series:K7fQ2mX9pL4sT8vB1nR6wA");
+    expect(isTourFileKey(key)).toBe(true);
+  });
+
+  it("the content key leaves out manifest.json and its signature, which a Finish drops", async () => {
+    // A tour built on a recording (`session.json` is not a tour-kit file);
+    // a tour of only tour-kit files falls back to every entry by design.
+    const recorded: TourFileKeyEntry[] = [
+      ...ENTRIES,
+      { filename: "session.json", uncompressedSize: 90, crc32: 5 },
+    ];
+    const withList: TourFileKeyEntry[] = [
+      ...recorded,
+      { filename: "manifest.json", uncompressedSize: 300, crc32: 7 },
+      { filename: "manifest.sig.json", uncompressedSize: 150, crc32: 8 },
+    ];
+    expect(await tourFileKey(withList)).toBe(await tourFileKey(recorded));
   });
 });

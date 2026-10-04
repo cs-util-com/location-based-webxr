@@ -27,7 +27,10 @@ loading with MIME types, and the poisoned-cache recovery loop.
   — `limits` overrides the zip-bomb caps (`DEFAULT_ARCHIVE_LIMITS`) for
   tests; the page always opens with the defaults.
 - `openTourFile(file, options?): Promise<TourSession>` (tour kit plan K0)
-  - a tour zip on the device, `options.limits` as above.
+  - a tour zip on the device, `options.limits` as above. Its
+    `archive.url` is `tour-file-key.ts`'s key: the series id when the
+    zip carries `manifest.json` (tour kit plan K1, R7), else the content
+    key.
 - `TourSession { entries; archive; fromFile; hasRecording; manifestWrap; budget; stats(); loadEntry(filename); loadEntryText(filename); loadContentEntry(image); close() }`
   - `integrity` (tour kit plan K1, §8 D3) - TIER 1's result
     (`tour-integrity.ts`): `none` for a tour without `manifest.json`,

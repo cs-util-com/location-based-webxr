@@ -510,3 +510,36 @@ describe("the signature (tour kit plan K1, K-D2)", () => {
     }
   });
 });
+
+describe("a file-opened tour's key (tour kit plan K1, R7)", () => {
+  // Why this matters: the draft store, the open tour's identity and the
+  // scan comparisons key on `archive.url`, which for a file is this key.
+  const file = (zip: Blob) =>
+    new File([zip], "tour.zip", { type: "application/zip" });
+
+  it("is the series id when the tour carries a manifest, whatever its content", async () => {
+    const first = await buildListedTourFixture(FILES, {
+      seriesId: "SeriesAAAAAAAAAAAAAAAAA",
+    });
+    const next = await buildListedTourFixture(
+      { ...FILES, "content/new.jpg": "NEW" },
+      { seriesId: "SeriesAAAAAAAAAAAAAAAAA", version: 2 },
+    );
+    const a = await openTourFile(file(first.zip));
+    const b = await openTourFile(file(next.zip));
+    expect(a.archive.url).toBe("local-file:series:SeriesAAAAAAAAAAAAAAAAA");
+    expect(b.archive.url).toBe(a.archive.url);
+    await a.close();
+    await b.close();
+  });
+
+  it("stays the content key for a tour without a manifest", async () => {
+    const zip = await writeStoreZip(
+      Object.entries(FILES).map(([path, data]) => ({ path, data })),
+      "test",
+    );
+    const session = await openTourFile(file(zip));
+    expect(session.archive.url).toMatch(/^local-file:[0-9a-f]{32}$/);
+    await session.close();
+  });
+});
