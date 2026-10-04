@@ -30,6 +30,7 @@ import {
   planMove,
   planVisitSettle,
   settleAlignment,
+  CODE_EVENT_REACH_M,
   sightedCodeOffset,
   type CodeMeasurement,
   type CodeSighting,
@@ -809,6 +810,22 @@ describe("moving a pin to the reticle (M4) goes through the settle's alignment",
   });
 });
 
+/** `pose` in another odometry frame: `move` (a rigid change, raw WebXR)
+ *  applied, as drift or a new session origin would. */
+function moved(pose: Pose, move: Matrix4): Pose {
+  const m = new Matrix4()
+    .compose(
+      new Vector3(...pose.position),
+      new Quaternion(...pose.rotation),
+      new Vector3(1, 1, 1),
+    )
+    .premultiply(move);
+  const p = new Vector3();
+  const q = new Quaternion();
+  m.decompose(p, q, new Vector3());
+  return { position: [p.x, p.y, p.z], rotation: [q.x, q.y, q.z, q.w] };
+}
+
 describe("each object at its own moment (D33)", () => {
   // Why these tests matter: settling every object through the alignment at
   // the visit's END folds the SLAM drift walked after an object into it
@@ -823,22 +840,6 @@ describe("each object at its own moment (D33)", () => {
     atMs,
     alignment,
   });
-
-  /** `pose` in another odometry frame: `move` (a rigid change, raw WebXR)
-   *  applied, as drift or a new session origin would. */
-  function moved(pose: Pose, move: Matrix4): Pose {
-    const m = new Matrix4()
-      .compose(
-        new Vector3(...pose.position),
-        new Quaternion(...pose.rotation),
-        new Vector3(1, 1, 1),
-      )
-      .premultiply(move);
-    const p = new Vector3();
-    const q = new Quaternion();
-    m.decompose(p, q, new Vector3());
-    return { position: [p.x, p.y, p.z], rotation: [q.x, q.y, q.z, q.w] };
-  }
 
   it("composes each note and the measured code through its own alignment, an object without one through the end", () => {
     const aEarly = yawAlignment(5, [1, 400, 2]);
@@ -1092,5 +1093,226 @@ describe("each object at its own moment (D33)", () => {
       },
     })!;
     expect(plan.objects[0]!.basis).toBe("code-corrected");
+  });
+});
+
+describe("which sighting corrects a note: nearest in WALKED distance, capped (review R3 of D33)", () => {
+  // Why these tests matter: SLAM drift grows with the distance walked, not
+  // with time. An author who stands still for minutes after a sighting and
+  // then walks a short loop past the code again is nearer the FIRST
+  // sighting in drift but nearer the second in time; the time rule picked
+  // the second and moved the note by the loop's drift (the sweep's "stop"
+  // cells). And a note walked far from every sighting inherits the drift
+  // and the code's heading error times its distance from the code, so past
+  // a cap no sighting corrects it.
+  const a1 = yawAlignment(20, [100, 400, 50]);
+  const stored = levelThrough(a1);
+  const a2 = yawAlignment(-35, [80, 403, 40]);
+  const drift = new Matrix4().compose(
+    new Vector3(2.5, 0, -1),
+    new Quaternion(...yawQ(6)),
+    new Vector3(1, 1, 1),
+  );
+  const spot: Pose = { position: [0.3, 0, -5], rotation: [0, 0, 0, 1] };
+  const s0: CodeSighting = { text: TEXT, levelId: LEVEL_ID, odomPose: CODE };
+  const s1: CodeSighting = { ...s0, odomPose: moved(CODE, drift) };
+  const local = [...odomNueFromWebXr(spot).position] as [
+    number,
+    number,
+    number,
+  ];
+  /** Where the measuring visit's alignment puts the spot. */
+  const expected = new Vector3(
+    ...throughAlignment(odomNueFromWebXr(spot), a1)!.position,
+  );
+  const settle = (
+    note: { atMs: number; walkedM?: number },
+    sightings: { atMs: number; walkedM?: number; sighting: CodeSighting }[],
+  ) =>
+    planVisitSettle({
+      visit: 1,
+      placed: [placedPin("note", local, 1, a2)],
+      alignment: a2,
+      zero: ZERO,
+      mintedLevel: stored,
+      measurement: measuredInVisit(0),
+      sighting: sightings.at(-1)?.sighting ?? null,
+      alignmentInfo: INFO,
+      nowIso: NOW,
+      picks: {
+        objects: new Map([["note", { ...note, alignment: a2 }]]),
+        measurement: null,
+        sightings: sightings.map((s) => ({ ...s, alignment: a2 })),
+      },
+    })!;
+
+  it("takes the sighting nearest in walked distance when time says otherwise (a stand-still)", () => {
+    // The note is placed 300 s after s0 without walking, then the author
+    // walks 120 m in 100 s and sights the code again (s1, drifted).
+    const plan = settle({ atMs: 301_000, walkedM: 50 }, [
+      { atMs: 1_000, walkedM: 50, sighting: s0 },
+      { atMs: 401_000, walkedM: 170, sighting: s1 },
+    ]);
+    expect(plan.objects[0]!.basis).toBe("code-corrected");
+    expect(worldOf(plan.objects[0]!.object).distanceTo(expected)).toBeLessThan(
+      1e-3,
+    );
+  });
+
+  it("corrects nothing past the cap: the note keeps its own alignment", () => {
+    const within = settle({ atMs: 100_000, walkedM: 50 + CODE_EVENT_REACH_M }, [
+      { atMs: 1_000, walkedM: 50, sighting: s0 },
+    ]);
+    expect(within.objects[0]!.basis).toBe("code-corrected");
+    const beyond = settle(
+      { atMs: 100_000, walkedM: 50 + CODE_EVENT_REACH_M + 1 },
+      [{ atMs: 1_000, walkedM: 50, sighting: s0 }],
+    );
+    expect(beyond.objects[0]!.basis).toBe("visit-alignment");
+    expect(beyond.objects[0]!.alignment).toEqual(a2);
+    expect(beyond.objects[0]!.refused).toBeNull();
+  });
+
+  // Why this test matters: picks kept without a walked distance (an older
+  // caller, the unit tests above) keep the time rule and no cap, so the
+  // change cannot silently drop a correction a caller relied on.
+  it("falls back to the nearest in time, uncapped, when a distance is unknown", () => {
+    const plan = settle({ atMs: 1_900 }, [
+      { atMs: 0, walkedM: 0, sighting: s0 },
+      { atMs: 2_000, walkedM: 10_000, sighting: s1 },
+    ]);
+    // Nearest in time is s1; the note sits in s0's frame, so through s1 it
+    // lands off by the drift.
+    expect(plan.objects[0]!.basis).toBe("code-corrected");
+    expect(
+      worldOf(plan.objects[0]!.object).distanceTo(expected),
+    ).toBeGreaterThan(1);
+  });
+});
+
+describe("a note near a code event of the visit that measured the code shares the code's alignment (review R1 of D33)", () => {
+  // Why these tests matter: since D33 each object goes through the first
+  // mature alignment after its OWN moment, so a code measured in this visit
+  // and a note placed a minute or a few dozen metres later went through
+  // different alignments, and the relation between them was off by how
+  // much the GPS solve moved in between (symptom B2 returned for taps after
+  // maturity: 0.5-1.6 m in the sweep where one shared alignment kept
+  // 0.1-0.5 m). A note within the reach of the measurement goes through
+  // the code's own alignment; one nearer a later sighting of the code is
+  // corrected through that sighting onto the code as re-minted.
+  const aCode = yawAlignment(2, [0.5, 400, -1]);
+  const aLate = yawAlignment(-8, [-3, 401, 4]);
+  const aEnd = yawAlignment(30, [9, 402, -6]);
+  const pickInfo = { hasMatrix: true, sampleCount: 40, gpsAccuracyM: 4 };
+  const spot: Pose = { position: [0.3, 0, -5], rotation: [0, 0, 0, 1] };
+  const nueOf = (pose: Pose) =>
+    [...odomNueFromWebXr(pose).position] as [number, number, number];
+  const base = {
+    visit: 0,
+    alignment: aEnd,
+    zero: ZERO,
+    mintedLevel: levelThrough(aEnd),
+    measurement: measuredInVisit(0),
+    sighting: null,
+    alignmentInfo: INFO,
+    nowIso: NOW,
+  };
+  const measurementPick = {
+    atMs: 500,
+    walkedM: 10,
+    alignment: aCode,
+    alignmentInfo: pickInfo,
+  };
+
+  it("puts a note within the reach of the measurement through the code's alignment, one beyond it through its own", () => {
+    const plan = planVisitSettle({
+      ...base,
+      placed: [
+        placedPin("near", nueOf(spot), 0, aLate),
+        placedPin("far", nueOf(spot), 0, aLate),
+      ],
+      picks: {
+        objects: new Map([
+          [
+            "near",
+            {
+              atMs: 60_000,
+              walkedM: 10 + CODE_EVENT_REACH_M - 1,
+              alignment: aLate,
+            },
+          ],
+          [
+            "far",
+            {
+              atMs: 90_000,
+              walkedM: 10 + CODE_EVENT_REACH_M + 1,
+              alignment: aLate,
+            },
+          ],
+        ]),
+        measurement: measurementPick,
+        sightings: [],
+      },
+    })!;
+    expect(plan.levelAlignment).toEqual(aCode);
+    expect(plan.objects[0]!.alignment).toEqual(aCode);
+    expect(plan.objects[0]!.basis).toBe("measured-here");
+    expect(plan.objects[1]!.alignment).toEqual(aLate);
+  });
+
+  it("corrects a note nearer a later sighting of the code through that sighting, onto the code as re-minted", () => {
+    // By the second sighting the odometry has drifted: the frame turned 6
+    // degrees and moved 2.5 m. The note is placed in THAT frame, next to the
+    // sighting, 300 m walked after the measurement.
+    const drift = new Matrix4().compose(
+      new Vector3(2.5, 0, -1),
+      new Quaternion(...yawQ(6)),
+      new Vector3(1, 1, 1),
+    );
+    const s1: CodeSighting = {
+      text: TEXT,
+      levelId: LEVEL_ID,
+      odomPose: moved(CODE, drift),
+    };
+    // The sighting's own pick: a few metres and degrees from the code's,
+    // as two mature alignments of one visit are (inside the bound).
+    const a2 = yawAlignment(-4, [2, 400.5, 1.5]);
+    const plan = planVisitSettle({
+      ...base,
+      gpsAccuracyM: 4,
+      placed: [placedPin("note", nueOf(moved(spot, drift)), 0, a2)],
+      picks: {
+        objects: new Map([
+          ["note", { atMs: 400_000, walkedM: 312, alignment: a2 }],
+        ]),
+        measurement: measurementPick,
+        sightings: [
+          { atMs: 390_000, walkedM: 310, alignment: a2, sighting: s1 },
+        ],
+      },
+    })!;
+    // Where the note sits relative to the code is what the tracking saw.
+    const expected = new Vector3(
+      ...throughAlignment(odomNueFromWebXr(spot), aCode)!.position,
+    );
+    expect(plan.objects[0]!.basis).toBe("measured-here");
+    expect(worldOf(plan.objects[0]!.object).distanceTo(expected)).toBeLessThan(
+      1e-3,
+    );
+  });
+
+  // Why this test matters: picks without walked distances (an older
+  // caller) keep D33's own-moment choice, never a guess.
+  it("keeps each note's own alignment when a walked distance is unknown", () => {
+    const plan = planVisitSettle({
+      ...base,
+      placed: [placedPin("note", nueOf(spot), 0, aLate)],
+      picks: {
+        objects: new Map([["note", { atMs: 60_000, alignment: aLate }]]),
+        measurement: measurementPick,
+        sightings: [],
+      },
+    })!;
+    expect(plan.objects[0]!.alignment).toEqual(aLate);
   });
 });

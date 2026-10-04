@@ -133,6 +133,31 @@ describe("createVisitAlignmentTracker (D33)", () => {
     expect(t.picks().measurement?.alignmentInfo).toEqual(info(90));
   });
 
+  // Why this test matters: the settle decides by WALKED distance which code
+  // event a note shares its alignment with (review R1 of D33) and which
+  // sighting corrects it (R3). Each event keeps the walked distance of its
+  // own moment - not of the alignment its pick later freezes at - and an
+  // event whose caller never told the distance keeps none.
+  it("stamps each event with the walked distance at its own moment", () => {
+    const t = createVisitAlignmentTracker();
+    t.noteAlignment({ ...moment(1, 5), walkedM: 12 });
+    t.noteMeasurement(0);
+    t.notePlacement("pin", 10);
+    t.noteSighting(sighting("a", 0), 20);
+    t.noteAlignment({ ...moment(2, 300), walkedM: 70 });
+    t.noteSighting(sighting("a", 1), 500);
+    t.noteSighting(sighting("a", 2), 5_000);
+    const picks = t.picks();
+    expect(picks.measurement?.walkedM).toBe(12);
+    expect(picks.objects.get("pin")?.walkedM).toBe(12);
+    // The newest of a run replaces it, with its own distance.
+    expect(picks.sightings.map((s) => s.walkedM)).toEqual([70, 70]);
+    const bare = createVisitAlignmentTracker();
+    bare.noteAlignment(moment(1, 5));
+    bare.notePlacement("pin", 0);
+    expect(bare.picks().objects.get("pin")?.walkedM).toBeUndefined();
+  });
+
   it("never merges sightings of two different codes", () => {
     const t = createVisitAlignmentTracker();
     t.noteAlignment(moment(1, 100));

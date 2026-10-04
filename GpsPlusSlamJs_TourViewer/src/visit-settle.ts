@@ -1,27 +1,40 @@
 /**
  * The authoring settle (authoring plan 2026-09-28-0953 §3.2, M2c; owner
- * decisions D2 and D10b): at the end of an AR visit - and at Finish for the
- * visit still running - the geo of the code measured in that visit and of
- * every object placed in it is recomputed through ONE alignment.
+ * decisions D2, D10b and D33): at the end of an AR visit - and at Finish for
+ * the visit still running - the geo of the code measured in that visit and
+ * of every object placed in it is recomputed from its odometry pose.
  *
  * WHY. Each tap minted its geo through the alignment of that moment: the
  * code at "Save the measured position", each note at its own Save. Those
  * alignments differ, so the stored notes disagreed with the stored code by
  * however much GPS moved in between, and no later relocalization could undo
- * it (plan §2.2, B2). Settled through one alignment, code and notes share
- * the same GPS error and keep exactly the relation the phone's tracking saw.
+ * it (plan §2.2, B2). A note and the code it sits by must share ONE
+ * alignment, so they keep the relation the phone's tracking saw.
  *
- * EACH OBJECT AT ITS OWN MOMENT (owner decision D33, 2026-10-03): with the
- * visit's picks (`visit-alignment-picks.ts`), each object, the measured code
- * and each sighting of a stored code is composed through the FIRST MATURE
- * alignment at or after its own moment (40 m of session GPS extent, D34), else
- * the visit's alignment at its end; a code correction uses the sighting
- * NEAREST the object in time and is judged through THAT sighting's
- * alignment. Without picks everything goes through the end alignment and
- * the latest sighting, as below. Measured in
+ * EACH OBJECT AT ITS OWN MOMENT (owner decision D33, 2026-10-03): one
+ * alignment for the whole visit (its end) folded all the SLAM drift walked
+ * after an object into it, so with the visit's picks
+ * (`visit-alignment-picks.ts`) each object, the measured code and each
+ * sighting is composed through the FIRST MATURE alignment at or after its
+ * own moment (40 m of session GPS extent, D34), else the visit's alignment
+ * at its end.
+ *
+ * NEAR A CODE EVENT, THE CODE'S ALIGNMENT (reviews R1 and R3 of D33): a
+ * note within {@link CODE_EVENT_REACH_M} WALKED of a code event of its
+ * visit shares the code's alignment through the nearest event - drift grows
+ * with the distance walked, not with time:
+ * - the visit MEASURED the code: the measurement's own pick (the code's), or
+ *   a later sighting's pick corrected onto the code as re-minted;
+ * - a STORED code: the nearest sighting's correction (D10b), judged through
+ *   that sighting's own pick.
+ * Farther from every event a note keeps its own pick; picks kept without a
+ * walked distance keep the rules before R1 and R3 (own pick; the sighting
+ * nearest in time). Without picks everything goes through the end
+ * alignment and the latest sighting, as below. Measured in
  * `visit-settle.left-behind.test.ts`.
  *
- * WHICH ALIGNMENT ({@link settleAlignment}):
+ * WHICH ALIGNMENT WITHOUT PICKS ({@link settleAlignment}; also the choice
+ * for an object at the visit's end):
  * - the visit MEASURED the code: the visit's alignment at its end (the
  *   solver's current, recency-weighted estimate); the code is re-minted
  *   through it too;
@@ -93,6 +106,9 @@ export interface TimedAlignment {
   /** The mint gate's view of that alignment, when the caller knew it: the
    *  quality block of a code re-minted through it. */
   readonly alignmentInfo?: MintAlignmentInfo | undefined;
+  /** How far the author had walked in the visit at this moment (m,
+   *  `walked-distance-tracker.ts`); absent when the caller did not know. */
+  readonly walkedM?: number | undefined;
 }
 
 /** A stable sighting of the code in hand, at its moment. */
@@ -325,16 +341,71 @@ export interface SettleChoice {
 }
 
 /**
- * The sighting of the code in hand a correction at `atMs` uses: the one
- * NEAREST in time (a tie goes to the later; `atMs` null: the latest), with
- * the alignment its correction is judged through - its own pick (D33).
+ * THE CODE EVENT REACH (reviews R1 and R3 of D33): a note within this many
+ * metres WALKED of a code event of its visit - the code's measurement or a
+ * stable sighting of it - is placed relative to the code through the
+ * nearest such event; one farther from every event keeps its own
+ * alignment. Within it, the note and the code share one alignment (the
+ * relation the phone's tracking saw, up to the drift walked since the
+ * event); past it, that drift and the code's heading error times the
+ * note's distance from the code outweigh what sharing removes. The sweep
+ * and the values that would reverse the choice are in the sidecar.
+ */
+export const CODE_EVENT_REACH_M = 40;
+
+const finite = (v: number | undefined): v is number =>
+  typeof v === "number" && Number.isFinite(v);
+
+/** The moment of an object: when it was placed and how far the author had
+ *  walked by then; null for "at the visit's end". */
+type Moment = Pick<TimedAlignment, "atMs" | "walkedM"> | null;
+
+/** Of `kept`, the one nearest `at` by `metric`; a tie goes to the later. */
+function nearestBy<T extends object>(
+  kept: readonly T[],
+  metric: (s: T) => number,
+  at: number,
+): { best: T; gap: number } {
+  let best = kept[kept.length - 1]!;
+  let gap = Number.POSITIVE_INFINITY;
+  for (const s of kept) {
+    const g = Math.abs(metric(s) - at);
+    if (g <= gap) {
+      best = s;
+      gap = g;
+    }
+  }
+  return { best, gap };
+}
+
+/** The walked distance of `at` when it and every one of `events` know
+ *  theirs; null otherwise (the rules before R1 and R3 then apply). */
+function walkedOf(
+  at: Moment,
+  events: readonly { readonly walkedM?: number | undefined }[],
+): number | null {
+  return at !== null &&
+    finite(at.walkedM) &&
+    events.every((e) => finite(e.walkedM))
+    ? at.walkedM
+    : null;
+}
+
+/**
+ * The sighting of the code in hand a correction at `at` uses, with the
+ * alignment its correction is judged through - its own pick (D33):
+ * - the one NEAREST in WALKED distance (R3: drift grows with the distance
+ *   walked, not with time), and none past {@link CODE_EVENT_REACH_M};
+ * - when the object's or any sighting's walked distance is unknown (a
+ *   caller that kept none), the one nearest in time, uncapped, as before;
+ * - `at` null (the visit's end): the latest.
  * Without a kept sighting of that code, the input's `sighting` through
  * `end` (the settle as before D33).
  */
 function nearestSighting(
   input: SettleAlignmentInput,
   end: number[],
-  atMs: number | null,
+  at: Moment,
 ): { sighting: CodeSighting; alignment: number[] } | null {
   const levelId = input.mintedLevel?.id;
   const kept = (input.picks?.sightings ?? []).filter(
@@ -346,15 +417,13 @@ function nearestSighting(
       : { sighting: input.sighting, alignment: end };
   }
   let best = kept[kept.length - 1]!;
-  if (atMs !== null && Number.isFinite(atMs)) {
-    let bestGap = Number.POSITIVE_INFINITY;
-    for (const s of kept) {
-      const gap = Math.abs(s.atMs - atMs);
-      if (gap <= bestGap) {
-        best = s;
-        bestGap = gap;
-      }
-    }
+  const walkedAt = walkedOf(at, kept);
+  if (walkedAt !== null) {
+    const near = nearestBy(kept, (s) => s.walkedM!, walkedAt);
+    if (near.gap > CODE_EVENT_REACH_M) return null;
+    best = near.best;
+  } else if (at !== null && finite(at.atMs)) {
+    best = nearestBy(kept, (s) => s.atMs, at.atMs).best;
   }
   return {
     sighting: best.sighting,
@@ -363,22 +432,22 @@ function nearestSighting(
 }
 
 /**
- * The choice for an object of the visit at `atMs` (null: at the end) whose
- * own alignment is `own`: measured here, through `own`; else corrected
- * through the nearest sighting of the stored code when the bound admits it,
- * judged through that sighting's alignment; else `own`.
+ * The choice for an object of the visit at moment `at` (null: at the end)
+ * whose own alignment is `own`: measured here, through `own`; else
+ * corrected through the nearest sighting of the stored code when the bound
+ * admits it, judged through that sighting's alignment; else `own`.
  */
 function choiceFor(
   input: SettleAlignmentInput,
   end: number[],
   zero: LatLong,
-  atMs: number | null,
+  at: Moment,
   own: number[],
 ): SettleChoice {
   if (measuredHere(input)) {
     return { basis: "measured-here", alignment: own, refused: null };
   }
-  const near = nearestSighting(input, end, atMs);
+  const near = nearestSighting(input, end, at);
   const correction =
     near === null
       ? null
@@ -402,6 +471,84 @@ function choiceFor(
     alignment: correction.alignment,
     refused: null,
   };
+}
+
+type CodeEvent =
+  | { readonly kind: "measurement"; readonly walkedM: number }
+  | {
+      readonly kind: "sighting";
+      readonly walkedM: number;
+      readonly sighting: CodeSighting;
+      readonly alignment: number[];
+    };
+
+/** Of the measurement and the kept sightings of the measured code, the one
+ *  nearest `at` in walked distance (a tie goes to the measurement), or null
+ *  past {@link CODE_EVENT_REACH_M} or when a walked distance is unknown. */
+function nearestCodeEvent(
+  input: VisitSettleInput,
+  end: number[],
+  at: Moment,
+  code: { readonly level: { readonly id: string } },
+): CodeEvent | null {
+  const measuredAt = input.picks?.measurement?.walkedM;
+  const sightings = (input.picks?.sightings ?? []).filter(
+    (s) => s.sighting.levelId === code.level.id,
+  );
+  const walkedAt = walkedOf(at, sightings);
+  if (walkedAt === null || !finite(measuredAt)) return null;
+  const events: CodeEvent[] = [
+    ...sightings.map((s) => ({
+      kind: "sighting" as const,
+      walkedM: s.walkedM!,
+      sighting: s.sighting,
+      alignment: readAlignment(s.alignment) ?? end,
+    })),
+    // Last, so a tie goes to the measurement.
+    { kind: "measurement" as const, walkedM: measuredAt },
+  ];
+  const near = nearestBy(events, (e) => e.walkedM, walkedAt);
+  return near.gap > CODE_EVENT_REACH_M ? null : near.best;
+}
+
+/**
+ * The choice for an object of a visit that MEASURED the code (R1 of D33),
+ * whose own alignment is `own`: the code event of this visit nearest it in
+ * walked distance - the measurement, or a later stable sighting of the
+ * code - within {@link CODE_EVENT_REACH_M}, places it relative to the code
+ * as re-minted (`level`, through `levelAlignment`):
+ * - the measurement: through `levelAlignment` itself, the code's own;
+ * - a sighting: through that sighting's pick corrected onto the re-minted
+ *   code (the D10b correction within the visit, its bound included).
+ * Otherwise, or when a walked distance is unknown (a caller that kept
+ * none), through `own`, as before. A tie goes to the measurement.
+ */
+function measuredChoice(
+  input: VisitSettleInput,
+  end: number[],
+  zero: LatLong,
+  at: Moment,
+  own: number[],
+  code: { level: { id: string; json: string }; alignment: number[] } | null,
+): SettleChoice {
+  const plain: SettleChoice = {
+    basis: "measured-here",
+    alignment: own,
+    refused: null,
+  };
+  const event = code === null ? null : nearestCodeEvent(input, end, at, code);
+  if (code === null || event === null) return plain;
+  if (event.kind === "measurement") {
+    return { ...plain, alignment: code.alignment };
+  }
+  const correction = codeCorrectionOf(
+    { ...input, mintedLevel: code.level, sighting: event.sighting },
+    event.alignment,
+    zero,
+  );
+  if (correction === null) return plain;
+  if ("refused" in correction) return { ...plain, refused: correction.refused };
+  return { ...plain, alignment: correction.alignment };
 }
 
 /** The stored code in hand and this visit's sighting of it, through
@@ -571,13 +718,6 @@ export function planVisitSettle(input: VisitSettleInput): VisitSettle | null {
   const zero = input.zero;
   if (end === null || zero === null) return null;
   const choice = choiceFor(input, end, zero, null, end);
-  const objects = targets.flatMap(({ index, object, local }) => {
-    const timed = input.picks?.objects.get(object.id);
-    const own = readAlignment(timed?.alignment ?? null) ?? end;
-    const mine = choiceFor(input, end, zero, timed?.atMs ?? null, own);
-    const settled = settledObject(object, local, mine.alignment, zero);
-    return settled === null ? [] : [{ index, object: settled, ...mine }];
-  });
   const picked = readAlignment(input.picks?.measurement?.alignment ?? null);
   const levelAlignment = measured ? (picked ?? end) : null;
   // Geo and quality block travel together: through the measurement's pick,
@@ -590,6 +730,19 @@ export function planVisitSettle(input: VisitSettleInput): VisitSettle | null {
     levelAlignment === null
       ? null
       : remintedLevel(input, levelAlignment, zero, levelInfo);
+  const code =
+    level === null || levelAlignment === null
+      ? null
+      : { level, alignment: levelAlignment };
+  const objects = targets.flatMap(({ index, object, local }) => {
+    const timed = input.picks?.objects.get(object.id);
+    const own = readAlignment(timed?.alignment ?? null) ?? end;
+    const mine = measured
+      ? measuredChoice(input, end, zero, timed ?? null, own, code)
+      : choiceFor(input, end, zero, timed ?? null, own);
+    const settled = settledObject(object, local, mine.alignment, zero);
+    return settled === null ? [] : [{ index, object: settled, ...mine }];
+  });
   return {
     basis: choice.basis,
     alignment: choice.alignment,

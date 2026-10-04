@@ -94,6 +94,7 @@ import {
 import { odomNueFromWebXr } from "./visit-anchoring.js";
 import { createVisitAlignmentTracker } from "./visit-alignment-picks.js";
 import { createGpsExtentTracker } from "gps-plus-slam-app-framework/state/gps-extent-tracker";
+import { createWalkedDistanceTracker } from "./walked-distance-tracker.js";
 import { createKeyedChain } from "./keyed-chain.js";
 
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
@@ -430,6 +431,8 @@ export function wireCreatorSetup(deps: {
   const alignmentPicks = createVisitAlignmentTracker();
   /** The session's GPS extent, the picks' maturity (40 m, D34). */
   const gpsExtent = createGpsExtentTracker();
+  /** How far the author has walked, each event's stamp (R1, R3 of D33). */
+  const walkedDistance = createWalkedDistanceTracker();
   /** What the picks last saw: the alignment and zero references and the
    *  fix count. */
   let pickedFrom: readonly [unknown, unknown, number] | null = null;
@@ -453,6 +456,10 @@ export function wireCreatorSetup(deps: {
       alignmentMatrix,
       zero,
       gpsExtentM: gpsExtent.update(positions),
+      walkedM: walkedDistance.update({
+        gpsPositions: positions,
+        odometryPositions: selectOdometryPositions(state),
+      }),
       alignmentInfo: authorAlignmentInfo(),
     });
   }

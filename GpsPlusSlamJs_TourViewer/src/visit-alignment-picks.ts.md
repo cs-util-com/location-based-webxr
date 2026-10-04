@@ -21,7 +21,7 @@ alignment, so the picks are folded here while it evolves.
 The rule is the framework's (`gps-plus-slam-app-framework/state/alignment-maturity`,
 DEC-H3: the Recorder's QR mint and the GPS anchor's `'mature-alignment'`
 start-up fold the same pick). This module keys it by object, measurement and
-sighting and keeps the sightings' times; `visit-settle.ts` decides what to do
+sighting and keeps each event's time and walked distance; `visit-settle.ts` decides what to do
 with them.
 
 **Why a tracker and not the GPS anchor object** (D33 asked for "a new
@@ -43,19 +43,24 @@ lives here.
   drift, about 1 cm per second; it would matter only above tens of seconds.
 - `createVisitAlignmentTracker(): VisitAlignmentTracker`
   - `noteAlignment(now)` - the alignment as it stands now
-    (`{ alignmentMatrix, zero, gpsExtentM, alignmentInfo? }`,
+    (`{ alignmentMatrix, zero, gpsExtentM, alignmentInfo?, walkedM? }`,
     `PickedAlignmentMoment`, module-internal); every open pick follows it, a mature one
     stays. `alignmentInfo` (the mint gate's fix count and accuracy) travels
     with the pick, so a code re-minted through it records that alignment's
-    quality block.
+    quality block. `walkedM` is how far the author has walked in the visit
+    (`walked-distance-tracker.ts`); each event noted after it is stamped
+    with it.
   - `notePlacement(id, atMs)` - an object placed or MOVED (re-opens it at the
     alignment last noted).
   - `noteMeasurement(atMs)` - the code measured in this visit.
   - `noteSighting(sighting, atMs)` - a stable sighting of the code in hand.
   - `picks(): VisitAlignmentPicks` - copies: `objects` (by id),
     `measurement`, `sightings` (oldest first), each
-    `{ atMs, alignment, alignmentInfo? }` with `alignment` null when no
-    usable alignment was noted since.
+    `{ atMs, walkedM?, alignment, alignmentInfo? }` with `alignment` null
+    when no usable alignment was noted since, and `walkedM` the walked
+    distance at the event's OWN moment (not at the alignment its pick froze
+    at), absent when the caller never passed one. The settle reads it for
+    "near a code event" (reviews R1 and R3 of D33).
   - `reset()` - a new visit.
 
 ## Invariants & assumptions
@@ -95,7 +100,8 @@ picks.reset();
   after the placement, or its own when already mature; follows to the latest
   usable alignment otherwise; a move re-opens; a placement before any
   alignment; one sighting per second of looking with its own time and pick;
-  two codes never merged; the mint info travels with its pick; reset; copies; a property test against the search
+  two codes never merged; the mint info travels with its pick; each event
+  stamped with the walked distance of its own moment; reset; copies; a property test against the search
   over the alignment history.
 - `visit-settle.test.ts` ("each object at its own moment") and
   `visit-settle.left-behind.test.ts` (the shipped path at three sweep

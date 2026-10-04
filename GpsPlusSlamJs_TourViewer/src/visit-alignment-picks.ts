@@ -17,7 +17,8 @@
  * The rule itself is the framework's (DEC-H3: the QR mint, the GPS anchor's
  * `'mature-alignment'` start-up and this settle fold the same pick); this
  * module only keys it by object, measurement and sighting, and keeps the
- * sightings' times for "the sighting nearest each note" (D33, D10b).
+ * events' times and walked distances for "the code event nearest each note"
+ * (D33, D10b; reviews R1 and R3).
  *
  * @see visit-alignment-picks.ts.md
  */
@@ -53,6 +54,9 @@ export const SIGHTING_SPACING_MS = 1_000;
  */
 interface PickedAlignmentMoment extends AlignmentMoment {
   readonly alignmentInfo?: MintAlignmentInfo | undefined;
+  /** How far the author has walked in the visit by now
+   *  (`walked-distance-tracker.ts`); absent when the caller does not know. */
+  readonly walkedM?: number | undefined;
 }
 
 export interface VisitAlignmentTracker {
@@ -73,6 +77,8 @@ export interface VisitAlignmentTracker {
 
 interface Timed {
   readonly atMs: number;
+  /** The walked distance at the event's own moment (R1, R3 of D33). */
+  readonly walkedM: number | undefined;
   pick: MatureAlignmentPick<PickedAlignmentMoment>;
 }
 
@@ -85,9 +91,11 @@ const NO_ALIGNMENT: PickedAlignmentMoment = {
  *  usable alignment was ever seen (the settle then uses the end one). */
 function timedAlignment(t: Timed): TimedAlignment {
   const { alignmentMatrix: matrix, alignmentInfo } = t.pick.alignment;
-  if (matrix === null) return { atMs: t.atMs, alignment: null };
+  const walked = t.walkedM === undefined ? {} : { walkedM: t.walkedM };
+  if (matrix === null) return { atMs: t.atMs, alignment: null, ...walked };
   return {
     atMs: t.atMs,
+    ...walked,
     alignment: Array.from(matrix),
     ...(alignmentInfo === undefined
       ? {}
@@ -107,6 +115,10 @@ export function createVisitAlignmentTracker(): VisitAlignmentTracker {
 
   const open = (atMs: number): Timed => ({
     atMs,
+    walkedM:
+      typeof current.walkedM === "number" && Number.isFinite(current.walkedM)
+        ? current.walkedM
+        : undefined,
     pick: openMatureAlignmentPick(current),
   });
   const advance = (t: Timed): void => {

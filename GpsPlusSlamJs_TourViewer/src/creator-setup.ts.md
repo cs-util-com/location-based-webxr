@@ -241,11 +241,14 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   recomputes the geo of the code measured in this visit and of every object
   placed in it - since D33 each through the first mature alignment after its
   own moment (`visit-alignment-picks.ts`, fed by `syncAlignmentPicks` on
-  every store change with the alignment, the zero and the session GPS extent;
+  every store change with the alignment, the zero, the session GPS extent
+  and the walked distance (`walked-distance-tracker.ts`, reviews R1 and R3 of
+  D33);
   a pin at its Save, a photo at its tap, a move through
   `object-editing.ts`'s `notePlaced`, the measurement at its tap, each
   stable sighting of the code in hand; emptied at each visit's start and
-  end), a correction through the sighting nearest each object; the records
+  end), and a note within `CODE_EVENT_REACH_M` walked of a code event of
+  the visit shares the code's alignment through the nearest event; the records
   replace the tap-time ones
   in `ctx.placedObjects` and `ctx.mintedLevel`, each settled object's draft
   record and the meta are REWRITTEN (the per-object file design already

@@ -81,6 +81,21 @@
  *   placement) is no better than m80: 0.9-1.7 / 1.8-3.8 m, with p90 up to
  *   3.0-3.3 m where m80 has 2.1-2.7.
  *
+ * NEAR A CODE EVENT (reviews R1 and R3 of D33, 2026-10-04; opt-in
+ * `VISIT_SETTLE_RELATION_SWEEP=1` and `VISIT_SETTLE_SIGHTING_SWEEP=1`, tables
+ * to `VISIT_SETTLE_RELATION_OUT` / `VISIT_SETTLE_SIGHTING_OUT`, run in slices
+ * with `VISIT_SETTLE_CELL_SLICE=from-to`; scored on the NOTE-MINUS-CODE
+ * relation): the note is placed after a walk, stand-still or look following
+ * the code event (`noteAfter`). With each object at its own pick, a note placed
+ * after a 60-120 s stand-still or a 10-30 m walk was 0.3-1.7 m p50 off the
+ * code it was placed by, 0.1-0.7 m through the code's pick; a later
+ * sighting next to the note, corrected onto the code, 0.2-0.3 m; for a
+ * stored code after a stand-still the sighting nearest in time 0.6-2.5 m,
+ * nearest walked 0.1-0.3 m. The reach of 40 m walked is the swept value
+ * (10-480 m) at which no cell's p50 relation is worse than the note's own
+ * pick; notes placed 60 m or more away from the code are what bound it.
+ * The full numbers are in `visit-settle.ts.md`.
+ *
  * Measured result BEFORE D33 (2026-10-03, 30 visits per cell, horizontal
  * p50 / p90; "end" = what shipped then, "tap" = the alignment at the tap,
  * "m40"/"m80" = the first alignment at or after the tap whose session GPS
@@ -141,8 +156,10 @@ import {
   recordGpsEvent,
   selectAlignmentMatrix,
   selectGpsPositions,
+  selectOdometryPositions,
   setZeroPos,
 } from "gps-plus-slam-app-framework/state";
+import { MATURE_GPS_EXTENT_M } from "gps-plus-slam-app-framework/state/alignment-maturity";
 import { createGpsExtentTracker } from "gps-plus-slam-app-framework/state/gps-extent-tracker";
 import { mintQrLevelFromWorld } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
@@ -164,6 +181,7 @@ import {
 } from "gps-plus-slam-app-framework/test-utils/integrated-slam-drift";
 
 import { createVisitAlignmentTracker } from "./visit-alignment-picks.js";
+import { createWalkedDistanceTracker } from "./walked-distance-tracker.js";
 import { mintPin } from "./content-placement.js";
 import { odomNueFromWebXr } from "./visit-anchoring.js";
 import {
@@ -244,6 +262,24 @@ interface VisitSpec {
   readonly walkM?: number;
   /** GPS noise, drift and look noise off: the fixture's sanity inputs. */
   readonly exact?: boolean;
+  /** The pin placed SOME WALK AFTER the code is measured (review R1 of
+   *  D33); absent: the pin is placed at the measurement's look. */
+  readonly noteAfter?: NoteAfterSpec;
+}
+
+/**
+ * Between the measurement (the end of the third look) and the pin: an
+ * out-and-back of `walkM` from the stand, a stand-still of `dwellS`, and
+ * with `lookAtEnd` one more 4 s look at the code (a sighting), all ending at
+ * the stand, where the pin is then placed.
+ */
+interface NoteAfterSpec {
+  readonly walkM: number;
+  readonly dwellS: number;
+  readonly lookAtEnd: boolean;
+  /** Walk `walkM` away and stay there (no way back, no look possible):
+   *  the pin is placed 4 m from that far point. Needs no leave after. */
+  readonly oneWay?: boolean;
 }
 
 interface FixSnapshot {
@@ -252,6 +288,9 @@ interface FixSnapshot {
   /** The session's GPS extent as the shipped `createGpsExtentTracker`
    *  reads it from the store (what D28's maturity floor reads). */
   readonly extentM: number;
+  /** How far the author has walked, as the shipped
+   *  `createWalkedDistanceTracker` reads it from the store. */
+  readonly walkedM: number;
 }
 
 interface Visit {
@@ -262,7 +301,9 @@ interface Visit {
   /** Look windows [from, to] (s); the last is the end-of-visit look of an
    *  out-and-back leave. */
   readonly looks: readonly (readonly [number, number])[];
-  /** When the code is measured and the pin placed (s). */
+  /** When the pin is placed (s); also when the code is measured, unless
+   *  `spec.noteAfter` places the pin later (the code is measured at the end
+   *  of the third look either way). */
   readonly placedS: number;
   readonly endS: number;
   readonly pinWorld: Vector3;
@@ -299,7 +340,20 @@ function timeline(spec: VisitSpec): {
     t += 0.5 + LOOK_S + 0.5;
     waypoints.push({ tS: t, at: STAND, walkedM: walked });
   }
-  const placedS = t - 0.25;
+  let placedS = t - 0.25;
+  if (spec.noteAfter !== undefined) {
+    if (
+      spec.noteAfter.oneWay === true &&
+      (spec.leave !== null || spec.noteAfter.lookAtEnd)
+    ) {
+      throw new Error("a one-way walk before the pin ends the visit there");
+    }
+    t = appendNoteWalk(spec.seed, spec.noteAfter, waypoints, looks, t, walked);
+    walked = waypoints.at(-1)!.walkedM;
+    t += 0.5;
+    waypoints.push({ tS: t, at: waypoints.at(-1)!.at, walkedM: walked });
+    placedS = t - 0.25;
+  }
   if (spec.leave === null) return { waypoints, looks, placedS, endS: t };
   t = appendLeave(spec.seed, spec.leave, waypoints, t, walked);
   if (spec.leave.endBack) {
@@ -308,6 +362,46 @@ function timeline(spec: VisitSpec): {
     waypoints.push({ tS: t, at: STAND, walkedM: waypoints.at(-1)!.walkedM });
   }
   return { waypoints, looks, placedS, endS: t };
+}
+
+/** The walk, stand-still and look between the measurement and the pin
+ *  ({@link NoteAfterSpec}); returns the end time. Its own random stream. */
+function appendNoteWalk(
+  seed: number,
+  spec: NoteAfterSpec,
+  waypoints: Waypoint[],
+  looks: [number, number][],
+  startS: number,
+  startWalkedM: number,
+): number {
+  let t = startS;
+  let walked = startWalkedM;
+  if (spec.walkM > 0) {
+    const phi = rad(CODE_NORMAL_DEG + (stream(seed, 8)() * 120 - 60));
+    const out = spec.oneWay === true ? spec.walkM : spec.walkM / 2;
+    t += out / WALK_SPEED_MPS;
+    walked += out;
+    waypoints.push({
+      tS: t,
+      at: [STAND[0] + out * Math.cos(phi), STAND[1] + out * Math.sin(phi)],
+      walkedM: walked,
+    });
+    if (spec.oneWay !== true) {
+      t += out / WALK_SPEED_MPS;
+      walked += out;
+      waypoints.push({ tS: t, at: STAND, walkedM: walked });
+    }
+  }
+  if (spec.dwellS > 0) {
+    t += spec.dwellS;
+    waypoints.push({ tS: t, at: waypoints.at(-1)!.at, walkedM: walked });
+  }
+  if (spec.lookAtEnd) {
+    looks.push([t + 0.5, t + 0.5 + LOOK_S]);
+    t += 0.5 + LOOK_S + 0.5;
+    waypoints.push({ tS: t, at: STAND, walkedM: walked });
+  }
+  return t;
 }
 
 /** The walk away from the stand after the pin; returns the end time. Its
@@ -384,10 +478,13 @@ function runVisit(spec: VisitSpec): Visit {
   const yawSign = rng() < 0.5 ? -1 : 1;
   const pinRng = stream(spec.seed, 7);
   const pinBearing = rad(CODE_NORMAL_DEG + (pinRng() * 120 - 60));
+  // 4 m from where the author stands at the tap: the stand, except after a
+  // one-way walk (`noteAfter.oneWay`).
+  const pinFrom = positionOnRoute(waypoints, placedS).at;
   const pinWorld: Vector3 = [
-    STAND[0] + PIN_FROM_STAND_M * Math.cos(pinBearing),
+    pinFrom[0] + PIN_FROM_STAND_M * Math.cos(pinBearing),
     GROUND_ALT,
-    STAND[1] + PIN_FROM_STAND_M * Math.sin(pinBearing),
+    pinFrom[1] + PIN_FROM_STAND_M * Math.sin(pinBearing),
   ];
   const exact = spec.exact === true;
   const frameYaw = (tS: number): number =>
@@ -433,6 +530,7 @@ function runVisit(spec: VisitSpec): Visit {
     ? Array.from({ length: count }, () => [0, 0])
     : gaussMarkovGpsErrors(stream(spec.seed, 2), count, ACCURACY_M);
   const extent = createGpsExtentTracker();
+  const walked = createWalkedDistanceTracker();
   const fixes: FixSnapshot[] = [];
   let zero: LatLong | null = null;
   errors.forEach((err, i) => {
@@ -465,6 +563,10 @@ function runVisit(spec: VisitSpec): Visit {
       tS: i,
       alignment: a === null ? null : Array.from(a),
       extentM: extent.update(selectGpsPositions(store.getState())),
+      walkedM: walked.update({
+        gpsPositions: selectGpsPositions(store.getState()),
+        odometryPositions: selectOdometryPositions(store.getState()),
+      }),
     });
   });
   if (zero === null) throw new Error("a visit needs at least one fix");
@@ -750,6 +852,11 @@ function settleAsShipped(
     readonly stored: { id: string; json: string } | null;
     /** The look the code is measured at; the third (2) when absent. */
     readonly measureLook?: number;
+    /** The looks the code in hand is sighted at (a measured code is
+     *  sighted at its measurement too, as `creator-setup.ts` does); absent:
+     *  {@link storedSightingLooks} for a stored code, none for a measured
+     *  one. The latest is also the input's `sighting`. */
+    readonly sightingLooks?: readonly number[];
   },
 ): VisitSettle {
   const tracker = createVisitAlignmentTracker();
@@ -768,15 +875,16 @@ function settleAsShipped(
       apply: () => tracker.noteMeasurement(ms(measureS)),
     });
   }
-  if (options.stored !== null) {
-    for (const look of storedSightingLooks(visit)) {
-      const endS = visit.looks[look]![1];
-      events.push({
-        tS: endS,
-        apply: () =>
-          tracker.noteSighting(sightingOf(codeSeenAt(visit, look)), ms(endS)),
-      });
-    }
+  const sightingLooks =
+    options.sightingLooks ??
+    (options.stored !== null ? storedSightingLooks(visit) : []);
+  for (const look of sightingLooks) {
+    const endS = visit.looks[look]![1];
+    events.push({
+      tS: endS,
+      apply: () =>
+        tracker.noteSighting(sightingOf(codeSeenAt(visit, look)), ms(endS)),
+    });
   }
   events.sort((a, b) => a.tS - b.tS);
   let next = 0;
@@ -788,11 +896,12 @@ function settleAsShipped(
       alignmentMatrix: fix.alignment,
       zero: visit.zero,
       gpsExtentM: fix.extentM,
+      walkedM: fix.walkedM,
     });
   }
   while (next < events.length) events[next++]!.apply();
   const pinLocal = odomNueAt(visit, visit.pinWorld, visit.placedS);
-  const latestLook = storedSightingLooks(visit).at(-1)!;
+  const latestLook = sightingLooks.at(-1);
   const plan = planVisitSettle({
     visit: 0,
     placed: pinEntry(visit, pinLocal),
@@ -802,8 +911,15 @@ function settleAsShipped(
       options.measured ? codeSeenAt(visit, measureLook) : null,
       options.stored === null
         ? null
-        : { level: options.stored, sighting: codeSeenAt(visit, latestLook) },
+        : {
+            level: options.stored,
+            sighting: codeSeenAt(visit, latestLook ?? 0),
+          },
     ),
+    // The page keeps the latest sighting of a measured code too.
+    ...(options.measured && latestLook !== undefined
+      ? { sighting: sightingOf(codeSeenAt(visit, latestLook)) }
+      : {}),
     picks: tracker.picks(),
     alignmentInfo: INFO,
     gpsAccuracyM: ACCURACY_M,
@@ -817,16 +933,29 @@ function settleAsShipped(
 function shippedPinError(
   visit: Visit,
   stored: { id: string; json: string } | null,
+  /** The looks the stored code is sighted at; {@link storedSightingLooks}
+   *  when absent. */
+  sightingLooks?: readonly number[],
 ): { error: GeoError; refused: boolean } {
-  const plan = settleAsShipped(visit, { measured: false, stored });
+  const plan = settleAsShipped(visit, {
+    measured: false,
+    stored,
+    ...(sightingLooks === undefined ? {} : { sightingLooks }),
+  });
   const pin = plan.objects[0];
-  // A sighted stored code that did not correct the pin was refused. Read
-  // from the basis (the pin's own, else the plan's), so a planner without
-  // per-object choices is counted the same way, never as "no refusal".
-  const basis = (pin as { basis?: string } | undefined)?.basis ?? plan.basis;
+  // A refusal by the bound is the pin's own `refused`. Since R3 of D33 a
+  // pin past the reach of every sighting is not corrected either, without
+  // a refusal, so the basis alone no longer tells. A planner without
+  // per-object choices is read from the plan's basis, as before, never as
+  // "no refusal".
+  const own = pin as { refused?: unknown } | undefined;
   return {
     error: pinError(visit, pin?.object ?? null),
-    refused: stored !== null && basis !== "code-corrected",
+    refused:
+      stored !== null &&
+      (own !== undefined && "refused" in own
+        ? own.refused !== null
+        : plan.basis !== "code-corrected"),
   };
 }
 
@@ -996,7 +1125,13 @@ describe("the shipped settle keeps notes and codes left behind (D33)", () => {
       for (const seed of DEFAULT_SEEDS) {
         const visit = runVisit({ seed, drift, leave });
         const stored = storedTrueLevel(visit);
-        shipped.push(shippedPinError(visit, stored).error.horizontalM);
+        // Sighted at every look before the pin and at the end look: the
+        // pin's correction goes through the nearest (the third look), not
+        // the latest.
+        shipped.push(
+          shippedPinError(visit, stored, [0, 1, 2, visit.looks.length - 1])
+            .error.horizontalM,
+        );
         const pinLocal = odomNueAt(visit, visit.pinWorld, visit.placedS);
         latest.push(
           pinError(
@@ -1031,7 +1166,12 @@ describe("the shipped settle keeps notes and codes left behind (D33)", () => {
       for (const seed of MEANDER_REFUSAL_SEEDS) {
         const visit = runVisit({ seed, drift, leave });
         const stored = storedTrueLevel(visit);
-        if (shippedPinError(visit, stored).refused) refusedShipped += 1;
+        // Sighted at every look before the pin, as the page sights a code in
+        // view: the correction is attempted next to the pin (within the
+        // reach, R3) and judged through that sighting's own alignment.
+        if (shippedPinError(visit, stored, [0, 1, 2]).refused) {
+          refusedShipped += 1;
+        }
         const pinLocal = odomNueAt(visit, visit.pinWorld, visit.placedS);
         const atEnd = settleThrough(
           visit,
@@ -1044,6 +1184,109 @@ describe("the shipped settle keeps notes and codes left behind (D33)", () => {
       }
       expect(refusedAtEnd).toBeGreaterThan(0);
       expect(refusedShipped).toBe(0);
+    },
+    10 * 60_000,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Always-run: a note near a code event shares the code's alignment (reviews
+// R1 and R3 of D33), at one sweep cell each.
+// ---------------------------------------------------------------------------
+
+describe("the shipped settle keeps a note's relation to its code near a code event (R1, R3 of D33)", () => {
+  // Why these tests matter: they are the relation sweep's two findings as
+  // assertions on the path that ships, each next to the rule it replaced,
+  // asserted to fail there so the cell provably measures the regression.
+  // R1: with each object at its own moment, a note placed two minutes after
+  // the code was measured (the session already mature) went through a
+  // different alignment than the code, and the note-minus-code relation
+  // drifted by the GPS solve's wander in between. R3: a note corrected
+  // through the sighting nearest in TIME after a stand-still took the
+  // drift of the walk between it and a later sighting.
+  it(
+    "keeps a note placed two minutes after the code's measurement within 0.5 m of it relative to the code, where its own pick is 1 m off (R1)",
+    () => {
+      const drift = { yawDegPer100m: 1, transPct: 1 };
+      const shipped: number[] = [];
+      const ownPick: number[] = [];
+      for (const seed of DEFAULT_SEEDS) {
+        const visit = runVisit({
+          seed,
+          drift,
+          leave: null,
+          walkM: 120,
+          noteAfter: { walkM: 0, dwellS: 120, lookAtEnd: false },
+        });
+        const plan = settleAsShipped(visit, {
+          measured: true,
+          stored: null,
+          sightingLooks: visit.looks.flatMap((w, i) =>
+            w[1] <= visit.placedS ? [i] : [],
+          ),
+        });
+        shipped.push(
+          relationErrorM(visit, plan.objects[0]?.object ?? null, plan.level),
+        );
+        const measureS = visit.looks[2]![1];
+        const pinLocal = odomNueAt(visit, visit.pinWorld, visit.placedS);
+        const code = settleThrough(
+          visit,
+          matureAfter(visit, measureS, MATURE_GPS_EXTENT_M),
+          codeSeenAt(visit, 2),
+          null,
+          null,
+        ).level;
+        const own = settleThrough(
+          visit,
+          matureAfter(visit, visit.placedS, MATURE_GPS_EXTENT_M),
+          null,
+          null,
+          pinLocal,
+        ).pin;
+        ownPick.push(relationErrorM(visit, own, code));
+      }
+      expect(median(ownPick)).toBeGreaterThan(1);
+      expect(median(shipped)).toBeLessThan(0.5);
+    },
+    10 * 60_000,
+  );
+
+  it(
+    "corrects a note through the sighting nearest in walked distance after a five-minute stand-still, where the nearest in time is 1 m off (R3)",
+    () => {
+      const drift = { yawDegPer100m: 1, transPct: 1 };
+      const shipped: number[] = [];
+      const byTime: number[] = [];
+      for (const seed of DEFAULT_SEEDS) {
+        const visit = runVisit({
+          seed,
+          drift,
+          leave: { distanceM: 120, endBack: true, path: "straight" },
+          noteAfter: { walkM: 0, dwellS: 300, lookAtEnd: false },
+        });
+        const stored = storedTrueLevel(visit);
+        const looks = visit.looks.map((_, i) => i);
+        const plan = settleAsShipped(visit, {
+          measured: false,
+          stored,
+          sightingLooks: looks,
+        });
+        shipped.push(
+          relationErrorM(visit, plan.objects[0]?.object ?? null, stored),
+        );
+        const nearest = nearestLook(visit, looks, visit.placedS, (t) => t);
+        const pin = settleThrough(
+          visit,
+          matureAfter(visit, visit.looks[nearest]![1], MATURE_GPS_EXTENT_M),
+          null,
+          { level: stored, sighting: codeSeenAt(visit, nearest) },
+          odomNueAt(visit, visit.pinWorld, visit.placedS),
+        ).pin;
+        byTime.push(relationErrorM(visit, pin, stored));
+      }
+      expect(median(byTime)).toBeGreaterThan(0.8);
+      expect(median(shipped)).toBeLessThan(0.5);
     },
     10 * 60_000,
   );
@@ -1348,6 +1591,462 @@ describe.skipIf(!SWEEP)(
         expect(lines.length).toBeGreaterThan(1);
       },
       120 * 60_000,
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Opt-in: the NOTE-MINUS-CODE relation (review R1 of D33). The code is
+// measured at the third look and the note placed after a further walk,
+// stand-still and/or look (`noteAfter`); scored on the error of the
+// note-minus-code vector, which is what a visitor sees once the content
+// snaps to the code (the 0.3 m field target near a code, plan §6a item 2).
+// ---------------------------------------------------------------------------
+
+/** Horizontal NUE of a geo relative to ORIGIN. */
+function geoNe(geo: { lat: number; lon: number; alt: number }): NE {
+  const nue = calcRelativeCoordsInMeters(ORIGIN, geo, geo.alt, 0);
+  return [nue[0], nue[2]];
+}
+
+/** The error (m) of the settled note-minus-code vector against the true
+ *  one, horizontally. */
+function relationErrorM(
+  visit: Visit,
+  pin: TourObject | null,
+  level: { json: string } | null,
+): number {
+  const codeGeo = level === null ? null : storedGeo(level.json);
+  if (pin === null || codeGeo === null) {
+    throw new Error("the settle dropped the pin or the code");
+  }
+  const p = geoNe(pin.geo);
+  const c = geoNe(codeGeo);
+  return Math.hypot(
+    p[0] - c[0] - (visit.pinWorld[0] - CODE_WORLD[0]),
+    p[1] - c[1] - (visit.pinWorld[2] - CODE_WORLD[2]),
+  );
+}
+
+/** The look at the end of `noteAfter`, when it has one: the fourth. */
+const NOTE_LOOK = 3;
+
+/** Every candidate on one visit of the relation family. */
+function measureRelation(
+  visit: Visit,
+  rows: { rel: Map<string, Column>; abs: Map<string, Column> },
+  matureAtMeasure: { count: number },
+): void {
+  const measureS = visit.looks[2]![1];
+  const code = codeSeenAt(visit, 2);
+  const pinLocal = odomNueAt(visit, visit.pinWorld, visit.placedS);
+  const lastBefore = [...visit.fixes].reverse().find((f) => f.tS <= measureS);
+  if ((lastBefore?.extentM ?? 0) >= MATURE_GPS_EXTENT_M) {
+    matureAtMeasure.count += 1;
+  }
+  const record = (
+    name: string,
+    pin: TourObject | null,
+    level: { json: string } | null,
+  ): void => {
+    addDistance(rows.rel, name, relationErrorM(visit, pin, level));
+    addTo(rows.abs, `${name} note`, pinError(visit, pin));
+    addTo(rows.abs, `${name} code`, codeError(level));
+  };
+  // What ships: the tracker with the code sighted at every look before the
+  // pin (as the page sights it), then the planner with its picks.
+  const looksBeforePin = visit.looks.flatMap((w, i) =>
+    w[1] <= visit.placedS ? [i] : [],
+  );
+  const shipped = settleAsShipped(visit, {
+    measured: true,
+    stored: null,
+    sightingLooks: looksBeforePin,
+  });
+  record("SHIPPED", shipped.objects[0]?.object ?? null, shipped.level);
+  // Before D33: ONE alignment, the visit's end one, for code and note.
+  const one = settleThrough(visit, endAlignment(visit), code, null, pinLocal);
+  record("one(end)", one.pin, one.level);
+  // The candidate: the note through the MEASUREMENT's pick.
+  const codePick = matureAfter(visit, measureS, MATURE_GPS_EXTENT_M);
+  const cp = settleThrough(visit, codePick, code, null, pinLocal);
+  record("code-pick", cp.pin, cp.level);
+  // D33 before R1: the note through its OWN pick, the code through its.
+  const ownPin = settleThrough(
+    visit,
+    matureAfter(visit, visit.placedS, MATURE_GPS_EXTENT_M),
+    null,
+    null,
+    pinLocal,
+  ).pin;
+  record("own-pick", ownPin, cp.level);
+  let sightingPin: TourObject | null = null;
+  if (visit.spec.noteAfter?.lookAtEnd === true) {
+    // The other candidate near a later sighting: the sighting's pick
+    // corrected onto the code as re-minted through its measurement's pick
+    // (the D10b correction within the visit).
+    const sightS = visit.looks[NOTE_LOOK]![1];
+    sightingPin = settleThrough(
+      visit,
+      matureAfter(visit, sightS, MATURE_GPS_EXTENT_M),
+      null,
+      { level: cp.plan.level!, sighting: codeSeenAt(visit, NOTE_LOOK) },
+      pinLocal,
+    ).pin;
+    record("sighting-corr", sightingPin, cp.level);
+  }
+  // The reach swept (R1): within R walked of the nearest code event the
+  // note shares it (the measurement: code-pick; the closing look:
+  // sighting-corr), else its own pick.
+  const noteM = walkedAt(visit, visit.placedS);
+  const measureGap = Math.abs(noteM - walkedAt(visit, measureS));
+  const sightGap =
+    sightingPin === null
+      ? Number.POSITIVE_INFINITY
+      : Math.abs(noteM - walkedAt(visit, visit.looks[NOTE_LOOK]![1]));
+  for (const reachM of REACH_SWEEP_M) {
+    const gap = Math.min(measureGap, sightGap);
+    const pin =
+      gap > reachM ? ownPin : sightGap < measureGap ? sightingPin : cp.pin;
+    record(`reach${String(reachM)}`, pin, cp.level);
+  }
+}
+
+/** The reach values swept (m walked), R1 and R3. */
+const REACH_SWEEP_M = [10, 20, 40, 80, 120, 240, 480];
+
+const noteAfterTag = (n: NoteAfterSpec): string =>
+  `${n.oneWay === true ? "one way" : "out-and-back"} ${String(n.walkM)} m, dwell ${String(n.dwellS)} s${n.lookAtEnd ? ", look" : ""}`;
+
+/** The relation grid; every parameter it rests on is in the label. */
+function relationCells(): (Cell & { readonly noteAfter: NoteAfterSpec })[] {
+  const variants: NoteAfterSpec[] = [
+    ...[0, 10, 30, 60, 120].map((walkM) => ({
+      walkM,
+      dwellS: 0,
+      lookAtEnd: false,
+    })),
+    { walkM: 0, dwellS: 60, lookAtEnd: false },
+    { walkM: 0, dwellS: 120, lookAtEnd: false },
+    { walkM: 240, dwellS: 0, lookAtEnd: false },
+    { walkM: 120, dwellS: 0, lookAtEnd: true },
+    { walkM: 300, dwellS: 0, lookAtEnd: true },
+    // The note FAR from the code: walked one way and placed there.
+    { walkM: 60, dwellS: 0, lookAtEnd: false, oneWay: true },
+    { walkM: 120, dwellS: 0, lookAtEnd: false, oneWay: true },
+    { walkM: 240, dwellS: 0, lookAtEnd: false, oneWay: true },
+  ];
+  const out: (Cell & { readonly noteAfter: NoteAfterSpec })[] = [];
+  // Walks of 60 m before the measurement leave the session short of the
+  // floor there (its pick still open); 120 m walks mature it before.
+  for (const walkM of [60, 120])
+    for (const yawDegPer100m of [0.5, 1, 2])
+      for (const transPct of [0.5, 1, 2])
+        for (const noteAfter of variants) {
+          // The visit ends at the pin. With 60 m walks before, the session
+          // may not mature by then (the label counts it at the measurement),
+          // and every pick is then the end alignment.
+          const drift = { yawDegPer100m, transPct };
+          out.push({
+            label: `walks ${String(walkM)} m, code measured, ${noteAfterTag(noteAfter)}, pin, ${driftTag(drift)}`,
+            drift,
+            leave: null,
+            walkM,
+            noteAfter,
+          });
+        }
+  return out;
+}
+
+const RELATION_SWEEP = process.env["VISIT_SETTLE_RELATION_SWEEP"] === "1";
+
+/**
+ * `VISIT_SETTLE_CELL_SLICE=from-to` (cell indices, `to` exclusive) runs a
+ * slice of an opt-in grid: one process holding every store of a few
+ * thousand visits runs out of heap, so a long grid is run in slices.
+ */
+function sliced<T>(cellList: readonly T[]): readonly T[] {
+  const spec = process.env["VISIT_SETTLE_CELL_SLICE"];
+  if (spec === undefined || spec === "") return cellList;
+  const match = /^(\d+)-(\d+)$/.exec(spec);
+  // A slice that does not read must never silently run the whole grid.
+  if (match === null) throw new Error(`bad VISIT_SETTLE_CELL_SLICE: ${spec}`);
+  return cellList.slice(Number(match[1]), Number(match[2]));
+}
+
+describe.skipIf(!RELATION_SWEEP)(
+  "sweep: the note-minus-code relation when the note is placed after the measurement (R1)",
+  () => {
+    it(
+      "measures the relation through each candidate across the walk between them and drift",
+      () => {
+        const seedCount = Number(
+          process.env["VISIT_SETTLE_LEFT_BEHIND_SEEDS"] ?? "30",
+        );
+        const seeds = Array.from({ length: seedCount }, (_, i) => i + 401);
+        const lines: string[] = [
+          `authoring settle, note-minus-code relation (${String(seedCount)} visits per cell; two 60 m walks, the code measured at the third look, then the walk / dwell / look before the pin 4 m from the stand, then L m; GPS 5 m; look yaw noise 2 deg; floor ${String(MATURE_GPS_EXTENT_M)} m): relation p50/p90 m; absolute note / code p50/p90 m`,
+        ];
+        for (const cell of sliced(relationCells())) {
+          const rows = {
+            rel: new Map<string, Column>(),
+            abs: new Map<string, Column>(),
+          };
+          const matureAtMeasure = { count: 0 };
+          const failed: string[] = [];
+          for (const seed of seeds) {
+            try {
+              measureRelation(
+                runVisit({
+                  seed,
+                  drift: cell.drift,
+                  leave: cell.leave,
+                  noteAfter: cell.noteAfter,
+                  ...(cell.walkM === undefined ? {} : { walkM: cell.walkM }),
+                }),
+                rows,
+                matureAtMeasure,
+              );
+            } catch (error) {
+              failed.push(`seed ${String(seed)}: ${String(error)}`);
+            }
+          }
+          lines.push(
+            `${cell.label} - mature at the measurement in ${String(matureAtMeasure.count)}/${String(seeds.length)}${failed.length === 0 ? "" : ` - ${String(failed.length)} not measured: ${failed.join("; ")}`}`,
+          );
+          lines.push(`  relation: ${formatColumns(rows.rel)}`);
+          lines.push(`  absolute: ${formatColumns(rows.abs)}`);
+        }
+        const table = lines.join("\n");
+        const out = process.env["VISIT_SETTLE_RELATION_OUT"];
+        if (out === undefined) console.log(table);
+        else writeFileSync(out, `${table}\n`);
+        expect(lines.length).toBeGreaterThan(1);
+      },
+      180 * 60_000,
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Opt-in: WHICH SIGHTING corrects a note, and how far one may (review R3 of
+// D33). A stored code is sighted at several looks; the note is placed after
+// a stand-still (time and walked distance disagree) or a walk away from the
+// last sighting. Scored absolute and on the note-minus-code relation, with
+// the stored code true and with a stored error (a real stored code carries
+// its own GPS error, which a correction inherits and the plain visit
+// alignment does not).
+// ---------------------------------------------------------------------------
+
+/** Standard deviation (m, per horizontal axis) and yaw (degrees) of the
+ *  stored code's error in the "err" columns: about 1.4 m p50, the scale of
+ *  a code measured mid-visit (D34 sweep: 1.0-1.5 m p50). */
+const STORED_ERROR_SIGMA_M = 1.2;
+const STORED_ERROR_YAW_DEG = 3;
+
+/** The code's stored level with a per-seed error (exact when both are 0),
+ *  minted against this visit's zero. */
+function storedLevelWithError(
+  visit: Visit,
+  sigmaM: number,
+  yawDeg: number,
+): { id: string; json: string } {
+  const rng = stream(visit.spec.seed, 9);
+  const world: Vector3 = [
+    CODE_WORLD[0] + sigmaM * gaussian(rng),
+    CODE_WORLD[1],
+    CODE_WORLD[2] + sigmaM * gaussian(rng),
+  ];
+  const codeLl = calcGpsCoords(ORIGIN, world);
+  const nue = calcRelativeCoordsInMeters(visit.zero, codeLl, world[1], 0);
+  const rotation = odomNueFromWebXr({
+    position: [0, 0, 0],
+    rotation: yawQuat(
+      Math.PI / 2 - rad(CODE_HEADING_DEG) + rad(yawDeg * gaussian(rng)),
+    ),
+  }).rotation;
+  const result = mintQrLevelFromWorld({
+    world: {
+      position: { x: nue[0], y: nue[1], z: nue[2] },
+      rotation: [...rotation],
+    },
+    zero: visit.zero,
+    alignment: INFO,
+    sizeM: CODE_SIZE_M,
+    nowIso: NOW_ISO,
+  });
+  if (!result.ok) throw new Error(result.error);
+  return { id: LEVEL_ID, json: result.json };
+}
+
+/** The walked distance (m) at `tS`. */
+const walkedAt = (visit: Visit, tS: number): number =>
+  positionOnRoute(visit.waypoints, tS).walkedM;
+
+/** Of `looks`, the one nearest `tS` by `metric` (a tie goes to the later). */
+function nearestLook(
+  visit: Visit,
+  looks: readonly number[],
+  tS: number,
+  metric: (atS: number) => number,
+): number {
+  let best = looks[0]!;
+  let bestGap = Number.POSITIVE_INFINITY;
+  for (const look of looks) {
+    const gap = Math.abs(metric(visit.looks[look]![1]) - metric(tS));
+    if (gap <= bestGap) {
+      best = look;
+      bestGap = gap;
+    }
+  }
+  return best;
+}
+
+/** Every candidate on one visit of the sighting family. */
+function measureSightingChoice(
+  visit: Visit,
+  sightingLooks: readonly number[],
+  rows: { rel: Map<string, Column>; abs: Map<string, Column> },
+  refused: { count: number },
+): void {
+  const pinLocal = odomNueAt(visit, visit.pinWorld, visit.placedS);
+  const byTime = nearestLook(visit, sightingLooks, visit.placedS, (t) => t);
+  const byWalk = nearestLook(visit, sightingLooks, visit.placedS, (t) =>
+    walkedAt(visit, t),
+  );
+  const variants: [string, number, number][] = [
+    ["true", 0, 0],
+    ["err", STORED_ERROR_SIGMA_M, STORED_ERROR_YAW_DEG],
+  ];
+  for (const [tag, sigma, yaw] of variants) {
+    const stored = storedLevelWithError(visit, sigma, yaw);
+    const record = (name: string, pin: TourObject | null): void => {
+      addDistance(
+        rows.rel,
+        `${name}/${tag}`,
+        relationErrorM(visit, pin, stored),
+      );
+      addTo(rows.abs, `${name}/${tag}`, pinError(visit, pin));
+    };
+    const shipped = settleAsShipped(visit, {
+      measured: false,
+      stored,
+      sightingLooks,
+    });
+    if (shipped.objects[0]?.basis !== "code-corrected") refused.count += 1;
+    record("SHIPPED", shipped.objects[0]?.object ?? null);
+    const through = (look: number): TourObject | null =>
+      settleThrough(
+        visit,
+        matureAfter(visit, visit.looks[look]![1], MATURE_GPS_EXTENT_M),
+        null,
+        { level: stored, sighting: codeSeenAt(visit, look) },
+        pinLocal,
+      ).pin;
+    record("time-nearest", through(byTime));
+    const walkPin = through(byWalk);
+    record("walk-nearest", walkPin);
+    // No correction: the note's own pick (what a cap falls back to).
+    const ownPin = settleThrough(
+      visit,
+      matureAfter(visit, visit.placedS, MATURE_GPS_EXTENT_M),
+      null,
+      null,
+      pinLocal,
+    ).pin;
+    record("own-pick", ownPin);
+    // The cap swept (R3): no correction past R walked from the nearest.
+    const gap = Math.abs(
+      walkedAt(visit, visit.placedS) - walkedAt(visit, visit.looks[byWalk]![1]),
+    );
+    for (const reachM of REACH_SWEEP_M) {
+      record(`cap${String(reachM)}`, gap > reachM ? ownPin : walkPin);
+    }
+  }
+}
+
+type SightingCell = Cell & { readonly noteAfter: NoteAfterSpec };
+
+/** The sighting grid; every parameter it rests on is in the label. */
+function sightingCells(): SightingCell[] {
+  const out: SightingCell[] = [];
+  for (const yawDegPer100m of [0.5, 1, 2])
+    for (const transPct of [0.5, 1, 2]) {
+      const drift = { yawDegPer100m, transPct };
+      // THE STOP: sighted at the third look, a stand-still, the pin, then a
+      // 120 m out-and-back ending in one more look. By time the closing
+      // look is nearer once the stand-still exceeds the walk's ~105 s; by
+      // walked distance the third look always is.
+      for (const dwellS of [0, 60, 180, 300])
+        out.push({
+          label: `stop: sighted, dwell ${String(dwellS)} s, pin, 120 m out-and-back, sighted; ${driftTag(drift)}`,
+          drift,
+          leave: { distanceM: 120, endBack: true, path: "straight" },
+          noteAfter: { walkM: 0, dwellS, lookAtEnd: false },
+        });
+      // FAR: the last sighting at the third look, then the pin after a walk
+      // of d m (back to the stand, or one way and placed there).
+      for (const walkM of [0, 30, 60, 120, 240, 480])
+        for (const oneWay of walkM === 0 ? [false] : [false, true])
+          out.push({
+            label: `far: sighted, ${oneWay ? "one way" : "out-and-back"} ${String(walkM)} m, pin; ${driftTag(drift)}`,
+            drift,
+            leave: null,
+            noteAfter: { walkM, dwellS: 0, lookAtEnd: false, oneWay },
+          });
+    }
+  return out;
+}
+
+const SIGHTING_SWEEP = process.env["VISIT_SETTLE_SIGHTING_SWEEP"] === "1";
+
+describe.skipIf(!SIGHTING_SWEEP)(
+  "sweep: which sighting corrects a note, nearest in time or in walked distance, and how far (R3)",
+  () => {
+    it(
+      "measures each sighting choice across stand-stills, walks from the last sighting and drift",
+      () => {
+        const seedCount = Number(
+          process.env["VISIT_SETTLE_LEFT_BEHIND_SEEDS"] ?? "30",
+        );
+        const seeds = Array.from({ length: seedCount }, (_, i) => i + 401);
+        const lines: string[] = [
+          `authoring settle, the sighting a note is corrected through (${String(seedCount)} visits per cell; the stored code sighted at every look; /true: the stored code exact, /err: a stored error of ${String(STORED_ERROR_SIGMA_M)} m per axis and ${String(STORED_ERROR_YAW_DEG)} deg; floor ${String(MATURE_GPS_EXTENT_M)} m): relation to the stored code p50/p90 m; absolute p50/p90 m`,
+        ];
+        for (const cell of sliced(sightingCells())) {
+          const rows = {
+            rel: new Map<string, Column>(),
+            abs: new Map<string, Column>(),
+          };
+          const refused = { count: 0 };
+          const failed: string[] = [];
+          for (const seed of seeds) {
+            try {
+              const visit = runVisit({
+                seed,
+                drift: cell.drift,
+                leave: cell.leave,
+                noteAfter: cell.noteAfter,
+              });
+              const looks = visit.looks.map((_, i) => i);
+              measureSightingChoice(visit, looks, rows, refused);
+            } catch (error) {
+              failed.push(`seed ${String(seed)}: ${String(error)}`);
+            }
+          }
+          lines.push(
+            `${cell.label} - SHIPPED not corrected (refused or past the reach) in ${String(refused.count)}/${String(2 * seeds.length)}${failed.length === 0 ? "" : ` - ${String(failed.length)} not measured: ${failed.join("; ")}`}`,
+          );
+          lines.push(`  relation: ${formatColumns(rows.rel)}`);
+          lines.push(`  absolute: ${formatColumns(rows.abs)}`);
+        }
+        const table = lines.join("\n");
+        const out = process.env["VISIT_SETTLE_SIGHTING_OUT"];
+        if (out === undefined) console.log(table);
+        else writeFileSync(out, `${table}\n`);
+        expect(lines.length).toBeGreaterThan(1);
+      },
+      180 * 60_000,
     );
   },
 );

@@ -4,30 +4,50 @@
 
 The authoring settle (authoring plan
 `2026-09-28-0953-tour-viewer-authoring-recording-anchoring-and-editing-plan.md`
-§3.2, milestone M2c; owner decisions D2 and D10b): at the end of an AR visit,
-and at Finish for the visit still running, the geo of the code measured in
-that visit and of every object placed in it is recomputed through ONE
-alignment, so code and notes share the same GPS error and keep the relation
-the phone's tracking saw (symptom B's half "B2", plan §2.2).
+§3.2, milestone M2c; owner decisions D2, D10b and D33): at the end of an AR
+visit, and at Finish for the visit still running, the geo of the code
+measured in that visit and of every object placed in it is recomputed from
+its odometry pose, so that a note and the code it sits by share one
+alignment and keep the relation the phone's tracking saw (symptom B's half
+"B2", plan §2.2). Without picks that is one alignment for the whole visit;
+with them, each object's own (D33) and, near a code event, the code's
+(R1 and R3 below).
 
 **Each object at its own moment (owner decision D33, 2026-10-03).** With the
 visit's picks (`visit-alignment-picks.ts`; `input.picks`) every object, the
 measured code and each sighting of a stored code is composed through the
 FIRST MATURE alignment at or after its own moment (40 m of session GPS
 extent, the framework's `state/alignment-maturity`), else the visit's
-alignment at its end. A D10b correction uses the sighting of the code in
-hand NEAREST the object in time (a tie goes to the later), and the
-plausibility bound is judged through THAT sighting's alignment, not the
-drifted end one. Measured (`visit-settle.left-behind.test.ts`): a note left
+alignment at its end. The plausibility bound of a D10b correction is judged
+through the sighting's own alignment, not the drifted end one. Measured (`visit-settle.left-behind.test.ts`): a note left
 500 m behind at 1 % / 1 degree per 100 m settled 8.4 m off through the end
 alignment and about 1.2 m through the first mature one, flat in the
 distance walked after; a start note of an out-and-back that saw the stored
 code again at the end went 11 m off through the latest sighting; and long
 meanders at 2 degrees per 100 m had correct codes refused through the end
-alignment. Without picks (`picks` absent: the live views, `planMove`)
-everything goes through `alignment` and the input's `sighting`, exactly as
-before. Nothing visible changes while authoring: the previews stay rigid as
-placed, and only the stored geo is settled.
+alignment. **Near a code event, the code's alignment (reviews R1 and R3 of D33,
+2026-10-04).** Each object at its own moment broke B2 again for notes
+placed after the session matured: a code measured in this visit and a note
+placed a minute later went through different alignments. So a note within
+`CODE_EVENT_REACH_M` (40 m) WALKED of a code event of its visit is placed
+relative to the code through the nearest event by walked distance:
+
+- the visit MEASURED the code: the measurement's own pick (the code's
+  alignment), or a later stable sighting's pick corrected onto the code as
+  re-minted (the D10b correction within the visit, its bound included); a
+  tie goes to the measurement; basis `measured-here` either way;
+- a STORED code: the nearest sighting's D10b correction (`code-corrected`).
+  Farther from every event a note keeps its own pick (`measured-here` /
+  `visit-alignment`). Walked distance, not time (R3): drift grows with the
+  distance walked, so after a stand-still the nearest sighting in time can be
+  a walk away. The walked distance is the odometry path length over the
+  device fixes (`walked-distance-tracker.ts`), stamped on each event by
+  `visit-alignment-picks.ts`. Picks without one (an older caller) keep the
+  rules before: their own pick, and the sighting nearest in time, uncapped.
+  Without picks (`picks` absent: the live views, `planMove`)
+  everything goes through `alignment` and the input's `sighting`, exactly as
+  before. Nothing visible changes while authoring: the previews stay rigid as
+  placed, and only the stored geo is settled.
 
 Pure. `creator-setup.ts` reads the store (before the session teardown),
 applies the result to `ctx.placedObjects` and `ctx.mintedLevel`, rewrites the
@@ -40,7 +60,11 @@ draft and logs `tourAuthoring/settled`.
 - `interface CodeSighting` - the anchor code as the running visit last saw it
   stable: `text`, `levelId`, `odomPose` (raw WebXR, this visit's odometry).
 - `type SettleBasis` - `"measured-here" | "code-corrected" | "visit-alignment"`.
-- `interface TimedAlignment` (`atMs`, `alignment` or null),
+- `CODE_EVENT_REACH_M = 40` - the walked distance (m) within which a note
+  shares the code's alignment through a code event (R1, R3); its sweep is
+  under Invariants.
+- `interface TimedAlignment` (`atMs`, `alignment` or null, `walkedM?`,
+  `alignmentInfo?`),
   `TimedSighting` (+ `sighting`; module-internal, the element type of
   `sightings`), `VisitAlignmentPicks` (`objects` by id,
   `measurement`, `sightings` oldest first) - the D33 picks, as
@@ -103,8 +127,9 @@ draft and logs `tourAuthoring/settled`.
   distance to the code).
 - `planVisitSettle(input): VisitSettle | null` - the settled records by
   index into `placed` (only objects whose `placement.visit` is this visit),
-  each with its own `SettleChoice` (D33: its pick by id, its nearest
-  sighting; no pick: the end alignment and the latest sighting); the
+  each with its own `SettleChoice` (D33: its pick by id; near a code event
+  the code's alignment through the nearest event, R1 and R3; no pick: the
+  end alignment and the latest sighting); the
   visit-level `basis`/`alignment`/`refused` of an object placed at the
   visit's end (what a photo landing after the settle goes through); and
   `level` re-minted through the measurement's pick (else the end alignment;
@@ -129,6 +154,44 @@ draft and logs `tourAuthoring/settled`.
     through its own pick, so the summary's path and its pins can differ
     slightly (about the drift between a pin's pick and the visit's end).
     Filed in the authoring plan's D33 follow-ups.
+- **The code event reach is 40 m walked** (`CODE_EVENT_REACH_M`; reviews R1
+  and R3 of D33). Measured in `visit-settle.left-behind.test.ts`
+  (`VISIT_SETTLE_RELATION_SWEEP`, `VISIT_SETTLE_SIGHTING_SWEEP`; 30 visits
+  per cell, drift 0.5-2 % and 0.5-2 degrees per 100 m, GPS 5 m; scored on
+  the note-minus-code relation, the 0.3 m field target of plan §6a item 2,
+  and on the absolute error; ranges over the nine drifts, p50 / p90):
+  - a code measured once the session is mature and a note placed after a
+    stand-still of 60-120 s or a 10-30 m walk: each object's own pick
+    1.0-1.7 / 2.1-2.8 m relation (0.3-0.9 / 0.8-1.7 after 10-30 m walks);
+    through the code's pick 0.1-0.7 / 0.2-0.8 m;
+  - a later sighting next to the note (a 120 m or 300 m walk ending at the
+    code): 0.2-0.3 / 0.5-0.6 m, where the code's pick is 0.6-8.2 / 0.9-10.3;
+  - a stored code after a 3-5 minute stand-still and a 120 m walk past it:
+    the sighting nearest in time 0.6-2.5 / 1.0-3.4 m, nearest walked
+    0.1-0.3 / 0.4-0.6 m;
+  - the reach swept {10, 20, 40, 80, 120, 240, 480} m: 20 m loses the 30 m
+    walks back to the code (0.9-1.0 / 1.7-2.0 m relation for a stored code
+    against 0.2-0.6 / 0.5-0.9); 80 m wins a 60 m walk back to the code
+    (stored: 0.3-1.2 / 0.6-1.5 against 1.1-1.2 / 2.0-2.3) but loses a note
+    placed 60 m away from it (relation p90 4.4-5.2 against 2.2-2.4, absolute
+    4.1-4.4 / 8.4-8.7 against 1.3-1.5 / 2.2-2.4 with a stored error); 120 m
+    and more lose both at 120 m. 40 m is the largest swept value at which
+    no cell's p50 relation is worse than its own pick's. Its cost: a note
+    placed 30 m AWAY from the code (one way) is worse in p90 relation
+    (2.4-2.9 against 2.0-2.2 m) and, with a stored error, in absolute error
+    (3.0-3.1 against 1.1-1.3 m p50).
+  - **What would reverse it:** the reach trades drift and the code's
+    heading error times the note's distance from the code (the one-way
+    cells) against the alignment wander between moments (the out-and-back
+    cells). Lower drift, or a code heading better than the 2 degrees of look
+    noise, moves the best value up; field notes placed mostly far from their
+    code move it down. A spatial term (the note's distance from the code)
+    would separate the two families and is the candidate refinement; it is
+    not built.
+  - **Absolute error near the code is the code's**: within the reach a note
+    inherits the code's own error (1.0-1.4 / 1.7-2.9 m measured mid-visit;
+    with a stored code, the stored error), which is the D10b trade: the
+    relation to the code is kept, not each note's independent GPS fix.
 - **Only what has odometry is touched.** Objects of other visits and
   restored draft objects (no `placement`) are never in the result; their geo
   stands.
@@ -287,6 +350,13 @@ const plan = planVisitSettle({
   the latest sighting is metres off; the bound judged through the
   sighting's own alignment admits a correct code the end alignment refuses
   and still refuses a far one; kept sightings of another code ignored);
+  "which sighting corrects a note" (R3: nearest walked after a stand-still,
+  none past the reach, the time rule kept without distances); "a note near
+  a code event of the visit that measured the code" (R1: within the reach
+  through the code's pick, beyond it its own; nearer a later sighting,
+  corrected onto the re-minted code; no distances, its own pick);
   `visit-settle.left-behind.test.ts` (the shipped path at three sweep
-  cells, each also failing through the end alignment); and
+  cells, each also failing through the end alignment, and at one R1 and one
+  R3 cell, each also failing through the rule it replaced; the relation and
+  sighting sweeps, opt-in); and
   `authoring-settle.test.ts` (the wiring).
