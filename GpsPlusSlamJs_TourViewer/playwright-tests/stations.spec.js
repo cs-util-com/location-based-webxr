@@ -209,7 +209,29 @@ test("a station tour: the code finds the first station, its knight speaks and as
   await expect(skip).toHaveText("Skip The tower - I can't get there");
   await skip.click();
   await expect(line).toHaveText("Tour complete - 1 skipped.");
-  await expect(skip).toBeHidden();
+  // The skip can be undone for a moment (K4 review R14): the tower comes
+  // back; skipped again, the button goes once the moment has passed (the
+  // next camera frames re-render it).
+  await expect(skip).toHaveText("Undo: bring back The tower");
+  await skip.click();
+  await expect(line).toHaveText(
+    /^Brought back The tower\. Next: The tower, \d+ m$/,
+  );
+  await expect(skip).toHaveText("Can't get there?");
+  await skip.click();
+  await skip.click();
+  await expect(line).toHaveText("Tour complete - 1 skipped.");
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return skip.isHidden();
+      },
+      { timeout: 15000 },
+    )
+    .toBe(true);
   await expect
     .poll(() =>
       page.evaluate(

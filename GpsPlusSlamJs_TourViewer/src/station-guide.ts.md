@@ -71,6 +71,20 @@ activateM)` (each tick, each offered station with a distance: the
   two taps ("Can't get there?", then "Skip <title> - I can't get there"),
   or in one once the suggestion clock ran out (`station-run.ts`). The line
   then says "Skipped <title>." with the next station.
+- **K4 review R14:**
+  - the skip clock starts when a station becomes the focus (`run.focus`,
+    called at every render), not at the tour's start: under `any` order
+    every focus was a one-tap skip two minutes in;
+  - a tap does what the button's label showed, for the station it named
+    (`rendered`): a clock that ran out since, or a focus that moved,
+    changes nothing;
+  - a skip can be undone for `SKIP_UNDO_MS` (6 s, the framework toast's
+    linger; argued, not measured): the button reads "Undo: bring back
+    <title>", the line "Skipped <title>." (the confirmation); the undo
+    brings the station back to the order ("Brought back <title>.") with a
+    fresh clock. The prefetch hears of a skip (`onDone`) only once it can
+    no longer be undone, or when the tour moves on (a find or another
+    station done). The notes go after the same 6 s.
 - **Ending a story (K4 review R9):** when no unfound station is offered, the
   same button is about the found offered station whose story plays: "End
   this story?", then "End the story of <title> now"; the second tap asks
@@ -118,7 +132,8 @@ store.subscribe(() => guide.tick());
 - `station-guide.property.test.ts` - stories that never end, stations
   nobody reaches, random orders and `next` links (cycles included): the
   tour completes within two taps per station (R9).
-- `station-guide.test.ts` - the gate wait, the line, the find; the HUD
+- `station-guide.test.ts` - the undo, the focus clock under `any` order and
+  the tap acting on its label (R14); the gate wait, the line, the find; the HUD
   targets and their bands; a code-only station; the D20 veto; a station
   with no spot; no position and weak GPS; the skip on demand and suggested,
   the completion and the HUD's disposal; a story's end; progress across

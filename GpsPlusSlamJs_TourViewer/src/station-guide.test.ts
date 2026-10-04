@@ -12,7 +12,11 @@ import { EYE_HEIGHT_M } from "./breadcrumbs";
 import { rotationFromHeading } from "./content-placement";
 import { stationBands } from "./station-bands";
 import { skipSuggestAfterMs } from "./station-run";
-import { wireStationGuide, type StationTour } from "./station-guide";
+import {
+  SKIP_UNDO_MS,
+  wireStationGuide,
+  type StationTour,
+} from "./station-guide";
 
 /**
  * Why these tests matter: this is where the visitor's real position, the
@@ -338,8 +342,80 @@ describe("wireStationGuide", () => {
     expect(h.dom.skip.textContent).toBe("Skip WELL - I can't get there");
     h.guide.skipTapped();
     expect(h.dom.line.textContent).toBe("Tour complete - 2 skipped.");
-    expect(h.dom.skip.hidden).toBe(true);
     expect(h.huds[0]!.disposed).toBe(true);
+    // The skip can be undone for a moment; then the button goes.
+    expect(h.dom.skip.textContent).toBe("Undo: bring back WELL");
+    h.advance(SKIP_UNDO_MS);
+    h.at(0, 0);
+    expect(h.dom.skip.hidden).toBe(true);
+  });
+
+  it("undo: a skip can be taken back for a moment, its station offered again; after the moment it cannot (R14)", () => {
+    // Why this test matters (K4 review R14): a one-tap skip with no undo
+    // lost a station to one stray tap. The confirmation and the undo are
+    // the async-feedback rule's final state for this (synchronous) action.
+    const h = harness({
+      stations: [station("gate", 100, 0), station("well", 0, 100)],
+      order: "fixed",
+      levels: null,
+    });
+    h.at(0, 0);
+    h.guide.skipTapped();
+    h.guide.skipTapped();
+    expect(h.dom.line.textContent).toBe("Skipped GATE. Next: WELL, 100 m");
+    expect(h.dom.skip.textContent).toBe("Undo: bring back GATE");
+    // The prefetch is told only once the skip can no longer be undone.
+    expect(h.dones).toEqual([]);
+    h.advance(SKIP_UNDO_MS - 1);
+    h.at(0, 0);
+    h.guide.skipTapped();
+    expect(h.dom.line.textContent).toBe("Brought back GATE. Next: GATE, 100 m");
+    expect(h.dom.skip.textContent).toBe("Can't get there?");
+    expect(h.dones).toEqual([]);
+    // Skipped again, and the moment passes: no undo any more.
+    h.guide.skipTapped();
+    h.guide.skipTapped();
+    h.advance(SKIP_UNDO_MS);
+    h.at(0, 0);
+    expect(h.dom.skip.textContent).toBe("Can't get there?");
+    expect(h.dones).toEqual(["gate"]);
+    h.guide.skipTapped();
+    expect(h.dom.skip.textContent).toBe("Skip WELL - I can't get there");
+  });
+
+  it("under any order a station's skip clock starts when it becomes the focus, not at the tour's start (R14)", () => {
+    // Why this test matters (K4 review R14): every clock started at the
+    // tour's start, so two minutes in every new focus was a one-tap skip.
+    const h = harness({
+      stations: [station("gate", 30, 0), station("well", -40, 0)],
+      order: "any",
+      levels: null,
+    });
+    h.at(0, 0);
+    h.advance(skipSuggestAfterMs(40) + 1);
+    h.at(0, 0);
+    expect(h.dom.skip.textContent).toBe("Skip GATE - I can't get there");
+    h.guide.skipTapped();
+    h.advance(SKIP_UNDO_MS);
+    h.at(0, 0);
+    // The well is the focus only now: its clock has just started.
+    expect(h.dom.line.textContent).toBe("Next: WELL, 40 m");
+    expect(h.dom.skip.textContent).toBe("Can't get there?");
+  });
+
+  it("a tap acts on the station and the action its label showed, even when the clock ran out since (R14)", () => {
+    const h = harness({
+      stations: [station("gate", 100, 0), station("well", 0, 100)],
+      order: "fixed",
+      levels: null,
+    });
+    h.at(0, 0);
+    expect(h.dom.skip.textContent).toBe("Can't get there?");
+    // The clock runs out with no render in between: the label still asks.
+    h.advance(skipSuggestAfterMs(100) + 1);
+    h.guide.skipTapped();
+    expect(h.dom.skip.textContent).toBe("Skip GATE - I can't get there");
+    expect(h.dom.line.textContent).toBe("Next: GATE, 100 m");
   });
 
   it("under branch order the completion line says the path was completed, not that every station was visited", () => {
@@ -532,6 +608,9 @@ describe("wireStationGuide", () => {
     expect(h.approaches.at(-1)?.slice(0, 2)).toEqual(["well", 80]);
     h.guide.skipTapped();
     h.guide.skipTapped();
+    // A skip reaches the prefetch once it can no longer be undone (R14).
+    h.advance(SKIP_UNDO_MS);
+    h.at(0, 0);
     expect(h.dones).toEqual(["gate", "well"]);
   });
 

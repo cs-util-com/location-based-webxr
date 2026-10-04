@@ -30,6 +30,7 @@ import type {
 import type { LatLong } from "gps-plus-slam-app-framework/core";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 import { formatDistance } from "gps-plus-slam-app-framework/utils/format-distance";
+import { DEFAULT_TOAST_LINGER_MS } from "gps-plus-slam-app-framework/utils/toast-core";
 import { Quaternion, Vector3 } from "three";
 
 import { EYE_HEIGHT_M } from "./breadcrumbs.js";
@@ -141,6 +142,22 @@ function yawOnly(geo: {
   return [0, 0, 0, 1];
 }
 
+/**
+ * How long a skip can be undone (K4 review R14): the framework's toast
+ * linger (6 s), so it reads like every other transient message. Argued,
+ * not measured: 3 s is about the time to read "Skipped X. Next: Y, 80 m"
+ * (8 words at 4 words a second) and react; 10 s would hold the next
+ * station's skip back that long. Reversed by a field test showing stray
+ * skips noticed later than 6 s, or visitors waiting on the undo.
+ */
+export const SKIP_UNDO_MS = DEFAULT_TOAST_LINGER_MS;
+
+/** What a tap on the skip button does (its label says which). */
+interface SkipAction {
+  readonly kind: "ask-skip" | "skip" | "ask-end" | "end" | "undo";
+  readonly id: string;
+}
+
 /** Whole metres: GPS-guided distances are not more precise than that. */
 function distanceText(m: number): string {
   return formatDistance(m, { metreDecimals: 0 });
@@ -156,8 +173,15 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   let replayFound = false;
   /** The visitor asked for the skip ("Can't get there?"), for this id. */
   let skipArmedFor: string | null = null;
+  /** What the skip button showed at the last render: a tap does that. */
+  let rendered: SkipAction | null = null;
+  /** The last skip while it can be undone (R14); its "done" reaches the
+   *  prefetch only when the moment passes or the tour moves on. */
+  let undoable: { id: string; untilMs: number } | null = null;
   /** A one-line note of what just happened ("Skipped the well."). */
   let note: string | null = null;
+  /** The note goes with the moment a skip can be undone (R14). */
+  let noteUntilMs = 0;
   /** The last measurement: the visitor, and every placeable station's
    *  horizontal distance (all stations, so an offer that changes between
    *  ticks has its distances already). Taken once per tick (K4 review R13). */
@@ -239,6 +263,8 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
         nowMs: deps.now(),
       });
       skipArmedFor = null;
+      rendered = null;
+      undoable = null;
       note = null;
     }
     return run;
@@ -263,12 +289,25 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   function handle(events: readonly StationEvent[]): void {
     for (const event of events) {
       if (event.kind === "found") {
+        // Another station moved on: the last skip stays as it is.
+        settleUndo();
         const station = stationById(event.id);
         if (station !== undefined) deps.onFound(station);
       } else if (event.kind === "done") {
+        // A skip that can still be undone reaches the prefetch later.
+        if (event.skipped && undoable?.id === event.id) continue;
+        settleUndo();
         deps.onDone?.(event.id);
       }
     }
+  }
+
+  /** The last skip can no longer be undone: tell the prefetch it is done. */
+  function settleUndo(): void {
+    if (undoable === null) return;
+    const id = undoable.id;
+    undoable = null;
+    deps.onDone?.(id);
   }
 
   /** The prefetch's view of the offer: each offered station's distance. */
@@ -390,34 +429,54 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       // Whichever action brought the run here (a tick, a code lock).
       ensureHud();
     }
+    if (undoable !== null && deps.now() >= undoable.untilMs) settleUndo();
+    if (note !== null && deps.now() >= noteUntilMs) note = null;
     show(dom.line, lineText());
+    rendered = skipAction();
+    show(dom.skip, rendered === null ? "" : skipLabel(rendered));
+  }
+
+  /** What the skip button offers now. The station in focus starts its skip
+   *  clock here, when it becomes the focus (K4 review R14). */
+  function skipAction(): SkipAction | null {
+    if (run === null) return null;
     const focus = focusStation();
+    if (focus !== null) {
+      run.focus(focus, deps.now(), last?.distances.get(focus) ?? null);
+    }
+    // A skip that can still be undone: the button undoes it (R14).
+    if (undoable !== null) return { kind: "undo", id: undoable.id };
     const story = focus === null ? storyFocus() : null;
     const target = focus ?? story;
-    if (run === null || target === null) {
-      show(dom.skip, "");
+    if (target === null) {
       skipArmedFor = null;
-      return;
+      return null;
     }
     if (skipArmedFor !== null && skipArmedFor !== target) skipArmedFor = null;
-    const title = stationTitle(stationById(target)!);
     if (story !== null) {
       // Nothing unfound is offered: the button ends the story playing, so
       // one that never ends cannot hold the tour (K4 review R9).
-      show(
-        dom.skip,
-        skipArmedFor === story
-          ? `End the story of ${title} now`
-          : "End this story?",
-      );
-      return;
+      return { kind: skipArmedFor === story ? "end" : "ask-end", id: story };
     }
     const ripe =
-      skipArmedFor === focus || run.skipSuggested(target, deps.now());
-    show(
-      dom.skip,
-      ripe ? `Skip ${title} - I can't get there` : "Can't get there?",
-    );
+      skipArmedFor === target || run.skipSuggested(target, deps.now());
+    return { kind: ripe ? "skip" : "ask-skip", id: target };
+  }
+
+  function skipLabel(action: SkipAction): string {
+    const title = stationTitle(stationById(action.id)!);
+    switch (action.kind) {
+      case "ask-skip":
+        return "Can't get there?";
+      case "skip":
+        return `Skip ${title} - I can't get there`;
+      case "ask-end":
+        return "End this story?";
+      case "end":
+        return `End the story of ${title} now`;
+      case "undo":
+        return `Undo: bring back ${title}`;
+    }
   }
 
   /** When no unfound station is offered: the found offered station whose
@@ -507,36 +566,41 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       render();
     },
     skipTapped() {
-      if (run === null) return;
-      const focus = focusStation();
-      if (focus === null) {
-        const story = storyFocus();
-        if (story === null) return;
-        if (skipArmedFor !== story) {
-          // On demand: the first tap asks, the second ends the story.
-          skipArmedFor = story;
-          render();
-          return;
-        }
-        skipArmedFor = null;
-        if (deps.onEndStory !== undefined) {
-          deps.onEndStory(story);
-        } else {
-          handle(run.finish(story, deps.now()));
-          render();
-        }
-        return;
+      // The tap does what the label showed, for the station it named (R14):
+      // a clock that ran out since, or a focus that moved, changes nothing.
+      const action = rendered;
+      if (run === null || action === null) return;
+      const title = stationTitle(stationById(action.id)!);
+      switch (action.kind) {
+        case "ask-skip":
+        case "ask-end":
+          // On demand: the first tap asks, the second acts.
+          skipArmedFor = action.id;
+          break;
+        case "skip":
+          skipArmedFor = null;
+          undoable = { id: action.id, untilMs: deps.now() + SKIP_UNDO_MS };
+          handle(run.skip(action.id, deps.now()));
+          note = `Skipped ${title}.`;
+          noteUntilMs = deps.now() + SKIP_UNDO_MS;
+          break;
+        case "end":
+          skipArmedFor = null;
+          if (deps.onEndStory !== undefined) {
+            // The story panel ends it and reports back (`storyEnded`).
+            deps.onEndStory(action.id);
+            return;
+          }
+          handle(run.finish(action.id, deps.now()));
+          break;
+        case "undo":
+          if (undoable?.id !== action.id) break;
+          undoable = null;
+          handle(run.unskip(action.id, deps.now()));
+          note = `Brought back ${title}.`;
+          noteUntilMs = deps.now() + SKIP_UNDO_MS;
+          break;
       }
-      if (skipArmedFor !== focus && !run.skipSuggested(focus, deps.now())) {
-        // On demand: the first tap asks, the second skips.
-        skipArmedFor = focus;
-        render();
-        return;
-      }
-      const title = stationTitle(stationById(focus)!);
-      handle(run.skip(focus, deps.now()));
-      skipArmedFor = null;
-      note = `Skipped ${title}.`;
       render();
     },
     endSession() {

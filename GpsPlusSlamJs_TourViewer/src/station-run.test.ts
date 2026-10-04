@@ -239,6 +239,51 @@ describe("createStationRun: offering", () => {
 });
 
 describe("skip suggestion clock", () => {
+  it("under any order, starts only when a station becomes the focus, at its distance then (R14)", () => {
+    // Why this test matters (K4 review R14): every station's clock started
+    // at the tour's start, so after about two minutes every focus became a
+    // one-tap skip.
+    const run = createStationRun({
+      stations: [station("a"), station("b")],
+      order: "any",
+      nowMs: 0,
+    });
+    run.observe({ distances: at({ a: 30, b: 40 }), accuracyM: 4, nowMs: 0 });
+    expect(run.skipSuggested("b", 10_000_000)).toBe(false);
+    run.focus("b", 10_000_000, 40);
+    // Focusing again later does not restart it.
+    run.focus("b", 10_050_000, 5);
+    expect(
+      run.skipSuggested("b", 10_000_000 + skipSuggestAfterMs(40) - 1),
+    ).toBe(false);
+    expect(run.skipSuggested("b", 10_000_000 + skipSuggestAfterMs(40))).toBe(
+      true,
+    );
+  });
+
+  it("a skip can be undone: the station is offered again, unskipped, with a fresh clock (R14)", () => {
+    for (const order of ["fixed", "any", "branch"] as const) {
+      const run = createStationRun({
+        stations: [station("a", { next: "b" }), station("b"), station("c")],
+        order,
+        nowMs: 0,
+      });
+      run.focus("a", 0, 10);
+      run.skip("a", 1);
+      expect(run.offered()).not.toContain("a");
+      expect(run.unskip("a", 2)).toEqual([
+        { kind: "offered", ids: order === "any" ? ["a", "b", "c"] : ["a"] },
+      ]);
+      expect(run.status("a")).toMatchObject({
+        state: "waiting",
+        skipped: false,
+      });
+      expect(run.skipSuggested("a", 10_000_000)).toBe(false);
+      // Only a skipped station comes back.
+      expect(run.unskip("b", 3)).toEqual([]);
+    }
+  });
+
   it("scales with the distance at the offer: a slow walker's time plus a fixed allowance", () => {
     expect(skipSuggestAfterMs(null)).toBe(SKIP_SUGGEST_BASE_MS);
     expect(skipSuggestAfterMs(100)).toBe(
@@ -252,6 +297,7 @@ describe("skip suggestion clock", () => {
       order: "fixed",
       nowMs: 0,
     });
+    run.focus("a", 0, null);
     run.observe({ distances: at({ a: 100 }), accuracyM: 4, nowMs: 0 });
     const due = skipSuggestAfterMs(100);
     expect(run.skipSuggested("a", due - 1)).toBe(false);
@@ -261,14 +307,14 @@ describe("skip suggestion clock", () => {
     expect(run.skipSuggested("a", due * 10)).toBe(false); // found
   });
 
-  it("restarts for the next station at the moment it is offered", () => {
+  it("restarts for the next station at the moment it becomes the focus", () => {
     const run = createStationRun({
       stations: [station("a"), station("b")],
       order: "fixed",
       nowMs: 0,
     });
     run.skip("a", 1_000_000);
-    run.observe({ distances: at({ b: 40 }), accuracyM: 4, nowMs: 1_000_001 });
+    run.focus("b", 1_000_000, 40);
     expect(run.skipSuggested("b", 1_000_000 + skipSuggestAfterMs(40) - 1)).toBe(
       false,
     );

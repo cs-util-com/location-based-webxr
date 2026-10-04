@@ -14,7 +14,7 @@ the distances, the code locks and the scene ends. Plan:
   - `offered()` - the offered station ids, in list order; empty once
     complete.
   - `status(id)` / `statuses()` - `{ id, state, skipped, foundVia,
-offeredAtMs, offeredDistanceM }`.
+focusedAtMs, focusDistanceM }`.
   - `isComplete()`.
   - `observe({ distances, accuracyM, nowMs }): StationEvent[]` - horizontal
     distances to the stations the caller can place; no judgement at all on
@@ -25,13 +25,20 @@ offeredAtMs, offeredDistanceM }`.
   - `skip(id, nowMs)` - any offered station not done.
   - `skipSuggested(id, nowMs)` - an offered, unfound station whose clock ran
     out.
+  - `focus(id, nowMs, distanceM)` - the station the guide points at: its
+    skip clock starts at the first call, with the distance then (else the
+    first observed after) - K4 review R14, the clock used to start at the
+    offer, which under `any` order is the tour's start;
+  - `unskip(id, nowMs)` - undo a skip: the station waits again, unskipped,
+    with a fresh clock, offered as before the skip (branch order makes it
+    the current station again); a station not skipped: nothing;
   - `upcoming()` - under `fixed` or `branch` order, while the one offered
     station is found: the station offered once it is done (the prefetch
     reads it ahead, K4 review R5); null otherwise and always under `any`.
 - `StationEvent`: `found` (`via: gps | code`),
   `done` (`skipped`), `offered` (the full new set), `complete`.
 - `stationTitle(station)` - the station's title, or "the next station".
-- `skipSuggestAfterMs(offeredDistanceM)`, `SKIP_SUGGEST_BASE_MS` (2 min),
+- `skipSuggestAfterMs(focusDistanceM)`, `SKIP_SUGGEST_BASE_MS` (2 min),
   `SKIP_SUGGEST_SLOW_MPS` (0.5 m/s).
 
 ## Invariants & assumptions
@@ -58,8 +65,10 @@ offeredAtMs, offeredDistanceM }`.
   with cyclic `next` links.
 - **A station with no steps** (all left out for a newer minor, K1 review R4)
   is done the moment it is found.
-- **The skip clock** starts when the station is offered and scales with
-  the first distance observed while offered: 2 minutes plus 1 s per 0.5 m.
+- **The skip clock** starts when the station becomes the guide's focus
+  (`focus`; K4 review R14) and scales with the distance then: 2 minutes
+  plus 1 s per 0.5 m. Under `fixed` and `branch` order the focus is the
+  offered station, so the clock starts with the offer as before.
   The skip itself is offered on demand from the start; the clock only
   decides when it is suggested (`station-run.sweep.test.ts`).
 
