@@ -18,10 +18,12 @@
 // was previously invisible: `MAX_HOME_PRINTABLE_SIDE_M` was a bare
 // `0.19 / 1.16`, in which the quiet zone appears only as the `.16` and no
 // reader would find it by searching for the fraction.
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+
+import { readTracked, trackedFiles } from './tracked-tree.js';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (rel) => readFileSync(resolve(repoRoot, rel), 'utf8');
@@ -55,14 +57,18 @@ function quietZoneFraction() {
  * repo convention with its own guards (PR #439 review).
  */
 function printMarkupFiles() {
-  return readdirSync(repoRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith('GpsPlusSlam'))
-    .map((entry) => `${entry.name}/index.html`)
+  // Through the shared tracked tree (tracked-tree.js; gate-speed plan
+  // 2026-10-04, G6): the tracked depth-1 `index.html` files, filtered from
+  // the whole-repo listing the other guards already memoise (a pathspec
+  // would cost one more `git` process). A package's untracked page is
+  // invisible until it is added.
+  return trackedFiles()
+    .filter((rel) => /^GpsPlusSlam[^/]*\/index\.html$/.test(rel))
     .filter((rel) => {
       try {
-        return read(rel).includes('#print-quiet');
+        return readTracked(rel).includes('#print-quiet');
       } catch {
-        return false; // no index.html in that package
+        return false; // tracked but deleted in the working tree
       }
     });
 }

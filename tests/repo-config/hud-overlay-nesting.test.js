@@ -26,10 +26,12 @@
 // `getElementById` — that linkage is asserted indirectly by each app's own
 // unit/e2e suite.
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 import { describe, it, expect } from 'vitest';
+
+import { readTracked, trackedFiles } from './tracked-tree.js';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -223,14 +225,28 @@ export function textImportsFramework(source) {
   );
 }
 
-function srcImportsFramework(appDir) {
-  const srcDir = join(appDir, 'src');
-  if (!existsSync(srcDir)) return false;
-  return readdirSync(srcDir, { recursive: true, withFileTypes: true })
-    .filter((e) => e.isFile() && /\.(ts|tsx|js|jsx|mts|cts)$/.test(e.name))
-    .some((e) =>
-      textImportsFramework(readFileSync(join(e.parentPath, e.name), 'utf8')),
-    );
+// Through the shared, memoised tracked tree (tracked-tree.js; gate-speed plan
+// 2026-10-04, G6) instead of its own recursive walk and reads, which made it
+// one more full read of every app's source per worker. It filters the
+// whole-repo listing in JS rather than passing pathspecs: the plain listing
+// is already memoised for the other guards, while every distinct pathspec
+// costs one more `git` process, the expensive part under load. Like every
+// guard on that tree, it sees TRACKED files only: an app's untracked new
+// source is invisible until it is added.
+function srcImportsFramework(appName) {
+  return trackedFiles()
+    .filter(
+      (path) =>
+        path.startsWith(`${appName}/src/`) &&
+        /\.(ts|tsx|js|jsx|mts|cts)$/.test(path),
+    )
+    .some((path) => {
+      try {
+        return textImportsFramework(readTracked(path));
+      } catch {
+        return false; // tracked but deleted in the working tree
+      }
+    });
 }
 
 /**
@@ -239,9 +255,9 @@ function srcImportsFramework(appDir) {
  * opens a WebXR dom-overlay session). Excludes the framework (no `index.html`,
  * and it never self-imports) and the static landing page (no `package.json` /
  * `src`). Returns repo-root-relative forward-slash `index.html` paths, matching
- * `APP_OVERLAY_CONTRACTS[].htmlPath`.
+ * `APP_OVERLAY_CONTRACTS[].htmlPath`. Reads the tracked tree from the repo
+ * root (see `srcImportsFramework`).
  *
- * @param {string} root repo root
  * @returns {string[]}
  */
 /**
@@ -268,16 +284,24 @@ function srcImportsFramework(appDir) {
 // from the coverage guard (PR #359 review).
 const NON_AR_APPS = new Set(['GpsPlusSlamJs_OsmDemo']);
 
-function discoverArAppHtmlPaths(root) {
-  return readdirSync(root, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .map((e) => e.name)
+function discoverArAppHtmlPaths() {
+  // Top-level packages only: depth-1 `<package>/<file>` paths.
+  const topLevel = (file) =>
+    new Set(
+      trackedFiles()
+        .filter((path) => {
+          const parts = path.split('/');
+          return parts.length === 2 && parts[1] === file;
+        })
+        .map((path) => path.split('/')[0]),
+    );
+  const withManifest = topLevel('package.json');
+  return [...topLevel('index.html')]
     .filter(
       (name) =>
         !NON_AR_APPS.has(name) &&
-        existsSync(join(root, name, 'index.html')) &&
-        existsSync(join(root, name, 'package.json')) &&
-        srcImportsFramework(join(root, name)),
+        withManifest.has(name) &&
+        srcImportsFramework(name),
     )
     .map((name) => `${name}/index.html`)
     .sort();
@@ -371,7 +395,7 @@ describe('overlay-contract coverage guard', () => {
   });
 
   it('discovers the known AR apps (so the guard is not vacuous)', () => {
-    const discovered = discoverArAppHtmlPaths(repoRoot);
+    const discovered = discoverArAppHtmlPaths();
     expect(discovered).toContain('GpsPlusSlamJs_QrTrackingDemo/index.html');
     expect(discovered).toContain('GpsPlusSlamJs_RecorderApp/index.html');
     expect(discovered.length).toBeGreaterThanOrEqual(4);
@@ -384,7 +408,7 @@ describe('overlay-contract coverage guard', () => {
     // would put a false claim in the registry; excluding it explicitly says the
     // true thing. This test exists so the exclusion cannot rot into a hole:
     // if the demo ever DOES start an AR session, this is where to look.
-    const discovered = discoverArAppHtmlPaths(repoRoot);
+    const discovered = discoverArAppHtmlPaths();
     expect(discovered).not.toContain('GpsPlusSlamJs_OsmDemo/index.html');
     expect(existsSync(join(repoRoot, 'GpsPlusSlamJs_OsmDemo/index.html'))).toBe(
       true,
@@ -392,7 +416,7 @@ describe('overlay-contract coverage guard', () => {
   });
 
   it('every AR app (workspace pkg + index.html + framework import) has an overlay contract', () => {
-    const discovered = discoverArAppHtmlPaths(repoRoot);
+    const discovered = discoverArAppHtmlPaths();
     const registered = APP_OVERLAY_CONTRACTS.map((c) => c.htmlPath);
     // A non-empty result names the unregistered app(s) — add them to
     // APP_OVERLAY_CONTRACTS so they inherit the nesting protection.
