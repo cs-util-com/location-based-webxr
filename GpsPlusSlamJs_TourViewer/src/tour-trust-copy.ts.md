@@ -11,8 +11,9 @@ fingerprints come in already computed.
 ## Public API
 
 - `trustLines({ signature, warnings, links, fingerprintOf }): string[]` -
-  the signature line, one line per warning, then one links line when the
-  tour links other series.
+  the signature line, one line per warning, then one links line when a
+  SIGNED tour links other series (an unsigned or unchecked tour shows none,
+  K1 milestone review R12: nobody vouches for its list).
 - `type SignatureState` - `none | listed | signed(author) |
 unsupported(author)`.
 
@@ -46,5 +47,6 @@ unsupported(author)`.
 
 `tour-trust-copy.test.ts`: the signed line names the fingerprint and says
 a key is not a person; unsupported never reads as checked; both unsigned
-lines; each warning with both keys; links with "same key"; no "same key"
-when the signature was not checked; no links line without links.
+lines; each warning with both keys; links with "same key"; no links line
+for an unsigned tour or one whose signature was not checked (R12); no
+links line without links.

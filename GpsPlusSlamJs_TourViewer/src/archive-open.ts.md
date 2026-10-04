@@ -55,7 +55,8 @@ DOM glue, its own module since the flows plan M6.
 
 - **The signature lines** (tour kit plan K1, K-D2): after a successful
   open, `#tour-trust` shows who signed the tour or that nobody did, the
-  trust-on-first-use warnings for its sources (the normalised link, and the
+  trust-on-first-use warnings for its sources (the link as `linkTrustKey`
+  reads it - a URL without its fragment, query kept - and the
   printed code when a scan or a `?qr=` boot named it) and its links to
   other series (`tour-trust-view.ts`). A file has no link source. Hidden
   again at the start of the next open.

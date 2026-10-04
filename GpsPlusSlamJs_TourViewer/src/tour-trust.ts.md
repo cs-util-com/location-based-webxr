@@ -4,8 +4,8 @@
 
 Trust on first use, keyed by SOURCE (tour kit plan K1, §8 D2,
 `GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`):
-the phone remembers which key signed what it opened - per normalised
-link, per printed code and per series - and warns when a source that was
+the phone remembers which key signed what it opened - per link (read as
+a URL, below), per printed code and per series - and warns when a source that was
 signed now serves another key or no signature at all. Keyed by series
 alone, the check would be bypassed by a fresh series id or a stripped
 signature (the cold review's D2), which is why the sources come first.
@@ -15,7 +15,16 @@ signature (the cold review's D2), which is why the sources come first.
 - `judgeTrust(known, sourceKeys, observed, nowMs)` - PURE: returns
   `{ warnings, records }`, never touching `known`. `observed` is
   `{ author: did | null, seriesId: string | null }`.
-- `linkTrustKey(url)` - `link:<normalised url>`.
+- `linkTrustKey(url)` - `link:<url>`, the url PARSED and serialised again
+  without its fragment (K1 milestone review R5): URL serialisation folds the
+  host's case and drops a default port, a fragment never reaches the
+  server, and the query is kept (another query can name another file). A
+  relative link (the Drive proxy route) keeps its path and query; text that
+  is no URL stays as is. Before R5 the key was the raw text, so every
+  spelling of a link was a first use. `normalizeShareUrl` does NOT do this
+  (it passes an unknown host's link through byte-identical, for the cache
+  key), which is why the key does it itself. Tracking parameters are NOT
+  removed: no rule can tell them from a query that names a file.
 - `codeTrustKey(printed)` - `code:<payload>`: a launch URL is named by its
   `?qr=` payload, so a scan (the full printed text) and a `?qr=` boot (the
   payload alone) name ONE source; any other code by its text.

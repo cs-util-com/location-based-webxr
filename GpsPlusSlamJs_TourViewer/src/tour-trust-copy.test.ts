@@ -81,15 +81,26 @@ describe("trustLines", () => {
     );
   });
 
-  it("never calls a link 'same key' when the tour itself is not signed by it", () => {
-    const out = lines({
-      signature: { kind: "unsupported", author: A },
-      links: [{ seriesId: "K7fQ2mX9pL4sT8vB1nR6wA", author: A }],
-    });
-    expect(out.at(-1)).toBe(
-      "Links to 1 other tour: K7fQ2mX9 (key aaaa 1111 aaaa).",
-    );
-  });
+  it.each([
+    ["not signed", { kind: "listed" } as const],
+    [
+      "signed but not checked here",
+      { kind: "unsupported", author: A } as const,
+    ],
+  ])(
+    "shows no links for a tour that is %s (K1 milestone review R12)",
+    (_label, signature) => {
+      // Why: links are the AUTHOR's claim about their other tours. Without
+      // a checked signature nobody vouches for the list, and a line naming
+      // keys would lend any key the look of a known author.
+      const out = lines({
+        signature,
+        links: [{ seriesId: "K7fQ2mX9pL4sT8vB1nR6wA", author: A }],
+      });
+      expect(out).toHaveLength(1);
+      expect(out.join("\n")).not.toMatch(/Links to/);
+    },
+  );
 
   it("adds no links line without links", () => {
     expect(lines({})).toHaveLength(1);

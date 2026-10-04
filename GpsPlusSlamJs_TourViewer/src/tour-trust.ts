@@ -1,6 +1,7 @@
 /**
  * Trust on first use, keyed by SOURCE (tour kit plan K1, §8 D2): the phone
- * remembers which key signed what it opened, per normalised link, per
+ * remembers which key signed what it opened, per link (read as a URL,
+ * `linkTrustKey`), per
  * printed code and per series, and warns when a source that was signed
  * now serves another key or no signature at all - the two ways someone who
  * took over a link would replace a creator's tour. Keyed by series alone,
@@ -59,9 +60,35 @@ export type TrustWarning =
       readonly now: string | null;
     };
 
-/** A link's record key (the NORMALISED url the archive was read from). */
+/** Resolves a relative link (the site's own Drive proxy route) for
+ *  parsing; never part of a key. `.invalid` cannot resolve (RFC 2606). */
+const RELATIVE_BASE = "https://relative.invalid";
+
+/**
+ * A link's record key: the url the archive was read from, PARSED as a URL
+ * and serialised again without its fragment (K1 milestone review R5). URL
+ * serialisation folds the host's case and drops a default port, and a
+ * fragment never reaches the server, so none of them makes another
+ * source; the query is kept, because another query can name another file.
+ * Without this, each spelling of one link was a "first use", and a
+ * stripped signature served under one of them passed silently. A relative
+ * link keeps its path and query; text that is no URL at all is kept as is.
+ */
 export function linkTrustKey(url: string): string {
-  return `link:${url}`;
+  return `link:${canonicalLink(url)}`;
+}
+
+function canonicalLink(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url, RELATIVE_BASE);
+  } catch {
+    return url;
+  }
+  parsed.hash = "";
+  return parsed.origin === RELATIVE_BASE
+    ? `${parsed.pathname}${parsed.search}`
+    : parsed.href;
 }
 
 /**

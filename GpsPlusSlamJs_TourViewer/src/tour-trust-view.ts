@@ -84,8 +84,12 @@ export async function describeTourTrust(input: {
     saveTrustRecords(input.storage, judged.records);
     warnings = judged.warnings;
   }
+  // Links only for a checked signature (R12, `tour-trust-copy.ts`): an
+  // unsigned list's keys are neither fingerprinted nor shown.
   const links =
-    input.integrity.kind === "none" ? [] : input.integrity.manifest.links;
+    input.integrity.kind === "none" || state.kind !== "signed"
+      ? []
+      : input.integrity.manifest.links;
   const keys = keysNamed(state, warnings, links);
   const prints = new Map(
     await Promise.all(

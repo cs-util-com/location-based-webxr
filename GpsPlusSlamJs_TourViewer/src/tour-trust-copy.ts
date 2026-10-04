@@ -67,11 +67,15 @@ function warningLine(
 }
 
 /** One line naming the linked series, each by the start of its id and its
- *  key - "the same key" when it is this tour's signer. */
+ *  key - "the same key" when it is this tour's signer. For a SIGNED tour
+ *  only (K1 milestone review R12): links are the author's claim, and
+ *  without a checked signature nobody vouches for them - a line naming
+ *  keys would lend any key the look of a known author. */
 function linksLine(input: TrustCopyInput): string | null {
-  if (input.links.length === 0) return null;
-  const signer =
-    input.signature.kind === "signed" ? input.signature.author : null;
+  if (input.links.length === 0 || input.signature.kind !== "signed") {
+    return null;
+  }
+  const signer = input.signature.author;
   const named = input.links.map(
     (link) =>
       `${link.seriesId.slice(0, 8)} (${

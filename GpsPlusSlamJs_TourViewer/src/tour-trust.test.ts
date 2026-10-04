@@ -253,4 +253,35 @@ describe("the source keys", () => {
   it("a link source and a code source never collide", () => {
     expect(linkTrustKey("x")).not.toBe(codeTrustKey("x"));
   });
+
+  // Why this matters (K1 milestone review R5): a link keyed by its raw text
+  // made a "new" source of every spelling - a fragment, the host in capitals,
+  // the default port - so a stripped signature served under one of them
+  // passed as a first use. The link is read as a URL instead; its query
+  // stays, because another query can name another file.
+  it("a link is one source however it is spelled: fragment, host case, default port", () => {
+    const key = linkTrustKey("https://host.example/tour.zip?v=2");
+    expect(linkTrustKey("https://host.example/tour.zip?v=2#start")).toBe(key);
+    expect(linkTrustKey("https://HOST.Example/tour.zip?v=2")).toBe(key);
+    expect(linkTrustKey("https://host.example:443/tour.zip?v=2")).toBe(key);
+    expect(linkTrustKey("https://host.example/tour.zip?v=3")).not.toBe(key);
+  });
+
+  it("a relative link (the site's own Drive proxy route) drops its fragment too", () => {
+    expect(linkTrustKey("/api/drive-proxy?id=X#again")).toBe(
+      linkTrustKey("/api/drive-proxy?id=X"),
+    );
+  });
+
+  it("no fragment ever makes another source (property)", () => {
+    fc.assert(
+      fc.property(
+        fc.webUrl({ withQueryParameters: true }),
+        fc.webFragments(),
+        (url, fragment) => {
+          expect(linkTrustKey(`${url}#${fragment}`)).toBe(linkTrustKey(url));
+        },
+      ),
+    );
+  });
 });

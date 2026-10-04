@@ -332,8 +332,8 @@ export function wireArchiveOpen(deps: {
   /**
    * The lines about the open tour's signature (tour kit plan K1): who
    * signed it or that nobody did, the trust-on-first-use warnings for its
-   * sources - the normalised link and the printed code - and its links to
-   * other series. Shown in both modes, under the file line.
+   * sources - the link (`linkTrustKey`) and the printed code - and, for a
+   * signed tour, its links to other series. Shown in both modes, under the file line.
    */
   async function presentTrust(
     opened: TourSession,
