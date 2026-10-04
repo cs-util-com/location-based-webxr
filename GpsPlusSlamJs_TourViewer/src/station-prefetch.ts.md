@@ -12,11 +12,15 @@ far the visitor is from each offered station. Plan:
 
 ## Public API
 
-- `createStationPrefetch({ assets, read, tour, budgetBytes? }): StationPrefetch`
+- `createStationPrefetch({ assets, read, tour, budgetBytes?, leadM? }): StationPrefetch`
+  (`leadM` only for the sweep)
   (`tour()` - the open tour, by identity: a different value or null drops
   the cache)
   - `approach(station, distanceM, activateM)` - inside
     `activateM + PREFETCH_LEAD_M`, queue the station's assets;
+  - `ahead(station)` - the station that comes next in a fixed or branch
+    order, while the current story plays: queue its assets from any
+    distance (K4 review R5; the guide's `onUpcoming`);
   - `done(stationId)` - the media only done stations need may be
     released;
   - `load(path)` - the story's read: the cache, a read in flight, or a
@@ -57,10 +61,24 @@ far the visitor is from each offered station. Plan:
 
 ## Evidence (`station-prefetch.sweep.test.ts`)
 
-- Lead 20-100 m x speed 0.8-1.8 m/s x story 1-20 MB x 1-20 Mbit/s, at the
-  tightest and a typical station: at 80 m every story up to 5 MB is ready at
-  1 Mbit/s and up to 20 MB from 5 Mbit/s; 60 m misses the 5 MB story at
-  1.8 m/s on the tightest station, 40 m at 1.4 m/s.
+The real module on a virtual clock (1 s steps; a story is three equal
+assets; a read takes 1 s plus its bytes at the link's rate, one at a time):
+
+- **Approach** (the first station, or the next after a skip): lead 20-100 m
+  x 0.8 / 1.4 / 1.8 m/s x 1 / 5 / 20 Mbit/s, the tightest station at 3 m
+  accuracy and a typical one. At 80 m at least 5 MB is ready in every cell
+  at 1 Mbit/s and 25 MB at 5 Mbit/s (worst: the tightest station at
+  1.8 m/s); 60 m leaves 3.75 MB there, 40 m 2 MB. A longer lead never
+  leaves a story less ready (asserted through the module, K4 review R17).
+- **Castle spacing** (K4 review R5): stations 30 m apart in a fixed order.
+  The K4 build had only 1-3 MB ready at 1 Mbit/s (1.75 MB at 1.4 m/s),
+  whatever the lead - the next station is offered 30 m away - so its
+  claim of "5 MB ready" did not hold at castle spacing. Reading the next
+  station ahead while the current story plays adds that time: 4.5-6.75 MB
+  after a 30 s story, 8-10.25 MB after 60 s, 15.25-17.5 MB after 120 s
+  (23 MB and more at 5 Mbit/s after 30 s). A 0 s story gains nothing;
+  reading ahead is never worse. Reversed by stories shorter than about
+  30 s on a 1 Mbit/s link, where only the walk counts.
 - A 1.7 m figure covers about 1840 px of a 2400 px screen from 2 m (60
   degree view): 2048 keeps it sharp from 2 m on; 1024 would look soft
   closer than about 3.7 m.
@@ -87,4 +105,5 @@ const blob = await prefetch.load(asset.path); // a hit when it was prefetched
 - `station-prefetch.property.test.ts` - random approaches, dones, answers
   and failures: in budget, one read per path at a time, no retry for a
   station a read failed for.
-- `station-prefetch.sweep.test.ts` - the lead and the decode cap.
+- `station-prefetch.sweep.test.ts` - the lead and the castle-spacing
+  simulations through the module, and the decode cap.

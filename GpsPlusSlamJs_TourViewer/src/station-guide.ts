@@ -77,6 +77,10 @@ export interface StationGuideDeps {
   onApproach?(station: TourStation, distanceM: number, activateM: number): void;
   /** A station is done (its story ended, or it was skipped). */
   onDone?(stationId: string): void;
+  /** Every render while the current station's story plays under a fixed
+   *  or branch order: the station that comes next (the prefetch reads it
+   *  ahead, K4 review R5). */
+  onUpcoming?(station: TourStation): void;
   /** Every tick with a position: the stage turns its figure to the visitor. */
   onVisitor?(nue: readonly [number, number, number]): void;
   /** The breadcrumbs: from the visitor towards the station in focus,
@@ -291,6 +295,9 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     const visitor = deps.visitor();
     last = { visitor, distances: horizontalDistances(visitor.nue) };
     deps.onGuide?.(visitor.nue, guideTarget());
+    const upcoming = run?.upcoming() ?? null;
+    const next = upcoming === null ? undefined : stationById(upcoming);
+    if (next !== undefined) deps.onUpcoming?.(next);
     if (run?.isComplete() === true) {
       // Nothing left to point at, whichever action completed the tour.
       hud?.dispose();

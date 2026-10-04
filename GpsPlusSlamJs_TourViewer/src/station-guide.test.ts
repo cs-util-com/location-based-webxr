@@ -60,6 +60,7 @@ function harness(tourValue: StationTour) {
   const found: string[] = [];
   const approaches: [string, number, number][] = [];
   const dones: string[] = [];
+  const upcomings: string[] = [];
   const guides: (string | null)[] = [];
   const huds: { getTargets: () => WayfindingTarget[]; disposed: boolean }[] =
     [];
@@ -84,6 +85,7 @@ function harness(tourValue: StationTour) {
     onFound: (s) => found.push(s.id),
     onApproach: (s, d, exit) => approaches.push([s.id, Math.round(d), exit]),
     onDone: (id) => dones.push(id),
+    onUpcoming: (s) => upcomings.push(s.id),
     onGuide: (_visitor, target) =>
       guides.push(
         target === null
@@ -97,6 +99,7 @@ function harness(tourValue: StationTour) {
     found,
     approaches,
     dones,
+    upcomings,
     guides,
     huds,
     ignored,
@@ -376,6 +379,17 @@ describe("wireStationGuide", () => {
     h.guide.skipTapped();
     h.guide.skipTapped();
     expect(h.dones).toEqual(["gate", "well"]);
+  });
+
+  it("names the next station in order to the prefetch as soon as the current one is found (R5)", () => {
+    const h = harness({
+      stations: [station("gate", 0, 0), station("well", 0, 30)],
+      order: "fixed",
+      levels: null,
+    });
+    h.at(0, 0);
+    expect(h.found).toEqual(["gate"]);
+    expect(h.upcomings.at(-1)).toBe("well");
   });
 
   it("lays the breadcrumbs towards the nearest unfound station, stopping at its arrival band, and none once it is found", () => {

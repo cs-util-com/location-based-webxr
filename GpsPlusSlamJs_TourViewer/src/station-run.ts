@@ -115,6 +115,13 @@ export interface StationRun {
   skip(id: string, nowMs: number): StationEvent[];
   /** Whether to suggest the skip for this offered, unfound station now. */
   skipSuggested(id: string, nowMs: number): boolean;
+  /**
+   * Under `fixed` or `branch` order, while the one offered station is found
+   * (its story plays): the station offered once it is done, else null (K4
+   * review R5: its media are read while the current story plays). Under
+   * `any` order always null - every station not done is offered already.
+   */
+  upcoming(): string | null;
 }
 
 interface Mutable {
@@ -291,6 +298,16 @@ export function createStationRun(input: {
       const s = states.get(id);
       if (s === undefined || s.state === "done" || !isOffered(id)) return [];
       return complete(id, true, nowMs);
+    },
+
+    upcoming() {
+      if (input.order === "any" || offeredIds.length !== 1) return null;
+      const current = offeredIds[0]!;
+      if (states.get(current)?.state !== "found") return null;
+      if (input.order === "branch") return branchNextAfter(current);
+      return (
+        stations.find((s) => s.id !== current && !isDone(s.id))?.id ?? null
+      );
     },
 
     skipSuggested(id, nowMs) {

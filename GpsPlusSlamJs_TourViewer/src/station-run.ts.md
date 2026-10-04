@@ -25,6 +25,9 @@ offeredAtMs, offeredDistanceM }`.
   - `skip(id, nowMs)` - any offered station not done.
   - `skipSuggested(id, nowMs)` - an offered, unfound station whose clock ran
     out.
+  - `upcoming()` - under `fixed` or `branch` order, while the one offered
+    station is found: the station offered once it is done (the prefetch
+    reads it ahead, K4 review R5); null otherwise and always under `any`.
 - `StationEvent`: `found` (`via: gps | code`),
   `done` (`skipped`), `offered` (the full new set), `complete`.
 - `stationTitle(station)` - the station's title, or "the next station".

@@ -189,6 +189,39 @@ describe("createStationRun: offering", () => {
     expect(run.isComplete()).toBe(true);
   });
 
+  it("names the station that comes next while the current one's story plays (fixed and branch; R5)", () => {
+    // Why this test matters (K4 review R5): under a fixed order the next
+    // station is offered only once the current is done, so a prefetch keyed
+    // on the offer started it with the visitor already on the way; the run
+    // names it as soon as the current station is found.
+    const fixed = createStationRun({
+      stations: [station("a"), station("b"), station("c")],
+      order: "fixed",
+      nowMs: 0,
+    });
+    expect(fixed.upcoming()).toBeNull();
+    fixed.codeLocked("x", 1);
+    fixed.observe({ distances: at({ a: 1 }), accuracyM: 4, nowMs: 1 });
+    expect(fixed.upcoming()).toBe("b");
+    fixed.finish("a", 2);
+    expect(fixed.upcoming()).toBeNull();
+    const branch = createStationRun({
+      stations: [station("a", { next: "c" }), station("b"), station("c")],
+      order: "branch",
+      nowMs: 0,
+    });
+    branch.observe({ distances: at({ a: 1 }), accuracyM: 4, nowMs: 1 });
+    expect(branch.upcoming()).toBe("c");
+    // Under "any" every station not done is offered already.
+    const any = createStationRun({
+      stations: [station("a"), station("b")],
+      order: "any",
+      nowMs: 0,
+    });
+    any.observe({ distances: at({ a: 1 }), accuracyM: 4, nowMs: 1 });
+    expect(any.upcoming()).toBeNull();
+  });
+
   it("skip: a labelled way past a station nobody can reach, recorded as skipped (plan §8 D5)", () => {
     const run = createStationRun({
       stations: [station("a"), station("b")],

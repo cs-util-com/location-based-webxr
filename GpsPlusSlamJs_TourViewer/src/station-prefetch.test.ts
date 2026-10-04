@@ -154,6 +154,17 @@ describe("createStationPrefetch", () => {
     expect(h.reads).toEqual(["content/knight.png", "content/arch.glb"]);
   });
 
+  it("reads the next station's media ahead, from any distance, while the current story plays (R5)", async () => {
+    // Why this test matters (K4 review R5): at castle spacing (30 m) the
+    // lead alone left about 2 MB ready; the next station's story is read
+    // while the current one plays.
+    const h = harness();
+    h.prefetch.ahead(station("well", ["knight", "arch"]));
+    expect(h.reads).toEqual(["content/knight.png"]);
+    await h.land();
+    expect(h.reads).toEqual(["content/knight.png", "content/arch.glb"]);
+  });
+
   it("the story's read joins a prefetch in flight and then hits the cache", async () => {
     const h = harness();
     h.prefetch.approach(station("gate", ["knight"]), 10, 38);
