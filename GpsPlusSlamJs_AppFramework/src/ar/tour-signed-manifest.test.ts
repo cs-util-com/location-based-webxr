@@ -19,6 +19,7 @@ import {
   signedManifestEntryOf,
   signedManifestFilesOf,
   SIGNED_MANIFEST_ENTRY,
+  successorManifest,
   TourIntegrityError,
   type SignedTourManifest,
 } from './tour-signed-manifest';
@@ -296,6 +297,62 @@ describe('checkEntriesAgainstManifest (tier 1: names and sizes)', () => {
     expect(
       kindOf(() => checkEntriesAgainstManifest(entries, listed, folder))
     ).toBe(kind);
+  });
+});
+
+describe('successorManifest (K1 milestone review R7)', () => {
+  // Why this matters: a writer that changes a tour (the creator's Finish)
+  // used to DROP manifest.json, and with it the series id's only home: the
+  // next version was a stranger to the phones that knew the series, and a
+  // file-opened draft lost its key. The successor keeps the series, counts
+  // the version up and lists exactly the files the new archive holds.
+  const base = manifest();
+  const record = { sha256: H('c'), size: 7 };
+
+  it('keeps the series, counts the version up, and lists the new files relative to the manifest folder', () => {
+    const next = successorManifest(base, 'mytour/manifest.json', {
+      removed: ['mytour/content/gate.jpg'],
+      written: new Map([
+        ['mytour/tour.json', record],
+        ['./mytour/qr/abc.json', record],
+      ]),
+      createdAt: '2026-10-05T09:00:00.000Z',
+    });
+    expect(next).toEqual({
+      ...base,
+      version: base.version + 1,
+      createdAt: '2026-10-05T09:00:00.000Z',
+      files: { 'tour.json': record, 'qr/abc.json': record },
+    });
+    // It is a valid manifest the writer accepts.
+    expect(parseSignedTourManifest(serializeSignedTourManifest(next))).toEqual(
+      next
+    );
+  });
+
+  it('starts from the given files when a later Finish rebuilds from an earlier one', () => {
+    const next = successorManifest(base, 'manifest.json', {
+      baseFiles: { 'a.jpg': record },
+      removed: [],
+      written: new Map([['b.jpg', record]]),
+      createdAt: '2026-10-05T09:00:00.000Z',
+    });
+    expect(next.version).toBe(base.version + 1);
+    expect(Object.keys(next.files).sort()).toEqual(['a.jpg', 'b.jpg']);
+  });
+
+  it.each([
+    ['outside the manifest folder', 'other/tour.json'],
+    ['an unsafe name', 'mytour/../x.json'],
+    ['the manifest itself', 'mytour/manifest.json'],
+  ])('refuses to list a written name %s', (_label, name) => {
+    expect(() =>
+      successorManifest(base, 'mytour/manifest.json', {
+        removed: [],
+        written: new Map([[name, record]]),
+        createdAt: '2026-10-05T09:00:00.000Z',
+      })
+    ).toThrow();
   });
 });
 

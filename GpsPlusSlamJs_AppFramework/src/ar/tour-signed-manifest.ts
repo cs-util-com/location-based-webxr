@@ -382,10 +382,73 @@ export function checkEntriesAgainstManifest(
 }
 
 /**
+ * The NEXT version of a series' list after a writer changed some of the
+ * tour's files (K1 milestone review R7): the same series id, links and
+ * reserved commitment, `version` one up, a new `createdAt`, and the file
+ * records updated - every removed name dropped, every written one recorded
+ * (a replaced file's record replaced). UNSIGNED by nature: a signature over
+ * the old list cannot cover the new one (K2 re-signs on export).
+ *
+ * @param previous the list the tour was opened with
+ * @param manifestEntryName the archive name of that `manifest.json`;
+ *   every name below is taken relative to its folder
+ * @param changes.baseFiles the records to start from (default
+ *   `previous.files`; a later rebuild of an earlier rebuild passes the
+ *   earlier one's)
+ * @param changes.removed archive names the writer left out
+ * @param changes.written archive name -> the record of the bytes written
+ * @throws TourIntegrityError (`unsafe-name`) for a written name that is
+ *   not canonical-safe, outside the manifest's folder, or reserved - a
+ *   programming error, refused before a wrong list is written.
+ */
+export function successorManifest(
+  previous: SignedTourManifest,
+  manifestEntryName: string,
+  changes: {
+    readonly baseFiles?: Readonly<Record<string, TourFileRecord>>;
+    readonly removed: readonly string[];
+    readonly written: ReadonlyMap<string, TourFileRecord>;
+    readonly createdAt: string;
+  }
+): SignedTourManifest {
+  const folder = folderOf(canonicalTourPath(manifestEntryName) ?? '');
+  const relativeOf = (name: string): string | null => {
+    const canonical = canonicalTourPath(name);
+    if (canonical === null || !canonical.startsWith(folder)) return null;
+    const relative = canonical.slice(folder.length);
+    return isReservedName(relative) ? null : relative;
+  };
+  const files: Record<string, TourFileRecord> = {
+    ...(changes.baseFiles ?? previous.files),
+  };
+  for (const name of changes.removed) {
+    const relative = relativeOf(name);
+    if (relative !== null) delete files[relative];
+  }
+  for (const [name, record] of changes.written) {
+    const relative = relativeOf(name);
+    if (relative === null) {
+      throw new TourIntegrityError(
+        'unsafe-name',
+        `"${name}" cannot be listed in the manifest at "${manifestEntryName}"`
+      );
+    }
+    files[relative] = record;
+  }
+  return {
+    ...previous,
+    version: previous.version + 1,
+    createdAt: changes.createdAt,
+    files,
+  };
+}
+
+/**
  * The archive's own names of `manifest.json` and, next to it,
  * `manifest.sig.json` - what a writer that CHANGES any file of a tour must
- * drop, because the list (and a signature over it) would then no longer
- * match. Empty for a tour without a manifest.
+ * replace (the list, with {@link successorManifest}) or drop (the
+ * signature), because they would then no longer match. Empty for a tour
+ * without a manifest.
  */
 export function signedManifestFilesOf(names: Iterable<string>): string[] {
   const all = [...names];

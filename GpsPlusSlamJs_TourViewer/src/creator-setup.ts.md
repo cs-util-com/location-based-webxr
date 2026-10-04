@@ -514,10 +514,20 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
     closes, since the hosted zip lacks them until the upload.
   - **The Finish replaces and filters** (`applyObjectChanges`), removes
     each deleted photo's content file (`contentEntriesToRemove` into the
-    rebuild's `remove`), drops `manifest.json` and `manifest.sig.json`
-    (`signedManifestFilesOf`, tour kit plan K1: the list and its signature
-    would no longer match the files this Finish rewrites, so the output
-    is an honest unsigned tour until K2 re-signs on export), and afterwards drops from `placedObjects` only
+    rebuild's `remove`), drops `manifest.sig.json` (a signature over the
+    old list cannot cover the files this Finish rewrites: the output is an
+    honest unsigned tour until K2 re-signs on export) and, for a LISTED
+    tour, writes `manifest.json` again as the series' next version
+    (`successorManifest`, K1 milestone review R7: the same series id, the
+    next version, the hash of every file the zip holds - the kept ones from
+    the list the input carries, the written ones hashed at the Finish; a
+    second Finish starts from the list the first one wrote, kept in
+    `ctx.rebuiltZip.signedManifest`). Dropping it, as K1 first did, dropped
+    the series id's only home. A phone that knew the signed tour still
+    warns that this copy is not signed. A NEW level file of a listed tour
+    is written inside the tour's folder (`manifestWrap`), where its list
+    can name it (a root `qr/` beside a wrapped list would be unlisted).
+    Afterwards it drops from `placedObjects` only
     what the zip carries WITH THE SAME CONTENT, and clears the applied
     deletions. The draft's tombstones stay until the hosted zip lacks the
     ids, the same proof the objects wait for.

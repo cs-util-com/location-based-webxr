@@ -36,6 +36,7 @@ import type {
   SelectTargetRay,
 } from "gps-plus-slam-app-framework/ar";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
+import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import type { RenderedTourObjects } from "./content-placement.js";
@@ -294,8 +295,14 @@ export interface TourViewerSession {
   /** The last finish failure, shown with priority until the next tap
    *  (the readout used to erase it on the next store dispatch, M3 review #1). */
   finishError: string | null;
-  /** The rebuilt zip awaiting download in step 5. */
-  rebuiltZip: { blob: Blob; filename: string } | null;
+  /** The rebuilt zip awaiting download in step 5, with the list its
+   *  `manifest.json` carries when the tour has one (K1 milestone review
+   *  R7): a second Finish rebuilds from this zip, so its list starts there. */
+  rebuiltZip: {
+    blob: Blob;
+    filename: string;
+    signedManifest?: SignedTourManifest;
+  } | null;
   /** What the panel calls the open tour (`tourLabel`); null with none. */
   tourLabel: string | null;
   /** Content placed in THIS setup session (M4): the records the finish

@@ -47,7 +47,9 @@ lives here.
     with the level) and `visitCodeSighting` (the anchor code's latest stable
     pose in the running AR visit, cleared at the visit's end) - both for the
     settle (authoring plan 2026-09-28-0953 §3.2, M2c),
-    `finishing`, `rebuiltZip`, `tourLabel` (set by archive-open); the open
+    `finishing`, `rebuiltZip` (with the `manifest.json` list it carries,
+    for the next Finish, K1 milestone review R7), `tourLabel` (set by
+    archive-open); the open
     tour's `tourManifest` (archive-open.ts); the placement layer (M4):
     `placedObjects` (each with an optional `placement`: the odometry-NUE
     pose in the world group and the AR visit it belongs to, authoring plan

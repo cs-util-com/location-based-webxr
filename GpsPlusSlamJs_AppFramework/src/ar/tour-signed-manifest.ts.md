@@ -27,6 +27,17 @@ Viewer's `tour-integrity.ts`.
   `manifest.json` (a wrapping folder is tolerated, like `tour.json`).
 - `checkEntriesAgainstManifest(entries, manifest, manifestEntryName):
 Map<filename, TourFileRecord>` - TIER 1; throws `TourIntegrityError`.
+- `successorManifest(previous, manifestEntryName, { baseFiles?, removed,
+written, createdAt }): SignedTourManifest` - the NEXT version of a
+  series' list after a writer changed files (K1 milestone review R7): the
+  same series id, links and commitment, `version + 1`, the records updated
+  (removed names dropped, written ones recorded, names taken relative to
+  the manifest's folder; `baseFiles` replaces `previous.files` as the
+  start, for a rebuild of a rebuild). Unsigned by nature. Throws
+  `unsafe-name` for a written name outside the folder, unsafe or reserved.
+- `signedManifestFilesOf(names): string[]` - the archive's own names of
+  the manifest and, next to it, its signature: what a writer that changes
+  a tour replaces (the list) or drops (the signature).
 - `TourIntegrityError { kind }` with `kind` one of `malformed-manifest`,
   `newer-format`, `malformed-signature`, `bad-signature`, `unsafe-name`,
   `duplicate-name`, `unlisted-file`, `missing-file`, `size-mismatch`,
@@ -109,8 +120,10 @@ records.get('content/gate.jpg'); // { sha256, size }
 ## Tests
 
 - `tour-signed-manifest.test.ts` - canonical paths, every field and every
-  refusal, the round trip, the manifest entry lookup, and each tier-1
-  failure kind.
+  refusal, the round trip, the links cap (the first 64 shown, the writer
+  refusing more), the manifest entry lookup, each tier-1 failure kind, and
+  the successor list (series kept, version up, files relative to the
+  folder, a later base, written names it refuses).
 - `tour-signed-manifest.property.test.ts` - generated listings are
   accepted in any order and under any `./` spelling with the same records;
   any entry repeated under any spelling is refused; one file more, one

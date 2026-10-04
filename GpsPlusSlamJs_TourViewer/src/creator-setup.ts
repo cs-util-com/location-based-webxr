@@ -62,7 +62,13 @@ import {
   type MintAlignmentInfo,
 } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
-import { signedManifestFilesOf } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
+import {
+  serializeSignedTourManifest,
+  signedManifestFilesOf,
+  successorManifest,
+  type SignedTourManifest,
+  type TourFileRecord,
+} from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
   createEmptyTourManifest,
   serializeTourManifest,
@@ -80,6 +86,7 @@ import {
 } from "gps-plus-slam-app-framework/state";
 import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
+import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import { Group, Vector3, type Object3D } from "three";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
@@ -318,6 +325,20 @@ export interface CreatorSetup {
    *  object under the tap (its target ray; the screen centre when null),
    *  or clear the selection on a miss. */
   selectInView: (tap: SelectTargetRay | null) => void;
+}
+
+/** A written entry's record for `manifest.json`: the SHA-256 and size of
+ *  the bytes the zip will hold (a string is written as UTF-8). */
+async function fileRecordOf(
+  data: Blob | Uint8Array | string,
+): Promise<TourFileRecord> {
+  const bytes =
+    typeof data === "string"
+      ? new TextEncoder().encode(data)
+      : data instanceof Uint8Array
+        ? data
+        : new Uint8Array(await data.arrayBuffer());
+  return { sha256: await sha256Hex(bytes), size: bytes.length };
 }
 
 export function wireCreatorSetup(deps: {
@@ -2731,17 +2752,28 @@ export function wireCreatorSetup(deps: {
             deleted,
           ),
         };
-        // A deleted photo takes its content file with it; and a manifest
-        // (with its signature) listing the files this Finish rewrites would
-        // no longer match them, so they go too - the output is unsigned
-        // until K2 signs on export (tour kit plan K1).
+        // A deleted photo takes its content file with it. A signature over
+        // the old list cannot cover the files this Finish rewrites, so it
+        // goes - the output is unsigned until K2 signs on export. The list
+        // itself CONTINUES for a listed tour (K1 milestone review R7, below);
+        // anything else carrying the name is dropped with it.
+        const [listName, ...signatureNames] = signedManifestFilesOf(entryNames);
+        const listed =
+          current.integrity.kind === "listed" && listName !== undefined
+            ? { integrity: current.integrity, entry: listName }
+            : null;
         const removed = [
           ...contentEntriesToRemove(manifest.objects, deleted, wrap),
-          ...signedManifestFilesOf(entryNames),
+          ...signatureNames,
+          ...(listed === null && listName !== undefined ? [listName] : []),
         ];
         const entries = [
           {
-            path: existingLevelPath ?? qrLevelEntryName(minted.id),
+            // A listed tour's new level goes inside the tour's folder, where
+            // its list can name it (R7); others keep the root, as before.
+            path:
+              existingLevelPath ??
+              `${listed === null ? "" : wrap}${qrLevelEntryName(minted.id)}`,
             data: minted.json,
           },
           { path: manifestPath, data: serializeTourManifest(written) },
@@ -2761,6 +2793,37 @@ export function wireCreatorSetup(deps: {
         const previous = ctx.rebuiltZip;
         const input = previous?.blob ?? (await current.readWholeArchive());
         if (ctx.session !== current) return; // re-opened meanwhile
+        // The series' list, continued: the same series id, the next
+        // version, and the hash of every file this zip will hold - the
+        // kept ones from the list the input carries (checked at open and
+        // as a whole by readWholeArchive, or written by the last Finish),
+        // the written ones hashed here. Without it the series id's only
+        // home was dropped (R7).
+        let signedManifest: SignedTourManifest | undefined;
+        if (listed !== null) {
+          signedManifest = successorManifest(
+            listed.integrity.manifest,
+            listed.entry,
+            {
+              ...(previous?.signedManifest === undefined
+                ? {}
+                : { baseFiles: previous.signedManifest.files }),
+              removed,
+              written: new Map(
+                await Promise.all(
+                  entries.map(
+                    async (e) => [e.path, await fileRecordOf(e.data)] as const,
+                  ),
+                ),
+              ),
+              createdAt: new Date().toISOString(),
+            },
+          );
+          entries.push({
+            path: listed.entry,
+            data: serializeSignedTourManifest(signedManifest),
+          });
+        }
         const blob = await rebuildZipWithEntries(input, entries, {
           remove: removed,
           // The open archive is untrusted, so its rebuild inflates under
@@ -2777,6 +2840,7 @@ export function wireCreatorSetup(deps: {
         const hosted = current.hostedFileName();
         ctx.rebuiltZip = {
           blob,
+          ...(signedManifest === undefined ? {} : { signedManifest }),
           // The hosted file's own name first: Drive offers "Replace" only
           // for the same name (Drive replace plan §2 decision 3) - made safe
           // to save where a phone would change it, and the Drive steps then

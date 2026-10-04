@@ -1006,6 +1006,7 @@ async function openFinishableTour(
       ...levels.map((l) => ({ filename: l.path })),
     ],
     manifestWrap: "",
+    integrity: { kind: "none" },
     readWholeArchive: () =>
       options.holdArchive === true
         ? new Promise<Blob>((resolve) => {
