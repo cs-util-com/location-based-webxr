@@ -83,6 +83,16 @@ export interface StationGuideDeps {
   onDone?(stationId: string): void;
   /** Every tick with a position: the stage turns its figure to the visitor. */
   onVisitor?(nue: readonly [number, number, number]): void;
+  /** The breadcrumbs: from the visitor towards the station in focus,
+   *  stopping at its arrival band; a null target (or visitor) clears them. */
+  onGuide?(
+    visitor: readonly [number, number, number] | null,
+    target: {
+      readonly id: string;
+      readonly to: readonly [number, number, number];
+      readonly stopM: number;
+    } | null,
+  ): void;
 }
 
 export interface StationGuide {
@@ -281,6 +291,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     // the guide has ticked at all.
     const visitor = deps.visitor();
     last = { visitor, distances: horizontalDistances(visitor.nue) };
+    deps.onGuide?.(visitor.nue, guideTarget());
     if (run?.isComplete() === true) {
       // Nothing left to point at, whichever action completed the tour.
       hud?.dispose();
@@ -306,6 +317,24 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       : "Can't get there?";
   }
 
+  /** The breadcrumbs' target: the station in focus, by its spot. */
+  function guideTarget(): {
+    id: string;
+    to: readonly [number, number, number];
+    stopM: number;
+  } | null {
+    const focus = focusStation();
+    if (focus === null || last === null) return null;
+    const pose = poseOf(focus);
+    const station = stationById(focus);
+    if (pose === null || station === undefined) return null;
+    return {
+      id: focus,
+      to: pose.positionNue,
+      stopM: stationBands(station, last.visitor.accuracyM).foundExitM,
+    };
+  }
+
   function ensureHud(): void {
     if (hud !== null || run === null || run.isComplete()) return;
     hud = deps.startHud(hudTargets);
@@ -317,6 +346,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       if (current === null) {
         dom.line.hidden = true;
         dom.skip.hidden = true;
+        deps.onGuide?.(null, null);
         return;
       }
       if (replayFound) {
@@ -373,6 +403,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       hud?.dispose();
       hud = null;
       replayFound = true;
+      deps.onGuide?.(null, null);
       dom.line.hidden = true;
       dom.skip.hidden = true;
     },

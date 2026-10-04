@@ -26,7 +26,9 @@ can't get there" (§8 D5), and hands a found station to its story. Plan:
   `onFound(station)`, `onVisitor?(nue)`, `onApproach?(station, distanceM,
 activateExitM)` (each tick, each offered station with a distance: the
   prefetch), `onDone?(stationId)` (a story's end or a skip: the prefetch may
-  release it).
+  release it), `onGuide?(visitor, target)` (every render: the breadcrumbs'
+  target, the station in focus with its arrival band as `stopM`; null when
+  there is none, at a session end and with no run).
 
 ## Invariants & assumptions
 

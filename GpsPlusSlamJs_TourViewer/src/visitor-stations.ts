@@ -16,6 +16,7 @@ import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/fr
 
 import type { ViewerMode } from "./mode.js";
 import { createKeyedChain } from "./keyed-chain.js";
+import { createBreadcrumbTrail } from "./breadcrumbs.js";
 import { gateAllowsPlacement } from "./scan-gate.js";
 import { createSceneAudio } from "./scene-audio.js";
 import { createSceneStage } from "./scene-stage.js";
@@ -89,6 +90,9 @@ export function wireVisitorStations(deps: {
   });
   // The decode cap: one figure decoded at a time, a large one scaled down.
   const decodes = createKeyedChain();
+  const breadcrumbs = createBreadcrumbTrail({
+    getScene: () => seams.getScene(),
+  });
   // The guide is created below; the stage reads its poses late.
   let poseOf: (id: string) => ReturnType<typeof guide.poseOf> = () => null;
   const stage = createSceneStage({
@@ -164,6 +168,9 @@ export function wireVisitorStations(deps: {
     },
     onVisitor: (nue) => {
       stage.faceVisitor(nue);
+    },
+    onGuide: (visitor, target) => {
+      breadcrumbs.update(visitor, target);
     },
   });
   poseOf = (id) => guide.poseOf(id);

@@ -152,6 +152,16 @@ test("a station tour: the code finds the first station, its knight speaks and as
       ),
     )
     .toEqual(["well"]);
+  // ... and the breadcrumbs lead there on the ground.
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        /** @type {any} */ (window).__tourViewerTest.fakeScene.children.map(
+          (c) => c.name,
+        ),
+      ),
+    )
+    .toContain("station-breadcrumbs");
 
   // Walk north to the well: found by GPS, its 3D model stands there.
   for (let m = 5, s = 1; m <= 30; m += 5, s += 1) await standAt(page, m, 0, s);

@@ -60,6 +60,7 @@ function harness(tourValue: StationTour) {
   const found: string[] = [];
   const approaches: [string, number, number][] = [];
   const dones: string[] = [];
+  const guides: (string | null)[] = [];
   const huds: { getTargets: () => WayfindingTarget[]; disposed: boolean }[] =
     [];
   const dom = {
@@ -83,6 +84,12 @@ function harness(tourValue: StationTour) {
     onFound: (s) => found.push(s.id),
     onApproach: (s, d, exit) => approaches.push([s.id, Math.round(d), exit]),
     onDone: (id) => dones.push(id),
+    onGuide: (_visitor, target) =>
+      guides.push(
+        target === null
+          ? null
+          : `${target.id}@${Math.round(target.to[0])},${Math.round(target.to[2])}/${target.stopM}`,
+      ),
   });
   return {
     guide,
@@ -90,6 +97,7 @@ function harness(tourValue: StationTour) {
     found,
     approaches,
     dones,
+    guides,
     huds,
     ignored,
     at: (north: number, east: number, accuracyM: number | null = 4) => {
@@ -348,6 +356,21 @@ describe("wireStationGuide", () => {
     h.guide.skipTapped();
     h.guide.skipTapped();
     expect(h.dones).toEqual(["gate", "well"]);
+  });
+
+  it("lays the breadcrumbs towards the nearest unfound station, stopping at its arrival band, and none once it is found", () => {
+    const s = station("well", 0, 80);
+    const h = harness({
+      stations: [s, station("tower", 0, 300)],
+      order: "fixed",
+      levels: null,
+    });
+    h.at(0, 0);
+    expect(h.guides.at(-1)).toBe(`well@0,80/${stationBands(s, 4).foundExitM}`);
+    h.at(0, 79);
+    expect(h.guides.at(-1)).toBeNull();
+    h.guide.endSession();
+    expect(h.guides.at(-1)).toBeNull();
   });
 
   it("finds nothing that is not offered, and calls onFound once per station", () => {

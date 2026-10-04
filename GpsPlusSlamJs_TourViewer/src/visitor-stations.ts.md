@@ -30,6 +30,8 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
   `decodeFrameTexture`, one at a time through a `keyed-chain` key and at
   `decodeDivisor(asset size)` (the decode cap); a model by
   `seams.loadGlbModel`.
+- The breadcrumbs (`breadcrumbs.ts`) follow the guide's `onGuide`, one
+  trail for the page.
 - A choice button is a `.btn` with `data-testid="scene-choice"`.
 - `stop()` stops the story and the HUD; the guide keeps the progress with
   the open tour.
