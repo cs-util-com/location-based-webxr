@@ -133,6 +133,20 @@ describe("createVisitAlignmentTracker (D33)", () => {
     expect(t.picks().measurement?.alignmentInfo).toEqual(info(90));
   });
 
+  // Why this test matters: D31 marks a code composed through an alignment
+  // under 10 m of GPS extent as heading-uncertain, and since R7 of D33 the
+  // settle's re-mint carries that marker, so the extent of the alignment a
+  // pick froze at has to travel with it, like its mint info.
+  it("hands each pick the GPS extent of its own alignment", () => {
+    const t = createVisitAlignmentTracker();
+    t.noteAlignment(moment(1, 6));
+    t.noteMeasurement(0);
+    expect(t.picks().measurement?.gpsExtentM).toBe(6);
+    t.noteAlignment(moment(2, MATURE_GPS_EXTENT_M));
+    t.noteAlignment(moment(3, 300));
+    expect(t.picks().measurement?.gpsExtentM).toBe(MATURE_GPS_EXTENT_M);
+  });
+
   // Why this test matters: the settle decides by WALKED distance which code
   // event a note shares its alignment with (review R1 of D33) and which
   // sighting corrects it (R3). Each event keeps the walked distance of its

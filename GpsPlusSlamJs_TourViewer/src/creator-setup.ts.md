@@ -254,7 +254,9 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   record and the meta are REWRITTEN (the per-object file design already
   keys by id; no format change - so a page reload keeps the settled geo,
   while a killed tab keeps the tap-time geo, accepted in the plan), and
-  `tourAuthoring/settled` is logged.
+  `tourAuthoring/settled` is logged. The input carries the end alignment's
+  GPS extent (`alignmentGpsExtentM`), the D31 heading marker of a code
+  re-minted through it (review R7 of D33).
   - **Each visit settles once, keyed by the visit the settle ran for**
     (`visitSettles`, M2c review #1): the record holds the basis, the
     alignment used, the store's alignment, the zero and the sighting. A

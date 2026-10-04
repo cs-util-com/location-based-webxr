@@ -56,7 +56,9 @@ lives here.
   - `noteSighting(sighting, atMs)` - a stable sighting of the code in hand.
   - `picks(): VisitAlignmentPicks` - copies: `objects` (by id),
     `measurement`, `sightings` (oldest first), each
-    `{ atMs, walkedM?, alignment, alignmentInfo? }` with `alignment` null
+    `{ atMs, walkedM?, alignment, alignmentInfo?, gpsExtentM? }` with
+    `gpsExtentM` the session GPS extent of the alignment the pick froze at
+    (the D31 marker of a code re-minted through it, R7), `alignment` null
     when no usable alignment was noted since, and `walkedM` the walked
     distance at the event's OWN moment (not at the alignment its pick froze
     at), absent when the caller never passed one. The settle reads it for
@@ -111,7 +113,8 @@ picks.reset();
   after the placement, or its own when already mature; follows to the latest
   usable alignment otherwise; a move re-opens; a placement before any
   alignment; one sighting per second of looking with its own time and pick;
-  two codes never merged; the mint info travels with its pick; each event
+  two codes never merged; the mint info and the GPS extent travel with
+  their pick; each event
   stamped with the walked distance of its own moment; reset; copies; a property test against the search
   over the alignment history.
 - `visit-settle.test.ts` ("each object at its own moment") and

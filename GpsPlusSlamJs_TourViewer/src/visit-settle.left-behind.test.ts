@@ -897,6 +897,8 @@ function settleAsShipped(
       zero: visit.zero,
       gpsExtentM: fix.extentM,
       walkedM: fix.walkedM,
+      // As the page passes it: the mint gate's view travels with a pick.
+      alignmentInfo: INFO,
     });
   }
   while (next < events.length) events[next++]!.apply();
@@ -922,6 +924,7 @@ function settleAsShipped(
       : {}),
     picks: tracker.picks(),
     alignmentInfo: INFO,
+    alignmentGpsExtentM: visit.fixes.at(-1)?.extentM,
     gpsAccuracyM: ACCURACY_M,
     nowIso: NOW_ISO,
   });

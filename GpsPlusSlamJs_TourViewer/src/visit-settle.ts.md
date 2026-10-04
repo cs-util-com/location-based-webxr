@@ -64,7 +64,7 @@ draft and logs `tourAuthoring/settled`.
   shares the code's alignment through a code event (R1, R3); its sweep is
   under Invariants.
 - `interface TimedAlignment` (`atMs`, `alignment` or null, `walkedM?`,
-  `alignmentInfo?`),
+  `alignmentInfo?`, `gpsExtentM?`),
   `TimedSighting` (+ `sighting`; module-internal, the element type of
   `sightings`), `VisitAlignmentPicks` (`objects` by id,
   `measurement`, `sightings` oldest first) - the D33 picks, as
@@ -199,11 +199,18 @@ draft and logs `tourAuthoring/settled`.
   a photo's rotation turns with the alignment.
 - **The stored code is the reference in a corrected visit**: it is NOT
   re-minted (`level: null`), because the correction maps this visit onto it.
-- **A re-minted level keeps the id** and takes the quality block of the
-  alignment its geo comes from: the measurement pick's
-  (`picks.measurement.alignmentInfo`, D33) when the level goes through that
-  pick and the caller kept the info, else the end one (`alignmentInfo`);
-  and the settle's time as `mintedAtIso`. A refused re-mint (fewer than `MIN_ALIGNMENT_SAMPLES` fixes)
+- **A re-minted level keeps the id** and takes its geo, its quality block
+  and its D31 heading marker from ONE alignment (review R7 of D33): the
+  measurement pick's when the pick carries its mint info
+  (`picks.measurement.alignmentInfo`, `gpsExtentM`), else all three from
+  the end alignment (`alignment`, `alignmentInfo`,
+  `alignmentGpsExtentM`) - never the pick's geo with the end's block. The
+  marker is the framework's `qrMintHeadingMarker` (the Recorder mint's
+  rule, DEC-H3): `alignmentGpsExtentM` and `headingUncertain` (under 10 m)
+  when the extent is known, nothing when it is not. It matters since D33: a
+  visit that never matures re-mints through an alignment that may span under
+  10 m, and the moved-code rule (`moved-code-rule.ts`) never settles a
+  level marked uncertain. And the settle's time as `mintedAtIso`. A refused re-mint (fewer than `MIN_ALIGNMENT_SAMPLES` fixes)
   keeps the old level.
   - **Why the block describes the SETTLE, not the tap.** `mintQuality` is
     the record the field validation (QR-pose plan M5) attributes a code's
@@ -220,9 +227,10 @@ draft and logs `tourAuthoring/settled`.
   - **Every mint-time field comes from the settle, none from the tap**:
     `mintedAtIso` (the settle's time), `alignmentSampleCount` and
     `gpsAccuracyM` (those of the alignment the geo comes from). The unit test compares the whole
-    block, so a field that stayed tap-time would fail it. The tap's mint
-    passes no extra `quality` fields today; one added there would have to
-    be re-derived here too, or the settle would silently drop it.
+    block, so a field that stayed tap-time would fail it. The one extra
+    `quality` field set here is the D31 marker, re-derived from the
+    settle's alignment; any other added to the tap's mint would have to be
+    re-derived here too, or the settle would silently drop it.
   - Geo and block always travel together: a corrected visit does not
     re-mint (the stored geo keeps its block), and a refused re-mint keeps
     both old halves.
@@ -346,7 +354,9 @@ const plan = planVisitSettle({
 - `creator-finish.test.ts` - the settle at Finish, once.
 - D33: `visit-settle.test.ts` "each object at its own moment" (each object
   and the measured code through its own pick, an unpicked one through the
-  end; a code re-minted through its pick carries that alignment's quality block; each note corrected through the sighting nearest it in time, where
+  end; a code re-minted through its pick carries that alignment's quality block,
+  and a pick without its info does not decide the code's geo (R7); the D31
+  heading marker of the alignment a code is re-minted through (R7); each note corrected through the sighting nearest it in time, where
   the latest sighting is metres off; the bound judged through the
   sighting's own alignment admits a correct code the end alignment refuses
   and still refuses a far one; kept sightings of another code ignored);

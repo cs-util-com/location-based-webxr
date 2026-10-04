@@ -56,6 +56,7 @@
 
 import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 import { parseQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import { qrMintHeadingMarker } from "gps-plus-slam-app-framework/ar/qr/qr-anchor-mint";
 import {
   mintQrLevelFromWorld,
   type MintAlignmentInfo,
@@ -109,6 +110,9 @@ export interface TimedAlignment {
   /** How far the author had walked in the visit at this moment (m,
    *  `walked-distance-tracker.ts`); absent when the caller did not know. */
   readonly walkedM?: number | undefined;
+  /** The session GPS extent that alignment rests on (m), when the caller
+   *  knew it: the D31 heading marker of a code re-minted through it. */
+  readonly gpsExtentM?: number | undefined;
 }
 
 /** A stable sighting of the code in hand, at its moment. */
@@ -678,6 +682,10 @@ export interface VisitSettleInput extends SettleAlignmentInput {
    *  re-minted level's quality block when the level goes through the end
    *  alignment (no measurement pick, or one kept without its info). */
   readonly alignmentInfo: MintAlignmentInfo;
+  /** The session GPS extent the end alignment rests on (m), for the D31
+   *  heading marker of a level re-minted through it; absent: unknown, and
+   *  the level then claims nothing either way. */
+  readonly alignmentGpsExtentM?: number | undefined;
   readonly nowIso: string;
 }
 
@@ -718,18 +726,29 @@ export function planVisitSettle(input: VisitSettleInput): VisitSettle | null {
   const zero = input.zero;
   if (end === null || zero === null) return null;
   const choice = choiceFor(input, end, zero, null, end);
-  const picked = readAlignment(input.picks?.measurement?.alignment ?? null);
-  const levelAlignment = measured ? (picked ?? end) : null;
-  // Geo and quality block travel together: through the measurement's pick,
-  // the block of that alignment (when the caller kept it).
-  const levelInfo =
-    picked === null
-      ? input.alignmentInfo
-      : (input.picks?.measurement?.alignmentInfo ?? input.alignmentInfo);
+  // Geo, quality block and heading marker travel together (R7 of D33):
+  // all three from the measurement's pick when it carries its block, else
+  // all three from the end alignment - never the pick's geo with the end's
+  // block.
+  const pick = input.picks?.measurement;
+  const picked = readAlignment(pick?.alignment ?? null);
+  const source =
+    picked !== null && pick?.alignmentInfo !== undefined
+      ? {
+          alignment: picked,
+          info: pick.alignmentInfo,
+          gpsExtentM: pick.gpsExtentM,
+        }
+      : {
+          alignment: end,
+          info: input.alignmentInfo,
+          gpsExtentM: input.alignmentGpsExtentM,
+        };
+  const levelAlignment = measured ? source.alignment : null;
   const level =
     levelAlignment === null
       ? null
-      : remintedLevel(input, levelAlignment, zero, levelInfo);
+      : remintedLevel(input, levelAlignment, zero, source);
   const code =
     level === null || levelAlignment === null
       ? null
@@ -784,12 +803,17 @@ export function planMove(
 }
 
 /** The level in hand re-minted from its measurement through `alignment`,
- *  or null when there is none to re-mint or the mint refuses. */
+ *  with that alignment's quality block and D31 heading marker (the
+ *  framework's `qrMintHeadingMarker`, the Recorder mint's rule), or null
+ *  when there is none to re-mint or the mint refuses. */
 function remintedLevel(
   input: VisitSettleInput,
   alignment: readonly number[],
   zero: LatLong,
-  alignmentInfo: MintAlignmentInfo,
+  quality: {
+    readonly info: MintAlignmentInfo;
+    readonly gpsExtentM: number | undefined;
+  },
 ): { id: string; json: string } | null {
   const { measurement, mintedLevel } = input;
   if (measurement === null || mintedLevel === null) return null;
@@ -808,9 +832,10 @@ function remintedLevel(
       rotation: [...world.rotation],
     },
     zero,
-    alignment: alignmentInfo,
+    alignment: quality.info,
     sizeM: measurement.sizeM,
     nowIso: input.nowIso,
+    quality: qrMintHeadingMarker(quality.gpsExtentM),
   });
   return result.ok ? { id: mintedLevel.id, json: result.json } : null;
 }

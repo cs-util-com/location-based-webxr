@@ -2317,6 +2317,9 @@ export function wireCreatorSetup(deps: {
       measurement: ctx.codeMeasurement,
       sighting: ctx.visitCodeSighting,
       alignmentInfo: authorAlignmentInfo(),
+      // The end alignment's extent: the D31 marker of a code re-minted
+      // through it (R7 of D33).
+      alignmentGpsExtentM: gpsExtent.update(selectGpsPositions(state)),
       gpsAccuracyM: authorAlignmentInfo().gpsAccuracyM,
       nowIso: new Date().toISOString(),
       // Each object at its own moment (D33).

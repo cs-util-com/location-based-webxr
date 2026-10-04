@@ -17,6 +17,13 @@ Decision record:
 - `QR_MINT_HEADING_UNCERTAIN_EXTENT_M = 10` - the GPS extent (m) under which
   a level is saved but marked `headingUncertain` (owner decision D31); the
   measured reason and the swept values (5 / 10 / 15 m) are in its doc comment.
+- `qrMintHeadingMarker(gpsExtentM): { alignmentGpsExtentM?, headingUncertain? }`
+  - THE D31 marker rule, for any level composed through an alignment with
+    that session GPS extent: both fields for a finite, non-negative extent
+    (`headingUncertain` when under the threshold), nothing otherwise (absent =
+    unknown). This mint uses it, and so does the Tour Viewer's authoring
+    settle when it re-mints a code through its own pick (review R7 of D33;
+    DEC-H3: one rule, not a copy).
 - `maxPairwiseRotationDeg(rotations): number` — the outlier-inclusive
   cross-sighting rotation disagreement.
 - `QrMintAlignmentNow` - an alignment of the session (`alignmentMatrix`,

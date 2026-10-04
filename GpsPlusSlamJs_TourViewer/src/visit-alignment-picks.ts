@@ -90,12 +90,17 @@ const NO_ALIGNMENT: PickedAlignmentMoment = {
 /** A pick's alignment as the settle reads it: 16 numbers, or null when no
  *  usable alignment was ever seen (the settle then uses the end one). */
 function timedAlignment(t: Timed): TimedAlignment {
-  const { alignmentMatrix: matrix, alignmentInfo } = t.pick.alignment;
+  const {
+    alignmentMatrix: matrix,
+    alignmentInfo,
+    gpsExtentM,
+  } = t.pick.alignment;
   const walked = t.walkedM === undefined ? {} : { walkedM: t.walkedM };
   if (matrix === null) return { atMs: t.atMs, alignment: null, ...walked };
   return {
     atMs: t.atMs,
     ...walked,
+    ...(gpsExtentM === undefined ? {} : { gpsExtentM }),
     alignment: Array.from(matrix),
     ...(alignmentInfo === undefined
       ? {}

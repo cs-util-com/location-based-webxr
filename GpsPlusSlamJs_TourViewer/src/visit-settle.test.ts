@@ -866,7 +866,9 @@ describe("each object at its own moment (D33)", () => {
           ["early", timed(1_000, aEarly)],
           ["late", timed(9_000, aLate)],
         ]),
-        measurement: timed(500, aCode),
+        // With its mint info, as the page keeps it (R7: a pick without one
+        // does not decide the code's geo).
+        measurement: { ...timed(500, aCode), alignmentInfo: INFO },
         sightings: [],
       },
     })!;
@@ -927,7 +929,10 @@ describe("each object at its own moment (D33)", () => {
       alignmentSampleCount: 17,
       gpsAccuracyM: 3,
     });
-    // A pick without info, or no pick, keeps the end block.
+    // A pick without info (review R7 of D33): geo and block are never
+    // mixed. The pick's geo with the end alignment's block would claim a
+    // quality the geo does not have, so the code goes through the END
+    // alignment with the end block, as with no pick at all.
     const bare = planVisitSettle({
       ...input,
       picks: {
@@ -940,6 +945,72 @@ describe("each object at its own moment (D33)", () => {
       alignmentSampleCount: INFO.sampleCount,
       gpsAccuracyM: INFO.gpsAccuracyM,
     });
+    expect(bare.levelAlignment).toEqual(aEnd);
+    expect(
+      codeWorldOf(bare.level!).distanceTo(
+        new Vector3(
+          ...throughAlignment(odomNueFromWebXr(CODE), aEnd)!.position,
+        ),
+      ),
+    ).toBeLessThan(1e-3);
+  });
+
+  // Why this test matters: D31. A code composed through an alignment that
+  // rests on under 10 m of GPS walk has a heading close to guesswork, and
+  // the moved-code rule (`moved-code-rule.ts`) refuses to settle a level
+  // marked so. Since D33 a visit that never matures re-mints through an
+  // alignment that may span under 10 m, so the re-mint must carry the
+  // marker of the alignment it went through (review R7), by the
+  // framework's one rule (`qrMintHeadingMarker`).
+  it("marks a re-minted code with the D31 heading marker of the alignment it went through", () => {
+    const aCode = yawAlignment(2, [0.5, 400, -1]);
+    const aEnd = yawAlignment(30, [9, 402, -6]);
+    const pickInfo = { hasMatrix: true, sampleCount: 17, gpsAccuracyM: 3 };
+    const input = {
+      visit: 0,
+      placed: [],
+      alignment: aEnd,
+      zero: ZERO,
+      mintedLevel: levelThrough(aEnd),
+      measurement: measuredInVisit(0),
+      sighting: null,
+      alignmentInfo: INFO,
+      nowIso: NOW,
+    };
+    const quality = (plan: { level: { json: string } | null }) =>
+      parseQrLevel(JSON.parse(plan.level!.json) as unknown).qr.mintQuality;
+    const throughPick = (gpsExtentM: number) =>
+      planVisitSettle({
+        ...input,
+        alignmentGpsExtentM: 300,
+        picks: {
+          objects: new Map(),
+          measurement: {
+            ...timed(500, aCode),
+            alignmentInfo: pickInfo,
+            gpsExtentM,
+          },
+          sightings: [],
+        },
+      })!;
+    expect(quality(throughPick(6))).toMatchObject({
+      headingUncertain: true,
+      alignmentGpsExtentM: 6,
+    });
+    expect(quality(throughPick(55))).toMatchObject({
+      headingUncertain: false,
+      alignmentGpsExtentM: 55,
+    });
+    // Through the end alignment: the end's extent.
+    const atEnd = planVisitSettle({ ...input, alignmentGpsExtentM: 4 })!;
+    expect(quality(atEnd)).toMatchObject({
+      headingUncertain: true,
+      alignmentGpsExtentM: 4,
+    });
+    // Unknown: nothing claimed either way.
+    const unknown = quality(planVisitSettle(input)!);
+    expect(unknown).not.toHaveProperty("headingUncertain");
+    expect(unknown).not.toHaveProperty("alignmentGpsExtentM");
   });
 
   it("corrects each note through the sighting of the stored code nearest it in time", () => {
