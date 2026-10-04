@@ -85,6 +85,7 @@ function openAnotherTour(ctx: ReturnType<typeof createTourViewerSession>) {
     fileAdvice: el(),
     openFileAdviceButton: el(),
     fileStatus: el(),
+    tourTrust: el(),
     statsPanel: el(),
     statsHeadline: el(),
     statsDetail: el(),

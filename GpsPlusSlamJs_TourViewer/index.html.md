@@ -19,7 +19,10 @@ screen. Everything marked `.creator-only` is hidden for a visitor
      tour zip from the device (`#open-file`, "Open a file", tour kit plan
      K0; a file has no link, so its code is printed once the zip is
      hosted). The picker itself (`#file-input`) and the line naming a
-     file-opened tour (`#file-status`) sit under `#error`, outside the
+     file-opened tour (`#file-status`) and the open tour's signature lines
+     (`#tour-trust`, tour kit plan K1: who signed it or that nobody did,
+     trust warnings, linked tours; `white-space: pre-line`) sit under
+     `#error`, outside the
      wizard, so a visitor reaches them too - with `#file-advice`, the
      "Open the downloaded file" button shown under a "host blocks
      browsers" error.
@@ -66,7 +69,7 @@ Behaviour lives in the wiring modules composed by `src/main.ts` (see
 
 The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 `starter-zip`, `link-input`, `open-button`, `open-file-button`,
-`file-input`, `file-status`, `file-advice`, `open-file-advice`,
+`file-input`, `file-status`, `tour-trust`, `file-advice`, `open-file-advice`,
 `storage-panel`,
 `clear-cache`, `print-panel` (owns `print-url-ask`, `print-url`,
 `print-url-shown`, `author-size`, `author-c`, `print-generate`,

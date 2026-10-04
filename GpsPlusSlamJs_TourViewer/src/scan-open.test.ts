@@ -53,6 +53,7 @@ function setup(
   let opening = false;
   let release: () => void = () => undefined;
   const opened: string[] = [];
+  const codeTexts: string[] = [];
   const deps: ScanOpenDeps = {
     ctx,
     resolve: (text) => {
@@ -63,8 +64,9 @@ function setup(
           : tour(url, options.levelId ?? null),
       );
     },
-    open: (url) => {
+    open: (url, codeText) => {
       opened.push(url);
+      codeTexts.push(codeText);
       opening = true;
       const outcome = outcomes.shift() ?? { kind: "opened" };
       const gate =
@@ -98,6 +100,7 @@ function setup(
     ctx,
     scan,
     opened,
+    codeTexts,
     see,
     release: () => {
       release();
@@ -127,6 +130,15 @@ describe("a creator with no tour open", () => {
     s.scan.onDetection(codeOf(A));
     await settle();
     expect(s.opened).toEqual([A]);
+  });
+
+  it("hands the open the printed code's text, the code's trust source (tour kit plan K1)", async () => {
+    // §8 D2: trust on first use is keyed by the printed code as well as
+    // the link, so the open must know which code named the link.
+    const s = setup();
+    s.scan.onDetection(codeOf(A));
+    await settle();
+    expect(s.codeTexts).toEqual([codeOf(A)]);
   });
 
   it("starts one open however many frames arrive while it runs", async () => {

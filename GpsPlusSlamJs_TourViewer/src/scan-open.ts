@@ -58,7 +58,7 @@ export interface ScanOpenDeps {
   /** Which tour a code names; `resolveCodeTour` with the proxy base. */
   resolve: (text: string) => Promise<CodeTour>;
   /** Open `url` as the tour (never rejects; the outcome says how it went). */
-  open: (url: string) => Promise<OpenOutcome>;
+  open: (url: string, codeText: string) => Promise<OpenOutcome>;
   /** Any open in flight, from step 1 as much as from a scan. */
   isOpening: () => boolean;
   now: () => number;
@@ -133,7 +133,7 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
     );
   }
 
-  function tryOpen(code: CodeTour & { kind: "tour" }): void {
+  function tryOpen(code: CodeTour & { kind: "tour" }, text: string): void {
     const previous = attemptFor(code.normalizedUrl);
     if (
       previous !== null &&
@@ -146,7 +146,7 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
     inFlight = target;
     deps.render();
     void deps
-      .open(code.url)
+      .open(code.url, text)
       .catch((): OpenOutcome => ({ kind: "failed", cause: "other" }))
       .then((outcome) => {
         if (inFlight === target) inFlight = null;
@@ -180,7 +180,7 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
       ctx.currentLevels,
     );
     if (relation === "no-tour-open" && !measuredForAnother(known)) {
-      tryOpen(known);
+      tryOpen(known, text);
     }
   }
 

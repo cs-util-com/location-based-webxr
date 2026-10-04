@@ -91,6 +91,7 @@ function wire() {
     fileAdvice: el(),
     openFileAdviceButton: el(),
     fileStatus: el(),
+    tourTrust: el(),
     statsPanel: el(),
     statsHeadline: el(),
     statsDetail: el(),
@@ -223,6 +224,20 @@ describe("the advice after a failed link", () => {
     mocks.openTourFile.mockReturnValueOnce(new Promise(() => undefined));
     pick(dom, new File(["zip"], "tour.zip"));
     await vi.waitFor(() => expect(dom.fileAdvice.hidden).toBe(true));
+  });
+});
+
+describe("the signature line (tour kit plan K1, K-D2)", () => {
+  // Why this matters: an unsigned tour must SAY it is unsigned - the
+  // visitor cannot tell otherwise - in both modes, under the file line.
+  it("says a tour without a manifest is not signed", async () => {
+    mocks.openTourFile.mockResolvedValueOnce(fakeSession("local-file:abc"));
+    const { dom } = wire();
+    pick(dom, new File(["zip"], "tour.zip"));
+    await vi.waitFor(() => {
+      expect(dom.tourTrust.hidden).toBe(false);
+    });
+    expect(dom.tourTrust.textContent).toMatch(/^Not signed: there is no way/);
   });
 });
 

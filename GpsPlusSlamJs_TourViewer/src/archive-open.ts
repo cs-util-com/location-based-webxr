@@ -23,6 +23,8 @@ import {
   offersFileOpen,
 } from "./open-errors.js";
 import { toStatsView } from "./stats-view.js";
+import { describeTourTrust } from "./tour-trust-view.js";
+import { codeTrustKey, linkTrustKey, trustStorage } from "./tour-trust.js";
 import { clearCacheLabel } from "./tour-flow.js";
 import {
   codeResolver,
@@ -68,6 +70,8 @@ export interface ArchiveOpenDom {
   openFileAdviceButton: HTMLButtonElement;
   /** Names the file a tour was opened from (both modes). */
   fileStatus: HTMLElement;
+  /** Who signed the open tour, trust warnings, linked tours (K1). */
+  tourTrust: HTMLElement;
   statsPanel: HTMLDivElement;
   statsHeadline: HTMLDivElement;
   statsDetail: HTMLDivElement;
@@ -319,8 +323,36 @@ export function wireArchiveOpen(deps: {
   function openUrl(
     url: string,
     origin: "host-step" | "measure-step" = "host-step",
+    /** The printed code's text, when a code named this link (K1). */
+    codeText?: string,
   ): Promise<OpenOutcome> {
-    return openTour({ kind: "link", url }, origin);
+    return openTour({ kind: "link", url }, origin, codeText);
+  }
+
+  /**
+   * The lines about the open tour's signature (tour kit plan K1): who
+   * signed it or that nobody did, the trust-on-first-use warnings for its
+   * sources - the normalised link and the printed code - and its links to
+   * other series. Shown in both modes, under the file line.
+   */
+  async function presentTrust(
+    opened: TourSession,
+    source: TourSource,
+    codeText: string | undefined,
+  ): Promise<void> {
+    const sources = [
+      ...(source.kind === "link" ? [linkTrustKey(opened.archive.url)] : []),
+      ...(codeText === undefined ? [] : [codeTrustKey(codeText)]),
+    ];
+    const lines = await describeTourTrust({
+      integrity: opened.integrity,
+      sources,
+      storage: trustStorage(),
+      nowMs: Date.now(),
+    }).catch(() => null);
+    if (ctx.session !== opened || lines === null) return;
+    dom.tourTrust.textContent = lines.join("\n");
+    dom.tourTrust.hidden = false;
   }
 
   async function openTour(
@@ -328,11 +360,13 @@ export function wireArchiveOpen(deps: {
     /** Where the open came from - a step-4 scan asks the wizard to
      *  stay there rather than jump to step 2 (M3 review #1). */
     origin: "host-step" | "measure-step" = "host-step",
+    codeText?: string,
   ): Promise<OpenOutcome> {
     const generation = ++ctx.openGeneration;
     opening = true;
     dom.errorBox.textContent = "";
     dom.fileStatus.hidden = true;
+    dom.tourTrust.hidden = true;
     dom.fileAdvice.hidden = true;
     // Async-UI rule: the in-progress state engages BEFORE the first await —
     // teardown of a previous session is async, and a second submission
@@ -364,6 +398,7 @@ export function wireArchiveOpen(deps: {
       // feature.
       hooks.tryPlaceTour();
       presentSource(source, origin);
+      void presentTrust(opened, source, codeText);
       // The placed content (guided-setup plan M3): the finish step writes
       // it back, so a re-measure never drops what an earlier session placed.
       // A broken manifest is an error the creator must see (the framework's
@@ -462,9 +497,9 @@ export function wireArchiveOpen(deps: {
   const scanOpen = createScanOpen({
     ctx,
     resolve: codeResolver(corsProxyBaseUrl),
-    open: (url) => {
+    open: (url, codeText) => {
       dom.linkInput.value = url;
-      return openUrl(url, "measure-step");
+      return openUrl(url, "measure-step", codeText);
     },
     isOpening: () => opening,
     now: () => performance.now(),
@@ -507,7 +542,7 @@ export function wireArchiveOpen(deps: {
         return;
       }
       dom.linkInput.value = url;
-      await openUrl(url);
+      await openUrl(url, "host-step", payload);
     },
   };
 }

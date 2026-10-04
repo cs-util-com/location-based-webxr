@@ -252,6 +252,11 @@
       #replace-help-drive {
         white-space: pre-line;
       }
+      /* Who signed the open tour, the trust warnings, the linked tours
+         (tour kit plan K1): one line each, as textContent. */
+      #tour-trust {
+        white-space: pre-line;
+      }
       /* The summary after Finish (authoring plan 2026-09-28-0953 M3b):
          one row per code, its verdict, the numbers folded away, then the
          map. Written by summary-panel.ts; the map's layers are Leaflet's
@@ -821,6 +826,12 @@
         class="prose hint--dim"
         hidden
         data-testid="file-status"
+      ></p>
+      <p
+        id="tour-trust"
+        class="prose hint--dim"
+        hidden
+        data-testid="tour-trust"
       ></p>
       <input
         id="file-input"

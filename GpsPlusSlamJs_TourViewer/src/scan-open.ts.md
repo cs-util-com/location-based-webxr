@@ -69,7 +69,9 @@ the panel should report about the code in view.
 const scanOpen = createScanOpen({
   ctx,
   resolve: codeResolver(corsProxyBaseUrl),
-  open: (url) => openUrl(url, "measure-step"),
+  // The printed code's text rides along: it is the code's trust source
+  // (tour kit plan K1, §8 D2, `tour-trust.ts`).
+  open: (url, codeText) => openUrl(url, "measure-step", codeText),
   isOpening: () => opening,
   now: () => performance.now(),
   render: () => hooks.renderAuthorReadout(),

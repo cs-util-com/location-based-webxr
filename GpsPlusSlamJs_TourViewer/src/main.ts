@@ -525,6 +525,7 @@ const archive = wireArchiveOpen({
     fileAdvice: element("file-advice"),
     openFileAdviceButton: element("open-file-advice"),
     fileStatus: element("file-status"),
+    tourTrust: element("tour-trust"),
     statsPanel: element("stats"),
     statsHeadline: element("stats-headline"),
     statsDetail: element("stats-detail"),
