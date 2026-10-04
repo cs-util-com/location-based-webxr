@@ -30,7 +30,10 @@ import {
 } from "gps-plus-slam-app-framework/state";
 
 import { objectPoseNue } from "./content-placement.js";
-import { createMovedCodeChecks } from "./moved-code-check.js";
+import {
+  checkHadItsWindow,
+  createMovedCodeChecks,
+} from "./moved-code-check.js";
 import {
   MOVED_CODE_FIT_WINDOW_S,
   MOVED_CODE_RULE_VERSION,
@@ -479,5 +482,40 @@ describe("createMovedCodeChecks - a tour switch", () => {
     expect(h.feed(circle(0, 90, [20, 50], 6))).toEqual([]);
     h.pin(codeSeen([0, 40]), 91);
     expect(h.checks.snapshot()).toHaveLength(1);
+  });
+});
+
+describe("checkHadItsWindow (tour kit K4 review R1)", () => {
+  // Why: the station guide holds a code lock the visitor's GPS disagrees
+  // with until the moved-code check COULD have read a move - the rule's
+  // own evidence gate (60 s span, 2 m spread) - so the two must agree on
+  // what "enough evidence" is; a separate copy of the numbers would drift.
+  it("is true exactly when the rule's evidence gate is met", () => {
+    const view = (spanS: number, spreadM: number) => ({
+      text: "t",
+      levelId: "lvl",
+      magnitudeM: 0,
+      yawDeg: 0,
+      spanS,
+      spreadM,
+      samples: 10,
+      turnChecked: false,
+      verdict: "undecided" as const,
+    });
+    expect(checkHadItsWindow(view(59.9, 5))).toBe(false);
+    expect(checkHadItsWindow(view(60, 1.9))).toBe(false);
+    expect(checkHadItsWindow(view(60, 2))).toBe(true);
+  });
+
+  it("a check pinned after a minute of walking has had its window at the first fix after the pin", () => {
+    const h = harness();
+    h.feed(circle(0, 70, [20, 10], 6));
+    h.pin(codeSeen([0, 0]), 70);
+    h.feed(circle(71, 71, [20, 10], 6));
+    expect(checkHadItsWindow(h.checks.snapshot()[0]!)).toBe(true);
+    const fresh = harness();
+    fresh.pin(codeSeen([0, 0]), 0);
+    fresh.feed(circle(0, 30, [20, 10], 6));
+    expect(checkHadItsWindow(fresh.checks.snapshot()[0]!)).toBe(false);
   });
 });

@@ -10,11 +10,15 @@ the measured accuracy (the median of the latest device fixes). Plan:
 
 ## Public API
 
-- `visitorPosition({ alignment, arPose, gpsPositions }): VisitorPosition`
+- `visitorPosition({ alignment, arPose, gpsPositions, zero? }): VisitorPosition`
   - `nue` - `[north, up, east]`, or null without an alignment, an AR pose,
     a finite pose, or a readable alignment;
   - `accuracyM` - the median reported accuracy of the latest
     `ACCURACY_WINDOW_FIXES` (10) device fixes, or null.
+  - `fixNue` - where the latest DEVICE fix alone puts the visitor
+    (`[north, up, east]` from the zero), or null without a zero or a device
+    fix. Never moved by a code's votes, which pull `nue` onto the code's
+    saved spot: the station guide judges a code lock by it (K4 review R1).
 
 ## Invariants & assumptions
 

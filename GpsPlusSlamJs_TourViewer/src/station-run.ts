@@ -109,8 +109,15 @@ export interface StationRun {
     readonly accuracyM: number | null;
     readonly nowMs: number;
   }): StationEvent[];
-  /** A lock of a printed code (its level id) the viewer trusts. */
-  codeLocked(levelId: string, nowMs: number): StationEvent[];
+  /** A lock of a printed code (its level id) the viewer trusts; `admit`
+   *  (default: all) picks which of the stations it anchors it may find - the
+   *  guide holds back one the moved-code check has not had its say on yet
+   *  (K4 review R1). */
+  codeLocked(
+    levelId: string,
+    nowMs: number,
+    admit?: (stationId: string) => boolean,
+  ): StationEvent[];
   /** The station's steps finished (a found station only). */
   finish(id: string, nowMs: number): StationEvent[];
   /** "Skip, I can't get there" (an offered station not yet done). */
@@ -270,12 +277,13 @@ export function createStationRun(input: {
       return events;
     },
 
-    codeLocked(levelId) {
+    codeLocked(levelId, _nowMs, admit) {
       const events: StationEvent[] = [];
       for (const station of stations) {
         if (station.anchor.code !== levelId || !isOffered(station.id)) continue;
         const s = states.get(station.id)!;
         if (s.state === "found" || s.state === "done") continue;
+        if (admit !== undefined && !admit(station.id)) continue;
         events.push(...found(station.id, "code"));
       }
       return events;

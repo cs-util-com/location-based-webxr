@@ -17,6 +17,7 @@ import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/fr
 
 import type { ViewerMode } from "./mode.js";
 import { createKeyedChain } from "./keyed-chain.js";
+import { checkHadItsWindow } from "./moved-code-check.js";
 import { createBreadcrumbTrail } from "./breadcrumbs.js";
 import { gateAllowsPlacement } from "./scan-gate.js";
 import { createSceneAudio } from "./scene-audio.js";
@@ -168,9 +169,17 @@ export function wireVisitorStations(deps: {
         alignment: selectAlignmentMatrix(state),
         arPose: seams.getArPose(),
         gpsPositions: selectGpsPositions(state),
+        zero: selectZeroReference(state),
       });
     },
     isIgnoredCode: (levelId) => ctx.ignoredCodes.has(levelId),
+    // The moved-code check's evidence for a held code lock (K4 review R1).
+    codeCheck: (levelId) => {
+      const check = ctx.movedCodeChecks
+        ?.snapshot()
+        .find((v) => v.levelId === levelId);
+      return check === undefined ? null : { judged: checkHadItsWindow(check) };
+    },
     startHud: (getTargets) => seams.createWayfindingHud({ getTargets }),
     now: deps.now,
     onFound: (station) => {

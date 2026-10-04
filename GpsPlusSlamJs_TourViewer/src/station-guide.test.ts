@@ -13,6 +13,7 @@ import { rotationFromHeading } from "./content-placement";
 import { stationBands } from "./station-bands";
 import { skipSuggestAfterMs } from "./station-run";
 import {
+  CODE_HOLD_MAX_MS,
   SKIP_UNDO_MS,
   wireStationGuide,
   type StationTour,
@@ -62,7 +63,10 @@ function harness(tourValue: StationTour) {
   let visitor = {
     nue: [0, 401.5, 0] as [number, number, number] | null,
     accuracyM: 4 as number | null,
+    fixNue: [0, 400, 0] as [number, number, number] | null,
   };
+  /** The moved-code check's evidence per level id (absent: no check). */
+  const checks = new Map<string, { judged: boolean }>();
   let allowed = true;
   let zeroNow: typeof zero | null = zero;
   const ignored = new Set<string>();
@@ -104,6 +108,7 @@ function harness(tourValue: StationTour) {
       return visitor;
     },
     isIgnoredCode: (id) => ignored.has(id),
+    codeCheck: (id) => checks.get(id) ?? null,
     startHud: (getTargets) => {
       const h = { getTargets, disposed: false };
       huds.push(h);
@@ -138,12 +143,27 @@ function harness(tourValue: StationTour) {
     guides,
     huds,
     ignored,
+    checks,
     at: (north: number, east: number, accuracyM: number | null = 4) => {
-      visitor = { nue: [north, 401.5, east], accuracyM };
+      visitor = {
+        nue: [north, 401.5, east],
+        accuracyM,
+        fixNue: [north, 400, east],
+      };
+      guide.tick();
+    },
+    /** The fused position (moved by a code's votes) and the latest raw
+     *  device fix apart. */
+    atFix: (north: number, east: number, fixN: number, fixE: number) => {
+      visitor = {
+        nue: [north, 401.5, east],
+        accuracyM: 4,
+        fixNue: [fixN, 400, fixE],
+      };
       guide.tick();
     },
     lost: () => {
-      visitor = { nue: null, accuracyM: 4 };
+      visitor = { nue: null, accuracyM: 4, fixNue: null };
       guide.tick();
     },
     advance: (ms: number) => (now += ms),
@@ -218,6 +238,9 @@ describe("wireStationGuide", () => {
     const h = harness({ stations: [s], order: "fixed", levels });
     h.at(0, 0);
     expect(h.dom.line.textContent).toBe("Next: TOWER, 40 m");
+    // Scanned standing at the poster (R1: a lock 40 m from where the GPS
+    // puts the code would be held for the moved-code check).
+    h.at(0, 38);
     h.guide.codeLocked("lvl-a");
     expect(h.found).toEqual(["tower"]);
   });
@@ -274,19 +297,84 @@ describe("wireStationGuide", () => {
     expect(own.guide.poseOf("gate")!.positionNue[1]).toBeCloseTo(400, 6);
   });
 
-  it("a code the moved-code check ignores does not count as found (D20)", () => {
+  it("a moved code finds nothing when its veto arrives AFTER the lock: not by the lock, not by its votes' pull (R1, R17)", () => {
+    // Why this test matters (K4 review R1, R17): every locked frame reports
+    // the code, while the moved-code check (D20) only judges it later, over
+    // GPS fixes; a find on the lock, latched, meant a moved poster always
+    // found its station. The K4 test seeded the veto BEFORE the lock, which
+    // never happens on the page.
     const s: TourStation = {
       ...station("tower", 100, 0),
       anchor: { code: "lvl-a", geo: station("x", 100, 0).anchor.geo! },
     };
     const h = harness({ stations: [s], order: "fixed", levels: null });
-    h.ignored.add("lvl-a");
+    h.checks.set("lvl-a", { judged: false });
+    // The visitor scans the poster where it hangs now, 100 m from the
+    // station by GPS.
     h.at(0, 0);
     h.guide.codeLocked("lvl-a");
     expect(h.found).toEqual([]);
-    h.ignored.clear();
+    expect(h.dom.line.textContent).toBe("Next: TOWER - checking its code…");
+    // Its votes pull the fused position onto the station; the raw fix stays.
+    h.atFix(100, 0, 0, 0);
     h.guide.codeLocked("lvl-a");
+    expect(h.found).toEqual([]);
+    // The veto arrives: the votes are taken back, nothing is found, ever.
+    h.ignored.add("lvl-a");
+    h.checks.delete("lvl-a");
+    h.at(0, 0);
+    h.advance(CODE_HOLD_MAX_MS + 1);
+    h.at(0, 0);
+    h.guide.codeLocked("lvl-a");
+    expect(h.found).toEqual([]);
+    // Walking to the station by GPS still finds it.
+    h.at(99, 0);
     expect(h.found).toEqual(["tower"]);
+  });
+
+  it("a code lock the visitor's own GPS agrees with finds its station at once; one it does not is held until the check has had its evidence (R1)", () => {
+    const s: TourStation = {
+      ...station("tower", 100, 0),
+      anchor: { code: "lvl-a", geo: station("x", 100, 0).anchor.geo! },
+    };
+    const near = harness({ stations: [s], order: "fixed", levels: null });
+    near.checks.set("lvl-a", { judged: false });
+    near.at(80, 0); // 20 m: inside the 30 m activation radius
+    near.guide.codeLocked("lvl-a");
+    expect(near.found).toEqual(["tower"]);
+    const far = harness({ stations: [s], order: "fixed", levels: null });
+    far.checks.set("lvl-a", { judged: false });
+    far.at(0, 0);
+    far.guide.codeLocked("lvl-a");
+    expect(far.found).toEqual([]);
+    far.at(0, 0);
+    expect(far.found).toEqual([]);
+    // The check has had its window and kept the code: the lock counts.
+    far.checks.set("lvl-a", { judged: true });
+    far.at(0, 0);
+    expect(far.found).toEqual(["tower"]);
+  });
+
+  it("a held code lock counts at the latest after CODE_HOLD_MAX_MS, and at once without a usable GPS fix (R1)", () => {
+    const s: TourStation = {
+      ...station("tower", 100, 0),
+      anchor: { code: "lvl-a", geo: station("x", 100, 0).anchor.geo! },
+    };
+    const h = harness({ stations: [s], order: "fixed", levels: null });
+    h.at(0, 0);
+    h.guide.codeLocked("lvl-a");
+    h.advance(CODE_HOLD_MAX_MS - 1);
+    h.at(0, 0);
+    expect(h.found).toEqual([]);
+    h.advance(1);
+    h.at(0, 0);
+    expect(h.found).toEqual(["tower"]);
+    // Indoors (no usable accuracy): nothing independent to judge by - as
+    // for the moved-code check itself - so the lock counts at once.
+    const indoor = harness({ stations: [s], order: "fixed", levels: null });
+    indoor.at(0, 0, null);
+    indoor.guide.codeLocked("lvl-a");
+    expect(indoor.found).toEqual(["tower"]);
   });
 
   it("a station with neither a spot nor a known code asks for its printed code", () => {

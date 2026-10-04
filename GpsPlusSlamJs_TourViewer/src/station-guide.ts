@@ -36,6 +36,7 @@ import { Quaternion, Vector3 } from "three";
 import { EYE_HEIGHT_M } from "./breadcrumbs.js";
 import { objectPoseNue, rotationFromHeading } from "./content-placement.js";
 import type { StagePose } from "./scene-stage.js";
+import { CODE_MOVE_RULE } from "./code-displacement.js";
 import { ACCURACY_CEILING_M, stationBands } from "./station-bands.js";
 import {
   createStationRun,
@@ -70,6 +71,11 @@ export interface StationGuideDeps {
   visitor(): VisitorPosition;
   /** The moved-code check ignores this level id (D20). */
   isIgnoredCode(levelId: string): boolean;
+  /** The moved-code check of this level id, while it runs: `judged` once
+   *  its rule has had the evidence to read a move (`moved-code-check.ts`
+   *  `checkHadItsWindow`); null when no check runs for it (none pinned
+   *  yet, or it ended). Absent: no check is consulted (K4 review R1). */
+  codeCheck?(levelId: string): { readonly judged: boolean } | null;
   /** Start the HUD for this AR session; null while it cannot (no camera
    *  yet). The guide retries on the next tick. */
   startHud(getTargets: () => WayfindingTarget[]): { dispose(): void } | null;
@@ -152,6 +158,22 @@ function yawOnly(geo: {
  */
 export const SKIP_UNDO_MS = DEFAULT_TOAST_LINGER_MS;
 
+/**
+ * How long a code lock the visitor's own GPS disagrees with is held at most
+ * before it finds its station anyway (K4 review R1): the moved-code rule's
+ * minimum evidence span (60 s, `CODE_MOVE_RULE.minSpanS`) - the earliest a
+ * check started at the lock can read a move when the visitor had no GPS
+ * history before it - plus 15 s for late or missed fixes. A hold usually
+ * ends much sooner: the check counts the device fixes of the 300 s before
+ * the lock too, so after a walk it has its evidence at the first fix. Swept
+ * in `station-code-hold.sweep.test.ts`: scanning at once, a 40 m move is
+ * vetoed 60 s after the pin, so 60 s ties with the veto and 30 or 45 s
+ * release the moved poster first; 75 s or more catch it. The hold outlasts
+ * the check only for a visitor who stands still (under 2 m of spread) or
+ * has no fixes; a longer hold makes them wait longer at a correct poster.
+ */
+export const CODE_HOLD_MAX_MS = (CODE_MOVE_RULE.minSpanS + 15) * 1000;
+
 /** What a tap on the skip button does (its label says which). */
 interface SkipAction {
   readonly kind: "ask-skip" | "skip" | "ask-end" | "end" | "undo";
@@ -178,6 +200,12 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   /** The last skip while it can be undone (R14); its "done" reaches the
    *  prefetch only when the moment passes or the tour moves on. */
   let undoable: { id: string; untilMs: number } | null = null;
+  /** Stations a code lock would find but the visitor's own GPS does not
+   *  agree with (K4 review R1): held, and not found by GPS either (the
+   *  code's votes pull the fused position onto its saved spot), until the
+   *  moved-code check has had its evidence, the code is vetoed (then the
+   *  hold is dropped), or `CODE_HOLD_MAX_MS` passed. */
+  const held = new Map<string, { levelId: string; sinceMs: number }>();
   /** A one-line note of what just happened ("Skipped the well."). */
   let note: string | null = null;
   /** The note goes with the moment a skip can be undone (R14). */
@@ -265,6 +293,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       skipArmedFor = null;
       rendered = null;
       undoable = null;
+      held.clear();
       note = null;
     }
     return run;
@@ -284,6 +313,55 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       );
     }
     return out;
+  }
+
+  /**
+   * Whether a lock of this station's code may find it now (R1): the latest
+   * raw device fix (never moved by a vote) is inside the station's
+   * activation radius at the measured accuracy - or there is nothing
+   * independent to judge by (no usable fix, or no spot), as for the
+   * moved-code check itself.
+   */
+  function codeAgrees(stationId: string): boolean {
+    const station = stationById(stationId);
+    const visitor = last?.visitor;
+    const accuracy = visitor?.accuracyM ?? null;
+    if (
+      station === undefined ||
+      visitor?.fixNue == null ||
+      accuracy === null ||
+      !(accuracy > 0 && accuracy <= ACCURACY_CEILING_M)
+    ) {
+      return true;
+    }
+    const spot = poseOf(stationId);
+    if (spot === null) return true;
+    const d = Math.hypot(
+      spot.positionNue[0] - visitor.fixNue[0],
+      spot.positionNue[2] - visitor.fixNue[2],
+    );
+    return d <= stationBands(station, accuracy).activateM;
+  }
+
+  /** Release held code locks whose hold is over (R1). */
+  function releaseHeld(current: StationRun): void {
+    for (const [id, h] of [...held]) {
+      const status = current.status(id);
+      if (deps.isIgnoredCode(h.levelId) || status?.state !== "waiting") {
+        // Vetoed (its votes were taken back), or done another way.
+        held.delete(id);
+        continue;
+      }
+      const judged = deps.codeCheck?.(h.levelId)?.judged === true;
+      if (
+        judged ||
+        deps.now() - h.sinceMs >= CODE_HOLD_MAX_MS ||
+        codeAgrees(id)
+      ) {
+        held.delete(id);
+        handle(current.codeLocked(h.levelId, deps.now(), (s) => s === id));
+      }
+    }
   }
 
   function handle(events: readonly StationEvent[]): void {
@@ -396,6 +474,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (visitor.accuracyM !== null && visitor.accuracyM > ACCURACY_CEILING_M) {
       return `${lead}${waiting} - GPS too weak to guide you (±${distanceText(visitor.accuracyM)}); step into the open.`;
     }
+    if (held.has(focus)) return `${lead}${waiting} - checking its code…`;
     if (d === undefined) {
       return `${lead}${waiting} - find its printed code.`;
     }
@@ -538,9 +617,14 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       }
       if (visitor.nue !== null) deps.onVisitor?.(visitor.nue);
       approach(distances, visitor.accuracyM);
+      releaseHeld(current);
+      // A held station is not found by GPS either: the code's votes pull
+      // the fused position onto its saved spot (R1).
+      const judged = new Map(distances);
+      for (const id of held.keys()) judged.delete(id);
       handle(
         current.observe({
-          distances,
+          distances: judged,
           accuracyM: visitor.accuracyM,
           nowMs: deps.now(),
         }),
@@ -556,7 +640,15 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       ) {
         return;
       }
-      handle(current.codeLocked(levelId, deps.now()));
+      if (last === null) measure();
+      handle(
+        current.codeLocked(levelId, deps.now(), (id) => {
+          if (held.has(id)) return false;
+          if (codeAgrees(id)) return true;
+          held.set(id, { levelId, sinceMs: deps.now() });
+          return false;
+        }),
+      );
       render();
     },
     storyEnded(stationId) {

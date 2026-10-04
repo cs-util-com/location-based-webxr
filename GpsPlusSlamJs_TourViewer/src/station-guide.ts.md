@@ -23,7 +23,8 @@ can't get there" (§8 D5), and hands a found station to its story. Plan:
     stands its figure there).
 - Deps: `dom` (`line`, `skip`), `tour()` (stations, order, levels),
   `placementAllowed()`, `zero()`, `visitor()` (`visitor-position.ts`),
-  `isIgnoredCode(levelId)`, `startHud(getTargets)`, `now()`,
+  `isIgnoredCode(levelId)`, `codeCheck?(levelId)` (the moved-code check's
+  evidence, `{ judged }` or null; R1), `startHud(getTargets)`, `now()`,
   `onFound(station)`, `onEndStory?(stationId)` (R9), `onVisitor?(nue)`, `onApproach?(station, distanceM,
 activateM)` (each tick, each offered station with a distance: the
   prefetch), `onDone?(stationId)` (a story's end or a skip: the prefetch may
@@ -60,6 +61,36 @@ activateM)` (each tick, each offered station with a distance: the
 - **Found by code:** only codes the moved-code check does not ignore (D20,
   §8 D8), checked again here although an ignored lock never reaches
   `onLocked`.
+- **A code lock is held until the moved-code check could have spoken (K4
+  review R1; B-12 revised).** Every locked frame reports the code, while
+  D20 judges it only later over GPS fixes, and its votes pull the fused
+  position onto the code's saved spot - so with "found is a latch" a moved
+  poster always found its station, by its lock or by the pull. Now:
+  - a lock finds its station at once when the latest RAW device fix
+    (`VisitorPosition.fixNue`, never moved by a vote) lies inside the
+    station's activation radius at the measured accuracy, or when there is
+    nothing independent to judge by (no usable fix, no spot) - as for D20
+    itself;
+  - otherwise the station is held (the line: "... - checking its code…")
+    and not found by GPS either, until the check has had its evidence
+    (`codeCheck(levelId).judged`, `checkHadItsWindow`), the raw fix
+    agrees, or `CODE_HOLD_MAX_MS` (75 s) passed - then the lock counts; a
+    veto drops the hold (its votes are taken back, so the station is found
+    by walking to it as any other);
+  - which of the reviewer's two rules: the hybrid. Rule (b) alone (the
+    visitor's FUSED position inside the activation radius) is defeated by
+    the code's own votes, which put the fused visitor on the saved spot
+    within a frame; a raw fix is the only vote-free position. Rule (a)
+    alone (hold every code lock for the check's window) holds every first
+    station of a tour up to 60 s. The raw fix lets an agreeing lock count
+    at once (a correct poster is held in at most 0.6 % of scans,
+    `station-code-hold.sweep.test.ts`), and only a disagreeing one waits
+    for (a);
+  - what is left: a moved poster within the activation radius of its
+    station finds it (the visitor is near the station anyway), and a
+    visitor who stands still at a moved poster (under 2 m of spread)
+    gives D20 no evidence, so the lock counts at 75 s; with no usable GPS
+    nothing can judge the code, as before.
 - **The HUD's arrival is the found radius (§8 D9):** each target's
   `distanceMin` / `distanceMax` are the station's found band at the
   measured accuracy, and the target sits at the visitor's own height, so
@@ -129,12 +160,16 @@ store.subscribe(() => guide.tick());
 
 ## Tests
 
+- `station-code-hold.sweep.test.ts` - the hold's maximum against the real
+  moved-code check's timing, and how often a correct poster is held (R1).
 - `station-guide.property.test.ts` - stories that never end, stations
   nobody reaches, random orders and `next` links (cycles included): the
   tour completes within two taps per station (R9).
 - `station-guide.test.ts` - the undo, the focus clock under `any` order and
   the tap acting on its label (R14); the gate wait, the line, the find; the HUD
-  targets and their bands; a code-only station; the D20 veto; a station
+  targets and their bands; a code-only station; the D20 veto arriving
+  after the lock, an agreeing lock at once, a held lock released by the
+  check's window and at the latest after 75 s, no usable GPS (R1); a station
   with no spot; no position and weak GPS; the skip on demand and suggested,
   the completion and the HUD's disposal; a story's end; progress across
   AR entries and a new tour; the replay of a story cut short; nothing found

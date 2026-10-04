@@ -86,6 +86,7 @@ describe("wireStationGuide (properties)", () => {
         let visitor = {
           nue: [1000, 401.5, 1000] as [number, number, number],
           accuracyM: 4,
+          fixNue: [1000, 400, 1000] as [number, number, number],
         };
         const dom = {
           line: { textContent: "", hidden: true },
@@ -108,13 +109,21 @@ describe("wireStationGuide (properties)", () => {
           },
         });
         for (const [north, east, tap] of wander) {
-          visitor = { nue: [north, 401.5, east], accuracyM: 4 };
+          visitor = {
+            nue: [north, 401.5, east],
+            accuracyM: 4,
+            fixNue: [north, 400, east],
+          };
           now += 1_000;
           guide.tick();
           if (tap) guide.skipTapped();
         }
         // From here on the visitor stands far from everything and only taps.
-        visitor = { nue: [1000, 401.5, 1000], accuracyM: 4 };
+        visitor = {
+          nue: [1000, 401.5, 1000],
+          accuracyM: 4,
+          fixNue: [1000, 400, 1000],
+        };
         for (let taps = 0; taps < 2 * n + 2; taps += 1) {
           now += 10_000;
           guide.tick();

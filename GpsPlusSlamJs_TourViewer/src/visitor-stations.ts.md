@@ -18,7 +18,10 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
 
 - The tour is read from the session object each time: `ctx.tourManifest`
   (settled) for the stations, the order and the assets, `ctx.currentLevels`
-  for a code-only station's spot, `ctx.ignoredCodes` for the D20 veto.
+  for a code-only station's spot, `ctx.ignoredCodes` for the D20 veto,
+  `ctx.movedCodeChecks` (its `snapshot()` through `checkHadItsWindow`) for
+  the guide's hold of a code lock (K4 review R1), and the store's zero for
+  the visitor's raw fix position.
 - Placement is allowed for a visitor with a live session
   (`ctx.placementUnsubscribe`) and a gate that allows it
   (`gateAllowsPlacement`, DEC-N3): the stations wait behind the scan gate

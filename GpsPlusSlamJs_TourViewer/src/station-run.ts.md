@@ -19,7 +19,9 @@ focusedAtMs, focusDistanceM }`.
   - `observe({ distances, accuracyM, nowMs }): StationEvent[]` - horizontal
     distances to the stations the caller can place; no judgement at all on
     a missing accuracy or one above `ACCURACY_CEILING_M`.
-  - `codeLocked(levelId, nowMs)` - a lock of a code the viewer trusts (the
+  - `codeLocked(levelId, nowMs, admit?)` - a lock of a code the viewer
+    trusts; `admit(stationId)` picks which of its stations it may find (the
+    guide holds one back for the moved-code check, K4 review R1) (the
     caller filters the moved-code check's ignored codes, D20).
   - `finish(id, nowMs)` - the scene ended (found stations only).
   - `skip(id, nowMs)` - any offered station not done.
