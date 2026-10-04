@@ -61,6 +61,7 @@ function readFrame({ grid, holeMin }) {
     holes: px.filter(hole).length,
     holeAt: grid.filter((_, i) => hole(px[i])).slice(0, 4),
     share: s.relief?.share ?? null,
+    settled: s.relief?.settled ?? null,
     phase: s.phase,
     altKm: live.altitudeKm,
   };
@@ -80,15 +81,18 @@ async function diveAndCount(page, context, gate) {
   let landedAt = null;
   // Each read renders one frame; until the relief has every pixel (or 20 s
   // after landing), at most 120 s.
-  while (Date.now() - started < 120_000) {
+  // The relief takes over only once its view is refined, which takes up to
+  // about 90 s at the hold under SwiftShader: 120 s after landing at most.
+  while (Date.now() - started < 240_000) {
     const f = await page.evaluate(readFrame, {
       grid: lowerGrid(),
       holeMin: HOLE_MIN,
     });
-    frames.push(f);
     if (f.phase === "landed" && landedAt === null) landedAt = Date.now();
+    f.sinceLandMs = landedAt === null ? null : Date.now() - landedAt;
+    frames.push(f);
     if (landedAt !== null && (f.share ?? 0) >= 1) break;
-    if (landedAt !== null && Date.now() - landedAt > 20_000) break;
+    if (landedAt !== null && Date.now() - landedAt > 120_000) break;
   }
   return { frames, errors };
 }
@@ -167,6 +171,14 @@ for (const gate of [1, 0]) {
     expect(errors).toEqual([]);
     // The relief did take over: the check ran through the band.
     expect(reliefFrames).toBeGreaterThan(0);
+    // With the gate the relief takes its first pixels only once its view is
+    // refined (owner 2026-10-04: no flash from the globe's sharp imagery to
+    // the relief's coarse first tiles).
+    const first = frames.find((f) => (f.share ?? 0) > 0);
+    console.log(
+      `dive, gate and fill ${gate}: the relief's first pixels at ${Math.round(first?.altKm ?? -1)} km, ${first?.sinceLandMs == null ? "before landing" : `${(first.sinceLandMs / 1000).toFixed(1)} s after landing`}, settled ${first?.settled}`,
+    );
+    if (gate === 1) expect(first?.settled).toBe(true);
     if (gate === 1) expect(holeFrames.length).toBe(0);
     else expect(holeFrames.length).toBeGreaterThan(0);
   });

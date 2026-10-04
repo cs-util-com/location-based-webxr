@@ -293,6 +293,12 @@
       pixels; the globe, compiled without the discard (`fill`), draws
       every pixel without a mark, coarse (`bandFillErrorTarget`) while the
       relief has every pixel (`/globe/globe-stencil-fill.js`).
+      - The relief takes its first pixels only once its view is refined
+        (`bandSharp`, default 1; owner 2026-10-04: no flash from the
+        globe's sharp imagery to the relief's coarse first tiles), and keeps
+        them while its top tiles are loaded. Under SwiftShader the takeover
+        came 77.8 s after landing at the hold; `bandSharp=0` takes over as
+        soon as the top tiles are loaded.
       - `bandGate=0` and `bandFill=0` restore the old rule, for a
         before/after. `bandFill` is read at start, since it needs a
         stencil buffer.

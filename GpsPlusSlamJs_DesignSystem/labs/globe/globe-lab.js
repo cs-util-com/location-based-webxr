@@ -322,6 +322,10 @@ const PARAMS = {
   // where none is, from the coarse tiles it keeps. 0 restores the dither
   // alone, for a before/after. Read at start (it needs a stencil buffer).
   bandFill: { fallback: 1, min: 0, max: 1 },
+  // 1: the relief takes over only once its view is refined, so the globe's
+  // sharp imagery never gives way to the relief's coarse first tiles
+  // (owner 2026-10-04). 0: as soon as its top tiles are loaded.
+  bandSharp: { fallback: 1, min: 0, max: 1 },
   // 1 clears the frame magenta instead of black (with the sky off), so a
   // pixel no carrier drew is unambiguous: the hand-over smokes count holes
   // by it (dark water at an oblique view reads near black).
@@ -1812,6 +1816,12 @@ async function start() {
    * so every pixel must come from the globe's fill (round-6 plan G6-1).
    */
   let reliefHidden = false;
+  /** Whether the relief's view is refined: nothing of it loading or queued. */
+  const reliefSettled = () =>
+    terrain.tiles.loadProgress === 1 &&
+    !terrain.tiles.downloadQueue.running &&
+    !terrain.tiles.parseQueue.running &&
+    !terrain.tiles.processNodeQueue.running;
   /** A carrier's coarsest tiles, which a drain keeps (round-6 plan G6-1). */
   const keepCoarsest = (tile) => (tile?.internal?.depth ?? Infinity) <= 1;
   /**
@@ -1928,7 +1938,14 @@ async function start() {
         bandShare = targetShare;
       } else {
         // Each carrier's readiness from its last update (round-6 plan G6-1).
-        const reliefReady = topLevelReady(terrain.tiles);
+        // The relief starts taking pixels only once its view is refined
+        // (round-6 plan G6-1, owner 2026-10-04: no flash from the globe's
+        // sharp imagery to the relief's coarse first tiles); once it has
+        // pixels it keeps them while its top tiles are loaded, so a pan at a
+        // low altitude never hands the frame back and forth.
+        const reliefReady =
+          topLevelReady(terrain.tiles) &&
+          (bandShare > 0 || params.bandSharp === 0 || reliefSettled());
         const globeReady = topLevelReady(globe.tiles);
         const held = !reliefReady || !globeReady;
         if (held !== bandHeld) {
