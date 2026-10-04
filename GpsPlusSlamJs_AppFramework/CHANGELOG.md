@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## [1.26.1] — 2026-10-04
+
+Requires `gps-plus-slam-js` ≥ 1.26.0. The version matches the core library's 1.26.1; 1.25.x was never published.
+
 ### ⚠️ Breaking changes
 
 - **`QrVoteBudget` gains a required `isSpent(text)`** (QR near-frontal pose
