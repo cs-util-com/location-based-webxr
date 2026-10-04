@@ -40,16 +40,33 @@
  * `VISIT_SETTLE_LEFT_BEHIND_SEEDS`, default 30; the table goes to the file
  * `VISIT_SETTLE_LEFT_BEHIND_OUT` names, else the console).
  *
- * WHAT SHIPS SINCE D33 (re-measured 2026-10-04, same grid, 30 visits per
- * cell; the SHIPPED columns run `visit-alignment-picks.ts` and
- * `planVisitSettle` with its picks, fed as `creator-setup.ts` feeds them):
- * - Note and code measured mid-visit: SHIPPED equals m80 in every row of
- *   every cell (it is m80, now through the real tracker): notes 1.1-1.7 m
- *   p50, 1.8-3.8 m p90; 500 m at 1 deg / 1 %: 1.2 / 2.1 m against 8.4 /
- *   11.2 m through the end alignment, and 1.2 / 2.1 m against 15.8 / 24.5 m
- *   on a 500 m meander at 2 / 2.
+ * WHAT SHIPS (D33 settle, D34 floor of 40 m; re-measured 2026-10-04, same
+ * grid, 30 visits per cell; the SHIPPED columns run `visit-alignment-picks.ts`
+ * and `planVisitSettle` with its picks, fed as `creator-setup.ts` feeds
+ * them, at the shared `MATURE_GPS_EXTENT_M`):
+ * - Note and code measured mid-visit: SHIPPED equals m40 in every row of
+ *   every cell (288 rows; it is m40, through the real tracker): notes
+ *   1.0-1.4 m p50, 1.6-2.8 m p90 (at 80 m, D33 as first shipped: 1.1-1.7 /
+ *   1.8-3.8); 500 m at 1 deg / 1 %: 1.0 / 1.6 m against 8.4 / 11.2 m through
+ *   the end alignment, and 1.1 / 1.7 m against 15.8 / 24.5 m on a 500 m
+ *   meander at 2 / 2.
+ * - THE NUMBER TO WATCH (D34): a code measured mid-visit keeps 1.0-1.5 /
+ *   1.7-2.8 m, but its heading p90 is 4.3-6.8 degrees at 40 m against
+ *   3.8-5.6 at 80 m; the worst cells are 2 % translation drift (6.8 degrees
+ *   at 0.5 deg / 2 %, 6.7 on a 500 m meander at 2 / 2; p50 2.5-2.6). The
+ *   sweep on real recordings is the check on it.
+ * - Code measured at the visit's START (R4 of the D33 review): 1.2-2.3 /
+ *   1.9-3.6 m, heading p90 3.8-6.9 degrees. 40 m fixes the case 80 m lost
+ *   (120 m walks at 2 / 2: 1.6 / 2.7 m against 5.3 / 7.6 m), and on a
+ *   100 m out and back it is 2.3 / 3.1 m against the end alignment's
+ *   4.0 / 6.2 m.
+ * - Short visits: the 80 m floor's known limit is gone. 100 m out and back,
+ *   note: SHIPPED = m40 = 1.0-1.1 / 1.6-1.7 m, where 80 m and the end
+ *   alignment gave 1.2-1.7 / 2.6-3.8 m.
  * - Stored code (D10b, sighted at the first look and, out and back, at the
- *   last): the correction goes through the sighting NEAREST the pin, so an
+ *   last): unchanged by D34 in every cell (the correction does not depend on
+ *   the alignment it starts from, and the bound refuses nothing at either
+ *   floor). The correction goes through the sighting NEAREST the pin, so an
  *   out-and-back start note keeps the start sighting's 1.2-2.5 m (500 m,
  *   1 / 1: 1.2 / 1.5 m against 11.2 / 15.2 m through the latest; 2 / 2:
  *   2.5 / 2.8 m against 22.5 / 30.4 m). The bound, judged through the
@@ -57,21 +74,12 @@
  *   alignment refused 1 / 2 / 5 of 30 on the 500 m meanders at 2 deg). A
  *   refusal is counted from the basis, so a silent fallback could not hide.
  *   Where the start sighting is the only one (straight and meander leaves),
- *   SHIPPED equals the end-alignment path by construction: the correction
- *   does not depend on the alignment it starts from, and what is left is the
- *   drift between the sighting and the tap (5.2 / 6.6 m after 240 m of walks
- *   at 2 / 2, the worst cell).
- * - KNOWN LIMIT of the 80 m floor (the owner's value, D28/D33): on a short
- *   visit the session's extent reaches 80 m only near or after its end, so
- *   the first mature pick IS about the end alignment. 100 m out and back:
- *   SHIPPED = m80 = end = 1.2-1.7 / 2.6-3.8 m, where m40 gives 1.0-1.1 /
- *   1.6-1.7 m and the tap 1.2 / 2.0-2.1 m. The same holds for a code
- *   measured at the start of 120 m walks (5.3 m against 1.6 m for m40).
- *   A lower floor would win there and lose heading p90 elsewhere (see
- *   `alignment-maturity.ts`).
+ *   SHIPPED equals the end-alignment path by construction, and what is left
+ *   is the drift between the sighting and the tap (5.2 / 6.6 m after 240 m
+ *   of walks at 2 / 2, the worst cell).
  * - "grown80" (the other reading of D33: the extent GROWN by 80 m since the
- *   placement) is no better: 0.9-1.7 / 1.8-3.8 m, with p90 up to 3.0-3.3 m
- *   where m80 has 2.1-2.7.
+ *   placement) is no better than m80: 0.9-1.7 / 1.8-3.8 m, with p90 up to
+ *   3.0-3.3 m where m80 has 2.1-2.7.
  *
  * Measured result BEFORE D33 (2026-10-03, 30 visits per cell, horizontal
  * p50 / p90; "end" = what shipped then, "tap" = the alignment at the tap,
@@ -84,7 +92,7 @@
  *   and back). Out and back is the worst path (500 m, 1 deg / 1 %: 10.6 /
  *   16.2 m). At 100 m it is no worse than the rest (1.0-1.7 m). tap, m40
  *   and m80 are flat in L: 1.0-1.4 / 1.6-2.8 m, except m80 on 100 m out
- *   and back (the known limit above).
+ *   and back (1.2-1.7 / 2.6-3.8 m: 80 m of extent comes only at the end).
  * - A code measured mid-visit regresses the same way (500 m, 1 deg / 1 %:
  *   8.7 m, heading 3.4 / 6.1 deg) and is fixed the same way (m80: 1.2-1.3 m,
  *   heading 1.4-1.6 / 4.6-5.4 deg, the best heading of the candidates; m40
@@ -731,7 +739,8 @@ function storedSightingLooks(visit: Visit): number[] {
 
 /**
  * The shipped settle of one visit: the pin placed at `placedS`, the code
- * MEASURED at the end of the third look (`measured`), or a STORED code
+ * MEASURED at the end of look `measureLook` (the third when absent), or a
+ * STORED code
  * (`stored`) sighted at the end of {@link storedSightingLooks}.
  */
 function settleAsShipped(
@@ -739,6 +748,8 @@ function settleAsShipped(
   options: {
     readonly measured: boolean;
     readonly stored: { id: string; json: string } | null;
+    /** The look the code is measured at; the third (2) when absent. */
+    readonly measureLook?: number;
   },
 ): VisitSettle {
   const tracker = createVisitAlignmentTracker();
@@ -749,7 +760,8 @@ function settleAsShipped(
       apply: () => tracker.notePlacement("pin", ms(visit.placedS)),
     },
   ];
-  const measureS = visit.looks[2]![1];
+  const measureLook = options.measureLook ?? 2;
+  const measureS = visit.looks[measureLook]![1];
   if (options.measured) {
     events.push({
       tS: measureS,
@@ -787,7 +799,7 @@ function settleAsShipped(
     alignment: endAlignment(visit),
     zero: visit.zero,
     ...codeInputs(
-      options.measured ? codeSeenAt(visit, 2) : null,
+      options.measured ? codeSeenAt(visit, measureLook) : null,
       options.stored === null
         ? null
         : { level: options.stored, sighting: codeSeenAt(visit, latestLook) },
@@ -1124,6 +1136,15 @@ function measureVisit(
     rows.codeMid,
     "SHIPPED",
     codeError(settleAsShipped(visit, { measured: true, stored: null }).level),
+  );
+  // R4 (D33 review): D34's floor on a code measured at the visit's start.
+  addTo(
+    rows.codeStart,
+    "SHIPPED",
+    codeError(
+      settleAsShipped(visit, { measured: true, stored: null, measureLook: 0 })
+        .level,
+    ),
   );
   // What the author sees change at the settle: the stored geo moving from
   // the tap-time record to the settled one.
