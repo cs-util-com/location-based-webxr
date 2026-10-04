@@ -255,6 +255,28 @@ describe("wireStationGuide", () => {
     expect(h.huds[0]!.disposed).toBe(true);
   });
 
+  it("under branch order the completion line says the path was completed, not that every station was visited", () => {
+    // Why this test matters (K4 review R16): a branch tour ends when the
+    // visitor's path ends, with stations of the other branches never
+    // offered; "every station visited" would be a false claim.
+    const h = harness({
+      stations: [
+        station("gate", 0, 0, { next: "tower" }),
+        station("well", 0, 80),
+        station("tower", 0, 0),
+      ],
+      order: "branch",
+      levels: null,
+    });
+    h.at(0, 0);
+    h.guide.storyEnded("gate");
+    h.at(0, 0);
+    h.guide.storyEnded("tower");
+    expect(h.dom.line.textContent).toBe(
+      "Tour complete - you reached the end of your path.",
+    );
+  });
+
   it("a story's end makes the station done and offers the next", () => {
     const h = harness({
       stations: [station("gate", 0, 0), station("well", 0, 80)],

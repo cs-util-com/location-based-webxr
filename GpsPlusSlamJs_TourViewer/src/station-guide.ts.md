@@ -43,7 +43,7 @@ activateExitM)` (each tick, each offered station with a distance: the
 - **Found by code:** only codes the moved-code check does not ignore (D20,
   §8 D8), checked again here although an ignored lock never reaches
   `onLocked`.
-- **The HUD's arrival is the found radius (DEC-F4):** each target's
+- **The HUD's arrival is the found radius (§8 D9):** each target's
   `distanceMin` / `distanceMax` are the station's found band at the
   measured accuracy, and the target sits at the visitor's own height, so
   the HUD's 3D distance is the horizontal distance the run judges. Only
@@ -58,7 +58,9 @@ activateExitM)` (each tick, each offered station with a distance: the
   <title>, N m", "... - waiting for your position…", "... - GPS too weak to
   guide you (±N m); step into the open." (above the accuracy ceiling),
   "... - find its printed code." (no spot), "Station found - its story is
-  playing.", "Tour complete - every station visited." or "- N skipped.".
+  playing.", "Tour complete - every station visited." or "- N skipped.";
+  under branch order "Tour complete - you reached the end of your path."
+  (with ", N skipped."), since the other branches were never offered.
   Distances are measured again from the last known position whenever the
   offer changes, so the next station's distance shows at once.
 

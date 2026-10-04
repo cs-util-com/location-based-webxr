@@ -25,13 +25,12 @@ activateM + band`.
 
 ## Invariants & assumptions
 
-- **Tied to the HUD (DEC-F4, DEC-H3).** `foundM` / `foundExitM` are the
+- **Tied to the HUD (§8 D9, DEC-H3).** `foundM` / `foundExitM` are the
   station's wayfinding target `distanceMin` / `distanceMax`: the arrow hides
   as "arrived" exactly where the station is found, and comes back one band
   out. The floors are the HUD's field-validated deadband (1.5 m / 3.0 m in
-  AnchorStarter and WayfindingHudDemo). One hysteresis convention, absolute
-  metres, as the community PR verdicts asked (DEC-F4 resolved: no second
-  fractional convention).
+  AnchorStarter and WayfindingHudDemo). One hysteresis convention in
+  absolute metres, the HUD's own (DEC-H3), not a second fractional one.
 - `foundM <= foundExitM <= activateM < activateExitM` for every input; all
   finite; never smaller than the authored radii; monotone in the accuracy.
 - Never throws: the authored radii are already validated by

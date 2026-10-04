@@ -3,8 +3,8 @@
  * activation and found radii, widened where the phone's measured accuracy
  * cannot resolve them, with one hysteresis convention shared with the
  * wayfinding HUD's arrival deadband (`distanceMin` / `distanceMax`, absolute
- * metres; DEC-F4 and DEC-H3: one hysteresis convention in this codebase,
- * not a second fractional one).
+ * metres; §8 D9 ties the radii to that deadband, and DEC-H3 keeps one
+ * hysteresis convention in this codebase, not a second fractional one).
  *
  * Pure. The numbers are chosen by `station-bands.sweep.test.ts`, which
  * simulates visitors under the framework's Gauss-Markov GPS noise model

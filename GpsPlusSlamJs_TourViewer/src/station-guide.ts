@@ -12,7 +12,7 @@
  * - **Found by its code:** a lock of the station's code counts, unless the
  *   moved-code check ignores that code (D20, §8 D8: a moved code is not a
  *   "found you").
- * - **The HUD's arrival is the found radius** (`station-bands.ts`, DEC-F4):
+ * - **The HUD's arrival is the found radius** (`station-bands.ts`, §8 D9):
  *   each target's `distanceMin`/`distanceMax` are the station's found band at
  *   the measured accuracy, and the target sits at the visitor's own height so
  *   the HUD's distance is the horizontal one the run judges.
@@ -258,6 +258,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     if (run === null) return "";
     if (run.isComplete()) {
       const skipped = run.statuses().filter((s) => s.skipped).length;
+      // A branch tour ends with its path; the other branches' stations
+      // were never offered, so "every station" would be false (R16).
+      if (deps.tour()?.order === "branch") {
+        return skipped === 0
+          ? "Tour complete - you reached the end of your path."
+          : `Tour complete - you reached the end of your path, ${String(skipped)} skipped.`;
+      }
       return skipped === 0
         ? "Tour complete - every station visited."
         : `Tour complete - ${String(skipped)} skipped.`;
