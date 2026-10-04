@@ -400,10 +400,50 @@ describe("clipPlanes", () => {
     );
   });
 
+  // Why (F2 plan F2a, M4): over the exaggerated relief the ground under the
+  // camera stands far above the ellipsoid (14.4 km for Mont Blanc at E 3),
+  // so a near plane from the height above the ellipsoid cut into the peaks
+  // at a low hold, and a far plane at the sea-level horizon cut off peaks
+  // beyond it. With the drawn ground below and the highest drawn peak, the
+  // near plane keeps its fraction of the height above the GROUND, and the
+  // far plane reaches a peak standing just beyond the horizon.
+  it("measures the near plane from the drawn ground, and reaches peaks beyond the horizon", () => {
+    const at = (h: number) =>
+      WGS84_ELLIPSOID.getCartographicToPosition(
+        0.8,
+        0.16,
+        h,
+        new THREE.Vector3(),
+      );
+    // 5 km above the ellipsoid over a ridge drawn 4 km high: 1 km of air.
+    const over = clipPlanes(WGS84_ELLIPSOID, at(5_000), {
+      groundM: 4_000,
+      peakM: 14_400,
+    });
+    expect(over.near).toBeCloseTo(1_000 * GLOBE_CLIP.nearFraction, 6);
+    const flat = clipPlanes(WGS84_ELLIPSOID, at(5_000));
+    expect(flat.near).toBeCloseTo(5_000 * GLOBE_CLIP.nearFraction, 6);
+    // The far plane: the sea-level horizon plus a 14.4 km peak's own
+    // horizon distance (about 428 km), so the peak there is still drawn.
+    const b = WGS84_ELLIPSOID.radius.z;
+    const peakReach = Math.sqrt((b + 14_400) ** 2 - b ** 2);
+    expect(over.far - flat.far).toBeCloseTo(peakReach, 0);
+    // The ground above the camera (a bad sample) never gives a negative
+    // height: the floor holds.
+    expect(
+      clipPlanes(WGS84_ELLIPSOID, at(5_000), { groundM: 9_000 }).near,
+    ).toBe(GLOBE_CLIP.minNearM);
+  });
+
   it("refuses a camera at the centre or off the numbers", () => {
     expect(() => clipPlanes(WGS84_ELLIPSOID, new THREE.Vector3())).toThrow(
       RangeError,
     );
+    expect(() =>
+      clipPlanes(WGS84_ELLIPSOID, new THREE.Vector3(R + 1e5, 0, 0), {
+        peakM: -1,
+      }),
+    ).toThrow(RangeError);
     expect(() =>
       clipPlanes(WGS84_ELLIPSOID, new THREE.Vector3(Number.NaN, 0, 0)),
     ).toThrow(RangeError);

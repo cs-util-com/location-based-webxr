@@ -121,24 +121,45 @@ export const GLOBE_CLIP = {
  *   visible, and past the far plane the tiles renderer culls the far side
  *   of the Earth too, which it would otherwise load (globe plan §15).
  *
- * RangeError for a non-finite position or one at the centre.
+ * Over a drawn relief (F2 plan F2a, M4) `groundM` is the highest drawn
+ * ground below and around the camera (m above the ellipsoid): the near
+ * plane is then its fraction of the height above THAT ground. `peakM` is
+ * the highest drawn peak anywhere: the far plane adds that peak's own
+ * horizon distance, so a peak standing just beyond the sea-level horizon is
+ * still drawn. Both default to 0, the plain ellipsoid.
+ *
+ * RangeError for a non-finite position or one at the centre, or a
+ * non-finite ground or a negative or non-finite peak.
  */
 export function clipPlanes(
   ellipsoid: Ellipsoid,
   position: THREE.Vector3,
+  relief: { groundM?: number; peakM?: number } = {},
 ): { near: number; far: number } {
+  const { groundM = 0, peakM = 0 } = relief;
+  if (!Number.isFinite(groundM) || !(peakM >= 0 && Number.isFinite(peakM))) {
+    throw new RangeError(
+      `the drawn ground must be finite and the peak finite and >= 0, got ${groundM}, ${peakM}`,
+    );
+  }
   const distance = position.length();
   if (!(distance > 0 && Number.isFinite(distance))) {
     throw new RangeError(
       `camera position must be finite and off the centre, got ${position.toArray().join(", ")}`,
     );
   }
-  const height = Math.max(0, ellipsoid.getPositionElevation(position));
+  const height = Math.max(
+    0,
+    ellipsoid.getPositionElevation(position) - Math.max(0, groundM),
+  );
   const near = Math.max(GLOBE_CLIP.minNearM, height * GLOBE_CLIP.nearFraction);
   const radii = [ellipsoid.radius.x, ellipsoid.radius.y, ellipsoid.radius.z];
   const a = Math.max(...radii);
   const b = Math.min(...radii);
-  const far = Math.sqrt(Math.max(0, distance ** 2 - b ** 2)) + (a - b);
+  const far =
+    Math.sqrt(Math.max(0, distance ** 2 - b ** 2)) +
+    Math.sqrt((b + peakM) ** 2 - b ** 2) +
+    (a - b);
   return { near, far: Math.max(far, near * 2) };
 }
 
