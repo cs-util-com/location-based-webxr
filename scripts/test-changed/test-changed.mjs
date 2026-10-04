@@ -42,7 +42,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { SKIP_BROWSER_ENV } from '../test-timing/projects.mjs';
-import { gateCommands, selectPackages } from './select.mjs';
+import { cascadeCommands, gateCommands, selectPackages } from './select.mjs';
 
 const WORKSPACE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -97,17 +97,6 @@ function packageName(dir) {
   ).name;
 }
 
-/** @param {string} command @returns {never} exits with the command's code */
-function execAndExit(command) {
-  console.log(`test-changed: ${command}`);
-  const child = spawnSync(command, {
-    shell: true,
-    stdio: 'inherit',
-    cwd: WORKSPACE_ROOT,
-  });
-  process.exit(child.status ?? 1);
-}
-
 /** @returns {boolean} is the sibling library link-overridden into this repo? */
 function libraryLinkOverrideActive() {
   try {
@@ -136,7 +125,7 @@ if (runAll) {
     console.log('test-changed: --all ⇒ full cascade (pnpm test)');
     process.exit(0);
   }
-  execAndExit('pnpm test');
+  process.exit(runInOrder(cascadeCommands()));
 }
 
 const dirs = packageDirs();
@@ -155,7 +144,7 @@ if (selection.mode === 'all') {
   if (dryRun) {
     process.exit(0);
   }
-  execAndExit('pnpm test');
+  process.exit(runInOrder(cascadeCommands()));
 }
 
 const names = selection.packages.map(packageName);
@@ -202,17 +191,26 @@ function run(command, extraEnv = {}) {
   return child.status ?? 1;
 }
 
-// Construction lives in `select.mjs` so the split is unit-tested; this loop
-// only executes it, fail-fast, in order.
-let status = 0;
-for (const { command, env } of gateCommands(names, {
-  skipBrowserEnv: SKIP_BROWSER_ENV,
-})) {
-  status = run(command, env);
-  if (status !== 0) {
-    break;
+/**
+ * Runs the commands fail-fast, in order. Construction lives in `select.mjs`
+ * so the order is unit-tested; this only executes it.
+ *
+ * @param {{ command: string, env: Record<string, string> }[]} commands
+ * @returns {number} the first non-zero status, else 0
+ */
+function runInOrder(commands) {
+  for (const { command, env } of commands) {
+    const status = run(command, env);
+    if (status !== 0) {
+      return status;
+    }
   }
+  return 0;
 }
+
+const status = runInOrder(
+  gateCommands(names, { skipBrowserEnv: SKIP_BROWSER_ENV })
+);
 
 if (status === 0 && names.length > 0) {
   console.log(
