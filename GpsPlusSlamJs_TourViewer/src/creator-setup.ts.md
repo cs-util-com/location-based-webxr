@@ -245,7 +245,7 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   and the walked distance (`walked-distance-tracker.ts`, reviews R1 and R3 of
   D33);
   a pin at its Save, a photo at its tap, a move through
-  `object-editing.ts`'s `notePlaced`, the measurement at its tap, each
+  `object-editing.ts`'s `notePlaced`, the measurement when its level identity resolves (its `atMs` is the tap's), each
   stable sighting of the code in hand; emptied at each visit's start and
   end), and a note within `CODE_EVENT_REACH_M` walked of a code event of
   the visit shares the code's alignment through the nearest event; the records

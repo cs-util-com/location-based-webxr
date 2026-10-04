@@ -2278,8 +2278,10 @@ export function wireCreatorSetup(deps: {
    *   between visits it already names the NEXT one (a page-side Finish once
    *   marked the next visit settled that way, so it never settled).
    * - A photo of the visit that lands AFTER its settle (the encode is
-   *   async) is minted through the same record when it lands, so every
-   *   object of a visit goes through one alignment.
+   *   async) is minted through the same record when it lands: the visit's
+   *   END choice. The visit's other objects went through their own picks
+   *   (D33), so a late photo can differ from them by the drift between its
+   *   capture and the visit's end.
    *
    * Recorded even for a visit with nothing to settle yet, for that photo.
    */
@@ -2288,7 +2290,9 @@ export function wireCreatorSetup(deps: {
   /**
    * Settle the running AR visit (authoring plan 2026-09-28-0953 §3.2, M2c):
    * the code measured in it and every object placed in it get their geo
-   * recomputed through ONE alignment (`visit-settle.ts` decides which), the
+   * recomputed from its odometry pose (`visit-settle.ts` decides through
+   * which alignment: each object's own pick, near a code event the
+   * code's, D33 and its review R1 and R3), the
    * draft is rewritten so a reload keeps it, and the troubleshooting
    * recording gets a `tourAuthoring/settled` action.
    *
@@ -2702,7 +2706,9 @@ export function wireCreatorSetup(deps: {
           levelId: id,
           odomPose: stablePose,
         });
-        // The code measured in this visit: its pick opens at the tap.
+        // The code measured in this visit: its pick opens NOW, when the
+        // level's identity has resolved (milliseconds, at most seconds after
+        // the tap), at the alignment current now; `atMs` stays the tap's.
         if (role.kept === "measurement") {
           syncAlignmentPicks();
           alignmentPicks.noteMeasurement(measured.atMs);

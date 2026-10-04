@@ -170,11 +170,14 @@ interface VisitSettledLog {
   readonly basis: SettleBasis;
   /** The store's alignment when the settle ran - before the teardown. */
   readonly visitAlignment: AlignmentMatrix;
-  /** The alignment the geo was recomputed through: `visitAlignment`, or
-   *  it corrected through the code (`basis: "code-corrected"`). */
+  /** The choice for an object placed at the visit's END (what a late
+   *  arrival uses): `visitAlignment`, or it corrected through the code
+   *  (`basis: "code-corrected"`). Each object's own is in `objects`. */
   readonly usedAlignment: readonly number[];
-  /** The code sighting a correction used: this visit's stable fused pose
-   *  (raw WebXR odometry) of the level in hand. Null otherwise. */
+  /** The LATEST stable sighting of the level in hand (raw WebXR odometry)
+   *  when the end choice was code-corrected; null otherwise. Since D33 each
+   *  object is corrected through the sighting nearest it, whose pose is not
+   *  logged: only `objects[].usedAlignment` records that choice. */
   readonly sighting: {
     readonly text: string;
     readonly levelId: string;
@@ -194,13 +197,15 @@ interface VisitSettledLog {
   /** The alignment `level` was re-minted through (the measurement's own,
    *  D33); null without a level. Absent in older recordings. */
   readonly levelAlignment?: readonly number[] | null;
-  /** The code re-minted through `usedAlignment` when this visit measured
+  /** The code re-minted through `levelAlignment` when this visit measured
    *  it; null otherwise. */
   readonly level: { readonly id: string; readonly json: string } | null;
   /** The level in hand when the settle ran, before any re-mint: the stored
    *  pose a code correction mapped this visit onto. With `zero`,
-   *  `visitAlignment` and `sighting` a replay recomputes a corrected
-   *  `usedAlignment` (`correctedAlignment`, `visit-anchoring.ts`). */
+   *  `visitAlignment` and `sighting` a replay recomputes the END choice's
+   *  corrected `usedAlignment` (`correctedAlignment`, `visit-anchoring.ts`)
+   *  - not the per-object choices of D33: their picks and sightings are not
+   *  logged, so a replay reads them from `objects` instead. */
   readonly referenceLevel: {
     readonly id: string;
     readonly json: string;
