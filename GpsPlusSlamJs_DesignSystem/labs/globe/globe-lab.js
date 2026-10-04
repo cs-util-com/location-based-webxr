@@ -409,6 +409,15 @@ const PARAMS = {
   // a glow round bright stars.
   grade: { fallback: 0, min: 0, max: 1 },
   cloudRelief: { fallback: 0, min: 0, max: 1 },
+  // The clouds on their own shell above the ground (round-6 plan G6-2,
+  // DEC-G6-3/4): 1 draws them there, so the ground keeps its colour and the
+  // clouds float above the relief; 0 paints them into the ground, as before.
+  cloudShell: { fallback: 1, min: 0, max: 1 },
+  // The shell's height over the ground (km), times the relief's
+  // exaggeration E, as the relief is raised (DEC-G6-3: 3 km x E).
+  cloudShellKm: { fallback: 3, min: 0, max: 30 },
+  // The soft cloud shadow on the ground with the shell (DEC-G6-4), 0 off.
+  cloudShadow: { fallback: 0.6, min: 0, max: 1 },
   twilight: { fallback: 0, min: 0, max: 1 },
   // The sky fill's floor (DEC-GL5-11; the terrain lab's `sky` key, the
   // Globe package's one sky level): what a low sun's ground keeps from the
@@ -1824,6 +1833,8 @@ async function start() {
    * so every pixel must come from the globe's fill (round-6 plan G6-1).
    */
   let reliefHidden = false;
+  /** For the cloud smoke: the shell hidden, the ground under it alone. */
+  let cloudShellHidden = false;
   /** Whether the relief's view is refined: nothing of it loading or queued. */
   const reliefSettled = () =>
     terrain.tiles.loadProgress === 1 &&
@@ -2130,6 +2141,21 @@ async function start() {
     } else {
       globe.update(camera, renderer);
     }
+    // The cloud shell rides the relief's exaggeration, as the relief is
+    // raised (round-6 plan G6-2, DEC-G6-3: 3 km x E; E is 1 without one).
+    globe.cloudShell.setHeightM(
+      params.cloudShellKm * 1000 * (terrain?.plugin.heightScale ?? 1),
+    );
+    // The clouds move onto the shell as the relief takes the pixels, so the
+    // orbit keeps the approved painted look exactly, and the relief, where
+    // the paint turned it black and white, gets the shell. Measured
+    // 2026-10-04: from orbit the shell read 25-35 levels (summed) darker than
+    // the paint, because each draw is tone-mapped and then blended in
+    // display space; the paint mixes before the tone mapping.
+    const shellShare = params.cloudShell === 1 && terrain ? bandShare : 0;
+    globe.setCloudShellShare(shellShare);
+    if (cloudShellHidden) globe.cloudShell.mesh.visible = false;
+    globe.surfaceUniforms.uCloudShadow.value = params.cloudShadow * shellShare;
     status.update(globe.state());
     readoutText = readoutNow();
     readout.offer(readoutText, performance.now());
@@ -2662,6 +2688,13 @@ async function start() {
      */
     hideRelief(on) {
       reliefHidden = Boolean(on);
+    },
+    /**
+     * Hides the cloud shell (true) or shows it as the hash says, so a
+     * smoke reads the ground under it alone (round-6 plan G6-2).
+     */
+    hideCloudShell(on) {
+      cloudShellHidden = Boolean(on);
     },
     /** The frame-hitch recorder's smoke API once it is loaded, else null. */
     perf: null,

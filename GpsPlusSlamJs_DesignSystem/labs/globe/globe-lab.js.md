@@ -52,7 +52,18 @@
   unless 0; no panel control), `handOverKm` (the hand-over altitude, 1-5000, default 150; the
   plate offers 20, 50, 150), `handOver` (1 opens the city, 0 holds),
   `nightGain` (0-4, default 0.7), `waterRoughness`,
-  `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default 0.5),
+  `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default
+  0.375, 0.75 x the first 0.5 by the owner's choice, DEC-G6-5),
+  `cloudShell` (1, the default: the clouds move onto their own shell above
+  the ground as the relief takes the pixels, the band's share, so the
+  orbit keeps the painted look and the relief keeps its colour under a
+  cloud; 0 paints them into the ground everywhere, as before; round-6 plan
+  G6-2), `cloudShellKm` (the shell's height, default 3, times the relief's
+  exaggeration E, set every frame), `cloudShadow` (the soft shadow on the
+  ground with the shell, 0-1, default 0.6, scaled by the shell's share;
+  `globe-clouds.smoke.spec.mjs` checks the ground keeps its colour, the
+  shadow only darkens, and the orbit is unchanged; the test hook
+  `hideCloudShell(on)` hides the shell),
   `sky` (0 turns the background pass off, default 1), `sunSize` (the disc's
   apparent diameter, 0.1-10°, default 1°, about twice the real 0.533°),
   `sunGlow` (0-4, default 0.95), `stars` (0 hides the procedural stars,
