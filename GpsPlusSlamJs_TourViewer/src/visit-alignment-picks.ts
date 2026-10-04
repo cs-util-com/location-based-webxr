@@ -43,7 +43,10 @@ import type {
  * per second of looking. A stable code is re-evaluated many times a second
  * while in view; "the sighting nearest a note" needs a resolution of the
  * walk's drift, about 1 cm per second at 1 % and walking pace, so 1 s loses
- * nothing measurable. It would matter only above tens of seconds.
+ * nothing measurable. It would matter only above tens of seconds. A run
+ * also ends when the walked distance changed since it began (a GPS fix
+ * moved it, about once a second): an entry never claims a distance its
+ * merged sightings did not have (R3 of D33 picks by walked distance).
  */
 export const SIGHTING_SPACING_MS = 1_000;
 
@@ -145,13 +148,15 @@ export function createVisitAlignmentTracker(): VisitAlignmentTracker {
     },
     noteSighting(sighting, atMs) {
       const last = sightings.at(-1);
+      const entry = open(atMs);
       const sameRun =
         last !== undefined &&
         last.sighting.levelId === sighting.levelId &&
+        last.walkedM === entry.walkedM &&
         atMs - last.windowStartMs < SIGHTING_SPACING_MS;
       if (sameRun) sightings.pop();
       sightings.push({
-        ...open(atMs),
+        ...entry,
         sighting,
         windowStartMs:
           sameRun && last !== undefined ? last.windowStartMs : atMs,

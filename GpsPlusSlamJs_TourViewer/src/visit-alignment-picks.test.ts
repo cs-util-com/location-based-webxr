@@ -112,6 +112,25 @@ describe("createVisitAlignmentTracker (D33)", () => {
     expect(SIGHTING_SPACING_MS).toBe(1_000);
   });
 
+  // Why this test matters: the settle picks the sighting nearest a note in
+  // WALKED distance (R3 of D33), so an entry must not claim a distance its
+  // merged sightings did not have. A run that spans a step of the walk (a
+  // GPS fix moved the walked distance) starts a new entry; within one step
+  // the newest still replaces the rest. Found by the Tour Viewer e2e, whose
+  // compressed time put a measurement and a sighting 51 m of walk later
+  // into one run, so a pin next to the measurement lost its correction.
+  it("starts a new sighting entry when the author walked during the run", () => {
+    const t = createVisitAlignmentTracker();
+    t.noteAlignment({ ...moment(1, 100), walkedM: 36 });
+    t.noteSighting(sighting("a", 0), 0);
+    t.noteSighting(sighting("a", 1), 100);
+    t.noteAlignment({ ...moment(2, 100), walkedM: 87 });
+    t.noteSighting(sighting("a", 2), 200);
+    const kept = t.picks().sightings;
+    expect(kept.map((s) => s.walkedM)).toEqual([36, 87]);
+    expect(kept.map((s) => s.sighting.odomPose.position[0])).toEqual([1, 2]);
+  });
+
   // Why this test matters: a code re-minted through a pick must record the
   // quality block (fix count, GPS accuracy) of THAT alignment, so the info
   // has to travel with the pick it belongs to.
@@ -164,8 +183,9 @@ describe("createVisitAlignmentTracker (D33)", () => {
     const picks = t.picks();
     expect(picks.measurement?.walkedM).toBe(12);
     expect(picks.objects.get("pin")?.walkedM).toBe(12);
-    // The newest of a run replaces it, with its own distance.
-    expect(picks.sightings.map((s) => s.walkedM)).toEqual([70, 70]);
+    // Each sighting keeps the distance of its own moment: the one at 500 ms
+    // is a new entry because the author walked since the first.
+    expect(picks.sightings.map((s) => s.walkedM)).toEqual([12, 70, 70]);
     const bare = createVisitAlignmentTracker();
     bare.noteAlignment(moment(1, 5));
     bare.notePlacement("pin", 0);

@@ -41,6 +41,9 @@ lives here.
 - `SIGHTING_SPACING_MS = 1000` - sightings of one code within a second of the
   first of a run are one entry (the newest). Rests on: walking pace and 1 %
   drift, about 1 cm per second; it would matter only above tens of seconds.
+  A run also ends when the walked distance changed since it began (a GPS
+  fix moved it): an entry never claims a walked distance its merged
+  sightings did not have (R3 of D33 picks by walked distance).
 - `createVisitAlignmentTracker(): VisitAlignmentTracker`
   - `noteAlignment(now)` - the alignment as it stands now
     (`{ alignmentMatrix, zero, gpsExtentM, alignmentInfo?, walkedM? }`,
@@ -113,6 +116,7 @@ picks.reset();
   after the placement, or its own when already mature; follows to the latest
   usable alignment otherwise; a move re-opens; a placement before any
   alignment; one sighting per second of looking with its own time and pick;
+  a run split where the walked distance changed;
   two codes never merged; the mint info and the GPS extent travel with
   their pick; each event
   stamped with the walked distance of its own moment; reset; copies; a property test against the search
