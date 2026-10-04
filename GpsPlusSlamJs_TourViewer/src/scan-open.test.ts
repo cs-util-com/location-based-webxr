@@ -23,10 +23,10 @@ const B = "https://h.test/b.zip";
 const codeOf = (url: string): string =>
   `https://gps.csutil.com/tour/?qr=${encodeURIComponent(url)}`;
 
-function tour(url: string): CodeTour {
+function tour(url: string, levelId: string | null = null): CodeTour {
   // A short link is the one kind the real resolver cannot compare.
   const comparable = !url.startsWith("https://bit.ly/");
-  return { kind: "tour", url, normalizedUrl: url, comparable };
+  return { kind: "tour", url, normalizedUrl: url, comparable, levelId };
 }
 
 /** Let resolutions and opens settle. */
@@ -40,6 +40,8 @@ function setup(
     outcomes?: (OpenOutcome | "reject")[];
     /** Opens wait for `release()` instead of settling at once. */
     hold?: boolean;
+    /** The level id every resolved code carries (`qrCodeId` stand-in). */
+    levelId?: string;
   } = {},
 ) {
   const ctx = createTourViewerSession();
@@ -56,7 +58,9 @@ function setup(
     resolve: (text) => {
       const url = new URL(text).searchParams.get("qr");
       return Promise.resolve(
-        url === null ? { kind: "not-a-tour-code" } : tour(url),
+        url === null
+          ? { kind: "not-a-tour-code" }
+          : tour(url, options.levelId ?? null),
       );
     },
     open: (url) => {
@@ -335,5 +339,30 @@ describe("tourOf", () => {
     expect(s.scan.tourOf(codeOf(A))).toBe(A);
     await s.see("https://menu.test/today");
     expect(s.scan.tourOf("https://menu.test/today")).toBeNull();
+  });
+});
+
+/**
+ * Why these tests matter (K0 milestone review R6): a tour opened from a
+ * FILE is known by a content key, so its own printed code could never
+ * match its link and the panel called the tour's own poster "a code from
+ * another tour". The level the tour carries for the code decides first.
+ */
+describe("a tour opened from a file", () => {
+  const FILE_KEY = "local-file:0123456789abcdef0123456789abcdef";
+
+  it("reads the tour's own code as this tour once its levels are in", async () => {
+    const s = setup({ openAt: FILE_KEY, levelId: "lvl1" });
+    s.ctx.currentLevels = new Map([["lvl1", {} as never]]);
+    await s.see(codeOf(A));
+    expect(s.scan.status(codeOf(A)).kind).toBe("quiet");
+    expect(s.opened).toEqual([]);
+  });
+
+  it("says it cannot tell, never 'another tour', for a code whose level it does not carry", async () => {
+    const s = setup({ openAt: FILE_KEY, levelId: "lvl2" });
+    s.ctx.currentLevels = new Map([["lvl1", {} as never]]);
+    await s.see(codeOf(A));
+    expect(s.scan.status(codeOf(A)).kind).toBe("unknown");
   });
 });

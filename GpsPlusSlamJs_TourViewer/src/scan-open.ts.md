@@ -41,7 +41,10 @@ the panel should report about the code in view.
   session-end hook.
 - **Opens only with no tour open.** Once a tour is open, a code of another
   tour is `added-to-open-tour` and a link that cannot be compared is
-  `unknown`; both are measured into the open tour like its own codes. To
+  `unknown` - the relation reads the open tour's levels
+  (`ctx.currentLevels`) as well as its link, so a tour opened from a file
+  knows its own code and calls any other `unknown` (K0 milestone review
+  R6); both are measured into the open tour like its own codes. To
   edit another tour: step 1's link, or reload and scan its code first
   (plan §13, which superseded the switching rules of §9 #3, §11, §12 #1).
 - **One open at a time:** none starts while `isOpening()` (the open path's
@@ -88,4 +91,6 @@ codeTourLine(scanOpen.status(ctx.lastDetectedText)); // in the readout
   afresh in a new AR session;
 - with a tour open: its own code quiet, a code of another tour added (never
   an open, however long in view), an uncomparable code `unknown`;
+- a tour opened from a file: its own code quiet once its levels are in, a
+  code whose level it does not carry `unknown` (K0 milestone review R6);
 - `tourOf`.

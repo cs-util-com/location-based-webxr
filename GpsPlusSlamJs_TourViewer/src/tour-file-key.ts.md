@@ -13,7 +13,10 @@ cold-review G3: "open a file" needs its own cache and draft key).
 - `tourFileKey(entries): Promise<string>` - `local-file:` plus the first
   32 hex digits (128 bits) of the SHA-256 of the entry list: one line per
   file entry, `name NUL unpacked size NUL CRC-32`, sorted. Directory
-  entries are skipped. Rejects where WebCrypto is missing (an insecure
+  entries are skipped; names are relative to a folder EVERY entry shares;
+  a name listed twice counts once (its last occurrence); the tour kit's
+  own files (`tour.json`, `qr/<id>.json`, `content/*`) are left out
+  whenever anything else remains. Rejects where WebCrypto is missing (an insecure
   origin); the open reports that like any failure.
 - `isTourFileKey(key)` - true for a key made here.
 - The prefix (`"local-file:"`) is module-private; `isTourFileKey` reads it.
@@ -40,9 +43,27 @@ Candidates weighed (2026-10-03):
 Consequences:
 
 - Same entries, any file name or date: same key, so the draft reattaches.
-- A finished tour (a changed `tour.json`) has a new key - as a re-uploaded
-  zip is new content behind the same link. The old key's draft is judged
-  against the manifest it was made for, exactly as for a link.
+- **A Finish keeps the key** (K0 milestone review R7, which found the draft
+  orphaned on every Finish and on any re-zip). The first version keyed on
+  every entry, so a finished tour (a changed `tour.json`, a new level, new
+  photos) got a new key and the creator's draft - work placed after the
+  Finish, and its storage - was left behind under the old one; this
+  sidecar then claimed the draft was judged "exactly as for a link", which
+  was not true: a link stays the same across a re-upload, the key did not.
+  Now the files a Finish writes or removes are left out, so the recording
+  a tour is built on names it, and a re-zip into a wrapping folder keeps
+  it too.
+- **No tour carries an identity of its own yet.** Searched 2026-10-04 in
+  both repos: `tour.json` v1 has `version` and `objects` only,
+  `session.json` carries timestamps but no id, and no `tourId` or
+  `seriesId` exists anywhere; K1's `seriesId` (in the signed
+  `manifest.json`, plan §8 G7) is the stable identity, and it replaces
+  this key when it lands. Until then:
+  - a hand-built tour (nothing but the tour kit's files) falls back to
+    every entry, so a Finish still changes its key;
+  - two tours built from the SAME recording on one device share a draft
+    namespace. The draft is offered against the open manifest (only
+    objects it does not already carry), never applied silently.
 - No cache entry: a file is already on the device (saved tours are K3).
 - The Drive replace step reads `hostedFileName()`, which for a file is the
   file's own name; `isDriveUrl` is false for a `local-file:` key, so the
@@ -53,4 +74,6 @@ Consequences:
 `tour-file-key.test.ts`: the key's shape and prefix, order and folder
 entries not mattering, any changed CRC, size, name or file count changing
 the key, and a property that two lists differing only in size never share
-a key.
+a key; stable across a Finish (a new `tour.json`, a level and photos) and
+a re-zip into a folder, two recordings still apart, and the fallback for a
+tour of only the tour kit's files (K0 milestone review R7).

@@ -174,7 +174,11 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
     const known = codes.get(text);
     if (known === undefined || known === "resolving") return;
     if (known.kind !== "tour" || deps.isOpening()) return;
-    const relation = tourRelation(known, ctx.session?.archive.url ?? null);
+    const relation = tourRelation(
+      known,
+      ctx.session?.archive.url ?? null,
+      ctx.currentLevels,
+    );
     if (relation === "no-tour-open" && !measuredForAnother(known)) {
       tryOpen(known);
     }
@@ -214,7 +218,11 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
         return tourOpen ? { kind: "quiet" } : { kind: "not-a-tour" };
       }
       if (inFlight === known.normalizedUrl) return { kind: "opening" };
-      const relation = tourRelation(known, ctx.session?.archive.url ?? null);
+      const relation = tourRelation(
+        known,
+        ctx.session?.archive.url ?? null,
+        ctx.currentLevels,
+      );
       if (relation === "this-tour") return { kind: "quiet" };
       if (relation === "unknown") return { kind: "unknown" };
       if (relation === "other-tour") return { kind: "added-to-open-tour" };

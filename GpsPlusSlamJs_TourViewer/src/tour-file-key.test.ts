@@ -67,3 +67,61 @@ describe("tourFileKey", () => {
     );
   });
 });
+
+/**
+ * Why these tests matter (K0 milestone review R7): the key is the draft's
+ * namespace. Keyed on every entry, a Finish (a new `tour.json`, a new
+ * `qr/<id>.json`, new photos) gave the tour a NEW key, so the creator's
+ * draft - work placed after the Finish, and its storage - was orphaned on
+ * every Finish and on any re-zip that wrapped the files in a folder.
+ */
+describe("tourFileKey - stable across a Finish and a re-zip", () => {
+  const RECORDING: TourFileKeyEntry[] = [
+    { filename: "session.json", uncompressedSize: 300, crc32: 11 },
+    { filename: "actions/000001.json", uncompressedSize: 900, crc32: 12 },
+    {
+      filename: "images/frame-000001.jpg",
+      uncompressedSize: 50_000,
+      crc32: 13,
+    },
+  ];
+
+  it("keeps its key when a Finish rewrites tour.json and adds a level and photos", async () => {
+    const before = await tourFileKey([
+      ...RECORDING,
+      { filename: "tour.json", uncompressedSize: 40, crc32: 1 },
+    ]);
+    const after = await tourFileKey([
+      ...RECORDING,
+      { filename: "tour.json", uncompressedSize: 900, crc32: 2 },
+      { filename: "qr/abc123def456.json", uncompressedSize: 500, crc32: 3 },
+      { filename: "content/p1.jpg", uncompressedSize: 70_000, crc32: 4 },
+    ]);
+    expect(after).toBe(before);
+  });
+
+  it("keeps its key when the same files are re-zipped inside a folder", async () => {
+    const flat = await tourFileKey(RECORDING);
+    const wrapped = await tourFileKey(
+      RECORDING.map((e) => ({ ...e, filename: `mytour/${e.filename}` })),
+    );
+    expect(wrapped).toBe(flat);
+  });
+
+  it("still tells two different recordings apart", async () => {
+    const other = RECORDING.map((e, i) => (i === 1 ? { ...e, crc32: 99 } : e));
+    expect(await tourFileKey(other)).not.toBe(await tourFileKey(RECORDING));
+  });
+
+  it("falls back to every entry for a tour that is ONLY the tour kit's files", async () => {
+    // A hand-built tour: nothing else names it, so a Finish does change
+    // its key (until K1's seriesId gives every tour an identity).
+    const a = await tourFileKey([
+      { filename: "tour.json", uncompressedSize: 40, crc32: 1 },
+    ]);
+    const b = await tourFileKey([
+      { filename: "tour.json", uncompressedSize: 41, crc32: 1 },
+    ]);
+    expect(a).not.toBe(b);
+  });
+});

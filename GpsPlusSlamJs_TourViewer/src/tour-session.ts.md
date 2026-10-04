@@ -125,8 +125,9 @@ loading with MIME types, and the poisoned-cache recovery loop.
   transport cap from `file.size`, cause `'too-large'`), no network, no
   cache, no warm download, no poison retry. `archive.url` is the content
   key of `tour-file-key.ts` (`local-file:` + 128 bits of SHA-256 over the
-  sorted name / size / CRC list of the central directory, the reasoning is
-  in that sidecar) - the draft store and the scan comparisons key on it;
+  sorted name / size / CRC list of the central directory, the tour kit's own
+  files left out so a Finish keeps it, K0 milestone review R7; the
+  reasoning is in that sidecar) - the draft store and the scan comparisons key on it;
   `hostedFileName()` is the file's name, so a finished zip is offered under
   it; `readWholeArchive()` returns the file itself; `fromFile` is true and
   the stats stay at zero. A file that is not a zip fails in plain words
