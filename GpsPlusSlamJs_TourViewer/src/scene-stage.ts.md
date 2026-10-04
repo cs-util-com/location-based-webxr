@@ -34,7 +34,9 @@ tour's other content (`content-placement.ts`). Plan:
   a newer show is disposed, never shown.
 - The scene it was added to is kept for removal (the e2e scene root is a
   stub that sets no `parent`).
-- Every removed subtree's geometries, materials and textures are disposed.
+- Every removed subtree's geometries, materials and textures are disposed
+  by the framework's `disposeObject3D` (every texture slot of a material,
+  not only `map`: K4 review R12; no second dispose walk here, DEC-H3).
 
 ## Examples
 
@@ -47,5 +49,5 @@ stage.faceVisitor(visitorNue);
 ## Tests
 
 - `scene-stage.test.ts` - the figure's spot, feet and aspect; facing the
-  visitor; a model's own rotation; replace and dispose; a late decode
+  visitor; a model's own rotation; replace and dispose; every texture of a model freed (R12); a late decode
   dropped; the two rejections.

@@ -14,6 +14,7 @@
  * station's altitude, facing the visitor about the vertical only.
  */
 
+import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
 import {
   DoubleSide,
   Group,
@@ -62,23 +63,6 @@ export interface SceneStage {
   faceVisitor(visitorNue: readonly [number, number, number]): void;
 }
 
-/** Dispose a subtree's geometries, materials and textures. */
-function disposeTree(root: Object3D): void {
-  root.traverse((node) => {
-    const mesh = node as Partial<Mesh>;
-    mesh.geometry?.dispose();
-    const materials = Array.isArray(mesh.material)
-      ? mesh.material
-      : mesh.material === undefined
-        ? []
-        : [mesh.material];
-    for (const material of materials) {
-      (material as MeshBasicMaterial).map?.dispose();
-      material.dispose();
-    }
-  });
-}
-
 export function createSceneStage(deps: SceneStageDeps): SceneStage {
   /** The scene it was added to, kept: the e2e scene root is a stub that
    *  sets no `parent`. */
@@ -90,7 +74,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     token += 1;
     if (shown === null) return;
     shown.scene.remove(shown.root);
-    disposeTree(shown.root);
+    disposeObject3D(shown.root);
     shown = null;
   }
 
@@ -104,7 +88,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     const scene = deps.getScene();
     const pose = deps.poseOf(stationId);
     if (mine !== token || scene === null || pose === null) {
-      disposeTree(root);
+      disposeObject3D(root);
       if (mine === token && pose === null) {
         throw new Error("the station has no position yet");
       }

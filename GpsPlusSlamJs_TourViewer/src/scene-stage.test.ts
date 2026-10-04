@@ -4,6 +4,7 @@ import {
   Group,
   Mesh,
   MeshBasicMaterial,
+  MeshStandardMaterial,
   Texture,
   Vector3,
   type Object3D,
@@ -119,6 +120,31 @@ describe("createSceneStage", () => {
     expect(textureDispose).toHaveBeenCalled();
     h.stage.clear();
     expect(h.scene.children).toHaveLength(0);
+  });
+
+  it("frees every texture of a model it takes away, not only its colour map (R12)", async () => {
+    // Why this test matters (K4 review R12): a GLB's materials carry normal,
+    // roughness and emissive maps; freeing only `map` leaked them for every
+    // model a story showed.
+    const h = harness();
+    const normalMap = new Texture();
+    const emissiveMap = new Texture();
+    h.deps.loadModel.mockImplementationOnce(() => {
+      const g = new Group();
+      g.add(
+        new Mesh(
+          new BoxGeometry(),
+          new MeshStandardMaterial({ normalMap, emissiveMap }),
+        ),
+      );
+      return Promise.resolve(g);
+    });
+    const normalDispose = vi.spyOn(normalMap, "dispose");
+    const emissiveDispose = vi.spyOn(emissiveMap, "dispose");
+    await h.stage.showModel("arch", new Blob(["glb"]));
+    h.stage.clear();
+    expect(normalDispose).toHaveBeenCalledOnce();
+    expect(emissiveDispose).toHaveBeenCalledOnce();
   });
 
   it("drops a figure whose decode lands after the stage moved on", async () => {
