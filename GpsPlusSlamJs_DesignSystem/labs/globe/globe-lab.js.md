@@ -309,6 +309,14 @@
         of a dive and of a zoom out: 0 holes with the gate and the fill,
         and holes with the old rule (the positive controls). It also logs
         the fill's cost at the hold (1.61-1.68 x under SwiftShader).
+      - A drain frees the relief's imagery and meshes, but its decoded
+        heights stay (`keepHeightsMiB`, default 16, read at start, 0 for
+        none; `createGlobeTerrain`'s `keepHeightsBytes`, owner decision
+        2026-10-04 DEC-N1), so a return into the band fetches almost none:
+        1 height tile against 30 without it in the hand-over smoke. The
+        state's `relief.keptHeights` and `relief.heightRequests` (the
+        synthetic heights' request count) and the Debug panel's "heights
+        kept" line show it.
       - A drain keeps a carrier's coarsest tiles (depth 1) and the tiles its
         last update used, so the globe can fill at once when the view
         widens.
