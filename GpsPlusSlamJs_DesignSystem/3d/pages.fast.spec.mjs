@@ -186,6 +186,23 @@ test("the globe lab opens with the relief, the band and the recorder, without er
   const stdev = await drawnStdev(page);
   console.log(`globe lab drawn: stdev ${stdev.toFixed(1)}`);
   expect(stdev).toBeGreaterThan(DRAWN_MIN_STDEV);
+  // The Debug panel (round-6 plan G6-0): it opens, records, and Copy
+  // produces JSON the owner can paste, with a finite altitude.
+  await page.locator("#globe-debug-toggle").click();
+  await expect(page.locator("#globe-debug")).toBeVisible();
+  await page.locator('[data-debug="record"]').click();
+  await frames(page, 10);
+  await page.locator('[data-debug="record"]').click();
+  await page.locator('[data-debug="copy"]').click();
+  await expect(page.locator('[data-debug="status"]')).toContainText(/Cop/);
+  const exported = JSON.parse(
+    await page.evaluate(() => window.__globeLab.debug.lastExport()),
+  );
+  expect(exported.format).toBe("globe-debug/1");
+  expect(Number.isFinite(exported.live.altitudeKm)).toBe(true);
+  expect(exported.recording.frames).toBeGreaterThan(0);
+  expect(exported.events.length).toBeGreaterThan(0);
+  expect(problems).toEqual([]);
 });
 
 test("the globe-terrain carrier lab opens and draws without errors", async ({

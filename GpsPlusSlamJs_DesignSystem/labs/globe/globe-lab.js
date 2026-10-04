@@ -99,9 +99,33 @@ import {
   solarPosition,
 } from "/fw/geo/solar-position.js";
 import { labelFor, locateAdvice, locateOnce } from "/fw/utils/locate-state.js";
+import { createGlobeDebug } from "./globe-debug.js";
+import { createDebugLog } from "./globe-debug-log.js";
+import { deviceBlock } from "./globe-device.js";
 
 const canvas = document.getElementById("globe-canvas");
 const errorBox = document.getElementById("globe-error");
+/**
+ * The page's event log for the Debug panel (round-6 plan 2026-10-04-1050
+ * G6-0): from the first line, so errors at boot are in it too.
+ */
+const debugLog = createDebugLog();
+window.addEventListener("error", (e) =>
+  debugLog.log("error", { message: String(e.message).slice(0, 300) }),
+);
+window.addEventListener("unhandledrejection", (e) =>
+  debugLog.log("error", { message: String(e.reason).slice(0, 300) }),
+);
+{
+  // three reports shader compile and link errors through console.error.
+  const consoleError = console.error.bind(console);
+  console.error = (...args) => {
+    debugLog.log("console.error", {
+      message: args.map(String).join(" ").slice(0, 300),
+    });
+    consoleError(...args);
+  };
+}
 const creditsBox = document.getElementById("globe-credits");
 const loadingLabel = document.getElementById("globe-loading");
 const replayButton = document.getElementById("globe-replay");
@@ -1726,13 +1750,47 @@ async function start() {
 
   /** The frame-hitch recorder (`#perf=1` only, `globe-perf.js`), or null. */
   let perf = null;
+  /** The Debug panel (`globe-debug.js`), created after the first frame's setup. */
+  let debug = null;
+  /** The band share last written to the debug log (steps of 0.1). */
+  let loggedShare = null;
+  /**
+   * The frame's recorder hooks, fanned out to the frame-hitch recorder and
+   * the Debug panel; the rare events also go to the debug log.
+   */
+  const hooks = {
+    frameStart(now) {
+      perf?.frameStart(now);
+      debug?.frameStart(now);
+    },
+    frameEnd(now) {
+      perf?.frameEnd(now);
+      debug?.frameEnd(now);
+    },
+    mark(kind, detail = null) {
+      perf?.mark(kind);
+      debug?.mark(kind);
+      if (
+        detail !== undefined &&
+        !kind.endsWith(".mixed") &&
+        !kind.startsWith("drain.")
+      ) {
+        debugLog.log(kind, detail);
+      }
+    },
+    eStep(ms, e) {
+      perf?.eStep(ms);
+      debug?.mark("e.step");
+      debugLog.log("e.step", { ms: Math.round(ms * 10) / 10, e });
+    },
+  };
   /** An exaggeration the recorder holds in place of the altitude's, or null. */
   let eOverride = null;
   /** The band's share on the frame before (the recorder's edge mark). */
   let lastShare = bandShare;
 
   const frame = () => {
-    perf?.frameStart(performance.now());
+    hooks.frameStart(performance.now());
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     // Both sides: a phone's URL bar changes only the height.
@@ -1798,14 +1856,17 @@ async function start() {
           lowM: Math.min(params.bandLow * 1000, highM - 1),
         });
       globe.surfaceUniforms.uCarrierShare.value = bandShare;
-      if (perf) {
-        if (
-          bandShare > 0 !== lastShare > 0 ||
-          bandShare < 1 !== lastShare < 1
-        ) {
-          perf.mark("band.edge");
-        }
-        if (bandShare > 0 && bandShare < 1) perf.mark("band.mixed");
+      if (bandShare > 0 !== lastShare > 0 || bandShare < 1 !== lastShare < 1) {
+        hooks.mark("band.edge", { share: bandShare, altKm: altitudeM / 1000 });
+      }
+      if (bandShare > 0 && bandShare < 1) hooks.mark("band.mixed");
+      const shareStep = Math.round(bandShare * 10) / 10;
+      if (shareStep !== loggedShare) {
+        loggedShare = shareStep;
+        debugLog.log("band.share", {
+          share: shareStep,
+          altKm: altitudeM / 1000,
+        });
       }
       lastShare = bandShare;
       // A carrier out of the band for `bandReleaseMs` has its cache
@@ -1836,7 +1897,7 @@ async function start() {
                 worstFrameMs: 0,
                 bytes: 0,
               };
-              perf?.mark(`release.${key}`);
+              hooks.mark(`release.${key}`, { altKm: altitudeM / 1000 });
             }
             const t0 = performance.now();
             const items = cache.itemList.length;
@@ -1856,10 +1917,14 @@ async function start() {
             l.worstFrameMs = Math.max(l.worstFrameMs, ms);
             l.bytes += bytes;
             released[key] += bytes;
-            perf?.mark(`drain.${key}`);
+            hooks.mark(`drain.${key}`);
             if (cache.itemList.length === 0) {
               o.done = true;
               l.drainedAt = now;
+              debugLog.log(`drained.${key}`, {
+                frames: l.frames,
+                mib: l.bytes / 2 ** 20,
+              });
             }
           }
         }
@@ -1910,7 +1975,7 @@ async function start() {
         if (e !== terrain.plugin.heightScale) {
           const t0 = performance.now();
           terrain.plugin.heightScale = e;
-          perf?.eStep(performance.now() - t0);
+          hooks.eStep(performance.now() - t0, e);
         }
         terrain.tiles.update();
       }
@@ -1962,8 +2027,73 @@ async function start() {
         sunIntensity: globe.sun.intensity,
       });
     }
-    perf?.frameEnd(performance.now());
+    hooks.frameEnd(performance.now());
   };
+  // The Debug panel (round-6 plan 2026-10-04-1050 G6-0, DEC-G6-6): always
+  // there; its live lines and Copy read this.
+  const enu = {
+    east: new THREE.Vector3(),
+    north: new THREE.Vector3(),
+    up: new THREE.Vector3(),
+  };
+  const debugCamera = new THREE.Vector3();
+  const debugTarget = new THREE.Vector3();
+  const debugForward = new THREE.Vector3();
+  const liveState = () => {
+    const ellipsoid = globe.tiles.ellipsoid;
+    globe.tiles.group.worldToLocal(debugCamera.copy(camera.position));
+    const c = ellipsoid.getPositionToCartographic(debugCamera, {});
+    ellipsoid.getEastNorthUpAxes(c.lat, c.lon, enu.east, enu.north, enu.up);
+    // The view direction in the tiles' (ECEF) frame.
+    camera.getWorldDirection(debugForward);
+    debugForward.transformDirection(
+      new THREE.Matrix4().copy(globe.tiles.group.matrixWorld).invert(),
+    );
+    const { phase, target } = flight.state();
+    let distanceKm = null;
+    if (target) {
+      ellipsoid.getCartographicToPosition(
+        target.lat * DEG,
+        target.lng * DEG,
+        0,
+        debugTarget,
+      );
+      distanceKm = debugCamera.distanceTo(debugTarget) / 1000;
+    }
+    const gs = globe.state();
+    const rs = terrain?.tiles.stats;
+    return {
+      altitudeKm: ellipsoid.getPositionElevation(debugCamera) / 1000,
+      distanceKm,
+      lat: c.lat / DEG,
+      lng: c.lon / DEG,
+      headingDeg:
+        (Math.atan2(debugForward.dot(enu.east), debugForward.dot(enu.north)) /
+          DEG +
+          360) %
+        360,
+      pitchDeg:
+        Math.asin(Math.max(-1, Math.min(1, debugForward.dot(enu.up)))) / DEG,
+      fovDeg: camera.fov,
+      phase,
+      e: terrain?.plugin.heightScale ?? null,
+      bandShare: terrain ? bandShare : null,
+      globeLoaded: gs.loadedTiles,
+      globePending: gs.pendingTiles,
+      globeMiB: globe.tiles.lruCache.cachedBytes / 2 ** 20,
+      reliefVisible: terrain ? terrain.tiles.visibleTiles.size : null,
+      reliefPending: rs ? rs.downloading + rs.parsing : null,
+      reliefMiB: terrain ? terrain.tiles.lruCache.cachedBytes / 2 ** 20 : null,
+      programs: renderer.info.programs?.length ?? null,
+      textures: renderer.info.memory.textures,
+      hash: location.hash.slice(1, 400),
+    };
+  };
+  debug = createGlobeDebug({
+    log: debugLog,
+    live: liveState,
+    device: () => deviceBlock({ renderer, params, relief: Boolean(terrain) }),
+  });
   renderer.setAnimationLoop(frame);
 
   /**
@@ -2372,6 +2502,8 @@ async function start() {
     },
     /** The frame-hitch recorder's smoke API once it is loaded, else null. */
     perf: null,
+    /** The Debug panel's smoke API (`globe-debug.js`). */
+    debug: debug.api,
   };
 
   // The frame-hitch recorder (frame-hitch plan 2026-10-03-2017 §4), loaded

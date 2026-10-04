@@ -509,6 +509,18 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     latitude exactly found no tile, or at a tile corner the far side of the
     Earth (the cause, shared vertices or three's triangle test, is not
     established). A hit beyond the Earth's centre reads as null.
+- The Debug panel (round-6 plan 2026-10-04-1050 G6-0, DEC-G6-6;
+  `globe-debug.js`): always there, a small button at the left edge. The
+  page's event log (`globe-debug-log.js`, from the first line, so boot
+  errors are in it) collects errors, three's console errors, band edges,
+  the band share in 0.1 steps, releases and their end, and E steps. The
+  frame's recorder hooks are fanned out (`hooks`) to the frame-hitch
+  recorder and the panel. `liveState()` gives the panel the altitude, the
+  distance to the target, the place under the camera, heading, pitch, E,
+  the band share, both carriers' tiles and caches, and the GPU's program
+  and texture counts. `__globeLab.debug` is the panel's smoke API. For the
+  coming OSM work, the test places are `at=47.3769,8.5417` (Zürich) and
+  `at=46.9480,7.4474` (Bern).
 - The frame-hitch recorder (frame-hitch plan 2026-10-03-2017 §4, PERF-1;
   `globe-perf.js`): `perf=1` loads it with a dynamic import after the
   page is ready and shows its overlay; without it nothing of it is fetched
