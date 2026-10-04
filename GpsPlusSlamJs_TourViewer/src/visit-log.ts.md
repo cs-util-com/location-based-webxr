@@ -115,7 +115,10 @@ entry and joined back in `codeVisitPoses`.
   vote's odometry is the code's corner, not where the creator stood).
 - `thinPath` returns an ordered subset with the first and last point,
   consecutive points at least `spacingM` apart (but the last), at most
-  `maxPoints` (property test).
+  `maxPoints` (property test). "Last" is the input's last ELEMENT, found by
+  index: an equal-valued earlier point (`-0` against `0`, or a repeated
+  object reference) never stands in for it (unit test pinning the
+  property's seed-770413408 counterexample).
 - Without an alignment a visit keeps its raw walk, but no fused path and no
   code.
 

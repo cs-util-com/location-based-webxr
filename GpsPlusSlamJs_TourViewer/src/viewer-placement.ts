@@ -306,6 +306,32 @@ export function createViewerPlacement(deps: {
       const id = ctx.levelIdByText.get(text);
       return id !== undefined && ctx.ignoredCodes.has(id);
     };
+    /** The scan gate's part of a lock. */
+    const gateOnLock = (level: QrLevel, hasVoted: boolean): void => {
+      // The gate passes on the LOCK of a lockable level (M5; plan review
+      // #1) whose code has cast votes: a lock before the store takes
+      // votes, or while the pose converges, corrected nothing, and
+      // passing on it placed the content through GPS alone while the
+      // line said the code had worked (authoring plan 2026-09-28-0953
+      // §2.2 B3). The escape button still passes a gate no vote reaches.
+      if (!hasVoted || !isLockableLevel(level)) return;
+      if (ctx.scanGate.kind === "scanning") {
+        passGate("code", lastDetectedText);
+        return;
+      }
+      // A working code after a veto (M5c review M1): the gate that said
+      // "code ignored" names this code again.
+      if (
+        ctx.scanGate.kind === "passed" &&
+        ctx.scanGate.via === "ignored" &&
+        lastDetectedText !== null &&
+        !isIgnored(lastDetectedText)
+      ) {
+        ctx.scanGate = { kind: "passed", via: "code" };
+        ctx.scanGateCodeText = lastDetectedText;
+        hooks.renderArStatus();
+      }
+    };
     ctx.qrController = createQrTrackingController(
       buildViewerControllerConfig({
         frontEnd,
@@ -380,29 +406,17 @@ export function createViewerPlacement(deps: {
           }
         },
         onLocked: (level, hasVoted) => {
-          // The gate passes on the LOCK of a lockable level (M5; plan review
-          // #1) whose code has cast votes: a lock before the store takes
-          // votes, or while the pose converges, corrected nothing, and
-          // passing on it placed the content through GPS alone while the
-          // line said the code had worked (authoring plan 2026-09-28-0953
-          // §2.2 B3). The escape button still passes a gate no vote reaches.
-          if (!hasVoted || !isLockableLevel(level)) return;
-          if (ctx.scanGate.kind === "scanning") {
-            passGate("code", lastDetectedText);
-            return;
-          }
-          // A working code after a veto (M5c review M1): the gate that said
-          // "code ignored" names this code again.
-          if (
-            ctx.scanGate.kind === "passed" &&
-            ctx.scanGate.via === "ignored" &&
-            lastDetectedText !== null &&
-            !isIgnored(lastDetectedText)
-          ) {
-            ctx.scanGate = { kind: "passed", via: "code" };
-            ctx.scanGateCodeText = lastDetectedText;
-            hooks.renderArStatus();
-          }
+          gateOnLock(level, hasVoted);
+          // A station's code (tour kit plan K4), AFTER the gate: the lock
+          // that passes it may also find the station the code anchors. Any
+          // lock of a code the viewer trusts counts - an ignored code
+          // reaches `onIgnoredLock` instead, and the guide checks the veto
+          // again.
+          const lockedId =
+            lastDetectedText === null
+              ? undefined
+              : ctx.levelIdByText.get(lastDetectedText);
+          if (lockedId !== undefined) hooks.stationCodeLocked(lockedId);
         },
         onError: (message) => {
           errorBox.textContent = `QR tracking failed: ${message}`;
