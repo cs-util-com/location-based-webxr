@@ -672,9 +672,14 @@ test("the cloud shadows cost little (on/off ratio, logged)", async ({
 // the camera's sky draws, so with a low sun (the crossing ~22 km out, past
 // the slab's far fade) every ground shadow vanished, and came back when the
 // camera moved toward the sun. Swept over the sun's elevation, the two
-// cloud modes and two camera positions: the GPU's shadow must follow the
+// cloud modes and three street-level cameras (the city view, and looking
+// toward and away from the sun): the GPU's shadow must follow the
 // view-free twin (clear columns change nothing, thick ones darken), and the
 // thick columns must darken at a low sun too (the case that used to vanish).
+// Every camera is below the cloud base (1,800 m): the check reads the
+// ground's pixels, so a camera inside or above the deck (the "aloft" view
+// at 2,150 m, used first) sees the cloud in front of the ground instead and
+// measures the deck, not the shadow (owner decision 2026-10-04).
 test("cloud shadows are the column alone, the same from every viewpoint, at every sun elevation", async ({
   page,
 }) => {
@@ -690,7 +695,7 @@ test("cloud shadows are the column alone, the same from every viewpoint, at ever
   });
   const lines = [];
   const results = [];
-  for (const view of ["city", "aloft"]) {
+  for (const view of ["city", "sun", "antisun"]) {
     for (const mode of ["dome", "slab"]) {
       for (const elevation of [2, 5, 10, 20, 58]) {
         await page.evaluate(
