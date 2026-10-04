@@ -52,6 +52,11 @@ export type StationEvent =
   | { readonly kind: "offered"; readonly ids: readonly string[] }
   | { readonly kind: "complete" };
 
+/** A station's name for the visitor. */
+export function stationTitle(station: TourStation): string {
+  return station.title ?? "the next station";
+}
+
 /**
  * The skip suggestion's fixed allowance: time to read the line, turn
  * around and pick a way (2 minutes; `station-run.sweep.test.ts`).
