@@ -36,6 +36,18 @@ const ORACLE = JSON.parse(
 /** Live oracle checks run where the browser stages run: CI and the milestone run. */
 const LIVE_ORACLE = !process.env['GATE_SKIP_BROWSER_STAGES'];
 
+/** The installed oracle, as the fixture records it: `qrcode@<version>`. */
+const INSTALLED_QRCODE = `qrcode@${
+  (
+    JSON.parse(
+      readFileSync(
+        new URL('../../../node_modules/qrcode/package.json', import.meta.url),
+        'utf8'
+      )
+    ) as { version: string }
+  ).version
+}`;
+
 describe('estimateQrSize — hand-derived spec values', () => {
   // Why this test matters: "HELLO WORLD" is the ISO 18004 worked example —
   // 11 alphanumeric chars = 5 pairs (55 bits) + 1 remainder (6 bits) + mode
@@ -160,7 +172,20 @@ describe('estimateQrSize — qrcode oracle boundary agreement', () => {
   // questions at every stored boundary (exactly v there, more than v one
   // character later), so a stale fixture or an oracle upgrade fails there and
   // cannot pass silently. In the fast per-commit gate those live checks are
-  // reported as skipped.
+  // reported as skipped. The fixture is written by
+  // `pnpm run regenerate:qr-oracle` (scripts/regenerate-qr-oracle-fixture.mjs),
+  // never by hand, and records the qrcode version it came from.
+  //
+  // Why this test matters (milestone review R10): a qrcode upgrade must not
+  // leave the fast gate comparing against the old version's answers until the
+  // next live run notices; the recorded version must be the installed one.
+  it('was recorded from the installed qrcode version', () => {
+    expect(
+      ORACLE.oracle,
+      `qrcode is now ${INSTALLED_QRCODE}: run \`pnpm run regenerate:qr-oracle\` in GpsPlusSlamJs_AppFramework and commit the JSON`
+    ).toBe(INSTALLED_QRCODE);
+  });
+
   for (const ec of EC_LEVELS) {
     for (const probe of MODE_PROBES) {
       it(`matches the oracle's v1–25 ${probe.label} capacities at EC ${ec}`, () => {
@@ -200,7 +225,10 @@ describe('estimateQrSize — qrcode oracle boundary agreement', () => {
   ];
 
   it('stores the oracle answer for exactly these mixed payloads', () => {
-    expect(ORACLE.mixed.map((m) => m.payload)).toEqual(MIXED_PROBES);
+    expect(
+      ORACLE.mixed.map((m) => m.payload),
+      'the list changed: update MIXED_PAYLOADS in scripts/regenerate-qr-oracle-fixture.mjs and run `pnpm run regenerate:qr-oracle`'
+    ).toEqual(MIXED_PROBES);
   });
 
   for (const [i, payload] of MIXED_PROBES.entries()) {

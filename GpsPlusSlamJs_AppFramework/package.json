@@ -50,7 +50,8 @@
     "bench": "vitest bench --run --config config/vitest.bench.config.ts",
     "bench:watch": "vitest bench --config config/vitest.bench.config.ts",
     "check:cycles": "node ../scripts/test-timing/timed-stage.mjs check:cycles",
-    "setup": "bash ./scripts/setup.sh"
+    "setup": "bash ./scripts/setup.sh",
+    "regenerate:qr-oracle": "node scripts/regenerate-qr-oracle-fixture.mjs"
   },
   "engines": {
     "node": ">=26.0.0"
