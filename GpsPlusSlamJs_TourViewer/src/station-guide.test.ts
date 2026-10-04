@@ -369,9 +369,7 @@ describe("wireStationGuide", () => {
       levels: null,
     });
     h.at(0, 0);
-    expect(h.approaches).toEqual([
-      ["gate", 0, stationBands(s, 4).activateExitM],
-    ]);
+    expect(h.approaches).toEqual([["gate", 0, stationBands(s, 4).activateM]]);
     h.guide.storyEnded("gate");
     h.at(0, 0);
     expect(h.approaches.at(-1)?.slice(0, 2)).toEqual(["well", 80]);

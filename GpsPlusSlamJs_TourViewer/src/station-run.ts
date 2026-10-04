@@ -1,6 +1,6 @@
 /**
  * The visitor's station run (tour kit plan K4, §4.2): each station's state
- * (inactive -> active -> found -> done), which stations the order preset
+ * (waiting -> found -> done), which stations the order preset
  * offers, the labelled skip of §8 D5, and when to suggest it. Pure: no
  * clock of its own (every call carries the page time), no DOM, no AR. The
  * wiring (`station-guide.ts`) feeds it distances, code locks and the scene
@@ -26,7 +26,9 @@ import type {
 
 import { ACCURACY_CEILING_M, stationBands } from "./station-bands.js";
 
-type StationState = "inactive" | "active" | "found" | "done";
+/** No state between waiting and found (K4 review R10): an "active" state
+ *  with its own hysteresis drove nothing a visitor sees. */
+type StationState = "waiting" | "found" | "done";
 
 interface StationStatus {
   readonly id: string;
@@ -41,7 +43,6 @@ interface StationStatus {
 }
 
 export type StationEvent =
-  | { readonly kind: "activated" | "deactivated"; readonly id: string }
   | {
       readonly kind: "found";
       readonly id: string;
@@ -135,7 +136,7 @@ export function createStationRun(input: {
     stations.map((s) => [
       s.id,
       {
-        state: "inactive",
+        state: "waiting",
         skipped: false,
         foundVia: null,
         offeredAtMs: null,
@@ -236,7 +237,7 @@ export function createStationRun(input: {
     return events;
   }
 
-  /** One offered station at one distance: the hysteresis, then the latch. */
+  /** One offered station at one distance: found inside the found radius. */
   function judge(
     id: string,
     d: number,
@@ -246,19 +247,8 @@ export function createStationRun(input: {
     const s = states.get(id)!;
     if (s.state === "found" || s.state === "done") return [];
     if (s.offeredDistanceM === null) s.offeredDistanceM = d;
-    const bands = stationBands(stations[index.get(id)!]!, accuracyM);
-    const events: StationEvent[] = [];
-    if (s.state === "inactive" && d <= bands.activateM) {
-      s.state = "active";
-      events.push({ kind: "activated", id });
-    } else if (s.state === "active" && d > bands.activateExitM) {
-      s.state = "inactive";
-      events.push({ kind: "deactivated", id });
-    }
-    if (s.state === "active" && d <= bands.foundM) {
-      events.push(...found(id, "gps", nowMs));
-    }
-    return events;
+    const { foundM } = stationBands(stations[index.get(id)!]!, accuracyM);
+    return d <= foundM ? found(id, "gps", nowMs) : [];
   }
 
   return {

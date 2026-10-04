@@ -13,8 +13,8 @@ far the visitor is from each offered station. Plan:
 ## Public API
 
 - `createStationPrefetch({ assets, read, budgetBytes? }): StationPrefetch`
-  - `approach(station, distanceM, activateExitM)` - inside
-    `activateExitM + PREFETCH_LEAD_M`, queue the station's assets;
+  - `approach(station, distanceM, activateM)` - inside
+    `activateM + PREFETCH_LEAD_M`, queue the station's assets;
   - `done(stationId)` - its media may be released first;
   - `load(path)` - the story's read: the cache, a read in flight, or a
     fresh read (not kept when it was never prefetched);
@@ -61,7 +61,7 @@ const prefetch = createStationPrefetch({
   assets,
   read: session.loadContentEntry,
 });
-prefetch.approach(station, distanceM, bands.activateExitM);
+prefetch.approach(station, distanceM, bands.activateM);
 const blob = await prefetch.load(asset.path); // a hit when it was prefetched
 ```
 

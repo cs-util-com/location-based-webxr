@@ -21,7 +21,7 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-stations";
 
 /**
- * Start prefetching this far beyond the station's activation exit radius:
+ * Start prefetching this far beyond the station's activation radius:
  * 80 m, about a minute at a 1.4 m/s walk, which has a 5 MB story read at
  * 1 Mbit/s and a 20 MB one at 5 Mbit/s before the visitor arrives, at every
  * speed swept (`station-prefetch.sweep.test.ts`; 60 m misses the 5 MB
@@ -78,12 +78,8 @@ export function stationAssetIds(station: TourStation): string[] {
 
 export interface StationPrefetch {
   /** The visitor is `distanceM` from this offered station; prefetch it when
-   *  inside its prefetch radius (`activateExitM + PREFETCH_LEAD_M`). */
-  approach(
-    station: TourStation,
-    distanceM: number,
-    activateExitM: number,
-  ): void;
+   *  inside its prefetch radius (`activateM + PREFETCH_LEAD_M`). */
+  approach(station: TourStation, distanceM: number, activateM: number): void;
   /** A station is done: its media may be released first. */
   done(stationId: string): void;
   /** Read an asset: from the cache, joining a read in flight, or now. */
@@ -165,8 +161,8 @@ export function createStationPrefetch(deps: {
   }
 
   return {
-    approach(station, distanceM, activateExitM) {
-      if (!(distanceM <= activateExitM + PREFETCH_LEAD_M)) return;
+    approach(station, distanceM, activateM) {
+      if (!(distanceM <= activateM + PREFETCH_LEAD_M)) return;
       const assets = deps.assets();
       for (const id of stationAssetIds(station)) {
         const asset = assets.get(id);

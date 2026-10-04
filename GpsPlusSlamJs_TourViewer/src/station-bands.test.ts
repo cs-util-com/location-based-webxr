@@ -43,12 +43,17 @@ describe("stationBands", () => {
     expect(tiny.foundExitM - tiny.foundM).toBe(HUD_ARRIVAL_BAND_M);
   });
 
-  it("activates no later than one band outside the found radius, and leaves one band further out", () => {
+  it("puts the activation radius no closer than one band outside the found radius, and has no exit radius of its own (R10)", () => {
     // Authored 6 m activation inside a widened 12 m found radius: the
-    // station activates before it is found, never after.
+    // prefetch that starts from it starts before the station is found.
     const b = stationBands({ activateRadiusM: 6, foundRadiusM: 3 }, 12);
     expect(b.activateM).toBe(b.foundExitM);
-    expect(b.activateExitM - b.activateM).toBe(b.foundExitM - b.foundM);
+    // Nothing toggles on the activation radius any more (K4 review R10).
+    expect(Object.keys(b).sort()).toEqual([
+      "activateM",
+      "foundExitM",
+      "foundM",
+    ]);
     // A generous authored activation radius stands.
     expect(
       stationBands({ activateRadiusM: 80, foundRadiusM: 3 }, 5).activateM,
@@ -68,7 +73,7 @@ describe("stationBands", () => {
     ).toBe(ACCURACY_CEILING_M * FOUND_ACCURACY_FACTOR);
   });
 
-  it("orders the four distances for any radii and accuracy (property)", () => {
+  it("orders the three distances for any radii and accuracy (property)", () => {
     fc.assert(
       fc.property(
         fc.double({ min: 0.01, max: 500, noNaN: true }),
@@ -88,7 +93,6 @@ describe("stationBands", () => {
           expect(b.foundExitM).toBeGreaterThan(b.foundM);
           expect(b.activateM).toBeGreaterThanOrEqual(b.foundExitM);
           expect(b.activateM).toBeGreaterThanOrEqual(activate);
-          expect(b.activateExitM).toBeGreaterThan(b.activateM);
           for (const v of Object.values(b))
             expect(Number.isFinite(v)).toBe(true);
         },
@@ -112,7 +116,7 @@ describe("stationBands", () => {
             acc + worse,
           );
           expect(b.foundM).toBeGreaterThanOrEqual(a.foundM);
-          expect(b.activateExitM).toBeGreaterThanOrEqual(a.activateExitM);
+          expect(b.activateM).toBeGreaterThanOrEqual(a.activateM);
         },
       ),
     );

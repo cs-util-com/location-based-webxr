@@ -14,11 +14,11 @@
 
 /** The radii a station is judged by, in horizontal metres. */
 export interface StationBands {
-  /** Inside this the station becomes ACTIVE (its figure shows, its media
-   *  are fetched). */
+  /** The authored activation radius, never inside `foundExitM`: the
+   *  prefetch of the station's media starts at this plus its lead
+   *  (`station-prefetch.ts`). Nothing toggles on it (K4 review R10: an
+   *  "active" state with its own hysteresis drove nothing a visitor sees). */
   readonly activateM: number;
-  /** Beyond this an active, not yet found station turns inactive again. */
-  readonly activateExitM: number;
   /** Inside this the station is FOUND (once; found never reverts). It is
    *  also the HUD target's `distanceMin`: the arrow hides as "arrived". */
   readonly foundM: number;
@@ -35,9 +35,13 @@ export interface StationBands {
 export const FOUND_ACCURACY_FACTOR = 1.0;
 
 /**
- * The hysteresis band is at least this many times the accuracy: 1.0 keeps a
- * visitor standing exactly on a radius to at most 7 toggles in 2 minutes at
- * p90 under the noisiest model (1-4 under the others); 0.5 allows 5-18.
+ * The band beyond the found radius is at least this many times the
+ * accuracy: the HUD's `distanceMax` (`foundExitM`), where the breadcrumbs
+ * stop, and the activation radius's floor. Since the found latch removes a
+ * station's HUD target the moment it is found, the band changes only where
+ * the dots end and how early the prefetch starts; it was swept for an
+ * activation hysteresis that no longer exists (R10) and is kept at 1.0, not
+ * re-swept: nothing a visitor sees reverses on it.
  */
 export const BAND_ACCURACY_FACTOR = 1.0;
 
@@ -72,9 +76,9 @@ function clampAccuracy(accuracyM: number | null): number {
  * - found = max(authored found, FOUND_ACCURACY_FACTOR x accuracy, the HUD's
  *   1.5 m);
  * - band = max(BAND_ACCURACY_FACTOR x accuracy, the HUD's 1.5 m);
- * - activate = max(authored activation, found + band): a station is active
- *   before it can be found, never after;
- * - each exit is its entry plus the band.
+ * - activate = max(authored activation, found + band): the prefetch starts
+ *   before the station can be found, never after;
+ * - the found exit is the found radius plus the band.
  */
 export function stationBands(
   station: { readonly activateRadiusM: number; readonly foundRadiusM: number },
@@ -89,7 +93,7 @@ export function stationBands(
   );
   const foundExitM = foundM + band;
   const activateM = Math.max(finiteOr(station.activateRadiusM, 0), foundExitM);
-  return { activateM, activateExitM: activateM + band, foundM, foundExitM };
+  return { activateM, foundM, foundExitM };
 }
 
 function finiteOr(value: number, fallback: number): number {

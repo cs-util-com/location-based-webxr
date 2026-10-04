@@ -25,7 +25,7 @@ offeredAtMs, offeredDistanceM }`.
   - `skip(id, nowMs)` - any offered station not done.
   - `skipSuggested(id, nowMs)` - an offered, unfound station whose clock ran
     out.
-- `StationEvent`: `activated`, `deactivated`, `found` (`via: gps | code`),
+- `StationEvent`: `found` (`via: gps | code`),
   `done` (`skipped`), `offered` (the full new set), `complete`.
 - `stationTitle(station)` - the station's title, or "the next station".
 - `skipSuggestAfterMs(offeredDistanceM)`, `SKIP_SUGGEST_BASE_MS` (2 min),
@@ -33,10 +33,12 @@ offeredAtMs, offeredDistanceM }`.
 
 ## Invariants & assumptions
 
-- **States:** inactive -> active (inside `activateM`) -> found (inside
-  `foundM` while active, or the station's own code locked from any
-  distance) -> done (`finish` or `skip`). Active falls back to inactive
-  beyond `activateExitM`; found and done never revert.
+- **States:** waiting -> found (inside `foundM`, or the station's own code
+  locked from any distance) -> done (`finish` or `skip`); found and done
+  never revert. There is no "active" state (K4 review R10): the K4 build's
+  one, with its own hysteresis on the activation radius, drove nothing a
+  visitor sees; the activation radius now only sets where the prefetch
+  starts.
 - **Only offered stations change.** Under `fixed` order a later station is
   not found by walking past it, nor by its code.
 - **Order presets:**

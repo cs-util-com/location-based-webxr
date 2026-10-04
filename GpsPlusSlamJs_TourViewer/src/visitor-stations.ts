@@ -160,8 +160,8 @@ export function wireVisitorStations(deps: {
     onFound: (station) => {
       view.offer(station);
     },
-    onApproach: (station, distanceM, activateExitM) => {
-      prefetch.approach(station, distanceM, activateExitM);
+    onApproach: (station, distanceM, activateM) => {
+      prefetch.approach(station, distanceM, activateM);
     },
     onDone: (stationId) => {
       prefetch.done(stationId);

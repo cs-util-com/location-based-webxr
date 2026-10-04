@@ -11,12 +11,12 @@ as the wayfinding HUD's arrival deadband. Plan:
 ## Public API
 
 - `stationBands(station, accuracyM): StationBands` -
-  `{ activateM, activateExitM, foundM, foundExitM }` in horizontal metres:
+  `{ activateM, foundM, foundExitM }` in horizontal metres:
   - `foundM = max(foundRadiusM, FOUND_ACCURACY_FACTOR x accuracy, 1.5 m)`;
   - band `= max(BAND_ACCURACY_FACTOR x accuracy, 1.5 m)`;
   - `foundExitM = foundM + band`;
-  - `activateM = max(activateRadiusM, foundExitM)`, `activateExitM =
-activateM + band`.
+  - `activateM = max(activateRadiusM, foundExitM)`: where the prefetch
+    starts (plus its lead); nothing toggles on it (K4 review R10).
 - (module-internal) `clampAccuracy` - null, non-finite or non-positive read
   as `ACCURACY_CEILING_M`; above it clamped to it.
 - Constants: `FOUND_ACCURACY_FACTOR` (1.0), `BAND_ACCURACY_FACTOR` (1.0),
@@ -31,7 +31,7 @@ activateM + band`.
   out. The floors are the HUD's field-validated deadband (1.5 m / 3.0 m in
   AnchorStarter and WayfindingHudDemo). One hysteresis convention in
   absolute metres, the HUD's own (DEC-H3), not a second fractional one.
-- `foundM <= foundExitM <= activateM < activateExitM` for every input; all
+- `foundM < foundExitM <= activateM` for every input; all
   finite; never smaller than the authored radii; monotone in the accuracy.
 - Never throws: the authored radii are already validated by
   `tour-stations.ts` (positive, found <= activate); a non-finite one reads
@@ -49,17 +49,17 @@ radius), accuracy 3-20 m, authored found radius 3-10 m:
 - standing on the spot: found within 3 s at p90 in every cell (the worst
   of 120 visitors: 16 s under the noisiest model);
 - walking past at three found radii: found by mistake at most 1.7 %;
-- standing on the activation radius: at most 7 toggles in two minutes at
-  p90 (noisiest model).
 - Reversed by: a found factor of 0.5 (25 s at p90 under the noisiest
-  model), a band factor of 0.5 (5-18 toggles), or real noise above the
-  noisiest model.
+  model), or real noise above the noisiest model.
+- The band factor is not swept any more: it was swept for the activation
+  hysteresis that R10 removed, and now sets only where the breadcrumbs end
+  and how early the prefetch starts.
 
 ## Examples
 
 ```ts
 const b = stationBands({ activateRadiusM: 30, foundRadiusM: 3 }, 8);
-// { foundM: 8, foundExitM: 16, activateM: 30, activateExitM: 38 }
+// { foundM: 8, foundExitM: 16, activateM: 30 }
 ```
 
 ## Tests

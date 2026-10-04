@@ -73,12 +73,8 @@ export interface StationGuideDeps {
   /** A station was found: play its story. */
   onFound(station: TourStation): void;
   /** Each tick, for each offered station with a distance: how far it is,
-   *  and its activation exit radius (the prefetch starts beyond it). */
-  onApproach?(
-    station: TourStation,
-    distanceM: number,
-    activateExitM: number,
-  ): void;
+   *  and its activation radius (the prefetch starts its lead beyond it). */
+  onApproach?(station: TourStation, distanceM: number, activateM: number): void;
   /** A station is done (its story ended, or it was skipped). */
   onDone?(stationId: string): void;
   /** Every tick with a position: the stage turns its figure to the visitor. */
@@ -206,11 +202,7 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     for (const [id, d] of distances) {
       const station = stationById(id);
       if (station === undefined) continue;
-      deps.onApproach(
-        station,
-        d,
-        stationBands(station, accuracyM).activateExitM,
-      );
+      deps.onApproach(station, d, stationBands(station, accuracyM).activateM);
     }
   }
 

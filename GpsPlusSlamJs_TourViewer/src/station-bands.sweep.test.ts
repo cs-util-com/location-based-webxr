@@ -16,23 +16,20 @@
  *   reported accuracy, i.e. the reported accuracy read as a 68 % radius,
  *   which is what phones report for a raw fix.
  * Swept: accuracy 3/5/8/12/20 m, authored found radius 3/5/10 m, and the
- * factors themselves (`FOUND_ACCURACY_FACTOR` 0.5/1/1.5,
- * `BAND_ACCURACY_FACTOR` 0.5/1), 120 seeds per cell.
+ * found factor itself (`FOUND_ACCURACY_FACTOR` 0.5/1/1.5), 120 seeds per
+ * cell. The band factor is not swept: it was swept for the activation
+ * hysteresis that K4 review R10 removed.
  *
  * WHAT IS MEASURED, and the verdict across the whole range at the shipped
- * factors (1.0 / 1.0):
+ * found factor (1.0):
  * - a visitor STANDING on the station's spot is found within 3 s at p90 in
  *   every cell; the worst of 120 visitors waits 3 s (fused), 7 s (mid) or
  *   16 s (raw);
  * - a visitor WALKING PAST at three found radii is found by mistake at most
- *   1.7 % of the time (raw at 20 m; 0 % in every fused and mid cell);
- * - a visitor standing exactly on the activation radius toggles the station
- *   at most 7 times in two minutes at p90 (raw), 4 (mid), 1 (fused).
+ *   1.7 % of the time (raw at 20 m; 0 % in every fused and mid cell).
  * WHAT WOULD REVERSE IT: a found factor of 0.5 leaves a standing visitor
  *   unfound for 25 s at p90 under the `raw` model (asserted below: over
- *   10 s), and a band factor of 0.5 allows 5-18 toggles in two minutes
- *   (asserted: over 8 under raw); noise above
- *   the `raw` model (a reported accuracy that understates the real error by
+ *   10 s); noise above the `raw` model (a reported accuracy that understates the real error by
  *   more than 1.5x) would need a found factor above 1.
  * Not simulated: the fused AR pose between fixes (smoother than any model
  *   here, so this is the pessimistic side) and SLAM drift.
@@ -79,7 +76,7 @@ function bandsAt(
   const band = Math.max(bandK * accuracyM, HUD_ARRIVAL_BAND_M);
   const foundM = Math.max(foundRadiusM, foundK * accuracyM, HUD_ARRIVAL_MIN_M);
   const activateM = Math.max(foundRadiusM * 4, foundM + band);
-  return { foundM, activateM, activateExitM: activateM + band };
+  return { foundM, activateM };
 }
 
 function quantile(sorted: readonly number[], q: number): number {
@@ -140,43 +137,6 @@ function passByRate(
   return wrong / SEEDS;
 }
 
-/** p90 of active/inactive toggles in 120 s for a visitor standing exactly
- *  on the activation radius. */
-function toggleP90(
-  noise: NoiseName,
-  acc: number,
-  foundR: number,
-  bandK: number,
-): number {
-  const counts: number[] = [];
-  for (let seed = 0; seed < SEEDS; seed += 1) {
-    const errors = gaussMarkovGpsErrors(
-      mulberry32(seed * 31337 + 5),
-      120,
-      acc,
-      NOISE[noise],
-    );
-    const { activateM, activateExitM } = bandsAt(foundR, acc, 1, bandK);
-    let active = false;
-    let toggles = 0;
-    for (const [n, e] of errors) {
-      const d = Math.hypot(activateM + n, e);
-      if (!active && d <= activateM) {
-        active = true;
-        toggles += 1;
-      } else if (active && d > activateExitM) {
-        active = false;
-        toggles += 1;
-      }
-    }
-    counts.push(toggles);
-  }
-  return quantile(
-    counts.sort((a, b) => a - b),
-    0.9,
-  );
-}
-
 describe("station bands sweep (K4, §8 D9)", () => {
   afterAll(() => {
     if (OUT !== undefined) writeFileSync(OUT, table.join("\n") + "\n");
@@ -197,7 +157,6 @@ describe("station bands sweep (K4, §8 D9)", () => {
         );
         expect(swept.foundM).toBe(shipped.foundM);
         expect(swept.activateM).toBe(shipped.activateM);
-        expect(swept.activateExitM).toBe(shipped.activateExitM);
       }
     }
   });
@@ -241,18 +200,5 @@ describe("station bands sweep (K4, §8 D9)", () => {
         }
       }
     }
-  });
-
-  it("keeps a visitor on the activation radius to at most 8 toggles in two minutes at p90; a band of 0.5x would not", () => {
-    for (const noise of NOISES) {
-      for (const acc of ACCURACIES) {
-        const p90 = toggleP90(noise, acc, 5, BAND_ACCURACY_FACTOR);
-        table.push(
-          `toggles ${noise} acc ${acc}: p90 ${p90} (band 0.5x: ${toggleP90(noise, acc, 5, 0.5)})`,
-        );
-        expect(p90).toBeLessThanOrEqual(8);
-      }
-    }
-    expect(toggleP90("raw", 5, 5, 0.5)).toBeGreaterThan(8);
   });
 });

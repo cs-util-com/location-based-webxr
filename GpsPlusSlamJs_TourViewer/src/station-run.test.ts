@@ -44,19 +44,16 @@ function station(id: string, extra: Partial<TourStation> = {}): TourStation {
 const at = (pairs: Record<string, number>) => new Map(Object.entries(pairs));
 
 describe("createStationRun: states", () => {
-  it("goes inactive -> active -> found by GPS, and done when its steps finish", () => {
+  it("waits, is found by GPS inside the found radius, and is done when its steps finish", () => {
     const run = createStationRun({
       stations: [station("a")],
       order: "fixed",
       nowMs: 0,
     });
-    expect(run.status("a")?.state).toBe("inactive");
+    expect(run.status("a")?.state).toBe("waiting");
     expect(
       run.observe({ distances: at({ a: 100 }), accuracyM: 4, nowMs: 1 }),
     ).toEqual([]);
-    expect(
-      run.observe({ distances: at({ a: 25 }), accuracyM: 4, nowMs: 2 }),
-    ).toEqual([{ kind: "activated", id: "a" }]);
     expect(
       run.observe({ distances: at({ a: 4 }), accuracyM: 4, nowMs: 3 }),
     ).toEqual([{ kind: "found", id: "a", via: "gps" }]);
@@ -73,34 +70,22 @@ describe("createStationRun: states", () => {
     expect(run.isComplete()).toBe(true);
   });
 
-  it("activates and finds in ONE observation when the first fix is already on the spot", () => {
+  it("has no state between waiting and found: walking inside the activation radius changes nothing (K4 review R10)", () => {
+    // Why this test matters: the K4 build had an "active" state with its
+    // own hysteresis that drove nothing a visitor sees, while the sidecar
+    // claimed it showed figures and fetched media. The activation radius
+    // now only sets where the prefetch starts (`station-prefetch.ts`).
     const run = createStationRun({
       stations: [station("a")],
       order: "fixed",
       nowMs: 0,
     });
-    expect(
-      run.observe({ distances: at({ a: 1 }), accuracyM: 4, nowMs: 1 }),
-    ).toEqual([
-      { kind: "activated", id: "a" },
-      { kind: "found", id: "a", via: "gps" },
-    ]);
-  });
-
-  it("leaves active only one band beyond the activation radius (hysteresis)", () => {
-    const run = createStationRun({
-      stations: [station("a")],
-      order: "fixed",
-      nowMs: 0,
-    });
-    run.observe({ distances: at({ a: 29 }), accuracyM: 4, nowMs: 1 });
-    // 30 m activation + a 4 m band: 33 m keeps it active, 35 m does not.
-    expect(
-      run.observe({ distances: at({ a: 33 }), accuracyM: 4, nowMs: 2 }),
-    ).toEqual([]);
-    expect(
-      run.observe({ distances: at({ a: 35 }), accuracyM: 4, nowMs: 3 }),
-    ).toEqual([{ kind: "deactivated", id: "a" }]);
+    for (const d of [29, 12, 33, 35, 20]) {
+      expect(
+        run.observe({ distances: at({ a: d }), accuracyM: 4, nowMs: d }),
+      ).toEqual([]);
+      expect(run.status("a")?.state).toBe("waiting");
+    }
   });
 
   it("does not judge distances on a fix too poor to place anything (above the accuracy ceiling)", () => {
@@ -119,7 +104,7 @@ describe("createStationRun: states", () => {
     expect(
       run.observe({ distances: at({ a: 1 }), accuracyM: null, nowMs: 1 }),
     ).toEqual([]);
-    expect(run.status("a")?.state).toBe("inactive");
+    expect(run.status("a")?.state).toBe("waiting");
   });
 
   it("is found by its own code's lock from any distance, and only by its own code", () => {
@@ -146,7 +131,6 @@ describe("createStationRun: states", () => {
     expect(
       run.observe({ distances: at({ a: 1 }), accuracyM: 4, nowMs: 1 }),
     ).toEqual([
-      { kind: "activated", id: "a" },
       { kind: "found", id: "a", via: "gps" },
       { kind: "done", id: "a", skipped: false },
       { kind: "offered", ids: ["b"] },
@@ -166,7 +150,7 @@ describe("createStationRun: offering", () => {
       run.observe({ distances: at({ a: 500, b: 1 }), accuracyM: 4, nowMs: 1 }),
     ).toEqual([]);
     expect(run.codeLocked("level-b", 2)).toEqual([]);
-    expect(run.status("b")?.state).toBe("inactive");
+    expect(run.status("b")?.state).toBe("waiting");
   });
 
   it("any: every station not done is offered at once", () => {
