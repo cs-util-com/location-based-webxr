@@ -742,7 +742,7 @@ describe('openRemoteArchive — fallbacks and rejections', () => {
  * whole-body download is counted while it streams. Before K0 a
  * range-refusing host's 200 was read whole into memory with no limit.
  */
-describe('openRemoteArchive — the transport size cap', () => {
+describe('openRemoteArchive - the transport size cap', () => {
   async function openErr(
     opts: ServerOptions,
     maxArchiveBytes: number
@@ -797,7 +797,7 @@ describe('openRemoteArchive — the transport size cap', () => {
  * "cors" otherwise. A cached copy is still tried first (the cache test
  * above), so the advice is only ever reached without a saved copy.
  */
-describe('openRemoteArchive — offline versus a host that blocks browsers', () => {
+describe('openRemoteArchive - offline versus a host that blocks browsers', () => {
   it('says "offline" when the fetch fails and the browser reports no network', async () => {
     const { fetchImpl } = fakeServer({ reject: true });
     const err = await openRemoteArchive(URL_, {
@@ -823,7 +823,7 @@ describe('openRemoteArchive — offline versus a host that blocks browsers', () 
   });
 });
 
-describe('openRemoteArchive — the cap holds for a saved copy too', () => {
+describe('openRemoteArchive - the cap holds for a saved copy too', () => {
   // Why this test matters: a copy saved before the cap existed (or under a
   // larger one) must not reopen past it, or the cap would only protect the
   // first visit.
@@ -843,7 +843,7 @@ describe('openRemoteArchive — the cap holds for a saved copy too', () => {
   });
 });
 
-describe('openRemoteArchive — a too-large rejection explains itself', () => {
+describe('openRemoteArchive - a too-large rejection explains itself', () => {
   // Why this test matters: the app shows the cap's own plain sentence
   // (which names the limit), so the rejection must carry it.
   it('carries the ArchiveLimitError as its cause', async () => {

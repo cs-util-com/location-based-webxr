@@ -354,7 +354,7 @@ function openRanged(
       (err: unknown) => {
         throw err instanceof ArchiveLimitError
           ? new StructuralReadError(
-              `range-ignore recovery of ${url} streamed more than the expected ${size} bytes — the file changed mid-session`
+              `range-ignore recovery of ${url} streamed more than the expected ${size} bytes - the file changed mid-session`
             )
           : err;
       }
