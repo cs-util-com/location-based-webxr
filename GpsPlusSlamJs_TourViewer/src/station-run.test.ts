@@ -1,0 +1,354 @@
+import { describe, expect, it } from "vitest";
+import fc from "fast-check";
+import type {
+  TourOrder,
+  TourStation,
+} from "gps-plus-slam-app-framework/ar/tour-stations";
+
+import {
+  createStationRun,
+  SKIP_SUGGEST_BASE_MS,
+  SKIP_SUGGEST_SLOW_MPS,
+  skipSuggestAfterMs,
+} from "./station-run";
+import { ACCURACY_CEILING_M } from "./station-bands";
+
+/**
+ * Why these tests matter: the station run is the tour's whole game state on
+ * the visitor's phone. A station found from the wrong side of town, a code
+ * that still counts after it was moved, an order that offers a station
+ * nobody can reach with no way past it (plan §8 D5), or a station that
+ * quietly drops out of the order would each end a castle tour half-way.
+ * The examples pin each rule; the properties walk generated tours to the
+ * end under every order preset.
+ */
+
+const step = {
+  id: "s1",
+  block: { kind: "text", text: "Hello" },
+  advance: { mode: "tap" },
+} as const;
+
+function station(id: string, extra: Partial<TourStation> = {}): TourStation {
+  return {
+    id,
+    anchor: { geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 } },
+    activateRadiusM: 30,
+    foundRadiusM: 5,
+    hint: "arrow",
+    steps: [step],
+    ...extra,
+  };
+}
+
+const at = (pairs: Record<string, number>) => new Map(Object.entries(pairs));
+
+describe("createStationRun: states", () => {
+  it("goes inactive -> active -> found by GPS, and done when its steps finish", () => {
+    const run = createStationRun({
+      stations: [station("a")],
+      order: "fixed",
+      nowMs: 0,
+    });
+    expect(run.status("a")?.state).toBe("inactive");
+    expect(
+      run.observe({ distances: at({ a: 100 }), accuracyM: 4, nowMs: 1 }),
+    ).toEqual([]);
+    expect(
+      run.observe({ distances: at({ a: 25 }), accuracyM: 4, nowMs: 2 }),
+    ).toEqual([{ kind: "activated", id: "a" }]);
+    expect(
+      run.observe({ distances: at({ a: 4 }), accuracyM: 4, nowMs: 3 }),
+    ).toEqual([{ kind: "found", id: "a", via: "gps" }]);
+    // Found never reverts, however far the noise throws the estimate.
+    expect(
+      run.observe({ distances: at({ a: 300 }), accuracyM: 4, nowMs: 4 }),
+    ).toEqual([]);
+    expect(run.status("a")?.state).toBe("found");
+    expect(run.finish("a", 5)).toEqual([
+      { kind: "done", id: "a", skipped: false },
+      { kind: "offered", ids: [] },
+      { kind: "complete" },
+    ]);
+    expect(run.isComplete()).toBe(true);
+  });
+
+  it("activates and finds in ONE observation when the first fix is already on the spot", () => {
+    const run = createStationRun({
+      stations: [station("a")],
+      order: "fixed",
+      nowMs: 0,
+    });
+    expect(
+      run.observe({ distances: at({ a: 1 }), accuracyM: 4, nowMs: 1 }),
+    ).toEqual([
+      { kind: "activated", id: "a" },
+      { kind: "found", id: "a", via: "gps" },
+    ]);
+  });
+
+  it("leaves active only one band beyond the activation radius (hysteresis)", () => {
+    const run = createStationRun({
+      stations: [station("a")],
+      order: "fixed",
+      nowMs: 0,
+    });
+    run.observe({ distances: at({ a: 29 }), accuracyM: 4, nowMs: 1 });
+    // 30 m activation + a 4 m band: 33 m keeps it active, 35 m does not.
+    expect(
+      run.observe({ distances: at({ a: 33 }), accuracyM: 4, nowMs: 2 }),
+    ).toEqual([]);
+    expect(
+      run.observe({ distances: at({ a: 35 }), accuracyM: 4, nowMs: 3 }),
+    ).toEqual([{ kind: "deactivated", id: "a" }]);
+  });
+
+  it("does not judge distances on a fix too poor to place anything (above the accuracy ceiling)", () => {
+    const run = createStationRun({
+      stations: [station("a")],
+      order: "fixed",
+      nowMs: 0,
+    });
+    expect(
+      run.observe({
+        distances: at({ a: 1 }),
+        accuracyM: ACCURACY_CEILING_M + 1,
+        nowMs: 1,
+      }),
+    ).toEqual([]);
+    expect(
+      run.observe({ distances: at({ a: 1 }), accuracyM: null, nowMs: 1 }),
+    ).toEqual([]);
+    expect(run.status("a")?.state).toBe("inactive");
+  });
+
+  it("is found by its own code's lock from any distance, and only by its own code", () => {
+    const run = createStationRun({
+      stations: [station("a", { anchor: { code: "level-a" } })],
+      order: "fixed",
+      nowMs: 0,
+    });
+    expect(run.codeLocked("level-b", 1)).toEqual([]);
+    expect(run.codeLocked("level-a", 2)).toEqual([
+      { kind: "found", id: "a", via: "code" },
+    ]);
+    expect(run.status("a")?.foundVia).toBe("code");
+    // A second lock changes nothing.
+    expect(run.codeLocked("level-a", 3)).toEqual([]);
+  });
+
+  it("a station whose every step was left out (a newer minor) is done the moment it is found", () => {
+    const run = createStationRun({
+      stations: [station("a", { steps: [] }), station("b")],
+      order: "fixed",
+      nowMs: 0,
+    });
+    expect(
+      run.observe({ distances: at({ a: 1 }), accuracyM: 4, nowMs: 1 }),
+    ).toEqual([
+      { kind: "activated", id: "a" },
+      { kind: "found", id: "a", via: "gps" },
+      { kind: "done", id: "a", skipped: false },
+      { kind: "offered", ids: ["b"] },
+    ]);
+  });
+});
+
+describe("createStationRun: offering", () => {
+  it("fixed: one station at a time, in list order; a station not offered is never found", () => {
+    const run = createStationRun({
+      stations: [station("a"), station("b", { anchor: { code: "level-b" } })],
+      order: "fixed",
+      nowMs: 0,
+    });
+    expect(run.offered()).toEqual(["a"]);
+    expect(
+      run.observe({ distances: at({ a: 500, b: 1 }), accuracyM: 4, nowMs: 1 }),
+    ).toEqual([]);
+    expect(run.codeLocked("level-b", 2)).toEqual([]);
+    expect(run.status("b")?.state).toBe("inactive");
+  });
+
+  it("any: every station not done is offered at once", () => {
+    const run = createStationRun({
+      stations: [station("a"), station("b"), station("c")],
+      order: "any",
+      nowMs: 0,
+    });
+    expect(run.offered()).toEqual(["a", "b", "c"]);
+    run.observe({ distances: at({ b: 1 }), accuracyM: 4, nowMs: 1 });
+    run.finish("b", 2);
+    expect(run.offered()).toEqual(["a", "c"]);
+  });
+
+  it("branch: follows each station's default next, else the list order; a done target falls through", () => {
+    const run = createStationRun({
+      stations: [
+        station("a", { next: "c" }),
+        station("b"),
+        station("c", { next: "a" }),
+        station("d"),
+      ],
+      order: "branch",
+      nowMs: 0,
+    });
+    expect(run.offered()).toEqual(["a"]);
+    run.skip("a", 1);
+    expect(run.offered()).toEqual(["c"]);
+    // c points back at a, which is done: the first undone after it in
+    // list order is b.
+    run.skip("c", 2);
+    expect(run.offered()).toEqual(["b"]);
+    run.skip("b", 3);
+    expect(run.offered()).toEqual(["d"]);
+    run.skip("d", 4);
+    expect(run.isComplete()).toBe(true);
+  });
+
+  it("skip: a labelled way past a station nobody can reach, recorded as skipped (plan §8 D5)", () => {
+    const run = createStationRun({
+      stations: [station("a"), station("b")],
+      order: "fixed",
+      nowMs: 0,
+    });
+    expect(run.skip("b", 1)).toEqual([]); // not offered: nothing to skip
+    expect(run.skip("a", 2)).toEqual([
+      { kind: "done", id: "a", skipped: true },
+      { kind: "offered", ids: ["b"] },
+    ]);
+    expect(run.status("a")).toMatchObject({ state: "done", skipped: true });
+    expect(run.skip("a", 3)).toEqual([]);
+  });
+});
+
+describe("skip suggestion clock", () => {
+  it("scales with the distance at the offer: a slow walker's time plus a fixed allowance", () => {
+    expect(skipSuggestAfterMs(null)).toBe(SKIP_SUGGEST_BASE_MS);
+    expect(skipSuggestAfterMs(100)).toBe(
+      SKIP_SUGGEST_BASE_MS + (100 / SKIP_SUGGEST_SLOW_MPS) * 1000,
+    );
+  });
+
+  it("is suggested only for an offered station not yet found, once its clock ran out", () => {
+    const run = createStationRun({
+      stations: [station("a"), station("b")],
+      order: "fixed",
+      nowMs: 0,
+    });
+    run.observe({ distances: at({ a: 100 }), accuracyM: 4, nowMs: 0 });
+    const due = skipSuggestAfterMs(100);
+    expect(run.skipSuggested("a", due - 1)).toBe(false);
+    expect(run.skipSuggested("a", due)).toBe(true);
+    expect(run.skipSuggested("b", due * 10)).toBe(false); // never offered yet
+    run.observe({ distances: at({ a: 1 }), accuracyM: 4, nowMs: due + 1 });
+    expect(run.skipSuggested("a", due * 10)).toBe(false); // found
+  });
+
+  it("restarts for the next station at the moment it is offered", () => {
+    const run = createStationRun({
+      stations: [station("a"), station("b")],
+      order: "fixed",
+      nowMs: 0,
+    });
+    run.skip("a", 1_000_000);
+    run.observe({ distances: at({ b: 40 }), accuracyM: 4, nowMs: 1_000_001 });
+    expect(run.skipSuggested("b", 1_000_000 + skipSuggestAfterMs(40) - 1)).toBe(
+      false,
+    );
+    expect(run.skipSuggested("b", 1_000_000 + skipSuggestAfterMs(40))).toBe(
+      true,
+    );
+  });
+});
+
+const ORDERS: readonly TourOrder[] = ["fixed", "any", "branch"];
+
+/** Generated tours: 1-8 stations with random default-next links (cycles included). */
+const tourArb = fc.integer({ min: 1, max: 8 }).chain((n) =>
+  fc.tuple(
+    fc.constant(n),
+    fc.array(
+      fc.option(fc.integer({ min: 0, max: n - 1 }), { nil: undefined }),
+      {
+        minLength: n,
+        maxLength: n,
+      },
+    ),
+    fc.constantFrom(...ORDERS),
+    fc.array(fc.tuple(fc.nat(), fc.constantFrom("skip", "find")), {
+      maxLength: 40,
+    }),
+  ),
+);
+
+describe("createStationRun: properties", () => {
+  it("never deadlocks: always offering something until complete, and completing within one action per station", () => {
+    fc.assert(
+      fc.property(tourArb, ([n, nexts, order, actions]) => {
+        const stations = nexts.map((next, i) =>
+          station(`s${i}`, next === undefined ? {} : { next: `s${next}` }),
+        );
+        const run = createStationRun({ stations, order, nowMs: 0 });
+        let t = 1;
+        let completions = 0;
+        // Arbitrary actions on offered stations first, then drain.
+        const act = (pick: number, how: string) => {
+          const offered = run.offered();
+          if (offered.length === 0) return;
+          const id = offered[pick % offered.length]!;
+          if (how === "skip") run.skip(id, t++);
+          else {
+            run.observe({
+              distances: new Map([[id, 0]]),
+              accuracyM: 4,
+              nowMs: t++,
+            });
+            run.finish(id, t++);
+          }
+          completions += 1;
+        };
+        for (const [pick, how] of actions) act(pick, how);
+        for (let guard = 0; guard < n + 1 && !run.isComplete(); guard += 1)
+          act(0, "skip");
+        expect(run.isComplete()).toBe(true);
+        expect(completions).toBeLessThanOrEqual(n);
+        expect(run.offered()).toEqual([]);
+        // fixed and any visit every station; branch may leave stations off
+        // its path, but never one that is still offered.
+        const undone = run.statuses().filter((s) => s.state !== "done");
+        expect(order === "branch" || undone.length === 0).toBe(true);
+      }),
+    );
+  });
+
+  it("never offers a done station, and a done station never changes again", () => {
+    fc.assert(
+      fc.property(tourArb, ([, nexts, order, actions]) => {
+        const stations = nexts.map((next, i) =>
+          station(`s${i}`, next === undefined ? {} : { next: `s${next}` }),
+        );
+        const run = createStationRun({ stations, order, nowMs: 0 });
+        let t = 1;
+        for (const [pick, how] of actions) {
+          const offered = run.offered();
+          for (const id of offered)
+            expect(run.status(id)?.state).not.toBe("done");
+          if (offered.length === 0) break;
+          const id = offered[pick % offered.length]!;
+          if (how === "skip") run.skip(id, t++);
+          else run.finish(id, t++);
+          const before = run.status(id);
+          if (before?.state !== "done") continue;
+          run.observe({
+            distances: new Map([[id, 0]]),
+            accuracyM: 4,
+            nowMs: t++,
+          });
+          run.skip(id, t++);
+          run.codeLocked("level", t++);
+          expect(run.status(id)).toEqual(before);
+        }
+      }),
+    );
+  });
+});
