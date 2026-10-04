@@ -19,7 +19,7 @@
  *    as `currentAlignment` when it is in their odometry segment, else the
  *    newest sighting's own snapshot. The caller decides which (owner
  *    decision D28, revised 2026-10-02, `qr-mint-alignment-tracker.ts`): the
- *    FIRST MATURE alignment (80 m of session GPS extent) at or after the
+ *    FIRST MATURE alignment (40 m of session GPS extent, D34) at or after the
  *    code's last sighting; before maturity the alignment at save, or the one
  *    the code's segment closed with. This superseded DEC-3 (each sighting
  *    through the alignment as it stood AT that sighting): a sighting taken

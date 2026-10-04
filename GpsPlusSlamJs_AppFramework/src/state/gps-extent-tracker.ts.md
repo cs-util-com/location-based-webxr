@@ -10,7 +10,7 @@ An alignment's yaw is unobservable until its fixes span a baseline, and the
 fix COUNT does not say whether they do (a phone standing still for a minute
 has sixty fixes). The extent does. The QR mint reads it as the maturity floor
 of the alignment a code is composed through (`../ar/qr/qr-mint-alignment-tracker.ts`,
-80 m, the shared `alignment-maturity.ts`) and as the uncertain-heading marker
+40 m, the shared `alignment-maturity.ts`) and as the uncertain-heading marker
 of a minted level (`../ar/qr/qr-mint-level.ts`). The GPS anchor's
 `'mature-alignment'` start-up and the Tour Viewer's authoring settle read it
 for the same floor (D33).

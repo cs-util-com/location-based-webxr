@@ -2,7 +2,7 @@
 
 ## Purpose
 
-One-line: the maturity floor of an alignment (`MATURE_GPS_EXTENT_M` = 80 m of
+One-line: the maturity floor of an alignment (`MATURE_GPS_EXTENT_M` = 40 m of
 session GPS extent) and the pure pick behind "the FIRST MATURE alignment at or
 after a moment" - the one rule through which an object seen or placed at that
 moment gets its global position.
@@ -27,16 +27,17 @@ walked after.
 
 ## Public API
 
-- `MATURE_GPS_EXTENT_M = 80` - the floor; its doc comment carries the
+- `MATURE_GPS_EXTENT_M = 40` - the floor (owner decision D34, lowered from
+  80 m); its doc comment carries the
   measurement, the swept range and the values that reverse it.
 - `AlignmentMoment` - `{ alignmentMatrix, zero, gpsExtentM? }`: the alignment
   as it stands at one moment (column-major odometry-NUE -> GPS-world NUE, the
   GPS zero, the session extent from `gps-extent-tracker.ts`).
 - `MatureAlignmentPick<A>` - `{ alignment, mature }`.
 - `isUsableAlignment(a)` - a matrix and a zero.
-- `isMatureAlignment(a, floorM = 80)` - usable, and a finite extent at or
+- `isMatureAlignment(a, floorM = 40)` - usable, and a finite extent at or
   above the floor.
-- `checkMatureGpsExtentM(floorM)` - the floor to use (80 when absent);
+- `checkMatureGpsExtentM(floorM)` - the floor to use (40 when absent);
   `RangeError` unless positive and finite (a caller bug, not data).
 - `openMatureAlignmentPick(now, floorM?)` - the pick at the moment itself.
 - `advanceMatureAlignmentPick(pick, now, floorM?)` - one alignment change
@@ -63,8 +64,8 @@ walked after.
   reached the floor, not that it grew by the floor after the moment: once
   the session is mature an object is fixed through the alignment of its own
   moment, so no drift accumulates between the object and its fix. Waiting
-  for 80 m MORE after each object (an alternative reading of D33) would add
-  the drift of those 80 m, and an object placed inside an area already
+  for the floor MORE after each object (an alternative reading of D33) would
+  add the drift of those metres, and an object placed inside an area already
   walked might never see the extent grow and fall back to the end-of-visit
   alignment - the regression this rule removes.
 
@@ -85,7 +86,7 @@ if (pick.mature) {
 
 ## Tests
 
-- `alignment-maturity.test.ts` - the 80 m constant; maturity needs a matrix,
+- `alignment-maturity.test.ts` - the 40 m constant; maturity needs a matrix,
   a zero and a finite extent; a bad floor throws; follow-then-freeze; frozen
   at the moment when already mature; an unusable alignment never replaces a
   usable one; a caller floor.

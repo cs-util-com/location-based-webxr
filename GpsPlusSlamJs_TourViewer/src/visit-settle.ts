@@ -14,7 +14,7 @@
  * EACH OBJECT AT ITS OWN MOMENT (owner decision D33, 2026-10-03): with the
  * visit's picks (`visit-alignment-picks.ts`), each object, the measured code
  * and each sighting of a stored code is composed through the FIRST MATURE
- * alignment at or after its own moment (80 m of session GPS extent), else
+ * alignment at or after its own moment (40 m of session GPS extent, D34), else
  * the visit's alignment at its end; a code correction uses the sighting
  * NEAREST the object in time and is judged through THAT sighting's
  * alignment. Without picks everything goes through the end alignment and

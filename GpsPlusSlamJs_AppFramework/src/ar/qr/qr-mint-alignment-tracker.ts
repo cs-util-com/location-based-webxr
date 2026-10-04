@@ -1,7 +1,8 @@
 /**
  * Which alignment a QR code is minted through: the FIRST MATURE alignment
  * at or after the code's last sighting (owner decision D28, revised
- * 2026-10-02; candidate a3 at 80 m of the start-at-code measurement).
+ * 2026-10-02; candidate a3 of the start-at-code measurement, its floor 40 m
+ * since D34).
  *
  * WHY NOT THE ALIGNMENT AT SAVE. Placing every code through the alignment
  * as it stands when the recording is saved (a2, shipped for one day) fixed

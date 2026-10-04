@@ -719,7 +719,7 @@ describe(
       expect(payload.visitAlignment).toEqual(end);
       expect(payload.usedAlignment).toEqual(end);
       // Since D33 each object also logs its own choice. This visit never
-      // reached 80 m of GPS extent, so the pin fell back to the end alignment.
+      // reached 40 m of GPS extent, so the pin fell back to the end alignment.
       expect(payload.objects).toEqual([
         {
           id: a.ctx.placedObjects[0]!.object.id,

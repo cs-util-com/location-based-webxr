@@ -4,7 +4,7 @@
 
 One-line: for the running authoring visit, the alignment each object, the
 measured code and each sighting of the code in hand is settled through - the
-FIRST MATURE alignment at or after its own moment (80 m of session GPS
+FIRST MATURE alignment at or after its own moment (40 m of session GPS
 extent), else the latest usable one (owner decision D33, authoring plan
 `2026-09-28-0953-tour-viewer-authoring-recording-anchoring-and-editing-plan.md`
 §6).

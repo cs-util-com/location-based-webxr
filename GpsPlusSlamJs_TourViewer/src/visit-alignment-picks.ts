@@ -3,7 +3,7 @@
  * decision D33, authoring plan 2026-09-28-0953 §6): for every object placed
  * or moved in the visit, for the code measured in it, and for each stable
  * sighting of the code in hand, the FIRST MATURE alignment at or after that
- * moment (`gps-plus-slam-app-framework/state/alignment-maturity`, 80 m of
+ * moment (`gps-plus-slam-app-framework/state/alignment-maturity`, 40 m of
  * session GPS extent) - or, while none has matured, the latest usable one,
  * which at the visit's end IS the end-of-visit fallback.
  *

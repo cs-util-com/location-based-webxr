@@ -103,7 +103,7 @@ export interface GpsAnchorOptions {
    */
   readonly getGpsExtentM?: () => number | null;
   /** The maturity floor (m) of the `'mature-alignment'` start-up; default
-   *  `MATURE_GPS_EXTENT_M` (80). Positive and finite. */
+   *  `MATURE_GPS_EXTENT_M` (40). Positive and finite. */
   readonly matureGpsExtentM?: number;
 }
 

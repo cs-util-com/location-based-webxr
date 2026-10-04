@@ -33,17 +33,21 @@ import type { LatLong } from '../core/index.js';
  *   own alignment, and for a code seen only at the start it is WORSE than
  *   the alignment at the walk's end (up to 8 degrees p50, 15-24 p90): the
  *   reversing value.
- * - 40 m keeps a code left behind at 1.1-1.7 m; its p90 heading is 5-6
- *   degrees at 2 % translation drift.
- * - 80 m (chosen by the owner, D28 revised) gives the same positions and a
- *   p90 heading of 3-4 degrees there; notes left behind 1.0-1.2 m p50.
- * - It loses to 40 m when 80 m of extent comes long after the object (a
- *   code measured at the start of long first walks: 5.3 m against 1.6 m at
- *   2 % / 2 degrees).
- * A lower GPS accuracy figure shrinks the noise share of the extent, so the
- * floor would mean a longer real walk at 2-3 m accuracy.
+ * - 40 m (the owner's choice, D34, 2026-10-04) keeps a code left behind at
+ *   1.1-1.7 m; its p90 heading is 5-6 degrees at 2 % translation drift.
+ * - 80 m (the session's earlier recommendation, shipped from D28 revised
+ *   until D34) gives the same positions and a p90 heading of 3-4 degrees
+ *   there; notes left behind 1.0-1.2 m p50. It loses to 40 m when 80 m of
+ *   extent comes long after the object (a code measured at the start of
+ *   long first walks: 5.3 m against 1.6 m at 2 % / 2 degrees; a 100 m
+ *   out-and-back authoring visit: 1.7 / 3.8 m against 1.1 / 1.7 m).
+ * The owner chose 40 m on this simulation's evidence, trading 1-2 degrees of
+ * p90 heading at high drift for maturity on short walks; the sweep on real
+ * recordings is filed as the check on it. A lower GPS accuracy figure
+ * shrinks the noise share of the extent, so the floor would mean a longer
+ * real walk at 2-3 m accuracy.
  */
-export const MATURE_GPS_EXTENT_M = 80;
+export const MATURE_GPS_EXTENT_M = 40;
 
 /** The alignment as it stands at one moment. */
 export interface AlignmentMoment {

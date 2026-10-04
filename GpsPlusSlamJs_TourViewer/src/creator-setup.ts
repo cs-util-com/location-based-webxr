@@ -428,7 +428,7 @@ export function wireCreatorSetup(deps: {
    * Nothing visible depends on it: the previews stay rigid as placed.
    */
   const alignmentPicks = createVisitAlignmentTracker();
-  /** The session's GPS extent, the picks' maturity (80 m). */
+  /** The session's GPS extent, the picks' maturity (40 m, D34). */
   const gpsExtent = createGpsExtentTracker();
   /** What the picks last saw: the alignment and zero references and the
    *  fix count. */

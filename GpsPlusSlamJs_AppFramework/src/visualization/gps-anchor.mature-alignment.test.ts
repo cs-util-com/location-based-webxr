@@ -2,7 +2,7 @@
  * The GPS anchor's `'mature-alignment'` start-up (owner decision D33,
  * 2026-10-03): an object placed live gets its GPS point fixed through the
  * fused alignment once the session's GPS extent reaches the maturity floor
- * (`state/alignment-maturity.ts`, 80 m) at or after the placement - or, when
+ * (`state/alignment-maturity.ts`, 40 m) at or after the placement - or, when
  * the session ends first, through the alignment the caller settles it on.
  *
  * Why these tests matter: the default start-up medians seven 1 Hz samples of

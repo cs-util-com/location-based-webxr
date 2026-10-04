@@ -52,7 +52,7 @@ keep, and no consumer passed any of the three.
     position in `arWorldGroup`'s frame (raw odometry NUE, whatever the
     group's lerped matrix is) through the FIRST MATURE alignment at or after
     the placement: the first whose session GPS extent (`getGpsExtentM`)
-    reaches `matureGpsExtentM` (default 80 m, the shared
+    reaches `matureGpsExtentM` (default 40 m, the shared
     `../state/alignment-maturity.ts`). An object placed after the session
     matured is fixed through the alignment read when the anchor is CREATED
     (its placement), not a later one. While it waits the object is never
@@ -67,7 +67,7 @@ keep, and no consumer passed any of the three.
   `secondsToAccumulateGpsPose` (default 7 samples at 1 Hz),
   `settlingSeconds` (default 0), `startup` (default `'median'`),
   `getGpsExtentM` (required by `'mature-alignment'`; null = unknown, never
-  mature), `matureGpsExtentM` (default 80).
+  mature), `matureGpsExtentM` (default 40).
   (The declared-but-never-wired `targetPosRefreshRateInSec` option was
   removed 2026-07-10, quality-review E-3 — the steady-state target is now
   cached on the `(zeroRef, alignmentMatrix, gpsPoint)` reference identities,

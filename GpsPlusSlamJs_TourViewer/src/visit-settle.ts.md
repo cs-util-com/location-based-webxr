@@ -13,7 +13,7 @@ the phone's tracking saw (symptom B's half "B2", plan §2.2).
 **Each object at its own moment (owner decision D33, 2026-10-03).** With the
 visit's picks (`visit-alignment-picks.ts`; `input.picks`) every object, the
 measured code and each sighting of a stored code is composed through the
-FIRST MATURE alignment at or after its own moment (80 m of session GPS
+FIRST MATURE alignment at or after its own moment (40 m of session GPS
 extent, the framework's `state/alignment-maturity`), else the visit's
 alignment at its end. A D10b correction uses the sighting of the code in
 hand NEAREST the object in time (a tie goes to the later), and the

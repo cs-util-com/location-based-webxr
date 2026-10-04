@@ -78,7 +78,7 @@ quality }` or `{ ok: false, reason, detail }`.
   `currentAlignment` when it describes the sightings' odometry segment, else
   the newest sighting's own snapshot. WHICH alignment the Recorder passes is
   owner decision D28, revised 2026-10-02 (`qr-mint-alignment-tracker.ts`):
-  the FIRST MATURE alignment (80 m of session GPS extent) at or after the
+  the FIRST MATURE alignment (40 m of session GPS extent, D34) at or after the
   code's last sighting; before maturity the alignment at save; after a
   frame change the one the code's segment closed with.
   - **This superseded DEC-3** (each sighting through the alignment as it
@@ -135,9 +135,12 @@ quality }` or `{ ok: false, reason, detail }`.
     MATURE alignment at or after the last sighting (40-80 m of GPS extent)
     holds 1.1-1.7 m and 1.0-2.3 degrees there and stays within 0.3 degrees
     of the alignment at save for start-at-code recordings; a floor of 10-20 m
-    is worse than that for those. The owner chose 80 m (p90 heading 3-4
-    degrees at 2 % translation drift, against 5-6 at 40 m); the shipped
-    rows are in the header of `qr-anchor-mint.start-at-code.test.ts`.
+    is worse than that for those. 80 m shipped first (the session's
+    recommendation: p90 heading 3-4 degrees at 2 % translation drift,
+    against 5-6 at 40 m); the owner lowered it to 40 m (D34, 2026-10-04) so
+    short walks mature too, with the real-data sweep filed as the check;
+    the shipped rows are in the header of
+    `qr-anchor-mint.start-at-code.test.ts`.
 - **Position is recency-weighted; rotation is not.** The weighting is the
   part of DEC-3 still in force, and its reason went with the per-sighting
   alignment: it was "a later sighting carries a later, better alignment",
@@ -225,7 +228,7 @@ fixture's, two pins of the integrated drift
 model (without drift it IS the pivot model; translation drift is the stated
 share of the distance), and the opt-in sweeps
 (`QR_MINT_START_AT_CODE_SWEEP=1` for all, or a comma list of `start`, the
-fix candidates with the shipped `a3-80 shipped` column and the
+fix candidates with the shipped `a3-40 shipped` column and the
 uncertain-heading marker shares; `left`, a code left behind under integrated drift, about an
 hour; `extent`, heading against GPS extent; `refusals`, the newest-snapshot
 refusals traced). Tables go to `QR_MINT_START_AT_CODE_SWEEP_OUT` (plus a

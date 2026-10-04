@@ -47,7 +47,7 @@ describe("createVisitAlignmentTracker (D33)", () => {
     const t = createVisitAlignmentTracker();
     t.noteAlignment(moment(1, 5));
     t.notePlacement("early", 1_000);
-    t.noteAlignment(moment(2, 40));
+    t.noteAlignment(moment(2, MATURE_GPS_EXTENT_M - 1));
     t.noteAlignment(moment(3, MATURE_GPS_EXTENT_M));
     t.notePlacement("late", 9_000);
     t.noteAlignment(moment(4, 300));
@@ -59,7 +59,7 @@ describe("createVisitAlignmentTracker (D33)", () => {
     expect(tagOf(picks.objects.get("late")?.alignment)).toBe(3);
   });
 
-  // Why this test matters: the fallback. A visit that ends before 80 m of
+  // Why this test matters: the fallback. A visit that ends before 40 m of
   // extent settles its objects through the end-of-visit alignment, which is
   // the latest one the open pick followed.
   it("follows the alignment to the latest usable one while none matures", () => {

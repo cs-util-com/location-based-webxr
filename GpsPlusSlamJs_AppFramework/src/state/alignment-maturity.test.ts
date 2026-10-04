@@ -29,21 +29,23 @@ function moment(
 }
 
 describe('alignment maturity (D28 revised, D33): the first mature alignment at or after an event', () => {
-  // Why this test matters: the measured reason for the 80 m floor lives in
-  // the constant's doc, and three callers (the QR mint, the GPS anchor's
+  // Why this test matters: the reason for the 40 m floor (the owner's D34,
+  // lowered from 80 m) lives in the constant's doc, and three callers (the QR mint, the GPS anchor's
   // mature-alignment start-up, the Tour Viewer's authoring settle) read
   // this ONE value; a silent edit would move every minted code and settled
   // note.
-  it('names 80 m as the maturity floor', () => {
-    expect(MATURE_GPS_EXTENT_M).toBe(80);
+  it('names 40 m as the maturity floor', () => {
+    expect(MATURE_GPS_EXTENT_M).toBe(40);
   });
 
   // Why this test matters: the floor is the only evidence that the yaw is
   // observable. An unknown, NaN or infinite extent must never pass it, and
   // an alignment without a matrix or a zero cannot place anything at all.
   it('calls an alignment mature only with a matrix, a zero and a finite extent at the floor', () => {
-    expect(isMatureAlignment(moment(1, 80))).toBe(true);
-    expect(isMatureAlignment(moment(1, 79.999))).toBe(false);
+    expect(isMatureAlignment(moment(1, MATURE_GPS_EXTENT_M))).toBe(true);
+    expect(isMatureAlignment(moment(1, MATURE_GPS_EXTENT_M - 0.001))).toBe(
+      false
+    );
     expect(isMatureAlignment(moment(1, undefined))).toBe(false);
     expect(isMatureAlignment(moment(1, Number.NaN))).toBe(false);
     expect(isMatureAlignment(moment(1, Number.POSITIVE_INFINITY))).toBe(false);
@@ -103,11 +105,13 @@ describe('alignment maturity (D28 revised, D33): the first mature alignment at o
   });
 
   // Why this test matters: the floor is the caller's to vary (the
-  // measurements sweep 40 m and 80 m), and the pick must honour it.
+  // measurements sweep 40 m and 80 m), and the pick must honour it. The
+  // caller floor (20 m) differs from the default, so the default could not
+  // pass for it: under 40 m the pick would follow on to the 90 m alignment.
   it('honours a caller floor', () => {
-    let pick = openMatureAlignmentPick(moment(1, 10), 40);
-    pick = advanceMatureAlignmentPick(pick, moment(2, 41), 40);
-    pick = advanceMatureAlignmentPick(pick, moment(3, 90), 40);
+    let pick = openMatureAlignmentPick(moment(1, 10), 20);
+    pick = advanceMatureAlignmentPick(pick, moment(2, 21), 20);
+    pick = advanceMatureAlignmentPick(pick, moment(3, 90), 20);
     expect(pick.alignment.tag).toBe(2);
   });
 });

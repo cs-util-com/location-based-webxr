@@ -42,11 +42,13 @@
  * The measured sweep of the fix candidates is opt-in:
  * `QR_MINT_START_AT_CODE_SWEEP=1`.
  *
- * WHAT SHIPS (owner decision D28, revised 2026-10-02): (a3) at 80 m - the
- * first alignment at or after the code's last sighting whose session GPS
- * extent reaches 80 m, else the alignment at save. The sweeps carry it as
- * the `a3-80 shipped` column, and it matches the simulated `a3 ext>=80m`
- * column in every cell. Re-run 2026-10-02 on the shipped path:
+ * WHAT SHIPS (owner decision D28, revised 2026-10-02; floor lowered from
+ * 80 m to 40 m by D34, 2026-10-04): (a3) - the first alignment at or after
+ * the code's last sighting whose session GPS extent reaches the shared floor
+ * (`MATURE_GPS_EXTENT_M`), else the alignment at save. The sweeps carry it
+ * as the `a3-40 shipped` column. At 80 m it matched the simulated
+ * `a3 ext>=80m` column in every cell; at 40 m it is the `a3 ext>=40m`
+ * column below. Re-run 2026-10-02 on the shipped path at 80 m:
  * - start-at-code (`start`): identical to (a2) wherever the walks never
  *   reach 80 m (15-60 m walks): 8.2-10.0 / 13-17 degrees and 1.3 m at 15 m,
  *   2.1-4.9 / 4-10 degrees and 1.3 m from 30 m up; at 120 m within 0.2
@@ -585,7 +587,7 @@ function recordedSightings(
 
 /**
  * The alignment the SHIPPED path mints this code through (D28 revised,
- * a3 at 80 m): the Recorder's feeder reports every detection and every
+ * a3, at 40 m since D34): the Recorder's feeder reports every detection and every
  * alignment change to `createQrMintAlignmentTracker`, in time order, and
  * the save asks it with the alignment at save as the live one. Each fix is
  * reported before a detection at the same instant, because a detection
@@ -899,7 +901,7 @@ describe('the Recorder mint when a recording starts at the code', () => {
   const SEEDS = Array.from({ length: 12 }, (_, i) => i + 1);
   /** The shipped mint (the alignment `shippedMintAlignment` picks passed as
    *  `currentAlignment`) on each seed's 30 m recording. Two 30 m walks never
-   *  reach the 80 m floor, so this is the save-time fallback. */
+   *  reach the floor, so this is the save-time fallback. */
   const shippedErrors = (looks: number): MintError[] =>
     SEEDS.map((seed) => {
       const rec = runRecording({ seed, walkM: 30 });
@@ -939,7 +941,7 @@ describe('the Recorder mint for a code left behind (D28 revised)', () => {
   // code seen mid-recording and then walked 500 m away from, at 1 % and
   // 1 degree per 100 m of SLAM drift, inherits all of that drift (8.6 m
   // p50 on the `left` sweep). The shipped rule (the first alignment at or
-  // after the last sighting whose GPS extent reaches 80 m) stops at the
+  // after the last sighting whose GPS extent reaches the floor) stops at the
   // sighting, as the per-sighting rule did (1.1-1.7 m). The a2 arm on the
   // same recordings shows the test can tell the two apart.
   it('keeps a code left 500 m behind at 1 % / 1 degree near 1.4 m, not 8.6 m', () => {
@@ -1022,10 +1024,10 @@ function candidateErrors(
     ['a1 no current', mintError(sightings)],
     // (a2) = shipped for one day: the alignment at the end of the recording.
     ['a2 at save', mintError(sightings, { currentAlignment: current })],
-    // What ships since D28 was revised: (a3) at 80 m through the real
-    // tracker (`shippedMintAlignment`).
+    // What ships since D28 was revised: (a3) through the real tracker
+    // (`shippedMintAlignment`), at 40 m since D34.
     [
-      'a3-80 shipped',
+      'a3-40 shipped',
       mintError(sightings, {
         currentAlignment: shippedMintAlignment(rec, detectionTimesS),
       }),
@@ -1258,7 +1260,7 @@ function leftCandidates(
       }),
     ],
     [
-      'a3-80 shipped',
+      'a3-40 shipped',
       mintError(sightings, {
         currentAlignment: shippedMintAlignment(rec, detectionTimesS),
       }),
@@ -1469,7 +1471,7 @@ describe.skipIf(!SWEEPS.has('extent'))(
               DEFAULT_NOISE,
               7
             );
-            // The shipped path (a3 at 80 m); walks this short never mature,
+            // The shipped path (a3, 40 m since D34); walks this short never mature,
             // so it is the alignment at save.
             const used = shippedMintAlignment(rec, detectionTimesS);
             const err = mintError(sightings, { currentAlignment: used });
@@ -1571,7 +1573,7 @@ describe.skipIf(!SWEEPS.has('refusals'))(
         }
         emitTable(
           [
-            `a1 refusals of start-only codes: ${String(rows.length)} of ${String(total)}; a3-80 shipped: ${String(shippedRefused)}`,
+            `a1 refusals of start-only codes: ${String(rows.length)} of ${String(total)}; a3-40 shipped: ${String(shippedRefused)}`,
             ...rows,
           ],
           '.refusals.txt'
