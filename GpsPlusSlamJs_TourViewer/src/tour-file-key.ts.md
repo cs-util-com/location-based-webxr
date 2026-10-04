@@ -16,7 +16,7 @@ cold-review G3: "open a file" needs its own cache and draft key).
   entries are skipped. Rejects where WebCrypto is missing (an insecure
   origin); the open reports that like any failure.
 - `isTourFileKey(key)` - true for a key made here.
-- `TOUR_FILE_KEY_PREFIX = "local-file:"`.
+- The prefix (`"local-file:"`) is module-private; `isTourFileKey` reads it.
 - `interface TourFileKeyEntry { filename; directory?; uncompressedSize; crc32? }`
   (zip.js `Entry` satisfies it).
 

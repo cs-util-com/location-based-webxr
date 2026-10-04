@@ -30,7 +30,7 @@ export interface TourFileKeyEntry {
 }
 
 /** Every file-opened tour's key starts with this; a link never does. */
-export const TOUR_FILE_KEY_PREFIX = "local-file:";
+const TOUR_FILE_KEY_PREFIX = "local-file:";
 
 /** True for a key made by {@link tourFileKey}. */
 export function isTourFileKey(key: string): boolean {

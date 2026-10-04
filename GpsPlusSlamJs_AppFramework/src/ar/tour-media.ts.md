@@ -11,8 +11,8 @@ tour from any link is the origin that will hold a creator's signing key).
 
 ## Public API
 
-- `type TourMediaKind = 'image' | 'model' | 'audio' | 'video'`,
-  `interface TourMediaType { kind; mime }`
+- `interface TourMediaType { kind; mime }` with `kind` one of `image`,
+  `model`, `audio`, `video` (the kind type itself is module-private).
 - `TOUR_MEDIA_EXTENSIONS` - every allowlisted extension (lower case).
 - `tourMediaTypeOf(extension)` - exact lower-case match (no dot), or
   `null`. `JPG`, `.jpg`, `__proto__` and non-strings are `null`.

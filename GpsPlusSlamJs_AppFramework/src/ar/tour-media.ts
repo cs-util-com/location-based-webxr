@@ -11,7 +11,7 @@
  * itself. Nothing here is ever served as HTML, XML or script. Pure: no I/O.
  */
 
-export type TourMediaKind = 'image' | 'model' | 'audio' | 'video';
+type TourMediaKind = 'image' | 'model' | 'audio' | 'video';
 
 export interface TourMediaType {
   readonly kind: TourMediaKind;
