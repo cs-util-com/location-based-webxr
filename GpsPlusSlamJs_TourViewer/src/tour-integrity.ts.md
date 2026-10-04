@@ -16,8 +16,17 @@ its canonicalisation rules live in the framework
   at open. Without `manifest.json` it returns `{ kind: "none" }`; with one
   it reads the manifest's bytes through `readBytes` (the session's capped
   reader), decodes them as strict UTF-8, parses them and checks every file
-  entry's name and declared size, returning `{ kind: "listed", manifest,
-manifestEntry, manifestSha256, records }`. Throws `TourIntegrityError`.
+  entry's name and declared size, returning `{ kind: "listed", signature,
+manifest, manifestEntry, manifestSha256, records }`. Throws
+  `TourIntegrityError`.
+  - The SIGNATURE is checked first (`manifest.sig.json` in the manifest's
+    own folder, `ar/tour-signature.ts`): nothing the manifest says is
+    believed before it is known to be the signed one. `signature` is null
+    for an unsigned tour, `{ kind: "valid", author }`, or
+    `{ kind: "unsupported", author }` where the browser cannot check
+    Ed25519 - shown as "not checked", never as valid. A signature that does
+    not verify fails the open (`bad-signature`), and so does a signature
+    with no manifest (`malformed-signature`: something was removed).
 - `checkEntryBytes(integrity, filename, bytes)` - TIER 2: one entry's
   decompressed bytes against its size and SHA-256. Entries without a
   record (the manifest, its signature) and every entry of a tour without a
@@ -71,6 +80,10 @@ manifestEntry, manifestSha256, records }`. Throws `TourIntegrityError`.
   file, a changed size, a repeated name (byte-patched, as zip.js will not
   write one), the same file under two spellings and a malformed manifest
   each fail the open with their kind - over a link and over a file;
+- the signature: a signed tour names its key; a listed tour has none; a
+  signature naming another key, a list re-made after signing (every hash
+  right, the signature over the old list) and a signature with no list
+  fail the open; a browser without Ed25519 opens it as `unsupported`;
 - tier 2: a changed entry fails its read, is reported once, and every
   later read fails too; honest entries read through; any single flipped
   byte fails (property); the recording's action entries are hashed;

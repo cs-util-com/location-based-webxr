@@ -14,7 +14,9 @@
  */
 
 import { ZipReader } from "@zip.js/zip.js";
+import { signedMessage } from "gps-plus-slam-app-framework/ar/tour-signature";
 import {
+  MANIFEST_SIGNATURE_ENTRY,
   serializeSignedTourManifest,
   SIGNED_MANIFEST_ENTRY,
   type SignedTourManifest,
@@ -30,6 +32,8 @@ import {
   writeStoreZip,
   type ZipEntryInput,
 } from "gps-plus-slam-app-framework/storage";
+import { ed25519PublicKeyToDidKey } from "gps-plus-slam-app-framework/utils/did-key";
+import { encodeBase64Url } from "gps-plus-slam-app-framework/utils/qr-payload/base64url";
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
 
 export interface TourFixtureOptions {
@@ -120,5 +124,62 @@ export async function buildListedTourFixture(
     entries,
     manifest,
     manifestText,
+  };
+}
+
+/** A fresh Ed25519 key pair for fixtures, with its did:key. */
+export async function generateFixtureKey(): Promise<{
+  privateKey: CryptoKey;
+  author: string;
+}> {
+  const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, [
+    "sign",
+    "verify",
+  ]);
+  const raw = new Uint8Array(
+    await crypto.subtle.exportKey("raw", pair.publicKey),
+  );
+  return { privateKey: pair.privateKey, author: ed25519PublicKeyToDidKey(raw) };
+}
+
+/** The `manifest.sig.json` text for `manifestText`, signed the way the
+ *  format prescribes (the context prefix, then the exact bytes). */
+export async function signManifestText(
+  manifestText: string,
+  key: { privateKey: CryptoKey; author: string },
+): Promise<string> {
+  const message = signedMessage(new TextEncoder().encode(manifestText));
+  const sig = await crypto.subtle.sign(
+    { name: "Ed25519" },
+    key.privateKey,
+    message,
+  );
+  return JSON.stringify({
+    alg: "Ed25519",
+    author: key.author,
+    sig: encodeBase64Url(new Uint8Array(sig)),
+  });
+}
+
+/** A listed tour plus `manifest.sig.json` by `key`. */
+export async function buildSignedTourFixture(
+  files: Readonly<Record<string, string | Uint8Array>>,
+  key: { privateKey: CryptoKey; author: string },
+  options: TourFixtureOptions = {},
+): Promise<TourFixture & { signatureText: string }> {
+  const listed = await buildListedTourFixture(files, options);
+  const signatureText = await signManifestText(listed.manifestText, key);
+  const entries = [
+    ...listed.entries,
+    {
+      path: `${options.wrap ?? ""}${MANIFEST_SIGNATURE_ENTRY}`,
+      data: signatureText,
+    },
+  ];
+  return {
+    ...listed,
+    entries,
+    zip: await writeStoreZip(entries, "tour fixture"),
+    signatureText,
   };
 }

@@ -24,7 +24,13 @@
 
 import { ZipReader, type Entry, type FileEntry } from "@zip.js/zip.js";
 import {
+  verifyManifestSignature,
+  type SignatureVerdict,
+} from "gps-plus-slam-app-framework/ar/tour-signature";
+import {
+  canonicalTourPath,
   checkEntriesAgainstManifest,
+  MANIFEST_SIGNATURE_ENTRY,
   parseSignedTourManifest,
   signedManifestEntryOf,
   TourIntegrityError,
@@ -48,8 +54,16 @@ export type TourIntegrity =
       readonly kind: "none";
     }
   | {
-      /** A manifest whose list the archive matches; nobody vouches for it. */
+      /** A manifest whose list the archive matches. */
       readonly kind: "listed";
+      /**
+       * `manifest.sig.json`'s verdict: null when the tour is not signed
+       * (nobody vouches for the list), `valid` for a signature by the key
+       * it names, `unsupported` when this browser cannot check Ed25519 -
+       * never treated as valid. A signature that does not verify is not a
+       * verdict: it fails the open.
+       */
+      readonly signature: SignatureVerdict | null;
       readonly manifest: SignedTourManifest;
       /** The archive name the manifest was read from. */
       readonly manifestEntry: string;
@@ -64,13 +78,16 @@ export type TourIntegrity =
  *  read: the signature covers the bytes, the parser reads the text. */
 const STRICT_UTF8 = new TextDecoder("utf-8", { fatal: true });
 
-function decodeManifest(bytes: Uint8Array): string {
+function decodeText(
+  bytes: Uint8Array,
+  name: "manifest.json" | "manifest.sig.json",
+): string {
   try {
     return STRICT_UTF8.decode(bytes);
   } catch {
     throw new TourIntegrityError(
-      "malformed-manifest",
-      "manifest.json is not valid UTF-8 text",
+      name === "manifest.json" ? "malformed-manifest" : "malformed-signature",
+      `${name} is not valid UTF-8 text`,
     );
   }
 }
@@ -96,18 +113,61 @@ export async function openTourIntegrity(
 ): Promise<TourIntegrity> {
   const files = entries.filter(isFileEntry);
   const manifestEntry = signedManifestEntryOf(files.map((e) => e.filename));
-  if (manifestEntry === null) return { kind: "none" };
+  if (manifestEntry === null) {
+    refuseOrphanSignature(files);
+    return { kind: "none" };
+  }
   const entry = files.find((e) => e.filename === manifestEntry)!;
   const bytes = await readBytes(entry);
-  const manifest = parseSignedTourManifest(decodeManifest(bytes));
+  // The signature first: it covers the manifest's exact bytes, so nothing
+  // the manifest says is believed before it is known to be the signed one.
+  const signatureEntry = signatureEntryOf(files, manifestEntry);
+  const signature =
+    signatureEntry === undefined
+      ? null
+      : await verifyManifestSignature(
+          bytes,
+          decodeText(await readBytes(signatureEntry), "manifest.sig.json"),
+        );
+  const manifest = parseSignedTourManifest(decodeText(bytes, "manifest.json"));
   const records = checkEntriesAgainstManifest(entries, manifest, manifestEntry);
   return {
     kind: "listed",
+    signature,
     manifest,
     manifestEntry,
     manifestSha256: await sha256Hex(bytes),
     records,
   };
+}
+
+/** `manifest.sig.json` in the manifest's own folder, if the archive has
+ *  one. (Anywhere else it is an ordinary file, and tier 1 refuses it as
+ *  unlisted.) */
+function signatureEntryOf(
+  files: readonly FileEntry[],
+  manifestEntry: string,
+): FileEntry | undefined {
+  const canonical = canonicalTourPath(manifestEntry) ?? "";
+  const folder = canonical.slice(0, canonical.lastIndexOf("/") + 1);
+  const wanted = `${folder}${MANIFEST_SIGNATURE_ENTRY}`;
+  return files.find((e) => canonicalTourPath(e.filename) === wanted);
+}
+
+/** A signature with no manifest to sign is not "unsigned": something was
+ *  removed, and the tour is not opened. */
+function refuseOrphanSignature(files: readonly FileEntry[]): void {
+  const orphan = files.some(
+    (e) =>
+      (canonicalTourPath(e.filename) ?? "").split("/").at(-1) ===
+      MANIFEST_SIGNATURE_ENTRY,
+  );
+  if (orphan) {
+    throw new TourIntegrityError(
+      "malformed-signature",
+      "the archive holds manifest.sig.json but no manifest.json",
+    );
+  }
 }
 
 /** The identity of a tier-1 result: the manifest's hash, or null for a

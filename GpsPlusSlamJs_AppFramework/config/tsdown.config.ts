@@ -65,10 +65,11 @@ const entryFiles = [
   'src/ar/tour-archive.ts',
   // The tour media allowlist (tour kit plan K0), deep-imported the same way.
   'src/ar/tour-media.ts',
-  // The v2 game content and the signed manifest (tour kit
+  // The v2 game content, the signed manifest and its signature (tour kit
   // plan K1), deep-imported by the Tour Viewer the same way.
   'src/ar/tour-stations.ts',
   'src/ar/tour-signed-manifest.ts',
+  'src/ar/tour-signature.ts',
   'src/ar/frame-loop.ts',
   // Shared hit-test reticle driver (2026-07-18 promotion of the three
   // app-local copies) — deep-imported by consumer apps via the `./ar/*`

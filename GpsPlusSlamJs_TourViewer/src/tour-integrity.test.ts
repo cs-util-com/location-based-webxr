@@ -1,5 +1,8 @@
 /**
- * Why these tests matter: a tour that carries `manifest.json` promises
+ * Why these tests matte  const repack = (entries: readonly ZipEntryInput[]) =>
+    writeStoreZip(entries, "test");
+
+r: a tour that carries `manifest.json` promises
  * that its archive is exactly the listed files (tour kit plan K1, §8 D3).
  * The first tier of that promise runs at open, before anything is shown:
  * a file slipped in beside the listed ones, a size that changed, or the
@@ -20,7 +23,12 @@ import {
   type ZipEntryInput,
 } from "gps-plus-slam-app-framework/storage";
 
-import { buildListedTourFixture } from "./test-support/tour-signing-fixture.js";
+import {
+  buildListedTourFixture,
+  buildSignedTourFixture,
+  generateFixtureKey,
+  signManifestText,
+} from "./test-support/tour-signing-fixture.js";
 import type { TourIntegrity } from "./tour-integrity.js";
 import { openTourFile, openTourSession } from "./tour-session.js";
 
@@ -257,18 +265,29 @@ describe("tier 2: every entry read is hashed", () => {
   });
 
   it("any single flipped byte of an entry fails its read (property)", async () => {
+    // One honest archive, built once; each run flips one byte of the
+    // entry's STORED data in place (store mode keeps the content verbatim),
+    // so the names and sizes still match and only the hash can tell.
     const content = "0123456789abcdefghij";
-    const files = { ...FILES, "content/gate.jpg": content };
+    const { zip } = await buildListedTourFixture({
+      ...FILES,
+      "content/gate.jpg": content,
+    });
+    const honest = await bytesOf(zip);
+    const needle = new TextEncoder().encode(content);
+    const offset = honest.findIndex((_, i) =>
+      needle.every((b, j) => honest[i + j] === b),
+    );
+    expect(offset).toBeGreaterThan(0);
     await fc.assert(
       fc.asyncProperty(
         fc.nat({ max: content.length - 1 }),
-        fc.constantFrom("~", "#", "Z"),
-        async (at, replacement) => {
-          fc.pre(content[at] !== replacement);
-          const changed = `${content.slice(0, at)}${replacement}${content.slice(at + 1)}`;
-          const zip = await tampered("content/gate.jpg", changed, files);
+        fc.integer({ min: 1, max: 255 }),
+        async (at, xor) => {
+          const bytes = honest.slice();
+          bytes[offset + at] = bytes[offset + at]! ^ xor;
           const session = await openTourSession("https://host/t.zip", {
-            fetchImpl: rangeServer(await bytesOf(zip)),
+            fetchImpl: rangeServer(bytes),
           });
           expect(await failureKind(session.loadEntry("content/gate.jpg"))).toBe(
             "hash-mismatch",
@@ -398,5 +417,96 @@ describe("tier 3: the whole archive, once it is on the device", () => {
     });
     await expect(uncached.wholeArchiveCheck).resolves.toBe("not-checked");
     await uncached.close();
+  });
+});
+
+describe("the signature (tour kit plan K1, K-D2)", () => {
+  // Why this matters: a signature is checked before anything the manifest
+  // says is believed. A valid one names its key; one that does not verify
+  // - another key, a re-made list, a signature with no list - stops the
+  // open as "modified"; and a browser that cannot check Ed25519 opens the
+  // tour as signed-but-NOT-checked, never as valid.
+  const repack = (entries: readonly ZipEntryInput[]) =>
+    writeStoreZip(entries, "test");
+
+  it("opens a signed tour, naming the key that signed it", async () => {
+    const key = await generateFixtureKey();
+    const { zip } = await buildSignedTourFixture(FILES, key);
+    const session = await openLink(zip);
+    expect(session.integrity).toMatchObject({
+      kind: "listed",
+      signature: { kind: "valid", author: key.author },
+    });
+    await session.close();
+  });
+
+  it("a listed but unsigned tour carries no signature verdict", async () => {
+    const { zip } = await buildListedTourFixture(FILES);
+    const session = await openLink(zip);
+    expect(session.integrity).toMatchObject({
+      kind: "listed",
+      signature: null,
+    });
+    await session.close();
+  });
+
+  it("refuses a signature that names another key", async () => {
+    const key = await generateFixtureKey();
+    const other = await generateFixtureKey();
+    const { entries, signatureText } = await buildSignedTourFixture(FILES, key);
+    const forged = JSON.stringify({
+      ...(JSON.parse(signatureText) as object),
+      author: other.author,
+    });
+    const zip = await repack(
+      entries.map((e) =>
+        e.path === "manifest.sig.json" ? { ...e, data: forged } : e,
+      ),
+    );
+    expect(await failureKind(openLink(zip))).toBe("bad-signature");
+  });
+
+  it("refuses a list re-made after signing, though every hash in it is right", async () => {
+    const key = await generateFixtureKey();
+    const signed = await buildSignedTourFixture(FILES, key);
+    // The attacker adds a file and lists it honestly - only the signature
+    // is now over the OLD list.
+    const remade = await buildListedTourFixture({
+      ...FILES,
+      "content/evil.jpg": "X",
+    });
+    const zip = await repack([
+      ...remade.entries,
+      { path: "manifest.sig.json", data: signed.signatureText },
+    ]);
+    expect(await failureKind(openLink(zip))).toBe("bad-signature");
+  });
+
+  it("refuses a signature with no manifest to sign", async () => {
+    const key = await generateFixtureKey();
+    const zip = await repack([
+      ...Object.entries(FILES).map(([path, data]) => ({ path, data })),
+      { path: "manifest.sig.json", data: await signManifestText("{}", key) },
+    ]);
+    expect(await failureKind(openLink(zip))).toBe("malformed-signature");
+  });
+
+  it("on a browser without Ed25519 the tour opens as signed but NOT checked", async () => {
+    const key = await generateFixtureKey();
+    const { zip } = await buildSignedTourFixture(FILES, key);
+    const spy = vi
+      .spyOn(crypto.subtle, "importKey")
+      .mockRejectedValue(
+        new DOMException("Unrecognized name", "NotSupportedError"),
+      );
+    try {
+      const session = await openLink(zip);
+      expect(session.integrity).toMatchObject({
+        signature: { kind: "unsupported", author: key.author },
+      });
+      await session.close();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
