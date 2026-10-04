@@ -11,8 +11,10 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
+import { exaggerationAt } from "./globe-flight.js";
 import {
   PERF_CHECKPOINTS_KM,
+  PERF_E_CHECK_KM,
   PERF_PATH,
   PERF_PLACES,
   perfStepPath,
@@ -166,5 +168,21 @@ describe("perfWheelDeltaY, the controls-driven mode", () => {
   it("refuses an altitude or target that is not finite and > 0", () => {
     expect(() => perfWheelDeltaY(0, 1e6)).toThrow(RangeError);
     expect(() => perfWheelDeltaY(1e6, Number.NaN)).toThrow(RangeError);
+  });
+});
+
+// Why: the frame-stepped path holds at PERF_E_CHECK_KM for its one E
+// change, which the recorder times as the cost of a height step (perf plan
+// 2026-10-03-2017 H1). Outside the exaggeration's ramp (1 above 2,000 km,
+// the near value from 20 km down) nothing would change there and the check
+// would time nothing.
+describe("PERF_E_CHECK_KM", () => {
+  it("lies inside the exaggeration's ramp, where a small move changes E", () => {
+    const m = PERF_E_CHECK_KM * 1000;
+    const e = exaggerationAt(m);
+    expect(e).toBeGreaterThan(1);
+    expect(e).toBeLessThan(exaggerationAt(0));
+    // A 30 % descent from the check altitude crosses at least one 0.1 step.
+    expect(exaggerationAt(m * 0.7)).toBeGreaterThan(e);
   });
 });
