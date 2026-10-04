@@ -25,6 +25,7 @@ const assets = new Map<string, TourAsset>([
   ["voice", { id: "voice", path: "content/voice.mp3", kind: "audio" }],
   ["arch", { id: "arch", path: "content/arch.glb", kind: "model" }],
   ["big", { id: "big", path: "content/big.png", kind: "image" }],
+  ["film", { id: "film", path: "content/film.mp4", kind: "video" }],
 ]);
 
 function station(id: string, assetIds: string[]): TourStation {
@@ -44,6 +45,8 @@ function station(id: string, assetIds: string[]): TourStation {
 
 function harness(budgetBytes = 1000, sizes: Record<string, number> = {}) {
   const reads: string[] = [];
+  /** The open tour (identity is what counts). */
+  let tour: object | null = { name: "castle" };
   const pending: {
     path: string;
     resolve: (b: Blob) => void;
@@ -58,13 +61,15 @@ function harness(budgetBytes = 1000, sizes: Record<string, number> = {}) {
       );
     },
     budgetBytes,
+    tour: () => tour,
   });
   const land = async (size?: number) => {
     const next = pending.shift()!;
     next.resolve(new Blob([new Uint8Array(size ?? sizes[next.path] ?? 10)]));
     await new Promise((r) => setTimeout(r, 0));
   };
-  return { prefetch, reads, pending, land };
+  const openTour = (t: object | null) => (tour = t);
+  return { prefetch, reads, pending, land, openTour };
 }
 
 describe("stationAssetIds", () => {
@@ -106,6 +111,23 @@ describe("stationAssetIds", () => {
       ],
     };
     expect(stationAssetIds(s)).toEqual(["knight", "voice", "arch"]);
+  });
+
+  it("never lists a video: K4 shows its transcript, and a video may be 256 MiB (R3)", () => {
+    // Why this test matters (K4 review R3): the prefetch read video files
+    // nothing played, up to the K0 entry cap each, over a phone's data.
+    const s: TourStation = {
+      ...station("gate", ["knight"]),
+      steps: [
+        {
+          id: "v",
+          block: { kind: "video", asset: "film", transcript: "t" },
+          advance: { mode: "tap" },
+        },
+        ...station("gate", ["knight"]).steps,
+      ],
+    };
+    expect(stationAssetIds(s)).toEqual(["knight"]);
   });
 });
 
@@ -161,14 +183,78 @@ describe("createStationPrefetch", () => {
     await expect(again).resolves.toBeInstanceOf(Blob);
   });
 
+  it("offline: a failed read is not asked again for the same station on every tick; another station tries once more (R4)", async () => {
+    // Why this test matters (K4 review R4): the guide ticks on every camera
+    // frame, so a read retried on every approach hammered a dead network
+    // (or a broken entry) dozens of times a second.
+    const h = harness();
+    const gate = station("gate", ["knight"]);
+    h.prefetch.approach(gate, 10, 38);
+    h.pending.shift()!.reject(new Error("offline"));
+    await new Promise((r) => setTimeout(r, 0));
+    for (let i = 0; i < 50; i += 1) h.prefetch.approach(gate, 10, 38);
+    expect(h.reads).toEqual(["content/knight.png"]);
+    // A different station needing the same picture: one more try.
+    h.prefetch.approach(station("well", ["knight"]), 10, 38);
+    expect(h.reads).toEqual(["content/knight.png", "content/knight.png"]);
+  });
+
+  it("holds an asset shared by two stations until both are done, and fetches it again once released (R11)", async () => {
+    // Why this test matters (K4 review R11): the K4 build tied an asset to
+    // the first station that asked, so it was released when that station
+    // was done - while the second still needed it - and never fetched again.
+    const h = harness(100);
+    h.prefetch.approach(station("a", ["knight"]), 10, 38);
+    h.prefetch.approach(station("b", ["knight"]), 10, 38);
+    await h.land(60);
+    h.prefetch.done("a");
+    // Room for c's picture would need the knight released: b still needs it.
+    h.prefetch.approach(station("c", ["big"]), 10, 38);
+    await h.land(60);
+    expect(h.prefetch.heldBytes()).toBe(60);
+    // b's story reads the knight from the cache: no third read.
+    const story = h.prefetch.load("content/knight.png");
+    expect(h.reads).toEqual(["content/knight.png", "content/big.png"]);
+    expect((await story).size).toBe(60);
+    // Once b is done too, the knight may go; a later station reads it again.
+    h.prefetch.done("b");
+    h.prefetch.approach(station("d", ["arch"]), 10, 38);
+    await h.land(60);
+    h.prefetch.approach(station("e", ["knight"]), 10, 38);
+    expect(h.reads.at(-1)).toBe("content/knight.png");
+  });
+
+  it("keeps the cache across a session end, and drops it when the tour closes or changes (R15)", async () => {
+    // Why this test matters (K4 review R15): the cache was dropped at every
+    // AR session end, so a visitor who left AR for a moment read the next
+    // story again; it is keyed by entry path, so it must go with the tour.
+    const h = harness();
+    h.prefetch.approach(station("gate", ["knight"]), 10, 38);
+    await h.land(7);
+    expect(h.prefetch.heldBytes()).toBe(7);
+    // A session end is not a tour change: nothing here clears.
+    expect((await h.prefetch.load("content/knight.png")).size).toBe(7);
+    h.openTour(null);
+    h.prefetch.sync();
+    expect(h.prefetch.heldBytes()).toBe(0);
+    h.openTour({ name: "abbey" });
+    void h.prefetch.load("content/knight.png");
+    expect(h.reads).toEqual(["content/knight.png", "content/knight.png"]);
+  });
+
   it("stays within its byte budget, releasing a done station first and never an offered one", async () => {
     const h = harness(100);
     h.prefetch.approach(station("a", ["knight"]), 10, 38);
     await h.land(60);
     h.prefetch.approach(station("b", ["arch"]), 10, 38);
     await h.land(60);
-    // a is still offered: b does not fit, and is not kept.
+    // a is still offered: b does not fit, and is not kept - nor read again
+    // on every tick while it would still not fit (its story reads it).
     expect(h.prefetch.heldBytes()).toBe(60);
+    for (let i = 0; i < 20; i += 1) {
+      h.prefetch.approach(station("b", ["arch"]), 10, 38);
+    }
+    expect(h.reads).toEqual(["content/knight.png", "content/arch.glb"]);
     h.prefetch.done("a");
     h.prefetch.approach(station("c", ["big"]), 10, 38);
     await h.land(60);
@@ -178,10 +264,11 @@ describe("createStationPrefetch", () => {
     expect(h.reads.at(-1)).toBe("content/knight.png");
   });
 
-  it("clear drops everything, and a read landing after it is not kept", async () => {
+  it("a tour change drops everything, and a read landing after it is not kept", async () => {
     const h = harness();
     h.prefetch.approach(station("gate", ["knight", "arch"]), 10, 38);
-    h.prefetch.clear();
+    h.openTour({ name: "abbey" });
+    h.prefetch.sync();
     await h.land();
     expect(h.prefetch.heldBytes()).toBe(0);
   });

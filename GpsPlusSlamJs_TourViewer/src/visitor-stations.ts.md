@@ -26,7 +26,9 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
 - Media are read through `ctx.session.loadContentEntry` (K0's allowlist and
   `.glb` check, K1's per-entry hash check), ahead of time as the visitor
   approaches (`station-prefetch.ts`; the story's own reads go through the
-  same cache, cleared by `stop()`). A figure is decoded by the framework's
+  same cache). The cache lives with the open tour's manifest
+  (`ctx.tourManifest`, by identity): kept across AR sessions, dropped when
+  the tour closes or another opens (K4 review R15). A figure is decoded by the framework's
   `decodeFrameTexture`, one at a time through a `keyed-chain` key and at
   `decodeDivisor(asset size)` (the decode cap); a model by
   `seams.loadGlbModel`.
@@ -34,7 +36,7 @@ VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
   trail for the page.
 - A choice button is a `.btn` with `data-testid="scene-choice"`.
 - `stop()` stops the story and the HUD; the guide keeps the progress with
-  the open tour.
+  the open tour, and the prefetch its cache unless the tour closed.
 
 ## Examples
 

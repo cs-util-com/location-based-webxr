@@ -6,12 +6,21 @@
  * same cache, so a prefetch in flight is joined, never repeated.
  *
  * Bounded, because a long tour must not fill a phone's memory:
- * - ONE prefetch read in flight, in the order the stations were approached
- *   (the tour session reads one entry at a time anyway);
- * - a byte budget for everything held (`PREFETCH_BUDGET_BYTES`), released
- *   from the station done longest ago, never from a station still offered;
- * - a failed read is not kept: the story's own read tries again and says
- *   what failed.
+ * - ONE prefetch read in flight, in the order asked (the tour session reads
+ *   one entry at a time anyway);
+ * - a byte budget for everything held (`PREFETCH_BUDGET_BYTES`): an asset is
+ *   held for every station that asked for it and released only once all of
+ *   them are done, the one whose last station was done longest ago first
+ *   (K4 review R11: an asset tied to the first station that asked was
+ *   released while a second still needed it, and never fetched again);
+ * - a read that failed, or did not fit the budget, is not kept and not
+ *   asked again for the stations that asked (R4: offline, the guide's
+ *   per-frame ticks retried it every frame); another station asking tries
+ *   once more, and the story's own read always tries and says what failed;
+ * - video is never prefetched (R3): K4 shows a video step's transcript, and
+ *   a video may be as large as the tour's entry cap;
+ * - the cache lives with the open tour (R15): kept across AR sessions,
+ *   dropped when the tour closes or another opens.
  */
 
 import type {
@@ -55,14 +64,15 @@ export function decodeDivisor(size?: {
     : 1;
 }
 
-/** The asset ids a station's story reads, in step order, deduplicated. */
+/** The asset ids a station's story reads, in step order, deduplicated.
+ *  Never a video (K4 review R3): K4 shows a video step's transcript, and a
+ *  video may be as large as the tour's entry cap allows. */
 export function stationAssetIds(station: TourStation): string[] {
   const ids = station.steps.flatMap((step: TourStep): string[] => {
     const block = step.block;
     switch (block.kind) {
       case "image":
       case "audio":
-      case "video":
       case "model":
         return [block.asset];
       case "character":
@@ -80,64 +90,128 @@ export interface StationPrefetch {
   /** The visitor is `distanceM` from this offered station; prefetch it when
    *  inside its prefetch radius (`activateM + PREFETCH_LEAD_M`). */
   approach(station: TourStation, distanceM: number, activateM: number): void;
-  /** A station is done: its media may be released first. */
+  /** A station is done: the media only it needed may be released. */
   done(stationId: string): void;
   /** Read an asset: from the cache, joining a read in flight, or now. */
   load(path: string): Promise<Blob>;
   /** Bytes held (for the budget's test). */
   heldBytes(): number;
-  /** Drop everything (the tour closed). */
-  clear(): void;
+  /** Drop everything now if the open tour changed or closed (the page
+   *  calls it when it stops the stations; every other call checks too). */
+  sync(): void;
 }
 
 export function createStationPrefetch(deps: {
   readonly assets: () => ReadonlyMap<string, TourAsset>;
   read(path: string): Promise<Blob>;
+  /** The open tour, compared by identity: the cache is keyed by entry
+   *  path, which the next tour reuses, so a different value (or null, the
+   *  tour closed) drops everything. A session end keeps it (R15). */
+  tour(): unknown;
   readonly budgetBytes?: number;
 }): StationPrefetch {
   const budget = deps.budgetBytes ?? PREFETCH_BUDGET_BYTES;
-  /** Held blobs by path, with the station that asked first. */
-  const held = new Map<string, { blob: Blob; stationId: string }>();
+  /** Held blobs by path. */
+  const held = new Map<string, Blob>();
+  /** The stations that asked for each queued, in-flight or held path: an
+   *  asset is held for all of them (K4 review R11). */
+  const needers = new Map<string, Set<string>>();
+  /** The stations a path was given up for - its read failed, or it did not
+   *  fit the budget: not asked again for them (K4 review R4: the guide
+   *  ticks on every camera frame); another station asking tries once more,
+   *  and the story's own read always tries. */
+  const givenUpFor = new Map<string, Set<string>>();
+  /** Done stations, by the order they were done in. */
+  const doneSeq = new Map<string, number>();
+  let doneCount = 0;
   const inFlight = new Map<string, Promise<Blob>>();
-  const requested = new Set<string>();
-  const doneOrder: string[] = [];
-  let queue: { path: string; stationId: string }[] = [];
+  let queue: string[] = [];
   let reading = false;
   let generation = 0;
+  let tourKey: unknown = deps.tour();
 
   const heldBytes = (): number =>
-    [...held.values()].reduce((sum, h) => sum + h.blob.size, 0);
+    [...held.values()].reduce((sum, blob) => sum + blob.size, 0);
 
-  /** Release blobs of done stations, oldest done first, until `need` fits. */
+  function clear(): void {
+    generation += 1;
+    held.clear();
+    needers.clear();
+    givenUpFor.clear();
+    doneSeq.clear();
+    inFlight.clear();
+    queue = [];
+    reading = false;
+  }
+
+  function sync(): void {
+    const key = deps.tour();
+    if (key === tourKey) return;
+    tourKey = key;
+    clear();
+  }
+
+  /** When the last station needing a held path was done, or null while
+   *  any of them is not done. */
+  function releasableAt(path: string): number | null {
+    let latest = -1;
+    for (const id of needers.get(path) ?? []) {
+      const at = doneSeq.get(id);
+      if (at === undefined) return null;
+      latest = Math.max(latest, at);
+    }
+    return latest;
+  }
+
+  /** Release held assets no station still needs, the one whose last
+   *  station was done longest ago first, until `need` fits. */
   function makeRoom(need: number): boolean {
-    for (const stationId of [...doneOrder]) {
+    const candidates = [...held.keys()]
+      .map((path) => ({ path, at: releasableAt(path) }))
+      .filter((c): c is { path: string; at: number } => c.at !== null)
+      .sort((a, b) => a.at - b.at);
+    for (const { path } of candidates) {
       if (heldBytes() + need <= budget) break;
-      for (const [path, h] of held) {
-        if (h.stationId === stationId) held.delete(path);
-      }
-      doneOrder.splice(doneOrder.indexOf(stationId), 1);
+      held.delete(path);
+      needers.delete(path);
     }
     return heldBytes() + need <= budget;
   }
 
-  /** Read once; `stationId` null: the story's own read, not kept. */
-  function read(path: string, stationId: string | null): Promise<Blob> {
+  /** A path not held after its read: not asked again for its askers. */
+  function giveUp(path: string): void {
+    const askers = needers.get(path);
+    if (askers === undefined) return;
+    const givenUp = givenUpFor.get(path) ?? new Set<string>();
+    for (const id of askers) givenUp.add(id);
+    givenUpFor.set(path, givenUp);
+    needers.delete(path);
+  }
+
+  /** Read once; kept only while a station asked for it (a story's own
+   *  read of an asset nobody prefetched is not kept). */
+  function read(path: string): Promise<Blob> {
     const cached = held.get(path);
-    if (cached !== undefined) return Promise.resolve(cached.blob);
+    if (cached !== undefined) return Promise.resolve(cached);
     const pending = inFlight.get(path);
     if (pending !== undefined) return pending;
     const mine = generation;
     const promise = deps.read(path).then(
       (blob) => {
+        if (mine !== generation) return blob;
         inFlight.delete(path);
-        if (stationId !== null && mine === generation && makeRoom(blob.size)) {
-          held.set(path, { blob, stationId });
+        if (needers.has(path) && makeRoom(blob.size)) {
+          held.set(path, blob);
+        } else {
+          giveUp(path);
         }
         return blob;
       },
       (err: unknown) => {
-        inFlight.delete(path);
-        requested.delete(path);
+        if (mine === generation) {
+          inFlight.delete(path);
+          giveUp(path);
+        }
         throw err;
       },
     );
@@ -147,11 +221,11 @@ export function createStationPrefetch(deps: {
 
   function pump(): void {
     if (reading) return;
-    const next = queue.shift();
-    if (next === undefined) return;
+    const path = queue.shift();
+    if (path === undefined) return;
     reading = true;
     const mine = generation;
-    void read(next.path, next.stationId)
+    void read(path)
       .catch(() => undefined)
       .finally(() => {
         if (mine !== generation) return;
@@ -160,31 +234,41 @@ export function createStationPrefetch(deps: {
       });
   }
 
+  /** Ask for a station's media: each path once, held for every station
+   *  that asked; a path given up for this station is not asked again. */
+  function request(station: TourStation): void {
+    const assets = deps.assets();
+    for (const id of stationAssetIds(station)) {
+      const asset = assets.get(id);
+      if (asset === undefined) continue;
+      const path = asset.path;
+      if (givenUpFor.get(path)?.has(station.id) === true) continue;
+      const askers = needers.get(path);
+      if (askers !== undefined) {
+        askers.add(station.id);
+        continue;
+      }
+      needers.set(path, new Set([station.id]));
+      if (!held.has(path) && !inFlight.has(path)) queue.push(path);
+    }
+    pump();
+  }
+
   return {
     approach(station, distanceM, activateM) {
+      sync();
       if (!(distanceM <= activateM + PREFETCH_LEAD_M)) return;
-      const assets = deps.assets();
-      for (const id of stationAssetIds(station)) {
-        const asset = assets.get(id);
-        if (asset === undefined || requested.has(asset.path)) continue;
-        requested.add(asset.path);
-        queue.push({ path: asset.path, stationId: station.id });
-      }
-      pump();
+      request(station);
     },
     done(stationId) {
-      if (!doneOrder.includes(stationId)) doneOrder.push(stationId);
+      sync();
+      if (!doneSeq.has(stationId)) doneSeq.set(stationId, (doneCount += 1));
     },
-    load: (path) => read(path, null),
+    load(path) {
+      sync();
+      return read(path);
+    },
     heldBytes,
-    clear() {
-      generation += 1;
-      held.clear();
-      inFlight.clear();
-      requested.clear();
-      doneOrder.length = 0;
-      queue = [];
-      reading = false;
-    },
+    sync,
   };
 }

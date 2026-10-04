@@ -79,9 +79,12 @@ export function wireVisitorStations(deps: {
   const assetsById = () =>
     new Map((ctx.tourManifest?.assets ?? []).map((asset) => [asset.id, asset]));
   // Media are read ahead as the visitor approaches (`station-prefetch.ts`),
-  // and the story's own reads go through the same cache.
+  // and the story's own reads go through the same cache. The cache lives
+  // with the open tour's manifest: kept across AR sessions, dropped when
+  // the tour closes or another opens (K4 review R15).
   const prefetch = createStationPrefetch({
     assets: assetsById,
+    tour: () => ctx.tourManifest,
     read: (path) => {
       const session = ctx.session;
       if (session === null) return Promise.reject(new Error("no tour open"));
@@ -198,8 +201,9 @@ export function wireVisitorStations(deps: {
     stop: () => {
       view.stopAll();
       guide.endSession();
-      // The cache is keyed by entry path, which the next tour reuses.
-      prefetch.clear();
+      // A tour close has already dropped the manifest: the cache goes now;
+      // a session end keeps it for the next session (R15).
+      prefetch.sync();
     },
   };
 }
