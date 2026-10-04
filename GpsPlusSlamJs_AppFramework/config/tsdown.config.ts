@@ -65,6 +65,10 @@ const entryFiles = [
   'src/ar/tour-archive.ts',
   // The tour media allowlist (tour kit plan K0), deep-imported the same way.
   'src/ar/tour-media.ts',
+  // The v2 game content and the signed manifest (tour kit
+  // plan K1), deep-imported by the Tour Viewer the same way.
+  'src/ar/tour-stations.ts',
+  'src/ar/tour-signed-manifest.ts',
   'src/ar/frame-loop.ts',
   // Shared hit-test reticle driver (2026-07-18 promotion of the three
   // app-local copies) — deep-imported by consumer apps via the `./ar/*`
@@ -322,6 +326,12 @@ const entryFiles = [
   // The JSON type guards those parsers share (one copy per package,
   // DEC-H3) - under the `./utils/*` wildcard, so per-file.
   'src/utils/json-guards.ts',
+  // Hex/SHA-256, base58btc and did:key (tour kit plan K1), deep-imported by
+  // the Tour Viewer's integrity check and its test fixtures.
+  'src/utils/sha256-hex.ts',
+  'src/utils/base58btc.ts',
+  'src/utils/did-key.ts',
+  'src/utils/qr-payload/base64url.ts',
   'src/ar/qr/qr-level.ts',
   'src/ar/qr/qr-level-archive.ts',
   'src/ar/qr/qr-mint-level.ts',

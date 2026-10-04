@@ -5,6 +5,7 @@
  * branch carries a contract of its own).
  */
 
+import { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
   ArchiveLimitError,
   OpenRemoteArchiveError,
@@ -67,7 +68,21 @@ const FIXED_TEXT: Partial<Record<RangeProbeRejectCause, string>> = {
     "This device is offline, and this tour is not saved on it. Connect to the internet and try again.",
 };
 
+/**
+ * A tour that does not match its own list of contents (tour kit plan K1,
+ * §4.2: "modified, do not trust"), in plain words, with the technical
+ * detail after it. A list made by a newer app is not "modified": it cannot
+ * be checked here, and updating the app is the way forward.
+ */
+export function describeIntegrityError(err: TourIntegrityError): string {
+  if (err.kind === "newer-format") {
+    return "This tour was made with a newer version of the app, so it cannot be checked here. Reload the page to update the app, then try again.";
+  }
+  return `This tour does not match its own list of contents, so it is not shown: it was changed after it was made or signed, or the file is damaged. Do not trust this copy - ask its author for a fresh link. (Detail: ${err.message}.)`;
+}
+
 export function describeOpenError(err: unknown, url?: string): string {
+  if (err instanceof TourIntegrityError) return describeIntegrityError(err);
   if (err instanceof OpenRemoteArchiveError) {
     const fixed = FIXED_TEXT[err.rejectCause];
     if (fixed !== undefined) return fixed;

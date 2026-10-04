@@ -514,7 +514,10 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
     closes, since the hosted zip lacks them until the upload.
   - **The Finish replaces and filters** (`applyObjectChanges`), removes
     each deleted photo's content file (`contentEntriesToRemove` into the
-    rebuild's `remove`), and afterwards drops from `placedObjects` only
+    rebuild's `remove`), drops `manifest.json` and `manifest.sig.json`
+    (`signedManifestFilesOf`, tour kit plan K1: the list and its signature
+    would no longer match the files this Finish rewrites, so the output
+    is an honest unsigned tour until K2 re-signs on export), and afterwards drops from `placedObjects` only
     what the zip carries WITH THE SAME CONTENT, and clears the applied
     deletions. The draft's tombstones stay until the hosted zip lacks the
     ids, the same proof the objects wait for.

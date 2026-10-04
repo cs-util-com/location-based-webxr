@@ -29,6 +29,12 @@ loading with MIME types, and the poisoned-cache recovery loop.
 - `openTourFile(file, options?): Promise<TourSession>` (tour kit plan K0)
   - a tour zip on the device, `options.limits` as above.
 - `TourSession { entries; archive; fromFile; hasRecording; manifestWrap; budget; stats(); loadEntry(filename); loadEntryText(filename); loadContentEntry(image); close() }`
+  - `integrity` (tour kit plan K1, §8 D3) - TIER 1's result
+    (`tour-integrity.ts`): `none` for a tour without `manifest.json`,
+    else the manifest whose names and sizes the archive matched. Run in
+    the build, before the session exists: an archive that does not match
+    its manifest rejects the open (`TourIntegrityError`), and a
+    cache-served one takes the poison path (evict, reopen remote).
   - `budget` - the archive's one `DecompressionBudget`; the creator's
     Finish passes it to `rebuildZipWithEntries` when the rebuild's input
     is this archive (K0 milestone review R1).

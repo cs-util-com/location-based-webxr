@@ -17,6 +17,7 @@
  * §3 M-A (DEC-2 / DEC-2b) for the decision and the collision argument.
  */
 
+import { bytesToHex } from '../sha256-hex.js';
 import { utf8Encode } from './utf8.js';
 
 /**
@@ -57,7 +58,7 @@ export async function qrCodeId(text: string): Promise<string> {
     'SHA-256',
     toArrayBuffer(utf8Encode(text))
   );
-  return toHex(new Uint8Array(digest)).slice(0, QR_CODE_ID_LENGTH);
+  return bytesToHex(new Uint8Array(digest)).slice(0, QR_CODE_ID_LENGTH);
 }
 
 /**
@@ -73,13 +74,4 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);
   return buffer;
-}
-
-/** Lowercase hex for a byte array. Private: only the digest needs it. */
-function toHex(bytes: Uint8Array): string {
-  let out = '';
-  for (const byte of bytes) {
-    out += byte.toString(16).padStart(2, '0');
-  }
-  return out;
 }

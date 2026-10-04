@@ -177,6 +177,8 @@ function fakeSession(
   blob: Blob,
   hostedName: string | null = null,
   budget?: DecompressionBudget,
+  /** Further entries the hosted zip carries (its `hostedContent`). */
+  extraNames: readonly string[] = [],
 ): unknown {
   return {
     budget,
@@ -185,6 +187,7 @@ function fakeSession(
     entries: [
       { filename: `${WRAP}tour.json` },
       { filename: `${WRAP}qr/${LEVEL_ID}.json` },
+      ...extraNames.map((filename) => ({ filename })),
     ],
     manifestWrap: WRAP,
     readWholeArchive: () => Promise.resolve(blob),
@@ -252,6 +255,7 @@ async function wireFinishable(options: {
     blob,
     options.hostedName ?? null,
     options.budget,
+    (options.hostedContent ?? []).map((c) => c.path),
   ) as never;
   ctx.mintedLevel = { id: LEVEL_ID, json: '{"measured":true}' };
   ctx.tourManifestStatus = "settled";
@@ -337,6 +341,35 @@ describe("the finish rebuilds the open archive under its session's budget (K0 mi
 
     expect(ctx.rebuiltZip).toBeNull();
     expect(ctx.finishError).toMatch(/too large once unpacked/);
+  });
+});
+
+describe("the finish drops a list and signature it would invalidate (tour kit plan K1)", () => {
+  it("removes manifest.json and manifest.sig.json, and keeps every other file", async () => {
+    // Why this test matters: the Finish rewrites tour.json and the level
+    // file, so a manifest listing their old hashes - and a signature over
+    // that manifest - no longer match. Carried along, they would make the
+    // creator's own new tour fail every visitor's check as "modified".
+    // Re-signing on export is K2's; until then the honest output is an
+    // unsigned tour.
+    const { dom, ctx } = await wireFinishable({
+      hosted: [pin("already-there")],
+      placed: [pin("new-one")],
+      hostedContent: [
+        { path: `${WRAP}manifest.json`, data: "{}" },
+        { path: `${WRAP}manifest.sig.json`, data: "{}" },
+        { path: `${WRAP}content/kept.jpg`, data: "0123456789" },
+      ],
+    });
+
+    dom.finishButton.click();
+    await settle(ctx);
+
+    const names = await entryNamesOf(ctx.rebuiltZip!.blob);
+    expect(names).not.toContain(`${WRAP}manifest.json`);
+    expect(names).not.toContain(`${WRAP}manifest.sig.json`);
+    expect(names).toContain(`${WRAP}content/kept.jpg`);
+    expect(names).toContain(`${WRAP}tour.json`);
   });
 });
 

@@ -19,6 +19,12 @@ the image-plane loader and the AR entry (flows plan M6 pulled it out of
   other cause reads as Drive's refusal when `url` is a Drive URL, else the
   generic "cannot be opened as an archive"; a non-probe error passes its
   message through.
+- `describeIntegrityError(err: TourIntegrityError): string` (tour kit plan
+  K1, §4.2) - "does not match its own list of contents, so it is not
+  shown ... Do not trust this copy", with the technical detail at the
+  end; for `newer-format` instead "made with a newer version of the app,
+  reload to update" (not modified, just not checkable here).
+  `describeOpenError` delegates to it.
 - `offersFileOpen(cause): boolean` - true for `cors` only: the page shows
   the "Open the downloaded file" button under the error. Offline a
   download is impossible too; a missing, broken or too-large file is not

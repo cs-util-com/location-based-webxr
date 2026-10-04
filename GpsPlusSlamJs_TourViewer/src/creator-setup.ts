@@ -62,6 +62,7 @@ import {
   type MintAlignmentInfo,
 } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
+import { signedManifestFilesOf } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
   createEmptyTourManifest,
   serializeTourManifest,
@@ -2730,8 +2731,14 @@ export function wireCreatorSetup(deps: {
             deleted,
           ),
         };
-        // A deleted photo takes its content file with it.
-        const removed = contentEntriesToRemove(manifest.objects, deleted, wrap);
+        // A deleted photo takes its content file with it; and a manifest
+        // (with its signature) listing the files this Finish rewrites would
+        // no longer match them, so they go too - the output is unsigned
+        // until K2 signs on export (tour kit plan K1).
+        const removed = [
+          ...contentEntriesToRemove(manifest.objects, deleted, wrap),
+          ...signedManifestFilesOf(entryNames),
+        ];
         const entries = [
           {
             path: existingLevelPath ?? qrLevelEntryName(minted.id),

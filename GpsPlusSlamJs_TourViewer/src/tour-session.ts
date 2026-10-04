@@ -50,6 +50,7 @@ import {
 
 import { fileNameFromContentDisposition } from "./content-disposition.js";
 import { tourFileKey } from "./tour-file-key.js";
+import { openTourIntegrity, type TourIntegrity } from "./tour-integrity.js";
 
 /** One archive entry as the gallery sees it (reached via `TourSession.entries`
  *  — not separately exported; knip counts a standalone export as dead). */
@@ -113,6 +114,13 @@ export interface TourSession {
    * reads and rebuild - shares one total (K0 milestone review R1).
    */
   readonly budget: DecompressionBudget;
+  /**
+   * What tier 1 established at open (tour kit plan K1, §8 D3): `none` for a
+   * tour without `manifest.json` (every tour before K1), else the manifest
+   * the archive's names and sizes matched. An archive that does not match
+   * its manifest never becomes a session: the open rejects.
+   */
+  readonly integrity: TourIntegrity;
   stats(): Readonly<StreamStats>;
   /** Decompress one entry to a Blob (images get their MIME type). */
   loadEntry(filename: string): Promise<Blob>;
@@ -474,6 +482,22 @@ async function buildSession(
   );
   const zipEntries = await listZipEntriesCapped(reader, limits.maxEntries);
   const budget = DecompressionBudget.forArchive(archive.size, limits);
+  // Tier 1 before anything is shown: the manifest read under the text cap,
+  // the archive's names and sizes against it.
+  const integrity = await openTourIntegrity(
+    zipEntries,
+    async (entry) =>
+      new Uint8Array(
+        await (
+          await readZipEntryBlob(
+            entry,
+            budget,
+            "application/json",
+            limits.maxTextEntryBytes,
+          )
+        ).arrayBuffer(),
+      ),
+  );
   const readText = (entry: FileEntry): Promise<string> =>
     readZipEntryText(entry, budget, limits.maxTextEntryBytes);
   const byName = new Map<string, FileEntry>();
@@ -514,6 +538,7 @@ async function buildSession(
     manifestWrap,
     hostedFileName: named.hostedFileName,
     budget,
+    integrity,
     stats: () => ({ ...stats }),
     loadEntry: async (filename) =>
       // The media allowlist types the Blob (tour kit plan K0); anything

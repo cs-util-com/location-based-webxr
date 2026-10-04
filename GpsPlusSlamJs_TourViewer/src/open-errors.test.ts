@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
   ArchiveLimitError,
   OpenRemoteArchiveError,
@@ -98,6 +99,26 @@ describe("describeOpenError (the rest)", () => {
     const capped = new ArchiveLimitError("entry-count", 20_000, 20_001);
     expect(describeOpenError(capped)).toBe(capped.message);
     expect(describeOpenError(capped)).toMatch(/too many files/);
+  });
+
+  it("calls a tour that does not match its own list modified, says not to trust it, and keeps the detail", () => {
+    // Tour kit plan K1, §4.2: a hash or list mismatch is a hard "modified,
+    // do not trust" failure, worded for a visitor; the technical detail
+    // stays at the end for whoever reports it.
+    const text = describeOpenError(
+      new TourIntegrityError("hash-mismatch", '"content/a.jpg" does not match'),
+    );
+    expect(text).toMatch(/does not match its own list of contents/);
+    expect(text).toMatch(/Do not trust this copy/);
+    expect(text).toContain('"content/a.jpg" does not match');
+  });
+
+  it("tells a visitor to update the app for a list made by a newer one, not that it was modified", () => {
+    const text = describeOpenError(
+      new TourIntegrityError("newer-format", "format 2"),
+    );
+    expect(text).toMatch(/newer version of the app/);
+    expect(text).not.toMatch(/Do not trust/);
   });
 
   it("passes any other error's message through", () => {
