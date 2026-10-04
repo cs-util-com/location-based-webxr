@@ -24,7 +24,7 @@
  *   (after k's story) started its prefetch; now the run names k+1 as soon
  *   as k is found, and the guide asks for it `ahead`.
  *
- * VERDICTS (asserted; full tables with `STATION_PREFETCH_SWEEP_OUT=<file>`):
+ * VERDICTS (asserted; the full tables with `STATION_PREFETCH_SWEEP_OUT=<file>`):
  * - APPROACH at the 80 m lead: at least 5 MB ready in every cell at
  *   1 Mbit/s and 25 MB at 5 Mbit/s (the worst cell: the tightest station
  *   at 1.8 m/s). What reverses 80 m: 60 m leaves 3.75 MB in that cell, 40 m
@@ -132,7 +132,9 @@ function rig(opts: { leadM: number; mbit: number; storyMb: number }) {
       const due = pending.findIndex((p) => p.at <= t);
       if (due < 0) break;
       const [p] = pending.splice(due, 1);
-      p!.resolve(new Blob([new Uint8Array(bytes)]));
+      // Only the size is read: a real Blob of up to 13 MB per asset made
+      // the simulation allocation-bound.
+      p!.resolve({ size: bytes } as Blob);
       landed.add(p!.path);
       await settle();
     }
@@ -208,7 +210,8 @@ async function mbReady(
   return lo / 4;
 }
 
-// About 8 s alone; the simulation runs the real module on a virtual clock.
+// About 1.5 s alone: the real module on a virtual clock, with size-only
+// blobs.
 describe("prefetch sweeps (K4, review R5 and R17)", { timeout: 60_000 }, () => {
   afterAll(() => {
     if (OUT !== undefined) writeFileSync(OUT, table.join("\n") + "\n");
@@ -236,7 +239,7 @@ describe("prefetch sweeps (K4, review R5 and R17)", { timeout: 60_000 }, () => {
     // The shipped lead (the cells of 80 m, all speeds and geometries).
     const at80 = byLead.get(PREFETCH_LEAD_M)!;
     const cellsAt = (mbit: number, cells: number[]) =>
-      cells.filter((_, k) => MBITS[Math.floor(k / 2) % 3] === mbit);
+      cells.filter((_, k) => MBITS[Math.floor(k / 2) % MBITS.length] === mbit);
     expect(Math.min(...cellsAt(1, at80))).toBeGreaterThanOrEqual(4.75);
     expect(Math.min(...cellsAt(5, at80))).toBeGreaterThanOrEqual(24);
     // What reverses it: shorter leads in the worst cell.
@@ -253,12 +256,14 @@ describe("prefetch sweeps (K4, review R5 and R17)", { timeout: 60_000 }, () => {
 
   it("CASTLE (R5): the table, and reading ahead is never worse than the K4 build", async () => {
     for (const spacing of SPACINGS) {
-      for (const storyS of STORY_S) {
-        for (const speed of SPEEDS) {
-          for (const mbit of MBITS) {
-            const before = await mbReady((s) =>
-              castleReady(false, storyS, spacing, speed, mbit, s),
-            );
+      for (const speed of SPEEDS) {
+        for (const mbit of MBITS) {
+          // The K4 build: the next station is offered only after the story,
+          // inside any lead - the story's length cannot matter.
+          const before = await mbReady((s) =>
+            castleReady(false, 0, spacing, speed, mbit, s),
+          );
+          for (const storyS of STORY_S) {
             const after = await mbReady((s) =>
               castleReady(true, storyS, spacing, speed, mbit, s),
             );
