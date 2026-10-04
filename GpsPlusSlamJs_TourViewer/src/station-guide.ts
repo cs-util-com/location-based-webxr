@@ -383,13 +383,20 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
   return {
     tick() {
       const current = currentRun();
-      if (current === null) {
-        dom.line.hidden = true;
-        dom.skip.hidden = true;
+      // The scan gate is checked every tick, not only when the run was
+      // created (K4 review R8): a later AR session waits behind its own.
+      if (current === null || !deps.placementAllowed()) {
+        show(dom.line, "");
+        show(dom.skip, "");
         deps.onGuide?.(null, null);
         return;
       }
-      if (replayFound) {
+      measure();
+      const { visitor, distances } = last!;
+      // A story cut short by the session's end plays again once it can be
+      // placed: a position and the GPS zero (R8: before them its figure had
+      // no pose).
+      if (replayFound && measuredZero !== null && visitor.nue !== null) {
         replayFound = false;
         for (const status of current.statuses()) {
           const station = stationById(status.id);
@@ -398,8 +405,6 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
           }
         }
       }
-      measure();
-      const { visitor, distances } = last!;
       if (visitor.nue !== null) deps.onVisitor?.(visitor.nue);
       approach(distances, visitor.accuracyM);
       handle(
@@ -413,7 +418,13 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     },
     codeLocked(levelId) {
       const current = currentRun();
-      if (current === null || deps.isIgnoredCode(levelId)) return;
+      if (
+        current === null ||
+        !deps.placementAllowed() ||
+        deps.isIgnoredCode(levelId)
+      ) {
+        return;
+      }
       handle(current.codeLocked(levelId, deps.now()));
       render();
     },

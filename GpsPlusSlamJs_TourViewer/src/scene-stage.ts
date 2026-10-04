@@ -7,7 +7,8 @@
  *
  * One thing at a time: a new figure or model replaces the previous one, and
  * `clear` removes it (the story ended or was stopped). A decode that lands
- * after the stage moved on is disposed, never shown.
+ * after the stage moved on is disposed, never shown. A station with no
+ * position yet does not fail the show: what was decoded waits for it.
  *
  * The character's size and placement are the K4 build agent's choice, not
  * the owner's (the plan leaves them open): 1.7 m tall, its feet at the
@@ -69,31 +70,58 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
   let shown: { root: Object3D; scene: Object3D; character: boolean } | null =
     null;
   let token = 0;
+  /** Decoded and waiting for the station's position (no GPS zero yet, or a
+   *  code-only station before the visitor's height is known): mounted on
+   *  the next visitor update that has one (K4 review R8: it used to fail
+   *  for good, and the story said "could not be loaded"). */
+  let waiting: {
+    mine: number;
+    stationId: string;
+    root: Object3D;
+    character: boolean;
+    settle: () => void;
+  } | null = null;
 
   function clear(): void {
     token += 1;
+    if (waiting !== null) {
+      disposeObject3D(waiting.root);
+      waiting.settle();
+      waiting = null;
+    }
     if (shown === null) return;
     shown.scene.remove(shown.root);
     disposeObject3D(shown.root);
     shown = null;
   }
 
-  /** Mount `root` at the station, unless the stage moved on meanwhile. */
+  /** Mount `root` at the station, unless the stage moved on meanwhile;
+   *  settles once it is mounted (or dropped). */
   function mount(
     mine: number,
     stationId: string,
     root: Object3D,
     character: boolean,
-  ): void {
+  ): Promise<void> {
+    if (mine !== token) {
+      disposeObject3D(root);
+      return Promise.resolve();
+    }
+    if (tryMount(stationId, root, character)) return Promise.resolve();
+    return new Promise((settle) => {
+      waiting = { mine, stationId, root, character, settle };
+    });
+  }
+
+  /** Mount now if the scene and the station's pose exist. */
+  function tryMount(
+    stationId: string,
+    root: Object3D,
+    character: boolean,
+  ): boolean {
     const scene = deps.getScene();
     const pose = deps.poseOf(stationId);
-    if (mine !== token || scene === null || pose === null) {
-      disposeObject3D(root);
-      if (mine === token && pose === null) {
-        throw new Error("the station has no position yet");
-      }
-      return;
-    }
+    if (scene === null || pose === null) return false;
     const holder = new Group();
     holder.name = `station-stage:${stationId}`;
     holder.position.set(...pose.positionNue);
@@ -101,6 +129,16 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     holder.add(root);
     scene.add(holder);
     shown = { root: holder, scene, character };
+    return true;
+  }
+
+  /** A visitor update: mount what waits for its position, if it has one. */
+  function retryWaiting(): void {
+    if (waiting === null || waiting.mine !== token) return;
+    const w = waiting;
+    if (!tryMount(w.stationId, w.root, w.character)) return;
+    waiting = null;
+    w.settle();
   }
 
   return {
@@ -128,17 +166,18 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       // Feet on the station's altitude.
       plane.position.set(0, CHARACTER_HEIGHT_M / 2, 0);
       plane.name = "station-character";
-      mount(mine, stationId, plane, true);
+      await mount(mine, stationId, plane, true);
     },
     async showModel(stationId, model) {
       clear();
       const mine = token;
       const root = await deps.loadModel(model);
       root.name = "station-model";
-      mount(mine, stationId, root, false);
+      await mount(mine, stationId, root, false);
     },
     clear,
     faceVisitor(visitor) {
+      retryWaiting();
       if (shown === null || !shown.character) return;
       const p = shown.root.position;
       const north = visitor[0] - p.x;

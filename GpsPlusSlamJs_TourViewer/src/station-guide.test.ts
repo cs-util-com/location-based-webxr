@@ -56,6 +56,7 @@ function harness(tourValue: StationTour) {
     accuracyM: 4 as number | null,
   };
   let allowed = true;
+  let zeroNow: typeof zero | null = zero;
   const ignored = new Set<string>();
   const found: string[] = [];
   const approaches: [string, number, number][] = [];
@@ -87,7 +88,7 @@ function harness(tourValue: StationTour) {
     placementAllowed: () => allowed,
     zero: () => {
       calls.zero += 1;
-      return zero;
+      return zeroNow;
     },
     visitor: () => {
       calls.visitor += 1;
@@ -132,6 +133,7 @@ function harness(tourValue: StationTour) {
     },
     advance: (ms: number) => (now += ms),
     allow: (v: boolean) => (allowed = v),
+    setZero: (z: typeof zero | null) => (zeroNow = z),
     setTour: (t: StationTour | null) => (tour = t),
   };
 }
@@ -348,6 +350,54 @@ describe("wireStationGuide", () => {
     h.guide.endSession();
     h.at(0, 0);
     expect(h.found).toEqual(["gate", "gate"]);
+    h.at(0, 0);
+    expect(h.found).toEqual(["gate", "gate"]);
+  });
+
+  it("a later AR session waits behind its own scan gate: no line, no HUD, nothing found until it passes (R8)", () => {
+    // Why this test matters (K4 review R8): the gate was checked only when
+    // the run was created, so a second AR session guided and found
+    // stations before its scan gate had passed.
+    const h = harness({
+      stations: [station("gate", 50, 0), station("well", 0, 0)],
+      order: "fixed",
+      levels: null,
+    });
+    h.at(0, 0);
+    expect(h.dom.line.textContent).toBe("Next: GATE, 50 m");
+    h.guide.endSession();
+    h.allow(false);
+    h.at(50, 0);
+    expect(h.dom.line.hidden).toBe(true);
+    expect(h.dom.skip.hidden).toBe(true);
+    expect(h.huds).toHaveLength(1);
+    expect(h.found).toEqual([]);
+    h.allow(true);
+    h.at(50, 0);
+    expect(h.found).toEqual(["gate"]);
+    expect(h.huds).toHaveLength(2);
+  });
+
+  it("a story cut short replays only once the visitor has a position and the GPS zero exists (R8)", () => {
+    // Why this test matters (K4 review R8): a replay at the first tick of a
+    // new session, before the zero was set, mounted the figure with no
+    // pose, and the story said "could not be loaded" for good.
+    const h = harness({
+      stations: [station("gate", 0, 0), station("well", 0, 80)],
+      order: "fixed",
+      levels: null,
+    });
+    h.at(0, 0);
+    expect(h.found).toEqual(["gate"]);
+    h.guide.endSession();
+    h.setZero(null);
+    h.lost();
+    expect(h.found).toEqual(["gate"]);
+    h.at(0, 0);
+    expect(h.found).toEqual(["gate"]);
+    h.setZero(zero);
+    h.lost();
+    expect(h.found).toEqual(["gate"]);
     h.at(0, 0);
     expect(h.found).toEqual(["gate", "gate"]);
   });

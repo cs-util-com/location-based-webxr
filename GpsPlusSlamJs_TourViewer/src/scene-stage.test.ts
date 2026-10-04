@@ -163,16 +163,51 @@ describe("createSceneStage", () => {
     expect(dispose).toHaveBeenCalled();
   });
 
-  it("rejects, so the story can say so, when a figure does not decode or the station cannot be placed", async () => {
+  it("rejects, so the story can say so, when a figure does not decode", async () => {
     const h = harness();
     h.deps.decodeTexture.mockResolvedValueOnce(null);
     await expect(
       h.stage.showCharacter("gate", new Blob(["x"])),
     ).rejects.toThrow(/did not decode/);
-    h.deps.poseOf.mockReturnValueOnce(null);
-    await expect(h.stage.showModel("gate", new Blob(["x"]))).rejects.toThrow(
-      /no position/,
-    );
+    expect(h.scene.children).toHaveLength(0);
+  });
+
+  it("waits for the station's position and mounts once it has one, instead of failing for good (R8)", async () => {
+    // Why this test matters (K4 review R8): a story replayed before the GPS
+    // zero existed lost its figure for good (\"could not be loaded\").
+    const h = harness();
+    h.deps.poseOf.mockReturnValue(null);
+    let settled = false;
+    const shown = h.stage.showModel("gate", new Blob(["x"])).then(() => {
+      settled = true;
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(settled).toBe(false);
+    expect(h.scene.children).toHaveLength(0);
+    // Still no position: a visitor update changes nothing.
+    h.stage.faceVisitor([0, 0, 0]);
+    expect(h.scene.children).toHaveLength(0);
+    h.deps.poseOf.mockReturnValue({
+      positionNue: [1, 2, 3],
+      rotationNue: [0, 0, 0, 1],
+    });
+    h.stage.faceVisitor([0, 0, 0]);
+    await shown;
+    expect(h.scene.children).toHaveLength(1);
+  });
+
+  it("a waiting mount taken away by the next step is freed, and the show settles", async () => {
+    const h = harness();
+    h.deps.poseOf.mockReturnValue(null);
+    const shown = h.stage.showCharacter("gate", new Blob(["x"]));
+    await new Promise((r) => setTimeout(r, 0));
+    h.stage.clear();
+    await shown;
+    h.deps.poseOf.mockReturnValue({
+      positionNue: [1, 2, 3],
+      rotationNue: [0, 0, 0, 1],
+    });
+    h.stage.faceVisitor([0, 0, 0]);
     expect(h.scene.children).toHaveLength(0);
   });
 });

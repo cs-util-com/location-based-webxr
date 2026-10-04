@@ -17,7 +17,8 @@ can't get there" (§8 D5), and hands a found station to its story. Plan:
     done;
   - `skipTapped()`;
   - `endSession()` - the HUD goes, the line hides; the progress stays, and
-    a found station's story plays again on the next session's first tick;
+    a found station's story plays again on the next session's first tick
+    with a position and the GPS zero;
   - `poseOf(stationId)` - the station's pose at the scene root (the stage
     stands its figure there).
 - Deps: `dom` (`line`, `skip`), `tour()` (stations, order, levels),
@@ -38,6 +39,13 @@ activateM)` (each tick, each offered station with a distance: the
   session with the scan gate passed or not required), kept across AR
   entries, replaced when the tour's stations change (another tour), gone
   with the tour. Saving it across page lives is K3.
+- **The scan gate per session (K4 review R8):** placement is checked on
+  every tick and code lock, not only when the run is created: a later AR
+  session shows no line, no skip and no HUD, and finds nothing, until its
+  own gate passes.
+- **A replay waits (R8):** a found station's story cut short by the
+  session's end plays again on the first tick that has a position and the
+  GPS zero (before them its figure had no pose).
 - **Where a station is (D19, §8 D8):** its own geo pose; a code-only
   station stands where its code's level was saved; with neither, it has no
   distance (found by its code only; the line asks for the printed code).
