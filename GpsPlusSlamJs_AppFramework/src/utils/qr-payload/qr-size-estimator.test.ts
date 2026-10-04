@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import QRCode from 'qrcode';
 import {
@@ -17,6 +18,23 @@ import {
  */
 
 const EC_LEVELS: readonly QrEcLevel[] = ['L', 'M', 'Q', 'H'];
+
+type ProbeMode = 'numeric' | 'alphanumeric' | 'byte';
+
+/** The qrcode oracle's stored answers; see the oracle section below. */
+const ORACLE = JSON.parse(
+  readFileSync(
+    new URL('./qr-size-estimator.oracle.json', import.meta.url),
+    'utf8'
+  )
+) as {
+  oracle: string;
+  boundaries: Record<QrEcLevel, Record<ProbeMode, number[]>>;
+  mixed: { payload: string; versions: Record<QrEcLevel, number> }[];
+};
+
+/** Live oracle checks run where the browser stages run: CI and the milestone run. */
+const LIVE_ORACLE = !process.env['GATE_SKIP_BROWSER_STAGES'];
 
 describe('estimateQrSize — hand-derived spec values', () => {
   // Why this test matters: "HELLO WORLD" is the ISO 18004 worked example —
@@ -115,9 +133,10 @@ describe('estimateQrSize — hand-derived spec values', () => {
  * Oracle cross-validation (decision D6): our chosen version must EQUAL the
  * `qrcode` package's for every probe. Instead of sweeping every length
  * (too slow), we probe each (version, EC, mode) capacity BOUNDARY: the
- * longest single-mode string our estimator says still fits version v must
- * make the oracle pick exactly v, and one more char must push the oracle
- * past v. A wrong entry anywhere in the v1–25 capacity table fails here.
+ * longest single-mode string the oracle still fits in version v must need
+ * exactly v by our estimate too, and one more char must push both past v.
+ * A wrong entry anywhere in the v1–25 capacity table fails here. The
+ * oracle's boundaries are stored (see the GATE SPEED note below).
  */
 describe('estimateQrSize — qrcode oracle boundary agreement', () => {
   const MODE_PROBES = [
@@ -126,57 +145,44 @@ describe('estimateQrSize — qrcode oracle boundary agreement', () => {
     { label: 'byte', char: 'a' },
   ] as const;
 
-  /** Largest repeat count of `char` that still fits `version` per OUR estimator. */
-  function maxCharsFitting(
-    char: string,
-    ec: QrEcLevel,
-    version: number
-  ): number {
-    let lo = 0;
-    let hi = 8000;
-    while (lo < hi) {
-      const mid = Math.ceil((lo + hi + 1) / 2);
-      const estimate = estimateQrSize(char.repeat(mid), ec);
-      if (estimate !== null && estimate.version <= version) {
-        lo = mid;
-      } else {
-        hi = mid - 1;
-      }
-    }
-    return lo;
-  }
-
   function oracleVersion(payload: string, ec: QrEcLevel): number {
     return QRCode.create(payload, { errorCorrectionLevel: ec }).version;
   }
 
+  // GATE SPEED (gate-speed plan 2026-10-04, G3): the oracle's answers never
+  // change with our code, so they are stored in qr-size-estimator.oracle.json:
+  // for every EC level, mode and version 1-25 the longest single-mode string
+  // the oracle still fits in that version (found by binary search on the
+  // ORACLE alone, so the table does not lean on our estimator), and the
+  // oracle's version for every mixed payload below. Every run checks the
+  // estimator against that table. A run with GATE_SKIP_BROWSER_STAGES unset
+  // (CI and the milestone run) also asks the live oracle the original two
+  // questions at every stored boundary (exactly v there, more than v one
+  // character later), so a stale fixture or an oracle upgrade fails there and
+  // cannot pass silently. In the fast per-commit gate those live checks are
+  // reported as skipped.
   for (const ec of EC_LEVELS) {
     for (const probe of MODE_PROBES) {
-      it(
-        `agrees on every v1–25 ${probe.label} boundary at EC ${ec}`,
-        // Wall-clock heavy (25 binary-searched oracle QR encodes per probe;
-        // ~2–5 s each in isolation) but the assertions are structural, so a
-        // generous budget weakens nothing. At the 5 s default these tests sit
-        // at 90–100 % of budget and flake whenever the suite grows and files
-        // run in parallel (observed 2026-07-11 at 5,028 ms).
-        { timeout: 60_000 },
-        () => {
-          for (let version = 1; version <= 25; version++) {
-            const maxChars = maxCharsFitting(probe.char, ec, version);
-            const atBoundary = probe.char.repeat(maxChars);
-            expect(
-              oracleVersion(atBoundary, ec),
-              `${probe.label}×${maxChars} @ EC ${ec} should need v${version}`
-            ).toBe(version);
-            // One more char must overflow this version for the oracle too.
-            const overflowed = probe.char.repeat(maxChars + 1);
-            expect(
-              oracleVersion(overflowed, ec),
-              `${probe.label}×${maxChars + 1} @ EC ${ec} should exceed v${version}`
-            ).toBeGreaterThan(version);
-          }
+      it(`matches the oracle's v1–25 ${probe.label} capacities at EC ${ec}`, () => {
+        const stored = ORACLE.boundaries[ec][probe.label];
+        expect(stored).toHaveLength(25);
+        for (let version = 1; version <= 25; version++) {
+          // The oracle's boundary must be OUR boundary too: exactly v at it,
+          // more than v one character later. Two estimates instead of a
+          // binary search: the estimator's version only grows with the
+          // repeat count, the property the search relied on as well.
+          const maxChars = stored[version - 1]!;
+          expect(
+            estimateQrSize(probe.char.repeat(maxChars), ec)?.version,
+            `${probe.label}×${maxChars} @ EC ${ec} should need v${version}`
+          ).toBe(version);
+          const over = estimateQrSize(probe.char.repeat(maxChars + 1), ec);
+          expect(
+            over === null || over.version > version,
+            `${probe.label}×${maxChars + 1} @ EC ${ec} should exceed v${version}`
+          ).toBe(true);
         }
-      );
+      });
     }
   }
 
@@ -193,15 +199,60 @@ describe('estimateQrSize — qrcode oracle boundary agreement', () => {
     '8'.repeat(120) + 'A'.repeat(50) + 'a'.repeat(30),
   ];
 
-  for (const payload of MIXED_PROBES) {
+  it('stores the oracle answer for exactly these mixed payloads', () => {
+    expect(ORACLE.mixed.map((m) => m.payload)).toEqual(MIXED_PROBES);
+  });
+
+  for (const [i, payload] of MIXED_PROBES.entries()) {
     it(`agrees with the oracle on mixed payload "${payload.slice(0, 24)}…"`, () => {
       for (const ec of EC_LEVELS) {
         const estimate = estimateQrSize(payload, ec);
         expect(estimate).not.toBeNull();
         expect(estimate?.version, `EC ${ec}: ${payload.slice(0, 40)}`).toBe(
-          oracleVersion(payload, ec)
+          ORACLE.mixed[i]!.versions[ec]
         );
       }
     });
   }
+
+  describe.runIf(LIVE_ORACLE)(
+    'the stored answers against the live qrcode package',
+    () => {
+      for (const ec of EC_LEVELS) {
+        for (const probe of MODE_PROBES) {
+          it(
+            `still fits exactly the stored ${probe.label} boundaries at EC ${ec}`,
+            // Wall-clock heavy (50 oracle QR encodes per probe), but the
+            // assertions are structural, so a generous budget weakens nothing.
+            { timeout: 60_000 },
+            () => {
+              for (let version = 1; version <= 25; version++) {
+                const maxChars =
+                  ORACLE.boundaries[ec][probe.label][version - 1]!;
+                expect(
+                  oracleVersion(probe.char.repeat(maxChars), ec),
+                  `${probe.label}×${maxChars} @ EC ${ec} should need v${version}`
+                ).toBe(version);
+                expect(
+                  oracleVersion(probe.char.repeat(maxChars + 1), ec),
+                  `${probe.label}×${maxChars + 1} @ EC ${ec} should exceed v${version}`
+                ).toBeGreaterThan(version);
+              }
+            }
+          );
+        }
+      }
+
+      it('still picks the stored version for every mixed payload', () => {
+        for (const { payload, versions } of ORACLE.mixed) {
+          for (const ec of EC_LEVELS) {
+            expect(
+              oracleVersion(payload, ec),
+              `EC ${ec}: ${payload.slice(0, 40)}`
+            ).toBe(versions[ec]);
+          }
+        }
+      });
+    }
+  );
 });
