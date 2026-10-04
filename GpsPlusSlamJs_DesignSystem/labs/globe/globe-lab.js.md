@@ -557,6 +557,22 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     latitude exactly found no tile, or at a tile corner the far side of the
     Earth (the cause, shared vertices or three's triangle test, is not
     established). A hit beyond the Earth's centre reads as null.
+- The world frame (F2 plan 2026-10-03-1922 F2a, M3; `/globe/globe-frame.js`):
+  `globe.group` carries one matrix from ECEF to a local frame at the target
+  (x east, y up, the origin on the ground), set at the pin's press and at
+  load or replay with an `at=` target, the identity (ECEF) otherwise. The
+  switch keeps the view (`setFrameTarget` re-applies the camera's ECEF
+  pose) and releases the controls' drag state. Every camera write goes
+  through `placeCameraEcef` (the intro's orbit pose, the dive, the
+  clearance's radial lift, the recorder's placement) and every read
+  through `ecefCamera` or the tiles' `worldToLocal` (the dive's start, the
+  state's `cameraDistanceM`, `cameraDirection` and `cameraDepressionDeg`,
+  so no smoke's expectation changed). The Earth's centre for the space sky
+  and the far-side test is the group's world position. `worldFrame=0`
+  keeps ECEF, for a before/after; the state's `worldFrame` is the frame's
+  target, and `__globeLab.reframe(target)` switches it for
+  `globe-frame.smoke.spec.mjs` (0.00 levels and 0 m across a switch at the
+  hold).
 - The Debug panel (round-6 plan 2026-10-04-1050 G6-0, DEC-G6-6;
   `globe-debug.js`): always there, a small button at the left edge. The
   page's event log (`globe-debug-log.js`, from the first line, so boot

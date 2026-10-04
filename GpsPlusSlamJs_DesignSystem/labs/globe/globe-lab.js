@@ -73,6 +73,11 @@ import {
 import { GLOBE_TERRAIN, createGlobeTerrain } from "/globe/globe-terrain.js";
 import { nextDrawnShare, topLevelReady } from "/globe/globe-band-gate.js";
 import { asStencilFill, asStencilWriter } from "/globe/globe-stencil-fill.js";
+import {
+  applyEcefPose,
+  ecefPoseOf,
+  worldFromEcefAt,
+} from "/globe/globe-frame.js";
 import { drainTileCache, releaseTileCache } from "/globe/globe-tile-cache.js";
 import { SKY_FILL } from "/globe/sky-level.js";
 import {
@@ -330,6 +335,11 @@ const PARAMS = {
   // 2026-10-04, DEC-N1), so a return into the band finds them; 0 keeps none,
   // as before, for a before/after. Read at start.
   keepHeightsMiB: { fallback: 16, min: 0, max: 256 },
+  // The world frame at the target (F2 plan F2a, M3): 1 draws the globe in a
+  // local frame there (x east, y up, the origin on the ground), which the
+  // framework's sky, haze and slab need below the band; 0 keeps the world
+  // in ECEF, as before, for a before/after.
+  worldFrame: { fallback: 1, min: 0, max: 1 },
   // 1 clears the frame magenta instead of black (with the sky off), so a
   // pixel no carrier drew is unambiguous: the hand-over smokes count holes
   // by it (dark water at an oblique view reads near black).
@@ -950,14 +960,15 @@ const LOCATE_TIMEOUT_MS = 15_000;
 /**
  * The camera's current pose as an orbit pose: the direction from the
  * centre, and the screen's up made perpendicular to it (or, looking
- * straight along it, the view's forward direction, then north). The lab's
- * tile group sits at the world's origin unturned, so world = ECEF here.
+ * straight along it, the view's forward direction, then north). From the
+ * camera's ECEF pose (`ecefPoseOf`, F2a): the world is not ECEF once the
+ * frame is at a target.
  */
-function currentPose(camera) {
-  const direction = camera.position.clone().normalize();
+function currentPose({ position, quaternion }) {
+  const direction = position.clone().normalize();
   for (const axis of [
-    new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion),
-    new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion),
+    new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion),
+    new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion),
     new THREE.Vector3(0, 0, 1),
   ]) {
     const up = axis.addScaledVector(direction, -axis.dot(direction));
@@ -1007,6 +1018,8 @@ function bindPin({
   navigate,
   diveFloorM = () => 0,
   onLocated = () => {},
+  ecefCamera,
+  setFrameTarget = () => {},
 }) {
   let phase = "idle";
   let message = "";
@@ -1168,13 +1181,17 @@ function bindPin({
     // The intro takes the camera: no drag or momentum left to resume.
     controls.release();
     const clock = startArrival(located, params);
+    // The world frame moves to the target at the press, the view unchanged
+    // (F2a): the dive then runs in the target's local frame.
+    setFrameTarget(located);
+    const start = ecefCamera();
     flight.dive(
       performance.now(),
       located,
       {
-        pose: currentPose(camera),
-        distanceM: camera.position.length(),
-        quaternion: camera.quaternion.clone(),
+        pose: currentPose(start),
+        distanceM: start.position.length(),
+        quaternion: start.quaternion,
       },
       {
         durationMs: params.diveMs,
@@ -1446,6 +1463,44 @@ async function start() {
     fill: fillAtStart,
   });
   useSurfaceDefaults(globe);
+  // The world frame (F2 plan F2a, M3): one matrix on globe.group, from ECEF
+  // to the target's local frame (x east, y up, the origin on the ground),
+  // or the identity before any target. Every camera pose is written and
+  // read in ECEF through it (`/globe/globe-frame.js`), never by assuming
+  // world = ECEF.
+  const worldFrame = { matrix: new THREE.Matrix4(), target: null };
+  globe.group.matrixAutoUpdate = false;
+  const ecefCamera = () => ecefPoseOf(camera, worldFrame.matrix);
+  const placeCameraEcef = (position, quaternion) =>
+    applyEcefPose(camera, { position, quaternion }, worldFrame.matrix);
+  /** Set once the controls exist: they hold world-space drag state. */
+  let onFrameChange = () => {};
+  /** Moves the world frame to `target` (null: ECEF), the view unchanged. */
+  const setFrameTarget = (target) => {
+    const next = params.worldFrame === 1 && target ? target : null;
+    if (
+      next?.lat === worldFrame.target?.lat &&
+      next?.lng === worldFrame.target?.lng
+    ) {
+      return;
+    }
+    const before = ecefCamera();
+    if (next) worldFromEcefAt(globe.tiles.ellipsoid, next, worldFrame.matrix);
+    else worldFrame.matrix.identity();
+    worldFrame.target = next ? { lat: next.lat, lng: next.lng } : null;
+    globe.group.matrix.copy(worldFrame.matrix);
+    globe.group.matrixWorldNeedsUpdate = true;
+    globe.group.updateMatrixWorld(true);
+    applyEcefPose(camera, before, worldFrame.matrix);
+    onFrameChange();
+    debugLog.log("frame", worldFrame.target);
+  };
+  /** The Earth's centre in the world (the origin of ECEF, through the frame). */
+  const earthCentre = new THREE.Vector3();
+  const earthCentreWorld = () =>
+    earthCentre.setFromMatrixPosition(globe.group.matrixWorld);
+  /** A camera for the orbit poses, which are written in ECEF. */
+  const ecefScratch = new THREE.PerspectiveCamera();
   const { radius: radii } = globe.tiles.ellipsoid;
   const atmosphere = createGlobeAtmosphere(renderer, [
     radii.x,
@@ -1589,6 +1644,8 @@ async function start() {
     flight.yieldToUser(performance.now());
     pin?.cameraTaken();
   });
+  // A frame change moves the world under the controls' drag state.
+  onFrameChange = () => controls.release();
   /**
    * How far the controls zoom out and where the fly-in starts (review
    * 2026-10-01-2124 Major 1): the largest of `maxKm`, the library's own
@@ -1607,6 +1664,7 @@ async function start() {
   controls.limit(zoomOutM);
   /** The replay button or a new target or timing: the intro again. */
   const giveBackToIntro = () => {
+    setFrameTarget(params.url);
     flight.restart(performance.now(), params);
     controls.release();
     pin?.cameraTaken();
@@ -1749,6 +1807,8 @@ async function start() {
       targetDistanceM,
     });
   };
+  // The world frame at the at= target from load (F2a), else ECEF.
+  setFrameTarget(params.url);
   flight.restart(performance.now(), params);
   applyLive();
   syncPanel();
@@ -1802,6 +1862,8 @@ async function start() {
   };
   pin = bindPin({
     diveFloorM,
+    ecefCamera,
+    setFrameTarget,
     // The relief's detail colour over the target's region, built while
     // the dive runs.
     onLocated: (target, p) => {
@@ -1915,8 +1977,9 @@ async function start() {
     } else if (flight.drives) {
       const step = flight.pose(now);
       if (step.pose) {
-        applyOrbitPose(camera, step.pose, step.distanceM ?? distance);
-        flight.cameraPlaced(camera.position.length());
+        applyOrbitPose(ecefScratch, step.pose, step.distanceM ?? distance);
+        placeCameraEcef(ecefScratch.position, ecefScratch.quaternion);
+        flight.cameraPlaced(ecefScratch.position.length());
         if (step.fovDeg !== undefined && camera.fov !== step.fovDeg) {
           camera.fov = step.fovDeg;
           camera.updateProjectionMatrix();
@@ -1924,8 +1987,7 @@ async function start() {
         fovReturn = null;
       } else {
         // The dive sets no field of view: one the fly-in left eases back.
-        camera.position.copy(step.position);
-        camera.quaternion.copy(step.quaternion);
+        placeCameraEcef(step.position, step.quaternion);
         returnFov(now);
       }
       camera.updateMatrixWorld();
@@ -2094,9 +2156,10 @@ async function start() {
           GLOBE_FLIGHT.clearanceM,
         );
         if (cleared > altitudeM) {
-          const r = camera.position.length();
-          camera.position.multiplyScalar((r + cleared - altitudeM) / r);
-          camera.updateMatrixWorld();
+          const lifted = ecefCamera();
+          const r = lifted.position.length();
+          lifted.position.multiplyScalar((r + cleared - altitudeM) / r);
+          placeCameraEcef(lifted.position, lifted.quaternion);
           clearanceLifts += 1;
         }
       }
@@ -2181,11 +2244,12 @@ async function start() {
       sky.setCelestialRotation(
         globe.celestialToWorld(siderealAngleRad, celestial),
       );
-      // Navy space, lighter towards the Earth (the globe at the origin).
-      const cameraDistance = camera.position.length();
+      // Navy space, lighter towards the Earth (its centre through the frame).
+      earthDirection.copy(earthCentreWorld()).sub(camera.position);
+      const cameraDistance = earthDirection.length();
       sky.setSpace({
         strength: params.space,
-        earthDirection: earthDirection.copy(camera.position).negate(),
+        earthDirection,
         earthAngularRadiusRad: Math.asin(
           Math.min(1, radius / Math.max(cameraDistance, radius)),
         ),
@@ -2348,7 +2412,8 @@ async function start() {
     const hit = raycaster.intersectObject(surfaceTiles().group, true)[0];
     // A hit beyond the Earth's centre is on the far side: the ray slipped
     // past the near surface, so there is no answer, not a wrong one.
-    if (!hit || hit.distance > camera.position.length()) return null;
+    if (!hit || hit.distance > camera.position.distanceTo(earthCentreWorld()))
+      return null;
     const local = globe.tiles.group.worldToLocal(hit.point.clone());
     const c = globe.tiles.ellipsoid.getPositionToCartographic(local, {});
     return { lat: c.lat / DEG, lng: c.lon / DEG };
@@ -2445,8 +2510,10 @@ async function start() {
       pin: pin.state(),
       // Who moves the camera, and where it is (round-2 plan M3a, M3b).
       cameraOwner: flight.drives ? "intro" : "controls",
-      cameraDistanceM: camera.position.length(),
-      cameraDirection: asArray(camera.position.clone().normalize()),
+      cameraDistanceM: ecefCamera().position.length(),
+      cameraDirection: asArray(ecefCamera().position.normalize()),
+      // The world frame's target (F2a), null in ECEF.
+      worldFrame: worldFrame.target,
       // The view's depression below the local horizontal (the oblique
       // flight's pitch, round-5 plan §3.5), degrees.
       cameraDepressionDeg:
@@ -2454,8 +2521,8 @@ async function start() {
           Math.min(
             1,
             new THREE.Vector3(0, 0, -1)
-              .applyQuaternion(camera.quaternion)
-              .dot(camera.position.clone().negate().normalize()),
+              .applyQuaternion(ecefCamera().quaternion)
+              .dot(ecefCamera().position.negate().normalize()),
           ),
         ) *
           180) /
@@ -2693,6 +2760,13 @@ async function start() {
      * Hides the cloud shell (true) or shows it as the hash says, so a
      * smoke reads the ground under it alone (round-6 plan G6-2).
      */
+    /**
+     * Moves the world frame to a target (null: ECEF), the view unchanged,
+     * so a smoke compares the frame before and after the switch (F2a).
+     */
+    reframe(target) {
+      setFrameTarget(target);
+    },
     hideCloudShell(on) {
       cloudShellHidden = Boolean(on);
     },
@@ -2753,9 +2827,7 @@ async function start() {
           altitudeM,
           pitchAtDeg(altitudeM, { pitchLowDeg: params.pitchLow }),
         );
-        camera.position.copy(view.position);
-        camera.quaternion.copy(view.quaternion);
-        camera.updateMatrixWorld();
+        placeCameraEcef(view.position, view.quaternion);
         returnFov(now);
         controls.followIntro();
       },
