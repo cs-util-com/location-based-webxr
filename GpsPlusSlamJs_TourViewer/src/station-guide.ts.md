@@ -24,7 +24,7 @@ can't get there" (§8 D5), and hands a found station to its story. Plan:
 - Deps: `dom` (`line`, `skip`), `tour()` (stations, order, levels),
   `placementAllowed()`, `zero()`, `visitor()` (`visitor-position.ts`),
   `isIgnoredCode(levelId)`, `startHud(getTargets)`, `now()`,
-  `onFound(station)`, `onVisitor?(nue)`, `onApproach?(station, distanceM,
+  `onFound(station)`, `onEndStory?(stationId)` (R9), `onVisitor?(nue)`, `onApproach?(station, distanceM,
 activateM)` (each tick, each offered station with a distance: the
   prefetch), `onDone?(stationId)` (a story's end or a skip: the prefetch may
   release it), `onUpcoming?(station)` (every render while the current
@@ -71,6 +71,15 @@ activateM)` (each tick, each offered station with a distance: the
   two taps ("Can't get there?", then "Skip <title> - I can't get there"),
   or in one once the suggestion clock ran out (`station-run.ts`). The line
   then says "Skipped <title>." with the next station.
+- **Ending a story (K4 review R9):** when no unfound station is offered, the
+  same button is about the found offered station whose story plays: "End
+  this story?", then "End the story of <title> now"; the second tap asks
+  the story panel to end it (`onEndStory`; without one the guide marks the
+  station done). A story whose choices all loop back therefore cannot hold
+  a tour: with the run's own guarantee, every order completes within two
+  taps per station (`station-guide.property.test.ts`). No parser rule that
+  every story reaches its end was added: a looping choice is valid in K1's
+  format, and the button now covers it.
 - **The line:** "Next: <title>, N m", "N stations to find - nearest:
   <title>, N m", "... - waiting for your position…", "... - GPS too weak to
   guide you (±N m); step into the open." (above the accuracy ceiling),
@@ -106,6 +115,9 @@ store.subscribe(() => guide.tick());
 
 ## Tests
 
+- `station-guide.property.test.ts` - stories that never end, stations
+  nobody reaches, random orders and `next` links (cycles included): the
+  tour completes within two taps per station (R9).
 - `station-guide.test.ts` - the gate wait, the line, the find; the HUD
   targets and their bands; a code-only station; the D20 veto; a station
   with no spot; no position and weak GPS; the skip on demand and suggested,

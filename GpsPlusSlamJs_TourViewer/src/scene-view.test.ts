@@ -323,6 +323,27 @@ describe("createSceneView", () => {
     expect(h.dom.playNext.hidden).toBe(true);
   });
 
+  it("ends a story on request: the playing one stops and the next starts; a queued one leaves the queue; either reports its end (R9)", () => {
+    // Why this test matters (K4 review R9): a story whose choices all loop
+    // back never ends; the guide's "End this story" must end it here, and
+    // the station is done only through the story's reported end.
+    const h = harness();
+    h.view.offer(station("a", [tap("a1", "A one"), tap("a2", "A two")]));
+    h.view.offer(station("b", [tap("b1", "B one")]));
+    h.view.offer(station("c", [tap("c1", "C one")]));
+    h.view.end("b");
+    expect(h.ended).toEqual(["b"]);
+    expect(h.view.playing()).toBe("a");
+    h.view.end("a");
+    expect(h.ended).toEqual(["b", "a"]);
+    expect(h.view.playing()).toBe("c");
+    expect(h.dom.text.textContent).toBe("C one");
+    // A station the panel does not hold (its story was lost with a
+    // session) still reports its end, so it cannot stay found for good.
+    h.view.end("z");
+    expect(h.ended).toEqual(["b", "a", "z"]);
+  });
+
   it("offers each station once, and stopAll empties the panel and the queue", () => {
     const h = harness();
     const a = station("a", [tap("a1", "A")]);

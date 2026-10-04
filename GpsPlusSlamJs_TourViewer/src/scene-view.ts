@@ -84,6 +84,11 @@ export interface SceneView {
   playNextNow(): void;
   /** The continue tap. */
   continueTapped(): void;
+  /** End this station's story now (the guide's "End this story", K4
+   *  review R9): the playing one stops and the next queued one starts, a
+   *  queued one leaves the queue; its end is reported either way, also for
+   *  a station the panel does not hold. */
+  end(stationId: string): void;
   /** No story any more (the session ended, the tour closed). */
   stopAll(): void;
   /** The station whose story plays, or null. */
@@ -278,6 +283,18 @@ export function createSceneView(deps: SceneViewDeps): SceneView {
     },
     continueTapped() {
       if (story !== null) render(story.player.next());
+    },
+    end(stationId) {
+      if (story?.station.id === stationId) {
+        endStory();
+        return;
+      }
+      const at = queue.findIndex((s) => s.id === stationId);
+      if (at >= 0) {
+        queue.splice(at, 1);
+        renderQueue();
+      }
+      deps.onStoryEnd(stationId);
     },
     stopAll() {
       queue.length = 0;

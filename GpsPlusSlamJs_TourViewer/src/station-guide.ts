@@ -80,6 +80,10 @@ export interface StationGuideDeps {
   onApproach?(station: TourStation, distanceM: number, activateM: number): void;
   /** A station is done (its story ended, or it was skipped). */
   onDone?(stationId: string): void;
+  /** End a found station's story now (the visitor asked, K4 review R9):
+   *  the story panel stops it and reports its end (`storyEnded`). Absent:
+   *  the guide marks the station done itself. */
+  onEndStory?(stationId: string): void;
   /** Every render while the current station's story plays under a fixed
    *  or branch order: the station that comes next (the prefetch reads it
    *  ahead, K4 review R5). */
@@ -388,18 +392,40 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
     }
     show(dom.line, lineText());
     const focus = focusStation();
-    if (run === null || focus === null) {
+    const story = focus === null ? storyFocus() : null;
+    const target = focus ?? story;
+    if (run === null || target === null) {
       show(dom.skip, "");
       skipArmedFor = null;
       return;
     }
-    if (skipArmedFor !== null && skipArmedFor !== focus) skipArmedFor = null;
-    const ripe = skipArmedFor === focus || run.skipSuggested(focus, deps.now());
+    if (skipArmedFor !== null && skipArmedFor !== target) skipArmedFor = null;
+    const title = stationTitle(stationById(target)!);
+    if (story !== null) {
+      // Nothing unfound is offered: the button ends the story playing, so
+      // one that never ends cannot hold the tour (K4 review R9).
+      show(
+        dom.skip,
+        skipArmedFor === story
+          ? `End the story of ${title} now`
+          : "End this story?",
+      );
+      return;
+    }
+    const ripe =
+      skipArmedFor === focus || run.skipSuggested(target, deps.now());
     show(
       dom.skip,
-      ripe
-        ? `Skip ${stationTitle(stationById(focus)!)} - I can't get there`
-        : "Can't get there?",
+      ripe ? `Skip ${title} - I can't get there` : "Can't get there?",
+    );
+  }
+
+  /** When no unfound station is offered: the found offered station whose
+   *  story the visitor may end (the first in list order), else null. */
+  function storyFocus(): string | null {
+    if (run === null) return null;
+    return (
+      run.offered().find((id) => run?.status(id)?.state === "found") ?? null
     );
   }
 
@@ -481,8 +507,26 @@ export function wireStationGuide(deps: StationGuideDeps): StationGuide {
       render();
     },
     skipTapped() {
+      if (run === null) return;
       const focus = focusStation();
-      if (run === null || focus === null) return;
+      if (focus === null) {
+        const story = storyFocus();
+        if (story === null) return;
+        if (skipArmedFor !== story) {
+          // On demand: the first tap asks, the second ends the story.
+          skipArmedFor = story;
+          render();
+          return;
+        }
+        skipArmedFor = null;
+        if (deps.onEndStory !== undefined) {
+          deps.onEndStory(story);
+        } else {
+          handle(run.finish(story, deps.now()));
+          render();
+        }
+        return;
+      }
       if (skipArmedFor !== focus && !run.skipSuggested(focus, deps.now())) {
         // On demand: the first tap asks, the second skips.
         skipArmedFor = focus;

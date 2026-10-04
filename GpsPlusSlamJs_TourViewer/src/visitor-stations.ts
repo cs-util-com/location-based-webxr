@@ -185,6 +185,9 @@ export function wireVisitorStations(deps: {
     onUpcoming: (station) => {
       prefetch.ahead(station);
     },
+    onEndStory: (stationId) => {
+      view.end(stationId);
+    },
     onVisitor: (nue) => {
       stage.faceVisitor(nue);
     },

@@ -17,6 +17,10 @@ time. Plan:
   - `playNextNow()` - the "Play" button: the story playing stops and waits
     its turn again (its station stays found), the queued one plays;
   - `continueTapped()`;
+  - `end(stationId)` - the guide's "End this story" (K4 review R9): the
+    playing story stops and the next queued one starts, a queued one leaves
+    the queue; `onStoryEnd(stationId)` is reported either way, also for a
+    station the panel does not hold, so it cannot stay found for good;
   - `stopAll()` - the session ended or the tour closed;
   - `playing()` - the station whose story plays.
 - Deps: `dom` (`SceneViewDom`), `assets` (by id), `loadAsset(path)`,
@@ -59,4 +63,5 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
 - `scene-view.test.ts` - steps in order and the end, a character (name,
   caption, figure on the stage, voice), refused sound and unreadable file,
   a late picture dropped and URLs revoked, the auto timer and its cancel, a
-  choice, one story at a time and the queue, de-duplication and `stopAll`.
+  choice, one story at a time and the queue, de-duplication and `stopAll`;
+  ending a playing, a queued and an unknown story (R9).

@@ -66,6 +66,7 @@ function harness(tourValue: StationTour) {
   const approaches: [string, number, number][] = [];
   const dones: string[] = [];
   const upcomings: string[] = [];
+  const ended: string[] = [];
   const guides: (string | null)[] = [];
   const huds: { getTargets: () => WayfindingTarget[]; disposed: boolean }[] =
     [];
@@ -109,6 +110,11 @@ function harness(tourValue: StationTour) {
     onApproach: (s, d, exit) => approaches.push([s.id, Math.round(d), exit]),
     onDone: (id) => dones.push(id),
     onUpcoming: (s) => upcomings.push(s.id),
+    // The story panel, as the page wires it: ending a story ends it.
+    onEndStory: (id) => {
+      ended.push(id);
+      guide.storyEnded(id);
+    },
     onGuide: (_visitor, target) =>
       guides.push(
         target === null
@@ -123,6 +129,7 @@ function harness(tourValue: StationTour) {
     approaches,
     dones,
     upcomings,
+    ended,
     calls,
     guides,
     huds,
@@ -355,6 +362,28 @@ describe("wireStationGuide", () => {
     expect(h.dom.line.textContent).toBe(
       "Tour complete - you reached the end of your path.",
     );
+  });
+
+  it("a found station's story can be ended in two taps, so a story that never ends cannot block the tour (R9)", () => {
+    // Why this test matters (K4 review R9): a found station could not be
+    // skipped, and a story whose choices all loop back never ends - under
+    // a fixed order the tour stopped there for good.
+    const h = harness({
+      stations: [station("gate", 0, 0), station("well", 0, 80)],
+      order: "fixed",
+      levels: null,
+    });
+    h.at(0, 0);
+    expect(h.found).toEqual(["gate"]);
+    expect(h.dom.skip).toEqual({
+      hidden: false,
+      textContent: "End this story?",
+    });
+    h.guide.skipTapped();
+    expect(h.dom.skip.textContent).toBe("End the story of GATE now");
+    h.guide.skipTapped();
+    expect(h.ended).toEqual(["gate"]);
+    expect(h.dom.line.textContent).toBe("Next: WELL, 80 m");
   });
 
   it("a story's end makes the station done and offers the next", () => {

@@ -150,6 +150,9 @@ test("a station tour: the code finds the first station, its knight speaks and as
     )
     .toEqual({ elements: 1, plays: 2 }); // the unlock, then the voice
 
+  // While the story plays, the skip button can end it (K4 review R9).
+  await expect(page.getByTestId("station-skip")).toHaveText("End this story?");
+
   // A scene choice.
   await page.getByTestId("scene-continue").click();
   await expect(page.getByTestId("scene-text")).toHaveText("Enter the castle?");
