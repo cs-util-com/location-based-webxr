@@ -7,7 +7,7 @@
  * @see sky-level.ts.md
  */
 
-import { smoothstep } from "./globe-camera.js";
+import { smoothstep } from "./globe-ease.js";
 
 const DEG = Math.PI / 180;
 

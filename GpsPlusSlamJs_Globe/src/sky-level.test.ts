@@ -10,6 +10,10 @@
  * lab's terrain-sun.js, whose tests read it from here now) and its shader
  * twin.
  */
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import { SKY_FILL, SKY_LEVEL_GLSL, skyLevel } from "./sky-level.js";
@@ -59,5 +63,33 @@ describe("SKY_LEVEL_GLSL", () => {
     expect(SKY_LEVEL_GLSL).toContain(
       Math.sin(SKY_FILL.twilightDeg * DEG).toFixed(8),
     );
+  });
+});
+
+// Why: pages without an import map load this module (the terrain lab's
+// colour comparison page, through terrain-sun.js). When it borrowed the
+// package's smoothstep from globe-camera.ts, it pulled in "three" through
+// that module, the page failed to resolve it and never started (r766
+// milestone run, 2026-10-04). Its whole relative import graph must stay
+// free of bare imports.
+describe("sky-level's imports", () => {
+  it("reach no bare module, through every relative import", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const seen = new Set<string>();
+    const bare: string[] = [];
+    const visit = (file: string) => {
+      if (seen.has(file)) return;
+      seen.add(file);
+      const source = readFileSync(join(here, file), "utf8");
+      for (const m of source.matchAll(
+        /^import(?!\s+type)[^"']*from\s*["']([^"']+)["']/gm,
+      )) {
+        const spec = m[1]!;
+        if (spec.startsWith("./")) visit(spec.slice(2).replace(/\.js$/, ".ts"));
+        else bare.push(`${file}: ${spec}`);
+      }
+    };
+    visit("sky-level.ts");
+    expect(bare).toEqual([]);
   });
 });

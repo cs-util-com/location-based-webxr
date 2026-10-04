@@ -142,11 +142,8 @@ export function clipPlanes(
   return { near, far: Math.max(far, near * 2) };
 }
 
-/** Hermite ease on [0, 1], clamped outside it. */
-export function smoothstep(t: number): number {
-  const x = Math.min(Math.max(t, 0), 1);
-  return x * x * (3 - 2 * x);
-}
+/** Hermite ease on [0, 1], clamped outside it (`globe-ease.ts`). */
+export { smoothstep } from "./globe-ease.js";
 
 /** Below this, two directions count as parallel (same or opposite). */
 const PARALLEL = 1e-9;
