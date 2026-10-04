@@ -40,7 +40,7 @@ export const GLOBE_SURFACE_TUNING = {
 export const GLOBE_CLOUD_DRIFT_DEG_PER_S = 0.375;
 
 /** Every tile's program is the same one: three shares it by this key. */
-export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v8";
+export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v9";
 
 /** The one uniforms object every tile's shader reads. */
 export interface GlobeSurfaceUniforms {
@@ -86,6 +86,21 @@ export interface GlobeSurfaceUniforms {
    * than as the scene's first directional light.
    */
   readonly uSunRadiance: { value: THREE.Vector3 };
+  /**
+   * The clouds' paint in the ground's colour (round-6 plan G6-2): 1 paints
+   * them into the surface (the look before), 0 leaves the ground its own
+   * colour for a page that draws them on their own shell
+   * (`globe-cloud-shell.ts`).
+   */
+  readonly uCloudInSurface: { value: number };
+  /**
+   * The soft cloud shadow on the ground (DEC-G6-4), 0 (none) to 1: the
+   * share of the diffuse colour a full cloud on the shell toward the sun
+   * takes away.
+   */
+  readonly uCloudShadow: { value: number };
+  /** The cloud shell's height above the ground (m), for the shadow's offset. */
+  readonly uCloudShellM: { value: number };
 }
 
 /**
@@ -126,6 +141,9 @@ export function createGlobeSurfaceUniforms(textures: {
     uSkyShare: { value: GLOBE_SURFACE_TUNING.skyShare },
     uCarrierShare: { value: 0 },
     uSunRadiance: { value: new THREE.Vector3(0, 0, 0) },
+    uCloudInSurface: { value: 1 },
+    uCloudShadow: { value: 0 },
+    uCloudShellM: { value: 0 },
   };
 }
 
@@ -226,27 +244,22 @@ uniform float uSkyFloor;
 uniform float uSkyShare;
 uniform float uCarrierShare;
 uniform vec3 uSunRadiance;
+uniform float uCloudInSurface;
+uniform float uCloudShadow;
+uniform float uCloudShellM;
 const vec3 GLOBE_WARM_LIGHTS = vec3( 1.4, 0.95, 0.5 );
 ${SKY_LEVEL_GLSL}
 ${GLOBE_FADE_GLSL}`;
 
 /**
- * After the overlay's colour is in diffuseColor: the water from the tile's
- * alpha (round-4 plan 2026-09-28-2105 DEC-GL4-6: the imagery tiles carry
- * the water mask there, 1 on land and 0 on water, so the glint follows the
- * imagery's own coastline at the imagery's resolution; the alpha is then
- * set back to opaque), the latitude and longitude from the geodetic normal,
- * the two global maps sampled once, and the clouds.
- * The longitude wraps at 180°, where its derivative jumps and would pick
- * the coarsest mip for a 1-px line: the gradients come from whichever of
- * two wraps (seam at 180° or at 0°) changes less across the pixel
- * (Tarini's method), computed before any choice so they stay defined.
- * The clouds are read uCloudLonOffset further west, so they drift east: a
- * continuous shift of a repeat-wrapped map, so the same gradients serve.
+ * The clouds' sample and shade, shared by the surface and the cloud shell
+ * (`globe-cloud-shell.ts`; DEC-H3): from the geodetic normal `vGeoNormal`
+ * the latitude and longitude (the longitude's gradients by whichever of two
+ * wraps changes less across the pixel, Tarini's method), the clouds read
+ * `uCloudLonOffset` further west so they drift east, and their blue-grey
+ * shade lit on the side facing the sun (`uCloudRelief`'s look).
  */
-const FRAGMENT_SAMPLES = /* glsl */ `
-float globeWater = 1.0 - diffuseColor.a;
-diffuseColor.a = 1.0;
+export const GLOBE_CLOUD_GLSL = /* glsl */ `
 vec3 globeN = normalize( vGeoNormal );
 float globeU = atan( globeN.y, globeN.x ) * 0.15915494309189535 + 0.5;
 float globeV = asin( clamp( globeN.z, -1.0, 1.0 ) ) * 0.3183098861837907 + 0.5;
@@ -260,12 +273,41 @@ vec2 globeDx = globeWrap ? globeDx2 : globeDx1;
 vec2 globeDy = globeWrap ? globeDy2 : globeDy1;
 vec2 globeUv = vec2( globeU, globeV );
 float globeCloud = textureGrad( uClouds, globeUv - vec2( uCloudLonOffset * 0.15915494309189535, 0.0 ), globeDx, globeDy ).r;
-vec3 globeNight = textureGrad( uNight, globeUv, globeDx, globeDy ).rgb;
 vec2 globeCloudGrad = vec2( dFdx( globeCloud ), dFdy( globeCloud ) );
 vec2 globeSunView = ( viewMatrix * vec4( uSunWorld, 0.0 ) ).xy;
 float globeCloudLit = clamp( 1.0 - 6.0 * dot( globeCloudGrad, globeSunView / max( length( globeSunView ), 1e-6 ) ), 0.65, 1.3 );
 vec3 globeCloudShade = mix( vec3( 0.6, 0.68, 0.8 ), vec3( 1.0 ), smoothstep( 0.15, 0.85, globeCloud ) ) * globeCloudLit;
-diffuseColor.rgb = mix( diffuseColor.rgb, mix( vec3( 1.0 ), globeCloudShade, uCloudRelief ), globeCloud * uCloudOpacity );
+`;
+
+/**
+ * After the overlay's colour is in diffuseColor: the water from the tile's
+ * alpha (round-4 plan 2026-09-28-2105 DEC-GL4-6: the imagery tiles carry
+ * the water mask there, 1 on land and 0 on water, so the glint follows the
+ * imagery's own coastline at the imagery's resolution; the alpha is then
+ * set back to opaque), the shared cloud block (`GLOBE_CLOUD_GLSL`), and
+ * the night map sampled with its gradients. The clouds are painted into
+ * the ground's colour only by `uCloudInSurface`; a page with the cloud
+ * shell sets it to 0 and the ground keeps its colour (round-6 plan G6-2).
+ * The soft shadow (`uCloudShadow`, DEC-G6-4) reads the cloud where the
+ * sun's ray through this point crosses the shell, `uCloudShellM` above:
+ * the point moved toward the sun by h / (R sin(elevation)) radians, the
+ * elevation floored at 0.05 so a low sun reaches no further than 20 h. By
+ * day only, after the paint, before the grade.
+ */
+const FRAGMENT_SAMPLES = /* glsl */ `
+float globeWater = 1.0 - diffuseColor.a;
+diffuseColor.a = 1.0;
+${GLOBE_CLOUD_GLSL}
+vec3 globeNight = textureGrad( uNight, globeUv, globeDx, globeDy ).rgb;
+diffuseColor.rgb = mix( diffuseColor.rgb, mix( vec3( 1.0 ), globeCloudShade, uCloudRelief ), globeCloud * uCloudOpacity * uCloudInSurface );
+float globeSunUp = dot( globeN, uSunEcef );
+float globeShellShadow = 0.0;
+if ( uCloudShadow > 0.0 && globeSunUp > 0.0 ) {
+  vec3 globeShellN = normalize( globeN + uSunEcef * ( uCloudShellM / ( 6371000.0 * max( globeSunUp, 0.05 ) ) ) );
+  vec2 globeShellUv = vec2( atan( globeShellN.y, globeShellN.x ) * 0.15915494309189535 + 0.5, asin( clamp( globeShellN.z, -1.0, 1.0 ) ) * 0.3183098861837907 + 0.5 );
+  globeShellShadow = textureGrad( uClouds, globeShellUv - vec2( uCloudLonOffset * 0.15915494309189535, 0.0 ), globeDx, globeDy ).r * uCloudOpacity;
+}
+diffuseColor.rgb *= 1.0 - uCloudShadow * globeShellShadow;
 float globeLuma = dot( diffuseColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
 diffuseColor.rgb = mix( diffuseColor.rgb, globeLuma * vec3( 0.7, 0.88, 1.2 ), uGrade * 0.7 );`;
 
@@ -274,15 +316,25 @@ const FRAGMENT_GLINT = /* glsl */ `
 roughnessFactor = mix( roughnessFactor, uWaterRoughness, globeWater * ( 1.0 - globeCloud ) );`;
 
 /**
+ * The twilight look (DEC-GL4-8 item 3) on a diffuse colour, by the sun's
+ * height `globeNdl` (the cosine of its zenith angle at the normal): a faint
+ * blue-grey night side and a soft band just past the terminator. Shared by
+ * the surface and the cloud shell (DEC-H3).
+ */
+export const GLOBE_TWILIGHT_GLSL = /* glsl */ `
+totalEmissiveRadiance += uTwilight * diffuseColor.rgb * ( vec3( 0.06, 0.09, 0.16 ) * ( 1.0 - smoothstep( -0.25, 0.05, globeNdl ) ) + vec3( 0.35, 0.3, 0.3 ) * smoothstep( -0.12, 0.0, globeNdl ) * ( 1.0 - smoothstep( 0.0, 0.12, globeNdl ) ) );`;
+
+/**
  * The lights fade in across the terminator (sun 4.6° above to 6.9° below
  * the horizon) and dim under cloud; the twilight look (DEC-GL4-8 item 3)
  * warms them, lights the night side faintly blue-grey (from the ground's
  * own colour) and adds a soft band just past the terminator.
  */
+
 const FRAGMENT_NIGHT = /* glsl */ `
 float globeNdl = dot( globeN, uSunEcef );
-totalEmissiveRadiance += globeNight * mix( vec3( 1.0 ), GLOBE_WARM_LIGHTS, uTwilight ) * uNightGain * ( 1.0 - smoothstep( -0.12, 0.08, globeNdl ) ) * ( 1.0 - 0.8 * globeCloud );
-totalEmissiveRadiance += uTwilight * diffuseColor.rgb * ( vec3( 0.06, 0.09, 0.16 ) * ( 1.0 - smoothstep( -0.25, 0.05, globeNdl ) ) + vec3( 0.35, 0.3, 0.3 ) * smoothstep( -0.12, 0.0, globeNdl ) * ( 1.0 - smoothstep( 0.0, 0.12, globeNdl ) ) );`;
+totalEmissiveRadiance += globeNight * mix( vec3( 1.0 ), GLOBE_WARM_LIGHTS, uTwilight ) * uNightGain * ( 1.0 - smoothstep( -0.12, 0.08, globeNdl ) ) * ( 1.0 - 0.8 * globeCloud * uCloudInSurface );
+${GLOBE_TWILIGHT_GLSL}`;
 
 /**
  * The sky fill (DEC-GL5-11), the relief's light: the direct diffuse keeps
@@ -306,8 +358,17 @@ reflectedLight.directDiffuse *= 1.0 - globeSkyShare;
 reflectedLight.indirectDiffuse += globeSkyShare * skyLevelOf( globeNdl, uSkyFloor ) * uSunRadiance * BRDF_Lambert( material.diffuseContribution );
 #endif`;
 
-/** `source` with `code` after `anchor`, which must occur exactly once. */
-function after(source: string, anchor: string, code: string): string {
+/**
+ * `code` inserted right after `anchor` in a shader source. Throws, naming
+ * the anchor, when it is missing or repeated (a three upgrade that renamed a
+ * chunk), rather than silently dropping the code. Shared by the surface and
+ * the cloud shell.
+ */
+export function afterChunk(
+  source: string,
+  anchor: string,
+  code: string,
+): string {
   const parts = source.split(anchor);
   if (parts.length !== 2) {
     throw new Error(
@@ -329,15 +390,15 @@ export function patchGlobeSurfaceShader(
   options: GlobeSurfacePatchOptions = {},
 ): void {
   let vs = shader.vertexShader;
-  vs = after(vs, "#include <common>", VERTEX_DECLARATIONS);
-  vs = after(vs, "#include <beginnormal_vertex>", VERTEX_NORMAL);
+  vs = afterChunk(vs, "#include <common>", VERTEX_DECLARATIONS);
+  vs = afterChunk(vs, "#include <beginnormal_vertex>", VERTEX_NORMAL);
   let fs = shader.fragmentShader;
-  fs = after(fs, "#include <common>", FRAGMENT_DECLARATIONS);
-  fs = after(fs, "#include <clipping_planes_fragment>", FRAGMENT_FADE);
-  fs = after(fs, "#include <alphamap_fragment>", FRAGMENT_SAMPLES);
-  fs = after(fs, "#include <roughnessmap_fragment>", FRAGMENT_GLINT);
-  fs = after(fs, "#include <emissivemap_fragment>", FRAGMENT_NIGHT);
-  fs = after(fs, "#include <lights_fragment_end>", FRAGMENT_SKY_FILL);
+  fs = afterChunk(fs, "#include <common>", FRAGMENT_DECLARATIONS);
+  fs = afterChunk(fs, "#include <clipping_planes_fragment>", FRAGMENT_FADE);
+  fs = afterChunk(fs, "#include <alphamap_fragment>", FRAGMENT_SAMPLES);
+  fs = afterChunk(fs, "#include <roughnessmap_fragment>", FRAGMENT_GLINT);
+  fs = afterChunk(fs, "#include <emissivemap_fragment>", FRAGMENT_NIGHT);
+  fs = afterChunk(fs, "#include <lights_fragment_end>", FRAGMENT_SKY_FILL);
   shader.vertexShader = vs;
   const defines = [
     options.band ? "#define GLOBE_BAND" : "",

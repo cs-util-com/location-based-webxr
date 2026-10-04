@@ -240,3 +240,103 @@ test("the stencil fill's cost at the hold, on against off (logged)", async ({
   );
   expect(Number.isFinite(on / off)).toBe(true);
 });
+
+/**
+ * Lands, zooms out until the relief has been drained, zooms back in to
+ * where it landed, and returns the height tiles requested on the way back
+ * (owner decision 2026-10-04, DEC-N1).
+ */
+async function returnIntoBand(page, context, keepMiB) {
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation(TARGET);
+  const errors = await bootGlobe(
+    page,
+    `${BASE}&bandReleaseMs=1000&keepHeightsMiB=${keepMiB}`,
+  );
+  await page.locator("#globe-pin").click();
+  const state = () => page.evaluate(() => window.__globeLab.state());
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return (
+        s.phase === "landed" && (s.relief?.share ?? 0) >= 1 && s.relief?.settled
+      );
+    },
+    null,
+    { timeout: 240_000 },
+  );
+  const landed = await state();
+  const altKm = () =>
+    page.evaluate(
+      () => JSON.parse(window.__globeLab.debug.exportText()).live.altitudeKm,
+    );
+  const landedKm = await altKm();
+  const box = await page.locator("#globe-canvas").boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  let steps = 0;
+  while ((await altKm()) < 2_600 && steps < 60) {
+    await page.mouse.wheel(0, 300);
+    await page.evaluate(() => window.__globeLab.timeFrames(2));
+    steps++;
+  }
+  // Out of the band: the relief is drained (all but its coarsest tiles).
+  await page.waitForFunction(
+    () =>
+      window.__globeLab.state().relief?.lastRelease?.relief?.drainedAt != null,
+    null,
+    { timeout: 120_000 },
+  );
+  const out = await state();
+  for (let i = 0; i < steps; i++) {
+    await page.mouse.wheel(0, -300);
+    await page.evaluate(() => window.__globeLab.timeFrames(2));
+  }
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return (s.relief?.share ?? 0) >= 1 && s.relief?.settled;
+    },
+    null,
+    { timeout: 240_000 },
+  );
+  const back = await state();
+  return {
+    errors,
+    landedKm,
+    backKm: await altKm(),
+    first: landed.relief.heightRequests,
+    returned: back.relief.heightRequests - out.relief.heightRequests,
+    kept: out.relief.keptHeights,
+  };
+}
+
+// Why (owner report 2026-10-04: "it seems not to reload the elevation from
+// cache"): leaving the band drains the relief, and the library freed its
+// decoded heights with the last tile, so a return fetched every height tile
+// again. With the keeper (16 MiB, the default) a return must fetch far
+// fewer; with it off (0) it refetches, the positive control.
+test("a return into the band reuses the kept heights, without the keeper it fetches them again", async ({
+  context,
+}) => {
+  test.setTimeout(900_000);
+  const rows = {};
+  for (const keepMiB of [16, 0]) {
+    const page = await context.newPage();
+    rows[keepMiB] = await returnIntoBand(page, context, keepMiB);
+    await page.close();
+  }
+  console.log(
+    `return into the band: ${[16, 0]
+      .map((k) => {
+        const r = rows[k];
+        return `keep ${k} MiB: landed ${Math.round(r.landedKm)} km, back at ${Math.round(r.backKm)} km, first descent ${r.first} height tiles, the return ${r.returned}, kept ${r.kept.kept} (${(r.kept.keptBytes / 2 ** 20).toFixed(1)} MiB, ${r.kept.evicted} given back)`;
+      })
+      .join("; ")}`,
+  );
+  for (const k of [16, 0]) expect(rows[k].errors, `keep ${k}`).toEqual([]);
+  expect(rows[16].kept.kept).toBeGreaterThan(0);
+  expect(rows[0].kept.kept).toBe(0);
+  // The control refetches; the keeper fetches at most a quarter of that.
+  expect(rows[0].returned).toBeGreaterThan(0);
+  expect(rows[16].returned).toBeLessThanOrEqual(rows[0].returned / 4);
+});

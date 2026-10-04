@@ -326,6 +326,10 @@ const PARAMS = {
   // sharp imagery never gives way to the relief's coarse first tiles
   // (owner 2026-10-04). 0: as soon as its top tiles are loaded.
   bandSharp: { fallback: 1, min: 0, max: 1 },
+  // The relief's decoded heights kept past their tiles (MiB; owner decision
+  // 2026-10-04, DEC-N1), so a return into the band finds them; 0 keeps none,
+  // as before, for a before/after. Read at start.
+  keepHeightsMiB: { fallback: 16, min: 0, max: 256 },
   // 1 clears the frame magenta instead of black (with the sky off), so a
   // pixel no carrier drew is unambiguous: the hand-over smokes count holes
   // by it (dark water at an oblique view reads near black).
@@ -405,6 +409,15 @@ const PARAMS = {
   // a glow round bright stars.
   grade: { fallback: 0, min: 0, max: 1 },
   cloudRelief: { fallback: 0, min: 0, max: 1 },
+  // The clouds on their own shell above the ground (round-6 plan G6-2,
+  // DEC-G6-3/4): 1 draws them there, so the ground keeps its colour and the
+  // clouds float above the relief; 0 paints them into the ground, as before.
+  cloudShell: { fallback: 1, min: 0, max: 1 },
+  // The shell's height over the ground (km), times the relief's
+  // exaggeration E, as the relief is raised (DEC-G6-3: 3 km x E).
+  cloudShellKm: { fallback: 3, min: 0, max: 30 },
+  // The soft cloud shadow on the ground with the shell (DEC-G6-4), 0 off.
+  cloudShadow: { fallback: 0.6, min: 0, max: 1 },
   twilight: { fallback: 0, min: 0, max: 1 },
   // The sky fill's floor (DEC-GL5-11; the terrain lab's `sky` key, the
   // Globe package's one sky level): what a low sun's ground keeps from the
@@ -1443,9 +1456,12 @@ async function start() {
   // The relief (F1): the library's terrain tiles wearing the globe's look,
   // in the globe's group, in place of the generated tiles. Created once, on
   // the page's first relief=1; its heights are exaggerated by altitude.
-  if (startParams.relief === 1 && startParams.reliefHeights === "synthetic") {
-    installSyntheticHeights();
-  }
+  // The synthetic heights record each height tile requested: the smokes
+  // count a return into the band's fetches (DEC-N1).
+  const syntheticHeights =
+    startParams.relief === 1 && startParams.reliefHeights === "synthetic"
+      ? installSyntheticHeights()
+      : null;
   // The real heights' source is loaded only for the relief: the boot graph
   // stays free of the Osm library (build-lookdev.test.mjs).
   const terrarium =
@@ -1465,6 +1481,7 @@ async function start() {
           template: globe.template,
           heightScale: 1,
           lazyHeightScale: startParams.lazyE === 1,
+          keepHeightsBytes: startParams.keepHeightsMiB * 2 ** 20,
         })
       : null;
   if (terrain) globe.group.add(terrain.tiles.group);
@@ -1816,6 +1833,8 @@ async function start() {
    * so every pixel must come from the globe's fill (round-6 plan G6-1).
    */
   let reliefHidden = false;
+  /** For the cloud smoke: the shell hidden, the ground under it alone. */
+  let cloudShellHidden = false;
   /** Whether the relief's view is refined: nothing of it loading or queued. */
   const reliefSettled = () =>
     terrain.tiles.loadProgress === 1 &&
@@ -2122,6 +2141,21 @@ async function start() {
     } else {
       globe.update(camera, renderer);
     }
+    // The cloud shell rides the relief's exaggeration, as the relief is
+    // raised (round-6 plan G6-2, DEC-G6-3: 3 km x E; E is 1 without one).
+    globe.cloudShell.setHeightM(
+      params.cloudShellKm * 1000 * (terrain?.plugin.heightScale ?? 1),
+    );
+    // The clouds move onto the shell as the relief takes the pixels, so the
+    // orbit keeps the approved painted look exactly, and the relief, where
+    // the paint turned it black and white, gets the shell. Measured
+    // 2026-10-04: from orbit the shell read 25-35 levels (summed) darker than
+    // the paint, because each draw is tone-mapped and then blended in
+    // display space; the paint mixes before the tone mapping.
+    const shellShare = params.cloudShell === 1 && terrain ? bandShare : 0;
+    globe.setCloudShellShare(shellShare);
+    if (cloudShellHidden) globe.cloudShell.mesh.visible = false;
+    globe.surfaceUniforms.uCloudShadow.value = params.cloudShadow * shellShare;
     status.update(globe.state());
     readoutText = readoutNow();
     readout.offer(readoutText, performance.now());
@@ -2227,6 +2261,7 @@ async function start() {
       reliefVisible: terrain ? terrain.tiles.visibleTiles.size : null,
       reliefPending: rs ? rs.downloading + rs.parsing : null,
       reliefMiB: terrain ? terrain.tiles.lruCache.cachedBytes / 2 ** 20 : null,
+      keptHeights: terrain ? terrain.heightKeeperStats() : null,
       programs: renderer.info.programs?.length ?? null,
       textures: renderer.info.memory.textures,
       hash: location.hash.slice(1, 400),
@@ -2481,6 +2516,10 @@ async function start() {
             cachedBytes: terrain.tiles.lruCache.cachedBytes,
             globeCachedBytes: globe.tiles.lruCache.cachedBytes,
             releasedBytes: { ...released },
+            // The decoded heights kept past their tiles, and the height
+            // tiles requested so far (synthetic heights only; DEC-N1).
+            keptHeights: terrain.heightKeeperStats(),
+            heightRequests: syntheticHeights?.requests.length ?? null,
             lastRelease: {
               globe: outOfBand.globe.last,
               relief: outOfBand.relief.last,
@@ -2649,6 +2688,13 @@ async function start() {
      */
     hideRelief(on) {
       reliefHidden = Boolean(on);
+    },
+    /**
+     * Hides the cloud shell (true) or shows it as the hash says, so a
+     * smoke reads the ground under it alone (round-6 plan G6-2).
+     */
+    hideCloudShell(on) {
+      cloudShellHidden = Boolean(on);
     },
     /** The frame-hitch recorder's smoke API once it is loaded, else null. */
     perf: null,
