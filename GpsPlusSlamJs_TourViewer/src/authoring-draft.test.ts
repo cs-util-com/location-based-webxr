@@ -18,9 +18,10 @@
  */
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import type {
-  TourManifest,
-  TourObject,
+import {
+  createEmptyTourManifest,
+  type TourManifest,
+  type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import {
@@ -77,7 +78,7 @@ function edited(object: TourObject, label: string): TourObject {
 }
 
 function manifestOf(objects: readonly TourObject[]): TourManifest {
-  return { version: 1, objects: [...objects] };
+  return { ...createEmptyTourManifest(), objects: [...objects] };
 }
 
 describe("draftObjectsNotYetHosted", () => {

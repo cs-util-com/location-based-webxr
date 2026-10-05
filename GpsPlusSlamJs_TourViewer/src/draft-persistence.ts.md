@@ -145,6 +145,11 @@ are the framework's.
   lists in whatever order the directory yields, and a tour whose objects
   shuffle between restores would produce a different `tour.json` each time
   for no reason a reader could see.
+- **Format version 2 (tour kit plan K1, §8 D7).** A draft object is
+  validated by wrapping it in a manifest of the CURRENT format, and the
+  pin and photo shapes did not change from version 1 to 2, so a draft
+  written by a pre-K1 app loads unchanged and its Finish writes version 2
+  (`draft-persistence.test.ts` loads one from the files the old app wrote).
 
 ## Examples
 

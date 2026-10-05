@@ -15,7 +15,17 @@ which serves ranges normally but HOLDS a range-less GET (the background warm
 download) while the warm gate is closed (`/warm-gate?state=hold` /
 `?state=release`), the deterministic in-flight-warm window the
 clear-cache-during-warm spec needs. `release` is idempotent and answers
-already-queued requests, so call ordering cannot deadlock. And
+already-queued requests, so call ordering cannot deadlock.
+`/no-cors/tour.zip` serves the archive WITHOUT CORS headers - a host that
+blocks browsers, for the "download the file and open it here" spec (tour
+kit plan K0). `/ranges-ok/sample-tour.zip` serves the committed sample tour
+(`public/samples/marienplatz-tour.zip`, owner decision S-D9) for
+`sample-tour.spec.js`. `/ranges-ok/stations-tour.zip` is a `tour.json` version 2
+with three stations in fixed order (tour kit plan K4, `stations.spec.js`):
+"The gate" on the fixture's printed code (a knight with a voice and a scene
+choice; the level's geo is where the fakes' armed pose puts the code under
+the seeded alignment, so its votes agree with the walk), "The well" 30 m
+north (a minimal `.glb` built here), "The tower" 300 m east (skipped). And
 `/api/drive-proxy?id=…` - the standard zip with ranges, on the Drive
 proxy's own path so the app treats it as a Drive tour without a Google host
 (Drive replace plan §5 #12): `id=e2e-drive` sends `content-disposition`

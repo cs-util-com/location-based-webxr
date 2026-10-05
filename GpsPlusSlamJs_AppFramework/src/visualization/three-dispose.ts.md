@@ -4,7 +4,7 @@
 
 Generic Three.js GPU resource cleanup utilities. Provides two functions:
 
-- `disposeObject3D` — traverses an Object3D tree and disposes all geometries, materials, and material textures (e.g. `map`). Deduplicates shared resources via an internal Set.
+- `disposeObject3D` — traverses an Object3D tree and disposes all geometries, materials, and every texture a material holds in a property of its own (`map`, `normalMap`, `roughnessMap`, ...). Deduplicates shared resources via an internal Set.
 - `disposeMeshArray` — convenience wrapper that removes meshes from a parent, calls `disposeObject3D` on each, and clears the array in-place.
 
 ## Public API
@@ -31,7 +31,8 @@ export function disposeMeshArray(
 
 - Traverses `root` and all descendants.
 - Disposes geometry on Mesh instances (skipped if `opts.skipGeometry`).
-- Disposes material and `material.map` texture on Mesh and Sprite instances (skipped if `opts.skipMaterial`).
+- Disposes the material and every `Texture`-valued property of it (by three's `isTexture` flag: `map`, `normalMap`, `emissiveMap`, ...; a texture in two slots once) on Mesh and Sprite instances (skipped if `opts.skipMaterial`). Until the tour kit K4 review (R12) only `map` was freed, which leaked a loaded GLB's other maps.
+- A ShaderMaterial's `uniforms` are NOT walked: a uniform often holds a texture another object owns (the camera blit sets its camera texture there), so freeing uniform textures is the caller's decision.
 - Shared resources (same geometry/material/texture on multiple objects) are disposed only once.
 - Does **not** remove `root` from its parent — callers handle that.
 
@@ -54,4 +55,4 @@ export function disposeMeshArray(
 
 ## Tests
 
-- `three-dispose.test.ts` — `disposeObject3D`: single mesh, sprite with texture, group tree traversal, shared geometry dedup, skipGeometry, skipMaterial (material skipped, texture map skipped), empty group, no parent removal, material arrays (dispose all, textures on each, skipMaterial respected). `disposeMeshArray`: parent removal, array clearing, null-parent, skipGeometry, skipMaterial.
+- `three-dispose.test.ts` — `disposeObject3D`: single mesh, sprite with texture, group tree traversal, shared geometry dedup, skipGeometry, every texture slot freed once (R12), a ShaderMaterial uniform texture left alone, skipMaterial (material skipped, texture map skipped), empty group, no parent removal, material arrays (dispose all, textures on each, skipMaterial respected). `disposeMeshArray`: parent removal, array clearing, null-parent, skipGeometry, skipMaterial.

@@ -65,6 +65,13 @@ codes to the `?debug=1` block.
   of every viewer/placement/author field the dead session owned (the list
   in `onSessionEnd`, one line per field - a field missing there blends the
   dead session into the next one).
+- **The visitor's stations (tour kit plan K4):** every camera frame and
+  every store dispatch of a visitor session calls `hooks.tickStations()`
+  (next to `tryPlaceTour`); the session end calls `hooks.stopStations()`
+  (the story stops, the HUD goes, the progress stays); a visitor's tap on
+  `#enter-ar` calls `hooks.unlockStationAudio()` FIRST, synchronously,
+  before any await - a phone lets the stories' audio element play later
+  only if it played inside a gesture.
 - **A creator's session end settles the visit FIRST** (authoring plan
   2026-09-28-0953 §3.2, M2c): `hooks.endAuthorVisit()` runs before the
   generation bump and before `endTourArRuntime`, whose
