@@ -128,6 +128,10 @@ export function createGlobeGroundSky(renderer) {
     get atmosphere() {
       return atmosphere;
     },
+    /** The framework sky's scene (the cloud volume draws its slab from it). */
+    get scene() {
+      return scene;
+    },
     /**
      * Advances the sky for this frame and returns `{ weight, exposure }`:
      * the ground sky's share of the sky and the eased scale of the sun in
@@ -189,10 +193,16 @@ export function createGlobeGroundSky(renderer) {
         target.setSize(size.x, size.y);
       }
       const previous = renderer.getRenderTarget();
+      // The cloud volume's slab, when there is one, draws after the Earth
+      // (globe-cloud-volume.js), never with the sky behind it.
+      const slab = scene.getObjectByName("atmosphere-cloud-slab");
+      const slabShown = slab?.visible ?? false;
+      if (slab) slab.visible = false;
       renderer.setRenderTarget(target);
       renderer.clear(true, false, false);
       renderer.render(scene, camera);
       renderer.setRenderTarget(previous);
+      if (slab) slab.visible = slabShown;
       uniforms.uWeight.value = weight;
       renderer.render(compositeScene, quadCamera);
     },

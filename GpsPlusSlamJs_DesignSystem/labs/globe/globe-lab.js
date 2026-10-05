@@ -104,6 +104,7 @@ import {
 } from "./globe-atmosphere-frame.js";
 import { createGlobeGroundSky } from "./globe-ground-sky.js";
 import { createGlobeHaze } from "./globe-haze.js";
+import { createGlobeCloudVolume } from "./globe-cloud-volume.js";
 import { EARTH_ATMOSPHERE } from "/fw/visualization/atmosphere/atmosphere-model.js";
 import {
   GLOBE_SKY_HAND_OVER,
@@ -449,6 +450,20 @@ const PARAMS = {
   // The haze over the relief below the edge (F2b): the physical extinction
   // times this (0 off), faded in with the ground sky's weight.
   hazeScale: { fallback: 1, min: 0, max: 10 },
+  // The cloud volume near the camera (volume-cloud plan 2026-10-05-0016,
+  // C2): 0 the shell only (as before), 1 the volume within the disc and the
+  // shell outside it, 2 the volume over the shell (the default: the owner's
+  // choice 2026-10-05, the only variant measured near no-plop; replacing the
+  // shell's soft clouds inside the disc changed the frame by 16 levels).
+  cloudVolume: { fallback: 2, min: 0, max: 2 },
+  // Its disc (km, the plan's R, swept {10, 20, 40}) and its ceiling (km; it
+  // fades in over the 10 km below).
+  cloudVolumeKm: { fallback: 20, min: 5, max: 40 },
+  cloudVolumeCeilingKm: { fallback: 40, min: 10, max: 100 },
+  // Its fade-in below the ceiling (km), and the cover's gain on the map
+  // (thinner below 1): the knobs the no-plop sweep measured (C4).
+  cloudVolumeFadeKm: { fallback: 25, min: 1, max: 40 },
+  cloudVolumeCover: { fallback: 0.5, min: 0, max: 2 },
   // The reference image's looks (round-4 plan 2026-09-28-2105 DEC-GL4-8),
   // each 0 (off, the look before) to 1: a blue grade over the ground,
   // shaded clouds, a soft blue-grey night with warm lights, navy space and
@@ -1650,6 +1665,16 @@ async function start() {
     visibilityKm: groundSky.atmosphere?.visibilityKm ?? 60,
   });
   if (terrain) haze.patch(terrain.tiles);
+  // The cloud volume (C2; globe-cloud-volume.js): the ground sky's slab, its
+  // clouds from the globe's map, ending at the relief's depth.
+  const cloudVolume =
+    terrain && groundSky.supported
+      ? createGlobeCloudVolume(renderer, {
+          atmosphere: groundSky.atmosphere,
+          skyScene: groundSky.scene,
+          surfaceUniforms: globe.surfaceUniforms,
+        })
+      : null;
   // The relief's detail colour, loaded only for the relief (its worker reads
   // the Osm library, which the boot graph must not).
   const detailRegion = terrain
@@ -2406,6 +2431,29 @@ async function start() {
     // strength by the weight.
     if (groundSky.state().lastStage === "read") haze.sync(groundSky.atmosphere);
     haze.setWeight(skyHandOver.weight, params.hazeScale);
+    // The cloud volume (C2): its share by altitude, its disc, and the
+    // shell's hole of the same size (variant 1), so the clouds are drawn
+    // once at every altitude.
+    if (cloudVolume) {
+      cloudVolume.setEnabled(params.cloudVolume > 0);
+      const volume = cloudVolume.update({
+        altitudeKm: Math.max(0, observerKm),
+        target: worldFrame.target,
+        radiusKm: params.cloudVolumeKm,
+        ceilingKm: params.cloudVolumeCeilingKm,
+        fadeKm: params.cloudVolumeFadeKm,
+        cover: params.cloudVolumeCover,
+        shellHeightM: globe.cloudShell.heightM(),
+      });
+      globe.cloudShell.setHole(
+        params.cloudVolume === 1 && volume.radiusM > 0
+          ? {
+              radiusM: volume.radiusM,
+              aboveCameraM: globe.cloudShell.heightM() - observerKm * 1000,
+            }
+          : null,
+      );
+    }
     globe.sun.intensity = skyHandOver.exposure;
     const thickness =
       params.atmoRamp === 1
@@ -2447,6 +2495,8 @@ async function start() {
       groundSky.render(camera);
     }
     renderer.render(scene, camera);
+    // The cloud volume over the Earth, ending at the relief (C2).
+    if (cloudVolume) cloudVolume.render(camera, terrain.tiles.group);
     // The air over the Earth and the sky, lit by the same sun (or, while
     // its cost is measured, as the measurement says).
     if (costMode === null ? params.atmo !== 0 : costMode === "on") {
@@ -2683,6 +2733,7 @@ async function start() {
       // The haze (F2b) and the renderer's program count (a fog that came
       // and went at the edge would recompile every material).
       haze: haze.state(),
+      cloudVolume: cloudVolume?.state() ?? null,
       programs: renderer.info.programs?.length ?? null,
       planes: {
         near: camera.near,

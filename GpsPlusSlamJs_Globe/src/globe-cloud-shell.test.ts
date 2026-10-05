@@ -70,8 +70,10 @@ describe("createGlobeCloudShell", () => {
     expect(m.transparent).toBe(true);
     expect(m.depthWrite).toBe(false);
     expect(m.side).toBe(THREE.DoubleSide);
+    // v2 since the volume's hole (C2): a changed shader needs a new key, or
+    // three may reuse the old program.
     expect(m.customProgramCacheKey()).toBe(
-      "gps-plus-slam-globe-cloud-shell-v1",
+      "gps-plus-slam-globe-cloud-shell-v2",
     );
   });
 
@@ -119,6 +121,37 @@ describe("createGlobeCloudShell", () => {
     for (const bad of [-0.1, 1.1, Number.NaN]) {
       expect(() => s.setShare(bad)).toThrow(RangeError);
     }
+  });
+
+  // WHY (volume-cloud plan 2026-10-05-0016, C2, variant 1): where the volume
+  // draws the clouds near the camera, the shell must not draw them too, and
+  // its hole must fade like the volume's disc (0.7 r to r, horizontally), so
+  // the two meet without an edge. The horizontal distance is the distance
+  // to the camera with the shell's height above it taken out.
+  it("leaves a faded hole around the camera, horizontally, for the volume", () => {
+    const { s } = shell();
+    s.setShare(1);
+    const shader = standardShader();
+    s.mesh.material.onBeforeCompile(shader, {} as THREE.WebGLRenderer);
+    expect(shader.uniforms["uShellHole"]?.value.toArray()).toEqual([0, 0, 0]);
+    s.setHole({ radiusM: 20_000, aboveCameraM: 7_000 });
+    expect(shader.uniforms["uShellHole"]?.value.toArray()).toEqual([
+      14_000, 20_000, 7_000,
+    ]);
+    expect(s.hole()).toEqual({ radiusM: 20_000, aboveCameraM: 7_000 });
+    expect(shader.fragmentShader).toContain("uShellHole");
+    expect(shader.fragmentShader).toContain("length( vViewPosition )");
+    s.setHole(null);
+    expect(shader.uniforms["uShellHole"]?.value.toArray()).toEqual([0, 0, 0]);
+    expect(s.hole()).toBeNull();
+    for (const bad of [0, -1, Number.NaN]) {
+      expect(() => s.setHole({ radiusM: bad, aboveCameraM: 0 })).toThrow(
+        RangeError,
+      );
+    }
+    expect(() =>
+      s.setHole({ radiusM: 1_000, aboveCameraM: Number.NaN }),
+    ).toThrow(RangeError);
   });
 
   it("frees its geometry and material", () => {

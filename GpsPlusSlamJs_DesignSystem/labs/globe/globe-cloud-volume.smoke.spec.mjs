@@ -1,0 +1,155 @@
+// @ts-check
+/**
+ * The cloud volume near the camera (volume-cloud plan 2026-10-05-0016, C2
+ * and C4).
+ *
+ * Why this file matters: the owner asked for volume clouds with no "plop"
+ * anywhere on the descent. The volume fades in by altitude (40 to 30 km)
+ * while the shell opens a hole of the same size, so the clouds must never
+ * jump. Measured with the bounds stated in the plan before building (each
+ * swept x0.5/x1/x2):
+ *
+ * - **Continuity:** the camera held at dive times through 45 to 15 km; the
+ *   frame-to-frame step with the volume (variant 2, the default) may
+ *   exceed the worse of the shell alone (`cloudVolume=0`) and the volume
+ *   alone (the shell hidden) by at most a mean 1 level: the plan's bound.
+ *   Against the shell alone only, the volume's own legitimate change as the
+ *   camera nears it (parallax, 0.7-1.5 levels a step once its share was
+ *   already 0.91-1) read as a plop although the fade itself added 0.00 at
+ *   every step (2026-10-05).
+ * - **It is drawn:** at the 12 km hold the volume draws, without a console
+ *   error, and the frame differs from the shell-only frame.
+ * - **The cost** (SwiftShader relative, logged): frame time with the volume
+ *   on against off at the hold.
+ */
+import { expect, test } from "@playwright/test";
+
+import { bootGlobe, meanOf } from "./globe-smoke-helpers.mjs";
+
+const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
+const TARGET = { latitude: 46.5, longitude: 9.0 };
+const HOLD_KM = 12;
+const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&handOver=0&detail=0&handOverKm=${HOLD_KM}`;
+/** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
+const SWEEP = [0.5, 1, 2];
+const STEP = 1;
+
+const verdict = (value, bound) =>
+  `${value.toFixed(2)} (bound ${bound}: ${SWEEP.map((k) => `x${k} ${value <= bound * k ? "ok" : "NO"}`).join(" ")})`;
+
+function grid() {
+  const g = [];
+  for (let i = 0; i < 10; i++) {
+    for (let j = 0; j < 6; j++) g.push([0.05 + i * 0.1, 0.1 + j * 0.15]);
+  }
+  return g;
+}
+
+const meanDiff = (a, b) =>
+  meanOf(
+    a.map((p, i) =>
+      Math.max(
+        Math.abs(p[0] - b[i][0]),
+        Math.abs(p[1] - b[i][1]),
+        Math.abs(p[2] - b[i][2]),
+      ),
+    ),
+  );
+
+test("the cloud volume fades in on the descent without a jump, ending at the relief, its cost stated", async ({
+  page,
+  context,
+}) => {
+  // Three rows of 21 held frames (about 5 min each) plus the landing.
+  test.setTimeout(1_500_000);
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation(TARGET);
+  const errors = await bootGlobe(page, BASE);
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return (
+        s.phase === "landed" && s.pin.phase === "idle" && s.relief?.settled
+      );
+    },
+    null,
+    { timeout: 300_000 },
+  );
+  const times = await page.evaluate(() => {
+    const at = (km) => {
+      let lo = 0;
+      let hi = 60_000;
+      for (let i = 0; i < 40; i++) {
+        const m = (lo + hi) / 2;
+        if (window.__globeLab.diveAltitudeAt(m) > km * 1000) lo = m;
+        else hi = m;
+      }
+      return lo;
+    };
+    const out = [];
+    for (let i = 0; i <= 20; i++) out.push(at(45 * (15 / 45) ** (i / 20)));
+    return out;
+  });
+  const g = grid();
+  const rows = {};
+  const cost = {};
+  for (const [label, volume, shellHidden] of [
+    ["volume", 2, false],
+    ["shell only", 0, false],
+    ["volume alone", 2, true],
+  ]) {
+    await page.evaluate((h) => {
+      location.hash = h;
+    }, `${BASE}&cloudVolume=${volume}&bandFreeze=1`);
+    await page.evaluate(
+      (on) => window.__globeLab.hideCloudShell(on),
+      shellHidden,
+    );
+    const frames = [];
+    for (const ms of times) {
+      await page.evaluate((t) => window.__globeLab.holdDiveAt(t), ms);
+      await page.waitForFunction(
+        () => window.__globeLab.state().groundSky?.rebuildPending === false,
+        null,
+        { timeout: 30_000 },
+      );
+      frames.push(
+        await page.evaluate((pts) => {
+          const lab = window.__globeLab;
+          const px = lab.readPixels(pts);
+          return { px, volume: lab.state().cloudVolume };
+        }, g),
+      );
+    }
+    rows[label] = frames;
+    // The cost at the hold: the last time (the lowest), 20 frames.
+    cost[label] = await page.evaluate(
+      () => window.__globeLab.timeFrames(20) / 20,
+    );
+  }
+  await page.evaluate(() => window.__globeLab.hideCloudShell(false));
+  const on = rows["volume"];
+  const off = rows["shell only"];
+  const alone = rows["volume alone"];
+  let worstStep = 0;
+  const beyond = [];
+  for (let i = 1; i < on.length; i++) {
+    const stepOn = meanDiff(on[i].px, on[i - 1].px);
+    const stepOff = Math.max(
+      meanDiff(off[i].px, off[i - 1].px),
+      meanDiff(alone[i].px, alone[i - 1].px),
+    );
+    beyond.push(stepOn - stepOff);
+    worstStep = Math.max(worstStep, stepOn - stepOff);
+  }
+  const atHold = meanDiff(on.at(-1).px, off.at(-1).px);
+  console.log(
+    `cloud volume over 45-15 km: frame-to-frame step beyond the worse of the shell alone and the volume alone, worst ${verdict(worstStep, STEP)}; per step ${beyond.map((v) => v.toFixed(2)).join(" ")}; shares ${on.map((f) => f.volume.share.toFixed(2)).join(" ")}; at ${(15).toFixed(0)} km the volume against the shell only ${atHold.toFixed(2)} levels, drawn on ${on.at(-1).volume.drawn} frames; ${cost.volume.toFixed(1)} ms a frame with the volume against ${cost["shell only"].toFixed(1)} without (x${(cost.volume / cost["shell only"]).toFixed(2)}, SwiftShader)`,
+  );
+  expect(errors).toEqual([]);
+  expect(on.at(-1).volume.share).toBe(1);
+  expect(on.at(-1).volume.drawn).toBeGreaterThan(0);
+  expect(on[0].volume.share).toBe(0);
+  expect(worstStep).toBeLessThanOrEqual(STEP);
+});

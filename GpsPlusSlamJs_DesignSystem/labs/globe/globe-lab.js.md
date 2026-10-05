@@ -562,6 +562,15 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   pre-round-4 look pin (`withPreRound4Look`) carries `relief=0`, and
   `bootGlobe` and every direct page load go through `plainGlobe(hash)`,
   which adds `relief=0` to a hash that names no relief.
+- The cloud volume (volume-cloud plan 2026-10-05-0016, C2;
+  `globe-cloud-volume.js`): `cloudVolume` 0 the shell only, 1 (default) the
+  volume within the disc and the shell outside it, 2 the volume over the
+  shell; `cloudVolumeKm` (20) the disc, `cloudVolumeCeilingKm` (40) the
+  ceiling it fades in under (10 km). Each frame after the sky hand-over its
+  share and disc are set and the shell's hole matches the disc (variant
+  1); after the Earth it draws the slab from the ground sky, ending at the
+  relief's depth. The state's `cloudVolume` carries its share, disc, lift
+  and drawn frames.
 - The sky hand-over (F2 plan 2026-10-03-1922 F2b; `globe-ground-sky.js`):
   each frame, before the sky pass, the observer's height over the
   ellipsoid's image (`observerAltitudeKm`) feeds the ground sky

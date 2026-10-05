@@ -18,6 +18,13 @@
       > = 0.
     - `setShare(s)` / `share()`: how much of the clouds the shell draws,
       0-1, its alpha's factor; hidden at 0. RangeError outside 0-1.
+    - `setHole({ radiusM, aboveCameraM } | null)` / `hole()` (volume-cloud
+      plan 2026-10-05-0016, C2, variant 1): the hole the cloud volume draws
+      in; the shell's clouds fade out from `radiusM` in to 0.7 of it,
+      horizontally (the distance to the camera with `aboveCameraM`, the
+      shell's height above the camera, taken out: `uShellHole`). RangeError
+      for a radius not positive or a height not finite. The program key is
+      v2 since the hole.
     - `heightM()`, `dispose()` (geometry and material).
   - RangeError for radii that are not three positive finite numbers.
 - Invariants & assumptions:

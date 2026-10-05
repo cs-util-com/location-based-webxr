@@ -20,7 +20,7 @@ import {
 } from "./globe-surface-material.js";
 
 /** The shell's program key (its shader differs from every tile's). */
-const PROGRAM_KEY = "gps-plus-slam-globe-cloud-shell-v1";
+const PROGRAM_KEY = "gps-plus-slam-globe-cloud-shell-v2";
 
 /**
  * Segments around and from pole to pole: at 256 x 128 a facet's chord sags
@@ -43,6 +43,16 @@ export interface GlobeCloudShell {
    */
   setShare(share: number): void;
   share(): number;
+  /**
+   * The hole the cloud volume draws in (volume-cloud plan 2026-10-05-0016,
+   * C2, variant 1): the shell's clouds fade out from `radiusM` to 0.7 of it
+   * horizontally around the camera (the volume's disc in reverse), the
+   * horizontal distance taken with `aboveCameraM`, the shell's height above
+   * the camera, removed. null for none. RangeError for a radius not
+   * positive and finite or a height not finite.
+   */
+  setHole(hole: { radiusM: number; aboveCameraM: number } | null): void;
+  hole(): { radiusM: number; aboveCameraM: number } | null;
   dispose(): void;
 }
 
@@ -64,12 +74,21 @@ uniform float uCloudRelief;
 uniform float uGrade;
 uniform float uTwilight;
 uniform float uShellShare;
+// The hole the volume draws in (C2): x, y the fade's inner and outer
+// horizontal radius (m), z the shell's height above the camera (m); y 0 is
+// no hole.
+uniform vec3 uShellHole;
 varying vec3 vGeoNormal;`;
 
 /** In place of the map: the cloud shade, the cloud as alpha, the grade. */
 const FRAGMENT_CLOUD = /* glsl */ `
 ${GLOBE_CLOUD_GLSL}
 diffuseColor = vec4( mix( vec3( 1.0 ), globeCloudShade, uCloudRelief ), globeCloud * uCloudOpacity * uShellShare );
+if ( uShellHole.y > 0.0 ) {
+  float shellDistance = length( vViewPosition );
+  float shellAcross = sqrt( max( shellDistance * shellDistance - uShellHole.z * uShellHole.z, 0.0 ) );
+  diffuseColor.a *= smoothstep( uShellHole.x, uShellHole.y, shellAcross );
+}
 float globeLuma = dot( diffuseColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
 diffuseColor.rgb = mix( diffuseColor.rgb, globeLuma * vec3( 0.7, 0.88, 1.2 ), uGrade * 0.7 );`;
 
@@ -104,6 +123,8 @@ export function createGlobeCloudShell(options: {
   });
   const shellRadii = { value: new THREE.Vector3(...radii) };
   const shellShare = { value: 0 };
+  const shellHole = { value: new THREE.Vector3() };
+  let hole: { radiusM: number; aboveCameraM: number } | null = null;
   material.onBeforeCompile = (shader) => {
     let vs = shader.vertexShader;
     vs = afterChunk(vs, "#include <common>", VERTEX_DECLARATIONS);
@@ -117,6 +138,7 @@ export function createGlobeCloudShell(options: {
     Object.assign(shader.uniforms, {
       uShellRadii: shellRadii,
       uShellShare: shellShare,
+      uShellHole: shellHole,
       uSunEcef: uniforms.uSunEcef,
       uSunWorld: uniforms.uSunWorld,
       uClouds: uniforms.uClouds,
@@ -162,6 +184,27 @@ export function createGlobeCloudShell(options: {
       mesh.visible = share > 0;
     },
     share: () => shellShare.value,
+    setHole(next) {
+      if (next !== null) {
+        if (!(next.radiusM > 0 && Number.isFinite(next.radiusM))) {
+          throw new RangeError(
+            `the hole's radius must be positive, got ${next.radiusM}`,
+          );
+        }
+        if (!Number.isFinite(next.aboveCameraM)) {
+          throw new RangeError(
+            `the shell's height above the camera must be finite, got ${next.aboveCameraM}`,
+          );
+        }
+      }
+      hole = next === null ? null : { ...next };
+      shellHole.value.set(
+        next === null ? 0 : 0.7 * next.radiusM,
+        next === null ? 0 : next.radiusM,
+        next === null ? 0 : next.aboveCameraM,
+      );
+    },
+    hole: () => (hole === null ? null : { ...hole }),
     dispose() {
       geometry.dispose();
       material.dispose();
