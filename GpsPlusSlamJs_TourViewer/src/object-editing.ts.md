@@ -25,7 +25,8 @@ Wired by `creator-setup.ts`, drawn by `object-list.ts`.
   - `reset()` - a visit ended or a tour closed: selection and note go.
 - `ObjectEditingDeps` - the creator setup's state and callbacks: the
   session object, the store, the view, the world group, `sessionLive`,
-  `placementAllowed`, `settleInputs` (the level in hand, this visit's
+  `placementAllowed`, the optional `notePlaced` (a move is a new placement
+  for the settle's per-moment alignment, D33), `settleInputs` (the level in hand, this visit's
   measurement and sighting, the GPS accuracy), the stored codes, the draft
   writes (`saveDraftObject`, `saveDraftDeletion`, `forgetDraftObject`,
   `forgetDraftDeletion`), `schedule` (the app's one-shot timer seam),

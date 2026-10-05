@@ -93,3 +93,23 @@ describe('tour manifest (properties)', () => {
     );
   });
 });
+
+describe('the v1 migration (properties, tour kit plan K1)', () => {
+  // Why this matters: every tour and draft made before K1 is version 1.
+  // Migrating must keep every object exactly, land on the same document a
+  // version 2 file with those objects gives, and be idempotent - a
+  // migrated tour written back and read again must not change.
+  it('a v1 manifest migrates to the v2 manifest with the same objects, and stays put', () => {
+    fc.assert(
+      fc.property(manifest, (v1) => {
+        const migrated = parseTourManifest(v1);
+        expect(migrated.version).toBe(2);
+        expect(migrated).toEqual(parseTourManifest({ ...v1, version: 2 }));
+        expect(
+          parseTourManifest(JSON.parse(serializeTourManifest(migrated)))
+        ).toEqual(migrated);
+      }),
+      { numRuns: 200 }
+    );
+  });
+});

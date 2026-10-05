@@ -27,7 +27,7 @@ import { computeDelta } from './delta.mjs';
 import { machineFingerprint, machineLabel } from './machine.mjs';
 import { parsePlaywrightCounts, parseVitestCounts } from './reporter-parse.mjs';
 import { buildStageCommand, decideRecording } from './stage-args.mjs';
-import { getStage, stageOrder } from './projects.mjs';
+import { gateBaseCommand, getStage, stageOrder } from './projects.mjs';
 import {
   LOWERED_MARKER_ENV,
   spawnAtPriority,
@@ -268,9 +268,16 @@ export async function runStage(project, stageName, forwardedArgs) {
     return { exitCode: 1, durationMs: 0, tests: null, recorded: false };
   }
 
-  const decision = decideRecording(forwardedArgs, process.env);
+  const baseCommand = gateBaseCommand(stage, process.env);
+  // A run on a stage's per-commit fast command (e.g. the framework's unit
+  // stage without --coverage, gate-speed plan G4) is NOT recorded: its
+  // duration is not comparable with the history of the canonical command.
+  const decision =
+    baseCommand === stage.command
+      ? decideRecording(forwardedArgs, process.env)
+      : { ...decideRecording(forwardedArgs, process.env), record: false };
   let command = buildStageCommand(
-    stage.command,
+    baseCommand,
     decision,
     stage.filteredRunArgs,
     stage.filteredRunCommand

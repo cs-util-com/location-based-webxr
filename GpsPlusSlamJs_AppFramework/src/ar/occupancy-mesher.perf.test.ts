@@ -103,6 +103,13 @@ const triangleCount = (m: OccupancyMeshResult): number => m.indices.length / 3;
 const vertexCount = (m: OccupancyMeshResult): number => m.positions.length / 3;
 const byteSize = (m: OccupancyMeshResult): number =>
   m.positions.byteLength + m.indices.byteLength;
+const maxIndex = (indices: ArrayLike<number>): number => {
+  let max = 0;
+  for (let i = 0; i < indices.length; i++) {
+    if (indices[i]! > max) max = indices[i]!;
+  }
+  return max;
+};
 
 describe('occupancy mesher — deterministic large-scene perf/memory harness', () => {
   /**
@@ -198,8 +205,14 @@ describe('occupancy mesher — deterministic large-scene perf/memory harness', (
         expect(mesh.aabbs.length).toBe(cellCount);
         expect(mesh.positions.every((p) => Number.isFinite(p))).toBe(true);
         const verts = vertexCount(mesh);
-        for (const idx of mesh.indices) expect(idx).toBeLessThan(verts);
+        // One computed maximum, not one `expect` per index (about 700k per
+        // mesh, most of this test's time; gate-speed plan 2026-10-04, G3):
+        // for non-negative integer indices it is the same claim.
+        expect(maxIndex(mesh.indices)).toBeLessThan(verts);
       }
+      // The 32-bit index regime this test is the only cover for: the per-face
+      // mesh's highest index does not fit a 16-bit index buffer.
+      expect(maxIndex(perFace.indices)).toBeGreaterThan(0xffff);
       // Per-face surface is watertight (closed box).
       expect(oddEdgeCount(perFace.positions, perFace.indices, cellSizeM)).toBe(
         0

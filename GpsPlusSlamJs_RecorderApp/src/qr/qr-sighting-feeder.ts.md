@@ -8,7 +8,8 @@ will place it through.
 
 Which alignment is owner decision D28, revised 2026-10-02: the FIRST MATURE
 alignment at or after the code's last sighting, maturity being a session GPS
-extent of 80 m (`QR_MINT_MATURE_GPS_EXTENT_M`). The rule lives in the
+extent of 40 m (`QR_MINT_MATURE_GPS_EXTENT_M`; owner decision D34 lowered it
+from 80 m). The rule lives in the
 framework's `qr-mint-alignment-tracker.ts`, so the measurement that chose it
 (`qr-anchor-mint.start-at-code.test.ts`) runs the same code; this module
 feeds it.
@@ -57,7 +58,7 @@ accumulator, alignmentFor }`.
   mid-recording and then walked away from inherits all SLAM drift after its
   sighting through it (8.6 m p50 at 500 m away, 1 % and 1 degree per 100 m);
   the first mature alignment keeps it at 1.1-1.7 m. A short recording never
-  reaches 80 m, so it gets the alignment at save, which is the start-at-code
+  reaches 40 m, so it gets the alignment at save, which is the start-at-code
   fix (72 degrees heading p50 through the sighting's own immature snapshot,
   about 4 through the walked one).
 - **A segment that closes freezes its waiting codes** (milestone review M1,

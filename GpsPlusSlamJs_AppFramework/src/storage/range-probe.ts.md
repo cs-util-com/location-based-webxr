@@ -18,7 +18,7 @@ branch is provable without a server.
 - `interface ArchiveValidators { etag?: string; lastModified?: string }` —
   freshness validators for cache revalidation; `lastModified` is
   CORS-safelisted, `etag` often unreadable cross-origin, hence both optional.
-- `type RangeProbeRejectCause = "unusable-link" | "cors" | "corrupt" | "missing"`
+- `type RangeProbeRejectCause = "unusable-link" | "cors" | "corrupt" | "missing" | "too-large" | "offline"`
 - `type FallbackDecision = { mode: "ranges"; size } | { mode: "eager-local"; body } | { mode: "full-download" } | { mode: "reject"; cause: RangeProbeRejectCause }`
 - `decideFallback(probe: ProbeResult): FallbackDecision`
 
@@ -35,8 +35,10 @@ branch is provable without a server.
   `full-download`, never `ranges` — boundary defense mirroring the validation
   in `probeRemote`.
 - `RangeProbeRejectCause`: `decideFallback` produces
-  `missing`/`corrupt`/`unusable-link`; `'cors'` is produced by the
-  orchestrator when `fetch` rejects before any status exists. A consumer with
+  `missing`/`corrupt`/`unusable-link`; `'cors'` and `'offline'` are produced
+  by the orchestrator when `fetch` rejects before any status exists (offline
+  only when the browser reports no network), and `'too-large'` when the
+  archive is above its transport cap (`archive-limits.ts`, tour kit plan K0). A consumer with
   its own fatal causes (e.g. "the file parsed but its contents were invalid")
   extends this union locally rather than this module growing app-specific
   causes.

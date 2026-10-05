@@ -54,6 +54,7 @@ import {
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
 import { createViewingLog } from "./viewing-log.js";
+import { wireVisitorStations } from "./visitor-stations.js";
 import { wireVisitorScreen } from "./visitor-screen.js";
 import { driveProxyBaseUrl } from "./drive-proxy-url.js";
 import { stepStoreOrUndefined, wireWizard } from "./wizard.js";
@@ -222,6 +223,15 @@ hooks.presentTourForPrint = (url, origin) => {
     url,
     origin === "measure-step" ? { prefer: "measure" } : {},
   );
+};
+
+// A tour opened from a file (tour kit plan K0) has no link: the print step
+// keeps asking for one, and only a creator's wizard moves on - the same
+// steps a link would reach, without remembering a link to prefill.
+hooks.presentLocalTour = (origin) => {
+  print.presentNoTour();
+  if (mode !== "creator") return;
+  wizard.openStep(origin === "measure-step" ? "measure" : "print");
 };
 
 const visitor = wireVisitorScreen({
@@ -472,6 +482,41 @@ hooks.tryPlaceTour = viewer.tryPlaceTour;
 hooks.startScanGate = viewer.startScanGate;
 hooks.resetScanGate = viewer.resetScanGate;
 hooks.reconsiderScanGate = viewer.reconsiderScanGate;
+
+// The visitor's stations and their stories (tour kit plan K4).
+const stations = wireVisitorStations({
+  ctx,
+  mode,
+  arStore,
+  seams,
+  dom: {
+    guide: {
+      line: element("station-line"),
+      skip: element("station-skip"),
+    },
+    scene: {
+      panel: element("scene-panel"),
+      title: element("scene-title"),
+      speaker: element("scene-speaker"),
+      text: element("scene-text"),
+      status: element("scene-status"),
+      image: element<HTMLImageElement>("scene-image"),
+      choices: element("scene-choices"),
+      continueButton: element("scene-continue"),
+      playNext: element("scene-play-next"),
+    },
+    skipButton: element("station-skip"),
+    continueButton: element("scene-continue"),
+    playNextButton: element("scene-play-next"),
+    doc: document,
+  },
+  now: () => Date.now(),
+  schedule: (fn, ms) => seams.schedule(fn, ms),
+});
+hooks.tickStations = stations.tick;
+hooks.stationCodeLocked = stations.codeLocked;
+hooks.unlockStationAudio = stations.unlockAudio;
+hooks.stopStations = stations.stop;
 // Every device fix goes through the viewer placement: while a scanned code's
 // keep-alive holds, the fix and its ring reach the store as ONE batch, one
 // solve (authoring plan 2026-09-28-0953 D18); otherwise as before.
@@ -511,6 +556,12 @@ const archive = wireArchiveOpen({
     form: element("open-form"),
     linkInput: element("link"),
     openButton: element("open"),
+    openFileButton: element("open-file"),
+    fileInput: element("file-input"),
+    fileAdvice: element("file-advice"),
+    openFileAdviceButton: element("open-file-advice"),
+    fileStatus: element("file-status"),
+    tourTrust: element("tour-trust"),
     statsPanel: element("stats"),
     statsHeadline: element("stats-headline"),
     statsDetail: element("stats-detail"),

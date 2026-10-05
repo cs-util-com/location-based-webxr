@@ -511,7 +511,16 @@ function authoring(
         basis: string;
         visitAlignment: unknown;
         usedAlignment: number[];
-        objects: { id: string; geo: TourObject["geo"] }[];
+        /** Since D33 each object carries its own choice. */
+        objects: {
+          id: string;
+          geo: TourObject["geo"];
+          basis?: string;
+          usedAlignment?: number[];
+          refusedCorrection?: unknown;
+        }[];
+        /** Since D33: the alignment the level was re-minted through. */
+        levelAlignment?: number[] | null;
         level: { id: string; json: string } | null;
         referenceLevel: { id: string; json: string } | null;
         zero: { lat: number; lon: number } | null;
@@ -709,13 +718,19 @@ describe(
       expect(payload.basis).toBe("measured-here");
       expect(payload.visitAlignment).toEqual(end);
       expect(payload.usedAlignment).toEqual(end);
+      // Since D33 each object also logs its own choice. This visit never
+      // reached 40 m of GPS extent, so the pin fell back to the end alignment.
       expect(payload.objects).toEqual([
         {
           id: a.ctx.placedObjects[0]!.object.id,
           geo: a.ctx.placedObjects[0]!.object.geo,
+          basis: "measured-here",
+          usedAlignment: end,
+          refusedCorrection: null,
         },
       ]);
       expect(payload.level).toEqual(a.ctx.mintedLevel);
+      expect(payload.levelAlignment).toEqual(end);
       // The level in hand BEFORE the settle and the zero (review #7): what a
       // replay needs to recompute a code-corrected settle.
       expect(payload.referenceLevel).toEqual(tapLevel);
@@ -1006,6 +1021,7 @@ async function openFinishableTour(
       ...levels.map((l) => ({ filename: l.path })),
     ],
     manifestWrap: "",
+    integrity: { kind: "none" },
     readWholeArchive: () =>
       options.holdArchive === true
         ? new Promise<Blob>((resolve) => {
@@ -1018,6 +1034,8 @@ async function openFinishableTour(
       Promise.resolve(
         new Blob([levels.find((l) => l.path === filename)?.data ?? ""]),
       ),
+    loadEntryText: (filename: string) =>
+      Promise.resolve(levels.find((l) => l.path === filename)?.data ?? ""),
   } as never;
   a.ctx.tourManifestStatus = "settled";
   a.ctx.tourManifest = createEmptyTourManifest();
@@ -1465,7 +1483,7 @@ describe(
     ) {
       const a = authoring(store === undefined ? {} : { store });
       await openFinishableTour(a);
-      a.ctx.tourManifest = { version: 1, objects };
+      a.ctx.tourManifest = { ...createEmptyTourManifest(), objects };
       a.setup.presentDraftForTour("https://example.test/tour.zip");
       await flush();
       a.beginVisit();
@@ -2794,6 +2812,77 @@ describe(
       fix(MOVE_PROMPT_RULE.minFixes);
       expect(a.dom.movePrompt.hidden).toBe(false);
       expect(logs(a, "codeMovePrompted")).toHaveLength(1);
+    });
+  },
+);
+
+describe(
+  "the settle at each object's own moment (D33)",
+  { timeout: SLOW_MS },
+  () => {
+    // Why these tests matter: the pure planner is tested on its own; these
+    // pin the WIRING - the creator setup feeds the picks the session's GPS
+    // extent and the alignment at each moment, so a pin placed after the
+    // session matured settles through the alignment at its placement, and
+    // the drift folded into the alignment by the visit's end never reaches
+    // it. A visit that never matures still falls back to the end alignment.
+
+    /** Twelve device fixes spanning `spanM` m North, with the coordinates
+     *  the GPS extent reads. */
+    function walkSpanning(spanM: number): {
+      fixes: unknown[];
+      odometry: number[][];
+    } {
+      const fixes = Array.from({ length: 12 }, (_, i) => {
+        const n = (spanM * i) / 11;
+        return {
+          id: `gps-${String(i)}`,
+          timestamp: 1_000 * i,
+          coordinates: [n, 400, 0],
+          latitude: ZERO.lat + (n / 6_371_000) * (180 / Math.PI),
+          longitude: ZERO.lon,
+          latLongAccuracy: 4,
+        };
+      });
+      return { fixes, odometry: fixes.map((_, i) => [(spanM * i) / 11, 0, 0]) };
+    }
+
+    const atPlacement = yawAlignment(0, [0, 400, 0]);
+    const drifted = yawAlignment(9, [6, 400, -3]);
+
+    it("settles a pin placed after the session matured through the alignment at its placement", async () => {
+      const a = authoring();
+      a.setWalk(walkSpanning(100));
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      // By the visit's end the alignment has the walk's drift folded in.
+      a.setAlignment(drifted);
+      a.endVisit();
+      const log = a.settledLogs().at(-1)!.payload;
+      expect(log.objects[0]!.usedAlignment).toEqual(atPlacement);
+      expect(log.levelAlignment).toEqual(atPlacement);
+      const pin = a.ctx.placedObjects[0]!.object;
+      const expected = throughAlignment(
+        { position: [2, 0, -1], rotation: [0, 0, 0, 1] },
+        atPlacement,
+      )!.position;
+      expect(
+        new Vector3(...objectPoseNue(pin.geo, ZERO).positionNue).distanceTo(
+          new Vector3(...expected),
+        ),
+      ).toBeLessThan(1e-3);
+    });
+
+    it("falls back to the end alignment when the session never matures", async () => {
+      const a = authoring();
+      a.setWalk(walkSpanning(30));
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      a.setAlignment(drifted);
+      a.endVisit();
+      const log = a.settledLogs().at(-1)!.payload;
+      expect(log.objects[0]!.usedAlignment).toEqual(drifted);
+      expect(log.levelAlignment).toEqual(drifted);
     });
   },
 );

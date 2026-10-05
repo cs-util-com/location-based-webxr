@@ -9,7 +9,12 @@ not copy it).
 
 ## Public API
 
-- `decodeFrameTexture(blob: Blob, divisor = 1): Promise<THREE.Texture | null>`
+- `decodeFrameTexture(blob: Blob, divisor = 1, options?: { maxPixels? }): Promise<THREE.Texture | null>`
+  With `maxPixels` the size is read from the header first
+  (`utils/image-header` `imageInfoOfBlob`), and an image over the cap, or
+  one whose size cannot be read, is never decoded (`null`): the tour kit
+  K4 review R2 decode cap, since `createImageBitmap` decodes at the stated
+  size before any resize;
   — `divisor > 1` re-samples the decoded bitmap to `1/divisor` of each
   dimension (display-memory mitigation). Returns `null` — never throws —
   when `createImageBitmap` is unavailable or the blob does not decode.
@@ -40,6 +45,7 @@ if (texture) material.map = texture;
 ## Tests
 
 `frame-texture-decoder.test.ts` (colocated) — the flip contract, the
-divisor resize, and the null soft-failure paths. Consumers:
+divisor resize, and the null soft-failure paths; the pixel cap (an image
+over it, or unmeasurable, never reaches `createImageBitmap`). Consumers:
 `GpsPlusSlamJs_RecorderApp` (frame tiles, live + replay) and
 `GpsPlusSlamJs_TourViewer` (image planes).
