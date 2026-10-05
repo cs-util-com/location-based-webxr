@@ -34,6 +34,13 @@ import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint
 // DECLINES such a recording while the recorder's QR fold SEGMENTS it, and two
 // copies that drifted would let one accept what the other refuses.
 import { SEGMENTING_ACTION_TYPES } from "gps-plus-slam-app-framework/state/segmenting-actions";
+import {
+  advanceMatureAlignmentPick,
+  openMatureAlignmentPick,
+  type AlignmentMoment,
+  type MatureAlignmentPick,
+} from "gps-plus-slam-app-framework/state/alignment-maturity";
+import { createGpsExtentTracker } from "gps-plus-slam-app-framework/state/gps-extent-tracker";
 
 type Vec3 = readonly [number, number, number];
 type Quat = readonly [number, number, number, number];
@@ -196,13 +203,44 @@ export function assessReplayedJoin(state: ReplayedJoinState): JoinAssessment {
   };
 }
 
+/** An alignment a capture can be placed through: a matrix and its rotation. */
+export interface CaptureAlignment {
+  readonly matrix: readonly number[];
+  readonly rotation: Quat;
+}
+
+/**
+ * The alignment as one capture should use it, validated like the final one:
+ * a 16-entry matrix and a unit rotation; anything else is `undefined`, and
+ * the capture falls back to the final alignment.
+ */
+function checkedAlignment(
+  a: CaptureAlignment | undefined,
+): { matrix: AlignmentMatrix; quat: ThreeQuaternion } | undefined {
+  if (a === undefined || a.matrix.length !== 16) return undefined;
+  const rotation = renormalizeUnitQuaternion(a.rotation);
+  if (rotation === undefined) return undefined;
+  const [x, y, z, w] = rotation;
+  return {
+    matrix: toAlignmentMatrix(a.matrix),
+    quat: new ThreeQuaternion(x, y, z, w),
+  };
+}
+
 /**
  * Compute every capture's world pose. Call only after
  * {@link assessReplayedJoin} returned `ok` — a null `gpsData`/zero here is
  * a programming error and throws.
+ *
+ * `alignmentFor` (scan-pass plan S-D11) gives a capture its own alignment -
+ * the first settled one after it was taken
+ * ({@link createCapturePickTracker}); a capture it does not know, or whose
+ * alignment fails the same checks as the final one, uses the final
+ * alignment, which is the whole join's behaviour without it.
  */
 export function computeCaptureGeoJoin(
   state: ReplayedJoinState,
+  alignmentFor?: (imageFile: string) => CaptureAlignment | undefined,
 ): CaptureWorldPose[] {
   const gpsData = state.gpsData;
   if (gpsData === null || gpsData.zero === null) {
@@ -238,7 +276,13 @@ export function computeCaptureGeoJoin(
   const alignmentQuat = new ThreeQuaternion(ax, ay, az, aw);
   const basisQuat = new ThreeQuaternion().setFromRotationMatrix(WEBXR_TO_NUE);
   return gpsData.odometryPath.points.flatMap((point) => {
-    const geo = fusedGpsFromOdom(matrix, [...point.position], zero);
+    const { matrix: pointMatrix, quat: pointAlignmentQuat } = checkedAlignment(
+      alignmentFor?.(point.imageFile),
+    ) ?? {
+      matrix,
+      quat: alignmentQuat,
+    };
+    const geo = fusedGpsFromOdom(pointMatrix, [...point.position], zero);
     // A capture the solve cannot place is DROPPED, never defaulted (PR #370
     // review). `main.ts` converts these back with
     // `calcRelativeCoordsInMeters(zero, {lat, lon}, altitude, 0)`, so NUE y
@@ -286,7 +330,7 @@ export function computeCaptureGeoJoin(
     // factor is LOAD-BEARING. Without it every plane is yawed 90° about Up
     // (this milestone's cold review, finding 1; the directional test below
     // pins South-facing for a North-looking capture).
-    const world = alignmentQuat
+    const world = pointAlignmentQuat
       .clone()
       .multiply(new ThreeQuaternion(cx, cy, cz, cw))
       .multiply(basisQuat);
@@ -300,4 +344,108 @@ export function computeCaptureGeoJoin(
       ...(point.height !== undefined ? { height: point.height } : {}),
     };
   });
+}
+
+/** One moment of the replay as a capture's pick sees it. */
+interface CaptureMoment extends AlignmentMoment {
+  readonly alignmentMatrix: readonly number[] | null;
+  readonly alignmentRotation: Quat | null;
+}
+
+/** A replayed state as far as the pick tracker reads it. */
+export interface PickTrackerState {
+  readonly gpsData: {
+    readonly zero: { lat: number; lon: number } | null;
+    readonly gpsEvents: {
+      readonly gpsPositions: readonly unknown[];
+      readonly alignmentMatrix: readonly number[];
+      readonly alignmentRotation: Quat;
+    };
+  } | null;
+}
+
+/** Each recorded photo's alignment by D33's rule, built during the replay. */
+export interface CapturePickTracker {
+  /** Feed every replayed action with the state it produced, in order. */
+  observe(
+    action: { type: string; payload?: unknown },
+    state: PickTrackerState,
+  ): void;
+  /** The photo's picked alignment; undefined for a photo never seen. */
+  alignmentFor(imageFile: string): CaptureAlignment | undefined;
+}
+
+const CAPTURE_ACTION = "gpsData/add2dImage";
+
+function captureImageFile(payload: unknown): string | undefined {
+  if (typeof payload !== "object" || payload === null) return undefined;
+  const file = (payload as { imageFile?: unknown }).imageFile;
+  return typeof file === "string" ? file : undefined;
+}
+
+/**
+ * Picks each recorded photo's alignment as the replay runs (scan-pass plan
+ * S-D11): the first alignment at or after the photo whose session GPS
+ * extent reached the shared maturity floor (`state/alignment-maturity`,
+ * the same rule as D33's authoring settle), else the last usable one when
+ * the walk never settles. A settled pick never moves again.
+ *
+ * `extentOf` measures a state's GPS extent; by default the framework's
+ * tracker over the store's device fixes.
+ */
+export function createCapturePickTracker(options?: {
+  readonly extentOf?: (state: PickTrackerState) => number;
+}): CapturePickTracker {
+  const extentTracker = createGpsExtentTracker();
+  const extentOf =
+    options?.extentOf ??
+    ((state: PickTrackerState) =>
+      extentTracker.update(
+        (state.gpsData?.gpsEvents.gpsPositions ?? []) as Parameters<
+          typeof extentTracker.update
+        >[0],
+      ));
+  const picks = new Map<string, MatureAlignmentPick<CaptureMoment>>();
+  const open = new Set<string>();
+
+  function momentOf(state: PickTrackerState): CaptureMoment {
+    const gps = state.gpsData;
+    return {
+      alignmentMatrix: gps?.gpsEvents.alignmentMatrix ?? null,
+      alignmentRotation: gps?.gpsEvents.alignmentRotation ?? null,
+      zero: gps?.zero ?? null,
+      gpsExtentM: extentOf(state),
+    };
+  }
+
+  return {
+    observe(action, state) {
+      const now = momentOf(state);
+      for (const file of open) {
+        const pick = advanceMatureAlignmentPick(picks.get(file)!, now);
+        picks.set(file, pick);
+        if (pick.mature) open.delete(file);
+      }
+      if (action.type !== CAPTURE_ACTION) return;
+      const file = captureImageFile(action.payload);
+      if (file === undefined) return;
+      const pick = openMatureAlignmentPick(now);
+      picks.set(file, pick);
+      if (!pick.mature) open.add(file);
+    },
+    alignmentFor(imageFile) {
+      const moment = picks.get(imageFile)?.alignment;
+      if (
+        moment === undefined ||
+        moment.alignmentMatrix === null ||
+        moment.alignmentRotation === null
+      ) {
+        return undefined;
+      }
+      return {
+        matrix: moment.alignmentMatrix,
+        rotation: moment.alignmentRotation,
+      };
+    },
+  };
 }

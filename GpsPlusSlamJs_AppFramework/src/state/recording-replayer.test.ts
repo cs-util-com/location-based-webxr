@@ -229,3 +229,33 @@ describe('replayActions — the pre-loaded half (geo-join M-B)', () => {
     );
   });
 });
+
+describe('replayActions - onAction, the state after each action (scan-pass S1)', () => {
+  // Why this test matters: a recorded photo is placed through the first
+  // settled alignment AFTER it was taken (owner decision S-D11, D33's rule),
+  // which needs the alignment as it stood after each action, not only the
+  // final state. The hook must see every action, in order, with the state
+  // that action produced.
+  it('reports every dispatched action with the state it produced, in order', async () => {
+    const zip = await produceTestZip();
+    const { loadActionsFromZip } = await import('../storage/zip-reader');
+    const actions = (await loadActionsFromZip(zip.zipData)).map(
+      (e) => e.action
+    );
+    const seen: { type: string; gpsCount: number }[] = [];
+    await replayActions(actions, {
+      onAction: (action, state) => {
+        seen.push({
+          type: action.type,
+          gpsCount: state.gpsData?.gpsEvents.gpsPositions.length ?? 0,
+        });
+      },
+    });
+    expect(seen.map((s) => s.type)).toEqual(actions.map((a) => a.type));
+    // The state is the one AFTER the action: the GPS list grows on the very
+    // action that adds a fix.
+    const firstGps = seen.findIndex((s) => s.type === 'gpsData/recordGpsEvent');
+    expect(firstGps).toBeGreaterThanOrEqual(0);
+    expect(seen[firstGps]?.gpsCount).toBe(1);
+  });
+});

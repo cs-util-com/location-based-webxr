@@ -40,7 +40,20 @@ taken instead of ringing them around the QR code.
       still reported success.
   - `ok: true` carries `{ pairCount, gpsAccuracyMedianM }` — the honest
     quality the viewer surfaces ("placed from N fixes, ±X m").
-- `computeCaptureGeoJoin(state): CaptureWorldPose[]` — per capture:
+- `createCapturePickTracker({ extentOf? }): CapturePickTracker` (scan-pass
+  plan S-D11, D33's rule for photos): fed every replayed action with the
+  state it produced (`observe`, from the framework replay's `onAction`), it
+  picks each photo's alignment as the first one at or after the photo whose
+  session GPS extent reached the shared floor (`state/alignment-maturity`,
+  40 m), else the last usable one; a settled pick never moves.
+  `alignmentFor(imageFile)` gives that `{ matrix, rotation }`, or undefined
+  for a photo it never saw. `extentOf` defaults to the framework's
+  `createGpsExtentTracker` over the store's device fixes.
+- `computeCaptureGeoJoin(state, alignmentFor?): CaptureWorldPose[]` - with
+  `alignmentFor`, each capture is placed through its own alignment, checked
+  like the final one (16 entries, a unit rotation); a capture without one,
+  or whose alignment fails the checks, uses the final alignment, exactly as
+  without the argument. Per capture:
   `fusedGpsFromOdom(alignmentMatrix, odomPos, zero)` → geo with ABSOLUTE
   altitude (the library's documented contract — NOT zero-relative), plus
   `rotationNue = alignmentRotation ∘ captureRotation ∘ WEBXR_TO_NUE` —
