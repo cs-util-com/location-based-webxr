@@ -36,6 +36,7 @@ import type { Texture } from "three";
 
 import type { TourCaptureSpots } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { bakeCaptureSpots, posesOfCaptureSpots } from "./capture-bake.js";
+import { entriesForVisitor } from "./tour-read-set.js";
 import type { CaptureWorldPose } from "./capture-geo-join.js";
 import { renderTourObjects } from "./content-placement.js";
 import { placeCapturedImagePlanes, placeImagePlanes } from "./image-planes.js";
@@ -1057,7 +1058,7 @@ export function createViewerPlacement(deps: {
    *  leaves a gap in the ring. */
   async function decodeTourTextures(current: TourSession): Promise<Texture[]> {
     const textures: Texture[] = [];
-    for (const entry of current.entries
+    for (const entry of entriesForVisitor(current.entries, ctx.visitorEntries)
       .filter((candidate) => candidate.isImage)
       .slice(0, 3)) {
       try {

@@ -44,6 +44,12 @@ import {
   type TourViewerHooks,
   type TourViewerSession,
 } from "./tour-viewer-session.js";
+import type { ViewerMode } from "./mode.js";
+import {
+  entriesForVisitor,
+  stopsVisitorDownload,
+  visitorEntryNames,
+} from "./tour-read-set.js";
 
 /** The label on every button that opens a tour. "Open" until the second
  *  testing session (F6): nobody wants to open the zip, they want to know
@@ -100,6 +106,9 @@ export function wireArchiveOpen(deps: {
   cacheStore: BoundedLocalCacheStore | undefined;
   corsProxyBaseUrl: string;
   hooks: TourViewerHooks;
+  /** A visitor's page stops the background download of a copy that
+   *  carries more than visitors read (scan-pass plan S1). */
+  mode: ViewerMode;
 }): ArchiveOpen {
   const { ctx, dom, cacheStore, corsProxyBaseUrl, hooks } = deps;
   let objectUrls: string[] = [];
@@ -112,6 +121,7 @@ export function wireArchiveOpen(deps: {
     objectUrls = [];
     dom.gallery.replaceChildren();
     ctx.tourManifestStatus = "settled";
+    ctx.visitorEntries = null;
     // Everything below belongs to a CLOSING tour, and without one there is
     // none of it: every writer of tour state runs after `ctx.session =
     // opened` and is guarded by it. What exists with no tour open is the
@@ -226,7 +236,12 @@ export function wireArchiveOpen(deps: {
   /** Sequentially stream image entries into the gallery — each image pops
    *  in as its bytes arrive, which is the visible proof of range streaming. */
   async function fillGallery(current: TourSession): Promise<void> {
-    for (const entry of current.entries) {
+    // Only what a visitor reads (scan-pass plan S1): a copy that kept the
+    // walk must not decode the creator's frames onto every visitor's page.
+    for (const entry of entriesForVisitor(
+      current.entries,
+      ctx.visitorEntries,
+    )) {
       if (ctx.session !== current) return; // a newer open superseded this one
       const item = document.createElement("li");
       const caption = document.createElement("figcaption");
@@ -398,7 +413,6 @@ export function wireArchiveOpen(deps: {
       ctx.session = opened;
       ctx.tourLabel = labelOf(source);
       renderStats();
-      void fillGallery(opened);
       // A tour opened AFTER entering AR places itself from the open path
       // (flows plan M4, review #8) - not from the levels continuation
       // below, whose rejection would otherwise silently cancel a GPS-only
@@ -416,6 +430,24 @@ export function wireArchiveOpen(deps: {
           if (ctx.session !== opened) return;
           ctx.tourManifest = manifest;
           ctx.tourManifestStatus = "settled";
+          ctx.visitorEntries =
+            manifest === null
+              ? null
+              : visitorEntryNames(
+                  opened.entries.map((e) => e.filename),
+                  manifest,
+                  opened.manifestWrap,
+                );
+          // The background download fetches the WHOLE file; a visitor of a
+          // copy that kept the walk reads entries on demand instead (the
+          // archive's dispose aborts the download only).
+          if (
+            stopsVisitorDownload(deps.mode, opened.entries, ctx.visitorEntries)
+          ) {
+            opened.archive.dispose();
+          }
+          // The gallery waits for the manifest, which says what it shows.
+          void fillGallery(opened);
           // Only now can a draft be judged: "already hosted" is a question
           // about this manifest.
           hooks.presentDraftForTour(tourKeyOf(source, opened));
@@ -427,6 +459,7 @@ export function wireArchiveOpen(deps: {
           // The finish step refuses on "broken" (M3 review #5): it must not
           // overwrite a placement it could not read.
           ctx.tourManifestStatus = "broken";
+          void fillGallery(opened);
           dom.errorBox.textContent = `Reading the tour's content list (tour.json) failed: ${
             err instanceof Error ? err.message : String(err)
           }`;

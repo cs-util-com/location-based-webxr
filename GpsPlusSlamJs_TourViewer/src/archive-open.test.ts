@@ -99,6 +99,7 @@ function openAnotherTour(ctx: ReturnType<typeof createTourViewerSession>) {
     dom: dom as unknown as ArchiveOpenDom,
     cacheStore: undefined,
     corsProxyBaseUrl: "https://proxy.test",
+    mode: "creator",
     hooks: createUnwiredHooks(),
   });
   dom.linkInput.value = "https://example.com/other-tour.zip";

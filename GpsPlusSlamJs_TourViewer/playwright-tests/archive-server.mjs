@@ -353,7 +353,9 @@ async function buildRecordingZip() {
  * A tour zip whose recorded photos' spots were BAKED at a Finish (scan-pass
  * plan S1): `tour.json` carries `captureSpots` (7 fixes, unlike the
  * recording zip's 4, so a status line proves which source placed them),
- * the two photos and a level - and NO recording at all.
+ * the two photos and a level - plus a walk a copy kept for a co-author
+ * (`session.json`, an action and a frame no spot shows), which a visitor
+ * must neither show in the gallery nor replay (scan-pass plan S1).
  */
 async function buildBakedZip() {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
@@ -376,12 +378,25 @@ async function buildBakedZip() {
       }),
     ),
   );
-  for (let i = 0; i < 2; i += 1) {
+  for (let i = 0; i < 3; i += 1) {
     await writer.add(
       `images/frame-${String(i)}.png`,
       new Uint8ArrayReader(TINY_PNG.slice()),
     );
   }
+  await writer.add(
+    "session.json",
+    new TextReader(JSON.stringify({ version: 1, odomCoordVersion: 5 })),
+  );
+  await writer.add(
+    "actions/000001.json",
+    new TextReader(
+      JSON.stringify({
+        type: "gpsData/setZeroPos",
+        payload: { lat: 47.5, lon: 8.7 },
+      }),
+    ),
+  );
   await writer.add(
     await e2eQrLevelEntryName(),
     new TextReader(

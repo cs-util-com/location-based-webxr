@@ -1028,8 +1028,9 @@ test("a tour whose photo spots were baked at its Finish places them without any 
 }) => {
   // Why this matters (scan-pass plan S1, S-D11): a published tour carries
   // its photos' spots in tour.json and no walk at all, so the viewer must
-  // place from the baked spots - never decline for "no recording" - and
-  // report the BAKED quality (7 fixes; the zip has no fixes to count).
+  // place from the baked spots - never replay the walk the copy kept for
+  // a co-author - and report the BAKED quality (7 fixes; the walk has
+  // none). Its gallery shows the 2 baked photos, not the unbaked third.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
   await openAsVisitor(page, ARCHIVE, 2);
   await enterAr(page);
@@ -1054,6 +1055,10 @@ test("a tour whose photo spots were baked at its Finish places them without any 
     )
     .toMatch(/2 photos at capture spots \(7 fixes/);
   await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
+  // Long after the gallery finished: still the two baked photos (the count
+  // checked on open could pass on its way to three).
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(2);
+  await expect(page.getByTestId("gallery")).not.toContainText("frame-2.png");
 });
 
 /** Force the tracking-quality slice to `ok` (→ onboarding `ready`). The

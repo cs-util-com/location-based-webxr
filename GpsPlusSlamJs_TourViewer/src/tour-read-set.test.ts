@@ -4,7 +4,12 @@ import {
   type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { scanEntryNames, visitorEntryNames } from "./tour-read-set";
+import {
+  entriesForVisitor,
+  scanEntryNames,
+  stopsVisitorDownload,
+  visitorEntryNames,
+} from "./tour-read-set";
 
 /**
  * Why these tests matter (scan-pass plan S1, S-D10): the read set is what
@@ -150,5 +155,40 @@ describe("scanEntryNames", () => {
     expect(
       scanEntryNames(["tour.json", "qr/abc123.json"], manifest(), ""),
     ).toEqual([]);
+  });
+});
+
+describe("what a visitor's page shows and downloads", () => {
+  // Why: the gallery, the photo ring and the background download used to
+  // read every entry. For a copy that kept the walk (S-D10, for a
+  // co-author) that is the creator's frames on every visitor's screen and
+  // the whole walk on every visitor's data plan (cold review R1).
+  const entries = [
+    { filename: "tour.json" },
+    { filename: "images/frame-000002.jpg" },
+    { filename: "images/frame-000001.jpg" },
+    { filename: "actions/000001.json" },
+  ];
+  const visible = new Set(["tour.json", "images/frame-000002.jpg"]);
+
+  it("keeps only the visitor's entries, in archive order", () => {
+    expect(entriesForVisitor(entries, visible)).toEqual([
+      { filename: "tour.json" },
+      { filename: "images/frame-000002.jpg" },
+    ]);
+  });
+
+  it("keeps everything for a tour without tour.json (no read set)", () => {
+    expect(entriesForVisitor(entries, null)).toEqual(entries);
+  });
+
+  it("stops a visitor's background download only for a tour that carries more than visitors read", () => {
+    expect(stopsVisitorDownload("visitor", entries, visible)).toBe(true);
+    expect(stopsVisitorDownload("visitor", entries.slice(0, 2), visible)).toBe(
+      false,
+    );
+    expect(stopsVisitorDownload("visitor", entries, null)).toBe(false);
+    // The creator's working copy is theirs to cache whole.
+    expect(stopsVisitorDownload("creator", entries, visible)).toBe(false);
   });
 });

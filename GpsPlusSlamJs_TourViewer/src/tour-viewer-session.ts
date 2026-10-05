@@ -222,6 +222,10 @@ export interface TourViewerSession {
    *  is pending or broken, or it would overwrite the creator's placement
    *  with an empty list (M3 review #5). */
   tourManifestStatus: "pending" | "settled" | "broken";
+  /** What a visitor of the open tour reads (scan-pass plan S1,
+   *  `tour-read-set.ts`), set when `tour.json` settles: the gallery and
+   *  the photo ring show only these. Null with no manifest (every entry). */
+  visitorEntries: ReadonlySet<string> | null;
   /** Bumped per open; a slower open that finishes after a newer one started
    *  must close itself instead of clobbering the newer session. */
   openGeneration: number;
@@ -486,6 +490,7 @@ export function createTourViewerSession(): TourViewerSession {
     currentLevels: null,
     tourManifest: null,
     tourManifestStatus: "settled",
+    visitorEntries: null,
     openGeneration: 0,
     qrController: null,
     fusedPose: null,

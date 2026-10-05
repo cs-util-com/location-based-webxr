@@ -23,6 +23,12 @@ Finish leaves it out unless the creator keeps it.
     what the photo ring shows.
 - `scanEntryNames(entryNames, manifest, wrap) -> string[]` - the rest, in
   archive order: what a lean Finish removes.
+- `entriesForVisitor(entries, visible) -> entries` - the entries in
+  `visible`, in archive order; all of them when `visible` is null (a tour
+  without `tour.json`). The gallery and the photo ring use it.
+- `stopsVisitorDownload(mode, entries, visible) -> boolean` - true for a
+  visitor of a tour carrying entries outside `visible` (a copy that kept
+  the walk): `archive-open.ts` then aborts the whole-file download.
 
 ## Invariants & assumptions
 
@@ -43,6 +49,8 @@ const leftOut = keepWalk ? [] : scanEntryNames(names, written, wrap);
 
 `tour-read-set.test.ts`: the full read set of a finished recording tour,
 the ring's images without baked spots, a wrapped tour, names the archive
-lacks, the scan of a baked tour and an empty scan. The Finish's use is in
+lacks, the scan of a baked tour and an empty scan; the visitor filter
+with and without a read set; when the download stops (visitor mode only,
+only with unread entries). The Finish's use is in
 `creator-finish.test.ts` ("the published copy carries only what visitors
 need").

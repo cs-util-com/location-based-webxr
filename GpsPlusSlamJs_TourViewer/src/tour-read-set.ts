@@ -13,6 +13,8 @@ import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest"
 import { tourMediaTypeOfEntry } from "gps-plus-slam-app-framework/ar/tour-media";
 import { signedManifestFilesOf } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 
+import type { ViewerMode } from "./mode.js";
+
 /**
  * The entries of `entryNames` a visitor reads: `tour.json`, every code
  * level, the signed list and its signature, the content files the manifest
@@ -54,4 +56,30 @@ export function scanEntryNames(
 ): string[] {
   const read = visitorEntryNames(entryNames, manifest, wrap);
   return entryNames.filter((name) => !read.has(name));
+}
+
+/** The entries a visitor's page shows: those in `visible`, or all of them
+ *  for a tour without `tour.json` (`visible` null: no read set). */
+export function entriesForVisitor<E extends { filename: string }>(
+  entries: readonly E[],
+  visible: ReadonlySet<string> | null,
+): E[] {
+  return visible === null
+    ? [...entries]
+    : entries.filter((e) => visible.has(e.filename));
+}
+
+/** True when a VISITOR's background download of the whole archive should
+ *  stop: the tour carries entries no visitor reads (a copy that kept the
+ *  walk). A creator's working copy is still cached whole. */
+export function stopsVisitorDownload(
+  mode: ViewerMode,
+  entries: readonly { filename: string }[],
+  visible: ReadonlySet<string> | null,
+): boolean {
+  return (
+    mode === "visitor" &&
+    visible !== null &&
+    entries.some((e) => !visible.has(e.filename))
+  );
 }

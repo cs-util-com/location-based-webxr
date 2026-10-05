@@ -565,6 +565,7 @@ hooks.renderArEntry = arEntry.renderArEntry;
 
 const archive = wireArchiveOpen({
   ctx,
+  mode,
   dom: {
     form: element("open-form"),
     linkInput: element("link"),

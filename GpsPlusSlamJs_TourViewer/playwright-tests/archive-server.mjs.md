@@ -39,8 +39,9 @@ with the file name "My tour.zip", any other id sends none (the fallback).
 `/health` (readiness for the playwright `webServer` gate), the four archive
 routes, `/ranges-ok/recording-tour.zip` (a recording: era-5 session.json +
 an action stream, for the capture-spots placement), `/ranges-ok/baked-tour.zip`
-(a `tour.json` with baked `captureSpots`, 7 fixes, and the two photos but no
-recording: scan-pass plan S1), `/ranges-ok/plain-tour.zip`
+(a `tour.json` with baked `captureSpots`, 7 fixes, the two photos, and a
+walk kept for a co-author - `session.json`, an action, a third frame no spot
+shows - that a visitor must neither show nor replay: scan-pass plan S1), `/ranges-ok/plain-tour.zip`
 (images only - no level, no recording: the "nothing to place" case, flows
 plan M4), `/flip`, `/warm-gate`, and a CORS preflight handler.
 

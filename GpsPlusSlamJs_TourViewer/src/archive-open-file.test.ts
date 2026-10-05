@@ -112,6 +112,7 @@ function wire() {
     dom: dom as unknown as ArchiveOpenDom,
     cacheStore: undefined,
     corsProxyBaseUrl: "https://proxy.test",
+    mode: "creator",
     hooks,
   });
   return { dom, hooks, ctx };

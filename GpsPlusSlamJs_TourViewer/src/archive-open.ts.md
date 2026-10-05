@@ -10,7 +10,7 @@ DOM glue, its own module since the flows plan M6.
 
 ## Public API
 
-- `wireArchiveOpen({ ctx, dom, cacheStore, corsProxyBaseUrl, hooks }): ArchiveOpen`
+- `wireArchiveOpen({ ctx, dom, cacheStore, corsProxyBaseUrl, hooks, mode }): ArchiveOpen`
   - `ArchiveOpenDom { form; linkInput; openButton; openFileButton; fileInput; fileAdvice; openFileAdviceButton; fileStatus; statsPanel; statsHeadline; statsDetail; errorBox; gallery; storagePanel; clearCacheButton }`
     - **The advice (tour kit plan K0).** A failed open whose cause
       `offersFileOpen` (a host that blocks browsers, `cors`) shows
@@ -109,6 +109,16 @@ DOM glue, its own module since the flows plan M6.
   "failed to load".
 - The gallery streams SEQUENTIALLY; a newer open supersedes an in-flight
   fill per entry; object URLs are revoked on teardown.
+- **The gallery waits for `tour.json` and shows only what a visitor reads**
+  (scan-pass plan S1, `tour-read-set.ts`): the settle sets
+  `ctx.visitorEntries` (null without a manifest: every entry, as before)
+  and then fills the gallery; a broken manifest fills it unfiltered. A copy
+  that kept the creator's walk therefore never decodes its frames.
+- **A visitor's page stops the background download of such a copy**
+  (`stopsVisitorDownload`, visitor mode only): `archive.dispose()` aborts
+  the warm, and the tour reads its entries by range instead. The cost is
+  tier 3 (the whole-archive check) and the offline copy for that tour; a
+  creator's working copy is still cached whole.
 - **Clear-cache settles once the store is durably empty, without waiting
   for the warm download** (flows plan M2): `size()` is read FIRST (the open
   session's eviction drops its own copy from the index - review #3), then
