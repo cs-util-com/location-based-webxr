@@ -7,11 +7,15 @@
  *
  * One thing at a time: a new figure or model replaces the previous one, and
  * `clear` removes it (the story ended or was stopped). A decode that lands
- * after the stage moved on is disposed, never shown.
+ * after the stage moved on is disposed, never shown. A station with no
+ * position yet does not fail the show: what was decoded waits for it.
  *
  * The character's size and placement are the K4 build agent's choice, not
- * the owner's (the plan leaves them open): 1.7 m tall, its feet at the
- * station's altitude, facing the visitor about the vertical only.
+ * the owner's (the plan leaves them open; revised by K4 review R6): 1.7 m
+ * tall, its feet at the station's altitude, facing the visitor about the
+ * vertical only. A code-only station's pose (from the guide) stands on the
+ * estimated ground below the code and is turned about the vertical only,
+ * so a model there takes the code's yaw, never its tilt.
  */
 
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
@@ -38,25 +42,15 @@ export interface SceneStageDeps {
   /** The station's pose at the scene root, or null when it cannot be
    *  placed yet (no GPS zero). */
   poseOf(stationId: string): StagePose | null;
-  /** Decode a figure; `size` is its pixel size where the tour states it
-   *  (the decode cap scales a large one down). */
-  decodeTexture(blob: Blob, size?: PixelSize): Promise<Texture | null>;
+  /** Decode a figure within the decode caps (`station-prefetch.ts`
+   *  `decodeFigure`: its size read from its own header). */
+  decodeTexture(blob: Blob): Promise<Texture | null>;
   /** A `.glb` already checked inert (`checkGlbInert`, K0). */
   loadModel(blob: Blob): Promise<Object3D>;
 }
 
-/** An image's pixel size, as the tour's asset record states it. */
-interface PixelSize {
-  readonly width?: number;
-  readonly height?: number;
-}
-
 export interface SceneStage {
-  showCharacter(
-    stationId: string,
-    image: Blob,
-    size?: PixelSize,
-  ): Promise<void>;
+  showCharacter(stationId: string, image: Blob): Promise<void>;
   showModel(stationId: string, model: Blob): Promise<void>;
   clear(): void;
   /** Turn a standing character towards the visitor (NUE). */
@@ -69,31 +63,58 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
   let shown: { root: Object3D; scene: Object3D; character: boolean } | null =
     null;
   let token = 0;
+  /** Decoded and waiting for the station's position (no GPS zero yet, or a
+   *  code-only station before the visitor's height is known): mounted on
+   *  the next visitor update that has one (K4 review R8: it used to fail
+   *  for good, and the story said "could not be loaded"). */
+  let waiting: {
+    mine: number;
+    stationId: string;
+    root: Object3D;
+    character: boolean;
+    settle: () => void;
+  } | null = null;
 
   function clear(): void {
     token += 1;
+    if (waiting !== null) {
+      disposeObject3D(waiting.root);
+      waiting.settle();
+      waiting = null;
+    }
     if (shown === null) return;
     shown.scene.remove(shown.root);
     disposeObject3D(shown.root);
     shown = null;
   }
 
-  /** Mount `root` at the station, unless the stage moved on meanwhile. */
+  /** Mount `root` at the station, unless the stage moved on meanwhile;
+   *  settles once it is mounted (or dropped). */
   function mount(
     mine: number,
     stationId: string,
     root: Object3D,
     character: boolean,
-  ): void {
+  ): Promise<void> {
+    if (mine !== token) {
+      disposeObject3D(root);
+      return Promise.resolve();
+    }
+    if (tryMount(stationId, root, character)) return Promise.resolve();
+    return new Promise((settle) => {
+      waiting = { mine, stationId, root, character, settle };
+    });
+  }
+
+  /** Mount now if the scene and the station's pose exist. */
+  function tryMount(
+    stationId: string,
+    root: Object3D,
+    character: boolean,
+  ): boolean {
     const scene = deps.getScene();
     const pose = deps.poseOf(stationId);
-    if (mine !== token || scene === null || pose === null) {
-      disposeObject3D(root);
-      if (mine === token && pose === null) {
-        throw new Error("the station has no position yet");
-      }
-      return;
-    }
+    if (scene === null || pose === null) return false;
     const holder = new Group();
     holder.name = `station-stage:${stationId}`;
     holder.position.set(...pose.positionNue);
@@ -101,13 +122,23 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     holder.add(root);
     scene.add(holder);
     shown = { root: holder, scene, character };
+    return true;
+  }
+
+  /** A visitor update: mount what waits for its position, if it has one. */
+  function retryWaiting(): void {
+    if (waiting === null || waiting.mine !== token) return;
+    const w = waiting;
+    if (!tryMount(w.stationId, w.root, w.character)) return;
+    waiting = null;
+    w.settle();
   }
 
   return {
-    async showCharacter(stationId, image, size) {
+    async showCharacter(stationId, image) {
       clear();
       const mine = token;
-      const texture = await deps.decodeTexture(image, size);
+      const texture = await deps.decodeTexture(image);
       if (texture === null) throw new Error("the figure did not decode");
       const source = texture.image as
         { width?: number; height?: number } | undefined;
@@ -128,17 +159,18 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       // Feet on the station's altitude.
       plane.position.set(0, CHARACTER_HEIGHT_M / 2, 0);
       plane.name = "station-character";
-      mount(mine, stationId, plane, true);
+      await mount(mine, stationId, plane, true);
     },
     async showModel(stationId, model) {
       clear();
       const mine = token;
       const root = await deps.loadModel(model);
       root.name = "station-model";
-      mount(mine, stationId, root, false);
+      await mount(mine, stationId, root, false);
     },
     clear,
     faceVisitor(visitor) {
+      retryWaiting();
       if (shown === null || !shown.character) return;
       const p = shown.root.position;
       const north = visitor[0] - p.x;

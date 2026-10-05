@@ -30,6 +30,7 @@ import {
   selectZeroReference,
   type RecordGpsEventPayload,
 } from "gps-plus-slam-app-framework/state";
+import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { Texture } from "three";
@@ -712,9 +713,11 @@ export function createViewerPlacement(deps: {
       // `mytour/content/…` while the manifest names `content/…`
       // (PR #435 review).
       loadPhotoTexture: async (entryName) =>
+        // Measured before it is decoded (tour kit K4 review R2).
         decodeFrameTexture(
           await current.loadContentEntry(entryName),
           CAPTURE_PLANE_DECODE_DIVISOR,
+          { maxPixels: TOUR_MAX_IMAGE_PIXELS },
         ),
     }).then(
       (rendered) => {
@@ -999,6 +1002,7 @@ export function createViewerPlacement(deps: {
         const texture = await decodeFrameTexture(
           await current.loadEntry(pose.imageFile),
           CAPTURE_PLANE_DECODE_DIVISOR,
+          { maxPixels: TOUR_MAX_IMAGE_PIXELS },
         );
         if (texture === null) continue;
         paired.push({
@@ -1061,6 +1065,8 @@ export function createViewerPlacement(deps: {
       try {
         const texture = await decodeFrameTexture(
           await current.loadEntry(entry.filename),
+          1,
+          { maxPixels: TOUR_MAX_IMAGE_PIXELS },
         );
         if (texture !== null) textures.push(texture);
       } catch {

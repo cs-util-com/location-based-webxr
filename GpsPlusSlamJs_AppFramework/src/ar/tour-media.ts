@@ -9,7 +9,14 @@
  * external or http URIs, no extensions that need a decoder fetched from a
  * CDN), and the audio and video containers every current browser decodes
  * itself. Nothing here is ever served as HTML, XML or script. Pure: no I/O.
+ *
+ * A raster image is also measured from its header before anything decodes
+ * it, against one pixel cap (`TOUR_MAX_IMAGE_PIXELS`), and so is every
+ * image inside a `.glb`: a few kilobytes of crafted header can otherwise
+ * make a phone allocate gigabytes (tour kit K4 review R2).
  */
+
+import { imageInfo } from '../utils/image-header.js';
 
 type TourMediaKind = 'image' | 'model' | 'audio' | 'video';
 
@@ -79,6 +86,39 @@ const CHUNK_JSON = 0x4e4f534a; // "JSON"
 const CHUNK_BIN = 0x004e4942; // "BIN\0"
 
 export type GlbCheck = { ok: true } | { ok: false; reason: string };
+
+/**
+ * The most pixels one tour image may have before it is decoded: 4096 x
+ * 4096 (16.8 MP, 64 MiB once decoded to RGBA), also the largest canvas iOS
+ * Safari allows. It admits a 12 MP phone photo (4032 x 3024) and a 4096 px
+ * model texture; it refuses a 48 MP photo (8064 x 6048, 186 MiB decoded)
+ * and an 8192 px texture (256 MiB). Swept in `tour-media.test.ts`
+ * ("the cap sweep"): 4.2 MP would refuse ordinary phone photos, 33.6 MP
+ * would let one decode take 128 MiB beside an AR session. What would
+ * reverse it: a phone that cannot hold one 64 MiB decode next to its AR
+ * session (unmeasured), or tours that need 8K textures.
+ */
+export const TOUR_MAX_IMAGE_PIXELS = 4096 * 4096;
+
+/** Whether an image's header states a size within `maxPixels`. An image
+ *  whose size cannot be read from its first bytes is refused too: it is
+ *  not decoded unmeasured. The reason is plain words. */
+export function checkImageWithinCap(
+  bytes: Uint8Array,
+  maxPixels: number = TOUR_MAX_IMAGE_PIXELS
+): GlbCheck {
+  const info = imageInfo(bytes);
+  if (info === null) {
+    return { ok: false, reason: 'its size could not be read from its file' };
+  }
+  if (info.width * info.height > maxPixels) {
+    return {
+      ok: false,
+      reason: `it is ${String(info.width)} x ${String(info.height)} pixels, more than a phone can safely decode (${String(maxPixels)} pixels)`,
+    };
+  }
+  return { ok: true };
+}
 
 function uriProblem(owner: string, value: unknown): string | null {
   if (!Array.isArray(value)) return null;
@@ -173,12 +213,100 @@ function glbJson(bytes: Uint8Array): Record<string, unknown> | string {
  * (never a relative path or an http URL the page would fetch), and no
  * extension that needs a decoder from outside. The reason is plain words.
  */
-export function checkGlbInert(bytes: Uint8Array): GlbCheck {
+export function checkGlbInert(
+  bytes: Uint8Array,
+  options: { readonly maxImagePixels?: number } = {}
+): GlbCheck {
   const json = glbJson(bytes);
   if (typeof json === 'string') return { ok: false, reason: json };
   const problem =
     uriProblem('buffer', json['buffers']) ??
     uriProblem('image', json['images']) ??
-    extensionProblem(json);
+    extensionProblem(json) ??
+    imagesProblem(bytes, json, options.maxImagePixels ?? TOUR_MAX_IMAGE_PIXELS);
   return problem === null ? { ok: true } : { ok: false, reason: problem };
+}
+
+/** The binary chunk's bytes, or null when the model has none. */
+function binChunk(bytes: Uint8Array): Uint8Array | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const at = 20 + view.getUint32(12, true);
+  if (at + 8 > bytes.length) return null;
+  return bytes.subarray(at + 8, at + 8 + view.getUint32(at, true));
+}
+
+/** A base64 `data:` URI's bytes, or null. */
+function dataUriBytes(uri: string): Uint8Array | null {
+  const comma = uri.indexOf(',');
+  if (comma < 0 || !uri.slice(0, comma).endsWith(';base64')) return null;
+  try {
+    return Uint8Array.from(atob(uri.slice(comma + 1)), (c) => c.charCodeAt(0));
+  } catch {
+    return null;
+  }
+}
+
+/** A buffer view's bytes in the binary chunk (buffer 0), or null. */
+function bufferViewBytes(
+  bytes: Uint8Array,
+  json: Record<string, unknown>,
+  index: unknown
+): Uint8Array | null {
+  const views = json['bufferViews'];
+  if (!Array.isArray(views) || !Number.isSafeInteger(index)) return null;
+  const view = views[index as number] as
+    | { buffer?: unknown; byteOffset?: unknown; byteLength?: unknown }
+    | undefined;
+  const bin = binChunk(bytes);
+  if (bin === null || view?.buffer !== 0) return null;
+  const range = rangeIn(view.byteOffset ?? 0, view.byteLength, bin.length);
+  return range === null ? null : bin.subarray(range[0], range[1]);
+}
+
+/** `[offset, offset + length]` when both are safe integers that fit in
+ *  `size` bytes, else null. */
+function rangeIn(
+  offset: unknown,
+  length: unknown,
+  size: number
+): readonly [number, number] | null {
+  if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length)) {
+    return null;
+  }
+  const start = offset as number;
+  const end = start + (length as number);
+  return start >= 0 && end >= start && end <= size ? [start, end] : null;
+}
+
+/** The bytes of one glTF image: its `data:` URI decoded, or its buffer
+ *  view in the binary chunk; null when they cannot be found. */
+function imageBytes(
+  bytes: Uint8Array,
+  json: Record<string, unknown>,
+  image: unknown
+): Uint8Array | null {
+  const record = image as { uri?: unknown; bufferView?: unknown } | null;
+  return typeof record?.uri === 'string'
+    ? dataUriBytes(record.uri)
+    : bufferViewBytes(bytes, json, record?.bufferView);
+}
+
+/** Why one of the model's images may not be decoded, or null. */
+function imagesProblem(
+  bytes: Uint8Array,
+  json: Record<string, unknown>,
+  maxPixels: number
+): string | null {
+  const images = json['images'];
+  if (images === undefined) return null;
+  if (!Array.isArray(images)) return '"images" is not a list';
+  for (const [i, image] of images.entries()) {
+    const data = imageBytes(bytes, json, image);
+    if (data === null) {
+      return `its image ${String(i)} cannot be found in the file`;
+    }
+    const check = checkImageWithinCap(data, maxPixels);
+    if (!check.ok) return `its image ${String(i)}: ${check.reason}`;
+  }
+  return null;
 }

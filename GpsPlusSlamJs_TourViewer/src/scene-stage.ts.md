@@ -12,13 +12,17 @@ tour's other content (`content-placement.ts`). Plan:
 ## Public API
 
 - `createSceneStage(deps): SceneStage`
-  - `showCharacter(stationId, imageBlob, size?)` / `showModel(stationId, glbBlob)`
-    (`size` is the asset's stated pixel size, handed to `decodeTexture` for
-    the decode cap)
-    - replace what is shown; reject when the figure does not decode or the
-      station cannot be placed (so the story can say so);
+  - `showCharacter(stationId, imageBlob)` / `showModel(stationId, glbBlob)`
+    (`decodeTexture` measures the figure from its own header: the size the
+    tour declares is no longer passed, K4 review R2)
+    - replace what is shown; reject when the figure does not decode (so the
+      story can say so); settle once mounted. A station with no position
+      yet (no GPS zero, or a code-only station before the visitor's height
+      is known) does not fail: the decoded figure or model waits and is
+      mounted on the next `faceVisitor` that finds a pose (K4 review R8);
   - `clear()` - remove and dispose;
-  - `faceVisitor(nue)` - turn a standing character about the vertical.
+  - `faceVisitor(nue)` - mount what waits for its position, then turn a
+    standing character about the vertical.
 - Deps: `getScene()`, `poseOf(stationId)`, `decodeTexture(blob)`,
   `loadModel(blob)` (a `.glb` already checked inert by K0's
   `checkGlbInert`).
@@ -27,11 +31,16 @@ tour's other content (`content-placement.ts`). Plan:
 ## Invariants & assumptions
 
 - **The K4 build agent's choice, not the owner's** (the plan leaves it
-  open): a character is 1.7 m tall, its aspect kept, its feet on the
-  station's altitude, facing the visitor about the vertical only. A model
-  takes the station's own rotation and is never turned.
+  open; B-15 as revised by K4 review R6): a character is 1.7 m tall, its
+  aspect kept, its feet on the station's altitude, facing the visitor about
+  the vertical only. A model takes the station's own rotation and is never
+  turned. At a code-only station the guide's pose is already on the
+  estimated ground below the code and turned about the vertical only, so
+  the figure does not float at the poster's centre and a model takes the
+  code's yaw, not its tilt.
 - One thing at a time; a decode or model load that lands after `clear` or
-  a newer show is disposed, never shown.
+  a newer show is disposed, never shown; so is one still waiting for its
+  position (its show settles).
 - The scene it was added to is kept for removal (the e2e scene root is a
   stub that sets no `parent`).
 - Every removed subtree's geometries, materials and textures are disposed
@@ -50,4 +59,5 @@ stage.faceVisitor(visitorNue);
 
 - `scene-stage.test.ts` - the figure's spot, feet and aspect; facing the
   visitor; a model's own rotation; replace and dispose; every texture of a model freed (R12); a late decode
-  dropped; the two rejections.
+  dropped; a figure that does not decode rejects; a mount waits for its
+  position and is mounted once it has one, or freed by the next step (R8).

@@ -17,6 +17,10 @@ time. Plan:
   - `playNextNow()` - the "Play" button: the story playing stops and waits
     its turn again (its station stays found), the queued one plays;
   - `continueTapped()`;
+  - `end(stationId)` - the guide's "End this story" (K4 review R9): the
+    playing story stops and the next queued one starts, a queued one leaves
+    the queue; `onStoryEnd(stationId)` is reported either way, also for a
+    station the panel does not hold, so it cannot stay found for good;
   - `stopAll()` - the session ended or the tour closed;
   - `playing()` - the station whose story plays.
 - Deps: `dom` (`SceneViewDom`), `assets` (by id), `loadAsset(path)`,
@@ -27,8 +31,14 @@ time. Plan:
 
 ## Invariants & assumptions
 
-- A character's figure goes to the stage with its asset's stated pixel
-  size (the decode cap, `station-prefetch.ts`).
+- A character's figure goes to the stage as it is; the stage's decoder
+  measures it from its own header (the decode cap, `station-prefetch.ts`
+  `decodeFigure`).
+- **A picture is measured before the `<img>` decodes it (K4 review R2):**
+  `checkPicture(blob)` (`image-cap.ts` `pictureProblem` in the page) names
+  a picture over the tour pixel cap or one whose size cannot be read; it
+  is then not shown, and the status says "The picture is too large to show
+  here - the words are below."
 - **Captions always** (plan §4.1): every step puts words in `text` - the
   text, the image's or model's caption, the character's caption, the
   audio's or video's transcript. A character also shows its name.
@@ -59,4 +69,5 @@ view.offer(foundStation); // plays at once, or waits behind "Play: …"
 - `scene-view.test.ts` - steps in order and the end, a character (name,
   caption, figure on the stage, voice), refused sound and unreadable file,
   a late picture dropped and URLs revoked, the auto timer and its cancel, a
-  choice, one story at a time and the queue, de-duplication and `stopAll`.
+  choice, one story at a time and the queue, de-duplication and `stopAll`;
+  ending a playing, a queued and an unknown story (R9).

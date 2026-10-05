@@ -12,10 +12,14 @@ import {
   selectGpsPositions,
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
+import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-stations";
+import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 
 import type { ViewerMode } from "./mode.js";
+import { pictureProblem } from "./image-cap.js";
 import { createKeyedChain } from "./keyed-chain.js";
+import { checkHadItsWindow } from "./moved-code-check.js";
 import { createBreadcrumbTrail } from "./breadcrumbs.js";
 import { gateAllowsPlacement } from "./scan-gate.js";
 import { createSceneAudio } from "./scene-audio.js";
@@ -23,7 +27,7 @@ import { createSceneStage } from "./scene-stage.js";
 import { createSceneView, type SceneViewDom } from "./scene-view.js";
 import type { TourViewerSeams } from "./seams.js";
 import { wireStationGuide, type StationGuideDom } from "./station-guide.js";
-import { createStationPrefetch, decodeDivisor } from "./station-prefetch.js";
+import { createStationPrefetch, decodeFigure } from "./station-prefetch.js";
 import type {
   TourViewerSession,
   TourViewerStore,
@@ -76,8 +80,20 @@ export function wireVisitorStations(deps: {
     createElement: () => seams.createAudioElement(),
     objectUrls,
   });
-  const assetsById = () =>
-    new Map((ctx.tourManifest?.assets ?? []).map((asset) => [asset.id, asset]));
+  // The open tour's assets by id, built once per manifest (K4 review R13:
+  // it was rebuilt on every read).
+  let indexed: { manifest: unknown; byId: Map<string, TourAsset> } | null =
+    null;
+  const assetsById = (): ReadonlyMap<string, TourAsset> => {
+    const manifest = ctx.tourManifest;
+    if (indexed?.manifest !== manifest) {
+      indexed = {
+        manifest,
+        byId: new Map((manifest?.assets ?? []).map((a) => [a.id, a])),
+      };
+    }
+    return indexed.byId;
+  };
   // Media are read ahead as the visitor approaches (`station-prefetch.ts`),
   // and the story's own reads go through the same cache. The cache lives
   // with the open tour's manifest: kept across AR sessions, dropped when
@@ -101,9 +117,15 @@ export function wireVisitorStations(deps: {
   const stage = createSceneStage({
     getScene: () => seams.getScene(),
     poseOf: (id) => poseOf(id),
-    decodeTexture: (blob, size) =>
+    // The figure measured from its own header (K4 review R2), and the
+    // decoder holds the same cap again.
+    decodeTexture: (blob) =>
       decodes.run("figure", () =>
-        decodeFrameTexture(blob, decodeDivisor(size)),
+        decodeFigure(blob, (b, divisor) =>
+          decodeFrameTexture(b, divisor, {
+            maxPixels: TOUR_MAX_IMAGE_PIXELS,
+          }),
+        ),
       ),
     loadModel: (blob) => seams.loadGlbModel(blob),
   });
@@ -116,6 +138,7 @@ export function wireVisitorStations(deps: {
     loadAsset: (path) => prefetch.load(path),
     audio,
     stage,
+    checkPicture: (blob) => pictureProblem(blob),
     createChoiceButton: (label, onClick) => {
       const button = dom.doc.createElement("button");
       button.type = "button";
@@ -155,9 +178,17 @@ export function wireVisitorStations(deps: {
         alignment: selectAlignmentMatrix(state),
         arPose: seams.getArPose(),
         gpsPositions: selectGpsPositions(state),
+        zero: selectZeroReference(state),
       });
     },
     isIgnoredCode: (levelId) => ctx.ignoredCodes.has(levelId),
+    // The moved-code check's evidence for a held code lock (K4 review R1).
+    codeCheck: (levelId) => {
+      const check = ctx.movedCodeChecks
+        ?.snapshot()
+        .find((v) => v.levelId === levelId);
+      return check === undefined ? null : { judged: checkHadItsWindow(check) };
+    },
     startHud: (getTargets) => seams.createWayfindingHud({ getTargets }),
     now: deps.now,
     onFound: (station) => {
@@ -168,6 +199,12 @@ export function wireVisitorStations(deps: {
     },
     onDone: (stationId) => {
       prefetch.done(stationId);
+    },
+    onUpcoming: (station) => {
+      prefetch.ahead(station);
+    },
+    onEndStory: (stationId) => {
+      view.end(stationId);
     },
     onVisitor: (nue) => {
       stage.faceVisitor(nue);

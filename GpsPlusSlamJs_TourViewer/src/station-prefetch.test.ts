@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   TourAsset,
   TourStation,
@@ -7,6 +7,7 @@ import type {
 import {
   createStationPrefetch,
   decodeDivisor,
+  decodeFigure,
   MAX_DECODE_SIDE_PX,
   PREFETCH_LEAD_M,
   stationAssetIds,
@@ -132,12 +133,45 @@ describe("stationAssetIds", () => {
 });
 
 describe("decodeDivisor", () => {
-  it("scales a figure above the cap down to it, and leaves the rest alone", () => {
+  it("scales a figure above the side cap down to it, and leaves the rest alone", () => {
     expect(decodeDivisor({ width: 1000, height: 2000 })).toBe(1);
     expect(decodeDivisor({ width: MAX_DECODE_SIDE_PX, height: 10 })).toBe(1);
     expect(decodeDivisor({ width: 3000, height: 8000 })).toBe(4);
-    expect(decodeDivisor(undefined)).toBe(1);
-    expect(decodeDivisor({ width: Number.POSITIVE_INFINITY })).toBe(1);
+  });
+});
+
+/** A PNG signature plus IHDR stating `width` x `height` (no pixels). */
+function pngHeader(width: number, height: number): Uint8Array<ArrayBuffer> {
+  const b = new Uint8Array(24);
+  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  b.set([0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52], 8);
+  new DataView(b.buffer).setUint32(16, width);
+  new DataView(b.buffer).setUint32(20, height);
+  return b;
+}
+
+describe("decodeFigure (K4 review R2)", () => {
+  // Why this test matters (K4 review R2): the decode cap trusted the size
+  // the TOUR declared (and a figure without one decoded at full size), so
+  // a crafted file decoded at whatever its header said. The size now comes
+  // from the image's own header, before any decode.
+  it("scales by the size the image's header states, not the tour's record", async () => {
+    const decode = vi.fn((_b: Blob, divisor: number) =>
+      Promise.resolve(divisor),
+    );
+    expect(await decodeFigure(new Blob([pngHeader(3000, 4000)]), decode)).toBe(
+      2,
+    );
+    expect(await decodeFigure(new Blob([pngHeader(600, 900)]), decode)).toBe(1);
+  });
+
+  it("never decodes a figure over the pixel cap, or one it cannot measure", async () => {
+    const decode = vi.fn(() => Promise.resolve(1));
+    expect(
+      await decodeFigure(new Blob([pngHeader(8192, 8192)]), decode),
+    ).toBeNull();
+    expect(await decodeFigure(new Blob(["png?"]), decode)).toBeNull();
+    expect(decode).not.toHaveBeenCalled();
   });
 });
 
@@ -150,6 +184,17 @@ describe("createStationPrefetch", () => {
     h.prefetch.approach(s, 38 + PREFETCH_LEAD_M, 38);
     expect(h.reads).toEqual(["content/knight.png"]);
     h.prefetch.approach(s, 30, 38); // asked again: nothing new
+    await h.land();
+    expect(h.reads).toEqual(["content/knight.png", "content/arch.glb"]);
+  });
+
+  it("reads the next station's media ahead, from any distance, while the current story plays (R5)", async () => {
+    // Why this test matters (K4 review R5): at castle spacing (30 m) the
+    // lead alone left about 2 MB ready; the next station's story is read
+    // while the current one plays.
+    const h = harness();
+    h.prefetch.ahead(station("well", ["knight", "arch"]));
+    expect(h.reads).toEqual(["content/knight.png"]);
     await h.land();
     expect(h.reads).toEqual(["content/knight.png", "content/arch.glb"]);
   });

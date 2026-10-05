@@ -18,8 +18,12 @@ tour from any link is the origin that will hold a creator's signing key).
   `null`. `JPG`, `.jpg`, `__proto__` and non-strings are `null`.
 - `tourMediaTypeOfEntry(name)` - by an entry name's last extension, case
   folded (a recording's `frame.JPG` is a JPEG); `null` without one.
-- `checkGlbInert(bytes)` - `{ ok: true }` or `{ ok: false, reason }` in
-  plain words.
+- `checkGlbInert(bytes, { maxImagePixels? })` - `{ ok: true }` or
+  `{ ok: false, reason }` in plain words; every image of the model is also
+  measured from its header against the cap (K4 review R2).
+- `TOUR_MAX_IMAGE_PIXELS` (4096 x 4096) and `checkImageWithinCap(bytes,
+maxPixels?)` - the pixel cap every tour image is measured against before
+  it is decoded; an image whose size cannot be read is refused too.
 
 ## The allowlist
 
@@ -46,6 +50,18 @@ tour from any link is the origin that will hold a creator's signing key).
   chunk and takes a later JSON chunk over the first, so a check of the
   first chunk alone passed a model whose second JSON chunk points at an
   http URL.
+- **The pixel cap (K4 review R2):** an image is decoded at the size its
+  file states, so a few kilobytes of crafted header can make a phone
+  allocate gigabytes. `TOUR_MAX_IMAGE_PIXELS` is 4096 x 4096 (16.8 MP, 64
+  MiB once decoded, also iOS Safari's largest canvas): it admits a 12 MP
+  phone photo and a 4096 px texture, and refuses a 48 MP photo (186 MiB)
+  and an 8192 px texture (256 MiB). Swept in the tests: 4.2 MP refuses a
+  phone photo, 8.4 MP admits only a figure, 33.6 MP lets one decode take
+  128 MiB. Reversed by a phone that cannot hold one 64 MiB decode beside
+  its AR session (unmeasured), or tours that need 8K textures.
+- `checkGlbInert` measures every `images[]` entry: its buffer view in the
+  binary chunk (buffer 0, inside the chunk) or its base64 `data:` URI; an
+  image it cannot find or measure refuses the model.
 - `checkGlbInert` never throws, whatever the bytes.
 - Pure: no I/O, no DOM.
 
@@ -60,7 +76,9 @@ tour from any link is the origin that will hold a creator's signing key).
 
 ## Tests
 
-`tour-media.test.ts`: the allowlist's members, that no type able to carry
+`tour-media.test.ts`: the pixel cap and its sweep, a model's images in
+the binary chunk and as `data:` URIs, an unmeasurable or unfindable image,
+a set cap (R2); the allowlist's members, that no type able to carry
 script or markup is admitted, exact matching, entry names, a never-throws
 property; `.glb` inertness with built binaries (binary chunk and `data:`
 accepted; http, relative and protocol-relative URIs refused for buffers and

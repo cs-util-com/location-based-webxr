@@ -48,11 +48,25 @@ export const BAND_ACCURACY_FACTOR = 1.0;
 /**
  * The wayfinding HUD's field-validated arrival deadband (AnchorStarter,
  * WayfindingHudDemo: hide at 1.5 m, come back at 3.0 m): the floor of the
- * found radius and of the band, so a station is never tighter than the arrow
- * that leads to it.
+ * band, so a station's arrow never comes back closer than the HUD's own
+ * deadband. The found radius has the higher `STATION_POSE_FLOOR_M`.
  */
 export const HUD_ARRIVAL_MIN_M = 1.5;
 export const HUD_ARRIVAL_BAND_M = 1.5;
+
+/**
+ * The found radius is never below this (K4 review R7): the station poses the
+ * viewer reads are off by up to 3.6 m at p90 (D34: codes measured at a
+ * visit's start 1.9-3.6 m, notes 1.6-2.8 m), so a visitor standing on the
+ * real spot is that far from the stored one. 5 m finds them within 3 s at
+ * p90 under the fused model (2 s worst) and 15 s under the noisier ones
+ * with a 3.6 m bias; the K4 floor of 1.5 m left them unfound for 108 s
+ * (fused), 4 m for 6 s. Cost: every station is found from at least 5 m,
+ * where the HUD's arrow hides; stations closer than about 10 m overlap
+ * under `any` order. Reversed by station poses measurably better than
+ * D34's (`station-bands.sweep.test.ts`).
+ */
+export const STATION_POSE_FLOOR_M = 5;
 
 /**
  * Accuracies above this are clamped (and a missing or nonsense one reads as
@@ -73,8 +87,8 @@ function clampAccuracy(accuracyM: number | null): number {
 /**
  * The effective radii of one station at the measured accuracy.
  *
- * - found = max(authored found, FOUND_ACCURACY_FACTOR x accuracy, the HUD's
- *   1.5 m);
+ * - found = max(authored found, FOUND_ACCURACY_FACTOR x accuracy, the
+ *   station pose floor 5 m);
  * - band = max(BAND_ACCURACY_FACTOR x accuracy, the HUD's 1.5 m);
  * - activate = max(authored activation, found + band): the prefetch starts
  *   before the station can be found, never after;
@@ -89,7 +103,7 @@ export function stationBands(
   const foundM = Math.max(
     finiteOr(station.foundRadiusM, 0),
     FOUND_ACCURACY_FACTOR * accuracy,
-    HUD_ARRIVAL_MIN_M,
+    STATION_POSE_FLOOR_M,
   );
   const foundExitM = foundM + band;
   const activateM = Math.max(finiteOr(station.activateRadiusM, 0), foundExitM);

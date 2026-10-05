@@ -242,6 +242,11 @@ recording. Its own module since the flows plan M6.
   cleared on tour teardown (`archive-open.ts`), not on session end - the
   same tour's codes stay valid across AR re-entries, and the QR
   controller's `reset()` re-resolves any text that locks again.
+- Every tour image this module decodes (the placed photo planes, the
+  capture planes, the ring) carries the tour pixel cap
+  (`decodeFrameTexture`'s `maxPixels: TOUR_MAX_IMAGE_PIXELS`, tour kit K4
+  review R2): an image over 4096 x 4096, or one whose size cannot be read,
+  is never decoded and leaves its plane out.
 - Capture planes decode at divisor 2 (the framework decoder's OOM
   mitigation; geo-join review finding 4).
 

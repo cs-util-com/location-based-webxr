@@ -5,6 +5,11 @@
  * story starts without "Loading…". The story's own reads go through the
  * same cache, so a prefetch in flight is joined, never repeated.
  *
+ * Two triggers: `approach` (an offered station within its activation
+ * radius plus `PREFETCH_LEAD_M`) and `ahead` (K4 review R5: the station
+ * that comes next in a fixed or branch order, from the moment the current
+ * station is found, so its story is read while the current one plays).
+ *
  * Bounded, because a long tour must not fill a phone's memory:
  * - ONE prefetch read in flight, in the order asked (the tour session reads
  *   one entry at a time anyway);
@@ -28,13 +33,18 @@ import type {
   TourStation,
   TourStep,
 } from "gps-plus-slam-app-framework/ar/tour-stations";
+import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
+import { imageInfoOfBlob } from "gps-plus-slam-app-framework/utils/image-header";
 
 /**
  * Start prefetching this far beyond the station's activation radius:
- * 80 m, about a minute at a 1.4 m/s walk, which has a 5 MB story read at
- * 1 Mbit/s and a 20 MB one at 5 Mbit/s before the visitor arrives, at every
- * speed swept (`station-prefetch.sweep.test.ts`; 60 m misses the 5 MB
- * story at 1.8 m/s on a tightly banded station).
+ * 80 m, about a minute at a 1.4 m/s walk, which has at least a 5 MB story
+ * read at 1 Mbit/s and 25 MB at 5 Mbit/s before the visitor arrives, at
+ * every speed swept (`station-prefetch.sweep.test.ts`; 60 m leaves 3.75 MB
+ * at 1.8 m/s on a tightly banded station). It decides only for a station
+ * approached from afar: under a fixed order at castle spacing the next
+ * station is offered inside any lead, and `ahead` reads it during the
+ * current story instead (K4 review R5).
  */
 export const PREFETCH_LEAD_M = 80;
 
@@ -51,17 +61,34 @@ const PREFETCH_BUDGET_BYTES = 64 * 1024 * 1024;
  */
 export const MAX_DECODE_SIDE_PX = 2048;
 
-/** The decode divisor that brings a figure within the cap (1 when its size
- *  is not stated: the tour's asset record is the only size known before
- *  decoding). */
-export function decodeDivisor(size?: {
-  readonly width?: number;
-  readonly height?: number;
+/** The decode divisor that brings a figure of this size within
+ *  `MAX_DECODE_SIDE_PX` along its longer side. */
+export function decodeDivisor(size: {
+  readonly width: number;
+  readonly height: number;
 }): number {
-  const side = Math.max(size?.width ?? 0, size?.height ?? 0);
+  const side = Math.max(size.width, size.height);
   return Number.isFinite(side) && side > MAX_DECODE_SIDE_PX
     ? Math.ceil(side / MAX_DECODE_SIDE_PX)
     : 1;
+}
+
+/**
+ * Decode a figure within the caps (K4 review R2): its size read from its
+ * own header, never from the size the tour declares; never decoded over
+ * the tour pixel cap (`TOUR_MAX_IMAGE_PIXELS`) or when its size cannot be
+ * read (null); otherwise decoded at the divisor that brings it within
+ * `MAX_DECODE_SIDE_PX`.
+ */
+export async function decodeFigure<T>(
+  blob: Blob,
+  decode: (blob: Blob, divisor: number) => Promise<T | null>,
+): Promise<T | null> {
+  const info = await imageInfoOfBlob(blob);
+  if (info === null || info.width * info.height > TOUR_MAX_IMAGE_PIXELS) {
+    return null;
+  }
+  return decode(blob, decodeDivisor(info));
 }
 
 /** The asset ids a station's story reads, in step order, deduplicated.
@@ -90,6 +117,9 @@ export interface StationPrefetch {
   /** The visitor is `distanceM` from this offered station; prefetch it when
    *  inside its prefetch radius (`activateM + PREFETCH_LEAD_M`). */
   approach(station: TourStation, distanceM: number, activateM: number): void;
+  /** The station that comes next in a fixed or branch order, while the
+   *  current story plays: prefetch it from any distance (K4 review R5). */
+  ahead(station: TourStation): void;
   /** A station is done: the media only it needed may be released. */
   done(stationId: string): void;
   /** Read an asset: from the cache, joining a read in flight, or now. */
@@ -109,8 +139,12 @@ export function createStationPrefetch(deps: {
    *  tour closed) drops everything. A session end keeps it (R15). */
   tour(): unknown;
   readonly budgetBytes?: number;
+  /** The lead beyond the activation radius; `PREFETCH_LEAD_M` unless a
+   *  sweep sets it (`station-prefetch.sweep.test.ts`). */
+  readonly leadM?: number;
 }): StationPrefetch {
   const budget = deps.budgetBytes ?? PREFETCH_BUDGET_BYTES;
+  const leadM = deps.leadM ?? PREFETCH_LEAD_M;
   /** Held blobs by path. */
   const held = new Map<string, Blob>();
   /** The stations that asked for each queued, in-flight or held path: an
@@ -257,7 +291,11 @@ export function createStationPrefetch(deps: {
   return {
     approach(station, distanceM, activateM) {
       sync();
-      if (!(distanceM <= activateM + PREFETCH_LEAD_M)) return;
+      if (!(distanceM <= activateM + leadM)) return;
+      request(station);
+    },
+    ahead(station) {
+      sync();
       request(station);
     },
     done(stationId) {

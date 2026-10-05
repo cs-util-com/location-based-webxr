@@ -13,6 +13,7 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 import { resolveQrPayload } from "gps-plus-slam-app-framework/utils/qr-payload/qr-launch-dispatch";
 
+import { pictureProblem } from "./image-cap.js";
 import { DEFAULT_ASSET_PREFIX } from "./code-tour.js";
 import type { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 
@@ -234,6 +235,10 @@ export function wireArchiveOpen(deps: {
         try {
           const blob = await current.loadEntry(entry.filename);
           if (ctx.session !== current) return;
+          // Measured before the <img> decodes it (tour kit K4 review R2).
+          const problem = await pictureProblem(blob);
+          if (ctx.session !== current) return;
+          if (problem !== null) throw new Error(problem);
           const url = URL.createObjectURL(blob);
           objectUrls.push(url);
           const img = document.createElement("img");

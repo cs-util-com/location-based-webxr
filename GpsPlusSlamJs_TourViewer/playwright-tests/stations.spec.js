@@ -122,6 +122,25 @@ test("a station tour: the code finds the first station, its knight speaks and as
       ),
     )
     .toContain("station-stage:gate");
+  // "The gate" is anchored by its code alone: the knight stands on the
+  // estimated ground below the code - the phone's height in the GPS world
+  // less 1.5 m - not at the poster's centre (K4 review R6; the code is
+  // saved at 400 m, where the K4 build stood it).
+  const heights = await page.evaluate(() => {
+    const t = /** @type {any} */ (window).__tourViewerTest;
+    const m = t.alignmentStore.getState().gpsData.gpsEvents.alignmentMatrix;
+    const { x, y, z } = t.arPose.position;
+    // Raw WebXR (x East, y Up, z South) to odometry NUE, then up through
+    // the alignment (column-major).
+    const [n, u, e] = [-z, y, x];
+    return {
+      feet: t.fakeScene.children.find((c) => c.name === "station-stage:gate")
+        .position.y,
+      camera: m[1] * n + m[5] * u + m[9] * e + m[13],
+    };
+  });
+  expect(heights.feet).toBeCloseTo(heights.camera - 1.5, 0);
+  expect(Math.abs(heights.feet - 400)).toBeGreaterThan(1);
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -130,6 +149,9 @@ test("a station tour: the code finds the first station, its knight speaks and as
       }),
     )
     .toEqual({ elements: 1, plays: 2 }); // the unlock, then the voice
+
+  // While the story plays, the skip button can end it (K4 review R9).
+  await expect(page.getByTestId("station-skip")).toHaveText("End this story?");
 
   // A scene choice.
   await page.getByTestId("scene-continue").click();
@@ -187,7 +209,29 @@ test("a station tour: the code finds the first station, its knight speaks and as
   await expect(skip).toHaveText("Skip The tower - I can't get there");
   await skip.click();
   await expect(line).toHaveText("Tour complete - 1 skipped.");
-  await expect(skip).toBeHidden();
+  // The skip can be undone for a moment (K4 review R14): the tower comes
+  // back; skipped again, the button goes once the moment has passed (the
+  // next camera frames re-render it).
+  await expect(skip).toHaveText("Undo: bring back The tower");
+  await skip.click();
+  await expect(line).toHaveText(
+    /^Brought back The tower\. Next: The tower, \d+ m$/,
+  );
+  await expect(skip).toHaveText("Can't get there?");
+  await skip.click();
+  await skip.click();
+  await expect(line).toHaveText("Tour complete - 1 skipped.");
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return skip.isHidden();
+      },
+      { timeout: 15000 },
+    )
+    .toBe(true);
   await expect
     .poll(() =>
       page.evaluate(
@@ -215,9 +259,17 @@ test("leaving AR stops the story but keeps the progress, and the cut-short story
   await expect(page.getByTestId("scene-panel")).toBeHidden();
   await expect(page.getByTestId("station-line")).toBeHidden();
 
-  // Back in AR: no new lock needed; the gate's story starts again.
+  // Back in AR, behind this session's own scan gate (K4 review R8): the
+  // story waits for the lock that passes it, and for a position and the
+  // GPS zero, then the gate's story starts again - the station stays found.
   await page.getByTestId("enter-ar").click();
+  await seedAlignment(page);
   await standAt(page, 0, 0, 10);
+  await expect(page.getByTestId("station-line")).toBeHidden();
+  await expect(page.getByTestId("scene-panel")).toBeHidden();
+  await lockTheCode(page);
+  // The next GPS fix (on a phone, the next camera frame) re-judges.
+  await standAt(page, 0, 0, 11);
   await expect(page.getByTestId("scene-panel")).toBeVisible();
   await expect(page.getByTestId("scene-text")).toHaveText("Halt, traveller!");
 });

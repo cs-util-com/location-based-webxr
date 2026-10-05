@@ -3,6 +3,8 @@ import fc from 'fast-check';
 
 import {
   checkGlbInert,
+  checkImageWithinCap,
+  TOUR_MAX_IMAGE_PIXELS,
   TOUR_MEDIA_EXTENSIONS,
   tourMediaTypeOf,
   tourMediaTypeOfEntry,
@@ -113,7 +115,8 @@ describe('checkGlbInert', () => {
       checkGlbInert(
         glb({
           asset: { version: '2.0' },
-          images: [{ uri: 'data:image/png;base64,AAAA' }],
+          // A data: URI image is measured too (K4 review R2): a real header.
+          images: [{ uri: dataUri(pngHeader(4, 4)) }],
         })
       )
     ).toEqual({ ok: true });
@@ -246,5 +249,137 @@ describe('checkGlbInert - the chunk structure', () => {
     ]);
     new DataView(model.buffer).setUint32(model.length - 12, 400, true);
     expect(checkGlbInert(model).ok).toBe(false);
+  });
+});
+
+/** A PNG signature plus IHDR stating `width` x `height` (no pixels). */
+function pngHeader(width: number, height: number): Uint8Array<ArrayBuffer> {
+  const b = new Uint8Array(24);
+  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  b.set([0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52], 8);
+  new DataView(b.buffer).setUint32(16, width);
+  new DataView(b.buffer).setUint32(20, height);
+  return b;
+}
+
+/** A model whose one image lives in its binary chunk. */
+function texturedGlb(image: Uint8Array): Uint8Array {
+  const padded = new Uint8Array(Math.ceil(image.length / 4) * 4);
+  padded.set(image);
+  return withChunks(
+    glb({
+      asset: { version: '2.0' },
+      buffers: [{ byteLength: padded.length }],
+      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: image.length }],
+      images: [{ bufferView: 0, mimeType: 'image/png' }],
+    }),
+    [{ type: BIN_CHUNK, data: padded }]
+  );
+}
+
+const dataUri = (bytes: Uint8Array): string =>
+  `data:image/png;base64,${btoa(String.fromCharCode(...bytes))}`;
+
+/**
+ * Why these tests matter (tour kit K4 review R2): a picture, a figure or a
+ * model's texture is decoded at the size its file states, so a few
+ * kilobytes of crafted header can make a phone allocate gigabytes. Every
+ * raster image a tour carries is measured from its header before any
+ * decode, against one pixel cap, and a model's embedded images too.
+ */
+describe('the pixel cap (R2)', () => {
+  it('is 4096 x 4096: a 12 MP phone photo and a 4096 px texture pass, a 48 MP photo and an 8192 px texture do not', () => {
+    expect(TOUR_MAX_IMAGE_PIXELS).toBe(4096 * 4096);
+    expect(checkImageWithinCap(pngHeader(4032, 3024))).toEqual({ ok: true });
+    expect(checkImageWithinCap(pngHeader(4096, 4096))).toEqual({ ok: true });
+    const big = checkImageWithinCap(pngHeader(8064, 6048));
+    expect(big.ok).toBe(false);
+    expect(big.ok ? '' : big.reason).toMatch(/8064 x 6048/);
+    expect(checkImageWithinCap(pngHeader(8192, 8192)).ok).toBe(false);
+  });
+
+  it('refuses an image whose size cannot be read, and takes another cap when given one', () => {
+    const unreadable = checkImageWithinCap(new Uint8Array([1, 2, 3, 4]));
+    expect(unreadable.ok).toBe(false);
+    expect(unreadable.ok ? '' : unreadable.reason).toMatch(/size/);
+    expect(checkImageWithinCap(pngHeader(300, 300), 300 * 300)).toEqual({
+      ok: true,
+    });
+    expect(checkImageWithinCap(pngHeader(301, 300), 300 * 300).ok).toBe(false);
+  });
+
+  it("checks a model's images, in its binary chunk or as data: URIs", () => {
+    expect(checkGlbInert(texturedGlb(pngHeader(2048, 2048)))).toEqual({
+      ok: true,
+    });
+    const huge = checkGlbInert(texturedGlb(pngHeader(16384, 16384)));
+    expect(huge.ok).toBe(false);
+    expect(huge.ok ? '' : huge.reason).toMatch(/16384 x 16384/);
+    expect(
+      checkGlbInert(
+        glb({
+          asset: { version: '2.0' },
+          images: [{ uri: dataUri(pngHeader(9000, 9000)) }],
+        })
+      ).ok
+    ).toBe(false);
+    // An image the header reader cannot measure is not decoded either.
+    expect(checkGlbInert(texturedGlb(new Uint8Array([7, 7, 7, 7]))).ok).toBe(
+      false
+    );
+    // A buffer view that runs past the binary chunk measures nothing.
+    const outside = withChunks(
+      glb({
+        asset: { version: '2.0' },
+        buffers: [{ byteLength: 4 }],
+        bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 4096 }],
+        images: [{ bufferView: 0 }],
+      }),
+      [{ type: BIN_CHUNK, data: new Uint8Array(4) }]
+    );
+    expect(checkGlbInert(outside).ok).toBe(false);
+    // The cap can be set.
+    expect(
+      checkGlbInert(texturedGlb(pngHeader(2048, 2048)), {
+        maxImagePixels: 1024 * 1024,
+      }).ok
+    ).toBe(false);
+  });
+});
+
+/**
+ * The cap sweep (R2): what each candidate cap admits of the images a tour
+ * meets, and what one decode then costs (RGBA, 4 bytes a pixel). The
+ * shipped 16.8 MP admits ordinary phone photos and 4096 px textures at
+ * 64 MiB a decode at most; 4.2 MP refuses a 12 MP photo; 33.6 MP lets one
+ * decode take 128 MiB; no cap here admits a 48 MP photo (186 MiB).
+ */
+describe('the pixel cap sweep (R2)', () => {
+  const SOURCES = {
+    phone12: [4032, 3024],
+    phone48: [8064, 6048],
+    figure: [2048, 4096],
+    texture4k: [4096, 4096],
+    texture8k: [8192, 8192],
+  } as const;
+  const CAPS = [2048 * 2048, 2900 * 2900, 4096 * 4096, 5793 * 5793];
+  const admits = (cap: number) =>
+    Object.entries(SOURCES)
+      .filter(([, [w, h]]) => checkImageWithinCap(pngHeader(w, h), cap).ok)
+      .map(([name]) => name);
+
+  it('admits what a tour needs and refuses what would not fit a phone, at the shipped cap only', () => {
+    expect(admits(CAPS[0]!)).toEqual([]);
+    expect(admits(CAPS[1]!)).toEqual(['figure']);
+    expect(admits(TOUR_MAX_IMAGE_PIXELS)).toEqual([
+      'phone12',
+      'figure',
+      'texture4k',
+    ]);
+    expect(admits(CAPS[3]!)).toEqual(['phone12', 'figure', 'texture4k']);
+    // The largest decode each cap allows, in MiB.
+    expect(CAPS.map((c) => Math.round((c * 4) / 2 ** 20))).toEqual([
+      16, 32, 64, 128,
+    ]);
   });
 });

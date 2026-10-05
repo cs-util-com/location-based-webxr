@@ -103,6 +103,10 @@ DOM glue, its own module since the flows plan M6.
 - **Async-UI rule:** the open button shows "Opening…" BEFORE the first
   await (PR #357 review) and restores only for the generation that owns
   it; the teardown runs INSIDE the try (PR #365 review).
+- Each gallery picture is measured from its header before its `<img>`
+  decodes it (`image-cap.ts` `pictureProblem`, tour kit K4 review R2): one
+  over the tour pixel cap, or one whose size cannot be read, shows as
+  "failed to load".
 - The gallery streams SEQUENTIALLY; a newer open supersedes an in-flight
   fill per entry; object URLs are revoked on teardown.
 - **Clear-cache settles once the store is durably empty, without waiting

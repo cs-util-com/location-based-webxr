@@ -36,10 +36,12 @@ interface StationStatus {
   /** Done by the visitor's "skip, I can't get there". */
   readonly skipped: boolean;
   readonly foundVia: "gps" | "code" | null;
-  /** When it was (last) offered, on the caller's clock; null until then. */
-  readonly offeredAtMs: number | null;
-  /** The first distance observed while offered: the skip clock's scale. */
-  readonly offeredDistanceM: number | null;
+  /** When it first became the focus (the skip clock's start, K4 review
+   *  R14), on the caller's clock; null until then. */
+  readonly focusedAtMs: number | null;
+  /** The distance when it became the focus (else the first observed
+   *  after): the skip clock's scale. */
+  readonly focusDistanceM: number | null;
 }
 
 export type StationEvent =
@@ -71,12 +73,12 @@ export const SKIP_SUGGEST_BASE_MS = 120_000;
  */
 export const SKIP_SUGGEST_SLOW_MPS = 0.5;
 
-/** When the skip is suggested, after the offer, for a straight-line
- *  distance at the offer (unknown: the allowance alone). */
-export function skipSuggestAfterMs(offeredDistanceM: number | null): number {
+/** When the skip is suggested, after the station became the focus, for a
+ *  straight-line distance then (unknown: the allowance alone). */
+export function skipSuggestAfterMs(focusDistanceM: number | null): number {
   const d =
-    offeredDistanceM !== null && Number.isFinite(offeredDistanceM)
-      ? Math.max(0, offeredDistanceM)
+    focusDistanceM !== null && Number.isFinite(focusDistanceM)
+      ? Math.max(0, focusDistanceM)
       : 0;
   return SKIP_SUGGEST_BASE_MS + (d / SKIP_SUGGEST_SLOW_MPS) * 1000;
 }
@@ -107,22 +109,46 @@ export interface StationRun {
     readonly accuracyM: number | null;
     readonly nowMs: number;
   }): StationEvent[];
-  /** A lock of a printed code (its level id) the viewer trusts. */
-  codeLocked(levelId: string, nowMs: number): StationEvent[];
+  /** A lock of a printed code (its level id) the viewer trusts; `admit`
+   *  (default: all) picks which of the stations it anchors it may find - the
+   *  guide holds back one the moved-code check has not had its say on yet
+   *  (K4 review R1). */
+  codeLocked(
+    levelId: string,
+    nowMs: number,
+    admit?: (stationId: string) => boolean,
+  ): StationEvent[];
   /** The station's steps finished (a found station only). */
   finish(id: string, nowMs: number): StationEvent[];
   /** "Skip, I can't get there" (an offered station not yet done). */
   skip(id: string, nowMs: number): StationEvent[];
-  /** Whether to suggest the skip for this offered, unfound station now. */
+  /** Whether to suggest the skip for this offered, unfound station now:
+   *  its clock, started when it became the focus, ran out. */
   skipSuggested(id: string, nowMs: number): boolean;
+  /** The station the visitor is pointed at now (the guide's focus): its
+   *  skip clock starts at the first call, with the distance then (K4
+   *  review R14: under `any` order every clock started at the tour's
+   *  start, so after two minutes every focus was a one-tap skip). */
+  focus(id: string, nowMs: number, distanceM: number | null): void;
+  /** Undo a skip (R14): the skipped station waits again, unskipped, with
+   *  a fresh clock, and the order offers it as before the skip. A station
+   *  that was not skipped: nothing. */
+  unskip(id: string, nowMs: number): StationEvent[];
+  /**
+   * Under `fixed` or `branch` order, while the one offered station is found
+   * (its story plays): the station offered once it is done, else null (K4
+   * review R5: its media are read while the current story plays). Under
+   * `any` order always null - every station not done is offered already.
+   */
+  upcoming(): string | null;
 }
 
 interface Mutable {
   state: StationState;
   skipped: boolean;
   foundVia: "gps" | "code" | null;
-  offeredAtMs: number | null;
-  offeredDistanceM: number | null;
+  focusedAtMs: number | null;
+  focusDistanceM: number | null;
 }
 
 export function createStationRun(input: {
@@ -139,15 +165,14 @@ export function createStationRun(input: {
         state: "waiting",
         skipped: false,
         foundVia: null,
-        offeredAtMs: null,
-        offeredDistanceM: null,
+        focusedAtMs: null,
+        focusDistanceM: null,
       },
     ]),
   );
   /** `branch` order's one offered station; null once its path ended. */
   let branchCurrent: string | null = stations[0]?.id ?? null;
   let offeredIds = computeOffered();
-  markOffered(offeredIds, input.nowMs);
 
   function isDone(id: string): boolean {
     return states.get(id)?.state === "done";
@@ -187,13 +212,6 @@ export function createStationRun(input: {
     return undoneAfter(index.get(id)!);
   }
 
-  function markOffered(ids: readonly string[], nowMs: number): void {
-    for (const id of ids) {
-      const s = states.get(id)!;
-      if (s.offeredAtMs === null) s.offeredAtMs = nowMs;
-    }
-  }
-
   function snapshot(id: string, s: Mutable): StationStatus {
     return { id, ...s };
   }
@@ -203,11 +221,7 @@ export function createStationRun(input: {
   }
 
   /** Done: record it, move the order on, report the new offer. */
-  function complete(
-    id: string,
-    skipped: boolean,
-    nowMs: number,
-  ): StationEvent[] {
+  function complete(id: string, skipped: boolean): StationEvent[] {
     const s = states.get(id)!;
     s.state = "done";
     s.skipped = skipped;
@@ -216,39 +230,31 @@ export function createStationRun(input: {
       branchCurrent = branchNextAfter(id);
     }
     const next = computeOffered();
-    markOffered(next, nowMs);
     offeredIds = next;
     events.push({ kind: "offered", ids: [...next] });
     if (next.length === 0) events.push({ kind: "complete" });
     return events;
   }
 
-  function found(
-    id: string,
-    via: "gps" | "code",
-    nowMs: number,
-  ): StationEvent[] {
+  function found(id: string, via: "gps" | "code"): StationEvent[] {
     const s = states.get(id)!;
     s.state = "found";
     s.foundVia = via;
     const events: StationEvent[] = [{ kind: "found", id, via }];
     const station = stations[index.get(id)!]!;
-    if (station.steps.length === 0) events.push(...complete(id, false, nowMs));
+    if (station.steps.length === 0) events.push(...complete(id, false));
     return events;
   }
 
   /** One offered station at one distance: found inside the found radius. */
-  function judge(
-    id: string,
-    d: number,
-    accuracyM: number,
-    nowMs: number,
-  ): StationEvent[] {
+  function judge(id: string, d: number, accuracyM: number): StationEvent[] {
     const s = states.get(id)!;
     if (s.state === "found" || s.state === "done") return [];
-    if (s.offeredDistanceM === null) s.offeredDistanceM = d;
+    if (s.focusedAtMs !== null && s.focusDistanceM === null) {
+      s.focusDistanceM = d;
+    }
     const { foundM } = stationBands(stations[index.get(id)!]!, accuracyM);
-    return d <= foundM ? found(id, "gps", nowMs) : [];
+    return d <= foundM ? found(id, "gps") : [];
   }
 
   return {
@@ -260,46 +266,79 @@ export function createStationRun(input: {
     statuses: () => stations.map((st) => snapshot(st.id, states.get(st.id)!)),
     isComplete: () => offeredIds.length === 0,
 
-    observe({ distances, accuracyM, nowMs }) {
+    observe({ distances, accuracyM }) {
       if (!usableAccuracy(accuracyM)) return [];
       const events: StationEvent[] = [];
       for (const id of [...offeredIds]) {
         const d = distances.get(id);
         if (d === undefined || !Number.isFinite(d) || !isOffered(id)) continue;
-        events.push(...judge(id, d, accuracyM, nowMs));
+        events.push(...judge(id, d, accuracyM));
       }
       return events;
     },
 
-    codeLocked(levelId, nowMs) {
+    codeLocked(levelId, _nowMs, admit) {
       const events: StationEvent[] = [];
       for (const station of stations) {
         if (station.anchor.code !== levelId || !isOffered(station.id)) continue;
         const s = states.get(station.id)!;
         if (s.state === "found" || s.state === "done") continue;
-        events.push(...found(station.id, "code", nowMs));
+        if (admit !== undefined && !admit(station.id)) continue;
+        events.push(...found(station.id, "code"));
       }
       return events;
     },
 
-    finish(id, nowMs) {
+    finish(id) {
       if (states.get(id)?.state !== "found") return [];
-      return complete(id, false, nowMs);
+      return complete(id, false);
     },
 
-    skip(id, nowMs) {
+    skip(id) {
       const s = states.get(id);
       if (s === undefined || s.state === "done" || !isOffered(id)) return [];
-      return complete(id, true, nowMs);
+      return complete(id, true);
+    },
+
+    upcoming() {
+      if (input.order === "any" || offeredIds.length !== 1) return null;
+      const current = offeredIds[0]!;
+      if (states.get(current)?.state !== "found") return null;
+      if (input.order === "branch") return branchNextAfter(current);
+      return (
+        stations.find((s) => s.id !== current && !isDone(s.id))?.id ?? null
+      );
     },
 
     skipSuggested(id, nowMs) {
       const s = states.get(id);
-      if (s === undefined || !isOffered(id) || s.offeredAtMs === null) {
+      if (s === undefined || !isOffered(id) || s.focusedAtMs === null) {
         return false;
       }
       if (s.state === "found" || s.state === "done") return false;
-      return nowMs - s.offeredAtMs >= skipSuggestAfterMs(s.offeredDistanceM);
+      return nowMs - s.focusedAtMs >= skipSuggestAfterMs(s.focusDistanceM);
+    },
+
+    focus(id, nowMs, distanceM) {
+      const s = states.get(id);
+      if (s === undefined || !isOffered(id) || s.focusedAtMs !== null) return;
+      s.focusedAtMs = nowMs;
+      if (distanceM !== null && Number.isFinite(distanceM)) {
+        s.focusDistanceM = distanceM;
+      }
+    },
+
+    unskip(id) {
+      const s = states.get(id);
+      if (s === undefined || s.state !== "done" || !s.skipped) return [];
+      s.state = "waiting";
+      s.skipped = false;
+      s.focusedAtMs = null;
+      s.focusDistanceM = null;
+      // Under branch order the skipped station was the one offered.
+      if (input.order === "branch") branchCurrent = id;
+      offeredIds = computeOffered();
+      return [{ kind: "offered", ids: [...offeredIds] }];
     },
   };
 }

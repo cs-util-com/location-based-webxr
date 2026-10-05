@@ -99,6 +99,50 @@ describe("visitorPosition", () => {
     ).toBeNull();
   });
 
+  it("reads where the latest DEVICE fix puts the visitor, never a code's vote (K4 review R1)", () => {
+    // Why this test matters (K4 review R1): a code's votes pull the fused
+    // position onto the code's saved spot, so only a raw device fix can
+    // tell whether a scanned code is where the visitor's GPS says.
+    const at = (north: number, east: number, source: string): GpsPoint => {
+      const g = calcGpsCoords(zero, [north, 0, east]);
+      return {
+        latitude: g.lat,
+        longitude: g.lon,
+        altitude: 400,
+        latLongAccuracy: 4,
+        timestamp: 1,
+        source,
+      } as unknown as GpsPoint;
+    };
+    const points = [
+      at(50, 50, GPS_POINT_SOURCE_DEVICE),
+      at(10, -5, GPS_POINT_SOURCE_DEVICE),
+      ...Array.from({ length: 16 }, () => at(100, 0, "synthetic-qr")),
+    ];
+    const p = visitorPosition({
+      alignment: null,
+      arPose: null,
+      gpsPositions: points,
+      zero,
+    });
+    expect(p.fixNue).not.toBeNull();
+    expect(p.fixNue![0]).toBeCloseTo(10, 3);
+    expect(p.fixNue![2]).toBeCloseTo(-5, 3);
+    // No zero, or no device fix: unknown.
+    expect(
+      visitorPosition({ alignment: null, arPose: null, gpsPositions: points })
+        .fixNue,
+    ).toBeNull();
+    expect(
+      visitorPosition({
+        alignment: null,
+        arPose: null,
+        gpsPositions: points.slice(2),
+        zero,
+      }).fixNue,
+    ).toBeNull();
+  });
+
   it("reads the accuracy from the latest DEVICE fixes only, as their median", () => {
     const fix = (accuracy: number | undefined, source?: string): GpsPoint =>
       ({

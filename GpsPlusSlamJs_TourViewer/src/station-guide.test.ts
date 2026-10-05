@@ -6,9 +6,18 @@ import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 
+import { Quaternion, Vector3 } from "three";
+
+import { EYE_HEIGHT_M } from "./breadcrumbs";
+import { rotationFromHeading } from "./content-placement";
 import { stationBands } from "./station-bands";
 import { skipSuggestAfterMs } from "./station-run";
-import { wireStationGuide, type StationTour } from "./station-guide";
+import {
+  CODE_HOLD_MAX_MS,
+  SKIP_UNDO_MS,
+  wireStationGuide,
+  type StationTour,
+} from "./station-guide";
 
 /**
  * Why these tests matter: this is where the visitor's real position, the
@@ -54,17 +63,35 @@ function harness(tourValue: StationTour) {
   let visitor = {
     nue: [0, 401.5, 0] as [number, number, number] | null,
     accuracyM: 4 as number | null,
+    fixNue: [0, 400, 0] as [number, number, number] | null,
   };
+  /** The moved-code check's evidence per level id (absent: no check). */
+  const checks = new Map<string, { judged: boolean }>();
   let allowed = true;
+  let zeroNow: typeof zero | null = zero;
   const ignored = new Set<string>();
   const found: string[] = [];
   const approaches: [string, number, number][] = [];
   const dones: string[] = [];
+  const upcomings: string[] = [];
+  const ended: string[] = [];
   const guides: (string | null)[] = [];
   const huds: { getTargets: () => WayfindingTarget[]; disposed: boolean }[] =
     [];
+  /** How often the guide wrote the line and read its inputs (R13). */
+  const calls = { lineWrites: 0, visitor: 0, zero: 0 };
+  let lineText = "";
   const dom = {
-    line: { textContent: "" as string, hidden: true },
+    line: {
+      get textContent(): string {
+        return lineText;
+      },
+      set textContent(v: string) {
+        calls.lineWrites += 1;
+        lineText = v;
+      },
+      hidden: true,
+    },
     skip: { textContent: "" as string, hidden: true },
   };
   let tour: StationTour | null = tourValue;
@@ -72,9 +99,16 @@ function harness(tourValue: StationTour) {
     dom,
     tour: () => tour,
     placementAllowed: () => allowed,
-    zero: () => zero,
-    visitor: () => visitor,
+    zero: () => {
+      calls.zero += 1;
+      return zeroNow;
+    },
+    visitor: () => {
+      calls.visitor += 1;
+      return visitor;
+    },
     isIgnoredCode: (id) => ignored.has(id),
+    codeCheck: (id) => checks.get(id) ?? null,
     startHud: (getTargets) => {
       const h = { getTargets, disposed: false };
       huds.push(h);
@@ -84,6 +118,12 @@ function harness(tourValue: StationTour) {
     onFound: (s) => found.push(s.id),
     onApproach: (s, d, exit) => approaches.push([s.id, Math.round(d), exit]),
     onDone: (id) => dones.push(id),
+    onUpcoming: (s) => upcomings.push(s.id),
+    // The story panel, as the page wires it: ending a story ends it.
+    onEndStory: (id) => {
+      ended.push(id);
+      guide.storyEnded(id);
+    },
     onGuide: (_visitor, target) =>
       guides.push(
         target === null
@@ -97,19 +137,38 @@ function harness(tourValue: StationTour) {
     found,
     approaches,
     dones,
+    upcomings,
+    ended,
+    calls,
     guides,
     huds,
     ignored,
+    checks,
     at: (north: number, east: number, accuracyM: number | null = 4) => {
-      visitor = { nue: [north, 401.5, east], accuracyM };
+      visitor = {
+        nue: [north, 401.5, east],
+        accuracyM,
+        fixNue: [north, 400, east],
+      };
+      guide.tick();
+    },
+    /** The fused position (moved by a code's votes) and the latest raw
+     *  device fix apart. */
+    atFix: (north: number, east: number, fixN: number, fixE: number) => {
+      visitor = {
+        nue: [north, 401.5, east],
+        accuracyM: 4,
+        fixNue: [fixN, 400, fixE],
+      };
       guide.tick();
     },
     lost: () => {
-      visitor = { nue: null, accuracyM: 4 };
+      visitor = { nue: null, accuracyM: 4, fixNue: null };
       guide.tick();
     },
     advance: (ms: number) => (now += ms),
     allow: (v: boolean) => (allowed = v),
+    setZero: (z: typeof zero | null) => (zeroNow = z),
     setTour: (t: StationTour | null) => (tour = t),
   };
 }
@@ -179,23 +238,162 @@ describe("wireStationGuide", () => {
     const h = harness({ stations: [s], order: "fixed", levels });
     h.at(0, 0);
     expect(h.dom.line.textContent).toBe("Next: TOWER, 40 m");
+    // Scanned standing at the poster (R1: a lock 40 m from where the GPS
+    // puts the code would be held for the moved-code check).
+    h.at(0, 38);
     h.guide.codeLocked("lvl-a");
     expect(h.found).toEqual(["tower"]);
   });
 
-  it("a code the moved-code check ignores does not count as found (D20)", () => {
+  it("a code-only station stands on the estimated ground below its code, turned about the vertical only (R6)", () => {
+    // Why this test matters (K4 review R6): a code-only station stood at
+    // the poster's centre, so a figure floated 1-2 m up at a wall poster
+    // and a model took the poster's tilt.
+    const geo = calcGpsCoords(zero, [0, 0, 40]);
+    // A poster facing heading 90, tilted 30 degrees back (no compat
+    // heading: the mint omits one for a tilted code).
+    const tilted = new Quaternion(...rotationFromHeading(90)).multiply(
+      new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 6),
+    );
+    const levels = new Map<string, QrLevel>([
+      [
+        "lvl-a",
+        {
+          version: 1,
+          qr: {
+            physicalSizeM: 0.2,
+            geo: {
+              lat: geo.lat,
+              lon: geo.lon,
+              alt: 403.2,
+              rotation: [tilted.x, tilted.y, tilted.z, tilted.w],
+            },
+          },
+        },
+      ],
+    ]);
+    const s: TourStation = {
+      ...station("tower", 0, 0),
+      anchor: { code: "lvl-a" },
+    };
+    const h = harness({ stations: [s], order: "fixed", levels });
+    h.at(0, 38);
+    const pose = h.guide.poseOf("tower")!;
+    expect(pose.positionNue[0]).toBeCloseTo(0, 1);
+    expect(pose.positionNue[2]).toBeCloseTo(40, 1);
+    // The ground below the visitor's phone, not the poster's 403.2 m.
+    expect(pose.positionNue[1]).toBeCloseTo(401.5 - EYE_HEIGHT_M, 6);
+    const yaw = rotationFromHeading(90);
+    for (let i = 0; i < 4; i += 1) {
+      expect(Math.abs(pose.rotationNue[i]!)).toBeCloseTo(Math.abs(yaw[i]!), 6);
+    }
+    // A station with a spot of its own keeps its own altitude.
+    const own = harness({
+      stations: [station("gate", 10, 0)],
+      order: "fixed",
+      levels: null,
+    });
+    own.at(0, 0);
+    expect(own.guide.poseOf("gate")!.positionNue[1]).toBeCloseTo(400, 6);
+  });
+
+  it("a moved code finds nothing when its veto arrives AFTER the lock: not by the lock, not by its votes' pull (R1, R17)", () => {
+    // Why this test matters (K4 review R1, R17): every locked frame reports
+    // the code, while the moved-code check (D20) only judges it later, over
+    // GPS fixes; a find on the lock, latched, meant a moved poster always
+    // found its station. The K4 test seeded the veto BEFORE the lock, which
+    // never happens on the page.
     const s: TourStation = {
       ...station("tower", 100, 0),
       anchor: { code: "lvl-a", geo: station("x", 100, 0).anchor.geo! },
     };
     const h = harness({ stations: [s], order: "fixed", levels: null });
-    h.ignored.add("lvl-a");
+    h.checks.set("lvl-a", { judged: false });
+    // The visitor scans the poster where it hangs now, 100 m from the
+    // station by GPS.
     h.at(0, 0);
     h.guide.codeLocked("lvl-a");
     expect(h.found).toEqual([]);
-    h.ignored.clear();
+    expect(h.dom.line.textContent).toBe("Next: TOWER - checking its code…");
+    // Its votes pull the fused position onto the station; the raw fix stays.
+    h.atFix(100, 0, 0, 0);
     h.guide.codeLocked("lvl-a");
+    expect(h.found).toEqual([]);
+    // The veto arrives: the votes are taken back, nothing is found, ever.
+    h.ignored.add("lvl-a");
+    h.checks.delete("lvl-a");
+    h.at(0, 0);
+    h.advance(CODE_HOLD_MAX_MS + 1);
+    h.at(0, 0);
+    h.guide.codeLocked("lvl-a");
+    expect(h.found).toEqual([]);
+    // Walking to the station by GPS still finds it.
+    h.at(99, 0);
     expect(h.found).toEqual(["tower"]);
+  });
+
+  it("a code lock the visitor's own GPS agrees with finds its station at once; one it does not is held until the check has had its evidence (R1)", () => {
+    const s: TourStation = {
+      ...station("tower", 100, 0),
+      anchor: { code: "lvl-a", geo: station("x", 100, 0).anchor.geo! },
+    };
+    const near = harness({ stations: [s], order: "fixed", levels: null });
+    near.checks.set("lvl-a", { judged: false });
+    near.at(80, 0); // 20 m: inside the 30 m activation radius
+    near.guide.codeLocked("lvl-a");
+    expect(near.found).toEqual(["tower"]);
+    const far = harness({ stations: [s], order: "fixed", levels: null });
+    far.checks.set("lvl-a", { judged: false });
+    far.at(0, 0);
+    far.guide.codeLocked("lvl-a");
+    expect(far.found).toEqual([]);
+    far.at(0, 0);
+    expect(far.found).toEqual([]);
+    // The check has had its window and kept the code: the lock counts.
+    far.checks.set("lvl-a", { judged: true });
+    far.at(0, 0);
+    expect(far.found).toEqual(["tower"]);
+  });
+
+  it("a held code lock ends with its AR session: the next session's check starts afresh, so the old hold cannot count (R1)", () => {
+    // Why this test matters: the moved-code checks are per AR entry. A
+    // hold carried into the next session would only ever be released by
+    // its clock - a moved poster never vetoed in the first session would
+    // then find its station in the second.
+    const s: TourStation = {
+      ...station("tower", 100, 0),
+      anchor: { code: "lvl-a", geo: station("x", 100, 0).anchor.geo! },
+    };
+    const h = harness({ stations: [s], order: "fixed", levels: null });
+    h.at(0, 0);
+    h.guide.codeLocked("lvl-a");
+    h.guide.endSession();
+    h.advance(CODE_HOLD_MAX_MS + 1);
+    h.at(0, 0);
+    expect(h.found).toEqual([]);
+    expect(h.dom.line.textContent).toBe("Next: TOWER, 100 m");
+  });
+
+  it("a held code lock counts at the latest after CODE_HOLD_MAX_MS, and at once without a usable GPS fix (R1)", () => {
+    const s: TourStation = {
+      ...station("tower", 100, 0),
+      anchor: { code: "lvl-a", geo: station("x", 100, 0).anchor.geo! },
+    };
+    const h = harness({ stations: [s], order: "fixed", levels: null });
+    h.at(0, 0);
+    h.guide.codeLocked("lvl-a");
+    h.advance(CODE_HOLD_MAX_MS - 1);
+    h.at(0, 0);
+    expect(h.found).toEqual([]);
+    h.advance(1);
+    h.at(0, 0);
+    expect(h.found).toEqual(["tower"]);
+    // Indoors (no usable accuracy): nothing independent to judge by - as
+    // for the moved-code check itself - so the lock counts at once.
+    const indoor = harness({ stations: [s], order: "fixed", levels: null });
+    indoor.at(0, 0, null);
+    indoor.guide.codeLocked("lvl-a");
+    expect(indoor.found).toEqual(["tower"]);
   });
 
   it("a station with neither a spot nor a known code asks for its printed code", () => {
@@ -251,8 +449,80 @@ describe("wireStationGuide", () => {
     expect(h.dom.skip.textContent).toBe("Skip WELL - I can't get there");
     h.guide.skipTapped();
     expect(h.dom.line.textContent).toBe("Tour complete - 2 skipped.");
-    expect(h.dom.skip.hidden).toBe(true);
     expect(h.huds[0]!.disposed).toBe(true);
+    // The skip can be undone for a moment; then the button goes.
+    expect(h.dom.skip.textContent).toBe("Undo: bring back WELL");
+    h.advance(SKIP_UNDO_MS);
+    h.at(0, 0);
+    expect(h.dom.skip.hidden).toBe(true);
+  });
+
+  it("undo: a skip can be taken back for a moment, its station offered again; after the moment it cannot (R14)", () => {
+    // Why this test matters (K4 review R14): a one-tap skip with no undo
+    // lost a station to one stray tap. The confirmation and the undo are
+    // the async-feedback rule's final state for this (synchronous) action.
+    const h = harness({
+      stations: [station("gate", 100, 0), station("well", 0, 100)],
+      order: "fixed",
+      levels: null,
+    });
+    h.at(0, 0);
+    h.guide.skipTapped();
+    h.guide.skipTapped();
+    expect(h.dom.line.textContent).toBe("Skipped GATE. Next: WELL, 100 m");
+    expect(h.dom.skip.textContent).toBe("Undo: bring back GATE");
+    // The prefetch is told only once the skip can no longer be undone.
+    expect(h.dones).toEqual([]);
+    h.advance(SKIP_UNDO_MS - 1);
+    h.at(0, 0);
+    h.guide.skipTapped();
+    expect(h.dom.line.textContent).toBe("Brought back GATE. Next: GATE, 100 m");
+    expect(h.dom.skip.textContent).toBe("Can't get there?");
+    expect(h.dones).toEqual([]);
+    // Skipped again, and the moment passes: no undo any more.
+    h.guide.skipTapped();
+    h.guide.skipTapped();
+    h.advance(SKIP_UNDO_MS);
+    h.at(0, 0);
+    expect(h.dom.skip.textContent).toBe("Can't get there?");
+    expect(h.dones).toEqual(["gate"]);
+    h.guide.skipTapped();
+    expect(h.dom.skip.textContent).toBe("Skip WELL - I can't get there");
+  });
+
+  it("under any order a station's skip clock starts when it becomes the focus, not at the tour's start (R14)", () => {
+    // Why this test matters (K4 review R14): every clock started at the
+    // tour's start, so two minutes in every new focus was a one-tap skip.
+    const h = harness({
+      stations: [station("gate", 30, 0), station("well", -40, 0)],
+      order: "any",
+      levels: null,
+    });
+    h.at(0, 0);
+    h.advance(skipSuggestAfterMs(40) + 1);
+    h.at(0, 0);
+    expect(h.dom.skip.textContent).toBe("Skip GATE - I can't get there");
+    h.guide.skipTapped();
+    h.advance(SKIP_UNDO_MS);
+    h.at(0, 0);
+    // The well is the focus only now: its clock has just started.
+    expect(h.dom.line.textContent).toBe("Next: WELL, 40 m");
+    expect(h.dom.skip.textContent).toBe("Can't get there?");
+  });
+
+  it("a tap acts on the station and the action its label showed, even when the clock ran out since (R14)", () => {
+    const h = harness({
+      stations: [station("gate", 100, 0), station("well", 0, 100)],
+      order: "fixed",
+      levels: null,
+    });
+    h.at(0, 0);
+    expect(h.dom.skip.textContent).toBe("Can't get there?");
+    // The clock runs out with no render in between: the label still asks.
+    h.advance(skipSuggestAfterMs(100) + 1);
+    h.guide.skipTapped();
+    expect(h.dom.skip.textContent).toBe("Skip GATE - I can't get there");
+    expect(h.dom.line.textContent).toBe("Next: GATE, 100 m");
   });
 
   it("under branch order the completion line says the path was completed, not that every station was visited", () => {
@@ -275,6 +545,28 @@ describe("wireStationGuide", () => {
     expect(h.dom.line.textContent).toBe(
       "Tour complete - you reached the end of your path.",
     );
+  });
+
+  it("a found station's story can be ended in two taps, so a story that never ends cannot block the tour (R9)", () => {
+    // Why this test matters (K4 review R9): a found station could not be
+    // skipped, and a story whose choices all loop back never ends - under
+    // a fixed order the tour stopped there for good.
+    const h = harness({
+      stations: [station("gate", 0, 0), station("well", 0, 80)],
+      order: "fixed",
+      levels: null,
+    });
+    h.at(0, 0);
+    expect(h.found).toEqual(["gate"]);
+    expect(h.dom.skip).toEqual({
+      hidden: false,
+      textContent: "End this story?",
+    });
+    h.guide.skipTapped();
+    expect(h.dom.skip.textContent).toBe("End the story of GATE now");
+    h.guide.skipTapped();
+    expect(h.ended).toEqual(["gate"]);
+    expect(h.dom.line.textContent).toBe("Next: WELL, 80 m");
   });
 
   it("a story's end makes the station done and offers the next", () => {
@@ -330,6 +622,54 @@ describe("wireStationGuide", () => {
     expect(h.found).toEqual(["gate", "gate"]);
   });
 
+  it("a later AR session waits behind its own scan gate: no line, no HUD, nothing found until it passes (R8)", () => {
+    // Why this test matters (K4 review R8): the gate was checked only when
+    // the run was created, so a second AR session guided and found
+    // stations before its scan gate had passed.
+    const h = harness({
+      stations: [station("gate", 50, 0), station("well", 0, 0)],
+      order: "fixed",
+      levels: null,
+    });
+    h.at(0, 0);
+    expect(h.dom.line.textContent).toBe("Next: GATE, 50 m");
+    h.guide.endSession();
+    h.allow(false);
+    h.at(50, 0);
+    expect(h.dom.line.hidden).toBe(true);
+    expect(h.dom.skip.hidden).toBe(true);
+    expect(h.huds).toHaveLength(1);
+    expect(h.found).toEqual([]);
+    h.allow(true);
+    h.at(50, 0);
+    expect(h.found).toEqual(["gate"]);
+    expect(h.huds).toHaveLength(2);
+  });
+
+  it("a story cut short replays only once the visitor has a position and the GPS zero exists (R8)", () => {
+    // Why this test matters (K4 review R8): a replay at the first tick of a
+    // new session, before the zero was set, mounted the figure with no
+    // pose, and the story said "could not be loaded" for good.
+    const h = harness({
+      stations: [station("gate", 0, 0), station("well", 0, 80)],
+      order: "fixed",
+      levels: null,
+    });
+    h.at(0, 0);
+    expect(h.found).toEqual(["gate"]);
+    h.guide.endSession();
+    h.setZero(null);
+    h.lost();
+    expect(h.found).toEqual(["gate"]);
+    h.at(0, 0);
+    expect(h.found).toEqual(["gate"]);
+    h.setZero(zero);
+    h.lost();
+    expect(h.found).toEqual(["gate"]);
+    h.at(0, 0);
+    expect(h.found).toEqual(["gate", "gate"]);
+  });
+
   it("measures from where the visitor is NOW when a code lock and its story come before any tick", () => {
     // On the page the lock that passes the scan gate can find the first
     // station before the guide has ticked once; the line after its story
@@ -375,7 +715,21 @@ describe("wireStationGuide", () => {
     expect(h.approaches.at(-1)?.slice(0, 2)).toEqual(["well", 80]);
     h.guide.skipTapped();
     h.guide.skipTapped();
+    // A skip reaches the prefetch once it can no longer be undone (R14).
+    h.advance(SKIP_UNDO_MS);
+    h.at(0, 0);
     expect(h.dones).toEqual(["gate", "well"]);
+  });
+
+  it("names the next station in order to the prefetch as soon as the current one is found (R5)", () => {
+    const h = harness({
+      stations: [station("gate", 0, 0), station("well", 0, 30)],
+      order: "fixed",
+      levels: null,
+    });
+    h.at(0, 0);
+    expect(h.found).toEqual(["gate"]);
+    expect(h.upcomings.at(-1)).toBe("well");
   });
 
   it("lays the breadcrumbs towards the nearest unfound station, stopping at its arrival band, and none once it is found", () => {
@@ -391,6 +745,26 @@ describe("wireStationGuide", () => {
     expect(h.guides.at(-1)).toBeNull();
     h.guide.endSession();
     expect(h.guides.at(-1)).toBeNull();
+  });
+
+  it("per tick: measures the visitor once, reads the zero once, and writes the line only when its text changes (R13)", () => {
+    // Why this test matters (K4 review R13): every tick rewrote the polite
+    // live region, so a screen reader re-announced the line on every
+    // camera frame, and each tick repeated the geodesy several times per
+    // offered station.
+    const h = harness({
+      stations: [station("gate", 50, 0), station("well", -30, 0)],
+      order: "any",
+      levels: null,
+    });
+    h.at(0, 0);
+    const before = { ...h.calls };
+    for (let i = 0; i < 10; i += 1) h.at(0, 0);
+    expect(h.calls.visitor - before.visitor).toBe(10);
+    expect(h.calls.zero - before.zero).toBe(10);
+    expect(h.calls.lineWrites - before.lineWrites).toBe(0);
+    h.at(-10, 0); // 20 m from the well now: the line changes once
+    expect(h.calls.lineWrites - before.lineWrites).toBe(1);
   });
 
   it("finds nothing that is not offered, and calls onFound once per station", () => {
