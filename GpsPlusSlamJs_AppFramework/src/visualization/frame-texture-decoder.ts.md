@@ -10,7 +10,7 @@ not copy it).
 ## Public API
 
 - `decodeFrameTexture(blob: Blob, divisor = 1, options?: { maxPixels? }): Promise<THREE.Texture | null>`
-  — with `maxPixels` the size is read from the header first
+  With `maxPixels` the size is read from the header first
   (`utils/image-header` `imageInfoOfBlob`), and an image over the cap, or
   one whose size cannot be read, is never decoded (`null`): the tour kit
   K4 review R2 decode cap, since `createImageBitmap` decodes at the stated
