@@ -36,9 +36,10 @@ it only in `cloudMode: 'slab'`.
   from `cloud-column.ts` (moved there in round 3 so the sky's GLSL can use
   it without an import cycle; see its sidecar).
 - `cloudSlabZenithOpacity(noise, threshold)`: 1 - e^(-σ·Q(T)).
-- `cloudSlabInterval(y, dir)`: the analytic part of the ray inside the slab
-  and the far fade, `{ inM, outM }` or null. Throws `RangeError` for a
-  non-finite height or a zero or non-finite direction.
+- `cloudSlabInterval(y, dir, sceneM = Infinity)`: the analytic part of the
+  ray inside the slab and the far fade, ended at the scene distance `sceneM`
+  (F2c), `{ inM, outM }` or null. Throws `RangeError` for a non-finite
+  height, a zero or non-finite direction, or a negative or NaN `sceneM`.
 - `cloudSlabUniformShare(y)`: how far a camera at height y has turned the
   spacing from quadratic (0: at or below the top) to uniform (1: from
   `uniformBlendM` above it), a smoothstep between.
@@ -80,6 +81,43 @@ it only in `cloudMode: 'slab'`.
   and viewport.
 - `setCloudSlabSteps(slab, steps)`: the step count, as a define (a new
   program); `RangeError` before any change for a count it is not built for.
+- **The coverage map and the disc** (globe volume-cloud plan
+  2026-10-05-0016, C1), both opt-in by defines, so without them the slab is
+  today's (a test pins the march unchanged under a constant threshold):
+  - `cloudSlabCoverThresholds()`: the noise threshold for each cover
+    k / 32 (`cloudThreshold`, the global cover's own quantile rule), 2
+    (clear) at cover 0; computed once; the shader's
+    `atmSlabCoverThresholds`.
+  - `cloudSlabThresholdForCover(cover)`: linear between the table's
+    entries, the cover clamped to [0, 1]; `RangeError` for NaN.
+  - `cloudSlabDiscThreshold(threshold, horizontalM, radiusM)`: the
+    threshold faded to clear from 0.7 r to r around the camera (smoothstep);
+    `RangeError` for a radius not positive or a negative distance.
+  - `cloudSlabMarch`'s `thresholdAt(xM, zM)`: the threshold read at each
+    node (both ends of a segment), the twin of the shader's
+    `atmSlabThresholdAt`. A camera inside its own disc carries a sliver of
+    cloud in its first segment by design (nodes are point-sampled).
+  - `setCloudSlabCoverage(slab, { glsl, uniforms } | null)`: the caller's
+    GLSL defines `float atmSlabCoverageAt(vec2 xz)` (the local cover at
+    world x/z, metres), inserted at the shader's coverage placeholder; the
+    local cover times `atmCloudCover` becomes the column's threshold.
+    `RangeError` for a chunk without that function. A new program on each
+    change.
+  - `setCloudSlabRadius(slab, radiusM | null)`: the disc; a new program
+    only when it is turned on or off.
+- `setCloudSlabSceneDepth(slab, depth | null)` (globe F2 plan
+  2026-10-03-1922, F2c): the scene's depth texture, or none. With one, the
+  define `ATM_SLAB_SCENE_DEPTH` ends the march at the scene (its point
+  through the same inverse projection as the ray; a depth of 1 is cleared)
+  and the depth test is OFF; without one the slab is unchanged. Only the
+  switch between depth and none builds a program; another depth is a
+  uniform. `TypeError` for a mesh that is not a slab.
+  - **Why the depth test goes off:** the slab is a back-faced prism, so
+    under the depth test a ridge in front of the prism's FAR face hid the
+    whole pixel, the cloud in front of the ridge with it.
+  - **The caller's duties:** the depth covers the slab render's viewport,
+    and it is not attached to the target the slab draws into (reading an
+    attached depth is a feedback loop).
 - Types: `Vec3`, `CloudSlabSteps`, `CloudSlabMarchInput` (its `light` is
   `{ sunTransmittance, sunDir, zenith, aureole?, silverLining? }`),
   `CloudSlabMarchResult`.
@@ -194,7 +232,9 @@ m.opacity; // the column's opacity straight up
   nodes it reads, and its error against the reference path (the replaced
   point-sampled march at 1024 steps, pinned to it at the shipped counts)
   from above, below and inside per pose and sun; the level of detail; the
-  draw order and far weight.
+  draw order and far weight; the scene depth (the interval ended at the
+  scene, none behind a nearer ridge, its refusals; the GLSL block behind its
+  define; the setter's define, texture, depth test and program rebuilds).
 - `cloud-slab.test.ts` also: the forward glow in the march (nothing when
   off; E·phase·τe^(-τ)·weight toward the sun through a thin column, from
   the column's own depth; far weaker away from the sun; nothing through a

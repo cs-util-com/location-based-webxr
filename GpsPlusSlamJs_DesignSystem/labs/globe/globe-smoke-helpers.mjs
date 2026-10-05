@@ -12,7 +12,25 @@ import { expect } from "@playwright/test";
  * has arrived at its target, and returns the list the page's console
  * errors collect into.
  */
-export async function bootGlobe(page, hash, { phase = "arrived" } = {}) {
+/**
+ * The hash with `relief=0` added when it names no relief: the relief is the
+ * lab's default since F2a (DEC-GL5-15), and a smoke that does not ask for
+ * it measures the plain globe it was written for.
+ */
+export function plainGlobe(hash) {
+  return new URLSearchParams(hash).has("relief") ? hash : `relief=0&${hash}`;
+}
+
+/**
+ * Boots the lab at `hash` and waits for `phase`; returns the page's console
+ * errors. `plain: false` loads the hash as given, so the page's own
+ * defaults (the relief among them) apply.
+ */
+export async function bootGlobe(
+  page,
+  hash,
+  { phase = "arrived", plain = true } = {},
+) {
   const errors = [];
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
@@ -20,7 +38,7 @@ export async function bootGlobe(page, hash, { phase = "arrived" } = {}) {
   page.on("pageerror", (e) => errors.push(e.message));
   // A pin press starts the arrival prefetch: its city data is answered here.
   await routeCityData(page);
-  await page.goto(`/labs/globe/#${hash}`);
+  await page.goto(`/labs/globe/#${plain ? plainGlobe(hash) : hash}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
     null,
@@ -38,9 +56,10 @@ export async function bootGlobe(page, hash, { phase = "arrived" } = {}) {
 /**
  * Waits until the page has arrived at `target` and its tiles have settled.
  * A new view loads every committed level under SwiftShader: 30-50 s
- * measured, so 60 s timed out once on a loaded machine.
+ * measured, so 60 s timed out once on a loaded machine. `timeoutMs` for a
+ * place measured slower (the Alps at 46.5 N 9 E: 107-116 s, 2026-10-05).
  */
-export async function arriveAt(page, target) {
+export async function arriveAt(page, target, { timeoutMs = 120_000 } = {}) {
   const started = Date.now();
   // Children of a just-parsed tile are queued only at the next update, so
   // one poll can see "nothing pending" between two levels: the tile count
@@ -65,7 +84,7 @@ export async function arriveAt(page, target) {
       return performance.now() - w.__settleSince >= 1000;
     },
     target,
-    { timeout: 120_000, polling: 100 },
+    { timeout: timeoutMs, polling: 100 },
   );
   // The settle time per view: a slow creep shows here long before 120 s.
   console.log(
@@ -98,6 +117,9 @@ export async function applyHash(page, hash) {
  * rather than re-measuring against a brighter default.
  */
 const PRE_ROUND4_LOOK = {
+  // The plain globe: the relief is the default since F2a (DEC-GL5-15), and
+  // these floors were measured without it.
+  relief: "0",
   sunIntensity: String(Math.PI),
   nightGain: "1",
   sunSize: "0.533",

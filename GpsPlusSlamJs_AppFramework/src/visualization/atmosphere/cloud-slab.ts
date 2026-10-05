@@ -32,6 +32,7 @@ import {
   CLOUD_TEXTURE_SIZE,
   cloudDensity,
   cloudLitRadiance,
+  cloudThreshold,
 } from './cloud-layer.js';
 import {
   CLOUD_SHEET,
@@ -125,21 +126,28 @@ export function cloudSlabZenithOpacity(
 /**
  * The part of a ray from height `y` along `dir` that lies in the slab and
  * inside the far fade, as distances along the ray; null when there is none.
- * Analytic, never from the mesh's faces. GLSL twin: the interval of
- * `CLOUD_SLAB_FRAGMENT_GLSL`.
+ * Analytic, never from the mesh's faces. `sceneM`, the distance to the
+ * scene along the ray (the scene's depth, F2c), ends it there: a ridge in
+ * front of the slab leaves nothing to march. GLSL twin: the interval of
+ * `CLOUD_SLAB_FRAGMENT_GLSL` (the scene's part behind
+ * `ATM_SLAB_SCENE_DEPTH`).
  *
- * @throws RangeError for a non-finite height or a direction that is not
- *   finite or has no length.
+ * @throws RangeError for a non-finite height, a direction that is not
+ *   finite or has no length, or a scene distance that is negative or NaN.
  */
 export function cloudSlabInterval(
   y: number,
-  dir: Vec3
+  dir: Vec3,
+  sceneM: number = Number.POSITIVE_INFINITY
 ): { inM: number; outM: number } | null {
   const length = Math.hypot(dir[0], dir[1], dir[2]);
   if (!(Number.isFinite(y) && Number.isFinite(length) && length > 0)) {
     throw new RangeError(
       `slab ray needs a finite height and direction, got ${y}, ${dir.join(', ')}`
     );
+  }
+  if (!(sceneM >= 0)) {
+    throw new RangeError(`the scene distance must be >= 0, got ${sceneM}`);
   }
   const dy = dir[1] / length;
   const horizontal = Math.hypot(dir[0], dir[2]) / length;
@@ -158,6 +166,7 @@ export function cloudSlabInterval(
     inM = Math.max(Math.min(tBase, tTop), 0);
     outM = Math.min(Math.max(tBase, tTop), cap);
   }
+  outM = Math.min(outM, sceneM);
   return outM > inM ? { inM, outM } : null;
 }
 
@@ -378,6 +387,69 @@ export function cloudSlabRenderOrder(cameraY: number): number {
   return cameraY > CLOUD_SLAB.baseM ? 1 : -1;
 }
 
+/** The covers the threshold table holds: k / COVER_STEPS, k = 0 … COVER_STEPS. */
+const COVER_STEPS = 32;
+/** The threshold that draws no cloud: above any noise value. */
+const CLEAR_THRESHOLD = 2;
+let coverThresholds: readonly number[] | undefined;
+
+/**
+ * The noise threshold for each cover k / 32, k = 0 … 32 (globe volume-cloud
+ * plan 2026-10-05-0016, C1): `cloudThreshold` (the noise's own quantile, the
+ * rule the global cover uses), clear (2) at cover 0 and never above it.
+ * Computed once. The shader's `atmSlabCoverThresholds`.
+ */
+export function cloudSlabCoverThresholds(): readonly number[] {
+  coverThresholds ??= Array.from({ length: COVER_STEPS + 1 }, (_, k) =>
+    Math.min(cloudThreshold(k / COVER_STEPS), CLEAR_THRESHOLD)
+  );
+  return coverThresholds;
+}
+
+/**
+ * The threshold for a local `cover` (0 … 1, clamped), linear between the
+ * table's entries. GLSL twin: `atmSlabThresholdAt` under
+ * `ATM_SLAB_COVERAGE`.
+ *
+ * @throws RangeError for a cover that is NaN.
+ */
+export function cloudSlabThresholdForCover(cover: number): number {
+  if (Number.isNaN(cover)) {
+    throw new RangeError('the cover must be a number, got NaN');
+  }
+  const table = cloudSlabCoverThresholds();
+  const c = Math.min(Math.max(cover, 0), 1) * COVER_STEPS;
+  const k = Math.min(Math.floor(c), COVER_STEPS - 1);
+  const f = c - k;
+  if (f === 0) return table[k]!;
+  if (f === 1) return table[k + 1]!;
+  return table[k]! + (table[k + 1]! - table[k]!) * f;
+}
+
+/**
+ * The threshold `threshold` faded to clear (2) around the camera: unchanged
+ * within 0.7 `radiusM` of it horizontally, clear from `radiusM`, smoothstep
+ * between, so the volume's disc ends without an edge. GLSL twin: under
+ * `ATM_SLAB_DISC`.
+ *
+ * @throws RangeError for a radius that is not positive and finite, or a
+ *   negative or NaN distance.
+ */
+export function cloudSlabDiscThreshold(
+  threshold: number,
+  horizontalM: number,
+  radiusM: number
+): number {
+  if (!(radiusM > 0 && Number.isFinite(radiusM))) {
+    throw new RangeError(`the disc radius must be positive, got ${radiusM}`);
+  }
+  if (!(horizontalM >= 0)) {
+    throw new RangeError(`the distance must be >= 0, got ${horizontalM}`);
+  }
+  const share = smoothstep(0.7 * radiusM, radiusM, horizontalM);
+  return threshold + (CLEAR_THRESHOLD - threshold) * share;
+}
+
 /** A sample's weight by horizontal distance: the sheet's far fade. */
 export function cloudSlabFarWeight(horizontalM: number): number {
   return (
@@ -410,6 +482,12 @@ export interface CloudSlabMarchInput {
   /** The combined noise at world x/z (metres) and a level of detail. */
   readonly sample: (xM: number, zM: number, lod: number) => number;
   readonly threshold: number;
+  /**
+   * The threshold at world x/z (metres), for a coverage map and the disc
+   * (C1: `cloudSlabThresholdForCover`, `cloudSlabDiscThreshold`); omitted:
+   * `threshold` everywhere. The shader's `atmSlabThresholdAt`.
+   */
+  readonly thresholdAt?: (xM: number, zM: number) => number;
   /** Radians per pixel (for the level of detail); 0 ignores the footprint. */
   readonly pixelAngle?: number;
   /** Where in each step the noise is sampled, [0, 1]; 0.5 (the middle) by default. */
@@ -474,11 +552,17 @@ export function cloudSlabMarch(
       cloudSlabLod(t, pixelAngle, stepM, horizontal)
     );
   // The thickness BEFORE its clamp: linear in the noise, so linear between
-  // nodes (see `cloudSlabOccupied`).
-  const raw = (noise: number) => T0 + heightScaleM * (noise - threshold);
+  // nodes (see `cloudSlabOccupied`); the threshold read at each node.
+  const raw = (noise: number, th: number) => T0 + heightScaleM * (noise - th);
+  const thresholdAt = input.thresholdAt;
+  const nodeThreshold = (t: number) =>
+    thresholdAt === undefined
+      ? threshold
+      : thresholdAt(camera[0] + dir[0] * t, camera[2] + dir[2] * t);
   const height = (t: number) => camera[1] + dir[1] * t - baseM;
   let ta = interval.inM;
   let na = read(ta, spacing(1 / steps, share) * lengthM);
+  let tha = nodeThreshold(ta);
   let top: [number, number, number] = [0, 0, 0];
   let cosToSun = 0;
   if (light) {
@@ -499,8 +583,9 @@ export function cloudSlabMarch(
   for (let k = 1; k < nodes.length; k++) {
     const tb = interval.inM + nodes[k]!;
     const nb = read(tb, tb - ta);
-    const ra = raw(na);
-    const rb = raw(nb);
+    const thb = nodeThreshold(tb);
+    const ra = raw(na, tha);
+    const rb = raw(nb, thb);
     const occupied =
       tb > ta ? cloudSlabOccupied(ra - height(ta), rb - height(tb)) : null;
     result.stepsTaken = k;
@@ -532,7 +617,7 @@ export function cloudSlabMarch(
         const under = cloudSlabSourceRadiance(
           light.sunTransmittance,
           cosToSun,
-          cloudDensity(na + (nb - na) * 0.5 * (fa + fb), threshold),
+          cloudDensity(na + (nb - na) * 0.5 * (fa + fb), 0.5 * (tha + thb)),
           light.zenith,
           light.sunDir[1],
           0
@@ -548,6 +633,7 @@ export function cloudSlabMarch(
     }
     ta = tb;
     na = nb;
+    tha = thb;
   }
   result.opacity = 1 - transmittance;
   addForwardGlow(result, light, cosToSun, transmittance);
@@ -628,6 +714,9 @@ uniform mat4 atmSlabInverseProjection;
 uniform mat4 atmSlabCameraWorld;
 uniform vec4 atmSlabViewport;
 uniform float atmSlabPixelAngle;
+#ifdef ATM_SLAB_SCENE_DEPTH
+uniform sampler2D atmSlabSceneDepth;
+#endif
 const float ATM_SLAB_BASE = ${glslFloat(CLOUD_SLAB.baseM)};
 const float ATM_SLAB_TOP = ${glslFloat(CLOUD_SLAB.topM)};
 const float ATM_SLAB_SIGMA = ${glslFloat(CLOUD_SLAB.extinctionPerM)};
@@ -645,6 +734,36 @@ const float ATM_SLAB_TEXEL = ${glslFloat(TEXEL_M)};
 const float ATM_SLAB_UNIFORM_BLEND = ${glslFloat(CLOUD_SLAB.uniformBlendM)};
 const float ATM_SLAB_LIGHT_SERIES = ${glslFloat(CLOUD_SLAB.lightSeriesX)};
 const float ATM_SLAB_FORWARD_KNOWN = ${glslFloat(CLOUD_SLAB.forwardKnownFactor)};
+
+#ifdef ATM_SLAB_COVERAGE
+uniform float atmSlabCoverThresholds[33];
+// atm-slab-coverage-chunk
+// Twin of cloudSlabThresholdForCover.
+float atmSlabCoverThreshold(float cover) {
+  float c = clamp(cover, 0.0, 1.0) * 32.0;
+  int k = int(min(floor(c), 31.0));
+  return mix(atmSlabCoverThresholds[k], atmSlabCoverThresholds[k + 1], c - float(k));
+}
+#endif
+#ifdef ATM_SLAB_DISC
+uniform float atmSlabDiscM;
+#endif
+
+// The threshold at world x/z (twin of the march's thresholdAt): the cover
+// from the caller's map times the global cover (ATM_SLAB_COVERAGE), else
+// the global threshold; faded to clear around the camera (ATM_SLAB_DISC,
+// twin of cloudSlabDiscThreshold).
+float atmSlabThresholdAt(vec2 xz) {
+#ifdef ATM_SLAB_COVERAGE
+  float th = atmSlabCoverThreshold(atmSlabCoverageAt(xz) * atmCloudCover);
+#else
+  float th = atmCloudThreshold;
+#endif
+#ifdef ATM_SLAB_DISC
+  th = mix(th, 2.0, smoothstep(0.7 * atmSlabDiscM, atmSlabDiscM, length(xz - cameraPosition.xz)));
+#endif
+  return th;
+}
 
 // Twin of cloudSlabCumulativeM.
 float atmSlabCumulative(float h) {
@@ -699,6 +818,15 @@ void main() {
     tIn = max(min(tBase, tTop), 0.0);
     tOut = min(max(tBase, tTop), cap);
   }
+#ifdef ATM_SLAB_SCENE_DEPTH
+  float atmSceneDepth = texture2D(atmSlabSceneDepth, (gl_FragCoord.xy - atmSlabViewport.xy) / atmSlabViewport.zw).r;
+  // The march ends at the scene (twin of cloudSlabInterval's sceneM): its
+  // point through the same inverse projection as the ray; 1 is cleared.
+  if (atmSceneDepth < 1.0) {
+    vec4 atmScene = atmSlabInverseProjection * vec4(ndc, atmSceneDepth * 2.0 - 1.0, 1.0);
+    tOut = min(tOut, length(atmScene.xyz / atmScene.w));
+  }
+#endif
   if (tOut <= tIn) discard;
   float lengthM = tOut - tIn;
   // Twin of cloudSlabUniformShare: quadratic from below and inside, uniform
@@ -722,13 +850,15 @@ void main() {
   float first = 1.0 / float(ATM_SLAB_STEPS);
   float ta = tIn;
   float na = atmSlabNoiseAt(ta, mix(first * first, first, share) * lengthM, dir, horizontal);
+  float tha = atmSlabThresholdAt(cameraPosition.xz + dir.xz * ta);
   // atm-slab-loop-begin
   for (int i = 0; i <= ATM_SLAB_STEPS; i++) {
     float u = i == ATM_SLAB_STEPS ? 1.0 : (float(i) + jitter) / float(ATM_SLAB_STEPS);
     float tb = tIn + mix(u * u, u, share) * lengthM;
     float nb = atmSlabNoiseAt(tb, tb - ta, dir, horizontal);
-    float ra = atmSlabRawThickness(na, atmCloudThreshold);
-    float rb = atmSlabRawThickness(nb, atmCloudThreshold);
+    float thb = atmSlabThresholdAt(cameraPosition.xz + dir.xz * tb);
+    float ra = atmSlabRawThickness(na, tha);
+    float rb = atmSlabRawThickness(nb, thb);
     float da = ra - (y + dir.y * ta - ATM_SLAB_BASE);
     float db = rb - (y + dir.y * tb - ATM_SLAB_BASE);
     if (tb > ta && (da >= 0.0 || db >= 0.0)) {
@@ -756,7 +886,7 @@ void main() {
       float c1 = clamp(mix(ra, rb, fb), 0.0, deck);
       highp float sunA = sunScale * (atmSlabCumulative(c0) - atmSlabCumulative(min(h0, c0)));
       highp float sunB = sunScale * (atmSlabCumulative(c1) - atmSlabCumulative(min(h1, c1)));
-      vec3 under = mix(under0, under1, atmCloudDensity(mix(na, nb, 0.5 * (fa + fb)), atmCloudThreshold));
+      vec3 under = mix(under0, under1, atmCloudDensity(mix(na, nb, 0.5 * (fa + fb)), 0.5 * (tha + thb)));
       colour += transmittance * w * (under * a + (top - under) * atmSlabInStepLight(tau, sunA, sunB));
       alpha += transmittance * a * w;
       transmittance *= exp(-tau);
@@ -764,6 +894,7 @@ void main() {
     }
     ta = tb;
     na = nb;
+    tha = thb;
   }
   // atm-slab-loop-end
   // Premultiplied: back to straight colour, with a floor against division.
@@ -860,6 +991,106 @@ export function setCloudSlabSteps(slab: THREE.Mesh, steps: number): void {
 }
 
 /**
+ * Gives the slab the scene's depth (globe F2 plan 2026-10-03-1922, F2c), or
+ * takes it away (null). With a depth the march ends at the scene and the
+ * depth test is OFF: as a back-faced prism under the depth test, a ridge in
+ * front of the prism's far face hid the cloud in front of the ridge too.
+ * Without one the slab is today's. The depth must cover the same viewport
+ * as the slab's render and must not be attached to the target the slab
+ * draws into (a read of an attached depth is a feedback loop). Only a
+ * switch between depth and none builds a new program; swapping one depth
+ * for another (a resize) is a uniform.
+ */
+export function setCloudSlabSceneDepth(
+  slab: THREE.Mesh,
+  depth: THREE.Texture | null
+): void {
+  const material = slab.material as THREE.ShaderMaterial;
+  const uniform = material.uniforms['atmSlabSceneDepth'];
+  if (uniform === undefined) {
+    throw new TypeError('not a cloud slab: it has no scene depth uniform');
+  }
+  const had = uniform.value !== null;
+  uniform.value = depth;
+  if (had === (depth !== null)) return;
+  const { ATM_SLAB_SCENE_DEPTH: _old, ...rest } = material.defines;
+  material.defines =
+    depth === null ? rest : { ...rest, ATM_SLAB_SCENE_DEPTH: 1 };
+  material.depthTest = depth === null;
+  material.needsUpdate = true;
+}
+
+/** Where a caller's coverage chunk goes in the fragment shader. */
+const COVERAGE_CHUNK = '// atm-slab-coverage-chunk';
+
+/**
+ * A coverage map for the slab (globe volume-cloud plan 2026-10-05-0016,
+ * C1), or none (null): `glsl` declares the caller's uniforms and defines
+ * `float atmSlabCoverageAt(vec2 xz)`, the local cover (0 … 1) at world x/z
+ * (metres), and `uniforms` are those uniforms. The local cover times the
+ * global cover becomes the column's threshold through the noise's quantiles
+ * (`cloudSlabThresholdForCover`), so the volume's clouds sit where the
+ * map has them. A new program on each change (a define and the shader).
+ *
+ * @throws RangeError for a chunk that does not define atmSlabCoverageAt.
+ */
+export function setCloudSlabCoverage(
+  slab: THREE.Mesh,
+  coverage: {
+    glsl: string;
+    uniforms: Record<string, THREE.IUniform>;
+  } | null
+): void {
+  const material = slab.material as THREE.ShaderMaterial;
+  const { ATM_SLAB_COVERAGE: _old, ...rest } = material.defines;
+  if (coverage === null) {
+    material.defines = rest;
+    material.fragmentShader = CLOUD_SLAB_FRAGMENT_GLSL;
+    material.needsUpdate = true;
+    return;
+  }
+  if (!/float\s+atmSlabCoverageAt\s*\(\s*vec2\s+\w+\s*\)/.test(coverage.glsl)) {
+    throw new RangeError(
+      'the coverage chunk must define float atmSlabCoverageAt(vec2 xz)'
+    );
+  }
+  Object.assign(material.uniforms, coverage.uniforms);
+  material.uniforms['atmSlabCoverThresholds']!.value = [
+    ...cloudSlabCoverThresholds(),
+  ];
+  material.defines = { ...rest, ATM_SLAB_COVERAGE: 1 };
+  material.fragmentShader = CLOUD_SLAB_FRAGMENT_GLSL.replace(
+    COVERAGE_CHUNK,
+    coverage.glsl
+  );
+  material.needsUpdate = true;
+}
+
+/**
+ * The slab's disc around the camera (C1): its clouds fade to clear from 0.7
+ * `radiusM` to `radiusM` horizontally (`cloudSlabDiscThreshold`), so a
+ * shell can draw the clouds beyond; null for no disc. A new program only
+ * when the disc is turned on or off; another radius is a uniform.
+ *
+ * @throws RangeError for a radius that is not positive and finite.
+ */
+export function setCloudSlabRadius(
+  slab: THREE.Mesh,
+  radiusM: number | null
+): void {
+  if (radiusM !== null && !(radiusM > 0 && Number.isFinite(radiusM))) {
+    throw new RangeError(`the disc radius must be positive, got ${radiusM}`);
+  }
+  const material = slab.material as THREE.ShaderMaterial;
+  const had = material.defines['ATM_SLAB_DISC'] !== undefined;
+  if (radiusM !== null) material.uniforms['atmSlabDiscM']!.value = radiusM;
+  if (had === (radiusM !== null)) return;
+  const { ATM_SLAB_DISC: _old, ...rest } = material.defines;
+  material.defines = radiusM === null ? rest : { ...rest, ATM_SLAB_DISC: 1 };
+  material.needsUpdate = true;
+}
+
+/**
  * The slab mesh, reading the given uniforms (the sky's LUTs, sun, scale and
  * the cloud uniforms, spread so one update reaches the sky and the slab) plus
  * its own ray uniforms, which `onBeforeRender` sets from the rendering
@@ -874,6 +1105,16 @@ export function createCloudSlab(
     atmSlabCameraWorld: { value: new THREE.Matrix4() },
     atmSlabViewport: { value: new THREE.Vector4(0, 0, 1, 1) },
     atmSlabPixelAngle: { value: 0 },
+    // Declared from the start, so turning the depth on is a define, not a
+    // new uniform set (`setCloudSlabSceneDepth`).
+    atmSlabSceneDepth: { value: null as THREE.Texture | null },
+    // The coverage map's threshold table and the disc's radius, declared
+    // from the start like the depth (set by setCloudSlabCoverage and
+    // setCloudSlabRadius; unread until their defines are on).
+    atmSlabCoverThresholds: {
+      value: new Array<number>(COVER_STEPS + 1).fill(CLEAR_THRESHOLD),
+    },
+    atmSlabDiscM: { value: 1 },
   };
   const material = new THREE.ShaderMaterial({
     name: 'atmosphere-cloud-slab',
