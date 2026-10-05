@@ -22,7 +22,6 @@ import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import {
   recordGpsEvent,
   recordQrDetection,
-  replayActions,
   selectGpsPositions,
   selectOdometryPositions,
   selectQrFusedEntries,
@@ -35,12 +34,9 @@ import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/fr
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { Texture } from "three";
 
-import {
-  assessReplayedJoin,
-  computeCaptureGeoJoin,
-  preflightCaptureJoin,
-  type ReplayedJoinState,
-} from "./capture-geo-join.js";
+import type { TourCaptureSpots } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { bakeCaptureSpots, posesOfCaptureSpots } from "./capture-bake.js";
+import type { CaptureWorldPose } from "./capture-geo-join.js";
 import { renderTourObjects } from "./content-placement.js";
 import { placeCapturedImagePlanes, placeImagePlanes } from "./image-planes.js";
 import type { ViewerMode } from "./mode.js";
@@ -670,8 +666,12 @@ export function createViewerPlacement(deps: {
       }
       return;
     }
+    // The baked spots live in tour.json (scan-pass plan S1): a tour whose
+    // manifest is still loading must not decline its photos for lacking a
+    // recording. The manifest's settle calls this trigger again.
+    if (ctx.tourManifestStatus === "pending") return;
     ctx.placementAttempted = true;
-    if (!current.hasRecording) {
+    if (!current.hasRecording && ctx.tourManifest?.captureSpots === undefined) {
       // No walk to place; the ring (if the tour has codes) waits for a lock.
       ctx.joinDeclined = true;
       ctx.placement = { kind: "declined", reason: "no recording in this tour" };
@@ -849,34 +849,19 @@ export function createViewerPlacement(deps: {
   }
 
   /**
-   * The capture-time geo join's viewer glue: gates → chunked replay →
-   * per-capture placement. Returns false whenever the ring should be placed
-   * instead; the reason lands in the AR status line so a decline is
-   * visible, never silent.
+   * The recorded photos' spots for this run: the ones the creator's Finish
+   * baked into `tour.json` (scan-pass plan S1, S-D11), else the same bake
+   * run here over the tour's recording (a tour never finished since S1).
+   * Null whenever the ring should be placed instead; the reason lands in
+   * the AR status line so a decline is visible, never silent.
    */
-  async function placeJoinedCapturePlanes(
+  async function captureSpotsForRun(
     current: TourSession,
-    scene: Scene,
-    viewerZero: { lat: number; lon: number },
     generation: number,
-  ): Promise<boolean> {
-    const [meta, actions] = await Promise.all([
-      current.loadSessionMeta(),
-      current.loadRecordingActions(),
-    ]);
-    if (actions === null) {
-      ctx.placement = { kind: "declined", reason: "no recording in this tour" };
-      return false;
-    }
-    const pre = preflightCaptureJoin(
-      meta,
-      actions.map((a) => a.type),
-    );
-    if (!pre.ok) {
-      ctx.placement = { kind: "declined", reason: pre.reason };
-      return false;
-    }
-    const state = (await replayActions(actions, {
+  ): Promise<TourCaptureSpots | null> {
+    const baked = ctx.tourManifest?.captureSpots;
+    if (baked !== undefined) return baked;
+    const bake = await bakeCaptureSpots(current, {
       // Same bail contract as `decodeJoinedPoses` below. `onChunk` alone
       // gave this run a place to NOTICE it had been superseded but no way
       // to act: it could skip the status label while the replay kept
@@ -888,20 +873,33 @@ export function createViewerPlacement(deps: {
         ctx.placement = { kind: "placing", phase: "reading-walk", done, total };
         hooks.renderArStatus();
       },
-    })) as unknown as ReplayedJoinState;
-    // An aborted replay returns a PARTIAL state by construction, so
-    // `assessReplayedJoin` would decline it and write a status naming the
-    // missing GPS data - a wrong reason, into a UI a newer run now owns.
-    // Bail silently instead.
-    if (generation !== ctx.planesRunGeneration) return false;
-    const verdict = assessReplayedJoin(state);
-    if (!verdict.ok) {
-      ctx.placement = { kind: "declined", reason: verdict.reason };
-      return false;
+    });
+    // An aborted replay's state is PARTIAL by construction, so its decline
+    // names a wrong reason, into a UI a newer run now owns. Bail silently.
+    if (generation !== ctx.planesRunGeneration) return null;
+    if (bake.kind === "declined") {
+      ctx.placement = { kind: "declined", reason: bake.reason };
+      return null;
     }
+    return bake.spots;
+  }
+
+  /**
+   * The capture-time geo join's viewer glue: the photos' spots (baked or
+   * baked here) → per-capture placement. Returns false whenever the ring
+   * should be placed instead.
+   */
+  async function placeJoinedCapturePlanes(
+    current: TourSession,
+    scene: Scene,
+    viewerZero: { lat: number; lon: number },
+    generation: number,
+  ): Promise<boolean> {
+    const spots = await captureSpotsForRun(current, generation);
+    if (spots === null) return false;
     const paired = await decodeJoinedPoses(
       current,
-      computeCaptureGeoJoin(state),
+      posesOfCaptureSpots(spots),
       viewerZero,
       generation,
     );
@@ -938,8 +936,8 @@ export function createViewerPlacement(deps: {
       kind: "placed",
       placedKind: "capture-spots",
       count: ctx.imagePlanes.count,
-      fixes: verdict.quality.pairCount,
-      gpsAccuracyMedianM: verdict.quality.gpsAccuracyMedianM,
+      fixes: spots.fixes,
+      gpsAccuracyMedianM: spots.gpsAccuracyMedianM,
     };
     deps.viewingLog?.placed({
       what: "capture-spots",
@@ -947,8 +945,8 @@ export function createViewerPlacement(deps: {
       count: ctx.imagePlanes.count,
       zero: viewerZero,
       join: {
-        fixes: verdict.quality.pairCount,
-        gpsAccuracyMedianM: verdict.quality.gpsAccuracyMedianM,
+        fixes: spots.fixes,
+        gpsAccuracyMedianM: spots.gpsAccuracyMedianM,
       },
     });
     hooks.renderArStatus();
@@ -962,7 +960,7 @@ export function createViewerPlacement(deps: {
    *  phase — reports progress (finding 4's async-UI half). */
   async function decodeJoinedPoses(
     current: TourSession,
-    poses: readonly ReturnType<typeof computeCaptureGeoJoin>[number][],
+    poses: readonly CaptureWorldPose[],
     viewerZero: { lat: number; lon: number },
     generation: number,
   ): Promise<

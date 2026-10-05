@@ -403,3 +403,109 @@ describe('serializeTourManifest', () => {
     ).toThrow(TourManifestValidationError);
   });
 });
+
+describe('baked capture spots (scan-pass plan S1, S-D11)', () => {
+  // Why: a recorded photo's spot is computed ONCE, at the creator's Finish,
+  // so a visitor neither downloads the walk nor replays it. The field is
+  // the "baked" marker the viewer trusts instead of its live join, so a
+  // malformed one must be refused here, never placed at a guessed spot.
+  const capture = {
+    image: 'images/frame-0001.jpg',
+    geo: {
+      lat: 48.1374,
+      lon: 11.5755,
+      alt: 520,
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    },
+  };
+  const spots = { fixes: 46, gpsAccuracyMedianM: 3.5, captures: [capture] };
+
+  it('reads and round-trips the baked spots', () => {
+    const manifest = parseTourManifest({
+      version: 2,
+      minor: 1,
+      objects: [],
+      captureSpots: spots,
+    });
+    expect(manifest.captureSpots).toEqual(spots);
+    expect(
+      parseTourManifest(JSON.parse(serializeTourManifest(manifest)))
+    ).toEqual(manifest);
+  });
+
+  it('keeps an unknown median accuracy unknown (null), never a guessed number', () => {
+    const manifest = parseTourManifest({
+      version: 2,
+      minor: 1,
+      objects: [],
+      captureSpots: { ...spots, gpsAccuracyMedianM: null },
+    });
+    expect(manifest.captureSpots?.gpsAccuracyMedianM).toBeNull();
+  });
+
+  it('is written at minor 1, the revision that added it, so an older writer refuses to drop it', () => {
+    const written = JSON.parse(
+      serializeTourManifest({
+        ...createEmptyTourManifest(),
+        captureSpots: spots,
+      })
+    ) as { version: number; minor: number };
+    expect(written.version).toBe(2);
+    expect(written.minor).toBe(1);
+  });
+
+  it('a tour WITHOUT baked spots is still written as version 1, whatever minor it was read at', () => {
+    // Lossless: this reader knows every field up to its own minor, so a
+    // file read at minor 1 that carries none of them needs nothing newer.
+    const read = parseTourManifest({ version: 2, minor: 1, objects: [pin] });
+    expect(JSON.parse(serializeTourManifest(read))).toEqual({
+      version: 1,
+      objects: [pin],
+    });
+  });
+
+  it.each([
+    ['a path that escapes the zip', { ...capture, image: '../x.jpg' }],
+    ['an absolute path', { ...capture, image: '/images/x.jpg' }],
+    ['a type that is not an image', { ...capture, image: 'images/x.glb' }],
+    ['a type outside the allowlist', { ...capture, image: 'images/x.svg' }],
+    [
+      'a pose without a rotation (photos face as captured)',
+      { ...capture, geo: { lat: 48, lon: 11, alt: 520, headingDeg: 10 } },
+    ],
+  ])('refuses a capture with %s', (_name, bad) => {
+    expect(() =>
+      parseTourManifest({
+        version: 2,
+        minor: 1,
+        objects: [],
+        captureSpots: { ...spots, captures: [bad] },
+      })
+    ).toThrow(TourManifestValidationError);
+  });
+
+  it.each([
+    ['no captures', { ...spots, captures: [] }],
+    ['the same photo twice', { ...spots, captures: [capture, capture] }],
+    ['a fix count that is not a positive integer', { ...spots, fixes: 0 }],
+    ['a negative accuracy', { ...spots, gpsAccuracyMedianM: -1 }],
+    ['an accuracy that is not a number', { ...spots, gpsAccuracyMedianM: '3' }],
+    ['captures that are not a list', { ...spots, captures: {} }],
+  ])('refuses spots with %s', (_name, bad) => {
+    expect(() =>
+      parseTourManifest({
+        version: 2,
+        minor: 1,
+        objects: [],
+        captureSpots: bad,
+      })
+    ).toThrow(TourManifestValidationError);
+  });
+
+  it('a version 1 document carries no baked spots (the field is version 2)', () => {
+    expect(
+      parseTourManifest({ version: 1, objects: [], captureSpots: spots })
+        .captureSpots
+    ).toBeUndefined();
+  });
+});

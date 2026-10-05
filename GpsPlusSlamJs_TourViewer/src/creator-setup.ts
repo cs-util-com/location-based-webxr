@@ -67,12 +67,14 @@ import {
   serializeSignedTourManifest,
   signedManifestFilesOf,
   successorManifest,
+  TourIntegrityError,
   type SignedTourManifest,
   type TourFileRecord,
 } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
   createEmptyTourManifest,
   serializeTourManifest,
+  type TourCaptureSpots,
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -85,7 +87,11 @@ import {
   selectQrFusedEntries,
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
-import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
+import {
+  ArchiveLimitError,
+  rebuildZipWithEntries,
+} from "gps-plus-slam-app-framework/storage";
+import { bakeCaptureSpots } from "./capture-bake.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
@@ -179,7 +185,7 @@ import { isDriveUrl } from "./open-errors.js";
 import { createPrintSizeCheck } from "./print-size-check.js";
 import type { ScanOpen } from "./scan-open.js";
 import type { TourViewerSeams } from "./seams.js";
-import { archiveFileName } from "./tour-session.js";
+import { archiveFileName, type TourSession } from "./tour-session.js";
 import {
   endQrPipeline,
   type ArController,
@@ -2810,6 +2816,35 @@ export function wireCreatorSetup(deps: {
     void measureCode(true);
   });
 
+  /**
+   * The recorded photos' spots for this Finish (scan-pass plan S1, S-D11):
+   * the tour's own when it carries them, else baked from its recording,
+   * else none - the tour then keeps the visitor's live join, as before S1.
+   * A recording that cannot be read or joined never fails the Finish; a
+   * cap's refusal and a failed integrity check do, as every read's does.
+   */
+  async function captureSpotsForFinish(
+    current: TourSession,
+    manifest: TourManifest,
+  ): Promise<TourCaptureSpots | undefined> {
+    if (manifest.captureSpots !== undefined) return manifest.captureSpots;
+    if (!current.hasRecording) return undefined;
+    try {
+      const bake = await bakeCaptureSpots(current, {
+        shouldContinue: () => ctx.session === current,
+        onChunk: (done, total) => {
+          ctx.finishProgress = FINISH_LABELS.placingPhotos(done, total);
+          renderAuthorReadout();
+        },
+      });
+      return bake.kind === "baked" ? bake.spots : undefined;
+    } catch (err) {
+      if (err instanceof ArchiveLimitError) throw err;
+      if (err instanceof TourIntegrityError) throw err;
+      return undefined;
+    }
+  }
+
   dom.finishButton.addEventListener("click", () => {
     const current = ctx.session;
     if (
@@ -2860,9 +2895,12 @@ export function wireCreatorSetup(deps: {
         // the new ones appended and the deleted ones filtered out (plan
         // §3.4, M4); the photos' bytes become content entries next to it.
         const manifest = ctx.tourManifest ?? createEmptyTourManifest();
+        const captureSpots = await captureSpotsForFinish(current, manifest);
+        if (ctx.session !== current) return; // re-opened meanwhile
         const deleted = [...ctx.deletedObjectIds];
         const written: TourManifest = {
           ...manifest,
+          ...(captureSpots === undefined ? {} : { captureSpots }),
           // Never an id twice, and not for tidiness: the serializer REJECTS
           // duplicates, so one restored object that is already in the
           // manifest would make every finish throw - for as long as the

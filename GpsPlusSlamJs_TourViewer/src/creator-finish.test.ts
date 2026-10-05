@@ -30,8 +30,10 @@
  */
 import { describe, expect, it } from "vitest";
 import { Matrix4, Quaternion, Vector3 } from "three";
+import { existsSync, readFileSync } from "node:fs";
 import {
   DecompressionBudget,
+  loadActionsFromZip,
   packFilesAsZip,
 } from "gps-plus-slam-app-framework/storage";
 import {
@@ -43,7 +45,10 @@ import {
   parseTourManifest,
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourManifest,
+  TourObject,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { wireCreatorSetup } from "./creator-setup.js";
 import type { CreatorSetupDom } from "./creator-setup.js";
@@ -259,22 +264,29 @@ async function wireFinishable(options: {
   /** A REAL open session in place of the fake one (its archive must carry
    *  `options.hosted` in `${WRAP}tour.json` and the level file). */
   session?: TourSession;
+  /** Merged over the fake session (a recording's readers, scan-pass S1). */
+  sessionExtras?: Record<string, unknown>;
+  /** Merged over the in-memory manifest the Finish starts from. */
+  manifestExtras?: Partial<TourManifest>;
 }) {
   const blob = await hostedArchive(options.hosted, options.hostedContent);
   const dom = fakeDom();
   const ctx = createTourViewerSession();
-  ctx.session = (options.session ??
-    fakeSession(
+  ctx.session = (options.session ?? {
+    ...(fakeSession(
       blob,
       options.hostedName ?? null,
       options.budget,
       (options.hostedContent ?? []).map((c) => c.path),
-    )) as never;
+    ) as object),
+    ...options.sessionExtras,
+  }) as never;
   ctx.mintedLevel = { id: LEVEL_ID, json: '{"measured":true}' };
   ctx.tourManifestStatus = "settled";
   ctx.tourManifest = {
     ...createEmptyTourManifest(),
     objects: [...options.hosted],
+    ...options.manifestExtras,
   };
   ctx.deletedObjectIds = [...(options.deleted ?? [])];
   ctx.placedObjects = [
@@ -809,5 +821,134 @@ describe("the finish settles the AR visit still running (authoring plan 2026-09-
     );
     expect(settles).toHaveLength(1);
     expect(ctx.mintedLevel).toBe(level);
+  });
+});
+
+describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)", () => {
+  // Why these tests matter: the baked spots are what every visitor places
+  // instead of replaying the walk, and their presence switches the
+  // visitor's live join OFF. So the Finish must bake exactly when the tour
+  // carries a recording it can join, never write the marker for nothing,
+  // and never let a recording it cannot join stop the creator's Finish.
+  createTourViewerStore();
+  const FIXTURE = new URL(
+    "../../GpsPlusSlamJs_PhysicsDemo/playwright-tests/fixtures/sample-recording.zip",
+    import.meta.url,
+  );
+
+  async function recordingExtras(odomCoordVersion = 5) {
+    if (!existsSync(FIXTURE)) {
+      throw new Error("creator-finish: the shared sample-recording.zip moved");
+    }
+    const bytes = new Uint8Array(readFileSync(FIXTURE));
+    const actions = (await loadActionsFromZip(bytes)).map((e) => e.action);
+    const images = Array.from(
+      { length: 6 },
+      (_, i) => `images/frame-${String(i + 1).padStart(6, "0")}.jpg`,
+    );
+    let replays = 0;
+    return {
+      extras: {
+        hasRecording: true,
+        entries: [
+          { filename: `${WRAP}tour.json` },
+          { filename: `${WRAP}qr/${LEVEL_ID}.json` },
+          ...images.map((filename) => ({ filename, isImage: true })),
+        ],
+        loadSessionMeta: () => Promise.resolve({ odomCoordVersion }),
+        loadRecordingActions: () => {
+          replays += 1;
+          return Promise.resolve(actions);
+        },
+      },
+      replays: () => replays,
+    };
+  }
+
+  async function writtenManifest(ctx: {
+    rebuiltZip: { blob: Blob } | null;
+  }): Promise<Record<string, unknown>> {
+    const bytes = readStoredEntryBytes(
+      new Uint8Array(await ctx.rebuiltZip!.blob.arrayBuffer()),
+      `${WRAP}tour.json`,
+    );
+    return JSON.parse(new TextDecoder().decode(bytes)) as Record<
+      string,
+      unknown
+    >;
+  }
+
+  it("writes the spots of a tour that carries a recording, at minor 1", async () => {
+    const recording = await recordingExtras();
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      sessionExtras: recording.extras,
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(ctx.finishError).toBeNull();
+    const written = await writtenManifest(ctx);
+    expect(written).toMatchObject({ version: 2, minor: 1 });
+    const spots = parseTourManifest(written).captureSpots;
+    // 5 of 6: the fixture's first photo precedes the GPS zero.
+    expect(spots?.captures).toHaveLength(5);
+    // The in-memory manifest advances with it, as with objects.
+    expect(ctx.tourManifest?.captureSpots).toEqual(spots);
+  });
+
+  it("does not bake again when the tour already carries its spots", async () => {
+    const recording = await recordingExtras();
+    const spots = {
+      fixes: 9,
+      gpsAccuracyMedianM: 2,
+      captures: [
+        {
+          image: "images/frame-000002.jpg",
+          geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+        },
+      ],
+    };
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      sessionExtras: recording.extras,
+      manifestExtras: { captureSpots: spots as never },
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(recording.replays()).toBe(0);
+    expect(parseTourManifest(await writtenManifest(ctx)).captureSpots).toEqual(
+      spots,
+    );
+  });
+
+  it("finishes WITHOUT the marker when the recording cannot be joined", async () => {
+    const recording = await recordingExtras(3);
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      sessionExtras: recording.extras,
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(ctx.finishError).toBeNull();
+    expect(await writtenManifest(ctx)).not.toHaveProperty("captureSpots");
+  });
+
+  it("finishes without the marker when reading the recording fails", async () => {
+    const recording = await recordingExtras();
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      sessionExtras: {
+        ...recording.extras,
+        loadRecordingActions: () => Promise.reject(new Error("bad stream")),
+      },
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(ctx.finishError).toBeNull();
+    expect(await writtenManifest(ctx)).not.toHaveProperty("captureSpots");
   });
 });

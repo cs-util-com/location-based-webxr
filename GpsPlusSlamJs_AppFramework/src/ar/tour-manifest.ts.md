@@ -13,8 +13,8 @@ tour kit plan K1 and §8 D7
 ## Public API
 
 - `TOUR_MANIFEST_VERSION = 2` (the format's major number) and
-  `TOUR_MANIFEST_MINOR = 0` (the newest additive revision this module
-  knows).
+  `TOUR_MANIFEST_MINOR = 1` (the newest additive revision this module
+  knows; minor 1 added `captureSpots`).
 - `parseTourManifest(data: unknown): TourManifest` - validates every field;
   throws `TourManifestValidationError` naming the object
   (`"objects[3].geo.lat" …`, `"stations[0].steps[2].block.asset" …`).
@@ -23,17 +23,39 @@ tour kit plan K1 and §8 D7
   version 1 document MIGRATES.
 - `serializeTourManifest(manifest): string` - re-validates through the
   reader, refuses a manifest of a newer minor, then pretty-prints - as
-  `{ version: 1, objects }` when nothing in it needs version 2 (below).
+  `{ version: 1, objects }` when nothing in it needs version 2, else at
+  the lowest minor its content needs (below).
 - `createEmptyTourManifest(): TourManifest` - `{ version: 2, minor: 0,
 order: "fixed", objects: [], assets: [], stations: [] }`, the starter
   zip's content.
 - Types `TourManifest`, `TourObject = TourPin | TourPhoto` (a
   discriminated union on `kind`, so a renderer never asserts a field the
-  parser guaranteed), `TourObjectKind`; `TourManifestValidationError`; and
+  parser guaranteed), `TourObjectKind`, `TourCaptureSpots` and
+  `TourCapture` (below); `TourManifestValidationError`; and
   re-exported from `tour-stations.ts`: `TourAsset`, `TourAssetKind`,
   `TourOrder`, `TourStation`, `TourStationAnchor`, `TourStep`,
   `TourStepAdvance`, `TourBlock`, `TourChoiceOption`, `TourQuizOption`,
   `TourQuizAnswer`, `TourQuizRoute`.
+
+## Baked capture spots (minor 1, scan-pass plan S1)
+
+- `captureSpots?: { fixes, gpsAccuracyMedianM, captures }`: a recorded
+  walk's photos, each `{ image, geo }`, placed ONCE at the creator's
+  Finish through the first settled alignment after the photo was taken
+  (S-D11), so a visitor neither downloads nor replays the walk. Its
+  presence is the "baked" marker: the Tour Viewer places these and never
+  runs its live join; a tour without it keeps the join.
+- `image` is the recording's own entry name (`add2dImage`'s `imageFile`,
+  e.g. `images/frame-000002.jpg`), not a `content/` path: checked by
+  the shared zip path rules (`storage/zip-entry-path.ts`) and the media
+  allowlist (an image type). `geo` must carry a `rotation` (photos face
+  as captured). `fixes` is a positive integer; `gpsAccuracyMedianM` is a
+  number >= 0 or `null` when the fixes reported none. `captures` is
+  non-empty (a bake that placed nothing writes no marker) and names each
+  photo once. A version 1 document carries none.
+- `fixes` and the accuracy describe the whole walk, as the live join's
+  status line did; with per-photo alignments they are the walk's quality,
+  not each spot's.
 
 ## The version policy (K1)
 
@@ -50,6 +72,11 @@ order: "fixed", objects: [], assets: [], stations: [] }`, the starter
   uses version 2 is written as version 2. In memory a manifest is always
   version 2; the downgrade is the text alone, and it reads back to the
   same manifest.
+- **The minor written is the lowest the content needs** (0, or 1 with
+  `captureSpots`), not the one the file was read at. That is lossless,
+  because this module knows every field up to its own minor, and it keeps
+  a tour without a newer field open and writable for older builds; the
+  empty manifest is minor 0 for the same reason.
 - **Minor (`minor`, default 0).** Additive revisions of version 2. A
   reader opens any minor; unknown fields are IGNORED at every level and at
   every minor (so a typo in a hand-edited optional field reads as absent:
@@ -115,6 +142,9 @@ parseTourManifest({ version: 1, objects: [] }).version; // 2 (migrated)
   a full v2 tour, a newer minor read with unknown fields ignored and
   refused on write, a newer minor's unknown values degraded (and the same
   file refused at this minor), a newer major and a malformed version
+  refused; the baked capture spots: read and round trip, written at
+  minor 1, a tour without them written as version 1 whatever minor it was
+  read at, a null median kept, and each malformed capture or spot set
   refused.
 - `tour-manifest.property.test.ts` - serialize→parse is the identity and
   parse is idempotent over generated manifests; a generated v1 manifest

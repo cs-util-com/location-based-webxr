@@ -114,6 +114,11 @@ taken instead of ringing them around the QR code.
 - **Accuracy model (owner-corrected, plan Rev 2):** the captures are a
   rigid constellation in SLAM space; the whole set shares the final
   alignment's error. Quality is reported, not guessed.
+  - Since scan-pass S1 (owner decision S-D11) the viewer and the Finish
+    pass each photo's own pick (`createCapturePickTracker`, through
+    `capture-bake.ts`), so the constellation is rigid only among photos
+    sharing a pick; `computeCaptureGeoJoin(state)` without the argument
+    keeps the old end-of-walk behaviour.
 - This module never touches the zip: the caller feeds it `loadSessionMeta()`,
   the action-type list, and the replayed state.
 

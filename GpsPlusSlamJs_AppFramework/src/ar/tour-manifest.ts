@@ -47,11 +47,12 @@
  * one place (§8 G7, `tour-signed-manifest.ts`).
  */
 
+import { assertSafeZipEntryPaths } from '../storage/zip-entry-path.js';
 import { isFiniteNumber, isRecord } from '../utils/json-guards.js';
 import { parseGeoPose } from './qr/geo-pose.js';
 import type { QrGeoPose } from './qr/qr-gps-vote.js';
 import { tourContentEntryName } from './tour-archive.js';
-import { tourMediaTypeOf } from './tour-media.js';
+import { tourMediaTypeOf, tourMediaTypeOfEntry } from './tour-media.js';
 import {
   parseTourAssets,
   parseTourStations,
@@ -78,8 +79,9 @@ export type {
 /** The manifest's format (major) version this module reads and writes. */
 export const TOUR_MANIFEST_VERSION = 2;
 
-/** The newest additive revision of version 2 this module knows. */
-export const TOUR_MANIFEST_MINOR = 0;
+/** The newest additive revision of version 2 this module knows. Minor 1
+ *  added `captureSpots` (scan-pass plan S1). */
+export const TOUR_MANIFEST_MINOR = 1;
 
 /** Format versions this reader still opens by migrating them. */
 const LEGACY_VERSION = 1;
@@ -115,6 +117,30 @@ export interface TourPhoto extends TourObjectBase {
 export type TourObject = TourPin | TourPhoto;
 export type TourObjectKind = TourObject['kind'];
 
+/** One recorded photo's spot, baked at the creator's Finish. */
+export interface TourCapture {
+  /** The photo's entry name as the recording wrote it (`add2dImage`). */
+  image: string;
+  /** Where it was taken and how it faced; always carries a rotation. */
+  geo: QrGeoPose;
+}
+
+/**
+ * The recorded photos' spots, computed ONCE at the creator's Finish
+ * (scan-pass plan S1, S-D11: each photo through the first settled
+ * alignment after it was taken), so a visitor neither downloads the walk
+ * nor replays it. Its presence is the "baked" marker: a viewer places
+ * these and never runs its live join; a tour without it keeps the join.
+ */
+export interface TourCaptureSpots {
+  /** The walk's GPS fixes paired with odometry, and their median accuracy
+   *  (null when the fixes reported none): the quality line a visitor sees,
+   *  as the live join reported it. */
+  fixes: number;
+  gpsAccuracyMedianM: number | null;
+  captures: TourCapture[];
+}
+
 export interface TourManifest {
   version: typeof TOUR_MANIFEST_VERSION;
   /** The additive revision the file was written at (0 when absent). */
@@ -128,6 +154,8 @@ export interface TourManifest {
   /** Media files named by their own ids (§8 G5). */
   assets: TourAsset[];
   stations: TourStation[];
+  /** Minor 1: the recorded photos' baked spots (see the type). */
+  captureSpots?: TourCaptureSpots;
 }
 
 const ORDERS: ReadonlySet<string> = new Set(['fixed', 'any', 'branch']);
@@ -158,7 +186,8 @@ function isPositiveInteger(v: unknown): v is number {
 export function createEmptyTourManifest(): TourManifest {
   return {
     version: TOUR_MANIFEST_VERSION,
-    minor: TOUR_MANIFEST_MINOR,
+    // The revision an empty tour needs; the writer raises it with content.
+    minor: 0,
     order: 'fixed',
     objects: [],
     assets: [],
@@ -269,6 +298,53 @@ function parseObjects(value: unknown, lenient: boolean): TourObject[] {
   return objects;
 }
 
+function parseCapture(value: unknown, at: string): TourCapture {
+  if (!isRecord(value)) fail(`"${at}" must be an object`);
+  const { image } = value;
+  if (typeof image !== 'string') fail(`"${at}.image" must be a string`);
+  try {
+    assertSafeZipEntryPaths([image]);
+  } catch (err) {
+    fail(`"${at}.image": ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (tourMediaTypeOfEntry(image)?.kind !== 'image') {
+    fail(`"${at}.image" must be an image type`);
+  }
+  const geo = parseGeoPose(value.geo, { path: `${at}.geo`, fail });
+  // Photos face as captured (capture-geo join D3): a heading alone would
+  // stand every plane upright, facing one bearing.
+  if (geo.rotation === undefined) fail(`"${at}.geo" must carry a rotation`);
+  return { image, geo };
+}
+
+/** The baked spots, or undefined when the document has none. */
+function parseCaptureSpots(value: unknown): TourCaptureSpots | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) fail('"captureSpots" must be an object');
+  const { fixes, gpsAccuracyMedianM, captures } = value;
+  if (!isPositiveInteger(fixes)) {
+    fail('"captureSpots.fixes" must be a positive integer');
+  }
+  if (
+    gpsAccuracyMedianM !== null &&
+    (!isFiniteNumber(gpsAccuracyMedianM) || gpsAccuracyMedianM < 0)
+  ) {
+    fail('"captureSpots.gpsAccuracyMedianM" must be null or a number >= 0');
+  }
+  // A bake that placed nothing is never written: the marker would stop the
+  // viewer's own join for a tour with nothing to show.
+  if (!Array.isArray(captures) || captures.length === 0) {
+    fail('"captureSpots.captures" must be a non-empty array');
+  }
+  const parsed = captures.map((c, i) =>
+    parseCapture(c, `captureSpots.captures[${String(i)}]`)
+  );
+  if (new Set(parsed.map((c) => c.image)).size !== parsed.length) {
+    fail('"captureSpots.captures" names a photo twice');
+  }
+  return { fixes, gpsAccuracyMedianM, captures: parsed };
+}
+
 /** The format version, checked: 1 (migrated) or 2; a newer one is named. */
 function formatVersionOf(value: unknown): 1 | 2 {
   if (value === LEGACY_VERSION || value === TOUR_MANIFEST_VERSION) {
@@ -320,6 +396,7 @@ function parseV2Parts(
     lenient,
   });
   const title = nonEmptyLabel(data.title);
+  const captureSpots = parseCaptureSpots(data.captureSpots);
   return {
     minor,
     ...(title === undefined ? {} : { title }),
@@ -330,6 +407,7 @@ function parseV2Parts(
       fail,
       lenient,
     }),
+    ...(captureSpots === undefined ? {} : { captureSpots }),
   };
 }
 
@@ -353,13 +431,23 @@ export function parseTourManifest(data: unknown): TourManifest {
     objects,
     assets: parts.assets,
     stations: parts.stations,
+    ...(parts.captureSpots === undefined
+      ? {}
+      : { captureSpots: parts.captureSpots }),
   };
+}
+
+/** The lowest revision of version 2 that carries everything the manifest
+ *  holds. Writing it, rather than the minor the file was read at, loses
+ *  nothing: this module knows every field up to its own minor. */
+function minorNeeded(manifest: TourManifest): number {
+  return manifest.captureSpots === undefined ? 0 : 1;
 }
 
 /** True when the manifest uses anything only version 2 can carry. */
 function needsVersion2(manifest: TourManifest): boolean {
   return (
-    manifest.minor !== 0 ||
+    minorNeeded(manifest) !== 0 ||
     manifest.title !== undefined ||
     manifest.order !== 'fixed' ||
     manifest.assets.length > 0 ||
@@ -374,7 +462,9 @@ function needsVersion2(manifest: TourManifest): boolean {
  * NEWER minor than {@link TOUR_MANIFEST_MINOR} is refused: it was read with
  * its unknown fields dropped, and writing it back would lose them. A
  * manifest that uses nothing of version 2 is written as VERSION 1
- * (`{ version: 1, objects }`), which builds from before K1 open (R10).
+ * (`{ version: 1, objects }`), which builds from before K1 open (R10); any
+ * other is written at the lowest minor its content needs, so a tour gains
+ * a newer minor, and older writers' refusal, only with a newer field.
  */
 export function serializeTourManifest(manifest: TourManifest): string {
   const parsed = parseTourManifest(manifest);
@@ -385,7 +475,7 @@ export function serializeTourManifest(manifest: TourManifest): string {
   }
   return JSON.stringify(
     needsVersion2(parsed)
-      ? parsed
+      ? { ...parsed, minor: minorNeeded(parsed) }
       : { version: LEGACY_VERSION, objects: parsed.objects },
     null,
     2

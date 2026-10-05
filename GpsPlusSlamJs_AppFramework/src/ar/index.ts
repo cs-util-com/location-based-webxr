@@ -275,6 +275,8 @@ export {
   type TourPin,
   type TourPhoto,
   type TourObjectKind,
+  type TourCapture,
+  type TourCaptureSpots,
   TourManifestValidationError,
   createEmptyTourManifest,
   parseTourManifest,

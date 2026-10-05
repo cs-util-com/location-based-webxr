@@ -114,6 +114,14 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   already carries its ids. Not on the download tap - on Android that
   resolves true the moment a download starts, and the creator still has to
   upload the file by hand afterwards.
+- **The Finish bakes a recording's photo spots** (scan-pass plan S1,
+  S-D11): a tour that carries a recording and no `captureSpots` yet is
+  replayed once (`capture-bake.ts`, busy line `FINISH_LABELS.placingPhotos`)
+  and `tour.json` gains the spots, written at minor 1. Spots the tour
+  already carries are kept, not baked again. A recording that cannot be
+  read or joined never fails the Finish (the tour keeps the visitor's live
+  join, as before); a cap's refusal and a failed integrity check do, as
+  every read's does.
 - The finish's append is **id-deduplicating**, because the serializer
   rejects duplicates: one already-hosted object would otherwise make every
   finish throw for as long as the draft was restored, with no escape inside

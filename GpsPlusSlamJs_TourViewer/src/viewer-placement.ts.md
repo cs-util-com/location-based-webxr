@@ -99,8 +99,11 @@ recording. Its own module since the flows plan M6.
     runs the capture join ONCE per session+tour
     (`ctx.placementAttempted`) as soon as
     `isPlacementReady(selectTrackingQuality(state))`; until then sets
-    `waiting-ready`. A tour without a recording declines at once (the ring
-    waits for a lock). Cheap by design: a few predicate reads per dispatch.
+    `waiting-ready`. It also waits while `tour.json` is still loading
+    (`tourManifestStatus === "pending"`; the manifest's settle calls it
+    again), because the baked spots live there. A tour with neither a
+    recording nor baked spots declines at once (the ring waits for a
+    lock). Cheap by design: a few predicate reads per dispatch.
 
 ## The moved-code veto (D20, M5c; owner approval 2026-10-02)
 
@@ -152,6 +155,12 @@ recording. Its own module since the flows plan M6.
   of the ≤ 10 budgeted locks retries (`imagePlanes === null &&
 !imagePlanesLoading`, review #4); a lock after a placement changes the
   status only.
+- **The photos' spots come from `tour.json` when the creator's Finish
+  baked them** (`captureSpots`, scan-pass plan S1, S-D11): no download of
+  the walk, no replay, and the status line reports the baked fixes. A tour
+  without them runs the SAME bake here (`capture-bake.ts`: each photo
+  through the first settled alignment after it was taken), so both show
+  the photos at the same spots.
 - **A declined join is remembered** (`joinDeclined`) so a later lock goes
   straight to the ring instead of replaying the walk (seconds of CPU).
 - **Liveness inside the async runs is the controller status (`running`)

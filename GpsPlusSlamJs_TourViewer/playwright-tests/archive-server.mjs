@@ -349,7 +349,56 @@ async function buildRecordingZip() {
   return writer.close();
 }
 
+/**
+ * A tour zip whose recorded photos' spots were BAKED at a Finish (scan-pass
+ * plan S1): `tour.json` carries `captureSpots` (7 fixes, unlike the
+ * recording zip's 4, so a status line proves which source placed them),
+ * the two photos and a level - and NO recording at all.
+ */
+async function buildBakedZip() {
+  const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
+  const spot = (i, lat) => ({
+    image: `images/frame-${String(i)}.png`,
+    geo: { lat, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+  });
+  await writer.add(
+    "tour.json",
+    new TextReader(
+      JSON.stringify({
+        version: 2,
+        minor: 1,
+        objects: [],
+        captureSpots: {
+          fixes: 7,
+          gpsAccuracyMedianM: 3,
+          captures: [spot(0, 47.50002), spot(1, 47.50011)],
+        },
+      }),
+    ),
+  );
+  for (let i = 0; i < 2; i += 1) {
+    await writer.add(
+      `images/frame-${String(i)}.png`,
+      new Uint8ArrayReader(TINY_PNG.slice()),
+    );
+  }
+  await writer.add(
+    await e2eQrLevelEntryName(),
+    new TextReader(
+      JSON.stringify({
+        version: 1,
+        qr: {
+          physicalSizeM: 0.2,
+          geo: { lat: 47.5001, lon: 8.7001, alt: 400, rotation: [0, 0, 0, 1] },
+        },
+      }),
+    ),
+  );
+  return writer.close();
+}
+
 const zipBytes = await buildZip();
+const bakedZipBytes = await buildBakedZip();
 const plainZipBytes = await buildZip({ withLevel: false });
 const recordingZipBytes = await buildRecordingZip();
 const stationsZipBytes = await buildStationsZip();
@@ -507,6 +556,10 @@ createServer((req, res) => {
   }
   if (url.pathname === "/ranges-ok/recording-tour.zip") {
     handleArchive(req, res, "ranges-ok", recordingZipBytes, '"e2e-rec-v1"');
+    return;
+  }
+  if (url.pathname === "/ranges-ok/baked-tour.zip") {
+    handleArchive(req, res, "ranges-ok", bakedZipBytes, '"e2e-baked-v1"');
     return;
   }
   if (url.pathname === "/ranges-ok/stations-tour.zip") {

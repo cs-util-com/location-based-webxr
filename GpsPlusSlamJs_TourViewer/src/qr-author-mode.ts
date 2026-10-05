@@ -404,6 +404,9 @@ export const MISSING_SIZE_MESSAGE = `Enter the printed code's side length in met
 export const FINISH_LABELS = {
   reading: (bytes: number) =>
     `Finishing - reading the hosted zip (${(bytes / 1_000_000).toFixed(1)} MB)…`,
+  /** The recorded photos' spots, baked once (scan-pass plan S1). */
+  placingPhotos: (done: number, total: number) =>
+    `Finishing - placing the recorded photos (${String(done)} of ${String(total)} steps of the walk)…`,
   rebuilding: (done: number, total: number) =>
     `Finishing - rebuilding ${String(done)} of ${String(total)} entries…`,
   /** The line the creator reads immediately BEFORE pressing the button, so

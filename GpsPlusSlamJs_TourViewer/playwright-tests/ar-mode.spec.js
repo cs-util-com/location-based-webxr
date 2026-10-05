@@ -1023,6 +1023,39 @@ test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", a
   expect(planesAfter).toBe(planesBefore);
 });
 
+test("a tour whose photo spots were baked at its Finish places them without any recording (scan-pass S1)", async ({
+  page,
+}) => {
+  // Why this matters (scan-pass plan S1, S-D11): a published tour carries
+  // its photos' spots in tour.json and no walk at all, so the viewer must
+  // place from the baked spots - never decline for "no recording" - and
+  // report the BAKED quality (7 fixes; the zip has no fixes to count).
+  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
+  await openAsVisitor(page, ARCHIVE, 2);
+  await enterAr(page);
+  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.alignmentStore.dispatch({
+      type: "gpsData/setZeroPos",
+      payload: { lat: 47.5, lon: 8.7 },
+    });
+  });
+  await forceTrackingReady(page);
+  await lockTheCode(page);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").textContent();
+      },
+      { timeout: 20000 },
+    )
+    .toMatch(/2 photos at capture spots \(7 fixes/);
+  await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
+});
+
 /** Force the tracking-quality slice to `ok` (→ onboarding `ready`). The
  *  fake initAR never dispatches poses, and `reportUpdated` is the slice's
  *  own action (not a middleware input), so it is not recomputed away. */

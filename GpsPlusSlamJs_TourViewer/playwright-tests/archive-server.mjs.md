@@ -38,7 +38,9 @@ with the file name "My tour.zip", any other id sends none (the fallback).
 `../../docs/dev-server-ports.md` under auxiliary e2e servers). Routes:
 `/health` (readiness for the playwright `webServer` gate), the four archive
 routes, `/ranges-ok/recording-tour.zip` (a recording: era-5 session.json +
-an action stream, for the capture-spots placement), `/ranges-ok/plain-tour.zip`
+an action stream, for the capture-spots placement), `/ranges-ok/baked-tour.zip`
+(a `tour.json` with baked `captureSpots`, 7 fixes, and the two photos but no
+recording: scan-pass plan S1), `/ranges-ok/plain-tour.zip`
 (images only - no level, no recording: the "nothing to place" case, flows
 plan M4), `/flip`, `/warm-gate`, and a CORS preflight handler.
 
