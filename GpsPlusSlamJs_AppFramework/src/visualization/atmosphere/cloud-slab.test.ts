@@ -37,6 +37,7 @@ import {
   cloudSlabZenithOpacity,
   CLOUD_SLAB_FRAGMENT_GLSL,
   createCloudSlab,
+  setCloudSlabSceneDepth,
   setCloudSlabSteps,
   type Vec3,
 } from './cloud-slab.js';
@@ -1524,5 +1525,82 @@ describe('CLOUD_SLAB_FRAGMENT_GLSL forward scattering', () => {
     expect(g).toContain(
       `ATM_SLAB_FORWARD_KNOWN = ${glslFloat(CLOUD_SLAB.forwardKnownFactor)}`
     );
+  });
+});
+
+describe('the scene depth (globe F2 plan 2026-10-03-1922, F2c)', () => {
+  // WHY: the slab is a back-faced prism drawn with the depth test, so a
+  // ridge in front of the prism's FAR face hid the whole pixel, the cloud
+  // between the camera and the ridge with it, and a deck over a valley
+  // marched on below the ground. With the scene's depth the march ends at
+  // the scene instead (the interval's twin), and the depth test is off.
+  it('ends the interval at the scene, and has none when the scene is nearer than the slab', () => {
+    const down = cloudSlabInterval(3200, [0, -1, 0], 1250)!;
+    expect(down.inM).toBeCloseTo(3200 - S.topM, 9);
+    expect(down.outM).toBe(1250);
+    // A ridge in front of the deck: nothing to march.
+    expect(cloudSlabInterval(3200, [0, -1, 0], 900)).toBeNull();
+    // A scene beyond the slab changes nothing.
+    expect(cloudSlabInterval(3200, [0, -1, 0], 5000)).toEqual(
+      cloudSlabInterval(3200, [0, -1, 0])
+    );
+  });
+
+  it('refuses a scene distance that is negative or not a number', () => {
+    expect(() => cloudSlabInterval(3200, [0, -1, 0], -1)).toThrow(RangeError);
+    expect(() => cloudSlabInterval(3200, [0, -1, 0], Number.NaN)).toThrow(
+      RangeError
+    );
+  });
+
+  // The GPU half: opt-in by a define, so without a depth the shader is
+  // today's; with one, the far end of the march is the scene's distance,
+  // reconstructed through the same inverse projection as the ray.
+  it('reads the depth only behind its define, and clips the interval with it', () => {
+    const g = CLOUD_SLAB_FRAGMENT_GLSL;
+    const block = g.slice(
+      g.indexOf('#ifdef ATM_SLAB_SCENE_DEPTH\n  float atmSceneDepth'),
+      g.indexOf('if (tOut <= tIn) discard;')
+    );
+    expect(block).toContain('texture2D(atmSlabSceneDepth');
+    expect(block).toContain('atmSlabInverseProjection');
+    expect(block).toContain('tOut = min(tOut,');
+    expect(g).toContain(
+      '#ifdef ATM_SLAB_SCENE_DEPTH\nuniform sampler2D atmSlabSceneDepth;'
+    );
+  });
+
+  it('turns the depth on and off on the mesh: the define, the texture and the depth test', () => {
+    const slab = createCloudSlab({
+      atmCloudThreshold: { value: 0.6 },
+      atmCloudCover: { value: 0.5 },
+    });
+    const m = slab.material as THREE.ShaderMaterial;
+    expect(m.defines['ATM_SLAB_SCENE_DEPTH']).toBeUndefined();
+    const depth = new THREE.DepthTexture(4, 4);
+    const version = m.version;
+    setCloudSlabSceneDepth(slab, depth);
+    expect(m.defines['ATM_SLAB_SCENE_DEPTH']).toBe(1);
+    expect(m.defines['ATM_SLAB_STEPS']).toBe(S.defaultSteps);
+    expect(m.uniforms['atmSlabSceneDepth']!.value).toBe(depth);
+    expect(m.depthTest).toBe(false);
+    expect(m.version).toBeGreaterThan(version);
+    setCloudSlabSceneDepth(slab, null);
+    expect(m.defines['ATM_SLAB_SCENE_DEPTH']).toBeUndefined();
+    expect(m.uniforms['atmSlabSceneDepth']!.value).toBeNull();
+    expect(m.depthTest).toBe(true);
+  });
+
+  // Swapping one depth texture for another (a resize) is a uniform change,
+  // not a new program.
+  it('swaps one depth for another without a new program', () => {
+    const slab = createCloudSlab({});
+    const m = slab.material as THREE.ShaderMaterial;
+    setCloudSlabSceneDepth(slab, new THREE.DepthTexture(4, 4));
+    const version = m.version;
+    const next = new THREE.DepthTexture(8, 8);
+    setCloudSlabSceneDepth(slab, next);
+    expect(m.version).toBe(version);
+    expect(m.uniforms['atmSlabSceneDepth']!.value).toBe(next);
   });
 });

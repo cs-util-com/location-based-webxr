@@ -30,7 +30,11 @@ import {
   luminance,
   transmittanceToTop,
 } from './atmosphere-model.js';
-import type { AtmosphereDevice, LutName } from './atmosphere-luts.js';
+import type {
+  AtmosphereDevice,
+  LutName,
+  SkyViewRead,
+} from './atmosphere-luts.js';
 import {
   ENVIRONMENT_BAKE_GAIN,
   SkyAtmosphere,
@@ -79,6 +83,33 @@ class FakeDevice implements AtmosphereDevice {
       lut.fill(value, y * width * 4, (y + 1) * width * 4);
     }
     return lut;
+  }
+  /** Asynchronous sky-view reads started (the staged path). */
+  asyncReads = 0;
+  /** Polls an asynchronous read answers "not yet" before it is ready. */
+  pollsBeforeReady = 1;
+  /** Asynchronous reads cancelled before they were taken. */
+  cancelledReads = 0;
+  /** Bakes into the device's own reused target (the staged path). */
+  reusedBakes = 0;
+  /** The reused bake's one texture. */
+  readonly reusedTexture = new THREE.Texture();
+  beginSkyViewRead(): SkyViewRead | null {
+    this.asyncReads += 1;
+    let polls = this.pollsBeforeReady;
+    return {
+      ready: () => polls-- <= 0,
+      take: () => this.readSkyView(),
+      cancel: () => (this.cancelledReads += 1),
+    };
+  }
+  bakeEnvironmentReused(scene: THREE.Scene): {
+    texture: THREE.Texture;
+    dispose(): void;
+  } {
+    this.reusedBakes += 1;
+    this.bakedScene = scene;
+    return { texture: this.reusedTexture, dispose: () => {} };
   }
   readTexel(): [number, number, number] {
     return [0, 0, 0];
@@ -1076,5 +1107,317 @@ describe('SkyAtmosphere.cloudTransmittanceToward (round-3 DEC-FB3-7)', () => {
     expect(() =>
       atmosphere.cloudTransmittanceToward([Number.NaN, 0, 0])
     ).toThrow(RangeError);
+  });
+});
+
+describe('SkyAtmosphere.setObserverAltitudeKm (globe F2 plan 2026-10-03-1922, F2b)', () => {
+  const GROUND = EARTH_ATMOSPHERE.groundRadiusKm;
+
+  // The globe lab's descent moves the observer from 100 km to the ground:
+  // the sky must follow its height, synchronously like the sun's setter
+  // (an on-demand page might never run a deferred rebuild).
+  it('moves the observer and re-renders only the sky view, with one bake', () => {
+    const { atmosphere, device } = setup();
+    atmosphere.setSun(UP);
+    atmosphere.setObserverAltitudeKm(40);
+    expect(atmosphere.observerAltitudeKm).toBe(40);
+    expect(atmosphere.sharedUniforms.atmObserverRadius.value).toBe(GROUND + 40);
+    // The transmittance and multi-scattering tables do not depend on the
+    // observer (they are tabulated over every radius).
+    expect(device.renders.slice(3)).toEqual(['skyView']);
+    expect(device.bakes).toBe(2);
+  });
+
+  // The scale follows: the sun-relative unit is the reference sun's
+  // transmittance from the OBSERVER, so it changes with the height.
+  it('rescales the sky to the new observer', () => {
+    const { atmosphere } = setup();
+    atmosphere.setSun(UP);
+    const before = atmosphere.radianceToScene / atmosphere.exposure;
+    atmosphere.setObserverAltitudeKm(60);
+    const after = atmosphere.radianceToScene / atmosphere.exposure;
+    const reference = (km: number) =>
+      luminance(
+        transmittanceToTop(
+          GROUND + km,
+          Math.sin(EARTH_ATMOSPHERE.referenceSunElevationRad),
+          { visibilityKm: atmosphere.visibilityKm, observerAltitudeKm: km }
+        )
+      );
+    expect(after / before).toBeCloseTo(
+      reference(EARTH_ATMOSPHERE.defaultObserverAltitudeKm) / reference(60),
+      9
+    );
+  });
+
+  // An unchanged height must cost nothing (the lab quantises and calls it
+  // every frame), and before the first sun nothing is built yet.
+  it('does no GPU work for an unchanged height, or before the first sun', () => {
+    const { atmosphere, device } = setup();
+    atmosphere.setObserverAltitudeKm(10);
+    expect(device.renders).toEqual([]);
+    atmosphere.setSun(UP);
+    const renders = device.renders.length;
+    atmosphere.setObserverAltitudeKm(10);
+    expect(device.renders.length).toBe(renders);
+    expect(device.bakes).toBe(1);
+  });
+
+  // The model's atmosphere is 100 km thick: a height at or above its top,
+  // negative or non-finite would render a black or wrong sky. Refused
+  // before anything changes.
+  it.each([-1, 100, 150, Number.NaN, Number.POSITIVE_INFINITY])(
+    'refuses %s km and keeps the height it had',
+    (km) => {
+      const { atmosphere } = setup();
+      atmosphere.setSun(UP);
+      expect(() => atmosphere.setObserverAltitudeKm(km)).toThrow(RangeError);
+      expect(atmosphere.observerAltitudeKm).toBe(
+        EARTH_ATMOSPHERE.defaultObserverAltitudeKm
+      );
+    }
+  );
+});
+
+describe('SkyAtmosphere staged rebuild (globe F2 plan 2026-10-03-1922, F2b)', () => {
+  function staged() {
+    const scene = new THREE.Scene();
+    const device = new FakeDevice();
+    const atmosphere = new SkyAtmosphere({ scene, device, rebuild: 'staged' });
+    return { scene, device, atmosphere };
+  }
+
+  /** Steps until idle; returns the stages done, in order. */
+  function drain(atmosphere: SkyAtmosphere): string[] {
+    const stages: string[] = [];
+    for (let s = atmosphere.stepRebuild(); s !== 'idle';) {
+      stages.push(s);
+      s = atmosphere.stepRebuild();
+    }
+    return stages;
+  }
+
+  // A page that renders every frame cannot afford a rebuild in one frame:
+  // the tables, a synchronous readback (a full GPU wait) and a new PMREM
+  // target. Staged, a setter only records the change, and each frame's
+  // step does at most one stage: the tables, then the read, then the bake.
+  it('does no GPU work in a setter, then one stage per step', () => {
+    const { atmosphere, device, scene } = staged();
+    atmosphere.setSun(UP);
+    expect(device.renders).toEqual([]);
+    expect(atmosphere.rebuildPending).toBe(true);
+    expect(atmosphere.stepRebuild()).toBe('luts');
+    expect(device.renders).toEqual([
+      'transmittance',
+      'multiScattering',
+      'skyView',
+    ]);
+    expect(device.asyncReads).toBe(1);
+    expect(atmosphere.stepRebuild()).toBe('waiting');
+    expect(atmosphere.stepRebuild()).toBe('read');
+    expect(device.reusedBakes).toBe(0);
+    expect(atmosphere.stepRebuild()).toBe('bake');
+    expect(device.reusedBakes).toBe(1);
+    expect(device.bakes).toBe(0);
+    expect(scene.environment).toBe(device.reusedTexture);
+    expect(atmosphere.rebuildPending).toBe(false);
+    expect(atmosphere.stepRebuild()).toBe('idle');
+  });
+
+  // The staged read measures exactly what the synchronous one does: the
+  // same exposure and horizon from the same sky.
+  it('exposes the staged sky exactly as the synchronous one', () => {
+    const { atmosphere } = staged();
+    const { atmosphere: immediate } = setup();
+    atmosphere.setSun(LOW);
+    immediate.setSun(LOW);
+    drain(atmosphere);
+    expect(atmosphere.exposure).toBe(immediate.exposure);
+    expect(atmosphere.radianceToScene).toBe(immediate.radianceToScene);
+    expect(atmosphere.horizonColour()).toEqual(immediate.horizonColour());
+  });
+
+  // The PMREM target is reused, not allocated per bake: a descent of ~100
+  // rebuilds must not allocate ~100 targets, and the one in use is never
+  // disposed under the scene.
+  it('bakes every rebuild into the one reused target', () => {
+    const { atmosphere, device, scene } = staged();
+    for (const km of [0.2, 10, 20, 30]) {
+      atmosphere.setObserverAltitudeKm(km);
+      atmosphere.setSun(km === 20 ? UP : LOW);
+      drain(atmosphere);
+    }
+    expect(device.reusedBakes).toBe(4);
+    expect(device.bakes).toBe(0);
+    expect(device.released).toBe(0);
+    expect(scene.environment).toBe(device.reusedTexture);
+  });
+
+  // A change while a rebuild is in flight finishes that rebuild (so the
+  // bake is never starved by a change every frame) and then runs once
+  // more from the latest values, not once per change.
+  it('finishes the rebuild in flight, then rebuilds once for every change since', () => {
+    const { atmosphere, device } = staged();
+    atmosphere.setSun(UP);
+    expect(atmosphere.stepRebuild()).toBe('luts');
+    atmosphere.setObserverAltitudeKm(30);
+    atmosphere.setObserverAltitudeKm(40);
+    atmosphere.setSun(LOW);
+    expect(drain(atmosphere)).toEqual([
+      'waiting',
+      'read',
+      'bake',
+      'luts',
+      'waiting',
+      'read',
+      'bake',
+    ]);
+    // The second pass is the sky view alone: the medium did not change.
+    expect(device.renders.slice(3)).toEqual(['skyView']);
+    expect(device.reusedBakes).toBe(2);
+    expect(atmosphere.sharedUniforms.atmObserverRadius.value).toBe(
+      EARTH_ATMOSPHERE.groundRadiusKm + 40
+    );
+  });
+
+  // The visibility changes the medium: the next pass renders every table.
+  it('renders every table when the medium changed since the last pass', () => {
+    const { atmosphere, device } = staged();
+    atmosphere.setSun(UP);
+    drain(atmosphere);
+    atmosphere.setVisibilityKm(20);
+    expect(atmosphere.stepRebuild()).toBe('luts');
+    expect(device.renders.slice(3)).toEqual([
+      'transmittance',
+      'multiScattering',
+      'skyView',
+    ]);
+  });
+
+  // A device without the asynchronous read (an older implementation of the
+  // interface) still stages: the read stage reads synchronously, and the
+  // bake is a new target each time, the old one disposed.
+  it('stages on a device without the asynchronous read or the reused bake', () => {
+    const { atmosphere, device } = staged();
+    (device as { beginSkyViewRead?: unknown }).beginSkyViewRead = undefined;
+    (device as { bakeEnvironmentReused?: unknown }).bakeEnvironmentReused =
+      undefined;
+    atmosphere.setSun(UP);
+    expect(drain(atmosphere)).toEqual(['luts', 'read', 'bake']);
+    expect(device.bakes).toBe(1);
+    atmosphere.setSun(LOW);
+    drain(atmosphere);
+    expect(device.bakes).toBe(2);
+    expect(device.released).toBe(1);
+  });
+
+  // A failed staged read keeps the exposure bounded exactly as a failed
+  // synchronous one does (the CPU sky estimate).
+  it('takes a failed read from the CPU sky estimate', () => {
+    const { atmosphere, device } = staged();
+    const { atmosphere: immediate, device: immediateDevice } = setup();
+    device.readbackFails = true;
+    immediateDevice.readbackFails = true;
+    atmosphere.setSun(LOW);
+    immediate.setSun(LOW);
+    drain(atmosphere);
+    expect(atmosphere.skyReadbackFailed).toBe(true);
+    expect(atmosphere.exposure).toBe(immediate.exposure);
+  });
+
+  // A restored context lost every table: staged, it starts a full pass.
+  it('starts a full staged rebuild after the WebGL context is restored', () => {
+    const { atmosphere, device } = staged();
+    atmosphere.setSun(UP);
+    drain(atmosphere);
+    device.restoreContext();
+    expect(device.renders.length).toBe(3);
+    expect(atmosphere.stepRebuild()).toBe('luts');
+    expect(device.renders.slice(3)).toEqual([
+      'transmittance',
+      'multiScattering',
+      'skyView',
+    ]);
+  });
+
+  // A read in flight holds a GPU buffer and a fence: dispose releases it.
+  it('cancels a read in flight on dispose', () => {
+    const { atmosphere, device } = staged();
+    atmosphere.setSun(UP);
+    atmosphere.stepRebuild();
+    atmosphere.dispose();
+    expect(device.cancelledReads).toBe(1);
+  });
+
+  // OsmDemo renders on demand and must stay on today's path: the immediate
+  // default never touches the staged device calls.
+  it('never uses the staged device calls by default', () => {
+    const { atmosphere, device } = setup();
+    atmosphere.setSun(UP);
+    atmosphere.setObserverAltitudeKm(20);
+    expect(device.asyncReads).toBe(0);
+    expect(device.reusedBakes).toBe(0);
+    expect(atmosphere.rebuildPending).toBe(false);
+    expect(atmosphere.stepRebuild()).toBe('idle');
+  });
+
+  it('refuses an unknown rebuild option and releases the device', () => {
+    const device = new FakeDevice();
+    expect(
+      () =>
+        new SkyAtmosphere({
+          scene: new THREE.Scene(),
+          device,
+          rebuild: 'lazy' as 'staged',
+        })
+    ).toThrow(RangeError);
+    expect(device.disposed).toBe(true);
+  });
+});
+
+describe('SkyAtmosphere.setCloudSceneDepth (globe F2 plan 2026-10-03-1922, F2c)', () => {
+  const slabOf = (scene: THREE.Scene) =>
+    scene.children.find((c) => c.name === 'atmosphere-cloud-slab') as
+      THREE.Mesh | undefined;
+
+  // The globe lab hands the relief's depth to the slab so the march ends at
+  // the ground. The slab exists only in slab mode, so the depth is kept and
+  // reaches a slab made later, and survives a switch away and back.
+  it('hands the depth to the slab, now and after a mode switch', () => {
+    const { atmosphere, scene } = setup();
+    const depth = new THREE.DepthTexture(4, 4);
+    atmosphere.setCloudSceneDepth(depth);
+    atmosphere.configure({ cloudMode: 'slab' });
+    const slab = slabOf(scene)!;
+    const m = slab.material as THREE.ShaderMaterial;
+    expect(m.uniforms['atmSlabSceneDepth']!.value).toBe(depth);
+    expect(m.defines['ATM_SLAB_SCENE_DEPTH']).toBe(1);
+    atmosphere.configure({ cloudMode: 'dome' });
+    atmosphere.configure({ cloudMode: 'slab' });
+    const again = slabOf(scene)!.material as THREE.ShaderMaterial;
+    expect(again.uniforms['atmSlabSceneDepth']!.value).toBe(depth);
+  });
+
+  it('takes the depth away from a slab that has one', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.configure({ cloudMode: 'slab' });
+    atmosphere.setCloudSceneDepth(new THREE.DepthTexture(4, 4));
+    atmosphere.setCloudSceneDepth(null);
+    const m = slabOf(scene)!.material as THREE.ShaderMaterial;
+    expect(m.defines['ATM_SLAB_SCENE_DEPTH']).toBeUndefined();
+    expect(m.depthTest).toBe(true);
+  });
+
+  // The sheet and the dome have no march to end: the depth is only kept.
+  it('does nothing to the sheet', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.configure({ cloudMode: 'sheet' });
+    atmosphere.setCloudSceneDepth(new THREE.DepthTexture(4, 4));
+    const sheet = scene.children.find(
+      (c) => c.name === 'atmosphere-cloud-sheet'
+    ) as THREE.Mesh;
+    expect(
+      (sheet.material as THREE.ShaderMaterial).uniforms['atmSlabSceneDepth']
+    ).toBeUndefined();
   });
 });
