@@ -15,10 +15,8 @@
  * @see image-header.ts.md
  */
 
-export type ImageHeaderType = 'jpeg' | 'png' | 'webp' | 'gif' | 'avif';
-
 export interface ImageHeaderInfo {
-  readonly type: ImageHeaderType;
+  readonly type: 'jpeg' | 'png' | 'webp' | 'gif' | 'avif';
   readonly width: number;
   readonly height: number;
 }
@@ -49,7 +47,7 @@ const ascii = (bytes: Uint8Array, i: number, n: number): string =>
   String.fromCharCode(...bytes.subarray(i, i + n));
 
 const sized = (
-  type: ImageHeaderType,
+  type: ImageHeaderInfo['type'],
   width: number,
   height: number
 ): ImageHeaderInfo | null =>
@@ -264,7 +262,7 @@ export function imageInfo(bytes: Uint8Array): ImageHeaderInfo | null {
  * ICC and XMP segments a camera writes before a JPEG's frame (each at most
  * 64 KiB). A header further in reads as unknown, never as a guess.
  */
-export const IMAGE_HEADER_PROBE_BYTES = 1024 * 1024;
+const IMAGE_HEADER_PROBE_BYTES = 1024 * 1024;
 
 /** `imageInfo` of a Blob's first `probeBytes`; null when they hold no
  *  complete header, or the Blob cannot be read. */

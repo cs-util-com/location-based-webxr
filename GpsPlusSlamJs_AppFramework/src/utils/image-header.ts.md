@@ -13,11 +13,11 @@ it against one pixel cap (`ar/tour-media.ts` `TOUR_MAX_IMAGE_PIXELS`).
 - `imageInfo(bytes)` -> `{ type, width, height }` with `type` one of
   `jpeg`, `png`, `webp`, `gif`, `avif`, or `null` when the bytes are
   not a complete header of one of them.
-- `imageInfoOfBlob(blob, probeBytes = IMAGE_HEADER_PROBE_BYTES)` - the same
-  from a Blob's first bytes (1 MiB), never reading a large image whole;
+- `imageInfoOfBlob(blob, probeBytes = 1 MiB)` - the same from a Blob's
+  first bytes (the module-private `IMAGE_HEADER_PROBE_BYTES`), never reading
+  a large image whole;
   `null` when the probe holds no complete header or the Blob cannot be read.
-- `IMAGE_HEADER_PROBE_BYTES` (1 MiB).
-- Types `ImageHeaderType`, `ImageHeaderInfo`.
+- Type `ImageHeaderInfo` (`type` is the union of the five).
 
 ## Invariants & assumptions
 
