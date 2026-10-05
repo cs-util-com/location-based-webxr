@@ -71,7 +71,7 @@ const { weight, exposure } = groundSky.update({
   sunWorld,
   framed: worldFrame.target !== null,
   edgeKm: 80,
-  widthKm: 20,
+  widthKm: 40,
   stepPct: 5,
   spaceExposure: 5,
 });

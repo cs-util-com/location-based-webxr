@@ -25,8 +25,11 @@ export const GLOBE_SKY_HAND_OVER = {
   shellToKm: 300,
   /** The ground sky's edge: no ground sky at or above it, km. */
   edgeKm: 80,
-  /** The cross-fade's width below the edge, km. */
-  widthKm: 20,
+  /**
+   * The cross-fade's width below the edge, km: 40 by the owner's choice
+   * (2026-10-05; at 20 the exposure moved 2.15 levels per 0.1 of the weight).
+   */
+  widthKm: 40,
   /**
    * The ground sky's highest observer, km: the framework's atmosphere is
    * 100 km thick and refuses its top.

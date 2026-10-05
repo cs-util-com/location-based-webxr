@@ -14,7 +14,9 @@ tests read the same numbers.
 
 - `GLOBE_SKY_HAND_OVER`: the defaults.
   - `shellFromKm` 2,000 and `shellToKm` 300: the halo's ramp.
-  - `edgeKm` 80 and `widthKm` 20: the ground sky's edge and cross-fade.
+  - `edgeKm` 80 and `widthKm` 40: the ground sky's edge and cross-fade (40
+    by the owner's choice, 2026-10-05; 20 moved the exposure 2.15 levels per
+    0.1 of the weight).
   - `observerCeilingKm` 99.9 (the framework's atmosphere is 100 km thick
     and refuses its top) and `observerFloorKm` 0.01.
   - `altitudeStepPct` 5 and `sunStepDeg` 0.25: the rebuild steps.

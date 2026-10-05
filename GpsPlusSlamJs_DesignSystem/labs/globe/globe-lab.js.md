@@ -567,7 +567,7 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   ellipsoid's image (`observerAltitudeKm`) feeds the ground sky
   (`groundSky=1`, the default; 0 keeps the space pass all the way down),
   which returns its weight (0 above `skyEdgeKm`, 80, to 1 at
-  `skyEdgeKm - skyWidthKm`, 20 below) and the eased exposure, the sun's
+  `skyEdgeKm - skyWidthKm`, 40 below) and the eased exposure, the sun's
   scale in the scene from `sunIntensity` (space) to the ground sky's
   automatic exposure; it IS the globe's sun intensity. The ground sky draws over
   the space sky's pixels before the Earth, the space pass's sky light is

@@ -91,9 +91,12 @@ describe("groundSkyWeight", () => {
   });
 
   // The defaults are the plan's: the edge at 80 km, 20 km wide.
-  it("defaults to the plan's edge and width", () => {
+  // The owner widened the fade from 20 to 40 km (2026-10-05): at 20 km the
+  // exposure changed 2.15 levels per 0.1 of the weight against a bound of 2.
+  it("defaults to the edge at 80 km and a 40 km fade", () => {
     expect(groundSkyWeight(90)).toBe(0);
-    expect(groundSkyWeight(55)).toBe(1);
+    expect(groundSkyWeight(60)).toBeCloseTo(0.5, 12);
+    expect(groundSkyWeight(40)).toBe(1);
   });
 
   // A weight that rises on the way down and never jumps: the ease's slope

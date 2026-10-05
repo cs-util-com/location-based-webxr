@@ -17,9 +17,13 @@
  *   2 levels per 0.1 of the weight beyond what the space pass alone does.
  * - **The rebuilds:** at most one pass per quantised observer step over the
  *   dive (plus the first), and the sky done rebuilding at the hold.
- * - **The sky against the space pass**, looking up at the hold: the sky's
- *   pixels with the ground sky against without, a first number for the
- *   owner's look (bound 8 levels).
+ * - **The dark, physical sky above the edge's band** (the owner's choice,
+ *   2026-10-05, from screenshots at 45 km): looking up at the hold, the
+ *   ground sky's pixels are darker than the space pass's by at least 20
+ *   levels of luminance (64 measured). The plan's first bound (within 8 of
+ *   the space pass) assumed the two skies would agree; they do not, because
+ *   the space pass draws a day-blue sky from inside its shell where the
+ *   real sky at 40 km is close to black.
  */
 import { expect, test } from "@playwright/test";
 
@@ -33,7 +37,8 @@ const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&m
 const SWEEP = [0.5, 1, 2];
 const STEP = 1;
 const EXPOSURE_PER_TENTH = 2;
-const SKY_AGAINST_SPACE = 8;
+/** Looking up at the hold: the ground sky darker by at least this (levels). */
+const SKY_DARKER = 20;
 
 const verdict = (value, bound) =>
   `${value.toFixed(2)} (bound ${bound}: ${SWEEP.map((k) => `x${k} ${value <= bound * k ? "ok" : "NO"}`).join(" ")})`;
@@ -180,9 +185,10 @@ test("the ground sky takes over the sky without a jump, its exposure eased, its 
       ),
     );
   }
-  const skyDiff = meanDiff(sky[0], sky[1]);
+  const skyDarker =
+    meanOf(sky[1].map(luminance)) - meanOf(sky[0].map(luminance));
   console.log(
-    `ground sky over 100-45 km: frame-to-frame step beyond the space pass's, worst ${verdict(worstStep, STEP)}; exposure, mean luminance per 0.1 of the weight beyond the space pass's, worst ${verdict(worstExposure, EXPOSURE_PER_TENTH)}; rebuild passes over the dive ${passes} (bound ${steps}); weights ${on.map((f) => f.weight.toFixed(2)).join(" ")}; looking up at ${HOLD_KM} km, the sky against the space pass ${verdict(skyDiff, SKY_AGAINST_SPACE)}; programs ${on[0].programs} at weight 0 and ${on.at(-1).programs} at weight 1; haze at weight 1 ${JSON.stringify(on.at(-1).haze)}`,
+    `ground sky over 100-45 km: frame-to-frame step beyond the space pass's, worst ${verdict(worstStep, STEP)}; exposure, mean luminance per 0.1 of the weight beyond the space pass's, worst ${verdict(worstExposure, EXPOSURE_PER_TENTH)}; rebuild passes over the dive ${passes} (bound ${steps}); weights ${on.map((f) => f.weight.toFixed(2)).join(" ")}; looking up at ${HOLD_KM} km, the ground sky darker than the space pass by ${skyDarker.toFixed(2)} (at least ${SKY_DARKER}: ${SWEEP.map((k) => `x${k} ${skyDarker >= SKY_DARKER * k ? "ok" : "NO"}`).join(" ")}); programs ${on[0].programs} at weight 0 and ${on.at(-1).programs} at weight 1; haze at weight 1 ${JSON.stringify(on.at(-1).haze)}`,
   );
   expect(errors).toEqual([]);
   expect(passes).toBeLessThanOrEqual(steps);
@@ -193,5 +199,5 @@ test("the ground sky takes over the sky without a jump, its exposure eased, its 
   expect(on.at(-1).haze.density).toBeGreaterThan(0);
   expect(worstStep).toBeLessThanOrEqual(STEP);
   expect(worstExposure).toBeLessThanOrEqual(EXPOSURE_PER_TENTH);
-  expect(skyDiff).toBeLessThanOrEqual(SKY_AGAINST_SPACE);
+  expect(skyDarker).toBeGreaterThanOrEqual(SKY_DARKER);
 });
