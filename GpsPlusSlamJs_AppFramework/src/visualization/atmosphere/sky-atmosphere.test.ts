@@ -1427,7 +1427,7 @@ describe('SkyAtmosphere coverage map and disc (globe volume-cloud plan 2026-10-0
     scene.children.find((c) => c.name === 'atmosphere-cloud-slab') as
       THREE.Mesh | undefined;
   const coverage = {
-    glsl: 'uniform float uFlat;\nfloat atmSlabCoverageAt(vec2 xz) { return uFlat; }',
+    glsl: 'uniform float uFlat;\nfloat atmCloudCoverageAt(vec2 xz) { return uFlat; }',
     uniforms: { uFlat: { value: 0.5 } },
   };
 
@@ -1440,13 +1440,13 @@ describe('SkyAtmosphere coverage map and disc (globe volume-cloud plan 2026-10-0
     atmosphere.setCloudDiscRadius(20_000);
     atmosphere.configure({ cloudMode: 'slab' });
     const m = slabOf(scene)!.material as THREE.ShaderMaterial;
-    expect(m.defines['ATM_SLAB_COVERAGE']).toBe(1);
-    expect(m.defines['ATM_SLAB_DISC']).toBe(1);
-    expect(m.uniforms['atmSlabDiscM']!.value).toBe(20_000);
+    expect(m.defines['ATM_CLOUD_COVERAGE']).toBe(1);
+    expect(m.defines['ATM_CLOUD_DISC']).toBe(1);
+    expect(m.uniforms['atmCoverDiscM']!.value).toBe(20_000);
     atmosphere.configure({ cloudMode: 'dome' });
     atmosphere.configure({ cloudMode: 'slab' });
     const again = slabOf(scene)!.material as THREE.ShaderMaterial;
-    expect(again.defines['ATM_SLAB_COVERAGE']).toBe(1);
+    expect(again.defines['ATM_CLOUD_COVERAGE']).toBe(1);
     expect(again.uniforms['uFlat']!.value).toBe(0.5);
   });
 
@@ -1458,8 +1458,8 @@ describe('SkyAtmosphere coverage map and disc (globe volume-cloud plan 2026-10-0
     atmosphere.setCloudCoverage(null);
     atmosphere.setCloudDiscRadius(null);
     const m = slabOf(scene)!.material as THREE.ShaderMaterial;
-    expect(m.defines['ATM_SLAB_COVERAGE']).toBeUndefined();
-    expect(m.defines['ATM_SLAB_DISC']).toBeUndefined();
+    expect(m.defines['ATM_CLOUD_COVERAGE']).toBeUndefined();
+    expect(m.defines['ATM_CLOUD_DISC']).toBeUndefined();
   });
 
   it('refuses a bad radius before keeping it', () => {

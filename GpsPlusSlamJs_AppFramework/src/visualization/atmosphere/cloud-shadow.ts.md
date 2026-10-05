@@ -30,6 +30,16 @@ shadows drift with the clouds and fall where the sky draws them.
 - `applyToObject(root)`: patches every lit material under `root` not yet
   patched; returns how many.
 
+- **A coverage map, a disc and a lift** (globe volume-cloud plan
+  2026-10-05-0016, C3), so the volume's shadow falls from the clouds the
+  volume draws: `configureMap({ coverage?, disc? })` (the shared chunk,
+  [`cloud-coverage.ts.md`](cloud-coverage.ts.md); fixed before the first
+  patched material, since it changes the shader text: `Error` after it,
+  `RangeError` for a chunk without `atmCloudCoverageAt`), and three
+  uniforms set live: `setLiftM(m)` (the layer lifted above its own height),
+  `setDiscRadiusM(m)` and `setCover(c)` (the global cover the map's is
+  multiplied by). The program key gains `-map` and `-disc`.
+
 ## Invariants & assumptions
 
 - **No chunk text is copied.** Just before the fragment's `void main() {`
@@ -81,6 +91,13 @@ haze.applyToObject(scene);
 // after each atmosphere change:
 cloudShadow.sync(atmosphere);
 ```
+
+- **The threshold where the light crosses the layer** (C3): the lifted
+  point moved along the light to the layer's middle
+  (`atmColumnDistance`), then `atmCloudThresholdAt` there. Without a map
+  or a disc it is the sky's threshold, so the default shadow is unchanged
+  and the same from every viewpoint; with the disc (the volume's) it
+  depends on the camera by design.
 
 ## Tests
 

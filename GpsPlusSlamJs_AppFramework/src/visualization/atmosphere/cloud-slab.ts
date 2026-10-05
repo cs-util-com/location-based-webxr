@@ -32,8 +32,14 @@ import {
   CLOUD_TEXTURE_SIZE,
   cloudDensity,
   cloudLitRadiance,
-  cloudThreshold,
 } from './cloud-layer.js';
+import {
+  CLOUD_COVERAGE_GLSL,
+  type CloudCoverage,
+  cloudCoverThresholds,
+  cloudCoverageUniforms,
+  withCloudCoverage,
+} from './cloud-coverage.js';
 import {
   CLOUD_SHEET,
   CLOUD_TOP_LIT_GLSL,
@@ -387,69 +393,6 @@ export function cloudSlabRenderOrder(cameraY: number): number {
   return cameraY > CLOUD_SLAB.baseM ? 1 : -1;
 }
 
-/** The covers the threshold table holds: k / COVER_STEPS, k = 0 … COVER_STEPS. */
-const COVER_STEPS = 32;
-/** The threshold that draws no cloud: above any noise value. */
-const CLEAR_THRESHOLD = 2;
-let coverThresholds: readonly number[] | undefined;
-
-/**
- * The noise threshold for each cover k / 32, k = 0 … 32 (globe volume-cloud
- * plan 2026-10-05-0016, C1): `cloudThreshold` (the noise's own quantile, the
- * rule the global cover uses), clear (2) at cover 0 and never above it.
- * Computed once. The shader's `atmSlabCoverThresholds`.
- */
-export function cloudSlabCoverThresholds(): readonly number[] {
-  coverThresholds ??= Array.from({ length: COVER_STEPS + 1 }, (_, k) =>
-    Math.min(cloudThreshold(k / COVER_STEPS), CLEAR_THRESHOLD)
-  );
-  return coverThresholds;
-}
-
-/**
- * The threshold for a local `cover` (0 … 1, clamped), linear between the
- * table's entries. GLSL twin: `atmSlabThresholdAt` under
- * `ATM_SLAB_COVERAGE`.
- *
- * @throws RangeError for a cover that is NaN.
- */
-export function cloudSlabThresholdForCover(cover: number): number {
-  if (Number.isNaN(cover)) {
-    throw new RangeError('the cover must be a number, got NaN');
-  }
-  const table = cloudSlabCoverThresholds();
-  const c = Math.min(Math.max(cover, 0), 1) * COVER_STEPS;
-  const k = Math.min(Math.floor(c), COVER_STEPS - 1);
-  const f = c - k;
-  if (f === 0) return table[k]!;
-  if (f === 1) return table[k + 1]!;
-  return table[k]! + (table[k + 1]! - table[k]!) * f;
-}
-
-/**
- * The threshold `threshold` faded to clear (2) around the camera: unchanged
- * within 0.7 `radiusM` of it horizontally, clear from `radiusM`, smoothstep
- * between, so the volume's disc ends without an edge. GLSL twin: under
- * `ATM_SLAB_DISC`.
- *
- * @throws RangeError for a radius that is not positive and finite, or a
- *   negative or NaN distance.
- */
-export function cloudSlabDiscThreshold(
-  threshold: number,
-  horizontalM: number,
-  radiusM: number
-): number {
-  if (!(radiusM > 0 && Number.isFinite(radiusM))) {
-    throw new RangeError(`the disc radius must be positive, got ${radiusM}`);
-  }
-  if (!(horizontalM >= 0)) {
-    throw new RangeError(`the distance must be >= 0, got ${horizontalM}`);
-  }
-  const share = smoothstep(0.7 * radiusM, radiusM, horizontalM);
-  return threshold + (CLEAR_THRESHOLD - threshold) * share;
-}
-
 /** A sample's weight by horizontal distance: the sheet's far fade. */
 export function cloudSlabFarWeight(horizontalM: number): number {
   return (
@@ -484,8 +427,9 @@ export interface CloudSlabMarchInput {
   readonly threshold: number;
   /**
    * The threshold at world x/z (metres), for a coverage map and the disc
-   * (C1: `cloudSlabThresholdForCover`, `cloudSlabDiscThreshold`); omitted:
-   * `threshold` everywhere. The shader's `atmSlabThresholdAt`.
+   * (C1: `cloudThresholdForCover`, `cloudDiscThreshold`,
+   * `cloud-coverage.ts`); omitted: `threshold` everywhere. The shader's
+   * `atmCloudThresholdAt`.
    */
   readonly thresholdAt?: (xM: number, zM: number) => number;
   /** Radians per pixel (for the level of detail); 0 ignores the footprint. */
@@ -735,36 +679,7 @@ const float ATM_SLAB_UNIFORM_BLEND = ${glslFloat(CLOUD_SLAB.uniformBlendM)};
 const float ATM_SLAB_LIGHT_SERIES = ${glslFloat(CLOUD_SLAB.lightSeriesX)};
 const float ATM_SLAB_FORWARD_KNOWN = ${glslFloat(CLOUD_SLAB.forwardKnownFactor)};
 
-#ifdef ATM_SLAB_COVERAGE
-uniform float atmSlabCoverThresholds[33];
-// atm-slab-coverage-chunk
-// Twin of cloudSlabThresholdForCover.
-float atmSlabCoverThreshold(float cover) {
-  float c = clamp(cover, 0.0, 1.0) * 32.0;
-  int k = int(min(floor(c), 31.0));
-  return mix(atmSlabCoverThresholds[k], atmSlabCoverThresholds[k + 1], c - float(k));
-}
-#endif
-#ifdef ATM_SLAB_DISC
-uniform float atmSlabDiscM;
-#endif
-
-// The threshold at world x/z (twin of the march's thresholdAt): the cover
-// from the caller's map times the global cover (ATM_SLAB_COVERAGE), else
-// the global threshold; faded to clear around the camera (ATM_SLAB_DISC,
-// twin of cloudSlabDiscThreshold).
-float atmSlabThresholdAt(vec2 xz) {
-#ifdef ATM_SLAB_COVERAGE
-  float th = atmSlabCoverThreshold(atmSlabCoverageAt(xz) * atmCloudCover);
-#else
-  float th = atmCloudThreshold;
-#endif
-#ifdef ATM_SLAB_DISC
-  th = mix(th, 2.0, smoothstep(0.7 * atmSlabDiscM, atmSlabDiscM, length(xz - cameraPosition.xz)));
-#endif
-  return th;
-}
-
+${CLOUD_COVERAGE_GLSL}
 // Twin of cloudSlabCumulativeM.
 float atmSlabCumulative(float h) {
   if (h <= 0.0) return 0.0;
@@ -850,13 +765,13 @@ void main() {
   float first = 1.0 / float(ATM_SLAB_STEPS);
   float ta = tIn;
   float na = atmSlabNoiseAt(ta, mix(first * first, first, share) * lengthM, dir, horizontal);
-  float tha = atmSlabThresholdAt(cameraPosition.xz + dir.xz * ta);
+  float tha = atmCloudThresholdAt(cameraPosition.xz + dir.xz * ta, atmCloudThreshold, atmCloudCover);
   // atm-slab-loop-begin
   for (int i = 0; i <= ATM_SLAB_STEPS; i++) {
     float u = i == ATM_SLAB_STEPS ? 1.0 : (float(i) + jitter) / float(ATM_SLAB_STEPS);
     float tb = tIn + mix(u * u, u, share) * lengthM;
     float nb = atmSlabNoiseAt(tb, tb - ta, dir, horizontal);
-    float thb = atmSlabThresholdAt(cameraPosition.xz + dir.xz * tb);
+    float thb = atmCloudThresholdAt(cameraPosition.xz + dir.xz * tb, atmCloudThreshold, atmCloudCover);
     float ra = atmSlabRawThickness(na, tha);
     float rb = atmSlabRawThickness(nb, thb);
     float da = ra - (y + dir.y * ta - ATM_SLAB_BASE);
@@ -1020,57 +935,42 @@ export function setCloudSlabSceneDepth(
   material.needsUpdate = true;
 }
 
-/** Where a caller's coverage chunk goes in the fragment shader. */
-const COVERAGE_CHUNK = '// atm-slab-coverage-chunk';
-
 /**
  * A coverage map for the slab (globe volume-cloud plan 2026-10-05-0016,
- * C1), or none (null): `glsl` declares the caller's uniforms and defines
- * `float atmSlabCoverageAt(vec2 xz)`, the local cover (0 … 1) at world x/z
- * (metres), and `uniforms` are those uniforms. The local cover times the
- * global cover becomes the column's threshold through the noise's quantiles
- * (`cloudSlabThresholdForCover`), so the volume's clouds sit where the
- * map has them. A new program on each change (a define and the shader).
+ * C1), or none (null): the caller's chunk defines
+ * `float atmCloudCoverageAt(vec2 xz)`, the local cover (0 … 1) at world x/z
+ * (metres) (`cloud-coverage.ts`); the local cover times the global cover
+ * becomes the column's threshold through the noise's quantiles, so the
+ * volume's clouds sit where the map has them. A new program on each change
+ * (a define and the shader).
  *
- * @throws RangeError for a chunk that does not define atmSlabCoverageAt.
+ * @throws RangeError for a chunk that does not define atmCloudCoverageAt.
  */
 export function setCloudSlabCoverage(
   slab: THREE.Mesh,
-  coverage: {
-    glsl: string;
-    uniforms: Record<string, THREE.IUniform>;
-  } | null
+  coverage: CloudCoverage | null
 ): void {
   const material = slab.material as THREE.ShaderMaterial;
-  const { ATM_SLAB_COVERAGE: _old, ...rest } = material.defines;
+  const { ATM_CLOUD_COVERAGE: _old, ...rest } = material.defines;
   if (coverage === null) {
     material.defines = rest;
     material.fragmentShader = CLOUD_SLAB_FRAGMENT_GLSL;
     material.needsUpdate = true;
     return;
   }
-  if (!/float\s+atmSlabCoverageAt\s*\(\s*vec2\s+\w+\s*\)/.test(coverage.glsl)) {
-    throw new RangeError(
-      'the coverage chunk must define float atmSlabCoverageAt(vec2 xz)'
-    );
-  }
+  const fragment = withCloudCoverage(CLOUD_SLAB_FRAGMENT_GLSL, coverage.glsl);
   Object.assign(material.uniforms, coverage.uniforms);
-  material.uniforms['atmSlabCoverThresholds']!.value = [
-    ...cloudSlabCoverThresholds(),
-  ];
-  material.defines = { ...rest, ATM_SLAB_COVERAGE: 1 };
-  material.fragmentShader = CLOUD_SLAB_FRAGMENT_GLSL.replace(
-    COVERAGE_CHUNK,
-    coverage.glsl
-  );
+  material.uniforms['atmCoverThresholds']!.value = [...cloudCoverThresholds()];
+  material.defines = { ...rest, ATM_CLOUD_COVERAGE: 1 };
+  material.fragmentShader = fragment;
   material.needsUpdate = true;
 }
 
 /**
  * The slab's disc around the camera (C1): its clouds fade to clear from 0.7
- * `radiusM` to `radiusM` horizontally (`cloudSlabDiscThreshold`), so a
- * shell can draw the clouds beyond; null for no disc. A new program only
- * when the disc is turned on or off; another radius is a uniform.
+ * `radiusM` to `radiusM` horizontally (`cloudDiscThreshold`), so a shell
+ * can draw the clouds beyond; null for no disc. A new program only when the
+ * disc is turned on or off; another radius is a uniform.
  *
  * @throws RangeError for a radius that is not positive and finite.
  */
@@ -1082,11 +982,11 @@ export function setCloudSlabRadius(
     throw new RangeError(`the disc radius must be positive, got ${radiusM}`);
   }
   const material = slab.material as THREE.ShaderMaterial;
-  const had = material.defines['ATM_SLAB_DISC'] !== undefined;
-  if (radiusM !== null) material.uniforms['atmSlabDiscM']!.value = radiusM;
+  const had = material.defines['ATM_CLOUD_DISC'] !== undefined;
+  if (radiusM !== null) material.uniforms['atmCoverDiscM']!.value = radiusM;
   if (had === (radiusM !== null)) return;
-  const { ATM_SLAB_DISC: _old, ...rest } = material.defines;
-  material.defines = radiusM === null ? rest : { ...rest, ATM_SLAB_DISC: 1 };
+  const { ATM_CLOUD_DISC: _old, ...rest } = material.defines;
+  material.defines = radiusM === null ? rest : { ...rest, ATM_CLOUD_DISC: 1 };
   material.needsUpdate = true;
 }
 
@@ -1111,10 +1011,7 @@ export function createCloudSlab(
     // The coverage map's threshold table and the disc's radius, declared
     // from the start like the depth (set by setCloudSlabCoverage and
     // setCloudSlabRadius; unread until their defines are on).
-    atmSlabCoverThresholds: {
-      value: new Array<number>(COVER_STEPS + 1).fill(CLEAR_THRESHOLD),
-    },
-    atmSlabDiscM: { value: 1 },
+    ...cloudCoverageUniforms(),
   };
   const material = new THREE.ShaderMaterial({
     name: 'atmosphere-cloud-slab',

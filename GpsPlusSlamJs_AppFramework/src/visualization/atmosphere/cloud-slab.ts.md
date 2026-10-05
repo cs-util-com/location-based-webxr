@@ -83,28 +83,22 @@ it only in `cloudMode: 'slab'`.
   program); `RangeError` before any change for a count it is not built for.
 - **The coverage map and the disc** (globe volume-cloud plan
   2026-10-05-0016, C1), both opt-in by defines, so without them the slab is
-  today's (a test pins the march unchanged under a constant threshold):
-  - `cloudSlabCoverThresholds()`: the noise threshold for each cover
-    k / 32 (`cloudThreshold`, the global cover's own quantile rule), 2
-    (clear) at cover 0; computed once; the shader's
-    `atmSlabCoverThresholds`.
-  - `cloudSlabThresholdForCover(cover)`: linear between the table's
-    entries, the cover clamped to [0, 1]; `RangeError` for NaN.
-  - `cloudSlabDiscThreshold(threshold, horizontalM, radiusM)`: the
-    threshold faded to clear from 0.7 r to r around the camera (smoothstep);
-    `RangeError` for a radius not positive or a negative distance.
+  today's (a test pins the march unchanged under a constant threshold).
+  The shared rule, its helpers and its GLSL live in
+  [`cloud-coverage.ts.md`](cloud-coverage.ts.md) (the shadow uses the same,
+  C3):
   - `cloudSlabMarch`'s `thresholdAt(xM, zM)`: the threshold read at each
     node (both ends of a segment), the twin of the shader's
-    `atmSlabThresholdAt`. A camera inside its own disc carries a sliver of
+    `atmCloudThresholdAt`. A camera inside its own disc carries a sliver of
     cloud in its first segment by design (nodes are point-sampled).
-  - `setCloudSlabCoverage(slab, { glsl, uniforms } | null)`: the caller's
-    GLSL defines `float atmSlabCoverageAt(vec2 xz)` (the local cover at
-    world x/z, metres), inserted at the shader's coverage placeholder; the
-    local cover times `atmCloudCover` becomes the column's threshold.
-    `RangeError` for a chunk without that function. A new program on each
-    change.
-  - `setCloudSlabRadius(slab, radiusM | null)`: the disc; a new program
-    only when it is turned on or off.
+  - `setCloudSlabCoverage(slab, coverage | null)`: the caller's chunk
+    (defining `float atmCloudCoverageAt(vec2 xz)`) inserted
+    (`withCloudCoverage`), the define `ATM_CLOUD_COVERAGE`; the local cover
+    times `atmCloudCover` becomes the column's threshold. `RangeError` for
+    a chunk without that function. A new program on each change.
+  - `setCloudSlabRadius(slab, radiusM | null)`: the disc
+    (`ATM_CLOUD_DISC`, `atmCoverDiscM`); a new program only when it is
+    turned on or off.
 - `setCloudSlabSceneDepth(slab, depth | null)` (globe F2 plan
   2026-10-03-1922, F2c): the scene's depth texture, or none. With one, the
   define `ATM_SLAB_SCENE_DEPTH` ends the march at the scene (its point

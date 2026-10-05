@@ -858,7 +858,7 @@ export class SkyAtmosphere {
 
   /**
    * A coverage map for the cloud slab, or none (null): the caller's GLSL
-   * defining `float atmSlabCoverageAt(vec2 xz)` and its uniforms (globe
+   * defining `float atmCloudCoverageAt(vec2 xz)` and its uniforms (globe
    * volume-cloud plan 2026-10-05-0016, C1; `setCloudSlabCoverage`). Kept
    * across modes and handed to a slab made later; the sheet and the dome
    * ignore it. No GPU work.
