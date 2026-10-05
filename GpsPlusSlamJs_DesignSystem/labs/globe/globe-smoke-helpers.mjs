@@ -21,7 +21,16 @@ export function plainGlobe(hash) {
   return new URLSearchParams(hash).has("relief") ? hash : `relief=0&${hash}`;
 }
 
-export async function bootGlobe(page, hash, { phase = "arrived" } = {}) {
+/**
+ * Boots the lab at `hash` and waits for `phase`; returns the page's console
+ * errors. `plain: false` loads the hash as given, so the page's own
+ * defaults (the relief among them) apply.
+ */
+export async function bootGlobe(
+  page,
+  hash,
+  { phase = "arrived", plain = true } = {},
+) {
   const errors = [];
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
@@ -29,7 +38,7 @@ export async function bootGlobe(page, hash, { phase = "arrived" } = {}) {
   page.on("pageerror", (e) => errors.push(e.message));
   // A pin press starts the arrival prefetch: its city data is answered here.
   await routeCityData(page);
-  await page.goto(`/labs/globe/#${plainGlobe(hash)}`);
+  await page.goto(`/labs/globe/#${plain ? plainGlobe(hash) : hash}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
     null,

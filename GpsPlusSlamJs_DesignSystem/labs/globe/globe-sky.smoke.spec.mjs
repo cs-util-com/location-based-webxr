@@ -563,14 +563,16 @@ test("the Milky Way is visible towards the galactic centre", async ({
 }) => {
   const time = "time=2026-03-20T12:00:00Z&cloudDrift=0&stars=0";
   const errors = await bootLab(page, `at=0,0&spinMs=0&turnMs=0&${time}`);
-  // The galactic centre (J2000) in the world frame the sky pass renders.
+  // The galactic centre (J2000) in ECEF as the sky pass renders it (the
+  // world is the target's local frame since F2a; the view below is placed
+  // by latitude and longitude).
   const gcCelestial = [
     Math.cos(-28.93617 * DEG) * Math.cos(266.40499 * DEG),
     Math.cos(-28.93617 * DEG) * Math.sin(266.40499 * DEG),
     Math.sin(-28.93617 * DEG),
   ];
   const g = await page.evaluate(
-    (v) => window.__globeLab.celestialToWorld(v),
+    (v) => window.__globeLab.celestialToEcef(v),
     gcCelestial,
   );
   // The view's axis 30° east of the centre (so it sits beside the Earth,

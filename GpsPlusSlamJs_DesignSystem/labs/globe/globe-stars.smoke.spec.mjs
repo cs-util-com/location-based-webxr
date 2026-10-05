@@ -53,7 +53,7 @@ test("the packed stars draw where their directions say", async ({ page }) => {
   // axis 30° east of the star (the Earth's disc spans about 23°), the
   // camera over the antipode of that axis (as the Milky Way check does).
   const g = await page.evaluate(
-    (v) => window.__globeLab.celestialToWorld(v),
+    (v) => window.__globeLab.celestialToEcef(v),
     brightest,
   );
   const east = [-g[1], g[0], 0];

@@ -562,13 +562,35 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   pre-round-4 look pin (`withPreRound4Look`) carries `relief=0`, and
   `bootGlobe` and every direct page load go through `plainGlobe(hash)`,
   which adds `relief=0` to a hash that names no relief.
+- The sky hand-over (F2 plan 2026-10-03-1922 F2b; `globe-ground-sky.js`):
+  each frame, before the sky pass, the observer's height over the
+  ellipsoid's image (`observerAltitudeKm`) feeds the ground sky
+  (`groundSky=1`, the default; 0 keeps the space pass all the way down),
+  which returns its weight (0 above `skyEdgeKm`, 80, to 1 at
+  `skyEdgeKm - skyWidthKm`, 20 below) and the eased exposure, the sun's
+  scale in the scene from `sunIntensity` (space) to the ground sky's
+  automatic exposure; it IS the globe's sun intensity. The ground sky draws over
+  the space sky's pixels before the Earth, the space pass's sky light is
+  scaled by `1 - weight` (the ground keeps its veil), and the halo's
+  thickness eases from `atmoThickness` above 2,000 km to 1x below 300 km
+  (`atmoRamp=1`, DEC-GL5-13; `shellThicknessAt`). The ground sky
+  rebuilds in stages, one a frame, its observer quantised in
+  `skyStepPct` (5 %) steps; it works only in the target's local frame.
+  The state's `groundSky` carries its weight, exposure, quantised
+  observer, rebuild counts and the observer's height it is fed from.
 - The clip planes over the relief (F2a, M4): `reliefPlanes()` gives
-  `clipPlanes` the highest drawn ground under the camera and at eight
-  points a near plane's width around it (the relief's sampler), and the
-  highest real peak (8,850 m) times E, whoever owns the camera: after the
+  `clipPlanes` the distance to the nearest drawn ground (`reliefClearanceM`
+  over the relief's sampler at the camera's ground point and on a ring of
+  eight points as far out as the camera stands above it), and the highest
+  real peak (8,850 m) times E, whoever owns the camera: after the
   intro places it and after the controls' own update. The controls' rays
   hit only the carrier drawing most of the frame (`pickFrom`, the
   library's `setScene`), not the cloud shell or the other carrier.
+  `reliefPlanes=0` keeps the planes over the ellipsoid (the planes smoke's
+  positive control), and `__globeLab.planeProbe({ jitterM, levels })`
+  measures the held view: the pixels that change under a 1 mm camera move
+  (z-fighting) and the clear colour in the frame's lower two thirds (a
+  clipped ground).
 - The world frame (F2 plan 2026-10-03-1922 F2a, M3; `/globe/globe-frame.js`):
   `globe.group` carries one matrix from ECEF to a local frame at the target
   (x east, y up, the origin on the ground), set at the pin's press and at
@@ -578,8 +600,12 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   through `placeCameraEcef` (the intro's orbit pose, the dive, the
   clearance's radial lift, the recorder's placement) and every read
   through `ecefCamera` or the tiles' `worldToLocal` (the dive's start, the
-  state's `cameraDistanceM`, `cameraDirection` and `cameraDepressionDeg`,
-  so no smoke's expectation changed). The Earth's centre for the space sky
+  state's `cameraDistanceM`, `cameraDirection` and `cameraDepressionDeg`).
+  Two test hooks were missed at first and caught by the full globe run
+  (2026-10-05): `project(lat, lng)` now takes the ECEF point through the
+  frame, and `celestialToEcef(v)` gives the smokes that turn a celestial
+  direction into a latitude and longitude its ECEF form
+  (`celestialToWorld` stays in the world, compared with the sky's own sun). The Earth's centre for the space sky
   and the far-side test is the group's world position. `worldFrame=0`
   keeps ECEF, for a before/after; the state's `worldFrame` is the frame's
   target, and `__globeLab.reframe(target)` switches it for
