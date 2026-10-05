@@ -1058,7 +1058,7 @@ export function createViewerPlacement(deps: {
    *  leaves a gap in the ring. */
   async function decodeTourTextures(current: TourSession): Promise<Texture[]> {
     const textures: Texture[] = [];
-    for (const entry of entriesForVisitor(current.entries, ctx.visitorEntries)
+    for (const entry of entriesForVisitor(current.entries, ctx.scanEntries)
       .filter((candidate) => candidate.isImage)
       .slice(0, 3)) {
       try {

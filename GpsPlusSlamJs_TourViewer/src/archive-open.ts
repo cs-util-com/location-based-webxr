@@ -47,8 +47,8 @@ import {
 import type { ViewerMode } from "./mode.js";
 import {
   entriesForVisitor,
+  scanEntryNames,
   stopsVisitorDownload,
-  visitorEntryNames,
 } from "./tour-read-set.js";
 
 /** The label on every button that opens a tour. "Open" until the second
@@ -121,7 +121,7 @@ export function wireArchiveOpen(deps: {
     objectUrls = [];
     dom.gallery.replaceChildren();
     ctx.tourManifestStatus = "settled";
-    ctx.visitorEntries = null;
+    ctx.scanEntries = new Set();
     // Everything below belongs to a CLOSING tour, and without one there is
     // none of it: every writer of tour state runs after `ctx.session =
     // opened` and is guarded by it. What exists with no tour open is the
@@ -236,12 +236,9 @@ export function wireArchiveOpen(deps: {
   /** Sequentially stream image entries into the gallery — each image pops
    *  in as its bytes arrive, which is the visible proof of range streaming. */
   async function fillGallery(current: TourSession): Promise<void> {
-    // Only what a visitor reads (scan-pass plan S1): a copy that kept the
-    // walk must not decode the creator's frames onto every visitor's page.
-    for (const entry of entriesForVisitor(
-      current.entries,
-      ctx.visitorEntries,
-    )) {
+    // Never the creator's walk (scan-pass plan S1): a copy that kept it must
+    // not decode its frames onto every visitor's page.
+    for (const entry of entriesForVisitor(current.entries, ctx.scanEntries)) {
       if (ctx.session !== current) return; // a newer open superseded this one
       const item = document.createElement("li");
       const caption = document.createElement("figcaption");
@@ -430,20 +427,19 @@ export function wireArchiveOpen(deps: {
           if (ctx.session !== opened) return;
           ctx.tourManifest = manifest;
           ctx.tourManifestStatus = "settled";
-          ctx.visitorEntries =
+          ctx.scanEntries = new Set(
             manifest === null
-              ? null
-              : visitorEntryNames(
+              ? []
+              : scanEntryNames(
                   opened.entries.map((e) => e.filename),
                   manifest,
                   opened.manifestWrap,
-                );
+                ),
+          );
           // The background download fetches the WHOLE file; a visitor of a
           // copy that kept the walk reads entries on demand instead (the
           // archive's dispose aborts the download only).
-          if (
-            stopsVisitorDownload(deps.mode, opened.entries, ctx.visitorEntries)
-          ) {
+          if (stopsVisitorDownload(deps.mode, ctx.scanEntries)) {
             opened.archive.dispose();
           }
           // The gallery waits for the manifest, which says what it shows.

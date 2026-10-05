@@ -975,6 +975,8 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     (_, i) => `images/frame-${String(i + 1).padStart(6, "0")}.jpg`,
   );
   const WALK = ["session.json", "actions/000001.json", ...FRAMES];
+  // A file of the creator's own that no viewer reads: never the walk.
+  const README = `${WRAP}README.txt`;
 
   async function wireRecordingTour(keepScan: boolean) {
     const bytes = new Uint8Array(readFileSync(FIXTURE));
@@ -982,13 +984,13 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     const wired = await wireFinishable({
       hosted: [],
       placed: [pin("new-one")],
-      hostedContent: WALK.map((path) => ({ path, data: "x" })),
+      hostedContent: [...WALK, README].map((path) => ({ path, data: "x" })),
       sessionExtras: {
         hasRecording: true,
         entries: [
           { filename: `${WRAP}tour.json` },
           { filename: `${WRAP}qr/${LEVEL_ID}.json` },
-          ...WALK.map((filename) => ({
+          ...[...WALK, README].map((filename) => ({
             filename,
             isImage: filename.endsWith(".jpg"),
           })),
@@ -1013,6 +1015,9 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     );
     expect(names).toContain(`${WRAP}tour.json`);
     expect(names).toContain(`${WRAP}qr/${LEVEL_ID}.json`);
+    // A first version dropped every file a visitor does not read, which
+    // would have taken a creator's README or licence out of the copy.
+    expect(names).toContain(README);
     // The creator is told, because the hosted file may be their only copy.
     expect(dom.finishStatus.textContent).toContain(
       "leaves out the walk recording",

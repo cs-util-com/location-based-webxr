@@ -1,8 +1,8 @@
 /**
- * What a visitor of a tour reads (scan-pass plan S1, S-D10): the entries
- * the published copy keeps, and the only ones a visitor's viewer touches.
- * Everything else in the archive is the creator's - the walk recording,
- * its unbaked frames, depth - and "Publish" leaves it out by default.
+ * What a visitor of a tour reads, and the creator's walk a visitor never
+ * reads (scan-pass plan S1, S-D10): the walk recording's own files minus
+ * the photos a visitor sees. The Finish leaves the walk out of the
+ * published copy by default, and a visitor's page leaves it out too.
  *
  * @see tour-read-set.ts.md
  */
@@ -12,6 +12,10 @@ import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourMediaTypeOfEntry } from "gps-plus-slam-app-framework/ar/tour-media";
 import { signedManifestFilesOf } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
+import {
+  LEGACY_SESSION_IMAGES_DIR,
+  SESSION_IMAGES_DIR,
+} from "gps-plus-slam-app-framework/storage/file-system-utils";
 
 import type { ViewerMode } from "./mode.js";
 
@@ -47,39 +51,59 @@ export function visitorEntryNames(
   );
 }
 
-/** The entries a visitor never reads, in archive order: what a lean
- *  Publish removes. */
+/** A recorded frame: `frame-NNNNNN.<ext>` in the recording's images
+ *  folder (`images/`, or `frames/` in legacy recordings). */
+const RECORDED_FRAME = new RegExp(
+  String.raw`(^|/)(${SESSION_IMAGES_DIR}|${LEGACY_SESSION_IMAGES_DIR})/frame-\d+\.[A-Za-z0-9]+$`,
+);
+
+/** The recording's action stream: the walk itself. */
+const ACTION_ENTRY = /(^|\/)actions\//;
+
+/** An entry a recording writes: its `session.json`, its action stream,
+ *  its frames. Depth samples travel inside the actions. */
+function isRecordingEntry(name: string): boolean {
+  return (
+    name === "session.json" ||
+    name.endsWith("/session.json") ||
+    ACTION_ENTRY.test(name) ||
+    RECORDED_FRAME.test(name)
+  );
+}
+
+/**
+ * The creator's walk in this archive, in archive order: the recording's own
+ * entries (`session.json`, `actions/`, recorded frames) that a visitor
+ * never reads - a baked photo, or a frame the photo ring shows, stays. What
+ * a lean Finish removes and a visitor's page leaves out. Never a file the
+ * recording did not write: a README, credits or a licence file stays.
+ */
 export function scanEntryNames(
   entryNames: readonly string[],
   manifest: TourManifest,
   wrap: string,
 ): string[] {
+  // No action stream, no walk: a session.json or frame-named image of the
+  // tour's own is then just a file.
+  if (!entryNames.some((name) => ACTION_ENTRY.test(name))) return [];
   const read = visitorEntryNames(entryNames, manifest, wrap);
-  return entryNames.filter((name) => !read.has(name));
+  return entryNames.filter((name) => isRecordingEntry(name) && !read.has(name));
 }
 
-/** The entries a visitor's page shows: those in `visible`, or all of them
- *  for a tour without `tour.json` (`visible` null: no read set). */
+/** The entries a visitor's page shows: all of them except the walk. */
 export function entriesForVisitor<E extends { filename: string }>(
   entries: readonly E[],
-  visible: ReadonlySet<string> | null,
+  scan: ReadonlySet<string>,
 ): E[] {
-  return visible === null
-    ? [...entries]
-    : entries.filter((e) => visible.has(e.filename));
+  return entries.filter((e) => !scan.has(e.filename));
 }
 
 /** True when a VISITOR's background download of the whole archive should
- *  stop: the tour carries entries no visitor reads (a copy that kept the
- *  walk). A creator's working copy is still cached whole. */
+ *  stop: the copy carries a walk (kept for a co-author). A creator's
+ *  working copy is still cached whole. */
 export function stopsVisitorDownload(
   mode: ViewerMode,
-  entries: readonly { filename: string }[],
-  visible: ReadonlySet<string> | null,
+  scan: ReadonlySet<string>,
 ): boolean {
-  return (
-    mode === "visitor" &&
-    visible !== null &&
-    entries.some((e) => !visible.has(e.filename))
-  );
+  return mode === "visitor" && scan.size > 0;
 }

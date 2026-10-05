@@ -50,8 +50,8 @@ lives here.
     `finishing`, `rebuiltZip` (with the `manifest.json` list it carries,
     for the next Finish, K1 milestone review R7), `tourLabel` (set by
     archive-open); the open
-    tour's `tourManifest` (archive-open.ts) and `visitorEntries` (what a visitor
-    reads, from `tour-read-set.ts`; null without a manifest); the placement layer (M4):
+    tour's `tourManifest` (archive-open.ts) and `scanEntries` (the creator's
+    walk, from `tour-read-set.ts`; empty without a manifest); the placement layer (M4):
     `placedObjects` (each with an optional `placement`: the odometry-NUE
     pose in the world group and the AR visit it belongs to, authoring plan
     2026-09-28-0953 M2c; an edit or a move of a hosted object is an entry

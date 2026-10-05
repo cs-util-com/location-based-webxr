@@ -109,11 +109,11 @@ DOM glue, its own module since the flows plan M6.
   "failed to load".
 - The gallery streams SEQUENTIALLY; a newer open supersedes an in-flight
   fill per entry; object URLs are revoked on teardown.
-- **The gallery waits for `tour.json` and shows only what a visitor reads**
+- **The gallery waits for `tour.json` and leaves out the creator's walk**
   (scan-pass plan S1, `tour-read-set.ts`): the settle sets
-  `ctx.visitorEntries` (null without a manifest: every entry, as before)
-  and then fills the gallery; a broken manifest fills it unfiltered. A copy
-  that kept the creator's walk therefore never decodes its frames.
+  `ctx.scanEntries` (empty without a manifest, as before) and then fills
+  the gallery; a broken manifest fills it unfiltered. A copy that kept the
+  walk therefore never decodes its frames; every other file still shows.
 - **A visitor's page stops the background download of such a copy**
   (`stopsVisitorDownload`, visitor mode only): `archive.dispose()` aborts
   the warm, and the tour reads its entries by range instead. The cost is

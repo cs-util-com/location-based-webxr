@@ -39,7 +39,6 @@ const RECORDING = [
   "actions/000002.json",
   "images/frame-000001.jpg",
   "images/frame-000002.jpg",
-  "depth/000001.bin",
 ];
 
 describe("visitorEntryNames", () => {
@@ -123,8 +122,19 @@ describe("visitorEntryNames", () => {
 });
 
 describe("scanEntryNames", () => {
-  it("is everything a visitor never reads: the walk, its unbaked frames and its depth", () => {
-    const names = ["tour.json", ...RECORDING];
+  // The walk is defined by what a RECORDING writes (session.json,
+  // actions/, images/ or legacy frames/ frame-NNNNNN files), not as
+  // "everything a visitor does not read": a creator's README, credits or
+  // licence file is never the walk, and dropping it from the published copy
+  // would lose it silently (the first milestone browser run caught exactly
+  // that).
+  const spot = {
+    image: "images/frame-000002.jpg",
+    geo: { lat: 48, lon: 11, alt: 500, rotation: [0, 0, 0, 1] as const },
+  };
+
+  it("is the recording's own files a visitor never reads: the walk and its unbaked frames", () => {
+    const names = ["tour.json", ...RECORDING, "frames/frame-000009.jpg"];
     expect(
       scanEntryNames(
         names,
@@ -132,12 +142,7 @@ describe("scanEntryNames", () => {
           captureSpots: {
             fixes: 9,
             gpsAccuracyMedianM: null,
-            captures: [
-              {
-                image: "images/frame-000002.jpg",
-                geo: { lat: 48, lon: 11, alt: 500, rotation: [0, 0, 0, 1] },
-              },
-            ],
+            captures: [spot],
           },
         }),
         "",
@@ -147,11 +152,59 @@ describe("scanEntryNames", () => {
       "actions/000001.json",
       "actions/000002.json",
       "images/frame-000001.jpg",
-      "depth/000001.bin",
+      "frames/frame-000009.jpg",
     ]);
   });
 
-  it("is empty for a tour that carries only what visitors read", () => {
+  it("never names a file the recording did not write", () => {
+    expect(
+      scanEntryNames(
+        [
+          "tour.json",
+          "README.txt",
+          "credits/LICENSE.md",
+          "data.json",
+          "depth/000001.bin",
+          "images/poster.jpg",
+        ],
+        manifest({
+          captureSpots: {
+            fixes: 9,
+            gpsAccuracyMedianM: null,
+            captures: [spot],
+          },
+        }),
+        "",
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps a recording's frames for a tour without baked spots: the ring shows them", () => {
+    expect(scanEntryNames(["tour.json", ...RECORDING], manifest(), "")).toEqual(
+      ["session.json", "actions/000001.json", "actions/000002.json"],
+    );
+  });
+
+  it("is empty without an action stream, whatever else looks like a recording", () => {
+    // The e2e tour fixture carries a session.json of its own and no
+    // actions; the second milestone browser run caught a version that
+    // dropped it. Without a walk there is nothing of the walk to drop.
+    expect(
+      scanEntryNames(
+        ["tour.json", "session.json", "images/frame-000001.jpg"],
+        manifest({
+          captureSpots: {
+            fixes: 9,
+            gpsAccuracyMedianM: null,
+            captures: [spot],
+          },
+        }),
+        "",
+      ),
+    ).toEqual([]);
+  });
+
+  it("is empty for a tour that carries no recording", () => {
     expect(
       scanEntryNames(["tour.json", "qr/abc123.json"], manifest(), ""),
     ).toEqual([]);
@@ -168,27 +221,22 @@ describe("what a visitor's page shows and downloads", () => {
     { filename: "images/frame-000002.jpg" },
     { filename: "images/frame-000001.jpg" },
     { filename: "actions/000001.json" },
+    { filename: "README.txt" },
   ];
-  const visible = new Set(["tour.json", "images/frame-000002.jpg"]);
+  const scan = new Set(["images/frame-000001.jpg", "actions/000001.json"]);
 
-  it("keeps only the visitor's entries, in archive order", () => {
-    expect(entriesForVisitor(entries, visible)).toEqual([
+  it("leaves out the walk, in archive order, and keeps everything else", () => {
+    expect(entriesForVisitor(entries, scan)).toEqual([
       { filename: "tour.json" },
       { filename: "images/frame-000002.jpg" },
+      { filename: "README.txt" },
     ]);
   });
 
-  it("keeps everything for a tour without tour.json (no read set)", () => {
-    expect(entriesForVisitor(entries, null)).toEqual(entries);
-  });
-
-  it("stops a visitor's background download only for a tour that carries more than visitors read", () => {
-    expect(stopsVisitorDownload("visitor", entries, visible)).toBe(true);
-    expect(stopsVisitorDownload("visitor", entries.slice(0, 2), visible)).toBe(
-      false,
-    );
-    expect(stopsVisitorDownload("visitor", entries, null)).toBe(false);
+  it("stops a visitor's background download only for a copy that carries a walk", () => {
+    expect(stopsVisitorDownload("visitor", scan)).toBe(true);
+    expect(stopsVisitorDownload("visitor", new Set())).toBe(false);
     // The creator's working copy is theirs to cache whole.
-    expect(stopsVisitorDownload("creator", entries, visible)).toBe(false);
+    expect(stopsVisitorDownload("creator", scan)).toBe(false);
   });
 });

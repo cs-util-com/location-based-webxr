@@ -161,8 +161,8 @@ recording. Its own module since the flows plan M6.
   without them runs the SAME bake here (`capture-bake.ts`: each photo
   through the first settled alignment after it was taken), so both show
   the photos at the same spots.
-- **The ring's photos are the visitor's** (`entriesForVisitor` over
-  `ctx.visitorEntries`): the first three images a visitor reads, never a
+- **The ring's photos are never the walk's** (`entriesForVisitor` over
+  `ctx.scanEntries`): the first three images outside the walk, never a
   frame of a walk the copy kept for a co-author.
 - **A declined join is remembered** (`joinDeclined`) so a later lock goes
   straight to the ring instead of replaying the walk (seconds of CPU).
