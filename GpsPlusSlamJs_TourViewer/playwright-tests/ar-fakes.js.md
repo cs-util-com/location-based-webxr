@@ -15,6 +15,10 @@ camera, so `installTourViewerArFakes(page)` installs
   GPS fixes into the app store, so the mint gate and placement unlock.
   Shared by `ar-mode.spec.js`, `object-editing.spec.js` and
   `ar-layout.spec.js` (it was copied into the first two).
+- `standAt(page, north, east, second)` - one device fix with the phone
+  `north`/`east` metres from the fakes' zero, its AR pose taken back through
+  the store's current alignment, so the camera stands exactly there. Shared
+  by `stations.spec.js` and `sample-tour.spec.js`.
 - `openFixtureTour(page)` - opens the fixture tour on the creator's page
   (`?nocache=1`, range streaming) and opens step 4; `enterArAndMeasure(page)`
   enters AR, arms the fixture code, seeds the alignment and measures it, so

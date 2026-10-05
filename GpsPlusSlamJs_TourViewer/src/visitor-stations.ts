@@ -28,6 +28,7 @@ import { createSceneView, type SceneViewDom } from "./scene-view.js";
 import type { TourViewerSeams } from "./seams.js";
 import { wireStationGuide, type StationGuideDom } from "./station-guide.js";
 import { createStationPrefetch, decodeFigure } from "./station-prefetch.js";
+import { createStationRelocator } from "./tour-relocation.js";
 import type {
   TourViewerSession,
   TourViewerStore,
@@ -68,8 +69,25 @@ export function wireVisitorStations(deps: {
   };
   now: () => number;
   schedule: (fn: () => void, ms: number) => () => void;
+  /** The test switch `?relocate=here` (owner decision S-D9): move the
+   *  tour's geo stations to the phone's first GPS fix. Off by default. */
+  relocate?: { onRelocated: () => void };
 }): VisitorStations {
   const { ctx, arStore, seams, dom } = deps;
+  const relocator = createStationRelocator(
+    deps.relocate !== undefined,
+    deps.relocate?.onRelocated,
+  );
+  /** The phone's first raw GPS fix, for the test relocation. */
+  function firstFix(): { lat: number; lon: number; alt: number } | null {
+    const first = selectGpsPositions(arStore.getState())[0];
+    if (first === undefined) return null;
+    return {
+      lat: first.latitude,
+      lon: first.longitude,
+      alt: first.altitude ?? Number.NaN,
+    };
+  }
   const objectUrls = {
     create: (blob: Blob) => URL.createObjectURL(blob),
     revoke: (url: string) => {
@@ -161,8 +179,10 @@ export function wireVisitorStations(deps: {
       if (ctx.tourManifestStatus !== "settled" || manifest === null) {
         return null;
       }
+      const stations = relocator(manifest.stations, firstFix());
+      if (stations === null) return null;
       return {
-        stations: manifest.stations,
+        stations,
         order: manifest.order,
         levels: ctx.currentLevels,
       };

@@ -10,9 +10,11 @@ in those modules, the composition in `playwright-tests/stations.spec.js`.
 
 ## Public API
 
-- `wireVisitorStations({ ctx, mode, arStore, seams, dom, now, schedule }):
+- `wireVisitorStations({ ctx, mode, arStore, seams, dom, now, schedule, relocate? }):
 VisitorStations` - `{ tick, codeLocked, unlockAudio, stop }` (properties,
-  handed to the hooks unbound).
+  handed to the hooks unbound). `relocate` (`{ onRelocated }`) turns on the
+  test switch `?relocate=here` (`tour-relocation.ts`): the stations are
+  held back until the phone's first raw GPS fix, then moved there.
 
 ## Invariants & assumptions
 

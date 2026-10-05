@@ -137,7 +137,9 @@ there?", then the labelled skip), the story panel `#scene-panel` and
 `#scene-play-next` ("Play: <title>", a station waiting behind the story
 playing) are inside `#ar-root`: the visitor stays in AR the whole tour
 (K-D9). All start hidden; `station-guide.ts` and `scene-view.ts` show
-them.
+them. `#relocate-note` ("Test mode: this tour was moved to where you
+are.") shows only when the test switch `?relocate=here` moved the tour
+(`tour-relocation.ts`).
 `#ar-debug` (a `<pre>` in `#ar-root`, hidden unless `?debug=1`) holds the
 QR readout (QR near-frontal pose plan §66).
 Renaming one is an e2e-breaking change. `#ar-hint`, `#ar-status`,

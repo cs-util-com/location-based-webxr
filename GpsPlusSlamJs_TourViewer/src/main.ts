@@ -55,6 +55,7 @@ import {
 import { createViewerPlacement } from "./viewer-placement.js";
 import { createViewingLog } from "./viewing-log.js";
 import { wireVisitorStations } from "./visitor-stations.js";
+import { relocationRequested } from "./tour-relocation.js";
 import { wireVisitorScreen } from "./visitor-screen.js";
 import { driveProxyBaseUrl } from "./drive-proxy-url.js";
 import { stepStoreOrUndefined, wireWizard } from "./wizard.js";
@@ -512,6 +513,16 @@ const stations = wireVisitorStations({
   },
   now: () => Date.now(),
   schedule: (fn, ms) => seams.schedule(fn, ms),
+  // The test switch ?relocate=here (tour-relocation.ts, owner decision S-D9).
+  ...(relocationRequested(location.search)
+    ? {
+        relocate: {
+          onRelocated: () => {
+            element("relocate-note").hidden = false;
+          },
+        },
+      }
+    : {}),
 });
 hooks.tickStations = stations.tick;
 hooks.stationCodeLocked = stations.codeLocked;

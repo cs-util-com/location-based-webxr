@@ -572,3 +572,46 @@ export async function seedAlignment(page) {
     }
   });
 }
+
+/** Metres to degrees at the fakes' zero (47.5, 8.7). */
+const DEG_PER_M_LAT = 8.9832e-6;
+const DEG_PER_M_LON = 1.32966e-5;
+
+/**
+ * One device fix with the phone `north`/`east` metres from the zero in
+ * GPS-world terms: the fix reads that spot, and the AR pose is that spot
+ * taken back through the store's CURRENT alignment (whatever the code's
+ * votes made of it), so the camera stands exactly there.
+ */
+export async function standAt(page, north, east, second) {
+  await page.evaluate(
+    ({ north, east, lat, lon, timestamp }) => {
+      const test = /** @type {any} */ (window).__tourViewerTest;
+      const m =
+        test.alignmentStore.getState().gpsData?.gpsEvents?.alignmentMatrix;
+      const a =
+        m != null && m.length === 16
+          ? Array.from(m)
+          : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+      // World NUE -> odometry NUE: the rigid inverse R^T (w - t).
+      const d = [north - a[12], 1.4 - a[13], east - a[14]];
+      const n = a[0] * d[0] + a[1] * d[1] + a[2] * d[2];
+      const u = a[4] * d[0] + a[5] * d[1] + a[6] * d[2];
+      const e = a[8] * d[0] + a[9] * d[1] + a[10] * d[2];
+      test.emitGps({
+        lat,
+        lon,
+        accuracy: 4,
+        timestamp,
+        arPosition: [e, u, -n], // raw WebXR: x East, y Up, z South
+      });
+    },
+    {
+      north,
+      east,
+      lat: 47.5 + north * DEG_PER_M_LAT,
+      lon: 8.7 + east * DEG_PER_M_LON,
+      timestamp: 1_790_000_000_000 + second * 1000,
+    },
+  );
+}

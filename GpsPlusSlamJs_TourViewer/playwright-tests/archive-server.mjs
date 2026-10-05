@@ -33,6 +33,7 @@
  * OPTIONS must allow it and `Content-Range`/`ETag` must be exposed.
  */
 
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import {
   TextReader,
@@ -352,6 +353,11 @@ const zipBytes = await buildZip();
 const plainZipBytes = await buildZip({ withLevel: false });
 const recordingZipBytes = await buildRecordingZip();
 const stationsZipBytes = await buildStationsZip();
+const sampleZipBytes = new Uint8Array(
+  readFileSync(
+    new URL("../public/samples/marienplatz-tour.zip", import.meta.url),
+  ),
+);
 const ETAG = '"e2e-tour-v1"';
 
 /**
@@ -505,6 +511,11 @@ createServer((req, res) => {
   }
   if (url.pathname === "/ranges-ok/stations-tour.zip") {
     handleArchive(req, res, "ranges-ok", stationsZipBytes, '"e2e-stations-v1"');
+    return;
+  }
+  if (url.pathname === "/ranges-ok/sample-tour.zip") {
+    // The committed sample tour (public/samples, owner decision S-D9).
+    handleArchive(req, res, "ranges-ok", sampleZipBytes, '"e2e-sample-v1"');
     return;
   }
   if (url.pathname === "/ranges-ok/plain-tour.zip") {
