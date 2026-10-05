@@ -131,7 +131,13 @@ test("the ground sky takes over the sky without a jump, its exposure eased, its 
         await page.evaluate((pts) => {
           const lab = window.__globeLab;
           const px = lab.readPixels(pts);
-          return { px, weight: lab.state().groundSky?.weight ?? 0 };
+          const st = lab.state();
+          return {
+            px,
+            weight: st.groundSky?.weight ?? 0,
+            programs: st.programs,
+            haze: st.haze,
+          };
         }, g),
       );
     }
@@ -176,10 +182,15 @@ test("the ground sky takes over the sky without a jump, its exposure eased, its 
   }
   const skyDiff = meanDiff(sky[0], sky[1]);
   console.log(
-    `ground sky over 100-45 km: frame-to-frame step beyond the space pass's, worst ${verdict(worstStep, STEP)}; exposure, mean luminance per 0.1 of the weight beyond the space pass's, worst ${verdict(worstExposure, EXPOSURE_PER_TENTH)}; rebuild passes over the dive ${passes} (bound ${steps}); weights ${on.map((f) => f.weight.toFixed(2)).join(" ")}; looking up at ${HOLD_KM} km, the sky against the space pass ${verdict(skyDiff, SKY_AGAINST_SPACE)}`,
+    `ground sky over 100-45 km: frame-to-frame step beyond the space pass's, worst ${verdict(worstStep, STEP)}; exposure, mean luminance per 0.1 of the weight beyond the space pass's, worst ${verdict(worstExposure, EXPOSURE_PER_TENTH)}; rebuild passes over the dive ${passes} (bound ${steps}); weights ${on.map((f) => f.weight.toFixed(2)).join(" ")}; looking up at ${HOLD_KM} km, the sky against the space pass ${verdict(skyDiff, SKY_AGAINST_SPACE)}; programs ${on[0].programs} at weight 0 and ${on.at(-1).programs} at weight 1; haze at weight 1 ${JSON.stringify(on.at(-1).haze)}`,
   );
   expect(errors).toEqual([]);
   expect(passes).toBeLessThanOrEqual(steps);
+  // The fog is there for the whole page, so crossing the edge compiles
+  // nothing (frame-hitch review 2026-10-03-2017), and the haze is on below.
+  expect(on.at(-1).programs).toBe(on[0].programs);
+  expect(on.at(-1).haze.synced).toBe(true);
+  expect(on.at(-1).haze.density).toBeGreaterThan(0);
   expect(worstStep).toBeLessThanOrEqual(STEP);
   expect(worstExposure).toBeLessThanOrEqual(EXPOSURE_PER_TENTH);
   expect(skyDiff).toBeLessThanOrEqual(SKY_AGAINST_SPACE);

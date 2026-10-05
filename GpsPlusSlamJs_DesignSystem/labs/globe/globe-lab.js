@@ -103,6 +103,7 @@ import {
   observerAltitudeKm,
 } from "./globe-atmosphere-frame.js";
 import { createGlobeGroundSky } from "./globe-ground-sky.js";
+import { createGlobeHaze } from "./globe-haze.js";
 import { EARTH_ATMOSPHERE } from "/fw/visualization/atmosphere/atmosphere-model.js";
 import {
   GLOBE_SKY_HAND_OVER,
@@ -445,6 +446,9 @@ const PARAMS = {
     min: 1,
     max: 20,
   },
+  // The haze over the relief below the edge (F2b): the physical extinction
+  // times this (0 off), faded in with the ground sky's weight.
+  hazeScale: { fallback: 1, min: 0, max: 10 },
   // The reference image's looks (round-4 plan 2026-09-28-2105 DEC-GL4-8),
   // each 0 (off, the look before) to 1: a blue grade over the ground,
   // shaded clouds, a soft blue-grey night with warm lights, navy space and
@@ -1640,6 +1644,12 @@ async function start() {
     roles(terrain.tiles, asStencilWriter);
     roles(globe.tiles, asStencilFill);
   }
+  // The haze (F2b; globe-haze.js): one fog for the whole page, the relief's
+  // tiles patched last, after their own hooks and the stencil writer.
+  const haze = createGlobeHaze(scene, {
+    visibilityKm: groundSky.atmosphere?.visibilityKm ?? 60,
+  });
+  if (terrain) haze.patch(terrain.tiles);
   // The relief's detail colour, loaded only for the relief (its worker reads
   // the Osm library, which the boot graph must not).
   const detailRegion = terrain
@@ -2392,6 +2402,10 @@ async function start() {
             spaceExposure: params.sunIntensity,
           })
         : { weight: 0, exposure: params.sunIntensity };
+    // The haze follows the ground sky: its state after each read, its
+    // strength by the weight.
+    if (groundSky.state().lastStage === "read") haze.sync(groundSky.atmosphere);
+    haze.setWeight(skyHandOver.weight, params.hazeScale);
     globe.sun.intensity = skyHandOver.exposure;
     const thickness =
       params.atmoRamp === 1
@@ -2666,6 +2680,10 @@ async function start() {
       // height over the ellipsoid's image it is fed from (km).
       groundSky: { ...groundSky.state(), observerAltitudeKm: observerKm },
       // The clip planes in effect and the drawn ground they were fitted to.
+      // The haze (F2b) and the renderer's program count (a fog that came
+      // and went at the edge would recompile every material).
+      haze: haze.state(),
+      programs: renderer.info.programs?.length ?? null,
       planes: {
         near: camera.near,
         far: camera.far,

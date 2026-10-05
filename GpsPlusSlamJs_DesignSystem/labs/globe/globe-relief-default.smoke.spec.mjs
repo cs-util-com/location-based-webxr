@@ -35,7 +35,11 @@ function grid() {
 async function orbitFrame(page, hash) {
   const started = Date.now();
   const errors = await bootGlobe(page, hash, { plain: false });
-  const state = await arriveAt(page, AT);
+  // The orbit over the Alps settles in 107-116 s under SwiftShader (three
+  // runs, 2026-10-05), against 30-50 s at the other places the smokes use,
+  // so the default 120 s left no margin under load (2 of 3 batch runs
+  // timed out at "111 of 112" imagery tiles). Twice the slowest measured.
+  const state = await arriveAt(page, AT, { timeoutMs: 240_000 });
   const bootS = (Date.now() - started) / 1000;
   const px = await page.evaluate(
     (g) => window.__globeLab.readPixels(g),
@@ -47,7 +51,8 @@ async function orbitFrame(page, hash) {
 test("the default page draws the relief's globe: the same orbit as relief=0, its boot cost stated", async ({
   browser,
 }) => {
-  test.setTimeout(420_000);
+  // Two page loads, each up to about 2 min to boot and 4 min to settle.
+  test.setTimeout(900_000);
   const run = async (hash) => {
     const context = await browser.newContext();
     const page = await context.newPage();

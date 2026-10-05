@@ -56,9 +56,10 @@ export async function bootGlobe(
 /**
  * Waits until the page has arrived at `target` and its tiles have settled.
  * A new view loads every committed level under SwiftShader: 30-50 s
- * measured, so 60 s timed out once on a loaded machine.
+ * measured, so 60 s timed out once on a loaded machine. `timeoutMs` for a
+ * place measured slower (the Alps at 46.5 N 9 E: 107-116 s, 2026-10-05).
  */
-export async function arriveAt(page, target) {
+export async function arriveAt(page, target, { timeoutMs = 120_000 } = {}) {
   const started = Date.now();
   // Children of a just-parsed tile are queued only at the next update, so
   // one poll can see "nothing pending" between two levels: the tile count
@@ -83,7 +84,7 @@ export async function arriveAt(page, target) {
       return performance.now() - w.__settleSince >= 1000;
     },
     target,
-    { timeout: 120_000, polling: 100 },
+    { timeout: timeoutMs, polling: 100 },
   );
   // The settle time per view: a slow creep shows here long before 120 s.
   console.log(
