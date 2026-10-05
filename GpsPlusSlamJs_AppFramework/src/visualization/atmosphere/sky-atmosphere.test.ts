@@ -1421,3 +1421,49 @@ describe('SkyAtmosphere.setCloudSceneDepth (globe F2 plan 2026-10-03-1922, F2c)'
     ).toBeUndefined();
   });
 });
+
+describe('SkyAtmosphere coverage map and disc (globe volume-cloud plan 2026-10-05-0016, C1)', () => {
+  const slabOf = (scene: THREE.Scene) =>
+    scene.children.find((c) => c.name === 'atmosphere-cloud-slab') as
+      THREE.Mesh | undefined;
+  const coverage = {
+    glsl: 'uniform float uFlat;\nfloat atmSlabCoverageAt(vec2 xz) { return uFlat; }',
+    uniforms: { uFlat: { value: 0.5 } },
+  };
+
+  // The globe lab hands the slab the globe's cloud map and a disc around the
+  // camera; the slab exists only in slab mode, so both are kept and reach a
+  // slab made later, as the scene depth does.
+  it('hands the coverage and the disc to the slab, now and after a mode switch', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.setCloudCoverage(coverage);
+    atmosphere.setCloudDiscRadius(20_000);
+    atmosphere.configure({ cloudMode: 'slab' });
+    const m = slabOf(scene)!.material as THREE.ShaderMaterial;
+    expect(m.defines['ATM_SLAB_COVERAGE']).toBe(1);
+    expect(m.defines['ATM_SLAB_DISC']).toBe(1);
+    expect(m.uniforms['atmSlabDiscM']!.value).toBe(20_000);
+    atmosphere.configure({ cloudMode: 'dome' });
+    atmosphere.configure({ cloudMode: 'slab' });
+    const again = slabOf(scene)!.material as THREE.ShaderMaterial;
+    expect(again.defines['ATM_SLAB_COVERAGE']).toBe(1);
+    expect(again.uniforms['uFlat']!.value).toBe(0.5);
+  });
+
+  it('takes them away again', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.configure({ cloudMode: 'slab' });
+    atmosphere.setCloudCoverage(coverage);
+    atmosphere.setCloudDiscRadius(20_000);
+    atmosphere.setCloudCoverage(null);
+    atmosphere.setCloudDiscRadius(null);
+    const m = slabOf(scene)!.material as THREE.ShaderMaterial;
+    expect(m.defines['ATM_SLAB_COVERAGE']).toBeUndefined();
+    expect(m.defines['ATM_SLAB_DISC']).toBeUndefined();
+  });
+
+  it('refuses a bad radius before keeping it', () => {
+    const { atmosphere } = setup();
+    expect(() => atmosphere.setCloudDiscRadius(-5)).toThrow(RangeError);
+  });
+});

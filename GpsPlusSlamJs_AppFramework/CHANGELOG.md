@@ -19,6 +19,16 @@
   stops at the scene and the slab's depth test is off, so a ridge in front
   of a cloud deck no longer hides the cloud in front of it. Without one the
   slab is unchanged. `cloudSlabInterval` gains an optional `sceneM`.
+- **The cloud slab can take its coverage from a map and fade by distance**,
+  opt-in: `setCloudSlabCoverage(slab, { glsl, uniforms } | null)` (the
+  caller defines `float atmSlabCoverageAt(vec2 xz)`; the local cover becomes
+  the column's threshold through the noise's quantiles),
+  `setCloudSlabRadius(slab, r | null)` (the clouds fade to clear from 0.7 r
+  to r around the camera), the matching `SkyAtmosphere.setCloudCoverage`
+  and `setCloudDiscRadius`, the pure helpers
+  `cloudSlabCoverThresholds`, `cloudSlabThresholdForCover` and
+  `cloudSlabDiscThreshold`, and `cloudSlabMarch`'s optional
+  `thresholdAt`. Without them the slab is unchanged.
 - **`AtmosphereDevice` gains two OPTIONAL members**,
   `beginSkyViewRead()` (with the `SkyViewRead` type) and
   `bakeEnvironmentReused(scene)`; an existing implementation keeps

@@ -63,6 +63,8 @@ import {
   CLOUD_SLAB,
   CLOUD_SLAB_STEPS,
   createCloudSlab,
+  setCloudSlabCoverage,
+  setCloudSlabRadius,
   setCloudSlabSceneDepth,
   setCloudSlabSteps,
 } from './cloud-slab.js';
@@ -339,6 +341,9 @@ export class SkyAtmosphere {
   private slabSteps: number = CLOUD_SLAB.defaultSteps;
   /** The scene's depth for the slab (`setCloudSceneDepth`), kept across modes. */
   private sceneDepth: THREE.Texture | null = null;
+  /** The slab's coverage map and disc (`setCloudCoverage`, `setCloudDiscRadius`). */
+  private coverage: Parameters<typeof setCloudSlabCoverage>[1] = null;
+  private discRadiusM: number | null = null;
 
   constructor(options: SkyAtmosphereOptions) {
     try {
@@ -851,6 +856,39 @@ export class SkyAtmosphere {
     }
   }
 
+  /**
+   * A coverage map for the cloud slab, or none (null): the caller's GLSL
+   * defining `float atmSlabCoverageAt(vec2 xz)` and its uniforms (globe
+   * volume-cloud plan 2026-10-05-0016, C1; `setCloudSlabCoverage`). Kept
+   * across modes and handed to a slab made later; the sheet and the dome
+   * ignore it. No GPU work.
+   *
+   * @throws RangeError as `setCloudSlabCoverage` (only once a slab exists).
+   */
+  setCloudCoverage(coverage: Parameters<typeof setCloudSlabCoverage>[1]): void {
+    this.coverage = coverage;
+    if (this.mode === 'slab' && this.cloudMesh !== undefined) {
+      setCloudSlabCoverage(this.cloudMesh, coverage);
+    }
+  }
+
+  /**
+   * The cloud slab's disc around the camera (m), or none (null): its clouds
+   * fade to clear from 0.7 r to r (C1; `setCloudSlabRadius`). Kept across
+   * modes, like the coverage. Validated before it is kept.
+   *
+   * @throws RangeError for a radius that is not positive and finite.
+   */
+  setCloudDiscRadius(radiusM: number | null): void {
+    if (radiusM !== null && !(radiusM > 0 && Number.isFinite(radiusM))) {
+      throw new RangeError(`the disc radius must be positive, got ${radiusM}`);
+    }
+    this.discRadiusM = radiusM;
+    if (this.mode === 'slab' && this.cloudMesh !== undefined) {
+      setCloudSlabRadius(this.cloudMesh, radiusM);
+    }
+  }
+
   /** The current cloud mode. */
   get cloudMode(): CloudMode {
     return this.mode;
@@ -885,6 +923,12 @@ export class SkyAtmosphere {
       this.cloudMesh = createCloudSlab(shared, this.slabSteps);
       if (this.sceneDepth !== null) {
         setCloudSlabSceneDepth(this.cloudMesh, this.sceneDepth);
+      }
+      if (this.coverage !== null) {
+        setCloudSlabCoverage(this.cloudMesh, this.coverage);
+      }
+      if (this.discRadiusM !== null) {
+        setCloudSlabRadius(this.cloudMesh, this.discRadiusM);
       }
     }
     if (this.cloudMesh !== undefined) this.scene.add(this.cloudMesh);
