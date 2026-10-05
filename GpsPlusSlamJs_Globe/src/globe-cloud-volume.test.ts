@@ -100,7 +100,7 @@ describe("CLOUD_VOLUME_COVERAGE_GLSL", () => {
   // The chunk is the CPU twin's formula, reading the globe's own map.
   it("defines the slab's coverage function from the globe's map and the share", () => {
     const g = CLOUD_VOLUME_COVERAGE_GLSL;
-    expect(g).toMatch(/float\s+atmSlabCoverageAt\s*\(\s*vec2\s+xz\s*\)/);
+    expect(g).toMatch(/float\s+atmCloudCoverageAt\s*\(\s*vec2\s+xz\s*\)/);
     for (const name of [
       "uVolumeClouds",
       "uVolumeOrigin",

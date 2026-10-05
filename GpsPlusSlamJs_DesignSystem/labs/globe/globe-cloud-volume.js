@@ -29,6 +29,7 @@
 import * as THREE from "three";
 
 import { CLOUD_SLAB } from "/fw/visualization/atmosphere/cloud-slab.js";
+import { CloudShadow } from "/fw/visualization/atmosphere/cloud-shadow.js";
 import {
   CLOUD_VOLUME_COVERAGE_GLSL,
   cloudVolumeShare,
@@ -97,6 +98,25 @@ export function createGlobeCloudVolume(
   const lifted = new THREE.PerspectiveCamera();
   const size = new THREE.Vector2();
   const clearColour = new THREE.Color();
+  // The volume's shadow on the relief (C3): the framework's cloud shadow
+  // with the same coverage chunk and uniforms, the disc and the lift, so it
+  // falls from exactly the clouds the volume draws. Off until asked for.
+  const coverage = {
+    glsl: CLOUD_VOLUME_COVERAGE_GLSL,
+    uniforms: {
+      uVolumeClouds: surfaceUniforms.uClouds,
+      uVolumeLonOffset: surfaceUniforms.uCloudLonOffset,
+      uVolumeOpacity: surfaceUniforms.uCloudOpacity,
+      uVolumeOrigin: origin,
+      uVolumeShare: shareUniform,
+      uVolumeGain: gainUniform,
+    },
+  };
+  const shadow = new CloudShadow();
+  shadow.configureMap({ coverage, disc: true });
+  shadow.sync(atmosphere);
+  shadow.setEnabled(false);
+  let shadowOn = false;
   let enabled = false;
   let share = 0;
   let radiusM = 0;
@@ -117,17 +137,7 @@ export function createGlobeCloudVolume(
       enabled = on;
       if (on) {
         atmosphere.configure({ cloudMode: "slab", cloudCover: 1 });
-        atmosphere.setCloudCoverage({
-          glsl: CLOUD_VOLUME_COVERAGE_GLSL,
-          uniforms: {
-            uVolumeClouds: surfaceUniforms.uClouds,
-            uVolumeLonOffset: surfaceUniforms.uCloudLonOffset,
-            uVolumeOpacity: surfaceUniforms.uCloudOpacity,
-            uVolumeOrigin: origin,
-            uVolumeShare: shareUniform,
-            uVolumeGain: gainUniform,
-          },
-        });
+        atmosphere.setCloudCoverage(coverage);
         atmosphere.setCloudSceneDepth(depthTexture);
       } else {
         atmosphere.setCloudCoverage(null);
@@ -168,6 +178,9 @@ export function createGlobeCloudVolume(
         );
       }
       if (enabled) atmosphere.setCloudDiscRadius(radiusM > 0 ? radiusM : null);
+      shadow.setLiftM(liftM);
+      if (radiusM > 0) shadow.setDiscRadiusM(radiusM);
+      shadow.setEnabled(shadowOn && enabled && radiusM > 0);
       return { share, radiusM };
     },
     /**
@@ -217,8 +230,28 @@ export function createGlobeCloudVolume(
       renderer.render(compositeScene, quadCamera);
       drawn += 1;
     },
+    /**
+     * Patches every lit mesh `tiles` loads from now on with the volume's
+     * shadow (call before the haze's patch: the haze is applied last).
+     */
+    patchShadow(tiles) {
+      tiles.addEventListener("load-model", ({ scene: model }) => {
+        shadow.applyToObject(model);
+      });
+    },
+    /** The volume's shadow on (C3, `cloudShadowFrom=1`) or off. */
+    setShadow(on) {
+      shadowOn = Boolean(on);
+    },
     state() {
-      return { enabled, share, radiusM, liftM, drawn };
+      return {
+        enabled,
+        share,
+        radiusM,
+        liftM,
+        drawn,
+        shadow: shadowOn && enabled && radiusM > 0,
+      };
     },
     dispose() {
       depthTarget.dispose();

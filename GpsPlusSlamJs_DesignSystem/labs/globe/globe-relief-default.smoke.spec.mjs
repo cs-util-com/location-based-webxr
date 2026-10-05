@@ -17,7 +17,8 @@ import { expect, test } from "@playwright/test";
 import { arriveAt, bootGlobe } from "./globe-smoke-helpers.mjs";
 
 const AT = { lat: 46.5, lng: 9 };
-const VIEW = `at=${AT.lat},${AT.lng}&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0`;
+// cityWarm=0: no city data at load (K0), as in every other smoke.
+const VIEW = `at=${AT.lat},${AT.lng}&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&cityWarm=0`;
 /** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
 const SWEEP = [0.5, 1, 2];
 /** DEC-GL5-14: the look above the band, mean levels. */

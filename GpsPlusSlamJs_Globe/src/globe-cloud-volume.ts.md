@@ -20,7 +20,7 @@ own cloud map so the swap from the cloud shell never plops.
   mapping (u the longitude, v the latitude) with the drift taken off u.
   RangeError for a non-finite input.
 - `CLOUD_VOLUME_COVERAGE_GLSL`: the chunk for the framework's
-  `setCloudSlabCoverage`, defining `float atmSlabCoverageAt(vec2 xz)` as
+  `setCloudSlabCoverage`, defining `float atmCloudCoverageAt(vec2 xz)` as
   the map at `cloudVolumeMapUv`'s position times `uVolumeOpacity` and
   `uVolumeShare`. Uniforms: `uVolumeClouds`, `uVolumeOrigin` (latitude,
   longitude, radians), `uVolumeLonOffset`, `uVolumeOpacity`,

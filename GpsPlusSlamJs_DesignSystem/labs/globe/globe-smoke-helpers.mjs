@@ -13,12 +13,18 @@ import { expect } from "@playwright/test";
  * errors collect into.
  */
 /**
- * The hash with `relief=0` added when it names no relief: the relief is the
- * lab's default since F2a (DEC-GL5-15), and a smoke that does not ask for
- * it measures the plain globe it was written for.
+ * The hash with `relief=0` added when it names no relief (the relief is the
+ * lab's default since F2a, DEC-GL5-15, and a smoke that does not ask for it
+ * measures the plain globe it was written for), and `cityWarm=0` when it
+ * names no warm-up (K0: no city data before a press).
  */
 export function plainGlobe(hash) {
-  return new URLSearchParams(hash).has("relief") ? hash : `relief=0&${hash}`;
+  const named = new URLSearchParams(hash);
+  // The city's warm-up at load (K0, the city plan 2026-10-05-0040) is on by
+  // default; a smoke that does not name it keeps the old behaviour: no
+  // city data before a press (most smokes use `at=` only for the view).
+  const warm = named.has("cityWarm") ? "" : "cityWarm=0&";
+  return named.has("relief") ? `${warm}${hash}` : `relief=0&${warm}${hash}`;
 }
 
 /**
@@ -120,6 +126,8 @@ const PRE_ROUND4_LOOK = {
   // The plain globe: the relief is the default since F2a (DEC-GL5-15), and
   // these floors were measured without it.
   relief: "0",
+  // No city data before a press (K0 warms it from load by default).
+  cityWarm: "0",
   sunIntensity: String(Math.PI),
   nightGain: "1",
   sunSize: "0.533",

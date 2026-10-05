@@ -153,3 +153,73 @@ test("the cloud volume fades in on the descent without a jump, ending at the rel
   expect(on[0].volume.share).toBe(0);
   expect(worstStep).toBeLessThanOrEqual(STEP);
 });
+
+// WHY (C3): the owner asked for the volume's shadows compared against the
+// 2D layer's. The same ground pixels at the 12 km hold, looking down, with
+// no cloud shadow, the shell's soft shadow (the default) and the volume's
+// (cloudShadowFrom=1, from the same map through the volume's own clouds):
+// each shadow's mean darkening and how alike the two patterns are (their
+// correlation over the pixels). Logged for the owner's eye; asserted only
+// that neither brightens the ground and that the volume's shadow darkens.
+test("the volume's shadow on the relief against the shell's soft shadow", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(900_000);
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation(TARGET);
+  const errors = await bootGlobe(page, BASE);
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return (
+        s.phase === "landed" && s.pin.phase === "idle" && s.relief?.settled
+      );
+    },
+    null,
+    { timeout: 300_000 },
+  );
+  const g = [];
+  for (let i = 0; i < 16; i++) {
+    for (let j = 0; j < 10; j++) g.push([0.04 + i * 0.06, 0.3 + j * 0.065]);
+  }
+  const read = async (extra) => {
+    await page.evaluate((h) => {
+      location.hash = h;
+    }, `${BASE}${extra}&bandFreeze=1`);
+    await page.evaluate(() => window.__globeLab.timeFrames(3));
+    return page.evaluate((pts) => {
+      const lab = window.__globeLab;
+      return { px: lab.readPixels(pts), volume: lab.state().cloudVolume };
+    }, g);
+  };
+  const lum = (p) => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
+  const none = await read("&cloudShadow=0&cloudShadowFrom=0");
+  const shell = await read("&cloudShadowFrom=0");
+  const volume = await read("&cloudShadowFrom=1");
+  const dShell = none.px.map((p, i) => lum(p) - lum(shell.px[i]));
+  const dVolume = none.px.map((p, i) => lum(p) - lum(volume.px[i]));
+  const mean = (a) => meanOf(a);
+  const corr = (a, b) => {
+    const ma = mean(a);
+    const mb = mean(b);
+    let ab = 0;
+    let aa = 0;
+    let bb = 0;
+    for (let i = 0; i < a.length; i++) {
+      ab += (a[i] - ma) * (b[i] - mb);
+      aa += (a[i] - ma) ** 2;
+      bb += (b[i] - mb) ** 2;
+    }
+    return aa > 0 && bb > 0 ? ab / Math.sqrt(aa * bb) : 0;
+  };
+  console.log(
+    `cloud shadows at ${HOLD_KM} km: the shell's darkens the ground by a mean ${mean(dShell).toFixed(2)} levels (max ${Math.max(...dShell).toFixed(1)}), the volume's by ${mean(dVolume).toFixed(2)} (max ${Math.max(...dVolume).toFixed(1)}); their patterns correlate ${corr(dShell, dVolume).toFixed(2)}; the volume's shadow on: ${volume.volume?.shadow}`,
+  );
+  expect(errors).toEqual([]);
+  expect(volume.volume?.shadow).toBe(true);
+  expect(mean(dShell)).toBeGreaterThanOrEqual(-0.5);
+  expect(mean(dVolume)).toBeGreaterThanOrEqual(-0.5);
+  expect(Math.max(...dVolume)).toBeGreaterThan(1);
+});

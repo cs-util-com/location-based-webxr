@@ -11,7 +11,7 @@
  *   z south, metres) reads the globe's cloud map, with the clouds' drift;
  *   the CPU twin of the GLSL chunk.
  * - `CLOUD_VOLUME_COVERAGE_GLSL`: the chunk the slab's coverage hook takes
- *   (`setCloudSlabCoverage`), defining `atmSlabCoverageAt(vec2 xz)`.
+ *   (`setCloudSlabCoverage`), defining `atmCloudCoverageAt(vec2 xz)`.
  *
  * A flat frame around the target: within the disc (at most 40 km) the
  * curvature's drop is 125 m, a tenth of the slab's thickness.
@@ -97,7 +97,7 @@ uniform float uVolumeLonOffset;
 uniform float uVolumeOpacity;
 uniform float uVolumeShare;
 uniform float uVolumeGain;
-float atmSlabCoverageAt(vec2 xz) {
+float atmCloudCoverageAt(vec2 xz) {
   float lat = uVolumeOrigin.x - xz.y / ${EARTH_RADIUS_M.toFixed(1)};
   float lon = uVolumeOrigin.y + xz.x / ( ${EARTH_RADIUS_M.toFixed(1)} * max( cos( uVolumeOrigin.x ), 0.01 ) );
   vec2 uv = vec2( ( lon - uVolumeLonOffset ) * 0.15915494309189535 + 0.5, lat * 0.3183098861837907 + 0.5 );

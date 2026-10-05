@@ -570,7 +570,12 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   share and disc are set and the shell's hole matches the disc (variant
   1); after the Earth it draws the slab from the ground sky, ending at the
   relief's depth. The state's `cloudVolume` carries its share, disc, lift
-  and drawn frames.
+  and drawn frames. `cloudShadowFrom` (C3) picks the ground's cloud shadow:
+  0 the shell's soft one (the default, as before), 1 the volume's (the
+  shell's then off). Measured at the 12 km hold: the shell's darkens by a
+  mean 0.93 levels, the volume's by 0.07 in sparse patches up to 9.5, and
+  the two patterns do not correlate (-0.03); whether the volume's shadow
+  is placed right is not yet verified.
 - The sky hand-over (F2 plan 2026-10-03-1922 F2b; `globe-ground-sky.js`):
   each frame, before the sky pass, the observer's height over the
   ellipsoid's image (`observerAltitudeKm`) feeds the ground sky

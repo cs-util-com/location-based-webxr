@@ -464,6 +464,12 @@ const PARAMS = {
   // (thinner below 1): the knobs the no-plop sweep measured (C4).
   cloudVolumeFadeKm: { fallback: 25, min: 1, max: 40 },
   cloudVolumeCover: { fallback: 0.5, min: 0, max: 2 },
+  // Whose shadow the ground gets (C3): 0 the shell's soft one (as before), 1
+  // the volume's, from the same map through the volume's own clouds.
+  cloudShadowFrom: { fallback: 0, min: 0, max: 1 },
+  // The city's data warmed from load when the link names a place (`at=`;
+  // the city plan 2026-10-05-0040, K0); 0 waits for the pin's press.
+  cityWarm: { fallback: 1, min: 0, max: 1 },
   // The reference image's looks (round-4 plan 2026-09-28-2105 DEC-GL4-8),
   // each 0 (off, the look before) to 1: a blue grade over the ground,
   // shaded clouds, a soft blue-grey night with warm lights, navy space and
@@ -1299,6 +1305,17 @@ function bindPin({
   });
   render();
   return {
+    /**
+     * Starts the city's prefetch for `target` before any press (the city
+     * plan 2026-10-05-0040, K0): a link that names a place warms its data
+     * while the globe still turns. A later press restarts it for the place
+     * it locates; what was stored counts as warm. Nothing while flying, and
+     * nothing with `prefetch=0`.
+     */
+    warm(target) {
+      if (phase === "flying" || getParams().prefetch === 0) return;
+      startArrival(target, getParams());
+    },
     /** The controls took the camera, or the intro restarted. */
     cameraTaken() {
       if (phase !== "flying") return;
@@ -1659,14 +1676,9 @@ async function start() {
     roles(terrain.tiles, asStencilWriter);
     roles(globe.tiles, asStencilFill);
   }
-  // The haze (F2b; globe-haze.js): one fog for the whole page, the relief's
-  // tiles patched last, after their own hooks and the stencil writer.
-  const haze = createGlobeHaze(scene, {
-    visibilityKm: groundSky.atmosphere?.visibilityKm ?? 60,
-  });
-  if (terrain) haze.patch(terrain.tiles);
   // The cloud volume (C2; globe-cloud-volume.js): the ground sky's slab, its
-  // clouds from the globe's map, ending at the relief's depth.
+  // clouds from the globe's map, ending at the relief's depth; its shadow
+  // (C3) patches the relief before the haze does.
   const cloudVolume =
     terrain && groundSky.supported
       ? createGlobeCloudVolume(renderer, {
@@ -1675,6 +1687,13 @@ async function start() {
           surfaceUniforms: globe.surfaceUniforms,
         })
       : null;
+  if (cloudVolume) cloudVolume.patchShadow(terrain.tiles);
+  // The haze (F2b; globe-haze.js): one fog for the whole page, the relief's
+  // tiles patched last, after their own hooks and the stencil writer.
+  const haze = createGlobeHaze(scene, {
+    visibilityKm: groundSky.atmosphere?.visibilityKm ?? 60,
+  });
+  if (terrain) haze.patch(terrain.tiles);
   // The relief's detail colour, loaded only for the relief (its worker reads
   // the Osm library, which the boot graph must not).
   const detailRegion = terrain
@@ -2051,6 +2070,9 @@ async function start() {
     sceneMs,
     navigate: (url) => location.assign(url),
   });
+  // A link that names a place (`at=`) warms the city's data from load (the
+  // city plan K0), not only from the pin's press.
+  if (params.url && params.cityWarm === 1) pin.warm(params.url);
 
   /** The frame-hitch recorder (`#perf=1` only, `globe-perf.js`), or null. */
   let perf = null;
@@ -2392,7 +2414,11 @@ async function start() {
     const shellShare = params.cloudShell === 1 && terrain ? bandShare : 0;
     globe.setCloudShellShare(shellShare);
     if (cloudShellHidden) globe.cloudShell.mesh.visible = false;
-    globe.surfaceUniforms.uCloudShadow.value = params.cloudShadow * shellShare;
+    // The shell's soft shadow, unless the volume's is chosen (C3).
+    globe.surfaceUniforms.uCloudShadow.value =
+      params.cloudShadowFrom === 1 && cloudVolume
+        ? 0
+        : params.cloudShadow * shellShare;
     status.update(globe.state());
     readoutText = readoutNow();
     readout.offer(readoutText, performance.now());
@@ -2436,6 +2462,7 @@ async function start() {
     // once at every altitude.
     if (cloudVolume) {
       cloudVolume.setEnabled(params.cloudVolume > 0);
+      cloudVolume.setShadow(params.cloudShadowFrom === 1);
       const volume = cloudVolume.update({
         altitudeKm: Math.max(0, observerKm),
         target: worldFrame.target,

@@ -24,7 +24,12 @@ and ending at the relief, so a ridge in front of a cloud hides it.
     volume).
   - `render(camera, relief)`: after the Earth, nothing at share 0: the
     relief's depth pass, the slab from the lifted camera, the composite.
-  - `state()`: `{ enabled, share, radiusM, liftM, drawn }`.
+  - `patchShadow(tiles)` and `setShadow(on)` (C3): the volume's shadow on
+    the relief, the framework's `CloudShadow` with the same coverage chunk
+    and uniforms, the disc and the lift (`configureMap`), so it falls from
+    the clouds the volume draws; patched before the haze (which is applied
+    last); on only while the volume draws.
+  - `state()`: `{ enabled, share, radiusM, liftM, drawn, shadow }`.
   - `dispose()`.
 
 ## Invariants & assumptions

@@ -198,3 +198,53 @@ test("stopping the flight aborts the prefetch and says so", async ({
   city.release();
   expect(errors).toEqual([]);
 });
+
+// WHY (the city plan 2026-10-05-0040, K0): a link that names a place warms
+// its city data from load, while the globe still turns, not only from the
+// pin's press, so a direct link to Zurich lands warm. With prefetch=0 it
+// waits, as every other smoke does by pinning cityWarm=0.
+test("a link that names a place warms its city data before any press", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(240_000);
+  const ZURICH =
+    "at=47.3769,8.5417&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&handOver=0";
+  const city = await routeCityData(page);
+  const { errors, requests } = await boot(
+    page,
+    context,
+    `${ZURICH}&cityWarm=1`,
+  );
+  await page.waitForFunction(
+    () => window.__globeLab.state().pin.arrival?.counts?.overpass?.total > 0,
+    null,
+    { timeout: 120_000 },
+  );
+  const warming = await arrival(page);
+  console.log(
+    `warm from load at Zurich: pin ${warming.pin}, overpass ${JSON.stringify(warming.counts.overpass)}, line "${warming.line}", city requests ${city.seen.overpass}`,
+  );
+  expect(warming.pin).toBe("idle");
+  expect(prefetchGraph(requests).length).toBeGreaterThan(0);
+  expect(city.seen.overpass).toBeGreaterThan(0);
+  expect(errors).toEqual([]);
+});
+
+test("with prefetch=0 a link that names a place loads no city data", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(240_000);
+  await routeCityData(page);
+  const { errors, requests } = await boot(
+    page,
+    context,
+    "at=47.3769,8.5417&spinMs=0&turnMs=0&cloudDrift=0&handOver=0&cityWarm=1&prefetch=0",
+  );
+  expect(
+    await page.evaluate(() => window.__globeLab.state().pin.arrival),
+  ).toBeNull();
+  expect(prefetchGraph(requests)).toEqual([]);
+  expect(errors).toEqual([]);
+});
