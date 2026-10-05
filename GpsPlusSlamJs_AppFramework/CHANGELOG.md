@@ -16,6 +16,13 @@
   cause.
 - `qrMintHeadingMarker` is now exported from `ar/qr/qr-anchor-mint` (D31's
   marker, reused by the Tour Viewer's re-mint).
+- **`disposeObject3D` frees every texture of a material** (tour kit K4
+  review R12), not only `.map`: normal, roughness, emissive and every other
+  `Texture`-valued property, each texture once. `ShaderMaterial` uniforms
+  stay with the caller.
+- **`checkGlbInert` measures every image inside a model** against the tour
+  image cap, and `decodeFrameTexture` takes a `maxPixels` option (tour kit K4
+  review R2).
 
 ### Added
 
@@ -25,7 +32,7 @@
   after a moment" (`openMatureAlignmentPick`, `advanceMatureAlignmentPick`,
   `isMatureAlignment`, `checkMatureGpsExtentM`), shared by the QR mint
   tracker, the Tour Viewer's authoring settle and `createGpsAnchor({
-  startup: 'mature-alignment', getGpsExtentM, matureGpsExtentM? })`, whose
+startup: 'mature-alignment', getGpsExtentM, matureGpsExtentM? })`, whose
   object is fixed through that alignment and untouched while it waits
   (`settleNow()` when the session ends first). `'median'` stays the
   default. `createGpsExtentTracker` now skips a fix without coordinates
@@ -40,6 +47,11 @@
   `storage/capped-response-body`, `storage/byte-counting-stream`), an
   `acceptLocalCopy` hook on `openRemoteArchive`, and
   `loadActionsFromEntries`.
+- **Image sizes from the header** (tour kit K4 review R2): `imageInfo` and
+  `imageInfoOfBlob` read the width and height of JPEG, PNG, WebP, GIF and
+  AVIF images without decoding them; `TOUR_MAX_IMAGE_PIXELS` (4096 x 4096)
+  and `checkImageWithinCap` refuse a tour image over the cap before it is
+  decoded.
 
 ## [1.26.1] — 2026-10-04
 
