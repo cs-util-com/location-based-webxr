@@ -121,25 +121,26 @@ export const GLOBE_CLIP = {
  *   visible, and past the far plane the tiles renderer culls the far side
  *   of the Earth too, which it would otherwise load (globe plan §15).
  *
- * Over a drawn relief (F2 plan F2a, M4) `groundM` is the highest drawn
- * ground below and around the camera (m above the ellipsoid): the near
- * plane is then its fraction of the height above THAT ground. `peakM` is
- * the highest drawn peak anywhere: the far plane adds that peak's own
- * horizon distance, so a peak standing just beyond the sea-level horizon is
- * still drawn. Both default to 0, the plain ellipsoid.
+ * Over a drawn relief (F2 plan F2a, M4) `clearanceM` is the distance from
+ * the camera to the nearest drawn ground (`reliefClearanceM`): the near
+ * plane is then its fraction of that, capped by the height above the
+ * ellipsoid (the globe's own surface is drawn too). `peakM` is the highest
+ * drawn peak anywhere: the far plane adds that peak's own horizon distance,
+ * so a peak standing just beyond the sea-level horizon is still drawn.
+ * Without them, the plain ellipsoid.
  *
  * RangeError for a non-finite position or one at the centre, or a
- * non-finite ground or a negative or non-finite peak.
+ * negative or NaN clearance or a negative or non-finite peak.
  */
 export function clipPlanes(
   ellipsoid: Ellipsoid,
   position: THREE.Vector3,
-  relief: { groundM?: number; peakM?: number } = {},
+  relief: { clearanceM?: number; peakM?: number } = {},
 ): { near: number; far: number } {
-  const { groundM = 0, peakM = 0 } = relief;
-  if (!Number.isFinite(groundM) || !(peakM >= 0 && Number.isFinite(peakM))) {
+  const { clearanceM = Number.POSITIVE_INFINITY, peakM = 0 } = relief;
+  if (!(clearanceM >= 0) || !(peakM >= 0 && Number.isFinite(peakM))) {
     throw new RangeError(
-      `the drawn ground must be finite and the peak finite and >= 0, got ${groundM}, ${peakM}`,
+      `the clearance must be >= 0 and the peak finite and >= 0, got ${clearanceM}, ${peakM}`,
     );
   }
   const distance = position.length();
@@ -148,9 +149,9 @@ export function clipPlanes(
       `camera position must be finite and off the centre, got ${position.toArray().join(", ")}`,
     );
   }
-  const height = Math.max(
-    0,
-    ellipsoid.getPositionElevation(position) - Math.max(0, groundM),
+  const height = Math.min(
+    Math.max(0, ellipsoid.getPositionElevation(position)),
+    clearanceM,
   );
   const near = Math.max(GLOBE_CLIP.minNearM, height * GLOBE_CLIP.nearFraction);
   const radii = [ellipsoid.radius.x, ellipsoid.radius.y, ellipsoid.radius.z];
@@ -161,6 +162,40 @@ export function clipPlanes(
     Math.sqrt((b + peakM) ** 2 - b ** 2) +
     (a - b);
   return { near, far: Math.max(far, near * 2) };
+}
+
+/**
+ * The distance (m) from a camera `altitudeM` above the ellipsoid to the
+ * nearest of the drawn-ground `samples`, each `distanceM` away horizontally
+ * at drawn height `groundM` (null: not loaded yet, skipped): the hypotenuse
+ * of the horizontal distance and the height difference, so a point beside
+ * the camera counts at least its horizontal distance however high it
+ * stands (F2a's browser run: the first rule, the height above the HIGHEST
+ * ground nearby, went negative under a ridge and floored the near plane).
+ * Infinity without a sample. RangeError for a non-finite altitude or a
+ * sample with a negative or non-finite distance or a non-finite height.
+ */
+export function reliefClearanceM(
+  altitudeM: number,
+  samples: readonly { distanceM: number; groundM: number | null }[],
+): number {
+  if (!Number.isFinite(altitudeM)) {
+    throw new RangeError(`the altitude must be finite, got ${altitudeM}`);
+  }
+  let nearest = Number.POSITIVE_INFINITY;
+  for (const { distanceM, groundM } of samples) {
+    if (!(distanceM >= 0 && Number.isFinite(distanceM))) {
+      throw new RangeError(
+        `a sample's distance must be >= 0, got ${distanceM}`,
+      );
+    }
+    if (groundM === null) continue;
+    if (!Number.isFinite(groundM)) {
+      throw new RangeError(`a sample's height must be finite, got ${groundM}`);
+    }
+    nearest = Math.min(nearest, Math.hypot(distanceM, altitudeM - groundM));
+  }
+  return nearest;
 }
 
 /** Hermite ease on [0, 1], clamped outside it (`globe-ease.ts`). */

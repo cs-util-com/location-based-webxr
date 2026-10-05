@@ -39,9 +39,18 @@
       half turn over the whole turn (so the up turns about three times faster
       than the view moves on a 60° arc over a pole: continuous, and for the
       owner to judge on the phone).
+  - `reliefClearanceM(altitudeM, samples)` (F2a, M4) - the distance from a
+    camera at `altitudeM` to the nearest drawn-ground sample `{ distanceM,
+groundM }` (null heights skipped): the hypotenuse of the horizontal
+    distance and the height difference, so a ridge beside the camera counts
+    at least its horizontal distance however high it stands; Infinity
+    without a sample; RangeError for a non-finite altitude or a bad sample.
+    The first rule (the height above the HIGHEST ground nearby) went
+    negative under a ridge and floored the near plane at 1 m (F2a's browser
+    run, 2026-10-05).
   - `smoothstep(t)` - the Hermite ease, clamped (the package's one copy,
     DEC-H3's per-package rule).
-  - `clipPlanes(ellipsoid, position, { groundM?, peakM? })` and `GLOBE_CLIP` (round-2 plan
+  - `clipPlanes(ellipsoid, position, { clearanceM?, peakM? })` and `GLOBE_CLIP` (round-2 plan
     2026-09-26-2055 M3b) - the near and far planes while the intro drives
     the camera, for a position in the ellipsoid's frame, whatever the
     camera looks at:
@@ -81,9 +90,9 @@
   - `smoothstep`: ends, clamping, monotonic, symmetric.
   - `clipPlanes`: the near plane's scale and floor, the fitted view's far
     plane short of the centre, the 150 km horizon, the refusals; over a
-    relief (F2 plan F2a, M4) the near plane from the height above the
-    drawn ground (`groundM`, the highest drawn ground below and around the
-    camera; a ground above the camera gives the floor), and the far plane
+    relief (F2 plan F2a, M4) the near plane from the distance to the
+    nearest drawn ground (`clearanceM`, capped by the height above the
+    ellipsoid; 0 gives the floor), and the far plane
     plus the highest drawn peak's own horizon distance (`peakM`), so a
     peak just beyond the sea-level horizon is still drawn.
   - Mutants checked 2026-09-26, each failing one test: the geodetic normal
