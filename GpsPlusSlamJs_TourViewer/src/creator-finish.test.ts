@@ -72,6 +72,7 @@ interface FakeEl {
   textContent: string;
   disabled: boolean;
   value: string;
+  checked: boolean;
   open: boolean;
   /** The status line's AR clamp flag (`data-clamped`). */
   dataset: Record<string, string>;
@@ -89,6 +90,7 @@ function el(): FakeEl {
     textContent: "",
     disabled: false,
     value: "",
+    checked: false,
     open: false,
     dataset: {},
     handlers,
@@ -144,6 +146,8 @@ const DOM_KEYS = [
   "moveUndo",
   "moveUndoText",
   "moveUndoButton",
+  "keepScanRow",
+  "keepScanInput",
 ] as const;
 
 function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {
@@ -950,5 +954,92 @@ describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)
     await settle(ctx);
     expect(ctx.finishError).toBeNull();
     expect(await writtenManifest(ctx)).not.toHaveProperty("captureSpots");
+  });
+});
+
+describe("the published copy carries only what visitors need (scan-pass plan S1, S-D10)", () => {
+  // Why these tests matter: the hosted zip is what every visitor downloads.
+  // By default the Finish leaves the creator's walk out of it - the action
+  // stream, session.json and the frames no baked spot shows - and keeps it
+  // only when the creator ticks the box (for a co-author). Both halves
+  // matter: a walk shipped to visitors costs them megabytes and publishes
+  // the creator's timestamped route; content dropped from the copy is a
+  // broken tour nobody notices until the field.
+  createTourViewerStore();
+  const FIXTURE = new URL(
+    "../../GpsPlusSlamJs_PhysicsDemo/playwright-tests/fixtures/sample-recording.zip",
+    import.meta.url,
+  );
+  const FRAMES = Array.from(
+    { length: 6 },
+    (_, i) => `images/frame-${String(i + 1).padStart(6, "0")}.jpg`,
+  );
+  const WALK = ["session.json", "actions/000001.json", ...FRAMES];
+
+  async function wireRecordingTour(keepScan: boolean) {
+    const bytes = new Uint8Array(readFileSync(FIXTURE));
+    const actions = (await loadActionsFromZip(bytes)).map((e) => e.action);
+    const wired = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      hostedContent: WALK.map((path) => ({ path, data: "x" })),
+      sessionExtras: {
+        hasRecording: true,
+        entries: [
+          { filename: `${WRAP}tour.json` },
+          { filename: `${WRAP}qr/${LEVEL_ID}.json` },
+          ...WALK.map((filename) => ({
+            filename,
+            isImage: filename.endsWith(".jpg"),
+          })),
+        ],
+        loadSessionMeta: () => Promise.resolve({ odomCoordVersion: 5 }),
+        loadRecordingActions: () => Promise.resolve(actions),
+      },
+    });
+    wired.dom.keepScanInput.checked = keepScan;
+    wired.dom.finishButton.click();
+    await settle(wired.ctx);
+    return wired;
+  }
+
+  it("leaves the walk out by default and keeps every photo a baked spot shows", async () => {
+    const { ctx, dom } = await wireRecordingTour(false);
+    expect(ctx.finishError).toBeNull();
+    const names = await entryNamesOf(ctx.rebuiltZip!.blob);
+    // The first frame precedes the GPS zero, so no spot shows it.
+    expect(names.filter((n) => WALK.includes(n)).sort()).toEqual(
+      FRAMES.slice(1).sort(),
+    );
+    expect(names).toContain(`${WRAP}tour.json`);
+    expect(names).toContain(`${WRAP}qr/${LEVEL_ID}.json`);
+    // The creator is told, because the hosted file may be their only copy.
+    expect(dom.finishStatus.textContent).toContain(
+      "leaves out the walk recording",
+    );
+  });
+
+  it("keeps the walk when the creator asks for it", async () => {
+    const { ctx, dom } = await wireRecordingTour(true);
+    const names = await entryNamesOf(ctx.rebuiltZip!.blob);
+    expect(names.filter((n) => WALK.includes(n)).sort()).toEqual(
+      [...WALK].sort(),
+    );
+    expect(dom.finishStatus.textContent).not.toContain(
+      "leaves out the walk recording",
+    );
+  });
+
+  it("offers the choice only for a tour that carries something visitors never read", async () => {
+    const plain = await wireFinishable({ hosted: [], placed: [] });
+    plain.setup.renderAuthorReadout();
+    expect(plain.dom.keepScanRow.hidden).toBe(true);
+    const withWalk = await wireFinishable({
+      hosted: [],
+      placed: [],
+      hostedContent: [{ path: "actions/000001.json", data: "x" }],
+    });
+    withWalk.setup.renderAuthorReadout();
+    expect(withWalk.dom.keepScanRow.hidden).toBe(false);
   });
 });

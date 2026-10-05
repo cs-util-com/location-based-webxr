@@ -298,6 +298,8 @@ const setup = wireCreatorSetup({
     status: element("setup-status"),
     mintButton: element("setup-mint"),
     finishButton: element("setup-finish"),
+    keepScanRow: element("keep-scan-row"),
+    keepScanInput: element<HTMLInputElement>("keep-scan"),
     finishStatus: element("finish-status"),
     downloadButton: element("finish-download"),
     replaceHelpShare: element("replace-help-share"),

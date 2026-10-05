@@ -92,6 +92,7 @@ import {
   rebuildZipWithEntries,
 } from "gps-plus-slam-app-framework/storage";
 import { bakeCaptureSpots } from "./capture-bake.js";
+import { scanEntryNames } from "./tour-read-set.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
@@ -269,6 +270,11 @@ export interface CreatorSetupDom {
   status: HTMLElement;
   mintButton: HTMLButtonElement;
   finishButton: HTMLButtonElement;
+  /** "Keep the walk recording in the zip" (scan-pass plan S1, S-D10):
+   *  shown beside Finish only for a tour that carries entries visitors
+   *  never read; unticked, the Finish leaves them out. */
+  keepScanRow: HTMLElement;
+  keepScanInput: HTMLInputElement;
   /** Step 5 on the page (outside the overlay): where the download lands. */
   finishStatus: HTMLElement;
   downloadButton: HTMLButtonElement;
@@ -1380,6 +1386,7 @@ export function wireCreatorSetup(deps: {
         manifest: ctx.tourManifestStatus,
       }) === "ready"
     );
+    renderKeepScan();
     if (ctx.authorErrorText !== null) {
       dom.status.textContent = ctx.authorErrorText;
       dom.mintButton.disabled = true;
@@ -2816,6 +2823,38 @@ export function wireCreatorSetup(deps: {
     void measureCode(true);
   });
 
+  /** The open tour's entries a visitor never reads, kept for the tour and
+   *  manifest it was computed for: the readout renders on every dispatch,
+   *  and a scan can hold thousands of entries. */
+  let scanMemo: {
+    session: TourSession;
+    manifest: TourManifest | null;
+    count: number;
+  } | null = null;
+
+  function renderKeepScan(): void {
+    const current = ctx.session;
+    if (current === null || ctx.tourManifestStatus !== "settled") {
+      dom.keepScanRow.hidden = true;
+      return;
+    }
+    if (
+      scanMemo?.session !== current ||
+      scanMemo.manifest !== ctx.tourManifest
+    ) {
+      scanMemo = {
+        session: current,
+        manifest: ctx.tourManifest,
+        count: scanEntryNames(
+          current.entries.map((e) => e.filename),
+          ctx.tourManifest ?? createEmptyTourManifest(),
+          current.manifestWrap,
+        ).length,
+      };
+    }
+    dom.keepScanRow.hidden = dom.finishButton.hidden || scanMemo.count === 0;
+  }
+
   /**
    * The recorded photos' spots for this Finish (scan-pass plan S1, S-D11):
    * the tour's own when it carries them, else baked from its recording,
@@ -2921,8 +2960,14 @@ export function wireCreatorSetup(deps: {
           current.integrity.kind === "listed" && listName !== undefined
             ? { integrity: current.integrity, entry: listName }
             : null;
+        // The published copy carries only what visitors read unless the
+        // creator keeps the walk (S-D10): the walk, its unbaked frames, depth.
+        const scanLeftOut = dom.keepScanInput.checked
+          ? []
+          : scanEntryNames(entryNames, written, wrap);
         const removed = [
           ...contentEntriesToRemove(manifest.objects, deleted, wrap),
+          ...scanLeftOut,
           ...signatureNames,
           ...(listed === null && listName !== undefined ? [listName] : []),
         ];
@@ -3011,9 +3056,15 @@ export function wireCreatorSetup(deps: {
                 ? hosted
                 : downloadSafeName(hosted),
         };
-        dom.finishStatus.textContent = drive()
-          ? FINISH_LABELS.readyDrive(blob.size, ctx.rebuiltZip.filename)
-          : FINISH_LABELS.ready(blob.size, route() === "share");
+        dom.finishStatus.textContent = `${
+          drive()
+            ? FINISH_LABELS.readyDrive(blob.size, ctx.rebuiltZip.filename)
+            : FINISH_LABELS.ready(blob.size, route() === "share")
+        }${
+          scanLeftOut.length === 0
+            ? ""
+            : ` ${FINISH_LABELS.scanLeftOut(scanLeftOut.length)}`
+        }`;
         dom.downloadButton.textContent = idleLabel();
         dom.downloadButton.disabled = false;
         // The placed objects are in the zip now; the next finish (a

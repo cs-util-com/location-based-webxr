@@ -421,6 +421,11 @@ export const FINISH_LABELS = {
    *  review #1). */
   readyDrive: (bytes: number, filename: string) =>
     `The rebuilt zip is ready (${(bytes / 1_000_000).toFixed(1)} MB). Before you save: delete any older ${filename} from this phone's Downloads, or the phone names the new one "${repeatDownloadName(filename)}". Then tap "Save the zip to this phone" - the Drive steps appear below.`,
+  /** Appended to the ready line when the Finish left the walk out of
+   *  the copy (scan-pass plan S-D10): the hosted file may be the creator's
+   *  only copy of it. */
+  scanLeftOut: (files: number) =>
+    `This copy is for visitors: it leaves out the walk recording (${String(files)} ${files === 1 ? "file" : "files"}). Keep your original zip if you still need the walk.`,
   failed: (reason: string) => `Finishing failed: ${reason}`,
   download: "Download the rebuilt zip",
   /** A Drive tour's route: the zip must land in Downloads for the Drive

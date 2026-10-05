@@ -122,6 +122,14 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   read or joined never fails the Finish (the tour keeps the visitor's live
   join, as before); a cap's refusal and a failed integrity check do, as
   every read's does.
+- **The published copy carries only what visitors read** (scan-pass plan
+  S1, S-D10): unless the creator ticks "Keep the walk recording in the zip"
+  (`keepScanRow` / `keepScanInput`, shown only for a tour that has such
+  entries, counted once per tour and manifest), the Finish removes
+  `scanEntryNames` of the manifest it writes (`tour-read-set.ts`): the
+  action stream, `session.json`, the frames no baked spot shows, depth.
+  The ready line then says so (`FINISH_LABELS.scanLeftOut`), because the
+  hosted file may be the creator's only copy of the walk.
 - The finish's append is **id-deduplicating**, because the serializer
   rejects duplicates: one already-hosted object would otherwise make every
   finish throw for as long as the draft was restored, with no escape inside
@@ -133,7 +141,7 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   - `openDraftStore(key)` resolves this tour's draft namespace, or
     `undefined` where there is no persistence. Injected so the unit tests
     and the e2e can supply one without OPFS.
-  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; replaceCodeButton; replaceCodeConfirm; replaceCodeConfirmText; replaceCodeYes; replaceCodeNo; movePrompt; movePromptText; movePromptUse; movePromptCopy; movePromptLater; moveUndo; moveUndoText; moveUndoButton }`
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; mintButton; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; replaceCodeButton; replaceCodeConfirm; replaceCodeConfirmText; replaceCodeYes; replaceCodeNo; movePrompt; movePromptText; movePromptUse; movePromptCopy; movePromptLater; moveUndo; moveUndoText; moveUndoButton }`
     - `objectList` (authoring plan 2026-09-28-0953 §3.4, M4) - the
       `object-list.ts` view (`bind`, `render`); `main.ts` builds it over
       `#object-list` inside the panel.

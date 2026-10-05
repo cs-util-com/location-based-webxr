@@ -209,6 +209,8 @@ const DOM_KEYS = [
   "moveUndo",
   "moveUndoText",
   "moveUndoButton",
+  "keepScanRow",
+  "keepScanInput",
 ] as const;
 
 function el() {
