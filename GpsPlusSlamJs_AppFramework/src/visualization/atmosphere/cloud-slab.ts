@@ -125,21 +125,28 @@ export function cloudSlabZenithOpacity(
 /**
  * The part of a ray from height `y` along `dir` that lies in the slab and
  * inside the far fade, as distances along the ray; null when there is none.
- * Analytic, never from the mesh's faces. GLSL twin: the interval of
- * `CLOUD_SLAB_FRAGMENT_GLSL`.
+ * Analytic, never from the mesh's faces. `sceneM`, the distance to the
+ * scene along the ray (the scene's depth, F2c), ends it there: a ridge in
+ * front of the slab leaves nothing to march. GLSL twin: the interval of
+ * `CLOUD_SLAB_FRAGMENT_GLSL` (the scene's part behind
+ * `ATM_SLAB_SCENE_DEPTH`).
  *
- * @throws RangeError for a non-finite height or a direction that is not
- *   finite or has no length.
+ * @throws RangeError for a non-finite height, a direction that is not
+ *   finite or has no length, or a scene distance that is negative or NaN.
  */
 export function cloudSlabInterval(
   y: number,
-  dir: Vec3
+  dir: Vec3,
+  sceneM: number = Number.POSITIVE_INFINITY
 ): { inM: number; outM: number } | null {
   const length = Math.hypot(dir[0], dir[1], dir[2]);
   if (!(Number.isFinite(y) && Number.isFinite(length) && length > 0)) {
     throw new RangeError(
       `slab ray needs a finite height and direction, got ${y}, ${dir.join(', ')}`
     );
+  }
+  if (!(sceneM >= 0)) {
+    throw new RangeError(`the scene distance must be >= 0, got ${sceneM}`);
   }
   const dy = dir[1] / length;
   const horizontal = Math.hypot(dir[0], dir[2]) / length;
@@ -158,6 +165,7 @@ export function cloudSlabInterval(
     inM = Math.max(Math.min(tBase, tTop), 0);
     outM = Math.min(Math.max(tBase, tTop), cap);
   }
+  outM = Math.min(outM, sceneM);
   return outM > inM ? { inM, outM } : null;
 }
 
@@ -628,6 +636,9 @@ uniform mat4 atmSlabInverseProjection;
 uniform mat4 atmSlabCameraWorld;
 uniform vec4 atmSlabViewport;
 uniform float atmSlabPixelAngle;
+#ifdef ATM_SLAB_SCENE_DEPTH
+uniform sampler2D atmSlabSceneDepth;
+#endif
 const float ATM_SLAB_BASE = ${glslFloat(CLOUD_SLAB.baseM)};
 const float ATM_SLAB_TOP = ${glslFloat(CLOUD_SLAB.topM)};
 const float ATM_SLAB_SIGMA = ${glslFloat(CLOUD_SLAB.extinctionPerM)};
@@ -699,6 +710,15 @@ void main() {
     tIn = max(min(tBase, tTop), 0.0);
     tOut = min(max(tBase, tTop), cap);
   }
+#ifdef ATM_SLAB_SCENE_DEPTH
+  float atmSceneDepth = texture2D(atmSlabSceneDepth, (gl_FragCoord.xy - atmSlabViewport.xy) / atmSlabViewport.zw).r;
+  // The march ends at the scene (twin of cloudSlabInterval's sceneM): its
+  // point through the same inverse projection as the ray; 1 is cleared.
+  if (atmSceneDepth < 1.0) {
+    vec4 atmScene = atmSlabInverseProjection * vec4(ndc, atmSceneDepth * 2.0 - 1.0, 1.0);
+    tOut = min(tOut, length(atmScene.xyz / atmScene.w));
+  }
+#endif
   if (tOut <= tIn) discard;
   float lengthM = tOut - tIn;
   // Twin of cloudSlabUniformShare: quadratic from below and inside, uniform
@@ -860,6 +880,36 @@ export function setCloudSlabSteps(slab: THREE.Mesh, steps: number): void {
 }
 
 /**
+ * Gives the slab the scene's depth (globe F2 plan 2026-10-03-1922, F2c), or
+ * takes it away (null). With a depth the march ends at the scene and the
+ * depth test is OFF: as a back-faced prism under the depth test, a ridge in
+ * front of the prism's far face hid the cloud in front of the ridge too.
+ * Without one the slab is today's. The depth must cover the same viewport
+ * as the slab's render and must not be attached to the target the slab
+ * draws into (a read of an attached depth is a feedback loop). Only a
+ * switch between depth and none builds a new program; swapping one depth
+ * for another (a resize) is a uniform.
+ */
+export function setCloudSlabSceneDepth(
+  slab: THREE.Mesh,
+  depth: THREE.Texture | null
+): void {
+  const material = slab.material as THREE.ShaderMaterial;
+  const uniform = material.uniforms['atmSlabSceneDepth'];
+  if (uniform === undefined) {
+    throw new TypeError('not a cloud slab: it has no scene depth uniform');
+  }
+  const had = uniform.value !== null;
+  uniform.value = depth;
+  if (had === (depth !== null)) return;
+  const { ATM_SLAB_SCENE_DEPTH: _old, ...rest } = material.defines;
+  material.defines =
+    depth === null ? rest : { ...rest, ATM_SLAB_SCENE_DEPTH: 1 };
+  material.depthTest = depth === null;
+  material.needsUpdate = true;
+}
+
+/**
  * The slab mesh, reading the given uniforms (the sky's LUTs, sun, scale and
  * the cloud uniforms, spread so one update reaches the sky and the slab) plus
  * its own ray uniforms, which `onBeforeRender` sets from the rendering
@@ -874,6 +924,9 @@ export function createCloudSlab(
     atmSlabCameraWorld: { value: new THREE.Matrix4() },
     atmSlabViewport: { value: new THREE.Vector4(0, 0, 1, 1) },
     atmSlabPixelAngle: { value: 0 },
+    // Declared from the start, so turning the depth on is a define, not a
+    // new uniform set (`setCloudSlabSceneDepth`).
+    atmSlabSceneDepth: { value: null as THREE.Texture | null },
   };
   const material = new THREE.ShaderMaterial({
     name: 'atmosphere-cloud-slab',
