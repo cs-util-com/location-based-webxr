@@ -31,9 +31,16 @@
  * orientation contract is preserved (the full bitmap is already upright; the
  * resize pass does NOT re-apply `imageOrientation`, which would re-flip it).
  *
+ * **The pixel cap (tour kit K4 review R2):** with `options.maxPixels` the
+ * image's size is read from its header first (`utils/image-header`), and
+ * an image over the cap, or one whose size cannot be read, is never
+ * decoded: `createImageBitmap` decodes at the size the file states, before
+ * any resize, so a crafted header could make it allocate gigabytes.
+ *
  * Returns `null` (never throws) when:
  *   - `createImageBitmap` is unavailable in the runtime
  *   - the blob cannot be decoded as an image
+ *   - with `maxPixels`: the header states more pixels, or cannot be read
  *
  * Soft-failure semantics let the wirer drop broken frames in the
  * field-recording corpus without surfacing errors to the user.
@@ -41,11 +48,33 @@
 
 import * as THREE from 'three';
 
+import { imageInfoOfBlob } from '../utils/image-header.js';
+
+/** Whether the image's header states at most `maxPixels` (no cap: yes). */
+async function fitsCap(
+  blob: Blob,
+  maxPixels: number | undefined
+): Promise<boolean> {
+  if (maxPixels === undefined) return true;
+  const info = await imageInfoOfBlob(blob);
+  return info !== null && info.width * info.height <= maxPixels;
+}
+
 export async function decodeFrameTexture(
   blob: Blob,
-  divisor: number = 1
+  divisor: number = 1,
+  options: { readonly maxPixels?: number } = {}
 ): Promise<THREE.Texture | null> {
   if (typeof createImageBitmap !== 'function') return null;
+  if (!(await fitsCap(blob, options.maxPixels))) return null;
+  return decodeMeasured(blob, divisor);
+}
+
+/** The decode itself, once the image may be decoded. */
+async function decodeMeasured(
+  blob: Blob,
+  divisor: number
+): Promise<THREE.Texture | null> {
   try {
     // Pre-flip at decode: an ImageBitmap ignores THREE.Texture.flipY on upload,
     // so the browser must hand us an already-upright bitmap.

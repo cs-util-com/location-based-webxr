@@ -479,7 +479,7 @@ describe('wireQrRecording', () => {
   /**
    * Why this test matters (D28 revised, 2026-10-02): a code is minted
    * through the first alignment at or after its sighting whose GPS extent
-   * reaches 80 m. The store keeps no alignment history, so the feeder must
+   * reaches the floor (40 m, D34). The store keeps no alignment history, so the feeder must
    * hear of every alignment change - a GPS fix is a store change - or a code
    * left behind is frozen at whatever the save sees, which is the drift the
    * rule exists to avoid. Once per animation frame is enough.

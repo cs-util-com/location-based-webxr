@@ -13,6 +13,7 @@ import { Reader } from '@zip.js/zip.js';
 import {
   readZipEntries,
   loadActionsFromZip,
+  loadActionsFromEntries,
   loadSessionMetadata,
   loadSessionMetadataFromBlob,
   loadEntriesFromSubdir,
@@ -20,6 +21,8 @@ import {
   MAX_ACTION_FILE_SIZE,
   type ZipActionEntry,
 } from './zip-reader';
+import { ArchiveLimitError } from './archive-limits';
+import { DecompressionBudget } from './capped-zip-entries';
 import {
   produceTestZip,
   type TestZipResult,
@@ -910,5 +913,155 @@ describe('ZipSource lazy Reader input', () => {
     expect(actionsResult).toEqual(await loadActionsFromZip(zipData));
     expect(meta).toEqual(await loadSessionMetadata(zipData));
     expect(subdir.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Why these tests matter (tour kit plan K0): a tour zip is often a whole
+ * recording, and the Tour Viewer parses its action stream through
+ * `loadActionsFromZip`. The per-entry check reads each entry's DECLARED
+ * size, so many entries each just under it - kilobytes deflated, a
+ * megabyte inflated - added up without any limit. The actions now read
+ * through a `DecompressionBudget` that counts the bytes actually inflated
+ * and caps the archive total.
+ */
+describe('loadActionsFromZip under a decompression budget', () => {
+  async function deflatedActions(count: number): Promise<Uint8Array> {
+    const { ZipWriter, Uint8ArrayWriter, TextReader } =
+      await import('@zip.js/zip.js');
+    const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 9 });
+    const padding = 'x'.repeat(500_000);
+    for (let i = 1; i <= count; i += 1) {
+      await writer.add(
+        `actions/${String(i).padStart(6, '0')}.json`,
+        new TextReader(JSON.stringify({ type: 'test/pad', payload: padding }))
+      );
+    }
+    return writer.close();
+  }
+
+  it('stops at the archive total even though every entry is under the per-entry cap', async () => {
+    const zip = await deflatedActions(4); // 4 x ~500 KB inflated, a few KB on disk
+    const budget = new DecompressionBudget({
+      maxEntryBytes: 1_048_576,
+      maxTotalBytes: 1_200_000,
+    });
+    const err = await loadActionsFromZip(
+      zip,
+      MAX_ACTION_FILE_SIZE,
+      budget
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveLimitError);
+    expect((err as ArchiveLimitError).kind).toBe('total-bytes');
+  });
+
+  it('reads the same stream in full under a budget that fits it', async () => {
+    const zip = await deflatedActions(4);
+    const budget = new DecompressionBudget({
+      maxEntryBytes: 1_048_576,
+      maxTotalBytes: 4_000_000,
+    });
+    const result = await loadActionsFromZip(zip, MAX_ACTION_FILE_SIZE, budget);
+    expect(result).toHaveLength(4);
+    expect(budget.totalBytes).toBeGreaterThan(2_000_000);
+  });
+
+  it('stops at the archive total when the action entries all share ONE name', async () => {
+    // K0 milestone review R3: thousands of copies of `actions/000001.json`,
+    // each its own deflated data, all read by the filter below. Charged by
+    // name, every copy after the first was free and the total never bit.
+    const zip = await deflatedActions(4);
+    const copies = ['000002', '000003', '000004'].map(
+      (n) => `actions/${n}.json`
+    );
+    const crafted = zip.slice();
+    const target = new TextEncoder().encode('actions/000001.json');
+    for (const name of copies) {
+      const needle = new TextEncoder().encode(name);
+      for (let i = 0; i + needle.length <= crafted.length; i += 1) {
+        if (needle.every((b, j) => crafted[i + j] === b))
+          crafted.set(target, i);
+      }
+    }
+    const budget = new DecompressionBudget({
+      maxEntryBytes: 1_048_576,
+      maxTotalBytes: 1_200_000,
+    });
+    const err = await loadActionsFromZip(
+      crafted,
+      MAX_ACTION_FILE_SIZE,
+      budget
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveLimitError);
+    expect((err as ArchiveLimitError).kind).toBe('total-bytes');
+  });
+
+  it('uses a default budget sized from the archive when none is passed', async () => {
+    // The default allowance has a 64 MiB floor, so a small real stream is
+    // unaffected - the guard only bites on a crafted archive.
+    const zip = await deflatedActions(2);
+    expect(await loadActionsFromZip(zip)).toHaveLength(2);
+  });
+});
+
+describe('loadActionsFromEntries: the parse over the caller own list and reader (tour kit plan K1)', () => {
+  // Why this matters: a signed tour hashes every entry it reads (tier 2).
+  // The action stream is read by this parser, so the parser must read each
+  // entry through the caller's reader - with the per-file cap it would have
+  // applied - or the recording would be the one part of a signed tour that
+  // is never checked. And it must parse the LIST the caller checked: a
+  // second read of a live source's directory can return another one (K1
+  // milestone review R1).
+  it('reads every action entry through the given reader, with the per-file cap', async () => {
+    const { ZipWriter, Uint8ArrayWriter, TextReader } =
+      await import('@zip.js/zip.js');
+    const writer = new ZipWriter(new Uint8ArrayWriter());
+    await writer.add('actions/000001.json', new TextReader('{"type":"a"}'));
+    await writer.add('actions/000002.json', new TextReader('{"type":"b"}'));
+    const zip = await writer.close();
+    const seen: [string, number][] = [];
+    const result = await loadActionsFromEntries(
+      await readZipEntries(zip),
+      (entry, maxBytes) => {
+        seen.push([entry.filename, maxBytes]);
+        return Promise.resolve(`{"type":"via-${entry.filename.slice(8, 14)}"}`);
+      },
+      1234
+    );
+    expect(seen).toEqual([
+      ['actions/000001.json', 1234],
+      ['actions/000002.json', 1234],
+    ]);
+    expect(result.map((r) => r.action.type)).toEqual([
+      'via-000001',
+      'via-000002',
+    ]);
+  });
+
+  it('lets the reader refuse: its error is the parse error', async () => {
+    const { ZipWriter, Uint8ArrayWriter, TextReader } =
+      await import('@zip.js/zip.js');
+    const writer = new ZipWriter(new Uint8ArrayWriter());
+    await writer.add('actions/000001.json', new TextReader('{"type":"a"}'));
+    const zip = await writer.close();
+    await expect(
+      loadActionsFromEntries(await readZipEntries(zip), () =>
+        Promise.reject(new Error('modified'))
+      )
+    ).rejects.toThrow('modified');
+  });
+
+  it('reads only the entries it is given, never a second directory', async () => {
+    const { ZipWriter, Uint8ArrayWriter, TextReader } =
+      await import('@zip.js/zip.js');
+    const writer = new ZipWriter(new Uint8ArrayWriter());
+    await writer.add('actions/000001.json', new TextReader('{"type":"a"}'));
+    await writer.add('actions/000002.json', new TextReader('{"type":"b"}'));
+    const all = await readZipEntries(await writer.close());
+    const result = await loadActionsFromEntries(
+      all.filter((e) => e.filename.endsWith('000001.json')),
+      () => Promise.resolve('{"type":"a"}')
+    );
+    expect(result.map((r) => r.filename)).toEqual(['actions/000001.json']);
   });
 });

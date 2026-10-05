@@ -239,12 +239,24 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   the store teardown resets the alignment) and a Finish tapped while the
   session is live run `settleVisit`: `planVisitSettle` (`visit-settle.ts`)
   recomputes the geo of the code measured in this visit and of every object
-  placed in it through one alignment; the records replace the tap-time ones
+  placed in it - since D33 each through the first mature alignment after its
+  own moment (`visit-alignment-picks.ts`, fed by `syncAlignmentPicks` on
+  every store change with the alignment, the zero, the session GPS extent
+  and the walked distance (`walked-distance-tracker.ts`, reviews R1 and R3 of
+  D33);
+  a pin at its Save, a photo at its tap, a move through
+  `object-editing.ts`'s `notePlaced`, the measurement when its level identity resolves (its `atMs` is the tap's), each
+  stable sighting of the code in hand; emptied at each visit's start and
+  end), and a note within `CODE_EVENT_REACH_M` walked of a code event of
+  the visit shares the code's alignment through the nearest event; the records
+  replace the tap-time ones
   in `ctx.placedObjects` and `ctx.mintedLevel`, each settled object's draft
   record and the meta are REWRITTEN (the per-object file design already
   keys by id; no format change - so a page reload keeps the settled geo,
   while a killed tab keeps the tap-time geo, accepted in the plan), and
-  `tourAuthoring/settled` is logged.
+  `tourAuthoring/settled` is logged. The input carries the end alignment's
+  GPS extent (`alignmentGpsExtentM`), the D31 heading marker of a code
+  re-minted through it (review R7 of D33).
   - **Each visit settles once, keyed by the visit the settle ran for**
     (`visitSettles`, M2c review #1): the record holds the basis, the
     alignment used, the store's alignment, the zero and the sighting. A
@@ -261,8 +273,9 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   - **Late arrivals join their visit's settle** (M2c review #6): the record
     is kept even for a visit with nothing to settle yet. A photo whose
     encode lands after its visit settled (the session ended, or a Finish
-    ran) is minted through the record's alignment and zero - which IS the
-    settle - and logged as `tourAuthoring/settled` with trigger
+    ran) is minted through the record's alignment and zero - the settle's
+    choice for an object placed at the visit's end, which a photo landing
+    late is (its capture a moment before the end) - and logged as `tourAuthoring/settled` with trigger
     `late-arrival`. Minting it through the store instead would use an
     alignment that belongs to no visit (the teardown resets it).
   - **A Finish removes from the list only what its zip carries** (the ids
@@ -370,7 +383,8 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
   - **A stored pose stays the reference** (D10b, M2c review #5): the level
     in hand before the tap is captured, and once the id lands
     `measurementRole` (`visit-settle.ts`) decides - with the hosted zip's
-    `qr/<id>.json` read through `hostedLevelJson` when nothing of this code
+    `qr/<id>.json` read through `hostedLevelJson` (`session.loadEntryText`,
+    under the text cap, K0 milestone review R10) when nothing of this code
     is in hand (ignored if another tour was opened meanwhile). A kept
     reference stays `mintedLevel` (so Finish writes the hosted file back
     byte for byte), the measurement becomes this visit's sighting, the
@@ -398,7 +412,11 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
   `session.manifestWrap` (the session's own prefix, never re-derived).
   The input is the **newest bytes for this tour**: `ctx.rebuiltZip` when a
   previous finish produced one, else `session.readWholeArchive()` (the
-  warmed copy, else range slices). On success `ctx.rebuiltZip` is set,
+  warmed copy, else range slices). The hosted archive is untrusted, so its
+  rebuild inflates under the session's own budget (`session.budget`, K0
+  milestone review R1) and a deflate bomb fails the Finish with the cap's
+  sentence; a previous Finish's zip is this page's own stored output and
+  gets the rebuild's default budget. On success `ctx.rebuiltZip` is set,
   `ctx.tourManifest` **advances to what was just written** and
   `ctx.placedObjects` is cleared, the AR session is ended through the
   controller (the framework's session-end path runs the app teardown) and
@@ -504,12 +522,26 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
     (`previewKey`) is replaced, one whose object is gone is disposed, the
     rest are left alone. Each visit starts with a fresh render into its
     frames. A hosted photo's bytes come from the zip
-    (`session.loadContentEntry`); a photo a Finish took out of
+    (`session.loadContentEntry`), decoded under the tour pixel cap
+    (`maxPixels`, tour kit K4 review R2); a photo a Finish took out of
     `placedObjects` keeps its bytes in `finishedPhotoBlobs` until the tour
     closes, since the hosted zip lacks them until the upload.
   - **The Finish replaces and filters** (`applyObjectChanges`), removes
     each deleted photo's content file (`contentEntriesToRemove` into the
-    rebuild's `remove`), and afterwards drops from `placedObjects` only
+    rebuild's `remove`), drops `manifest.sig.json` (a signature over the
+    old list cannot cover the files this Finish rewrites: the output is an
+    honest unsigned tour until K2 re-signs on export) and, for a LISTED
+    tour, writes `manifest.json` again as the series' next version
+    (`successorManifest`, K1 milestone review R7: the same series id, the
+    next version, the hash of every file the zip holds - the kept ones from
+    the list the input carries, the written ones hashed at the Finish; a
+    second Finish starts from the list the first one wrote, kept in
+    `ctx.rebuiltZip.signedManifest`). Dropping it, as K1 first did, dropped
+    the series id's only home. A phone that knew the signed tour still
+    warns that this copy is not signed. A NEW level file of a listed tour
+    is written inside the tour's folder (`manifestWrap`), where its list
+    can name it (a root `qr/` beside a wrapped list would be unlisted).
+    Afterwards it drops from `placedObjects` only
     what the zip carries WITH THE SAME CONTENT, and clears the applied
     deletions. The draft's tombstones stay until the hosted zip lacks the
     ids, the same proof the objects wait for.

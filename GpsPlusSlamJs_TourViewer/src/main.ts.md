@@ -28,6 +28,10 @@ listed in `index.html.md`. The concerns and their modules:
   (`createViewerPlacement`).
 - `ar-entry.ts` - the AR entry, the runtime start/end, the status line
   renderer (`wireArEntry`).
+- `visitor-stations.ts` - the visitor's stations and their stories (tour
+  kit plan K4, `wireVisitorStations`), wired after the viewer placement;
+  `main.ts` binds `hooks.tickStations`, `stationCodeLocked`,
+  `unlockStationAudio` and `stopStations`.
 - `archive-open.ts` - the open path, the gallery, the stats, the Storage
   section, the `?qr=` boot (`wireArchiveOpen`), and step 4's scan-to-open,
   which the setup panel reaches through a local late binding (the panel is
@@ -87,7 +91,10 @@ listed in `index.html.md`. The concerns and their modules:
   cross-module entry points to the `hooks` object (`renderArStatus`,
   `renderArEntry`, `renderAuthorReadout`,
   `tryPlaceTour`, `startAuthorPipeline`, `startViewerPipeline`,
-  `presentTourForPrint`), and callers read the hooks at call time - which
+  `presentTourForPrint`, and `presentLocalTour` - a FILE-opened tour, tour
+  kit plan K0: the print step keeps asking for a link and a creator's
+  wizard opens step 2, or stays in step 4, without remembering a link),
+  and callers read the hooks at call time - which
   is what keeps the modules free of import cycles (`check:cycles` is in
   the gate). A hook read before its owner is wired is the no-op from
   `createUnwiredHooks()`, never a throw.

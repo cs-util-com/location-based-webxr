@@ -63,6 +63,13 @@ const entryFiles = [
   // imported by the Tour Viewer via the `./ar/*` wildcard, so per-file.
   'src/ar/tour-manifest.ts',
   'src/ar/tour-archive.ts',
+  // The tour media allowlist (tour kit plan K0), deep-imported the same way.
+  'src/ar/tour-media.ts',
+  // The v2 game content, the signed manifest and its signature (tour kit
+  // plan K1), deep-imported by the Tour Viewer the same way.
+  'src/ar/tour-stations.ts',
+  'src/ar/tour-signed-manifest.ts',
+  'src/ar/tour-signature.ts',
   'src/ar/frame-loop.ts',
   // Shared hit-test reticle driver (2026-07-18 promotion of the three
   // app-local copies) — deep-imported by consumer apps via the `./ar/*`
@@ -162,6 +169,9 @@ const entryFiles = [
   'src/state/subscribe-to-selector.ts',
   // The session GPS extent the Recorder's QR mint reads (D28 revised).
   'src/state/gps-extent-tracker.ts',
+  // The maturity floor and the first-mature-alignment pick (D28 revised,
+  // D33), deep-imported by the Tour Viewer's authoring settle.
+  'src/state/alignment-maturity.ts',
 
   // storage/
   'src/storage/index.ts',
@@ -217,6 +227,10 @@ const entryFiles = [
   // archive actually carries. Advertised by the wildcard export and
   // documented, but never built, so no sibling could import it.
   'src/test-utils/zip-central-directory.ts',
+  // The integrated SLAM drift and GPS noise models the Recorder's
+  // left-behind sweep measured D28 with, shared with the Tour Viewer's
+  // authoring-settle sweep so both measure the same drift.
+  'src/test-utils/integrated-slam-drift.ts',
 
   // types/
   'src/types/index.ts',
@@ -295,6 +309,9 @@ const entryFiles = [
   // wildcard, like the above.
   'src/utils/locate-state.ts',
   'src/utils/toast-core.ts',
+  // An image's size from its header (tour kit K4 review R2): the Tour
+  // Viewer measures a figure before it decodes it.
+  'src/utils/image-header.ts',
   // Both GPS actions' payloads (core 1.26's recordGpsEventBatch beside
   // recordGpsEvent) - deep-imported by the Tour Viewer's recording folders
   // and the recorder's timing page, so per-file for the `./utils/*` wildcard.
@@ -328,6 +345,12 @@ const entryFiles = [
   // The JSON type guards those parsers share (one copy per package,
   // DEC-H3) - under the `./utils/*` wildcard, so per-file.
   'src/utils/json-guards.ts',
+  // Hex/SHA-256, base58btc and did:key (tour kit plan K1), deep-imported by
+  // the Tour Viewer's integrity check and its test fixtures.
+  'src/utils/sha256-hex.ts',
+  'src/utils/base58btc.ts',
+  'src/utils/did-key.ts',
+  'src/utils/qr-payload/base64url.ts',
   'src/ar/qr/qr-level.ts',
   'src/ar/qr/qr-level-archive.ts',
   'src/ar/qr/qr-mint-level.ts',
