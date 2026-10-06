@@ -77,6 +77,7 @@ import { asStencilFill, asStencilWriter } from "/globe/globe-stencil-fill.js";
 import {
   applyEcefPose,
   ecefPoseOf,
+  frameRecentreTarget,
   worldFromEcefAt,
 } from "/globe/globe-frame.js";
 import { drainTileCache, releaseTileCache } from "/globe/globe-tile-cache.js";
@@ -1614,6 +1615,26 @@ async function start() {
     onFrameChange();
     debugLog.log("frame", worldFrame.target);
   };
+  /**
+   * Moves the frame under the camera once the user has flown it too far
+   * from the frame's origin (volume-cloud plan §14, `frameRecentreTarget`):
+   * a frame left on the link's target while the owner flew 244 km stood
+   * 4.7 km off the curved ground there, and the cloud deck, flat in the
+   * frame, floated above the camera (2026-10-06). The view is unchanged;
+   * the volume's noise is anchored to the ground, so its clouds stay put.
+   */
+  const recentreFrame = () => {
+    if (worldFrame.target === null) return;
+    const ellipsoid = globe.tiles.ellipsoid;
+    const c = ellipsoid.getPositionToCartographic(ecefCamera().position, {});
+    const next = frameRecentreTarget(
+      ellipsoid,
+      worldFrame.target,
+      { lat: c.lat / DEG, lng: c.lon / DEG },
+      c.height,
+    );
+    if (next) setFrameTarget(next);
+  };
   /** The Earth's centre in the world (the origin of ECEF, through the frame). */
   const earthCentre = new THREE.Vector3();
   const earthCentreWorld = () =>
@@ -2206,6 +2227,7 @@ async function start() {
       returnFov(now);
       controls.pickFrom(surfaceTiles().group);
       if (!heldView) controls.update();
+      recentreFrame();
     }
     pin.frame();
     if (terrain) {
@@ -3136,6 +3158,47 @@ async function start() {
      */
     reframe(target) {
       setFrameTarget(target);
+    },
+    /**
+     * A test hook (volume-cloud plan §14): places the held camera at a
+     * Debug export's pose, `{ lat, lng, altitudeKm, headingDeg, pitchDeg }`
+     * (degrees, the heading from north toward east, the pitch above the
+     * local horizontal), so a smoke can stand where the owner stood.
+     */
+    placeView({ lat, lng, altitudeKm, headingDeg, pitchDeg }) {
+      const values = [lat, lng, altitudeKm, headingDeg, pitchDeg];
+      if (!values.every(Number.isFinite)) {
+        throw new RangeError(`a view needs finite values, got ${values}`);
+      }
+      flight.yieldToUser(performance.now());
+      pin?.cameraTaken();
+      heldView = true;
+      const ellipsoid = globe.tiles.ellipsoid;
+      const position = ellipsoid.getCartographicToPosition(
+        lat * DEG,
+        lng * DEG,
+        altitudeKm * 1000,
+        new THREE.Vector3(),
+      );
+      const east = new THREE.Vector3();
+      const north = new THREE.Vector3();
+      const up = new THREE.Vector3();
+      ellipsoid.getEastNorthUpAxes(lat * DEG, lng * DEG, east, north, up);
+      const h = headingDeg * DEG;
+      const p = pitchDeg * DEG;
+      const forward = east
+        .clone()
+        .multiplyScalar(Math.sin(h) * Math.cos(p))
+        .addScaledVector(north, Math.cos(h) * Math.cos(p))
+        .addScaledVector(up, Math.sin(p));
+      // A camera looks down its -z: lookAt(eye, target) points -z at target.
+      const look = new THREE.Matrix4().lookAt(new THREE.Vector3(), forward, up);
+      placeCameraEcef(
+        position,
+        new THREE.Quaternion().setFromRotationMatrix(look),
+      );
+      camera.updateMatrixWorld();
+      frame();
     },
     hideCloudShell(on) {
       cloudShellHidden = Boolean(on);

@@ -264,6 +264,60 @@ test("the cloud volume reaches toward the horizon, not only around the camera", 
   expect(upper).toBeGreaterThanOrEqual(UPPER_SHARE);
 });
 
+// WHY (volume-cloud plan §14, the owner's Debug export of 2026-10-06): the
+// world frame stayed on the link's target (Bern) while the owner flew 244
+// km by hand; there the flat frame stood 4.7 km off the curved ground, and
+// the cloud deck, flat in the frame, floated above the 11 km camera as
+// clouds in the sky. The frame now moves under the camera once it drifts
+// more than 20 km. This stands where the owner stood and holds that the
+// frame came along (within the drift of the camera's ground point).
+const OWNER_POSE = {
+  lat: 46.01573406214657,
+  lng: 10.315647467533294,
+  altitudeKm: 11.20566007039464,
+  headingDeg: 26.040594802555347,
+  pitchDeg: -14.781217358099239,
+};
+
+test("the world frame follows a camera flown far from the target, so the cloud deck stays below it", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(600_000);
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation({ latitude: 46.948, longitude: 7.4474 });
+  const errors = await bootGlobe(page, `${BASE}&cloudVolumeCover=1`);
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return (
+        s.phase === "landed" && s.pin.phase === "idle" && s.relief?.settled
+      );
+    },
+    null,
+    { timeout: 300_000 },
+  );
+  await page.evaluate((p) => window.__globeLab.placeView(p), OWNER_POSE);
+  await page.evaluate(() => window.__globeLab.timeFrames(4));
+  const frameTarget = await page.evaluate(
+    () => window.__globeLab.state().worldFrame,
+  );
+  const R = 6_371_000;
+  const rad = Math.PI / 180;
+  const driftM =
+    R *
+    Math.hypot(
+      (frameTarget.lat - OWNER_POSE.lat) * rad,
+      (frameTarget.lng - OWNER_POSE.lng) * rad * Math.cos(OWNER_POSE.lat * rad),
+    );
+  console.log(
+    `the frame after a 244 km flight: ${JSON.stringify(frameTarget)}, ${(driftM / 1000).toFixed(1)} km from the camera's ground point`,
+  );
+  expect(errors).toEqual([]);
+  expect(driftM).toBeLessThan(20_000);
+});
+
 // WHY (C3): the owner asked for the volume's shadows compared against the
 // 2D layer's. The same ground pixels at the 12 km hold, looking down, with
 // no cloud shadow, the shell's soft shadow (the default) and the volume's
