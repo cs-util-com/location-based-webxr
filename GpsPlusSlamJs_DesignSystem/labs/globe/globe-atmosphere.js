@@ -83,6 +83,9 @@ uniform vec3 uCamera;
 uniform vec3 uSun;
 uniform float uRadiance;
 uniform float uThickness;
+// The space pass's share of the SKY (F2b): 1 above the hand-over edge,
+// 1 - the ground sky's weight below it. The ground keeps its veil.
+uniform float uSkyShare;
 varying vec3 vDirection;
 
 // Chapman's grazing-incidence function and the compensation (the frame
@@ -161,6 +164,7 @@ void main() {
   // comes through: one grey value, the mean over R, G, B (a per-channel
   // veil needs the ground's own shader). Space behind keeps its stars.
   float through = hitsGround ? dot( throughput, vec3( 1.0 / 3.0 ) ) : 1.0;
+  if ( !hitsGround ) radiance *= uSkyShare;
   gl_FragColor = vec4( radiance * uRadiance, 1.0 - through );
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -198,6 +202,7 @@ export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
     uSun: { value: new THREE.Vector3(1, 0, 0) },
     uRadiance: { value: 0 },
     uThickness: { value: look.thickness },
+    uSkyShare: { value: 1 },
   };
   let built = false;
   const material = new THREE.ShaderMaterial({
@@ -251,9 +256,15 @@ export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
      * (updated world matrix), `worldFromEcef` the tiles group's world
      * matrix (the ECEF frame's placement), `sunEcef` a unit vector and
      * `sunIntensity` the Earth's sun light's, so the air and the ground are
-     * lit by the same sun.
+     * lit by the same sun. `skyShare` (0-1, default 1) scales the light of
+     * the rays that miss the ground: the ground sky takes over the sky's
+     * pixels below the hand-over edge (F2b), the ground keeps its veil.
      */
-    render(camera, { worldFromEcef, sunEcef, sunIntensity }) {
+    render(camera, { worldFromEcef, sunEcef, sunIntensity, skyShare = 1 }) {
+      if (!(skyShare >= 0 && skyShare <= 1)) {
+        throw new RangeError(`skyShare must be 0-1, got ${skyShare}`);
+      }
+      uniforms.uSkyShare.value = skyShare;
       if (!device.supported) return;
       if (!built) {
         device.render("transmittance", uniforms);

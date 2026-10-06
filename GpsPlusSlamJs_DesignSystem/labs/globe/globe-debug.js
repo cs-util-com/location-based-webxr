@@ -5,18 +5,14 @@
  * by hand (touches do not void it, unlike `#perf=1`'s scripted runs), and
  * Copy puts the device, the live state, the recording and the event log on
  * the clipboard as one JSON (`globe-debug-log.js`). The frame statistics
- * are the framework's (`globe-perf-stats.js`, DEC-H3).
+ * are the framework's (`globe-perf-stats.js`, DEC-H3). The recorder, its
+ * statistics and the share helpers load when the panel first opens, so a
+ * page whose panel stays closed never fetches them (`#perf=1` stays the
+ * only thing that loads the recorder at boot; globe-perf.smoke).
  *
  * @see globe-debug.js.md
  */
 import { debugExportText } from "./globe-debug-log.js";
-import { createPerfRecorder } from "./globe-perf-recorder.js";
-import {
-  browserShareEnv,
-  copyExport,
-  downloadExport,
-} from "./globe-perf-share.js";
-import { createFrameRun, formatFrameRunSummary } from "./globe-perf-stats.js";
 
 /** The thresholds counted (ms), as the recorder's (globe-perf.js). */
 const THRESHOLDS_MS = Object.freeze([33, 34, 50, 51, 100]);
@@ -56,10 +52,30 @@ const fmt = (v, digits = 1) =>
  *   live: () => Record<string, unknown>, device: () => Record<string, unknown> }} deps
  */
 export function createGlobeDebug({ log, live, device }) {
-  const rec = createPerfRecorder({
-    createRun: () =>
-      createFrameRun({ refreshIntervalMs: null, thresholdsMs: THRESHOLDS_MS }),
-  });
+  /** The recorder and the share helpers, once the panel has opened. */
+  let tools = null;
+  let loading = null;
+  const loadTools = () =>
+    (loading ??= Promise.all([
+      import("./globe-perf-recorder.js"),
+      import("./globe-perf-share.js"),
+      import("./globe-perf-stats.js"),
+    ]).then(([recorder, shareModule, stats]) => {
+      tools = {
+        rec: recorder.createPerfRecorder({
+          createRun: () =>
+            stats.createFrameRun({
+              refreshIntervalMs: null,
+              thresholdsMs: THRESHOLDS_MS,
+            }),
+        }),
+        share: shareModule.browserShareEnv(showText),
+        copyExport: shareModule.copyExport,
+        downloadExport: shareModule.downloadExport,
+        formatFrameRunSummary: stats.formatFrameRunSummary,
+      };
+      return tools;
+    }));
   /** The last finished recording's result, or null. */
   let recording = null;
   let lastExport = "";
@@ -95,7 +111,6 @@ export function createGlobeDebug({ log, live, device }) {
     box.focus();
     box.select();
   };
-  const share = browserShareEnv(showText);
 
   let shownAt = -Infinity;
   const showLive = (now) => {
@@ -108,7 +123,8 @@ export function createGlobeDebug({ log, live, device }) {
       `E ${fmt(s.e, 1)}  band share ${fmt(s.bandShare, 2)}`,
       `globe tiles ${s.globeLoaded ?? "?"} loaded, ${s.globePending ?? "?"} pending, ${fmt(s.globeMiB)} MiB`,
       `relief tiles ${s.reliefVisible ?? "-"} visible, ${s.reliefPending ?? "-"} pending, ${fmt(s.reliefMiB)} MiB`,
-      `events ${log.total()}${rec.running() ? "  RECORDING" : ""}`,
+      `heights kept ${s.keptHeights?.kept ?? "-"}, ${fmt((s.keptHeights?.keptBytes ?? Number.NaN) / 2 ** 20)} MiB`,
+      `events ${log.total()}${tools?.rec.running() ? "  RECORDING" : ""}`,
     ].join("\n");
   };
 
@@ -125,8 +141,10 @@ export function createGlobeDebug({ log, live, device }) {
     toggle.setAttribute("aria-expanded", String(!panel.hidden));
     shownAt = -Infinity;
     showLive(performance.now());
+    if (!panel.hidden) void loadTools();
   });
-  part("record").addEventListener("click", () => {
+  part("record").addEventListener("click", async () => {
+    const { rec, formatFrameRunSummary } = await loadTools();
     if (rec.running()) {
       const r = rec.stopRun();
       recording = r && {
@@ -150,6 +168,7 @@ export function createGlobeDebug({ log, live, device }) {
     }
   });
   part("copy").addEventListener("click", async () => {
+    const { copyExport, share } = await loadTools();
     lastExport = exportText();
     const how = await copyExport(lastExport, share);
     part("status").textContent =
@@ -157,7 +176,8 @@ export function createGlobeDebug({ log, live, device }) {
         ? "Copied. Paste it into the chat."
         : "Copy was refused: select the text below.";
   });
-  part("download").addEventListener("click", () => {
+  part("download").addEventListener("click", async () => {
+    const { downloadExport, share } = await loadTools();
     lastExport = exportText();
     const stamp = new Date().toISOString().replace(/\.\d+Z$/, "Z");
     const how = downloadExport(
@@ -173,14 +193,14 @@ export function createGlobeDebug({ log, live, device }) {
 
   return {
     frameStart(now) {
-      rec.frameStart(now);
+      tools?.rec.frameStart(now);
       showLive(now);
     },
     frameEnd(now) {
-      rec.frameEnd(now);
+      tools?.rec.frameEnd(now);
     },
     mark(kind, n = 1) {
-      if (rec.running()) rec.mark(kind, n);
+      if (tools?.rec.running()) tools.rec.mark(kind, n);
     },
     api: {
       /** The export as Copy would produce it now. */

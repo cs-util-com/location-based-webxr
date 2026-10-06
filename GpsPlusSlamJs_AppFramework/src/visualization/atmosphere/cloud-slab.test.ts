@@ -37,10 +37,19 @@ import {
   cloudSlabZenithOpacity,
   CLOUD_SLAB_FRAGMENT_GLSL,
   createCloudSlab,
+  setCloudSlabCoverage,
+  setCloudSlabRadius,
+  setCloudSlabSceneDepth,
   setCloudSlabSteps,
   type Vec3,
 } from './cloud-slab.js';
 import { ATMOSPHERE_CLOUD_GLSL } from './atmosphere-glsl.js';
+import {
+  CLOUD_COVERAGE_GLSL,
+  cloudCoverThresholds,
+  cloudDiscThreshold,
+  cloudThresholdForCover,
+} from './cloud-coverage.js';
 import { EARTH_ATMOSPHERE, transmittanceToTop } from './atmosphere-model.js';
 import { glslFloat } from '../../utils/glsl-float.js';
 import {
@@ -1524,5 +1533,198 @@ describe('CLOUD_SLAB_FRAGMENT_GLSL forward scattering', () => {
     expect(g).toContain(
       `ATM_SLAB_FORWARD_KNOWN = ${glslFloat(CLOUD_SLAB.forwardKnownFactor)}`
     );
+  });
+});
+
+describe('the scene depth (globe F2 plan 2026-10-03-1922, F2c)', () => {
+  // WHY: the slab is a back-faced prism drawn with the depth test, so a
+  // ridge in front of the prism's FAR face hid the whole pixel, the cloud
+  // between the camera and the ridge with it, and a deck over a valley
+  // marched on below the ground. With the scene's depth the march ends at
+  // the scene instead (the interval's twin), and the depth test is off.
+  it('ends the interval at the scene, and has none when the scene is nearer than the slab', () => {
+    const down = cloudSlabInterval(3200, [0, -1, 0], 1250)!;
+    expect(down.inM).toBeCloseTo(3200 - S.topM, 9);
+    expect(down.outM).toBe(1250);
+    // A ridge in front of the deck: nothing to march.
+    expect(cloudSlabInterval(3200, [0, -1, 0], 900)).toBeNull();
+    // A scene beyond the slab changes nothing.
+    expect(cloudSlabInterval(3200, [0, -1, 0], 5000)).toEqual(
+      cloudSlabInterval(3200, [0, -1, 0])
+    );
+  });
+
+  it('refuses a scene distance that is negative or not a number', () => {
+    expect(() => cloudSlabInterval(3200, [0, -1, 0], -1)).toThrow(RangeError);
+    expect(() => cloudSlabInterval(3200, [0, -1, 0], Number.NaN)).toThrow(
+      RangeError
+    );
+  });
+
+  // The GPU half: opt-in by a define, so without a depth the shader is
+  // today's; with one, the far end of the march is the scene's distance,
+  // reconstructed through the same inverse projection as the ray.
+  it('reads the depth only behind its define, and clips the interval with it', () => {
+    const g = CLOUD_SLAB_FRAGMENT_GLSL;
+    const block = g.slice(
+      g.indexOf('#ifdef ATM_SLAB_SCENE_DEPTH\n  float atmSceneDepth'),
+      g.indexOf('if (tOut <= tIn) discard;')
+    );
+    expect(block).toContain('texture2D(atmSlabSceneDepth');
+    expect(block).toContain('atmSlabInverseProjection');
+    expect(block).toContain('tOut = min(tOut,');
+    expect(g).toContain(
+      '#ifdef ATM_SLAB_SCENE_DEPTH\nuniform sampler2D atmSlabSceneDepth;'
+    );
+  });
+
+  it('turns the depth on and off on the mesh: the define, the texture and the depth test', () => {
+    const slab = createCloudSlab({
+      atmCloudThreshold: { value: 0.6 },
+      atmCloudCover: { value: 0.5 },
+    });
+    const m = slab.material as THREE.ShaderMaterial;
+    expect(m.defines['ATM_SLAB_SCENE_DEPTH']).toBeUndefined();
+    const depth = new THREE.DepthTexture(4, 4);
+    const version = m.version;
+    setCloudSlabSceneDepth(slab, depth);
+    expect(m.defines['ATM_SLAB_SCENE_DEPTH']).toBe(1);
+    expect(m.defines['ATM_SLAB_STEPS']).toBe(S.defaultSteps);
+    expect(m.uniforms['atmSlabSceneDepth']!.value).toBe(depth);
+    expect(m.depthTest).toBe(false);
+    expect(m.version).toBeGreaterThan(version);
+    setCloudSlabSceneDepth(slab, null);
+    expect(m.defines['ATM_SLAB_SCENE_DEPTH']).toBeUndefined();
+    expect(m.uniforms['atmSlabSceneDepth']!.value).toBeNull();
+    expect(m.depthTest).toBe(true);
+  });
+
+  // Swapping one depth texture for another (a resize) is a uniform change,
+  // not a new program.
+  it('swaps one depth for another without a new program', () => {
+    const slab = createCloudSlab({});
+    const m = slab.material as THREE.ShaderMaterial;
+    setCloudSlabSceneDepth(slab, new THREE.DepthTexture(4, 4));
+    const version = m.version;
+    const next = new THREE.DepthTexture(8, 8);
+    setCloudSlabSceneDepth(slab, next);
+    expect(m.version).toBe(version);
+    expect(m.uniforms['atmSlabSceneDepth']!.value).toBe(next);
+  });
+});
+
+describe('the coverage map and the disc (globe volume-cloud plan 2026-10-05-0016, C1)', () => {
+  // WHY: the globe's clouds are one map; a volume near the camera must put
+  // its clouds where the map has them, or the swap from the shell to the
+  // volume changes the pattern (the "plop" the owner ruled out). The map
+  // gives a cover per column, and the cover becomes a threshold through the
+  // noise's own quantiles, the same rule the global cover uses.
+  // WHY: the per-position threshold must leave today's march exactly as it
+  // is when it is constant (OsmDemo and the look-dev pages never set it).
+  it('marches exactly as before with a constant per-position threshold', () => {
+    const base = {
+      camera: [0, 3200, 0] as Vec3,
+      dir: unit([1, -0.6, 0.2]),
+      steps: 16,
+      sample: (x: number, z: number) =>
+        0.5 + 0.3 * Math.sin(x * 0.001 + z * 0.0007),
+      threshold: 0.62,
+      light: {
+        sunTransmittance: [0.9, 0.85, 0.7] as Vec3,
+        sunDir: unit([0.3, 0.8, 0.2]),
+        zenith: [0.1, 0.2, 0.4] as Vec3,
+      },
+    };
+    const before = cloudSlabMarch(base);
+    const after = cloudSlabMarch({ ...base, thresholdAt: () => 0.62 });
+    expect(after).toEqual(before);
+    expect(before.opacity).toBeGreaterThan(0);
+  });
+
+  // WHY: the map decides where the clouds are: the same noise, clouds east
+  // of x = 0 and clear west of it, gives cloud only toward the east.
+  it('puts the clouds where the per-position threshold says', () => {
+    const cloudy = cloudThresholdForCover(0.9);
+    const thresholdAt = (x: number) => (x > 0 ? cloudy : 2);
+    const march = (dir: Vec3) =>
+      cloudSlabMarch({
+        camera: [0, 3200, 0],
+        dir: unit(dir),
+        steps: 16,
+        sample: () => 0.6,
+        threshold: 2,
+        thresholdAt,
+      });
+    expect(march([1, -0.5, 0]).opacity).toBeGreaterThan(0.1);
+    expect(march([-1, -0.5, 0]).opacity).toBe(0);
+  });
+
+  // WHY: beyond the disc the shell draws the clouds; the volume must have
+  // nothing there, or both would draw them. Seen from above, the slab's
+  // entry about 10 km out: a 2 km disc leaves every node beyond it (the
+  // threshold is read at the nodes, so a camera inside its own disc would
+  // carry a sliver of cloud in its first segment by design).
+  it('draws nothing beyond the disc', () => {
+    const cloudy = cloudThresholdForCover(0.9);
+    const march = (radiusM: number) =>
+      cloudSlabMarch({
+        camera: [0, 3_200, 0],
+        dir: unit([10, -1, 0]),
+        steps: 16,
+        sample: () => 0.6,
+        threshold: 2,
+        thresholdAt: (x, z) =>
+          cloudDiscThreshold(cloudy, Math.hypot(x, z), radiusM),
+      });
+    expect(march(40_000).opacity).toBeGreaterThan(0.1);
+    expect(march(2_000).opacity).toBe(0);
+  });
+
+  // The GPU half: opt-in by defines, so without them the shader is today's.
+  it('reads the coverage and the disc only behind their defines', () => {
+    const g = CLOUD_SLAB_FRAGMENT_GLSL;
+    // The shared chunk (cloud-coverage.ts), read at both nodes.
+    expect(g).toContain(CLOUD_COVERAGE_GLSL);
+    // The march reads the per-position threshold at both nodes.
+    expect(g).toContain('atmSlabRawThickness(na, tha)');
+    expect(g).toContain('atmSlabRawThickness(nb, thb)');
+  });
+
+  it('turns the coverage and the disc on and off on the mesh', () => {
+    const slab = createCloudSlab({});
+    const m = slab.material as THREE.ShaderMaterial;
+    const plain = m.fragmentShader;
+    expect(m.defines['ATM_CLOUD_COVERAGE']).toBeUndefined();
+    const map = new THREE.Texture();
+    setCloudSlabCoverage(slab, {
+      glsl: 'uniform sampler2D uMap;\nfloat atmCloudCoverageAt(vec2 xz) { return texture2D(uMap, xz).r; }',
+      uniforms: { uMap: { value: map } },
+    });
+    expect(m.defines['ATM_CLOUD_COVERAGE']).toBe(1);
+    expect(m.fragmentShader).toContain('float atmCloudCoverageAt(vec2 xz)');
+    expect(m.uniforms['uMap']!.value).toBe(map);
+    expect(m.uniforms['atmCoverThresholds']!.value).toEqual(
+      cloudCoverThresholds()
+    );
+    setCloudSlabRadius(slab, 20_000);
+    expect(m.defines['ATM_CLOUD_DISC']).toBe(1);
+    expect(m.uniforms['atmCoverDiscM']!.value).toBe(20_000);
+    setCloudSlabCoverage(slab, null);
+    setCloudSlabRadius(slab, null);
+    expect(m.defines['ATM_CLOUD_COVERAGE']).toBeUndefined();
+    expect(m.defines['ATM_CLOUD_DISC']).toBeUndefined();
+    expect(m.fragmentShader).toBe(plain);
+  });
+
+  it('refuses a coverage chunk without its function, or a radius that is not positive', () => {
+    const slab = createCloudSlab({});
+    expect(() =>
+      setCloudSlabCoverage(slab, {
+        glsl: 'float other() { return 0.0; }',
+        uniforms: {},
+      })
+    ).toThrow(RangeError);
+    expect(() => setCloudSlabRadius(slab, 0)).toThrow(RangeError);
+    expect(() => setCloudSlabRadius(slab, Number.NaN)).toThrow(RangeError);
   });
 });

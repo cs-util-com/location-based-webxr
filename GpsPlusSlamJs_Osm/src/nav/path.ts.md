@@ -9,6 +9,14 @@ caller-supplied set of in-scope H3 cells.
 An agent needs the other question, and the navigation design names **traversal
 within a component** as the piece that does not exist yet.
 
+**No production caller today, kept on purpose.** The OSM demo routes over the
+column model (`column-space.ts` with `findCheapestPath`), and the design's
+rung 5.3 (flat wandering), this module's own use, is not scheduled. It stays
+as the flat case, with its tests, because it is part of the package's public
+surface (owner decision 2026-10-05). It is also the only caller of
+`findStatePath` and `reachableStates` in `search.ts`. The dead-code check does
+not flag it, because the package barrel is a knip entry.
+
 ## The injectable step predicate is the architecture
 
 The design describes two rungs that read as contradictory:

@@ -18,6 +18,7 @@ import {
   GLOBE_CLIP,
   applyOrbitPose,
   clipPlanes,
+  reliefClearanceM,
   orbitDistanceToFit,
   orbitPose,
   smoothstep,
@@ -400,10 +401,109 @@ describe("clipPlanes", () => {
     );
   });
 
+  // Why (F2 plan F2a, M4): over the exaggerated relief the ground under the
+  // camera stands far above the ellipsoid (14.4 km for Mont Blanc at E 3),
+  // so a near plane from the height above the ellipsoid cut into the peaks
+  // at a low hold, and a far plane at the sea-level horizon cut off peaks
+  // beyond it. With the drawn ground below and the highest drawn peak, the
+  // near plane keeps its fraction of the height above the GROUND, and the
+  // far plane reaches a peak standing just beyond the horizon.
+  it("measures the near plane from the drawn ground, and reaches peaks beyond the horizon", () => {
+    const at = (h: number) =>
+      WGS84_ELLIPSOID.getCartographicToPosition(
+        0.8,
+        0.16,
+        h,
+        new THREE.Vector3(),
+      );
+    // 5 km above the ellipsoid, 1 km from the nearest drawn ground.
+    const over = clipPlanes(WGS84_ELLIPSOID, at(5_000), {
+      clearanceM: 1_000,
+      peakM: 14_400,
+    });
+    expect(over.near).toBeCloseTo(1_000 * GLOBE_CLIP.nearFraction, 6);
+    const flat = clipPlanes(WGS84_ELLIPSOID, at(5_000));
+    expect(flat.near).toBeCloseTo(5_000 * GLOBE_CLIP.nearFraction, 6);
+    // The globe's own surface is drawn too (the fill): a clearance beyond
+    // the height above the ellipsoid is capped by it.
+    expect(
+      clipPlanes(WGS84_ELLIPSOID, at(5_000), { clearanceM: 9_000 }).near,
+    ).toBeCloseTo(5_000 * GLOBE_CLIP.nearFraction, 6);
+    // The far plane: the sea-level horizon plus a 14.4 km peak's own
+    // horizon distance (about 428 km), so the peak there is still drawn.
+    const b = WGS84_ELLIPSOID.radius.z;
+    const peakReach = Math.sqrt((b + 14_400) ** 2 - b ** 2);
+    expect(over.far - flat.far).toBeCloseTo(peakReach, 0);
+    // Touching the ground: the floor holds.
+    expect(clipPlanes(WGS84_ELLIPSOID, at(5_000), { clearanceM: 0 }).near).toBe(
+      GLOBE_CLIP.minNearM,
+    );
+  });
+
+  // WHY (F2a's browser run, 2026-10-05): the first rule took the height
+  // above the HIGHEST ground nearby. Held 300 m over a slope with the ridge
+  // 1.5 km away standing 330 m above the camera, that height was negative
+  // and the near plane fell to its 1 m floor exactly where the relief is
+  // steep. What the near plane must not pass is the nearest ground, and a
+  // point beside the camera is at least its horizontal distance away
+  // however high it stands.
+  it("finds the nearest drawn ground: down below, or beside the camera however high", () => {
+    // 300 m over the ground below; the ridge 1.5 km away, 330 m above.
+    expect(
+      reliefClearanceM(5_094, [
+        { distanceM: 0, groundM: 4_794 },
+        { distanceM: 1_500, groundM: 5_424 },
+      ]),
+    ).toBeCloseTo(300, 9);
+    // A slope rising 200 m over 250 m toward the camera's side: nearer
+    // than the ground below.
+    expect(
+      reliefClearanceM(1_000, [
+        { distanceM: 0, groundM: 700 },
+        { distanceM: 250, groundM: 900 },
+      ]),
+    ).toBeCloseTo(Math.hypot(250, 100), 9);
+    // No sample: no clearance (the caller falls back to the ellipsoid).
+    expect(reliefClearanceM(1_000, [])).toBe(Number.POSITIVE_INFINITY);
+    // A sample with no height yet (null) is skipped.
+    expect(
+      reliefClearanceM(1_000, [
+        { distanceM: 0, groundM: null },
+        { distanceM: 100, groundM: 950 },
+      ]),
+    ).toBeCloseTo(Math.hypot(100, 50), 9);
+  });
+
+  it("refuses a clearance or a sample that is negative or off the numbers", () => {
+    const at = WGS84_ELLIPSOID.getCartographicToPosition(
+      0.8,
+      0.16,
+      5_000,
+      new THREE.Vector3(),
+    );
+    expect(() => clipPlanes(WGS84_ELLIPSOID, at, { clearanceM: -1 })).toThrow(
+      RangeError,
+    );
+    expect(() =>
+      clipPlanes(WGS84_ELLIPSOID, at, { clearanceM: Number.NaN }),
+    ).toThrow(RangeError);
+    expect(() =>
+      reliefClearanceM(1_000, [{ distanceM: -1, groundM: 0 }]),
+    ).toThrow(RangeError);
+    expect(() =>
+      reliefClearanceM(Number.NaN, [{ distanceM: 0, groundM: 0 }]),
+    ).toThrow(RangeError);
+  });
+
   it("refuses a camera at the centre or off the numbers", () => {
     expect(() => clipPlanes(WGS84_ELLIPSOID, new THREE.Vector3())).toThrow(
       RangeError,
     );
+    expect(() =>
+      clipPlanes(WGS84_ELLIPSOID, new THREE.Vector3(R + 1e5, 0, 0), {
+        peakM: -1,
+      }),
+    ).toThrow(RangeError);
     expect(() =>
       clipPlanes(WGS84_ELLIPSOID, new THREE.Vector3(Number.NaN, 0, 0)),
     ).toThrow(RangeError);

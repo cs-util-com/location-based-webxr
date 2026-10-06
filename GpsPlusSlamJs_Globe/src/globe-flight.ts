@@ -23,6 +23,13 @@ export const GLOBE_FLIGHT = Object.freeze({
   exaggerationNear: 3,
   /** E moves in these steps, so the tile tree is not re-traversed each frame. */
   exaggerationStep: 0.1,
+  /**
+   * The third band (city plan 2026-10-05-0040 K1), only with a `ground`
+   * value: E is the near value at and above this...
+   */
+  groundBandTopM: 8_000,
+  /** ...and the ground value at and below this, smoothstep in the log between. */
+  groundBandBottomM: 2_000,
   /** The least height over the exaggerated ground. */
   clearanceM: 300,
   /** The Earth's mean radius for the frame metric. */
@@ -93,19 +100,28 @@ export function pitchAtDeg(
  * `exaggerationFarM`, `near` (3) from `exaggerationNearM`
  * down, smoothstep in the logarithm between, rounded to
  * `exaggerationStep` so it changes in steps. Never falls as the camera
- * descends. RangeError for a negative or non-finite altitude or a near
- * value below 1.
+ * descends - unless a `ground` value (1 to `near`) is given: then a third
+ * band eases it from `near` at `groundBandTopM` to `ground` at
+ * `groundBandBottomM` and below, so a city can stand on true heights
+ * (K1). RangeError for a negative or non-finite altitude, a near value
+ * below 1, or a ground value outside 1 to `near`.
  */
 export function exaggerationAt(
   altM: number,
-  options: { near?: number } = {},
+  options: { near?: number; ground?: number } = {},
 ): number {
   const { near = GLOBE_FLIGHT.exaggerationNear } = options;
+  const ground = options.ground ?? near;
   if (!(altM >= 0 && Number.isFinite(altM))) {
     throw new RangeError(`the altitude must be finite and >= 0, got ${altM}`);
   }
   if (!(near >= 1 && Number.isFinite(near))) {
     throw new RangeError(`the near exaggeration must be >= 1, got ${near}`);
+  }
+  if (!(ground >= 1 && ground <= near)) {
+    throw new RangeError(
+      `the ground exaggeration must be 1 to the near value ${near}, got ${ground}`,
+    );
   }
   const s = smoothstep(
     logShare(
@@ -114,8 +130,12 @@ export function exaggerationAt(
       GLOBE_FLIGHT.exaggerationNearM,
     ),
   );
+  const g = smoothstep(
+    logShare(altM, GLOBE_FLIGHT.groundBandTopM, GLOBE_FLIGHT.groundBandBottomM),
+  );
   const step = GLOBE_FLIGHT.exaggerationStep;
-  return Math.round((1 + (near - 1) * s) / step) * step;
+  const e = 1 + (near - 1) * s + (ground - near) * g;
+  return Math.round(e / step) * step;
 }
 
 /**
