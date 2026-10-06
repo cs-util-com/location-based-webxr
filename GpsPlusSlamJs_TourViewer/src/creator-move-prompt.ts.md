@@ -12,7 +12,7 @@ M5 asks it per code in view.
 
 ## Public API
 
-- `wireCreatorMovePrompt({ ctx, arStore, dom, draft, sessionLive, levelInHandIsStored, judgeRefusal, settled, alignmentInfo, render }): CreatorMovePrompt`
+- `wireCreatorMovePrompt({ ctx, arStore, dom, draft, codes, sessionLive, levelInHandIsStored, judgeRefusal, settled, alignmentInfo, render }): CreatorMovePrompt`
   - `dom` (`CreatorMovePromptDom`): `movePrompt`, `movePromptText`, the
     three answers `movePromptUse` / `movePromptCopy` / `movePromptLater`,
     and `moveUndo`, `moveUndoText`, `moveUndoButton`.

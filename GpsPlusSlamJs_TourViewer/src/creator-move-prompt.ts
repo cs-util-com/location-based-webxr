@@ -29,6 +29,7 @@ import {
   type MovePrompt,
   type MovePromptOnset,
 } from "./code-move-prompt.js";
+import type { CreatorCodes } from "./creator-codes.js";
 import type { CreatorDraft } from "./creator-draft.js";
 import {
   codeMoveAnswered,
@@ -74,6 +75,7 @@ export function wireCreatorMovePrompt(deps: {
     CreatorDraft,
     "moveAnswers" | "setMoveAnswers" | "saveMeta" | "warnNoBackup"
   >;
+  codes: Pick<CreatorCodes, "inHand" | "measurement" | "sighting">;
   sessionLive: () => boolean;
   /** The level in hand is a stored one (only those are asked about). */
   levelInHandIsStored: () => boolean;
@@ -117,7 +119,7 @@ export function wireCreatorMovePrompt(deps: {
    * the last look, and log a new ask once.
    */
   function updateMovePrompt(): void {
-    const level = ctx.mintedLevel;
+    const level = deps.codes.inHand();
     const clock = fixClock();
     if (deps.sessionLive() && clock.count !== moveFixCount) {
       moveFixCount = clock.count;
@@ -137,8 +139,8 @@ export function wireCreatorMovePrompt(deps: {
               alignment: selectAlignmentMatrix(state),
               zero: selectZeroReference(state),
               mintedLevel: level,
-              measurement: ctx.codeMeasurement,
-              sighting: ctx.visitCodeSighting,
+              measurement: deps.codes.measurement(),
+              sighting: deps.codes.sighting(),
             });
           })();
     const alignment = deps.alignmentInfo();

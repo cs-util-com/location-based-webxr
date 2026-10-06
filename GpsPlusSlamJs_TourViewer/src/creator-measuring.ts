@@ -24,6 +24,7 @@ import {
 } from "gps-plus-slam-app-framework/state";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import type { CreatorAlignmentPicks } from "./creator-alignment-picks.js";
+import type { CreatorCodes } from "./creator-codes.js";
 import { hostedLevelJson, type CreatorDraft } from "./creator-draft.js";
 import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
 import {
@@ -42,11 +43,7 @@ import {
   type TourViewerSession,
   type TourViewerStore,
 } from "./tour-viewer-session.js";
-import {
-  measurementRole,
-  type CodeMeasurement,
-  type CodeSighting,
-} from "./visit-settle.js";
+import { measurementRole, type CodeMeasurement } from "./visit-settle.js";
 import type { Wizard } from "./wizard.js";
 
 /** Why a measurement found no stable pose: the gate closed since the
@@ -81,18 +78,8 @@ export interface CreatorMeasuring {
   maybeMeasure(canMint: boolean, measure: boolean): void;
   /** A measurement is in flight (Finish waits for it). */
   inFlight(): boolean;
-  /** This visit's latest stable sighting of every code with a stored pose
-   *  (the visit log's). */
-  storedSightings(): IterableIterator<{
-    readonly visit: number;
-    readonly sighting: CodeSighting;
-  }>;
-  /** A Finish wrote this level into the tour. */
-  noteFinished(levelId: string): void;
-  /** A visit ended: its tries and its sightings go. */
+  /** A visit ended: its tries go. */
   endVisit(): void;
-  /** A tour closed: the levels its Finishes wrote go. */
-  reset(): void;
 }
 
 export function wireCreatorMeasuring(deps: {
@@ -111,6 +98,17 @@ export function wireCreatorMeasuring(deps: {
     "setSighting" | "sync" | "noteMeasurement"
   >;
   draft: Pick<CreatorDraft, "saveMeta">;
+  /** The codes: the code in hand, the stored ones, what Finish wrote. */
+  codes: Pick<
+    CreatorCodes,
+    | "inHand"
+    | "measurement"
+    | "setInHand"
+    | "clearInHand"
+    | "hasStoredPose"
+    | "noteStoredSighting"
+    | "isSaved"
+  >;
   sessionLive: () => boolean;
   alignmentInfo: () => MintAlignmentInfo;
   /** Re-place the earlier visits' objects after a sighting. */
@@ -121,9 +119,6 @@ export function wireCreatorMeasuring(deps: {
   /** Each decoded code text's level id (`qrCodeId`, a hash - async), so a
    *  detection can be matched to the level in hand synchronously. */
   const codeIds = new Map<string, string>();
-  /** The levels a Finish in this page wrote into the tour: saved, so a
-   *  new code may take the hand from them (`codeOutcome`). */
-  const finishedLevelIds = new Set<string>();
   /** Measurements in flight: Finish waits for them (`measureCode`). */
   let inFlight = 0;
   /** The codes measured on their own in this visit, by visit and text:
@@ -238,8 +233,7 @@ export function wireCreatorMeasuring(deps: {
     ctx.printSizeCheck?.answer(offer.text, "adopted");
     dom.sizeInput.value = String(sizeM);
     ctx.mintGeneration += 1;
-    ctx.mintedLevel = null;
-    ctx.codeMeasurement = null;
+    deps.codes.clearInHand();
     // The code is measured again at the new size.
     autoMeasured.clear();
     endQrPipeline(ctx);
@@ -261,27 +255,6 @@ export function wireCreatorMeasuring(deps: {
   const identifying = new Set<string>();
 
   /**
-   * The latest stable sighting in the running visit of EVERY code with a
-   * stored pose - the level in hand or any level of the open tour - by
-   * level id (M3a/M3b review #6). Only the visit log reads it: each becomes
-   * that code's visit record, through the visit's plain alignment, so the
-   * tour's other codes gather visits too. It never makes a code the one in
-   * hand, and never corrects anything. Tagged with its visit, so a visit
-   * that ended without a settle cannot leak into the next one's log.
-   */
-  const storedCodeSightings = new Map<
-    string,
-    { readonly visit: number; readonly sighting: CodeSighting }
-  >();
-
-  /** Whether `levelId` has a stored pose: in hand, or in the open tour. */
-  function hasStoredPose(levelId: string): boolean {
-    if (ctx.mintedLevel?.id === levelId) return true;
-    const level = ctx.currentLevels?.get(levelId);
-    return level?.qr.geo !== undefined;
-  }
-
-  /**
    * Keep the anchor code's latest STABLE pose in this visit (plan §3.2,
    * D10b; the entry hint §3.2a): the code whose level is in hand, or - with
    * none measured yet - any code, since that is the one about to be
@@ -289,7 +262,7 @@ export function wireCreatorMeasuring(deps: {
    * uses: a merely detected code gives a single-frame pose whose yaw error
    * (several degrees) would swing every corrected note by a metre at 20 m.
    * Any code with a stored pose is also kept for the visit log
-   * (`storedCodeSightings`), whichever code is in hand.
+   * (`creator-codes.ts`), whichever code is in hand.
    */
   function noteSighting(
     text: string,
@@ -302,13 +275,11 @@ export function wireCreatorMeasuring(deps: {
       return;
     }
     const sighting = { text, levelId: id, odomPose: fused.pose };
-    if (hasStoredPose(id)) {
-      storedCodeSightings.set(id, {
-        visit: ctx.arSessionGeneration,
-        sighting,
-      });
+    if (deps.codes.hasStoredPose(id)) {
+      deps.codes.noteStoredSighting(id, ctx.arSessionGeneration, sighting);
     }
-    if (ctx.mintedLevel !== null && ctx.mintedLevel.id !== id) return;
+    const inHand = deps.codes.inHand();
+    if (inHand !== null && inHand.id !== id) return;
     deps.alignmentPicks.setSighting(sighting);
     deps.placeEarlierObjects();
   }
@@ -364,13 +335,13 @@ export function wireCreatorMeasuring(deps: {
     },
   ): void {
     if (role.kept === "measurement") {
-      ctx.mintedLevel = fresh.level;
-      ctx.codeMeasurement = fresh.measurement;
+      deps.codes.setInHand(fresh.level, fresh.measurement);
       return;
     }
-    ctx.mintedLevel = role.reference;
-    ctx.codeMeasurement =
-      priorMeasurement?.levelId === fresh.level.id ? priorMeasurement : null;
+    deps.codes.setInHand(
+      role.reference,
+      priorMeasurement?.levelId === fresh.level.id ? priorMeasurement : null,
+    );
   }
 
   /**
@@ -433,7 +404,10 @@ export function wireCreatorMeasuring(deps: {
     // The level in hand before this tap. When it - or the open tour's zip
     // - already stores THIS code's pose, that pose stays the reference and
     // the new measurement only corrects this visit (D10b, M2c review #5).
-    const prior = { level: ctx.mintedLevel, measurement: ctx.codeMeasurement };
+    const prior = {
+      level: deps.codes.inHand(),
+      measurement: deps.codes.measurement(),
+    };
     const openAtTap = ctx.openGeneration;
     // The level in hand STAYS while the identity is derived (UI round 1,
     // U3): the measurement is automatic, and an emptied hand refused every
@@ -449,8 +423,7 @@ export function wireCreatorMeasuring(deps: {
           return { kind: "superseded" };
         }
         // A failed identity must not lose the reference in hand.
-        ctx.mintedLevel = prior.level;
-        ctx.codeMeasurement = prior.measurement;
+        deps.codes.setInHand(prior.level, prior.measurement);
         ctx.placementNote =
           "Could not derive the code's identity on this device, so it was not measured.";
         return { kind: "failed", reason: "no code identity" };
@@ -535,23 +508,19 @@ export function wireCreatorMeasuring(deps: {
     measure: boolean;
   } {
     const id = codeIds.get(text);
-    const inHand = ctx.mintedLevel;
+    const inHand = deps.codes.inHand();
     if (id !== undefined && id === inHand?.id) {
       return { ready: "measured", measure: false };
     }
     if (inFlight > 0) return { ready: "measuring", measure: false };
-    if (inHand !== null && (id === undefined || hasStoredPose(id))) {
+    if (inHand !== null && (id === undefined || deps.codes.hasStoredPose(id))) {
       return { ready: "seen", measure: false };
     }
     // A new code takes the hand only once the code in hand is saved in the
     // tour (hosted, or written by a Finish): each Finish writes the ONE code
     // in hand, so measuring past an unsaved one would silently drop it (U3
     // milestone review #7; before U3 that took a deliberate tap).
-    if (
-      inHand !== null &&
-      !(ctx.currentLevels?.has(inHand.id) ?? false) &&
-      !finishedLevelIds.has(inHand.id)
-    ) {
+    if (inHand !== null && !deps.codes.isSaved(inHand.id)) {
       return { ready: "finish-first", measure: false };
     }
     const relation = deps.codeTour.relation(text);
@@ -595,16 +564,8 @@ export function wireCreatorMeasuring(deps: {
     outcome: codeOutcome,
     maybeMeasure,
     inFlight: () => inFlight > 0,
-    storedSightings: () => storedCodeSightings.values(),
-    noteFinished: (levelId) => {
-      finishedLevelIds.add(levelId);
-    },
     endVisit: () => {
       autoMeasured.clear();
-      storedCodeSightings.clear();
-    },
-    reset: () => {
-      finishedLevelIds.clear();
     },
   };
 }

@@ -12,7 +12,7 @@ M4 makes the sightings per code, and this is where they will live.
 
 ## Public API
 
-- `wireCreatorAlignmentPicks({ ctx, arStore, alignmentInfo }): CreatorAlignmentPicks`
+- `wireCreatorAlignmentPicks({ arStore, codes, alignmentInfo }): CreatorAlignmentPicks`
   - `alignmentInfo()` - the mint gate's view of the alignment
     (`creator-setup.ts`'s `authorAlignmentInfo`), recorded with each
     alignment the picks see.
@@ -23,7 +23,7 @@ M4 makes the sightings per code, and this is where they will live.
     change and before every noted moment.
   - `notePlaced(id)` - an object placed or moved now.
   - `setSighting(sighting)` - the visit's sighting of the code in hand
-    changed: written to `ctx.visitCodeSighting` and noted now.
+    changed: kept by `creator-codes.ts` and noted now.
   - `noteMeasurement(atMs)` - the code measured in this visit, at the tap's
     moment (the caller syncs first, once the level's id has resolved).
   - `picks()` - the picks so far; `gpsExtent(positions)` - the session's GPS

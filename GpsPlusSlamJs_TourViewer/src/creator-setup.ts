@@ -22,8 +22,6 @@
  * their `endVisit` / `reset`.
  */
 
-import { storedGeo } from "./visit-settle.js";
-
 import {
   AUTHOR_DEFAULT_SIZE_M,
   type MintAlignmentInfo,
@@ -45,6 +43,7 @@ import {
 } from "./finish-guard.js";
 
 import { wireCreatorHandoff } from "./creator-handoff.js";
+import { wireCreatorCodes } from "./creator-codes.js";
 import { wireCreatorDraft } from "./creator-draft.js";
 import { wireCreatorPreviews } from "./creator-previews.js";
 import { wireCreatorAlignmentPicks } from "./creator-alignment-picks.js";
@@ -58,8 +57,6 @@ import { newObjectId } from "./content-placement.js";
 
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import type { SelectTargetRay } from "gps-plus-slam-app-framework/ar";
-
-import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 
 import {
   removeDraftDeletion,
@@ -76,7 +73,6 @@ import {
   archiveSizeNote,
   authorStatusLine,
   finishBlockedHint,
-  finishReadiness,
   codeTourLine,
   entryHint,
   setupHint,
@@ -253,11 +249,13 @@ export function wireCreatorSetup(deps: {
   /** This page load's id: a visit id is this plus the visit's generation,
    *  which restarts at 0 on every load (`newVisitId`). */
   const pageId = newObjectId();
+  /** The one owner of the codes (`creator-codes.ts`, plan M4a). */
+  const codes = wireCreatorCodes({ ctx });
   /** The running visit's per-moment alignments (owner decision D33,
    *  `creator-alignment-picks.ts`). */
   const alignmentPicks = wireCreatorAlignmentPicks({
-    ctx,
     arStore,
+    codes,
     alignmentInfo: () => authorAlignmentInfo(),
   });
   /** The tour's on-device draft (`creator-draft.ts`): the offer, the
@@ -267,6 +265,7 @@ export function wireCreatorSetup(deps: {
     dom,
     openDraftStore,
     visitLog,
+    codes,
     wizard,
     sessionLive,
     syncPreviews: () => {
@@ -326,12 +325,12 @@ export function wireCreatorSetup(deps: {
       alignmentPicks.notePlaced(id);
     },
     settleInputs: () => ({
-      mintedLevel: ctx.mintedLevel,
-      measurement: ctx.codeMeasurement,
-      sighting: ctx.visitCodeSighting,
+      mintedLevel: codes.inHand(),
+      measurement: codes.measurement(),
+      sighting: codes.sighting(),
       gpsAccuracyM: authorAlignmentInfo().gpsAccuracyM,
     }),
-    codes: storedCodes,
+    codes: () => codes.storedPoses(),
     saveDraftObject: (object, blob) =>
       draft.write(object.id, (store) => writeDraftObject(store, object, blob)),
     saveDraftDeletion: (id) =>
@@ -347,20 +346,6 @@ export function wireCreatorSetup(deps: {
       renderAuthorReadout();
     },
   });
-
-  /** The stored codes' geo (the level in hand, then the open tour's other
-   *  levels), for the list's "4 m from the code". */
-  function storedCodes(): QrGeoPose[] {
-    const out: QrGeoPose[] = [];
-    const inHand = ctx.mintedLevel;
-    const inHandGeo = inHand === null ? null : storedGeo(inHand.json);
-    if (inHandGeo !== null) out.push(inHandGeo);
-    for (const [id, level] of ctx.currentLevels ?? []) {
-      if (id === inHand?.id || level.qr.geo === undefined) continue;
-      out.push(level.qr.geo);
-    }
-    return out;
-  }
 
   if (creator) {
     // Alignment arrives via GPS dispatches, not via controller state - the
@@ -395,12 +380,13 @@ export function wireCreatorSetup(deps: {
   /** The entry hint (§3.2a, D5) as the line's first part, until this
    *  visit has seen the code in hand (or any code, with none measured). */
   function entryLead(): string {
-    const sighting = ctx.visitCodeSighting;
+    const sighting = codes.sighting();
+    const inHand = codes.inHand();
     const hint = entryHint({
       tourOpen: ctx.session !== null,
       codeSeen:
         sighting !== null &&
-        (ctx.mintedLevel === null || sighting.levelId === ctx.mintedLevel.id),
+        (inHand === null || sighting.levelId === inHand.id),
     });
     return hint === "" ? "" : `${hint} · `;
   }
@@ -408,8 +394,8 @@ export function wireCreatorSetup(deps: {
   /** Whether the level in hand is a stored pose THIS visit did not measure
    *  (hosted, draft, or an earlier visit's): what a new measurement keeps. */
   function levelInHandIsStored(): boolean {
-    const level = ctx.mintedLevel;
-    const measurement = ctx.codeMeasurement;
+    const level = codes.inHand();
+    const measurement = codes.measurement();
     return (
       level !== null &&
       !(
@@ -447,6 +433,7 @@ export function wireCreatorSetup(deps: {
     arStore,
     dom,
     draft,
+    codes,
     sessionLive,
     levelInHandIsStored: () => levelInHandIsStored(),
     judgeRefusal: () => {
@@ -484,11 +471,7 @@ export function wireCreatorSetup(deps: {
     dom.finishButton.hidden = !(
       sessionLive() ||
       ctx.finishError !== null ||
-      finishReadiness({
-        measured: ctx.mintedLevel !== null,
-        tourOpen: ctx.session !== null,
-        manifest: ctx.tourManifestStatus,
-      }) === "ready"
+      finish.readiness() === "ready"
     );
     // The save cannot be forgotten (UI round 1, U2): after AR with changes
     // not finished, Finish says so; while a rebuilt file waits for its
@@ -514,14 +497,10 @@ export function wireCreatorSetup(deps: {
       dom.finishButton.disabled = false;
       return;
     }
-    const readiness = finishReadiness({
-      measured: ctx.mintedLevel !== null,
-      tourOpen: ctx.session !== null,
-      manifest: ctx.tourManifestStatus,
-    });
+    const readiness = finish.readiness();
     // Not while a measurement is in flight: the level it lands may be the
     // one the zip should carry.
-    dom.finishButton.disabled = readiness !== "ready" || measuring.inFlight();
+    dom.finishButton.disabled = !finish.canStart();
     // Everything above this line is a message about something that
     // happened - an error, a rebuild - and is shown whenever it is true.
     // Below is the LIVE measuring readout, which describes a camera: "hold
@@ -563,11 +542,12 @@ export function wireCreatorSetup(deps: {
     // Once measured, the setup hint (what to do next) joins the live
     // measuring readout - the readout's gate wording (the fix count) stays
     // visible on a re-entry.
+    const inHandId = codes.inHand()?.id ?? null;
     const hint = setupHint({
-      measured: ctx.mintedLevel !== null,
+      measured: codes.inHand() !== null,
       tourOpen: ctx.session !== null,
       inTour:
-        ctx.mintedLevel !== null && ctx.currentLevels?.has(ctx.mintedLevel.id)
+        inHandId !== null && ctx.currentLevels?.has(inHandId)
           ? "this-code"
           : (ctx.currentLevels?.size ?? 0) > 0
             ? "other-codes"
@@ -608,6 +588,7 @@ export function wireCreatorSetup(deps: {
     arStore,
     arController,
     seams,
+    codes,
     dom,
     alignmentPicks,
     draft,
@@ -629,6 +610,7 @@ export function wireCreatorSetup(deps: {
     arStore,
     seams,
     dom,
+    codes,
     wizard,
     codeTour,
     alignmentPicks,
@@ -650,10 +632,10 @@ export function wireCreatorSetup(deps: {
     arStore,
     seams,
     previews,
+    codes,
     alignmentPicks,
     draft,
     movePrompt,
-    measuring,
     visitLog,
     pageId,
     ...(deps.summary === undefined ? {} : { summary: deps.summary }),
@@ -695,6 +677,7 @@ export function wireCreatorSetup(deps: {
     arStore,
     arController,
     wizard,
+    codes,
     dom,
     measuring,
     settle,
@@ -734,7 +717,7 @@ export function wireCreatorSetup(deps: {
       settle.settleVisit("visit-end");
       measuring.endVisit();
       alignmentPicks.reset();
-      ctx.visitCodeSighting = null;
+      codes.endVisit();
       settle.endVisit();
       movePrompt.endVisit();
       statusExpanded = false;
@@ -766,7 +749,7 @@ export function wireCreatorSetup(deps: {
       // And the move prompt's boundaries and undo (M5b).
       settle.reset();
       movePrompt.reset();
-      measuring.reset();
+      codes.reset();
     },
     presentDraftForTour: (tourUrl) => {
       if (!creator) return; // a visitor authors nothing

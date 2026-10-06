@@ -24,6 +24,7 @@ import {
 import { Vector3 } from "three";
 import { mintPhoto, mintPin, newObjectId } from "./content-placement.js";
 import type { CreatorAlignmentPicks } from "./creator-alignment-picks.js";
+import type { CreatorCodes } from "./creator-codes.js";
 import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorPreviews } from "./creator-previews.js";
 import { usablePhotoFrame } from "./photo-frame.js";
@@ -63,6 +64,7 @@ export function wireCreatorPlacement(deps: {
   alignmentPicks: Pick<CreatorAlignmentPicks, "notePlaced">;
   draft: Pick<CreatorDraft, "recordPlacement">;
   previews: Pick<CreatorPreviews, "sync">;
+  codes: Pick<CreatorCodes, "inHand">;
   alignmentInfo: () => MintAlignmentInfo;
   /** The settle record of a visit that already settled, if any. */
   settledVisit: (
@@ -83,7 +85,7 @@ export function wireCreatorPlacement(deps: {
   function placementAllowed(): boolean {
     const alignment = deps.alignmentInfo();
     return (
-      ctx.mintedLevel !== null &&
+      deps.codes.inHand() !== null &&
       alignment.hasMatrix &&
       alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES &&
       arController.getState().status === "running" &&

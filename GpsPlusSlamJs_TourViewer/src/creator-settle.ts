@@ -37,7 +37,7 @@ import {
 } from "./code-position-settle.js";
 import type { CreatorAlignmentPicks } from "./creator-alignment-picks.js";
 import type { CreatorDraft } from "./creator-draft.js";
-import type { CreatorMeasuring } from "./creator-measuring.js";
+import type { CreatorCodes } from "./creator-codes.js";
 import type { CreatorMovePrompt } from "./creator-move-prompt.js";
 import type { CreatorPreviews } from "./creator-previews.js";
 import { moveWithCode, withinCodeReach } from "./move-with-code.js";
@@ -124,7 +124,17 @@ export function wireCreatorSettle(deps: {
     | "recordVisit"
   >;
   movePrompt: Pick<CreatorMovePrompt, "settling">;
-  measuring: Pick<CreatorMeasuring, "storedSightings">;
+  /** The codes: in hand, its measurement and sightings, every stored
+   *  pose, the visit's stored-code sightings. */
+  codes: Pick<
+    CreatorCodes,
+    | "inHand"
+    | "measurement"
+    | "sighting"
+    | "remint"
+    | "references"
+    | "storedSightings"
+  >;
   /** The page-side visit log (`creator-setup.ts` owns it). */
   visitLog: Pick<VisitLog, "entries">;
   /** This page load's id, a visit id's prefix. */
@@ -180,9 +190,9 @@ export function wireCreatorSettle(deps: {
       visit: ctx.arSessionGeneration,
       alignment: selectAlignmentMatrix(state),
       zero: selectZeroReference(state),
-      mintedLevel: ctx.mintedLevel,
-      measurement: ctx.codeMeasurement,
-      sighting: ctx.visitCodeSighting,
+      mintedLevel: deps.codes.inHand(),
+      measurement: deps.codes.measurement(),
+      sighting: deps.codes.sighting(),
       gpsAccuracyM: deps.alignmentInfo().gpsAccuracyM,
     });
     liveRefusal = refusalOf(choice);
@@ -252,7 +262,7 @@ export function wireCreatorSettle(deps: {
     // with this visit's view of it (UI round 1, U3). A change is made by
     // handing the settle a measurement of the code, so it is re-minted as
     // if measured here - through the sighting's own pick.
-    const level = ctx.mintedLevel;
+    const level = deps.codes.inHand();
     // A settle redone after a failed Finish re-applies the decision it
     // already made: the code is in hand at its new spot, the objects near
     // it have moved once, and the visit log keeps the saved pose (U3
@@ -266,8 +276,8 @@ export function wireCreatorSettle(deps: {
       planCodePosition({
         visit,
         mintedLevel: level,
-        measurement: ctx.codeMeasurement,
-        sighting: ctx.visitCodeSighting,
+        measurement: deps.codes.measurement(),
+        sighting: deps.codes.sighting(),
         picks,
         alignment: visitAlignment,
         zero,
@@ -292,8 +302,8 @@ export function wireCreatorSettle(deps: {
       alignment: visitAlignment,
       zero,
       mintedLevel: level,
-      measurement: remint ?? ctx.codeMeasurement,
-      sighting: ctx.visitCodeSighting,
+      measurement: remint ?? deps.codes.measurement(),
+      sighting: deps.codes.sighting(),
       alignmentInfo: deps.alignmentInfo(),
       alignmentGpsExtentM,
       gpsAccuracyM,
@@ -347,8 +357,8 @@ export function wireCreatorSettle(deps: {
       visitAlignment,
       zero,
       sighting:
-        choice.basis === "code-corrected" ? ctx.visitCodeSighting : null,
-      referenceLevel: ctx.mintedLevel,
+        choice.basis === "code-corrected" ? deps.codes.sighting() : null,
+      referenceLevel: deps.codes.inHand(),
       refused: choice.refused,
     };
     visitSettles.set(visit, record);
@@ -384,7 +394,7 @@ export function wireCreatorSettle(deps: {
       deps.draft.recordPlacement(object);
     }
     if (plan.level !== null) {
-      ctx.mintedLevel = plan.level;
+      deps.codes.remint(plan.level);
       void deps.draft.saveMeta();
     }
     // An IMPROVED position takes the pins and photos near it along, so
@@ -467,7 +477,7 @@ export function wireCreatorSettle(deps: {
     savedLevel: { id: string; json: string } | null,
   ): void {
     const codes: { levelId: string; odomPose: CodeSighting["odomPose"] }[] = [];
-    const measurement = ctx.codeMeasurement;
+    const measurement = deps.codes.measurement();
     if (measurement !== null && measurement.visit === visit) {
       codes.push({
         levelId: measurement.levelId,
@@ -477,7 +487,7 @@ export function wireCreatorSettle(deps: {
     // The tour's other stored codes this visit saw (M3a/M3b review #6),
     // then the code in hand last: the log keeps each code's LAST look.
     // Never a print answered "It's a second copy" (M5b review #11).
-    for (const seen of deps.measuring.storedSightings()) {
+    for (const seen of deps.codes.storedSightings()) {
       if (seen.visit !== visit || isSecondCopy(state, seen.sighting)) {
         continue;
       }
@@ -486,7 +496,7 @@ export function wireCreatorSettle(deps: {
         odomPose: seen.sighting.odomPose,
       });
     }
-    const sighting = ctx.visitCodeSighting;
+    const sighting = deps.codes.sighting();
     if (sighting !== null && !isSecondCopy(state, sighting)) {
       codes.push({ levelId: sighting.levelId, odomPose: sighting.odomPose });
     }
@@ -526,14 +536,14 @@ export function wireCreatorSettle(deps: {
     state: ReturnType<typeof arStore.getState>,
     sighting: CodeSighting,
   ): boolean {
-    const level = ctx.mintedLevel;
+    const level = deps.codes.inHand();
     if (level === null || sighting.levelId !== level.id) return false;
     const offset = sightedCodeOffset({
       visit: ctx.arSessionGeneration,
       alignment: selectAlignmentMatrix(state),
       zero: selectZeroReference(state),
       mintedLevel: level,
-      measurement: ctx.codeMeasurement,
+      measurement: deps.codes.measurement(),
       sighting,
     });
     return (
@@ -559,27 +569,13 @@ export function wireCreatorSettle(deps: {
       summary.show(
         buildSummaryModel({
           visits: deps.visitLog.entries(),
-          references: codeReferences(),
+          references: deps.codes.references(),
           objects: ctx.tourManifest?.objects ?? [],
         }),
       );
     } catch {
       summary.hide();
     }
-  }
-
-  /** Each code's stored pose: the level in hand, then the tour's others. */
-  function codeReferences(): { levelId: string; geo: QrGeoPose | null }[] {
-    const inHand = ctx.mintedLevel;
-    const references: { levelId: string; geo: QrGeoPose | null }[] =
-      inHand === null
-        ? []
-        : [{ levelId: inHand.id, geo: storedGeo(inHand.json) }];
-    for (const [id, level] of ctx.currentLevels ?? []) {
-      if (id === inHand?.id) continue;
-      references.push({ levelId: id, geo: level.qr.geo ?? null });
-    }
-    return references;
   }
 
   /** Forget the settle of `visit` if it is still the running visit, so

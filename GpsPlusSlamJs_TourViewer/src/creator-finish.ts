@@ -38,6 +38,7 @@ import {
   downloadSafeName,
   nameSurvivesDownload,
 } from "./content-disposition.js";
+import type { CreatorCodes } from "./creator-codes.js";
 import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorHandoff } from "./creator-handoff.js";
 import type { CreatorMeasuring } from "./creator-measuring.js";
@@ -45,7 +46,7 @@ import type { CreatorMovePrompt } from "./creator-move-prompt.js";
 import type { CreatorPreviews } from "./creator-previews.js";
 import type { CreatorSettle } from "./creator-settle.js";
 import { finishEntries, type FinishEntry } from "./finish-entries.js";
-import { FINISH_LABELS } from "./qr-author-mode.js";
+import { FINISH_LABELS, finishReadiness } from "./qr-author-mode.js";
 import { authoringFinished } from "./tour-authoring-actions.js";
 import { scanEntryNames } from "./tour-read-set.js";
 import { archiveFileName, type TourSession } from "./tour-session.js";
@@ -81,6 +82,12 @@ export interface CreatorFinishDom {
 }
 
 export interface CreatorFinish {
+  /** Whether a Finish could run, and why not (the readout's hint). */
+  readiness(): ReturnType<typeof finishReadiness>;
+  /** A tap would start a Finish now: ready, no measurement in flight and
+   *  none running. The ONE rule the button and the click share (M2
+   *  review #2): M4 changes readiness, and two copies could disagree. */
+  canStart(): boolean;
   /** Show the keep-the-walk switch only for a tour with something
    *  visitors never read, on the page, with no rebuilt file waiting. */
   renderKeepScan(): void;
@@ -92,7 +99,8 @@ export function wireCreatorFinish(deps: {
   arController: Pick<ArController, "disable">;
   wizard: Pick<Wizard, "openStep">;
   dom: CreatorFinishDom;
-  measuring: Pick<CreatorMeasuring, "inFlight" | "noteFinished">;
+  measuring: Pick<CreatorMeasuring, "inFlight">;
+  codes: Pick<CreatorCodes, "inHand" | "noteFinished">;
   settle: Pick<
     CreatorSettle,
     | "settleVisit"
@@ -184,23 +192,32 @@ export function wireCreatorFinish(deps: {
     }
   }
 
+  function readiness(): ReturnType<typeof finishReadiness> {
+    return finishReadiness({
+      measured: deps.codes.inHand() !== null,
+      tourOpen: ctx.session !== null,
+      manifest: ctx.tourManifestStatus,
+    });
+  }
+
+  function canStart(): boolean {
+    return (
+      readiness() === "ready" && !deps.measuring.inFlight() && !ctx.finishing
+    );
+  }
+
   dom.finishButton.addEventListener("click", () => {
     const current = ctx.session;
-    if (
-      current === null ||
-      ctx.mintedLevel === null ||
-      deps.measuring.inFlight() ||
-      ctx.finishing ||
-      ctx.tourManifestStatus !== "settled"
-    ) {
-      return;
-    }
+    if (current === null || !canStart()) return;
     // The visit still running is settled BEFORE anything is read for the
     // zip (plan §3.2): its objects and its code are written as settled, not
     // as tapped. A visit already over was settled at its end.
     const settledAtTap = deps.sessionLive() ? ctx.arSessionGeneration : null;
     if (settledAtTap !== null) deps.settle.settleVisit("finish");
-    const minted = ctx.mintedLevel;
+    // Read AFTER the settle, which may re-mint the code in hand. It never
+    // empties the hand, so this return is unreachable; it keeps the type.
+    const minted = deps.codes.inHand();
+    if (minted === null) return;
     // Both guards for the continuation: the tour may be re-opened and the
     // AR session may end (and a new one start) while the rebuild runs; the
     // result must not land in a session or a tour it was not made for
@@ -405,7 +422,7 @@ export function wireCreatorFinish(deps: {
         );
         deps.previews.sync();
         wroteZip = true;
-        deps.measuring.noteFinished(minted.id);
+        deps.codes.noteFinished(minted.id);
         deps.movePrompt.clearUndo();
         // The result screen said them; the next Finish reports its own.
         deps.settle.afterFinish();
@@ -466,5 +483,5 @@ export function wireCreatorFinish(deps: {
     })();
   });
 
-  return { renderKeepScan };
+  return { renderKeepScan, readiness, canStart };
 }

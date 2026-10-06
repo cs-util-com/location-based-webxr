@@ -12,13 +12,18 @@ M4 makes it write every code of the book, not only the one in hand.
 
 ## Public API
 
-- `wireCreatorFinish({ ctx, arStore, arController, wizard, dom, measuring, settle, handoff, previews, movePrompt, draft, sessionLive, render }): CreatorFinish`
+- `wireCreatorFinish({ ctx, arStore, arController, wizard, codes, dom, measuring, settle, handoff, previews, movePrompt, draft, sessionLive, render }): CreatorFinish`
   - `dom` (`CreatorFinishDom`): `finishButton` (whose click this module
     handles), `keepScanRow`, `keepScanInput`, `finishStatus`,
     `downloadButton`, `finishBlock`.
   - The Finish settles a visit still running FIRST
     (`settle.settleVisit("finish")`), and forgets that settle again when
     no zip was written (`settle.unsettle`).
+- `CreatorFinish.readiness()` / `canStart()` - whether a Finish could run
+  (the readout's hint), and whether a tap starts one now: ready, no
+  measurement in flight, none running. The ONE rule the button's state and
+  the click both read (M2 review #2; M4 changes readiness, and two copies
+  could disagree).
 - `CreatorFinish.renderKeepScan()` - the keep-the-walk switch: shown on the
   page only, for a tour whose manifest settled and that carries entries a
   visitor never reads (counted once per tour and manifest), never while a

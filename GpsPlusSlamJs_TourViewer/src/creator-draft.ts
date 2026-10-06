@@ -33,6 +33,7 @@ import {
   writeDraftObject,
   writeDraftVisit,
 } from "./draft-persistence.js";
+import type { CreatorCodes } from "./creator-codes.js";
 import { createKeyedChain } from "./keyed-chain.js";
 import { upsertPlaced } from "./object-editing.js";
 import type { TourSession } from "./tour-session.js";
@@ -118,6 +119,8 @@ export function wireCreatorDraft(deps: {
   openDraftStore: (key: string) => Promise<DraftFileStore | undefined>;
   /** The page-side visit log (`creator-setup.ts` owns it). */
   visitLog: VisitLog;
+  /** The code in hand: written to the meta, restored from it. */
+  codes: Pick<CreatorCodes, "inHand" | "restoreInHand">;
   wizard: Pick<Wizard, "revealStep">;
   sessionLive: () => boolean;
   /** Render the placed objects (a restore brings some back). */
@@ -395,7 +398,7 @@ export function wireCreatorDraft(deps: {
       tourUrl,
       sizeM:
         Number.isFinite(sizeM) && sizeM > 0 ? sizeM : AUTHOR_DEFAULT_SIZE_M,
-      level: ctx.mintedLevel,
+      level: deps.codes.inHand(),
       // Re-stated on every write, not only on the discard's: this file is
       // rewritten on each mint, each finish and each tour open, and one
       // that omitted the list would hand a rejected draft back on the next
@@ -451,9 +454,7 @@ export function wireCreatorDraft(deps: {
     // The measured level comes back too, and it is what unlocks Finish
     // without walking to the poster again. Only when the session has not
     // already measured one: a live measurement is newer than a draft.
-    if (ctx.mintedLevel === null && waiting.level !== null) {
-      ctx.mintedLevel = waiting.level;
-    }
+    if (waiting.level !== null) deps.codes.restoreInHand(waiting.level);
     // And the printed size, which the page rewrites from the framework
     // default on every load - so without this a re-entry would solve
     // against 16 cm for a poster printed at 20.
@@ -722,7 +723,7 @@ export function wireCreatorDraft(deps: {
       // A level measured before this open is newer than the offered
       // draft's and would otherwise live only in memory; a mint after the
       // open would write it the same way.
-      if (ctx.mintedLevel !== null) void recordMeta(tourUrl);
+      if (deps.codes.inHand() !== null) void recordMeta(tourUrl);
       offered = {
         objects: waiting,
         storedIds: stored.storedIds,

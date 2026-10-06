@@ -17,10 +17,8 @@ import {
   selectOdometryPositions,
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
-import type {
-  TourViewerSession,
-  TourViewerStore,
-} from "./tour-viewer-session.js";
+import type { TourViewerStore } from "./tour-viewer-session.js";
+import type { CreatorCodes } from "./creator-codes.js";
 import { createVisitAlignmentTracker } from "./visit-alignment-picks.js";
 import type { CodeSighting } from "./visit-settle.js";
 import { createWalkedDistanceTracker } from "./walked-distance-tracker.js";
@@ -32,8 +30,8 @@ export interface CreatorAlignmentPicks {
   sync(): void;
   /** An object placed or moved in the running visit, now. */
   notePlaced(id: string): void;
-  /** The visit's sighting of the code in hand changed (also written to
-   *  `ctx.visitCodeSighting`). */
+  /** The visit's sighting of the code in hand changed (also kept by
+   *  `creator-codes.ts`). */
   setSighting(sighting: CodeSighting): void;
   /** The code measured in this visit, at the tap's moment. */
   noteMeasurement(atMs: number): void;
@@ -50,12 +48,13 @@ export interface CreatorAlignmentPicks {
 }
 
 export function wireCreatorAlignmentPicks(deps: {
-  ctx: TourViewerSession;
   arStore: Pick<TourViewerStore, "getState">;
+  /** Where the visit's sighting of the code in hand is kept. */
+  codes: Pick<CreatorCodes, "setSighting">;
   /** The mint gate's view of the alignment (`authorAlignmentInfo`). */
   alignmentInfo: () => MintAlignmentInfo;
 }): CreatorAlignmentPicks {
-  const { ctx, arStore } = deps;
+  const { arStore } = deps;
   /**
    * The running visit's per-moment alignments (owner decision D33): each
    * object placed or moved, the code measured and each sighting of the code
@@ -108,7 +107,7 @@ export function wireCreatorAlignmentPicks(deps: {
 
   /** The visit's sighting of the code in hand changed. */
   function setVisitSighting(sighting: CodeSighting): void {
-    ctx.visitCodeSighting = sighting;
+    deps.codes.setSighting(sighting);
     syncAlignmentPicks();
     alignmentPicks.noteSighting(sighting, Date.now());
   }

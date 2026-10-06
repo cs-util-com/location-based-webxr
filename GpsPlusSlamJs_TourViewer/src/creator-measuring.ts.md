@@ -12,7 +12,7 @@ M4 replaces its one code in hand with the code book.
 
 ## Public API
 
-- `wireCreatorMeasuring({ ctx, arStore, seams, dom, wizard, codeTour, alignmentPicks, draft, sessionLive, alignmentInfo, placeEarlierObjects, render }): CreatorMeasuring`
+- `wireCreatorMeasuring({ ctx, arStore, seams, dom, codes, wizard, codeTour, alignmentPicks, draft, sessionLive, alignmentInfo, placeEarlierObjects, render }): CreatorMeasuring`
   - `dom` (`CreatorMeasuringDom`): `sizeInput`, `finishButton` (held off
     while a measurement runs), `sizeOffer`, `sizeOfferText`,
     `sizeOfferUse`, `sizeOfferKeep` (whose clicks this module handles).
@@ -26,12 +26,10 @@ M4 replaces its one code in hand with the code book.
   - `outcome(text)` / `maybeMeasure(canMint, measure)` - the
     classification below, and the measurement it asks for.
   - `inFlight()` - a measurement is running (Finish waits).
-  - `storedSightings()` - this visit's latest stable sighting of every
-    code with a stored pose, tagged with its visit (the visit log reads
-    them).
-  - `noteFinished(levelId)` - a Finish wrote this level into the tour.
-  - `endVisit()` - the visit's tries and sightings go; `reset()` - a
-    tour closed: the levels its Finishes wrote go.
+  - `endVisit()` - the visit's tries go.
+- The code in hand, the stored codes' sightings and the levels a Finish
+  wrote live in `creator-codes.ts` since M4a; this module reads and writes
+  them through it.
 
 ## Invariants & assumptions
 
@@ -66,7 +64,8 @@ M4 replaces its one code in hand with the code book.
     yet): `seen` - a sighting for the visit log; taking it in hand would
     change what this visit's objects are corrected through;
   - with a code in hand that is not saved in the tour yet (neither
-    hosted nor written by a Finish of this page, `finishedLevelIds`), a
+    hosted nor written by a Finish of this page, `creator-codes.ts`'s
+    `isSaved`), a
     new code: `finish-first` - each Finish writes the ONE code in hand,
     so measuring past it would silently drop it;
   - with no tour open: `seen`;

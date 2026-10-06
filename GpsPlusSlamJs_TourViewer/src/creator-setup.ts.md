@@ -33,7 +33,8 @@ root.** Each concern is its own `creator-*.ts` module with its own sidecar:
 `creator-draft.ts` (the on-device draft), `creator-previews.ts` (the AR
 previews), `creator-alignment-picks.ts` (the per-moment alignments),
 `creator-move-prompt.ts` ("Did the poster move here?"),
-`creator-placement.ts` (pins and photos), `creator-measuring.ts` (the QR
+`creator-placement.ts` (pins and photos), `creator-codes.ts` (the one
+owner of the codes, M4a), `creator-measuring.ts` (the QR
 pipeline, the size offer, automatic measuring), `creator-settle.ts` (the
 visit settle, the visit log, the summary), `creator-finish.ts` (the rebuilt
 zip) and `creator-handoff.ts` (its download, share or Drive save). What
@@ -133,7 +134,7 @@ were here. What stays is the Finish's side:
     of the manifest it wrote): a photo that landed during the rebuild is in
     neither and waits, settled, for the next Finish.
   - **The entry hint** (§3.2a, D5): the live status line starts with
-    `entryHint` while a tour is open and `ctx.visitCodeSighting` holds no
+    `entryHint` while a tour is open and `creator-codes.ts` holds no
     sighting of the code in hand (any code while none is measured); it goes
     the moment this visit has one, and never locks a control.
 

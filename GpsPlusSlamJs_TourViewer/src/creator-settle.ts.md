@@ -13,7 +13,7 @@ M4 settles every code of the book, not only the one in hand.
 
 ## Public API
 
-- `wireCreatorSettle({ ctx, arStore, seams, previews, alignmentPicks, draft, movePrompt, measuring, visitLog, pageId, summary?, alignmentInfo }): CreatorSettle`
+- `wireCreatorSettle({ ctx, arStore, seams, previews, alignmentPicks, draft, movePrompt, codes, visitLog, pageId, summary?, alignmentInfo }): CreatorSettle`
 - `CreatorSettle`:
   - `settleVisit(trigger)` - settle the running visit (`"visit-end"` from
     `endAuthorVisit`, `"finish"` from a Finish tapped in a session). READS
@@ -197,7 +197,7 @@ M4 settles every code of the book, not only the one in hand.
 - **Every stored code, not only the one in hand** (M3a/M3b review #6):
   `noteSighting` also keeps the latest stable sighting of ANY code with a
   stored pose (the level in hand, or a level of the open tour with a geo)
-  in `storedCodeSightings`, tagged with its visit and cleared at the
+  in `creator-codes.ts`, tagged with its visit and cleared at the
   visit's end. Only the visit log reads it: such a sighting never makes a
   code the one in hand and never corrects anything.
 - **The saved pose is marked** (M3a/M3b review #2): `settleVisit` plans the

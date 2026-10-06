@@ -10,7 +10,7 @@ troubleshooting recording's record of each placement. Split out of
 
 ## Public API
 
-- `wireCreatorPlacement({ ctx, arStore, arController, seams, dom, alignmentPicks, draft, previews, alignmentInfo, settledVisit, lateArrival, render }): CreatorPlacement`
+- `wireCreatorPlacement({ ctx, arStore, arController, seams, dom, alignmentPicks, draft, previews, codes, alignmentInfo, settledVisit, lateArrival, render }): CreatorPlacement`
   - `dom` (`CreatorPlacementDom`): `pinButton`, `pinLabel`, `pinSave`,
     `pinCancel`, `photoButton`, whose clicks this module handles.
   - `seams`: `getArWorldGroup` (the odometry frame a placement is kept

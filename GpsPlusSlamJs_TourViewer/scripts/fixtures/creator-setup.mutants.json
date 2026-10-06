@@ -52,10 +52,10 @@
     },
     {
       "name": "Finish not held for a measurement",
-      "region": "readout",
-      "file": "src/creator-setup.ts",
-      "from": "readiness !== \"ready\" || measuring.inFlight();",
-      "to": "readiness !== \"ready\";"
+      "region": "finish",
+      "file": "src/creator-finish.ts",
+      "from": "readiness() === \"ready\" && !deps.measuring.inFlight() && !ctx.finishing",
+      "to": "readiness() === \"ready\" && !ctx.finishing"
     },
     {
       "name": "empty visits logged",
@@ -82,8 +82,8 @@
       "name": "other stored codes not kept",
       "region": "sightings",
       "file": "src/creator-measuring.ts",
-      "from": "      storedCodeSightings.set(id, {",
-      "to": "      void ({"
+      "from": "      deps.codes.noteStoredSighting(id, ctx.arSessionGeneration, sighting);",
+      "to": "      void sighting;"
     },
     {
       "name": "U3 decision not logged when nothing settled",
@@ -261,7 +261,7 @@
       "name": "a code written by Finish not recorded",
       "region": "measuring",
       "file": "src/creator-finish.ts",
-      "from": "        deps.measuring.noteFinished(minted.id);",
+      "from": "        deps.codes.noteFinished(minted.id);",
       "to": ""
     },
     {
@@ -281,7 +281,7 @@
     {
       "name": "sightings carried into the next visit",
       "region": "visit hooks",
-      "file": "src/creator-measuring.ts",
+      "file": "src/creator-codes.ts",
       "from": "      storedCodeSightings.clear();",
       "to": "",
       "expected": "equivalent",
@@ -299,7 +299,7 @@
     {
       "name": "sighting not kept on the session",
       "region": "picks",
-      "file": "src/creator-alignment-picks.ts",
+      "file": "src/creator-codes.ts",
       "from": "    ctx.visitCodeSighting = sighting;\n",
       "to": ""
     },
