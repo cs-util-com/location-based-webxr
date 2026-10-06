@@ -81,6 +81,57 @@ describe("exaggerationAt", () => {
   });
 });
 
+// Why (city plan 2026-10-05-0040 K1): a city's buildings stand on true
+// heights, so near the ground the relief may have to come back to E 1 or
+// they are buried in a hillside drawn three times as high. The third band
+// is opt-in (`ground`), so the default law, and its "never falls as the
+// camera descends", are unchanged until the owner has compared it.
+describe("exaggerationAt with a ground value (the third band)", () => {
+  it("eases from the near value at the band's top to the ground value at its bottom", () => {
+    const { groundBandTopM, groundBandBottomM } = GLOBE_FLIGHT;
+    expect(exaggerationAt(groundBandTopM, { ground: 1 })).toBe(3);
+    expect(exaggerationAt(GLOBE_FLIGHT.exaggerationNearM, { ground: 1 })).toBe(
+      3,
+    );
+    expect(exaggerationAt(groundBandBottomM, { ground: 1 })).toBe(1);
+    expect(exaggerationAt(500, { ground: 1 })).toBe(1);
+    expect(exaggerationAt(0, { ground: 1 })).toBe(1);
+    expect(exaggerationAt(5_000_000, { ground: 1 })).toBe(1);
+    const mid = exaggerationAt(Math.sqrt(groundBandTopM * groundBandBottomM), {
+      ground: 1,
+    });
+    expect(mid).toBeGreaterThan(1);
+    expect(mid).toBeLessThan(3);
+  });
+
+  it("changes nothing when the ground value is the near value (the default)", () => {
+    for (let alt = 100; alt < 3_000_000; alt *= 1.3) {
+      expect(exaggerationAt(alt, { ground: 3 })).toBe(exaggerationAt(alt));
+    }
+  });
+
+  it("moves in the law's steps and falls as the camera descends through the band", () => {
+    let prev = exaggerationAt(GLOBE_FLIGHT.exaggerationNearM, { ground: 1 });
+    for (let alt = GLOBE_FLIGHT.exaggerationNearM; alt > 100; alt *= 0.95) {
+      const e = exaggerationAt(alt, { ground: 1 });
+      expect(
+        Math.round(e / GLOBE_FLIGHT.exaggerationStep) *
+          GLOBE_FLIGHT.exaggerationStep,
+      ).toBeCloseTo(e, 12);
+      expect(e).toBeLessThanOrEqual(prev);
+      prev = e;
+    }
+  });
+
+  it("refuses a ground value below 1 or above the near value", () => {
+    expect(() => exaggerationAt(1_000, { ground: 0.5 })).toThrow(RangeError);
+    expect(() => exaggerationAt(1_000, { ground: 4 })).toThrow(RangeError);
+    expect(() => exaggerationAt(1_000, { ground: Number.NaN })).toThrow(
+      RangeError,
+    );
+  });
+});
+
 describe("minimumAltitudeM", () => {
   // One-scene plan §3.4: the clearance is over the EXAGGERATED ground, the
   // sea drawn at 0 (review 2026-10-02-1235 major 3).
