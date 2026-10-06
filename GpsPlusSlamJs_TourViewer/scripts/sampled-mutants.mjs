@@ -5,7 +5,7 @@
 // restored from memory after every mutant and in a `finally`, never through
 // git. See sampled-mutants.mjs.md.
 //
-//   node scripts/sampled-mutants.mjs scripts/creator-setup.mutants.json
+//   node scripts/sampled-mutants.mjs scripts/fixtures/creator-setup.mutants.json
 import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";

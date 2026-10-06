@@ -15,10 +15,11 @@ replacement, so it still applies when the text moved into another module
 ## Usage
 
 ```bash
-node scripts/sampled-mutants.mjs scripts/creator-setup.mutants.json
+node scripts/sampled-mutants.mjs scripts/fixtures/creator-setup.mutants.json
 ```
 
-The list: `{ tests: string[], mutants: { name, region, file, from, to }[] }`
+The list (under `scripts/fixtures/`: the repo guards against data loose in
+`scripts/`): `{ tests: string[], mutants: { name, region, file, from, to }[] }`
 
 - `file` relative to the package, `from` must occur exactly once in it.
 - `expected` (optional): `"equivalent"` (the mutant cannot change
