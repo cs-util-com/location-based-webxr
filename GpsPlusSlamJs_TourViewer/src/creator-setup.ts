@@ -108,20 +108,14 @@ import { scanEntryNames } from "./tour-read-set.js";
 import { finishEntries, type FinishEntry } from "./finish-entries.js";
 import { wireCreatorHandoff } from "./creator-handoff.js";
 import { hostedLevelJson, wireCreatorDraft } from "./creator-draft.js";
+import { wireCreatorPreviews } from "./creator-previews.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
-import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
-import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
-import { Group, Vector3, type Object3D } from "three";
+
+import { Vector3 } from "three";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
 
-import {
-  mintPhoto,
-  mintPin,
-  newObjectId,
-  renderTourObjects,
-  type TourObjectRendererDeps,
-} from "./content-placement.js";
+import { mintPhoto, mintPin, newObjectId } from "./content-placement.js";
 import { odomNueFromWebXr } from "./visit-anchoring.js";
 import { createVisitAlignmentTracker } from "./visit-alignment-picks.js";
 import { createGpsExtentTracker } from "gps-plus-slam-app-framework/state/gps-extent-tracker";
@@ -149,7 +143,6 @@ import {
   authoringObjects,
   upsertPlaced,
   wireObjectEditing,
-  type AuthoringObject,
 } from "./object-editing.js";
 import type { ObjectListView } from "./object-list.js";
 import type { ViewerMode } from "./mode.js";
@@ -471,11 +464,20 @@ export function wireCreatorSetup(deps: {
     wizard,
     sessionLive,
     syncPreviews: () => {
-      syncPreviews();
+      previews.sync();
     },
     render: () => {
       renderAuthorReadout();
     },
+  });
+  /** The placed objects' previews and the earlier visits' frame
+   *  (`creator-previews.ts`). */
+  const previews = wireCreatorPreviews({
+    ctx,
+    arStore,
+    seams,
+    creator,
+    objects: () => editing.objects(),
   });
 
   dom.panel.hidden = !creator;
@@ -505,9 +507,6 @@ export function wireCreatorSetup(deps: {
   function sessionLive(): boolean {
     return arSessionLive(arController.getState().status);
   }
-  /** A preview sync found no zero yet (see `syncPreviews`): the store
-   *  subscription runs it again once the zero lands. */
-  let previewsWaitForZero = false;
 
   /** The object list and its actions (authoring plan 2026-09-28-0953
    *  §3.4, M4): edit, move and delete over the same in-memory state the
@@ -538,7 +537,7 @@ export function wireCreatorSetup(deps: {
     schedule: (fn, ms) => seams.schedule(fn, ms),
     forgetDraftObject: (id) => draft.forgetObject(id),
     syncPreviews: () => {
-      syncPreviews();
+      previews.sync();
     },
     renderAuthorReadout: () => {
       renderAuthorReadout();
@@ -566,10 +565,10 @@ export function wireCreatorSetup(deps: {
     arStore.subscribe(() => {
       syncAlignmentPicks();
       if (
-        previewsWaitForZero &&
+        previews.waitingForZero() &&
         selectZeroReference(arStore.getState()) !== null
       ) {
-        syncPreviews();
+        previews.sync();
       }
       renderAuthorReadout();
     });
@@ -1022,154 +1021,6 @@ export function wireCreatorSetup(deps: {
     }
   }
 
-  /**
-   * Where a preview goes. An object placed in THIS visit is RIGID in AR
-   * (decision D2): under the world group at its odometry pose, where GPS
-   * re-solves move it together with the camera. Anything else has only its
-   * geo and is placed from it in `fromGeo` - the earlier visits' frame, or
-   * the scene root outside a visit (plan §3.2).
-   */
-  function previewFrame(
-    placement: (typeof ctx.placedObjects)[number]["placement"],
-    fromGeo: Object3D,
-  ): Pick<TourObjectRendererDeps, "scene" | "poseOf"> {
-    const group = seams.getArWorldGroup();
-    if (
-      placement === undefined ||
-      placement.visit !== ctx.arSessionGeneration ||
-      group === null
-    ) {
-      return { scene: fromGeo };
-    }
-    const { position, rotation } = placement.local;
-    return {
-      scene: group,
-      poseOf: () => ({ positionNue: position, rotationNue: rotation }),
-    };
-  }
-
-  /**
-   * What each preview was rendered from, by object id (authoring plan
-   * 2026-09-28-0953 §3.4, M4): its look and where its pose comes from. A
-   * preview whose key no longer matches is replaced; one whose object is
-   * gone (deleted, or its tour closed) is disposed. Emptied with the
-   * previews at each visit's end - the next visit renders everything again.
-   */
-  const previewKeys = new Map<string, string>();
-  /**
-   * The bytes of photos a Finish took out of `placedObjects`: the hosted
-   * zip does not carry them until the creator uploads the rebuilt one, so
-   * their preview reads them from here. Emptied when the tour closes.
-   */
-  const finishedPhotoBlobs = new Map<string, Blob>();
-
-  function previewKey(entry: AuthoringObject): string {
-    const { object } = entry;
-    const placement = entry.placed?.placement;
-    const rigid =
-      placement !== undefined && placement.visit === ctx.arSessionGeneration;
-    return JSON.stringify([
-      object.kind,
-      object.kind === "pin" ? object.label : object.image,
-      rigid ? placement.local : object.geo,
-    ]);
-  }
-
-  /** Dispose every preview and forget what they were made from. */
-  function clearPreviews(): void {
-    previewKeys.clear();
-    for (const preview of ctx.placedPreviews.values()) preview.dispose();
-    ctx.placedPreviews.clear();
-  }
-
-  /**
-   * Bring the previews in line with the tour's objects now - this device's
-   * AND the hosted zip's (M4: an author reopening a tour used to see none
-   * of what was already there), keyed by id. Incremental: an object whose
-   * preview still matches is left alone, so each placement decodes only
-   * its own photo and two placements cannot race each other's disposal
-   * (M4 review #7 of the guided-setup plan).
-   */
-  function syncPreviews(): void {
-    const scene = seams.getScene();
-    if (!creator || scene === null) return;
-    const desired = new Map(
-      editing.objects().map((entry) => [entry.object.id, entry]),
-    );
-    dropStalePreviews(desired);
-    const zero = selectZeroReference(arStore.getState());
-    // Placed from geo, which needs the zero - and on the first visit of a
-    // page load (a restored draft) the zero comes with the first GPS fix,
-    // after the visit began. Rendered when it lands (M2c review #4).
-    previewsWaitForZero = zero === null;
-    if (zero === null) return;
-    for (const entry of desired.values()) {
-      if (!previewKeys.has(entry.object.id)) {
-        renderPreview(entry, zero, earlierFrame ?? scene);
-      }
-    }
-  }
-
-  /** Dispose each preview whose object is gone or no longer looks or sits
-   *  as it was rendered. */
-  function dropStalePreviews(
-    desired: ReadonlyMap<string, AuthoringObject>,
-  ): void {
-    for (const [id, key] of previewKeys) {
-      const entry = desired.get(id);
-      if (entry !== undefined && previewKey(entry) === key) continue;
-      previewKeys.delete(id);
-      ctx.placedPreviews.get(id)?.dispose();
-      ctx.placedPreviews.delete(id);
-    }
-  }
-
-  function renderPreview(
-    entry: AuthoringObject,
-    zero: LatLong,
-    fromGeo: Object3D,
-  ): void {
-    const id = entry.object.id;
-    const key = previewKey(entry);
-    previewKeys.set(id, key);
-    const generation = ctx.arSessionGeneration;
-    const blob = entry.placed?.blob ?? finishedPhotoBlobs.get(id);
-    const session = ctx.session;
-    void renderTourObjects([entry.object], {
-      ...previewFrame(entry.placed?.placement, fromGeo),
-      zero,
-      makeLabel: (text) => seams.createLabel(text),
-      loadPhotoTexture: async (image) => {
-        // This device's bytes first; a hosted photo's come from the zip,
-        // through the session (it knows the folder the manifest sits in).
-        if (blob !== undefined) return decodeFrameTexture(blob, 2);
-        if (session === null) return null;
-        // A tour image is measured before it is decoded (K4 review R2).
-        return decodeFrameTexture(await session.loadContentEntry(image), 2, {
-          maxPixels: TOUR_MAX_IMAGE_PIXELS,
-        });
-      },
-    }).then(
-      (rendered) => {
-        // The session may have ended while the photo decoded, or the
-        // object changed or went away meanwhile.
-        if (
-          generation !== ctx.arSessionGeneration ||
-          previewKeys.get(id) !== key
-        ) {
-          rendered.dispose();
-          return;
-        }
-        ctx.placedPreviews.get(id)?.dispose();
-        ctx.placedPreviews.set(id, rendered);
-      },
-      () => {
-        // A throwing label or plane: forget it, so a later sync may retry.
-        if (previewKeys.get(id) === key) previewKeys.delete(id);
-      },
-    );
-  }
-
   /** Objects placed on this device that the zip does not carry yet - an
    *  edit or a move of a hosted object is in `placedObjects` too (M4),
    *  but it was not "placed". */
@@ -1320,7 +1171,7 @@ export function wireCreatorSetup(deps: {
     logPlacement(pin, { reticleWorld: position });
     dom.pinLabel.value = "";
     hideLabelInput();
-    syncPreviews();
+    previews.sync();
     note(`Pin "${label}" placed · ${placed(newlyPlaced())}.`);
   });
 
@@ -1396,7 +1247,7 @@ export function wireCreatorSetup(deps: {
             null,
           );
         }
-        syncPreviews();
+        previews.sync();
         // The plane sits at the capture spot, facing back at it: the
         // creator is standing on it and sees it once they step back.
         note(
@@ -1516,23 +1367,10 @@ export function wireCreatorSetup(deps: {
     renderAuthorReadout();
   });
 
-  /**
-   * The frame the earlier visits' objects are shown in during this AR visit
-   * (plan §3.2 "Earlier visits' objects on re-entry"): at the scene root
-   * with the identity while they can only be placed from geo, under the AR
-   * world group with the corrected alignment's inverse once the code has
-   * been seen - which puts each where the code says, rigid in AR, because
-   * the corrected alignment does not depend on the visit's GPS alignment
-   * (`visit-anchoring.ts`). Null outside a visit.
-   */
-  let earlierFrame: Group | null = null;
   /** The code correction this visit's latest sighting would make, when
    *  the plausibility bound refused it (M2c review #2): the panel says so
    *  until the visit ends or a sighting is accepted. */
   let liveRefusal: CorrectionRefusal | null = null;
-  /** Where `earlierFrame` is attached. Tracked, not read from `parent`:
-   *  the e2e fakes' scene nodes do not set it. */
-  let earlierFrameUnderGroup = false;
 
   /** A refused correction's line, as the live line's lead. */
   function refusalLead(): string {
@@ -1558,7 +1396,7 @@ export function wireCreatorSetup(deps: {
    */
   function judgeRefusal(): ReturnType<typeof settleAlignment> {
     // Nothing to judge outside a visit - and nothing to read either.
-    if (earlierFrame === null || seams.getScene() === null) return null;
+    if (!previews.inVisit() || seams.getScene() === null) return null;
     const state = arStore.getState();
     const choice = settleAlignment({
       visit: ctx.arSessionGeneration,
@@ -1574,30 +1412,9 @@ export function wireCreatorSetup(deps: {
   }
 
   /** Move the earlier visits' frame to where this visit's knowledge of the
-   *  code puts it (see `earlierFrame`). Cheap: one matrix. */
+   *  code puts it (`creator-previews.ts`). Cheap: one matrix. */
   function placeEarlierObjects(): void {
-    const choice = judgeRefusal();
-    const frame = earlierFrame;
-    const scene = seams.getScene();
-    if (frame === null || scene === null) return;
-    const group = seams.getArWorldGroup();
-    if (choice?.basis === "code-corrected" && group !== null) {
-      frame.matrix.fromArray(choice.alignment).invert();
-      frame.matrixWorldNeedsUpdate = true;
-      if (!earlierFrameUnderGroup) {
-        scene.remove(frame);
-        group.add(frame);
-        earlierFrameUnderGroup = true;
-      }
-      return;
-    }
-    frame.matrix.identity();
-    frame.matrixWorldNeedsUpdate = true;
-    if (earlierFrameUnderGroup) {
-      group?.remove(frame);
-      scene.add(frame);
-      earlierFrameUnderGroup = false;
-    }
+    previews.placeEarlier(judgeRefusal());
   }
 
   /** Texts whose level id is being derived (`qrCodeId` is async). */
@@ -1926,7 +1743,7 @@ export function wireCreatorSetup(deps: {
       draft.recordPlacement(object);
       moved.push({ id: object.id, before, after });
     }
-    if (moved.length > 0) syncPreviews();
+    if (moved.length > 0) previews.sync();
     return moved;
   }
 
@@ -2668,7 +2485,7 @@ export function wireCreatorSetup(deps: {
           if (inZip.get(p.object.id) !== objectContentKey(p.object)) {
             kept.push(p);
           } else if (p.blob !== undefined) {
-            finishedPhotoBlobs.set(p.object.id, p.blob);
+            previews.keepFinishedPhoto(p.object.id, p.blob);
           }
         }
         ctx.placedObjects = kept;
@@ -2678,7 +2495,7 @@ export function wireCreatorSetup(deps: {
         ctx.deletedObjectIds = ctx.deletedObjectIds.filter(
           (id) => !deleted.includes(id),
         );
-        syncPreviews();
+        previews.sync();
         wroteZip = true;
         finishedLevelIds.add(minted.id);
         undoable = null;
@@ -2766,15 +2583,7 @@ export function wireCreatorSetup(deps: {
       // placed from geo, like the viewer's content - and moves under the
       // world group once the code is seen (`placeEarlierObjects`).
       resetAlignmentPicks();
-      earlierFrame = new Group();
-      earlierFrame.name = "earlier-visits";
-      earlierFrame.matrixAutoUpdate = false;
-      earlierFrameUnderGroup = false;
-      scene.add(earlierFrame);
-      // Everything is rendered afresh into this visit's frames - the
-      // hosted zip's objects too (M4) - keyed by id.
-      clearPreviews();
-      syncPreviews();
+      previews.beginVisit(scene);
       placeEarlierObjects();
       editing.render();
       // The summary describes the visits up to the last Finish; this visit
@@ -2792,14 +2601,9 @@ export function wireCreatorSetup(deps: {
       moveOnset = null;
       movePrompt = null;
       moveFixCount = -1;
-      previewsWaitForZero = false;
       statusExpanded = false;
-      // The previews are disposed by the entry's teardown right after this
-      // (`placedPreviews`); what they were made from goes now, so the next
-      // visit renders everything again. The frame itself is this module's.
-      previewKeys.clear();
-      earlierFrame?.removeFromParent();
-      earlierFrame = null;
+      // What the previews were made from, and the earlier visits' frame.
+      previews.endVisit();
       // An AR selection means nothing on the page.
       editing.reset();
     },
@@ -2818,8 +2622,7 @@ export function wireCreatorSetup(deps: {
       // prompt's answers belonged to the tour that just closed.
       draft.reset();
       // The closing tour's previews, photo bytes and list (M4).
-      clearPreviews();
-      finishedPhotoBlobs.clear();
+      previews.reset();
       editing.reset();
       // The summary and the visits belonged to the closing tour (M3b).
       deps.summary?.hide();
@@ -2837,7 +2640,7 @@ export function wireCreatorSetup(deps: {
       if (!creator) return; // a visitor authors nothing
       // The manifest just settled: its objects join the previews and the
       // list (M4 - an author reopening a tour sees what is already there).
-      syncPreviews();
+      previews.sync();
       editing.render();
       // Then its draft: offered, swept as spent, or started.
       draft.present(tourUrl);

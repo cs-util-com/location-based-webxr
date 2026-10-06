@@ -29,7 +29,7 @@
  * gets is the file, not the call.
  */
 import { describe, expect, it } from "vitest";
-import { Matrix4, Quaternion, Vector3 } from "three";
+import { Group, Matrix4, Object3D, Quaternion, Vector3 } from "three";
 import { existsSync, readFileSync } from "node:fs";
 import {
   DecompressionBudget,
@@ -678,6 +678,47 @@ describe("edits and deletions reach the published zip (authoring plan 2026-09-28
     expect(names).toContain(`${WRAP}content/kept.jpg`);
     // Applied: the next Finish has nothing left to delete.
     expect(ctx.deletedObjectIds).toEqual([]);
+  });
+});
+
+describe("a finished photo keeps its bytes for its preview (code book plan M2)", () => {
+  // Why this test matters: the Finish takes a photo out of `placedObjects`,
+  // while the HOSTED zip does not carry its bytes until the creator uploads
+  // the rebuilt one. The Finish hands the bytes to the previews; without
+  // that, the next visit's preview asks the hosted zip, finds nothing, and
+  // the photo is gone from the scene. Node cannot decode a texture, but the
+  // zip read happens before any decode, so it is what this test watches
+  // (the sampled mutant "finished photo bytes dropped" was a known gap).
+  it("renders the next visit's preview from the kept bytes, not the hosted zip", async () => {
+    const zipReads: string[] = [];
+    const scene = new Group();
+    const { dom, ctx, setup } = await wireFinishable({
+      hosted: [pin("a")],
+      placed: [],
+      seamsExtras: {
+        getScene: () => scene,
+        getArWorldGroup: () => null,
+        createLabel: () => ({
+          object: new Object3D(),
+          dispose: () => undefined,
+        }),
+      },
+      sessionExtras: {
+        loadContentEntry: (name: string) => {
+          zipReads.push(name);
+          return Promise.resolve(new Blob([]));
+        },
+      },
+    });
+    ctx.placedObjects = [{ object: photo("new"), blob: new Blob(["jpg"]) }];
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(ctx.finishError).toBeNull();
+    // Written, so it left the list of work to write.
+    expect(ctx.placedObjects).toEqual([]);
+    setup.beginAuthorVisit();
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    expect(zipReads).toEqual([]);
   });
 });
 

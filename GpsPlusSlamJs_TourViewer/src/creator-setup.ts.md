@@ -231,7 +231,8 @@ were here. What stays is the Finish's side:
   - **Earlier visits' objects on re-entry.** `beginAuthorVisit` (called by
     `ar-entry.ts` once the runtime runs) renders every earlier object into
     one frame at the scene root, placed from geo like the viewer's content;
-    each sighting re-places that frame (`placeEarlierObjects`): once the
+    each sighting re-places that frame (`placeEarlierObjects`, the frame
+    itself in `creator-previews.ts`): once the
     basis is `code-corrected` it moves under the world group with the
     corrected alignment's inverse as its matrix, which puts each object at
     the odometry spot the code says - rigid in AR, since the corrected
@@ -258,12 +259,8 @@ were here. What stays is the Finish's side:
       Pinned by `authoring-settle.test.ts` "keeps the earlier notes in the
       code's frame on new fixes while the code is out of view" (it fails
       when a fix re-places the frame).
-  - **A preview from geo waits for the zero** (M2c review #4): on the
-    first visit of a page load (a restored draft) the zero arrives with the
-    first GPS fix, after `beginAuthorVisit` ran. `previewObject` records the
-    object's id instead of returning silently, and the store subscription
-    renders what waited once the zero is there (once each; the set is
-    emptied at the visit's end, since the next visit renders everything).
+  - **A preview from geo waits for the zero** (M2c review #4):
+    `creator-previews.ts`.
   - **"Seen" is the fused pose's `stable`, no new threshold.** The same gate
     the mint uses (the fused-pose source's own fit, motion and spread
     checks). Considered over the plausible range of "seen": at one end a
@@ -409,15 +406,8 @@ were here. What stays is the Finish's side:
     through the same path as the earlier visits' objects: from geo in the
     earlier-visits frame, which moves under the world group once the code
     is seen (D10b). Before M4 they were invisible to an author reopening a
-    tour. `syncPreviews` keeps `ctx.placedPreviews` (a map by id) in line
-    with `authoringObjects`: a preview whose object changed look or pose
-    (`previewKey`) is replaced, one whose object is gone is disposed, the
-    rest are left alone. Each visit starts with a fresh render into its
-    frames. A hosted photo's bytes come from the zip
-    (`session.loadContentEntry`), decoded under the tour pixel cap
-    (`maxPixels`, tour kit K4 review R2); a photo a Finish took out of
-    `placedObjects` keeps its bytes in `finishedPhotoBlobs` until the tour
-    closes, since the hosted zip lacks them until the upload.
+    tour. How the previews are kept in line, and where a photo's bytes
+    come from: `creator-previews.ts`.
   - **The Finish replaces and filters** (`applyObjectChanges`), removes
     each deleted photo's content file (`contentEntriesToRemove` into the
     rebuild's `remove`), drops `manifest.sig.json` (a signature over the

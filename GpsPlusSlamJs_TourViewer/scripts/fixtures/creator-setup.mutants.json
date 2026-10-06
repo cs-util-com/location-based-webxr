@@ -4,7 +4,8 @@
     "src/creator-finish.test.ts",
     "src/creator-setup.test.ts",
     "src/fused-pose-wiring.test.ts",
-    "src/ar-entry.test.ts"
+    "src/ar-entry.test.ts",
+    "src/creator-previews.test.ts"
   ],
   "mutants": [
     {
@@ -31,7 +32,7 @@
     {
       "name": "corrected frame not inverted",
       "region": "previews",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-previews.ts",
       "from": "frame.matrix.fromArray(choice.alignment).invert();",
       "to": "frame.matrix.fromArray(choice.alignment);"
     },
@@ -194,14 +195,14 @@
     {
       "name": "frame left at the scene root",
       "region": "previews",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-previews.ts",
       "from": "        earlierFrameUnderGroup = true;",
       "to": ""
     },
     {
       "name": "no resync once the zero lands",
       "region": "previews",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-previews.ts",
       "from": "    previewsWaitForZero = zero === null;",
       "to": "    previewsWaitForZero = false;"
     },
@@ -209,10 +210,15 @@
       "name": "finished photo bytes dropped",
       "region": "previews",
       "file": "src/creator-setup.ts",
-      "from": "            finishedPhotoBlobs.set(p.object.id, p.blob);",
-      "to": "",
-      "expected": "known-gap",
-      "why": "no unit test can decode a photo texture (decodeFrameTexture needs a browser) and the e2e never re-renders a finished photo; M2 injects the decoder into the previews module and adds the test"
+      "from": "            previews.keepFinishedPhoto(p.object.id, p.blob);\n",
+      "to": ""
+    },
+    {
+      "name": "kept photo bytes not stored",
+      "region": "previews",
+      "file": "src/creator-previews.ts",
+      "from": "      finishedPhotoBlobs.set(id, blob);",
+      "to": ""
     },
     {
       "name": "status never expands",
