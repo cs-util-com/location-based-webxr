@@ -95,9 +95,14 @@ export function arButtonView(
         disabled: false,
       };
     case "running":
+      // The way out of AR (UI round 1, U2, review F2). The creator's work
+      // stays in the draft; the page then leads with saving it.
       return {
-        label: mode === "creator" ? "Setting up in AR" : "Tour running",
-        disabled: true,
+        label:
+          mode === "creator"
+            ? "Exit AR - your work stays on this phone"
+            : "Exit AR",
+        disabled: false,
       };
     case "error":
       return {

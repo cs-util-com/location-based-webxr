@@ -67,7 +67,7 @@ function harness(
       // handed over, and nothing after the enable needs a scene.
       return Promise.resolve({ ok: options.enableOk === true });
     }),
-    disable: () => Promise.resolve(),
+    disable: vi.fn(() => Promise.resolve()),
   };
   const hooks = createUnwiredHooks();
   // The viewer pipeline (stood in here) owns the controller and its source.
@@ -129,6 +129,7 @@ function harness(
     dispose,
     arStore,
     seams,
+    arController,
     enabledConfig: () => enabled,
     async enter() {
       dom.enterArButton.click();
@@ -271,5 +272,16 @@ describe("wireArEntry depth for a recorded entry", () => {
 
     config?.callbacks?.onSessionEnd?.({ requestedByApp: false });
     expect(h.seams.stopDepthCapture).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the button is the way out of AR (UI round 1, U2, review F2)", () => {
+  // Why: with no exit control a visitor who was done, or a creator who
+  // wanted to stop without finishing, had to guess at the back gesture.
+  it("ends a running session instead of starting one", async () => {
+    const h = harness({ arStatus: "running" });
+    await h.enter();
+    expect(h.arController.disable).toHaveBeenCalledTimes(1);
+    expect(h.arController.enable).not.toHaveBeenCalled();
   });
 });

@@ -19,7 +19,8 @@ the panel should report about the code in view.
   - `deps.resolve(text)` - which tour a code names (`codeResolver(proxy)` =
     `resolveCodeTour` bound to the open path's proxy base).
   - `deps.open(url)` - `archive-open`'s open; resolves an `OpenOutcome`
-    (`opened`, `superseded`, or `failed` with the framework's reject cause
+    (`opened`, `superseded`, `cancelled` - the creator chose to stay with
+    an unsaved rebuilt file, UI round 1, U2 -, or `failed` with the framework's reject cause
     or `"other"`), never rejects (a rejection is treated as `other`).
   - `deps.isOpening()` - any open in flight, including a step-1 open.
   - `deps.now()`, `deps.render()`.

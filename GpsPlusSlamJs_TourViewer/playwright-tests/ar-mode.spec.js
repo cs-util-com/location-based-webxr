@@ -188,7 +188,7 @@ test("a visitor who refuses the location stays on 'Allow location' with the sett
   await expect(page.getByTestId("ar-hint")).toContainText(/no gps fix yet/i);
   await expect(page.getByTestId("error")).toBeEmpty();
   await button.click();
-  await expect(button).toHaveText("Tour running");
+  await expect(button).toHaveText("Exit AR");
 });
 
 test("a first-time visitor is asked for the location on its own tap, then starts the tour on the next (DEC-N2)", async ({
@@ -217,7 +217,7 @@ test("a first-time visitor is asked for the location on its own tap, then starts
   });
   expect(state).toEqual({ requests: 1, initAR: 0 }); // no session yet
   await button.click();
-  await expect(button).toHaveText("Tour running");
+  await expect(button).toHaveText("Exit AR");
 });
 
 test("visitor mode boots to running: session started, alignment bound, capture at 8 Hz", async ({
@@ -227,7 +227,7 @@ test("visitor mode boots to running: session started, alignment bound, capture a
   await expect(page.getByTestId("enter-ar")).toHaveText("Start the tour");
   await expect(page.getByTestId("ar-hint")).toBeVisible();
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   // `#ar-root` is the DOM overlay: the start-screen hint must not sit over
   // the camera feed for the whole session (milestone review, 2026-09-05).
   await expect(page.getByTestId("ar-hint")).toBeHidden();
@@ -272,7 +272,7 @@ test("camera frames flow through the foundation and surface in the status line",
 }) => {
   await openAsVisitor(page, RANGES_ARCHIVE, 8, { debug: true });
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
 
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.emitFrames(3);
@@ -290,7 +290,9 @@ test("creator mode (the plain page) boots the same foundation under its own labe
   await page.goto("/");
   await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup");
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
+  await expect(page.getByTestId("enter-ar")).toHaveText(
+    "Exit AR - your work stays on this phone",
+  );
   await expect(page.getByTestId("ar-status")).toContainText("Creator mode");
 
   const wiring = await page.evaluate(() => {
@@ -311,6 +313,21 @@ test("creator mode (the plain page) boots the same foundation under its own labe
   expect(wiring.isRecording).toBe(true);
 });
 
+test("Exit AR ends the visitor's session from the button (UI round 1, U2)", async ({
+  page,
+}) => {
+  // Why this matters (usability review F2): the button used to sit
+  // disabled as "Tour running" over the camera; a visitor who was done had
+  // to guess at the back gesture.
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  await enterAr(page);
+  const button = page.getByTestId("enter-ar");
+  await expect(button).toHaveText("Exit AR");
+  await expect(button).toBeEnabled();
+  await button.click();
+  await expect(button).toHaveText("Start the tour");
+});
+
 test("a system session end tears the runtime down, and a re-entry starts a clean session", async ({
   page,
 }) => {
@@ -321,7 +338,9 @@ test("a system session end tears the runtime down, and a re-entry starts a clean
   // alignment solve.
   await page.goto("/");
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
+  await expect(page.getByTestId("enter-ar")).toHaveText(
+    "Exit AR - your work stays on this phone",
+  );
 
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.endXrSession();
@@ -338,7 +357,9 @@ test("a system session end tears the runtime down, and a re-entry starts a clean
   expect(afterEnd.isRecording).toBe(false);
 
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
+  await expect(page.getByTestId("enter-ar")).toHaveText(
+    "Exit AR - your work stays on this phone",
+  );
   const afterReenter = await page.evaluate(() => {
     const t = /** @type {any} */ (window).__tourViewerTest;
     return {
@@ -385,7 +406,9 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   await enterAr(page);
   await expect(page.getByTestId("setup-controls")).toBeVisible();
   await expect(page.getByTestId("setup-finish")).toBeDisabled(); // not measured
-  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
+  await expect(page.getByTestId("enter-ar")).toHaveText(
+    "Exit AR - your work stays on this phone",
+  );
   await expect(page.getByTestId("setup-status")).toHaveText(
     /hold the phone on the printed code/i,
   );
@@ -638,7 +661,9 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // origins. The snapshot makes the count session-relative. (The finish
   // above already ended the session.)
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
+  await expect(page.getByTestId("enter-ar")).toHaveText(
+    "Exit AR - your work stays on this phone",
+  );
   await expect
     .poll(
       async () => {
@@ -920,7 +945,9 @@ test("a failed finish says so with priority and can be retried; the panel shows 
     /finishing failed/i,
   );
   await expect(page.getByTestId("setup-finish")).toBeEnabled();
-  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR"); // the session survived
+  await expect(page.getByTestId("enter-ar")).toHaveText(
+    "Exit AR - your work stays on this phone",
+  ); // the session survived
 
   // Retry with the network back: progress, then step 5.
   await page.unroute("http://127.0.0.1:5197/**");
@@ -947,7 +974,7 @@ test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", a
   await openAsVisitor(page, ARCHIVE, 2, { debug: true });
 
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
 
   await page.evaluate(() => {
     const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
@@ -1050,7 +1077,7 @@ test("a tour whose photo spots were baked at its Finish places them without any 
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
   await openAsVisitor(page, ARCHIVE, 2, { debug: true });
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.alignmentStore.dispatch({
       type: "gpsData/setZeroPos",
@@ -1282,7 +1309,7 @@ test("a re-entered session places the tour again once ITS tracking is ready (rev
   await openAsVisitor(page, ARCHIVE, 2, { debug: true });
   for (const entry of [1, 2]) {
     await enterAr(page);
-    await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+    await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
     await seedAlignment(page);
     // Each session has its own gate: the code locks anew (M5).
     await lockTheCode(page);
@@ -1338,7 +1365,7 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
   await openAsVisitor(page, ARCHIVE, 8, { debug: true });
 
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
 
   // The session zero + a few real fixes (the alignment the votes refine).
   await seedAlignment(page);
@@ -2913,7 +2940,7 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
   );
   await page.getByTestId("record-session").check();
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   await expect(page.getByTestId("recording-marker")).toHaveText(
     "Recording this session",
   );
@@ -3030,7 +3057,7 @@ test("a code hung far from its saved spot is ignored after a minute of walking: 
   const CODE = { n: 11, e: 50 };
   await openAsVisitor(page, RANGES_ARCHIVE, 8, { debug: true });
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   const t0 = Date.now();
   /** A device fix at second `s`, on an 8 m circle around the poster. */
   const fix = (s) =>

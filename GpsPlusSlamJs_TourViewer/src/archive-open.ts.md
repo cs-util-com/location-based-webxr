@@ -127,6 +127,9 @@ DOM glue, its own module since the flows plan M6.
   copy, and - because dispose aborts the archive's one controller - the
   recovery download for a host that stops honouring ranges mid-session
   (S1 milestone review #5).
+- **Another tour asks before replacing one with an unsaved rebuilt file**
+  (UI round 1, U2): `openTour` returns `{ kind: "cancelled" }` when
+  `hooks.confirmLeaveTour()` is false.
 - **The manifest is marked pending BEFORE the open's placement trigger**
   (S1 milestone review #4): a tour opened into a running AR session would
   otherwise be judged before its `tour.json` (with the baked photo spots)

@@ -268,6 +268,10 @@ async function wireFinishable(options: {
   /** A REAL open session in place of the fake one (its archive must carry
    *  `options.hosted` in `${WRAP}tour.json` and the level file). */
   session?: TourSession;
+  /** Merged over the seams (the save hand-off, UI round 1, U2). */
+  seamsExtras?: Record<string, unknown>;
+  /** The AR controller's status (default "running"). */
+  arStatus?: string;
   /** Merged over the fake session (a recording's readers, scan-pass S1). */
   sessionExtras?: Record<string, unknown>;
   /** Merged over the in-memory manifest the Finish starts from. */
@@ -275,6 +279,8 @@ async function wireFinishable(options: {
 }) {
   const blob = await hostedArchive(options.hosted, options.hostedContent);
   const dom = fakeDom();
+  // Mutable, so a test can end the session the way the back gesture does.
+  const arStatus = { value: options.arStatus ?? "running" };
   const ctx = createTourViewerSession();
   ctx.session = (options.session ?? {
     ...(fakeSession(
@@ -311,18 +317,22 @@ async function wireFinishable(options: {
     mode: "creator",
     arStore: arStore as never,
     arController: {
-      getState: () => ({ status: "running" }),
+      getState: () => ({ status: arStatus.value }),
       disable: () => {
         options.onDisable?.(ctx);
         return Promise.resolve();
       },
     } as never,
-    seams: { canShareZip: () => false, getScene: () => null } as never,
+    seams: {
+      canShareZip: () => false,
+      getScene: () => null,
+      ...options.seamsExtras,
+    } as never,
     wizard: { openStep: () => undefined, revealStep: () => undefined } as never,
     dom: dom as unknown as CreatorSetupDom,
     openDraftStore: () => Promise.resolve(undefined),
   });
-  return { dom, ctx, setup, dispatched: arStore.dispatched };
+  return { dom, ctx, setup, dispatched: arStore.dispatched, arStatus };
 }
 
 /**
@@ -1064,15 +1074,82 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
   });
 
   it("offers the choice only for a tour that carries something visitors never read", async () => {
-    const plain = await wireFinishable({ hosted: [], placed: [] });
+    // On the page, before AR (UI round 1, U2): never over the camera.
+    const plain = await wireFinishable({
+      hosted: [],
+      placed: [],
+      arStatus: "ready",
+    });
     plain.setup.renderAuthorReadout();
     expect(plain.dom.keepScanRow.hidden).toBe(true);
     const withWalk = await wireFinishable({
       hosted: [],
       placed: [],
       hostedContent: [{ path: "actions/000001.json", data: "x" }],
+      arStatus: "ready",
     });
     withWalk.setup.renderAuthorReadout();
     expect(withWalk.dom.keepScanRow.hidden).toBe(false);
+    // In AR it is gone: the Finish there reads it.
+    withWalk.arStatus.value = "running";
+    withWalk.setup.renderAuthorReadout();
+    expect(withWalk.dom.keepScanRow.hidden).toBe(true);
+  });
+});
+
+describe("the save cannot be forgotten (UI round 1, U2)", () => {
+  // Why these tests matter (owner decision 2026-10-06): the creator's work
+  // reaches visitors only once the rebuilt file is SAVED and uploaded.
+  // Leaving with an unsaved file asks first; a delivered save stops asking;
+  // a session ended without Finish (the back gesture) makes Finish say what
+  // is waiting.
+  it("asks before leaving while the rebuilt file is unsaved, and stops once a save delivered it", async () => {
+    const { dom, ctx, setup } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      seamsExtras: {
+        downloadZip: () => Promise.resolve(true),
+        shareOrDownloadZip: () =>
+          Promise.resolve({ route: "download", delivered: true }),
+      },
+    });
+    expect(setup.leaveNeedsConfirm()).toBe(false);
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(setup.leaveNeedsConfirm()).toBe(true);
+    dom.downloadButton.click();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(ctx.rebuiltZip?.delivered).toBe(true);
+    expect(setup.leaveNeedsConfirm()).toBe(false);
+  });
+
+  it("a dismissed save keeps asking", async () => {
+    const { dom, ctx, setup } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      seamsExtras: {
+        shareOrDownloadZip: () =>
+          Promise.resolve({ route: "download", delivered: false }),
+      },
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    dom.downloadButton.click();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(setup.leaveNeedsConfirm()).toBe(true);
+  });
+
+  it("after AR ends without a Finish, Finish leads with saving the changes", async () => {
+    const { dom, setup, arStatus } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+    });
+    arStatus.value = "ready"; // the back gesture ended the session
+    setup.renderAuthorReadout();
+    expect(dom.finishButton.textContent).toBe("Finish and save your changes");
   });
 });

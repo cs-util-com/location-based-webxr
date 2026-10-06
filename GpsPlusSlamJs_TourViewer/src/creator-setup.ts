@@ -92,6 +92,12 @@ import {
   rebuildZipWithEntries,
 } from "gps-plus-slam-app-framework/storage";
 import { bakeCaptureSpots } from "./capture-bake.js";
+import {
+  finishButtonText,
+  hideFinishForResult,
+  leaveNeedsConfirm,
+  type FinishGuardInput,
+} from "./finish-guard.js";
 import { scanEntryNames } from "./tour-read-set.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
@@ -326,6 +332,9 @@ export interface CreatorSetupDom {
 /** Properties, not methods: they are handed to the hooks object unbound. */
 export interface CreatorSetup {
   renderAuthorReadout: () => void;
+  /** True while leaving (the page, or for another tour) should ask first:
+   *  a rebuilt tour file was not saved (UI round 1, U2, `finish-guard`). */
+  leaveNeedsConfirm: () => boolean;
   /** Creates the author tracking controller for THIS AR entry; false (with
    *  the reason in the panel) keeps AR unstarted. */
   startAuthorPipeline: () => boolean;
@@ -1386,6 +1395,12 @@ export function wireCreatorSetup(deps: {
         manifest: ctx.tourManifestStatus,
       }) === "ready"
     );
+    // The save cannot be forgotten (UI round 1, U2): after AR with changes
+    // not finished, Finish says so; while a rebuilt file waits for its
+    // save on a phone, Finish steps aside for it.
+    const guard = guardInput();
+    dom.finishButton.textContent = finishButtonText(guard);
+    if (hideFinishForResult(guard)) dom.finishButton.hidden = true;
     renderKeepScan();
     if (ctx.authorErrorText !== null) {
       dom.status.textContent = ctx.authorErrorText;
@@ -2823,6 +2838,20 @@ export function wireCreatorSetup(deps: {
     void measureCode(true);
   });
 
+  /** What the save guard reads (`finish-guard.ts`). */
+  function guardInput(): FinishGuardInput {
+    return {
+      sessionLive: sessionLive(),
+      arAvailable: arController.getState().status !== "unsupported",
+      placedCount: ctx.placedObjects.length,
+      deletedCount: ctx.deletedObjectIds.length,
+      rebuilt:
+        ctx.rebuiltZip === null
+          ? null
+          : { delivered: ctx.rebuiltZip.delivered === true },
+    };
+  }
+
   /** The open tour's entries a visitor never reads, kept for the tour and
    *  manifest it was computed for: the readout renders on every dispatch,
    *  and a scan can hold thousands of entries. */
@@ -2852,7 +2881,9 @@ export function wireCreatorSetup(deps: {
         ).length,
       };
     }
-    dom.keepScanRow.hidden = dom.finishButton.hidden || scanMemo.count === 0;
+    // Chosen on the page before AR (UI round 1, U2): hidden in a session,
+    // since the Finish there reads it.
+    dom.keepScanRow.hidden = sessionLive() || scanMemo.count === 0;
   }
 
   /**
@@ -3148,6 +3179,10 @@ export function wireCreatorSetup(deps: {
         dom.finishBlock.hidden = false;
         // The summary of every visit (M3b), on the page with the download.
         showSummary();
+        // The save is the one thing left (UI round 1, U2): brought into
+        // view and focused, rather than the top of step 4.
+        dom.downloadButton.scrollIntoView?.({ block: "center" });
+        dom.downloadButton.focus?.();
       } catch (err) {
         if (ctx.session === current) {
           ctx.finishError = FINISH_LABELS.failed(
@@ -3223,6 +3258,11 @@ export function wireCreatorSetup(deps: {
       (outcome) => {
         const { delivered } = outcome;
         if (openGeneration !== ctx.openGeneration) return;
+        // Saved: the guard stops asking, and Finish comes back (U2).
+        if (delivered && ctx.rebuiltZip === rebuilt) {
+          ctx.rebuiltZip = { ...rebuilt, delivered: true };
+          renderAuthorReadout();
+        }
         dom.downloadButton.disabled = false;
         dom.downloadButton.textContent = idleLabel();
         dom.finishStatus.textContent = finishHandoffStatus(
@@ -3271,6 +3311,7 @@ export function wireCreatorSetup(deps: {
 
   return {
     renderAuthorReadout,
+    leaveNeedsConfirm: () => leaveNeedsConfirm(guardInput()),
     startAuthorPipeline,
     beginAuthorVisit: () => {
       if (!creator) return;

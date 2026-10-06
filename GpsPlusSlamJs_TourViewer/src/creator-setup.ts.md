@@ -122,10 +122,19 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   read or joined never fails the Finish (the tour keeps the visitor's live
   join, as before); a cap's refusal and a failed integrity check do, as
   every read's does.
+- **The save cannot be forgotten** (UI round 1, U2, `finish-guard.ts`):
+  after a Finish the save button is scrolled into view and focused; on a
+  phone, Finish steps aside while the rebuilt file waits for its save
+  (`hideFinishForResult`); after AR ends without a Finish (the back
+  gesture), Finish reads "Finish and save your changes"; a delivered save
+  marks `ctx.rebuiltZip.delivered`; `leaveNeedsConfirm()` (exported) is
+  what `main.ts` asks before another tour or leaving the page.
 - **The published copy leaves the creator's walk out** (scan-pass plan
-  S1, S-D10): unless the creator ticks "Keep the walk recording in the zip"
-  (`keepScanRow` / `keepScanInput`, shown only for a tour that carries a
-  walk, counted once per tour and manifest), the Finish removes
+  S1, S-D10): unless the creator ticks "Keep the walk recording in the tour
+  file" (`keepScanRow` / `keepScanInput`, on the page BEFORE AR since UI
+  round 1, U2 - hidden in a session, since the Finish there reads it -,
+  shown only for a tour that carries a walk, counted once per tour and
+  manifest), the Finish removes
   `scanEntryNames` of the manifest it writes (`tour-read-set.ts`): the
   action stream, `session.json` and the recorded frames no visitor sees.
   A file the recording did not write (a README, credits) always stays.

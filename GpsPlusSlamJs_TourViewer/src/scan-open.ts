@@ -25,6 +25,8 @@ export type OpenOutcome =
   | { kind: "opened" }
   /** A newer open replaced this one; not a failure of this link. */
   | { kind: "superseded" }
+  /** The creator chose to stay with an unsaved rebuilt file (U2). */
+  | { kind: "cancelled" }
   | { kind: "failed"; cause: RangeProbeRejectCause | "other" };
 
 /** What the creator's panel says about the code in view. */

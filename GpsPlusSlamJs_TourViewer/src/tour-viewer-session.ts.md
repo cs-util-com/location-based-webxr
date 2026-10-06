@@ -165,3 +165,11 @@ re-arms every code while keeping both objects. `viewer-votes.test.ts`
 drives a reopened tour through it. Otherwise no logic to test;
 the fields' behaviour is pinned by the owning modules' tests and the e2e suite (`playwright-tests/*.spec.js`), which runs
 unchanged across the split (the split's behaviour-neutrality proof).
+
+## UI round 1 additions
+
+- `TourViewerHooks.confirmLeaveTour()` - false when the creator declined to
+  leave an unsaved rebuilt file for another tour (U2; `main.ts` binds it,
+  `createUnwiredHooks` returns true).
+- `rebuiltZip.delivered` - a save delivered the rebuilt file (U2).
+- `scanEntries` - see the S1 note above.

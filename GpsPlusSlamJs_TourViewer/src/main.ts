@@ -8,6 +8,7 @@
  * lives here; the e2e suite drives the composed page.
  */
 
+import { LEAVE_UNSAVED_QUESTION } from "./finish-guard.js";
 import { createEnableGpsArController } from "gps-plus-slam-app-framework/ar";
 import {
   createEmptyTourManifest,
@@ -358,6 +359,13 @@ const setup = wireCreatorSetup({
 hooks.renderAuthorReadout = setup.renderAuthorReadout;
 hooks.startAuthorPipeline = setup.startAuthorPipeline;
 hooks.resetFinishStep = setup.resetFinishStep;
+// The save cannot be forgotten (UI round 1, U2): another tour, or leaving
+// the page, asks first while a rebuilt tour file was not saved.
+hooks.confirmLeaveTour = () =>
+  !setup.leaveNeedsConfirm() || window.confirm(LEAVE_UNSAVED_QUESTION);
+window.addEventListener("beforeunload", (event) => {
+  if (setup.leaveNeedsConfirm()) event.preventDefault();
+});
 hooks.beginAuthorVisit = setup.beginAuthorVisit;
 hooks.endAuthorVisit = setup.endAuthorVisit;
 hooks.selectInView = setup.selectInView;

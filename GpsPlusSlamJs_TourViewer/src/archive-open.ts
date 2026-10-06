@@ -386,6 +386,11 @@ export function wireArchiveOpen(deps: {
     origin: "host-step" | "measure-step" = "host-step",
     codeText?: string,
   ): Promise<OpenOutcome> {
+    // Another tour would replace one whose rebuilt file was not saved: ask
+    // first (UI round 1, U2; the work itself stays in the draft).
+    if (ctx.session !== null && !hooks.confirmLeaveTour()) {
+      return { kind: "cancelled" };
+    }
     const generation = ++ctx.openGeneration;
     opening = true;
     dom.errorBox.textContent = "";

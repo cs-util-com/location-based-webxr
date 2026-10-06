@@ -434,6 +434,14 @@ export function wireArEntry(deps: {
   renderArState(arController.getState());
   void arController.refreshSupport();
   dom.enterArButton.addEventListener("click", () => {
+    // During a session the button is the way out (UI round 1, U2): the
+    // session end runs the same teardown as the back gesture.
+    if (arController.getState().status === "running") {
+      arController.disable().catch((err: unknown) => {
+        dom.errorBox.textContent = describeOpenError(err);
+      });
+      return;
+    }
     // Inside the tap, before any await: the stories' one audio element
     // may play later only if it played in a gesture (tour kit plan K4).
     if (!authorMode) hooks.unlockStationAudio();

@@ -156,6 +156,9 @@ export interface TourViewerHooks {
    *  and step 4 stops offering to open a tour at all - for the rest of the
    *  page's life (M3 milestone review #3). */
   presentNoTour(): void;
+  /** Before another tour replaces the open one: false when the creator
+   *  declined to leave an unsaved rebuilt file (UI round 1, U2). */
+  confirmLeaveTour(): boolean;
   /** A tour opened AND its manifest settled: offer any unsaved work this
    *  device still holds for it, or delete a draft the hosted zip has
    *  already absorbed. It waits for the manifest because "spent" is
@@ -187,6 +190,7 @@ export function createUnwiredHooks(): TourViewerHooks {
   return {
     renderArStatus: () => undefined,
     renderArEntry: () => undefined,
+    confirmLeaveTour: () => true,
     renderAuthorReadout: () => undefined,
     tryPlaceTour: () => undefined,
     startAuthorPipeline: () => false,
@@ -320,6 +324,8 @@ export interface TourViewerSession {
     blob: Blob;
     filename: string;
     signedManifest?: SignedTourManifest;
+    /** A save delivered it (UI round 1, U2: the leave guard). */
+    delivered?: boolean;
   } | null;
   /** What the panel calls the open tour (`tourLabel`); null with none. */
   tourLabel: string | null;

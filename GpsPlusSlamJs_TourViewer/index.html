@@ -941,6 +941,22 @@
              over as its own zip - never inside the tour zip. A creator's,
              and a visitor's only with ?debug=1 (M1b): main.ts unhides it,
              so it is not .creator-only. -->
+        <!-- What the published copy carries (scan-pass plan S1, S-D10),
+             chosen BEFORE AR (UI round 1, U2, review #6: the Finish's
+             rebuild reads it, so it cannot follow the Finish), shown only
+             for a tour that carries a walk; unticked, Finish leaves it
+             out. -->
+        <label
+          class="switch"
+          id="keep-scan-row"
+          data-testid="keep-scan-row"
+          hidden
+        >
+          <input type="checkbox" id="keep-scan" data-testid="keep-scan" />
+          <span class="switch-track"></span>
+          Keep the walk recording in the tour file (for a co-author; visitors
+          never need it)
+        </label>
         <div id="recording-block" data-testid="recording-block" hidden>
           <!-- A recording a killed tab left unsaved (M1b,
                recording-offer.ts). OFFERED, never applied, with the draft
@@ -1321,20 +1337,6 @@
             >
               Finish - rebuild the zip
             </button>
-            <!-- What the published copy carries (scan-pass plan S1, S-D10):
-                 shown only for a tour with entries visitors never read (the
-                 walk recording); unticked, Finish leaves them out. -->
-            <label
-              class="switch"
-              id="keep-scan-row"
-              data-testid="keep-scan-row"
-              hidden
-            >
-              <input type="checkbox" id="keep-scan" data-testid="keep-scan" />
-              <span class="switch-track"></span>
-              Keep the walk recording in the zip (for a co-author; visitors
-              never need it)
-            </label>
             <!-- The tour's objects with Edit text, Move to the reticle and
                  Delete (authoring plan 2026-09-28-0953 §3.4, M4). OUTSIDE
                  #setup-controls: listing, editing and deleting need no AR,

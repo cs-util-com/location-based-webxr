@@ -53,7 +53,9 @@ since the flows plan M6.
     styling), and `arStatusLive` (the screen reader's live region) is
     written only when the visitor's sentence changes, never per camera
     frame (UI round 1, U1, review F14).
-  - Subscribes the button renderer to the controller and binds the click.
+  - Subscribes the button renderer to the controller and binds the click:
+    during a running session the click ENDS it ("Exit AR", UI round 1, U2),
+    through the same teardown as the back gesture.
 
 ## Moved-code veto inputs (D20, M5c)
 

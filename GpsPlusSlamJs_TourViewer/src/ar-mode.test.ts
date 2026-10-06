@@ -298,8 +298,10 @@ describe("arButtonView", () => {
     ["ready", "visitor", "Start the tour", false],
     ["ready", "creator", "Start AR setup", false],
     ["starting", "visitor", "Starting…", true],
-    ["running", "visitor", "Tour running", true],
-    ["running", "creator", "Setting up in AR", true],
+    // The way out of AR (UI round 1, U2, review F2): it used to sit there
+    // disabled as "Tour running" / "Setting up in AR".
+    ["running", "visitor", "Exit AR", false],
+    ["running", "creator", "Exit AR - your work stays on this phone", false],
     ["stopping", "visitor", "Stopping…", true],
   ] as const)("%s (%s) → %j / disabled=%s", (status, mode, label, disabled) => {
     expect(arButtonView({ status }, mode)).toEqual({

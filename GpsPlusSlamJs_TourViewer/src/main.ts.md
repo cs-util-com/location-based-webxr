@@ -126,3 +126,10 @@ Driven end-to-end by `playwright-tests/*.spec.js` (streaming, fallback,
 cache-hit revisit, clear cache, error paths, the faked-AR boot of both
 modes, the print panel, the ready-triggered placement). The modules'
 sidecars name the unit tests beneath each concern.
+
+## Leaving with an unsaved tour file (UI round 1, U2)
+
+`hooks.confirmLeaveTour` asks `LEAVE_UNSAVED_QUESTION` (`finish-guard.ts`)
+before another tour replaces the open one while the creator's rebuilt file
+was not saved, and a `beforeunload` handler asks the browser's own question
+before the page goes (partial on Android; the draft survives the rest).
