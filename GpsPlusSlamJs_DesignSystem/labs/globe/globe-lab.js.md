@@ -137,7 +137,9 @@
   the air; the dive itself always looks straight down.
   `__globeLab.placeView({ lat, lng, altitudeKm, headingDeg, pitchDeg })`
   holds the camera at a Debug export's pose the same way, so a smoke can
-  stand where the owner stood.
+  stand where the owner stood. `__globeLab.shiftCamera(eastM, northM)` moves the
+  camera along the ground without taking it from the controls, so a smoke
+  can fly it far during a press.
 - The cost probe (round-4 plan DEC-GL4-2/4): `__globeLab.timeFrames(n)`
   draws n frames back to back, reads one pixel so the GPU has finished,
   and returns the wall time in ms. Under SwiftShader it is relative only:
@@ -643,7 +645,10 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   while the owner flew 244 km by hand stood 4.7 km off the curved ground
   there, and the cloud deck, flat in the frame, floated above the 11 km
   camera (2026-10-06); the volume's noise is anchored to the ground, so
-  its clouds stay put across a move.
+  its clouds stay put across a move. It never moves under a gesture: a move releases
+  the controls (ending a drag), so it waits while `controls.busy()` (a
+  pointer down, a gesture state, or momentum left); the owner's drags died
+  a second in on r785 before this guard.
 - The Debug panel (round-6 plan 2026-10-04-1050 G6-0, DEC-G6-6;
   `globe-debug.js`): always there, a small button at the left edge. The
   page's event log (`globe-debug-log.js`, from the first line, so boot

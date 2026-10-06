@@ -1051,6 +1051,20 @@ function cameraControls(
     setAdjustHeight(on) {
       controls.adjustHeight = on;
     },
+    /**
+     * Whether the controls are in a gesture or still gliding: a pointer
+     * down, a state other than none, or momentum left (the library's own
+     * test, with the globe's spin). Releasing them then would end the
+     * gesture, so a frame move waits (volume-cloud plan §14).
+     */
+    busy() {
+      return (
+        controls.pointerTracker.getPointerCount() > 0 ||
+        controls.state !== 0 ||
+        controls.globeInertiaFactor !== 0 ||
+        Boolean(controls._inertiaNeedsUpdate?.())
+      );
+    },
     release() {
       // Toggling `enabled` is the library's own reset: it ends any drag,
       // forgets the pointers and drops the drag and rotation momentum. The
@@ -1623,9 +1637,12 @@ async function start() {
    * 4.7 km off the curved ground there, and the cloud deck, flat in the
    * frame, floated above the camera (2026-10-06). The view is unchanged;
    * the volume's noise is anchored to the ground, so its clouds stay put.
+   * It waits while the controls are busy, so a gesture is never cut short.
    */
   const recentreFrame = () => {
-    if (worldFrame.target === null) return;
+    // Never under a gesture: a frame move releases the controls, which
+    // ended the owner's drags a second in (2026-10-06, r785).
+    if (worldFrame.target === null || controls.busy()) return;
     const ellipsoid = globe.tiles.ellipsoid;
     const c = ellipsoid.getPositionToCartographic(ecefCamera().position, {});
     const next = frameRecentreTarget(
@@ -3169,6 +3186,28 @@ async function start() {
      */
     reframe(target) {
       setFrameTarget(target);
+    },
+    /**
+     * A test hook (volume-cloud plan §14): moves the camera `eastM` east and
+     * `northM` north along the ground under it, its orientation kept,
+     * WITHOUT taking it from the controls (a drag in progress stays one),
+     * so a smoke can fly it far during a press.
+     */
+    shiftCamera(eastM, northM) {
+      if (!Number.isFinite(eastM) || !Number.isFinite(northM)) {
+        throw new RangeError(`a shift must be finite, got ${eastM}, ${northM}`);
+      }
+      const ellipsoid = globe.tiles.ellipsoid;
+      const pose = ecefCamera();
+      const c = ellipsoid.getPositionToCartographic(pose.position, {});
+      const east = new THREE.Vector3();
+      const north = new THREE.Vector3();
+      const up = new THREE.Vector3();
+      ellipsoid.getEastNorthUpAxes(c.lat, c.lon, east, north, up);
+      pose.position.addScaledVector(east, eastM).addScaledVector(north, northM);
+      placeCameraEcef(pose.position, pose.quaternion);
+      camera.updateMatrixWorld();
+      frame();
     },
     /**
      * A test hook (volume-cloud plan §14): places the held camera at a

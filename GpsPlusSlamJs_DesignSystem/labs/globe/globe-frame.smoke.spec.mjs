@@ -113,3 +113,73 @@ test("the world frame switches without moving the view, and a dive lands in the 
   expect(Math.abs(inFrame.distanceM - inEcef.distanceM)).toBeLessThan(1);
   expect(dirDeg(inFrame.direction, inEcef.direction)).toBeLessThan(0.01);
 });
+
+// WHY (owner, 2026-10-06, r785): "the touch controls stop working after
+// about a second of moving the camera". Moving the frame under a camera
+// flown far away (volume-cloud plan §14) releases the controls, which ends
+// a drag in progress: flying at 10 to 20 km, a drag crosses the 20 km drift
+// within a second, and the gesture died. The frame now moves only once the
+// controls are idle (no pointer down, no glide). This holds a press while
+// the camera is moved 50 km (a test hook that leaves the camera with the
+// controls), and checks that the frame waits, that the drag still turns
+// the view, and that the frame follows once the press ends.
+test("the frame never moves under a drag in progress, and follows once the controls are idle", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(600_000);
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation(TARGET);
+  const errors = await bootGlobe(page, BASE);
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return s.phase === "landed" && s.pin.phase === "idle";
+    },
+    null,
+    { timeout: 300_000 },
+  );
+  const frameOf = () =>
+    page.evaluate(() => window.__globeLab.state().worldFrame);
+  const before = await frameOf();
+  const box = await page.locator("#globe-canvas").boundingBox();
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 20, cy, { steps: 4 });
+  await page.evaluate(() => window.__globeLab.shiftCamera(50_000, 0));
+  await page.evaluate(() => window.__globeLab.timeFrames(5));
+  const during = await frameOf();
+  const atPress = await page.evaluate(
+    () => window.__globeLab.state().cameraDirection,
+  );
+  await page.mouse.move(cx + 220, cy + 60, { steps: 10 });
+  await page.evaluate(() => window.__globeLab.timeFrames(3));
+  const afterDrag = await page.evaluate(
+    () => window.__globeLab.state().cameraDirection,
+  );
+  const turned = Math.hypot(
+    afterDrag[0] - atPress[0],
+    afterDrag[1] - atPress[1],
+    afterDrag[2] - atPress[2],
+  );
+  await page.mouse.up();
+  await page.waitForFunction(
+    (b) => {
+      const f = window.__globeLab.state().worldFrame;
+      return f && (f.lat !== b.lat || f.lng !== b.lng);
+    },
+    before,
+    { timeout: 30_000 },
+  );
+  const after = await frameOf();
+  console.log(
+    `frame before ${JSON.stringify(before)}, during the press ${JSON.stringify(during)}, after it ${JSON.stringify(after)}; the drag turned the camera's direction by ${turned.toExponential(2)}`,
+  );
+  expect(errors).toEqual([]);
+  expect(during).toEqual(before);
+  expect(turned).toBeGreaterThan(1e-5);
+  expect(after).not.toEqual(before);
+});
