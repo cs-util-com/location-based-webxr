@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CLOUD_SLAB,
+  CLOUD_SLAB_REACH,
   CLOUD_SLAB_STEPS,
   cloudSlabCumulativeM,
   cloudSlabFarWeight,
@@ -39,6 +40,7 @@ import {
   createCloudSlab,
   setCloudSlabCoverage,
   setCloudSlabRadius,
+  setCloudSlabReach,
   setCloudSlabSceneDepth,
   setCloudSlabSteps,
   type Vec3,
@@ -768,13 +770,14 @@ describe('CLOUD_SLAB_FRAGMENT_GLSL', () => {
       T0,
       S.sunDepthScale,
       S.sunMuFloor,
-      S.maxMarchM,
       S.earlyExitTransmittance,
       S.uniformBlendM,
       S.lightSeriesX,
     ]) {
       expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain(glslFloat(v));
     }
+    // The march cap and the far fade are the reach's uniform since R1
+    // (globe volume-cloud plan §13); the reach tests below hold them.
   });
 
   // WHY (cold review finding 3, cost): inside the loop implicit derivatives
@@ -1726,5 +1729,98 @@ describe('the coverage map and the disc (globe volume-cloud plan 2026-10-05-0016
     ).toThrow(RangeError);
     expect(() => setCloudSlabRadius(slab, 0)).toThrow(RangeError);
     expect(() => setCloudSlabRadius(slab, Number.NaN)).toThrow(RangeError);
+  });
+});
+
+// WHY (globe volume-cloud plan 2026-10-05-0016 §13, R1): the slab's reach
+// was fixed at the look-dev page's 21 km (its far plane is 30 km), so in the
+// globe, where the camera looks out over a deck hundreds of km wide, the
+// volume ended 21 km from the camera and most of the horizon the owner
+// looked at had none (2026-10-06). The reach is now a setting, its default
+// the old constants, so the look-dev page draws exactly what it drew.
+describe('the reach (globe volume-cloud plan §13, R1)', () => {
+  const wide = { farStartM: 60_000, farEndM: 80_000 };
+
+  it('defaults to the sheet far fade, which every other number was sized for', () => {
+    expect(CLOUD_SLAB_REACH.farStartM).toBe(CLOUD_SHEET.farFadeStartM);
+    expect(CLOUD_SLAB_REACH.farEndM).toBe(CLOUD_SHEET.farFadeEndM);
+    const level = cloudSlabInterval(2000, [1, 0, 0]);
+    expect(level?.outM).toBe(CLOUD_SHEET.farFadeEndM);
+    expect(cloudSlabFarWeight(CLOUD_SHEET.farFadeEndM)).toBe(0);
+  });
+
+  it('moves the interval and the far fade out to a wider reach', () => {
+    expect(cloudSlabInterval(2000, [1, 0, 0], Infinity, wide)?.outM).toBe(
+      80_000
+    );
+    expect(cloudSlabFarWeight(60_000, wide)).toBe(1);
+    expect(cloudSlabFarWeight(70_000, wide)).toBeGreaterThan(0);
+    expect(cloudSlabFarWeight(70_000, wide)).toBeLessThan(1);
+    expect(cloudSlabFarWeight(80_000, wide)).toBe(0);
+    // The march cap grows with the reach (it must never end the clouds
+    // before the far fade does).
+    const steep = cloudSlabInterval(2000, [1, -0.001, 0], Infinity, wide);
+    expect(steep?.outM).toBeGreaterThan(79_000);
+  });
+
+  it('draws clouds out to the wider reach in the march, where the default draws none', () => {
+    // From 200 m above the top at a 1 % dip: the deck is entered 20 km out
+    // and left 60 km out, all of it beyond the default's 21 km.
+    const dir: [number, number, number] = [1, -0.01, 0];
+    const input = {
+      camera: [0, CLOUD_SLAB.topM + 200, 0] as [number, number, number],
+      dir,
+      steps: CLOUD_SLAB.defaultSteps,
+      sample: () => 1,
+      threshold: 0,
+    };
+    expect(cloudSlabMarch(input).alpha).toBeLessThan(0.05);
+    expect(cloudSlabMarch({ ...input, reach: wide }).alpha).toBeGreaterThan(
+      0.5
+    );
+  });
+
+  it('sets the reach on the mesh as a uniform and grows the mesh to cover it', () => {
+    const slab = createCloudSlab({});
+    const m = slab.material as THREE.ShaderMaterial;
+    const reach = () => m.uniforms['atmSlabReach']!.value as THREE.Vector3;
+    expect(reach().x).toBe(CLOUD_SHEET.farFadeStartM);
+    expect(reach().y).toBe(CLOUD_SHEET.farFadeEndM);
+    expect(reach().z).toBe(CLOUD_SLAB.maxMarchM);
+    expect(slab.scale.x).toBe(1);
+    const program = m.fragmentShader;
+    setCloudSlabReach(slab, wide);
+    expect(reach().x).toBe(60_000);
+    expect(reach().y).toBe(80_000);
+    expect(reach().z).toBeGreaterThanOrEqual(
+      Math.hypot(80_000, CLOUD_SLAB.topM)
+    );
+    expect(slab.scale.x * CLOUD_SLAB.radiusM).toBeGreaterThan(80_000);
+    expect(slab.scale.z).toBe(slab.scale.x);
+    expect(slab.scale.y).toBe(1);
+    // A uniform, not a new program.
+    expect(m.fragmentShader).toBe(program);
+    setCloudSlabReach(slab, null);
+    expect(reach().y).toBe(CLOUD_SHEET.farFadeEndM);
+    expect(slab.scale.x).toBe(1);
+  });
+
+  it('reads the reach from the uniform in the shader, not from constants', () => {
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain('uniform vec3 atmSlabReach;');
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).not.toContain('ATM_SLAB_FAR_END');
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).not.toContain('ATM_SLAB_MAX_MARCH');
+  });
+
+  it('refuses a reach whose fade does not start before it ends, or is not finite', () => {
+    const slab = createCloudSlab({});
+    for (const bad of [
+      { farStartM: 80_000, farEndM: 60_000 },
+      { farStartM: -1, farEndM: 60_000 },
+      { farStartM: 0, farEndM: Number.POSITIVE_INFINITY },
+      { farStartM: Number.NaN, farEndM: 60_000 },
+    ]) {
+      expect(() => setCloudSlabReach(slab, bad)).toThrow(RangeError);
+      expect(() => cloudSlabFarWeight(1, bad)).toThrow(RangeError);
+    }
   });
 });

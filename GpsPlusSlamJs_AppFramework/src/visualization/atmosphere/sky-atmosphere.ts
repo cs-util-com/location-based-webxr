@@ -62,11 +62,14 @@ import {
 import {
   CLOUD_SLAB,
   CLOUD_SLAB_STEPS,
+  assertCloudSlabReach,
   createCloudSlab,
   setCloudSlabCoverage,
   setCloudSlabRadius,
+  setCloudSlabReach,
   setCloudSlabSceneDepth,
   setCloudSlabSteps,
+  type CloudSlabReach,
 } from './cloud-slab.js';
 import {
   type AtmosphereDevice,
@@ -344,6 +347,8 @@ export class SkyAtmosphere {
   /** The slab's coverage map and disc (`setCloudCoverage`, `setCloudDiscRadius`). */
   private coverage: Parameters<typeof setCloudSlabCoverage>[1] = null;
   private discRadiusM: number | null = null;
+  /** The slab's reach (`setCloudReach`), kept across modes; null the default. */
+  private reach: CloudSlabReach | null = null;
 
   constructor(options: SkyAtmosphereOptions) {
     try {
@@ -889,6 +894,21 @@ export class SkyAtmosphere {
     }
   }
 
+  /**
+   * How far out the cloud slab draws (globe volume-cloud plan 2026-10-05-0016
+   * §13, R1; `setCloudSlabReach`), or the default (null). Kept across modes,
+   * like the disc. Validated before it is kept.
+   *
+   * @throws RangeError for a reach that does not fade from 0 <= start < end.
+   */
+  setCloudReach(reach: CloudSlabReach | null): void {
+    if (reach !== null) assertCloudSlabReach(reach);
+    this.reach = reach;
+    if (this.mode === 'slab' && this.cloudMesh !== undefined) {
+      setCloudSlabReach(this.cloudMesh, reach);
+    }
+  }
+
   /** The current cloud mode. */
   get cloudMode(): CloudMode {
     return this.mode;
@@ -930,6 +950,7 @@ export class SkyAtmosphere {
       if (this.discRadiusM !== null) {
         setCloudSlabRadius(this.cloudMesh, this.discRadiusM);
       }
+      if (this.reach !== null) setCloudSlabReach(this.cloudMesh, this.reach);
     }
     if (this.cloudMesh !== undefined) this.scene.add(this.cloudMesh);
     this.syncVisibleClouds();

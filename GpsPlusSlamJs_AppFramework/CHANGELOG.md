@@ -4,6 +4,14 @@
 
 ### Added
 
+- **The cloud slab's reach**, opt-in: `setCloudSlabReach(slab, reach |
+null)` and `SkyAtmosphere.setCloudReach(reach | null)` move the slab's
+  far fade and march cap out (and scale its mesh to match), so a camera
+  high over a wide deck sees the volume toward the horizon, not only
+  around itself. The default is the old fixed 14 to 21 km, so a page that
+  never calls it draws exactly what it drew. `cloudSlabInterval`,
+  `cloudSlabFarWeight` and `cloudSlabMarch` take the reach too;
+  `CLOUD_SLAB_REACH` and `assertCloudSlabReach` are exported.
 - **`SkyAtmosphere.setObserverAltitudeKm(km)`** and the `observerAltitudeKm`
   getter: the sky follows the observer's height (0 to 100 km) after
   construction, synchronously like `setSun` (globe F2 plan, F2b).

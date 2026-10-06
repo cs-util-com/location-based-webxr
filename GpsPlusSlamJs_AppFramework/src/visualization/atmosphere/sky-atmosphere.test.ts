@@ -19,6 +19,7 @@ import { ATMOSPHERE_MAX_SCENE_RADIANCE } from './atmosphere-glsl.js';
 import { skyRadiance } from './atmosphere-scattering.js';
 import { cloudColumnTransmittanceToward } from './cloud-column.js';
 import { CLOUD_SHEET } from './cloud-sheet.js';
+import { CLOUD_SLAB_REACH } from './cloud-slab.js';
 import {
   CLOUD_TEXTURE_SIZE,
   cloudNoise,
@@ -1465,5 +1466,40 @@ describe('SkyAtmosphere coverage map and disc (globe volume-cloud plan 2026-10-0
   it('refuses a bad radius before keeping it', () => {
     const { atmosphere } = setup();
     expect(() => atmosphere.setCloudDiscRadius(-5)).toThrow(RangeError);
+  });
+});
+
+describe('SkyAtmosphere cloud reach (globe volume-cloud plan 2026-10-05-0016 §13, R1)', () => {
+  const slabOf = (scene: THREE.Scene) =>
+    scene.children.find((c) => c.name === 'atmosphere-cloud-slab') as
+      THREE.Mesh | undefined;
+  const wide = { farStartM: 60_000, farEndM: 80_000 };
+
+  // The globe's slab reaches out toward the horizon, far past the look-dev
+  // page's 21 km; the reach is kept like the disc, so a slab made later
+  // (a mode switch, a staged rebuild) still has it.
+  it('hands the reach to the slab, now and after a mode switch, and restores the default', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.setCloudReach(wide);
+    atmosphere.configure({ cloudMode: 'slab' });
+    const reachOf = () =>
+      (slabOf(scene)!.material as THREE.ShaderMaterial).uniforms[
+        'atmSlabReach'
+      ]!.value as THREE.Vector3;
+    expect(reachOf().y).toBe(80_000);
+    expect(slabOf(scene)!.scale.x).toBeGreaterThan(1);
+    atmosphere.configure({ cloudMode: 'dome' });
+    atmosphere.configure({ cloudMode: 'slab' });
+    expect(reachOf().y).toBe(80_000);
+    atmosphere.setCloudReach(null);
+    expect(reachOf().y).toBe(CLOUD_SLAB_REACH.farEndM);
+    expect(slabOf(scene)!.scale.x).toBe(1);
+  });
+
+  it('refuses a bad reach before keeping it', () => {
+    const { atmosphere } = setup();
+    expect(() =>
+      atmosphere.setCloudReach({ farStartM: 5, farEndM: 1 })
+    ).toThrow(RangeError);
   });
 });

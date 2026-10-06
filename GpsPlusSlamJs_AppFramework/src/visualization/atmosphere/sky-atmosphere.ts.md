@@ -30,6 +30,10 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   2026-10-05-0016, C1): the slab's coverage map and disc around the camera
   (`cloud-slab.ts.md`), kept across modes and handed to a slab made later
   like the scene depth; the radius validated before it is kept.
+- `setCloudReach(reach | null)` (volume-cloud plan §13, R1): how far out
+  the slab draws (`setCloudSlabReach`), kept across modes and handed to a
+  slab made later like the disc; validated before it is kept; null the
+  default.
 - `setCloudSceneDepth(depth | null)` (F2c): the scene's depth for the slab,
   kept across modes and handed to a slab made later; the sheet and the
   dome ignore it; no GPU work (`cloud-slab.ts.md`).
