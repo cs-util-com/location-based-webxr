@@ -571,9 +571,11 @@ const UNDER_THE_SUN = { latitude: 0, longitude: 1.86 };
 async function skyFromInside(page, context, altKm, thickness) {
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(UNDER_THE_SUN);
+  // The shell's thickness pinned (atmoRamp=0): since F2b it thins to 1x on
+  // the descent below 2,000 km, and this measures the shell at k itself.
   const errors = await bootGlobe(
     page,
-    `at=0,1.86&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&cloudOpacity=0&stars=0&milkyWay=0&sky=0&atmoStrength=4&atmoThickness=${thickness}&diveMs=1000&handOver=0&handOverKm=${altKm}`,
+    `at=0,1.86&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&cloudOpacity=0&stars=0&milkyWay=0&sky=0&atmoStrength=4&atmoThickness=${thickness}&atmoRamp=0&diveMs=1000&handOver=0&handOverKm=${altKm}`,
   );
   await page.locator("#globe-pin").click();
   await page.waitForFunction(

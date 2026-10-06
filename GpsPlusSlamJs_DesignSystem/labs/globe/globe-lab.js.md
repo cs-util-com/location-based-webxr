@@ -52,7 +52,18 @@
   unless 0; no panel control), `handOverKm` (the hand-over altitude, 1-5000, default 150; the
   plate offers 20, 50, 150), `handOver` (1 opens the city, 0 holds),
   `nightGain` (0-4, default 0.7), `waterRoughness`,
-  `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default 0.5),
+  `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default
+  0.375, 0.75 x the first 0.5 by the owner's choice, DEC-G6-5),
+  `cloudShell` (1, the default: the clouds move onto their own shell above
+  the ground as the relief takes the pixels, the band's share, so the
+  orbit keeps the painted look and the relief keeps its colour under a
+  cloud; 0 paints them into the ground everywhere, as before; round-6 plan
+  G6-2), `cloudShellKm` (the shell's height, default 3, times the relief's
+  exaggeration E, set every frame), `cloudShadow` (the soft shadow on the
+  ground with the shell, 0-1, default 0.6, scaled by the shell's share;
+  `globe-clouds.smoke.spec.mjs` checks the ground keeps its colour, the
+  shadow only darkens, and the orbit is unchanged; the test hook
+  `hideCloudShell(on)` hides the shell),
   `sky` (0 turns the background pass off, default 1), `sunSize` (the disc's
   apparent diameter, 0.1-10°, default 1°, about twice the real 0.533°),
   `sunGlow` (0-4, default 0.95), `stars` (0 hides the procedural stars,
@@ -309,6 +320,14 @@
         of a dive and of a zoom out: 0 holes with the gate and the fill,
         and holes with the old rule (the positive controls). It also logs
         the fill's cost at the hold (1.61-1.68 x under SwiftShader).
+      - A drain frees the relief's imagery and meshes, but its decoded
+        heights stay (`keepHeightsMiB`, default 16, read at start, 0 for
+        none; `createGlobeTerrain`'s `keepHeightsBytes`, owner decision
+        2026-10-04 DEC-N1), so a return into the band fetches almost none:
+        1 height tile against 30 without it in the hand-over smoke. The
+        state's `relief.keptHeights` and `relief.heightRequests` (the
+        synthetic heights' request count) and the Debug panel's "heights
+        kept" line show it.
       - A drain keeps a carrier's coarsest tiles (depth 1) and the tiles its
         last update used, so the globe can fill at once when the view
         widens.
@@ -538,6 +557,74 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     latitude exactly found no tile, or at a tile corner the far side of the
     Earth (the cause, shared vertices or three's triangle test, is not
     established). A hit beyond the Earth's centre reads as null.
+- The relief is the default since F2a (DEC-GL5-15); `relief=0` keeps the
+  plain globe. The smokes that measure the plain globe pin it: the
+  pre-round-4 look pin (`withPreRound4Look`) carries `relief=0`, and
+  `bootGlobe` and every direct page load go through `plainGlobe(hash)`,
+  which adds `relief=0` to a hash that names no relief.
+- The cloud volume (volume-cloud plan 2026-10-05-0016, C2;
+  `globe-cloud-volume.js`): `cloudVolume` 0 the shell only, 1 (default) the
+  volume within the disc and the shell outside it, 2 the volume over the
+  shell; `cloudVolumeKm` (20) the disc, `cloudVolumeCeilingKm` (40) the
+  ceiling it fades in under (10 km). Each frame after the sky hand-over its
+  share and disc are set and the shell's hole matches the disc (variant
+  1); after the Earth it draws the slab from the ground sky, ending at the
+  relief's depth. The state's `cloudVolume` carries its share, disc, lift
+  and drawn frames. `cloudShadowFrom` (C3) picks the ground's cloud shadow:
+  0 the shell's soft one (the default, as before), 1 the volume's (the
+  shell's then off). Measured at the 12 km hold: the shell's darkens by a
+  mean 0.93 levels, the volume's by 0.07 in sparse patches up to 9.5, and
+  the two patterns do not correlate (-0.03); whether the volume's shadow
+  is placed right is not yet verified.
+- The sky hand-over (F2 plan 2026-10-03-1922 F2b; `globe-ground-sky.js`):
+  each frame, before the sky pass, the observer's height over the
+  ellipsoid's image (`observerAltitudeKm`) feeds the ground sky
+  (`groundSky=1`, the default; 0 keeps the space pass all the way down),
+  which returns its weight (0 above `skyEdgeKm`, 80, to 1 at
+  `skyEdgeKm - skyWidthKm`, 40 below) and the eased exposure, the sun's
+  scale in the scene from `sunIntensity` (space) to the ground sky's
+  automatic exposure; it IS the globe's sun intensity. The ground sky draws over
+  the space sky's pixels before the Earth, the space pass's sky light is
+  scaled by `1 - weight` (the ground keeps its veil), and the halo's
+  thickness eases from `atmoThickness` above 2,000 km to 1x below 300 km
+  (`atmoRamp=1`, DEC-GL5-13; `shellThicknessAt`). The ground sky
+  rebuilds in stages, one a frame, its observer quantised in
+  `skyStepPct` (5 %) steps; it works only in the target's local frame.
+  The state's `groundSky` carries its weight, exposure, quantised
+  observer, rebuild counts and the observer's height it is fed from.
+- The clip planes over the relief (F2a, M4): `reliefPlanes()` gives
+  `clipPlanes` the distance to the nearest drawn ground (`reliefClearanceM`
+  over the relief's sampler at the camera's ground point and on a ring of
+  eight points as far out as the camera stands above it), and the highest
+  real peak (8,850 m) times E, whoever owns the camera: after the
+  intro places it and after the controls' own update. The controls' rays
+  hit only the carrier drawing most of the frame (`pickFrom`, the
+  library's `setScene`), not the cloud shell or the other carrier.
+  `reliefPlanes=0` keeps the planes over the ellipsoid (the planes smoke's
+  positive control), and `__globeLab.planeProbe({ jitterM, levels })`
+  measures the held view: the pixels that change under a 1 mm camera move
+  (z-fighting) and the clear colour in the frame's lower two thirds (a
+  clipped ground).
+- The world frame (F2 plan 2026-10-03-1922 F2a, M3; `/globe/globe-frame.js`):
+  `globe.group` carries one matrix from ECEF to a local frame at the target
+  (x east, y up, the origin on the ground), set at the pin's press and at
+  load or replay with an `at=` target, the identity (ECEF) otherwise. The
+  switch keeps the view (`setFrameTarget` re-applies the camera's ECEF
+  pose) and releases the controls' drag state. Every camera write goes
+  through `placeCameraEcef` (the intro's orbit pose, the dive, the
+  clearance's radial lift, the recorder's placement) and every read
+  through `ecefCamera` or the tiles' `worldToLocal` (the dive's start, the
+  state's `cameraDistanceM`, `cameraDirection` and `cameraDepressionDeg`).
+  Two test hooks were missed at first and caught by the full globe run
+  (2026-10-05): `project(lat, lng)` now takes the ECEF point through the
+  frame, and `celestialToEcef(v)` gives the smokes that turn a celestial
+  direction into a latitude and longitude its ECEF form
+  (`celestialToWorld` stays in the world, compared with the sky's own sun). The Earth's centre for the space sky
+  and the far-side test is the group's world position. `worldFrame=0`
+  keeps ECEF, for a before/after; the state's `worldFrame` is the frame's
+  target, and `__globeLab.reframe(target)` switches it for
+  `globe-frame.smoke.spec.mjs` (0.00 levels and 0 m across a switch at the
+  hold).
 - The Debug panel (round-6 plan 2026-10-04-1050 G6-0, DEC-G6-6;
   `globe-debug.js`): always there, a small button at the left edge. The
   page's event log (`globe-debug-log.js`, from the first line, so boot
