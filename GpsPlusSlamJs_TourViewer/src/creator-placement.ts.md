@@ -17,7 +17,7 @@ troubleshooting recording's record of each placement. Split out of
     in), `encodeFrameJpeg` (the photo's bytes).
   - `settledVisit(visit)` - the settle record of a visit that already
     settled; `lateArrival(visit, photo)` logs a photo minted through it as
-    that settle's late arrival (`creator-setup.ts` owns the settle).
+    that settle's late arrival (`creator-settle.ts` owns the settle).
 - `CreatorPlacement`:
   - `allowed()` - the gate below, re-checked at every tap; the object
     list asks it too.

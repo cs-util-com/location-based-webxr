@@ -719,6 +719,9 @@ describe("a finished photo keeps its bytes for its preview (code book plan M2)",
     setup.beginAuthorVisit();
     for (let i = 0; i < 5; i += 1) await Promise.resolve();
     expect(zipReads).toEqual([]);
+    // The positive control (M2 review #6): the preview WAS rendered, so the
+    // empty list above is not a preview that was never attempted.
+    expect(ctx.placedPreviews.has("new")).toBe(true);
   });
 });
 

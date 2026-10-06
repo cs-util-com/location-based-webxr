@@ -31,6 +31,9 @@ The list (under `scripts/fixtures/`: the repo guards against data loose in
 - Each mutant's file is restored from the text read before the run, after
   every mutant and in a `finally` - never through git (a git restore also
   drops uncommitted work in the file).
+- The unmutated tests run first; a red baseline exits 2 before any mutant
+  (a mutant is "killed" when the tests fail, so a red baseline would read
+  as every mutant killed; M2 review #5).
 - A `from` that is missing or not unique is reported, not applied.
 - Exit code 1 when any mutant survived or could not be applied.
 - The tests run through `pnpm run test:unit` (the package rule), with the

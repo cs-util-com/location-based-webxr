@@ -161,8 +161,8 @@
       "file": "src/creator-move-prompt.ts",
       "from": "      moveFixCount = clock.count;",
       "to": "",
-      "expected": "equivalent",
-      "why": "the same re-judge at the same state gives the same refusal; only the work per render grows"
+      "expected": "known-gap",
+      "why": "NOT equivalent (M2 review #4): after a size adoption or a failed identity clears the level, the refused-correction line stays until the next fix, where re-judging every render clears it at once. No test covers that window yet; the stale line is filed as a small pre-existing defect in the code book plan (section 12, M2 review)."
     },
     {
       "name": "result screen outcome not recorded",
@@ -294,7 +294,7 @@
       "from": "    syncAlignmentPicks();\n    alignmentPicks.notePlacement(id, Date.now());",
       "to": "    alignmentPicks.notePlacement(id, Date.now());",
       "expected": "known-gap",
-      "why": "the store subscription syncs the picks on every store change, so a placement finds them current; only a store change the subscription has not delivered yet would expose this sync, and no harness (nor, as far as known, production) produces one - belt and braces, not proven equivalent"
+      "why": "testable, not yet tested (M2 review #3): a harness whose store never notifies (creator-finish, creator-setup and ar-entry tests) would show a placement noted without its walked distance, which changes the walked-distance tie-break. In production it holds while store notifications are synchronous. The test is filed for M4, whose per-code run-merge compares walked distances."
     },
     {
       "name": "sighting not kept on the session",

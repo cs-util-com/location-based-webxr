@@ -5,7 +5,7 @@
 The moved-code prompt and its undo (UI round 1, U3: "Did the poster move
 here?"): the state and the DOM. WHEN it asks is `code-move-prompt.ts`'s;
 WHAT a "Yes" does is the settle's (`code-position-settle.ts`, in
-`creator-setup.ts`). Split out of `creator-setup.ts` unchanged in the code
+`creator-settle.ts`). Split out of `creator-setup.ts` unchanged in the code
 book refactor plan's M2
 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan.md`);
 M5 asks it per code in view.
@@ -17,7 +17,7 @@ M5 asks it per code in view.
     three answers `movePromptUse` / `movePromptCopy` / `movePromptLater`,
     and `moveUndo`, `moveUndoText`, `moveUndoButton`.
   - `draft` - where the answers are remembered (`creator-draft.ts`).
-  - `settled(visit)` - the visit has settled (`creator-setup.ts`'s
+  - `settled(visit)` - the visit has settled (`creator-settle.ts`'s
     `visitSettles`); `judgeRefusal()` re-judges the latest sighting's
     refusal for the panel line.
 - `CreatorMovePrompt`:
@@ -49,7 +49,7 @@ M5 asks it per code in view.
     before it opened); a refused meta write is the backup notice.
   - "Yes, it moved" changes nothing at once: the status line says the
     new spot is saved when the visit ends if the creator walked enough,
-    and the settle applies it (`creator-setup.ts`). Logged as
+    and the settle applies it (`creator-settle.ts`). Logged as
     `tourAuthoring/codeMoveAnswered` `moved` (`replaced` false).
   - **Undo until the visit settles**: a "Yes, it moved" can be taken back
     until its visit settles (a session end or a Finish - also one that

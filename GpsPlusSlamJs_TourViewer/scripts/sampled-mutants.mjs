@@ -20,6 +20,27 @@ if (listPath === undefined) {
 /** @type {{ tests: string[]; mutants: { name: string; region: string; file: string; from: string; to: string; expected?: "equivalent" | "known-gap"; why?: string }[] }} */
 const list = JSON.parse(readFileSync(resolve(packageDir, listPath), "utf8"));
 
+/** Run the list's tests; true when they pass. */
+function testsPass() {
+  try {
+    execSync(`pnpm run test:unit ${list.tests.join(" ")}`, {
+      cwd: packageDir,
+      stdio: "pipe",
+      env: { ...process.env, GATE_SLOT_DIR: "off" },
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// The unmutated baseline first: a mutant counts as killed when the tests
+// fail, so a red or flaky baseline would read as every mutant killed.
+if (!testsPass()) {
+  console.error("baseline red: the unmutated tests fail, no mutant was run");
+  process.exit(2);
+}
+
 /** @type {Map<string, string>} */
 const originals = new Map();
 const results = [];
@@ -37,13 +58,7 @@ try {
     writeFileSync(path, original.replace(m.from, m.to));
     let outcome = "survived";
     try {
-      execSync(`pnpm run test:unit ${list.tests.join(" ")}`, {
-        cwd: packageDir,
-        stdio: "pipe",
-        env: { ...process.env, GATE_SLOT_DIR: "off" },
-      });
-    } catch {
-      outcome = "killed";
+      if (!testsPass()) outcome = "killed";
     } finally {
       writeFileSync(path, original);
     }

@@ -89,7 +89,8 @@ were here. What stays is the Finish's side:
   - `CreatorSetup.startAuthorPipeline(): boolean` - validates the printed
     size (opening step 2 when it is unusable), creates the author tracking
     controller into `ctx.qrController`; false keeps AR unstarted.
-- Both are properties (handed to the hooks object unbound).
+- Every `CreatorSetup` member is a property (handed to the hooks object
+  unbound).
 - `deps.codeTour` (optional; `ScanOpen`'s `onDetection`, `status`,
   `tourOf`) - step 4's scan-to-open (`scan-open.ts`, owned by
   `archive-open`). Every author detection is fed to it; the live readout

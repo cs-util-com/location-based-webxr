@@ -190,7 +190,7 @@ export function wireCreatorSettle(deps: {
   }
 
   /** Move the earlier visits' frame to where this visit's knowledge of the
-   *  code puts it (`creator-deps.previews.ts`). Cheap: one matrix. */
+   *  code puts it (`creator-previews.ts`). Cheap: one matrix. */
   function placeEarlierObjects(): void {
     deps.previews.placeEarlier(judgeRefusal());
   }
