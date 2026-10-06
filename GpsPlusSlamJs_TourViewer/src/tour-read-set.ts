@@ -60,14 +60,25 @@ const RECORDED_FRAME = new RegExp(
 /** The recording's action stream: the walk itself. */
 const ACTION_ENTRY = /(^|\/)actions\//;
 
+/**
+ * The folders the Recorder's zip contributors add beside the recording:
+ * the COLMAP export (`sparse/`: the occupancy point cloud and every frame's
+ * camera pose) and the reference points (`refPoints/`: timestamped GPS
+ * points). Both are the scan. `recorder-walk-folders.test.ts` reads the
+ * Recorder's contributors and fails when one is added without a decision.
+ */
+const RECORDER_SCAN_FOLDER = /(^|\/)(sparse|refPoints)\//;
+
 /** An entry a recording writes: its `session.json`, its action stream,
- *  its frames. Depth samples travel inside the actions. */
+ *  its frames, and the Recorder's scan folders. Depth samples travel
+ *  inside the actions. */
 function isRecordingEntry(name: string): boolean {
   return (
     name === "session.json" ||
     name.endsWith("/session.json") ||
     ACTION_ENTRY.test(name) ||
-    RECORDED_FRAME.test(name)
+    RECORDED_FRAME.test(name) ||
+    RECORDER_SCAN_FOLDER.test(name)
   );
 }
 
@@ -98,12 +109,18 @@ export function entriesForVisitor<E extends { filename: string }>(
   return entries.filter((e) => !scan.has(e.filename));
 }
 
-/** True when a VISITOR's background download of the whole archive should
- *  stop: the copy carries a walk (kept for a co-author). A creator's
- *  working copy is still cached whole. */
+/**
+ * True when a VISITOR's background download of the whole archive should
+ * stop: a copy whose photos are baked (`baked`) and that still carries a
+ * walk (kept for a co-author). Without baked spots the viewer replays the
+ * walk, reading every action entry: stopping the download would turn one
+ * download into a range read per entry and lose the offline copy (S1
+ * milestone review #1). A creator's working copy is still cached whole.
+ */
 export function stopsVisitorDownload(
   mode: ViewerMode,
   scan: ReadonlySet<string>,
+  baked: boolean,
 ): boolean {
-  return mode === "visitor" && scan.size > 0;
+  return mode === "visitor" && baked && scan.size > 0;
 }

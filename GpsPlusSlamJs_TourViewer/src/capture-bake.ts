@@ -91,19 +91,21 @@ export async function bakeCaptureSpots(
   const images = new Set(
     source.entries.filter((e) => e.isImage).map((e) => e.filename),
   );
-  const captures = computeCaptureGeoJoin(state, (file) =>
+  const poses = computeCaptureGeoJoin(state, (file) =>
     tracker.alignmentFor(file),
-  )
-    .filter((pose) => images.has(pose.imageFile))
-    .map((pose) => ({
-      image: pose.imageFile,
-      geo: {
-        lat: pose.geo.lat,
-        lon: pose.geo.lon,
-        alt: pose.geo.altitude,
-        rotation: pose.rotationNue,
-      },
-    }));
+  ).filter((pose) => images.has(pose.imageFile));
+  // One spot per file (tour.json refuses a photo named twice): a file
+  // captured again keeps its LAST pose, as the zip keeps its last write.
+  const lastPoseOf = new Map(poses.map((pose) => [pose.imageFile, pose]));
+  const captures = [...lastPoseOf.values()].map((pose) => ({
+    image: pose.imageFile,
+    geo: {
+      lat: pose.geo.lat,
+      lon: pose.geo.lon,
+      alt: pose.geo.altitude,
+      rotation: pose.rotationNue,
+    },
+  }));
   if (captures.length === 0) {
     return { kind: "declined", reason: "no recorded photo file in this tour" };
   }

@@ -2858,16 +2858,19 @@ export function wireCreatorSetup(deps: {
   /**
    * The recorded photos' spots for this Finish (scan-pass plan S1, S-D11):
    * the tour's own when it carries them, else baked from its recording,
-   * else none - the tour then keeps the visitor's live join, as before S1.
-   * A recording that cannot be read or joined never fails the Finish; a
-   * cap's refusal and a failed integrity check do, as every read's does.
+   * else none - the tour then keeps the visitor's live join, as before S1,
+   * and `notPlaced` says why for the creator. A recording that cannot be
+   * read or joined never fails the Finish; a cap's refusal and a failed
+   * integrity check do, as every read's does.
    */
   async function captureSpotsForFinish(
     current: TourSession,
     manifest: TourManifest,
-  ): Promise<TourCaptureSpots | undefined> {
-    if (manifest.captureSpots !== undefined) return manifest.captureSpots;
-    if (!current.hasRecording) return undefined;
+  ): Promise<{ spots?: TourCaptureSpots; notPlaced?: string }> {
+    if (manifest.captureSpots !== undefined) {
+      return { spots: manifest.captureSpots };
+    }
+    if (!current.hasRecording) return {};
     try {
       const bake = await bakeCaptureSpots(current, {
         shouldContinue: () => ctx.session === current,
@@ -2876,11 +2879,17 @@ export function wireCreatorSetup(deps: {
           renderAuthorReadout();
         },
       });
-      return bake.kind === "baked" ? bake.spots : undefined;
+      return bake.kind === "baked"
+        ? { spots: bake.spots }
+        : { notPlaced: bake.reason };
     } catch (err) {
       if (err instanceof ArchiveLimitError) throw err;
       if (err instanceof TourIntegrityError) throw err;
-      return undefined;
+      return {
+        notPlaced: `reading the recording failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      };
     }
   }
 
@@ -2934,7 +2943,8 @@ export function wireCreatorSetup(deps: {
         // the new ones appended and the deleted ones filtered out (plan
         // §3.4, M4); the photos' bytes become content entries next to it.
         const manifest = ctx.tourManifest ?? createEmptyTourManifest();
-        const captureSpots = await captureSpotsForFinish(current, manifest);
+        const photos = await captureSpotsForFinish(current, manifest);
+        const captureSpots = photos.spots;
         if (ctx.session !== current) return; // re-opened meanwhile
         const deleted = [...ctx.deletedObjectIds];
         const written: TourManifest = {
@@ -2962,9 +2972,13 @@ export function wireCreatorSetup(deps: {
             : null;
         // The published copy carries only what visitors read unless the
         // creator keeps the walk (S-D10): the walk, its unbaked frames, depth.
-        const scanLeftOut = dom.keepScanInput.checked
-          ? []
-          : scanEntryNames(entryNames, written, wrap);
+        // Never without baked spots (S1 milestone review #2): the walk is
+        // then the only way a viewer can place the photos, and the hosted
+        // file may be the creator's only copy of it.
+        const scanLeftOut =
+          dom.keepScanInput.checked || written.captureSpots === undefined
+            ? []
+            : scanEntryNames(entryNames, written, wrap);
         const removed = [
           ...contentEntriesToRemove(manifest.objects, deleted, wrap),
           ...scanLeftOut,
@@ -3056,15 +3070,17 @@ export function wireCreatorSetup(deps: {
                 ? hosted
                 : downloadSafeName(hosted),
         };
-        dom.finishStatus.textContent = `${
+        dom.finishStatus.textContent = [
           drive()
             ? FINISH_LABELS.readyDrive(blob.size, ctx.rebuiltZip.filename)
-            : FINISH_LABELS.ready(blob.size, route() === "share")
-        }${
-          scanLeftOut.length === 0
-            ? ""
-            : ` ${FINISH_LABELS.scanLeftOut(scanLeftOut.length)}`
-        }`;
+            : FINISH_LABELS.ready(blob.size, route() === "share"),
+          ...(scanLeftOut.length === 0
+            ? []
+            : [FINISH_LABELS.scanLeftOut(scanLeftOut.length)]),
+          ...(photos.notPlaced === undefined
+            ? []
+            : [FINISH_LABELS.photosNotPlaced(photos.notPlaced)]),
+        ].join(" ");
         dom.downloadButton.textContent = idleLabel();
         dom.downloadButton.disabled = false;
         // The placed objects are in the zip now; the next finish (a
@@ -3303,6 +3319,9 @@ export function wireCreatorSetup(deps: {
     },
     resetFinishStep: () => {
       dom.downloadButton.disabled = true;
+      // A "keep the walk" given for the closing tour is not given for the
+      // next one (S1 milestone review #9).
+      dom.keepScanInput.checked = false;
       // The LABEL too, because the hand-off continuation is generation-
       // guarded and returns without restoring it for a tour that closed
       // underneath an open share sheet. Without this the next tour's

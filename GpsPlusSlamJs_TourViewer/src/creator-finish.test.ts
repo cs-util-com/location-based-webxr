@@ -978,7 +978,7 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
   // A file of the creator's own that no viewer reads: never the walk.
   const README = `${WRAP}README.txt`;
 
-  async function wireRecordingTour(keepScan: boolean) {
+  async function wireRecordingTour(keepScan: boolean, odomCoordVersion = 5) {
     const bytes = new Uint8Array(readFileSync(FIXTURE));
     const actions = (await loadActionsFromZip(bytes)).map((e) => e.action);
     const wired = await wireFinishable({
@@ -995,7 +995,7 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
             isImage: filename.endsWith(".jpg"),
           })),
         ],
-        loadSessionMeta: () => Promise.resolve({ odomCoordVersion: 5 }),
+        loadSessionMeta: () => Promise.resolve({ odomCoordVersion }),
         loadRecordingActions: () => Promise.resolve(actions),
       },
     });
@@ -1022,6 +1022,34 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     expect(dom.finishStatus.textContent).toContain(
       "leaves out the walk recording",
     );
+  });
+
+  it("keeps the walk when the photos could not be placed, and says why", async () => {
+    // Why (S1 milestone review #2): without baked spots the walk is the
+    // only way a visitor's viewer can place the photos - and the hosted
+    // file may be the creator's only copy of it. A recording this build
+    // cannot join (an old era here; a network blip reading it, a wrapped
+    // zip) must leave the copy as it was, with the reason on screen.
+    const { ctx, dom } = await wireRecordingTour(false, 3);
+    expect(ctx.finishError).toBeNull();
+    const names = await entryNamesOf(ctx.rebuiltZip!.blob);
+    expect(names.filter((n) => WALK.includes(n)).sort()).toEqual(
+      [...WALK].sort(),
+    );
+    expect(dom.finishStatus.textContent).not.toContain(
+      "leaves out the walk recording",
+    );
+    expect(dom.finishStatus.textContent).toContain(
+      "The recorded photos could not be placed",
+    );
+  });
+
+  it("forgets the creator's tick with the tour it was given for", async () => {
+    // Why (S1 milestone review #9): a "keep the walk" for one tour must not
+    // silently apply to the next tour's Finish.
+    const { dom, setup } = await wireRecordingTour(true);
+    setup.resetFinishStep();
+    expect(dom.keepScanInput.checked).toBe(false);
   });
 
   it("keeps the walk when the creator asks for it", async () => {

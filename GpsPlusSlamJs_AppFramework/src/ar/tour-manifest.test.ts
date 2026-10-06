@@ -502,6 +502,31 @@ describe('baked capture spots (scan-pass plan S1, S-D11)', () => {
     ).toThrow(TourManifestValidationError);
   });
 
+  it('a NEWER minor with spots this build cannot read opens without them, instead of failing the tour', () => {
+    // Why (S1 milestone review #8): additive revisions must degrade
+    // (K1 R4). A later minor that extends the spots (a new image type, a
+    // capture without a rotation) would otherwise break every older
+    // viewer's open; without the spots the viewer falls back to its own
+    // join or the photo ring.
+    const read = parseTourManifest({
+      version: 2,
+      minor: TOUR_MANIFEST_MINOR + 1,
+      objects: [],
+      captureSpots: { ...spots, captures: [{ image: 'images/x.heic' }] },
+    });
+    expect(read.captureSpots).toBeUndefined();
+  });
+
+  it('TRIPWIRE: raising TOUR_MANIFEST_MINOR must teach the writer what needs the new minor', () => {
+    // The writer writes the LOWEST minor a manifest's content needs
+    // (minorNeeded in tour-manifest.ts). A field added at minor 2 that
+    // minorNeeded does not know would be written at minor 1, and a minor-1
+    // reader parses minor-1 files strictly - so the tour would stop
+    // opening there. When this fails: extend minorNeeded for the new
+    // field, add its round trip, then move this number.
+    expect(TOUR_MANIFEST_MINOR).toBe(1);
+  });
+
   it('a version 1 document carries no baked spots (the field is version 2)', () => {
     expect(
       parseTourManifest({ version: 1, objects: [], captureSpots: spots })

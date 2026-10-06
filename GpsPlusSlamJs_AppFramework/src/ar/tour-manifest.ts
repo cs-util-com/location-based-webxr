@@ -345,6 +345,18 @@ function parseCaptureSpots(value: unknown): TourCaptureSpots | undefined {
   return { fixes, gpsAccuracyMedianM, captures: parsed };
 }
 
+/** A newer minor's spots this reader cannot read degrade to none (K1 R4,
+ *  S1 milestone review #8): the viewer then falls back to its own join or
+ *  the ring, instead of the whole tour failing to open. */
+function captureSpotsOrNone(value: unknown): TourCaptureSpots | undefined {
+  try {
+    return parseCaptureSpots(value);
+  } catch (err) {
+    if (err instanceof TourManifestValidationError) return undefined;
+    throw err;
+  }
+}
+
 /** The format version, checked: 1 (migrated) or 2; a newer one is named. */
 function formatVersionOf(value: unknown): 1 | 2 {
   if (value === LEGACY_VERSION || value === TOUR_MANIFEST_VERSION) {
@@ -396,7 +408,9 @@ function parseV2Parts(
     lenient,
   });
   const title = nonEmptyLabel(data.title);
-  const captureSpots = parseCaptureSpots(data.captureSpots);
+  const captureSpots = lenient
+    ? captureSpotsOrNone(data.captureSpots)
+    : parseCaptureSpots(data.captureSpots);
   return {
     minor,
     ...(title === undefined ? {} : { title }),

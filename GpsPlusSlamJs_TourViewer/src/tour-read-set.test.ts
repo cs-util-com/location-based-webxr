@@ -233,10 +233,14 @@ describe("what a visitor's page shows and downloads", () => {
     ]);
   });
 
-  it("stops a visitor's background download only for a copy that carries a walk", () => {
-    expect(stopsVisitorDownload("visitor", scan)).toBe(true);
-    expect(stopsVisitorDownload("visitor", new Set())).toBe(false);
+  it("stops a visitor's background download only for a baked copy that carries a walk", () => {
+    expect(stopsVisitorDownload("visitor", scan, true)).toBe(true);
+    expect(stopsVisitorDownload("visitor", new Set(), true)).toBe(false);
     // The creator's working copy is theirs to cache whole.
-    expect(stopsVisitorDownload("creator", scan)).toBe(false);
+    expect(stopsVisitorDownload("creator", scan, true)).toBe(false);
+    // Without baked spots the viewer replays the walk, by range reads of
+    // every action entry: stopping the download would only make it slower
+    // and lose the offline copy (S1 milestone review #1).
+    expect(stopsVisitorDownload("visitor", scan, false)).toBe(false);
   });
 });

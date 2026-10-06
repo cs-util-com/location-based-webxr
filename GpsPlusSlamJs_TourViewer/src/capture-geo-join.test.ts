@@ -444,6 +444,21 @@ describe("createCapturePickTracker - each photo through the first settled alignm
     expect(tracker().alignmentFor("images/none.jpg")).toBeUndefined();
   });
 
+  it("computeCaptureGeoJoin refuses a picked alignment that never solved (identity) and uses the final one", () => {
+    // Why (S1 milestone review #6): the store's alignment starts as the
+    // IDENTITY, which the maturity rule counts as usable once a zero
+    // exists. A walk whose GPS extent reaches the floor before the first
+    // solve would otherwise pick it and place that photo at raw odometry
+    // metres from the zero, baked into tour.json for good.
+    const state = baseState({ matrix: translation(9, 0, 0) });
+    const [viaPick] = computeCaptureGeoJoin(state, () => ({
+      matrix: translation(0, 0, 0),
+      rotation: [0, 0, 0, 1] as const,
+    }));
+    const north = (lat: number) => (lat - 47.5) * 111_320;
+    expect(north(viaPick!.geo.lat)).toBeCloseTo(10, 0);
+  });
+
   it("computeCaptureGeoJoin places a photo through its picked alignment, not the final one", () => {
     const state = baseState({ matrix: translation(9, 0, 0) });
     const picked = {

@@ -38,6 +38,12 @@ spots.
 - **Only photos the zip carries as images are baked**: the live join's
   decode skips a missing frame, and a spot naming no file would show
   nothing.
+- **One spot per file**: `tour.json` refuses a photo named twice, which
+  would make every Finish of that tour throw; a file captured again keeps
+  its last pose, as the zip keeps its last write (S1 milestone review #7).
+- A wrapped Recorder zip (`mytour/actions/...`) never bakes: the recorded
+  `imageFile` names are unwrapped. The Finish then keeps the walk and says
+  so, which leaves a later fix possible.
 - `fixes` and `gpsAccuracyMedianM` are the walk's (the final assessment's),
   as the live join's status line reported them; `null` stays `null`.
 - Errors thrown by the session's reads (a cap's refusal, a failed

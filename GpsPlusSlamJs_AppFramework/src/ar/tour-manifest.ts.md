@@ -56,6 +56,13 @@ order: "fixed", objects: [], assets: [], stations: [] }`, the starter
 - `fixes` and the accuracy describe the whole walk, as the live join's
   status line did; with per-photo alignments they are the walk's quality,
   not each spot's.
+- **A newer minor's spots this reader cannot read are dropped**, not the
+  tour (K1 R4, S1 milestone review #8): the viewer then falls back to its
+  own join or the ring. At this reader's own minor they are a broken file.
+- **The minor the writer stamps is `minorNeeded`, which must learn every
+  new field at a bump.** Forgetting it writes a too-low minor, and a reader
+  at that minor parses strictly and refuses the tour. A tripwire test pins
+  `TOUR_MANIFEST_MINOR` to 1 so a bump cannot happen without reading this.
 
 ## The version policy (K1)
 

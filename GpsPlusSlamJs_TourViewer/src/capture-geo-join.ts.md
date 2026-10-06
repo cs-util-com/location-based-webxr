@@ -49,6 +49,17 @@ taken instead of ringing them around the QR code.
   `alignmentFor(imageFile)` gives that `{ matrix, rotation }`, or undefined
   for a photo it never saw. `extentOf` defaults to the framework's
   `createGpsExtentTracker` over the store's device fixes.
+  - **Linear in the walk** (S1 milestone review #10): one shared "latest
+    usable" moment is every open photo's pick once it came after the
+    photo, and a mature moment settles every open photo at once, so a walk
+    costs actions + photos, not actions x photos (a walk that never reaches
+    40 m keeps every photo open to the end). A file captured again starts
+    over. The property test pins it to the per-photo fold of
+    `advanceMatureAlignmentPick` over random walks.
+  - A picked alignment that is the IDENTITY (the store's value before the
+    first solve, which the maturity rule counts as usable once a zero
+    exists) is refused by `computeCaptureGeoJoin`'s check, like an unsolved
+    final one, and that photo uses the final alignment (review #6).
 - `computeCaptureGeoJoin(state, alignmentFor?): CaptureWorldPose[]` - with
   `alignmentFor`, each capture is placed through its own alignment, checked
   like the final one (16 entries, a unit rotation); a capture without one,

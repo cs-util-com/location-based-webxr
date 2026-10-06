@@ -114,11 +114,19 @@ DOM glue, its own module since the flows plan M6.
   `ctx.scanEntries` (empty without a manifest, as before) and then fills
   the gallery; a broken manifest fills it unfiltered. A copy that kept the
   walk therefore never decodes its frames; every other file still shows.
-- **A visitor's page stops the background download of such a copy**
-  (`stopsVisitorDownload`, visitor mode only): `archive.dispose()` aborts
-  the warm, and the tour reads its entries by range instead. The cost is
-  tier 3 (the whole-archive check) and the offline copy for that tour; a
-  creator's working copy is still cached whole.
+- **A visitor's page stops the background download of a BAKED copy that
+  kept the walk** (`stopsVisitorDownload`, visitor mode only; an unbaked
+  one replays its walk and keeps the download): `archive.dispose()`
+  aborts the warm, and the tour reads its entries by range instead. The
+  costs, for that copy only: tier 3 (the whole-archive check), the offline
+  copy, and - because dispose aborts the archive's one controller - the
+  recovery download for a host that stops honouring ranges mid-session
+  (S1 milestone review #5).
+- **The manifest is marked pending BEFORE the open's placement trigger**
+  (S1 milestone review #4): a tour opened into a running AR session would
+  otherwise be judged before its `tour.json` (with the baked photo spots)
+  was read, and declined for the whole session.
+  `archive-open-order.test.ts` pins the order.
 - **Clear-cache settles once the store is durably empty, without waiting
   for the warm download** (flows plan M2): `size()` is read FIRST (the open
   session's eviction drops its own copy from the index - review #3), then

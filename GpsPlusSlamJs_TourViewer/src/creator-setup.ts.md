@@ -129,6 +129,11 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   `scanEntryNames` of the manifest it writes (`tour-read-set.ts`): the
   action stream, `session.json` and the recorded frames no visitor sees.
   A file the recording did not write (a README, credits) always stays.
+  **Never without baked spots** (S1 milestone review #2): a recording the
+  bake declined or could not read keeps its walk, and the ready line says
+  why (`FINISH_LABELS.photosNotPlaced`); the walk is then the only way a
+  viewer can place the photos. The tick is cleared with the Finish step
+  when the tour closes (review #9).
   The ready line then says so (`FINISH_LABELS.scanLeftOut`), because the
   hosted file may be the creator's only copy of the walk.
 - The finish's append is **id-deduplicating**, because the serializer

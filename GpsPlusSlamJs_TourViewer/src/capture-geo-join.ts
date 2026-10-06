@@ -35,10 +35,9 @@ import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint
 // copies that drifted would let one accept what the other refuses.
 import { SEGMENTING_ACTION_TYPES } from "gps-plus-slam-app-framework/state/segmenting-actions";
 import {
-  advanceMatureAlignmentPick,
-  openMatureAlignmentPick,
+  isMatureAlignment,
+  isUsableAlignment,
   type AlignmentMoment,
-  type MatureAlignmentPick,
 } from "gps-plus-slam-app-framework/state/alignment-maturity";
 import { createGpsExtentTracker } from "gps-plus-slam-app-framework/state/gps-extent-tracker";
 
@@ -218,6 +217,10 @@ function checkedAlignment(
   a: CaptureAlignment | undefined,
 ): { matrix: AlignmentMatrix; quat: ThreeQuaternion } | undefined {
   if (a === undefined || a.matrix.length !== 16) return undefined;
+  // The store's alignment starts as the IDENTITY, which the maturity rule
+  // counts as usable once a zero exists: a pick from before the first solve
+  // is refused like an unsolved final one (S1 milestone review #6).
+  if (isIdentityMatrix4(toAlignmentMatrix(a.matrix))) return undefined;
   const rotation = renormalizeUnitQuaternion(a.rotation);
   if (rotation === undefined) return undefined;
   const [x, y, z, w] = rotation;
@@ -405,8 +408,17 @@ export function createCapturePickTracker(options?: {
           typeof extentTracker.update
         >[0],
       ));
-  const picks = new Map<string, MatureAlignmentPick<CaptureMoment>>();
-  const open = new Set<string>();
+  /** Settled picks: they never move again. */
+  const settled = new Map<string, CaptureMoment>();
+  /** Open photos: the moment each was taken, and when. */
+  const open = new Map<string, { moment: CaptureMoment; seq: number }>();
+  /** The latest usable moment, and when. It is the pick of every photo
+   *  still open that was taken before it - the shared rule's advance, done
+   *  once for all of them, so a walk costs actions + photos rather than
+   *  actions x photos (S1 milestone review #10; the property test pins it
+   *  to the per-photo fold of `advanceMatureAlignmentPick`). */
+  let latestUsable: { moment: CaptureMoment; seq: number } | null = null;
+  let seq = 0;
 
   function momentOf(state: PickTrackerState): CaptureMoment {
     const gps = state.gpsData;
@@ -420,21 +432,33 @@ export function createCapturePickTracker(options?: {
 
   return {
     observe(action, state) {
+      seq += 1;
       const now = momentOf(state);
-      for (const file of open) {
-        const pick = advanceMatureAlignmentPick(picks.get(file)!, now);
-        picks.set(file, pick);
-        if (pick.mature) open.delete(file);
+      if (isUsableAlignment(now)) {
+        latestUsable = { moment: now, seq };
+        if (isMatureAlignment(now)) {
+          for (const file of open.keys()) settled.set(file, now);
+          open.clear();
+        }
       }
       if (action.type !== CAPTURE_ACTION) return;
       const file = captureImageFile(action.payload);
       if (file === undefined) return;
-      const pick = openMatureAlignmentPick(now);
-      picks.set(file, pick);
-      if (!pick.mature) open.add(file);
+      // A file captured again starts over, as a new pick would.
+      settled.delete(file);
+      open.delete(file);
+      if (isMatureAlignment(now)) settled.set(file, now);
+      else open.set(file, { moment: now, seq });
     },
     alignmentFor(imageFile) {
-      const moment = picks.get(imageFile)?.alignment;
+      const taken = open.get(imageFile);
+      const moment =
+        settled.get(imageFile) ??
+        (taken === undefined
+          ? undefined
+          : latestUsable !== null && latestUsable.seq > taken.seq
+            ? latestUsable.moment
+            : taken.moment);
       if (
         moment === undefined ||
         moment.alignmentMatrix === null ||

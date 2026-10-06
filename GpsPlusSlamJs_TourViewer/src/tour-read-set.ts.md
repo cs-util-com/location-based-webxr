@@ -25,13 +25,18 @@ out too.
   archive order: the entries a RECORDING writes (`session.json`, anything
   under `actions/`, `frame-NNNNNN.<ext>` in `images/` or the legacy
   `frames/`, the framework's `SESSION_IMAGES_DIR` and
-  `LEGACY_SESSION_IMAGES_DIR`) that are not in `visitorEntryNames`. What a
-  lean Finish removes.
+  `LEGACY_SESSION_IMAGES_DIR`, and the Recorder's scan folders `sparse/`
+  (COLMAP: the point cloud and every frame's pose) and `refPoints/`
+  (timestamped GPS points)) that are not in `visitorEntryNames`. What a
+  lean Finish removes. `recorder-walk-folders.test.ts` reads the
+  Recorder's zip contributors and fails when one is added undecided.
 - `entriesForVisitor(entries, scan) -> entries` - every entry except the
   walk, in archive order. The gallery and the photo ring use it.
-- `stopsVisitorDownload(mode, scan) -> boolean` - true for a visitor of a
-  copy that carries a walk: `archive-open.ts` then aborts the whole-file
-  download.
+- `stopsVisitorDownload(mode, scan, baked) -> boolean` - true for a
+  visitor of a BAKED copy that carries a walk: `archive-open.ts` then
+  aborts the whole-file download. Without baked spots the viewer replays the
+  walk, one range read per action entry, so the download is kept (S1
+  milestone review #1).
 
 ## Invariants & assumptions
 

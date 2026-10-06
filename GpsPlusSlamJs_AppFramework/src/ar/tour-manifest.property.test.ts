@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   parseTourManifest,
   serializeTourManifest,
+  TOUR_MANIFEST_MINOR,
   type TourObject,
 } from './tour-manifest';
 
@@ -108,6 +109,61 @@ describe('the v1 migration (properties, tour kit plan K1)', () => {
         expect(
           parseTourManifest(JSON.parse(serializeTourManifest(migrated)))
         ).toEqual(migrated);
+      }),
+      { numRuns: 200 }
+    );
+  });
+});
+
+describe('baked capture spots (properties, scan-pass plan S1)', () => {
+  // Why this matters: the spots are written once at a creator's Finish and
+  // read by every visitor. They must round-trip exactly, and the file's
+  // minor must be the one its content needs (1 with spots, the version 1
+  // form without anything of version 2) whatever minor it was read at - an
+  // exact-minor round trip would be wrong here by design.
+  const capture = fc.record({
+    image: fc
+      .integer({ min: 0, max: 999_999 })
+      .map((n) => `images/frame-${String(n).padStart(6, '0')}.jpg`),
+    geo: geoWithRotation,
+  });
+  const spots = fc.record({
+    fixes: fc.integer({ min: 1, max: 5000 }),
+    gpsAccuracyMedianM: fc.option(coordinate(0, 100), { nil: null }),
+    captures: fc.uniqueArray(capture, {
+      minLength: 1,
+      maxLength: 8,
+      selector: (c) => c.image,
+    }),
+  });
+  const v2 = fc
+    .record({
+      objects: manifest.map((m) => m.objects),
+      minor: fc.integer({ min: 0, max: TOUR_MANIFEST_MINOR }),
+      captureSpots: fc.option(spots, { nil: undefined }),
+    })
+    .map(({ captureSpots, ...rest }) => ({
+      version: 2,
+      ...rest,
+      ...(captureSpots === undefined ? {} : { captureSpots }),
+    }));
+
+  it('round-trips the spots and writes the minor the content needs', () => {
+    fc.assert(
+      fc.property(v2, (m) => {
+        const parsed = parseTourManifest(m);
+        const written = JSON.parse(serializeTourManifest(parsed)) as {
+          version: number;
+          minor?: number;
+        };
+        const again = parseTourManifest(written);
+        expect(again.captureSpots).toEqual(parsed.captureSpots);
+        expect(again.objects).toEqual(parsed.objects);
+        expect(written).toMatchObject(
+          parsed.captureSpots === undefined
+            ? { version: 1 }
+            : { version: 2, minor: 1 }
+        );
       }),
       { numRuns: 200 }
     );

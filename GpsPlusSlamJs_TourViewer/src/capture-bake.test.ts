@@ -91,6 +91,33 @@ describe("bakeCaptureSpots over the real sample recording", () => {
     expect(moved.length).toBeGreaterThan(0);
   });
 
+  it("names each photo once when the recording captured a file twice", async () => {
+    // Why (S1 milestone review #7): tour.json refuses a photo named twice,
+    // so a duplicate would make the Finish of that tour throw - on every
+    // Finish, since each one bakes again. The later capture wins, as the
+    // zip's own file is its last write.
+    const source = await sampleSource();
+    const actions = (await source.loadRecordingActions())!;
+    const again = actions
+      .filter((a) => a.type === "gpsData/add2dImage")
+      .at(-1)!;
+    const bake = await bakeCaptureSpots({
+      ...source,
+      loadRecordingActions: () => Promise.resolve([...actions, again]),
+    });
+    if (bake.kind !== "baked") throw new Error("expected a bake");
+    const images = bake.spots.captures.map((c) => c.image);
+    expect(new Set(images).size).toBe(images.length);
+    expect(() =>
+      parseTourManifest({
+        version: 2,
+        minor: 1,
+        objects: [],
+        captureSpots: bake.spots,
+      }),
+    ).not.toThrow();
+  });
+
   it("drops a photo whose file the zip does not carry, as the live join's decode would", async () => {
     const source = await sampleSource();
     const full = await bakeCaptureSpots(source);

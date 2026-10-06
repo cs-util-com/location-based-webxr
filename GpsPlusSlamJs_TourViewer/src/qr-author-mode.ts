@@ -426,6 +426,11 @@ export const FINISH_LABELS = {
    *  only copy of it. */
   scanLeftOut: (files: number) =>
     `This copy is for visitors: it leaves out the walk recording (${String(files)} ${files === 1 ? "file" : "files"}). Keep your original zip if you still need the walk.`,
+  /** Appended when the recording's photos could not be placed at this
+   *  Finish (S1 milestone review #2): the walk then stays in the zip, the
+   *  viewer places them itself or rings them, and the creator sees why. */
+  photosNotPlaced: (reason: string) =>
+    `The recorded photos could not be placed (${reason}), so the walk recording stays in the zip.`,
   failed: (reason: string) => `Finishing failed: ${reason}`,
   download: "Download the rebuilt zip",
   /** A Drive tour's route: the zip must land in Downloads for the Drive

@@ -409,6 +409,11 @@ export function wireArchiveOpen(deps: {
       }
       ctx.session = opened;
       ctx.tourLabel = labelOf(source);
+      // Pending BEFORE the placement trigger below: the photos' baked spots
+      // live in tour.json, and a trigger that saw the teardown's "settled"
+      // with no manifest would decline them for the whole session (S1
+      // milestone review #4; archive-open-order.test.ts).
+      ctx.tourManifestStatus = "pending";
       renderStats();
       // A tour opened AFTER entering AR places itself from the open path
       // (flows plan M4, review #8) - not from the levels continuation
@@ -421,7 +426,6 @@ export function wireArchiveOpen(deps: {
       // it back, so a re-measure never drops what an earlier session placed.
       // A broken manifest is an error the creator must see (the framework's
       // rule for this file), not a silently empty tour.
-      ctx.tourManifestStatus = "pending";
       void opened.loadTourManifest().then(
         (manifest) => {
           if (ctx.session !== opened) return;
@@ -437,9 +441,17 @@ export function wireArchiveOpen(deps: {
                 ),
           );
           // The background download fetches the WHOLE file; a visitor of a
-          // copy that kept the walk reads entries on demand instead (the
-          // archive's dispose aborts the download only).
-          if (stopsVisitorDownload(deps.mode, ctx.scanEntries)) {
+          // baked copy that kept the walk reads entries on demand instead.
+          // The archive's dispose aborts the download AND its recovery
+          // download for a host that stops honouring ranges mid-session
+          // (S1 milestone review #5): accepted for this copy only.
+          if (
+            stopsVisitorDownload(
+              deps.mode,
+              ctx.scanEntries,
+              manifest?.captureSpots !== undefined,
+            )
+          ) {
             opened.archive.dispose();
           }
           // The gallery waits for the manifest, which says what it shows.
