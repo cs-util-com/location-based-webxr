@@ -36,9 +36,10 @@ it only in `cloudMode: 'slab'`.
   from `cloud-column.ts` (moved there in round 3 so the sky's GLSL can use
   it without an import cycle; see its sidecar).
 - `cloudSlabZenithOpacity(noise, threshold)`: 1 - e^(-σ·Q(T)).
-- `cloudSlabInterval(y, dir)`: the analytic part of the ray inside the slab
-  and the far fade, `{ inM, outM }` or null. Throws `RangeError` for a
-  non-finite height or a zero or non-finite direction.
+- `cloudSlabInterval(y, dir, sceneM = Infinity, reach = CLOUD_SLAB_REACH)`:
+  the analytic part of the ray inside the slab and the reach's far fade,
+  ended at the scene distance `sceneM` (F2c), `{ inM, outM }` or null. Throws `RangeError` for a non-finite
+  height, a zero or non-finite direction, or a negative or NaN `sceneM`.
 - `cloudSlabUniformShare(y)`: how far a camera at height y has turned the
   spacing from quadratic (0: at or below the top) to uniform (1: from
   `uniformBlendM` above it), a smoothstep between.
@@ -65,7 +66,15 @@ it only in `cloudMode: 'slab'`.
 - `cloudSlabLod(t, pixelAngle, step, dirHorizontal)`: the noise's level
   of detail from the pixel footprint or the step's horizontal skip.
 - `cloudSlabRenderOrder(y)`: -1 at or below the base, +1 inside and above.
-- `cloudSlabFarWeight(horizontalM)`: the sheet's far fade, as a weight.
+- `cloudSlabFarWeight(horizontalM, reach = CLOUD_SLAB_REACH)`: the
+  reach's far fade, as a weight; `RangeError` for a bad reach.
+- `CLOUD_SLAB_REACH`, `CloudSlabReach` and `assertCloudSlabReach(reach)`
+  (globe volume-cloud plan 2026-10-05-0016 §13, R1): how far out the slab
+  draws, `{ farStartM, farEndM }` horizontal from the camera; the default
+  is the sheet's far fade (14 to 21 km), which the look-dev page's 30 km
+  far plane and the mesh's 24 km radius were sized for. The check throws
+  `RangeError` unless 0 <= start < end, both finite. `cloudSlabMarch`'s
+  input takes an optional `reach` too.
 - `cloudSlabMarch(input)`: the shader's march on the CPU (its `light` may
   carry `aureole` and `silverLining`, the two lobes' strengths: after the march it adds
   E·phase·τe^(-τ) of the marched depth, weighted by alpha over the opacity
@@ -80,6 +89,47 @@ it only in `cloudMode: 'slab'`.
   and viewport.
 - `setCloudSlabSteps(slab, steps)`: the step count, as a define (a new
   program); `RangeError` before any change for a count it is not built for.
+- **The coverage map and the disc** (globe volume-cloud plan
+  2026-10-05-0016, C1), both opt-in by defines, so without them the slab is
+  today's (a test pins the march unchanged under a constant threshold).
+  The shared rule, its helpers and its GLSL live in
+  [`cloud-coverage.ts.md`](cloud-coverage.ts.md) (the shadow uses the same,
+  C3):
+  - `cloudSlabMarch`'s `thresholdAt(xM, zM)`: the threshold read at each
+    node (both ends of a segment), the twin of the shader's
+    `atmCloudThresholdAt`. A camera inside its own disc carries a sliver of
+    cloud in its first segment by design (nodes are point-sampled).
+  - `setCloudSlabCoverage(slab, coverage | null)`: the caller's chunk
+    (defining `float atmCloudCoverageAt(vec2 xz)`) inserted
+    (`withCloudCoverage`), the define `ATM_CLOUD_COVERAGE`; the local cover
+    times `atmCloudCover` becomes the column's threshold. `RangeError` for
+    a chunk without that function. A new program on each change.
+  - `setCloudSlabRadius(slab, radiusM | null)`: the disc
+    (`ATM_CLOUD_DISC`, `atmCoverDiscM`); a new program only when it is
+    turned on or off.
+- `setCloudSlabDiscCentre(slab, { x, z } | null)` (volume-cloud plan
+  §15): the disc's centre, a world point or the camera (null, the
+  default); a uniform, read only with the disc on.
+- `setCloudSlabReach(slab, reach | null)` (R1): the uniform `atmSlabReach`
+  (the far fade's start and end, and the march cap, which grows with the
+  end so it never ends the clouds first) and the mesh scaled out
+  horizontally by `farEndM / 21 km` so it still covers the fade's end; null
+  restores the default and the scale 1. A uniform, never a new program.
+  The globe lab sets it to the volume's disc; the look-dev page never
+  calls it.
+- `setCloudSlabSceneDepth(slab, depth | null)` (globe F2 plan
+  2026-10-03-1922, F2c): the scene's depth texture, or none. With one, the
+  define `ATM_SLAB_SCENE_DEPTH` ends the march at the scene (its point
+  through the same inverse projection as the ray; a depth of 1 is cleared)
+  and the depth test is OFF; without one the slab is unchanged. Only the
+  switch between depth and none builds a program; another depth is a
+  uniform. `TypeError` for a mesh that is not a slab.
+  - **Why the depth test goes off:** the slab is a back-faced prism, so
+    under the depth test a ridge in front of the prism's FAR face hid the
+    whole pixel, the cloud in front of the ridge with it.
+  - **The caller's duties:** the depth covers the slab render's viewport,
+    and it is not attached to the target the slab draws into (reading an
+    attached depth is a feedback loop).
 - Types: `Vec3`, `CloudSlabSteps`, `CloudSlabMarchInput` (its `light` is
   `{ sunTransmittance, sunDir, zenith, aureole?, silverLining? }`),
   `CloudSlabMarchResult`.
@@ -194,7 +244,9 @@ m.opacity; // the column's opacity straight up
   nodes it reads, and its error against the reference path (the replaced
   point-sampled march at 1024 steps, pinned to it at the shipped counts)
   from above, below and inside per pose and sun; the level of detail; the
-  draw order and far weight.
+  draw order and far weight; the scene depth (the interval ended at the
+  scene, none behind a nearer ridge, its refusals; the GLSL block behind its
+  define; the setter's define, texture, depth test and program rebuilds).
 - `cloud-slab.test.ts` also: the forward glow in the march (nothing when
   off; E·phase·τe^(-τ)·weight toward the sun through a thin column, from
   the column's own depth; far weaker away from the sun; nothing through a
