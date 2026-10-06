@@ -28,10 +28,12 @@
  */
 import * as THREE from "three";
 
+import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
 import { CLOUD_SLAB } from "/fw/visualization/atmosphere/cloud-slab.js";
 import { CloudShadow } from "/fw/visualization/atmosphere/cloud-shadow.js";
 import {
   CLOUD_VOLUME_COVERAGE_GLSL,
+  cloudVolumeNoiseOffset,
   cloudVolumeShare,
 } from "/globe/globe-cloud-volume.js";
 
@@ -184,6 +186,19 @@ export function createGlobeCloudVolume(
           (target.lat * Math.PI) / 180,
           (target.lng * Math.PI) / 180,
         );
+        // The noise belongs to the ground and drifts with the map: without
+        // it every place put the same (clear) patch under its target.
+        if (enabled) {
+          const [u, v] = cloudVolumeNoiseOffset(
+            {
+              latRad: origin.value.x,
+              lonRad: origin.value.y,
+              lonOffsetRad: surfaceUniforms.uCloudLonOffset.value,
+            },
+            CLOUD_LAYER.tileKm * 1000,
+          );
+          atmosphere.cloudUniforms.atmCloudOffset.value.set(u, v);
+        }
       }
       if (enabled) atmosphere.setCloudDiscRadius(radiusM > 0 ? radiusM : null);
       shadow.setLiftM(liftM);

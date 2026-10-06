@@ -14,6 +14,7 @@ import {
   CLOUD_VOLUME,
   CLOUD_VOLUME_COVERAGE_GLSL,
   cloudVolumeMapUv,
+  cloudVolumeNoiseOffset,
   cloudVolumeShare,
 } from "./globe-cloud-volume.js";
 
@@ -92,6 +93,49 @@ describe("cloudVolumeMapUv", () => {
         lonRad: 0,
         lonOffsetRad: 0,
       }),
+    ).toThrow(RangeError);
+  });
+});
+
+// Why: the slab's noise is tiled in world metres, and the lab's world frame
+// is centred on the target, so with a fixed offset every place on Earth put
+// the SAME patch of noise under the target - a clear one: every link the
+// owner zoomed into looked straight down into the same hole (2026-10-06,
+// 0 % cover at 11 km over a place the map has overcast). The offset makes
+// the noise belong to the ground, and drift east with the map's clouds.
+describe("cloudVolumeNoiseOffset", () => {
+  const TILE_M = 24_000;
+
+  it("is the target's east and south distance from (0, 0) in tiles, wrapped to [0, 1)", () => {
+    const [u, v] = cloudVolumeNoiseOffset(
+      { latRad: 0.5, lonRad: 0.1, lonOffsetRad: 0 },
+      TILE_M,
+    );
+    const east = (R * Math.cos(0.5) * 0.1) / TILE_M;
+    const south = (-R * 0.5) / TILE_M;
+    expect(u).toBeCloseTo(east - Math.floor(east), 9);
+    expect(v).toBeCloseTo(south - Math.floor(south), 9);
+  });
+
+  it("moves the noise east with the map's drift", () => {
+    const at = { latRad: 0.8, lonRad: 0.16, lonOffsetRad: 0 };
+    const [u0] = cloudVolumeNoiseOffset(at, TILE_M);
+    const [u1] = cloudVolumeNoiseOffset({ ...at, lonOffsetRad: 1e-4 }, TILE_M);
+    // The map is read at (lon - drift): a feature moves east by the drift,
+    // so the noise under a fixed point is the noise from further west.
+    const step = (R * Math.cos(0.8) * 1e-4) / TILE_M;
+    expect((((u0 - u1 - step) % 1) + 1.5) % 1).toBeCloseTo(0.5, 9);
+  });
+
+  it("refuses a non-finite position or a tile that is not positive", () => {
+    expect(() =>
+      cloudVolumeNoiseOffset(
+        { latRad: Number.NaN, lonRad: 0, lonOffsetRad: 0 },
+        TILE_M,
+      ),
+    ).toThrow(RangeError);
+    expect(() =>
+      cloudVolumeNoiseOffset({ latRad: 0, lonRad: 0, lonOffsetRad: 0 }, 0),
     ).toThrow(RangeError);
   });
 });

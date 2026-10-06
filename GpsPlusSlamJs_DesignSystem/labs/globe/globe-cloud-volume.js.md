@@ -21,7 +21,10 @@ and ending at the relief, so a ridge in front of a cloud hides it.
     `{ share, radiusM }`: the share by altitude (`cloudVolumeShare`), the
     disc `radiusKm` x share, the lift (the shell's height minus the slab's
     middle), the origin from `target` (degrees; null before one: no
-    volume).
+    volume), and, while enabled, the ground sky's noise offset
+    (`cloudVolumeNoiseOffset` at the map's drift), which anchors the noise
+    to the ground: with the frame centred on the target, a fixed offset put
+    the same clear patch under every place (2026-10-06).
   - `render(camera, relief)`: after the Earth, nothing at share 0: the
     relief's depth pass, the slab from the lifted camera, the composite.
   - `patchShadow(tiles)` and `setShadow(on)` (C3): the volume's shadow on
