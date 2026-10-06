@@ -2916,3 +2916,45 @@ describe(
     });
   },
 );
+
+describe(
+  "characterization before the split (code book plan M1: a sampled mutation pass found these unpinned)",
+  { timeout: SLOW_MS },
+  () => {
+    // Why these tests matter: M2 moves creator-setup.ts into modules and is
+    // verified by the composed tests passing unchanged. A sampled mutation
+    // pass (twelve hand-made mutants, 2026-10-06) found four behaviours no
+    // test could notice; each is pinned here so the split cannot drop one
+    // (Finish held during a measurement: fused-pose-wiring.test.ts, which
+    // can hold the identity hash).
+
+    it("does not retry a measurement the mint refused on every render (once per visit and code)", async () => {
+      // No zero yet: the gate is open, the mint refuses. Retrying it on
+      // every frame would rewrite the note at frame rate and never stop.
+      const a = authoring();
+      a.setZero(null);
+      a.seeTheCode();
+      await flush();
+      expect(a.ctx.placementNote).toMatch(/GPS alignment/);
+      a.ctx.placementNote = null;
+      a.seeTheCode();
+      a.setup.renderAuthorReadout();
+      await flush();
+      expect(a.ctx.placementNote).toBeNull();
+    });
+
+    it("keeps a visit with no fix and no code out of the visit log", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = authoring({ store });
+      await openFinishableTour(a);
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      a.setWalk({ fixes: [], odometry: [] });
+      a.endVisit();
+      await flush();
+      expect(
+        [...files.keys()].filter((k) => k.startsWith(visitKey(""))),
+      ).toEqual([]);
+    });
+  },
+);

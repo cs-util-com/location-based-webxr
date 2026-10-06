@@ -25,6 +25,7 @@ import type {
 import { qrFrameChanged } from "gps-plus-slam-app-framework/state";
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
+import type * as QrCodeIdModule from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { Matrix4 } from "three";
 import type { TourViewerSeams } from "./seams.js";
 import {
@@ -58,6 +59,34 @@ vi.mock("gps-plus-slam-app-framework/ar/qr/qr-tracking-controller", () => ({
 // The creator's print-size check (QR size consensus plan S3a) is tested on
 // its own (print-size-check.test.ts); here a controllable stand-in, whose
 // defaults (no offer, nothing pending) leave the other tests as they were.
+/** The identity hash, passed through - except that a test can hold the
+ *  `holdCall`-th call for a text until `release` (code book plan M1:
+ *  the window while a measurement is in flight is one hash long). */
+const idHold = vi.hoisted(() => ({
+  text: null as string | null,
+  holdCall: 0,
+  calls: 0,
+  gate: null as Promise<void> | null,
+}));
+vi.mock(
+  "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id",
+  async (importOriginal) => {
+    const real = await importOriginal<typeof QrCodeIdModule>();
+    return {
+      ...real,
+      qrCodeId: async (text: string) => {
+        if (text === idHold.text) {
+          idHold.calls += 1;
+          if (idHold.calls === idHold.holdCall && idHold.gate !== null) {
+            await idHold.gate;
+          }
+        }
+        return real.qrCodeId(text);
+      },
+    };
+  },
+);
+
 const sizeCheck = vi.hoisted(() => ({
   offer: null as { text: string; sizeM: number } | null,
   detections: [] as string[],
@@ -476,6 +505,72 @@ describe("the creator measures and mints with the fused pose", () => {
       expect(c.ctx.mintedLevel?.id).not.toBe("an-earlier-code");
     });
     expect(c.ctx.mintedLevel?.id).toBe(await qrCodeId(TEXT));
+  });
+
+  // Code book plan M1 (a sampled mutation pass found it unpinned): Finish
+  // is held while a measurement is in flight - the level it lands may be
+  // the one the zip should carry.
+  it("holds Finish while a measurement is in flight", async () => {
+    const c = creator({ aligned: true });
+    c.ctx.session = {
+      archive: { url: "https://h.test/a.zip", size: 1 },
+      entries: [],
+      hostedFileName: () => null,
+    } as never;
+    c.ctx.tourManifestStatus = "settled";
+    c.ctx.mintedLevel = { id: "hosted", json: "{}" };
+    c.ctx.currentLevels = new Map([["hosted", { qr: {} } as never]]);
+    let release: () => void = () => undefined;
+    idHold.text = TEXT;
+    idHold.calls = 0;
+    // Call 1 identifies the sighting; call 2 is the measurement's.
+    idHold.holdCall = 2;
+    idHold.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      c.setup.renderAuthorReadout();
+      expect(c.dom.finishButton.disabled).toBe(false);
+      for (let i = 0; i < 7; i++) c.detect(i);
+      await vi.waitFor(() => {
+        expect(idHold.calls).toBe(2);
+      });
+      c.setup.renderAuthorReadout();
+      expect(c.dom.finishButton.disabled).toBe(true);
+      release();
+      await vi.waitFor(() => {
+        expect(c.ctx.mintedLevel?.id).not.toBe("hosted");
+      });
+      await vi.waitFor(() => {
+        expect(c.dom.finishButton.disabled).toBe(false);
+      });
+    } finally {
+      release();
+      idHold.text = null;
+      idHold.gate = null;
+    }
+  });
+
+  // Code book plan M1: adopting a measured print size empties the code in
+  // hand; the code must then be measured again, at the new size.
+  it("measures the code again at a newly adopted print size", async () => {
+    const c = creator({ aligned: true });
+    for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    sizeCheck.offer = { text: TEXT, sizeM: 0.1554 };
+    c.detect(7);
+    c.dom.sizeOfferUse.click();
+    sizeCheck.offer = null;
+    expect(c.ctx.mintedLevel).toBeNull();
+    for (let i = 8; i < 16; i++) {
+      captured.configs.at(-1)?.onDetection?.(fusedEvent(TEXT, i));
+    }
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    expect(c.ctx.codeMeasurement?.sizeM).toBe(0.155);
   });
 
   // U3 milestone review #7: each Finish writes the ONE code in hand, so a
