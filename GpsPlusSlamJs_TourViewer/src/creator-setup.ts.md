@@ -28,46 +28,32 @@ does nothing and no explanation anywhere. With no session live the live
 measuring readout is blank instead: "hold the phone on the printed code"
 is an instruction for a situation a desktop creator is not in.
 
+**Since the code book refactor plan's M2 split this file is the composition
+root.** Each concern is its own `creator-*.ts` module with its own sidecar:
+`creator-draft.ts` (the on-device draft), `creator-previews.ts` (the AR
+previews), `creator-alignment-picks.ts` (the per-moment alignments),
+`creator-move-prompt.ts` ("Did the poster move here?"),
+`creator-placement.ts` (pins and photos), `creator-measuring.ts` (the QR
+pipeline, the size offer, automatic measuring), `creator-settle.ts` (the
+visit settle, the visit log, the summary), `creator-finish.ts` (the rebuilt
+zip) and `creator-handoff.ts` (its download, share or Drive save). What
+stays here: the wiring, the readout that joins them, the save guard's
+input, and the hooks, which fan out to each module's `endVisit` / `reset`.
+
 ## Crash-safe authoring and the Finish's file
 
 The on-device draft (second testing session, F13) is `creator-draft.ts`
 since the code book plan's M2 split; its sidecar holds the rules that
 were here. What stays is the Finish's side:
 
-- **The Finish bakes a recording's photo spots** (scan-pass plan S1,
-  S-D11): a tour that carries a recording and no `captureSpots` yet is
-  replayed once (`capture-bake.ts`, busy line `FINISH_LABELS.placingPhotos`)
-  and `tour.json` gains the spots, written at minor 1. Spots the tour
-  already carries are kept, not baked again. A recording that cannot be
-  read or joined never fails the Finish (the tour keeps the visitor's live
-  join, as before); a cap's refusal and a failed integrity check do, as
-  every read's does.
+- **The Finish's file** (what it writes, the baked photo spots, the walk
+  left out, the listed series continued): `creator-finish.ts`.
 - **The save cannot be forgotten** (UI round 1, U2, `finish-guard.ts`):
   after a Finish the save button is scrolled into view and focused; on a
   phone, Finish steps aside while the rebuilt file waits for its save
   (`hideFinishForResult`); after AR ends without a Finish (the back
   gesture), Finish reads "Finish and save your changes"; a delivered save
   marks `ctx.rebuiltZip.delivered`; `leaveNeedsConfirm()` and `leaveQuestion()` (exported) are what `main.ts` asks before another tour or leaving the page. A failed Finish reveals a file it already made, and the keep-the-walk switch hides while a rebuilt file waits (the next Finish rebuilds from it; U2 milestone review #2, #4).
-- **The published copy leaves the creator's walk out** (scan-pass plan
-  S1, S-D10): unless the creator ticks "Keep the walk recording in the tour
-  file" (`keepScanRow` / `keepScanInput`, on the page BEFORE AR since UI
-  round 1, U2 - hidden in a session, since the Finish there reads it -,
-  shown only for a tour that carries a walk, counted once per tour and
-  manifest), the Finish removes
-  `scanEntryNames` of the manifest it writes (`tour-read-set.ts`): the
-  action stream, `session.json` and the recorded frames no visitor sees.
-  A file the recording did not write (a README, credits) always stays.
-  **Never without baked spots** (S1 milestone review #2): a recording the
-  bake declined or could not read keeps its walk, and the ready line says
-  why (`FINISH_LABELS.photosNotPlaced`); the walk is then the only way a
-  viewer can place the photos. The tick is cleared with the Finish step
-  when the tour closes (review #9).
-  The ready line then says so (`FINISH_LABELS.scanLeftOut`), because the
-  hosted file may be the creator's only copy of the walk.
-- The finish's append is **id-deduplicating**, because the serializer
-  rejects duplicates: one already-hosted object would otherwise make every
-  finish throw for as long as the draft was restored, with no escape inside
-  the app.
 
 ## Public API
 
@@ -150,48 +136,10 @@ were here. What stays is the Finish's side:
     sighting of the code in hand (any code while none is measured); it goes
     the moment this visit has one, and never locks a control.
 
-- **The rebuilt zip is named after the hosted file** -
-  `session.hostedFileName()`, else `archiveFileName(url)` - because Drive
-  offers "Replace" only for the same name (Drive replace plan §2
-  decision 3).
 - **Mint, automatic measuring, the print-size check:** `creator-measuring.ts`
   (its sidecar holds the rules that were here).
-- **Finish** (`finishReadiness`): needs a measured level, an open tour AND
-  a settled manifest load (pending or broken refuses, with the reason:
-  finishing would overwrite a placement it could not read, M3 review #5);
-  runs once at a time (`ctx.finishing`). While it runs the panel shows
-  its progress with priority over the measuring readout, and a failure
-  stays on the line until the next tap (`ctx.finishProgress`,
-  `ctx.finishError`; store dispatches used to erase both). The
-  continuation re-checks `ctx.session` after every await and ends the AR
-  session only if it is still the one it started in
-  (`ctx.arSessionGeneration`). An existing level for the same id (also in
-  the tolerated wrapped shape) is replaced in place, never duplicated.
-  The size note next to the button says what the rebuild will copy. Entries: the level at
-  `qrLevelEntryName(id)` and `tour.json` from `ctx.tourManifest` (what the
-  zip already carried, so a re-measure never drops placed content) or an
-  empty manifest, plus each placed photo's bytes under
-  `session.manifestWrap` (the session's own prefix, never re-derived).
-  The input is the **newest bytes for this tour**: `ctx.rebuiltZip` when a
-  previous finish produced one, else `session.readWholeArchive()` (the
-  warmed copy, else range slices). The hosted archive is untrusted, so its
-  rebuild inflates under the session's own budget (`session.budget`, K0
-  milestone review R1) and a deflate bomb fails the Finish with the cap's
-  sentence; a previous Finish's zip is this page's own stored output and
-  gets the rebuild's default budget. On success `ctx.rebuiltZip` is set,
-  `ctx.tourManifest` **advances to what was just written** and
-  `ctx.placedObjects` is cleared, the AR session is ended through the
-  controller (the framework's session-end path runs the app teardown) and
-  step 4's finish block is revealed - AFTER the `disable()`, so it cannot
-  appear over a session that is still compositing; on failure the reason
-  stays in the panel and the button re-enables.
-  - **Why the chaining and the advance go together** (PR #435 review):
-    finishing ends the AR session but does NOT close the tour, so a
-    creator can measure again, place more and finish again. Leaving the
-    manifest at its pre-finish value silently dropped the first batch;
-    advancing it while still rebuilding from the hosted zip would write a
-    manifest naming photos the archive does not contain. Both halves are
-    needed, and the e2e finishes twice in one open tour to hold them.
+- **Finish:** `creator-finish.ts` (its sidecar holds the rules that were
+  here); `finishReadiness` gates the button from the readout.
 - **Hand-off and the Drive steps:** `creator-handoff.ts` (split out in
   the code book plan's M2; its sidecar holds what was here).
 - **Placement (M4, DEC-N9):** the gate, the pin and the photo are
@@ -227,25 +175,6 @@ were here. What stays is the Finish's side:
     is seen (D10b). Before M4 they were invisible to an author reopening a
     tour. How the previews are kept in line, and where a photo's bytes
     come from: `creator-previews.ts`.
-  - **The Finish replaces and filters** (`applyObjectChanges`), removes
-    each deleted photo's content file (`contentEntriesToRemove` into the
-    rebuild's `remove`), drops `manifest.sig.json` (a signature over the
-    old list cannot cover the files this Finish rewrites: the output is an
-    honest unsigned tour until K2 re-signs on export) and, for a LISTED
-    tour, writes `manifest.json` again as the series' next version
-    (`successorManifest`, K1 milestone review R7: the same series id, the
-    next version, the hash of every file the zip holds - the kept ones from
-    the list the input carries, the written ones hashed at the Finish; a
-    second Finish starts from the list the first one wrote, kept in
-    `ctx.rebuiltZip.signedManifest`). Dropping it, as K1 first did, dropped
-    the series id's only home. A phone that knew the signed tour still
-    warns that this copy is not signed. A NEW level file of a listed tour
-    is written inside the tour's folder (`manifestWrap`), where its list
-    can name it (a root `qr/` beside a wrapped list would be unlisted).
-    Afterwards it drops from `placedObjects` only
-    what the zip carries WITH THE SAME CONTENT, and clears the applied
-    deletions. The draft's tombstones stay until the hosted zip lacks the
-    ids, the same proof the objects wait for.
   - **Draft**: an edit is a record under the same id; a delete of a
     hosted object is `writeDraftDeletion`; the offer names changes and
     deletions (`restoreOfferText`); a restore replaces by id and brings

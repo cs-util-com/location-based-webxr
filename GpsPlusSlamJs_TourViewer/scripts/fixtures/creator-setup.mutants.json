@@ -18,7 +18,7 @@
     {
       "name": "manifest not advanced",
       "region": "finish",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-finish.ts",
       "from": "        ctx.tourManifest = written;",
       "to": ""
     },
@@ -67,8 +67,8 @@
     {
       "name": "summary not shown",
       "region": "finish",
-      "file": "src/creator-setup.ts",
-      "from": "        settle.showSummary();",
+      "file": "src/creator-finish.ts",
+      "from": "        deps.settle.showSummary();",
       "to": ""
     },
     {
@@ -209,8 +209,8 @@
     {
       "name": "finished photo bytes dropped",
       "region": "previews",
-      "file": "src/creator-setup.ts",
-      "from": "            previews.keepFinishedPhoto(p.object.id, p.blob);\n",
+      "file": "src/creator-finish.ts",
+      "from": "            deps.previews.keepFinishedPhoto(p.object.id, p.blob);\n",
       "to": ""
     },
     {
@@ -260,8 +260,8 @@
     {
       "name": "a code written by Finish not recorded",
       "region": "measuring",
-      "file": "src/creator-setup.ts",
-      "from": "        measuring.noteFinished(minted.id);",
+      "file": "src/creator-finish.ts",
+      "from": "        deps.measuring.noteFinished(minted.id);",
       "to": ""
     },
     {
