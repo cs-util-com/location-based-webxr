@@ -38,20 +38,18 @@ import {
   DEFAULT_TERRARIUM_ZOOM,
   fromWorldPixel,
   toWorldPixel,
-  type ElevationProvider,
-  type EnuFrame,
-  type LatLng,
-} from "gps-plus-slam-osm";
+} from "./terrarium.js";
+import type { ElevationProvider } from "./elevation-provider.js";
+import type { EnuFrame } from "../mesh/enu.js";
+import type { LatLng } from "../model/osm-feature.js";
 
 import {
   NEAR_FIELD_M,
+  isMeasured,
   peakToTrough,
-  type EnuPoint,
   type HeightfieldData,
 } from "./heightfield.js";
-// The sign of the absolute datum, owned and tested in one place. Importing it
-// here rather than writing `-x` inline is the whole reason it exists.
-import { absoluteDatumFor } from "./ar-origin.js";
+import type { EnuPoint } from "../mesh/enu.js";
 
 /**
  * Posts kept before the furthest are evicted.
@@ -222,6 +220,55 @@ export function latticeWindow(
   return { origin: nearestPixel(centre, zoom), reach };
 }
 
+/**
+ * The datum an absolute (ellipsoidal) field asks for, given the geoid
+ * undulation at the origin.
+ *
+ * Returns the value `sampleGrid`'s datum takes, so the caller never has to
+ * remember the sign. `heightAt` computes `surfaceHeight − datum`, so
+ * producing an ellipsoidal height from an orthometric DEM means subtracting
+ * `−N`, i.e. the datum is the NEGATED undulation.
+ *
+ * **The sign is the whole content of this function and the reason it exists.**
+ * Getting it backwards puts the city ~2N — about 94 m at Cologne — out of
+ * place, in the direction that reads as a GPS+SLAM fusion bug rather than as an
+ * elevation one, which is a much more expensive place to go looking. That
+ * warning is `geoid.ts`'s, and it is why this package pays for a function
+ * instead of a minus sign at the call site. (Moved here from OsmDemo's
+ * `ar-origin.ts` with the field, globe city plan 2026-10-05-0040 §14 L1.)
+ *
+ * ⚠️ **THIS FUNCTION IS HALF OF A HANDSHAKE, and the other half is untested.**
+ * Converting the DEM to ellipsoidal is only correct because the frame it has to
+ * meet — the AR fusion's Up axis — is ellipsoidal too, and that is true only
+ * because Android/Chrome reports `GeolocationCoordinates.altitude` against the
+ * ellipsoid. If a platform's altitude turns out to be orthometric, this
+ * conversion doubles the error rather than cancelling it; fix that at the
+ * sensor boundary so this function keeps its single, checkable meaning.
+ */
+/** The grid a field answers with before it holds any height. */
+function noField(
+  total: number,
+  extentM: number,
+  centreEnu: EnuPoint,
+): HeightfieldData {
+  return {
+    heights: new Float32Array(0),
+    side: 0,
+    extentM,
+    centreEnu,
+    datum: 0,
+    hasData: false,
+    missing: total,
+    total,
+    reliefM: 0,
+    nearReliefM: 0,
+  };
+}
+
+export function absoluteDatumFor(undulationMetres: number): number {
+  return -undulationMetres;
+}
+
 export function createTerrainField(options: TerrainFieldOptions): TerrainField {
   const { provider } = options;
   const zoom = options.zoom ?? DEFAULT_TERRARIUM_ZOOM;
@@ -296,20 +343,7 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
     const { origin, reach } = latticeWindow(centre, radiusM, zoom);
 
     const viewPosts = (2 * reach + 1) ** 2;
-    const missing: { x: number; y: number }[] = [];
-    for (let dy = -reach; dy <= reach; dy++) {
-      for (let dx = -reach; dx <= reach; dx++) {
-        const x = origin.x + dx;
-        const y = origin.y + dy;
-        // Already held — the whole point. Standing still costs nothing.
-        //
-        // EXCEPT a post we INVENTED. A mean-filled post is not an answer, it is
-        // a placeholder that happens to be stored the same way, and skipping it
-        // here is what made the wrong height permanent.
-        if (posts.has(key(x, y)) && !meanFilled.has(key(x, y))) continue;
-        missing.push({ x, y });
-      }
-    }
+    const missing = missingPosts(origin, reach);
     lastWindow = { origin, reach };
     if (missing.length === 0) {
       evictBeyond(origin, viewPosts);
@@ -335,11 +369,46 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
       return;
     }
 
+    if (!storePosts(missing, heights)) return;
+
+    evictBeyond(origin, viewPosts);
+  }
+
+  /** The window's posts not yet held, or held only as a mean fill. */
+  function missingPosts(
+    origin: { x: number; y: number },
+    reach: number,
+  ): { x: number; y: number }[] {
+    const missing: { x: number; y: number }[] = [];
+    for (let dy = -reach; dy <= reach; dy++) {
+      for (let dx = -reach; dx <= reach; dx++) {
+        const x = origin.x + dx;
+        const y = origin.y + dy;
+        // Already held — the whole point. Standing still costs nothing.
+        //
+        // EXCEPT a post we INVENTED. A mean-filled post is not an answer, it is
+        // a placeholder that happens to be stored the same way, and skipping it
+        // here is what made the wrong height permanent.
+        if (posts.has(key(x, y)) && !meanFilled.has(key(x, y))) continue;
+        missing.push({ x, y });
+      }
+    }
+    return missing;
+  }
+
+  /**
+   * Stores a batch's heights; a gap takes the batch's mean and is marked so
+   * a later load replaces it. False when the batch measured nothing.
+   */
+  function storePosts(
+    missing: readonly { x: number; y: number }[],
+    heights: readonly (number | undefined)[],
+  ): boolean {
     const known: number[] = [];
     for (const height of heights) {
       if (height !== undefined && Number.isFinite(height)) known.push(height);
     }
-    if (known.length === 0) return;
+    if (known.length === 0) return false;
     anyData = true;
     // Missing posts take the mean of what arrived — NOT zero. See the module
     // header of `heightfield.ts`: zero is sea level, and a sea-level hole reads
@@ -368,8 +437,7 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
         upgraded.delete(postKey);
       }
     });
-
-    evictBeyond(origin, viewPosts);
+    return true;
   }
 
   /**
@@ -466,45 +534,10 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
     // 13 posts, not 12. Off by one here tilts the whole surface.
     const side = Math.max(2, Math.round((extentM * 2) / spacingM) + 1);
     const total = side * side;
-    const heights = new Float32Array(total);
-
-    const values: number[] = [];
-    /** The same, restricted to the near field — see `nearReliefM`. */
-    const near: number[] = [];
-    for (let row = 0; row < side; row++) {
-      for (let col = 0; col < side; col++) {
-        const enu = {
-          x: centreEnu.x - extentM + (col / (side - 1)) * extentM * 2,
-          y: centreEnu.y - extentM + (row / (side - 1)) * extentM * 2,
-        };
-        const height = heightAtPosition(frame.toLatLng(enu));
-        if (height !== undefined) {
-          values.push(height);
-          if (isNearField(enu, centreEnu)) near.push(height);
-        }
-        // NaN, NOT 0, and the difference is the whole gap-fill below. Zero is
-        // finite, so `?? 0` sailed straight through the `!Number.isFinite`
-        // repair and every uncovered post stayed at sea level — a ~53 m pit at
-        // Cologne after the datum subtraction, shaped exactly like whatever
-        // outage produced it, published as real terrain with the buildings sunk
-        // into it. Raised in review on PR #231.
-        heights[row * side + col] = height ?? Number.NaN;
-      }
-    }
+    const { heights, values, near } = walkGrid(frame, side, extentM, centreEnu);
 
     if (!anyData || values.length === 0) {
-      return {
-        heights: new Float32Array(0),
-        side: 0,
-        extentM,
-        centreEnu,
-        datum: 0,
-        hasData: false,
-        missing: total,
-        total,
-        reliefM: 0,
-        nearReliefM: 0,
-      };
+      return noField(total, extentM, centreEnu);
     }
 
     // Gaps inside the grid take the mean of what was found, for the same reason
@@ -552,6 +585,44 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
     };
   }
 
+  /**
+   * The grid's heights at the held posts (NaN where none), every height
+   * found, and those within the near field.
+   */
+  function walkGrid(
+    frame: EnuFrame,
+    side: number,
+    extentM: number,
+    centreEnu: EnuPoint,
+  ): { heights: Float32Array; values: number[]; near: number[] } {
+    const heights = new Float32Array(side * side);
+
+    const values: number[] = [];
+    /** The same, restricted to the near field — see `nearReliefM`. */
+    const near: number[] = [];
+    for (let row = 0; row < side; row++) {
+      for (let col = 0; col < side; col++) {
+        const enu = {
+          x: centreEnu.x - extentM + (col / (side - 1)) * extentM * 2,
+          y: centreEnu.y - extentM + (row / (side - 1)) * extentM * 2,
+        };
+        const height = heightAtPosition(frame.toLatLng(enu));
+        if (height !== undefined) {
+          values.push(height);
+          if (isNearField(enu, centreEnu)) near.push(height);
+        }
+        // NaN, NOT 0, and the difference is the whole gap-fill below. Zero is
+        // finite, so `?? 0` sailed straight through the `!Number.isFinite`
+        // repair and every uncovered post stayed at sea level — a ~53 m pit at
+        // Cologne after the datum subtraction, shaped exactly like whatever
+        // outage produced it, published as real terrain with the buildings sunk
+        // into it. Raised in review on PR #231.
+        heights[row * side + col] = height ?? Number.NaN;
+      }
+    }
+    return { heights, values, near };
+  }
+
   /** Every held post as a position, in map order. */
   function heldPositions(): readonly LatLng[] {
     return [...posts.keys()].map((postKey) => {
@@ -586,7 +657,7 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
     const incoming = new Map<string, number>();
     positions.forEach((position, index) => {
       const height = heights[index];
-      if (height === undefined || !Number.isFinite(height)) return;
+      if (!isMeasured(height)) return;
       const pixel = pixelOf(position);
       incoming.set(key(pixel.x, pixel.y), height);
     });
@@ -601,7 +672,22 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
       if (posts.has(postKey)) pendingUpgrade.set(postKey, height);
     }
 
-    const { origin, reach } = lastWindow;
+    if (!windowUpgraded(lastWindow)) return false;
+
+    if (applyUpgrade() === 0) return false;
+    anyData = true;
+    return true;
+  }
+
+  /**
+   * Whether every held post of `window` would come from the upgraded
+   * source: pending in this upgrade, or upgraded earlier.
+   */
+  function windowUpgraded(window: {
+    origin: { x: number; y: number };
+    reach: number;
+  }): boolean {
+    const { origin, reach } = window;
     for (let dy = -reach; dy <= reach; dy++) {
       for (let dx = -reach; dx <= reach; dx++) {
         const postKey = key(origin.x + dx, origin.y + dy);
@@ -613,7 +699,11 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
         return false;
       }
     }
+    return true;
+  }
 
+  /** Writes the pending upgrade into the held posts; the count written. */
+  function applyUpgrade(): number {
     // COUNTED, so the return value cannot claim a change that did not happen.
     // Every pending post can legitimately be absent from `posts` by now — the
     // eviction pass runs between an upgrade being asked for and arriving — and
@@ -629,9 +719,7 @@ export function createTerrainField(options: TerrainFieldOptions): TerrainField {
       written += 1;
     }
     pendingUpgrade.clear();
-    if (written === 0) return false;
-    anyData = true;
-    return true;
+    return written;
   }
 
   return {

@@ -73,6 +73,10 @@ const entryFiles = [
   "src/elevation/terrarium.ts",
   "src/elevation/opentopodata-provider.ts",
   "src/elevation/geoid.ts",
+  // The terrain height field (globe city plan 2026-10-05-0040 §14 L1).
+  "src/elevation/heightfield.ts",
+  "src/elevation/terrain-field.ts",
+  "src/elevation/terrain-window.ts",
   // The EGM96 grid is ~170 KB and is NOT in the elevation barrel, so an app
   // that does not need absolute heights never pays for it. Own entry point.
   "src/elevation/egm96.ts",
@@ -80,6 +84,13 @@ const entryFiles = [
 
   // mesh/ — OSM features to renderable geometry, as plain typed arrays
   "src/mesh/index.ts",
+  "src/mesh/city.ts",
+  "src/mesh/shell-rand.ts",
+
+  // three/ - the city as three.js objects, its own entry so the core stays
+  // three-free (globe city plan 2026-10-05-0040 §14 L5).
+  "src/three/index.ts",
+  "src/three/city-objects.ts",
   "src/mesh/enu.ts",
   "src/mesh/triangulate.ts",
   "src/mesh/building-heights.ts",
@@ -102,6 +113,6 @@ export default defineConfig({
     // h3-js is a peer dependency: it must resolve to the consumer's copy, not a
     // second bundled one. Two h3-js instances would silently produce two
     // incompatible cell-index universes.
-    neverBundle: ["h3-js"],
+    neverBundle: ["h3-js", "three"],
   },
 });

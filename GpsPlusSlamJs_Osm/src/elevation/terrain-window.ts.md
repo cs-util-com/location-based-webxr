@@ -1,5 +1,12 @@
 # `terrain-window.ts` — where the terrain is sampled, and in whose coordinates
 
+> **In the Osm library since 2026-10-06** (moved from OsmDemo, globe city plan
+> 2026-10-05-0040 §14 L1: the globe's city is the library's second consumer,
+> so the height field it shares with OsmDemo lives here). "The demo" and "the
+> worker" below are OsmDemo, its first consumer; tests named below that are
+> not in this folder (`far-field.test.ts`, `heightfield.plane.test.ts`, the
+> worker's) stay in OsmDemo, since they need three.js or the app.
+
 ## Purpose
 
 Decide, for one terrain load, **which post lattice to grow** and **which frame

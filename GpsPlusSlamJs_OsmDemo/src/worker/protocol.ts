@@ -41,7 +41,7 @@ import type { RoutePoint } from "../agent-route.js";
 import type { DemoSnapshot } from "../demo-pipeline.js";
 import type { WorkerStageTimings } from "../click-timings.js";
 import type { GeoEventStats } from "../geo-event-stats.js";
-import type { HeightfieldData } from "../heightfield.js";
+import type { HeightfieldData } from "gps-plus-slam-osm";
 
 /**
  * A built mesh plus the counters the status line reports.

@@ -21,8 +21,9 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { enuFrameAt } from "gps-plus-slam-osm";
-import type { ElevationProvider, LatLng } from "gps-plus-slam-osm";
+import { enuFrameAt } from "../mesh/enu.js";
+import type { ElevationProvider } from "./elevation-provider.js";
+import type { LatLng } from "../model/osm-feature.js";
 
 import {
   buildHeightfield,

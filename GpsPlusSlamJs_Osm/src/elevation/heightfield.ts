@@ -24,13 +24,9 @@
  * @see heightfield.ts.md
  */
 
-import type { ElevationProvider, EnuFrame, LatLng } from "gps-plus-slam-osm";
-
-/** A point in the frame's ENU metres. Structural, so nothing imports three. */
-export interface EnuPoint {
-  readonly x: number;
-  readonly y: number;
-}
+import type { ElevationProvider } from "./elevation-provider.js";
+import type { EnuFrame, EnuPoint } from "../mesh/enu.js";
+import type { LatLng } from "../model/osm-feature.js";
 
 /** The window centred on the frame origin — the shape before it could move. */
 const AT_ORIGIN: EnuPoint = { x: 0, y: 0 };
@@ -170,6 +166,15 @@ export const NEAR_FIELD_M = 300;
  */
 export const TERRAIN_EXTENT_M = 2400;
 
+/**
+ * Metres between terrain posts. Terrarium z13 is ~12 m per pixel at Cologne's
+ * latitude. Sampling finer would interpolate detail the DEM never had;
+ * sampling coarser would throw away detail already fetched. (Moved here from
+ * OsmDemo's `building-view.ts`, which is three.js, so the field's two
+ * numbers live together; globe city plan 2026-10-05-0040 §14 L1.)
+ */
+export const TERRAIN_SPACING_M = 12;
+
 export interface Heightfield extends HeightfieldData {
   /** Relief in metres at an ENU point, relative to the frame origin. */
   heightAt(point: { x: number; y: number }): number;
@@ -252,6 +257,48 @@ export function createHeightfieldCache(): (
   };
 }
 
+/** A provider's answer for one post: a finite height, not a gap. */
+export function isMeasured(value: number | undefined): value is number {
+  return value !== undefined && Number.isFinite(value);
+}
+
+/**
+ * The posts' heights, a gap filled with `mean`, and the measured posts
+ * within `NEAR_FIELD_M` of `centreEnu`, collected as the grid is walked
+ * rather than re-derived afterwards: the row/col to ENU mapping (`enuOf`)
+ * is stated once and deriving it a second time is how the two drift.
+ */
+function fillPosts(
+  raw: readonly (number | undefined)[],
+  side: number,
+  mean: number,
+  enuOf: (index: number) => EnuPoint,
+  centreEnu: EnuPoint,
+): { heights: Float32Array; near: number[] } {
+  const total = side * side;
+  const heights = new Float32Array(total);
+  const near: number[] = [];
+  for (let i = 0; i < total; i++) {
+    const value = raw[i];
+    if (!isMeasured(value)) {
+      heights[i] = mean;
+      continue;
+    }
+    heights[i] = value;
+    const enu = enuOf(i);
+    // AROUND THE WINDOW'S CENTRE (DEC-R11-10), which is where the user is —
+    // the status line says "relief around you" and measuring it around a scene
+    // anchor they walked away from makes that sentence false.
+    if (
+      Math.abs(enu.x - centreEnu.x) <= NEAR_FIELD_M &&
+      Math.abs(enu.y - centreEnu.y) <= NEAR_FIELD_M
+    ) {
+      near.push(value);
+    }
+  }
+  return { heights, near };
+}
+
 /**
  * Loads a heightfield over a square centred on the frame's origin.
  *
@@ -293,35 +340,20 @@ export async function buildHeightfieldData(
     return flat(total, extentM, centreEnu);
   }
 
-  const known = raw.filter(
-    (v): v is number => v !== undefined && Number.isFinite(v),
-  );
+  const known = raw.filter(isMeasured);
   if (known.length === 0) return flat(total, extentM, centreEnu);
 
   // Missing posts take the mean of what did arrive. Not zero — see the module
   // header — and not a neighbour scan either: at this grid size the mean keeps
   // the surface continuous without inventing a slope the data never showed.
   const mean = known.reduce((sum, v) => sum + v, 0) / known.length;
-  const heights = new Float32Array(total);
-  // The posts within `NEAR_FIELD_M` of the origin, collected as the grid is
-  // walked rather than re-derived afterwards — the row/col to ENU mapping is
-  // stated once above and deriving it a second time is how the two drift.
-  const near: number[] = [];
-  for (let i = 0; i < total; i++) {
-    const value = raw[i];
-    heights[i] = value === undefined || !Number.isFinite(value) ? mean : value;
-    if (value === undefined || !Number.isFinite(value)) continue;
-    const enu = enuAt(i % side, Math.floor(i / side));
-    // AROUND THE WINDOW'S CENTRE (DEC-R11-10), which is where the user is —
-    // the status line says "relief around you" and measuring it around a scene
-    // anchor they walked away from makes that sentence false.
-    if (
-      Math.abs(enu.x - centreEnu.x) <= NEAR_FIELD_M &&
-      Math.abs(enu.y - centreEnu.y) <= NEAR_FIELD_M
-    ) {
-      near.push(value);
-    }
-  }
+  const { heights, near } = fillPosts(
+    raw,
+    side,
+    mean,
+    (i) => enuAt(i % side, Math.floor(i / side)),
+    centreEnu,
+  );
 
   return {
     heights,

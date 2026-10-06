@@ -1,5 +1,12 @@
 # `terrain-field.ts`
 
+> **In the Osm library since 2026-10-06** (moved from OsmDemo, globe city plan
+> 2026-10-05-0040 §14 L1: the globe's city is the library's second consumer,
+> so the height field it shares with OsmDemo lives here). "The demo" and "the
+> worker" below are OsmDemo, its first consumer; tests named below that are
+> not in this folder (`far-field.test.ts`, `heightfield.plane.test.ts`, the
+> worker's) stay in OsmDemo, since they need three.js or the app.
+
 ## Purpose
 
 The session's terrain cache: one growing lattice of height posts on the DEM's own
@@ -38,6 +45,7 @@ pixel grid, fetched once each and reused as the user moves.
       and functions do not survive a structured clone; the page samples `N` once
       at the frame origin, which is uniform to ~5 cm across a city.
   - `postCount` — held posts, so the eviction bound is testable.
+- `absoluteDatumFor(undulationMetres)` → `-undulationMetres`: the datum an absolute (ellipsoidal) field asks for. The sign is the whole content; getting it backwards puts a city ~2N (about 94 m at Cologne) out of place. Moved here from OsmDemo's `ar-origin.ts`, which re-exports it.
 - `latticeWindow(centre, radiusM, zoom = DEFAULT_TERRARIUM_ZOOM)` →
   `{ origin, reach }` - the square of integer lattice pixels `ensureAround`
   covers (`reach` = `ceil(radiusM / metres per pixel) + 1`, `origin` the

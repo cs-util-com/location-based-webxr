@@ -1,5 +1,12 @@
 # `heightfield.ts`
 
+> **In the Osm library since 2026-10-06** (moved from OsmDemo, globe city plan
+> 2026-10-05-0040 §14 L1: the globe's city is the library's second consumer,
+> so the height field it shares with OsmDemo lives here). "The demo" and "the
+> worker" below are OsmDemo, its first consumer; tests named below that are
+> not in this folder (`far-field.test.ts`, `heightfield.plane.test.ts`, the
+> worker's) stay in OsmDemo, since they need three.js or the app.
+
 **Purpose.** Fetch terrain elevation once for the area around the user and expose it as a synchronous relative-height sampler the mesh build can call per building.
 
 ## Public API
@@ -14,6 +21,7 @@
   - `heightAt` is **relative** to the datum (the height at `centreEnu`) and always finite. It takes ENU in the SCENE’s frame and subtracts `centreEnu` itself, so every caller — buildings, trees, POI markers, the ground plane, the affordance grid — passes plain ENU and none of them has to know where the window is sitting.
   - `hasData: false` means flat zero everywhere.
   - `reliefM` is peak-to-trough across the field; `nearReliefM` is the same within `NEAR_FIELD_M` of `centreEnu` — i.e. of the USER (DEC-R11-10), not of the frame origin, or the status line’s “relief around you” describes somewhere they walked away from (DEC-R2-22 — over a 2.8 km field the whole-field number stops describing the ground the user is standing on).
+- `TERRAIN_SPACING_M = 12` - metres between posts, the Terrarium z13 pitch (~12 m at Cologne). Moved here from OsmDemo's `building-view.ts` (three.js) with the field, so its two numbers live together.
 - `TERRAIN_EXTENT_M = 2400` — half-width of the ground plane and of the terrain sampled under it, i.e. a 4.8 km square. **It is exactly `FAR_PLANE_M`, and that is a constraint rather than a coincidence** (W5, DEC-R5-3/R5-12): the plane ends here, so a camera that can see further looks past the edge of the world. `far-field.test.ts` asserts `FAR_PLANE_M <= TERRAIN_EXTENT_M` so the two cannot be edited apart. Was 600 m (DEC-15), then 1400 m (DEC-R2-8, sized to the rendered geometry). **Moved here from `building-view.ts` on 2026-07-31** because the worker also needs it (to clip ground plates before triangulating) and must not import three.
 - `NEAR_FIELD_M = 300` — radius treated as "around the user" for `nearReliefM`. Always lived here; listed now because PR #237 pointed out neither constant was.
 - `peakToTrough(values)` — a fold, never a spread into `Math.max`, which throws above ~100 k elements. Exported because `terrain-field.ts` needs exactly this and two copies is two chances for someone to "simplify" one back into a spread.

@@ -25,7 +25,8 @@
 
 import { describe, it, expect } from "vitest";
 
-import { enuFrameAt, type ElevationProvider } from "gps-plus-slam-osm";
+import { enuFrameAt } from "../mesh/enu.js";
+import type { ElevationProvider } from "./elevation-provider.js";
 
 import { createTerrainField } from "./terrain-field.js";
 

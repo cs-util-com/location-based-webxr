@@ -1,4 +1,9 @@
-# `worker/shell-rand.ts`
+# `shell-rand.ts`
+
+> In the Osm library since 2026-10-06 (moved from OsmDemo's `worker/` with
+> `buildCity`, globe city plan 2026-10-05-0040 §14 L3). Its one caller is
+> `city.ts`; OsmDemo's `mesh-shell-attributes.test.ts` still checks the shell
+> attributes it feeds end to end.
 
 ## Purpose
 

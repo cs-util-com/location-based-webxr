@@ -71,10 +71,13 @@ The files (bytes, first 16 hex digits of the SHA-256):
 - Source and encoding: as above (AWS Open Data Terrain Tiles, Terrarium).
 - Fetched: 2026-09-28 with `curl`, byte for byte (`Last-Modified`
   2017-11-15 for every tile). Not re-encoded.
-- Cropped to the region: the 9 tiles `regionTiles` asks for at z8 for the
+- Cropped to the region: the 12 tiles `regionTiles` asks for at z8 for the
   256 km region around 53.75° N, 9.14° E (the middle of tile 134/82) plus
   its 8 km padding ring; the pipeline test holds the set to the lab's own
-  projection.
+  projection. It was 9 until 2026-10-06, when the ENU frame took the AR
+  core's metres a degree (globe city plan 2026-10-05-0040 §14 L0): the
+  region's north edge moved about 0.4 km north in degrees and crossed into
+  row 80, fetched the same day the same way (`Last-Modified` 2017-11-15).
 - Zoom 8 only. Land: SRTM (NASA/NGA, distributed by the USGS), public
   domain, as for the Alps. The North Sea and the Baltic in these tiles
   carry the tile set's bathymetry (ETOPO1, NOAA), so the region has posts
@@ -85,18 +88,21 @@ The files (bytes, first 16 hex digits of the SHA-256):
 
 The files (bytes, first 16 hex digits of the SHA-256):
 
+- `terrarium/8/133/80.png`: 69908 bytes, `d0f83d590f3af8c3`
 - `terrarium/8/133/81.png`: 74918 bytes, `0f5032cd699bc79c`
 - `terrarium/8/133/82.png`: 64300 bytes, `ffb76831d200e325`
 - `terrarium/8/133/83.png`: 40980 bytes, `0eac8fcc9f91d6a3`
+- `terrarium/8/134/80.png`: 56898 bytes, `be6ceb05059462a3`
 - `terrarium/8/134/81.png`: 58224 bytes, `5441d22543efd96c`
 - `terrarium/8/134/82.png`: 53955 bytes, `b2e741f7b95f2fe4`
 - `terrarium/8/134/83.png`: 43885 bytes, `ec324c804ea0d5ad`
+- `terrarium/8/135/80.png`: 84321 bytes, `bbdc9879f199fb1f`
 - `terrarium/8/135/81.png`: 83835 bytes, `efb1373745a420b0`
 - `terrarium/8/135/82.png`: 53760 bytes, `dca499543e668542`
 - `terrarium/8/135/83.png`: 48383 bytes, `41ae7d9a83e46d81`
-- Total: 522240 bytes (510 KiB).
+- Total: 733367 bytes (716 KiB).
 
-All three places together: 2063373 bytes (2.0 MB).
+All three places together: 2274500 bytes (2.2 MB).
 
 ## The GPS place
 

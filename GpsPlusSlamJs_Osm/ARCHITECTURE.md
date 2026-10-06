@@ -36,7 +36,7 @@ the user walks into the woods and loses signal. The limits of that are §6.
 
 ```mermaid
 flowchart TB
-  subgraph pkg["🟩 gps-plus-slam-osm — pure data, no Three.js, no framework"]
+  subgraph pkg["🟩 gps-plus-slam-osm — pure data (Three.js only in the opt-in ./three entry), no framework"]
     direction TB
     src["source/<br/>Overpass, caching, budget"]
     model["model/<br/>parse, geometry, tags"]

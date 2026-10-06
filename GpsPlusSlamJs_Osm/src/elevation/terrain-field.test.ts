@@ -22,12 +22,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import {
-  DEFAULT_TERRARIUM_ZOOM,
-  enuFrameAt,
-  toWorldPixel,
-} from "gps-plus-slam-osm";
-import type { ElevationProvider, LatLng } from "gps-plus-slam-osm";
+import { DEFAULT_TERRARIUM_ZOOM, toWorldPixel } from "./terrarium.js";
+import { enuFrameAt } from "../mesh/enu.js";
+import type { ElevationProvider } from "./elevation-provider.js";
+import type { LatLng } from "../model/osm-feature.js";
 
 import { createTerrainField } from "./terrain-field.js";
 import { heightfieldFrom } from "./heightfield.js";

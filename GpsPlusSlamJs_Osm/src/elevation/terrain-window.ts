@@ -28,7 +28,8 @@
  * @see terrain-window.ts.md
  */
 
-import { enuFrameAt, type EnuFrame, type LatLng } from "gps-plus-slam-osm";
+import { enuFrameAt, type EnuFrame } from "../mesh/enu.js";
+import type { LatLng } from "../model/osm-feature.js";
 
 /**
  * How far past the sampled square the post lattice is grown.
