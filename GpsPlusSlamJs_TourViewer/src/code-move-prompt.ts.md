@@ -74,14 +74,10 @@ The prompt asks only when ALL of these hold:
   count that went down (a new session's store) starts the count again;
 - no remembered answer for that level AND that saved pose lies within
   `sameSpotM` of the offset (M5b review #2). An offset is FROM the saved
-  position of the time: after a replace the same offset names another
-  place, so answers given against the old pose stop counting; an Undo
-  restores the old pose, its key, and so its answers. A distance rather than bands: a band edge would ask again for a
+  position of the time: after a new saved position the same offset names another place, so answers given against the old pose stop counting. A distance rather than bands: a band edge would ask again for a
   spot that GPS noise moved across it.
 
-What the tracker does NOT decide: "Use the new spot" counts as answered
-only once the replace happened (the setup checks `measureCode`'s
-outcome; §7j #10), and the undo counts the spot as "Not now".
+What the tracker does NOT decide: what a "Yes, it moved" does (UI round 1, U3). The settle reads it through `answerAtSpot` and saves the new spot once the visit walked enough (`code-position-settle.ts`); an Undo before the settle re-answers the spot "Not now". `answerAtSpot(answers, { levelId, savedKey, offset }, sameSpotM?)` returns the newest covering "moved" or "second-copy", else null.
 
 ## The trigger (D26; real recordings)
 

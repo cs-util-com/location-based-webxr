@@ -89,3 +89,49 @@ export function qualityOfLevel(json: string): PositionQuality {
     return { extentM: null, accuracyM: null };
   }
 }
+
+/** What one settle decided for the code, for the result screen. */
+export interface CodePositionOutcome {
+  readonly decision: CodePositionDecision;
+  /** The change was made (the re-mint succeeded). */
+  readonly applied: boolean;
+  /** This visit's measurement quality (for "walk about N m"). */
+  readonly candidate: PositionQuality;
+}
+
+/**
+ * The result screen's line about the code's position since the last
+ * Finish (UI round 1, U3: no button announces it any more, so the result
+ * says which happened and why). An applied change outranks any later
+ * "kept"; otherwise the latest outcome speaks. A position kept because it
+ * was good already, or left to the move question, says nothing.
+ */
+export function codePositionSentence(
+  outcomes: readonly CodePositionOutcome[],
+): string {
+  const changed = outcomes.filter(
+    (o) =>
+      o.applied &&
+      (o.decision.kind === "replace" || o.decision.kind === "move"),
+  );
+  if (changed.some((o) => o.decision.kind === "replace")) {
+    return "The code's saved position was improved by this walk; pins and photos within 40 m moved with it.";
+  }
+  if (changed.length > 0) {
+    return "The code's saved position moved to the poster's new spot; pins and photos kept their places.";
+  }
+  const latest = outcomes.at(-1);
+  if (latest === undefined) return "";
+  const { decision } = latest;
+  if (decision.kind === "move-waits") {
+    return `The poster's move is not saved yet: walk about ${String(Math.round(decision.walkMoreM))} m more in AR after seeing the code, then finish again.`;
+  }
+  if (decision.kind === "keep" && decision.reason === "not-walked") {
+    const needed = Math.max(
+      MIN_RELIABLE_WALK_M,
+      walkNeededM(latest.candidate.accuracyM ?? 5),
+    );
+    return `The code's saved position was kept: walk about ${String(Math.round(needed))} m in AR after seeing the code to improve it.`;
+  }
+  return "";
+}

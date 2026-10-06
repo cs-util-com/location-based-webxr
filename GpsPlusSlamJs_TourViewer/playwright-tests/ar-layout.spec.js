@@ -133,12 +133,12 @@ for (const viewport of PHONES) {
 }
 
 for (const viewport of PHONES) {
-  test(`every AR panel control fits a ${viewport.width}x${viewport.height} screen, with an object selected through the chooser and the code's re-measure offered`, async ({
+  test(`every AR panel control fits a ${viewport.width}x${viewport.height} screen, with an object selected through the chooser`, async ({
     page,
   }) => {
     // The editing state (authoring plan 2026-09-28-0953 M4; review #4): a
-    // hosted tour reopened, its stored code measured again (so "Re-measure
-    // the code" is offered), and the hosted pin selected with the AR
+    // hosted tour reopened, its stored code measured again, and the hosted
+    // pin selected with the AR
     // chooser - the selected row's Edit / Move / Delete / Done, the
     // chooser's own line, the placement controls and the recording marker
     // together. The previous layout test never reached this state.
@@ -177,7 +177,6 @@ for (const viewport of PHONES) {
     });
     await page.getByTestId("setup-mint").click();
     await expect(page.getByTestId("setup-pin")).toBeEnabled();
-    await expect(page.getByTestId("replace-code")).toBeVisible();
 
     await page.getByTestId("object-next").click();
     const selected = page.locator(

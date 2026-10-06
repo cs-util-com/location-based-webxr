@@ -149,7 +149,6 @@
       #setup-panel,
       #setup-controls,
       #object-list,
-      #replace-code-confirm,
       #move-prompt,
       #move-undo,
       #draft-offer,
@@ -1186,8 +1185,9 @@
             </div>
             <div id="setup-controls" data-testid="setup-controls" hidden>
               <!-- The moved-code prompt (authoring plan 2026-09-28-0953
-                   §3.6, D20, M5b): asked once a refusal of the code in hand
-                   has lasted; creator-setup.ts decides when it shows. -->
+                   §3.6, D20, M5b; UI round 1, U3): "Did the poster move
+                   here?" - the one question about the code's position
+                   left; creator-setup.ts decides when it shows. -->
               <div
                 id="move-prompt"
                 data-testid="move-prompt"
@@ -1201,9 +1201,8 @@
                   id="move-prompt-use"
                   class="btn btn--prose"
                   data-testid="move-prompt-use"
-                  disabled
                 >
-                  Use the new spot
+                  Yes, it moved
                 </button>
                 <button
                   type="button"
@@ -1211,7 +1210,7 @@
                   class="btn"
                   data-testid="move-prompt-copy"
                 >
-                  It's a second copy
+                  No, it's a second poster
                 </button>
                 <button
                   type="button"
@@ -1231,48 +1230,6 @@
               >
                 Save the measured position
               </button>
-              <!-- The explicit replace of a STORED code pose (authoring plan
-                   2026-09-28-0953 §3.4, M4): without it a new measurement
-                   of a stored code only corrects this visit (D10b). A
-                   confirm step first - it moves the code for every
-                   visitor. creator-setup.ts decides when it shows. -->
-              <button
-                type="button"
-                id="replace-code"
-                class="btn btn--prose"
-                data-testid="replace-code"
-                hidden
-                disabled
-              >
-                Replace the code's saved position
-              </button>
-              <div
-                id="replace-code-confirm"
-                data-testid="replace-code-confirm"
-                hidden
-              >
-                <p
-                  id="replace-code-confirm-text"
-                  data-testid="replace-code-confirm-text"
-                ></p>
-                <button
-                  type="button"
-                  id="replace-code-yes"
-                  class="btn btn--prose"
-                  data-testid="replace-code-yes"
-                  disabled
-                >
-                  Replace the saved position
-                </button>
-                <button
-                  type="button"
-                  id="replace-code-no"
-                  class="btn"
-                  data-testid="replace-code-no"
-                >
-                  Keep the saved position
-                </button>
-              </div>
               <!-- Placement (M4): a pin at the reticle with a typed label
                    (the input is an overlay control: window.prompt is
                    unavailable in an XR session), a photo of the current

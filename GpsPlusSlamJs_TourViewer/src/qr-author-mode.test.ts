@@ -28,7 +28,6 @@ import {
   adoptedSizeNote,
   codeTourLine,
   correctionRefusedLine,
-  replaceCodeConfirmText,
   type AuthorPipelineDeps,
 } from "./qr-author-mode";
 
@@ -776,36 +775,5 @@ describe("correctionRefusedLine (M2c review #2)", () => {
         maxHorizontalM: 26,
       }),
     ).toMatch(/^Code seen turned 150° from its saved position/);
-  });
-});
-
-describe("replaceCodeConfirmText (M4 review #3)", () => {
-  // Why this matters: the explicit replace moves the code for every
-  // visitor, and visitors are lined up with the code - so notes placed
-  // against the OLD position keep their stored geo but appear shifted by
-  // about the replace's size. "Objects already placed keep their own
-  // positions" was true of the stored numbers and misleading about what a
-  // visitor sees; the creator has to know the size before confirming.
-  it("says how far the code moves and turns, and that earlier notes will appear shifted by about that much", () => {
-    const text = replaceCodeConfirmText({ horizontalM: 3.44, yawDeg: 4.2 });
-    expect(text).toMatch(/Everyone who opens the tour/);
-    expect(text).toMatch(/about 3\.4 m/);
-    expect(text).toMatch(/4°/);
-    expect(text).toMatch(/keep their saved positions/);
-    expect(text).toMatch(/appear shifted by about that much/);
-    expect(text).not.toMatch(/keep their own positions\.$/);
-  });
-
-  it("rounds a large move to whole metres and leaves out a negligible turn", () => {
-    const text = replaceCodeConfirmText({ horizontalM: 23.6, yawDeg: 0.2 });
-    expect(text).toMatch(/about 24 m/);
-    expect(text).not.toMatch(/°/);
-  });
-
-  it("still says what happens to earlier notes when the size is unknown", () => {
-    const text = replaceCodeConfirmText(null);
-    expect(text).toMatch(/Everyone who opens the tour/);
-    expect(text).toMatch(/appear shifted/);
-    expect(text).not.toMatch(/ m /);
   });
 });

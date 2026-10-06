@@ -103,10 +103,7 @@ draft and logs `tourAuthoring/settled`.
     THIS visit (same odometry; the visit's settle re-mints it anyway).
     With a reference kept, the caller keeps it as `mintedLevel`, takes the
     measurement as this visit's sighting, and the visit settles
-    `code-corrected`. Replacing a stored pose on purpose is the explicit
-    "Replace the code's saved position" action in
-    `creator-setup.ts` (plan §3.4, M4), which skips this function with a
-    confirm step first - never a side effect of measuring.
+    `code-corrected`. Whether this visit's view REPLACES a stored pose is decided at the settle (UI round 1, U3: `code-position-settle.ts`, which hands `planVisitSettle` a measurement of the code when it changes) - never a side effect of measuring.
 - `planMove(input & { object, local })` (M4) - an object moved to `local`
   (the reticle, odometry-NUE) in the running visit: its geo recomputed
   through `settleAlignment`'s choice - the D10b code correction when this

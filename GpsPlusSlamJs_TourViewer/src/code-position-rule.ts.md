@@ -27,6 +27,13 @@ buttons and the replace's confirm. Pure.
   - stored position reliable itself: `keep` / `stored-good` (no churn per
     visit);
   - otherwise `replace`.
+- `CodePositionOutcome { decision, applied, candidate }` and
+  `codePositionSentence(outcomes)` - the result screen's line after Finish
+  (no button announces the decision any more): an applied improvement or
+  move outranks a later "kept"; otherwise the latest speaks - "walk about
+  N m in AR after seeing the code" for `not-walked` (N from the walk
+  model) or "walk about N m more" for `move-waits`; `stored-good` and
+  `far` say nothing.
 - `qualityOfLevel(json)` - a saved level's `qr.mintQuality`
   (`alignmentGpsExtentM`, `gpsAccuracyM`, D31); unknown for an older level
   or an unreadable file.
@@ -60,7 +67,7 @@ decideCodePosition({
 
 ## Tests
 
-`code-position-rule.test.ts`: the reliability table, the R1 sweep over
+`code-position-rule.test.ts`: the reliability table, the result line, the R1 sweep over
 accuracy, a property tying `isReliable` to the walk model, each decision
 branch, a property that nothing unreliable ever replaces or moves, and
 `qualityOfLevel` on new, old and broken files.

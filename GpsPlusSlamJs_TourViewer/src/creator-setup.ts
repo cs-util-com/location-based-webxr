@@ -21,11 +21,17 @@ import {
   codeMeasured,
   codeMoveAnswered,
   codeMovePrompted,
-  codeReplaceUndone,
   objectPlaced,
   visitSettled,
 } from "./tour-authoring-actions.js";
 import {
+  codePositionSentence,
+  type CodePositionOutcome,
+} from "./code-position-rule.js";
+import { planCodePosition } from "./code-position-settle.js";
+import { moveWithCode, withinCodeReach } from "./move-with-code.js";
+import {
+  answerAtSpot,
   isSecondCopySpot,
   MOVE_PROMPT_LABELS,
   movePromptText,
@@ -155,6 +161,7 @@ import {
   type VisitLogEntry,
 } from "./visit-log.js";
 import {
+  authoringObjects,
   upsertPlaced,
   wireObjectEditing,
   type AuthoringObject,
@@ -176,7 +183,6 @@ import {
   adoptedSizeNote,
   codeTourLine,
   correctionRefusedLine,
-  replaceCodeConfirmText,
   driveReplaceSteps,
   entryHint,
   finishRoute,
@@ -206,15 +212,8 @@ import type { Wizard } from "./wizard.js";
 const STORED_POSITION_KEPT =
   "Code seen - its saved position stays, and this visit is lined up with it";
 
-/** What a measurement tap became (`measureCode`): the move prompt's
- *  "Use the new spot" counts as answered only on `replaced` (M5b). */
+/** What a measurement became (`measureCode`). */
 type MeasureOutcome =
-  | {
-      readonly kind: "replaced";
-      /** The draft's meta write of the replace: true once the draft holds
-       *  it (or no draft is open), false when the write was refused. */
-      readonly saved: Promise<boolean>;
-    }
   | { readonly kind: "measured" | "kept" | "superseded" }
   | { readonly kind: "failed"; readonly reason: string };
 
@@ -307,24 +306,19 @@ export interface CreatorSetupDom {
   /** The placed objects' list with Edit text, Move and Delete (authoring
    *  plan 2026-09-28-0953 §3.4, M4): `object-list.ts`'s view. */
   objectList: ObjectListView;
-  /** The explicit "Replace the code's saved position"
-   *  (M4; M2c review #5), shown in AR while the level in hand is a stored
-   *  pose, and its confirm step. */
-  replaceCodeButton: HTMLButtonElement;
-  replaceCodeConfirm: HTMLElement;
-  replaceCodeConfirmText: HTMLElement;
-  replaceCodeYes: HTMLButtonElement;
-  replaceCodeNo: HTMLButtonElement;
   /** The moved-code prompt (authoring plan 2026-09-28-0953 §3.6, D20,
-   *  M5b): asked in AR once a refusal of the code in hand has lasted, with
-   *  its three answers (`code-move-prompt.ts` decides when). */
+   *  M5b; UI round 1, U3: "Did the poster move here?"): asked in AR once
+   *  the code in hand has been seen far from its saved spot for long
+   *  enough, with its three answers (`code-move-prompt.ts` decides when).
+   *  The one question about the code's position left (the measure and
+   *  replace buttons are gone, U3). */
   movePrompt: HTMLElement;
   movePromptText: HTMLElement;
   movePromptUse: HTMLButtonElement;
   movePromptCopy: HTMLButtonElement;
   movePromptLater: HTMLButtonElement;
-  /** Undo of a replace of the code's saved position, until Finish - in
-   *  AR and on the page. */
+  /** Undo of a "Yes, it moved" while its visit runs (before the settle
+   *  applies it). */
   moveUndo: HTMLElement;
   moveUndoText: HTMLElement;
   moveUndoButton: HTMLButtonElement;
@@ -1000,52 +994,39 @@ export function wireCreatorSetup(deps: {
     renderAuthorReadout();
   });
 
-  /** Whether the explicit replace's confirm step is open. */
-  let replaceConfirmOpen = false;
-
   // -------------------------------------------------------------------------
-  // The moved-code prompt and the replace's undo (authoring plan
-  // 2026-09-28-0953 §3.6 "Authoring (D20 ask once)", milestone M5b). WHEN it
-  // asks is `code-move-prompt.ts`'s; this is the state and the DOM.
+  // The moved-code prompt (authoring plan 2026-09-28-0953 §3.6 "Authoring
+  // (D20 ask once)", milestone M5b; UI round 1, U3: "Did the poster move
+  // here?"). WHEN it asks is `code-move-prompt.ts`'s; WHAT a "Yes" does is
+  // the settle's (`code-position-settle.ts`): the new spot is saved at the
+  // visit's end once the visit walked enough. This is the state and the DOM.
   // -------------------------------------------------------------------------
 
   /** Where the running offset beyond the prompt's trigger began (the
    *  tracker's state). */
   let moveOnset: MovePromptOnset | null = null;
-  /** The prompt on screen; kept while "Use the new spot" runs. */
+  /** The prompt on screen. */
   let movePrompt: MovePrompt | null = null;
   /** The onset the shown prompt was logged for: one log per ask. */
   let movePromptLogged: MovePromptOnset | null = null;
-  /** "Use the new spot" in flight. */
-  let moveBusy = false;
-  /** "It's a second copy" and "Not now", per level and spot - read from
-   *  the draft's meta at tour open, re-stated by every meta write. */
+  /** Every answer, per level and spot - read from the draft's meta at tour
+   *  open, re-stated by every meta write. */
   let moveAnswers: RememberedMoveAnswer[] = [];
   /** The store's fix count at the last refusal re-evaluation: a new fix
    *  re-judges the latest sighting through the new alignment - the
    *  refusal only, never the earlier objects' frame (§7m #8). */
   let moveFixCount = -1;
-  /** Codes moved to a new spot - by "Use the new spot" or the Replace
-   *  button, any replace (M5b review #3) - by the visit that moved them:
-   *  the visit log's move boundary (§7j #12). */
+  /** Codes moved to the poster's new spot (a "Yes, it moved" the settle
+   *  applied), by the visit that moved them: the visit log's move boundary
+   *  (§7j #12). An improved position of the same poster is no boundary:
+   *  every visit saw that one poster. */
   const movedInVisit = new Map<string, number>();
-  /**
-   * The latest replace of the code's saved position - the prompt's or the
-   * Replace button's - undoable until Finish: the level it replaced (as
-   * `codeMeasured` logs it in `replaced`) and the measurement in hand with
-   * it. `prompt`: the ask it answered, when it came from the prompt.
-   * `boundary`: whether THIS replace set the visit's move boundary (the
-   * visit may already have had one), so an Undo drops only its own.
-   */
-  let undoable: {
-    levelId: string;
-    replaced: { id: string; json: string };
-    priorMeasurement: CodeMeasurement | null;
-    visit: number;
-    prompt: MovePrompt | null;
-    boundary: boolean;
-  } | null = null;
-  let undoBusy = false;
+  /** The latest "Yes, it moved", undoable while its visit runs - the settle
+   *  at the visit's end applies it, and nothing before that has changed. */
+  let undoable: { prompt: MovePrompt; visit: number } | null = null;
+  /** What each settle since the last Finish decided for the code in hand:
+   *  the result screen's line (`codePositionSentence`). */
+  let codePositionOutcomes: CodePositionOutcome[] = [];
 
   /** The store's GPS fix count and the latest fix's own time. */
   function fixClock(): { count: number; lastMs: number | null } {
@@ -1064,7 +1045,6 @@ export function wireCreatorSetup(deps: {
    * the last look, and log a new ask once.
    */
   function updateMovePrompt(): void {
-    if (moveBusy) return;
     const level = ctx.mintedLevel;
     const clock = fixClock();
     if (sessionLive() && clock.count !== moveFixCount) {
@@ -1120,46 +1100,30 @@ export function wireCreatorSetup(deps: {
     }
   }
 
-  /** The prompt and the undo on screen. "Use the new spot" is re-enabled
-   *  by the live readout, with the Replace button's gate. */
+  /** The prompt and the undo on screen. */
   function renderMovePrompt(): void {
     updateMovePrompt();
     dom.movePrompt.hidden = movePrompt === null;
     if (movePrompt !== null) {
       dom.movePromptText.textContent = movePromptText(movePrompt.horizontalM);
     }
-    dom.movePromptUse.textContent = moveBusy
-      ? MOVE_PROMPT_LABELS.using
-      : MOVE_PROMPT_LABELS.use;
-    dom.movePromptUse.disabled = true;
-    dom.movePromptCopy.disabled = moveBusy;
-    dom.movePromptLater.disabled = moveBusy;
-    // Until Finish, and only while the replaced code is still the one in
-    // hand: another code's measurement ends it. NOT while no level is in
-    // hand - a measurement empties it while its identity is computed, and
-    // a render then must not withdraw Undo (M5b review #4); a size change,
-    // which empties it for good, ends Undo itself (`adoptMeasuredSize`).
-    if (
+    dom.movePromptUse.textContent = MOVE_PROMPT_LABELS.use;
+    dom.movePromptCopy.textContent = MOVE_PROMPT_LABELS.secondCopy;
+    dom.movePromptLater.textContent = MOVE_PROMPT_LABELS.notNow;
+    dom.movePromptUse.disabled = false;
+    // Only while the answer's visit runs and has not settled: the settle
+    // applies it, and after that there is nothing left to take back.
+    const live =
       undoable !== null &&
-      ctx.mintedLevel !== null &&
-      ctx.mintedLevel.id !== undoable.levelId
-    ) {
-      undoable = null;
-    }
-    dom.moveUndo.hidden = (undoable === null && !undoBusy) || ctx.finishing;
-    dom.moveUndoText.textContent = MOVE_PROMPT_LABELS.replacedHint;
-    dom.moveUndoButton.textContent = undoBusy
-      ? MOVE_PROMPT_LABELS.undoing
-      : MOVE_PROMPT_LABELS.undo;
-    dom.moveUndoButton.disabled = undoBusy;
+      undoable.visit === ctx.arSessionGeneration &&
+      !visitSettles.has(undoable.visit) &&
+      sessionLive();
+    dom.moveUndo.hidden = !live || ctx.finishing;
+    dom.moveUndoText.textContent = MOVE_PROMPT_LABELS.movedHint;
+    dom.moveUndoButton.textContent = MOVE_PROMPT_LABELS.undo;
   }
 
-  function logMoveAnswer(
-    prompt: MovePrompt,
-    answer: "use-new-spot" | MoveAnswer,
-    replaced: boolean,
-    error: string | null,
-  ): void {
+  function logMoveAnswer(prompt: MovePrompt, answer: MoveAnswer): void {
     arStore.dispatch(
       codeMoveAnswered({
         levelId: prompt.levelId,
@@ -1169,8 +1133,9 @@ export function wireCreatorSetup(deps: {
         horizontalM: prompt.horizontalM,
         northM: prompt.northM,
         eastM: prompt.eastM,
-        replaced,
-        error,
+        // Nothing is replaced at an answer since U3: the settle decides.
+        replaced: false,
+        error: null,
       }),
     );
   }
@@ -1191,180 +1156,37 @@ export function wireCreatorSetup(deps: {
     });
   }
 
-  dom.movePromptUse.addEventListener("click", () => {
-    const prompt = movePrompt;
-    if (prompt === null || moveBusy) return;
-    moveBusy = true;
-    // Hidden directly, as the replace's own confirm does: a re-render
-    // would overwrite the "Saving…" line the measurement puts up.
-    dom.movePromptUse.textContent = MOVE_PROMPT_LABELS.using;
-    dom.movePromptUse.disabled = true;
-    dom.movePromptCopy.disabled = true;
-    dom.movePromptLater.disabled = true;
-    void measureCode(true).then(async (outcome) => {
-      // Said once the draft holds the replace - the durable end state (M5b
-      // review #7) - and the button stays busy until then.
-      const saved = outcome.kind === "replaced" ? await outcome.saved : true;
-      moveBusy = false;
-      const replaced = outcome.kind === "replaced";
-      logMoveAnswer(
-        prompt,
-        "use-new-spot",
-        replaced,
-        outcome.kind === "failed"
-          ? outcome.reason
-          : replaced
-            ? null
-            : outcome.kind,
-      );
-      if (replaced) {
-        // Counted as asked only now (§7j #10). The replace itself marked
-        // the visit's move boundary (`measureCode`).
-        if (undoable !== null) undoable = { ...undoable, prompt };
-        moveOnset = null;
-        // The one backup notice is spent here too, so later refusals do not
-        // repeat it; the outcome then says what this refusal means.
-        if (!saved) noteNoPersistence();
-        ctx.placementNote = saved
-          ? MOVE_PROMPT_LABELS.used
-          : MOVE_PROMPT_LABELS.usedNotBackedUp;
-      } else if (outcome.kind !== "superseded") {
-        // Through the status line, the AR session's error channel; the
-        // offset still stands, so the prompt comes back.
-        ctx.placementNote = MOVE_PROMPT_LABELS.useFailed;
-      }
-      renderAuthorReadout();
-    });
-  });
-
   for (const [button, answer] of [
+    [dom.movePromptUse, "moved"],
     [dom.movePromptCopy, "second-copy"],
     [dom.movePromptLater, "not-now"],
   ] as const) {
     button.addEventListener("click", () => {
       const prompt = movePrompt;
-      if (prompt === null || moveBusy) return;
+      if (prompt === null) return;
       rememberAnswer(prompt, answer);
-      logMoveAnswer(prompt, answer, false, null);
+      logMoveAnswer(prompt, answer);
       movePrompt = null;
+      if (answer === "moved") {
+        undoable = { prompt, visit: ctx.arSessionGeneration };
+        ctx.placementNote = MOVE_PROMPT_LABELS.moved;
+      }
       renderAuthorReadout();
     });
   }
 
-  /**
-   * Undo the latest replace (until Finish): the level it replaced is back
-   * in hand with its measurement, the visit loses its move boundary, a
-   * prompt's spot counts as "Not now" (or the offset it answered would ask
-   * again at once), and the undo waits for the draft's meta - the durable
-   * end state - before saying it is done.
-   */
+  /** Undo a "Yes, it moved" before its visit settles: the spot is answered
+   *  "Not now" instead (the newest answer for a spot is the one that
+   *  counts), so the prompt does not ask again at once. */
   dom.moveUndoButton.addEventListener("click", () => {
     const u = undoable;
-    if (u === null || undoBusy || ctx.finishing) return;
-    undoBusy = true;
+    if (u === null || ctx.finishing || visitSettles.has(u.visit)) return;
     undoable = null;
-    const undone = ctx.mintedLevel;
-    // A measurement still in flight must not land over the undo.
-    ctx.mintGeneration += 1;
-    ctx.mintedLevel = u.replaced;
-    ctx.codeMeasurement = u.priorMeasurement;
-    // Only a boundary this replace set: one the visit had before it
-    // (an earlier replace that stays) is not this undo's to drop.
-    if (u.boundary && movedInVisit.get(u.levelId) === u.visit) {
-      movedInVisit.delete(u.levelId);
-      unmarkLoggedMove(u.visit, u.levelId);
-    }
-    if (u.prompt !== null) {
-      moveAnswers = rememberMoveAnswer(moveAnswers, {
-        levelId: u.prompt.levelId,
-        northM: u.prompt.northM,
-        eastM: u.prompt.eastM,
-        answer: "not-now",
-        // The restored pose's: the prompt was asked against it.
-        savedKey: u.prompt.savedKey,
-      });
-    }
-    arStore.dispatch(
-      codeReplaceUndone({
-        levelId: u.levelId,
-        arVisitIndex: ctx.arSessionGeneration,
-        atMs: Date.now(),
-        restored: u.replaced,
-        undone,
-        fromPrompt: u.prompt !== null,
-      }),
-    );
-    placeEarlierObjects();
+    rememberAnswer(u.prompt, "not-now");
+    logMoveAnswer(u.prompt, "not-now");
+    ctx.placementNote = MOVE_PROMPT_LABELS.undone;
     renderAuthorReadout();
-    const written =
-      draftTourUrl === null ? Promise.resolve(true) : recordMeta(draftTourUrl);
-    void written
-      .catch(() => false)
-      .then((ok) => {
-        undoBusy = false;
-        ctx.placementNote = ok
-          ? MOVE_PROMPT_LABELS.undone
-          : MOVE_PROMPT_LABELS.undoNotBackedUp;
-        renderAuthorReadout();
-      });
   });
-
-  /** A visit already logged with a move of `levelId` loses the mark (an
-   *  undo after the visit ended), in memory and in the draft. */
-  function unmarkLoggedMove(visit: number, levelId: string): void {
-    const visitId = newVisitId(pageId, visit);
-    const entry = visitLog.entries().find((e) => e.visitId === visitId);
-    if (entry === undefined) return;
-    const codes = entry.codes.map((c) => {
-      if (c.levelId !== levelId || c.moved !== true) return c;
-      const { moved: _moved, ...rest } = c;
-      return rest;
-    });
-    recordVisit({ ...entry, codes });
-  }
-
-  /**
-   * The explicit "Replace the code's saved position"
-   * (authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5): offered in AR
-   * while the level in hand is a STORED pose - the only case in which a
-   * measurement does not replace it by itself. Enabled with the mint gate
-   * (see the live readout), and only for that code in view.
-   */
-  function renderReplaceCode(): void {
-    const shown = sessionLive() && levelInHandIsStored();
-    if (!shown) replaceConfirmOpen = false;
-    dom.replaceCodeButton.hidden = !shown || replaceConfirmOpen;
-    dom.replaceCodeConfirm.hidden = !(shown && replaceConfirmOpen);
-    // The question states what the replace does to visitors, with its size
-    // as this visit sees the code now (M4 review #3) - kept current while
-    // the confirm is open, since the sighting refines.
-    if (shown && replaceConfirmOpen) {
-      const state = arStore.getState();
-      dom.replaceCodeConfirmText.textContent = replaceCodeConfirmText(
-        sightedCodeOffset({
-          visit: ctx.arSessionGeneration,
-          alignment: selectAlignmentMatrix(state),
-          zero: selectZeroReference(state),
-          mintedLevel: ctx.mintedLevel,
-          measurement: ctx.codeMeasurement,
-          sighting: ctx.visitCodeSighting,
-        }),
-      );
-    }
-    // Re-enabled by the live readout when the gate is open.
-    dom.replaceCodeButton.disabled = true;
-    dom.replaceCodeYes.disabled = true;
-  }
-
-  /** The code in view is the one whose level is in hand. */
-  function codeInViewIsLevelInHand(): boolean {
-    const text = ctx.lastDetectedText;
-    return (
-      text !== null &&
-      ctx.mintedLevel !== null &&
-      codeIds.get(text) === ctx.mintedLevel.id
-    );
-  }
 
   function renderAuthorReadout(): void {
     renderSizeOffer();
@@ -1374,7 +1196,6 @@ export function wireCreatorSetup(deps: {
     dom.status.dataset["clamped"] =
       sessionLive() && !statusExpanded ? "true" : "false";
     renderPlacementButtons();
-    renderReplaceCode();
     renderMovePrompt();
     editing.render();
     // F11: the AR controls belong to the AR session. On the setup page they
@@ -1488,12 +1309,6 @@ export function wireCreatorSetup(deps: {
       tour;
     // No status locks Save: in authoring there is no wrong code (plan §13).
     dom.mintButton.disabled = !readout.canMint;
-    // The explicit replace takes the same gate, for the stored code only.
-    const canReplace = readout.canMint && codeInViewIsLevelInHand();
-    dom.replaceCodeButton.disabled = !canReplace;
-    dom.replaceCodeYes.disabled = !canReplace;
-    // "Use the new spot" is the same replace, behind the same gate (§7j #10).
-    dom.movePromptUse.disabled = moveBusy || !canReplace;
     const blocked = finishBlockedHint(readiness);
     if (blocked !== "") dom.status.textContent += ` · ${blocked}`;
     if (readiness === "ready" && ctx.session !== null) {
@@ -2367,22 +2182,56 @@ export function wireCreatorSetup(deps: {
     const state = arStore.getState();
     const visitAlignment = selectAlignmentMatrix(state);
     const zero = selectZeroReference(state);
+    const picks = alignmentPicks.picks();
+    // The end alignment's extent: the D31 marker of a code re-minted
+    // through it (R7 of D33).
+    const alignmentGpsExtentM = gpsExtent.update(selectGpsPositions(state));
+    const gpsAccuracyM = authorAlignmentInfo().gpsAccuracyM;
+    // A STORED code this visit saw: keep its saved position, or replace it
+    // with this visit's view of it (UI round 1, U3). A change is made by
+    // handing the settle a measurement of the code, so it is re-minted as
+    // if measured here - through the sighting's own pick.
+    const level = ctx.mintedLevel;
+    const position = planCodePosition({
+      visit,
+      mintedLevel: level,
+      measurement: ctx.codeMeasurement,
+      sighting: ctx.visitCodeSighting,
+      picks,
+      alignment: visitAlignment,
+      zero,
+      endQuality: {
+        extentM: alignmentGpsExtentM ?? null,
+        accuracyM: gpsAccuracyM ?? null,
+      },
+      answerAt: (offset) =>
+        level === null
+          ? null
+          : answerAtSpot(moveAnswers, {
+              levelId: level.id,
+              savedKey: savedPoseKey(level.json),
+              offset,
+            }),
+    });
+    const remint = position?.measurement ?? null;
     const input = {
       visit,
       placed: ctx.placedObjects,
       alignment: visitAlignment,
       zero,
-      mintedLevel: ctx.mintedLevel,
-      measurement: ctx.codeMeasurement,
+      mintedLevel: level,
+      measurement: remint ?? ctx.codeMeasurement,
       sighting: ctx.visitCodeSighting,
       alignmentInfo: authorAlignmentInfo(),
-      // The end alignment's extent: the D31 marker of a code re-minted
-      // through it (R7 of D33).
-      alignmentGpsExtentM: gpsExtent.update(selectGpsPositions(state)),
-      gpsAccuracyM: authorAlignmentInfo().gpsAccuracyM,
+      alignmentGpsExtentM,
+      gpsAccuracyM,
       nowIso: new Date().toISOString(),
-      // Each object at its own moment (D33).
-      picks: alignmentPicks.picks(),
+      // Each object at its own moment (D33); a re-minted stored code at its
+      // sighting's.
+      picks:
+        remint === null || position === null
+          ? picks
+          : { ...picks, measurement: position.pick },
     };
     const choice = settleAlignment(input);
     // Pure, so planned before the log: the log marks the pose this settle
@@ -2390,6 +2239,23 @@ export function wireCreatorSetup(deps: {
     // get (M3a/M3b review #2).
     const plan =
       choice === null || zero === null ? null : planVisitSettle(input);
+    const applied =
+      position !== null &&
+      remint !== null &&
+      plan !== null &&
+      plan.level !== null;
+    // A real move is the visit log's boundary (§7j #12), set before the
+    // log is written.
+    if (applied && position.decision.kind === "move") {
+      movedInVisit.set(position.levelId, visit);
+    }
+    if (position !== null) {
+      codePositionOutcomes.push({
+        decision: position.decision,
+        applied,
+        candidate: position.candidate,
+      });
+    }
     logVisit(visit, state, choice?.alignment ?? null, plan?.level ?? null);
     if (choice === null || zero === null) return;
     const record: VisitSettleRecord = {
@@ -2403,7 +2269,30 @@ export function wireCreatorSetup(deps: {
       refused: choice.refused,
     };
     visitSettles.set(visit, record);
-    if (plan === null) return;
+    const decided =
+      position === null
+        ? undefined
+        : {
+            levelId: position.levelId,
+            decision: position.decision,
+            offsetM: position.offsetM,
+            candidate: position.candidate,
+            stored: position.stored,
+            applied,
+            movedWithCode: [] as {
+              id: string;
+              before: QrGeoPose;
+              after: QrGeoPose;
+            }[],
+          };
+    if (plan === null) {
+      // Nothing to recompute, but a decision about the code is still the
+      // recording's to keep.
+      if (decided !== undefined) {
+        logSettle(visit, trigger, record, [], null, null, decided);
+      }
+      return;
+    }
     for (const { index, object } of plan.objects) {
       const entry = ctx.placedObjects[index];
       if (entry === undefined) continue;
@@ -2415,6 +2304,13 @@ export function wireCreatorSetup(deps: {
       ctx.mintedLevel = plan.level;
       if (draftTourUrl !== null) void recordMeta(draftTourUrl);
     }
+    // An IMPROVED position takes the pins and photos near it along, so
+    // they keep their place next to the poster (owner decision
+    // 2026-10-06); a real move leaves them where they are (D19).
+    const movedWithCode =
+      applied && position.decision.kind === "replace" && level !== null
+        ? moveEarlierWithCode(visit, level.json, plan.level.json)
+        : [];
     logSettle(
       visit,
       trigger,
@@ -2422,7 +2318,50 @@ export function wireCreatorSetup(deps: {
       plan.objects,
       plan.level,
       plan.levelAlignment,
+      decided === undefined ? undefined : { ...decided, movedWithCode },
     );
+  }
+
+  /**
+   * Move the earlier objects within reach of an improved code with it
+   * (`move-with-code.ts`): every object of the tour this visit did not
+   * place - the hosted ones, a restored draft's, an earlier visit's -
+   * within 40 m of the code's OLD position, as an edit by id (the Finish
+   * writes it like any move). A pin keeps its orientation: it has none
+   * (`mintPin` writes the identity).
+   */
+  function moveEarlierWithCode(
+    visit: number,
+    beforeJson: string,
+    afterJson: string,
+  ): { id: string; before: QrGeoPose; after: QrGeoPose }[] {
+    const from = storedGeo(beforeJson);
+    const to = storedGeo(afterJson);
+    if (from === null || to === null) return [];
+    const moved: { id: string; before: QrGeoPose; after: QrGeoPose }[] = [];
+    for (const entry of authoringObjects(
+      ctx.tourManifest?.objects ?? [],
+      ctx.placedObjects,
+      ctx.deletedObjectIds,
+    )) {
+      if (entry.placed?.placement?.visit === visit) continue;
+      const before = entry.object.geo;
+      if (!withinCodeReach(before, from)) continue;
+      const turned = moveWithCode(before, from, to);
+      const after: QrGeoPose =
+        entry.object.kind === "pin"
+          ? { ...before, lat: turned.lat, lon: turned.lon, alt: turned.alt }
+          : turned;
+      const object = { ...entry.object, geo: after };
+      ctx.placedObjects = upsertPlaced(ctx.placedObjects, {
+        ...(entry.placed ?? {}),
+        object,
+      });
+      recordPlacement(object);
+      moved.push({ id: object.id, before, after });
+    }
+    if (moved.length > 0) syncPreviews();
+    return moved;
   }
 
   /**
@@ -2577,9 +2516,11 @@ export function wireCreatorSetup(deps: {
     objects: readonly ({ object: TourObject } & SettleChoice)[],
     level: { id: string; json: string } | null,
     levelAlignment: number[] | null,
+    codePosition?: Parameters<typeof visitSettled>[0]["codePosition"],
   ): void {
     arStore.dispatch(
       visitSettled({
+        ...(codePosition === undefined ? {} : { codePosition }),
         arVisitIndex: visit,
         atMs: Date.now(),
         trigger,
@@ -2645,18 +2586,15 @@ export function wireCreatorSetup(deps: {
   }
 
   /**
-   * Measure the code in view ("Save the measured position"), or - with
-   * `replace` - deliberately replace the stored pose in hand with the new
-   * measurement ("Replace the code's saved position",
-   * authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5). Without
-   * `replace`, a measurement of a code whose pose is already stored is a
-   * correction sighting for this visit (`measurementRole`, D10b).
+   * Measure the code in view ("Save the measured position"). A measurement
+   * of a code whose pose is already stored is a correction sighting for
+   * this visit (`measurementRole`, D10b); whether this visit's view then
+   * REPLACES the stored pose is decided at the visit's settle (UI round 1,
+   * U3, `code-position-settle.ts`), never by a tap.
    *
-   * Resolves with what the tap became, so the move prompt's "Use the new
-   * spot" can say whether the replace happened (M5b, §7j #10): a no-op is
-   * `failed` with the reason, never silence.
+   * Resolves with what it became: a no-op is `failed` with the reason.
    */
-  function measureCode(replace: boolean): Promise<MeasureOutcome> {
+  function measureCode(): Promise<MeasureOutcome> {
     if (ctx.lastDetectedText === null) {
       return Promise.resolve({ kind: "failed", reason: "no code in view" });
     }
@@ -2731,24 +2669,15 @@ export function wireCreatorSetup(deps: {
         return { kind: "failed", reason: "no code identity" };
       }
       if (mintGeneration !== ctx.mintGeneration) return { kind: "superseded" };
-      // The explicit replace applies to the stored pose in hand, and only
-      // when the code measured IS that code.
-      const replaced = replace && prior.level?.id === id ? prior.level : null;
-      const hostedJson =
-        replaced === null
-          ? await hostedCandidate(id, prior.level, openAtTap)
-          : null;
+      const hostedJson = await hostedCandidate(id, prior.level, openAtTap);
       if (mintGeneration !== ctx.mintGeneration) return { kind: "superseded" };
-      const role =
-        replaced === null
-          ? measurementRole({
-              levelId: id,
-              visit: measured.arVisitIndex,
-              inHand: prior.level,
-              inHandMeasurement: prior.measurement,
-              hostedJson,
-            })
-          : { kept: "measurement" as const };
+      const role = measurementRole({
+        levelId: id,
+        visit: measured.arVisitIndex,
+        inHand: prior.level,
+        inHandMeasurement: prior.measurement,
+        hostedJson,
+      });
       adoptMeasurement(role, prior.measurement, {
         level: { id, json: result.json },
         // What the settle re-mints the code from at the visit's end, and
@@ -2786,59 +2715,18 @@ export function wireCreatorSetup(deps: {
           levelId: id,
           ...measured,
           kept: role.kept,
-          ...(replaced === null ? {} : { replaced }),
         }),
       );
-      if (replaced !== null) {
-        ctx.placementNote =
-          "The code's saved position was replaced with this measurement.";
-        // Any replace moves the code, so any replace marks the visit's
-        // move boundary (M5b review #3), whichever button made it.
-        const boundary = movedInVisit.get(id) !== measured.arVisitIndex;
-        movedInVisit.set(id, measured.arVisitIndex);
-        // Undoable until Finish (M5b): the level it replaced, and the
-        // measurement that was in hand with it.
-        undoable = {
-          levelId: id,
-          replaced,
-          priorMeasurement: prior.measurement,
-          visit: measured.arVisitIndex,
-          prompt: null,
-          boundary,
-        };
+      if (draftTourUrl !== null) {
+        void recordMeta(draftTourUrl).catch(() => false);
       }
-      const saved =
-        draftTourUrl === null
-          ? Promise.resolve(true)
-          : recordMeta(draftTourUrl).catch(() => false);
       renderAuthorReadout();
-      if (replaced !== null) return { kind: "replaced", saved };
       return { kind: role.kept === "measurement" ? "measured" : "kept" };
     })();
   }
 
   dom.mintButton.addEventListener("click", () => {
-    void measureCode(false);
-  });
-
-  // The explicit replace: a confirm step first, because it moves the code
-  // for everyone who opens the tour (M4).
-  dom.replaceCodeButton.addEventListener("click", () => {
-    replaceConfirmOpen = true;
-    renderAuthorReadout();
-  });
-  dom.replaceCodeNo.addEventListener("click", () => {
-    replaceConfirmOpen = false;
-    renderAuthorReadout();
-  });
-  dom.replaceCodeYes.addEventListener("click", () => {
-    replaceConfirmOpen = false;
-    // Hidden directly: a re-render would overwrite the "Saving…" line the
-    // measurement puts up; its own end re-renders the panel.
-    dom.replaceCodeConfirm.hidden = true;
-    // Notes never move with the code (owner decision D19): the confirm
-    // says they will appear shifted.
-    void measureCode(true);
+    void measureCode();
   });
 
   /** What the save guard reads (`finish-guard.ts`). */
@@ -3121,7 +3009,12 @@ export function wireCreatorSetup(deps: {
           ...(photos.notPlaced === undefined
             ? []
             : [FINISH_LABELS.photosNotPlaced(photos.notPlaced)]),
-        ].join(" ");
+          // What the settles decided for the code (UI round 1, U3): no
+          // button announces it any more.
+          codePositionSentence(codePositionOutcomes),
+        ]
+          .filter((line) => line !== "")
+          .join(" ");
         dom.downloadButton.textContent = idleLabel();
         dom.downloadButton.disabled = false;
         // The placed objects are in the zip now; the next finish (a
@@ -3156,8 +3049,9 @@ export function wireCreatorSetup(deps: {
         );
         syncPreviews();
         wroteZip = true;
-        // Undo lasts until Finish (M5b): the zip carries the new spot now.
         undoable = null;
+        // The result screen said them; the next Finish reports its own.
+        codePositionOutcomes = [];
         arStore.dispatch(
           authoringFinished({
             levelId: minted.id,
@@ -3402,7 +3296,6 @@ export function wireCreatorSetup(deps: {
       // The closing tour's previews, photo bytes and list (M4).
       clearPreviews();
       finishedPhotoBlobs.clear();
-      replaceConfirmOpen = false;
       editing.reset();
       // The summary and the visits belonged to the closing tour (M3b).
       deps.summary?.hide();
@@ -3411,6 +3304,7 @@ export function wireCreatorSetup(deps: {
       moveAnswers = [];
       movedInVisit.clear();
       undoable = null;
+      codePositionOutcomes = [];
       moveOnset = null;
       movePrompt = null;
     },

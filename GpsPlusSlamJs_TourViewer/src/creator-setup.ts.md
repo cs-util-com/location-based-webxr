@@ -155,17 +155,11 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   - `openDraftStore(key)` resolves this tour's draft namespace, or
     `undefined` where there is no persistence. Injected so the unit tests
     and the e2e can supply one without OPFS.
-  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; mintButton; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; replaceCodeButton; replaceCodeConfirm; replaceCodeConfirmText; replaceCodeYes; replaceCodeNo; movePrompt; movePromptText; movePromptUse; movePromptCopy; movePromptLater; moveUndo; moveUndoText; moveUndoButton }`
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; mintButton; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; movePrompt; movePromptText; movePromptUse; movePromptCopy; movePromptLater; moveUndo; moveUndoText; moveUndoButton }`
     - `objectList` (authoring plan 2026-09-28-0953 §3.4, M4) - the
       `object-list.ts` view (`bind`, `render`); `main.ts` builds it over
       `#object-list` inside the panel.
-    - `replaceCode*` - the explicit "Replace the code's saved
-      position" (a re-measure; its label was shortened to one line for the
-      360x640 overlay, 2026-10-01) and its confirm step, inside `#setup-controls`.
-    - `movePrompt*` (M5b) - the moved-code prompt and its three answers,
-      inside `#setup-controls`; `moveUndo*` - the replace's Undo, in the
-      panel but outside the controls (it lasts until Finish, on the page
-      too).
+    - `movePrompt*` (M5b; UI round 1, U3) - "Did the poster move here?" and its three answers, inside `#setup-controls` - the one question about the code's position left (the explicit replace and its confirm are gone); `moveUndo*` - the Undo of a "Yes, it moved" while its visit runs.
   - `arSessionLive(status)` - whether the controller's status means a
     session is up (`starting` / `running` / `stopping`). Exported because
     `main.ts` hands the same predicate to the wizard, which must not
@@ -344,8 +338,7 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
       CURRENT alignment (`judgeRefusal`) - but that updates the refusal
       (`liveRefusal`: the panel line) only. The objects'
       frame is re-chosen only by `placeEarlierObjects`: a stable sighting
-      of the code in hand, and the explicit paths (a measurement of the
-      code - a mint or a replace -, a replace's Undo, the visit's start). So
+      of the code in hand, and the explicit paths (a measurement of the code, the visit's start). So
       while the code is out of view the objects stay where its last
       sighting put them, however far GPS drifts (M5b had re-placed them
       on every fix, a jump of at least the plausibility bound - 13.5 m at
@@ -589,17 +582,7 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
     since M4 review #4 hands the tap's target ray as a second argument
     (backward compatible: MinimalExample's one-parameter handler is as it
     was), so the pick goes through the tapped point.
-  - **The explicit replace of a stored code** (M2c review #5): offered in
-    AR while the level in hand is a stored pose, enabled with the mint gate
-    for that code in view, behind a confirm step (`replaceCodeConfirmText`,
-    M4 review #3) that says the code moves for every visitor - by how much,
-    from this visit's sighting (`sightedCodeOffset`), kept current while
-    the confirm is open - and that notes placed against the old position
-    keep their stored geo and so will appear shifted by about that much.
-    Confirmed, the measurement becomes the reference (`kept:
-"measurement"`, logged with `replaced`); without it a new measurement
-    of a stored code stays a correction sighting. Notes never move with
-    the code (owner decision D19).
+  - **The code's saved position, decided at the settle** (UI round 1, U3; owner decisions 2026-10-06): no button replaces a stored code. At each visit's settle `planCodePosition` (`code-position-settle.ts`) judges this visit's latest sighting of the stored code in hand through its own pick (the source the re-mint takes) with `decideCodePosition` (`code-position-rule.ts`): replace a weaker or unknown saved position after a walk the summary's model calls enough at this accuracy (at least 10 m); keep a well-walked one; leave a code seen 15 m or more away to the move question; apply a remembered "Yes, it moved" under the same walk rule. A change hands `planVisitSettle` a measurement of the code (the sighting's pose, the stored print's size, the sighting's pick as the measurement pick), so it is re-minted as if measured here and this visit's objects settle relative to it. An IMPROVED position moves the tour's other objects within 40 m of the code's old position with it (`moveEarlierWithCode`, `move-with-code.ts`: hosted, restored and earlier visits' objects, as edits by id; a pin keeps its orientation); a real MOVE leaves them (D19) and marks the visit's move boundary. The decision is logged on `tourAuthoring/settled` as `codePosition` (also for a visit that settled nothing else), and the result screen's line after Finish is `codePositionSentence` over the settles since the last Finish.
   - **The moved-code prompt** (authoring plan §3.6 "Authoring (D20 ask
     once)", M5b; `code-move-prompt.ts` decides WHEN): on every readout
     render the tracker is fed the latest sighting's offset through the
@@ -612,21 +595,7 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
     fix's time, and the remembered answers. It asks only for a stored
     level in hand, in a live session, outside a Finish. A new ask logs
     `tourAuthoring/codeMovePrompted` once per run beyond the trigger.
-    - "Use the new spot" runs the Replace button's `measureCode(true)`
-      behind the same gate (`canMint && codeInViewIsLevelInHand`): the
-      button reads "Using the new spot…" and the other two are disabled
-      until it resolves; `measureCode` resolves with its outcome
-      (`replaced`, `measured`, `kept`, `failed` with a reason,
-      `superseded`). Only `replaced` counts as answered. Its outcome
-      carries the draft's meta write of the replace (`saved`), and the
-      button stays busy until that settles (M5b review #7): then the
-      status line says the saved position is the new spot, or, for a
-      refused write, that it is the new spot here but not saved on this
-      device (the backup notice is spent with it). Anything else says "Could not use the
-      new spot..." in the status line (the AR session's error channel) and
-      the prompt comes back while the offset stays beyond the trigger. Logged as
-      `tourAuthoring/codeMoveAnswered` with `replaced` and `error`.
-    - "It's a second copy" / "Not now": remembered per level and spot
+    - Every answer ("Yes, it moved", "No, it's a second poster", "Not now") is remembered per level and spot
       (`rememberMoveAnswer`), in memory and in the draft's meta
       (`moveAnswers`, re-stated by every `recordMeta`, read at tour open
       whether or not the draft is restored and merged with answers given
@@ -636,25 +605,7 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
       the prompt saw it) is kept out of the visit log (`logVisit`): it is
       another print, so it must not count as a visit of the stored code
       in `codeVisitPoses` (M5b review #11). "Not now" leaves it a visit.
-    - **The move boundary**: ANY replace - the prompt's or the Replace
-      button's - records its visit as the code's move boundary
-      (`movedInVisit`, set in `measureCode`; M5b review #3), because
-      either moves the code for everyone.
-    - **Undo until Finish, while the page stays open** (memory only: a
-      reload loses it, which the hint says; M5b review #5): any replace
-      (prompt or Replace button) keeps
-      the level it replaced (`codeMeasured`'s `replaced`) and the
-      measurement that was in hand; Undo puts both back, bumps
-      `mintGeneration` (an in-flight measurement must not land over it),
-      drops the visit's move boundary when THIS replace set it (an earlier
-      replace's boundary in the same visit stays), re-recording an already
-      logged visit without the mark, counts a prompt's spot as "Not now", logs
-      `tourAuthoring/codeReplaceUndone`, and reads "Undoing…" until the
-      meta write lands, then "back where it was" or that the device could
-      not save it. A Finish that wrote the zip, a tour close, an adopted
-      print size, or another code's level in hand ends it; the moment a
-      measurement leaves no level in hand (its identity hash in flight)
-      does not (M5b review #4).
+    - "Yes, it moved" changes nothing at once: the status line says the new spot is saved when the visit ends if the creator walked enough, and the settle applies it (above). Logged as `tourAuthoring/codeMoveAnswered` `moved` (`replaced` false). - **The move boundary**: a move the settle APPLIED records its visit as the code's move boundary (`movedInVisit`, set before the visit is logged); an improved position of the same poster is no boundary. - **Undo while the visit runs**: a "Yes, it moved" can be taken back until its visit settles (a session end or a Finish); Undo re-answers the spot "Not now" (logged as such), so the prompt does not ask again at once. Nothing else needs restoring: nothing changed before the settle.
   - The readout's "N objects placed" counts only objects the zip does not
     carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,
@@ -733,21 +684,10 @@ one landing during a live Finish; a restored object shown once the zero
 arrives), `creator-finish.test.ts` (the settle at
 Finish, once). Editing (M4): `authoring-settle.test.ts` (hosted objects
 rendered and listed, edit, delete, move through the code correction, the
-async states, tap-select, the overlay guard, the explicit replace). The
+async states, tap-select, the overlay guard). The code's position at the settle (U3): `authoring-settle.test.ts` "the code's saved position, decided at the settle" (a replace after a reliable walk taking the pin next to the code along and leaving the one 60 m away, a hosted pin moved as an edit by id, R1's standing re-measure kept, a well-walked position kept, the result screen's line) plus the pure `code-position-rule`, `code-position-settle` and `move-with-code` tests. The
 moved-code prompt (M5b): `authoring-settle.test.ts` "the moved-code
 prompt" (asked only after the rule's fixes and seconds, logged once; not
-with the gate closed; "Use the new spot" in progress, replaced, logged,
-undoable, and its failure surfaced with the prompt coming back; its
-outcome said only once the draft holds the replace, and a refused write
-said as not backed up; a Replace-button replace marking the move boundary
-too, and its Undo logged as not from the prompt, leaving the remembered
-answers alone, with the prompt free to return; Undo kept through a later
-measurement of the same code; the other two answers remembered in the
-draft across a reload, and their refused write surfaced as the backup
-notice; a sighting answered "It's a second copy" kept out of the visit
-log while a "Not now" one stays in it; Undo in progress,
-restoring the level and dropping the visit's move boundary, its refused
-write surfaced, ended by a Finish), plus the pure `code-move-prompt*`
+with the gate closed; "Yes, it moved" changing nothing at once, logged and remembered, applied by the settle after enough walking with no pin moved and the move boundary marked, held without the walk and said on the result screen; Undo while the visit runs, re-answering "Not now", gone once the visit settled; the answers remembered in the draft across a reload, and a refused write surfaced as the backup notice; a sighting answered "It's a second copy" kept out of the visit log while a "Not now" one stays in it), plus the pure `code-move-prompt*`
 tests and the e2e `move-prompt.spec.js` (one per answer).
 `creator-finish.test.ts` (an edit replaces in place; a deletion filters
 the object and takes a deleted photo's jpg out of the archive),

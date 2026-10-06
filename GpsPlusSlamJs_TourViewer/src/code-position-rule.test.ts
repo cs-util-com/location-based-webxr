@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 
 import { walkNeededM } from "./code-verdict";
 import {
+  codePositionSentence,
   decideCodePosition,
   isReliable,
   qualityOfLevel,
@@ -180,5 +181,63 @@ describe("qualityOfLevel", () => {
   it("an older level, or a broken file, is unknown - never 'settled'", () => {
     expect(qualityOfLevel(level())).toEqual(unknown);
     expect(qualityOfLevel("{not json")).toEqual(unknown);
+  });
+});
+
+describe("codePositionSentence - the result screen's line (U3)", () => {
+  const at5: PositionQuality = { extentM: 3, accuracyM: 5 };
+  const outcome = (
+    decision: Parameters<typeof codePositionSentence>[0][number]["decision"],
+    applied = true,
+  ) => ({ decision, applied, candidate: at5 });
+
+  // Why: the plan asks the result screen to say which happened and why,
+  // since no button announces it any more; an applied change outranks a
+  // later visit's "kept", or the improvement would go unmentioned.
+  it("names an improvement, and that nearby pins and photos moved with it", () => {
+    expect(
+      codePositionSentence([
+        outcome({ kind: "replace" }),
+        outcome({ kind: "keep", reason: "stored-good" }),
+      ]),
+    ).toBe(
+      "The code's saved position was improved by this walk; pins and photos within 40 m moved with it.",
+    );
+  });
+
+  it("names a saved move, and that pins and photos stayed", () => {
+    expect(codePositionSentence([outcome({ kind: "move" })])).toBe(
+      "The code's saved position moved to the poster's new spot; pins and photos kept their places.",
+    );
+  });
+
+  it("says how much walking a kept position or a waiting move needs", () => {
+    expect(
+      codePositionSentence([
+        outcome({ kind: "keep", reason: "not-walked" }, false),
+      ]),
+    ).toBe(
+      `The code's saved position was kept: walk about ${String(Math.round(walkNeededM(5)))} m in AR after seeing the code to improve it.`,
+    );
+    expect(
+      codePositionSentence([
+        outcome({ kind: "move-waits", walkMoreM: 12.4 }, false),
+      ]),
+    ).toBe(
+      "The poster's move is not saved yet: walk about 12 m more in AR after seeing the code, then finish again.",
+    );
+  });
+
+  it("says nothing when the position was good already, far (the question's), not applied, or not decided", () => {
+    expect(
+      codePositionSentence([outcome({ kind: "keep", reason: "stored-good" })]),
+    ).toBe("");
+    expect(
+      codePositionSentence([outcome({ kind: "keep", reason: "far" })]),
+    ).toBe("");
+    expect(codePositionSentence([outcome({ kind: "replace" }, false)])).toBe(
+      "",
+    );
+    expect(codePositionSentence([])).toBe("");
   });
 });

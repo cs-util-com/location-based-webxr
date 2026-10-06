@@ -285,43 +285,6 @@ export function correctionRefusedLine(refusal: {
   return `Code seen ${where} from its saved position - a second print or a moved poster? Not used; this visit follows GPS`;
 }
 
-/**
- * The explicit replace's confirm question (authoring plan 2026-09-28-0953
- * §3.4, M4; M4 review #3), with the replace's size when this visit's
- * sighting of the code gives one (`sightedCodeOffset`).
- *
- * WHAT IT MUST SAY: the notes' STORED positions do not change, but every
- * visitor is lined up with the code - so notes placed against the old code
- * position will appear shifted, by about the distance the code moves (and
- * by more the further they stand from it, when it also turns).
- *
- * Rounding: one decimal below 10 m (a 0.4 m replace is not "0 m"), whole
- * metres above, where GPS-level error makes decimals noise; a turn below
- * 1° is left out - a note 20 m away moves under 0.35 m for it.
- *
- * Notes never move with the code (owner decision D19): each keeps its own
- * saved position, so this says what happens and offers no option to move
- * them along.
- */
-export function replaceCodeConfirmText(
-  size: { horizontalM: number; yawDeg: number } | null,
-): string {
-  const question =
-    "Replace the code's saved position with this new measurement? Everyone who opens the tour is lined up with the code, so it moves for them too";
-  const notes =
-    "Notes already placed keep their saved positions, so to visitors the ones placed against the old position will appear shifted";
-  if (size === null) return `${question}. ${notes}.`;
-  const metres =
-    size.horizontalM < 10
-      ? (Math.round(size.horizontalM * 10) / 10).toFixed(1)
-      : String(Math.round(size.horizontalM));
-  const turn =
-    size.yawDeg >= 1 ? ` and turns ${String(Math.round(size.yawDeg))}°` : "";
-  const further =
-    turn === "" ? "" : ", and more the further they are from the code";
-  return `${question}: it moves about ${metres} m${turn}. ${notes} by about that much${further}.`;
-}
-
 /** What the setup panel says once the code is measured: the next move. */
 export function setupHint(state: {
   measured: boolean;

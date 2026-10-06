@@ -77,8 +77,9 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
     `objectDeleted` it undoes (the restored object, `hosted`, the visit,
     the time, the surface), so a replay pairs the two by the object's id.
   - `codeMeasured` gains `replaced` - the stored pose the explicit
-    "Replace the code's saved position" replaced; absent for
-    every other measurement.
+    "Replace the code's saved position" replaced; absent for every other
+    measurement, and in recordings since UI round 1 U3 (no explicit
+    replace any more).
 - The moved-code prompt (authoring plan §3.6, D20, M5b; §7j #15):
   - `codeMovePrompted(payload)` - `tourAuthoring/codeMovePrompted`, once
     per refusal run: `levelId`, `arVisitIndex`, `atMs`, the refusal
@@ -86,13 +87,17 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
     its saved position - `yawDeg`, `maxHorizontalM`) and how long it
     lasted (`fixes`, `seconds`, null without readable fix times).
   - `codeMoveAnswered(payload)` - `tourAuthoring/codeMoveAnswered`: the
-    `answer` (`use-new-spot`, `second-copy`, `not-now`), the spot, whether
-    the saved position was `replaced`, and the `error` when a "Use the new
-    spot" did not replace (null otherwise).
-  - `codeReplaceUndone(payload)` - `tourAuthoring/codeReplaceUndone`: an
-    undo before Finish of any replace - `restored` (the `replaced` of the
-    undone measurement), `undone` (the level taken out of hand),
-    `fromPrompt`.
+    `answer` (`moved`, `second-copy`, `not-now`; an Undo of "moved" is a
+    `not-now`), the spot, `replaced` (false since UI round 1 U3: a "moved"
+    answer is applied by the settle) and `error`. `use-new-spot` and
+    `tourAuthoring/codeReplaceUndone` (the immediate replace and its undo)
+    exist in older recordings only.
+- `visitSettled` gains `codePosition` (UI round 1, U3;
+  `code-position-settle.ts`): for a stored code the visit saw, the
+  `decision` (keep with its reason, replace, move, move-waits), the
+  `offsetM`, the `candidate` and `stored` qualities, whether it was
+  `applied`, and `movedWithCode` - each earlier object an improved code
+  took with it, `before` and `after`.
 - Each creator carries `.type`, as RTK's do; the payload interfaces are
   module-private (knip), reachable as `Parameters<typeof objectPlaced>[0]`.
 - `logAction`, `LogActionCreator`, `AlignmentMatrix` - exported since M1b

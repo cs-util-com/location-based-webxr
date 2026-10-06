@@ -80,10 +80,10 @@ entry and joined back in `codeVisitPoses`.
   costs that field, not the code.
 - **`moved`** (optional, per code, only ever `true`; authoring plan §3.6,
   M5b, §7j #12): THIS visit moved the code to a new spot (the author
-  answered "Use the new spot"; `input.moved` lists the levels). Earlier
+  answered "Yes, it moved" and the settle saved the new spot, UI round 1 U3; `input.moved` lists the levels). Earlier
   visits describe the old spot, so `codeVisitPoses` reads only from the
   latest marked visit on, and the summary's estimate never sits between
-  two spots. An undo before Finish re-records the visit without it.
+  two spots. An improved position of the same poster is no boundary.
   Anything but `true` in a file reads as no mark.
 
 ## Parameters and what they rest on

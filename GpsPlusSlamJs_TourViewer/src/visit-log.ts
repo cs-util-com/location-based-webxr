@@ -92,7 +92,7 @@ interface VisitCode {
    *  #2). Absent for a visit that only saw the code. */
   readonly savedGeo?: QrGeoPose;
   /** THE MOVE BOUNDARY (authoring plan §3.6, M5b; §7j #12): this visit
-   *  moved the code - the author answered "Use the new spot" - so earlier
+   *  moved the code - a "Yes, it moved" the settle applied (UI round 1, U3) - so earlier
    *  visits describe the old spot and {@link codeVisitPoses} reads only
    *  from the latest such visit on. Absent otherwise (never false). */
   readonly moved?: true;
