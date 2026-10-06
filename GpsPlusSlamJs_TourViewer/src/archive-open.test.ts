@@ -80,6 +80,12 @@ function openAnotherTour(ctx: ReturnType<typeof createTourViewerSession>) {
     form: el(),
     linkInput: el(),
     openButton: el(),
+    openFileButton: el(),
+    fileInput: el(),
+    fileAdvice: el(),
+    openFileAdviceButton: el(),
+    fileStatus: el(),
+    tourTrust: el(),
     statsPanel: el(),
     statsHeadline: el(),
     statsDetail: el(),
@@ -93,6 +99,7 @@ function openAnotherTour(ctx: ReturnType<typeof createTourViewerSession>) {
     dom: dom as unknown as ArchiveOpenDom,
     cacheStore: undefined,
     corsProxyBaseUrl: "https://proxy.test",
+    mode: "creator",
     hooks: createUnwiredHooks(),
   });
   dom.linkInput.value = "https://example.com/other-tour.zip";

@@ -1023,6 +1023,44 @@ test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", a
   expect(planesAfter).toBe(planesBefore);
 });
 
+test("a tour whose photo spots were baked at its Finish places them without any recording (scan-pass S1)", async ({
+  page,
+}) => {
+  // Why this matters (scan-pass plan S1, S-D11): a published tour carries
+  // its photos' spots in tour.json and no walk at all, so the viewer must
+  // place from the baked spots - never replay the walk the copy kept for
+  // a co-author - and report the BAKED quality (7 fixes; the walk has
+  // none). Its gallery shows the 2 baked photos, not the unbaked third.
+  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
+  await openAsVisitor(page, ARCHIVE, 2);
+  await enterAr(page);
+  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.alignmentStore.dispatch({
+      type: "gpsData/setZeroPos",
+      payload: { lat: 47.5, lon: 8.7 },
+    });
+  });
+  await forceTrackingReady(page);
+  await lockTheCode(page);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").textContent();
+      },
+      { timeout: 20000 },
+    )
+    .toMatch(/2 photos at capture spots \(7 fixes/);
+  await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
+  // Long after the gallery finished: still the two baked photos (the count
+  // checked on open could pass on its way to three).
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(2);
+  await expect(page.getByTestId("gallery")).not.toContainText("frame-2.png");
+});
+
 /** Force the tracking-quality slice to `ok` (→ onboarding `ready`). The
  *  fake initAR never dispatches poses, and `reportUpdated` is the slice's
  *  own action (not a middleware input), so it is not recomputed away. */
@@ -1229,6 +1267,15 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
   // anchor). The budget is the guardrail: without it every locked frame
   // votes and a lingering visitor pins the alignment centroid.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
+  // three REFUSES a child that is not an Object3D, leaving only this
+  // console error, so a pin label that never reached the scene graph left
+  // no other trace (the e2e label fake was a plain object until 2026-10-03).
+  const refusedAdds = /** @type {string[]} */ ([]);
+  page.on("console", (message) => {
+    if (message.text().includes("THREE.Object3D.add")) {
+      refusedAdds.push(message.text());
+    }
+  });
   await openAsVisitor(page, ARCHIVE, 8);
 
   await enterAr(page);
@@ -1275,15 +1322,22 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
         t.alignmentStore.getState().gpsData.gpsEvents.gpsPositions.length,
       markerUpdates: t.qrDebugUpdates,
       planes: t.fakeScene.children.length,
+      pinLabels: t.fakeScene.children
+        .flatMap((/** @type {any} */ c) => (c.isGroup ? c.children : []))
+        .filter((/** @type {any} */ o) => o.isSprite === true).length,
     };
   });
   // 3 seeded fixes + 10 vote batches × 16 correspondences (the 30 m ring,
   // authoring plan M2b; 16 per lock since owner decision D13) = 163.
   expect(afterBudget.gpsCount).toBe(163);
   expect(afterBudget.markerUpdates).toBeGreaterThan(0);
-  // The image ring (3 planes), placed once, plus the fixture pin's label
-  // that the tour.json content placed after the lock (M5).
+  // The image ring (3 planes), placed once, plus the group of the tour.json
+  // content placed after the lock (M5)...
   expect(afterBudget.planes).toBe(4);
+  // ...which really holds the fixture pin's label sprite: a label three
+  // refused still counted in the placement but was never drawn.
+  expect(afterBudget.pinLabels).toBe(1);
+  expect(refusedAdds).toEqual([]);
 
   // Budget holds: more locked frames add NOTHING.
   await page.evaluate(() => {

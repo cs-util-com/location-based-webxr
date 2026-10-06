@@ -40,7 +40,31 @@ taken instead of ringing them around the QR code.
       still reported success.
   - `ok: true` carries `{ pairCount, gpsAccuracyMedianM }` — the honest
     quality the viewer surfaces ("placed from N fixes, ±X m").
-- `computeCaptureGeoJoin(state): CaptureWorldPose[]` — per capture:
+- `createCapturePickTracker({ extentOf? }): CapturePickTracker` (scan-pass
+  plan S-D11, D33's rule for photos): fed every replayed action with the
+  state it produced (`observe`, from the framework replay's `onAction`), it
+  picks each photo's alignment as the first one at or after the photo whose
+  session GPS extent reached the shared floor (`state/alignment-maturity`,
+  40 m), else the last usable one; a settled pick never moves.
+  `alignmentFor(imageFile)` gives that `{ matrix, rotation }`, or undefined
+  for a photo it never saw. `extentOf` defaults to the framework's
+  `createGpsExtentTracker` over the store's device fixes.
+  - **Linear in the walk** (S1 milestone review #10): one shared "latest
+    usable" moment is every open photo's pick once it came after the
+    photo, and a mature moment settles every open photo at once, so a walk
+    costs actions + photos, not actions x photos (a walk that never reaches
+    40 m keeps every photo open to the end). A file captured again starts
+    over. The property test pins it to the per-photo fold of
+    `advanceMatureAlignmentPick` over random walks.
+  - A picked alignment that is the IDENTITY (the store's value before the
+    first solve, which the maturity rule counts as usable once a zero
+    exists) is refused by `computeCaptureGeoJoin`'s check, like an unsolved
+    final one, and that photo uses the final alignment (review #6).
+- `computeCaptureGeoJoin(state, alignmentFor?): CaptureWorldPose[]` - with
+  `alignmentFor`, each capture is placed through its own alignment, checked
+  like the final one (16 entries, a unit rotation); a capture without one,
+  or whose alignment fails the checks, uses the final alignment, exactly as
+  without the argument. Per capture:
   `fusedGpsFromOdom(alignmentMatrix, odomPos, zero)` → geo with ABSOLUTE
   altitude (the library's documented contract — NOT zero-relative), plus
   `rotationNue = alignmentRotation ∘ captureRotation ∘ WEBXR_TO_NUE` —
@@ -101,6 +125,11 @@ taken instead of ringing them around the QR code.
 - **Accuracy model (owner-corrected, plan Rev 2):** the captures are a
   rigid constellation in SLAM space; the whole set shares the final
   alignment's error. Quality is reported, not guessed.
+  - Since scan-pass S1 (owner decision S-D11) the viewer and the Finish
+    pass each photo's own pick (`createCapturePickTracker`, through
+    `capture-bake.ts`), so the constellation is rigid only among photos
+    sharing a pick; `computeCaptureGeoJoin(state)` without the argument
+    keeps the old end-of-walk behaviour.
 - This module never touches the zip: the caller feeds it `loadSessionMeta()`,
   the action-type list, and the replayed state.
 

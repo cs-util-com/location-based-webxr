@@ -308,6 +308,24 @@ describe("thinPath", () => {
     expect(thinPath([7], dist)).toEqual([7]);
   });
 
+  it("keeps the input's last element even when it equals the last kept one", () => {
+    // Why: the end is the input's LAST ELEMENT, not "a value equal to it".
+    // A value comparison of the last kept point with the end dropped the
+    // end of [-0, 0] (-0 === 0) and handed back -0 as the end - the
+    // property's counterexample at seed 770413408, pinned here because a
+    // random seed reaches it only rarely. The same comparison would drop a
+    // repeated object reference at the end of a walk.
+    const out = thinPath([-0, 0], dist, 0.1, 2);
+    expect(out[0]).toBe(-0);
+    expect(out.at(-1)).toBe(0);
+    const shared = { at: 1 };
+    const never = (): number => 0;
+    expect(thinPath([shared, { at: 2 }, shared], never, 1)).toEqual([
+      shared,
+      shared,
+    ]);
+  });
+
   it("is an ordered subset with both ends, spaced, and capped", () => {
     // Why: the summary draws exactly this, and the baseline is measured
     // on it - a reordered or invented point would draw a walk that did not

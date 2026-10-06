@@ -12,13 +12,17 @@
 import {
   BlobReader,
   BlobWriter,
+  ERR_OVERLAPPING_ENTRY,
   TextReader,
+  Uint8ArrayReader,
   Uint8ArrayWriter,
   ZipReader,
   ZipWriter,
 } from '@zip.js/zip.js';
 import { describe, expect, it } from 'vitest';
 
+import { ArchiveLimitError } from './archive-limits';
+import { DecompressionBudget } from './capped-zip-entries';
 import { packFilesAsZip, ZipPackagingError } from './pack-files-as-zip';
 import { readStoredCentralDirectory } from '../test-utils/zip-central-directory';
 import { rebuildZipWithEntries } from './zip-rebuild';
@@ -484,5 +488,95 @@ describe('rebuildZipWithEntries', () => {
         { path: 'tour.json', data: '{}' },
       ])
     ).rejects.toBeInstanceOf(ZipPackagingError);
+  });
+});
+
+/**
+ * Why these tests matter (K0 milestone review R1): the Tour Viewer's Finish
+ * rebuilds the zip a tour was opened from, and that zip came from any link
+ * or a file someone handed the creator. Read with zip.js's own writer, a
+ * carried entry inflated without limit - a few KB of deflated zeros became
+ * gigabytes in the creator's tab at the moment they finished walking. The
+ * rebuild now lists under the entry cap and inflates under a budget.
+ */
+describe('rebuildZipWithEntries under the archive caps (K0 milestone review R1)', () => {
+  const MiB = 1024 * 1024;
+
+  async function deflatedZip(
+    files: Record<string, Uint8Array | string>
+  ): Promise<Blob> {
+    const writer = new ZipWriter(new BlobWriter('application/zip'), {
+      level: 9,
+    });
+    for (const [name, data] of Object.entries(files)) {
+      await writer.add(
+        name,
+        typeof data === 'string'
+          ? new TextReader(data)
+          : new Uint8ArrayReader(data)
+      );
+    }
+    return writer.close();
+  }
+
+  it('inflates every carried entry under the given budget, refusing a bomb', async () => {
+    const zip = await deflatedZip({
+      'images/bomb.jpg': new Uint8Array(4 * MiB),
+      'tour.json': '{}',
+    });
+    expect(zip.size).toBeLessThan(64 * 1024);
+    const budget = new DecompressionBudget({
+      maxEntryBytes: MiB,
+      maxTotalBytes: 100 * MiB,
+    });
+    const err = await rebuildZipWithEntries(
+      zip,
+      [{ path: 'qr/x.json', data: '{}' }],
+      { budget }
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ZipPackagingError);
+    expect((err as Error).cause).toBeInstanceOf(ArchiveLimitError);
+    expect(((err as Error).cause as ArchiveLimitError).kind).toBe(
+      'entry-bytes'
+    );
+  });
+
+  it('lists the input under the entry cap', async () => {
+    const zip = await deflatedZip({ a: 'a', b: 'b', c: 'c' });
+    const err = await rebuildZipWithEntries(zip, [], { maxEntries: 2 }).catch(
+      (e: unknown) => e
+    );
+    expect(((err as Error).cause as ArchiveLimitError).kind).toBe(
+      'entry-count'
+    );
+  });
+
+  it('reads through the capped path even with no options (two records over one payload are refused)', async () => {
+    // The default budget's floor is 64 MiB, so a small test cannot reach
+    // it; the overlap refusal is what proves the capped read is in use.
+    const bytes = new Uint8Array(
+      await (
+        await deflatedZip({
+          a: new Uint8Array(1000),
+          b: new Uint8Array(1000),
+        })
+      ).arrayBuffer()
+    );
+    const view = new DataView(bytes.buffer);
+    const central: number[] = [];
+    for (let i = 0; i + 4 <= bytes.length; i += 1) {
+      if (view.getUint32(i, true) === 0x02014b50) central.push(i);
+    }
+    view.setUint32(
+      central[1]! + 42,
+      view.getUint32(central[0]! + 42, true),
+      true
+    );
+    const err = await rebuildZipWithEntries(
+      new Blob([bytes as BlobPart]),
+      []
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ZipPackagingError);
+    expect(((err as Error).cause as Error).message).toBe(ERR_OVERLAPPING_ENTRY);
   });
 });

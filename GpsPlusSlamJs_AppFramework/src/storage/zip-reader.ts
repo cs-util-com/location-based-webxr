@@ -26,6 +26,8 @@ import {
 import { GPS_POINT_SOURCE_DEVICE, gpsPointSourceOf } from 'gps-plus-slam-js';
 import { recordedGpsEventPayloads } from '../utils/gps-event-actions';
 import { createLogger } from '../utils/logger';
+import { DEFAULT_ARCHIVE_LIMITS } from './archive-limits';
+import { DecompressionBudget, readZipEntryText } from './capped-zip-entries';
 
 const log = createLogger('ZipReader');
 
@@ -121,6 +123,27 @@ function extractActionIndex(filename: string): number {
 }
 
 /**
+ * The caller's decompression budget, or one for the whole archive read
+ * through `data`.
+ * Called after the entries were listed, so a lazy Reader knows its size;
+ * one that still reports none gets the absolute ceiling rather than the
+ * small-archive floor, which would refuse a real long recording.
+ */
+function budgetFor(
+  data: ZipSource,
+  given: DecompressionBudget | undefined
+): DecompressionBudget {
+  if (given !== undefined) return given;
+  const size = data instanceof Uint8Array ? data.length : data.size;
+  return Number.isSafeInteger(size) && size > 0
+    ? DecompressionBudget.forArchive(size)
+    : new DecompressionBudget({
+        maxEntryBytes: DEFAULT_ARCHIVE_LIMITS.maxEntryBytes,
+        maxTotalBytes: DEFAULT_ARCHIVE_LIMITS.maxTotalBytes,
+      });
+}
+
+/**
  * Load all recorded Redux actions from a zip file.
  *
  * Filters for JSON files in the actions/ directory, parses them, and returns
@@ -130,15 +153,47 @@ function extractActionIndex(filename: string): number {
  * a name that does not fit the scheme.
  *
  * @param data - The zip content as a Uint8Array, or a zip.js Reader for lazy access
- * @param maxFileSize - Maximum allowed uncompressed size per entry (defaults to MAX_ACTION_FILE_SIZE)
+ * @param maxFileSize - Maximum allowed uncompressed size per entry (defaults to MAX_ACTION_FILE_SIZE),
+ *   checked against the declared size up front AND against the bytes actually inflated
+ * @param budget - The archive's decompression allowance (`capped-zip-entries`); a
+ *   caller reading several parts of one archive passes one budget to all of them.
+ *   Defaults to one sized from the archive (`DecompressionBudget.forArchive`).
  * @returns Array of action entries sorted by filename
+ * @throws ArchiveLimitError when the inflated bytes pass a cap
  */
 export async function loadActionsFromZip(
   data: ZipSource,
-  maxFileSize: number = MAX_ACTION_FILE_SIZE
+  maxFileSize: number = MAX_ACTION_FILE_SIZE,
+  budget?: DecompressionBudget
 ): Promise<ZipActionEntry[]> {
   const entries = await readZipEntries(data);
+  const allowance = budgetFor(data, budget);
+  return loadActionsFromEntries(
+    entries,
+    (entry, maxBytes) => readZipEntryText(entry, allowance, maxBytes),
+    maxFileSize
+  );
+}
 
+/**
+ * The parse of {@link loadActionsFromZip} over an entry list the caller
+ * ALREADY HOLDS, each action entry read through `readText`. For a caller
+ * that has checked its list and must not let a second read of the
+ * directory replace it: the Tour Viewer reads a signed tour's recording
+ * from the list tier 1 checked, each entry hashed by its own reader (tour
+ * kit plan K1, milestone review R1) - re-listing a live range source could
+ * return another directory than the one that was checked.
+ *
+ * @param entries - The archive's entries (directories are skipped)
+ * @param read - Reads one action entry's text, given the per-file cap;
+ *   its rejection is the parse's
+ * @param maxFileSize - As for {@link loadActionsFromZip}
+ */
+export async function loadActionsFromEntries(
+  entries: readonly Entry[],
+  read: (entry: FileEntry, maxBytes: number) => Promise<string>,
+  maxFileSize: number = MAX_ACTION_FILE_SIZE
+): Promise<ZipActionEntry[]> {
   // Filter to action JSON files only
   const actionEntries = entries
     .filter(
@@ -167,7 +222,7 @@ export async function loadActionsFromZip(
             'The file will still be processed.'
         );
       }
-      const text = await entry.getData(new TextWriter());
+      const text = await read(entry, maxFileSize);
       let action: RecordedAction;
       try {
         const parsed: unknown = JSON.parse(text);
@@ -235,7 +290,14 @@ async function extractSessionMetadataFromReader(
       );
     }
 
-    const text = await sessionEntry.getData(new TextWriter());
+    // Counted while inflating too: the check above reads the DECLARED size.
+    const text = await readZipEntryText(
+      sessionEntry,
+      new DecompressionBudget({
+        maxEntryBytes: maxFileSize,
+        maxTotalBytes: maxFileSize,
+      })
+    );
     return JSON.parse(text) as Record<string, unknown>;
   } finally {
     await reader.close();

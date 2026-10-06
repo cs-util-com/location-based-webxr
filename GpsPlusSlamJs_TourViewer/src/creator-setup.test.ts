@@ -127,6 +127,8 @@ const DOM_KEYS = [
   "moveUndo",
   "moveUndoText",
   "moveUndoButton",
+  "keepScanRow",
+  "keepScanInput",
 ] as const;
 
 function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {

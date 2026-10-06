@@ -216,11 +216,17 @@ test("'It's a second copy' is remembered in the draft: after a reload the same s
         // The page keeps writing and removing draft files while this walks
         // (a write commits through a temporary file; a discard removes its
         // entry), so an entry listed a moment ago can be gone when it is
-        // opened: that read is "not yet", and the poll asks again.
+        // opened (`NotFoundError`), or held by the page's write when it is
+        // read (`NotReadableError`): either read is "not yet", and the poll
+        // asks again. Any other error is a real failure.
         try {
           await walk(root);
         } catch (error) {
-          if (error instanceof DOMException && error.name === "NotFoundError") {
+          if (
+            error instanceof DOMException &&
+            (error.name === "NotFoundError" ||
+              error.name === "NotReadableError")
+          ) {
             return false;
           }
           throw error;

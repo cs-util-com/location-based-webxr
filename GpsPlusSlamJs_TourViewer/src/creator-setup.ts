@@ -47,6 +47,7 @@ import {
   type CodeSighting,
   type CorrectionRefusal,
   type SettleBasis,
+  type SettleChoice,
 } from "./visit-settle.js";
 import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
@@ -63,8 +64,17 @@ import {
 } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
 import {
+  serializeSignedTourManifest,
+  signedManifestFilesOf,
+  successorManifest,
+  TourIntegrityError,
+  type SignedTourManifest,
+  type TourFileRecord,
+} from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
+import {
   createEmptyTourManifest,
   serializeTourManifest,
+  type TourCaptureSpots,
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -77,8 +87,15 @@ import {
   selectQrFusedEntries,
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
-import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
+import {
+  ArchiveLimitError,
+  rebuildZipWithEntries,
+} from "gps-plus-slam-app-framework/storage";
+import { bakeCaptureSpots } from "./capture-bake.js";
+import { scanEntryNames } from "./tour-read-set.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
+import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
+import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import { Group, Vector3, type Object3D } from "three";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
@@ -91,6 +108,9 @@ import {
   type TourObjectRendererDeps,
 } from "./content-placement.js";
 import { odomNueFromWebXr } from "./visit-anchoring.js";
+import { createVisitAlignmentTracker } from "./visit-alignment-picks.js";
+import { createGpsExtentTracker } from "gps-plus-slam-app-framework/state/gps-extent-tracker";
+import { createWalkedDistanceTracker } from "./walked-distance-tracker.js";
 import { createKeyedChain } from "./keyed-chain.js";
 
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
@@ -166,7 +186,7 @@ import { isDriveUrl } from "./open-errors.js";
 import { createPrintSizeCheck } from "./print-size-check.js";
 import type { ScanOpen } from "./scan-open.js";
 import type { TourViewerSeams } from "./seams.js";
-import { archiveFileName } from "./tour-session.js";
+import { archiveFileName, type TourSession } from "./tour-session.js";
 import {
   endQrPipeline,
   type ArController,
@@ -250,6 +270,11 @@ export interface CreatorSetupDom {
   status: HTMLElement;
   mintButton: HTMLButtonElement;
   finishButton: HTMLButtonElement;
+  /** "Keep the walk recording in the zip" (scan-pass plan S1, S-D10):
+   *  shown beside Finish only for a tour that carries entries visitors
+   *  never read; unticked, the Finish leaves them out. */
+  keepScanRow: HTMLElement;
+  keepScanInput: HTMLInputElement;
   /** Step 5 on the page (outside the overlay): where the download lands. */
   finishStatus: HTMLElement;
   downloadButton: HTMLButtonElement;
@@ -317,6 +342,20 @@ export interface CreatorSetup {
    *  object under the tap (its target ray; the screen centre when null),
    *  or clear the selection on a miss. */
   selectInView: (tap: SelectTargetRay | null) => void;
+}
+
+/** A written entry's record for `manifest.json`: the SHA-256 and size of
+ *  the bytes the zip will hold (a string is written as UTF-8). */
+async function fileRecordOf(
+  data: Blob | Uint8Array | string,
+): Promise<TourFileRecord> {
+  const bytes =
+    typeof data === "string"
+      ? new TextEncoder().encode(data)
+      : data instanceof Uint8Array
+        ? data
+        : new Uint8Array(await data.arrayBuffer());
+  return { sha256: await sha256Hex(bytes), size: bytes.length };
 }
 
 export function wireCreatorSetup(deps: {
@@ -416,6 +455,68 @@ export function wireCreatorSetup(deps: {
   /** Each decoded code text's level id (`qrCodeId`, a hash - async), so a
    *  detection can be matched to the level in hand synchronously. */
   const codeIds = new Map<string, string>();
+  /**
+   * The running visit's per-moment alignments (owner decision D33): each
+   * object placed or moved, the code measured and each sighting of the code
+   * in hand is settled through the first mature alignment after its own
+   * moment (`visit-alignment-picks.ts`), not the drifted end one. Fed on
+   * every store change and before every noted moment; emptied per visit.
+   * Nothing visible depends on it: the previews stay rigid as placed.
+   */
+  const alignmentPicks = createVisitAlignmentTracker();
+  /** The session's GPS extent, the picks' maturity (40 m, D34). */
+  const gpsExtent = createGpsExtentTracker();
+  /** How far the author has walked, each event's stamp (R1, R3 of D33). */
+  const walkedDistance = createWalkedDistanceTracker();
+  /** What the picks last saw: the alignment and zero references and the
+   *  fix count. */
+  let pickedFrom: readonly [unknown, unknown, number] | null = null;
+
+  /** Hand the picks the alignment as it stands now, when it changed. */
+  function syncAlignmentPicks(): void {
+    const state = arStore.getState();
+    const alignmentMatrix = selectAlignmentMatrix(state);
+    const zero = selectZeroReference(state);
+    const positions = selectGpsPositions(state);
+    if (
+      pickedFrom !== null &&
+      pickedFrom[0] === alignmentMatrix &&
+      pickedFrom[1] === zero &&
+      pickedFrom[2] === positions.length
+    ) {
+      return;
+    }
+    pickedFrom = [alignmentMatrix, zero, positions.length];
+    alignmentPicks.noteAlignment({
+      alignmentMatrix,
+      zero,
+      gpsExtentM: gpsExtent.update(positions),
+      walkedM: walkedDistance.update({
+        gpsPositions: positions,
+        odometryPositions: selectOdometryPositions(state),
+      }),
+      alignmentInfo: authorAlignmentInfo(),
+    });
+  }
+
+  /** An object placed or moved in the running visit, now. */
+  function notePlaced(id: string): void {
+    syncAlignmentPicks();
+    alignmentPicks.notePlacement(id, Date.now());
+  }
+
+  /** The visit's sighting of the code in hand changed. */
+  function setVisitSighting(sighting: CodeSighting): void {
+    ctx.visitCodeSighting = sighting;
+    syncAlignmentPicks();
+    alignmentPicks.noteSighting(sighting, Date.now());
+  }
+
+  /** A new visit's picks start empty. */
+  function resetAlignmentPicks(): void {
+    alignmentPicks.reset();
+    pickedFrom = null;
+  }
   /** The creator-facing url of the open tour, for later draft writes. */
   let draftTourUrl: string | null = null;
   /** What a draft is offering, until the creator answers. */
@@ -624,7 +725,9 @@ export function wireCreatorSetup(deps: {
     );
     if (entry === undefined) return null;
     try {
-      return await (await session.loadEntry(entry.filename)).text();
+      // Under the text cap, like every JSON the session reads (K0
+      // milestone review R10): a level file is text on the JS heap.
+      return await session.loadEntryText(entry.filename);
     } catch {
       // Unreadable is not proof of anything, and the safe direction is to
       // KEEP the draft.
@@ -709,6 +812,9 @@ export function wireCreatorSetup(deps: {
     getArWorldGroup: () => seams.getArWorldGroup(),
     sessionLive,
     placementAllowed,
+    notePlaced: (id) => {
+      notePlaced(id);
+    },
     settleInputs: () => ({
       mintedLevel: ctx.mintedLevel,
       measurement: ctx.codeMeasurement,
@@ -760,6 +866,7 @@ export function wireCreatorSetup(deps: {
     // readout must follow the store, or "waiting for GPS alignment" sticks.
     // So does the zero, which the previews from geo wait for.
     arStore.subscribe(() => {
+      syncAlignmentPicks();
       if (
         previewsWaitForZero &&
         selectZeroReference(arStore.getState()) !== null
@@ -1279,6 +1386,7 @@ export function wireCreatorSetup(deps: {
         manifest: ctx.tourManifestStatus,
       }) === "ready"
     );
+    renderKeepScan();
     if (ctx.authorErrorText !== null) {
       dom.status.textContent = ctx.authorErrorText;
       dom.mintButton.disabled = true;
@@ -1497,7 +1605,10 @@ export function wireCreatorSetup(deps: {
         // through the session (it knows the folder the manifest sits in).
         if (blob !== undefined) return decodeFrameTexture(blob, 2);
         if (session === null) return null;
-        return decodeFrameTexture(await session.loadContentEntry(image), 2);
+        // A tour image is measured before it is decoded (K4 review R2).
+        return decodeFrameTexture(await session.loadContentEntry(image), 2, {
+          maxPixels: TOUR_MAX_IMAGE_PIXELS,
+        });
       },
     }).then(
       (rendered) => {
@@ -1834,6 +1945,7 @@ export function wireCreatorSetup(deps: {
             },
           },
     );
+    if (local !== null) notePlaced(pin.id);
     recordPlacement(pin);
     logPlacement(pin, { reticleWorld: position });
     dom.pinLabel.value = "";
@@ -1860,6 +1972,10 @@ export function wireCreatorSetup(deps: {
     // The visit the frame's odometry belongs to, taken at the tap: the
     // encode is async and the session may end meanwhile.
     const visit = ctx.arSessionGeneration;
+    // Its id now, so its pick opens at the capture (D33), not when the
+    // encode lands.
+    const photoId = newObjectId();
+    notePlaced(photoId);
     seams.encodeFrameJpeg(frame.image).then(
       (jpeg) => {
         // A visit that settled while this encoded (its session ended, or a
@@ -1868,7 +1984,7 @@ export function wireCreatorSetup(deps: {
         // to no visit at all (the teardown resets it).
         const settled = visitSettles.get(visit);
         const photo = mintPhoto({
-          id: newObjectId(),
+          id: photoId,
           cameraPose,
           alignmentMatrix:
             settled === undefined
@@ -1894,7 +2010,21 @@ export function wireCreatorSetup(deps: {
         recordPlacement(photo, jpeg.blob);
         logPlacement(photo, { cameraOdomPose: cameraPose });
         if (settled !== undefined) {
-          logSettle(visit, "late-arrival", settled, [photo], null);
+          logSettle(
+            visit,
+            "late-arrival",
+            settled,
+            [
+              {
+                object: photo,
+                basis: settled.basis,
+                alignment: settled.alignment,
+                refused: settled.refused,
+              },
+            ],
+            null,
+            null,
+          );
         }
         syncPreviews();
         // The plane sits at the capture spot, facing back at it: the
@@ -2152,7 +2282,7 @@ export function wireCreatorSetup(deps: {
       });
     }
     if (ctx.mintedLevel !== null && ctx.mintedLevel.id !== id) return;
-    ctx.visitCodeSighting = sighting;
+    setVisitSighting(sighting);
     placeEarlierObjects();
   }
 
@@ -2189,8 +2319,10 @@ export function wireCreatorSetup(deps: {
    *   between visits it already names the NEXT one (a page-side Finish once
    *   marked the next visit settled that way, so it never settled).
    * - A photo of the visit that lands AFTER its settle (the encode is
-   *   async) is minted through the same record when it lands, so every
-   *   object of a visit goes through one alignment.
+   *   async) is minted through the same record when it lands: the visit's
+   *   END choice. The visit's other objects went through their own picks
+   *   (D33), so a late photo can differ from them by the drift between its
+   *   capture and the visit's end.
    *
    * Recorded even for a visit with nothing to settle yet, for that photo.
    */
@@ -2199,7 +2331,9 @@ export function wireCreatorSetup(deps: {
   /**
    * Settle the running AR visit (authoring plan 2026-09-28-0953 §3.2, M2c):
    * the code measured in it and every object placed in it get their geo
-   * recomputed through ONE alignment (`visit-settle.ts` decides which), the
+   * recomputed from its odometry pose (`visit-settle.ts` decides through
+   * which alignment: each object's own pick, near a code event the
+   * code's, D33 and its review R1 and R3), the
    * draft is rewritten so a reload keeps it, and the troubleshooting
    * recording gets a `tourAuthoring/settled` action.
    *
@@ -2210,6 +2344,8 @@ export function wireCreatorSetup(deps: {
   function settleVisit(trigger: "visit-end" | "finish"): void {
     const visit = ctx.arSessionGeneration;
     if (visitSettles.has(visit)) return;
+    // The picks see the alignment as it stands at the end (the fallback).
+    syncAlignmentPicks();
     const state = arStore.getState();
     const visitAlignment = selectAlignmentMatrix(state);
     const zero = selectZeroReference(state);
@@ -2222,8 +2358,13 @@ export function wireCreatorSetup(deps: {
       measurement: ctx.codeMeasurement,
       sighting: ctx.visitCodeSighting,
       alignmentInfo: authorAlignmentInfo(),
+      // The end alignment's extent: the D31 marker of a code re-minted
+      // through it (R7 of D33).
+      alignmentGpsExtentM: gpsExtent.update(selectGpsPositions(state)),
       gpsAccuracyM: authorAlignmentInfo().gpsAccuracyM,
       nowIso: new Date().toISOString(),
+      // Each object at its own moment (D33).
+      picks: alignmentPicks.picks(),
     };
     const choice = settleAlignment(input);
     // Pure, so planned before the log: the log marks the pose this settle
@@ -2260,8 +2401,9 @@ export function wireCreatorSetup(deps: {
       visit,
       trigger,
       record,
-      plan.objects.map(({ object }) => object),
+      plan.objects,
       plan.level,
+      plan.levelAlignment,
     );
   }
 
@@ -2414,8 +2556,9 @@ export function wireCreatorSetup(deps: {
     visit: number,
     trigger: "visit-end" | "finish" | "late-arrival",
     record: VisitSettleRecord,
-    objects: readonly TourObject[],
+    objects: readonly ({ object: TourObject } & SettleChoice)[],
     level: { id: string; json: string } | null,
+    levelAlignment: number[] | null,
   ): void {
     arStore.dispatch(
       visitSettled({
@@ -2426,7 +2569,15 @@ export function wireCreatorSetup(deps: {
         visitAlignment: record.visitAlignment,
         usedAlignment: record.alignment,
         sighting: record.sighting,
-        objects: objects.map((object) => ({ id: object.id, geo: object.geo })),
+        // Each object's own choice (D33): its alignment, and why.
+        objects: objects.map(({ object, basis, alignment, refused }) => ({
+          id: object.id,
+          geo: object.geo,
+          basis,
+          usedAlignment: alignment,
+          refusedCorrection: refused,
+        })),
+        levelAlignment,
         level,
         referenceLevel: record.referenceLevel,
         zero: record.zero,
@@ -2594,11 +2745,18 @@ export function wireCreatorSetup(deps: {
       });
       codeIds.set(mintedText, id);
       if (measured.arVisitIndex === ctx.arSessionGeneration) {
-        ctx.visitCodeSighting = {
+        setVisitSighting({
           text: mintedText,
           levelId: id,
           odomPose: stablePose,
-        };
+        });
+        // The code measured in this visit: its pick opens NOW, when the
+        // level's identity has resolved (milliseconds, at most seconds after
+        // the tap), at the alignment current now; `atMs` stays the tap's.
+        if (role.kept === "measurement") {
+          syncAlignmentPicks();
+          alignmentPicks.noteMeasurement(measured.atMs);
+        }
         placeEarlierObjects();
       }
       ctx.mintedLevelTour = {
@@ -2665,6 +2823,76 @@ export function wireCreatorSetup(deps: {
     void measureCode(true);
   });
 
+  /** The open tour's entries a visitor never reads, kept for the tour and
+   *  manifest it was computed for: the readout renders on every dispatch,
+   *  and a scan can hold thousands of entries. */
+  let scanMemo: {
+    session: TourSession;
+    manifest: TourManifest | null;
+    count: number;
+  } | null = null;
+
+  function renderKeepScan(): void {
+    const current = ctx.session;
+    if (current === null || ctx.tourManifestStatus !== "settled") {
+      dom.keepScanRow.hidden = true;
+      return;
+    }
+    if (
+      scanMemo?.session !== current ||
+      scanMemo.manifest !== ctx.tourManifest
+    ) {
+      scanMemo = {
+        session: current,
+        manifest: ctx.tourManifest,
+        count: scanEntryNames(
+          current.entries.map((e) => e.filename),
+          ctx.tourManifest ?? createEmptyTourManifest(),
+          current.manifestWrap,
+        ).length,
+      };
+    }
+    dom.keepScanRow.hidden = dom.finishButton.hidden || scanMemo.count === 0;
+  }
+
+  /**
+   * The recorded photos' spots for this Finish (scan-pass plan S1, S-D11):
+   * the tour's own when it carries them, else baked from its recording,
+   * else none - the tour then keeps the visitor's live join, as before S1,
+   * and `notPlaced` says why for the creator. A recording that cannot be
+   * read or joined never fails the Finish; a cap's refusal and a failed
+   * integrity check do, as every read's does.
+   */
+  async function captureSpotsForFinish(
+    current: TourSession,
+    manifest: TourManifest,
+  ): Promise<{ spots?: TourCaptureSpots; notPlaced?: string }> {
+    if (manifest.captureSpots !== undefined) {
+      return { spots: manifest.captureSpots };
+    }
+    if (!current.hasRecording) return {};
+    try {
+      const bake = await bakeCaptureSpots(current, {
+        shouldContinue: () => ctx.session === current,
+        onChunk: (done, total) => {
+          ctx.finishProgress = FINISH_LABELS.placingPhotos(done, total);
+          renderAuthorReadout();
+        },
+      });
+      return bake.kind === "baked"
+        ? { spots: bake.spots }
+        : { notPlaced: bake.reason };
+    } catch (err) {
+      if (err instanceof ArchiveLimitError) throw err;
+      if (err instanceof TourIntegrityError) throw err;
+      return {
+        notPlaced: `reading the recording failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      };
+    }
+  }
+
   dom.finishButton.addEventListener("click", () => {
     const current = ctx.session;
     if (
@@ -2715,9 +2943,13 @@ export function wireCreatorSetup(deps: {
         // the new ones appended and the deleted ones filtered out (plan
         // §3.4, M4); the photos' bytes become content entries next to it.
         const manifest = ctx.tourManifest ?? createEmptyTourManifest();
+        const photos = await captureSpotsForFinish(current, manifest);
+        const captureSpots = photos.spots;
+        if (ctx.session !== current) return; // re-opened meanwhile
         const deleted = [...ctx.deletedObjectIds];
         const written: TourManifest = {
           ...manifest,
+          ...(captureSpots === undefined ? {} : { captureSpots }),
           // Never an id twice, and not for tidiness: the serializer REJECTS
           // duplicates, so one restored object that is already in the
           // manifest would make every finish throw - for as long as the
@@ -2728,11 +2960,38 @@ export function wireCreatorSetup(deps: {
             deleted,
           ),
         };
-        // A deleted photo takes its content file with it.
-        const removed = contentEntriesToRemove(manifest.objects, deleted, wrap);
+        // A deleted photo takes its content file with it. A signature over
+        // the old list cannot cover the files this Finish rewrites, so it
+        // goes - the output is unsigned until K2 signs on export. The list
+        // itself CONTINUES for a listed tour (K1 milestone review R7, below);
+        // anything else carrying the name is dropped with it.
+        const [listName, ...signatureNames] = signedManifestFilesOf(entryNames);
+        const listed =
+          current.integrity.kind === "listed" && listName !== undefined
+            ? { integrity: current.integrity, entry: listName }
+            : null;
+        // The published copy carries only what visitors read unless the
+        // creator keeps the walk (S-D10): the walk, its unbaked frames, depth.
+        // Never without baked spots (S1 milestone review #2): the walk is
+        // then the only way a viewer can place the photos, and the hosted
+        // file may be the creator's only copy of it.
+        const scanLeftOut =
+          dom.keepScanInput.checked || written.captureSpots === undefined
+            ? []
+            : scanEntryNames(entryNames, written, wrap);
+        const removed = [
+          ...contentEntriesToRemove(manifest.objects, deleted, wrap),
+          ...scanLeftOut,
+          ...signatureNames,
+          ...(listed === null && listName !== undefined ? [listName] : []),
+        ];
         const entries = [
           {
-            path: existingLevelPath ?? qrLevelEntryName(minted.id),
+            // A listed tour's new level goes inside the tour's folder, where
+            // its list can name it (R7); others keep the root, as before.
+            path:
+              existingLevelPath ??
+              `${listed === null ? "" : wrap}${qrLevelEntryName(minted.id)}`,
             data: minted.json,
           },
           { path: manifestPath, data: serializeTourManifest(written) },
@@ -2749,11 +3008,47 @@ export function wireCreatorSetup(deps: {
         // contain (PR #435 review, the second half of the second-finish
         // bug). A tour close clears the rebuilt zip, so a re-opened tour
         // starts from what is actually hosted.
-        const input =
-          ctx.rebuiltZip?.blob ?? (await current.readWholeArchive());
+        const previous = ctx.rebuiltZip;
+        const input = previous?.blob ?? (await current.readWholeArchive());
         if (ctx.session !== current) return; // re-opened meanwhile
+        // The series' list, continued: the same series id, the next
+        // version, and the hash of every file this zip will hold - the
+        // kept ones from the list the input carries (checked at open and
+        // as a whole by readWholeArchive, or written by the last Finish),
+        // the written ones hashed here. Without it the series id's only
+        // home was dropped (R7).
+        let signedManifest: SignedTourManifest | undefined;
+        if (listed !== null) {
+          signedManifest = successorManifest(
+            listed.integrity.manifest,
+            listed.entry,
+            {
+              ...(previous?.signedManifest === undefined
+                ? {}
+                : { baseFiles: previous.signedManifest.files }),
+              removed,
+              written: new Map(
+                await Promise.all(
+                  entries.map(
+                    async (e) => [e.path, await fileRecordOf(e.data)] as const,
+                  ),
+                ),
+              ),
+              createdAt: new Date().toISOString(),
+            },
+          );
+          entries.push({
+            path: listed.entry,
+            data: serializeSignedTourManifest(signedManifest),
+          });
+        }
         const blob = await rebuildZipWithEntries(input, entries, {
           remove: removed,
+          // The open archive is untrusted, so its rebuild inflates under
+          // the session's own budget (K0 milestone review R1). A previous
+          // Finish's zip is this page's own output, stored and bounded:
+          // the rebuild sizes a budget for it itself.
+          ...(previous === null ? { budget: current.budget } : {}),
           onProgress: (done, total) => {
             ctx.finishProgress = FINISH_LABELS.rebuilding(done, total);
             renderAuthorReadout();
@@ -2763,6 +3058,7 @@ export function wireCreatorSetup(deps: {
         const hosted = current.hostedFileName();
         ctx.rebuiltZip = {
           blob,
+          ...(signedManifest === undefined ? {} : { signedManifest }),
           // The hosted file's own name first: Drive offers "Replace" only
           // for the same name (Drive replace plan §2 decision 3) - made safe
           // to save where a phone would change it, and the Drive steps then
@@ -2774,9 +3070,17 @@ export function wireCreatorSetup(deps: {
                 ? hosted
                 : downloadSafeName(hosted),
         };
-        dom.finishStatus.textContent = drive()
-          ? FINISH_LABELS.readyDrive(blob.size, ctx.rebuiltZip.filename)
-          : FINISH_LABELS.ready(blob.size, route() === "share");
+        dom.finishStatus.textContent = [
+          drive()
+            ? FINISH_LABELS.readyDrive(blob.size, ctx.rebuiltZip.filename)
+            : FINISH_LABELS.ready(blob.size, route() === "share"),
+          ...(scanLeftOut.length === 0
+            ? []
+            : [FINISH_LABELS.scanLeftOut(scanLeftOut.length)]),
+          ...(photos.notPlaced === undefined
+            ? []
+            : [FINISH_LABELS.photosNotPlaced(photos.notPlaced)]),
+        ].join(" ");
         dom.downloadButton.textContent = idleLabel();
         dom.downloadButton.disabled = false;
         // The placed objects are in the zip now; the next finish (a
@@ -2976,6 +3280,7 @@ export function wireCreatorSetup(deps: {
       // visit, so they go into one frame that starts at the scene root -
       // placed from geo, like the viewer's content - and moves under the
       // world group once the code is seen (`placeEarlierObjects`).
+      resetAlignmentPicks();
       earlierFrame = new Group();
       earlierFrame.name = "earlier-visits";
       earlierFrame.matrixAutoUpdate = false;
@@ -2994,6 +3299,7 @@ export function wireCreatorSetup(deps: {
     endAuthorVisit: () => {
       if (!creator) return;
       settleVisit("visit-end");
+      resetAlignmentPicks();
       ctx.visitCodeSighting = null;
       storedCodeSightings.clear();
       liveRefusal = null;
@@ -3013,6 +3319,9 @@ export function wireCreatorSetup(deps: {
     },
     resetFinishStep: () => {
       dom.downloadButton.disabled = true;
+      // A "keep the walk" given for the closing tour is not given for the
+      // next one (S1 milestone review #9).
+      dom.keepScanInput.checked = false;
       // The LABEL too, because the hand-off continuation is generation-
       // guarded and returns without restoring it for a tour that closed
       // underneath an open share sheet. Without this the next tour's

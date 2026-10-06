@@ -263,6 +263,8 @@ export function wireArEntry(deps: {
     ctx.contentRendered = null;
     ctx.contentAttempted = false;
     ctx.contentError = null;
+    // The story stops with the session; the station progress stays.
+    hooks.stopStations();
     dom.escapeButton.hidden = true;
     ctx.viewerQrStatus = null;
     ctx.viewerUnknownCode = null;
@@ -331,6 +333,7 @@ export function wireArEntry(deps: {
           ctx.latestFrame = frame;
           ctx.qrController?.offerFrame(frame);
           renderArStatus();
+          hooks.tickStations();
         },
         onSessionEnd,
         onGpsPosition: (position) => {
@@ -399,8 +402,11 @@ export function wireArEntry(deps: {
     ctx.joinDeclined = false;
     ctx.placementUnsubscribe = arStore.subscribe(() => {
       hooks.tryPlaceTour();
+      // The stations (tour kit plan K4) are judged on every GPS fix too.
+      hooks.tickStations();
     });
     hooks.tryPlaceTour();
+    hooks.tickStations();
     renderArStatus();
   }
 
@@ -408,6 +414,9 @@ export function wireArEntry(deps: {
   renderArState(arController.getState());
   void arController.refreshSupport();
   dom.enterArButton.addEventListener("click", () => {
+    // Inside the tap, before any await: the stories' one audio element
+    // may play later only if it played in a gesture (tour kit plan K4).
+    if (!authorMode) hooks.unlockStationAudio();
     // Defensive: enable() reports failures via its state machine, but a
     // rejection anywhere else (e.g. the rollback disable()) must reach the
     // error box, not die as an unhandled rejection.

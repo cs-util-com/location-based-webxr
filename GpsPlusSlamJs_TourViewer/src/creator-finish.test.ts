@@ -30,7 +30,12 @@
  */
 import { describe, expect, it } from "vitest";
 import { Matrix4, Quaternion, Vector3 } from "three";
-import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
+import { existsSync, readFileSync } from "node:fs";
+import {
+  DecompressionBudget,
+  loadActionsFromZip,
+  packFilesAsZip,
+} from "gps-plus-slam-app-framework/storage";
 import {
   readStoredCentralDirectory,
   readStoredEntryBytes,
@@ -40,7 +45,10 @@ import {
   parseTourManifest,
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import type {
+  TourManifest,
+  TourObject,
+} from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { wireCreatorSetup } from "./creator-setup.js";
 import type { CreatorSetupDom } from "./creator-setup.js";
@@ -49,6 +57,14 @@ import {
   createTourViewerStore,
 } from "./tour-viewer-session.js";
 import { objectPoseNue } from "./content-placement.js";
+import {
+  buildListedTourFixture,
+  buildSignedTourFixture,
+  generateFixtureKey,
+} from "./test-support/tour-signing-fixture.js";
+import { openTourFile, type TourSession } from "./tour-session.js";
+import { describeTourTrust } from "./tour-trust-view.js";
+import { linkTrustKey, type TrustStorage } from "./tour-trust.js";
 
 /** The element surface `creator-setup` writes to, and nothing else. */
 interface FakeEl {
@@ -56,6 +72,7 @@ interface FakeEl {
   textContent: string;
   disabled: boolean;
   value: string;
+  checked: boolean;
   open: boolean;
   /** The status line's AR clamp flag (`data-clamped`). */
   dataset: Record<string, string>;
@@ -73,6 +90,7 @@ function el(): FakeEl {
     textContent: "",
     disabled: false,
     value: "",
+    checked: false,
     open: false,
     dataset: {},
     handlers,
@@ -128,6 +146,8 @@ const DOM_KEYS = [
   "moveUndo",
   "moveUndoText",
   "moveUndoButton",
+  "keepScanRow",
+  "keepScanInput",
 ] as const;
 
 function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {
@@ -170,17 +190,27 @@ async function hostedArchive(
 }
 
 /** The slice of an open session the finish handler actually reaches for. */
-function fakeSession(blob: Blob, hostedName: string | null = null): unknown {
+function fakeSession(
+  blob: Blob,
+  hostedName: string | null = null,
+  budget?: DecompressionBudget,
+  /** Further entries the hosted zip carries (its `hostedContent`). */
+  extraNames: readonly string[] = [],
+): unknown {
   return {
+    budget,
     archive: { url: "https://example.test/mytour.zip", size: blob.size },
     hostedFileName: () => hostedName,
     entries: [
       { filename: `${WRAP}tour.json` },
       { filename: `${WRAP}qr/${LEVEL_ID}.json` },
+      ...extraNames.map((filename) => ({ filename })),
     ],
     manifestWrap: WRAP,
+    integrity: { kind: "none" },
     readWholeArchive: () => Promise.resolve(blob),
     loadEntry: () => Promise.resolve(new Blob([])),
+    loadEntryText: () => Promise.resolve(""),
   };
 }
 
@@ -228,21 +258,39 @@ async function wireFinishable(options: {
   onDisable?: (ctx: ReturnType<typeof createTourViewerSession>) => void;
   /** The store's alignment as 16 numbers (enables the settle). */
   alignment?: number[];
+  /** The open session's decompression budget (K0 milestone review R1). */
+  budget?: DecompressionBudget;
   /** Objects placed in the RUNNING visit (0), at these odometry spots. */
   placedInVisit?: readonly {
     object: TourObject;
     local: [number, number, number];
   }[];
+  /** A REAL open session in place of the fake one (its archive must carry
+   *  `options.hosted` in `${WRAP}tour.json` and the level file). */
+  session?: TourSession;
+  /** Merged over the fake session (a recording's readers, scan-pass S1). */
+  sessionExtras?: Record<string, unknown>;
+  /** Merged over the in-memory manifest the Finish starts from. */
+  manifestExtras?: Partial<TourManifest>;
 }) {
   const blob = await hostedArchive(options.hosted, options.hostedContent);
   const dom = fakeDom();
   const ctx = createTourViewerSession();
-  ctx.session = fakeSession(blob, options.hostedName ?? null) as never;
+  ctx.session = (options.session ?? {
+    ...(fakeSession(
+      blob,
+      options.hostedName ?? null,
+      options.budget,
+      (options.hostedContent ?? []).map((c) => c.path),
+    ) as object),
+    ...options.sessionExtras,
+  }) as never;
   ctx.mintedLevel = { id: LEVEL_ID, json: '{"measured":true}' };
   ctx.tourManifestStatus = "settled";
   ctx.tourManifest = {
     ...createEmptyTourManifest(),
     objects: [...options.hosted],
+    ...options.manifestExtras,
   };
   ctx.deletedObjectIds = [...(options.deleted ?? [])];
   ctx.placedObjects = [
@@ -302,6 +350,179 @@ async function entryNamesOf(blob: Blob): Promise<string[]> {
   const bytes = new Uint8Array(await blob.arrayBuffer());
   return readStoredCentralDirectory(bytes).map((e) => e.name);
 }
+
+describe("the finish rebuilds the open archive under its session's budget (K0 milestone review R1)", () => {
+  it("fails the finish with the cap's sentence when the hosted zip passes the session's budget", async () => {
+    // A tour from any link can carry a deflate bomb; the Finish used to
+    // inflate every carried entry with no limit. A budget too small for
+    // the archive stands in for one, so the test needs no bomb.
+    const { dom, ctx } = await wireFinishable({
+      hosted: [pin("already-there")],
+      placed: [pin("new-one")],
+      // A carried entry: the finish replaces tour.json and the level, so
+      // only a file it keeps is inflated from the hosted zip.
+      hostedContent: [{ path: `${WRAP}content/kept.jpg`, data: "0123456789" }],
+      budget: new DecompressionBudget({ maxEntryBytes: 4, maxTotalBytes: 4 }),
+    });
+
+    dom.finishButton.click();
+    await settle(ctx);
+
+    expect(ctx.rebuiltZip).toBeNull();
+    expect(ctx.finishError).toMatch(/too large once unpacked/);
+  });
+});
+
+/** A hosted tour WITH a manifest (signed or not), opened as a real session
+ *  from a file: the shape a Finish of a K1 tour starts from. */
+async function listedHostedSession(signed: boolean, withLevel = true) {
+  const files = {
+    "tour.json": serializeTourManifest({
+      ...createEmptyTourManifest(),
+      objects: [pin("already-there")],
+    }),
+    ...(withLevel ? { [`qr/${LEVEL_ID}.json`]: '{"old":true}' } : {}),
+    "content/kept.jpg": "0123456789",
+  };
+  const options = { wrap: WRAP, version: 3 };
+  const fixture = signed
+    ? await buildSignedTourFixture(files, await generateFixtureKey(), options)
+    : await buildListedTourFixture(files, options);
+  const session = await openTourFile(
+    new File([fixture.zip], "mytour.zip", { type: "application/zip" }),
+  );
+  expect(session.integrity.kind).toBe("listed");
+  return { fixture, session };
+}
+
+/** An in-memory `localStorage` stand-in for the trust records. */
+function memoryStorage(): TrustStorage {
+  const items = new Map<string, string>();
+  return {
+    getItem: (key) => items.get(key) ?? null,
+    setItem: (key, value) => {
+      items.set(key, value);
+    },
+  };
+}
+
+describe("the finish continues a listed tour's series, unsigned (K1 milestone review R7)", () => {
+  // Why these tests matter: the Finish rewrites tour.json and the level
+  // file, so the OLD list and any signature over it no longer match. It
+  // used to drop manifest.json altogether - and with it the series id's
+  // only home: the next version was a stranger to every phone that knew the
+  // series, and a file-opened draft lost its key. Now the list continues:
+  // the same series, the next version, the hashes of what the zip really
+  // holds. Only the signature goes (K2 re-signs on export), so a phone that
+  // knew the signed tour still warns that this copy is not signed.
+  it.each([
+    ["an unsigned", false],
+    ["a signed", true],
+  ])(
+    "%s tour: the new zip opens as the next version of the same series, unsigned, every file listed",
+    async (_label, signed) => {
+      const { fixture, session } = await listedHostedSession(signed);
+      const { dom, ctx } = await wireFinishable({
+        hosted: [pin("already-there")],
+        placed: [pin("new-one")],
+        session,
+      });
+      dom.finishButton.click();
+      await settle(ctx);
+      expect(ctx.finishError).toBeNull();
+
+      const blob = ctx.rebuiltZip!.blob;
+      const names = await entryNamesOf(blob);
+      expect(names).not.toContain(`${WRAP}manifest.sig.json`);
+      const next = await openTourFile(
+        new File([blob], "mytour.zip", { type: "application/zip" }),
+      );
+      expect(next.integrity).toMatchObject({
+        kind: "listed",
+        signature: null,
+        manifest: {
+          seriesId: fixture.manifest.seriesId,
+          version: fixture.manifest.version + 1,
+        },
+      });
+      // Every file the zip holds is listed with its real hash.
+      await expect(next.wholeArchiveCheck).resolves.toBe("checked");
+      // The draft stays attached: a file is keyed by its series.
+      expect(next.archive.url).toBe(session.archive.url);
+      await next.close();
+      await session.close();
+    },
+  );
+
+  it("a code new to a wrapped listed tour gets its level inside the tour's folder, where the list names it", async () => {
+    const { session } = await listedHostedSession(false, false);
+    const { dom, ctx } = await wireFinishable({
+      hosted: [pin("already-there")],
+      placed: [],
+      session,
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(ctx.finishError).toBeNull();
+    const blob = ctx.rebuiltZip!.blob;
+    expect(await entryNamesOf(blob)).toContain(`${WRAP}qr/${LEVEL_ID}.json`);
+    const next = await openTourFile(
+      new File([blob], "mytour.zip", { type: "application/zip" }),
+    );
+    expect(next.integrity.kind).toBe("listed");
+    await next.close();
+    await session.close();
+  });
+
+  it("a phone that knew the SIGNED tour at a link warns that the finished copy is not signed", async () => {
+    const { session } = await listedHostedSession(true);
+    const storage = memoryStorage();
+    const link = linkTrustKey("https://host.example/mytour.zip");
+    await describeTourTrust({
+      integrity: session.integrity,
+      sources: [link],
+      storage,
+      nowMs: 1,
+    });
+    const { dom, ctx } = await wireFinishable({
+      hosted: [pin("already-there")],
+      placed: [pin("new-one")],
+      session,
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    const next = await openTourFile(
+      new File([ctx.rebuiltZip!.blob], "mytour.zip", {
+        type: "application/zip",
+      }),
+    );
+    const lines = await describeTourTrust({
+      integrity: next.integrity,
+      sources: [link],
+      storage,
+      nowMs: 2,
+    });
+    expect(lines.join("\n")).toMatch(/This copy is not signed/);
+    await next.close();
+    await session.close();
+  });
+
+  it("a tour that uses nothing of version 2 is published as tour.json version 1, which older builds open (K1 milestone review R10)", async () => {
+    const { dom, ctx } = await wireFinishable({
+      hosted: [pin("already-there")],
+      placed: [pin("new-one")],
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    const bytes = readStoredEntryBytes(
+      new Uint8Array(await ctx.rebuiltZip!.blob.arrayBuffer()),
+      `${WRAP}tour.json`,
+    );
+    expect(JSON.parse(new TextDecoder().decode(bytes))).toMatchObject({
+      version: 1,
+    });
+  });
+});
 
 describe("what the finish actually writes into the published zip", () => {
   it("keeps the manifest and the level INSIDE the wrap, adding no root copies", async () => {
@@ -604,5 +825,254 @@ describe("the finish settles the AR visit still running (authoring plan 2026-09-
     );
     expect(settles).toHaveLength(1);
     expect(ctx.mintedLevel).toBe(level);
+  });
+});
+
+describe("the finish bakes the recorded photos' spots (scan-pass plan S1, S-D11)", () => {
+  // Why these tests matter: the baked spots are what every visitor places
+  // instead of replaying the walk, and their presence switches the
+  // visitor's live join OFF. So the Finish must bake exactly when the tour
+  // carries a recording it can join, never write the marker for nothing,
+  // and never let a recording it cannot join stop the creator's Finish.
+  createTourViewerStore();
+  const FIXTURE = new URL(
+    "../../GpsPlusSlamJs_PhysicsDemo/playwright-tests/fixtures/sample-recording.zip",
+    import.meta.url,
+  );
+
+  async function recordingExtras(odomCoordVersion = 5) {
+    if (!existsSync(FIXTURE)) {
+      throw new Error("creator-finish: the shared sample-recording.zip moved");
+    }
+    const bytes = new Uint8Array(readFileSync(FIXTURE));
+    const actions = (await loadActionsFromZip(bytes)).map((e) => e.action);
+    const images = Array.from(
+      { length: 6 },
+      (_, i) => `images/frame-${String(i + 1).padStart(6, "0")}.jpg`,
+    );
+    let replays = 0;
+    return {
+      extras: {
+        hasRecording: true,
+        entries: [
+          { filename: `${WRAP}tour.json` },
+          { filename: `${WRAP}qr/${LEVEL_ID}.json` },
+          ...images.map((filename) => ({ filename, isImage: true })),
+        ],
+        loadSessionMeta: () => Promise.resolve({ odomCoordVersion }),
+        loadRecordingActions: () => {
+          replays += 1;
+          return Promise.resolve(actions);
+        },
+      },
+      replays: () => replays,
+    };
+  }
+
+  async function writtenManifest(ctx: {
+    rebuiltZip: { blob: Blob } | null;
+  }): Promise<Record<string, unknown>> {
+    const bytes = readStoredEntryBytes(
+      new Uint8Array(await ctx.rebuiltZip!.blob.arrayBuffer()),
+      `${WRAP}tour.json`,
+    );
+    return JSON.parse(new TextDecoder().decode(bytes)) as Record<
+      string,
+      unknown
+    >;
+  }
+
+  it("writes the spots of a tour that carries a recording, at minor 1", async () => {
+    const recording = await recordingExtras();
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      sessionExtras: recording.extras,
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(ctx.finishError).toBeNull();
+    const written = await writtenManifest(ctx);
+    expect(written).toMatchObject({ version: 2, minor: 1 });
+    const spots = parseTourManifest(written).captureSpots;
+    // 5 of 6: the fixture's first photo precedes the GPS zero.
+    expect(spots?.captures).toHaveLength(5);
+    // The in-memory manifest advances with it, as with objects.
+    expect(ctx.tourManifest?.captureSpots).toEqual(spots);
+  });
+
+  it("does not bake again when the tour already carries its spots", async () => {
+    const recording = await recordingExtras();
+    const spots = {
+      fixes: 9,
+      gpsAccuracyMedianM: 2,
+      captures: [
+        {
+          image: "images/frame-000002.jpg",
+          geo: { lat: 47.5, lon: 8.7, alt: 400, rotation: [0, 0, 0, 1] },
+        },
+      ],
+    };
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      sessionExtras: recording.extras,
+      manifestExtras: { captureSpots: spots as never },
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(recording.replays()).toBe(0);
+    expect(parseTourManifest(await writtenManifest(ctx)).captureSpots).toEqual(
+      spots,
+    );
+  });
+
+  it("finishes WITHOUT the marker when the recording cannot be joined", async () => {
+    const recording = await recordingExtras(3);
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      sessionExtras: recording.extras,
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(ctx.finishError).toBeNull();
+    expect(await writtenManifest(ctx)).not.toHaveProperty("captureSpots");
+  });
+
+  it("finishes without the marker when reading the recording fails", async () => {
+    const recording = await recordingExtras();
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      sessionExtras: {
+        ...recording.extras,
+        loadRecordingActions: () => Promise.reject(new Error("bad stream")),
+      },
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(ctx.finishError).toBeNull();
+    expect(await writtenManifest(ctx)).not.toHaveProperty("captureSpots");
+  });
+});
+
+describe("the published copy carries only what visitors need (scan-pass plan S1, S-D10)", () => {
+  // Why these tests matter: the hosted zip is what every visitor downloads.
+  // By default the Finish leaves the creator's walk out of it - the action
+  // stream, session.json and the frames no baked spot shows - and keeps it
+  // only when the creator ticks the box (for a co-author). Both halves
+  // matter: a walk shipped to visitors costs them megabytes and publishes
+  // the creator's timestamped route; content dropped from the copy is a
+  // broken tour nobody notices until the field.
+  createTourViewerStore();
+  const FIXTURE = new URL(
+    "../../GpsPlusSlamJs_PhysicsDemo/playwright-tests/fixtures/sample-recording.zip",
+    import.meta.url,
+  );
+  const FRAMES = Array.from(
+    { length: 6 },
+    (_, i) => `images/frame-${String(i + 1).padStart(6, "0")}.jpg`,
+  );
+  const WALK = ["session.json", "actions/000001.json", ...FRAMES];
+  // A file of the creator's own that no viewer reads: never the walk.
+  const README = `${WRAP}README.txt`;
+
+  async function wireRecordingTour(keepScan: boolean, odomCoordVersion = 5) {
+    const bytes = new Uint8Array(readFileSync(FIXTURE));
+    const actions = (await loadActionsFromZip(bytes)).map((e) => e.action);
+    const wired = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      hostedContent: [...WALK, README].map((path) => ({ path, data: "x" })),
+      sessionExtras: {
+        hasRecording: true,
+        entries: [
+          { filename: `${WRAP}tour.json` },
+          { filename: `${WRAP}qr/${LEVEL_ID}.json` },
+          ...[...WALK, README].map((filename) => ({
+            filename,
+            isImage: filename.endsWith(".jpg"),
+          })),
+        ],
+        loadSessionMeta: () => Promise.resolve({ odomCoordVersion }),
+        loadRecordingActions: () => Promise.resolve(actions),
+      },
+    });
+    wired.dom.keepScanInput.checked = keepScan;
+    wired.dom.finishButton.click();
+    await settle(wired.ctx);
+    return wired;
+  }
+
+  it("leaves the walk out by default and keeps every photo a baked spot shows", async () => {
+    const { ctx, dom } = await wireRecordingTour(false);
+    expect(ctx.finishError).toBeNull();
+    const names = await entryNamesOf(ctx.rebuiltZip!.blob);
+    // The first frame precedes the GPS zero, so no spot shows it.
+    expect(names.filter((n) => WALK.includes(n)).sort()).toEqual(
+      FRAMES.slice(1).sort(),
+    );
+    expect(names).toContain(`${WRAP}tour.json`);
+    expect(names).toContain(`${WRAP}qr/${LEVEL_ID}.json`);
+    // A first version dropped every file a visitor does not read, which
+    // would have taken a creator's README or licence out of the copy.
+    expect(names).toContain(README);
+    // The creator is told, because the hosted file may be their only copy.
+    expect(dom.finishStatus.textContent).toContain(
+      "leaves out the walk recording",
+    );
+  });
+
+  it("keeps the walk when the photos could not be placed, and says why", async () => {
+    // Why (S1 milestone review #2): without baked spots the walk is the
+    // only way a visitor's viewer can place the photos - and the hosted
+    // file may be the creator's only copy of it. A recording this build
+    // cannot join (an old era here; a network blip reading it, a wrapped
+    // zip) must leave the copy as it was, with the reason on screen.
+    const { ctx, dom } = await wireRecordingTour(false, 3);
+    expect(ctx.finishError).toBeNull();
+    const names = await entryNamesOf(ctx.rebuiltZip!.blob);
+    expect(names.filter((n) => WALK.includes(n)).sort()).toEqual(
+      [...WALK].sort(),
+    );
+    expect(dom.finishStatus.textContent).not.toContain(
+      "leaves out the walk recording",
+    );
+    expect(dom.finishStatus.textContent).toContain(
+      "The recorded photos could not be placed",
+    );
+  });
+
+  it("forgets the creator's tick with the tour it was given for", async () => {
+    // Why (S1 milestone review #9): a "keep the walk" for one tour must not
+    // silently apply to the next tour's Finish.
+    const { dom, setup } = await wireRecordingTour(true);
+    setup.resetFinishStep();
+    expect(dom.keepScanInput.checked).toBe(false);
+  });
+
+  it("keeps the walk when the creator asks for it", async () => {
+    const { ctx, dom } = await wireRecordingTour(true);
+    const names = await entryNamesOf(ctx.rebuiltZip!.blob);
+    expect(names.filter((n) => WALK.includes(n)).sort()).toEqual(
+      [...WALK].sort(),
+    );
+    expect(dom.finishStatus.textContent).not.toContain(
+      "leaves out the walk recording",
+    );
+  });
+
+  it("offers the choice only for a tour that carries something visitors never read", async () => {
+    const plain = await wireFinishable({ hosted: [], placed: [] });
+    plain.setup.renderAuthorReadout();
+    expect(plain.dom.keepScanRow.hidden).toBe(true);
+    const withWalk = await wireFinishable({
+      hosted: [],
+      placed: [],
+      hostedContent: [{ path: "actions/000001.json", data: "x" }],
+    });
+    withWalk.setup.renderAuthorReadout();
+    expect(withWalk.dom.keepScanRow.hidden).toBe(false);
   });
 });
