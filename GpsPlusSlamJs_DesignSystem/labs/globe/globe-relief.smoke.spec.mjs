@@ -272,7 +272,13 @@ test("the band's cross-fade between the globe and the relief is continuous, and 
   for (const altKm of [1900, 1550, 1250]) {
     const context = await browser.newContext();
     const page = await context.newPage();
-    const base = `${BASE}&handOverKm=${altKm}&detail=0`;
+    // The carriers' own cross-fade: without round 6's stencil fill (the
+    // globe drawn behind the relief at share 1, by design) and without the
+    // cloud shell (its clouds and shadow add their own swap across the
+    // band, 19 levels against 6); both have their own smokes
+    // (globe-handover, globe-clouds). Red since round 6 until pinned (the
+    // full run of 2026-10-05, bisected to d0bb6cbe and the shell).
+    const base = `${BASE}&handOverKm=${altKm}&detail=0&bandFill=0&cloudShell=0`;
     await context.grantPermissions(["geolocation"], { origin: ORIGIN });
     await context.setGeolocation(TARGET);
     const errors = await bootGlobe(page, `${base}&bandShare=0.5`);
@@ -488,10 +494,14 @@ test("the band's fade does not shimmer under a moving camera", async ({
 // fetches nothing" was true by construction and unmeasured, and the
 // globe's 64 MB cache stayed resident down to the hold. On a phone's
 // viewport (390 x 844 at DPR 2): above the band the relief has fetched
-// nothing; at the 150 km hold the globe's cache has been released and the
-// globe asks for no tile over five seconds; the two caches together stay
-// under 72 MiB there (the relief's own 64 MB budget plus an eighth),
-// reported at x0.5 and x2.
+// nothing; at the 150 km hold the globe's cache has been released down to
+// its coarsest tiles and the globe asks for no tile over five seconds; the
+// two caches together stay under 72 MiB there (the relief's own 64 MB
+// budget plus an eighth), reported at x0.5 and x2. Since round 6 the
+// drain keeps the globe's coarsest tiles on purpose: they are the stencil
+// fill behind the relief (plan 2026-10-04-1050 G6-1). Kept: more than
+// nothing (the fill needs them) and at most 8 MiB, the same eighth of the
+// globe's 64 MB budget (4.0 MiB measured on 2026-10-05).
 test("outside the band the other carrier fetches nothing and holds no memory, on a phone", async ({
   browser,
 }) => {
@@ -548,7 +558,8 @@ test("outside the band the other carrier fetches nothing and holds no memory, on
   expect(above.relief.stats.loaded).toBe(0);
   expect(above.relief.cachedBytes).toBe(0);
   expect(held.relief.releasedBytes.globe).toBeGreaterThan(0);
-  expect(held.relief.globeCachedBytes).toBe(0);
+  expect(held.relief.globeCachedBytes).toBeGreaterThan(0);
+  expect(held.relief.globeCachedBytes).toBeLessThanOrEqual(8 * MIB);
   expect(sum(held.tileRequestsByLevel)).toBe(sum(t0.requests));
   expect(total).toBeLessThanOrEqual(LIMIT);
   await context.close();
@@ -565,7 +576,16 @@ test("a planted detail grid lands where it is placed: east of the target brighte
   context,
 }) => {
   test.setTimeout(300_000);
-  const errors = await diveAndLand(page, context, `${BASE}&detail=0`);
+  // The placement alone: round 6's sharp takeover and the cloud shell
+  // change the frame while it is read (the relief taking pixels late, the
+  // shell's clouds and shadow over the relief), which drifted the west half
+  // by 4.3 and then 22 levels with nothing planted there (bisected
+  // 2026-10-05: fb27d790, then the shell). Their own smokes cover them.
+  const errors = await diveAndLand(
+    page,
+    context,
+    `${BASE}&detail=0&bandSharp=0&cloudShell=0`,
+  );
   const half = (left) => {
     const g = [];
     for (let y = 0.45; y <= 0.95; y += 0.05)

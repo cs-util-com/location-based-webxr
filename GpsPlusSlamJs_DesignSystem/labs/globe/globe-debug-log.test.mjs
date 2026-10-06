@@ -64,6 +64,15 @@ describe("debugExportText", () => {
     assert.equal(parsed.format, "globe-debug/1");
   });
 
+  // The link back to the exported view (volume-cloud plan §16): null when
+  // none is given, the URL as passed otherwise.
+  it("carries the link to the exported view, or null", () => {
+    const base = { device: {}, live: {}, recording: null, events: [] };
+    assert.equal(JSON.parse(debugExportText(base)).link, null);
+    const link = "https://example.test/labs/globe/#view=1,2,3.000,4.0,5.0";
+    assert.equal(JSON.parse(debugExportText({ ...base, link })).link, link);
+  });
+
   it("stays under 100 KB with a full ring of 500 events", () => {
     const log = createDebugLog({ capacity: 500, now: () => 123456.789 });
     for (let i = 0; i < 2000; i++) {

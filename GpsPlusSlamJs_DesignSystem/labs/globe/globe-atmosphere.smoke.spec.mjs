@@ -571,9 +571,11 @@ const UNDER_THE_SUN = { latitude: 0, longitude: 1.86 };
 async function skyFromInside(page, context, altKm, thickness) {
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(UNDER_THE_SUN);
+  // The shell's thickness pinned (atmoRamp=0): since F2b it thins to 1x on
+  // the descent below 2,000 km, and this measures the shell at k itself.
   const errors = await bootGlobe(
     page,
-    `at=0,1.86&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&cloudOpacity=0&stars=0&milkyWay=0&sky=0&atmoStrength=4&atmoThickness=${thickness}&diveMs=1000&handOver=0&handOverKm=${altKm}`,
+    `at=0,1.86&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&cloudOpacity=0&stars=0&milkyWay=0&sky=0&atmoStrength=4&atmoThickness=${thickness}&atmoRamp=0&diveMs=1000&handOver=0&handOverKm=${altKm}`,
   );
   await page.locator("#globe-pin").click();
   await page.waitForFunction(
@@ -698,4 +700,75 @@ test("the plate measures the atmosphere's cost and shows it in the device line",
   expect(s.deviceLine).toContain(s.atmosphereCost);
   expect(s.atmosphere.on).toBe(true);
   expect(errors).toEqual([]);
+});
+
+// WHY (owner, 2026-10-06): "it is more the glow of the globe that causes
+// the sharp edge". Below the hand-over the space pass keeps its veil over
+// the ground (F2 plan M1 R3 Major 1: the framework haze alone is too thin
+// at 80-40 km, and fading the veil there broke the hand-over's continuity
+// smoke), but its rays ended at the ellipsoid: relief standing above the
+// ellipsoid's limb was treated as sky (whose share is 0 below the
+// hand-over) and drawn unveiled, a hard line with the mountains above it
+// (the plan's accepted "no scene depth" limit, M1 R3 minor 10). The rays
+// now end at the drawn relief. This stands 9.7 km up (the owner's pose of
+// the export) with E 5, so the synthetic hills stand taller than the camera
+// and so above the limb, the sky ON (with the sky off there is no
+// hand-over, and the pass then draws its sky light over every pixel: two
+// earlier versions of this test were blind that way). The relief's pixels
+// are those that change when the relief is hidden; each must also change
+// when the pass is on against off. Bound: at most 2 % of them unveiled,
+// swept x0.5/x1/x2.
+const UNVEILED_SHARE = 0.02;
+
+test("below the hand-over the space pass veils every relief pixel at the horizon (no edge at the ellipsoid's limb)", async ({
+  page,
+}) => {
+  test.setTimeout(600_000);
+  const base =
+    "spinMs=0&turnMs=0&time=2026-10-05T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&detail=0&cloudShell=0&cloudVolume=0&reliefNear=5&view=44.94871,6.85455,9.664,353.1,-9.2";
+  const errors = await bootGlobe(page, base, { plain: false, phase: "user" });
+  await page.waitForFunction(
+    () => window.__globeLab.state().relief?.settled,
+    null,
+    {
+      timeout: 400_000,
+    },
+  );
+  const points = [];
+  for (let v = 0.2; v <= 0.8; v += 0.004) {
+    for (let i = 0; i < 64; i++) points.push([(i + 0.5) / 64, v]);
+  }
+  const read = async (hash, hidden = false) => {
+    await applyHash(page, hash);
+    await page.evaluate((h) => window.__globeLab.hideRelief(h), hidden);
+    await page.evaluate(() => window.__globeLab.timeFrames(3));
+    return page.evaluate((pts) => window.__globeLab.readPixels(pts), points);
+  };
+  const diff = (a, b) =>
+    Math.max(
+      Math.abs(a[0] - b[0]),
+      Math.abs(a[1] - b[1]),
+      Math.abs(a[2] - b[2]),
+    );
+  const on = await read(base);
+  const off = await read(`${base}&atmo=0`);
+  const noRelief = await read(base, true);
+  await page.evaluate(() => window.__globeLab.hideRelief(false));
+  let relief = 0;
+  let unveiled = 0;
+  for (let i = 0; i < points.length; i++) {
+    if (diff(on[i], noRelief[i]) < 3) continue;
+    relief += 1;
+    if (diff(on[i], off[i]) < 1) unveiled += 1;
+  }
+  const share = relief > 0 ? unveiled / relief : 1;
+  const verdict = [0.5, 1, 2]
+    .map((k) => `x${k} ${share <= UNVEILED_SHARE * k ? "ok" : "NO"}`)
+    .join(" ");
+  console.log(
+    `space pass at 9.7 km toward the horizon, E 5: ${unveiled} of ${relief} relief pixels in the band unveiled (${(share * 100).toFixed(1)} %; bound ${UNVEILED_SHARE * 100} %: ${verdict})`,
+  );
+  expect(errors).toEqual([]);
+  expect(relief).toBeGreaterThan(points.length / 10);
+  expect(share).toBeLessThanOrEqual(UNVEILED_SHARE);
 });
