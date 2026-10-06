@@ -3150,6 +3150,36 @@ describe(
       expect(meta.levels.map((l) => l.id)).toEqual([first.id, second.id]);
     });
 
+    // Why this test matters (code book plan M4e, found by the two-code
+    // e2e): the visit log recorded the code in hand's measurement only, so
+    // the first of two codes measured in one visit had no visit record and
+    // no saved pose in it - the summary after Finish could not say where it
+    // is, or grade its saved pose by the visit it came from.
+    it("logs both codes measured in the visit, each with the pose its settle saved", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = authoring({ store });
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      await a.mint();
+      const first = a.ctx.mintedLevel!;
+      await a.mint(
+        new Matrix4().makeTranslation(20, 0, 0),
+        "https://gps.csutil.com/tour/?qr=second",
+        10_000,
+      );
+      const second = a.ctx.mintedLevel!;
+      a.endVisit();
+      await flush();
+      const key = [...files.keys()].find((k) => k.startsWith(visitKey("")))!;
+      const entry = parseVisitLogEntry(files.get(key) as string)!;
+      expect(entry.codes.map((c) => c.levelId).sort()).toEqual(
+        [first.id, second.id].sort(),
+      );
+      for (const code of entry.codes) {
+        expect(code.savedGeo, code.levelId).toBeDefined();
+      }
+    });
+
     // Why this test matters: each code keeps its OWN measurement pick
     // (M4c-2). With one pick, the second code's replaced the first's, and
     // the first code was re-minted through the wrong moment's alignment -
@@ -3192,6 +3222,59 @@ describe(
       expect(
         codeWorldOf(settledA.json).distanceTo(codeWorldOf(first.json)),
       ).toBeLessThan(0.01);
+    });
+
+    // Why this test matters (code book plan M4e; the sampled mutant "other
+    // codes' sightings not noted", filed at M4c-2): a stored code seen while
+    // ANOTHER code is in hand is a code event the settle ties notes to (D2).
+    // Without it the pin placed beside the stored code is tied to the code in
+    // hand instead, and settled through this visit's GPS - here 20 m and 30
+    // degrees off - rather than corrected through the stored code it was
+    // placed next to.
+    it("ties a pin to the stored code it was placed beside, though another code is in hand", async () => {
+      const a = authoring();
+      a.setAlignment(yawAlignment(0, [0, 400, 0]));
+      await a.mint();
+      const stored = a.ctx.mintedLevel!;
+      a.endVisit();
+      // Code A is the tour's now, as a hosted level.
+      a.ctx.currentLevels = new Map([
+        [stored.id, parseQrLevel(JSON.parse(stored.json) as unknown)],
+      ]);
+
+      a.beginVisit();
+      // Walked distances must be known for the nearest-code rule; a GPS
+      // extent of 59 m makes every pick mature at its own moment.
+      const fixes = Array.from({ length: 60 }, (_, i) => ({
+        id: `fix-${String(i)}`,
+        timestamp: 1_000 + i * 1000,
+        coordinates: [i, 0, 0],
+        latitude: ZERO.lat,
+        longitude: ZERO.lon,
+      }));
+      a.setWalk({ fixes, odometry: fixes.map(() => [0, 0, 0]) });
+      a.setAlignment(yawAlignment(30, [20, 401, -8]));
+      a.setZero(ZERO);
+      // Code B, new, measured first: it takes the hand.
+      await a.mint(
+        new Matrix4().makeTranslation(20, 0, 0),
+        "https://gps.csutil.com/tour/?qr=second",
+        10_000,
+      );
+      expect(a.ctx.mintedLevel?.id).not.toBe(stored.id);
+      // Then code A is seen again, and a pin placed beside it.
+      a.seeTheCode(undefined, TEXT, 20_000);
+      await flush();
+      await a.placePin("Beside A", [3, 0, 1]);
+      a.endVisit();
+
+      const pin = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin" && p.object.label === "Beside A",
+      )!.object;
+      const settled = a.settledLogs().at(-1)!.payload;
+      expect(settled.objects.find((o) => o.id === pin.id)?.basis).toBe(
+        "code-corrected",
+      );
     });
   },
 );

@@ -63,8 +63,9 @@ export interface CreatorCodes {
   clearSighting(): void;
   /** `levelId` has a stored pose: in hand, or in the open tour with geo. */
   hasStoredPose(levelId: string): boolean;
-  /** Every code's stored pose: the code in hand first, then the open
-   *  tour's others (geo null for a level that carries none). */
+  /** Every code's stored pose: the code in hand first, then the book's
+   *  others at the pose the next Finish writes (M4e), then the open tour's
+   *  others (geo null for a level that carries none); each code once. */
   references(): { levelId: string; geo: QrGeoPose | null }[];
   /** The stored poses that read, in the order of {@link references}. */
   storedPoses(): QrGeoPose[];
@@ -161,8 +162,16 @@ export function wireCreatorCodes(deps: {
       inHand === null
         ? []
         : [{ levelId: inHand.id, geo: storedGeo(inHand.json) }];
+    const listed = new Set(out.map((r) => r.levelId));
+    // The book's other codes (M4e): measured or kept by this page, at the
+    // pose the next Finish writes - which replaces a hosted one.
+    for (const code of book.values()) {
+      if (code.saved === null || listed.has(code.levelId)) continue;
+      listed.add(code.levelId);
+      out.push({ levelId: code.levelId, geo: storedGeo(code.saved) });
+    }
     for (const [id, level] of ctx.currentLevels ?? []) {
-      if (id === inHand?.id) continue;
+      if (listed.has(id)) continue;
       out.push({ levelId: id, geo: level.qr.geo ?? null });
     }
     return out;

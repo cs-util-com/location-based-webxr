@@ -74,7 +74,9 @@ entry and joined back in `codeVisitPoses`.
   review #6): `creator-setup.ts` hands each stored code's latest stable
   sighting, so the tour's other codes gather visits too.
 - **`savedGeo`** (optional, per code): the pose THIS visit's settle saved
-  for the code (`input.saved`), when it saved one. The summary finds the
+  for the code (`input.saved`, one entry per code the settle saved -
+  every code measured in the visit, code book plan M4e), when it saved
+  one. The summary finds the
   visit a stored pose came from by it, to grade what visitors get (M3a/M3b
   review #2). Version 1 files without it read as before; an unreadable one
   costs that field, not the code.

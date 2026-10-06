@@ -190,8 +190,9 @@ M4 settles every code of the book, not only the one in hand.
   (`settleVisit`, which already runs while the store holds the visit) also
   copies the visit into `visit-log.ts`'s log: the device fixes and the
   odometry, the fused path through the alignment the visit's objects
-  settled through, and each code the visit saw (its measurement in this
-  visit, then its latest sighting - the log keeps the LAST) through the
+  settled through, and each code the visit saw (every code's measurement
+  in this visit - all of them since M4e, not only the code in hand's -
+  then its latest sighting; the log keeps the LAST) through the
   visit's OWN plain alignment, never the code-corrected one (that would
   repeat the stored pose and fake agreement between visits). A visit with
   no fix and no code is not logged.
@@ -202,9 +203,9 @@ M4 settles every code of the book, not only the one in hand.
   visit's end. Only the visit log reads it: such a sighting never makes a
   code the one in hand and never corrects anything.
 - **The saved pose is marked** (M3a/M3b review #2): `settleVisit` plans the
-  settle (pure) before logging, and hands the level it re-mints - if any -
-  to the log as `saved`, so the summary can grade the stored pose by the
-  visit it came from.
+  settle (pure) before logging, and hands every level it re-mints (one
+  per code measured in the visit, M4e) to the log as `saved`, so the
+  summary can grade each stored pose by the visit it came from.
 - The id is `newVisitId(pageId, arSessionGeneration)` with a random page
   id, so it stays unique across reloads; a visit settled again (a failed
   Finish) replaces its entry.

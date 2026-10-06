@@ -397,9 +397,7 @@
       "region": "measure several",
       "file": "src/creator-measuring.ts",
       "from": "        deps.alignmentPicks.noteSighting(sighting);",
-      "to": "",
-      "expected": "known-gap",
-      "why": "observable only when a code NOT in hand is seen again after a long walk with odometry drift and a pin is placed next to that later sighting: the pin then follows that sighting (with the mutant, the other code). Needs growing odometry and a drifted second sighting in the settle harness; filed for M4e (code book plan section 12, M4c-2)."
+      "to": ""
     },
     {
       "name": "measurement picks lose their code",

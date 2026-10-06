@@ -7,6 +7,7 @@ import {
   openFixtureTour as openTour,
 } from "./ar-fakes.js";
 import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { E2E_QR_ARCHIVE } from "./qr-fixture.mjs";
 import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
 
 /**
@@ -29,15 +30,9 @@ test.beforeEach(async ({ page }) => {
   await installTourViewerArFakes(page);
 });
 
-/** Entry names, and the JSON entries' text, of the n-th downloaded zip. */
-async function downloadedZip(page, index) {
-  const data = await page.evaluate(async (i) => {
-    const d = /** @type {any} */ (window).__tourViewerTest.downloads[i];
-    return Array.from(new Uint8Array(await d.blob.arrayBuffer()));
-  }, index);
-  const reader = new ZipReader(
-    new BlobReader(new Blob([new Uint8Array(data)])),
-  );
+/** Every file entry's name, and each JSON entry's text, of a zip's bytes. */
+async function readZip(bytes) {
+  const reader = new ZipReader(new BlobReader(new Blob([bytes])));
   const names = [];
   const json = {};
   for (const entry of await reader.getEntries()) {
@@ -48,7 +43,30 @@ async function downloadedZip(page, index) {
     }
   }
   await reader.close();
-  return { names, manifest: parseTourManifest(JSON.parse(json["tour.json"])) };
+  return { names, json };
+}
+
+/** The level files (`qr/*.json`) of a zip, by entry name, as text. */
+async function levelTexts(bytes) {
+  const { json } = await readZip(bytes);
+  return Object.fromEntries(
+    Object.entries(json).filter(([name]) => name.startsWith("qr/")),
+  );
+}
+
+/** Entry names, the manifest and the level files of the n-th downloaded zip. */
+async function downloadedZip(page, index) {
+  const data = await page.evaluate(async (i) => {
+    const d = /** @type {any} */ (window).__tourViewerTest.downloads[i];
+    return Array.from(new Uint8Array(await d.blob.arrayBuffer()));
+  }, index);
+  const bytes = new Uint8Array(data);
+  const { names, json } = await readZip(bytes);
+  return {
+    names,
+    manifest: parseTourManifest(JSON.parse(json["tour.json"])),
+    levels: await levelTexts(bytes),
+  };
 }
 
 /**
@@ -109,6 +127,59 @@ test("the list edits a hosted pin on the page - no AR needed - and the Finish wr
   // Replaced in place: one record, the new text.
   expect(pins).toHaveLength(1);
   expect(pins[0]?.kind === "pin" && pins[0].label).toBe("The renamed pin");
+});
+
+test("a desk edit is finished without entering AR, and the hosted code's level is not rewritten (code book plan M4e, §9 D4)", async ({
+  page,
+}) => {
+  // A Finish and BOTH zips read back in node (the hosted one for the
+  // byte comparison): longer than the 30 s default allows on a loaded
+  // machine - its first runs reached "Saved as" and timed out reading.
+  test.setTimeout(90_000);
+  // Why this matters: the owner decided a tour can be edited at the desk
+  // and finished there - no walk to a printed code. Finish used to need a
+  // measured code in hand. The unit tests prove the readiness rule and the
+  // rebuild; only the composed page shows that the button is offered on a
+  // desktop with no session, and that the zip it writes keeps the hosted
+  // level exactly (nothing was measured, so nothing may move).
+  await openTour(page);
+  await row(page, "Fixture pin").getByTestId("object-edit").click();
+  await page.getByTestId("object-edit-input").fill("Renamed at the desk");
+  await page.getByTestId("object-edit-save").click();
+  await expect(page.getByTestId("object-list-note")).toHaveText(
+    /Saved "Renamed at the desk"/,
+  );
+  // The AR session was never started.
+  await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
+
+  // Not `finishAndDownload`: it waits for the button to come back, and
+  // after a desk Finish nothing is left to write, so it stays hidden.
+  const finish = page.getByTestId("setup-finish");
+  await expect(finish).toBeEnabled();
+  await finish.click();
+  await expect(page.getByTestId("finish-block")).toBeVisible({
+    timeout: 30000,
+  });
+  await page.getByTestId("finish-download").click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => /** @type {any} */ (window).__tourViewerTest.downloads.length,
+      ),
+    )
+    .toBe(1);
+  await expect(finish).toBeHidden();
+  const zip = await downloadedZip(page, 0);
+  const pins = zip.manifest.objects.filter((o) => o.id === FIXTURE_PIN);
+  expect(pins).toHaveLength(1);
+  expect(pins[0]?.kind === "pin" && pins[0].label).toBe("Renamed at the desk");
+  const hosted = await page.evaluate(async (url) => {
+    const response = await fetch(url);
+    return Array.from(new Uint8Array(await response.arrayBuffer()));
+  }, E2E_QR_ARCHIVE);
+  const hostedLevels = await levelTexts(new Uint8Array(hosted));
+  expect(Object.keys(hostedLevels)).not.toHaveLength(0);
+  expect(zip.levels).toEqual(hostedLevels);
 });
 
 test("a deleted photo leaves the zip with its jpg, and a deleted hosted pin leaves the manifest", async ({

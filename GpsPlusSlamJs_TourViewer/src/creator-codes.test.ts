@@ -147,6 +147,31 @@ describe("creator-codes: stored codes and what Finish wrote", () => {
     expect(codes.storedPoses().map((g) => g.lat)).toEqual([47.5, 47.3]);
   });
 
+  // Why this test matters (code book plan M4e): a code measured on this
+  // page and then followed by another one leaves the hand, but it is still
+  // a code of the tour - the next Finish writes it. The summary listed only
+  // the code in hand and the hosted ones, so after measuring two new codes
+  // it showed "The code" for one of them and nothing for the other; the
+  // object list measured distances to one code only.
+  it("lists every code of the book too, at its saved pose, before the hosted others", () => {
+    const ctx = createTourViewerSession();
+    ctx.currentLevels = new Map([
+      ["h", hostedLevel(47.3)],
+      ["a", hostedLevel(47.0)],
+    ]);
+    const codes = wireCreatorCodes({ ctx });
+    codes.setInHand({ id: "a", json: levelJson(47.5) }, MEASUREMENT);
+    codes.setInHand(
+      { id: "b", json: levelJson(47.6) },
+      { ...MEASUREMENT, levelId: "b" },
+    );
+    const refs = codes.references();
+    expect(refs.map((r) => r.levelId)).toEqual(["b", "a", "h"]);
+    // The book's saved pose, not the hosted one it replaces.
+    expect(refs[1]!.geo?.lat).toBe(47.5);
+    expect(codes.storedPoses().map((g) => g.lat)).toEqual([47.6, 47.5, 47.3]);
+  });
+
   // Why this test matters: a new code may take the hand only once the code
   // in hand is saved in the tour - hosted, or written by a Finish of this
   // page (U3 milestone review #7) - and the Finish's set goes with its tour.

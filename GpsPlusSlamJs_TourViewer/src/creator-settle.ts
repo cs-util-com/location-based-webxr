@@ -377,7 +377,7 @@ export function wireCreatorSettle(deps: {
       );
       void deps.draft.saveMeta();
     }
-    logVisit(visit, state, choice?.alignment ?? null, plan?.level ?? null);
+    logVisit(visit, state, choice?.alignment ?? null, plan?.levels ?? []);
     if (choice === null || zero === null) return;
     const record: VisitSettleRecord = {
       basis: choice.basis,
@@ -502,19 +502,21 @@ export function wireCreatorSettle(deps: {
    * alignment (`visit-log.ts`). The fused path goes through
    * `pathAlignment` - what the visit's objects settled through - so the
    * pins sit on it. A visit settled again (a failed Finish) replaces its
-   * entry. `savedLevel` is the level this settle re-mints from the visit's
-   * measurement, if any: its pose is marked on the code, so the summary
-   * can grade the stored pose by the visit it came from.
+   * entry. `savedLevels` are the levels this settle re-mints from the
+   * visit's measurements (every code measured in it, M4e): each pose is
+   * marked on its code, so the summary can grade the stored pose by the
+   * visit it came from.
    */
   function logVisit(
     visit: number,
     state: ReturnType<typeof arStore.getState>,
     pathAlignment: readonly number[] | null,
-    savedLevel: { id: string; json: string } | null,
+    savedLevels: readonly { id: string; json: string }[],
   ): void {
     const codes: { levelId: string; odomPose: CodeSighting["odomPose"] }[] = [];
-    const measurement = deps.codes.measurement();
-    if (measurement !== null && measurement.visit === visit) {
+    // Every code measured in this visit (M4e), not only the code in hand.
+    for (const { measurement } of deps.codes.visitCodes(visit)) {
+      if (measurement === null || measurement.visit !== visit) continue;
       codes.push({
         levelId: measurement.levelId,
         odomPose: measurement.odomPose,
@@ -536,7 +538,6 @@ export function wireCreatorSettle(deps: {
     if (sighting !== null && !isSecondCopy(state, sighting)) {
       codes.push({ levelId: sighting.levelId, odomPose: sighting.odomPose });
     }
-    const savedGeo = savedLevel === null ? null : storedGeo(savedLevel.json);
     const entry = buildVisitLogEntry({
       visitId: newVisitId(deps.pageId, visit),
       atMs: Date.now(),
@@ -547,10 +548,10 @@ export function wireCreatorSettle(deps: {
       zero: selectZeroReference(state),
       storeAccuracyM: deps.alignmentInfo().gpsAccuracyM ?? null,
       codes,
-      saved:
-        savedLevel === null || savedGeo === null
-          ? null
-          : { levelId: savedLevel.id, geo: savedGeo },
+      saved: savedLevels.flatMap((level) => {
+        const geo = storedGeo(level.json);
+        return geo === null ? [] : [{ levelId: level.id, geo }];
+      }),
       // The move boundary (M5b): the codes this visit moved to a new spot.
       moved: [...movedInVisit].flatMap(([levelId, v]) =>
         v === visit ? [levelId] : [],

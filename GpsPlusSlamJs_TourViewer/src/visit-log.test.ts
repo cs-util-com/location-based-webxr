@@ -248,7 +248,7 @@ describe("buildVisitLogEntry", () => {
           { levelId: "lvl", odomPose: CODE_POSE },
           { levelId: "other", odomPose: CODE_POSE },
         ],
-        saved: { levelId: "lvl", geo: saved },
+        saved: [{ levelId: "lvl", geo: saved }],
       }),
     );
     expect(entry.codes.find((c) => c.levelId === "lvl")?.savedGeo).toEqual(

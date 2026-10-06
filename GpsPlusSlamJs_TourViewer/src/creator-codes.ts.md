@@ -22,8 +22,11 @@ writes these through it, so that M4c can turn its inside into the code book
   - `setSighting(sighting)`, `clearSighting()`.
 - Per code:
   - `hasStoredPose(levelId)` - in hand, or in the open tour with a geo;
-  - `references()` - every code's stored pose, the code in hand first and
-    once, then the tour's others (geo null for a level without one);
+  - `references()` - every code's stored pose, each code once: the code
+    in hand first, then the book's other codes at their saved pose (the
+    pose the next Finish writes, which replaces a hosted one; M4e - the
+    summary and the object list missed a code measured before the one in
+    hand), then the tour's others (geo null for a level without one);
     `storedPoses()` - the ones that read, same order;
   - `isSaved(levelId)` - hosted by the open tour, or written by a Finish of
     this page (`finished`); what lets a new code take the hand.

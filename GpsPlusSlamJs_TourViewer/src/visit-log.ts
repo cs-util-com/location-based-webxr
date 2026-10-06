@@ -160,8 +160,12 @@ export interface VisitLogInput {
     readonly levelId: string;
     readonly odomPose: Pose;
   }[];
-  /** The pose the visit's settle saved for a code, when it saved one. */
-  readonly saved?: { readonly levelId: string; readonly geo: QrGeoPose } | null;
+  /** The pose the visit's settle saved for each code it saved one for
+   *  (one per code measured in the visit, code book plan M4e). */
+  readonly saved?: readonly {
+    readonly levelId: string;
+    readonly geo: QrGeoPose;
+  }[];
   /** The codes this visit moved to a new spot (the move boundary). */
   readonly moved?: readonly string[];
 }
@@ -366,11 +370,11 @@ export function buildVisitLogEntry(input: VisitLogInput): VisitLogEntry {
     for (const [levelId, odomPose] of last) {
       const geo = codeGeo(odomPose, alignment, zero);
       if (geo === null) continue;
-      const saved = input.saved;
+      const saved = input.saved?.find((s) => s.levelId === levelId);
       const code: VisitCode =
-        saved != null && saved.levelId === levelId
-          ? { levelId, geo, savedGeo: saved.geo }
-          : { levelId, geo };
+        saved === undefined
+          ? { levelId, geo }
+          : { levelId, geo, savedGeo: saved.geo };
       codes.push(
         input.moved?.includes(levelId) === true
           ? { ...code, moved: true }

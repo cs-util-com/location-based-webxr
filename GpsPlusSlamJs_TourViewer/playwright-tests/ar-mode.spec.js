@@ -1,11 +1,17 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
-import { installTourViewerArFakes, seedAlignment } from "./ar-fakes.js";
+import {
+  enterArAndMeasure,
+  installTourViewerArFakes,
+  openFixtureTour,
+  seedAlignment,
+} from "./ar-fakes.js";
 import {
   E2E_QR_ARCHIVE,
   E2E_QR_TEXT,
   E2E_QR_UNKNOWN_TEXT,
+  e2eQrLevelEntryName,
 } from "./qr-fixture.mjs";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { parseQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
@@ -839,6 +845,172 @@ test("a first measurement of a code the tour does not store is minted into the r
   expect(
     manifest.objects.map((o) => (o.kind === "pin" ? o.label : o.kind)),
   ).toEqual(["First code's pin"]);
+});
+
+/**
+ * Point the fake camera at another code and feed frames until the page has
+ * measured it. The status line already reads "Code measured" for the code
+ * before, so waiting for that text alone would pass at once: the line must
+ * first leave it (the new code is measured from scratch) and then come back.
+ */
+async function measureAnotherCode(page, text, position) {
+  await page.evaluate(
+    ({ text, position }) => {
+      /** @type {any} */ (window).__tourViewerTest.armQrDetection(
+        text,
+        position,
+      );
+    },
+    { text, position },
+  );
+  const statusAfterFrame = async () => {
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+    });
+    return page.getByTestId("setup-status").textContent();
+  };
+  await expect
+    .poll(statusAfterFrame, { timeout: 15000 })
+    .not.toMatch(/Code measured/);
+  await expect
+    .poll(statusAfterFrame, { timeout: 15000 })
+    .toMatch(/Code measured/);
+}
+
+/** Metres between two stored codes' geo (equirectangular; ample at 20 m). */
+function geoDistanceM(a, b) {
+  const r = 6371008.8;
+  const lat = ((a.lat + b.lat) / 2) * (Math.PI / 180);
+  const dn = (b.lat - a.lat) * (Math.PI / 180) * r;
+  const de = (b.lon - a.lon) * (Math.PI / 180) * r * Math.cos(lat);
+  return Math.hypot(dn, de);
+}
+
+test("two new codes 20 m apart, measured in one visit, both reach the zip with one Finish (code book plan M4e)", async ({
+  page,
+}) => {
+  // Two measurements, two pins, a Finish and the zip read back: longer
+  // than the 30 s default allows on a loaded machine (the first run of
+  // this test reached the saved zip and timed out reading it).
+  test.setTimeout(90_000);
+  // Why this matters (code book refactor plan, D1/D5): before the code
+  // book, a Finish wrote ONE code, and a second code in the same visit was
+  // refused with "Finish first". Now every code seen while a tour is open
+  // is measured and kept, and one Finish writes all of them. The unit tests
+  // prove the book, the settle and the zip writer apart; only the composed
+  // page shows that the second code does not replace the first on its way
+  // to the downloaded zip.
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(PLAIN_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await enterAr(page);
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("setup-status").textContent();
+      },
+      { timeout: 15000 },
+    )
+    .toMatch(/waiting for GPS alignment/i);
+  await seedAlignment(page);
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /Code measured/,
+    { timeout: 10000 },
+  );
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("Pin at the first code");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  // The second code, 20 m east of the first ([1, 1.5, -2] by default; x is
+  // east in the fakes' world).
+  await measureAnotherCode(page, E2E_QR_UNKNOWN_TEXT, [21, 1.5, -2]);
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("Pin at the second code");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /2 objects placed/,
+  );
+
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("finish-block")).toBeVisible({
+    timeout: 30000,
+  });
+  await page.getByTestId("finish-download").click();
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+
+  const rebuilt = await readDownloadedZip(page, 0);
+  const first = `qr/${await qrCodeId(E2E_QR_TEXT)}.json`;
+  const second = `qr/${await qrCodeId(E2E_QR_UNKNOWN_TEXT)}.json`;
+  const levelNames = Object.keys(rebuilt.entries).filter((n) =>
+    n.startsWith("qr/"),
+  );
+  expect(levelNames.sort()).toEqual([first, second].sort());
+  const geoOf = (name) => {
+    const geo = parseQrLevel(JSON.parse(rebuilt.entries[name])).qr.geo;
+    if (geo == null) throw new Error(`${name} has no geo`);
+    return geo;
+  };
+  // Each code keeps ITS OWN pose: 20 m apart, as measured. One pose written
+  // under both names would read 0 m.
+  expect(geoDistanceM(geoOf(first), geoOf(second))).toBeCloseTo(20, 0);
+  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  expect(
+    manifest.objects.map((o) => (o.kind === "pin" ? o.label : o.kind)).sort(),
+  ).toEqual(["Pin at the first code", "Pin at the second code"]);
+  // The summary after Finish names both codes: it listed only the code in
+  // hand and the hosted ones, so the first code was missing (M4e).
+  await expect(
+    page.getByTestId("summary").getByTestId("summary-code"),
+  ).toHaveCount(2);
+});
+
+test("a later visit adds a new code beside a stored one; the stored code's level is kept byte for byte (code book plan M4e)", async ({
+  page,
+}) => {
+  // Two measurements, two pins, a Finish and the zip read back: longer
+  // than the 30 s default allows on a loaded machine (the first run of
+  // this test reached the saved zip and timed out reading it).
+  test.setTimeout(90_000);
+  // Why this matters (code book plan, D5): a creator who prints a second
+  // code for a tour that already stores one measures the stored code (its
+  // pose is kept, D10b) and then the new one. The Finish must write the
+  // new code AND leave the stored one exactly as hosted - a re-write would
+  // silently move every note placed against it.
+  await openFixtureTour(page);
+  await enterArAndMeasure(page);
+  await measureAnotherCode(page, E2E_QR_UNKNOWN_TEXT, [21, 1.5, -2]);
+
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("finish-block")).toBeVisible({
+    timeout: 30000,
+  });
+  await page.getByTestId("finish-download").click();
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+
+  const rebuilt = await readDownloadedZip(page, 0);
+  const hosted = await page.evaluate(async (url) => {
+    const response = await fetch(url);
+    return Array.from(new Uint8Array(await response.arrayBuffer()));
+  }, E2E_QR_ARCHIVE);
+  const hostedEntries = await zipEntries(new Uint8Array(hosted));
+  const stored = await e2eQrLevelEntryName();
+  const added = `qr/${await qrCodeId(E2E_QR_UNKNOWN_TEXT)}.json`;
+  expect(Object.keys(hostedEntries)).not.toContain(added);
+  expect(rebuilt.entries[stored]).toBe(hostedEntries[stored]);
+  const level = parseQrLevel(JSON.parse(rebuilt.entries[added]));
+  expect(level.qr.geo?.lat).toEqual(expect.any(Number));
 });
 
 test("the creator's AR visit first asks for the tour's code, and stops asking once the code is seen (authoring plan 2026-09-28-0953 §3.2a, D5)", async ({
