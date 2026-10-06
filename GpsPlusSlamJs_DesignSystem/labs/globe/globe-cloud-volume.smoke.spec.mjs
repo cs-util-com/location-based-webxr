@@ -27,7 +27,12 @@ import { expect, test } from "@playwright/test";
 import { bootGlobe, meanOf } from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
-const TARGET = { latitude: 46.5, longitude: 9.0 };
+// A partly cloudy part of the map (56.5 N 9 E, Jutland: the map's mean
+// 0.45 over a 0.3 degree box, a cover of 0.36 at gain 1), where a jump
+// between the shell and the volume would show. Until 2026-10-06 these tests
+// ran at 46.5 N 9 E, where the map is about 0.1 and the volume drew almost
+// nothing, so their verdicts were hollow (volume-cloud plan §11).
+const TARGET = { latitude: 56.5, longitude: 9.0 };
 const HOLD_KM = 12;
 const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&handOver=0&detail=0&handOverKm=${HOLD_KM}`;
 /** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
