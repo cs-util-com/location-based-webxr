@@ -675,7 +675,32 @@ function settledObject(
   }
 }
 
+/**
+ * One code of a visit with several (code book refactor plan M4b): its
+ * level - the stored one, or for a code measured here the level in hand
+ * (only its id is read; the settle re-mints it) - and this page's
+ * measurement of it with that measurement's pick (D33). The code's
+ * sightings are the picks' sightings of its level id.
+ */
+interface VisitCode {
+  readonly level: { readonly id: string; readonly json: string };
+  /** This page's measurement of the code; null for a stored code. */
+  readonly measurement: CodeMeasurement | null;
+  /** The measurement's pick; absent or null when none was kept. */
+  readonly measurementPick?: TimedAlignment | null | undefined;
+}
+
 export interface VisitSettleInput extends SettleAlignmentInput {
+  /**
+   * The visit's codes (M4b). Each object settles through the code event
+   * nearest it in walked distance of ANY of them (D2), then through that
+   * code's own rules (the measurement's pick, or the D10b correction
+   * onto the stored pose). Absent: the one code of the legacy fields
+   * (`mintedLevel`, `measurement`, `picks.measurement`), exactly as before;
+   * the first code of a list plays their part where one code is asked for
+   * (the legacy `level`, an unknown walked distance).
+   */
+  readonly codes?: readonly VisitCode[] | undefined;
   readonly placed: readonly {
     readonly object: TourObject;
     readonly placement?: { readonly visit: number; readonly local: NuePose };
@@ -705,6 +730,9 @@ export interface VisitSettle {
   readonly level: { id: string; json: string } | null;
   /** The alignment `level` was re-minted through; null without one. */
   readonly levelAlignment: number[] | null;
+  /** Every code measured in this visit, re-minted, each through its own
+   *  alignment, in the order of the codes (M4b); `level` is the first. */
+  readonly levels: { id: string; json: string; alignment: number[] }[];
   /** That end choice's refused correction; null otherwise. */
   readonly refused: CorrectionRefusal | null;
 }
@@ -722,17 +750,70 @@ export function planVisitSettle(input: VisitSettleInput): VisitSettle | null {
       ? [{ index, object: entry.object, local: entry.placement.local }]
       : [],
   );
-  const measured = measuredHere(input);
-  if (targets.length === 0 && !measured) return null;
+  const views = codeViews(input);
+  if (targets.length === 0 && !views.some(measuredHere)) return null;
   const end = readAlignment(input.alignment);
   const zero = input.zero;
   if (end === null || zero === null) return null;
-  const choice = choiceFor(input, end, zero, null, end);
-  // Geo, quality block and heading marker travel together (R7 of D33):
-  // all three from the measurement's pick when it carries its block, else
-  // all three from the end alignment - never the pick's geo with the end's
-  // block.
-  const pick = input.picks?.measurement;
+  // Each code's view of the visit, and the code as re-minted when this
+  // visit measured it.
+  const codes = views.map((view) => ({
+    view,
+    measured: measuredHere(view),
+    reminted: measuredHere(view) ? remintedCode(view, end, zero) : null,
+  }));
+  // A photo that lands after the settle is at the visit's end: the code
+  // seen last (with one code, the code in hand, as before).
+  const choice = choiceFor(
+    views[latestCode(views)] ?? input,
+    end,
+    zero,
+    null,
+    end,
+  );
+  const objects = targets.flatMap(({ index, object, local }) => {
+    const timed = input.picks?.objects.get(object.id) ?? null;
+    const own = readAlignment(timed?.alignment ?? null) ?? end;
+    const code = codes[nearestCode(views, timed)];
+    const mine =
+      code === undefined
+        ? choiceFor(input, end, zero, timed, own)
+        : code.measured
+          ? measuredChoice(code.view, end, zero, timed, own, code.reminted)
+          : choiceFor(code.view, end, zero, timed, own);
+    const settled = settledObject(object, local, mine.alignment, zero);
+    return settled === null ? [] : [{ index, object: settled, ...mine }];
+  });
+  const levels = codes.flatMap((c) =>
+    c.reminted === null
+      ? []
+      : [{ ...c.reminted.level, alignment: c.reminted.alignment }],
+  );
+  const first = codes[0]?.reminted ?? null;
+  return {
+    basis: choice.basis,
+    alignment: choice.alignment,
+    objects,
+    level: first?.level ?? null,
+    levelAlignment: first?.alignment ?? null,
+    levels,
+    refused: choice.refused,
+  };
+}
+
+/**
+ * The code measured in `view`'s visit re-minted, with the alignment it went
+ * through. Geo, quality block and heading marker travel together (R7 of
+ * D33): all three from the measurement's pick when it carries its block,
+ * else all three from the end alignment - never the pick's geo with the
+ * end's block.
+ */
+function remintedCode(
+  view: VisitSettleInput,
+  end: number[],
+  zero: LatLong,
+): { level: { id: string; json: string }; alignment: number[] } | null {
+  const pick = view.picks?.measurement;
   const picked = readAlignment(pick?.alignment ?? null);
   const source =
     picked !== null && pick?.alignmentInfo !== undefined
@@ -743,35 +824,99 @@ export function planVisitSettle(input: VisitSettleInput): VisitSettle | null {
         }
       : {
           alignment: end,
-          info: input.alignmentInfo,
-          gpsExtentM: input.alignmentGpsExtentM,
+          info: view.alignmentInfo,
+          gpsExtentM: view.alignmentGpsExtentM,
         };
-  const levelAlignment = measured ? source.alignment : null;
-  const level =
-    levelAlignment === null
-      ? null
-      : remintedLevel(input, levelAlignment, zero, source);
-  const code =
-    level === null || levelAlignment === null
-      ? null
-      : { level, alignment: levelAlignment };
-  const objects = targets.flatMap(({ index, object, local }) => {
-    const timed = input.picks?.objects.get(object.id);
-    const own = readAlignment(timed?.alignment ?? null) ?? end;
-    const mine = measured
-      ? measuredChoice(input, end, zero, timed ?? null, own, code)
-      : choiceFor(input, end, zero, timed ?? null, own);
-    const settled = settledObject(object, local, mine.alignment, zero);
-    return settled === null ? [] : [{ index, object: settled, ...mine }];
+  const level = remintedLevel(view, source.alignment, zero, source);
+  return level === null ? null : { level, alignment: source.alignment };
+}
+
+/**
+ * The visit as each of its codes sees it (M4b): the input with that code
+ * as the code in hand - its level, its measurement and pick, its latest
+ * sighting, and the picks' sightings of it only. Without `codes`, the input
+ * itself (one code, or none): the legacy path, unchanged.
+ */
+function codeViews(input: VisitSettleInput): VisitSettleInput[] {
+  if (input.codes === undefined) return [input];
+  return input.codes.map((code) => {
+    const kept = (input.picks?.sightings ?? []).filter(
+      (s) => s.sighting.levelId === code.level.id,
+    );
+    const sighting =
+      input.sighting?.levelId === code.level.id
+        ? input.sighting
+        : (kept.at(-1)?.sighting ?? null);
+    return {
+      ...input,
+      mintedLevel: code.level,
+      measurement: code.measurement,
+      sighting,
+      ...(input.picks === undefined || input.picks === null
+        ? {}
+        : {
+            picks: {
+              ...input.picks,
+              measurement: code.measurementPick ?? null,
+              sightings: kept,
+            },
+          }),
+    };
   });
-  return {
-    basis: choice.basis,
-    alignment: choice.alignment,
-    objects,
-    level,
-    levelAlignment: level === null ? null : levelAlignment,
-    refused: choice.refused,
-  };
+}
+
+/** A code's events in its view: its measurement's pick (when measured in
+ *  this visit) and its kept sightings. */
+function eventsOf(
+  view: VisitSettleInput,
+): readonly Pick<TimedAlignment, "atMs" | "walkedM">[] {
+  const pick = measuredHere(view) ? view.picks?.measurement : null;
+  return [
+    ...(pick === null || pick === undefined ? [] : [pick]),
+    ...(view.picks?.sightings ?? []),
+  ];
+}
+
+/**
+ * Of several codes, the one whose event is nearest `at` in walked distance
+ * (D2; a tie goes to the later event); the first code when there is one
+ * code, no moment, or a walked distance is unknown (the code in hand, as
+ * before M4b).
+ */
+function nearestCode(views: readonly VisitSettleInput[], at: Moment): number {
+  if (views.length <= 1 || at === null || !finite(at.walkedM)) return 0;
+  const walkedAt = at.walkedM;
+  let best = 0;
+  let bestGap = Number.POSITIVE_INFINITY;
+  let bestAt = Number.NEGATIVE_INFINITY;
+  for (const [i, view] of views.entries()) {
+    for (const e of eventsOf(view)) {
+      if (!finite(e.walkedM)) return 0;
+      const gap = Math.abs(e.walkedM - walkedAt);
+      if (gap < bestGap || (gap === bestGap && e.atMs > bestAt)) {
+        best = i;
+        bestGap = gap;
+        bestAt = e.atMs;
+      }
+    }
+  }
+  return best;
+}
+
+/** The code whose latest event is the latest of the visit; the first code
+ *  when there is one, or none has an event. */
+function latestCode(views: readonly VisitSettleInput[]): number {
+  let best = 0;
+  let bestAt = Number.NEGATIVE_INFINITY;
+  for (const [i, view] of views.entries()) {
+    for (const e of eventsOf(view)) {
+      if (Number.isFinite(e.atMs) && e.atMs > bestAt) {
+        best = i;
+        bestAt = e.atMs;
+      }
+    }
+  }
+  return best;
 }
 
 /**

@@ -5,7 +5,10 @@
     "src/creator-setup.test.ts",
     "src/fused-pose-wiring.test.ts",
     "src/ar-entry.test.ts",
-    "src/creator-previews.test.ts"
+    "src/creator-previews.test.ts",
+    "src/visit-settle.codes.test.ts",
+    "src/visit-settle.test.ts",
+    "src/visit-settle.golden.test.ts"
   ],
   "mutants": [
     {
@@ -336,6 +339,41 @@
       "region": "placement",
       "file": "src/creator-placement.ts",
       "from": "        if (settled !== undefined) deps.lateArrival(visit, photo);\n",
+      "to": ""
+    },
+    {
+      "name": "every object through the first code",
+      "region": "settle per code",
+      "file": "src/visit-settle.ts",
+      "from": "  if (views.length <= 1 || at === null || !finite(at.walkedM)) return 0;",
+      "to": "  return 0;"
+    },
+    {
+      "name": "late arrival through the first code",
+      "region": "settle per code",
+      "file": "src/visit-settle.ts",
+      "from": "function latestCode(views: readonly VisitSettleInput[]): number {\n  let best = 0;",
+      "to": "function latestCode(views: readonly VisitSettleInput[]): number {\n  return 0;\n  let best = 0;"
+    },
+    {
+      "name": "only the first code re-minted",
+      "region": "settle per code",
+      "file": "src/visit-settle.ts",
+      "from": "    reminted: measuredHere(view) ? remintedCode(view, end, zero) : null,",
+      "to": "    reminted: measuredHere(view) && view === views[0] ? remintedCode(view, end, zero) : null,"
+    },
+    {
+      "name": "a code's own measurement pick lost",
+      "region": "settle per code",
+      "file": "src/visit-settle.ts",
+      "from": "              measurement: code.measurementPick ?? null,",
+      "to": "              measurement: null,"
+    },
+    {
+      "name": "a stored code's events never counted",
+      "region": "settle per code",
+      "file": "src/visit-settle.ts",
+      "from": "    ...(view.picks?.sightings ?? []),",
       "to": ""
     }
   ]

@@ -133,6 +133,20 @@ draft and logs `tourAuthoring/settled`.
   `levelAlignment` says which) when the basis is `measured-here` (through `mintQrLevelFromWorld`, the code's
   pose converted with the same `odomNueFromWebXr`). Null when the visit
   placed and measured nothing, or when `settleAlignment` is null.
+- **Several codes (code book refactor plan M4b): `codes` and `levels`.**
+  `input.codes` (`VisitCode[]`: a level, this page's measurement or null,
+  the measurement's pick) lists the visit's codes. Each object settles
+  through the code event nearest it in WALKED distance of ANY code (D2, the
+  owner's choice after the M3 sweep; a tie goes to the later event), then
+  through that code's own one-code rules unchanged: a measured code's
+  measurement or sighting (R1), a stored code's sighting (D10b, its bound
+  included), within `CODE_EVENT_REACH_M`. With one code, no moment or an
+  unknown walked distance, the first code (the code in hand) decides, as
+  before. The visit-level choice (a photo landing after the settle) goes
+  through the code whose latest event is the latest. `levels` holds every
+  code measured in the visit re-minted through its own pick; `level` /
+  `levelAlignment` stay the first one's. Without `codes` the legacy fields
+  are the one code and the result is identical (the one-code oracle).
 
 ## Invariants & assumptions
 
@@ -323,6 +337,15 @@ const plan = planVisitSettle({
 
 ## Tests
 
+- `visit-settle.codes.test.ts` (M4b) - two stored codes, each note through
+  the code nearest it in walked distance; what lands after the settle
+  through the code seen last; a note out of every reach on its own
+  alignment; a one-code list equal to the legacy fields; a mixed visit (a
+  stored code sighted, a new one measured); two measured codes both
+  re-minted. Its five sampled mutants are in
+  `scripts/fixtures/creator-setup.mutants.json` ("settle per code").
+- `visit-settle.golden.test.ts` - the one-code oracle; since M4b it
+  compares the legacy fields and checks `levels` is the legacy `level`.
 - `visit-settle.test.ts` - B2 (code and pin through different tap-time
   alignments disagree; settled they agree), a pin's record and facing, a
   photo's rotation, the re-minted code's quality block (the settle

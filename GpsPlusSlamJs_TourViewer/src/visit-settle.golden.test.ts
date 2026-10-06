@@ -353,7 +353,7 @@ function outputs(seed: number): Output {
               ? picks
               : { ...picks, measurement: position?.pick ?? null },
         };
-  const composed = planVisitSettle(composedInput);
+  const composed = legacyPlan(planVisitSettle(composedInput));
   // An improved code takes the earlier objects with it.
   const oldGeo =
     input.mintedLevel === null ? null : storedGeo(input.mintedLevel.json);
@@ -368,13 +368,34 @@ function outputs(seed: number): Output {
     kind,
     answer,
     settleAlignment: settleAlignment(input),
-    planVisitSettle: planVisitSettle(input),
+    planVisitSettle: legacyPlan(planVisitSettle(input)),
     planMove: planMove({ ...input, ...move }),
     sightedCodeOffset: sightedCodeOffset(input),
     planCodePosition: position,
     composed,
     movedWithCode,
   }) as Output;
+}
+
+/**
+ * A plan as the oracle froze it, before M4b added `levels`: that field is
+ * checked here instead - for one code it must be exactly the legacy
+ * `level` with its alignment - and left out of the frozen comparison, so
+ * the frozen file never has to be regenerated for it.
+ */
+function legacyPlan(
+  plan: ReturnType<typeof planVisitSettle>,
+): Omit<NonNullable<ReturnType<typeof planVisitSettle>>, "levels"> | null {
+  if (plan === null) return null;
+  const { levels, ...legacy } = plan;
+  const expected =
+    plan.level === null || plan.levelAlignment === null
+      ? []
+      : [{ ...plan.level, alignment: plan.levelAlignment }];
+  if (JSON.stringify(levels) !== JSON.stringify(expected)) {
+    throw new Error("one code: `levels` is not the legacy `level`");
+  }
+  return legacy;
 }
 
 describe("the one-code settle oracle (frozen before M4)", () => {
