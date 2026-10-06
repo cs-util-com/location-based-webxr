@@ -228,7 +228,10 @@ export function wireArchiveOpen(deps: {
     // archive.origin is only the initial state (PR #357 review).
     const stats = ctx.session.stats();
     const view = toStatsView(stats, ctx.session.archive.size, stats.origin);
-    dom.statsPanel.hidden = false;
+    // The transfer numbers are the creator's (and ?debug=1's); a visitor's
+    // could stall below 100 % once the whole-file download stops (UI round
+    // 1, U1, review F11).
+    dom.statsPanel.hidden = deps.mode === "visitor" && !ctx.debug;
     dom.statsHeadline.textContent = view.headline;
     dom.statsDetail.textContent = view.detail;
   }
@@ -368,10 +371,12 @@ export function wireArchiveOpen(deps: {
       sources,
       storage: trustStorage(),
       nowMs: Date.now(),
+      audience: deps.mode,
     }).catch(() => null);
     if (ctx.session !== opened || lines === null) return;
     dom.tourTrust.textContent = lines.join("\n");
-    dom.tourTrust.hidden = false;
+    // A visitor's unsigned tour without a warning has no line (UI round 1).
+    dom.tourTrust.hidden = lines.length === 0;
   }
 
   async function openTour(
@@ -518,6 +523,7 @@ export function wireArchiveOpen(deps: {
       dom.errorBox.textContent = describeOpenError(
         err,
         source.kind === "link" ? source.url : undefined,
+        deps.mode,
       );
       // A host that blocks browsers: the advice says "download the file
       // and open it here", and its button is right below it (K0). Offline,

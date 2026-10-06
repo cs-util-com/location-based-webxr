@@ -33,7 +33,8 @@ import type { ViewerMode } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { debugReadoutLines, visitorFusedHint } from "./qr-debug-readout.js";
 import type { TourViewerSeams } from "./seams.js";
-import { arStatusLine } from "./tour-flow.js";
+import { arStatusLine, type ArStatusInput } from "./tour-flow.js";
+import { visitorStatus } from "./visitor-status.js";
 import type { LocationGate } from "./visitor-screen.js";
 import type { RecordingPanel } from "./recording-panel.js";
 import {
@@ -57,6 +58,10 @@ export interface ArEntryDom {
   escapeButton: HTMLButtonElement;
   /** The `?debug=1` QR readout (plan §66); written only while `ctx.debug`. */
   arDebug?: HTMLElement;
+  /** The screen reader's copy of the visitor's sentence (UI round 1, U1,
+   *  review F14): written only when the sentence changes, never per camera
+   *  frame like the visible line. */
+  arStatusLive?: HTMLElement;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -123,9 +128,10 @@ export function wireArEntry(deps: {
 
   function renderArStatus(): void {
     renderDebugReadout();
-    dom.arStatus.textContent = arStatusLine({
+    const input: ArStatusInput = {
       mode,
       arStatus: arController.getState().status,
+      arError: arController.getState().error ?? null,
       cameraFrames: ctx.cameraFrameCount,
       tour:
         ctx.session === null
@@ -173,7 +179,21 @@ export function wireArEntry(deps: {
               count: ctx.contentRendered.count,
               skipped: ctx.contentRendered.skipped.length,
             },
-    });
+    };
+    // A visitor reads one plain sentence (UI round 1, U1); the technical
+    // line stays for the creator and for a visitor's `?debug=1`. The state
+    // name is the stable channel for the page's styling and the tests.
+    const plain = visitorStatus(input);
+    dom.arStatus.dataset.state = plain.state;
+    dom.arStatus.textContent =
+      mode === "visitor" && !ctx.debug ? plain.text : arStatusLine(input);
+    if (
+      mode === "visitor" &&
+      dom.arStatusLive !== undefined &&
+      dom.arStatusLive.textContent !== plain.text
+    ) {
+      dom.arStatusLive.textContent = plain.text;
+    }
   }
 
   /** The ?debug=1 block: the controller state and each code's counts. */

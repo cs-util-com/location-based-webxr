@@ -81,9 +81,24 @@ export function describeIntegrityError(err: TourIntegrityError): string {
   return `This tour does not match its own list of contents, so it is not shown: it was changed after it was made or signed, or the file is damaged. Do not trust this copy - ask its author for a fresh link. (Detail: ${err.message}.)`;
 }
 
-export function describeOpenError(err: unknown, url?: string): string {
+/** A visitor's words for a host that blocks reads: the download route
+ *  (their only way in, K-D1) without the creator's hosting note, and who
+ *  can fix the host (UI round 1, U1, review F11). */
+const VISITOR_CORS_TEXT =
+  "The tour's host refused this browser access.\n" +
+  `Download the file to this device, then tap "${OPEN_FILE_ADVICE_LABEL}" below to open it here.\n` +
+  "If that does not work, tell the person who put up the poster.";
+
+export function describeOpenError(
+  err: unknown,
+  url?: string,
+  audience: "creator" | "visitor" = "creator",
+): string {
   if (err instanceof TourIntegrityError) return describeIntegrityError(err);
   if (err instanceof OpenRemoteArchiveError) {
+    if (audience === "visitor" && err.rejectCause === "cors") {
+      return VISITOR_CORS_TEXT;
+    }
     const fixed = FIXED_TEXT[err.rejectCause];
     if (fixed !== undefined) return fixed;
     if (err.rejectCause === "too-large") {

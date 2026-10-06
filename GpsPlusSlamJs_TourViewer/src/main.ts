@@ -556,6 +556,7 @@ const arEntry = wireArEntry({
     errorBox,
     escapeButton,
     arDebug: element("ar-debug"),
+    arStatusLive: element("ar-status-live"),
   },
   hooks,
   ...(recordingPanel === null ? {} : { recording: recordingPanel }),
@@ -594,5 +595,5 @@ scanOpen = archive.scanOpen;
 // unexpected boot failure must reach the error box, not vanish in an
 // unhandled rejection.
 archive.boot().catch((err: unknown) => {
-  errorBox.textContent = describeOpenError(err);
+  errorBox.textContent = describeOpenError(err, undefined, mode);
 });

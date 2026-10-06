@@ -43,10 +43,16 @@ since the flows plan M6.
     before the visitor's placement subscription; the session end cancels
     the escape clock, hides the escape button and disposes the placed
     content (M5).
-  - `ArEntryDom { arRoot; arStatus; arHint; enterArButton; escapeButton; sizeInput; errorBox }`
+  - `ArEntryDom { arRoot; arStatus; arHint; enterArButton; escapeButton; sizeInput; errorBox; arDebug?; arStatusLive? }`
   - `ArEntry.renderArStatus()` - composes `#ar-status` from the session
     object; assigned to `hooks.renderArStatus` by `main.ts` so the other
-    modules can call it without importing this one.
+    modules can call it without importing this one. A VISITOR without
+    `?debug=1` reads `visitorStatus`'s one plain sentence; the creator and
+    `?debug=1` keep the technical `arStatusLine`. `data-state` always
+    carries `visitorStatus`'s state (the stable channel for tests and
+    styling), and `arStatusLive` (the screen reader's live region) is
+    written only when the visitor's sentence changes, never per camera
+    frame (UI round 1, U1, review F14).
   - Subscribes the button renderer to the controller and binds the click.
 
 ## Moved-code veto inputs (D20, M5c)

@@ -47,11 +47,12 @@ async function lockTheCode(page) {
         await page.evaluate(() => {
           /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
         });
-        return page.getByTestId("ar-status").textContent();
+        return page.getByTestId("ar-status").getAttribute("data-state");
       },
       { timeout: 20000 },
     )
-    .toMatch(/Code recognised/);
+    // Past the scan gate (UI round 1: the state, not the wording).
+    .toMatch(/^(locking|warming-up|placing|placed)$/);
 }
 
 test("a station tour: the code finds the first station, its knight speaks and asks, a walk finds the next, the last is skipped", async ({

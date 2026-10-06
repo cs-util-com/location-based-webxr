@@ -101,7 +101,9 @@ export function arButtonView(
       };
     case "error":
       return {
-        label: `Retry — ${state.error ?? "failed to start"}`,
+        // The reason is the status line's, in plain words (UI round 1,
+        // U1, review F5); the raw error only under ?debug=1 there.
+        label: "Try again",
         disabled: false,
       };
     default:

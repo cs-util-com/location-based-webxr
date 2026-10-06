@@ -8,7 +8,10 @@ the image-plane loader and the AR entry (flows plan M6 pulled it out of
 
 ## Public API
 
-- `describeOpenError(err, url?): string` - one sentence per
+- `describeOpenError(err, url?, audience?): string` - for a `"visitor"`
+  the `cors` text keeps the download route (their only way in, K-D1)
+  but drops the creator's hosting note and names who can fix it ("tell the
+  person who put up the poster"; UI round 1, U1). Otherwise one sentence per
   `OpenRemoteArchiveError.rejectCause` (`missing`, `corrupt`, `cors` - with
   the advice "download the file to this device, then tap
   `OPEN_FILE_ADVICE_LABEL` below", tour kit plan K0 - `offline` - "this

@@ -32,6 +32,7 @@ function el() {
     hidden: false,
     disabled: false,
     value: "",
+    dataset: {} as Record<string, string>,
     addEventListener: (type: string, handler: () => void) =>
       handlers.set(type, handler),
     click: () => handlers.get("click")?.(),

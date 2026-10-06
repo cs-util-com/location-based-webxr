@@ -102,7 +102,9 @@ describe("the scan gate and the content in the composed line (M5)", () => {
         percentReady: 40,
       },
     });
-    expect(line).toContain("Point the phone at the printed code");
+    expect(line).toContain(
+      "Point the phone at the tour's code (on the poster)",
+    );
     expect(line).not.toContain("Walk around");
   });
 

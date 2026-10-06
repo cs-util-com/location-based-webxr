@@ -345,6 +345,15 @@
          sheet's plateless-legibility halo. It used to be #333 with a WHITE
          halo, which measures 1.16:1 on the page's own ground - invisible,
          and independently reported as "a weird white shadow" (F14). */
+      /* Read by screen readers, not shown (UI round 1, U1). */
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
       #ar-status {
         font-size: var(--size-hint);
         margin-bottom: var(--space-2);
@@ -1016,7 +1025,17 @@
             says it is measured; walking a few metres with GPS reception lets
             the phone align to the map.
           </p>
-          <div id="ar-status" data-testid="ar-status" aria-live="polite"></div>
+          <!-- The visible line changes per camera frame for a creator and
+               with ?debug=1, so it is NOT a live region; a visitor's
+               sentence reaches screen readers through #ar-status-live,
+               written only when it changes (UI round 1, U1, review F14). -->
+          <div id="ar-status" data-testid="ar-status"></div>
+          <p
+            id="ar-status-live"
+            class="visually-hidden"
+            data-testid="ar-status-live"
+            aria-live="polite"
+          ></p>
           <!-- Up while the troubleshooting recording runs: over the camera,
                and on the page (recording-panel.ts). -->
           <p id="recording-marker" data-testid="recording-marker" hidden></p>

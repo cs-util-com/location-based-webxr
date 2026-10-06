@@ -65,8 +65,16 @@ const RANGES_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
 
 /** The visitor's way in (DEC-N1): a `?qr=` launch, which opens the tour on
  *  boot and shows the visitor screen instead of the setup. */
-async function openAsVisitor(page, url, imageCount = 8) {
-  await page.goto(`/?qr=${encodeURIComponent(url)}`);
+async function openAsVisitor(
+  page,
+  url,
+  imageCount = 8,
+  { debug = false } = {},
+) {
+  // `debug`: the technical status line (frames, votes, fixes) a visitor
+  // reads only with ?debug=1 since UI round 1; tests of the pipeline's
+  // internals read it there, the plain line has its own test.
+  await page.goto(`/?qr=${encodeURIComponent(url)}${debug ? "&debug=1" : ""}`);
   await expect(page.getByTestId("gallery").locator("img")).toHaveCount(
     imageCount,
     { timeout: 15000 },
@@ -85,11 +93,13 @@ async function lockTheCode(page) {
         await page.evaluate(() => {
           /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
         });
-        return page.getByTestId("ar-status").textContent();
+        return page.getByTestId("ar-status").getAttribute("data-state");
       },
       { timeout: 20000 },
     )
-    .toMatch(/Code recognised/);
+    // Past the scan gate (UI round 1: the state, not the wording, which
+    // differs with and without ?debug=1).
+    .toMatch(/^(locking|warming-up|placing|placed)$/);
 }
 
 /**
@@ -142,8 +152,12 @@ test("the plain page is the creator's setup; a ?qr= launch is the visitor's scre
   // gets the consent copy, the Start button and one stats line.
   await expect(page.getByTestId("storage-panel")).toBeHidden();
   await expect(page.getByTestId("gallery")).toBeHidden();
-  await expect(page.getByTestId("stats")).toBeVisible();
-  await expect(page.getByTestId("ar-hint")).toContainText("printed code");
+  // The transfer numbers are the creator's since UI round 1 (U1, review
+  // F11): a visitor's could stall below 100 % and read as stuck.
+  await expect(page.getByTestId("stats")).toBeHidden();
+  await expect(page.getByTestId("ar-hint")).toContainText(
+    "the tour's code (on the poster)",
+  );
   await expect(page.getByTestId("enter-ar")).toHaveText("Start the tour");
 });
 
@@ -170,7 +184,9 @@ test("a visitor who refuses the location stays on 'Allow location' with the sett
   });
   await button.click();
   await expect(button).toHaveText("Start the tour");
-  await expect(page.getByTestId("error")).toContainText(/no gps fix yet/i);
+  // A benign note above the button, not the red alert (UI round 1, U1).
+  await expect(page.getByTestId("ar-hint")).toContainText(/no gps fix yet/i);
+  await expect(page.getByTestId("error")).toBeEmpty();
   await button.click();
   await expect(button).toHaveText("Tour running");
 });
@@ -254,7 +270,7 @@ test("visitor mode boots to running: session started, alignment bound, capture a
 test("camera frames flow through the foundation and surface in the status line", async ({
   page,
 }) => {
-  await openAsVisitor(page, RANGES_ARCHIVE);
+  await openAsVisitor(page, RANGES_ARCHIVE, 8, { debug: true });
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
 
@@ -928,7 +944,7 @@ test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", a
   // silent decline that still shows a ring is exactly the failure the
   // taxonomy exists to make visible.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
-  await openAsVisitor(page, ARCHIVE, 2);
+  await openAsVisitor(page, ARCHIVE, 2, { debug: true });
 
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
@@ -972,7 +988,7 @@ test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", a
     /** @type {any} */ (window).__tourViewerTest.emitFrames(2);
   });
   await expect(page.getByTestId("ar-status")).toContainText(
-    "Point the phone at the printed code",
+    "Point the phone at the tour's code",
   );
   await expect(page.getByTestId("ar-status")).not.toContainText(
     /capture spots|slowly look around|hold steady/,
@@ -1032,7 +1048,7 @@ test("a tour whose photo spots were baked at its Finish places them without any 
   // a co-author - and report the BAKED quality (7 fixes; the walk has
   // none). Its gallery shows the 2 baked photos, not the unbaked third.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
-  await openAsVisitor(page, ARCHIVE, 2);
+  await openAsVisitor(page, ARCHIVE, 2, { debug: true });
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
   await page.evaluate(() => {
@@ -1089,7 +1105,7 @@ test("a tour with no recording and no printed codes says so, instead of scanning
   // Why this matters (feedback F3): the reporter's zip could not carry a
   // code, and the old line promised one forever.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/plain-tour.zip";
-  await openAsVisitor(page, ARCHIVE, 8);
+  await openAsVisitor(page, ARCHIVE, 8, { debug: true });
   await enterAr(page);
   await forceTrackingReady(page);
   await expect
@@ -1127,12 +1143,12 @@ test("the visitor's content and ring wait for the lock; the escape after 45 s pl
   // and the ring follows the vote. A second visitor never locks: the clock
   // (fired by the fake, no frames needed) offers the escape, which places
   // by GPS and says so.
-  await openAsVisitor(page, RANGES_ARCHIVE);
+  await openAsVisitor(page, RANGES_ARCHIVE, 8, { debug: true });
   await enterAr(page);
   await seedAlignment(page);
   await forceTrackingReady(page);
   await expect(page.getByTestId("ar-status")).toContainText(
-    "Point the phone at the printed code",
+    "Point the phone at the tour's code",
   );
   await expect(page.getByTestId("scan-escape")).toBeHidden();
   expect(
@@ -1188,6 +1204,49 @@ test("the visitor's content and ring wait for the lock; the escape after 45 s pl
   await expect(page.getByTestId("ar-status")).toContainText("1 placed object");
 });
 
+test("a visitor reads one plain sentence per state, never the debug readout (UI round 1, U1)", async ({
+  page,
+}) => {
+  // Why this matters (usability review F1, F15): the visitor's status line
+  // used to be a debug readout - a frame counter, "vote batches", "Pose
+  // error px". Without ?debug=1 a visitor now reads one sentence per
+  // state, and the line's data-state names the state for the page.
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  await enterAr(page);
+  await seedAlignment(page);
+  await forceTrackingReady(page);
+  const status = page.getByTestId("ar-status");
+  await expect(status).toHaveAttribute("data-state", "scan");
+  await expect(status).toHaveText(
+    "Point your phone at the tour's code (on the poster).",
+  );
+  await lockTheCode(page);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return status.getAttribute("data-state");
+      },
+      { timeout: 20000 },
+    )
+    .toBe("placed");
+  await expect(status).toHaveText("Tour placed. Look around.");
+  // The screen reader's copy says the same, once.
+  await expect(page.getByTestId("ar-status-live")).toHaveText(
+    "Tour placed. Look around.",
+  );
+  for (const word of [
+    "camera frames",
+    "vote batch",
+    "Pose error",
+    "Visitor mode",
+  ]) {
+    await expect(status).not.toContainText(word);
+  }
+});
+
 test("without a QR detector the photos still land at capture spots (review #2)", async ({
   page,
 }) => {
@@ -1199,7 +1258,7 @@ test("without a QR detector the photos still land at capture spots (review #2)",
     seams.createQrFrontEnd = () => null;
   });
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
-  await openAsVisitor(page, ARCHIVE, 2);
+  await openAsVisitor(page, ARCHIVE, 2, { debug: true });
   await enterAr(page);
   await seedAlignment(page);
   await forceTrackingReady(page);
@@ -1220,7 +1279,7 @@ test("a re-entered session places the tour again once ITS tracking is ready (rev
   page,
 }) => {
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
-  await openAsVisitor(page, ARCHIVE, 2);
+  await openAsVisitor(page, ARCHIVE, 2, { debug: true });
   for (const entry of [1, 2]) {
     await enterAr(page);
     await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
@@ -1276,7 +1335,7 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
       refusedAdds.push(message.text());
     }
   });
-  await openAsVisitor(page, ARCHIVE, 8);
+  await openAsVisitor(page, ARCHIVE, 8, { debug: true });
 
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
@@ -1290,7 +1349,7 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
     /** @type {any} */ (window).__tourViewerTest.emitFrames(2);
   });
   await expect(page.getByTestId("ar-status")).toContainText(
-    "Point the phone at the printed code",
+    "Point the phone at the tour's code",
   );
   expect(
     await page.evaluate(
@@ -1362,7 +1421,11 @@ test("a scanned code with no level reads as unknown instead of flapping", async 
   // resolves once and the visitor gets a plain answer. A launch whose
   // archive is gone still boots VISITOR mode (the mode is the parameter's
   // presence), which is the "no tour open" visitor state.
-  await page.goto("/?qr=http%3A%2F%2F127.0.0.1%3A5197%2Fnope%2Fgone.zip");
+  // ?debug=1: the line naming the code by its id is the author's readout
+  // (a visitor reads "This code isn't part of this tour", U1).
+  await page.goto(
+    "/?qr=http%3A%2F%2F127.0.0.1%3A5197%2Fnope%2Fgone.zip&debug=1",
+  );
   await expect(page.getByTestId("error")).toContainText("does not exist", {
     timeout: 15000,
   });
@@ -2965,7 +3028,7 @@ test("a code hung far from its saved spot is ignored after a minute of walking: 
   const degPerMLat = 8.9832e-6;
   const degPerMLon = 1.32966e-5; // at lat 47.5
   const CODE = { n: 11, e: 50 };
-  await openAsVisitor(page, RANGES_ARCHIVE);
+  await openAsVisitor(page, RANGES_ARCHIVE, 8, { debug: true });
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
   const t0 = Date.now();

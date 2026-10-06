@@ -107,6 +107,11 @@ DOM glue, its own module since the flows plan M6.
   decodes it (`image-cap.ts` `pictureProblem`, tour kit K4 review R2): one
   over the tour pixel cap, or one whose size cannot be read, shows as
   "failed to load".
+- **The stats panel is the creator's** (and `?debug=1`'s): a visitor's
+  transfer numbers could stall below 100 % once the whole-file download
+  stops, and read as stuck (UI round 1, U1, review F11; supersedes M2
+  review #2's one stats line for visitors). The trust line is hidden when
+  it has no line for the audience (`trustLines`).
 - The gallery streams SEQUENTIALLY; a newer open supersedes an in-flight
   fill per entry; object URLs are revoked on teardown.
 - **The gallery waits for `tour.json` and leaves out the creator's walk**

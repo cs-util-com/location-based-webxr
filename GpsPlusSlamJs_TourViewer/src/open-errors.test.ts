@@ -151,3 +151,26 @@ describe("isDriveUrl", () => {
     expect(isDriveUrl("https://www.googleapis.com/youtube/v3/x")).toBe(false);
   });
 });
+
+describe("describeOpenError for a visitor (UI round 1, U1, review F11)", () => {
+  // Why: a visitor who scanned a poster cannot change how the tour is
+  // hosted, so the creator's note about the site's proxy and cross-site
+  // reads is noise to them. The download-and-open route stays: on such a
+  // host it is the visitor's only way in (K-D1).
+  it("keeps the download route, drops the hosting note, and names who can fix it", () => {
+    const text = describeOpenError(
+      new OpenRemoteArchiveError("x", "cors"),
+      undefined,
+      "visitor",
+    );
+    expect(text).toContain(OPEN_FILE_ADVICE_LABEL);
+    expect(text).not.toMatch(/proxy|cross-site/);
+    expect(text).toMatch(/tell the person who put up the poster/);
+  });
+
+  it("the creator keeps the hosting note", () => {
+    expect(describeOpenError(new OpenRemoteArchiveError("x", "cors"))).toMatch(
+      /proxy/,
+    );
+  });
+});

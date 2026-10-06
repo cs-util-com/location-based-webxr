@@ -18,7 +18,9 @@ identical here — they diverge in M3/M4.
   setup" (creator), "Start the tour" (visitor), "Allow location" (visitor
   while the location gate is pending, DEC-N2), "Getting your location…"
   disabled (visitor while the request runs); running: "Setting up in AR"
-  / "Tour running".
+  / "Tour running"; error: "Try again" (the cause is the status line's, in
+  plain words, `visitor-status.ts`; it used to be "Retry - " plus the raw
+  browser error, UI round 1, U1, review F5).
 - `buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig` -
   `hooks.requestHitTest` asks for the WebXR `hit-test` feature (the
   creator's reticle; without it the reticle never shows) - hooks:

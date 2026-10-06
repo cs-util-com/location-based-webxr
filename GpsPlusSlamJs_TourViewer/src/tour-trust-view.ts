@@ -70,6 +70,9 @@ export async function describeTourTrust(input: {
   readonly sources: readonly string[];
   readonly storage: TrustStorage | undefined;
   readonly nowMs: number;
+  /** Who reads the lines (`trustLines`' audience); the creator's by
+   *  default. */
+  readonly audience?: "creator" | "visitor";
 }): Promise<string[]> {
   const state = signatureStateOf(input.integrity);
   const observed = observationOf(input.integrity, state);
@@ -96,10 +99,13 @@ export async function describeTourTrust(input: {
       keys.map(async (k) => [k, await keyFingerprint(k)] as const),
     ),
   );
-  return trustLines({
-    signature: state,
-    warnings,
-    links,
-    fingerprintOf: (author) => prints.get(author) ?? author,
-  });
+  return trustLines(
+    {
+      signature: state,
+      warnings,
+      links,
+      fingerprintOf: (author) => prints.get(author) ?? author,
+    },
+    input.audience ?? "creator",
+  );
 }

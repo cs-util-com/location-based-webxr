@@ -106,3 +106,48 @@ describe("trustLines", () => {
     expect(lines({})).toHaveLength(1);
   });
 });
+
+describe("trustLines for a visitor (UI round 1, U1; owner decision 2026-10-06)", () => {
+  // Why: every tour a creator finishes is unsigned until signing on export
+  // exists, so every visitor read "Not signed: there is no way to check
+  // who made this tour..." - an alarm on every normal tour. A visitor now
+  // reads a trust line only when there is something to say: a signature,
+  // or a warning. The creator keeps the plain "not signed" note.
+  const visitor = (input: Partial<TrustCopyInput>) =>
+    trustLines(
+      {
+        signature: { kind: "none" },
+        warnings: [],
+        links: [],
+        fingerprintOf,
+        ...input,
+      },
+      "visitor",
+    );
+
+  it("says nothing about an unsigned tour, listed or not, without a warning", () => {
+    expect(visitor({ signature: { kind: "none" } })).toEqual([]);
+    expect(visitor({ signature: { kind: "listed" } })).toEqual([]);
+  });
+
+  it("still warns when a link used to open a signed tour", () => {
+    const out = visitor({
+      signature: { kind: "none" },
+      warnings: [{ kind: "source-lost-signature", source: "link", was: A }],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatch(
+      /^Warning: this link used to open a tour signed by key aaaa 1111 aaaa/,
+    );
+  });
+
+  it("names a signature as before", () => {
+    expect(visitor({ signature: { kind: "signed", author: A } })[0]).toMatch(
+      /^Signed by key aaaa 1111 aaaa/,
+    );
+  });
+
+  it("the creator keeps the plain note", () => {
+    expect(lines({ signature: { kind: "none" } })[0]).toMatch(/^Not signed/);
+  });
+});

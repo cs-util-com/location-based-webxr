@@ -10,10 +10,17 @@ fingerprints come in already computed.
 
 ## Public API
 
-- `trustLines({ signature, warnings, links, fingerprintOf }): string[]` -
-  the signature line, one line per warning, then one links line when a
-  SIGNED tour links other series (an unsigned or unchecked tour shows none,
-  K1 milestone review R12: nobody vouches for its list).
+- `trustLines({ signature, warnings, links, fingerprintOf }, audience?)`
+  - the signature line, one line per warning, then one links line when a
+    SIGNED tour links other series (an unsigned or unchecked tour shows none,
+    K1 milestone review R12: nobody vouches for its list). `audience`
+    defaults to `"creator"`; for `"visitor"` an unsigned tour (listed or
+    not) gets NO signature line, only its warnings (UI round 1, U1; owner
+    decision 2026-10-06, superseding K1 §4.2's plain note for visitors:
+    every finished tour is unsigned until signing on export, and the note
+    read as an alarm on every one). The page cannot know "never signed",
+    only this device's trust records, so a visitor of an unsigned tour seen
+    for the first time reads nothing.
 - `type SignatureState` - `none | listed | signed(author) |
 unsupported(author)`.
 
