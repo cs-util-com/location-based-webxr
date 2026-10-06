@@ -570,7 +570,7 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
 - The cloud volume (volume-cloud plan 2026-10-05-0016, C2;
   `globe-cloud-volume.js`): `cloudVolume` 0 the shell only, 1 the volume
   within the disc and the shell outside it, 2 (default, the owner's choice
-  of 2026-10-05) the volume over the shell; `cloudVolumeKm` (20) the disc,
+  of 2026-10-05) the volume over the shell; `cloudVolumeKm` (80; 20 until 2026-10-06) the disc, which the slab's reach follows,
   `cloudVolumeCeilingKm` (40) the ceiling it fades in under over
   `cloudVolumeFadeKm` (25); `cloudVolumeCover` (1, the owner 2026-10-06;
   0.5 before, chosen where the volume drew almost nothing) the gain on the

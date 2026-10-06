@@ -29,7 +29,10 @@
 import * as THREE from "three";
 
 import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
-import { CLOUD_SLAB } from "/fw/visualization/atmosphere/cloud-slab.js";
+import {
+  CLOUD_SLAB,
+  CLOUD_SLAB_REACH,
+} from "/fw/visualization/atmosphere/cloud-slab.js";
 import { CloudShadow } from "/fw/visualization/atmosphere/cloud-shadow.js";
 import {
   CLOUD_VOLUME_COVERAGE_GLSL,
@@ -65,6 +68,12 @@ const SLAB_MIDDLE_M = (CLOUD_SLAB.baseM + CLOUD_SLAB.topM) / 2;
  * 2.5 m at 20 km (z^2 / (near x 2^24)).
  */
 const VOLUME_NEAR_M = 10;
+
+/**
+ * The slab's reach never ends before its default (m): a small disc keeps
+ * the look-dev page's fade.
+ */
+const MIN_REACH_END_M = CLOUD_SLAB_REACH.farEndM;
 
 /**
  * The volume for `renderer`, drawing the ground sky's `atmosphere` slab
@@ -132,6 +141,8 @@ export function createGlobeCloudVolume(
   let radiusM = 0;
   let liftM = 0;
   let drawn = 0;
+  /** The reach's end last handed to the slab (m), or null (the default). */
+  let lastReachEndM = null;
 
   const slab = () => skyScene.getObjectByName("atmosphere-cloud-slab");
   const fit = (target) => {
@@ -153,6 +164,8 @@ export function createGlobeCloudVolume(
         atmosphere.setCloudCoverage(null);
         atmosphere.setCloudSceneDepth(null);
         atmosphere.setCloudDiscRadius(null);
+        atmosphere.setCloudReach(null);
+        lastReachEndM = null;
         atmosphere.configure({ cloudMode: "dome", cloudCover: 0 });
       }
     },
@@ -200,7 +213,20 @@ export function createGlobeCloudVolume(
           atmosphere.cloudUniforms.atmCloudOffset.value.set(u, v);
         }
       }
-      if (enabled) atmosphere.setCloudDiscRadius(radiusM > 0 ? radiusM : null);
+      if (enabled) {
+        atmosphere.setCloudDiscRadius(radiusM > 0 ? radiusM : null);
+        // The slab's reach follows the disc (volume-cloud plan §13, R2): its
+        // default ends 21 km from the camera, which left the horizon the
+        // owner looked at without volume clouds (2026-10-06).
+        const reachEndM = Math.max(radiusM, MIN_REACH_END_M);
+        if (reachEndM !== lastReachEndM) {
+          lastReachEndM = reachEndM;
+          atmosphere.setCloudReach({
+            farStartM: (2 / 3) * reachEndM,
+            farEndM: reachEndM,
+          });
+        }
+      }
       shadow.setLiftM(liftM);
       if (radiusM > 0) shadow.setDiscRadiusM(radiusM);
       shadow.setEnabled(shadowOn && enabled && radiusM > 0);

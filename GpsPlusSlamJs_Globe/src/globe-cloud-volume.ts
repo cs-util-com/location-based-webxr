@@ -24,7 +24,7 @@ const EARTH_RADIUS_M = 6_371_000;
 
 export const CLOUD_VOLUME = {
   /** The volume's disc around the camera, km (the plan's R). */
-  radiusKm: 20,
+  radiusKm: 80,
   /** No volume at and above this altitude, km. */
   ceilingKm: 40,
   /** It fades in over this much below the ceiling, km. */

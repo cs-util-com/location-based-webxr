@@ -219,6 +219,51 @@ test("the cloud volume is seen looking down from just above the deck, over an ov
   expect(coverage.lowerShare).toBeGreaterThanOrEqual(LOWER_SHARE);
 });
 
+// WHY (volume-cloud plan §13): the owner saw the volume only around the
+// camera, never toward the horizon he looked at. The slab's reach was the
+// look-dev page's (it ended 21 km from the camera) and the disc 20 km; the
+// reach now follows an 80 km disc. Held over the overcast place, 12 km up,
+// the view pitched 35 degrees up toward the horizon: the upper half of the
+// frame (the far deck) must show volume. Measured: 0 % before the reach,
+// 21 % with it; the bound, swept x0.5/x1/x2, is half of that.
+const UPPER_SHARE = 0.1;
+
+test("the cloud volume reaches toward the horizon, not only around the camera", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(600_000);
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation(OVERCAST);
+  const errors = await bootGlobe(page, `${BASE}&cloudVolumeCover=1`);
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return (
+        s.phase === "landed" && s.pin.phase === "idle" && s.relief?.settled
+      );
+    },
+    null,
+    { timeout: 300_000 },
+  );
+  await page.evaluate(() => window.__globeLab.pitchView(35));
+  await page.evaluate(() => window.__globeLab.timeFrames(4));
+  const { coverage, volume } = await page.evaluate(() => ({
+    coverage: window.__globeLab.cloudVolumeCoverage(),
+    volume: window.__globeLab.state().cloudVolume,
+  }));
+  const upper = 2 * coverage.share - coverage.lowerShare;
+  const verdict = SWEEP.map(
+    (k) => `x${k} ${upper >= UPPER_SHARE * k ? "ok" : "NO"}`,
+  ).join(" ");
+  console.log(
+    `the volume toward the horizon at ${HOLD_KM} km over 61 N 5.5 E: upper half ${(upper * 100).toFixed(1)} % (bound ${UPPER_SHARE * 100} %: ${verdict}), lower half ${(coverage.lowerShare * 100).toFixed(1)} %, disc ${(volume.radiusM / 1000).toFixed(0)} km`,
+  );
+  expect(errors).toEqual([]);
+  expect(upper).toBeGreaterThanOrEqual(UPPER_SHARE);
+});
+
 // WHY (C3): the owner asked for the volume's shadows compared against the
 // 2D layer's. The same ground pixels at the 12 km hold, looking down, with
 // no cloud shadow, the shell's soft shadow (the default) and the volume's

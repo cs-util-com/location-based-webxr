@@ -9,7 +9,7 @@ own cloud map so the swap from the cloud shell never plops.
 
 ## Public API
 
-- `CLOUD_VOLUME`: `radiusKm` 20 (the disc, the plan's R), `ceilingKm` 40
+- `CLOUD_VOLUME`: `radiusKm` 80 (the disc, the plan's R; 20 until the reach, §13), `ceilingKm` 40
   (no volume at and above), `fadeKm` 10 (it fades in below the ceiling).
 - `cloudVolumeShare(altitudeKm, { ceilingKm?, fadeKm? })`: 1 at and below
   `ceilingKm - fadeKm`, 0 at and above `ceilingKm`, smoothstep between.

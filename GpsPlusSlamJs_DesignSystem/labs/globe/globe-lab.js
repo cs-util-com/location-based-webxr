@@ -461,9 +461,10 @@ const PARAMS = {
   // choice 2026-10-05, the only variant measured near no-plop; replacing the
   // shell's soft clouds inside the disc changed the frame by 16 levels).
   cloudVolume: { fallback: 2, min: 0, max: 2 },
-  // Its disc (km, the plan's R, swept {10, 20, 40}) and its ceiling (km; it
-  // fades in over the 10 km below).
-  cloudVolumeKm: { fallback: 20, min: 5, max: 40 },
+  // Its disc (km, the plan's R, swept {10, 20, 40}; 80 since 2026-10-06, so
+  // the volume reaches toward the horizon, the slab's reach following it:
+  // volume-cloud plan §13) and its ceiling (km; it fades in below it).
+  cloudVolumeKm: { fallback: 80, min: 5, max: 200 },
   cloudVolumeCeilingKm: { fallback: 40, min: 10, max: 100 },
   // Its fade-in below the ceiling (km), and the cover's gain on the map
   // (thinner below 1). The gain is 1, the map's own cloud (the owner,

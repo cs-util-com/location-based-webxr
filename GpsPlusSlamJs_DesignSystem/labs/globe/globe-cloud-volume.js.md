@@ -24,7 +24,10 @@ and ending at the relief, so a ridge in front of a cloud hides it.
     volume), and, while enabled, the ground sky's noise offset
     (`cloudVolumeNoiseOffset` at the map's drift), which anchors the noise
     to the ground: with the frame centred on the target, a fixed offset put
-    the same clear patch under every place (2026-10-06).
+    the same clear patch under every place (2026-10-06). The slab's reach
+    (`setCloudReach`) follows the disc, at least the default 21 km, so the
+    volume reaches toward the horizon (volume-cloud plan §13, R2: the
+    default ended it 21 km from the camera); disabling restores it.
   - `render(camera, relief)`: after the Earth, nothing at share 0: the
     relief's depth pass, the slab from the lifted camera, the composite.
   - `patchShadow(tiles)` and `setShadow(on)` (C3): the volume's shadow on
