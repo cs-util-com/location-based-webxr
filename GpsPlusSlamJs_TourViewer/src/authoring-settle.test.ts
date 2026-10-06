@@ -2065,6 +2065,37 @@ describe(
       expect(codePosition(a)?.movedWithCode).toHaveLength(1);
     });
 
+    // Why this test matters (code book plan M4b, the owner's choice after
+    // the M3 sweep): an improved code took every pin within 40 m along,
+    // including pins that belong to ANOTHER code nearby - dragging them off
+    // that code. A pin nearer another code of the tour stays put.
+    it("leaves a pin nearer another code of the tour where it is", async () => {
+      const { a, stored, before, pins } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      // A second code of the tour stands right at the near pin.
+      a.ctx.currentLevels = new Map([
+        [
+          "other0000001",
+          {
+            version: 1,
+            qr: {
+              text: "https://example.invalid/?qr=other",
+              physicalSizeM: 0.16,
+              geo: { ...before.get("near")!, rotation: [0, 0, 0, 1] },
+            },
+          } as never,
+        ],
+      ]);
+      a.endVisit();
+      expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      expect(codePosition(a)?.applied).toBe(true);
+      expect(pins().get("near")).toEqual(before.get("near"));
+      expect(codePosition(a)?.movedWithCode).toHaveLength(0);
+    });
+
     it("moves a pin the hosted zip carries too, as an edit by id the Finish writes", async () => {
       // Why: in the field the pins near the code come from the tour file,
       // not from this page's earlier visits; they must move the same way.

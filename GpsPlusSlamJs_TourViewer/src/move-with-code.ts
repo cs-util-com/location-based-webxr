@@ -97,6 +97,28 @@ export function moveWithCode(
 /** The objects an improved code takes with it: within about 40 m (the
  *  reach D33 ties notes to a code event with). */
 export function withinCodeReach(object: QrGeoPose, code: QrGeoPose): boolean {
-  const r = calcRelativeCoordsInMeters(code, object);
-  return Math.hypot(r[0], r[2]) <= CODE_EVENT_REACH_M;
+  return horizontalM(code, object) <= CODE_EVENT_REACH_M;
+}
+
+/**
+ * Whether an improved code takes `object` along (code book refactor plan
+ * M4b, the owner's choice after the M3 sweep): within its reach AND no
+ * nearer to any of the tour's `others` codes than to this one (a tie goes
+ * to this code). Notes that belong to another code nearby stay with it;
+ * moving them dragged them up to 10 m off it in the sweep.
+ */
+export function takesAlong(
+  object: QrGeoPose,
+  code: QrGeoPose,
+  others: readonly QrGeoPose[],
+): boolean {
+  if (!withinCodeReach(object, code)) return false;
+  const own = horizontalM(code, object);
+  return others.every((other) => own <= horizontalM(other, object));
+}
+
+/** Horizontal distance from `from` to `to` (m). */
+function horizontalM(from: QrGeoPose, to: QrGeoPose): number {
+  const r = calcRelativeCoordsInMeters(from, to);
+  return Math.hypot(r[0], r[2]);
 }

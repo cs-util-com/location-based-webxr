@@ -15,7 +15,7 @@ import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 
 import { createTourViewerStore } from "./tour-viewer-session";
-import { moveWithCode, withinCodeReach } from "./move-with-code";
+import { moveWithCode, takesAlong, withinCodeReach } from "./move-with-code";
 
 // The geodesy is licence-gated; building a store activates it, as the page
 // does at boot.
@@ -156,5 +156,31 @@ describe("withinCodeReach", () => {
     const at = (m: number): Pose => ({ ...code, lat: code.lat + m / 111_320 });
     expect(withinCodeReach(at(39), code)).toBe(true);
     expect(withinCodeReach(at(41), code)).toBe(false);
+  });
+});
+
+describe("takesAlong (code book plan M4b: only the notes nearer the improved code)", () => {
+  // Why this test matters: an improved code took every object within 40 m
+  // with it, including the notes that belong to ANOTHER code nearby. In the
+  // M3 sweep that dragged the other code's notes up to 10 m off it when two
+  // codes stood 10-20 m apart; moving only the objects nearer the improved
+  // code than any other code was never worse (the owner's choice after M3).
+  const north = (m: number): Pose => ({ ...code, lat: code.lat + m / 111_320 });
+  const other = north(20);
+
+  it("takes an object within reach that is nearer the improved code than every other code", () => {
+    expect(takesAlong(north(5), code, [other])).toBe(true);
+    // Halfway counts as nearer (the improved code takes ties).
+    expect(takesAlong(north(10), code, [other])).toBe(true);
+  });
+
+  it("leaves an object nearer another code, even within reach", () => {
+    expect(withinCodeReach(north(15), code)).toBe(true);
+    expect(takesAlong(north(15), code, [other])).toBe(false);
+  });
+
+  it("leaves an object out of reach, and is the plain reach with no other code", () => {
+    expect(takesAlong(north(41), code, [])).toBe(false);
+    expect(takesAlong(north(39), code, [])).toBe(true);
   });
 });

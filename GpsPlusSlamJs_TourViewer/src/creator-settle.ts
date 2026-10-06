@@ -40,7 +40,7 @@ import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorCodes } from "./creator-codes.js";
 import type { CreatorMovePrompt } from "./creator-move-prompt.js";
 import type { CreatorPreviews } from "./creator-previews.js";
-import { moveWithCode, withinCodeReach } from "./move-with-code.js";
+import { moveWithCode, takesAlong } from "./move-with-code.js";
 import { authoringObjects, upsertPlaced } from "./object-editing.js";
 import { correctionRefusedLine } from "./qr-author-mode.js";
 import type { TourViewerSeams } from "./seams.js";
@@ -405,7 +405,7 @@ export function wireCreatorSettle(deps: {
       reapplied === null &&
       position.decision.kind === "replace" &&
       level !== null
-        ? moveEarlierWithCode(visit, level.json, plan.level.json)
+        ? moveEarlierWithCode(visit, level.id, level.json, plan.level.json)
         : [];
     logSettle(
       visit,
@@ -428,12 +428,18 @@ export function wireCreatorSettle(deps: {
    */
   function moveEarlierWithCode(
     visit: number,
+    levelId: string,
     beforeJson: string,
     afterJson: string,
   ): { id: string; before: QrGeoPose; after: QrGeoPose }[] {
     const from = storedGeo(beforeJson);
     const to = storedGeo(afterJson);
     if (from === null || to === null) return [];
+    // The tour's other codes: an object nearer one of them stays with it
+    // (M4b, `takesAlong`).
+    const others = deps.codes
+      .references()
+      .flatMap((r) => (r.levelId === levelId || r.geo === null ? [] : [r.geo]));
     const moved: { id: string; before: QrGeoPose; after: QrGeoPose }[] = [];
     for (const entry of authoringObjects(
       ctx.tourManifest?.objects ?? [],
@@ -442,7 +448,7 @@ export function wireCreatorSettle(deps: {
     )) {
       if (entry.placed?.placement?.visit === visit) continue;
       const before = entry.object.geo;
-      if (!withinCodeReach(before, from)) continue;
+      if (!takesAlong(before, from, others)) continue;
       const turned = moveWithCode(before, from, to);
       const after: QrGeoPose =
         entry.object.kind === "pin"

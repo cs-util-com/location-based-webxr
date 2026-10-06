@@ -27,6 +27,12 @@ landmarks (D19). Pure.
 - `withinCodeReach(object, code): boolean` - horizontal distance at most
   `CODE_EVENT_REACH_M` (40 m), the same reach D33 ties notes to a code
   event with.
+- `takesAlong(object, code, others): boolean` - what an improved code
+  takes with it (code book refactor plan M4b, the owner's choice after the
+  M3 sweep): within the reach AND no nearer to any of the tour's `others`
+  codes than to this one (a tie goes to this code). Notes that belong to
+  another code nearby stay with it: moving them dragged them up to 10 m
+  off it in the sweep, and moving only the nearer ones was never worse.
 
 ## Invariants & assumptions
 
@@ -48,7 +54,8 @@ const moved = withinCodeReach(pin.geo, oldGeo)
 
 ## Tests
 
-`move-with-code.test.ts`: the turn's direction (an offset in the code's
+`move-with-code.test.ts`: `takesAlong` (nearer this code, a tie, nearer
+another code within reach, out of reach, no other code); the turn's direction (an offset in the code's
 own frame kept), a tilt difference ignored, an object at the code lands on
 the new code; the
 field case (41 degrees at about 6 m, the chord); a property that the

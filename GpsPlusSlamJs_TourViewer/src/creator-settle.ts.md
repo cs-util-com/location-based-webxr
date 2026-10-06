@@ -167,7 +167,8 @@ M4 settles every code of the book, not only the one in hand.
       pick), so it is re-minted as if measured here and this visit's
       objects settle relative to it.
     - An IMPROVED position moves the tour's other objects within 40 m of
-      the code's old position with it (`moveEarlierWithCode`,
+      the code's old position, and no nearer to another of the tour's
+      codes (M4b, `takesAlong`), with it (`moveEarlierWithCode`,
       `move-with-code.ts`: yaw and position only, as the code correction;
       hosted, restored and earlier visits' objects, as edits by id; a pin
       keeps its orientation). A real MOVE leaves them (D19) and marks the
