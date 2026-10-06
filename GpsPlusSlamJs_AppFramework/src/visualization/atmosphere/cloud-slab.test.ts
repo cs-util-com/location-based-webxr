@@ -39,6 +39,7 @@ import {
   CLOUD_SLAB_FRAGMENT_GLSL,
   createCloudSlab,
   setCloudSlabCoverage,
+  setCloudSlabDiscCentre,
   setCloudSlabRadius,
   setCloudSlabReach,
   setCloudSlabSceneDepth,
@@ -1822,5 +1823,24 @@ describe('the reach (globe volume-cloud plan §13, R1)', () => {
       expect(() => setCloudSlabReach(slab, bad)).toThrow(RangeError);
       expect(() => cloudSlabFarWeight(1, bad)).toThrow(RangeError);
     }
+  });
+});
+
+describe('the disc centre on the slab (globe volume-cloud plan §15)', () => {
+  it('centres the disc on a world point as a uniform, and back on the camera', () => {
+    const slab = createCloudSlab({});
+    const m = slab.material as THREE.ShaderMaterial;
+    const program = m.fragmentShader;
+    const centre = () =>
+      (m.uniforms['atmCoverDiscCentre']!.value as THREE.Vector3).toArray();
+    expect(centre()).toEqual([0, 0, 1]);
+    setCloudSlabDiscCentre(slab, { x: 12_000, z: -30_000 });
+    expect(centre()).toEqual([12_000, -30_000, 0]);
+    expect(m.fragmentShader).toBe(program);
+    setCloudSlabDiscCentre(slab, null);
+    expect(centre()[2]).toBe(1);
+    expect(() => setCloudSlabDiscCentre(slab, { x: Number.NaN, z: 0 })).toThrow(
+      RangeError
+    );
   });
 });

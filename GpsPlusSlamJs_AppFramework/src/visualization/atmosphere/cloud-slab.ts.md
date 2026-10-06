@@ -107,6 +107,9 @@ it only in `cloudMode: 'slab'`.
   - `setCloudSlabRadius(slab, radiusM | null)`: the disc
     (`ATM_CLOUD_DISC`, `atmCoverDiscM`); a new program only when it is
     turned on or off.
+- `setCloudSlabDiscCentre(slab, { x, z } | null)` (volume-cloud plan
+  §15): the disc's centre, a world point or the camera (null, the
+  default); a uniform, read only with the disc on.
 - `setCloudSlabReach(slab, reach | null)` (R1): the uniform `atmSlabReach`
   (the far fade's start and end, and the march cap, which grows with the
   end so it never ends the clouds first) and the mesh scaled out

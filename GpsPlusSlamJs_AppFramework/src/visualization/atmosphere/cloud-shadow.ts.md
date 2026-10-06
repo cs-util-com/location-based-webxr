@@ -37,8 +37,9 @@ shadows drift with the clouds and fall where the sky draws them.
   patched material, since it changes the shader text: `Error` after it,
   `RangeError` for a chunk without `atmCloudCoverageAt`), and three
   uniforms set live: `setLiftM(m)` (the layer lifted above its own height),
-  `setDiscRadiusM(m)` and `setCover(c)` (the global cover the map's is
-  multiplied by). The program key gains `-map` and `-disc`.
+  `setDiscRadiusM(m)`, `setDiscCentre({ x, z } | null)` (the disc's
+  centre, the camera when null; volume-cloud plan §15) and `setCover(c)`
+  (the global cover the map's is multiplied by). The program key gains `-map` and `-disc`.
 
 ## Invariants & assumptions
 

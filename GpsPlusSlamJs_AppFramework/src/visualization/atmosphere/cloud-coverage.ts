@@ -19,7 +19,7 @@
  * @see cloud-coverage.ts.md
  */
 
-import type * as THREE from 'three';
+import * as THREE from 'three';
 
 import { smoothstep } from '../../utils/smoothstep.js';
 import { cloudThreshold } from './cloud-layer.js';
@@ -117,13 +117,16 @@ float atmCoverThreshold(float cover) {
 #endif
 #ifdef ATM_CLOUD_DISC
 uniform float atmCoverDiscM;
+// The disc's centre: world x, z, and 1 to follow the camera instead.
+uniform vec3 atmCoverDiscCentre;
 #endif
 float atmCloudThresholdAt(vec2 xz, float threshold, float cover) {
 #ifdef ATM_CLOUD_COVERAGE
   threshold = atmCoverThreshold(atmCloudCoverageAt(xz) * cover);
 #endif
 #ifdef ATM_CLOUD_DISC
-  threshold = mix(threshold, 2.0, smoothstep(0.7 * atmCoverDiscM, atmCoverDiscM, length(xz - cameraPosition.xz)));
+  vec2 atmDiscCentre = mix(atmCoverDiscCentre.xy, cameraPosition.xz, atmCoverDiscCentre.z);
+  threshold = mix(threshold, 2.0, smoothstep(0.7 * atmCoverDiscM, atmCoverDiscM, length(xz - atmDiscCentre)));
 #endif
   return threshold;
 }
@@ -137,12 +140,15 @@ float atmCloudThresholdAt(vec2 xz, float threshold, float cover) {
 export function cloudCoverageUniforms(): {
   atmCoverThresholds: THREE.IUniform<number[]>;
   atmCoverDiscM: THREE.IUniform<number>;
+  atmCoverDiscCentre: THREE.IUniform<THREE.Vector3>;
 } {
   return {
     atmCoverThresholds: {
       value: new Array<number>(COVER_STEPS + 1).fill(CLEAR_THRESHOLD),
     },
     atmCoverDiscM: { value: 1 },
+    // Following the camera (z = 1) until a centre is set.
+    atmCoverDiscCentre: { value: new THREE.Vector3(0, 0, 1) },
   };
 }
 
@@ -163,4 +169,33 @@ export function withCloudCoverage(fragment: string, glsl: string): string {
     throw new RangeError('the shader does not include CLOUD_COVERAGE_GLSL');
   }
   return fragment.replace(COVERAGE_CHUNK, glsl);
+}
+
+/** A disc centre: world x and z (m). */
+export interface CloudDiscCentre {
+  readonly x: number;
+  readonly z: number;
+}
+
+/**
+ * Writes a disc centre into the chunk's `atmCoverDiscCentre` uniform (globe
+ * volume-cloud plan 2026-10-05-0016 §15): the world point, or the camera
+ * (null), so the slab and the shadow agree on it.
+ *
+ * @throws RangeError for a centre that is not finite.
+ */
+export function writeCloudDiscCentre(
+  uniform: THREE.IUniform<THREE.Vector3>,
+  centre: CloudDiscCentre | null
+): void {
+  if (centre === null) {
+    uniform.value.z = 1;
+    return;
+  }
+  if (!(Number.isFinite(centre.x) && Number.isFinite(centre.z))) {
+    throw new RangeError(
+      `the disc centre must be finite, got ${centre.x}, ${centre.z}`
+    );
+  }
+  uniform.value.set(centre.x, centre.z, 0);
 }

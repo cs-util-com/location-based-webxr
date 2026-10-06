@@ -24,10 +24,17 @@ and C3; DEC-H3, one implementation).
 - `CLOUD_COVERAGE_GLSL`: the chunk both shaders include. Its
   `atmCloudThresholdAt(xz, threshold, cover)` returns the map's threshold
   (the local cover times `cover`, behind `ATM_CLOUD_COVERAGE`) or
-  `threshold`, faded at the disc (`atmCoverDiscM`, behind `ATM_CLOUD_DISC`).
+  `threshold`, faded at the disc (`atmCoverDiscM`, behind `ATM_CLOUD_DISC`),
+  centred on `atmCoverDiscCentre` (world x, z), or on the camera while its
+  z is 1 (the default; volume-cloud plan §15).
   Without either define it returns `threshold`.
 - `cloudCoverageUniforms()`: the uniforms the chunk declares, neutral (the
-  table clear, a 1 m disc) until set; a fresh object each call.
+  table clear, a 1 m disc following the camera) until set; a fresh object
+  each call.
+- `CloudDiscCentre` and `writeCloudDiscCentre(uniform, centre | null)`
+  (§15): writes a world point into the centre uniform, or turns it back to
+  the camera (null), so the slab and the shadow share one rule.
+  RangeError for a centre that is not finite.
 - `withCloudCoverage(fragment, glsl)`: the fragment with the caller's chunk
   inserted at the chunk's place; RangeError for a chunk without
   `atmCloudCoverageAt` or a fragment without the chunk.

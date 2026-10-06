@@ -4,6 +4,12 @@
 
 ### Added
 
+- **The cloud disc's centre**, opt-in: `setCloudSlabDiscCentre(slab,
+{ x, z } | null)`, `SkyAtmosphere.setCloudDiscCentre` and
+  `CloudShadow.setDiscCentre` centre the disc on a world point instead of
+  the camera (the default, unchanged), so a page can put the volume where
+  the view looks. `CloudDiscCentre` and `writeCloudDiscCentre` are
+  exported.
 - **The cloud slab's reach**, opt-in: `setCloudSlabReach(slab, reach |
 null)` and `SkyAtmosphere.setCloudReach(reach | null)` move the slab's
   far fade and march cap out (and scale its mesh to match), so a camera

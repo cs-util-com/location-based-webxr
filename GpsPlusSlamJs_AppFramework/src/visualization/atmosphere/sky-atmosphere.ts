@@ -65,12 +65,14 @@ import {
   assertCloudSlabReach,
   createCloudSlab,
   setCloudSlabCoverage,
+  setCloudSlabDiscCentre,
   setCloudSlabRadius,
   setCloudSlabReach,
   setCloudSlabSceneDepth,
   setCloudSlabSteps,
   type CloudSlabReach,
 } from './cloud-slab.js';
+import type { CloudDiscCentre } from './cloud-coverage.js';
 import {
   type AtmosphereDevice,
   type AtmosphereUniforms,
@@ -348,6 +350,8 @@ export class SkyAtmosphere {
   private coverage: Parameters<typeof setCloudSlabCoverage>[1] = null;
   private discRadiusM: number | null = null;
   /** The slab's reach (`setCloudReach`), kept across modes; null the default. */
+  /** The disc's centre (`setCloudDiscCentre`), kept across modes; null: the camera. */
+  private discCentre: CloudDiscCentre | null = null;
   private reach: CloudSlabReach | null = null;
 
   constructor(options: SkyAtmosphereOptions) {
@@ -909,6 +913,28 @@ export class SkyAtmosphere {
     }
   }
 
+  /**
+   * The cloud slab's disc centre (globe volume-cloud plan 2026-10-05-0016
+   * §15; `setCloudSlabDiscCentre`): a world point, or the camera (null, the
+   * default). Kept across modes, like the disc. Validated before it is kept.
+   *
+   * @throws RangeError for a centre that is not finite.
+   */
+  setCloudDiscCentre(centre: CloudDiscCentre | null): void {
+    if (
+      centre !== null &&
+      !(Number.isFinite(centre.x) && Number.isFinite(centre.z))
+    ) {
+      throw new RangeError(
+        `the disc centre must be finite, got ${centre.x}, ${centre.z}`
+      );
+    }
+    this.discCentre = centre === null ? null : { x: centre.x, z: centre.z };
+    if (this.mode === 'slab' && this.cloudMesh !== undefined) {
+      setCloudSlabDiscCentre(this.cloudMesh, this.discCentre);
+    }
+  }
+
   /** The current cloud mode. */
   get cloudMode(): CloudMode {
     return this.mode;
@@ -941,19 +967,22 @@ export class SkyAtmosphere {
     if (mode === 'sheet') this.cloudMesh = createCloudSheet(shared);
     if (mode === 'slab') {
       this.cloudMesh = createCloudSlab(shared, this.slabSteps);
-      if (this.sceneDepth !== null) {
-        setCloudSlabSceneDepth(this.cloudMesh, this.sceneDepth);
-      }
-      if (this.coverage !== null) {
-        setCloudSlabCoverage(this.cloudMesh, this.coverage);
-      }
-      if (this.discRadiusM !== null) {
-        setCloudSlabRadius(this.cloudMesh, this.discRadiusM);
-      }
-      if (this.reach !== null) setCloudSlabReach(this.cloudMesh, this.reach);
+      this.applySlabSettings(this.cloudMesh);
     }
     if (this.cloudMesh !== undefined) this.scene.add(this.cloudMesh);
     this.syncVisibleClouds();
+  }
+
+  /**
+   * Hands a slab made now everything set before it existed: the scene's
+   * depth, the coverage map, the disc, its centre and the reach.
+   */
+  private applySlabSettings(slab: THREE.Mesh): void {
+    if (this.sceneDepth !== null) setCloudSlabSceneDepth(slab, this.sceneDepth);
+    if (this.coverage !== null) setCloudSlabCoverage(slab, this.coverage);
+    if (this.discRadiusM !== null) setCloudSlabRadius(slab, this.discRadiusM);
+    if (this.reach !== null) setCloudSlabReach(slab, this.reach);
+    if (this.discCentre !== null) setCloudSlabDiscCentre(slab, this.discCentre);
   }
 
   private syncVisibleClouds(): void {

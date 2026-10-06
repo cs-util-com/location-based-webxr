@@ -90,6 +90,8 @@ describe('CLOUD_COVERAGE_GLSL', () => {
     const u = cloudCoverageUniforms();
     expect(u.atmCoverThresholds.value).toEqual(new Array(33).fill(2));
     expect(u.atmCoverDiscM.value).toBe(1);
+    // The disc follows the camera until a centre is set (z = 1).
+    expect(u.atmCoverDiscCentre.value.toArray()).toEqual([0, 0, 1]);
     expect(cloudCoverageUniforms().atmCoverThresholds).not.toBe(
       u.atmCoverThresholds
     );
@@ -105,5 +107,21 @@ describe('CLOUD_COVERAGE_GLSL', () => {
       withCloudCoverage(CLOUD_COVERAGE_GLSL, 'float other() { return 0.0; }')
     ).toThrow(RangeError);
     expect(() => withCloudCoverage('no chunk here', chunk)).toThrow(RangeError);
+  });
+});
+
+// WHY (globe volume-cloud plan 2026-10-05-0016 §15): the owner, looking at
+// the horizon from 24 km, saw the volume only around the camera: the disc
+// was centred on it while the view's centre met the deck 130 km ahead. The
+// disc can now be centred anywhere (world x, z), and still follows the
+// camera by default (the look-dev page and every earlier caller).
+describe('the disc centre', () => {
+  it('centres the disc on a world point, or on the camera when the centre follows it', () => {
+    const g = CLOUD_COVERAGE_GLSL;
+    expect(g).toContain('uniform vec3 atmCoverDiscCentre;');
+    expect(g).toContain(
+      'mix(atmCoverDiscCentre.xy, cameraPosition.xz, atmCoverDiscCentre.z)'
+    );
+    expect(g).not.toContain('length(xz - cameraPosition.xz)');
   });
 });

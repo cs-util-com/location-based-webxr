@@ -314,6 +314,15 @@ describe('CloudShadow with a coverage map, a disc and a lift (globe volume-cloud
     expect(u['atmCoverDiscM']!.value).toBe(20_000);
     expect(u['atmShadowCover']!.value).toBe(0.5);
     expect(() => shadow.setDiscRadiusM(0)).toThrow(RangeError);
+    // The disc's centre (volume-cloud plan §15): a world point, or the camera.
+    const centre = u['atmCoverDiscCentre']!.value as THREE.Vector3;
+    shadow.setDiscCentre({ x: 5_000, z: 7_000 });
+    expect(centre.toArray()).toEqual([5_000, 7_000, 0]);
+    shadow.setDiscCentre(null);
+    expect(centre.z).toBe(1);
+    expect(() => shadow.setDiscCentre({ x: 0, z: Number.NaN })).toThrow(
+      RangeError
+    );
     expect(() => shadow.setLiftM(Number.NaN)).toThrow(RangeError);
     expect(() => shadow.setCover(-1)).toThrow(RangeError);
   });

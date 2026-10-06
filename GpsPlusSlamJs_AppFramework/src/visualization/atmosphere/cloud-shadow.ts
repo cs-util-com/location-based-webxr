@@ -40,6 +40,8 @@ import * as THREE from 'three';
 
 import { CLOUD_LAYER } from './cloud-layer.js';
 import {
+  writeCloudDiscCentre,
+  type CloudDiscCentre,
   CLOUD_COVERAGE_GLSL,
   type CloudCoverage,
   cloudCoverThresholds,
@@ -244,6 +246,20 @@ export class CloudShadow {
       throw new RangeError(`the disc radius must be positive, got ${radiusM}`);
     }
     this.uniforms['atmCoverDiscM']!.value = radiusM;
+  }
+
+  /**
+   * The disc's centre with `configureMap({ disc: true })` (volume-cloud plan
+   * §15): a world point (x, z), or the camera (null, the default). A
+   * uniform.
+   *
+   * @throws RangeError for a centre that is not finite.
+   */
+  setDiscCentre(centre: CloudDiscCentre | null): void {
+    writeCloudDiscCentre(
+      this.uniforms['atmCoverDiscCentre'] as THREE.IUniform<THREE.Vector3>,
+      centre
+    );
   }
 
   /**

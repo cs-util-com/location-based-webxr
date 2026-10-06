@@ -1503,3 +1503,30 @@ describe('SkyAtmosphere cloud reach (globe volume-cloud plan 2026-10-05-0016 §1
     ).toThrow(RangeError);
   });
 });
+
+describe('SkyAtmosphere cloud disc centre (globe volume-cloud plan §15)', () => {
+  const slabOf = (scene: THREE.Scene) =>
+    scene.children.find((c) => c.name === 'atmosphere-cloud-slab') as
+      THREE.Mesh | undefined;
+
+  it('hands the disc centre to the slab, now and after a mode switch', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.setCloudDiscCentre({ x: 1_000, z: 2_000 });
+    atmosphere.configure({ cloudMode: 'slab' });
+    const centreOf = () =>
+      (
+        (slabOf(scene)!.material as THREE.ShaderMaterial).uniforms[
+          'atmCoverDiscCentre'
+        ]!.value as THREE.Vector3
+      ).toArray();
+    expect(centreOf()).toEqual([1_000, 2_000, 0]);
+    atmosphere.configure({ cloudMode: 'dome' });
+    atmosphere.configure({ cloudMode: 'slab' });
+    expect(centreOf()).toEqual([1_000, 2_000, 0]);
+    atmosphere.setCloudDiscCentre(null);
+    expect(centreOf()[2]).toBe(1);
+    expect(() =>
+      atmosphere.setCloudDiscCentre({ x: Number.POSITIVE_INFINITY, z: 0 })
+    ).toThrow(RangeError);
+  });
+});

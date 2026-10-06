@@ -34,6 +34,8 @@ import {
   cloudLitRadiance,
 } from './cloud-layer.js';
 import {
+  writeCloudDiscCentre,
+  type CloudDiscCentre,
   CLOUD_COVERAGE_GLSL,
   type CloudCoverage,
   cloudCoverThresholds,
@@ -1056,6 +1058,24 @@ export function setCloudSlabRadius(
   const { ATM_CLOUD_DISC: _old, ...rest } = material.defines;
   material.defines = radiusM === null ? rest : { ...rest, ATM_CLOUD_DISC: 1 };
   material.needsUpdate = true;
+}
+
+/**
+ * The slab's disc centre (globe volume-cloud plan 2026-10-05-0016 §15): a
+ * world point (x, z), or the camera (null, the default). A uniform, never a
+ * new program; read only with the disc on (`setCloudSlabRadius`).
+ *
+ * @throws RangeError for a centre that is not finite.
+ */
+export function setCloudSlabDiscCentre(
+  slab: THREE.Mesh,
+  centre: CloudDiscCentre | null
+): void {
+  const material = slab.material as THREE.ShaderMaterial;
+  writeCloudDiscCentre(
+    material.uniforms['atmCoverDiscCentre'] as THREE.IUniform<THREE.Vector3>,
+    centre
+  );
 }
 
 /**
