@@ -649,6 +649,7 @@ export function wireCreatorSetup(deps: {
       arAvailable: arController.getState().status !== "unsupported",
       placedCount: ctx.placedObjects.length,
       deletedCount: ctx.deletedObjectIds.length,
+      codeCount: codes.toWrite().length,
       rebuilt:
         ctx.rebuiltZip === null
           ? null

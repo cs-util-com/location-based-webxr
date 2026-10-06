@@ -17,6 +17,9 @@ export interface FinishGuardInput {
   readonly placedCount: number;
   /** Objects deleted since the last Finish. */
   readonly deletedCount: number;
+  /** Codes measured or improved that no Finish has written yet (the code
+   *  book's `toWrite`, code book plan M4c-1). */
+  readonly codeCount: number;
   /** The last Finish's rebuilt file, and whether a save delivered it. */
   readonly rebuilt: { readonly delivered: boolean } | null;
   /** The draft backs changes up on this device (false once a backup write
@@ -42,7 +45,7 @@ export function leaveQuestion(input: FinishGuardInput): string {
 }
 
 function changedSinceFinish(input: FinishGuardInput): boolean {
-  return input.placedCount > 0 || input.deletedCount > 0;
+  return input.placedCount > 0 || input.deletedCount > 0 || input.codeCount > 0;
 }
 
 /** Work that has not reached a saved tour file. */

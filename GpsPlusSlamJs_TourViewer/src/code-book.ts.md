@@ -39,6 +39,9 @@ hosted, measurement, reference, finished }`:
   what the zip holds.
 - `withReference(book, levelId)` - a stored code taken as reference.
 - `withSaved(book, level)` - a settle's re-mint or improvement.
+- `codesNotHosted(book)` - what the on-device draft keeps (M4c-1): a
+  saved pose the HOSTED zip does not hold yet, a Finish's among them - a
+  Finish's zip reaches the world only when the creator uploads it.
 - `codesToWrite(book)` - what a Finish writes (and what the save guard
   calls unsaved): a saved pose that differs from the BASELINE, the text
   the zip the next Finish rebuilds from holds - `finished ?? hosted`

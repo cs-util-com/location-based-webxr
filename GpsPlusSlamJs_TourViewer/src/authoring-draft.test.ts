@@ -31,6 +31,7 @@ import {
   draftHasUnhostedLevel,
   draftIsSpent,
   draftKeyForTour,
+  draftLevels,
   draftObjectsNotYetHosted,
   restoredText,
   restoreOfferText,
@@ -379,5 +380,43 @@ describe("the words the creator reads", () => {
         expect(restoredText(count)).toContain(String(count));
       }),
     );
+  });
+});
+
+describe("a draft with several codes (code book plan M4c-1)", () => {
+  // Why: a draft holding two measured codes was judged by its one `level`,
+  // so a draft whose OTHER code the hosted zip does not hold yet could be
+  // deleted as spent - the measurement lost. Every code must be hosted.
+  const a = { id: "aaaaaaaaaaa1", json: "A" };
+  const b = { id: "bbbbbbbbbbb2", json: "B" };
+  const twoCodes: AuthoringDraft = { ...draftOf([]), level: b, levels: [a, b] };
+  const hostedOf = (texts: Record<string, string>) => (id: string) =>
+    texts[id] ?? null;
+
+  it("is spent only when the hosted zip holds every code", () => {
+    expect(
+      draftIsSpent(
+        twoCodes,
+        manifestOf([]),
+        hostedOf({ [a.id]: "A", [b.id]: "B" }),
+      ),
+    ).toBe(true);
+    expect(
+      draftIsSpent(twoCodes, manifestOf([]), hostedOf({ [b.id]: "B" })),
+    ).toBe(false);
+    expect(draftHasUnhostedLevel(twoCodes, hostedOf({ [b.id]: "B" }))).toBe(
+      true,
+    );
+    expect(
+      draftHasUnhostedLevel(twoCodes, hostedOf({ [a.id]: "A", [b.id]: "B" })),
+    ).toBe(false);
+  });
+
+  it("reads the legacy one-level form: a string is the hosted text of `level`", () => {
+    const one: AuthoringDraft = { ...draftOf([]), level: a };
+    expect(draftHasUnhostedLevel(one, "A")).toBe(false);
+    expect(draftHasUnhostedLevel(one, "old")).toBe(true);
+    expect(draftLevels(one)).toEqual([a]);
+    expect(draftLevels(twoCodes)).toEqual([a, b]);
   });
 });

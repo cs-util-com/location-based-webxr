@@ -15,6 +15,7 @@ import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import {
   draftDeletionsNotYetHosted,
   draftHasUnhostedLevel,
+  draftLevels,
   draftIsSpent,
   draftKeyForTour,
   draftObjectsNotYetHosted,
@@ -120,7 +121,10 @@ export function wireCreatorDraft(deps: {
   /** The page-side visit log (`creator-setup.ts` owns it). */
   visitLog: VisitLog;
   /** The code in hand: written to the meta, restored from it. */
-  codes: Pick<CreatorCodes, "inHand" | "restoreInHand">;
+  codes: Pick<
+    CreatorCodes,
+    "inHand" | "restoreInHand" | "restoreLevels" | "notHosted"
+  >;
   wizard: Pick<Wizard, "revealStep">;
   sessionLive: () => boolean;
   /** Render the placed objects (a restore brings some back). */
@@ -205,6 +209,8 @@ export function wireCreatorDraft(deps: {
     /** The measured level and the size it was measured at - the other
      *  half of a lost walk, and what makes Finish reachable again. */
     level: { id: string; json: string } | null;
+    /** Every code of the draft (M4c-1), `level` among them. */
+    levels: readonly { id: string; json: string }[];
     sizeM: number;
     /** The deletions the hosted zip still carries (tombstones, plan
      *  §3.4, M4). */
@@ -399,6 +405,9 @@ export function wireCreatorDraft(deps: {
       sizeM:
         Number.isFinite(sizeM) && sizeM > 0 ? sizeM : AUTHOR_DEFAULT_SIZE_M,
       level: deps.codes.inHand(),
+      // Every code the hosted zip does not hold yet (M4c-1), the code in
+      // hand among them; `level` stays for an older build reading this.
+      levels: deps.codes.notHosted(),
       // Re-stated on every write, not only on the discard's: this file is
       // rewritten on each mint, each finish and each tour open, and one
       // that omitted the list would hand a rejected draft back on the next
@@ -454,6 +463,9 @@ export function wireCreatorDraft(deps: {
     // The measured level comes back too, and it is what unlocks Finish
     // without walking to the poster again. Only when the session has not
     // already measured one: a live measurement is newer than a draft.
+    // Every code it kept (M4c-1), in the draft's order: saved, so the next
+    // Finish writes them; live work on a code is newer and wins.
+    deps.codes.restoreLevels(waiting.levels);
     if (waiting.level !== null) deps.codes.restoreInHand(waiting.level);
     // And the printed size, which the page rewrites from the framework
     // default on every load - so without this a re-entry would solve
@@ -659,10 +671,14 @@ export function wireCreatorDraft(deps: {
         stored.draft,
         ctx.tourManifest,
       );
-      const hostedLevel =
-        stored.draft.level === null
-          ? null
-          : await hostedLevelJson(ctx.session, stored.draft.level.id);
+      // What the hosted zip stores for each of the draft's codes (M4c-1):
+      // the content, read one by one like the one level was.
+      const hostedTexts = new Map<string, string | null>();
+      for (const level of draftLevels(stored.draft)) {
+        hostedTexts.set(level.id, await hostedLevelJson(ctx.session, level.id));
+      }
+      const hostedLevel = (id: string): string | null =>
+        hostedTexts.get(id) ?? null;
       if (stale()) return;
       if (
         draftIsSpent(
@@ -735,6 +751,7 @@ export function wireCreatorDraft(deps: {
         // `hasLevel` only decides the WORDS and whether the draft counts
         // as spent.
         level: stored.draft.level,
+        levels: draftLevels(stored.draft),
         sizeM: stored.draft.sizeM,
         deleted: waitingDeletions,
         counts,

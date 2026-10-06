@@ -8,12 +8,16 @@ are the framework's.
 
 ## Public API
 
-- `writeDraftMeta(store, { tourUrl, sizeM, level, rejected?, moveAnswers? })` - the
+- `writeDraftMeta(store, { tourUrl, sizeM, level, levels?, rejected?, moveAnswers? })` - the
   tour, the printed size, the measured level, the ids the creator has
   thrown away, and the move prompt's remembered answers ("It's a second
   copy" / "Not now" per level and spot, authoring plan §3.6, M5b). **This write is the commit point for a rejection** - see the
   invariant below. `rejected` is optional and absent from every meta file
-  written before 2026-09-10.
+  written before 2026-09-10. `levels` (code book plan M4c-1) is every code
+  the hosted zip does not hold yet, `level` (the code in hand) among them;
+  optional, and `readDraft` returns the one `level` as the list for a meta
+  written before it. Each entry is checked like `level`; one that does not
+  read costs itself (`draft.levels`).
 - `writeDraftObject(store, object, blob?)` - one placement. Returns false
   if either file failed, so a half-written photo is reported rather than
   believed.

@@ -185,6 +185,18 @@ export function codesToWrite(book: CodeBook): LevelText[] {
   );
 }
 
+/** The codes the draft must keep (M4c-1): a saved pose the HOSTED zip does
+ *  not hold yet - a Finish's zip reaches the world only when the creator
+ *  uploads it, so a code a Finish wrote stays until the hosted file holds
+ *  it. In the book's order. */
+export function codesNotHosted(book: CodeBook): LevelText[] {
+  return [...book.values()].flatMap((code) =>
+    code.saved !== null && code.saved !== code.hosted
+      ? [{ id: code.levelId, json: code.saved }]
+      : [],
+  );
+}
+
 /** After a Finish that wrote `written`: those texts are saved. */
 export function afterFinish(
   book: CodeBook,

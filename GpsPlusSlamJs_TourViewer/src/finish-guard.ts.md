@@ -12,8 +12,9 @@ the page knows.
 ## Public API
 
 - `type FinishGuardInput` - `{ sessionLive, arAvailable, placedCount,
-deletedCount, rebuilt: { delivered } | null, draftPersists,
-finishFailed }`.
+deletedCount, codeCount, rebuilt: { delivered } | null, draftPersists,
+finishFailed }`. `codeCount` (code book plan M4c-1): codes measured or
+  improved that no Finish has written yet - unsaved work like a placement.
 - `unsavedWork(input)` - changes since the last Finish, or a rebuilt file
   not saved.
 - `finishButtonText(input)` - "Finish - rebuild the zip", or "Finish and

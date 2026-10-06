@@ -282,6 +282,11 @@ describe("a meta written before the code book (one level) stays readable (code b
       json: '{"version":1}',
     });
     expect(read?.draft.sizeM).toBe(0.2);
+    // Since M4c-1 the codes are a list; the one level of an older meta is
+    // that list's only entry.
+    expect(read?.draft.levels).toEqual([
+      { id: "a1b2c3d4e5f6", json: '{"version":1}' },
+    ]);
     expect(read?.moveAnswers).toEqual([
       {
         levelId: "a1b2c3d4e5f6",
@@ -291,6 +296,42 @@ describe("a meta written before the code book (one level) stays readable (code b
         savedKey: "k1",
       },
     ]);
+  });
+});
+
+describe("several codes in the meta (code book plan M4c-1)", () => {
+  // Why these tests matter: a meta held ONE level, so a crash after a
+  // Finish but before its upload lost every other code measured on the
+  // page. `levels` keeps them all; `level` (the code in hand) is still
+  // written, so an older build reading the draft keeps its one code.
+  it("keeps every code, and the code in hand as the legacy level", async () => {
+    const store = memoryStore();
+    const a = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
+    const b = { id: "bbbbbbbbbbb2", json: '{"b":1}' };
+    await writeDraftMeta(store, { ...META, level: b, levels: [a, b] });
+    const read = await readDraft(store);
+    expect(read?.draft.level).toEqual(b);
+    expect(read?.draft.levels).toEqual([a, b]);
+  });
+
+  it("drops a code that does not read and keeps the others", async () => {
+    const store = memoryStore();
+    const a = { id: "aaaaaaaaaaa1", json: "{}" };
+    store.files.set(
+      "meta",
+      JSON.stringify({
+        ...META,
+        level: null,
+        levels: [a, { id: "../escape", json: "{}" }, { id: 5 }, 7],
+      }),
+    );
+    expect((await readDraft(store))?.draft.levels).toEqual([a]);
+  });
+
+  it("reads no codes from a meta without a level", async () => {
+    const store = memoryStore();
+    await writeDraftMeta(store, META);
+    expect((await readDraft(store))?.draft.levels).toEqual([]);
   });
 });
 

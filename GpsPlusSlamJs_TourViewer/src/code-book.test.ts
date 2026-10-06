@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   afterFinish,
+  codesNotHosted,
   codesToWrite,
   openCodeBook,
   referenceCodes,
@@ -300,5 +301,31 @@ describe("properties, against a model of the zip", () => {
         }
       }),
     );
+  });
+});
+
+describe("codesNotHosted - what the draft must keep (M4c-1)", () => {
+  // Why: a Finish's zip reaches the world only when the creator uploads
+  // it, so the draft must keep every code whose saved text the HOSTED zip
+  // does not hold yet - including codes a Finish already wrote. A crash
+  // between the Finish and the upload otherwise lost the measurement.
+  it("keeps a code a Finish wrote until the hosted zip holds it", () => {
+    let book = withSaved(openCodeBook({ hosted }), { id: "a", json: "X" });
+    book = afterFinish(book, codesToWrite(book));
+    expect(codesToWrite(book)).toEqual([]);
+    expect(codesNotHosted(book)).toEqual([{ id: "a", json: "X" }]);
+    // The upload: the reopened tour hosts it.
+    book = withHosted(book, new Map([["a", "X"]]));
+    expect(codesNotHosted(book)).toEqual([]);
+  });
+
+  it("keeps a new code, and leaves out a hosted code kept unchanged", () => {
+    let book = withMeasurement(
+      openCodeBook({ hosted }),
+      { id: "c", json: "C" },
+      measurement("c"),
+    );
+    book = withReference(book, "b");
+    expect(codesNotHosted(book)).toEqual([{ id: "c", json: "C" }]);
   });
 });

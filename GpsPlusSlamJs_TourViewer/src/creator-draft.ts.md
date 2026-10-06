@@ -25,7 +25,9 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
   - `reset()` - a tour closed: the offer, the namespace, the rejections
     and the move answers go.
   - `saveMeta()` - rewrite the open tour's meta (tour, printed size from
-    the FIELD, the code in hand from `creator-codes.ts`, the rejections, the move answers),
+    the FIELD, the code in hand from `creator-codes.ts` and every code the
+    hosted zip does not hold yet as `levels` (M4c-1), the rejections, the
+    move answers),
     queued per namespace. Resolves true with no tour open (nothing to
     write, nothing failed), false where the tour has no store; a refused
     write may reject, as before the split.

@@ -33,7 +33,11 @@ writes these through it, so that M4c can turn its inside into the code book
     else the hosted one from `ctx.currentLevelTexts`), in the order the
     codes were first taken; a stored code kept unchanged is not written;
   - `finished(written)` - a Finish wrote these: each is saved, and its
-    text is what the next Finish builds on.
+    text is what the next Finish builds on;
+  - `notHosted()` - what the draft keeps: every code whose saved text the
+    HOSTED zip does not hold yet, a Finish's among them;
+  - `restoreLevels(levels)` - a restored draft's codes, in its order, saved
+    and taken as references; a code changed live keeps its live text.
 - The visit's stored-code sightings: `noteStoredSighting(levelId, visit,
 sighting)` keeps the latest per code; `storedSightings()` lists them (the
   visit log reads them).

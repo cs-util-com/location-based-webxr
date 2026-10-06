@@ -1556,3 +1556,38 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
     ).toBe(false);
   });
 });
+
+describe("a draft with several codes (code book plan M4c-1)", () => {
+  // Why this test matters: a draft kept ONE level, the code in hand, so a
+  // crash after measuring a second code lost the first one's measurement.
+  // A restored draft's codes all go back into the code book, and the next
+  // meta write keeps them all.
+  it("restores every code a draft kept, and the next meta write keeps them", async () => {
+    const a = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
+    const b = { id: "bbbbbbbbbbb2", json: '{"b":1}' };
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({
+        tourUrl: TOUR,
+        sizeM: 0.16,
+        level: b,
+        levels: [a, b],
+      }),
+    });
+    const { dom, ctx, setup } = wire(store);
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.draftOffer.hidden).toBe(false);
+    dom.draftRestore.click();
+    await settle();
+    expect(ctx.mintedLevel).toEqual(b);
+    // The tour opened again: with a code in hand its meta is re-stated.
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    const meta = JSON.parse(String(files.get(META_KEY))) as {
+      level: unknown;
+      levels: unknown;
+    };
+    expect(meta.level).toEqual(b);
+    expect(meta.levels).toEqual([a, b]);
+  });
+});

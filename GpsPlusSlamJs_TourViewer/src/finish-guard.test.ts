@@ -23,6 +23,7 @@ function input(overrides: Partial<FinishGuardInput> = {}): FinishGuardInput {
     arAvailable: true,
     placedCount: 0,
     deletedCount: 0,
+    codeCount: 0,
     rebuilt: null,
     draftPersists: true,
     finishFailed: false,
@@ -35,6 +36,9 @@ describe("unsavedWork", () => {
     ["nothing done", {}, false],
     ["a pin placed", { placedCount: 1 }, true],
     ["a deletion", { deletedCount: 1 }, true],
+    // Why (code book plan M4c-1): a code measured or improved and not yet
+    // written by a Finish is work the creator would lose.
+    ["a code measured, not finished", { codeCount: 1 }, true],
     ["a rebuilt file not saved yet", { rebuilt: { delivered: false } }, true],
     ["a rebuilt file saved", { rebuilt: { delivered: true } }, false],
   ])("%s", (_name, o, expected) => {

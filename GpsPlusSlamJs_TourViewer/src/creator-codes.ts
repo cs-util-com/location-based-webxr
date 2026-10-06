@@ -19,7 +19,9 @@
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import {
   afterFinish,
+  codesNotHosted,
   codesToWrite,
+  withDraft,
   withHosted,
   withMeasurement,
   withoutMeasurement,
@@ -75,6 +77,13 @@ export interface CreatorCodes {
   storedSightings(): IterableIterator<StoredSighting>;
   /** `levelId` is saved in the tour: hosted, or written by a Finish. */
   isSaved(levelId: string): boolean;
+  /** The codes the draft keeps: every code of the book whose saved text
+   *  the HOSTED zip does not hold yet, a Finish's among them (its zip
+   *  reaches the world only with the upload). */
+  notHosted(): LevelText[];
+  /** A restored draft's codes, saved and taken as references; a code
+   *  changed live in this page keeps its live text. */
+  restoreLevels(levels: readonly LevelText[]): void;
   /** The codes a Finish writes now: every code of the book whose saved
    *  text differs from what the zip it rebuilds from holds (the last
    *  Finish's text, else the hosted one), in the order they were taken. */
@@ -191,6 +200,11 @@ export function wireCreatorCodes(deps: {
       (ctx.currentLevels?.has(levelId) ?? false) ||
       finishedLevelIds.has(levelId),
     toWrite: () => codesToWrite(withHostedTexts()),
+    notHosted: () => codesNotHosted(withHostedTexts()),
+    restoreLevels: (levels) => {
+      takeInHand();
+      book = withDraft(book, levels);
+    },
     finished: (written) => {
       book = afterFinish(withHostedTexts(), written);
       for (const { id } of written) finishedLevelIds.add(id);
