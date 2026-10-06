@@ -115,9 +115,12 @@ export function buildAuthorControllerConfig(
  * `measured` - it is the code in hand; `measuring` - its measurement is
  * in flight, or about to start; `seen` - a sighting only (another stored
  * code of the tour, or no tour open yet); `not-measured` - it is not a code
- * the open tour may take (`autoMeasureAllowed`).
+ * the open tour may take (`autoMeasureAllowed`); `finish-first` - a new
+ * code while the code in hand is not saved in the tour yet (each Finish
+ * writes one code).
  */
-export type CodeReadyState = "measured" | "measuring" | "seen" | "not-measured";
+export type CodeReadyState =
+  "measured" | "measuring" | "seen" | "not-measured" | "finish-first";
 
 const READY_TEXT: Readonly<Record<CodeReadyState, string>> = {
   measured: "Code measured.",
@@ -125,6 +128,8 @@ const READY_TEXT: Readonly<Record<CodeReadyState, string>> = {
   seen: "Code seen.",
   "not-measured":
     "Code seen - not measured: it is not a code of the open tour.",
+  "finish-first":
+    "Code seen - not measured yet: Finish first, to save the code you measured before.",
 };
 
 /** What the author panel shows, and whether the gate is open (the code

@@ -15,6 +15,7 @@ import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
+import { walkNeededM } from "./code-verdict.js";
 import {
   planCodePosition,
   type CodePositionSettleInput,
@@ -105,6 +106,7 @@ function input(
     alignment,
     zero: ZERO,
     endQuality: { extentM: 0, accuracyM: 4 },
+    sizeM: 0.21,
     answerAt: () => null,
     ...overrides,
   };
@@ -122,7 +124,7 @@ describe("planCodePosition", () => {
       levelId: LEVEL_ID,
       text: TEXT,
       odomPose: CODE,
-      // The stored print's size, not the page's current one.
+      // The size the visit's poses were solved at.
       sizeM: 0.21,
       visit: 2,
     });
@@ -149,7 +151,10 @@ describe("planCodePosition", () => {
         mintedLevel: stored(undefined, undefined),
       }),
     );
-    expect(plan?.decision).toEqual({ kind: "keep", reason: "not-walked" });
+    expect(plan?.decision).toMatchObject({
+      kind: "keep",
+      reason: "not-walked",
+    });
     expect(plan?.measurement).toBeNull();
   });
 
@@ -240,5 +245,90 @@ describe("planCodePosition", () => {
     expect(plan?.decision).toEqual({ kind: "replace" });
     expect(plan?.pick?.alignment).toBeNull();
     expect(plan?.pick?.walkedM).toBe(3);
+  });
+
+  // Why (U3 milestone review #1): a pick freezes once its alignment
+  // matures at 40 m of GPS spread, but 4.77 x accuracy exceeds 40 m above
+  // about 8.4 m accuracy - judged through the pick alone, no walk could
+  // ever improve or move the code. The end alignment keeps growing.
+  it("judges through the end alignment when the frozen pick is not reliable", () => {
+    const base = input();
+    const frozen = {
+      ...base.picks!.sightings[0]!,
+      gpsExtentM: 40,
+      alignmentInfo: { ...INFO, gpsAccuracyM: 10 },
+    };
+    const plan = planCodePosition({
+      ...base,
+      picks: { ...base.picks!, sightings: [frozen] },
+      endQuality: { extentM: 60, accuracyM: 10 },
+    });
+    expect(plan?.decision).toEqual({ kind: "replace" });
+    expect(plan?.candidate).toEqual({ extentM: 60, accuracyM: 10 });
+    expect(plan?.pick?.alignment).toBeNull();
+  });
+
+  it("can always be reached by walking: swept over GPS accuracy 3-20 m with the pick frozen at 40 m", () => {
+    // The verdict across the range the plan named (§7 #4), not at one
+    // accuracy: a walk just past the need replaces, just short keeps.
+    for (let accuracyM = 3; accuracyM <= 20; accuracyM += 1) {
+      const need = Math.max(10, walkNeededM(accuracyM));
+      const base = input();
+      const frozen = {
+        ...base.picks!.sightings[0]!,
+        gpsExtentM: 40,
+        alignmentInfo: { ...INFO, gpsAccuracyM: accuracyM },
+      };
+      const at = (extentM: number) =>
+        planCodePosition({
+          ...base,
+          picks: { ...base.picks!, sightings: [frozen] },
+          endQuality: { extentM, accuracyM },
+        })?.decision.kind;
+      expect(at(need + 1), String(accuracyM)).toBe("replace");
+      // Just short: the frozen pick decides while it is reliable itself.
+      expect(at(need - 1), String(accuracyM)).toBe(
+        need > 40 ? "keep" : "replace",
+      );
+    }
+  });
+
+  it("leaves a code beyond the code correction's plausibility bound to the question, even below 15 m", () => {
+    // Why (U3 milestone review #11): with 2 m accuracies the bound is
+    // about 13.5 m; an offset between it and 15 m is a second print or a
+    // moved poster to the settle, never a silent improvement.
+    const precise = { ...INFO, gpsAccuracyM: 2 };
+    const level = (() => {
+      const r = mintQrLevel({
+        odomPose: CODE,
+        alignmentMatrix: yawAlignment(0, [0, 400, 0]) as never,
+        zero: ZERO,
+        alignment: precise,
+        sizeM: 0.21,
+        nowIso: "2026-10-06T10:00:00.000Z",
+      });
+      if (!r.ok) throw new Error(r.error);
+      return { id: LEVEL_ID, json: r.json };
+    })();
+    const base = input({ alignment: yawAlignment(0, [14, 400, 0]) });
+    const plan = planCodePosition({
+      ...base,
+      mintedLevel: level,
+      picks: {
+        ...base.picks!,
+        sightings: [{ ...base.picks!.sightings[0]!, alignmentInfo: precise }],
+      },
+    });
+    expect(plan?.offsetM).toBeCloseTo(14, 0);
+    expect(plan?.decision).toEqual({ kind: "keep", reason: "far" });
+  });
+
+  it("reports a 'moved' answer so the caller can forget it, applied or not", () => {
+    const far = yawAlignment(0, [40, 400, 0]);
+    expect(
+      planCodePosition(input({ alignment: far, answerAt: () => "moved" }))
+        ?.answeredMoved,
+    ).toBe(true);
+    expect(planCodePosition(input())?.answeredMoved).toBe(false);
   });
 });

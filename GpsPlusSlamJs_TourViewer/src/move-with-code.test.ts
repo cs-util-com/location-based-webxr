@@ -65,6 +65,44 @@ describe("moveWithCode", () => {
     );
   });
 
+  it("turns positions the way the code turns (an offset in the code's own frame is kept)", () => {
+    // Why (U3 milestone review #10): distances and a round trip pass for a
+    // turn in the WRONG direction. A code turned +90 degrees about Up
+    // takes a pin 6 m north of it to 6 m west (NUE: x North, z East).
+    const pin: Pose = {
+      lat: code.lat + 6 / 111_200,
+      lon: code.lon,
+      alt: 520,
+      headingDeg: 0,
+    };
+    const turned: Pose = { ...code, rotation: yaw(90) };
+    const r = calcRelativeCoordsInMeters(
+      turned,
+      moveWithCode(pin, code, turned),
+    );
+    expect(r[0]).toBeCloseTo(0, 1);
+    expect(r[2]).toBeCloseTo(-6, 1);
+  });
+
+  it("ignores the two measurements' tilt: only their yaw and position move objects", () => {
+    // Why (U3 milestone review #2): the visitor's frame is yaw-only, so a
+    // tilt difference between two solves is noise; applied, it would lift
+    // or sink a pin 40 m away by about 0.7 m per degree.
+    const tilt = (deg: number): [number, number, number, number] => {
+      const h = (deg * Math.PI) / 360;
+      return [Math.sin(h), 0, 0, Math.cos(h)]; // about North (a lean)
+    };
+    const pin: Pose = {
+      lat: code.lat,
+      lon: code.lon + 40 / 75_000,
+      alt: 520,
+      headingDeg: 0,
+    };
+    const leaning: Pose = { ...code, rotation: tilt(8) };
+    const out = moveWithCode(pin, code, leaning);
+    expect(metres(out, pin)).toBeLessThan(0.01);
+  });
+
   it("turns a heading-only pose's heading with the code (the -h about Up convention)", () => {
     // Why: a photo minted before rotations existed carries only a heading;
     // a code turned 41 degrees anticlockwise (seen from above) turns its

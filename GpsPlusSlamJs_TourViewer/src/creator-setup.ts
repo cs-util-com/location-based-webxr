@@ -28,7 +28,10 @@ import {
   codePositionSentence,
   type CodePositionOutcome,
 } from "./code-position-rule.js";
-import { planCodePosition } from "./code-position-settle.js";
+import {
+  planCodePosition,
+  type CodePositionPlan,
+} from "./code-position-settle.js";
 import { moveWithCode, withinCodeReach } from "./move-with-code.js";
 import {
   answerAtSpot,
@@ -468,6 +471,9 @@ export function wireCreatorSetup(deps: {
   /** Each decoded code text's level id (`qrCodeId`, a hash - async), so a
    *  detection can be matched to the level in hand synchronously. */
   const codeIds = new Map<string, string>();
+  /** The levels a Finish in this page wrote into the tour: saved, so a
+   *  new code may take the hand from them (`codeOutcome`). */
+  const finishedLevelIds = new Set<string>();
   /** Measurements in flight: Finish waits for them (`measureCode`). */
   let measuring = 0;
   /** The codes measured on their own in this visit, by visit and text:
@@ -1039,6 +1045,9 @@ export function wireCreatorSetup(deps: {
   /** What each settle since the last Finish decided for the code in hand:
    *  the result screen's line (`codePositionSentence`). */
   let codePositionOutcomes: CodePositionOutcome[] = [];
+  /** The visit whose settle CHANGED the code's saved position, and the
+   *  plan it applied - re-applied when a failed Finish settles it again. */
+  let appliedCode: { visit: number; plan: CodePositionPlan } | null = null;
 
   /** The store's GPS fix count and the latest fix's own time. */
   function fixClock(): { count: number; lastMs: number | null } {
@@ -1312,7 +1321,14 @@ export function wireCreatorSetup(deps: {
     // What is happening to the tour the code names (plan §9 #9), and which
     // tour is open (§9 #10) - derived each render, never a one-off note.
     const codeStatus = codeTour.status(ctx.lastDetectedText);
-    const codeLine = codeTourLine(codeStatus);
+    // A code that is not measured is not "added to the open tour" either
+    // (U3 milestone review #6): the ready line says why.
+    const codeLine =
+      view?.ready === "not-measured" &&
+      (codeStatus.kind === "added-to-open-tour" ||
+        codeStatus.kind === "unknown")
+        ? ""
+        : codeTourLine(codeStatus);
     const tour = ctx.tourLabel === null ? "" : ` · Tour: ${ctx.tourLabel}`;
     dom.status.textContent =
       lead +
@@ -2190,6 +2206,10 @@ export function wireCreatorSetup(deps: {
   function settleVisit(trigger: "visit-end" | "finish"): void {
     const visit = ctx.arSessionGeneration;
     if (visitSettles.has(visit)) return;
+    // The settle applies a "Yes, it moved" or not: after it there is
+    // nothing to take back, even if a failed Finish settles again (U3
+    // milestone review #4).
+    if (undoable?.visit === visit) undoable = null;
     // The picks see the alignment as it stands at the end (the fallback).
     syncAlignmentPicks();
     const state = arStore.getState();
@@ -2205,27 +2225,38 @@ export function wireCreatorSetup(deps: {
     // handing the settle a measurement of the code, so it is re-minted as
     // if measured here - through the sighting's own pick.
     const level = ctx.mintedLevel;
-    const position = planCodePosition({
-      visit,
-      mintedLevel: level,
-      measurement: ctx.codeMeasurement,
-      sighting: ctx.visitCodeSighting,
-      picks,
-      alignment: visitAlignment,
-      zero,
-      endQuality: {
-        extentM: alignmentGpsExtentM ?? null,
-        accuracyM: gpsAccuracyM ?? null,
-      },
-      answerAt: (offset) =>
-        level === null
-          ? null
-          : answerAtSpot(moveAnswers, {
-              levelId: level.id,
-              savedKey: savedPoseKey(level.json),
-              offset,
-            }),
-    });
+    // A settle redone after a failed Finish re-applies the decision it
+    // already made: the code is in hand at its new spot, the objects near
+    // it have moved once, and the visit log keeps the saved pose (U3
+    // milestone review #8).
+    const reapplied =
+      appliedCode !== null && appliedCode.visit === visit
+        ? appliedCode.plan
+        : null;
+    const position =
+      reapplied ??
+      planCodePosition({
+        visit,
+        mintedLevel: level,
+        measurement: ctx.codeMeasurement,
+        sighting: ctx.visitCodeSighting,
+        picks,
+        alignment: visitAlignment,
+        zero,
+        endQuality: {
+          extentM: alignmentGpsExtentM ?? null,
+          accuracyM: gpsAccuracyM ?? null,
+        },
+        sizeM: ctx.activeSizeM,
+        answerAt: (offset) =>
+          level === null
+            ? null
+            : answerAtSpot(moveAnswers, {
+                levelId: level.id,
+                savedKey: savedPoseKey(level.json),
+                offset,
+              }),
+      });
     const remint = position?.measurement ?? null;
     const input = {
       visit,
@@ -2262,12 +2293,18 @@ export function wireCreatorSetup(deps: {
     if (applied && position.decision.kind === "move") {
       movedInVisit.set(position.levelId, visit);
     }
-    if (position !== null) {
-      codePositionOutcomes.push({
-        decision: position.decision,
-        applied,
-        candidate: position.candidate,
-      });
+    if (applied) appliedCode = { visit, plan: position };
+    if (position !== null && reapplied === null) {
+      codePositionOutcomes.push({ decision: position.decision, applied });
+    }
+    // A "Yes, it moved" holds for its visit only: applied now, or asked
+    // again next time - never applied later, out of Undo's reach (U3
+    // milestone review #5).
+    if (level !== null && moveAnswers.some((a) => a.answer === "moved")) {
+      moveAnswers = moveAnswers.filter(
+        (a) => !(a.answer === "moved" && a.levelId === level.id),
+      );
+      if (draftTourUrl !== null) void recordMeta(draftTourUrl);
     }
     logVisit(visit, state, choice?.alignment ?? null, plan?.level ?? null);
     if (choice === null || zero === null) return;
@@ -2321,7 +2358,10 @@ export function wireCreatorSetup(deps: {
     // they keep their place next to the poster (owner decision
     // 2026-10-06); a real move leaves them where they are (D19).
     const movedWithCode =
-      applied && position.decision.kind === "replace" && level !== null
+      applied &&
+      reapplied === null &&
+      position.decision.kind === "replace" &&
+      level !== null
         ? moveEarlierWithCode(visit, level.json, plan.level.json)
         : [];
     logSettle(
@@ -2769,6 +2809,17 @@ export function wireCreatorSetup(deps: {
     if (inHand !== null && (id === undefined || hasStoredPose(id))) {
       return { ready: "seen", measure: false };
     }
+    // A new code takes the hand only once the code in hand is saved in the
+    // tour (hosted, or written by a Finish): each Finish writes the ONE code
+    // in hand, so measuring past an unsaved one would silently drop it (U3
+    // milestone review #7; before U3 that took a deliberate tap).
+    if (
+      inHand !== null &&
+      !(ctx.currentLevels?.has(inHand.id) ?? false) &&
+      !finishedLevelIds.has(inHand.id)
+    ) {
+      return { ready: "finish-first", measure: false };
+    }
     const relation = codeTour.relation(text);
     if (relation === "resolving") return { ready: "measuring", measure: false };
     if (relation === "no-tour-open") return { ready: "seen", measure: false };
@@ -3125,6 +3176,7 @@ export function wireCreatorSetup(deps: {
         );
         syncPreviews();
         wroteZip = true;
+        finishedLevelIds.add(minted.id);
         undoable = null;
         // The result screen said them; the next Finish reports its own.
         codePositionOutcomes = [];
@@ -3382,6 +3434,8 @@ export function wireCreatorSetup(deps: {
       movedInVisit.clear();
       undoable = null;
       codePositionOutcomes = [];
+      appliedCode = null;
+      finishedLevelIds.clear();
       moveOnset = null;
       movePrompt = null;
     },

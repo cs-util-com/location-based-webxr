@@ -154,7 +154,7 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   - `openDraftStore(key)` resolves this tour's draft namespace, or
     `undefined` where there is no persistence. Injected so the unit tests
     and the e2e can supply one without OPFS.
-  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; mintButton; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; movePrompt; movePromptText; movePromptUse; movePromptCopy; movePromptLater; moveUndo; moveUndoText; moveUndoButton }`
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; movePrompt; movePromptText; movePromptUse; movePromptCopy; movePromptLater; moveUndo; moveUndoText; moveUndoButton }`
     - `objectList` (authoring plan 2026-09-28-0953 §3.4, M4) - the
       `object-list.ts` view (`bind`, `render`); `main.ts` builds it over
       `#object-list` inside the panel.
@@ -580,8 +580,74 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
     since M4 review #4 hands the tap's target ray as a second argument
     (backward compatible: MinimalExample's one-parameter handler is as it
     was), so the pick goes through the tapped point.
-  - **Automatic measuring** (UI round 1, U3; plan review #1): there is no "Save the measured position" button. Each render classifies the code in view (`codeOutcome`) and the same answer feeds the line (`authorStatusLine`'s `ready`) and the measurement (`maybeMeasure`), so the line never claims a measurement that does not happen: the code in hand is `measured`; a measurement in flight or a code still being read is `measuring`; with a code in hand another STORED code is only `seen` (a sighting for the visit log; taking it in hand would change what this visit's objects are corrected through), and only a code with no saved position yet - a new code for the tour - is measured; with no tour open a code is `seen`; a code the open tour may not take (`autoMeasureAllowed`) is `not-measured`. Once per visit and code (`autoMeasured`, cleared at the visit's end and when a measured print size is adopted), never during a Finish; a measurement that lost the gate is tried again, one the mint or the identity refused is not (its reason becomes the panel's note). A measurement changes no note and no failed Finish's line (nothing the creator did asked for it), keeps the level in hand while its identity is derived (an emptied hand refused every placement in that window), and holds Finish off while it runs (`measuring`). The once-per-visit rule replaces the tap's "measure again": the settle refines a code measured here through its own pick (D33), not through later sightings.
-- **The code's saved position, decided at the settle** (UI round 1, U3; owner decisions 2026-10-06): no button replaces a stored code. At each visit's settle `planCodePosition` (`code-position-settle.ts`) judges this visit's latest sighting of the stored code in hand through its own pick (the source the re-mint takes) with `decideCodePosition` (`code-position-rule.ts`): replace a weaker or unknown saved position after a walk the summary's model calls enough at this accuracy (at least 10 m); keep a well-walked one; leave a code seen 15 m or more away to the move question; apply a remembered "Yes, it moved" under the same walk rule. A change hands `planVisitSettle` a measurement of the code (the sighting's pose, the stored print's size, the sighting's pick as the measurement pick), so it is re-minted as if measured here and this visit's objects settle relative to it. An IMPROVED position moves the tour's other objects within 40 m of the code's old position with it (`moveEarlierWithCode`, `move-with-code.ts`: hosted, restored and earlier visits' objects, as edits by id; a pin keeps its orientation); a real MOVE leaves them (D19) and marks the visit's move boundary. The decision is logged on `tourAuthoring/settled` as `codePosition` (also for a visit that settled nothing else), and the result screen's line after Finish is `codePositionSentence` over the settles since the last Finish.
+  - **Automatic measuring** (UI round 1, U3; plan review #1; U3 milestone
+    review #6, #7): there is no "Save the measured position" button. Each
+    render classifies the code in view (`codeOutcome`), and the same answer
+    feeds the line (`authorStatusLine`'s `ready`) and the measurement
+    (`maybeMeasure`), so the line never claims a measurement that does not
+    happen:
+    - the code in hand: `measured`;
+    - a measurement in flight, or a code still being read: `measuring`;
+    - with a code in hand, another STORED code (or one not identified
+      yet): `seen` - a sighting for the visit log; taking it in hand would
+      change what this visit's objects are corrected through;
+    - with a code in hand that is not saved in the tour yet (neither
+      hosted nor written by a Finish of this page, `finishedLevelIds`), a
+      new code: `finish-first` - each Finish writes the ONE code in hand,
+      so measuring past it would silently drop it;
+    - with no tour open: `seen`;
+    - a code the open tour may not take (`autoMeasureAllowed`):
+      `not-measured`, and scan-to-open's "added to the open tour" line is
+      left out so the two do not contradict;
+    - otherwise it is measured, once per visit and code (`autoMeasured`,
+      cleared at the visit's end and when a measured print size is
+      adopted), never during a Finish.
+
+    A measurement that lost the gate is tried again; one the mint or the
+    identity refused is not, and its reason becomes the panel's note (the
+    only note a measurement writes - it clears none, and no failed
+    Finish's line). It keeps the level in hand while its identity is
+    derived (an emptied hand refused every placement in that window) and
+    holds Finish off while it runs (`measuring`). The once-per-visit rule
+    replaces the tap's "measure again": the settle refines a code measured
+    here through its own pick (D33), not through later sightings.
+
+  - **The code's saved position, decided at the settle** (UI round 1, U3;
+    owner decisions 2026-10-06; U3 milestone review #1-#5, #8): no button
+    replaces a stored code. At each visit's settle `planCodePosition`
+    (`code-position-settle.ts`) judges this visit's latest sighting of the
+    stored code in hand with `decideCodePosition` (`code-position-rule.ts`),
+    through ONE source that the re-mint then takes: the sighting's own pick
+    when its walk is reliable, else the end alignment (a pick freezes at
+    40 m of GPS spread, which phones at more than about 8 m accuracy never
+    find enough).
+    - It replaces a weaker or unknown saved position after a walk the
+      summary's model calls enough at this accuracy (at least 10 m), and
+      keeps a well-walked one.
+    - It leaves a code seen beyond the code correction's plausibility bound
+      or 15 m (or turned beyond its yaw bound) to the move question.
+    - It applies a remembered "Yes, it moved" only while this visit still
+      sees the code 15 m or more away, under the same walk rule.
+    - A change hands `planVisitSettle` a measurement of the code (the
+      sighting's pose, the print size the visit solved at, the chosen
+      pick), so it is re-minted as if measured here and this visit's
+      objects settle relative to it.
+    - An IMPROVED position moves the tour's other objects within 40 m of
+      the code's old position with it (`moveEarlierWithCode`,
+      `move-with-code.ts`: yaw and position only, as the code correction;
+      hosted, restored and earlier visits' objects, as edits by id; a pin
+      keeps its orientation). A real MOVE leaves them (D19) and marks the
+      visit's move boundary.
+    - A settle redone after a failed Finish re-applies the decision it
+      already made (`appliedCode`): the objects are not moved twice and the
+      visit log keeps the saved pose.
+    - Every "Yes, it moved" of the code is forgotten at the settle, applied
+      or not: a waiting one is asked again next time, never applied in a
+      later visit out of Undo's reach.
+    - The decision is logged on `tourAuthoring/settled` as `codePosition`
+      (also for a visit that settled nothing else), and the result screen's
+      line after Finish is `codePositionSentence` over the settles since
+      the last Finish.
   - **The moved-code prompt** (authoring plan §3.6 "Authoring (D20 ask
     once)", M5b; `code-move-prompt.ts` decides WHEN): on every readout
     render the tracker is fed the latest sighting's offset through the
@@ -604,7 +670,18 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
       the prompt saw it) is kept out of the visit log (`logVisit`): it is
       another print, so it must not count as a visit of the stored code
       in `codeVisitPoses` (M5b review #11). "Not now" leaves it a visit.
-    - "Yes, it moved" changes nothing at once: the status line says the new spot is saved when the visit ends if the creator walked enough, and the settle applies it (above). Logged as `tourAuthoring/codeMoveAnswered` `moved` (`replaced` false). - **The move boundary**: a move the settle APPLIED records its visit as the code's move boundary (`movedInVisit`, set before the visit is logged); an improved position of the same poster is no boundary. - **Undo while the visit runs**: a "Yes, it moved" can be taken back until its visit settles (a session end or a Finish); Undo re-answers the spot "Not now" (logged as such), so the prompt does not ask again at once. Nothing else needs restoring: nothing changed before the settle.
+    - "Yes, it moved" changes nothing at once: the status line says the
+      new spot is saved when the visit ends if the creator walked enough,
+      and the settle applies it (above). Logged as
+      `tourAuthoring/codeMoveAnswered` `moved` (`replaced` false).
+    - **The move boundary**: a move the settle APPLIED records its visit as
+      the code's move boundary (`movedInVisit`, set before the visit is
+      logged); an improved position of the same poster is no boundary.
+    - **Undo until the visit settles**: a "Yes, it moved" can be taken back
+      until its visit settles (a session end or a Finish - also one that
+      fails afterwards); Undo re-answers the spot "Not now" (logged as
+      such), so the prompt does not ask again at once. Nothing else needs
+      restoring: nothing changed before the settle.
   - The readout's "N objects placed" counts only objects the zip does not
     carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,

@@ -77,7 +77,7 @@ The prompt asks only when ALL of these hold:
   position of the time: after a new saved position the same offset names another place, so answers given against the old pose stop counting. A distance rather than bands: a band edge would ask again for a
   spot that GPS noise moved across it.
 
-What the tracker does NOT decide: what a "Yes, it moved" does (UI round 1, U3). The settle reads it through `answerAtSpot` and saves the new spot once the visit walked enough (`code-position-settle.ts`); an Undo before the settle re-answers the spot "Not now". `answerAtSpot(answers, { levelId, savedKey, offset }, sameSpotM?)` returns the newest covering "moved" or "second-copy", else null.
+What the tracker does NOT decide: what a "Yes, it moved" does (UI round 1, U3). The settle reads it through `answerAtSpot` and saves the new spot once the visit walked enough (`code-position-settle.ts`); an Undo before the settle re-answers the spot "Not now". Every "moved" answer of the code is forgotten at its visit's settle, applied or not (U3 milestone review #5): a waiting "Yes" is asked again rather than applied in a later visit. `answerAtSpot(answers, { levelId, savedKey, offset }, sameSpotM?)` returns the newest covering "moved" or "second-copy", else null.
 
 ## The trigger (D26; real recordings)
 

@@ -7,31 +7,38 @@
  * changes, so the existing re-mint path (`planVisitSettle`, measured here)
  * does the rest. Pure.
  *
- * THE CANDIDATE. The latest kept sighting of the code in hand, through its
- * own pick (D33) when the pick carries its quality block, else through the
- * visit's end alignment - the SAME source the re-mint takes (R7 of D33),
- * so the walk the rule judges is the walk the saved quality block then
- * records.
+ * THE CANDIDATE. The latest kept sighting of the code in hand, through ONE
+ * source that the rule judges and the re-mint then takes (R7 of D33): the
+ * sighting's own pick when it carries its quality block and its walk is
+ * reliable (least drift since the sighting), else the visit's end
+ * alignment. A pick stops advancing once its alignment matures (40 m of
+ * GPS spread), so judging the pick alone could never reach the walk a
+ * phone at more than about 8 m accuracy needs (U3 milestone review #1);
+ * the end alignment keeps growing with the walk.
  *
  * @see code-position-settle.ts.md
  */
 
-import { parseQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { LatLong } from "gps-plus-slam-app-framework/core";
 
 import {
   decideCodePosition,
+  isReliable,
   qualityOfLevel,
   type CodePositionDecision,
   type PositionQuality,
 } from "./code-position-rule.js";
 import {
+  CORRECTION_MAX_YAW_DEG,
+  correctionBoundM,
+  readAlignment,
   sightedCodeOffset,
   type CodeMeasurement,
   type CodeSighting,
   type TimedAlignment,
   type VisitAlignmentPicks,
 } from "./visit-settle.js";
+import { MOVE_PROMPT_FLOOR_M } from "./code-move-prompt.js";
 
 export interface CodePositionSettleInput {
   /** The visit being settled (`arSessionGeneration`). */
@@ -47,6 +54,9 @@ export interface CodePositionSettleInput {
   readonly zero: LatLong | null;
   /** The end alignment's walk and accuracy. */
   readonly endQuality: PositionQuality;
+  /** The printed size the visit's poses were solved at (m): what a
+   *  re-mint from the sighting is minted with, as a tap's mint was. */
+  readonly sizeM: number;
   /** The creator's remembered answer for the code seen at this spot
    *  (north and east of its saved position, m); null for none. */
   readonly answerAt: (spot: {
@@ -62,29 +72,18 @@ export interface CodePositionPlan {
   readonly offsetM: number;
   readonly candidate: PositionQuality;
   readonly stored: PositionQuality;
+  /** The creator had answered "Yes, it moved" for this spot: the caller
+   *  forgets that answer at the settle, applied or not (U3 milestone
+   *  review #5 - a waiting "Yes" is asked again, never applied later
+   *  without Undo). */
+  readonly answeredMoved: boolean;
   /** What the settle re-mints the code from - only for `replace` and
    *  `move`; null otherwise. */
   readonly measurement: CodeMeasurement | null;
   /** The pick the re-mint and the code event go through: the sighting's
-   *  own, or (without its quality block) one with no alignment - the end
-   *  alignment then - keeping the sighting's moment and walked distance. */
+   *  own, or one with no alignment (the end alignment then), keeping the
+   *  sighting's moment and walked distance. */
   readonly pick: TimedAlignment | null;
-}
-
-/** 16 finite numbers, or null. */
-function readAlignment(alignment: ArrayLike<number> | null): number[] | null {
-  if (alignment === null || alignment.length !== 16) return null;
-  const values = Array.from(alignment);
-  return values.every((v) => Number.isFinite(v)) ? values : null;
-}
-
-/** The printed size the saved level records (m), or null. */
-function storedSizeM(json: string): number | null {
-  try {
-    return parseQrLevel(JSON.parse(json) as unknown).qr.physicalSizeM ?? null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -112,14 +111,17 @@ export function planCodePosition(
     (input.sighting?.levelId === level.id ? input.sighting : null);
   if (sighting === null) return null;
   const picked = readAlignment(latest?.alignment ?? null);
-  const throughPick = picked !== null && latest?.alignmentInfo !== undefined;
+  const pickQuality: PositionQuality | null =
+    picked !== null && latest?.alignmentInfo !== undefined
+      ? {
+          extentM: latest.gpsExtentM ?? null,
+          accuracyM: latest.alignmentInfo.gpsAccuracyM ?? null,
+        }
+      : null;
+  const throughPick =
+    picked !== null && pickQuality !== null && isReliable(pickQuality);
   const alignment = throughPick ? picked : end;
-  const candidate: PositionQuality = throughPick
-    ? {
-        extentM: latest.gpsExtentM ?? null,
-        accuracyM: latest.alignmentInfo?.gpsAccuracyM ?? null,
-      }
-    : input.endQuality;
+  const candidate = throughPick ? pickQuality : input.endQuality;
   const offset = sightedCodeOffset({
     visit: input.visit,
     alignment,
@@ -135,36 +137,39 @@ export function planCodePosition(
   });
   if (answer === "second-copy") return null;
   const stored = qualityOfLevel(level.json);
+  // A silent replace only within what two visits' GPS plausibly disagree
+  // by (the code correction's own bound, D10b) and below the move
+  // question's 15 m (U3 milestone review #11).
+  const far =
+    offset.horizontalM >=
+      Math.min(
+        MOVE_PROMPT_FLOOR_M,
+        correctionBoundM(candidate.accuracyM, stored.accuracyM),
+      ) || offset.yawDeg > CORRECTION_MAX_YAW_DEG;
   const decision = decideCodePosition({
     stored,
     candidate,
     offsetM: offset.horizontalM,
     moved: answer === "moved",
+    far,
   });
   const changes = decision.kind === "replace" || decision.kind === "move";
-  const sizeM = storedSizeM(level.json);
-  if (!changes || sizeM === null) {
-    return {
-      levelId: level.id,
-      decision,
-      offsetM: offset.horizontalM,
-      candidate,
-      stored,
-      measurement: null,
-      pick: null,
-    };
-  }
-  return {
+  const base = {
     levelId: level.id,
     decision,
     offsetM: offset.horizontalM,
     candidate,
     stored,
+    answeredMoved: answer === "moved",
+  };
+  if (!changes) return { ...base, measurement: null, pick: null };
+  return {
+    ...base,
     measurement: {
       levelId: level.id,
       text: sighting.text,
       odomPose: sighting.odomPose,
-      sizeM,
+      sizeM: input.sizeM,
       visit: input.visit,
     },
     pick:

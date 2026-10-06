@@ -51,7 +51,7 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   bound) "- a second print or a moved poster? Not used; this visit follows
   GPS".
 - `autoMeasureAllowed(relation, tourHasCodes)` (UI round 1, U3; plan review #1) - whether the creator panel measures the code in view on its own: the open tour's own code (`this-tour`), or - for a tour with no code yet - the first code that names a tour (`other-tour`, `unknown`); never `not-a-tour`, `no-tour-open` or `resolving`. Before U3 a tap could measure any code (plan §13).
-- `CodeReadyState` and `authorStatusLine(..., ready)` (U3) - the ready line says what became of the code once the gate is open: "Code measured." (`measured`, the default), "Measuring the code…", "Code seen.", or "Code seen - not measured: it is not a code of the open tour." (`not-measured`); the print-size hint follows any of them. The gate being open is no longer "measured".
+- `CodeReadyState` and `authorStatusLine(..., ready)` (U3) - the ready line says what became of the code once the gate is open: "Code measured." (`measured`, the default), "Measuring the code…", "Code seen.", or "Code seen - not measured: it is not a code of the open tour." (`not-measured`), or "Code seen - not measured yet: Finish first, to save the code you measured before." (`finish-first`: a new code while the code in hand is not saved in the tour; each Finish writes one code); the print-size hint follows any of them. The gate being open is no longer "measured".
 - `setupHint({ measured, tourOpen, hadLevel, keptStored? })` - what the
   panel says once measured: "Position saved." when no tour is open
   (`codeTourLine` then says what is happening to the code's tour;

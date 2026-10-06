@@ -466,14 +466,30 @@ describe("the creator measures and mints with the fused pose", () => {
   // anywhere) is still measured on its own - that is how a tour gains its
   // second code (each Finish writes the code in hand) - while another
   // STORED code stays a sighting (authoring-settle.test.ts).
-  it("measures a new code while another code is in hand", async () => {
+  it("measures a new code while another code is in hand, once that one is saved in the tour", async () => {
     const c = creator({ aligned: true });
     c.ctx.mintedLevel = { id: "an-earlier-code", json: "{}" };
+    // Hosted: the tour already carries it.
+    c.ctx.currentLevels = new Map([["an-earlier-code", { qr: {} } as never]]);
     for (let i = 0; i < 7; i++) c.detect(i);
     await vi.waitFor(() => {
       expect(c.ctx.mintedLevel?.id).not.toBe("an-earlier-code");
     });
     expect(c.ctx.mintedLevel?.id).toBe(await qrCodeId(TEXT));
+  });
+
+  // U3 milestone review #7: each Finish writes the ONE code in hand, so a
+  // new code measured past an unsaved one would silently drop it.
+  it("asks for a Finish before measuring a new code past one not saved yet", async () => {
+    const c = creator({ aligned: true });
+    c.ctx.mintedLevel = { id: "measured-not-finished", json: "{}" };
+    for (let i = 0; i < 7; i++) c.detect(i);
+    // Once the code's identity is derived (an async hash), the line says
+    // why it is not measured, and the code in hand stays.
+    await vi.waitFor(() => {
+      expect(c.dom.status.textContent).toMatch(/Finish first/);
+    });
+    expect(c.ctx.mintedLevel.id).toBe("measured-not-finished");
   });
 
   // TourViewer scan-to-open plan §5 #13 (a pre-existing bug): a note in
@@ -550,6 +566,11 @@ describe("the creator measures and mints with the fused pose", () => {
       for (let i = 0; i < 7; i++) withCodes.detect(i);
       await settled();
       expect(withCodes.ctx.mintedLevel).toBeNull();
+      // One line, not two that contradict (U3 milestone review #6).
+      expect(withCodes.dom.status.textContent).toMatch(/not measured/);
+      expect(withCodes.dom.status.textContent).not.toMatch(
+        /added to the open tour/,
+      );
     });
 
     it("measures nothing with no tour open, or for a code naming no tour", async () => {

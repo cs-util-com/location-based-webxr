@@ -219,7 +219,9 @@ export function correctionBoundM(
 }
 
 /** 16 finite numbers, or null. */
-function readAlignment(alignment: ArrayLike<number> | null): number[] | null {
+export function readAlignment(
+  alignment: ArrayLike<number> | null,
+): number[] | null {
   if (alignment === null || alignment.length !== 16) return null;
   const values = Array.from(alignment);
   return values.every((v) => typeof v === "number" && Number.isFinite(v))

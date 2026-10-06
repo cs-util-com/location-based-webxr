@@ -73,7 +73,12 @@ describe("decideCodePosition", () => {
         offsetM: 0.9,
         moved: false,
       }),
-    ).toEqual({ kind: "keep", reason: "not-walked" });
+    ).toEqual({
+      kind: "keep",
+      reason: "not-walked",
+      // 7 m accuracy needs about 33 m; 4 m were walked.
+      walkMoreM: walkNeededM(7) - 4,
+    });
   });
 
   it("keeps a stored position that was itself measured well (no churn per visit, D10b)", () => {
@@ -107,6 +112,33 @@ describe("decideCodePosition", () => {
         candidate: good,
         offsetM: 20,
         moved: false,
+      }),
+    ).toEqual({ kind: "keep", reason: "far" });
+  });
+
+  // Why (U3 milestone review #3): the prompt fires just past 15 m and an
+  // answer covers 20 m around it, so a "Yes" given to a GPS-bias prompt
+  // could move a well-walked code that the walked alignment puts back at
+  // its saved spot - and leave every pin behind.
+  it("ignores 'Yes, it moved' when this visit sees the code near its saved spot", () => {
+    expect(
+      decideCodePosition({
+        stored: good,
+        candidate: good,
+        offsetM: 2,
+        moved: true,
+      }),
+    ).toEqual({ kind: "keep", reason: "stored-good" });
+  });
+
+  it("leaves a code beyond the plausibility bound (far) to the question even below 15 m", () => {
+    expect(
+      decideCodePosition({
+        stored: weak,
+        candidate: good,
+        offsetM: 14,
+        moved: false,
+        far: true,
       }),
     ).toEqual({ kind: "keep", reason: "far" });
   });
@@ -185,11 +217,10 @@ describe("qualityOfLevel", () => {
 });
 
 describe("codePositionSentence - the result screen's line (U3)", () => {
-  const at5: PositionQuality = { extentM: 3, accuracyM: 5 };
   const outcome = (
     decision: Parameters<typeof codePositionSentence>[0][number]["decision"],
     applied = true,
-  ) => ({ decision, applied, candidate: at5 });
+  ) => ({ decision, applied });
 
   // Why: the plan asks the result screen to say which happened and why,
   // since no button announces it any more; an applied change outranks a
@@ -211,20 +242,23 @@ describe("codePositionSentence - the result screen's line (U3)", () => {
     );
   });
 
-  it("says how much walking a kept position or a waiting move needs", () => {
+  // Why (U3 milestone review #1, #5): the line says how much walking was
+  // MISSING, not the total, and a move that waited is asked again rather
+  // than applied in some later visit.
+  it("says how much more walking a kept position or a waiting move needed", () => {
     expect(
       codePositionSentence([
-        outcome({ kind: "keep", reason: "not-walked" }, false),
+        outcome({ kind: "keep", reason: "not-walked", walkMoreM: 20.4 }, false),
       ]),
     ).toBe(
-      `The code's saved position was kept: walk about ${String(Math.round(walkNeededM(5)))} m in AR after seeing the code to improve it.`,
+      "The code's saved position was kept: this visit's walk was about 20 m too short for the GPS accuracy to improve it.",
     );
     expect(
       codePositionSentence([
         outcome({ kind: "move-waits", walkMoreM: 12.4 }, false),
       ]),
     ).toBe(
-      "The poster's move is not saved yet: walk about 12 m more in AR after seeing the code, then finish again.",
+      `The poster's move was not saved: this visit's walk was about 12 m too short for the GPS accuracy. Next time, walk farther in AR and answer "Yes, it moved" again.`,
     );
   });
 

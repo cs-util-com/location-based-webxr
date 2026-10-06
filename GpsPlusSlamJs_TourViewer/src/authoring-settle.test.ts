@@ -2090,7 +2090,7 @@ describe(
       });
       a.endVisit();
       expect(a.ctx.mintedLevel).toEqual(stored);
-      expect(codePosition(a)?.decision).toEqual({
+      expect(codePosition(a)?.decision).toMatchObject({
         kind: "keep",
         reason: "not-walked",
       });
@@ -2136,7 +2136,8 @@ describe(
       await finished(a.ctx);
       expect(a.ctx.finishError).toBeNull();
       expect(a.dom.finishStatus.textContent).toMatch(
-        /The code's saved position was kept: walk about 24 m in AR after seeing the code to improve it\./,
+        // 4 m walked against the 24 m that 5 m accuracy needs.
+        /The code's saved position was kept: this visit's walk was about 20 m too short for the GPS accuracy to improve it\./,
       );
     });
   },
@@ -2629,8 +2630,61 @@ describe(
       expect(a.ctx.finishError).toBeNull();
       expect(a.ctx.mintedLevel).toEqual(stored);
       expect(a.dom.finishStatus.textContent).toMatch(
-        /The poster's move is not saved yet: walk about \d+ m more in AR after seeing the code, then finish again\./,
+        /The poster's move was not saved: this visit's walk was about \d+ m too short for the GPS accuracy\. Next time, walk farther in AR and answer "Yes, it moved" again\./,
       );
+    });
+
+    it("forgets a 'Yes, it moved' its visit could not apply, so the next visit asks again (U3 milestone review #5)", async () => {
+      // Why: a waiting "Yes" kept in the draft would silence the prompt
+      // and be applied in whichever later visit walked enough - long after
+      // its Undo was gone.
+      const { store, files } = memoryDraftStore();
+      const { a, stored, fix } = await secondVisitFarFromTheCode(store);
+      fix(MOVE_PROMPT_RULE.minFixes);
+      a.dom.movePromptUse.click();
+      a.endVisit();
+      await flush();
+      expect(a.ctx.mintedLevel).toEqual(stored);
+      const meta = JSON.parse(files.get(META_KEY) as string) as {
+        moveAnswers: { answer: string }[];
+      };
+      expect(meta.moveAnswers.map((x) => x.answer)).not.toContain("moved");
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [60, 400, 0]));
+      a.seeTheCode();
+      await flush();
+      fix(MOVE_PROMPT_RULE.minFixes + 1);
+      expect(a.dom.movePrompt.hidden).toBe(false);
+    });
+
+    it("does not bring Undo back after a failed Finish whose settle applied the move (U3 milestone review #4)", async () => {
+      // Why: the failed Finish drops the visit's settle record, and Undo
+      // then offered to take back a move that had already been saved -
+      // writing "Not now" against the old pose and saying it was undone.
+      const { store } = memoryDraftStore();
+      const { a, stored, fix, walk } = await secondVisitFarFromTheCode(store);
+      a.ctx.tourManifestStatus = "settled";
+      fix(MOVE_PROMPT_RULE.minFixes);
+      a.dom.movePromptUse.click();
+      walk(30, 1);
+      (
+        a.ctx.session as unknown as { readWholeArchive: () => Promise<Blob> }
+      ).readWholeArchive = () => Promise.reject(new Error("offline"));
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).not.toBeNull();
+      expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      a.setup.renderAuthorReadout();
+      expect(a.dom.moveUndo.hidden).toBe(true);
+      // The visit settles again at its end, re-applying the same decision:
+      // the code stays at its new spot.
+      const moved = a.ctx.mintedLevel!;
+      a.endVisit();
+      expect(
+        codeWorldOf(a.ctx.mintedLevel!.json).distanceTo(
+          codeWorldOf(moved.json),
+        ),
+      ).toBeLessThan(0.01);
     });
 
     it("'Not now' and 'It's a second copy' whose draft write is refused say the walk is not backed up", async () => {

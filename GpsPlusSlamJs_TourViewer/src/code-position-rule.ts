@@ -35,10 +35,18 @@ export function isReliable(q: PositionQuality): boolean {
 }
 
 export type CodePositionDecision =
-  | { kind: "keep"; reason: "not-walked" | "stored-good" | "far" }
+  | { kind: "keep"; reason: "stored-good" | "far" }
+  | { kind: "keep"; reason: "not-walked"; walkMoreM: number }
   | { kind: "replace" }
   | { kind: "move" }
   | { kind: "move-waits"; walkMoreM: number };
+
+/** How much more walking `q` needs to be reliable (m); 5 m accuracy is
+ *  assumed when it is unknown, only for this figure. */
+function walkMoreM(q: PositionQuality): number {
+  const needed = Math.max(MIN_RELIABLE_WALK_M, walkNeededM(q.accuracyM ?? 5));
+  return Math.max(0, needed - (q.extentM ?? 0));
+}
 
 /**
  * @param stored the saved position's quality
@@ -46,30 +54,39 @@ export type CodePositionDecision =
  *   accuracy)
  * @param offsetM how far this visit sees the code from its saved spot
  * @param moved the creator answered "Yes, the poster moved here"
+ * @param far this visit sees the code too far off for a silent replace:
+ *   beyond the move question's 15 m, or beyond the code correction's
+ *   plausibility bound (`correctionBoundM`, `CORRECTION_MAX_YAW_DEG`) -
+ *   a second print or a moved poster. Defaults to `offsetM >= 15`.
  */
 export function decideCodePosition(input: {
   stored: PositionQuality;
   candidate: PositionQuality;
   offsetM: number;
   moved: boolean;
+  far?: boolean;
 }): CodePositionDecision {
   const reliable = isReliable(input.candidate);
-  if (input.moved) {
+  // A "Yes, it moved" counts only while the code is still seen where the
+  // question was asked about (15 m and more): a walked alignment that puts
+  // it back near its saved spot shows the question came from GPS bias
+  // (U3 milestone review #3).
+  if (input.moved && input.offsetM >= MOVE_PROMPT_FLOOR_M) {
     if (reliable) return { kind: "move" };
-    const needed = Math.max(
-      MIN_RELIABLE_WALK_M,
-      walkNeededM(input.candidate.accuracyM ?? 5),
-    );
-    return {
-      kind: "move-waits",
-      walkMoreM: Math.max(0, needed - (input.candidate.extentM ?? 0)),
-    };
+    return { kind: "move-waits", walkMoreM: walkMoreM(input.candidate) };
   }
   // Far from the saved spot is the move question's domain, never a silent
   // replace (D20/D26: the poster may have moved, or be a second print).
-  if (input.offsetM >= MOVE_PROMPT_FLOOR_M)
+  if (input.far ?? input.offsetM >= MOVE_PROMPT_FLOOR_M) {
     return { kind: "keep", reason: "far" };
-  if (!reliable) return { kind: "keep", reason: "not-walked" };
+  }
+  if (!reliable) {
+    return {
+      kind: "keep",
+      reason: "not-walked",
+      walkMoreM: walkMoreM(input.candidate),
+    };
+  }
   // A saved position from a good walk is not churned by every later visit
   // (the D10b reason: GPS jumps 5-10 m between visits).
   if (isReliable(input.stored)) return { kind: "keep", reason: "stored-good" };
@@ -95,8 +112,6 @@ export interface CodePositionOutcome {
   readonly decision: CodePositionDecision;
   /** The change was made (the re-mint succeeded). */
   readonly applied: boolean;
-  /** This visit's measurement quality (for "walk about N m"). */
-  readonly candidate: PositionQuality;
 }
 
 /**
@@ -123,15 +138,15 @@ export function codePositionSentence(
   const latest = outcomes.at(-1);
   if (latest === undefined) return "";
   const { decision } = latest;
+  // How much farther: this visit's GPS spread against what its accuracy
+  // needs. A "Yes, it moved" is forgotten at the settle that could not
+  // apply it, so it is asked again (U3 milestone review #5).
+  const more = (m: number) => String(Math.max(1, Math.round(m)));
   if (decision.kind === "move-waits") {
-    return `The poster's move is not saved yet: walk about ${String(Math.round(decision.walkMoreM))} m more in AR after seeing the code, then finish again.`;
+    return `The poster's move was not saved: this visit's walk was about ${more(decision.walkMoreM)} m too short for the GPS accuracy. Next time, walk farther in AR and answer "Yes, it moved" again.`;
   }
   if (decision.kind === "keep" && decision.reason === "not-walked") {
-    const needed = Math.max(
-      MIN_RELIABLE_WALK_M,
-      walkNeededM(latest.candidate.accuracyM ?? 5),
-    );
-    return `The code's saved position was kept: walk about ${String(Math.round(needed))} m in AR after seeing the code to improve it.`;
+    return `The code's saved position was kept: this visit's walk was about ${more(decision.walkMoreM)} m too short for the GPS accuracy to improve it.`;
   }
   return "";
 }
