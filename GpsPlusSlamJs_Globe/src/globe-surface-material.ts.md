@@ -37,7 +37,21 @@ fill: true`, round-6 plan G6-1) under `-band-fill`.
     (`GLOBE_SURFACE_TUNING.skyShare`), `uCarrierShare` (the altitude
     band's relief share, 0 until the page sets it) and `uSunRadiance` (the
     sun light's colour x intensity, kept by the surface: the fill's light by
-    role, not the scene's first directional light).
+    role, not the scene's first directional light), and the cloud shell's
+    three (round-6 plan G6-2): `uCloudInSurface` (1, the default: the
+    clouds painted into the ground's colour; 0 with the shell, then the
+    ground keeps its colour, and the night lights' cloud dimming follows the
+    same factor), `uCloudShadow` (the soft shadow on the ground, 0 off) and
+    `uCloudShellM` (the shell's height, for the shadow's offset).
+  - `GLOBE_CLOUD_GLSL` and `GLOBE_TWILIGHT_GLSL`: the cloud sample and
+    shade, and the twilight look, shared with the cloud shell
+    (`globe-cloud-shell.ts`, DEC-H3); `afterChunk(source, anchor, code)`,
+    the insertion both use, which throws on a missing or repeated anchor.
+  - The shadow reads the cloud where the sun's ray through the ground
+    point crosses the shell: the point moved toward the sun by
+    h / (R sin(elevation)) radians, the elevation floored at 0.05; by day
+    only, after the paint, before the grade. A third textureGrad, with the
+    seam fix's gradients.
   - `GLOBE_FADE_GLSL` and `globeFadeKeeps(d, share, side)`: the band's
     cross-fade (one-scene plan §3.2). Each pixel goes to exactly one
     carrier by a screen dither (interleaved gradient noise of

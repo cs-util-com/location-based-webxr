@@ -44,6 +44,65 @@ export function parseLatLngText(text: string | null): LatLng | undefined {
   return { lat, lng };
 }
 
+/** A camera pose a link can carry (`view=`): where, how high, which way. */
+export interface GlobeView {
+  readonly lat: number;
+  readonly lng: number;
+  /** Above the ellipsoid, km. */
+  readonly altitudeKm: number;
+  /** From north toward east, degrees in [0, 360). */
+  readonly headingDeg: number;
+  /** Above the local horizontal, degrees in [-90, 90]. */
+  readonly pitchDeg: number;
+}
+
+/** The highest altitude a view may name (km): the lab's own zoom-out limit. */
+const VIEW_MAX_ALTITUDE_KM = 50_000;
+
+/**
+ * One `"lat,lng,altitudeKm,headingDeg,pitchDeg"` token (the pose a Debug
+ * export carries, volume-cloud plan §16), or `undefined` when absent or malformed in
+ * any way, as `parseLatLngText`: a pose that cannot be read never moves the
+ * camera. The heading is wrapped into [0, 360); the latitude must be in
+ * [-90, 90], the longitude in [-180, 180], the altitude above 0 and at most
+ * 50,000 km, the pitch in [-90, 90].
+ */
+export function parseViewText(text: string | null): GlobeView | undefined {
+  if (text === null) return undefined;
+  const parts = text.split(",").map((p) => p.trim());
+  if (parts.length !== 5 || !parts.every((p) => DECIMAL.test(p))) {
+    return undefined;
+  }
+  const [lat, lng, altitudeKm, heading, pitchDeg] = parts.map(
+    (p) => Number(p) + 0,
+  ) as [number, number, number, number, number];
+  if (![lat, lng, altitudeKm, heading, pitchDeg].every(Number.isFinite)) {
+    return undefined;
+  }
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180 || Math.abs(pitchDeg) > 90) {
+    return undefined;
+  }
+  if (!(altitudeKm > 0 && altitudeKm <= VIEW_MAX_ALTITUDE_KM)) return undefined;
+  const headingDeg = (((heading % 360) + 360) % 360) + 0;
+  return { lat, lng, altitudeKm, headingDeg, pitchDeg };
+}
+
+/**
+ * A view as its link token: the place to 5 decimals (about a metre), the
+ * altitude to the metre, the angles to 0.1 degree. `parseViewText` reads it
+ * back within that precision.
+ */
+export function formatViewText(view: GlobeView): string {
+  const heading = ((view.headingDeg % 360) + 360) % 360;
+  return [
+    view.lat.toFixed(5),
+    view.lng.toFixed(5),
+    view.altitudeKm.toFixed(3),
+    heading.toFixed(1),
+    view.pitchDeg.toFixed(1),
+  ].join(",");
+}
+
 /** Where the chosen target came from; `waiting` means there is none yet. */
 export type GlobeTargetSource = "url" | "fix" | "fallback" | "waiting";
 
