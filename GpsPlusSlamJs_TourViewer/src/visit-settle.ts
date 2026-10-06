@@ -126,6 +126,9 @@ export interface VisitAlignmentPicks {
   readonly objects: ReadonlyMap<string, TimedAlignment>;
   /** The code measured in this visit. */
   readonly measurement: TimedAlignment | null;
+  /** Each code's measurement in this visit, by level id (M4c-2);
+   *  absent from a caller that kept one. */
+  readonly measurements?: ReadonlyMap<string, TimedAlignment> | undefined;
   /** The code in hand's sightings, oldest first. */
   readonly sightings: readonly TimedSighting[];
 }

@@ -24,7 +24,11 @@ M4 makes the sightings per code, and this is where they will live.
   - `notePlaced(id)` - an object placed or moved now.
   - `setSighting(sighting)` - the visit's sighting of the code in hand
     changed: kept by `creator-codes.ts` and noted now.
-  - `noteMeasurement(atMs)` - the code measured in this visit, at the tap's
+  - `noteSighting(sighting)` - a stable sighting of a code NOT in hand
+    (one measured in this visit, or a stored one; M4c-2): that code's
+    event for the settle, never the code in hand's sighting.
+  - `noteMeasurement(atMs, levelId)` - a code measured in this visit (its
+    own pick per code since M4c-2), at the tap's
     moment (the caller syncs first, once the level's id has resolved).
   - `picks()` - the picks so far; `gpsExtent(positions)` - the session's GPS
     extent (40 m maturity, D34; the D31 marker of a re-minted code).

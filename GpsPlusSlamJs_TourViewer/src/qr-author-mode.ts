@@ -313,21 +313,20 @@ export function correctionRefusedLine(refusal: {
 }
 
 /**
- * Whether the creator's panel may measure the code in view on its own (UI
- * round 1, U3; second plan review #1): the open tour's own code, or - for
- * a tour that has no code yet - the first code that names a tour. Never a
- * code naming no tour, a code read with no tour open, or one still being
- * read: measuring is automatic, so a stray code must not become the code
- * in hand. (Before U3 the tap allowed any code: plan §13's "no wrong code
- * in authoring" - now only through a tour with no code.)
+ * Whether the creator's panel may measure the code in view on its own:
+ * every code seen while a tour is open - the tour's own, another tour's, an
+ * unknown link, a QR naming no tour at all (code book refactor plan §11
+ * D5, extended by the owner: "a stray QR code ... provides another anchor
+ * that can stabilize the virtual objects"). Not a code read with no tour
+ * open, nor one still being read. The risk named with the decision: a code
+ * on something that moves; the per-code move question (M5) is its guard.
+ * (Before M4c-2 only the tour's own code, or the first code of a tour with
+ * none: UI round 1, U3, second plan review #1.)
  */
 export function autoMeasureAllowed(
   relation: TourRelation | "resolving",
-  tourHasCodes: boolean,
 ): boolean {
-  if (relation === "this-tour") return true;
-  if (relation === "other-tour" || relation === "unknown") return !tourHasCodes;
-  return false;
+  return relation !== "no-tour-open" && relation !== "resolving";
 }
 
 /** What the setup panel says once the code is measured: the next move. */

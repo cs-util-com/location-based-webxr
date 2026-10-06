@@ -68,8 +68,10 @@ export interface VisitAlignmentTracker {
   noteAlignment(now: PickedAlignmentMoment): void;
   /** An object was placed, or moved, at `atMs` (re-opens it). */
   notePlacement(id: string, atMs: number): void;
-  /** The code was measured in this visit at `atMs` (re-opens it). */
-  noteMeasurement(atMs: number): void;
+  /** A code was measured in this visit at `atMs` (re-opens its pick);
+   *  `levelId` keys it per code (M4c-2), absent for a caller that knows
+   *  only one code. */
+  noteMeasurement(atMs: number, levelId?: string): void;
   /** A stable sighting of the code in hand at `atMs`. */
   noteSighting(sighting: CodeSighting, atMs: number): void;
   /** What the settle reads: every pick as it stands now. */
@@ -115,6 +117,8 @@ export function createVisitAlignmentTracker(): VisitAlignmentTracker {
   let current: PickedAlignmentMoment = NO_ALIGNMENT;
   const objects = new Map<string, Timed>();
   let measurement: Timed | null = null;
+  /** Each code's measurement pick, by level id (M4c-2). */
+  const measurements = new Map<string, Timed>();
   /** `windowStartMs`: when the run this entry stands for began. */
   const sightings: (Timed & {
     readonly sighting: CodeSighting;
@@ -138,13 +142,17 @@ export function createVisitAlignmentTracker(): VisitAlignmentTracker {
       current = now;
       for (const t of objects.values()) advance(t);
       if (measurement !== null) advance(measurement);
+      for (const t of measurements.values()) {
+        if (t !== measurement) advance(t);
+      }
       for (const t of sightings) advance(t);
     },
     notePlacement(id, atMs) {
       objects.set(id, open(atMs));
     },
-    noteMeasurement(atMs) {
+    noteMeasurement(atMs, levelId) {
       measurement = open(atMs);
+      if (levelId !== undefined) measurements.set(levelId, measurement);
     },
     noteSighting(sighting, atMs) {
       const last = sightings.at(-1);
@@ -168,6 +176,9 @@ export function createVisitAlignmentTracker(): VisitAlignmentTracker {
           [...objects].map(([id, t]) => [id, timedAlignment(t)] as const),
         ),
         measurement: measurement === null ? null : timedAlignment(measurement),
+        measurements: new Map(
+          [...measurements].map(([id, t]) => [id, timedAlignment(t)] as const),
+        ),
         sightings: sightings.map((t) => ({
           ...timedAlignment(t),
           sighting: t.sighting,
@@ -178,6 +189,7 @@ export function createVisitAlignmentTracker(): VisitAlignmentTracker {
       current = NO_ALIGNMENT;
       objects.clear();
       measurement = null;
+      measurements.clear();
       sightings.length = 0;
     },
   };

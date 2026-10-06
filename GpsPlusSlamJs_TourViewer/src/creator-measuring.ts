@@ -95,7 +95,7 @@ export function wireCreatorMeasuring(deps: {
   codeTour: Pick<ScanOpen, "onDetection" | "tourOf" | "relation">;
   alignmentPicks: Pick<
     CreatorAlignmentPicks,
-    "setSighting" | "sync" | "noteMeasurement"
+    "setSighting" | "sync" | "noteMeasurement" | "noteSighting"
   >;
   draft: Pick<CreatorDraft, "saveMeta">;
   /** The codes: the code in hand, the stored ones, what Finish wrote. */
@@ -107,7 +107,8 @@ export function wireCreatorMeasuring(deps: {
     | "clearInHand"
     | "hasStoredPose"
     | "noteStoredSighting"
-    | "isSaved"
+    | "inBook"
+    | "measuredIn"
   >;
   sessionLive: () => boolean;
   alignmentInfo: () => MintAlignmentInfo;
@@ -279,7 +280,15 @@ export function wireCreatorMeasuring(deps: {
       deps.codes.noteStoredSighting(id, ctx.arSessionGeneration, sighting);
     }
     const inHand = deps.codes.inHand();
-    if (inHand !== null && inHand.id !== id) return;
+    if (inHand !== null && inHand.id !== id) {
+      // Another code of the visit (M4c-2): measured here, or stored. Its
+      // sighting is a code event the settle can tie notes to, never the
+      // code in hand's sighting.
+      if (deps.codes.inBook(id) || deps.codes.hasStoredPose(id)) {
+        deps.alignmentPicks.noteSighting(sighting);
+      }
+      return;
+    }
     deps.alignmentPicks.setSighting(sighting);
     deps.placeEarlierObjects();
   }
@@ -462,7 +471,7 @@ export function wireCreatorMeasuring(deps: {
         // the tap), at the alignment current now; `atMs` stays the tap's.
         if (role.kept === "measurement") {
           deps.alignmentPicks.sync();
-          deps.alignmentPicks.noteMeasurement(measured.atMs);
+          deps.alignmentPicks.noteMeasurement(measured.atMs, id);
         }
         deps.placeEarlierObjects();
       }
@@ -490,16 +499,20 @@ export function wireCreatorMeasuring(deps: {
    * U3: no "Save the measured position" button), and whether to measure it
    * now - one classification for the panel's line and the measurement, so
    * the line never claims a measurement that does not happen:
-   * - the code in hand: `measured`;
+   * - the code in hand, or one measured earlier in this visit (M4c-2):
+   *   `measured`;
    * - a measurement in flight, or a code still being read: `measuring`;
    * - with a code in hand, another STORED code (or one not identified
    *   yet): `seen` - it stays a sighting for the visit log (M3a/M3b review
    *   #6); taking it in hand would change the code this visit's objects
-   *   are corrected through. Only a code with no saved position yet (a new
-   *   code for the tour) is measured then;
+   *   are corrected through (per code in M5). A code with no saved
+   *   position yet is measured then, even past an unsaved code in hand: a
+   *   Finish writes every code of the book since M4c-1;
    * - no tour open: `seen` (scan-to-open opens the code's tour first);
-   * - a code the open tour may not take (`autoMeasureAllowed`: only its
-   *   own, or the first code of a tour with none): `not-measured`;
+   * - a code the open tour may not take: `not-measured`. Since M4c-2
+   *   (`autoMeasureAllowed`, the owner's extended D5: every code seen while
+   *   a tour is open is measured) nothing reaches it; the state goes with
+   *   M5's slot remnants;
    * - otherwise `measuring`, measured now unless this visit already tried
    *   (once per visit and code, plan review #1).
    */
@@ -509,25 +522,23 @@ export function wireCreatorMeasuring(deps: {
   } {
     const id = codeIds.get(text);
     const inHand = deps.codes.inHand();
-    if (id !== undefined && id === inHand?.id) {
+    if (
+      id !== undefined &&
+      (id === inHand?.id || deps.codes.measuredIn(id, ctx.arSessionGeneration))
+    ) {
       return { ready: "measured", measure: false };
     }
     if (inFlight > 0) return { ready: "measuring", measure: false };
     if (inHand !== null && (id === undefined || deps.codes.hasStoredPose(id))) {
       return { ready: "seen", measure: false };
     }
-    // A new code takes the hand only once the code in hand is saved in the
-    // tour (hosted, or written by a Finish): each Finish writes the ONE code
-    // in hand, so measuring past an unsaved one would silently drop it (U3
-    // milestone review #7; before U3 that took a deliberate tap).
-    if (inHand !== null && !deps.codes.isSaved(inHand.id)) {
-      return { ready: "finish-first", measure: false };
-    }
+    // A new code takes the hand even while the code in hand is unsaved:
+    // since M4c-1 a Finish writes every code of the book, so nothing is
+    // dropped (the U3 milestone review's #7 "Finish first" is gone).
     const relation = deps.codeTour.relation(text);
     if (relation === "resolving") return { ready: "measuring", measure: false };
     if (relation === "no-tour-open") return { ready: "seen", measure: false };
-    const tourHasCodes = (ctx.currentLevels?.size ?? 0) > 0 || inHand !== null;
-    if (!autoMeasureAllowed(relation, tourHasCodes)) {
+    if (!autoMeasureAllowed(relation)) {
       return { ready: "not-measured", measure: false };
     }
     const tried = autoMeasured.has(visitKeyOf(text));

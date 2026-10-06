@@ -58,20 +58,21 @@ M4 replaces its one code in hand with the code book.
   feeds the line (`authorStatusLine`'s `ready`) and the measurement
   (`maybeMeasure`), so the line never claims a measurement that does not
   happen:
-  - the code in hand: `measured`;
+  - the code in hand, or one measured earlier in this visit (M4c-2):
+    `measured`;
   - a measurement in flight, or a code still being read: `measuring`;
   - with a code in hand, another STORED code (or one not identified
     yet): `seen` - a sighting for the visit log; taking it in hand would
     change what this visit's objects are corrected through;
-  - with a code in hand that is not saved in the tour yet (neither
-    hosted nor written by a Finish of this page, `creator-codes.ts`'s
-    `isSaved`), a
-    new code: `finish-first` - each Finish writes the ONE code in hand,
-    so measuring past it would silently drop it;
+  - a new code is measured even past an unsaved code in hand (M4c-2):
+    since M4c-1 a Finish writes every code of the book, so the U3
+    milestone review's `finish-first` is gone (the state itself goes with
+    M5's slot remnants);
   - with no tour open: `seen`;
-  - a code the open tour may not take (`autoMeasureAllowed`):
-    `not-measured`, and scan-to-open's "added to the open tour" line is
-    left out so the two do not contradict;
+  - every code seen while a tour is open is measured (the owner's
+    extended D5: another tour's, an unknown link, a QR naming no tour -
+    "another anchor"), so `not-measured` is no longer reached
+    (`autoMeasureAllowed`; the state goes with M5's slot remnants);
   - otherwise it is measured, once per visit and code (`autoMeasured`,
     cleared at the visit's end and when a measured print size is
     adopted), never during a Finish.
@@ -85,6 +86,12 @@ M4 replaces its one code in hand with the code book.
   replaces the tap's "measure again": the settle refines a code measured
   here through its own pick (D33), not through later sightings.
 
+- **Several codes in a visit (M4c-2)**: each measurement keeps its own
+  pick (`noteMeasurement(atMs, levelId)`), and a stable sighting of a code
+  NOT in hand - one measured in this visit, or a stored one - is noted to
+  the picks as that code's event (`alignmentPicks.noteSighting`), never as
+  the code in hand's sighting. The settle then ties each note to the
+  nearest event of any code.
 - **Each detection** records the event, feeds scan-to-open and the
   print-size check, evaluates the fused pose (after EVERY detection: the
   motion detector counts detections) and notes a stable sighting: the code

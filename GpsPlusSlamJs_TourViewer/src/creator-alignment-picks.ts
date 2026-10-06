@@ -33,8 +33,13 @@ export interface CreatorAlignmentPicks {
   /** The visit's sighting of the code in hand changed (also kept by
    *  `creator-codes.ts`). */
   setSighting(sighting: CodeSighting): void;
-  /** The code measured in this visit, at the tap's moment. */
-  noteMeasurement(atMs: number): void;
+  /** A code measured in this visit, at the tap's moment (its own pick,
+   *  M4c-2). */
+  noteMeasurement(atMs: number, levelId: string): void;
+  /** A stable sighting of a code that is NOT in hand - one measured in this
+   *  visit, or a stored one (M4c-2): a code event for the settle, never the
+   *  code in hand's sighting. */
+  noteSighting(sighting: CodeSighting): void;
   /** The picks so far (`visit-alignment-picks.ts`). */
   picks(): ReturnType<VisitAlignmentTracker["picks"]>;
   /** The session's GPS extent over these fixes (the D31 marker). */
@@ -122,8 +127,12 @@ export function wireCreatorAlignmentPicks(deps: {
     sync: syncAlignmentPicks,
     notePlaced,
     setSighting: setVisitSighting,
-    noteMeasurement: (atMs) => {
-      alignmentPicks.noteMeasurement(atMs);
+    noteMeasurement: (atMs, levelId) => {
+      alignmentPicks.noteMeasurement(atMs, levelId);
+    },
+    noteSighting: (sighting) => {
+      syncAlignmentPicks();
+      alignmentPicks.noteSighting(sighting, Date.now());
     },
     picks: () => alignmentPicks.picks(),
     gpsExtent: (positions) => gpsExtent.update(positions),

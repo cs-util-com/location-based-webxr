@@ -55,7 +55,9 @@ lives here.
     with it.
   - `notePlacement(id, atMs)` - an object placed or MOVED (re-opens it at the
     alignment last noted).
-  - `noteMeasurement(atMs)` - the code measured in this visit.
+  - `noteMeasurement(atMs, levelId?)` - a code measured in this visit;
+    with `levelId` it is also kept per code (`picks().measurements`, code
+    book plan M4c-2), and `measurement` stays the latest one.
   - `noteSighting(sighting, atMs)` - a stable sighting of the code in hand.
   - `picks(): VisitAlignmentPicks` - copies: `objects` (by id),
     `measurement`, `sightings` (oldest first), each

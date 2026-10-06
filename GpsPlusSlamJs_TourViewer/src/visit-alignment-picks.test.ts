@@ -230,6 +230,26 @@ describe("createVisitAlignmentTracker (D33)", () => {
   });
 });
 
+describe("one measurement pick per code (code book plan M4c-2)", () => {
+  // Why this test matters: a visit that measures two codes kept ONE
+  // measurement pick, so the first code's was replaced by the second's and
+  // its re-mint went through the wrong moment's alignment. Each code keeps
+  // its own; `measurement` stays the latest, for the one-code settle.
+  it("keeps each code's measurement at its own moment, and the latest as `measurement`", () => {
+    const t = createVisitAlignmentTracker();
+    t.noteAlignment(moment(1, MATURE_GPS_EXTENT_M));
+    t.noteMeasurement(1_000, "a");
+    t.noteAlignment(moment(2, MATURE_GPS_EXTENT_M + 10));
+    t.noteMeasurement(5_000, "b");
+    const picks = t.picks();
+    expect(tagOf(picks.measurements?.get("a")?.alignment)).toBe(1);
+    expect(tagOf(picks.measurements?.get("b")?.alignment)).toBe(2);
+    expect(picks.measurement?.atMs).toBe(5_000);
+    t.reset();
+    expect(t.picks().measurements?.size).toBe(0);
+  });
+});
+
 describe("createVisitAlignmentTracker (property)", () => {
   // Why this test matters: whatever order alignments and placements come
   // in, each object's pick is the definition - the first mature alignment

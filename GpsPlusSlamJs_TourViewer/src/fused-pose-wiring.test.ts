@@ -389,6 +389,9 @@ describe("the creator measures and mints with the fused pose", () => {
       arStore,
       setup,
       detect: (i: number) => config.onDetection?.(fusedEvent(TEXT, i)),
+      /** A detection of another code (code book plan M4c-2). */
+      detectText: (text: string, i: number) =>
+        config.onDetection?.(fusedEvent(text, i)),
     };
   }
 
@@ -578,18 +581,41 @@ describe("the creator measures and mints with the fused pose", () => {
     expect(c.ctx.codeMeasurement?.sizeM).toBe(0.155);
   });
 
-  // U3 milestone review #7: each Finish writes the ONE code in hand, so a
-  // new code measured past an unsaved one would silently drop it.
-  it("asks for a Finish before measuring a new code past one not saved yet", async () => {
+  // Code book plan M4c-2 (replacing U3 milestone review #7's "Finish
+  // first"): a Finish writes every code of the book since M4c-1, so a new
+  // code is measured past an unsaved one and neither is dropped.
+  it("measures a new code past one not saved yet", async () => {
     const c = creator({ aligned: true });
     c.ctx.mintedLevel = { id: "measured-not-finished", json: "{}" };
     for (let i = 0; i < 7; i++) c.detect(i);
-    // Once the code's identity is derived (an async hash), the line says
-    // why it is not measured, and the code in hand stays.
     await vi.waitFor(() => {
-      expect(c.dom.status.textContent).toMatch(/Finish first/);
+      expect(c.ctx.mintedLevel?.id).not.toBe("measured-not-finished");
     });
-    expect(c.ctx.mintedLevel.id).toBe("measured-not-finished");
+    expect(c.dom.status.textContent).not.toMatch(/Finish first/);
+  });
+
+  // Code book plan M4c-2: a code measured earlier in the visit is still
+  // "measured" once another code has taken the hand - not "seen", and
+  // never measured a second time.
+  it("still reads a code measured earlier in the visit as measured after a second code", async () => {
+    const c = creator({ aligned: true });
+    for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    const first = c.ctx.mintedLevel!.id;
+    const second = "https://gps.csutil.com/tour/?qr=second";
+    for (let i = 0; i < 7; i++) c.detectText(second, i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel?.id).not.toBe(first);
+    });
+    // Each measurement bumps the mint generation.
+    const before = c.ctx.mintGeneration;
+    for (let i = 7; i < 14; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.dom.status.textContent).toMatch(/Code measured/);
+    });
+    expect(c.ctx.mintGeneration).toBe(before);
   });
 
   // TourViewer scan-to-open plan §5 #13 (a pre-existing bug): a note in
@@ -650,9 +676,10 @@ describe("the creator measures and mints with the fused pose", () => {
       expect(c.dom.status.textContent).toMatch(/Could not open the tour/);
     });
 
-    // Plan review #1: measuring is automatic, so another tour's code joins
-    // only a tour that has no code yet - never one that has its own.
-    it("measures another tour's code only for a tour with no code yet", async () => {
+    // Code book plan §11 D5, extended by the owner: every code seen while
+    // a tour is open is measured - another tour's too, also for a tour
+    // that has codes (before M4c-2 only for a tour with none).
+    it("measures another tour's code, for a tour with codes too", async () => {
       const s = stub({ kind: "added-to-open-tour" }, "other-tour");
       const first = creator({ aligned: true, codeTour: s.codeTour });
       for (let i = 0; i < 7; i++) first.detect(i);
@@ -664,30 +691,33 @@ describe("the creator measures and mints with the fused pose", () => {
       const withCodes = creator({ aligned: true, codeTour: s.codeTour });
       withCodes.ctx.currentLevels = new Map([["other", { qr: {} } as never]]);
       for (let i = 0; i < 7; i++) withCodes.detect(i);
-      await settled();
-      expect(withCodes.ctx.mintedLevel).toBeNull();
-      // One line, not two that contradict (U3 milestone review #6).
-      expect(withCodes.dom.status.textContent).toMatch(/not measured/);
-      expect(withCodes.dom.status.textContent).not.toMatch(
-        /added to the open tour/,
-      );
+      await vi.waitFor(() => {
+        expect(withCodes.ctx.mintedLevel).not.toBeNull();
+      });
+      expect(withCodes.dom.status.textContent).not.toMatch(/not measured/);
     });
 
-    it("measures nothing with no tour open, or for a code naming no tour", async () => {
+    it("measures nothing with no tour open", async () => {
       // ...and the line never claims a measurement (U3: "ready" is not
       // "measured").
-      for (const [relation, line] of [
-        ["no-tour-open", /Code seen\./],
-        ["not-a-tour", /not measured: it is not a code of the open tour/],
-      ] as const) {
-        const s = stub({ kind: "quiet" }, relation);
-        const c = creator({ aligned: true, codeTour: s.codeTour });
-        for (let i = 0; i < 7; i++) c.detect(i);
-        await settled();
-        expect(c.ctx.mintedLevel, relation).toBeNull();
-        expect(c.dom.status.textContent, relation).toMatch(line);
-        expect(c.dom.status.textContent, relation).not.toMatch(/Code measured/);
-      }
+      const s = stub({ kind: "quiet" }, "no-tour-open");
+      const c = creator({ aligned: true, codeTour: s.codeTour });
+      for (let i = 0; i < 7; i++) c.detect(i);
+      await settled();
+      expect(c.ctx.mintedLevel).toBeNull();
+      expect(c.dom.status.textContent).toMatch(/Code seen\./);
+      expect(c.dom.status.textContent).not.toMatch(/Code measured/);
+    });
+
+    // The owner's extension of D5: a stray QR that names no tour is
+    // "another anchor that can stabilize the virtual objects".
+    it("measures a code naming no tour while a tour is open", async () => {
+      const s = stub({ kind: "quiet" }, "not-a-tour");
+      const c = creator({ aligned: true, codeTour: s.codeTour });
+      for (let i = 0; i < 7; i++) c.detect(i);
+      await vi.waitFor(() => {
+        expect(c.ctx.mintedLevel).not.toBeNull();
+      });
     });
 
     it("names the open tour", () => {

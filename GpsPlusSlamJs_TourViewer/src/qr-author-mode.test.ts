@@ -791,22 +791,19 @@ describe("correctionRefusedLine (M2c review #2)", () => {
   });
 });
 
-describe("autoMeasureAllowed (UI round 1, U3; plan review #1)", () => {
-  // Why: measuring is automatic now, so a stray code must not become the
-  // code in hand: only the open tour's own code, or - for a tour with no
-  // code yet - the first code that names a tour.
+describe("autoMeasureAllowed (code book plan §11 D5, extended by the owner)", () => {
+  // Why: the owner decided every code seen while a tour is open is
+  // measured - even a stray QR that names no tour is "another anchor".
+  // Only a code read with no tour open, or still being read, is not.
   it.each([
-    ["this-tour", true, true],
-    ["this-tour", false, true],
-    ["other-tour", false, true],
-    ["unknown", false, true],
-    ["other-tour", true, false],
-    ["unknown", true, false],
-    ["not-a-tour", false, false],
-    ["no-tour-open", false, false],
-    ["resolving", false, false],
-  ] as const)("%s with codes %s: %s", (relation, hasCodes, allowed) => {
-    expect(autoMeasureAllowed(relation, hasCodes)).toBe(allowed);
+    ["this-tour", true],
+    ["other-tour", true],
+    ["unknown", true],
+    ["not-a-tour", true],
+    ["no-tour-open", false],
+    ["resolving", false],
+  ] as const)("%s: %s", (relation, allowed) => {
+    expect(autoMeasureAllowed(relation)).toBe(allowed);
   });
 });
 

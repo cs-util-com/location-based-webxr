@@ -241,3 +241,54 @@ describe("creator-codes: the book of codes a Finish writes (M4c-1)", () => {
     expect(codes.toWrite()).toEqual([]);
   });
 });
+
+describe("creator-codes: the visit's codes for the settle (M4c-2)", () => {
+  // Why this test matters: the settle can tie each note to the nearest
+  // code event of ANY code of the visit (M4b), but only if it is handed
+  // them: every code measured in this visit, and every stored code seen
+  // stable in it - not only the code in hand.
+  it("lists the codes measured in the visit and the stored codes sighted in it", () => {
+    const ctx = createTourViewerSession();
+    const hosted = levelJson(47.3);
+    ctx.currentLevelTexts = new Map([["h", hosted]]);
+    ctx.currentLevels = new Map([["h", hostedLevel(47.3)]]);
+    const codes = wireCreatorCodes({ ctx });
+    const a = { id: "a", json: levelJson(47.5) };
+    const b = { id: "b", json: levelJson(47.6) };
+    codes.setInHand(a, { ...MEASUREMENT, visit: 2 });
+    codes.setInHand(b, { ...MEASUREMENT, levelId: "b", visit: 2 });
+    codes.noteStoredSighting("h", 2, { ...SIGHTING, levelId: "h" });
+    // An older visit's measurement is not this visit's code event.
+    codes.setInHand(
+      { id: "c", json: levelJson(47.7) },
+      { ...MEASUREMENT, levelId: "c", visit: 1 },
+    );
+    codes.setInHand(b, { ...MEASUREMENT, levelId: "b", visit: 2 });
+    const listed = codes.visitCodes(2);
+    expect(
+      listed.map((c) => [c.level.id, c.measurement?.visit ?? null]),
+    ).toEqual([
+      ["a", 2],
+      ["b", 2],
+      ["h", null],
+    ]);
+    expect(listed[2]!.level.json).toBe(hosted);
+  });
+
+  // Why this test matters: a visit that measured two codes re-mints both;
+  // the one not in hand must be saved in the book without taking the hand.
+  it("saves a re-minted code that is not in hand, without taking the hand", () => {
+    const ctx = createTourViewerSession();
+    const codes = wireCreatorCodes({ ctx });
+    const a = { id: "a", json: levelJson(47.5) };
+    const b = { id: "b", json: levelJson(47.6) };
+    codes.setInHand(a, MEASUREMENT);
+    codes.setInHand(b, { ...MEASUREMENT, levelId: "b" });
+    const a2 = { id: "a", json: levelJson(47.55) };
+    codes.saveLevel(a2);
+    expect(codes.inHand()).toBe(b);
+    expect(codes.toWrite()).toEqual([a2, b]);
+    expect(codes.inBook("a")).toBe(true);
+    expect(codes.inBook("z")).toBe(false);
+  });
+});

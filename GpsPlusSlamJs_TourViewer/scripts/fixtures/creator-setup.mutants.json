@@ -8,7 +8,9 @@
     "src/creator-previews.test.ts",
     "src/visit-settle.codes.test.ts",
     "src/visit-settle.test.ts",
-    "src/visit-settle.golden.test.ts"
+    "src/visit-settle.golden.test.ts",
+    "src/creator-settle.test.ts",
+    "src/creator-codes.test.ts"
   ],
   "mutants": [
     {
@@ -375,6 +377,43 @@
       "file": "src/visit-settle.ts",
       "from": "    ...(view.picks?.sightings ?? []),",
       "to": ""
+    },
+    {
+      "name": "the settle ignores the visit's codes",
+      "region": "measure several",
+      "file": "src/creator-settle.ts",
+      "from": "planVisitSettle(codes === undefined ? input : { ...input, codes })",
+      "to": "planVisitSettle(input)"
+    },
+    {
+      "name": "other codes' re-mints dropped",
+      "region": "measure several",
+      "file": "src/creator-settle.ts",
+      "from": "      if (other.id !== plan.level?.id) deps.codes.saveLevel(other);",
+      "to": "      void other;"
+    },
+    {
+      "name": "other codes' sightings not noted",
+      "region": "measure several",
+      "file": "src/creator-measuring.ts",
+      "from": "        deps.alignmentPicks.noteSighting(sighting);",
+      "to": "",
+      "expected": "known-gap",
+      "why": "observable only when a code NOT in hand is seen again after a long walk with odometry drift and a pin is placed next to that later sighting: the pin then follows that sighting (with the mutant, the other code). Needs growing odometry and a drifted second sighting in the settle harness; filed for M4e (code book plan section 12, M4c-2)."
+    },
+    {
+      "name": "measurement picks lose their code",
+      "region": "measure several",
+      "file": "src/creator-measuring.ts",
+      "from": "deps.alignmentPicks.noteMeasurement(measured.atMs, id);",
+      "to": "deps.alignmentPicks.noteMeasurement(measured.atMs, \"\");"
+    },
+    {
+      "name": "a code measured earlier in the visit reads as new",
+      "region": "measure several",
+      "file": "src/creator-measuring.ts",
+      "from": "(id === inHand?.id || deps.codes.measuredIn(id, ctx.arSessionGeneration))",
+      "to": "id === inHand?.id"
     }
   ]
 }

@@ -132,6 +132,8 @@ export function wireCreatorSettle(deps: {
     | "measurement"
     | "sighting"
     | "remint"
+    | "saveLevel"
+    | "visitCodes"
     | "references"
     | "storedSightings"
   >;
@@ -316,11 +318,37 @@ export function wireCreatorSettle(deps: {
           : { ...picks, measurement: position.pick },
     };
     const choice = settleAlignment(input);
+    // The visit's codes (M4c-2): the code in hand first - with this
+    // settle's re-mint when its position changed - then every other code
+    // the visit measured, or sighted with a stored pose. One code: the
+    // legacy fields decide, exactly as before.
+    const others = deps.codes
+      .visitCodes(visit)
+      .filter((c) => c.level.id !== level?.id);
+    const codes =
+      level === null || others.length === 0
+        ? undefined
+        : [
+            {
+              level,
+              measurement: input.measurement,
+              measurementPick:
+                remint !== null && position !== null
+                  ? position.pick
+                  : (picks.measurements?.get(level.id) ?? null),
+            },
+            ...others.map((c) => ({
+              ...c,
+              measurementPick: picks.measurements?.get(c.level.id) ?? null,
+            })),
+          ];
     // Pure, so planned before the log: the log marks the pose this settle
     // saves for the code, which is how the summary grades what visitors
     // get (M3a/M3b review #2).
     const plan =
-      choice === null || zero === null ? null : planVisitSettle(input);
+      choice === null || zero === null
+        ? null
+        : planVisitSettle(codes === undefined ? input : { ...input, codes });
     const applied =
       position !== null &&
       remint !== null &&
@@ -393,10 +421,12 @@ export function wireCreatorSettle(deps: {
       // The record only: a photo's bytes did not change.
       deps.draft.recordPlacement(object);
     }
-    if (plan.level !== null) {
-      deps.codes.remint(plan.level);
-      void deps.draft.saveMeta();
+    if (plan.level !== null) deps.codes.remint(plan.level);
+    // The visit's other measured codes, re-minted too (M4c-2).
+    for (const other of plan.levels) {
+      if (other.id !== plan.level?.id) deps.codes.saveLevel(other);
     }
+    if (plan.levels.length > 0) void deps.draft.saveMeta();
     // An IMPROVED position takes the pins and photos near it along, so
     // they keep their place next to the poster (owner decision
     // 2026-10-06); a real move leaves them where they are (D19).

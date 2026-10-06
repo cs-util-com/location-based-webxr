@@ -139,7 +139,12 @@ function inOrigin(pose: Pose, origin?: Matrix4): Pose {
 /** The i-th detection of the code, from a camera stepping sideways
  *  (the fused-pose wiring test's walk: stable after about seven), in the
  *  odometry of a session whose origin is `origin` away from the first. */
-function detection(i: number, origin?: Matrix4): QrDetectionEvent {
+function detection(
+  i: number,
+  origin?: Matrix4,
+  text = TEXT,
+  startMs = 0,
+): QrDetectionEvent {
   const dx = -0.3 + 0.1 * i;
   const corners = buildObjectPoints(SIZE_M).map((p) => {
     const w = rotateVectorByQuaternion(TRUE_CODE.rotation, p);
@@ -150,8 +155,8 @@ function detection(i: number, origin?: Matrix4): QrDetectionEvent {
     rotation: yawQ(6 + ((i % 3) - 1) * 6),
   };
   return {
-    text: TEXT,
-    timestamp: i * 125,
+    text,
+    timestamp: startMs + i * 125,
     corners,
     cameraPose: inOrigin(
       { position: [dx, 0, 1.2], rotation: [0, 0, 0, 1] },
@@ -466,19 +471,25 @@ function authoring(
   expect(setup.startAuthorPipeline()).toBe(true);
 
   /** Walk the code until its fused pose is stable. */
-  function seeTheCode(origin?: Matrix4): void {
+  function seeTheCode(origin?: Matrix4, text = TEXT, startMs = 0): void {
     for (let i = 0; i < 8; i += 1) {
-      captured.configs.at(-1)?.onDetection?.(detection(i, origin));
+      captured.configs
+        .at(-1)
+        ?.onDetection?.(detection(i, origin, text, startMs));
     }
   }
 
   /** Measure the code: stable, and the gate open, it is measured on its
    *  own (UI round 1, U3). */
-  async function mint(): Promise<void> {
+  async function mint(
+    origin?: Matrix4,
+    text = TEXT,
+    startMs = 0,
+  ): Promise<void> {
     const measured = () =>
       dispatched.filter((x) => x.type === "tourAuthoring/codeMeasured").length;
     const before = measured();
-    seeTheCode();
+    seeTheCode(origin, text, startMs);
     await vi.waitFor(() => {
       expect(measured()).toBeGreaterThan(before);
       expect(ctx.mintedLevel).not.toBeNull();
@@ -3102,6 +3113,85 @@ describe(
       a.ctx.gpsSamplesAtSessionStart = 0;
       await a.placePin("Gate", [2, 0, -1]);
       expect(a.ctx.placedObjects).toHaveLength(1);
+    });
+  },
+);
+
+describe(
+  "two new codes in one visit (code book plan M4c-2, the owner's case)",
+  { timeout: SLOW_MS },
+  () => {
+    // Why this test matters: the owner's case - two codes printed 20 m
+    // apart, both measured in ONE visit. With one slot the second showed
+    // "Finish first" and was never measured; now both are measured, both
+    // re-minted by the settle, and the draft keeps both levels for the
+    // Finish.
+    it("measures both codes, and the draft keeps both levels", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = authoring({ store });
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      await a.mint();
+      const first = a.ctx.mintedLevel!;
+      // Code B: its own print, 20 m away.
+      const twentyAway = new Matrix4().makeTranslation(20, 0, 0);
+      await a.mint(
+        twentyAway,
+        "https://gps.csutil.com/tour/?qr=second",
+        10_000,
+      );
+      const second = a.ctx.mintedLevel!;
+      expect(second.id).not.toBe(first.id);
+      a.endVisit();
+      await flush();
+      const meta = JSON.parse(String(files.get(META_KEY))) as {
+        levels: { id: string }[];
+      };
+      expect(meta.levels.map((l) => l.id)).toEqual([first.id, second.id]);
+    });
+
+    // Why this test matters: each code keeps its OWN measurement pick
+    // (M4c-2). With one pick, the second code's replaced the first's, and
+    // the first code was re-minted through the wrong moment's alignment -
+    // here 3 m and 8 degrees off where it was measured.
+    it("re-mints each code through the alignment of its own measurement", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = authoring({ store });
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      // A walk wide enough for the alignment to be mature from the start,
+      // so each pick freezes at its own moment.
+      const fixes = Array.from({ length: 60 }, (_, i) => ({
+        id: `fix-${String(i)}`,
+        timestamp: 1_000 + i * 1000,
+        coordinates: [i, 0, 0],
+        latitude: ZERO.lat,
+        longitude: ZERO.lon,
+      }));
+      a.setWalk({ fixes, odometry: fixes.map(() => [0, 0, 0]) });
+      const atA = yawAlignment(0, [0, 400, 0]);
+      a.setAlignment(atA);
+      a.setZero(ZERO);
+      await a.mint();
+      const first = a.ctx.mintedLevel!;
+      // The alignment moves before code B is measured.
+      a.setAlignment(yawAlignment(8, [3, 400, 0]));
+      a.setZero(ZERO);
+      await a.mint(
+        new Matrix4().makeTranslation(20, 0, 0),
+        "https://gps.csutil.com/tour/?qr=second",
+        10_000,
+      );
+      a.endVisit();
+      await flush();
+      const meta = JSON.parse(String(files.get(META_KEY))) as {
+        levels: { id: string; json: string }[];
+      };
+      const settledA = meta.levels.find((l) => l.id === first.id)!;
+      // Re-minted through A's own pick: where it was measured.
+      expect(
+        codeWorldOf(settledA.json).distanceTo(codeWorldOf(first.json)),
+      ).toBeLessThan(0.01);
     });
   },
 );

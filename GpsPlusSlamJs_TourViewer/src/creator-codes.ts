@@ -77,6 +77,20 @@ export interface CreatorCodes {
   storedSightings(): IterableIterator<StoredSighting>;
   /** `levelId` is saved in the tour: hosted, or written by a Finish. */
   isSaved(levelId: string): boolean;
+  /** The visit's codes for the settle (M4c-2): every code measured in
+   *  `visit` (book order), then every stored code sighted stable in it,
+   *  with its stored text. */
+  visitCodes(visit: number): {
+    level: LevelText;
+    measurement: CodeMeasurement | null;
+  }[];
+  /** A code re-minted by the settle: saved in the book; it takes the hand
+   *  only if it already had it. */
+  saveLevel(level: LevelText): void;
+  /** This page took `levelId` (measured, restored or kept it). */
+  inBook(levelId: string): boolean;
+  /** `levelId` was measured in `visit`. */
+  measuredIn(levelId: string, visit: number): boolean;
   /** The codes the draft keeps: every code of the book whose saved text
    *  the HOSTED zip does not hold yet, a Finish's among them (its zip
    *  reaches the world only with the upload). */
@@ -201,6 +215,40 @@ export function wireCreatorCodes(deps: {
       finishedLevelIds.has(levelId),
     toWrite: () => codesToWrite(withHostedTexts()),
     notHosted: () => codesNotHosted(withHostedTexts()),
+    visitCodes: (visit) => {
+      takeInHand();
+      const measured = [...book.values()].flatMap((c) =>
+        c.measurement?.visit === visit && c.saved !== null
+          ? [
+              {
+                level: { id: c.levelId, json: c.saved },
+                measurement: c.measurement,
+              },
+            ]
+          : [],
+      );
+      const taken = new Set(measured.map((c) => c.level.id));
+      const sighted = [...storedCodeSightings].flatMap(([id, seen]) => {
+        if (seen.visit !== visit || taken.has(id)) return [];
+        const json = book.get(id)?.saved ?? ctx.currentLevelTexts?.get(id);
+        return json === undefined || json === null
+          ? []
+          : [{ level: { id, json }, measurement: null }];
+      });
+      return [...measured, ...sighted];
+    },
+    saveLevel: (level) => {
+      book = withSaved(book, level);
+      if (ctx.mintedLevel?.id === level.id) ctx.mintedLevel = level;
+    },
+    inBook: (levelId) => {
+      takeInHand();
+      return book.has(levelId);
+    },
+    measuredIn: (levelId, visit) => {
+      takeInHand();
+      return book.get(levelId)?.measurement?.visit === visit;
+    },
     restoreLevels: (levels) => {
       takeInHand();
       book = withDraft(book, levels);
