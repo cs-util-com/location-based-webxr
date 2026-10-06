@@ -36,6 +36,7 @@ import type {
   SelectTargetRay,
 } from "gps-plus-slam-app-framework/ar";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
+import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import type { RenderedTourObjects } from "./content-placement.js";
@@ -132,6 +133,10 @@ export interface TourViewerHooks {
    *  from: an open started in step 4 must not answer by jumping to step 2
    *  and collapsing step 4, whose content is the AR overlay root. */
   presentTourForPrint(url: string, origin?: "host-step" | "measure-step"): void;
+  /** A tour opened from a FILE (tour kit plan K0): it has no link to
+   *  print, so the print step keeps asking for one, and the wizard moves on
+   *  as for a link (`origin` as above) without remembering a link. */
+  presentLocalTour(origin?: "host-step" | "measure-step"): void;
   /** A tour closed: the finish step's page-side state is stale. */
   resetFinishStep(): void;
   /** A creator's AR visit is running (its world group exists): show the
@@ -151,6 +156,9 @@ export interface TourViewerHooks {
    *  and step 4 stops offering to open a tour at all - for the rest of the
    *  page's life (M3 milestone review #3). */
   presentNoTour(): void;
+  /** Before another tour replaces the open one: false when the creator
+   *  declined to leave an unsaved rebuilt file (UI round 1, U2). */
+  confirmLeaveTour(): boolean;
   /** A tour opened AND its manifest settled: offer any unsaved work this
    *  device still holds for it, or delete a draft the hosted zip has
    *  already absorbed. It waits for the manifest because "spent" is
@@ -166,17 +174,29 @@ export interface TourViewerHooks {
   reconsiderScanGate(
     levels: ReadonlyMap<string, QrLevel> | "unavailable",
   ): void;
+  /** The visitor's stations (tour kit plan K4): re-judge after a store
+   *  change or a camera frame. */
+  tickStations(): void;
+  /** A printed code locked in the visitor's AR (its level id). */
+  stationCodeLocked(levelId: string): void;
+  /** Inside the "Start the tour" tap: unlock the stories' sound. */
+  unlockStationAudio(): void;
+  /** The AR session ended or the tour closed: the story stops, the HUD
+   *  goes; the progress stays with the open tour. */
+  stopStations(): void;
 }
 
 export function createUnwiredHooks(): TourViewerHooks {
   return {
     renderArStatus: () => undefined,
     renderArEntry: () => undefined,
+    confirmLeaveTour: () => true,
     renderAuthorReadout: () => undefined,
     tryPlaceTour: () => undefined,
     startAuthorPipeline: () => false,
     startViewerPipeline: () => false,
     presentTourForPrint: () => undefined,
+    presentLocalTour: () => undefined,
     resetFinishStep: () => undefined,
     beginAuthorVisit: () => undefined,
     endAuthorVisit: () => undefined,
@@ -186,6 +206,10 @@ export function createUnwiredHooks(): TourViewerHooks {
     startScanGate: () => undefined,
     resetScanGate: () => undefined,
     reconsiderScanGate: () => undefined,
+    tickStations: () => undefined,
+    stationCodeLocked: () => undefined,
+    unlockStationAudio: () => undefined,
+    stopStations: () => undefined,
   };
 }
 
@@ -202,6 +226,10 @@ export interface TourViewerSession {
    *  is pending or broken, or it would overwrite the creator's placement
    *  with an empty list (M3 review #5). */
   tourManifestStatus: "pending" | "settled" | "broken";
+  /** The creator's walk in the open tour (scan-pass plan S1,
+   *  `tour-read-set.ts`), set when `tour.json` settles: the gallery and
+   *  the photo ring leave it out. Empty with no manifest. */
+  scanEntries: ReadonlySet<string>;
   /** Bumped per open; a slower open that finishes after a newer one started
    *  must close itself instead of clobbering the newer session. */
   openGeneration: number;
@@ -289,8 +317,16 @@ export interface TourViewerSession {
   /** The last finish failure, shown with priority until the next tap
    *  (the readout used to erase it on the next store dispatch, M3 review #1). */
   finishError: string | null;
-  /** The rebuilt zip awaiting download in step 5. */
-  rebuiltZip: { blob: Blob; filename: string } | null;
+  /** The rebuilt zip awaiting download in step 5, with the list its
+   *  `manifest.json` carries when the tour has one (K1 milestone review
+   *  R7): a second Finish rebuilds from this zip, so its list starts there. */
+  rebuiltZip: {
+    blob: Blob;
+    filename: string;
+    signedManifest?: SignedTourManifest;
+    /** A save delivered it (UI round 1, U2: the leave guard). */
+    delivered?: boolean;
+  } | null;
   /** What the panel calls the open tour (`tourLabel`); null with none. */
   tourLabel: string | null;
   /** Content placed in THIS setup session (M4): the records the finish
@@ -460,6 +496,7 @@ export function createTourViewerSession(): TourViewerSession {
     currentLevels: null,
     tourManifest: null,
     tourManifestStatus: "settled",
+    scanEntries: new Set(),
     openGeneration: 0,
     qrController: null,
     fusedPose: null,

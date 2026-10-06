@@ -7,6 +7,7 @@ import type { QrDetectionEvent } from "gps-plus-slam-app-framework/ar/qr/qr-trac
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 
 import {
+  autoMeasureAllowed,
   archiveSizeNote,
   authorStatusLine,
   finishBlockedHint,
@@ -28,7 +29,6 @@ import {
   adoptedSizeNote,
   codeTourLine,
   correctionRefusedLine,
-  replaceCodeConfirmText,
   type AuthorPipelineDeps,
 } from "./qr-author-mode";
 
@@ -124,10 +124,12 @@ describe("the print-size check's copy (QR size consensus plan S3a)", () => {
       notStableReason: null,
     } as unknown as QrFusedPose;
     const ready = authorStatusLine("A", stable, align);
-    expect(ready.text).toBe("Measured and stable — save the position.");
+    // UI round 1, U3: measured on its own, so the line says so - no
+    // button to tap.
+    expect(ready.text).toBe("Code measured.");
     const pending = authorStatusLine("A", stable, align, true);
     expect(pending.text).toBe(
-      "Measured and stable — save the position. Take a step sideways to check the print size.",
+      "Code measured. Take a step sideways to check the print size.",
     );
     // The mint is not held (plan §12 #3).
     expect(pending.canMint).toBe(true);
@@ -145,7 +147,7 @@ describe("the print-size check's copy (QR size consensus plan S3a)", () => {
 
   it("confirms an adopted size and says what to do next", () => {
     expect(adoptedSizeNote(0.155)).toBe(
-      "Now using 15.5 cm (0.155 m) - walk slowly around the code again, then save the position.",
+      "Now using 15.5 cm (0.155 m) - walk slowly around the code again to measure it at this size.",
     );
   });
 });
@@ -200,7 +202,7 @@ describe("authorStatusLine", () => {
     );
     const ready = authorStatusLine("text", fused(), GOOD_ALIGNMENT_INFO);
     expect(ready.canMint).toBe(true);
-    expect(ready.text).toMatch(/save the position/i);
+    expect(ready.text).toMatch(/Code measured/);
   });
 
   // Plan §60-§61 #11: the readout says what actually gates the fused pose,
@@ -610,6 +612,18 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
     expect(final, "and what to do instead").toMatch(/restart AR/);
   });
 
+  it("names an offline phone as offline (K0)", () => {
+    expect(
+      codeTourLine({ kind: "failed", cause: "offline", retrying: true }),
+    ).toMatch(/offline/);
+  });
+
+  it("names a too-large tour as too large (K0)", () => {
+    expect(
+      codeTourLine({ kind: "failed", cause: "too-large", retrying: false }),
+    ).toMatch(/too large/);
+  });
+
   it("stays short enough for the phone panel", () => {
     // The longest line shares the panel with the live readout at 360 px;
     // describeOpenError's 200-character Drive text was the review's worst
@@ -619,6 +633,8 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
       "cors",
       "corrupt",
       "unusable-link",
+      "too-large",
+      "offline",
       "other",
     ] as const;
     for (const cause of causes) {
@@ -765,33 +781,43 @@ describe("correctionRefusedLine (M2c review #2)", () => {
   });
 });
 
-describe("replaceCodeConfirmText (M4 review #3)", () => {
-  // Why this matters: the explicit replace moves the code for every
-  // visitor, and visitors are lined up with the code - so notes placed
-  // against the OLD position keep their stored geo but appear shifted by
-  // about the replace's size. "Objects already placed keep their own
-  // positions" was true of the stored numbers and misleading about what a
-  // visitor sees; the creator has to know the size before confirming.
-  it("says how far the code moves and turns, and that earlier notes will appear shifted by about that much", () => {
-    const text = replaceCodeConfirmText({ horizontalM: 3.44, yawDeg: 4.2 });
-    expect(text).toMatch(/Everyone who opens the tour/);
-    expect(text).toMatch(/about 3\.4 m/);
-    expect(text).toMatch(/4°/);
-    expect(text).toMatch(/keep their saved positions/);
-    expect(text).toMatch(/appear shifted by about that much/);
-    expect(text).not.toMatch(/keep their own positions\.$/);
+describe("autoMeasureAllowed (UI round 1, U3; plan review #1)", () => {
+  // Why: measuring is automatic now, so a stray code must not become the
+  // code in hand: only the open tour's own code, or - for a tour with no
+  // code yet - the first code that names a tour.
+  it.each([
+    ["this-tour", true, true],
+    ["this-tour", false, true],
+    ["other-tour", false, true],
+    ["unknown", false, true],
+    ["other-tour", true, false],
+    ["unknown", true, false],
+    ["not-a-tour", false, false],
+    ["no-tour-open", false, false],
+    ["resolving", false, false],
+  ] as const)("%s with codes %s: %s", (relation, hasCodes, allowed) => {
+    expect(autoMeasureAllowed(relation, hasCodes)).toBe(allowed);
   });
+});
 
-  it("rounds a large move to whole metres and leaves out a negligible turn", () => {
-    const text = replaceCodeConfirmText({ horizontalM: 23.6, yawDeg: 0.2 });
-    expect(text).toMatch(/about 24 m/);
-    expect(text).not.toMatch(/°/);
-  });
-
-  it("still says what happens to earlier notes when the size is unknown", () => {
-    const text = replaceCodeConfirmText(null);
-    expect(text).toMatch(/Everyone who opens the tour/);
-    expect(text).toMatch(/appear shifted/);
-    expect(text).not.toMatch(/ m /);
+describe("authorStatusLine's ready line says what became of the code (UI round 1, U3)", () => {
+  // Why: the code is measured on its own now, so the gate being open is
+  // not the same as "measured": a code of another tour is not measured at
+  // all, and the line must not claim it was.
+  const align = { hasMatrix: true, sampleCount: 5 };
+  const stable = {
+    status: "stable",
+    notStableReason: null,
+  } as unknown as QrFusedPose;
+  it.each([
+    ["measured", "Code measured."],
+    ["measuring", "Measuring the code…"],
+    ["seen", "Code seen."],
+    [
+      "not-measured",
+      "Code seen - not measured: it is not a code of the open tour.",
+    ],
+  ] as const)("%s", (ready, text) => {
+    expect(authorStatusLine("A", stable, align, false, ready).text).toBe(text);
   });
 });

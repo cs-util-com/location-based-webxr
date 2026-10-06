@@ -5,8 +5,7 @@
 The creator's AR setup (guided-setup plan M3; `author-mode.ts` until
 2026-09-08): the panel inside `#ar-root` that guides the creator through
 measuring the hung code (the mint gate: a stable pose AND a GPS alignment
-with at least `MIN_ALIGNMENT_SAMPLES` fixes since this session started),
-keeps the measured level in the session, and on Finish rebuilds the hosted
+with at least `MIN_ALIGNMENT_SAMPLES` fixes since this session started; measured on its own since UI round 1 U3, see "Automatic measuring" below), keeps the measured level in the session, and on Finish rebuilds the hosted
 zip in the browser (DEC-N6) with `qr/<id>.json` and `tour.json`, ends the
 AR session and reveals the download at the END of step 4, where it is its
 own tap (a download needs its own user gesture).
@@ -114,6 +113,36 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   already carries its ids. Not on the download tap - on Android that
   resolves true the moment a download starts, and the creator still has to
   upload the file by hand afterwards.
+- **The Finish bakes a recording's photo spots** (scan-pass plan S1,
+  S-D11): a tour that carries a recording and no `captureSpots` yet is
+  replayed once (`capture-bake.ts`, busy line `FINISH_LABELS.placingPhotos`)
+  and `tour.json` gains the spots, written at minor 1. Spots the tour
+  already carries are kept, not baked again. A recording that cannot be
+  read or joined never fails the Finish (the tour keeps the visitor's live
+  join, as before); a cap's refusal and a failed integrity check do, as
+  every read's does.
+- **The save cannot be forgotten** (UI round 1, U2, `finish-guard.ts`):
+  after a Finish the save button is scrolled into view and focused; on a
+  phone, Finish steps aside while the rebuilt file waits for its save
+  (`hideFinishForResult`); after AR ends without a Finish (the back
+  gesture), Finish reads "Finish and save your changes"; a delivered save
+  marks `ctx.rebuiltZip.delivered`; `leaveNeedsConfirm()` and `leaveQuestion()` (exported) are what `main.ts` asks before another tour or leaving the page. A failed Finish reveals a file it already made, and the keep-the-walk switch hides while a rebuilt file waits (the next Finish rebuilds from it; U2 milestone review #2, #4).
+- **The published copy leaves the creator's walk out** (scan-pass plan
+  S1, S-D10): unless the creator ticks "Keep the walk recording in the tour
+  file" (`keepScanRow` / `keepScanInput`, on the page BEFORE AR since UI
+  round 1, U2 - hidden in a session, since the Finish there reads it -,
+  shown only for a tour that carries a walk, counted once per tour and
+  manifest), the Finish removes
+  `scanEntryNames` of the manifest it writes (`tour-read-set.ts`): the
+  action stream, `session.json` and the recorded frames no visitor sees.
+  A file the recording did not write (a README, credits) always stays.
+  **Never without baked spots** (S1 milestone review #2): a recording the
+  bake declined or could not read keeps its walk, and the ready line says
+  why (`FINISH_LABELS.photosNotPlaced`); the walk is then the only way a
+  viewer can place the photos. The tick is cleared with the Finish step
+  when the tour closes (review #9).
+  The ready line then says so (`FINISH_LABELS.scanLeftOut`), because the
+  hosted file may be the creator's only copy of the walk.
 - The finish's append is **id-deduplicating**, because the serializer
   rejects duplicates: one already-hosted object would otherwise make every
   finish throw for as long as the draft was restored, with no escape inside
@@ -125,23 +154,16 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   - `openDraftStore(key)` resolves this tour's draft namespace, or
     `undefined` where there is no persistence. Injected so the unit tests
     and the e2e can supply one without OPFS.
-  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; mintButton; finishButton; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; replaceCodeButton; replaceCodeConfirm; replaceCodeConfirmText; replaceCodeYes; replaceCodeNo; movePrompt; movePromptText; movePromptUse; movePromptCopy; movePromptLater; moveUndo; moveUndoText; moveUndoButton }`
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; movePrompt; movePromptText; movePromptUse; movePromptCopy; movePromptLater; moveUndo; moveUndoText; moveUndoButton }`
     - `objectList` (authoring plan 2026-09-28-0953 §3.4, M4) - the
       `object-list.ts` view (`bind`, `render`); `main.ts` builds it over
       `#object-list` inside the panel.
-    - `replaceCode*` - the explicit "Replace the code's saved
-      position" (a re-measure; its label was shortened to one line for the
-      360x640 overlay, 2026-10-01) and its confirm step, inside `#setup-controls`.
-    - `movePrompt*` (M5b) - the moved-code prompt and its three answers,
-      inside `#setup-controls`; `moveUndo*` - the replace's Undo, in the
-      panel but outside the controls (it lasts until Finish, on the page
-      too).
+    - `movePrompt*` (M5b; UI round 1, U3) - "Did the poster move here?" and its three answers, inside `#setup-controls` - the one question about the code's position left (the explicit replace and its confirm are gone); `moveUndo*` - the Undo of a "Yes, it moved" while its visit runs.
   - `arSessionLive(status)` - whether the controller's status means a
     session is up (`starting` / `running` / `stopping`). Exported because
     `main.ts` hands the same predicate to the wizard, which must not
     collapse step 4 while it is true.
-    - `panel`, `status`, `controls`, `mintButton`, `finishButton` live
-      inside `#ar-root` (the DOM overlay); `finishBlock`, `finishStatus`,
+    - `panel`, `status`, `controls`, `finishButton` live inside `#ar-root` (the DOM overlay); `finishBlock`, `finishStatus`,
       `downloadButton` and `replaceHelp` sit at the end of step 4 but
       OUTSIDE `#ar-root` - the download is tapped after the session ends,
       so putting it over the camera would promise otherwise.
@@ -239,12 +261,24 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   the store teardown resets the alignment) and a Finish tapped while the
   session is live run `settleVisit`: `planVisitSettle` (`visit-settle.ts`)
   recomputes the geo of the code measured in this visit and of every object
-  placed in it through one alignment; the records replace the tap-time ones
+  placed in it - since D33 each through the first mature alignment after its
+  own moment (`visit-alignment-picks.ts`, fed by `syncAlignmentPicks` on
+  every store change with the alignment, the zero, the session GPS extent
+  and the walked distance (`walked-distance-tracker.ts`, reviews R1 and R3 of
+  D33);
+  a pin at its Save, a photo at its tap, a move through
+  `object-editing.ts`'s `notePlaced`, the measurement when its level identity resolves (its `atMs` is the tap's), each
+  stable sighting of the code in hand; emptied at each visit's start and
+  end), and a note within `CODE_EVENT_REACH_M` walked of a code event of
+  the visit shares the code's alignment through the nearest event; the records
+  replace the tap-time ones
   in `ctx.placedObjects` and `ctx.mintedLevel`, each settled object's draft
   record and the meta are REWRITTEN (the per-object file design already
   keys by id; no format change - so a page reload keeps the settled geo,
   while a killed tab keeps the tap-time geo, accepted in the plan), and
-  `tourAuthoring/settled` is logged.
+  `tourAuthoring/settled` is logged. The input carries the end alignment's
+  GPS extent (`alignmentGpsExtentM`), the D31 heading marker of a code
+  re-minted through it (review R7 of D33).
   - **Each visit settles once, keyed by the visit the settle ran for**
     (`visitSettles`, M2c review #1): the record holds the basis, the
     alignment used, the store's alignment, the zero and the sighting. A
@@ -261,8 +295,9 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   - **Late arrivals join their visit's settle** (M2c review #6): the record
     is kept even for a visit with nothing to settle yet. A photo whose
     encode lands after its visit settled (the session ended, or a Finish
-    ran) is minted through the record's alignment and zero - which IS the
-    settle - and logged as `tourAuthoring/settled` with trigger
+    ran) is minted through the record's alignment and zero - the settle's
+    choice for an object placed at the visit's end, which a photo landing
+    late is (its capture a moment before the end) - and logged as `tourAuthoring/settled` with trigger
     `late-arrival`. Minting it through the store instead would use an
     alignment that belongs to no visit (the teardown resets it).
   - **A Finish removes from the list only what its zip carries** (the ids
@@ -301,8 +336,7 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
       CURRENT alignment (`judgeRefusal`) - but that updates the refusal
       (`liveRefusal`: the panel line) only. The objects'
       frame is re-chosen only by `placeEarlierObjects`: a stable sighting
-      of the code in hand, and the explicit paths (a measurement of the
-      code - a mint or a replace -, a replace's Undo, the visit's start). So
+      of the code in hand, and the explicit paths (a measurement of the code, the visit's start). So
       while the code is out of view the objects stay where its last
       sighting put them, however far GPS drifts (M5b had re-placed them
       on every fix, a jump of at least the plausibility bound - 13.5 m at
@@ -370,7 +404,8 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
   - **A stored pose stays the reference** (D10b, M2c review #5): the level
     in hand before the tap is captured, and once the id lands
     `measurementRole` (`visit-settle.ts`) decides - with the hosted zip's
-    `qr/<id>.json` read through `hostedLevelJson` when nothing of this code
+    `qr/<id>.json` read through `hostedLevelJson` (`session.loadEntryText`,
+    under the text cap, K0 milestone review R10) when nothing of this code
     is in hand (ignored if another tour was opened meanwhile). A kept
     reference stays `mintedLevel` (so Finish writes the hosted file back
     byte for byte), the measurement becomes this visit's sighting, the
@@ -398,7 +433,11 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
   `session.manifestWrap` (the session's own prefix, never re-derived).
   The input is the **newest bytes for this tour**: `ctx.rebuiltZip` when a
   previous finish produced one, else `session.readWholeArchive()` (the
-  warmed copy, else range slices). On success `ctx.rebuiltZip` is set,
+  warmed copy, else range slices). The hosted archive is untrusted, so its
+  rebuild inflates under the session's own budget (`session.budget`, K0
+  milestone review R1) and a deflate bomb fails the Finish with the cap's
+  sentence; a previous Finish's zip is this page's own stored output and
+  gets the rebuild's default budget. On success `ctx.rebuiltZip` is set,
   `ctx.tourManifest` **advances to what was just written** and
   `ctx.placedObjects` is cleared, the AR session is ended through the
   controller (the framework's session-end path runs the app teardown) and
@@ -504,12 +543,26 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
     (`previewKey`) is replaced, one whose object is gone is disposed, the
     rest are left alone. Each visit starts with a fresh render into its
     frames. A hosted photo's bytes come from the zip
-    (`session.loadContentEntry`); a photo a Finish took out of
+    (`session.loadContentEntry`), decoded under the tour pixel cap
+    (`maxPixels`, tour kit K4 review R2); a photo a Finish took out of
     `placedObjects` keeps its bytes in `finishedPhotoBlobs` until the tour
     closes, since the hosted zip lacks them until the upload.
   - **The Finish replaces and filters** (`applyObjectChanges`), removes
     each deleted photo's content file (`contentEntriesToRemove` into the
-    rebuild's `remove`), and afterwards drops from `placedObjects` only
+    rebuild's `remove`), drops `manifest.sig.json` (a signature over the
+    old list cannot cover the files this Finish rewrites: the output is an
+    honest unsigned tour until K2 re-signs on export) and, for a LISTED
+    tour, writes `manifest.json` again as the series' next version
+    (`successorManifest`, K1 milestone review R7: the same series id, the
+    next version, the hash of every file the zip holds - the kept ones from
+    the list the input carries, the written ones hashed at the Finish; a
+    second Finish starts from the list the first one wrote, kept in
+    `ctx.rebuiltZip.signedManifest`). Dropping it, as K1 first did, dropped
+    the series id's only home. A phone that knew the signed tour still
+    warns that this copy is not signed. A NEW level file of a listed tour
+    is written inside the tour's folder (`manifestWrap`), where its list
+    can name it (a root `qr/` beside a wrapped list would be unlisted).
+    Afterwards it drops from `placedObjects` only
     what the zip carries WITH THE SAME CONTENT, and clears the applied
     deletions. The draft's tombstones stay until the hosted zip lacks the
     ids, the same proof the objects wait for.
@@ -527,17 +580,74 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
     since M4 review #4 hands the tap's target ray as a second argument
     (backward compatible: MinimalExample's one-parameter handler is as it
     was), so the pick goes through the tapped point.
-  - **The explicit replace of a stored code** (M2c review #5): offered in
-    AR while the level in hand is a stored pose, enabled with the mint gate
-    for that code in view, behind a confirm step (`replaceCodeConfirmText`,
-    M4 review #3) that says the code moves for every visitor - by how much,
-    from this visit's sighting (`sightedCodeOffset`), kept current while
-    the confirm is open - and that notes placed against the old position
-    keep their stored geo and so will appear shifted by about that much.
-    Confirmed, the measurement becomes the reference (`kept:
-"measurement"`, logged with `replaced`); without it a new measurement
-    of a stored code stays a correction sighting. Notes never move with
-    the code (owner decision D19).
+  - **Automatic measuring** (UI round 1, U3; plan review #1; U3 milestone
+    review #6, #7): there is no "Save the measured position" button. Each
+    render classifies the code in view (`codeOutcome`), and the same answer
+    feeds the line (`authorStatusLine`'s `ready`) and the measurement
+    (`maybeMeasure`), so the line never claims a measurement that does not
+    happen:
+    - the code in hand: `measured`;
+    - a measurement in flight, or a code still being read: `measuring`;
+    - with a code in hand, another STORED code (or one not identified
+      yet): `seen` - a sighting for the visit log; taking it in hand would
+      change what this visit's objects are corrected through;
+    - with a code in hand that is not saved in the tour yet (neither
+      hosted nor written by a Finish of this page, `finishedLevelIds`), a
+      new code: `finish-first` - each Finish writes the ONE code in hand,
+      so measuring past it would silently drop it;
+    - with no tour open: `seen`;
+    - a code the open tour may not take (`autoMeasureAllowed`):
+      `not-measured`, and scan-to-open's "added to the open tour" line is
+      left out so the two do not contradict;
+    - otherwise it is measured, once per visit and code (`autoMeasured`,
+      cleared at the visit's end and when a measured print size is
+      adopted), never during a Finish.
+
+    A measurement that lost the gate is tried again; one the mint or the
+    identity refused is not, and its reason becomes the panel's note (the
+    only note a measurement writes - it clears none, and no failed
+    Finish's line). It keeps the level in hand while its identity is
+    derived (an emptied hand refused every placement in that window) and
+    holds Finish off while it runs (`measuring`). The once-per-visit rule
+    replaces the tap's "measure again": the settle refines a code measured
+    here through its own pick (D33), not through later sightings.
+
+  - **The code's saved position, decided at the settle** (UI round 1, U3;
+    owner decisions 2026-10-06; U3 milestone review #1-#5, #8): no button
+    replaces a stored code. At each visit's settle `planCodePosition`
+    (`code-position-settle.ts`) judges this visit's latest sighting of the
+    stored code in hand with `decideCodePosition` (`code-position-rule.ts`),
+    through ONE source that the re-mint then takes: the sighting's own pick
+    when its walk is reliable, else the end alignment (a pick freezes at
+    40 m of GPS spread, which phones at more than about 8 m accuracy never
+    find enough).
+    - It replaces a weaker or unknown saved position after a walk the
+      summary's model calls enough at this accuracy (at least 10 m), and
+      keeps a well-walked one.
+    - It leaves a code seen beyond the code correction's plausibility bound
+      or 15 m (or turned beyond its yaw bound) to the move question.
+    - It applies a remembered "Yes, it moved" only while this visit still
+      sees the code 15 m or more away, under the same walk rule.
+    - A change hands `planVisitSettle` a measurement of the code (the
+      sighting's pose, the print size the visit solved at, the chosen
+      pick), so it is re-minted as if measured here and this visit's
+      objects settle relative to it.
+    - An IMPROVED position moves the tour's other objects within 40 m of
+      the code's old position with it (`moveEarlierWithCode`,
+      `move-with-code.ts`: yaw and position only, as the code correction;
+      hosted, restored and earlier visits' objects, as edits by id; a pin
+      keeps its orientation). A real MOVE leaves them (D19) and marks the
+      visit's move boundary.
+    - A settle redone after a failed Finish re-applies the decision it
+      already made (`appliedCode`): the objects are not moved twice and the
+      visit log keeps the saved pose.
+    - Every "Yes, it moved" of the code is forgotten at the settle, applied
+      or not: a waiting one is asked again next time, never applied in a
+      later visit out of Undo's reach.
+    - The decision is logged on `tourAuthoring/settled` as `codePosition`
+      (also for a visit that settled nothing else), and the result screen's
+      line after Finish is `codePositionSentence` over the settles since
+      the last Finish.
   - **The moved-code prompt** (authoring plan §3.6 "Authoring (D20 ask
     once)", M5b; `code-move-prompt.ts` decides WHEN): on every readout
     render the tracker is fed the latest sighting's offset through the
@@ -550,21 +660,7 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
     fix's time, and the remembered answers. It asks only for a stored
     level in hand, in a live session, outside a Finish. A new ask logs
     `tourAuthoring/codeMovePrompted` once per run beyond the trigger.
-    - "Use the new spot" runs the Replace button's `measureCode(true)`
-      behind the same gate (`canMint && codeInViewIsLevelInHand`): the
-      button reads "Using the new spot…" and the other two are disabled
-      until it resolves; `measureCode` resolves with its outcome
-      (`replaced`, `measured`, `kept`, `failed` with a reason,
-      `superseded`). Only `replaced` counts as answered. Its outcome
-      carries the draft's meta write of the replace (`saved`), and the
-      button stays busy until that settles (M5b review #7): then the
-      status line says the saved position is the new spot, or, for a
-      refused write, that it is the new spot here but not saved on this
-      device (the backup notice is spent with it). Anything else says "Could not use the
-      new spot..." in the status line (the AR session's error channel) and
-      the prompt comes back while the offset stays beyond the trigger. Logged as
-      `tourAuthoring/codeMoveAnswered` with `replaced` and `error`.
-    - "It's a second copy" / "Not now": remembered per level and spot
+    - Every answer ("Yes, it moved", "No, it's a second poster", "Not now") is remembered per level and spot
       (`rememberMoveAnswer`), in memory and in the draft's meta
       (`moveAnswers`, re-stated by every `recordMeta`, read at tour open
       whether or not the draft is restored and merged with answers given
@@ -574,25 +670,18 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
       the prompt saw it) is kept out of the visit log (`logVisit`): it is
       another print, so it must not count as a visit of the stored code
       in `codeVisitPoses` (M5b review #11). "Not now" leaves it a visit.
-    - **The move boundary**: ANY replace - the prompt's or the Replace
-      button's - records its visit as the code's move boundary
-      (`movedInVisit`, set in `measureCode`; M5b review #3), because
-      either moves the code for everyone.
-    - **Undo until Finish, while the page stays open** (memory only: a
-      reload loses it, which the hint says; M5b review #5): any replace
-      (prompt or Replace button) keeps
-      the level it replaced (`codeMeasured`'s `replaced`) and the
-      measurement that was in hand; Undo puts both back, bumps
-      `mintGeneration` (an in-flight measurement must not land over it),
-      drops the visit's move boundary when THIS replace set it (an earlier
-      replace's boundary in the same visit stays), re-recording an already
-      logged visit without the mark, counts a prompt's spot as "Not now", logs
-      `tourAuthoring/codeReplaceUndone`, and reads "Undoing…" until the
-      meta write lands, then "back where it was" or that the device could
-      not save it. A Finish that wrote the zip, a tour close, an adopted
-      print size, or another code's level in hand ends it; the moment a
-      measurement leaves no level in hand (its identity hash in flight)
-      does not (M5b review #4).
+    - "Yes, it moved" changes nothing at once: the status line says the
+      new spot is saved when the visit ends if the creator walked enough,
+      and the settle applies it (above). Logged as
+      `tourAuthoring/codeMoveAnswered` `moved` (`replaced` false).
+    - **The move boundary**: a move the settle APPLIED records its visit as
+      the code's move boundary (`movedInVisit`, set before the visit is
+      logged); an improved position of the same poster is no boundary.
+    - **Undo until the visit settles**: a "Yes, it moved" can be taken back
+      until its visit settles (a session end or a Finish - also one that
+      fails afterwards); Undo re-answers the spot "Not now" (logged as
+      such), so the prompt does not ask again at once. Nothing else needs
+      restoring: nothing changed before the settle.
   - The readout's "N objects placed" counts only objects the zip does not
     carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,
@@ -671,21 +760,10 @@ one landing during a live Finish; a restored object shown once the zero
 arrives), `creator-finish.test.ts` (the settle at
 Finish, once). Editing (M4): `authoring-settle.test.ts` (hosted objects
 rendered and listed, edit, delete, move through the code correction, the
-async states, tap-select, the overlay guard, the explicit replace). The
+async states, tap-select, the overlay guard). The code's position at the settle (U3): `authoring-settle.test.ts` "the code's saved position, decided at the settle" (a replace after a reliable walk taking the pin next to the code along and leaving the one 60 m away, a hosted pin moved as an edit by id, R1's standing re-measure kept, a well-walked position kept, the result screen's line) plus the pure `code-position-rule`, `code-position-settle` and `move-with-code` tests. The
 moved-code prompt (M5b): `authoring-settle.test.ts` "the moved-code
 prompt" (asked only after the rule's fixes and seconds, logged once; not
-with the gate closed; "Use the new spot" in progress, replaced, logged,
-undoable, and its failure surfaced with the prompt coming back; its
-outcome said only once the draft holds the replace, and a refused write
-said as not backed up; a Replace-button replace marking the move boundary
-too, and its Undo logged as not from the prompt, leaving the remembered
-answers alone, with the prompt free to return; Undo kept through a later
-measurement of the same code; the other two answers remembered in the
-draft across a reload, and their refused write surfaced as the backup
-notice; a sighting answered "It's a second copy" kept out of the visit
-log while a "Not now" one stays in it; Undo in progress,
-restoring the level and dropping the visit's move boundary, its refused
-write surfaced, ended by a Finish), plus the pure `code-move-prompt*`
+with the gate closed; "Yes, it moved" changing nothing at once, logged and remembered, applied by the settle after enough walking with no pin moved and the move boundary marked, held without the walk and said on the result screen; Undo while the visit runs, re-answering "Not now", gone once the visit settled; the answers remembered in the draft across a reload, and a refused write surfaced as the backup notice; a sighting answered "It's a second copy" kept out of the visit log while a "Not now" one stays in it), plus the pure `code-move-prompt*`
 tests and the e2e `move-prompt.spec.js` (one per answer).
 `creator-finish.test.ts` (an edit replaces in place; a deletion filters
 the object and takes a deleted photo's jpg out of the archive),

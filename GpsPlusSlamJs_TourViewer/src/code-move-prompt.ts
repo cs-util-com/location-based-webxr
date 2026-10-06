@@ -1,8 +1,9 @@
 /**
  * The authoring prompt for a physically moved code (authoring plan
  * 2026-09-28-0953 §3.6 "Authoring (D20 ask once)", milestone M5b): WHEN the
- * creator setup asks "This code seems to have moved about N m. Use the new
- * spot?", and which answers it remembers so it does not ask again.
+ * creator setup asks "The code is about N m from its saved spot. Did the
+ * poster move here?" (UI round 1, U3), and which answers it remembers so it
+ * does not ask again.
  *
  * THE TRIGGER (owner decision D26, 2026-10-02: its own 15 m trigger). While
  * authoring, a sighting of the code in hand is mapped through the visit's
@@ -26,7 +27,8 @@
  *   passes a GPS stall during which nothing new was learned. Fixes without
  *   a readable time leave the fix count to decide alone.
  *
- * WHAT IS REMEMBERED. "It's a second copy" and "Not now" are kept per level
+ * WHAT IS REMEMBERED. Every answer ("Yes, it moved", "No, it's a second
+ * poster", "Not now"; UI round 1, U3) is kept per level
  * and per spot - the offset of the code as the visit saw it from its saved
  * position, north and east in metres - so a reload does not ask again for
  * the same spot; an offset more than {@link MovePromptRule.sameSpotM} from
@@ -35,11 +37,11 @@
  * spot that only GPS noise moved across it. An offset is FROM the saved
  * position of the time, so each answer also keeps that saved pose's key
  * ({@link savedPoseKey}) and counts only while the level in hand carries the
- * same pose: a replace makes the old answers name other places (they stop
- * counting), and an Undo brings the old pose back (they count again).
+ * same pose: a new saved position makes the old answers name other places
+ * (they stop counting).
  *
- * Pure: the creator setup feeds it on every store change and owns the DOM,
- * the replace and the draft writes.
+ * Pure: the creator setup feeds it on every store change and owns the DOM
+ * and the draft writes; the settle reads "moved" through {@link answerAtSpot}.
  *
  * @see code-move-prompt.ts.md
  */
@@ -120,7 +122,11 @@ export const MOVE_PROMPT_RULE: MovePromptRule = Object.freeze({
 /** The most remembered answers the draft keeps (newest kept). */
 export const MOVE_ANSWERS_MAX = 32;
 
-export type MoveAnswer = "second-copy" | "not-now";
+/** "moved": the creator said the poster moved here (UI round 1, U3) - the
+ *  settle then saves the new spot once the visit walked enough
+ *  (`code-position-settle.ts`); "second-copy" and "not-now" keep the
+ *  saved spot. */
+export type MoveAnswer = "second-copy" | "not-now" | "moved";
 
 /** An answer that keeps the prompt quiet for one spot of one code. */
 export interface RememberedMoveAnswer {
@@ -246,6 +252,31 @@ export function isSecondCopySpot(
 }
 
 /**
+ * The answer that covers a sighting of `levelId` at `offset` from the saved
+ * pose `savedKey`, for the settle (UI round 1, U3): "moved" (save the new
+ * spot once walked enough) or "second-copy" (another print, never a visit
+ * of the stored code); "not-now" and no answer are null. The newest
+ * covering answer counts, as in {@link rememberMoveAnswer}.
+ */
+export function answerAtSpot(
+  answers: readonly RememberedMoveAnswer[],
+  sighting: {
+    readonly levelId: string;
+    readonly savedKey: string;
+    readonly offset: { readonly northM: number; readonly eastM: number };
+  },
+  sameSpotM: number = MOVE_PROMPT_RULE.sameSpotM,
+): "moved" | "second-copy" | null {
+  const { levelId, savedKey, offset } = sighting;
+  if (!finite(offset.northM) || !finite(offset.eastM)) return null;
+  const covering = answers.filter((a) =>
+    answered([a], levelId, savedKey, offset, sameSpotM),
+  );
+  const newest = covering.at(-1)?.answer;
+  return newest === "moved" || newest === "second-copy" ? newest : null;
+}
+
+/**
  * One step of the tracker: the onset carried to the next call, and the
  * prompt to show now (null for none).
  */
@@ -337,7 +368,12 @@ export function parseMoveAnswers(value: unknown): RememberedMoveAnswer[] {
       const { levelId, northM, eastM, answer, savedKey } = r;
       if (typeof levelId !== "string" || levelId.length === 0) return [];
       if (!finite(northM) || !finite(eastM)) return [];
-      if (answer !== "second-copy" && answer !== "not-now") return [];
+      if (
+        answer !== "second-copy" &&
+        answer !== "not-now" &&
+        answer !== "moved"
+      )
+        return [];
       if (typeof savedKey !== "string" || savedKey.length === 0) return [];
       return [{ levelId, northM, eastM, answer, savedKey }];
     })
@@ -347,26 +383,18 @@ export function parseMoveAnswers(value: unknown): RememberedMoveAnswer[] {
 /** The prompt's question. Whole metres: the offset is beyond the 15 m
  *  trigger, where GPS-level error makes decimals noise. */
 export function movePromptText(horizontalM: number): string {
-  return `This code seems to have moved about ${String(Math.round(horizontalM))} m. Use the new spot?`;
+  return `The code is about ${String(Math.round(horizontalM))} m from its saved spot. Did the poster move here?`;
 }
 
 /** The prompt's and the undo's words (one place, for the panel and the
  *  e2e). */
 export const MOVE_PROMPT_LABELS = Object.freeze({
-  use: "Use the new spot",
-  using: "Using the new spot…",
-  secondCopy: "It's a second copy",
+  use: "Yes, it moved",
+  secondCopy: "No, it's a second poster",
   notNow: "Not now",
-  used: "The code's saved position is now the new spot. Notes keep their own positions.",
-  usedNotBackedUp:
-    "The code's saved position is the new spot here, but this device could not save the change - finish and download before closing the page.",
-  useFailed:
-    "Could not use the new spot - hold the phone on the code until it reads as measured, then try again.",
+  moved:
+    "Marked as moved: the code's new spot is saved when this visit ends, if you walked enough by then. Pins and photos keep their places.",
   undo: "Undo",
-  undoing: "Undoing…",
-  undone: "The code's saved position is back where it was.",
-  undoNotBackedUp:
-    "Undone here, but this device could not save the change - finish and download before closing the page.",
-  replacedHint:
-    "The code's saved position was replaced. Undo is possible until Finish, while this page stays open.",
+  undone: "Not marked as moved.",
+  movedHint: "Marked as moved.",
 });

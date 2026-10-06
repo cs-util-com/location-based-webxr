@@ -95,7 +95,6 @@ const DOM_KEYS = [
   "sizeInput",
   "printPanel",
   "status",
-  "mintButton",
   "finishButton",
   "finishStatus",
   "downloadButton",
@@ -114,11 +113,6 @@ const DOM_KEYS = [
   "sizeOfferUse",
   "sizeOfferKeep",
   "objectList",
-  "replaceCodeButton",
-  "replaceCodeConfirm",
-  "replaceCodeConfirmText",
-  "replaceCodeYes",
-  "replaceCodeNo",
   "movePrompt",
   "movePromptText",
   "movePromptUse",
@@ -127,6 +121,8 @@ const DOM_KEYS = [
   "moveUndo",
   "moveUndoText",
   "moveUndoButton",
+  "keepScanRow",
+  "keepScanInput",
 ] as const;
 
 function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {

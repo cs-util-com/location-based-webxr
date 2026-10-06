@@ -21,11 +21,20 @@ import {
   codeMeasured,
   codeMoveAnswered,
   codeMovePrompted,
-  codeReplaceUndone,
   objectPlaced,
   visitSettled,
 } from "./tour-authoring-actions.js";
 import {
+  codePositionSentence,
+  type CodePositionOutcome,
+} from "./code-position-rule.js";
+import {
+  planCodePosition,
+  type CodePositionPlan,
+} from "./code-position-settle.js";
+import { moveWithCode, withinCodeReach } from "./move-with-code.js";
+import {
+  answerAtSpot,
   isSecondCopySpot,
   MOVE_PROMPT_LABELS,
   movePromptText,
@@ -47,6 +56,7 @@ import {
   type CodeSighting,
   type CorrectionRefusal,
   type SettleBasis,
+  type SettleChoice,
 } from "./visit-settle.js";
 import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
@@ -63,8 +73,17 @@ import {
 } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
 import {
+  serializeSignedTourManifest,
+  signedManifestFilesOf,
+  successorManifest,
+  TourIntegrityError,
+  type SignedTourManifest,
+  type TourFileRecord,
+} from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
+import {
   createEmptyTourManifest,
   serializeTourManifest,
+  type TourCaptureSpots,
   type TourManifest,
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -77,8 +96,22 @@ import {
   selectQrFusedEntries,
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
-import { rebuildZipWithEntries } from "gps-plus-slam-app-framework/storage";
+import {
+  ArchiveLimitError,
+  rebuildZipWithEntries,
+} from "gps-plus-slam-app-framework/storage";
+import { bakeCaptureSpots } from "./capture-bake.js";
+import {
+  finishButtonText,
+  hideFinishForResult,
+  leaveNeedsConfirm,
+  leaveQuestion,
+  type FinishGuardInput,
+} from "./finish-guard.js";
+import { scanEntryNames } from "./tour-read-set.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
+import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
+import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import { Group, Vector3, type Object3D } from "three";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
@@ -91,6 +124,9 @@ import {
   type TourObjectRendererDeps,
 } from "./content-placement.js";
 import { odomNueFromWebXr } from "./visit-anchoring.js";
+import { createVisitAlignmentTracker } from "./visit-alignment-picks.js";
+import { createGpsExtentTracker } from "gps-plus-slam-app-framework/state/gps-extent-tracker";
+import { createWalkedDistanceTracker } from "./walked-distance-tracker.js";
 import { createKeyedChain } from "./keyed-chain.js";
 
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
@@ -128,6 +164,7 @@ import {
   type VisitLogEntry,
 } from "./visit-log.js";
 import {
+  authoringObjects,
   upsertPlaced,
   wireObjectEditing,
   type AuthoringObject,
@@ -137,6 +174,8 @@ import type { ViewerMode } from "./mode.js";
 import {
   archiveSizeNote,
   authorStatusLine,
+  autoMeasureAllowed,
+  type CodeReadyState,
   buildAuthorControllerConfig,
   FINISH_LABELS,
   finishBusyLabel,
@@ -149,7 +188,6 @@ import {
   adoptedSizeNote,
   codeTourLine,
   correctionRefusedLine,
-  replaceCodeConfirmText,
   driveReplaceSteps,
   entryHint,
   finishRoute,
@@ -166,7 +204,7 @@ import { isDriveUrl } from "./open-errors.js";
 import { createPrintSizeCheck } from "./print-size-check.js";
 import type { ScanOpen } from "./scan-open.js";
 import type { TourViewerSeams } from "./seams.js";
-import { archiveFileName } from "./tour-session.js";
+import { archiveFileName, type TourSession } from "./tour-session.js";
 import {
   endQrPipeline,
   type ArController,
@@ -175,19 +213,12 @@ import {
 } from "./tour-viewer-session.js";
 import type { Wizard } from "./wizard.js";
 
-/** Said when a new measurement kept the code's stored pose (D10b). */
-const STORED_POSITION_KEPT =
-  "Code seen - its saved position stays, and this visit is lined up with it";
+/** Why a measurement found no stable pose: the gate closed since the
+ *  render, so it is tried again. */
+const STEADY_LOST = "the code is not measured steadily";
 
-/** What a measurement tap became (`measureCode`): the move prompt's
- *  "Use the new spot" counts as answered only on `replaced` (M5b). */
+/** What a measurement became (`measureCode`). */
 type MeasureOutcome =
-  | {
-      readonly kind: "replaced";
-      /** The draft's meta write of the replace: true once the draft holds
-       *  it (or no draft is open), false when the write was refused. */
-      readonly saved: Promise<boolean>;
-    }
   | { readonly kind: "measured" | "kept" | "superseded" }
   | { readonly kind: "failed"; readonly reason: string };
 
@@ -248,8 +279,12 @@ export interface CreatorSetupDom {
   /** The print step, opened when the size error points at it. */
   printPanel: HTMLDetailsElement;
   status: HTMLElement;
-  mintButton: HTMLButtonElement;
   finishButton: HTMLButtonElement;
+  /** "Keep the walk recording in the zip" (scan-pass plan S1, S-D10):
+   *  shown beside Finish only for a tour that carries entries visitors
+   *  never read; unticked, the Finish leaves them out. */
+  keepScanRow: HTMLElement;
+  keepScanInput: HTMLInputElement;
   /** Step 5 on the page (outside the overlay): where the download lands. */
   finishStatus: HTMLElement;
   downloadButton: HTMLButtonElement;
@@ -275,24 +310,19 @@ export interface CreatorSetupDom {
   /** The placed objects' list with Edit text, Move and Delete (authoring
    *  plan 2026-09-28-0953 §3.4, M4): `object-list.ts`'s view. */
   objectList: ObjectListView;
-  /** The explicit "Replace the code's saved position"
-   *  (M4; M2c review #5), shown in AR while the level in hand is a stored
-   *  pose, and its confirm step. */
-  replaceCodeButton: HTMLButtonElement;
-  replaceCodeConfirm: HTMLElement;
-  replaceCodeConfirmText: HTMLElement;
-  replaceCodeYes: HTMLButtonElement;
-  replaceCodeNo: HTMLButtonElement;
   /** The moved-code prompt (authoring plan 2026-09-28-0953 §3.6, D20,
-   *  M5b): asked in AR once a refusal of the code in hand has lasted, with
-   *  its three answers (`code-move-prompt.ts` decides when). */
+   *  M5b; UI round 1, U3: "Did the poster move here?"): asked in AR once
+   *  the code in hand has been seen far from its saved spot for long
+   *  enough, with its three answers (`code-move-prompt.ts` decides when).
+   *  The one question about the code's position left (the measure and
+   *  replace buttons are gone, U3). */
   movePrompt: HTMLElement;
   movePromptText: HTMLElement;
   movePromptUse: HTMLButtonElement;
   movePromptCopy: HTMLButtonElement;
   movePromptLater: HTMLButtonElement;
-  /** Undo of a replace of the code's saved position, until Finish - in
-   *  AR and on the page. */
+  /** Undo of a "Yes, it moved" while its visit runs (before the settle
+   *  applies it). */
   moveUndo: HTMLElement;
   moveUndoText: HTMLElement;
   moveUndoButton: HTMLButtonElement;
@@ -301,6 +331,11 @@ export interface CreatorSetupDom {
 /** Properties, not methods: they are handed to the hooks object unbound. */
 export interface CreatorSetup {
   renderAuthorReadout: () => void;
+  /** True while leaving (the page, or for another tour) should ask first:
+   *  a rebuilt tour file was not saved (UI round 1, U2, `finish-guard`). */
+  leaveNeedsConfirm: () => boolean;
+  /** The question to ask then (`finish-guard`'s `leaveQuestion`). */
+  leaveQuestion: () => string;
   /** Creates the author tracking controller for THIS AR entry; false (with
    *  the reason in the panel) keeps AR unstarted. */
   startAuthorPipeline: () => boolean;
@@ -319,6 +354,20 @@ export interface CreatorSetup {
   selectInView: (tap: SelectTargetRay | null) => void;
 }
 
+/** A written entry's record for `manifest.json`: the SHA-256 and size of
+ *  the bytes the zip will hold (a string is written as UTF-8). */
+async function fileRecordOf(
+  data: Blob | Uint8Array | string,
+): Promise<TourFileRecord> {
+  const bytes =
+    typeof data === "string"
+      ? new TextEncoder().encode(data)
+      : data instanceof Uint8Array
+        ? data
+        : new Uint8Array(await data.arrayBuffer());
+  return { sha256: await sha256Hex(bytes), size: bytes.length };
+}
+
 export function wireCreatorSetup(deps: {
   ctx: TourViewerSession;
   mode: ViewerMode;
@@ -332,18 +381,24 @@ export function wireCreatorSetup(deps: {
   openDraftStore?: (key: string) => Promise<DraftFileStore | undefined>;
   /** Step 4's scan-to-open (`scan-open.ts`, owned by `archive-open`):
    *  fed every detection, asked what to say about the code in view. */
-  codeTour?: Pick<ScanOpen, "onDetection" | "status" | "tourOf">;
+  codeTour?: Pick<ScanOpen, "onDetection" | "status" | "tourOf" | "relation">;
   /** The summary after Finish (authoring plan 2026-09-28-0953 M3b,
    *  `summary-panel.ts`); none in the node tests that do not need it. */
   summary?: Pick<SummaryPanel, "show" | "hide">;
 }): CreatorSetup {
   const { ctx, mode, arStore, arController, seams, wizard, dom } = deps;
-  const codeTour: Pick<ScanOpen, "onDetection" | "status" | "tourOf"> =
-    deps.codeTour ?? {
-      onDetection: () => undefined,
-      status: () => ({ kind: "quiet" }),
-      tourOf: () => null,
-    };
+  const codeTour: Pick<
+    ScanOpen,
+    "onDetection" | "status" | "tourOf" | "relation"
+  > = deps.codeTour ?? {
+    onDetection: () => undefined,
+    status: () => ({ kind: "quiet" }),
+    tourOf: () => null,
+    // The node tests' stand-in: every code is the open tour's, so it is
+    // measured as soon as the gate opens (`main.ts` always passes the
+    // real scan-to-open).
+    relation: () => "this-tour",
+  };
   const creator = mode === "creator";
   const openDraftStore =
     deps.openDraftStore ?? (() => Promise.resolve(undefined));
@@ -416,6 +471,76 @@ export function wireCreatorSetup(deps: {
   /** Each decoded code text's level id (`qrCodeId`, a hash - async), so a
    *  detection can be matched to the level in hand synchronously. */
   const codeIds = new Map<string, string>();
+  /** The levels a Finish in this page wrote into the tour: saved, so a
+   *  new code may take the hand from them (`codeOutcome`). */
+  const finishedLevelIds = new Set<string>();
+  /** Measurements in flight: Finish waits for them (`measureCode`). */
+  let measuring = 0;
+  /** The codes measured on their own in this visit, by visit and text:
+   *  each once per visit (UI round 1, U3; plan review #1; `maybeMeasure`). */
+  const autoMeasured = new Set<string>();
+  /**
+   * The running visit's per-moment alignments (owner decision D33): each
+   * object placed or moved, the code measured and each sighting of the code
+   * in hand is settled through the first mature alignment after its own
+   * moment (`visit-alignment-picks.ts`), not the drifted end one. Fed on
+   * every store change and before every noted moment; emptied per visit.
+   * Nothing visible depends on it: the previews stay rigid as placed.
+   */
+  const alignmentPicks = createVisitAlignmentTracker();
+  /** The session's GPS extent, the picks' maturity (40 m, D34). */
+  const gpsExtent = createGpsExtentTracker();
+  /** How far the author has walked, each event's stamp (R1, R3 of D33). */
+  const walkedDistance = createWalkedDistanceTracker();
+  /** What the picks last saw: the alignment and zero references and the
+   *  fix count. */
+  let pickedFrom: readonly [unknown, unknown, number] | null = null;
+
+  /** Hand the picks the alignment as it stands now, when it changed. */
+  function syncAlignmentPicks(): void {
+    const state = arStore.getState();
+    const alignmentMatrix = selectAlignmentMatrix(state);
+    const zero = selectZeroReference(state);
+    const positions = selectGpsPositions(state);
+    if (
+      pickedFrom !== null &&
+      pickedFrom[0] === alignmentMatrix &&
+      pickedFrom[1] === zero &&
+      pickedFrom[2] === positions.length
+    ) {
+      return;
+    }
+    pickedFrom = [alignmentMatrix, zero, positions.length];
+    alignmentPicks.noteAlignment({
+      alignmentMatrix,
+      zero,
+      gpsExtentM: gpsExtent.update(positions),
+      walkedM: walkedDistance.update({
+        gpsPositions: positions,
+        odometryPositions: selectOdometryPositions(state),
+      }),
+      alignmentInfo: authorAlignmentInfo(),
+    });
+  }
+
+  /** An object placed or moved in the running visit, now. */
+  function notePlaced(id: string): void {
+    syncAlignmentPicks();
+    alignmentPicks.notePlacement(id, Date.now());
+  }
+
+  /** The visit's sighting of the code in hand changed. */
+  function setVisitSighting(sighting: CodeSighting): void {
+    ctx.visitCodeSighting = sighting;
+    syncAlignmentPicks();
+    alignmentPicks.noteSighting(sighting, Date.now());
+  }
+
+  /** A new visit's picks start empty. */
+  function resetAlignmentPicks(): void {
+    alignmentPicks.reset();
+    pickedFrom = null;
+  }
   /** The creator-facing url of the open tour, for later draft writes. */
   let draftTourUrl: string | null = null;
   /** What a draft is offering, until the creator answers. */
@@ -624,7 +749,9 @@ export function wireCreatorSetup(deps: {
     );
     if (entry === undefined) return null;
     try {
-      return await (await session.loadEntry(entry.filename)).text();
+      // Under the text cap, like every JSON the session reads (K0
+      // milestone review R10): a level file is text on the JS heap.
+      return await session.loadEntryText(entry.filename);
     } catch {
       // Unreadable is not proof of anything, and the safe direction is to
       // KEEP the draft.
@@ -709,6 +836,9 @@ export function wireCreatorSetup(deps: {
     getArWorldGroup: () => seams.getArWorldGroup(),
     sessionLive,
     placementAllowed,
+    notePlaced: (id) => {
+      notePlaced(id);
+    },
     settleInputs: () => ({
       mintedLevel: ctx.mintedLevel,
       measurement: ctx.codeMeasurement,
@@ -760,6 +890,7 @@ export function wireCreatorSetup(deps: {
     // readout must follow the store, or "waiting for GPS alignment" sticks.
     // So does the zero, which the previews from geo wait for.
     arStore.subscribe(() => {
+      syncAlignmentPicks();
       if (
         previewsWaitForZero &&
         selectZeroReference(arStore.getState()) !== null
@@ -881,52 +1012,42 @@ export function wireCreatorSetup(deps: {
     renderAuthorReadout();
   });
 
-  /** Whether the explicit replace's confirm step is open. */
-  let replaceConfirmOpen = false;
-
   // -------------------------------------------------------------------------
-  // The moved-code prompt and the replace's undo (authoring plan
-  // 2026-09-28-0953 §3.6 "Authoring (D20 ask once)", milestone M5b). WHEN it
-  // asks is `code-move-prompt.ts`'s; this is the state and the DOM.
+  // The moved-code prompt (authoring plan 2026-09-28-0953 §3.6 "Authoring
+  // (D20 ask once)", milestone M5b; UI round 1, U3: "Did the poster move
+  // here?"). WHEN it asks is `code-move-prompt.ts`'s; WHAT a "Yes" does is
+  // the settle's (`code-position-settle.ts`): the new spot is saved at the
+  // visit's end once the visit walked enough. This is the state and the DOM.
   // -------------------------------------------------------------------------
 
   /** Where the running offset beyond the prompt's trigger began (the
    *  tracker's state). */
   let moveOnset: MovePromptOnset | null = null;
-  /** The prompt on screen; kept while "Use the new spot" runs. */
+  /** The prompt on screen. */
   let movePrompt: MovePrompt | null = null;
   /** The onset the shown prompt was logged for: one log per ask. */
   let movePromptLogged: MovePromptOnset | null = null;
-  /** "Use the new spot" in flight. */
-  let moveBusy = false;
-  /** "It's a second copy" and "Not now", per level and spot - read from
-   *  the draft's meta at tour open, re-stated by every meta write. */
+  /** Every answer, per level and spot - read from the draft's meta at tour
+   *  open, re-stated by every meta write. */
   let moveAnswers: RememberedMoveAnswer[] = [];
   /** The store's fix count at the last refusal re-evaluation: a new fix
    *  re-judges the latest sighting through the new alignment - the
    *  refusal only, never the earlier objects' frame (§7m #8). */
   let moveFixCount = -1;
-  /** Codes moved to a new spot - by "Use the new spot" or the Replace
-   *  button, any replace (M5b review #3) - by the visit that moved them:
-   *  the visit log's move boundary (§7j #12). */
+  /** Codes moved to the poster's new spot (a "Yes, it moved" the settle
+   *  applied), by the visit that moved them: the visit log's move boundary
+   *  (§7j #12). An improved position of the same poster is no boundary:
+   *  every visit saw that one poster. */
   const movedInVisit = new Map<string, number>();
-  /**
-   * The latest replace of the code's saved position - the prompt's or the
-   * Replace button's - undoable until Finish: the level it replaced (as
-   * `codeMeasured` logs it in `replaced`) and the measurement in hand with
-   * it. `prompt`: the ask it answered, when it came from the prompt.
-   * `boundary`: whether THIS replace set the visit's move boundary (the
-   * visit may already have had one), so an Undo drops only its own.
-   */
-  let undoable: {
-    levelId: string;
-    replaced: { id: string; json: string };
-    priorMeasurement: CodeMeasurement | null;
-    visit: number;
-    prompt: MovePrompt | null;
-    boundary: boolean;
-  } | null = null;
-  let undoBusy = false;
+  /** The latest "Yes, it moved", undoable while its visit runs - the settle
+   *  at the visit's end applies it, and nothing before that has changed. */
+  let undoable: { prompt: MovePrompt; visit: number } | null = null;
+  /** What each settle since the last Finish decided for the code in hand:
+   *  the result screen's line (`codePositionSentence`). */
+  let codePositionOutcomes: CodePositionOutcome[] = [];
+  /** The visit whose settle CHANGED the code's saved position, and the
+   *  plan it applied - re-applied when a failed Finish settles it again. */
+  let appliedCode: { visit: number; plan: CodePositionPlan } | null = null;
 
   /** The store's GPS fix count and the latest fix's own time. */
   function fixClock(): { count: number; lastMs: number | null } {
@@ -945,7 +1066,6 @@ export function wireCreatorSetup(deps: {
    * the last look, and log a new ask once.
    */
   function updateMovePrompt(): void {
-    if (moveBusy) return;
     const level = ctx.mintedLevel;
     const clock = fixClock();
     if (sessionLive() && clock.count !== moveFixCount) {
@@ -1001,46 +1121,30 @@ export function wireCreatorSetup(deps: {
     }
   }
 
-  /** The prompt and the undo on screen. "Use the new spot" is re-enabled
-   *  by the live readout, with the Replace button's gate. */
+  /** The prompt and the undo on screen. */
   function renderMovePrompt(): void {
     updateMovePrompt();
     dom.movePrompt.hidden = movePrompt === null;
     if (movePrompt !== null) {
       dom.movePromptText.textContent = movePromptText(movePrompt.horizontalM);
     }
-    dom.movePromptUse.textContent = moveBusy
-      ? MOVE_PROMPT_LABELS.using
-      : MOVE_PROMPT_LABELS.use;
-    dom.movePromptUse.disabled = true;
-    dom.movePromptCopy.disabled = moveBusy;
-    dom.movePromptLater.disabled = moveBusy;
-    // Until Finish, and only while the replaced code is still the one in
-    // hand: another code's measurement ends it. NOT while no level is in
-    // hand - a measurement empties it while its identity is computed, and
-    // a render then must not withdraw Undo (M5b review #4); a size change,
-    // which empties it for good, ends Undo itself (`adoptMeasuredSize`).
-    if (
+    dom.movePromptUse.textContent = MOVE_PROMPT_LABELS.use;
+    dom.movePromptCopy.textContent = MOVE_PROMPT_LABELS.secondCopy;
+    dom.movePromptLater.textContent = MOVE_PROMPT_LABELS.notNow;
+    dom.movePromptUse.disabled = false;
+    // Only while the answer's visit runs and has not settled: the settle
+    // applies it, and after that there is nothing left to take back.
+    const live =
       undoable !== null &&
-      ctx.mintedLevel !== null &&
-      ctx.mintedLevel.id !== undoable.levelId
-    ) {
-      undoable = null;
-    }
-    dom.moveUndo.hidden = (undoable === null && !undoBusy) || ctx.finishing;
-    dom.moveUndoText.textContent = MOVE_PROMPT_LABELS.replacedHint;
-    dom.moveUndoButton.textContent = undoBusy
-      ? MOVE_PROMPT_LABELS.undoing
-      : MOVE_PROMPT_LABELS.undo;
-    dom.moveUndoButton.disabled = undoBusy;
+      undoable.visit === ctx.arSessionGeneration &&
+      !visitSettles.has(undoable.visit) &&
+      sessionLive();
+    dom.moveUndo.hidden = !live || ctx.finishing;
+    dom.moveUndoText.textContent = MOVE_PROMPT_LABELS.movedHint;
+    dom.moveUndoButton.textContent = MOVE_PROMPT_LABELS.undo;
   }
 
-  function logMoveAnswer(
-    prompt: MovePrompt,
-    answer: "use-new-spot" | MoveAnswer,
-    replaced: boolean,
-    error: string | null,
-  ): void {
+  function logMoveAnswer(prompt: MovePrompt, answer: MoveAnswer): void {
     arStore.dispatch(
       codeMoveAnswered({
         levelId: prompt.levelId,
@@ -1050,8 +1154,9 @@ export function wireCreatorSetup(deps: {
         horizontalM: prompt.horizontalM,
         northM: prompt.northM,
         eastM: prompt.eastM,
-        replaced,
-        error,
+        // Nothing is replaced at an answer since U3: the settle decides.
+        replaced: false,
+        error: null,
       }),
     );
   }
@@ -1072,180 +1177,37 @@ export function wireCreatorSetup(deps: {
     });
   }
 
-  dom.movePromptUse.addEventListener("click", () => {
-    const prompt = movePrompt;
-    if (prompt === null || moveBusy) return;
-    moveBusy = true;
-    // Hidden directly, as the replace's own confirm does: a re-render
-    // would overwrite the "Saving…" line the measurement puts up.
-    dom.movePromptUse.textContent = MOVE_PROMPT_LABELS.using;
-    dom.movePromptUse.disabled = true;
-    dom.movePromptCopy.disabled = true;
-    dom.movePromptLater.disabled = true;
-    void measureCode(true).then(async (outcome) => {
-      // Said once the draft holds the replace - the durable end state (M5b
-      // review #7) - and the button stays busy until then.
-      const saved = outcome.kind === "replaced" ? await outcome.saved : true;
-      moveBusy = false;
-      const replaced = outcome.kind === "replaced";
-      logMoveAnswer(
-        prompt,
-        "use-new-spot",
-        replaced,
-        outcome.kind === "failed"
-          ? outcome.reason
-          : replaced
-            ? null
-            : outcome.kind,
-      );
-      if (replaced) {
-        // Counted as asked only now (§7j #10). The replace itself marked
-        // the visit's move boundary (`measureCode`).
-        if (undoable !== null) undoable = { ...undoable, prompt };
-        moveOnset = null;
-        // The one backup notice is spent here too, so later refusals do not
-        // repeat it; the outcome then says what this refusal means.
-        if (!saved) noteNoPersistence();
-        ctx.placementNote = saved
-          ? MOVE_PROMPT_LABELS.used
-          : MOVE_PROMPT_LABELS.usedNotBackedUp;
-      } else if (outcome.kind !== "superseded") {
-        // Through the status line, the AR session's error channel; the
-        // offset still stands, so the prompt comes back.
-        ctx.placementNote = MOVE_PROMPT_LABELS.useFailed;
-      }
-      renderAuthorReadout();
-    });
-  });
-
   for (const [button, answer] of [
+    [dom.movePromptUse, "moved"],
     [dom.movePromptCopy, "second-copy"],
     [dom.movePromptLater, "not-now"],
   ] as const) {
     button.addEventListener("click", () => {
       const prompt = movePrompt;
-      if (prompt === null || moveBusy) return;
+      if (prompt === null) return;
       rememberAnswer(prompt, answer);
-      logMoveAnswer(prompt, answer, false, null);
+      logMoveAnswer(prompt, answer);
       movePrompt = null;
+      if (answer === "moved") {
+        undoable = { prompt, visit: ctx.arSessionGeneration };
+        ctx.placementNote = MOVE_PROMPT_LABELS.moved;
+      }
       renderAuthorReadout();
     });
   }
 
-  /**
-   * Undo the latest replace (until Finish): the level it replaced is back
-   * in hand with its measurement, the visit loses its move boundary, a
-   * prompt's spot counts as "Not now" (or the offset it answered would ask
-   * again at once), and the undo waits for the draft's meta - the durable
-   * end state - before saying it is done.
-   */
+  /** Undo a "Yes, it moved" before its visit settles: the spot is answered
+   *  "Not now" instead (the newest answer for a spot is the one that
+   *  counts), so the prompt does not ask again at once. */
   dom.moveUndoButton.addEventListener("click", () => {
     const u = undoable;
-    if (u === null || undoBusy || ctx.finishing) return;
-    undoBusy = true;
+    if (u === null || ctx.finishing || visitSettles.has(u.visit)) return;
     undoable = null;
-    const undone = ctx.mintedLevel;
-    // A measurement still in flight must not land over the undo.
-    ctx.mintGeneration += 1;
-    ctx.mintedLevel = u.replaced;
-    ctx.codeMeasurement = u.priorMeasurement;
-    // Only a boundary this replace set: one the visit had before it
-    // (an earlier replace that stays) is not this undo's to drop.
-    if (u.boundary && movedInVisit.get(u.levelId) === u.visit) {
-      movedInVisit.delete(u.levelId);
-      unmarkLoggedMove(u.visit, u.levelId);
-    }
-    if (u.prompt !== null) {
-      moveAnswers = rememberMoveAnswer(moveAnswers, {
-        levelId: u.prompt.levelId,
-        northM: u.prompt.northM,
-        eastM: u.prompt.eastM,
-        answer: "not-now",
-        // The restored pose's: the prompt was asked against it.
-        savedKey: u.prompt.savedKey,
-      });
-    }
-    arStore.dispatch(
-      codeReplaceUndone({
-        levelId: u.levelId,
-        arVisitIndex: ctx.arSessionGeneration,
-        atMs: Date.now(),
-        restored: u.replaced,
-        undone,
-        fromPrompt: u.prompt !== null,
-      }),
-    );
-    placeEarlierObjects();
+    rememberAnswer(u.prompt, "not-now");
+    logMoveAnswer(u.prompt, "not-now");
+    ctx.placementNote = MOVE_PROMPT_LABELS.undone;
     renderAuthorReadout();
-    const written =
-      draftTourUrl === null ? Promise.resolve(true) : recordMeta(draftTourUrl);
-    void written
-      .catch(() => false)
-      .then((ok) => {
-        undoBusy = false;
-        ctx.placementNote = ok
-          ? MOVE_PROMPT_LABELS.undone
-          : MOVE_PROMPT_LABELS.undoNotBackedUp;
-        renderAuthorReadout();
-      });
   });
-
-  /** A visit already logged with a move of `levelId` loses the mark (an
-   *  undo after the visit ended), in memory and in the draft. */
-  function unmarkLoggedMove(visit: number, levelId: string): void {
-    const visitId = newVisitId(pageId, visit);
-    const entry = visitLog.entries().find((e) => e.visitId === visitId);
-    if (entry === undefined) return;
-    const codes = entry.codes.map((c) => {
-      if (c.levelId !== levelId || c.moved !== true) return c;
-      const { moved: _moved, ...rest } = c;
-      return rest;
-    });
-    recordVisit({ ...entry, codes });
-  }
-
-  /**
-   * The explicit "Replace the code's saved position"
-   * (authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5): offered in AR
-   * while the level in hand is a STORED pose - the only case in which a
-   * measurement does not replace it by itself. Enabled with the mint gate
-   * (see the live readout), and only for that code in view.
-   */
-  function renderReplaceCode(): void {
-    const shown = sessionLive() && levelInHandIsStored();
-    if (!shown) replaceConfirmOpen = false;
-    dom.replaceCodeButton.hidden = !shown || replaceConfirmOpen;
-    dom.replaceCodeConfirm.hidden = !(shown && replaceConfirmOpen);
-    // The question states what the replace does to visitors, with its size
-    // as this visit sees the code now (M4 review #3) - kept current while
-    // the confirm is open, since the sighting refines.
-    if (shown && replaceConfirmOpen) {
-      const state = arStore.getState();
-      dom.replaceCodeConfirmText.textContent = replaceCodeConfirmText(
-        sightedCodeOffset({
-          visit: ctx.arSessionGeneration,
-          alignment: selectAlignmentMatrix(state),
-          zero: selectZeroReference(state),
-          mintedLevel: ctx.mintedLevel,
-          measurement: ctx.codeMeasurement,
-          sighting: ctx.visitCodeSighting,
-        }),
-      );
-    }
-    // Re-enabled by the live readout when the gate is open.
-    dom.replaceCodeButton.disabled = true;
-    dom.replaceCodeYes.disabled = true;
-  }
-
-  /** The code in view is the one whose level is in hand. */
-  function codeInViewIsLevelInHand(): boolean {
-    const text = ctx.lastDetectedText;
-    return (
-      text !== null &&
-      ctx.mintedLevel !== null &&
-      codeIds.get(text) === ctx.mintedLevel.id
-    );
-  }
 
   function renderAuthorReadout(): void {
     renderSizeOffer();
@@ -1255,7 +1217,6 @@ export function wireCreatorSetup(deps: {
     dom.status.dataset["clamped"] =
       sessionLive() && !statusExpanded ? "true" : "false";
     renderPlacementButtons();
-    renderReplaceCode();
     renderMovePrompt();
     editing.render();
     // F11: the AR controls belong to the AR session. On the setup page they
@@ -1279,9 +1240,15 @@ export function wireCreatorSetup(deps: {
         manifest: ctx.tourManifestStatus,
       }) === "ready"
     );
+    // The save cannot be forgotten (UI round 1, U2): after AR with changes
+    // not finished, Finish says so; while a rebuilt file waits for its
+    // save on a phone, Finish steps aside for it.
+    const guard = guardInput();
+    dom.finishButton.textContent = finishButtonText(guard);
+    if (hideFinishForResult(guard)) dom.finishButton.hidden = true;
+    renderKeepScan();
     if (ctx.authorErrorText !== null) {
       dom.status.textContent = ctx.authorErrorText;
-      dom.mintButton.disabled = true;
       return;
     }
     // The finish step owns the line while it runs and after it failed
@@ -1289,13 +1256,11 @@ export function wireCreatorSetup(deps: {
     // (GPS fixes, detections) and used to overwrite both.
     if (ctx.finishing) {
       dom.status.textContent = ctx.finishProgress;
-      dom.mintButton.disabled = true;
       dom.finishButton.disabled = true;
       return;
     }
     if (ctx.finishError !== null) {
       dom.status.textContent = ctx.finishError;
-      dom.mintButton.disabled = true;
       dom.finishButton.disabled = false;
       return;
     }
@@ -1304,7 +1269,9 @@ export function wireCreatorSetup(deps: {
       tourOpen: ctx.session !== null,
       manifest: ctx.tourManifestStatus,
     });
-    dom.finishButton.disabled = readiness !== "ready";
+    // Not while a measurement is in flight: the level it lands may be the
+    // one the zip should carry.
+    dom.finishButton.disabled = readiness !== "ready" || measuring > 0;
     // Everything above this line is a message about something that
     // happened - an error, a rebuild - and is shown whenever it is true.
     // Below is the LIVE measuring readout, which describes a camera: "hold
@@ -1313,7 +1280,6 @@ export function wireCreatorSetup(deps: {
     // creator is not in.
     if (!sessionLive()) {
       dom.status.textContent = ctx.placementNote ?? "";
-      dom.mintButton.disabled = true;
       return;
     }
     // A placement's outcome (or a draft notice) stands until the next tap
@@ -1332,16 +1298,19 @@ export function wireCreatorSetup(deps: {
       ctx.lastDetectedText === null
         ? null
         : (ctx.fusedPose?.evaluate(ctx.lastDetectedText) ?? null);
+    const view =
+      ctx.lastDetectedText === null ? null : codeOutcome(ctx.lastDetectedText);
     const readout = authorStatusLine(
       ctx.lastDetectedText,
       fused,
       authorAlignmentInfo(),
       ctx.lastDetectedText !== null &&
         (ctx.printSizeCheck?.pending(ctx.lastDetectedText) ?? false),
+      view?.ready ?? "measured",
     );
     // Once measured, the setup hint (what to do next) joins the live
-    // measuring readout - re-measuring stays possible, and the readout's
-    // gate wording (the fix count) stays visible on a re-entry.
+    // measuring readout - the readout's gate wording (the fix count) stays
+    // visible on a re-entry.
     const hint = setupHint({
       measured: ctx.mintedLevel !== null,
       tourOpen: ctx.session !== null,
@@ -1352,7 +1321,14 @@ export function wireCreatorSetup(deps: {
     // What is happening to the tour the code names (plan §9 #9), and which
     // tour is open (§9 #10) - derived each render, never a one-off note.
     const codeStatus = codeTour.status(ctx.lastDetectedText);
-    const codeLine = codeTourLine(codeStatus);
+    // A code that is not measured is not "added to the open tour" either
+    // (U3 milestone review #6): the ready line says why.
+    const codeLine =
+      view?.ready === "not-measured" &&
+      (codeStatus.kind === "added-to-open-tour" ||
+        codeStatus.kind === "unknown")
+        ? ""
+        : codeTourLine(codeStatus);
     const tour = ctx.tourLabel === null ? "" : ` · Tour: ${ctx.tourLabel}`;
     dom.status.textContent =
       lead +
@@ -1360,14 +1336,8 @@ export function wireCreatorSetup(deps: {
       count +
       (codeLine === "" ? "" : ` · ${codeLine}`) +
       tour;
-    // No status locks Save: in authoring there is no wrong code (plan §13).
-    dom.mintButton.disabled = !readout.canMint;
-    // The explicit replace takes the same gate, for the stored code only.
-    const canReplace = readout.canMint && codeInViewIsLevelInHand();
-    dom.replaceCodeButton.disabled = !canReplace;
-    dom.replaceCodeYes.disabled = !canReplace;
-    // "Use the new spot" is the same replace, behind the same gate (§7j #10).
-    dom.movePromptUse.disabled = moveBusy || !canReplace;
+    // Measured on its own once the gate opens (UI round 1, U3).
+    maybeMeasure(readout.canMint, view?.measure === true);
     const blocked = finishBlockedHint(readiness);
     if (blocked !== "") dom.status.textContent += ` · ${blocked}`;
     if (readiness === "ready" && ctx.session !== null) {
@@ -1497,7 +1467,10 @@ export function wireCreatorSetup(deps: {
         // through the session (it knows the folder the manifest sits in).
         if (blob !== undefined) return decodeFrameTexture(blob, 2);
         if (session === null) return null;
-        return decodeFrameTexture(await session.loadContentEntry(image), 2);
+        // A tour image is measured before it is decoded (K4 review R2).
+        return decodeFrameTexture(await session.loadContentEntry(image), 2, {
+          maxPixels: TOUR_MAX_IMAGE_PIXELS,
+        });
       },
     }).then(
       (rendered) => {
@@ -1834,6 +1807,7 @@ export function wireCreatorSetup(deps: {
             },
           },
     );
+    if (local !== null) notePlaced(pin.id);
     recordPlacement(pin);
     logPlacement(pin, { reticleWorld: position });
     dom.pinLabel.value = "";
@@ -1860,6 +1834,10 @@ export function wireCreatorSetup(deps: {
     // The visit the frame's odometry belongs to, taken at the tap: the
     // encode is async and the session may end meanwhile.
     const visit = ctx.arSessionGeneration;
+    // Its id now, so its pick opens at the capture (D33), not when the
+    // encode lands.
+    const photoId = newObjectId();
+    notePlaced(photoId);
     seams.encodeFrameJpeg(frame.image).then(
       (jpeg) => {
         // A visit that settled while this encoded (its session ended, or a
@@ -1868,7 +1846,7 @@ export function wireCreatorSetup(deps: {
         // to no visit at all (the teardown resets it).
         const settled = visitSettles.get(visit);
         const photo = mintPhoto({
-          id: newObjectId(),
+          id: photoId,
           cameraPose,
           alignmentMatrix:
             settled === undefined
@@ -1894,7 +1872,21 @@ export function wireCreatorSetup(deps: {
         recordPlacement(photo, jpeg.blob);
         logPlacement(photo, { cameraOdomPose: cameraPose });
         if (settled !== undefined) {
-          logSettle(visit, "late-arrival", settled, [photo], null);
+          logSettle(
+            visit,
+            "late-arrival",
+            settled,
+            [
+              {
+                object: photo,
+                basis: settled.basis,
+                alignment: settled.alignment,
+                refused: settled.refused,
+              },
+            ],
+            null,
+            null,
+          );
         }
         syncPreviews();
         // The plane sits at the capture spot, facing back at it: the
@@ -1999,8 +1991,8 @@ export function wireCreatorSetup(deps: {
     ctx.mintGeneration += 1;
     ctx.mintedLevel = null;
     ctx.codeMeasurement = null;
-    // The level the Undo would restore was measured at the old size.
-    undoable = null;
+    // The code is measured again at the new size.
+    autoMeasured.clear();
     endQrPipeline(ctx);
     arStore.dispatch(clearQrMarker({ text: offer.text }));
     startAuthorPipeline();
@@ -2152,7 +2144,7 @@ export function wireCreatorSetup(deps: {
       });
     }
     if (ctx.mintedLevel !== null && ctx.mintedLevel.id !== id) return;
-    ctx.visitCodeSighting = sighting;
+    setVisitSighting(sighting);
     placeEarlierObjects();
   }
 
@@ -2189,8 +2181,10 @@ export function wireCreatorSetup(deps: {
    *   between visits it already names the NEXT one (a page-side Finish once
    *   marked the next visit settled that way, so it never settled).
    * - A photo of the visit that lands AFTER its settle (the encode is
-   *   async) is minted through the same record when it lands, so every
-   *   object of a visit goes through one alignment.
+   *   async) is minted through the same record when it lands: the visit's
+   *   END choice. The visit's other objects went through their own picks
+   *   (D33), so a late photo can differ from them by the drift between its
+   *   capture and the visit's end.
    *
    * Recorded even for a visit with nothing to settle yet, for that photo.
    */
@@ -2199,7 +2193,9 @@ export function wireCreatorSetup(deps: {
   /**
    * Settle the running AR visit (authoring plan 2026-09-28-0953 §3.2, M2c):
    * the code measured in it and every object placed in it get their geo
-   * recomputed through ONE alignment (`visit-settle.ts` decides which), the
+   * recomputed from its odometry pose (`visit-settle.ts` decides through
+   * which alignment: each object's own pick, near a code event the
+   * code's, D33 and its review R1 and R3), the
    * draft is rewritten so a reload keeps it, and the troubleshooting
    * recording gets a `tourAuthoring/settled` action.
    *
@@ -2210,20 +2206,76 @@ export function wireCreatorSetup(deps: {
   function settleVisit(trigger: "visit-end" | "finish"): void {
     const visit = ctx.arSessionGeneration;
     if (visitSettles.has(visit)) return;
+    // The settle applies a "Yes, it moved" or not: after it there is
+    // nothing to take back, even if a failed Finish settles again (U3
+    // milestone review #4).
+    if (undoable?.visit === visit) undoable = null;
+    // The picks see the alignment as it stands at the end (the fallback).
+    syncAlignmentPicks();
     const state = arStore.getState();
     const visitAlignment = selectAlignmentMatrix(state);
     const zero = selectZeroReference(state);
+    const picks = alignmentPicks.picks();
+    // The end alignment's extent: the D31 marker of a code re-minted
+    // through it (R7 of D33).
+    const alignmentGpsExtentM = gpsExtent.update(selectGpsPositions(state));
+    const gpsAccuracyM = authorAlignmentInfo().gpsAccuracyM;
+    // A STORED code this visit saw: keep its saved position, or replace it
+    // with this visit's view of it (UI round 1, U3). A change is made by
+    // handing the settle a measurement of the code, so it is re-minted as
+    // if measured here - through the sighting's own pick.
+    const level = ctx.mintedLevel;
+    // A settle redone after a failed Finish re-applies the decision it
+    // already made: the code is in hand at its new spot, the objects near
+    // it have moved once, and the visit log keeps the saved pose (U3
+    // milestone review #8).
+    const reapplied =
+      appliedCode !== null && appliedCode.visit === visit
+        ? appliedCode.plan
+        : null;
+    const position =
+      reapplied ??
+      planCodePosition({
+        visit,
+        mintedLevel: level,
+        measurement: ctx.codeMeasurement,
+        sighting: ctx.visitCodeSighting,
+        picks,
+        alignment: visitAlignment,
+        zero,
+        endQuality: {
+          extentM: alignmentGpsExtentM ?? null,
+          accuracyM: gpsAccuracyM ?? null,
+        },
+        sizeM: ctx.activeSizeM,
+        answerAt: (offset) =>
+          level === null
+            ? null
+            : answerAtSpot(moveAnswers, {
+                levelId: level.id,
+                savedKey: savedPoseKey(level.json),
+                offset,
+              }),
+      });
+    const remint = position?.measurement ?? null;
     const input = {
       visit,
       placed: ctx.placedObjects,
       alignment: visitAlignment,
       zero,
-      mintedLevel: ctx.mintedLevel,
-      measurement: ctx.codeMeasurement,
+      mintedLevel: level,
+      measurement: remint ?? ctx.codeMeasurement,
       sighting: ctx.visitCodeSighting,
       alignmentInfo: authorAlignmentInfo(),
-      gpsAccuracyM: authorAlignmentInfo().gpsAccuracyM,
+      alignmentGpsExtentM,
+      gpsAccuracyM,
       nowIso: new Date().toISOString(),
+      // Each object at its own moment (D33); a re-minted stored code at its
+      // sighting's.
+      picks:
+        remint === null || position === null
+          ? picks
+          : { ...picks, measurement: position.pick },
     };
     const choice = settleAlignment(input);
     // Pure, so planned before the log: the log marks the pose this settle
@@ -2231,6 +2283,29 @@ export function wireCreatorSetup(deps: {
     // get (M3a/M3b review #2).
     const plan =
       choice === null || zero === null ? null : planVisitSettle(input);
+    const applied =
+      position !== null &&
+      remint !== null &&
+      plan !== null &&
+      plan.level !== null;
+    // A real move is the visit log's boundary (§7j #12), set before the
+    // log is written.
+    if (applied && position.decision.kind === "move") {
+      movedInVisit.set(position.levelId, visit);
+    }
+    if (applied) appliedCode = { visit, plan: position };
+    if (position !== null && reapplied === null) {
+      codePositionOutcomes.push({ decision: position.decision, applied });
+    }
+    // A "Yes, it moved" holds for its visit only: applied now, or asked
+    // again next time - never applied later, out of Undo's reach (U3
+    // milestone review #5).
+    if (level !== null && moveAnswers.some((a) => a.answer === "moved")) {
+      moveAnswers = moveAnswers.filter(
+        (a) => !(a.answer === "moved" && a.levelId === level.id),
+      );
+      if (draftTourUrl !== null) void recordMeta(draftTourUrl);
+    }
     logVisit(visit, state, choice?.alignment ?? null, plan?.level ?? null);
     if (choice === null || zero === null) return;
     const record: VisitSettleRecord = {
@@ -2244,7 +2319,30 @@ export function wireCreatorSetup(deps: {
       refused: choice.refused,
     };
     visitSettles.set(visit, record);
-    if (plan === null) return;
+    const decided =
+      position === null
+        ? undefined
+        : {
+            levelId: position.levelId,
+            decision: position.decision,
+            offsetM: position.offsetM,
+            candidate: position.candidate,
+            stored: position.stored,
+            applied,
+            movedWithCode: [] as {
+              id: string;
+              before: QrGeoPose;
+              after: QrGeoPose;
+            }[],
+          };
+    if (plan === null) {
+      // Nothing to recompute, but a decision about the code is still the
+      // recording's to keep.
+      if (decided !== undefined) {
+        logSettle(visit, trigger, record, [], null, null, decided);
+      }
+      return;
+    }
     for (const { index, object } of plan.objects) {
       const entry = ctx.placedObjects[index];
       if (entry === undefined) continue;
@@ -2256,13 +2354,67 @@ export function wireCreatorSetup(deps: {
       ctx.mintedLevel = plan.level;
       if (draftTourUrl !== null) void recordMeta(draftTourUrl);
     }
+    // An IMPROVED position takes the pins and photos near it along, so
+    // they keep their place next to the poster (owner decision
+    // 2026-10-06); a real move leaves them where they are (D19).
+    const movedWithCode =
+      applied &&
+      reapplied === null &&
+      position.decision.kind === "replace" &&
+      level !== null
+        ? moveEarlierWithCode(visit, level.json, plan.level.json)
+        : [];
     logSettle(
       visit,
       trigger,
       record,
-      plan.objects.map(({ object }) => object),
+      plan.objects,
       plan.level,
+      plan.levelAlignment,
+      decided === undefined ? undefined : { ...decided, movedWithCode },
     );
+  }
+
+  /**
+   * Move the earlier objects within reach of an improved code with it
+   * (`move-with-code.ts`): every object of the tour this visit did not
+   * place - the hosted ones, a restored draft's, an earlier visit's -
+   * within 40 m of the code's OLD position, as an edit by id (the Finish
+   * writes it like any move). A pin keeps its orientation: it has none
+   * (`mintPin` writes the identity).
+   */
+  function moveEarlierWithCode(
+    visit: number,
+    beforeJson: string,
+    afterJson: string,
+  ): { id: string; before: QrGeoPose; after: QrGeoPose }[] {
+    const from = storedGeo(beforeJson);
+    const to = storedGeo(afterJson);
+    if (from === null || to === null) return [];
+    const moved: { id: string; before: QrGeoPose; after: QrGeoPose }[] = [];
+    for (const entry of authoringObjects(
+      ctx.tourManifest?.objects ?? [],
+      ctx.placedObjects,
+      ctx.deletedObjectIds,
+    )) {
+      if (entry.placed?.placement?.visit === visit) continue;
+      const before = entry.object.geo;
+      if (!withinCodeReach(before, from)) continue;
+      const turned = moveWithCode(before, from, to);
+      const after: QrGeoPose =
+        entry.object.kind === "pin"
+          ? { ...before, lat: turned.lat, lon: turned.lon, alt: turned.alt }
+          : turned;
+      const object = { ...entry.object, geo: after };
+      ctx.placedObjects = upsertPlaced(ctx.placedObjects, {
+        ...(entry.placed ?? {}),
+        object,
+      });
+      recordPlacement(object);
+      moved.push({ id: object.id, before, after });
+    }
+    if (moved.length > 0) syncPreviews();
+    return moved;
   }
 
   /**
@@ -2414,11 +2566,14 @@ export function wireCreatorSetup(deps: {
     visit: number,
     trigger: "visit-end" | "finish" | "late-arrival",
     record: VisitSettleRecord,
-    objects: readonly TourObject[],
+    objects: readonly ({ object: TourObject } & SettleChoice)[],
     level: { id: string; json: string } | null,
+    levelAlignment: number[] | null,
+    codePosition?: Parameters<typeof visitSettled>[0]["codePosition"],
   ): void {
     arStore.dispatch(
       visitSettled({
+        ...(codePosition === undefined ? {} : { codePosition }),
         arVisitIndex: visit,
         atMs: Date.now(),
         trigger,
@@ -2426,7 +2581,15 @@ export function wireCreatorSetup(deps: {
         visitAlignment: record.visitAlignment,
         usedAlignment: record.alignment,
         sighting: record.sighting,
-        objects: objects.map((object) => ({ id: object.id, geo: object.geo })),
+        // Each object's own choice (D33): its alignment, and why.
+        objects: objects.map(({ object, basis, alignment, refused }) => ({
+          id: object.id,
+          geo: object.geo,
+          basis,
+          usedAlignment: alignment,
+          refusedCorrection: refused,
+        })),
+        levelAlignment,
         level,
         referenceLevel: record.referenceLevel,
         zero: record.zero,
@@ -2472,22 +2635,18 @@ export function wireCreatorSetup(deps: {
     ctx.mintedLevel = role.reference;
     ctx.codeMeasurement =
       priorMeasurement?.levelId === fresh.level.id ? priorMeasurement : null;
-    ctx.placementNote = STORED_POSITION_KEPT;
   }
 
   /**
-   * Measure the code in view ("Save the measured position"), or - with
-   * `replace` - deliberately replace the stored pose in hand with the new
-   * measurement ("Replace the code's saved position",
-   * authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5). Without
-   * `replace`, a measurement of a code whose pose is already stored is a
-   * correction sighting for this visit (`measurementRole`, D10b).
+   * Measure the code in view (on its own since U3: `maybeMeasure`). A measurement
+   * of a code whose pose is already stored is a correction sighting for
+   * this visit (`measurementRole`, D10b); whether this visit's view then
+   * REPLACES the stored pose is decided at the visit's settle (UI round 1,
+   * U3, `code-position-settle.ts`), never by a tap.
    *
-   * Resolves with what the tap became, so the move prompt's "Use the new
-   * spot" can say whether the replace happened (M5b, §7j #10): a no-op is
-   * `failed` with the reason, never silence.
+   * Resolves with what it became: a no-op is `failed` with the reason.
    */
-  function measureCode(replace: boolean): Promise<MeasureOutcome> {
+  function measureCode(): Promise<MeasureOutcome> {
     if (ctx.lastDetectedText === null) {
       return Promise.resolve({ kind: "failed", reason: "no code in view" });
     }
@@ -2498,10 +2657,7 @@ export function wireCreatorSetup(deps: {
     const stablePose = fused?.status === "stable" ? fused.pose : null;
     if (stablePose === null) {
       // The gate lost stability since render.
-      return Promise.resolve({
-        kind: "failed",
-        reason: "the code is not measured steadily",
-      });
+      return Promise.resolve({ kind: "failed", reason: STEADY_LOST });
     }
     const result = mintQrLevel({
       odomPose: stablePose,
@@ -2512,13 +2668,14 @@ export function wireCreatorSetup(deps: {
       nowIso: new Date().toISOString(),
     });
     if (!result.ok) {
-      // Inside the DOM-overlay root - errorBox is a sibling of #ar-root and
-      // therefore INVISIBLE during the AR session (milestone review #4).
-      dom.status.textContent = result.error;
+      // In the panel (errorBox is a sibling of #ar-root and therefore
+      // INVISIBLE during the AR session, milestone review #4), as a note
+      // that stands until the next one.
+      ctx.placementNote = result.error;
       return Promise.resolve({ kind: "failed", reason: result.error });
     }
-    ctx.finishError = null; // a new measurement supersedes a failed finish
-    ctx.placementNote = null;
+    // Automatic since U3, so it changes no note and no failed Finish's
+    // line (plan review #1): nothing the creator did asked for it.
     // The file name IS the code's identity, derived from the exact text this
     // poster carries - so the creator never matches a number by hand. The
     // hash is async; until it lands the finish button stays off (the level
@@ -2542,9 +2699,10 @@ export function wireCreatorSetup(deps: {
     // the new measurement only corrects this visit (D10b, M2c review #5).
     const prior = { level: ctx.mintedLevel, measurement: ctx.codeMeasurement };
     const openAtTap = ctx.openGeneration;
-    ctx.mintedLevel = null;
-    ctx.codeMeasurement = null;
-    dom.status.textContent = "Saving the measured position…";
+    // The level in hand STAYS while the identity is derived (UI round 1,
+    // U3): the measurement is automatic, and an emptied hand refused every
+    // placement in that window. Finish waits for it instead (`measuring`).
+    measuring += 1;
     dom.finishButton.disabled = true;
     return (async (): Promise<MeasureOutcome> => {
       let id: string;
@@ -2557,29 +2715,20 @@ export function wireCreatorSetup(deps: {
         // A failed identity must not lose the reference in hand.
         ctx.mintedLevel = prior.level;
         ctx.codeMeasurement = prior.measurement;
-        dom.status.textContent =
-          "Could not derive the code's identity - tap the button again.";
+        ctx.placementNote =
+          "Could not derive the code's identity on this device, so it was not measured.";
         return { kind: "failed", reason: "no code identity" };
       }
       if (mintGeneration !== ctx.mintGeneration) return { kind: "superseded" };
-      // The explicit replace applies to the stored pose in hand, and only
-      // when the code measured IS that code.
-      const replaced = replace && prior.level?.id === id ? prior.level : null;
-      const hostedJson =
-        replaced === null
-          ? await hostedCandidate(id, prior.level, openAtTap)
-          : null;
+      const hostedJson = await hostedCandidate(id, prior.level, openAtTap);
       if (mintGeneration !== ctx.mintGeneration) return { kind: "superseded" };
-      const role =
-        replaced === null
-          ? measurementRole({
-              levelId: id,
-              visit: measured.arVisitIndex,
-              inHand: prior.level,
-              inHandMeasurement: prior.measurement,
-              hostedJson,
-            })
-          : { kept: "measurement" as const };
+      const role = measurementRole({
+        levelId: id,
+        visit: measured.arVisitIndex,
+        inHand: prior.level,
+        inHandMeasurement: prior.measurement,
+        hostedJson,
+      });
       adoptMeasurement(role, prior.measurement, {
         level: { id, json: result.json },
         // What the settle re-mints the code from at the visit's end, and
@@ -2594,11 +2743,18 @@ export function wireCreatorSetup(deps: {
       });
       codeIds.set(mintedText, id);
       if (measured.arVisitIndex === ctx.arSessionGeneration) {
-        ctx.visitCodeSighting = {
+        setVisitSighting({
           text: mintedText,
           levelId: id,
           odomPose: stablePose,
-        };
+        });
+        // The code measured in this visit: its pick opens NOW, when the
+        // level's identity has resolved (milliseconds, at most seconds after
+        // the tap), at the alignment current now; `atMs` stays the tap's.
+        if (role.kept === "measurement") {
+          syncAlignmentPicks();
+          alignmentPicks.noteMeasurement(measured.atMs);
+        }
         placeEarlierObjects();
       }
       ctx.mintedLevelTour = {
@@ -2610,66 +2766,194 @@ export function wireCreatorSetup(deps: {
           levelId: id,
           ...measured,
           kept: role.kept,
-          ...(replaced === null ? {} : { replaced }),
         }),
       );
-      if (replaced !== null) {
-        ctx.placementNote =
-          "The code's saved position was replaced with this measurement.";
-        // Any replace moves the code, so any replace marks the visit's
-        // move boundary (M5b review #3), whichever button made it.
-        const boundary = movedInVisit.get(id) !== measured.arVisitIndex;
-        movedInVisit.set(id, measured.arVisitIndex);
-        // Undoable until Finish (M5b): the level it replaced, and the
-        // measurement that was in hand with it.
-        undoable = {
-          levelId: id,
-          replaced,
-          priorMeasurement: prior.measurement,
-          visit: measured.arVisitIndex,
-          prompt: null,
-          boundary,
-        };
+      if (draftTourUrl !== null) {
+        void recordMeta(draftTourUrl).catch(() => false);
       }
-      const saved =
-        draftTourUrl === null
-          ? Promise.resolve(true)
-          : recordMeta(draftTourUrl).catch(() => false);
-      renderAuthorReadout();
-      if (replaced !== null) return { kind: "replaced", saved };
       return { kind: role.kept === "measurement" ? "measured" : "kept" };
-    })();
+    })().finally(() => {
+      measuring -= 1;
+      renderAuthorReadout();
+    });
   }
 
-  dom.mintButton.addEventListener("click", () => {
-    void measureCode(false);
-  });
+  /**
+   * What becomes of the code in view once the gate is open (UI round 1,
+   * U3: no "Save the measured position" button), and whether to measure it
+   * now - one classification for the panel's line and the measurement, so
+   * the line never claims a measurement that does not happen:
+   * - the code in hand: `measured`;
+   * - a measurement in flight, or a code still being read: `measuring`;
+   * - with a code in hand, another STORED code (or one not identified
+   *   yet): `seen` - it stays a sighting for the visit log (M3a/M3b review
+   *   #6); taking it in hand would change the code this visit's objects
+   *   are corrected through. Only a code with no saved position yet (a new
+   *   code for the tour) is measured then;
+   * - no tour open: `seen` (scan-to-open opens the code's tour first);
+   * - a code the open tour may not take (`autoMeasureAllowed`: only its
+   *   own, or the first code of a tour with none): `not-measured`;
+   * - otherwise `measuring`, measured now unless this visit already tried
+   *   (once per visit and code, plan review #1).
+   */
+  function codeOutcome(text: string): {
+    ready: CodeReadyState;
+    measure: boolean;
+  } {
+    const id = codeIds.get(text);
+    const inHand = ctx.mintedLevel;
+    if (id !== undefined && id === inHand?.id) {
+      return { ready: "measured", measure: false };
+    }
+    if (measuring > 0) return { ready: "measuring", measure: false };
+    if (inHand !== null && (id === undefined || hasStoredPose(id))) {
+      return { ready: "seen", measure: false };
+    }
+    // A new code takes the hand only once the code in hand is saved in the
+    // tour (hosted, or written by a Finish): each Finish writes the ONE code
+    // in hand, so measuring past an unsaved one would silently drop it (U3
+    // milestone review #7; before U3 that took a deliberate tap).
+    if (
+      inHand !== null &&
+      !(ctx.currentLevels?.has(inHand.id) ?? false) &&
+      !finishedLevelIds.has(inHand.id)
+    ) {
+      return { ready: "finish-first", measure: false };
+    }
+    const relation = codeTour.relation(text);
+    if (relation === "resolving") return { ready: "measuring", measure: false };
+    if (relation === "no-tour-open") return { ready: "seen", measure: false };
+    const tourHasCodes = (ctx.currentLevels?.size ?? 0) > 0 || inHand !== null;
+    if (!autoMeasureAllowed(relation, tourHasCodes)) {
+      return { ready: "not-measured", measure: false };
+    }
+    const tried = autoMeasured.has(visitKeyOf(text));
+    return { ready: tried ? "seen" : "measuring", measure: !tried };
+  }
 
-  // The explicit replace: a confirm step first, because it moves the code
-  // for everyone who opens the tour (M4).
-  dom.replaceCodeButton.addEventListener("click", () => {
-    replaceConfirmOpen = true;
-    renderAuthorReadout();
-  });
-  dom.replaceCodeNo.addEventListener("click", () => {
-    replaceConfirmOpen = false;
-    renderAuthorReadout();
-  });
-  dom.replaceCodeYes.addEventListener("click", () => {
-    replaceConfirmOpen = false;
-    // Hidden directly: a re-render would overwrite the "Saving…" line the
-    // measurement puts up; its own end re-renders the panel.
-    dom.replaceCodeConfirm.hidden = true;
-    // Notes never move with the code (owner decision D19): the confirm
-    // says they will appear shifted.
-    void measureCode(true);
-  });
+  /** `autoMeasured`'s key: the visit and the code's text. */
+  function visitKeyOf(text: string): string {
+    return `${String(ctx.arSessionGeneration)}|${text}`;
+  }
+
+  /**
+   * Measure the code in view on its own when `codeOutcome` says so and the
+   * gate is open: never during a Finish. A measurement that lost the gate
+   * before it ran is tried again; one the mint or the identity refused is
+   * not, until the next visit (its reason stands as the panel's note).
+   */
+  function maybeMeasure(canMint: boolean, measure: boolean): void {
+    const text = ctx.lastDetectedText;
+    if (!canMint || !measure || text === null) return;
+    if (ctx.finishing || !sessionLive()) return;
+    const key = visitKeyOf(text);
+    autoMeasured.add(key);
+    void measureCode().then((outcome) => {
+      if (outcome.kind === "failed" && outcome.reason === STEADY_LOST) {
+        autoMeasured.delete(key);
+      }
+    });
+  }
+
+  /** What the save guard reads (`finish-guard.ts`). */
+  function guardInput(): FinishGuardInput {
+    return {
+      sessionLive: sessionLive(),
+      arAvailable: arController.getState().status !== "unsupported",
+      placedCount: ctx.placedObjects.length,
+      deletedCount: ctx.deletedObjectIds.length,
+      rebuilt:
+        ctx.rebuiltZip === null
+          ? null
+          : { delivered: ctx.rebuiltZip.delivered === true },
+      // A failed backup write is noted once; from then on the page cannot
+      // promise the phone keeps the work (U2 milestone review #3).
+      draftPersists: !warnedAboutPersistence,
+      finishFailed: ctx.finishError !== null,
+    };
+  }
+
+  /** The open tour's entries a visitor never reads, kept for the tour and
+   *  manifest it was computed for: the readout renders on every dispatch,
+   *  and a scan can hold thousands of entries. */
+  let scanMemo: {
+    session: TourSession;
+    manifest: TourManifest | null;
+    count: number;
+  } | null = null;
+
+  function renderKeepScan(): void {
+    const current = ctx.session;
+    if (current === null || ctx.tourManifestStatus !== "settled") {
+      dom.keepScanRow.hidden = true;
+      return;
+    }
+    if (
+      scanMemo?.session !== current ||
+      scanMemo.manifest !== ctx.tourManifest
+    ) {
+      scanMemo = {
+        session: current,
+        manifest: ctx.tourManifest,
+        count: scanEntryNames(
+          current.entries.map((e) => e.filename),
+          ctx.tourManifest ?? createEmptyTourManifest(),
+          current.manifestWrap,
+        ).length,
+      };
+    }
+    // Chosen on the page before AR (UI round 1, U2): hidden in a session,
+    // since the Finish there reads it.
+    // ... and while a rebuilt file waits: the next Finish rebuilds from it,
+    // so a changed tick could not change it (U2 milestone review #2).
+    dom.keepScanRow.hidden =
+      sessionLive() || ctx.rebuiltZip !== null || scanMemo.count === 0;
+  }
+
+  /**
+   * The recorded photos' spots for this Finish (scan-pass plan S1, S-D11):
+   * the tour's own when it carries them, else baked from its recording,
+   * else none - the tour then keeps the visitor's live join, as before S1,
+   * and `notPlaced` says why for the creator. A recording that cannot be
+   * read or joined never fails the Finish; a cap's refusal and a failed
+   * integrity check do, as every read's does.
+   */
+  async function captureSpotsForFinish(
+    current: TourSession,
+    manifest: TourManifest,
+  ): Promise<{ spots?: TourCaptureSpots; notPlaced?: string }> {
+    if (manifest.captureSpots !== undefined) {
+      return { spots: manifest.captureSpots };
+    }
+    if (!current.hasRecording) return {};
+    try {
+      const bake = await bakeCaptureSpots(current, {
+        shouldContinue: () => ctx.session === current,
+        onChunk: (done, total) => {
+          ctx.finishProgress = FINISH_LABELS.placingPhotos(done, total);
+          renderAuthorReadout();
+        },
+      });
+      return bake.kind === "baked"
+        ? { spots: bake.spots }
+        : { notPlaced: bake.reason };
+    } catch (err) {
+      if (err instanceof ArchiveLimitError) throw err;
+      if (err instanceof TourIntegrityError) throw err;
+      return {
+        notPlaced: `reading the recording failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      };
+    }
+  }
 
   dom.finishButton.addEventListener("click", () => {
     const current = ctx.session;
     if (
       current === null ||
       ctx.mintedLevel === null ||
+      measuring > 0 ||
       ctx.finishing ||
       ctx.tourManifestStatus !== "settled"
     ) {
@@ -2715,9 +2999,13 @@ export function wireCreatorSetup(deps: {
         // the new ones appended and the deleted ones filtered out (plan
         // §3.4, M4); the photos' bytes become content entries next to it.
         const manifest = ctx.tourManifest ?? createEmptyTourManifest();
+        const photos = await captureSpotsForFinish(current, manifest);
+        const captureSpots = photos.spots;
+        if (ctx.session !== current) return; // re-opened meanwhile
         const deleted = [...ctx.deletedObjectIds];
         const written: TourManifest = {
           ...manifest,
+          ...(captureSpots === undefined ? {} : { captureSpots }),
           // Never an id twice, and not for tidiness: the serializer REJECTS
           // duplicates, so one restored object that is already in the
           // manifest would make every finish throw - for as long as the
@@ -2728,11 +3016,38 @@ export function wireCreatorSetup(deps: {
             deleted,
           ),
         };
-        // A deleted photo takes its content file with it.
-        const removed = contentEntriesToRemove(manifest.objects, deleted, wrap);
+        // A deleted photo takes its content file with it. A signature over
+        // the old list cannot cover the files this Finish rewrites, so it
+        // goes - the output is unsigned until K2 signs on export. The list
+        // itself CONTINUES for a listed tour (K1 milestone review R7, below);
+        // anything else carrying the name is dropped with it.
+        const [listName, ...signatureNames] = signedManifestFilesOf(entryNames);
+        const listed =
+          current.integrity.kind === "listed" && listName !== undefined
+            ? { integrity: current.integrity, entry: listName }
+            : null;
+        // The published copy carries only what visitors read unless the
+        // creator keeps the walk (S-D10): the walk, its unbaked frames, depth.
+        // Never without baked spots (S1 milestone review #2): the walk is
+        // then the only way a viewer can place the photos, and the hosted
+        // file may be the creator's only copy of it.
+        const scanLeftOut =
+          dom.keepScanInput.checked || written.captureSpots === undefined
+            ? []
+            : scanEntryNames(entryNames, written, wrap);
+        const removed = [
+          ...contentEntriesToRemove(manifest.objects, deleted, wrap),
+          ...scanLeftOut,
+          ...signatureNames,
+          ...(listed === null && listName !== undefined ? [listName] : []),
+        ];
         const entries = [
           {
-            path: existingLevelPath ?? qrLevelEntryName(minted.id),
+            // A listed tour's new level goes inside the tour's folder, where
+            // its list can name it (R7); others keep the root, as before.
+            path:
+              existingLevelPath ??
+              `${listed === null ? "" : wrap}${qrLevelEntryName(minted.id)}`,
             data: minted.json,
           },
           { path: manifestPath, data: serializeTourManifest(written) },
@@ -2749,11 +3064,47 @@ export function wireCreatorSetup(deps: {
         // contain (PR #435 review, the second half of the second-finish
         // bug). A tour close clears the rebuilt zip, so a re-opened tour
         // starts from what is actually hosted.
-        const input =
-          ctx.rebuiltZip?.blob ?? (await current.readWholeArchive());
+        const previous = ctx.rebuiltZip;
+        const input = previous?.blob ?? (await current.readWholeArchive());
         if (ctx.session !== current) return; // re-opened meanwhile
+        // The series' list, continued: the same series id, the next
+        // version, and the hash of every file this zip will hold - the
+        // kept ones from the list the input carries (checked at open and
+        // as a whole by readWholeArchive, or written by the last Finish),
+        // the written ones hashed here. Without it the series id's only
+        // home was dropped (R7).
+        let signedManifest: SignedTourManifest | undefined;
+        if (listed !== null) {
+          signedManifest = successorManifest(
+            listed.integrity.manifest,
+            listed.entry,
+            {
+              ...(previous?.signedManifest === undefined
+                ? {}
+                : { baseFiles: previous.signedManifest.files }),
+              removed,
+              written: new Map(
+                await Promise.all(
+                  entries.map(
+                    async (e) => [e.path, await fileRecordOf(e.data)] as const,
+                  ),
+                ),
+              ),
+              createdAt: new Date().toISOString(),
+            },
+          );
+          entries.push({
+            path: listed.entry,
+            data: serializeSignedTourManifest(signedManifest),
+          });
+        }
         const blob = await rebuildZipWithEntries(input, entries, {
           remove: removed,
+          // The open archive is untrusted, so its rebuild inflates under
+          // the session's own budget (K0 milestone review R1). A previous
+          // Finish's zip is this page's own output, stored and bounded:
+          // the rebuild sizes a budget for it itself.
+          ...(previous === null ? { budget: current.budget } : {}),
           onProgress: (done, total) => {
             ctx.finishProgress = FINISH_LABELS.rebuilding(done, total);
             renderAuthorReadout();
@@ -2763,6 +3114,7 @@ export function wireCreatorSetup(deps: {
         const hosted = current.hostedFileName();
         ctx.rebuiltZip = {
           blob,
+          ...(signedManifest === undefined ? {} : { signedManifest }),
           // The hosted file's own name first: Drive offers "Replace" only
           // for the same name (Drive replace plan §2 decision 3) - made safe
           // to save where a phone would change it, and the Drive steps then
@@ -2774,9 +3126,22 @@ export function wireCreatorSetup(deps: {
                 ? hosted
                 : downloadSafeName(hosted),
         };
-        dom.finishStatus.textContent = drive()
-          ? FINISH_LABELS.readyDrive(blob.size, ctx.rebuiltZip.filename)
-          : FINISH_LABELS.ready(blob.size, route() === "share");
+        dom.finishStatus.textContent = [
+          drive()
+            ? FINISH_LABELS.readyDrive(blob.size, ctx.rebuiltZip.filename)
+            : FINISH_LABELS.ready(blob.size, route() === "share"),
+          ...(scanLeftOut.length === 0
+            ? []
+            : [FINISH_LABELS.scanLeftOut(scanLeftOut.length)]),
+          ...(photos.notPlaced === undefined
+            ? []
+            : [FINISH_LABELS.photosNotPlaced(photos.notPlaced)]),
+          // What the settles decided for the code (UI round 1, U3): no
+          // button announces it any more.
+          codePositionSentence(codePositionOutcomes),
+        ]
+          .filter((line) => line !== "")
+          .join(" ");
         dom.downloadButton.textContent = idleLabel();
         dom.downloadButton.disabled = false;
         // The placed objects are in the zip now; the next finish (a
@@ -2811,8 +3176,10 @@ export function wireCreatorSetup(deps: {
         );
         syncPreviews();
         wroteZip = true;
-        // Undo lasts until Finish (M5b): the zip carries the new spot now.
+        finishedLevelIds.add(minted.id);
         undoable = null;
+        // The result screen said them; the next Finish reports its own.
+        codePositionOutcomes = [];
         arStore.dispatch(
           authoringFinished({
             levelId: minted.id,
@@ -2844,11 +3211,18 @@ export function wireCreatorSetup(deps: {
         dom.finishBlock.hidden = false;
         // The summary of every visit (M3b), on the page with the download.
         showSummary();
+        // The save is the one thing left (UI round 1, U2): brought into
+        // view and focused, rather than the top of step 4.
+        dom.downloadButton.scrollIntoView?.({ block: "center" });
+        dom.downloadButton.focus?.();
       } catch (err) {
         if (ctx.session === current) {
           ctx.finishError = FINISH_LABELS.failed(
             err instanceof Error ? err.message : String(err),
           );
+          // A file this Finish already made stays reachable with the
+          // retry (U2 milestone review #4).
+          if (ctx.rebuiltZip !== null) dom.finishBlock.hidden = false;
         }
       } finally {
         // A Finish that wrote no zip leaves its visit unsettled again while
@@ -2919,6 +3293,11 @@ export function wireCreatorSetup(deps: {
       (outcome) => {
         const { delivered } = outcome;
         if (openGeneration !== ctx.openGeneration) return;
+        // Saved: the guard stops asking, and Finish comes back (U2).
+        if (delivered && ctx.rebuiltZip === rebuilt) {
+          ctx.rebuiltZip = { ...rebuilt, delivered: true };
+          renderAuthorReadout();
+        }
         dom.downloadButton.disabled = false;
         dom.downloadButton.textContent = idleLabel();
         dom.finishStatus.textContent = finishHandoffStatus(
@@ -2967,6 +3346,8 @@ export function wireCreatorSetup(deps: {
 
   return {
     renderAuthorReadout,
+    leaveNeedsConfirm: () => leaveNeedsConfirm(guardInput()),
+    leaveQuestion: () => leaveQuestion(guardInput()),
     startAuthorPipeline,
     beginAuthorVisit: () => {
       if (!creator) return;
@@ -2976,6 +3357,7 @@ export function wireCreatorSetup(deps: {
       // visit, so they go into one frame that starts at the scene root -
       // placed from geo, like the viewer's content - and moves under the
       // world group once the code is seen (`placeEarlierObjects`).
+      resetAlignmentPicks();
       earlierFrame = new Group();
       earlierFrame.name = "earlier-visits";
       earlierFrame.matrixAutoUpdate = false;
@@ -2994,6 +3376,8 @@ export function wireCreatorSetup(deps: {
     endAuthorVisit: () => {
       if (!creator) return;
       settleVisit("visit-end");
+      autoMeasured.clear();
+      resetAlignmentPicks();
       ctx.visitCodeSighting = null;
       storedCodeSightings.clear();
       liveRefusal = null;
@@ -3013,6 +3397,9 @@ export function wireCreatorSetup(deps: {
     },
     resetFinishStep: () => {
       dom.downloadButton.disabled = true;
+      // A "keep the walk" given for the closing tour is not given for the
+      // next one (S1 milestone review #9).
+      dom.keepScanInput.checked = false;
       // The LABEL too, because the hand-off continuation is generation-
       // guarded and returns without restoring it for a tour that closed
       // underneath an open share sheet. Without this the next tour's
@@ -3038,7 +3425,6 @@ export function wireCreatorSetup(deps: {
       // The closing tour's previews, photo bytes and list (M4).
       clearPreviews();
       finishedPhotoBlobs.clear();
-      replaceConfirmOpen = false;
       editing.reset();
       // The summary and the visits belonged to the closing tour (M3b).
       deps.summary?.hide();
@@ -3047,6 +3433,9 @@ export function wireCreatorSetup(deps: {
       moveAnswers = [];
       movedInVisit.clear();
       undoable = null;
+      codePositionOutcomes = [];
+      appliedCode = null;
+      finishedLevelIds.clear();
       moveOnset = null;
       movePrompt = null;
     },

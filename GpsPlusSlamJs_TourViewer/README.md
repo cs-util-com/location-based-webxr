@@ -66,6 +66,12 @@ capture spots), and a tour that carries a recording also places its
 photos at the spots they were taken. A tour whose zip carries no measured
 code is placed by GPS at once, and says so.
 
+A sample station tour ships with the app: `/tour/samples/marienplatz-tour.zip`
+(three stations at Marienplatz in Munich, a knight, a choice, an arch).
+Open it with `/tour/?qr=<that URL>&relocate=here` to try it anywhere: the
+test switch moves its stations to your first GPS fix, in memory only
+(`scripts/build-sample-tour.mjs`, `src/tour-relocation.ts`).
+
 ## What the transport does
 
 - Accepts a pasted share link or direct URL to a hosted `.zip`, or a

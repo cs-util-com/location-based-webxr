@@ -33,7 +33,8 @@ import type { ViewerMode } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { debugReadoutLines, visitorFusedHint } from "./qr-debug-readout.js";
 import type { TourViewerSeams } from "./seams.js";
-import { arStatusLine } from "./tour-flow.js";
+import { arStatusLine, type ArStatusInput } from "./tour-flow.js";
+import { visitorStatus } from "./visitor-status.js";
 import type { LocationGate } from "./visitor-screen.js";
 import type { RecordingPanel } from "./recording-panel.js";
 import {
@@ -57,6 +58,10 @@ export interface ArEntryDom {
   escapeButton: HTMLButtonElement;
   /** The `?debug=1` QR readout (plan §66); written only while `ctx.debug`. */
   arDebug?: HTMLElement;
+  /** The screen reader's copy of the visitor's sentence (UI round 1, U1,
+   *  review F14): written only when the sentence changes, never per camera
+   *  frame like the visible line. */
+  arStatusLive?: HTMLElement;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -123,9 +128,10 @@ export function wireArEntry(deps: {
 
   function renderArStatus(): void {
     renderDebugReadout();
-    dom.arStatus.textContent = arStatusLine({
+    const input: ArStatusInput = {
       mode,
       arStatus: arController.getState().status,
+      arError: arController.getState().error ?? null,
       cameraFrames: ctx.cameraFrameCount,
       tour:
         ctx.session === null
@@ -173,7 +179,41 @@ export function wireArEntry(deps: {
               count: ctx.contentRendered.count,
               skipped: ctx.contentRendered.skipped.length,
             },
-    });
+    };
+    // A visitor reads one plain sentence (UI round 1, U1); the technical
+    // line stays for the creator and for a visitor's `?debug=1`. The state
+    // name is the stable channel for the page's styling and the tests.
+    const plain = visitorStatus(input);
+    const visitor = mode === "visitor";
+    const line = visitor && !ctx.debug ? plain.text : arStatusLine(input);
+    dom.arStatus.textContent = line;
+    // The visitor's state machine only (a creator's would mislead), and
+    // the gate for both (U1 milestone review #8, #9).
+    if (visitor) dom.arStatus.dataset.state = plain.state;
+    else delete dom.arStatus.dataset.state;
+    dom.arStatus.dataset.gate = gateName(ctx.scanGate);
+    // The live region: the visitor's sentence, and a creator's line only
+    // outside a session - inside one it changes with every camera frame.
+    const live = visitor
+      ? plain.text
+      : input.arStatus === "running"
+        ? null
+        : line;
+    if (
+      live !== null &&
+      dom.arStatusLive !== undefined &&
+      dom.arStatusLive.textContent !== live
+    ) {
+      dom.arStatusLive.textContent = live;
+    }
+  }
+
+  /** The scan gate as one word (`data-gate`): "passed-code" proves the
+   *  CODE passed it, not GPS. */
+  function gateName(gate: TourViewerSession["scanGate"]): string {
+    if (gate.kind === "passed") return `passed-${gate.via}`;
+    if (gate.kind === "not-required") return `not-required-${gate.reason}`;
+    return gate.kind;
   }
 
   /** The ?debug=1 block: the controller state and each code's counts. */
@@ -263,6 +303,8 @@ export function wireArEntry(deps: {
     ctx.contentRendered = null;
     ctx.contentAttempted = false;
     ctx.contentError = null;
+    // The story stops with the session; the station progress stays.
+    hooks.stopStations();
     dom.escapeButton.hidden = true;
     ctx.viewerQrStatus = null;
     ctx.viewerUnknownCode = null;
@@ -331,6 +373,7 @@ export function wireArEntry(deps: {
           ctx.latestFrame = frame;
           ctx.qrController?.offerFrame(frame);
           renderArStatus();
+          hooks.tickStations();
         },
         onSessionEnd,
         onGpsPosition: (position) => {
@@ -399,8 +442,11 @@ export function wireArEntry(deps: {
     ctx.joinDeclined = false;
     ctx.placementUnsubscribe = arStore.subscribe(() => {
       hooks.tryPlaceTour();
+      // The stations (tour kit plan K4) are judged on every GPS fix too.
+      hooks.tickStations();
     });
     hooks.tryPlaceTour();
+    hooks.tickStations();
     renderArStatus();
   }
 
@@ -408,6 +454,17 @@ export function wireArEntry(deps: {
   renderArState(arController.getState());
   void arController.refreshSupport();
   dom.enterArButton.addEventListener("click", () => {
+    // During a session the button is the way out (UI round 1, U2): the
+    // session end runs the same teardown as the back gesture.
+    if (arController.getState().status === "running") {
+      arController.disable().catch((err: unknown) => {
+        dom.errorBox.textContent = describeOpenError(err);
+      });
+      return;
+    }
+    // Inside the tap, before any await: the stories' one audio element
+    // may play later only if it played in a gesture (tour kit plan K4).
+    if (!authorMode) hooks.unlockStationAudio();
     // Defensive: enable() reports failures via its state machine, but a
     // rejection anywhere else (e.g. the rollback disable()) must reach the
     // error box, not die as an unhandled rejection.

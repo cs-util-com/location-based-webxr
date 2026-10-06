@@ -35,13 +35,24 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
   `finish`, or `late-arrival` - a photo of an already settled visit, minted
   through that visit's settle when its encode landed), `basis` (`visit-settle.ts`), `visitAlignment` (the store's, read
   before the teardown), `usedAlignment` (what the geo went through),
-  `sighting` (the code pose a correction used, or null), `objects` (each
-  settled object's `id` and new `geo`), `level` (the re-minted code, or
-  null), `referenceLevel` (the level in hand when the settle ran, before any
+  `sighting` (the LATEST sighting of the level in hand when the end choice
+  was code-corrected, or null; since D33 each object is corrected through
+  the sighting nearest it, whose pose is not logged), `objects` (each
+  settled object's `id` and new `geo`, and since D33 its own `basis`,
+  `usedAlignment` and `refusedCorrection`: each object goes through the
+  first mature alignment after its own moment, so the top-level
+  `usedAlignment` is the choice for an object placed at the visit's end -
+  what a late arrival uses; these three are optional and absent in
+  recordings made before D33, and no reader parses them yet: the entry is
+  only checked for its place in the action order), `level` (the re-minted
+  code, or null) with `levelAlignment` (the measurement's own alignment,
+  D33; optional, absent before D33), `referenceLevel` (the level in hand when the settle ran, before any
   re-mint - the stored pose a code correction maps onto) and `zero` (M2c
-  review #7): with `visitAlignment` and `sighting` a replay recomputes a
-  code-corrected `usedAlignment` through `correctedAlignment` (pinned by the
-  cross-visit test in `authoring-settle.test.ts`), and `refusedCorrection`
+  review #7): with `visitAlignment` and `sighting` a replay recomputes the
+  END choice's code-corrected `usedAlignment` through `correctedAlignment`
+  (pinned by the cross-visit test in `authoring-settle.test.ts`), but not
+  the per-object choices of D33, whose picks and sightings are not logged:
+  a replay reads those from `objects[].usedAlignment`, and `refusedCorrection`
   (a code correction the plausibility bound refused - its horizontal size,
   yaw and the bounds - after which the visit settled through its plain
   alignment; null otherwise; M2c review #2). The tap-time geo of `objectPlaced`/`codeMeasured` is what a killed
@@ -66,8 +77,9 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
     `objectDeleted` it undoes (the restored object, `hosted`, the visit,
     the time, the surface), so a replay pairs the two by the object's id.
   - `codeMeasured` gains `replaced` - the stored pose the explicit
-    "Replace the code's saved position" replaced; absent for
-    every other measurement.
+    "Replace the code's saved position" replaced; absent for every other
+    measurement, and in recordings since UI round 1 U3 (no explicit
+    replace any more).
 - The moved-code prompt (authoring plan §3.6, D20, M5b; §7j #15):
   - `codeMovePrompted(payload)` - `tourAuthoring/codeMovePrompted`, once
     per refusal run: `levelId`, `arVisitIndex`, `atMs`, the refusal
@@ -75,13 +87,17 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
     its saved position - `yawDeg`, `maxHorizontalM`) and how long it
     lasted (`fixes`, `seconds`, null without readable fix times).
   - `codeMoveAnswered(payload)` - `tourAuthoring/codeMoveAnswered`: the
-    `answer` (`use-new-spot`, `second-copy`, `not-now`), the spot, whether
-    the saved position was `replaced`, and the `error` when a "Use the new
-    spot" did not replace (null otherwise).
-  - `codeReplaceUndone(payload)` - `tourAuthoring/codeReplaceUndone`: an
-    undo before Finish of any replace - `restored` (the `replaced` of the
-    undone measurement), `undone` (the level taken out of hand),
-    `fromPrompt`.
+    `answer` (`moved`, `second-copy`, `not-now`; an Undo of "moved" is a
+    `not-now`), the spot, `replaced` (false since UI round 1 U3: a "moved"
+    answer is applied by the settle) and `error`. `use-new-spot` and
+    `tourAuthoring/codeReplaceUndone` (the immediate replace and its undo)
+    exist in older recordings only.
+- `visitSettled` gains `codePosition` (UI round 1, U3;
+  `code-position-settle.ts`): for a stored code the visit saw, the
+  `decision` (keep with its reason, replace, move, move-waits), the
+  `offsetM`, the `candidate` and `stored` qualities, whether it was
+  `applied`, and `movedWithCode` - each earlier object an improved code
+  took with it, `before` and `after`.
 - Each creator carries `.type`, as RTK's do; the payload interfaces are
   module-private (knip), reachable as `Parameters<typeof objectPlaced>[0]`.
 - `logAction`, `LogActionCreator`, `AlignmentMatrix` - exported since M1b

@@ -24,6 +24,7 @@ import type {
 } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { qrFrameChanged } from "gps-plus-slam-app-framework/state";
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
+import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { Matrix4 } from "three";
 import type { TourViewerSeams } from "./seams.js";
 import {
@@ -248,7 +249,6 @@ describe("the creator measures and mints with the fused pose", () => {
     "sizeInput",
     "printPanel",
     "status",
-    "mintButton",
     "finishButton",
     "finishStatus",
     "downloadButton",
@@ -267,11 +267,6 @@ describe("the creator measures and mints with the fused pose", () => {
     "sizeOfferUse",
     "sizeOfferKeep",
     "objectList",
-    "replaceCodeButton",
-    "replaceCodeConfirm",
-    "replaceCodeConfirmText",
-    "replaceCodeYes",
-    "replaceCodeNo",
     "movePrompt",
     "movePromptText",
     "movePromptUse",
@@ -280,6 +275,8 @@ describe("the creator measures and mints with the fused pose", () => {
     "moveUndo",
     "moveUndoText",
     "moveUndoButton",
+    "keepScanRow",
+    "keepScanInput",
   ] as const;
   function el() {
     const handlers = new Map<string, () => void>();
@@ -323,7 +320,10 @@ describe("the creator measures and mints with the fused pose", () => {
   function creator(
     options: {
       aligned?: boolean;
-      codeTour?: Pick<ScanOpen, "onDetection" | "status" | "tourOf">;
+      codeTour?: Pick<
+        ScanOpen,
+        "onDetection" | "status" | "tourOf" | "relation"
+      >;
     } = {},
   ) {
     captured.configs.length = 0;
@@ -399,7 +399,7 @@ describe("the creator measures and mints with the fused pose", () => {
       expect(c.arStore.getState().qrDetected.markers[TEXT]).toBeUndefined();
       expect(c.dom.sizeOfferUse.hidden).toBe(true);
       expect(c.dom.sizeOfferText.textContent).toBe(
-        "Now using 15.5 cm (0.155 m) - walk slowly around the code again, then save the position.",
+        "Now using 15.5 cm (0.155 m) - walk slowly around the code again to measure it at this size.",
       );
     });
 
@@ -426,30 +426,79 @@ describe("the creator measures and mints with the fused pose", () => {
 
   // Milestone review of b4b #1: the readout and the mint read the fused
   // result; a cached one survives a tracking restart, and minting from it
-  // would stamp the OLD frame's pose into the printed code.
-  it("does not mint the old frame's pose after a tracking restart", () => {
+  // would stamp the OLD frame's pose into the printed code. Since U3 the
+  // measurement follows the readout on its own, so the readout must not
+  // read the old frame's pose either.
+  it("does not read the old frame's pose after a tracking restart", () => {
     const c = creator();
     for (let i = 0; i < 7; i++) c.detect(i);
     c.arStore.dispatch(qrFrameChanged());
-    c.dom.mintButton.click();
-    expect(c.dom.status.textContent).not.toMatch(/no usable gps alignment/i);
+    c.setup.renderAuthorReadout();
     expect(c.dom.status.textContent).not.toMatch(/pose stable/i);
+    expect(c.ctx.mintedLevel).toBeNull();
   });
 
   it("reads the fused pose as stable where the single frames scatter", () => {
     const c = creator();
     for (let i = 0; i < 7; i++) c.detect(i);
-    // Stable; the mint then waits only for the GPS alignment.
+    // Stable; the measurement then waits only for the GPS alignment.
     expect(c.dom.status.textContent).toMatch(/pose stable/i);
+    expect(c.ctx.mintedLevel).toBeNull();
+  });
+
+  // UI round 1, U3: no "Save the measured position" button - the code is
+  // measured on its own once the gate is open, ONCE per visit and code
+  // (plan review #1), so later detections do not keep re-measuring it.
+  it("measures the code on its own once stable and aligned, once per visit", async () => {
+    const c = creator({ aligned: true });
+    for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    expect(c.dom.status.textContent).toMatch(/Code measured/);
+    const generation = c.ctx.mintGeneration;
+    for (let i = 7; i < 14; i++) c.detect(i);
+    c.setup.renderAuthorReadout();
+    expect(c.ctx.mintGeneration).toBe(generation);
+  });
+
+  // UI round 1, U3: with a code in hand, a NEW code (no saved position
+  // anywhere) is still measured on its own - that is how a tour gains its
+  // second code (each Finish writes the code in hand) - while another
+  // STORED code stays a sighting (authoring-settle.test.ts).
+  it("measures a new code while another code is in hand, once that one is saved in the tour", async () => {
+    const c = creator({ aligned: true });
+    c.ctx.mintedLevel = { id: "an-earlier-code", json: "{}" };
+    // Hosted: the tour already carries it.
+    c.ctx.currentLevels = new Map([["an-earlier-code", { qr: {} } as never]]);
+    for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel?.id).not.toBe("an-earlier-code");
+    });
+    expect(c.ctx.mintedLevel?.id).toBe(await qrCodeId(TEXT));
+  });
+
+  // U3 milestone review #7: each Finish writes the ONE code in hand, so a
+  // new code measured past an unsaved one would silently drop it.
+  it("asks for a Finish before measuring a new code past one not saved yet", async () => {
+    const c = creator({ aligned: true });
+    c.ctx.mintedLevel = { id: "measured-not-finished", json: "{}" };
+    for (let i = 0; i < 7; i++) c.detect(i);
+    // Once the code's identity is derived (an async hash), the line says
+    // why it is not measured, and the code in hand stays.
+    await vi.waitFor(() => {
+      expect(c.dom.status.textContent).toMatch(/Finish first/);
+    });
+    expect(c.ctx.mintedLevel.id).toBe("measured-not-finished");
   });
 
   // TourViewer scan-to-open plan §5 #13 (a pre-existing bug): a note in
   // the panel - "not saving a backup copy", a restored draft, a failed
-  // delete - replaced the live readout and locked Save until the next Pin
-  // or Photo tap. On a device without OPFS the backup note fires when the
-  // tour opens, before any measuring, so Save could never unlock: Pin and
-  // Photo need a saved position first.
-  it("keeps Save and the live readout when the panel carries a note", async () => {
+  // delete - replaced the live readout and locked measuring until the next
+  // Pin or Photo tap. Since U3 the automatic measurement must also leave
+  // the note standing (plan review #1): nothing the creator did asked for
+  // it.
+  it("measures, and keeps the live readout and the note, when the panel carries a note", async () => {
     const c = creator({ aligned: true });
     c.setup.presentDraftForTour("https://example.test/tour.zip");
     for (let i = 0; i < 12; i += 1) await Promise.resolve();
@@ -458,17 +507,23 @@ describe("the creator measures and mints with the fused pose", () => {
       "the no-backup note must have fired, or this proves nothing",
     ).toContain("not saving a backup copy");
     for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    expect(c.ctx.placementNote).toContain("not saving a backup copy");
     expect(c.dom.status.textContent).toContain("not saving a backup copy");
-    expect(c.dom.status.textContent).toMatch(/measured and stable/i);
-    expect(c.dom.mintButton.disabled).toBe(false);
+    expect(c.dom.status.textContent).toMatch(/Code measured/);
   });
 
   // TourViewer scan-to-open plan §9 #4, #9, #10: the panel feeds every
   // detection to scan-to-open, says what it reports about the code in view,
-  // names the open tour, keeps Save off for a code of another tour, and the
-  // mint remembers which tour its code named.
+  // names the open tour, and the measurement remembers which tour its code
+  // named. UI round 1, U3: which codes are measured on their own.
   describe("step 4's scan-to-open in the panel", () => {
-    function stub(status: CodeTourStatus) {
+    function stub(
+      status: CodeTourStatus,
+      relation: ReturnType<ScanOpen["relation"]> = "this-tour",
+    ) {
       const seen: string[] = [];
       return {
         seen,
@@ -478,8 +533,13 @@ describe("the creator measures and mints with the fused pose", () => {
           },
           status: () => status,
           tourOf: () => "https://h.test/a.zip",
+          relation: () => relation,
         },
       };
+    }
+
+    async function settled(): Promise<void> {
+      for (let i = 0; i < 12; i += 1) await Promise.resolve();
     }
 
     it("feeds every detection and shows the code's status", () => {
@@ -490,27 +550,44 @@ describe("the creator measures and mints with the fused pose", () => {
       expect(c.dom.status.textContent).toMatch(/Could not open the tour/);
     });
 
-    it("keeps Save on for a code of another tour: it joins the open tour", () => {
-      // Plan §13 (owner): in authoring there is no wrong code.
-      const s = stub({ kind: "added-to-open-tour" });
-      const c = creator({ aligned: true, codeTour: s.codeTour });
-      for (let i = 0; i < 7; i++) c.detect(i);
-      expect(c.dom.status.textContent).toMatch(/measured and stable/i);
-      expect(c.dom.status.textContent).toMatch(/added to the open tour/);
-      expect(c.dom.mintButton.disabled).toBe(false);
+    // Plan review #1: measuring is automatic, so another tour's code joins
+    // only a tour that has no code yet - never one that has its own.
+    it("measures another tour's code only for a tour with no code yet", async () => {
+      const s = stub({ kind: "added-to-open-tour" }, "other-tour");
+      const first = creator({ aligned: true, codeTour: s.codeTour });
+      for (let i = 0; i < 7; i++) first.detect(i);
+      await vi.waitFor(() => {
+        expect(first.ctx.mintedLevel).not.toBeNull();
+      });
+      expect(first.dom.status.textContent).toMatch(/added to the open tour/);
+
+      const withCodes = creator({ aligned: true, codeTour: s.codeTour });
+      withCodes.ctx.currentLevels = new Map([["other", { qr: {} } as never]]);
+      for (let i = 0; i < 7; i++) withCodes.detect(i);
+      await settled();
+      expect(withCodes.ctx.mintedLevel).toBeNull();
+      // One line, not two that contradict (U3 milestone review #6).
+      expect(withCodes.dom.status.textContent).toMatch(/not measured/);
+      expect(withCodes.dom.status.textContent).not.toMatch(
+        /added to the open tour/,
+      );
     });
 
-    it("keeps Save on when the level in hand was measured for another tour", () => {
-      // Milestone review #6: with no tour open, a level bound to a tour that
-      // never opens must not block measuring this code - a new measurement
-      // replaces it.
-      const s = stub({ kind: "measured-for-another", label: "x.zip" });
-      const c = creator({ aligned: true, codeTour: s.codeTour });
-      for (let i = 0; i < 7; i++) c.detect(i);
-      expect(c.dom.status.textContent).toMatch(
-        /You measured the code of x.zip/,
-      );
-      expect(c.dom.mintButton.disabled).toBe(false);
+    it("measures nothing with no tour open, or for a code naming no tour", async () => {
+      // ...and the line never claims a measurement (U3: "ready" is not
+      // "measured").
+      for (const [relation, line] of [
+        ["no-tour-open", /Code seen\./],
+        ["not-a-tour", /not measured: it is not a code of the open tour/],
+      ] as const) {
+        const s = stub({ kind: "quiet" }, relation);
+        const c = creator({ aligned: true, codeTour: s.codeTour });
+        for (let i = 0; i < 7; i++) c.detect(i);
+        await settled();
+        expect(c.ctx.mintedLevel, relation).toBeNull();
+        expect(c.dom.status.textContent, relation).toMatch(line);
+        expect(c.dom.status.textContent, relation).not.toMatch(/Code measured/);
+      }
     });
 
     it("names the open tour", () => {
@@ -529,23 +606,11 @@ describe("the creator measures and mints with the fused pose", () => {
         codeTour: stub({ kind: "quiet" }).codeTour,
       });
       for (let i = 0; i < 7; i++) c.detect(i);
-      expect(c.dom.mintButton.disabled).toBe(false);
-      c.dom.mintButton.click();
       await vi.waitFor(() => expect(c.ctx.mintedLevel).not.toBeNull());
       expect(c.ctx.mintedLevelTour).toEqual({
         levelId: c.ctx.mintedLevel?.id,
         tourUrl: "https://h.test/a.zip",
       });
     });
-  });
-
-  it("mints from the fused pose: the tap reaches the mint, which needs the alignment next", () => {
-    const c = creator();
-    for (let i = 0; i < 7; i++) c.detect(i);
-    const before = c.dom.status.textContent;
-    c.dom.mintButton.click();
-    // A mint that found no stable pose returns without a word; one that
-    // found it reports what the mint itself refused (no alignment here).
-    expect(c.dom.status.textContent).not.toBe(before);
   });
 });

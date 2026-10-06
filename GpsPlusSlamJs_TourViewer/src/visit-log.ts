@@ -92,7 +92,7 @@ interface VisitCode {
    *  #2). Absent for a visit that only saw the code. */
   readonly savedGeo?: QrGeoPose;
   /** THE MOVE BOUNDARY (authoring plan §3.6, M5b; §7j #12): this visit
-   *  moved the code - the author answered "Use the new spot" - so earlier
+   *  moved the code - a "Yes, it moved" the settle applied (UI round 1, U3) - so earlier
    *  visits describe the old spot and {@link codeVisitPoses} reads only
    *  from the latest such visit on. Absent otherwise (never false). */
   readonly moved?: true;
@@ -200,17 +200,19 @@ export function thinPath<T>(
   const first = points[0];
   if (first === undefined) return [];
   const kept: T[] = [first];
-  let last = first;
+  let lastIndex = 0;
   for (let i = 1; i < points.length; i += 1) {
     const p = points[i]!;
-    if (distanceM(last, p) >= spacingM) {
+    if (distanceM(points[lastIndex]!, p) >= spacingM) {
       kept.push(p);
-      last = p;
+      lastIndex = i;
     }
   }
-  // The walk's end is where the summary should show it ended.
-  const end = points[points.length - 1]!;
-  if (points.length > 1 && last !== end) kept.push(end);
+  // The walk's end is where the summary should show it ended. Compared by
+  // index: a value comparison mistakes an equal earlier point (-0 and 0, or
+  // a repeated reference) for the end and drops the end itself.
+  const endIndex = points.length - 1;
+  if (lastIndex !== endIndex) kept.push(points[endIndex]!);
   const cap = Math.max(2, Math.floor(maxPoints));
   if (kept.length <= cap) return kept;
   const out: T[] = [];

@@ -375,3 +375,84 @@ describe('RemoteRangeByteSource.read — cache mode', () => {
     expect(cacheModes).toEqual(['no-cache']);
   });
 });
+
+/**
+ * Why these tests matter (K0 milestone review R2): the transport cap was
+ * enforced on every whole-body read, but a range read's 206 body and the
+ * probe's 206 body were read with `arrayBuffer()` - whatever the host sent,
+ * all of it, before the length check. A hostile host answering a 4-byte
+ * range with gigabytes went straight past the cap. A range read now takes
+ * at most the length it asked for and cancels the rest; the probe's body
+ * (one byte asked) is cancelled, never drained.
+ */
+describe('range bodies stop at the requested length', () => {
+  /** A 206 whose streamed body is 1,000 times longer than any read here
+   *  asks for (finite, so the uncapped read it replaces drains it rather
+   *  than exhausting the test worker), counting pulls and cancels. */
+  function endless206(contentRange: string | null): {
+    response: Response;
+    pulls: () => number;
+    cancelled: () => boolean;
+  } {
+    let pulls = 0;
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls > 1000) controller.close();
+        else controller.enqueue(new Uint8Array(4).fill(1));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    return {
+      response: new Response(stream, {
+        status: 206,
+        headers: contentRange === null ? {} : { 'content-range': contentRange },
+      }),
+      pulls: () => pulls,
+      cancelled: () => cancelled,
+    };
+  }
+
+  it('refuses a 206 that streams past the requested length, without draining it', async () => {
+    const endless = endless206(null);
+    const source = new RemoteRangeByteSource('https://x/t.zip', 100, () =>
+      Promise.resolve(endless.response)
+    );
+    const err = await source.read(0, 8).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(StructuralReadError);
+    expect(endless.cancelled()).toBe(true);
+    expect(endless.pulls()).toBeLessThan(10);
+  });
+
+  it('still returns an exact-length streamed 206 intact', async () => {
+    const source = new RemoteRangeByteSource('https://x/t.zip', 100, () =>
+      Promise.resolve(
+        new Response(new Uint8Array([5, 6, 7, 8]), { status: 206 })
+      )
+    );
+    await expect(source.read(10, 4)).resolves.toEqual(
+      new Uint8Array([5, 6, 7, 8])
+    );
+  });
+
+  it('cancels the probe 206 body instead of draining it', async () => {
+    const endless = endless206('bytes 0-0/100');
+    const fetchImpl: typeof fetch = (_input, init) =>
+      Promise.resolve(
+        init?.method === 'HEAD'
+          ? new Response(null, {
+              status: 200,
+              headers: { 'content-length': '100' },
+            })
+          : endless.response
+      );
+    const probe = await probeRemote('https://x/t.zip', fetchImpl);
+    expect(probe.status).toBe(206);
+    expect(probe.size).toBe(100);
+    expect(endless.cancelled()).toBe(true);
+    expect(endless.pulls()).toBeLessThan(3);
+  });
+});

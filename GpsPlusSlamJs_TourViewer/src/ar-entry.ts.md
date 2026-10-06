@@ -43,11 +43,15 @@ since the flows plan M6.
     before the visitor's placement subscription; the session end cancels
     the escape clock, hides the escape button and disposes the placed
     content (M5).
-  - `ArEntryDom { arRoot; arStatus; arHint; enterArButton; escapeButton; sizeInput; errorBox }`
+  - `ArEntryDom { arRoot; arStatus; arHint; enterArButton; escapeButton; sizeInput; errorBox; arDebug?; arStatusLive? }`
   - `ArEntry.renderArStatus()` - composes `#ar-status` from the session
     object; assigned to `hooks.renderArStatus` by `main.ts` so the other
-    modules can call it without importing this one.
-  - Subscribes the button renderer to the controller and binds the click.
+    modules can call it without importing this one. A VISITOR without
+    `?debug=1` reads `visitorStatus`'s one plain sentence; the creator and
+    `?debug=1` keep the technical `arStatusLine`. `data-state` carries `visitorStatus`'s state for a visitor (none for a creator, whose session it would mislead), `data-gate` the scan gate as one word for both (`passed-code` proves the code passed it); `arStatusLive` (the screen reader's live region) is written only when its text changes: the visitor's sentence, and a creator's line outside a session (a failed start with its cause), never per camera frame (UI round 1, U1, review F14; U1 milestone review #8, #9).
+  - Subscribes the button renderer to the controller and binds the click:
+    during a running session the click ENDS it ("Exit AR", UI round 1, U2),
+    through the same teardown as the back gesture.
 
 ## Moved-code veto inputs (D20, M5c)
 
@@ -65,6 +69,13 @@ codes to the `?debug=1` block.
   of every viewer/placement/author field the dead session owned (the list
   in `onSessionEnd`, one line per field - a field missing there blends the
   dead session into the next one).
+- **The visitor's stations (tour kit plan K4):** every camera frame and
+  every store dispatch of a visitor session calls `hooks.tickStations()`
+  (next to `tryPlaceTour`); the session end calls `hooks.stopStations()`
+  (the story stops, the HUD goes, the progress stays); a visitor's tap on
+  `#enter-ar` calls `hooks.unlockStationAudio()` FIRST, synchronously,
+  before any await - a phone lets the stories' audio element play later
+  only if it played inside a gesture.
 - **A creator's session end settles the visit FIRST** (authoring plan
   2026-09-28-0953 §3.2, M2c): `hooks.endAuthorVisit()` runs before the
   generation bump and before `endTourArRuntime`, whose

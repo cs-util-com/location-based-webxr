@@ -48,6 +48,7 @@ import {
   downloadSafeName,
   nameSurvivesDownload,
 } from "./content-disposition.js";
+import type { TourRelation } from "./code-tour.js";
 import type { CodeTourStatus } from "./scan-open.js";
 
 /**
@@ -109,7 +110,30 @@ export function buildAuthorControllerConfig(
   };
 }
 
-/** What the author panel shows, and whether the mint button unlocks. */
+/**
+ * What became of the code in view once the gate is open (UI round 1, U3):
+ * `measured` - it is the code in hand; `measuring` - its measurement is
+ * in flight, or about to start; `seen` - a sighting only (another stored
+ * code of the tour, or no tour open yet); `not-measured` - it is not a code
+ * the open tour may take (`autoMeasureAllowed`); `finish-first` - a new
+ * code while the code in hand is not saved in the tour yet (each Finish
+ * writes one code).
+ */
+export type CodeReadyState =
+  "measured" | "measuring" | "seen" | "not-measured" | "finish-first";
+
+const READY_TEXT: Readonly<Record<CodeReadyState, string>> = {
+  measured: "Code measured.",
+  measuring: "Measuring the code…",
+  seen: "Code seen.",
+  "not-measured":
+    "Code seen - not measured: it is not a code of the open tour.",
+  "finish-first":
+    "Code seen - not measured yet: Finish first, to save the code you measured before.",
+};
+
+/** What the author panel shows, and whether the gate is open (the code
+ *  is then measured on its own, U3). */
 export interface AuthorReadout {
   text: string;
   canMint: boolean;
@@ -127,6 +151,9 @@ export function authorStatusLine(
   alignment: MintAlignmentInfo,
   /** The print-size check has no answer for this code yet (S3a). */
   sizeCheckPending = false,
+  /** What became of the code once the gate is open (UI round 1, U3: it
+   *  is measured on its own, so "ready" is not "measured"). */
+  ready: CodeReadyState = "measured",
 ): AuthorReadout {
   if (detectedText === null || fused === null || fused.status === "unknown") {
     return {
@@ -153,8 +180,8 @@ export function authorStatusLine(
     // The print-size check needs a sideways step that nothing else asks for
     // (QR size consensus plan §12 #3); the mint is not held for it.
     text: sizeCheckPending
-      ? `Measured and stable — save the position. ${SIZE_CHECK_HINT}`
-      : "Measured and stable — save the position.",
+      ? `${READY_TEXT[ready]} ${SIZE_CHECK_HINT}`
+      : READY_TEXT[ready],
     canMint: true,
   };
 }
@@ -184,7 +211,7 @@ export function sizeOfferView(
 
 /** The confirmation after adopting a measured size: measuring starts over. */
 export function adoptedSizeNote(sizeM: number): string {
-  return `Now using ${cmText(sizeM)} cm (${String(sizeM)} m) - walk slowly around the code again, then save the position.`;
+  return `Now using ${cmText(sizeM)} cm (${String(sizeM)} m) - walk slowly around the code again to measure it at this size.`;
 }
 
 /**
@@ -219,6 +246,10 @@ function openCauseText(cause: CodeTourStatus & { kind: "failed" }): string {
       return "the host refused the browser access";
     case "corrupt":
       return "the file is not a readable tour";
+    case "too-large":
+      return "the file is too large to open here";
+    case "offline":
+      return "this phone is offline";
     default:
       return "the link cannot be opened as a tour";
   }
@@ -282,40 +313,21 @@ export function correctionRefusedLine(refusal: {
 }
 
 /**
- * The explicit replace's confirm question (authoring plan 2026-09-28-0953
- * §3.4, M4; M4 review #3), with the replace's size when this visit's
- * sighting of the code gives one (`sightedCodeOffset`).
- *
- * WHAT IT MUST SAY: the notes' STORED positions do not change, but every
- * visitor is lined up with the code - so notes placed against the old code
- * position will appear shifted, by about the distance the code moves (and
- * by more the further they stand from it, when it also turns).
- *
- * Rounding: one decimal below 10 m (a 0.4 m replace is not "0 m"), whole
- * metres above, where GPS-level error makes decimals noise; a turn below
- * 1° is left out - a note 20 m away moves under 0.35 m for it.
- *
- * Notes never move with the code (owner decision D19): each keeps its own
- * saved position, so this says what happens and offers no option to move
- * them along.
+ * Whether the creator's panel may measure the code in view on its own (UI
+ * round 1, U3; second plan review #1): the open tour's own code, or - for
+ * a tour that has no code yet - the first code that names a tour. Never a
+ * code naming no tour, a code read with no tour open, or one still being
+ * read: measuring is automatic, so a stray code must not become the code
+ * in hand. (Before U3 the tap allowed any code: plan §13's "no wrong code
+ * in authoring" - now only through a tour with no code.)
  */
-export function replaceCodeConfirmText(
-  size: { horizontalM: number; yawDeg: number } | null,
-): string {
-  const question =
-    "Replace the code's saved position with this new measurement? Everyone who opens the tour is lined up with the code, so it moves for them too";
-  const notes =
-    "Notes already placed keep their saved positions, so to visitors the ones placed against the old position will appear shifted";
-  if (size === null) return `${question}. ${notes}.`;
-  const metres =
-    size.horizontalM < 10
-      ? (Math.round(size.horizontalM * 10) / 10).toFixed(1)
-      : String(Math.round(size.horizontalM));
-  const turn =
-    size.yawDeg >= 1 ? ` and turns ${String(Math.round(size.yawDeg))}°` : "";
-  const further =
-    turn === "" ? "" : ", and more the further they are from the code";
-  return `${question}: it moves about ${metres} m${turn}. ${notes} by about that much${further}.`;
+export function autoMeasureAllowed(
+  relation: TourRelation | "resolving",
+  tourHasCodes: boolean,
+): boolean {
+  if (relation === "this-tour") return true;
+  if (relation === "other-tour" || relation === "unknown") return !tourHasCodes;
+  return false;
 }
 
 /** What the setup panel says once the code is measured: the next move. */
@@ -400,6 +412,9 @@ export const MISSING_SIZE_MESSAGE = `Enter the printed code's side length in met
 export const FINISH_LABELS = {
   reading: (bytes: number) =>
     `Finishing - reading the hosted zip (${(bytes / 1_000_000).toFixed(1)} MB)…`,
+  /** The recorded photos' spots, baked once (scan-pass plan S1). */
+  placingPhotos: (done: number, total: number) =>
+    `Finishing - placing the recorded photos (${String(done)} of ${String(total)} steps of the walk)…`,
   rebuilding: (done: number, total: number) =>
     `Finishing - rebuilding ${String(done)} of ${String(total)} entries…`,
   /** The line the creator reads immediately BEFORE pressing the button, so
@@ -414,6 +429,16 @@ export const FINISH_LABELS = {
    *  review #1). */
   readyDrive: (bytes: number, filename: string) =>
     `The rebuilt zip is ready (${(bytes / 1_000_000).toFixed(1)} MB). Before you save: delete any older ${filename} from this phone's Downloads, or the phone names the new one "${repeatDownloadName(filename)}". Then tap "Save the zip to this phone" - the Drive steps appear below.`,
+  /** Appended to the ready line when the Finish left the walk out of
+   *  the copy (scan-pass plan S-D10): the hosted file may be the creator's
+   *  only copy of it. */
+  scanLeftOut: (files: number) =>
+    `This copy is for visitors: it leaves out the walk recording (${String(files)} ${files === 1 ? "file" : "files"}). Keep your original zip if you still need the walk.`,
+  /** Appended when the recording's photos could not be placed at this
+   *  Finish (S1 milestone review #2): the walk then stays in the zip, the
+   *  viewer places them itself or rings them, and the creator sees why. */
+  photosNotPlaced: (reason: string) =>
+    `The recorded photos could not be placed (${reason}), so the walk recording stays in the zip.`,
   failed: (reason: string) => `Finishing failed: ${reason}`,
   download: "Download the rebuilt zip",
   /** A Drive tour's route: the zip must land in Downloads for the Drive

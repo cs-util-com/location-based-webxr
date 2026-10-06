@@ -127,28 +127,30 @@ describe('createQrSightingFeeder - the alignment at mint time (D28 revised)', ()
     live.extentM = 25;
     feeder.noteAlignment();
     live.count = 75;
-    live.extentM = 40;
+    // Still under the 40 m floor (D34) at save.
+    live.extentM = 35;
 
     expect(feeder.alignmentFor('code')).toEqual({
       alignmentMatrix: IDENTITY,
       zero: { lat: 48, lon: 11 },
       alignmentSampleCount: 75,
-      gpsExtentM: 40,
+      gpsExtentM: 35,
       segment: 0,
     });
   });
 
   it('freezes a code at the first mature alignment after its sighting', () => {
     // Why this test matters: the left-behind fix. Once the session's GPS
-    // extent reaches 80 m the code stops following the alignment, so the
+    // extent reaches the floor the code stops following the alignment, so the
     // SLAM drift of the walk away from it never reaches its anchor.
     const { live, feeder, readAlignment } = liveFeeder();
     feeder.onPlacement('code', PLACEMENT, 0);
+    // Just under, then at the 40 m floor (D34).
     live.count = 40;
-    live.extentM = 79;
+    live.extentM = 39;
     feeder.noteAlignment();
     live.count = 41;
-    live.extentM = 80;
+    live.extentM = 40;
     feeder.noteAlignment();
     live.count = 500;
     live.extentM = 600;
