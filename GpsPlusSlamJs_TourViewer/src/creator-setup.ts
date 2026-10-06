@@ -1314,7 +1314,12 @@ export function wireCreatorSetup(deps: {
     const hint = setupHint({
       measured: ctx.mintedLevel !== null,
       tourOpen: ctx.session !== null,
-      hadLevel: (ctx.currentLevels?.size ?? 0) > 0,
+      inTour:
+        ctx.mintedLevel !== null && ctx.currentLevels?.has(ctx.mintedLevel.id)
+          ? "this-code"
+          : (ctx.currentLevels?.size ?? 0) > 0
+            ? "other-codes"
+            : "none",
       keptStored: levelInHandIsStored(),
     });
     const count = newlyPlaced() > 0 ? ` · ${placed(newlyPlaced())}` : "";

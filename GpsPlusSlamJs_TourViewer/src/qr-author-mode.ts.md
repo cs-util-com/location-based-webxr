@@ -52,13 +52,16 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   GPS".
 - `autoMeasureAllowed(relation, tourHasCodes)` (UI round 1, U3; plan review #1) - whether the creator panel measures the code in view on its own: the open tour's own code (`this-tour`), or - for a tour with no code yet - the first code that names a tour (`other-tour`, `unknown`); never `not-a-tour`, `no-tour-open` or `resolving`. Before U3 a tap could measure any code (plan §13).
 - `CodeReadyState` and `authorStatusLine(..., ready)` (U3) - the ready line says what became of the code once the gate is open: "Code measured." (`measured`, the default), "Measuring the code…", "Code seen.", or "Code seen - not measured: it is not a code of the open tour." (`not-measured`), or "Code seen - not measured yet: Finish first, to save the code you measured before." (`finish-first`: a new code while the code in hand is not saved in the tour; each Finish writes one code); the print-size hint follows any of them. The gate being open is no longer "measured".
-- `setupHint({ measured, tourOpen, hadLevel, keptStored? })` - what the
+- `setupHint({ measured, tourOpen, inTour, keptStored? })` - what the
   panel says once measured: "Position saved." when no tour is open
   (`codeTourLine` then says what is happening to the code's tour;
   scan-to-open plan §9 #9); "Saved position kept." when the level in hand
   is a stored pose this visit did not measure (D10b: a new measurement only
-  corrects the visit, M2c review #5); that the measurement replaces a code
-  the tour already carried; else place content or finish.
+  corrects the visit, M2c review #5); with `inTour` "this-code" that the
+  measurement replaces this code's saved position (reached only when its
+  saved pose does not read), with "other-codes" that Finish adds it as one
+  more code (it said "replaces" until the code book plan review #13); then
+  place content or finish.
 - `codeTourLine(status: CodeTourStatus): string` - the scan-to-open status
   of the code in view (`scan-open.ts`) in plain words: opening, does not
   point to a tour, could not open (a short cause, and either "keep the

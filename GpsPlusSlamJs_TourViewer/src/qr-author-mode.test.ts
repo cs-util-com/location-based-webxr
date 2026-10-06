@@ -270,20 +270,30 @@ describe("setupHint / finishReadiness", () => {
     // Why this matters: the measured position is only useful inside the
     // hosted zip. A creator who measured before opening the tour must be
     // told to open it, not left with a disabled button and no reason.
-    expect(
-      setupHint({ measured: false, tourOpen: true, hadLevel: false }),
-    ).toBe("");
+    expect(setupHint({ measured: false, tourOpen: true, inTour: "none" })).toBe(
+      "",
+    );
     // With no tour open the code-status line says what is happening to the
     // code's tour (scan-to-open plan §9 #9); "open it in step 1" pointed at
     // a form a creator holding the phone at the poster cannot reach.
+    expect(setupHint({ measured: true, tourOpen: false, inTour: "none" })).toBe(
+      "Position saved.",
+    );
     expect(
-      setupHint({ measured: true, tourOpen: false, hadLevel: false }),
-    ).toBe("Position saved.");
+      setupHint({ measured: true, tourOpen: true, inTour: "this-code" }),
+    ).toMatch(/replaces this code's saved position/);
+    // Why (code book plan review #13): a NEW code in a tour that carries
+    // other codes is ADDED by the Finish beside them; "it replaces the
+    // code this tour already carried" told the creator the opposite.
+    const added = setupHint({
+      measured: true,
+      tourOpen: true,
+      inTour: "other-codes",
+    });
+    expect(added).toMatch(/one more code/);
+    expect(added).not.toMatch(/replaces/);
     expect(
-      setupHint({ measured: true, tourOpen: true, hadLevel: true }),
-    ).toMatch(/replaces/);
-    expect(
-      setupHint({ measured: true, tourOpen: true, hadLevel: false }),
+      setupHint({ measured: true, tourOpen: true, inTour: "none" }),
     ).toMatch(/Finish/);
     // A stored pose in hand (the hosted zip's, a draft's, an earlier
     // visit's kept through a new measurement) is NOT replaced (D10b, M2c
@@ -292,7 +302,7 @@ describe("setupHint / finishReadiness", () => {
     const kept = setupHint({
       measured: true,
       tourOpen: true,
-      hadLevel: true,
+      inTour: "this-code",
       keptStored: true,
     });
     expect(kept).not.toMatch(/replaces/);

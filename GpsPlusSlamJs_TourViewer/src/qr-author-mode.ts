@@ -334,7 +334,11 @@ export function autoMeasureAllowed(
 export function setupHint(state: {
   measured: boolean;
   tourOpen: boolean;
-  hadLevel: boolean;
+  /** What the open tour already carries: this code (its file is then
+   *  replaced - reached only when its saved pose does not read, else the
+   *  pose is kept), other codes only (this one is added beside them), or
+   *  none. */
+  inTour: "this-code" | "other-codes" | "none";
   /** The level in hand is a stored pose this visit did not measure (a
    *  hosted or draft level, or an earlier visit's): it is kept, never
    *  replaced by a new measurement (D10b). */
@@ -347,11 +351,13 @@ export function setupHint(state: {
   if (state.keptStored === true) {
     return "Saved position kept. Place content, or tap Finish to rebuild the zip.";
   }
-  return (
-    (state.hadLevel
-      ? "Position saved - it replaces the code this tour already carried. "
-      : "Position saved. ") + "Place content, or tap Finish to rebuild the zip."
-  );
+  const saved =
+    state.inTour === "this-code"
+      ? "Position saved - it replaces this code's saved position in the tour. "
+      : state.inTour === "other-codes"
+        ? "Position saved - Finish adds it to the tour as one more code. "
+        : "Position saved. ";
+  return `${saved}Place content, or tap Finish to rebuild the zip.`;
 }
 
 /** Whether the finish button may run, and if not, why. */
