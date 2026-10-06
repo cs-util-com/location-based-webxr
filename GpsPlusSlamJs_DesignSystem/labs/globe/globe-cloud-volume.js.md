@@ -10,9 +10,11 @@ and ending at the relief, so a ridge in front of a cloud hides it.
 
 ## Public API
 
-- `createGlobeCloudVolume(renderer, { atmosphere, skyScene, surfaceUniforms })`
-  (`atmosphere` and `skyScene` the ground sky's, `globe-ground-sky.js`)
-  returns:
+- `createGlobeCloudVolume(renderer, { atmosphere, skyScene, surfaceUniforms,
+sceneDepth })`
+  (`atmosphere` and `skyScene` the ground sky's, `globe-ground-sky.js`;
+  `sceneDepth` the relief's depth, `globe-scene-depth.js`, shared with the
+  space pass) returns:
   - `setEnabled(on)`: the ground sky's slab mode (cover 1), the coverage
     chunk (`CLOUD_VOLUME_COVERAGE_GLSL` with the globe's map, drift and
     opacity uniforms, the target's origin and the share) and the relief's
@@ -35,7 +37,8 @@ and ending at the relief, so a ridge in front of a cloud hides it.
     disc's far side; the lab passes `maxAheadM` 0 in variant 1, where the
     shell's hole is around the camera.
   - `render(camera, relief)`: after the Earth, nothing at share 0: the
-    relief's depth pass, the slab from the lifted camera, the composite.
+    relief's depth (drawn here unless the lab already drew it this frame
+    for the space pass), the slab from the lifted camera, the composite.
   - `patchShadow(tiles)` and `setShadow(on)` (C3): the volume's shadow on
     the relief, the framework's `CloudShadow` with the same coverage chunk
     and uniforms, the disc and the lift (`configureMap`), so it falls from
@@ -51,18 +54,17 @@ maxAlpha }`, the share of the last volume frame's pixels its clouds
 
 ## Invariants & assumptions
 
-- **The relief's depth** comes from its own meshes with their colour
-  writes off: the displacement is in their vertex shader, so an override
-  material would draw them flat. Rendered with the relief alone as the
-  scene, the relief's program compiles once more without the page's fog,
-  on the first volume frame.
+- **The relief's depth** is `globe-scene-depth.js`'s (its own meshes with
+  their colour writes off: the displacement is in their vertex shader, so
+  an override material would draw them flat), at most once a frame: the
+  space pass reads the same texture (volume-cloud plan §17).
 - **The height**: the framework's slab sits at 1.8-2.2 km; the slab is
   drawn from a copy of the camera lowered by the lift, which raises it to
   the shell's height (3 km x E). Noise, depth and distances are unchanged
   by a vertical shift. Its thickness (400 m) is not scaled with E.
-- **Its own near plane** (`VOLUME_NEAR_M`, 10 m at most): the depth pass
-  and the slab are drawn from a copy of the camera with this near plane,
-  never the camera's own. The camera's is fitted to the ground (0.3 x the
+- **Its own near plane** (10 m at most, the scene depth's camera): the
+  depth pass and the slab are drawn from a copy of the camera with this
+  near plane, never the camera's own. The camera's is fitted to the ground (0.3 x the
   clearance, 2.77 km at the 12 km hold), and the deck can be far nearer
   than the ground (3 km below the camera there): with it every view down
   clipped the deck away, and only grazing distant views kept any cloud

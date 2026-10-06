@@ -109,6 +109,7 @@ import {
 import { createGlobeGroundSky } from "./globe-ground-sky.js";
 import { createGlobeHaze } from "./globe-haze.js";
 import { createGlobeCloudVolume } from "./globe-cloud-volume.js";
+import { createGlobeSceneDepth } from "./globe-scene-depth.js";
 import { EARTH_ATMOSPHERE } from "/fw/visualization/atmosphere/atmosphere-model.js";
 import {
   GLOBE_SKY_HAND_OVER,
@@ -427,6 +428,12 @@ const PARAMS = {
   // (1 = as computed) and how many times thicker than the real air the
   // shell is drawn (1 = physical).
   atmo: { fallback: 1, min: 0, max: 1 },
+  // 1 (the default) keeps the space pass's veil over the ground below the
+  // hand-over, its rays ending at the drawn relief (volume-cloud plan §17);
+  // 0 fades it with the sky's share, for a comparison: the framework haze
+  // alone is too thin at 80-40 km, so the ground then darkens by about 54
+  // levels over the cross-fade (the hand-over's continuity smoke fails).
+  atmoGround: { fallback: 1, min: 0, max: 1 },
   // Fewer samples on a touch screen (review B5; `defaultAtmosphereSteps`).
   atmoSteps: {
     fallback: defaultAtmosphereSteps(
@@ -1778,12 +1785,16 @@ async function start() {
   // The cloud volume (C2; globe-cloud-volume.js): the ground sky's slab, its
   // clouds from the globe's map, ending at the relief's depth; its shadow
   // (C3) patches the relief before the haze does.
+  // The drawn relief's depth, once a frame below the hand-over, for the
+  // cloud volume's march and the space pass's rays (§17).
+  const sceneDepth = terrain ? createGlobeSceneDepth(renderer) : null;
   const cloudVolume =
     terrain && groundSky.supported
       ? createGlobeCloudVolume(renderer, {
           atmosphere: groundSky.atmosphere,
           skyScene: groundSky.scene,
           surfaceUniforms: globe.surfaceUniforms,
+          sceneDepth,
         })
       : null;
   if (cloudVolume) cloudVolume.patchShadow(terrain.tiles);
@@ -2641,6 +2652,17 @@ async function start() {
     }
     renderer.render(scene, camera);
     // The cloud volume over the Earth, ending at the relief (C2).
+    // The relief's depth (§17): below the hand-over, for the space pass's
+    // rays (they end at the drawn relief, not the ellipsoid) and the
+    // volume's march; the volume draws it itself when only it needs it.
+    sceneDepth?.beginFrame();
+    if (
+      sceneDepth &&
+      skyHandOver.weight > 0 &&
+      (costMode === null ? params.atmo !== 0 : costMode === "on")
+    ) {
+      sceneDepth.render(camera, terrain.tiles.group);
+    }
     if (cloudVolume) cloudVolume.render(camera, terrain.tiles.group);
     // The air over the Earth and the sky, lit by the same sun (or, while
     // its cost is measured, as the measurement says).
@@ -2650,6 +2672,12 @@ async function start() {
         sunEcef: globe.surfaceUniforms.uSunEcef.value,
         sunIntensity: globe.sun.intensity,
         skyShare: 1 - skyHandOver.weight,
+        // The ground keeps its veil, its rays ending at the drawn relief
+        // (§17); `atmoGround=0` fades it with the sky's, for a comparison.
+        groundShare: params.atmoGround === 1 ? 1 : 1 - skyHandOver.weight,
+        sceneDepth,
+        // From nothing at the 80 km edge, so the depth is no jump there.
+        sceneDepthWeight: skyHandOver.weight,
       });
     }
     hooks.frameEnd(performance.now());

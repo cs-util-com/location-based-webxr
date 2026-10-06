@@ -603,7 +603,15 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   scale in the scene from `sunIntensity` (space) to the ground sky's
   automatic exposure; it IS the globe's sun intensity. The ground sky draws over
   the space sky's pixels before the Earth, the space pass's sky light is
-  scaled by `1 - weight` (the ground keeps its veil), and the halo's
+  scaled by `1 - weight`, its veil over the ground is kept (`atmoGround=1`,
+  the default; `atmoGround=0` fades it with the sky's, a comparison that
+  breaks the hand-over's continuity), and below the edge its rays end at
+  the drawn relief: the scene depth (`globe-scene-depth.js`, volume-cloud
+  plan §17) is drawn once a frame while the weight is above 0 and the pass
+  is on, and shared with the cloud volume, which draws it itself when only
+  it needs it; the pass weighs it by the hand-over's weight, so it grows
+  from nothing at the 80 km edge. Before, the rays ended at the ellipsoid and relief above
+  its limb stood unveiled, a hard edge at the horizon. The halo's
   thickness eases from `atmoThickness` above 2,000 km to 1x below 300 km
   (`atmoRamp=1`, DEC-GL5-13; `shellThicknessAt`). The ground sky
   rebuilds in stages, one a frame, its observer quantised in

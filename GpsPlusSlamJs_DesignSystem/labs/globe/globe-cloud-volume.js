@@ -64,13 +64,6 @@ void main() {
 const SLAB_MIDDLE_M = (CLOUD_SLAB.baseM + CLOUD_SLAB.topM) / 2;
 
 /**
- * The volume's near plane at most (m): small against any deck distance, and
- * the depth texture (24 bits or more) still resolves the relief to about
- * 2.5 m at 20 km (z^2 / (near x 2^24)).
- */
-const VOLUME_NEAR_M = 10;
-
-/**
  * The slab's reach never ends before its default (m): a small disc keeps
  * the look-dev page's fade.
  */
@@ -82,16 +75,11 @@ const MIN_REACH_END_M = CLOUD_SLAB_REACH.farEndM;
  */
 export function createGlobeCloudVolume(
   renderer,
-  { atmosphere, skyScene, surfaceUniforms },
+  { atmosphere, skyScene, surfaceUniforms, sceneDepth },
 ) {
   const origin = { value: new THREE.Vector2() };
   const shareUniform = { value: 0 };
   const gainUniform = { value: 1 };
-  const depthTexture = new THREE.DepthTexture(1, 1);
-  const depthTarget = new THREE.WebGLRenderTarget(1, 1, {
-    depthBuffer: true,
-    depthTexture,
-  });
   const volumeTarget = new THREE.WebGLRenderTarget(1, 1, {
     type: THREE.HalfFloatType,
     depthBuffer: false,
@@ -114,7 +102,6 @@ export function createGlobeCloudVolume(
   const compositeScene = new THREE.Scene();
   compositeScene.add(triangle);
   const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  const near = new THREE.PerspectiveCamera();
   const lifted = new THREE.PerspectiveCamera();
   const size = new THREE.Vector2();
   const clearColour = new THREE.Color();
@@ -162,7 +149,7 @@ export function createGlobeCloudVolume(
       if (on) {
         atmosphere.configure({ cloudMode: "slab", cloudCover: 1 });
         atmosphere.setCloudCoverage(coverage);
-        atmosphere.setCloudSceneDepth(depthTexture);
+        atmosphere.setCloudSceneDepth(sceneDepth.texture);
       } else {
         atmosphere.setCloudCoverage(null);
         atmosphere.setCloudSceneDepth(null);
@@ -260,40 +247,24 @@ export function createGlobeCloudVolume(
       return { share, radiusM };
     },
     /**
-     * Draws the volume over the frame, after the Earth: the relief's depth,
+     * Draws the volume over the frame, after the Earth: the relief's depth
+     * (`globe-scene-depth.js`, drawn here unless already drawn this frame),
      * the slab with the lifted camera, the composite. Nothing at share 0.
      */
     render(camera, relief) {
       const mesh = slab();
       if (!enabled || share <= 0 || mesh === undefined) return;
       renderer.getDrawingBufferSize(size);
-      fit(depthTarget);
       fit(volumeTarget);
       const previous = renderer.getRenderTarget();
-      // The volume's own near plane: the camera's is fitted to the ground
-      // (0.3 x the clearance), and the deck can be far nearer than the
-      // ground (3 km under a 2.8 km near plane at the 12 km hold), so with
-      // it every view down clipped the deck away. The depth pass and the
-      // slab share this projection: the slab reads the depth back through
-      // its own inverse.
-      near.copy(camera);
-      near.near = Math.min(camera.near, VOLUME_NEAR_M);
-      near.updateProjectionMatrix();
-      // The relief's depth: its own meshes (the displacement is in their
-      // vertex shader), colour off.
-      const written = [];
-      relief.traverse((o) => {
-        if (o.isMesh && o.material?.colorWrite) {
-          o.material.colorWrite = false;
-          written.push(o.material);
-        }
-      });
-      renderer.setRenderTarget(depthTarget);
-      renderer.clear(false, true, false);
-      renderer.render(relief, near);
-      for (const m of written) m.colorWrite = true;
+      // The depth's own near plane (at most 10 m): the camera's is fitted to
+      // the ground, and the deck can be far nearer than the ground (3 km
+      // under a 2.8 km near plane at the 12 km hold), so with it every view
+      // down clipped the deck away. The slab reads the depth back through
+      // its own inverse projection, so it draws from that camera too.
+      if (!sceneDepth.fresh) sceneDepth.render(camera, relief);
       // The slab alone, from the lifted camera, into a clear target.
-      lifted.copy(near);
+      lifted.copy(sceneDepth.camera);
       lifted.position.y -= liftM;
       lifted.updateMatrixWorld();
       const hidden = [];
@@ -371,8 +342,6 @@ export function createGlobeCloudVolume(
       };
     },
     dispose() {
-      depthTarget.dispose();
-      depthTexture.dispose();
       volumeTarget.dispose();
       material.dispose();
       geometry.dispose();
