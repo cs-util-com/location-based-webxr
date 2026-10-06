@@ -114,7 +114,6 @@ const DOM_KEYS = [
   "sizeInput",
   "printPanel",
   "status",
-  "mintButton",
   "finishButton",
   "finishStatus",
   "downloadButton",

@@ -378,3 +378,31 @@ describe("a tour opened from a file", () => {
     expect(s.scan.status(codeOf(A)).kind).toBe("unknown");
   });
 });
+
+/**
+ * Why these tests matter (UI round 1, U3; second plan review #1): the
+ * creator's code is now measured automatically, and only a code of the
+ * open tour may be - `status` folds "the open tour's code", "a code naming
+ * no tour" and "still reading" into one "quiet", so the panel needs the
+ * relation itself.
+ */
+describe("relation", () => {
+  it("is 'resolving' until the code is read, then names its relation to the open tour", async () => {
+    const s = setup({ openAt: A });
+    expect(s.scan.relation(codeOf(A))).toBe("resolving");
+    await s.see(codeOf(A));
+    expect(s.scan.relation(codeOf(A))).toBe("this-tour");
+    await s.see(codeOf(B));
+    expect(s.scan.relation(codeOf(B))).toBe("other-tour");
+    await s.see("https://menu.test/today");
+    expect(s.scan.relation("https://menu.test/today")).toBe("not-a-tour");
+    await s.see(codeOf("https://bit.ly/x"));
+    expect(s.scan.relation(codeOf("https://bit.ly/x"))).toBe("unknown");
+  });
+
+  it("is 'no-tour-open' with no tour open", async () => {
+    const s = setup({ outcomes: [{ kind: "failed", cause: "other" }] });
+    await s.see(codeOf(A));
+    expect(s.scan.relation(codeOf(A))).toBe("no-tour-open");
+  });
+});

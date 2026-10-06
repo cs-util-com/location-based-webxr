@@ -282,6 +282,9 @@ const setup = wireCreatorSetup({
     },
     status: (text) => scanOpen?.status(text) ?? { kind: "quiet" },
     tourOf: (text) => scanOpen?.tourOf(text) ?? null,
+    // Before scan-to-open exists nothing is known about a code, so nothing
+    // is measured on its own (UI round 1, U3).
+    relation: (text) => scanOpen?.relation(text) ?? "resolving",
   },
   arStore,
   arController,
@@ -296,7 +299,6 @@ const setup = wireCreatorSetup({
     sizeInput,
     printPanel,
     status: element("setup-status"),
-    mintButton: element("setup-mint"),
     finishButton: element("setup-finish"),
     keepScanRow: element("keep-scan-row"),
     keepScanInput: element<HTMLInputElement>("keep-scan"),

@@ -48,6 +48,7 @@ import {
   downloadSafeName,
   nameSurvivesDownload,
 } from "./content-disposition.js";
+import type { TourRelation } from "./code-tour.js";
 import type { CodeTourStatus } from "./scan-open.js";
 
 /**
@@ -109,7 +110,25 @@ export function buildAuthorControllerConfig(
   };
 }
 
-/** What the author panel shows, and whether the mint button unlocks. */
+/**
+ * What became of the code in view once the gate is open (UI round 1, U3):
+ * `measured` - it is the code in hand; `measuring` - its measurement is
+ * in flight, or about to start; `seen` - a sighting only (another stored
+ * code of the tour, or no tour open yet); `not-measured` - it is not a code
+ * the open tour may take (`autoMeasureAllowed`).
+ */
+export type CodeReadyState = "measured" | "measuring" | "seen" | "not-measured";
+
+const READY_TEXT: Readonly<Record<CodeReadyState, string>> = {
+  measured: "Code measured.",
+  measuring: "Measuring the code…",
+  seen: "Code seen.",
+  "not-measured":
+    "Code seen - not measured: it is not a code of the open tour.",
+};
+
+/** What the author panel shows, and whether the gate is open (the code
+ *  is then measured on its own, U3). */
 export interface AuthorReadout {
   text: string;
   canMint: boolean;
@@ -127,6 +146,9 @@ export function authorStatusLine(
   alignment: MintAlignmentInfo,
   /** The print-size check has no answer for this code yet (S3a). */
   sizeCheckPending = false,
+  /** What became of the code once the gate is open (UI round 1, U3: it
+   *  is measured on its own, so "ready" is not "measured"). */
+  ready: CodeReadyState = "measured",
 ): AuthorReadout {
   if (detectedText === null || fused === null || fused.status === "unknown") {
     return {
@@ -153,8 +175,8 @@ export function authorStatusLine(
     // The print-size check needs a sideways step that nothing else asks for
     // (QR size consensus plan §12 #3); the mint is not held for it.
     text: sizeCheckPending
-      ? `Measured and stable — save the position. ${SIZE_CHECK_HINT}`
-      : "Measured and stable — save the position.",
+      ? `${READY_TEXT[ready]} ${SIZE_CHECK_HINT}`
+      : READY_TEXT[ready],
     canMint: true,
   };
 }
@@ -184,7 +206,7 @@ export function sizeOfferView(
 
 /** The confirmation after adopting a measured size: measuring starts over. */
 export function adoptedSizeNote(sizeM: number): string {
-  return `Now using ${cmText(sizeM)} cm (${String(sizeM)} m) - walk slowly around the code again, then save the position.`;
+  return `Now using ${cmText(sizeM)} cm (${String(sizeM)} m) - walk slowly around the code again to measure it at this size.`;
 }
 
 /**
@@ -283,6 +305,24 @@ export function correctionRefusedLine(refusal: {
       ? `${String(Math.round(refusal.horizontalM))} m`
       : `turned ${String(Math.round(refusal.yawDeg))}°`;
   return `Code seen ${where} from its saved position - a second print or a moved poster? Not used; this visit follows GPS`;
+}
+
+/**
+ * Whether the creator's panel may measure the code in view on its own (UI
+ * round 1, U3; second plan review #1): the open tour's own code, or - for
+ * a tour that has no code yet - the first code that names a tour. Never a
+ * code naming no tour, a code read with no tour open, or one still being
+ * read: measuring is automatic, so a stray code must not become the code
+ * in hand. (Before U3 the tap allowed any code: plan §13's "no wrong code
+ * in authoring" - now only through a tour with no code.)
+ */
+export function autoMeasureAllowed(
+  relation: TourRelation | "resolving",
+  tourHasCodes: boolean,
+): boolean {
+  if (relation === "this-tour") return true;
+  if (relation === "other-tour" || relation === "unknown") return !tourHasCodes;
+  return false;
 }
 
 /** What the setup panel says once the code is measured: the next move. */

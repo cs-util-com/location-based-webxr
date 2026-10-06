@@ -16,7 +16,12 @@
 
 import type { RangeProbeRejectCause } from "gps-plus-slam-app-framework/storage";
 
-import { resolveCodeTour, tourRelation, type CodeTour } from "./code-tour.js";
+import {
+  resolveCodeTour,
+  tourRelation,
+  type CodeTour,
+  type TourRelation,
+} from "./code-tour.js";
 import { tourLabel } from "./tour-session.js";
 import type { TourViewerSession } from "./tour-viewer-session.js";
 
@@ -75,6 +80,9 @@ export interface ScanOpen {
   status(text: string | null): CodeTourStatus;
   /** The normalised link of the tour `text` names, once read; else null. */
   tourOf(text: string): string | null;
+  /** How `text` relates to the open tour, once read; "resolving" before
+   *  (UI round 1, U3: what the creator's panel may measure on its own). */
+  relation(text: string): TourRelation | "resolving";
 }
 
 /** Causes a creator can fix while standing at the poster: a file uploaded
@@ -252,6 +260,16 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
         known.kind === "tour"
         ? known.normalizedUrl
         : null;
+    },
+
+    relation(text) {
+      const known = codes.get(text);
+      if (known === undefined || known === "resolving") return "resolving";
+      return tourRelation(
+        known,
+        ctx.session?.archive.url ?? null,
+        ctx.currentLevels,
+      );
     },
   };
 }

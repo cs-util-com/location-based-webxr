@@ -28,9 +28,9 @@ the panel should report about the code in view.
 - `ScanOpen.status(text | null): CodeTourStatus` - `quiet`, `opening`,
   `not-a-tour`, `failed {cause, retrying}`, `measured-for-another {label}`,
   `added-to-open-tour`, `unknown`; `qr-author-mode.ts`'s `codeTourLine`
-  words it. No status locks Save.
-- `ScanOpen.tourOf(text)` - the normalised link of the tour a code names,
-  once read; the mint records it (`ctx.mintedLevelTour`).
+  words it. No status locks anything; which codes are measured is `relation`'s.
+- `ScanOpen.tourOf(text)` - the normalised link of the tour a code names, once read; the mint records it (`ctx.mintedLevelTour`).
+- `ScanOpen.relation(text)` (UI round 1, U3) - `tourRelation` against the open tour once the code is read, `"resolving"` before: what the creator panel may measure on its own (`qr-author-mode.ts` `autoMeasureAllowed`). `status` cannot answer it: its `quiet` folds the open tour's own code, a code naming no tour and a code still being read.
 
 ## Invariants & assumptions
 
@@ -96,4 +96,6 @@ codeTourLine(scanOpen.status(ctx.lastDetectedText)); // in the readout
   an open, however long in view), an uncomparable code `unknown`;
 - a tour opened from a file: its own code quiet once its levels are in, a
   code whose level it does not carry `unknown` (K0 milestone review R6);
-- `tourOf`.
+- `tourOf`;
+- `relation` (U3): "resolving" until read, then `this-tour`, `other-tour`,
+  `not-a-tour`, `unknown`, and `no-tour-open` with no tour open.

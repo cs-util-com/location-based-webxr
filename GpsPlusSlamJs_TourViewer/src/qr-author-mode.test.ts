@@ -7,6 +7,7 @@ import type { QrDetectionEvent } from "gps-plus-slam-app-framework/ar/qr/qr-trac
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 
 import {
+  autoMeasureAllowed,
   archiveSizeNote,
   authorStatusLine,
   finishBlockedHint,
@@ -123,10 +124,12 @@ describe("the print-size check's copy (QR size consensus plan S3a)", () => {
       notStableReason: null,
     } as unknown as QrFusedPose;
     const ready = authorStatusLine("A", stable, align);
-    expect(ready.text).toBe("Measured and stable — save the position.");
+    // UI round 1, U3: measured on its own, so the line says so - no
+    // button to tap.
+    expect(ready.text).toBe("Code measured.");
     const pending = authorStatusLine("A", stable, align, true);
     expect(pending.text).toBe(
-      "Measured and stable — save the position. Take a step sideways to check the print size.",
+      "Code measured. Take a step sideways to check the print size.",
     );
     // The mint is not held (plan §12 #3).
     expect(pending.canMint).toBe(true);
@@ -144,7 +147,7 @@ describe("the print-size check's copy (QR size consensus plan S3a)", () => {
 
   it("confirms an adopted size and says what to do next", () => {
     expect(adoptedSizeNote(0.155)).toBe(
-      "Now using 15.5 cm (0.155 m) - walk slowly around the code again, then save the position.",
+      "Now using 15.5 cm (0.155 m) - walk slowly around the code again to measure it at this size.",
     );
   });
 });
@@ -199,7 +202,7 @@ describe("authorStatusLine", () => {
     );
     const ready = authorStatusLine("text", fused(), GOOD_ALIGNMENT_INFO);
     expect(ready.canMint).toBe(true);
-    expect(ready.text).toMatch(/save the position/i);
+    expect(ready.text).toMatch(/Code measured/);
   });
 
   // Plan §60-§61 #11: the readout says what actually gates the fused pose,
@@ -775,5 +778,46 @@ describe("correctionRefusedLine (M2c review #2)", () => {
         maxHorizontalM: 26,
       }),
     ).toMatch(/^Code seen turned 150° from its saved position/);
+  });
+});
+
+describe("autoMeasureAllowed (UI round 1, U3; plan review #1)", () => {
+  // Why: measuring is automatic now, so a stray code must not become the
+  // code in hand: only the open tour's own code, or - for a tour with no
+  // code yet - the first code that names a tour.
+  it.each([
+    ["this-tour", true, true],
+    ["this-tour", false, true],
+    ["other-tour", false, true],
+    ["unknown", false, true],
+    ["other-tour", true, false],
+    ["unknown", true, false],
+    ["not-a-tour", false, false],
+    ["no-tour-open", false, false],
+    ["resolving", false, false],
+  ] as const)("%s with codes %s: %s", (relation, hasCodes, allowed) => {
+    expect(autoMeasureAllowed(relation, hasCodes)).toBe(allowed);
+  });
+});
+
+describe("authorStatusLine's ready line says what became of the code (UI round 1, U3)", () => {
+  // Why: the code is measured on its own now, so the gate being open is
+  // not the same as "measured": a code of another tour is not measured at
+  // all, and the line must not claim it was.
+  const align = { hasMatrix: true, sampleCount: 5 };
+  const stable = {
+    status: "stable",
+    notStableReason: null,
+  } as unknown as QrFusedPose;
+  it.each([
+    ["measured", "Code measured."],
+    ["measuring", "Measuring the code…"],
+    ["seen", "Code seen."],
+    [
+      "not-measured",
+      "Code seen - not measured: it is not a code of the open tour.",
+    ],
+  ] as const)("%s", (ready, text) => {
+    expect(authorStatusLine("A", stable, align, false, ready).text).toBe(text);
   });
 });

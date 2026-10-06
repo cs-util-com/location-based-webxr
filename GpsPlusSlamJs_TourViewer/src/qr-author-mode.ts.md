@@ -38,7 +38,7 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   "code not read clearly, move closer"), never the view threshold and never
   "hold steady" - moving the camera is what resolves the tilt (§61 #11). The copy is the creator
   setup's guidance since the guided-setup plan M3 ("Hold the phone on the
-  printed code…", "Measured and stable - save the position.").
+  printed code…"; since UI round 1 U3 the ready line is "Code measured." - it is measured on its own).
 - `entryHint({ tourOpen, codeSeen })` - the AR visit's first hint (authoring
   plan 2026-09-28-0953 §3.2a, decision D5): "First, point the camera at the
   code you scanned to open this tour." while a tour is open and the code in
@@ -50,6 +50,8 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   N m from its saved position" (or "turned N°" when only the yaw broke the
   bound) "- a second print or a moved poster? Not used; this visit follows
   GPS".
+- `autoMeasureAllowed(relation, tourHasCodes)` (UI round 1, U3; plan review #1) - whether the creator panel measures the code in view on its own: the open tour's own code (`this-tour`), or - for a tour with no code yet - the first code that names a tour (`other-tour`, `unknown`); never `not-a-tour`, `no-tour-open` or `resolving`. Before U3 a tap could measure any code (plan §13).
+- `CodeReadyState` and `authorStatusLine(..., ready)` (U3) - the ready line says what became of the code once the gate is open: "Code measured." (`measured`, the default), "Measuring the code…", "Code seen.", or "Code seen - not measured: it is not a code of the open tour." (`not-measured`); the print-size hint follows any of them. The gate being open is no longer "measured".
 - `setupHint({ measured, tourOpen, hadLevel, keptStored? })` - what the
   panel says once measured: "Position saved." when no tour is open
   (`codeTourLine` then says what is happening to the code's tour;

@@ -51,8 +51,9 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   summary "Other settings" - something you normally do not open, F9).
 - Shared: `#error`, `#ar-root` (the DOM-overlay root: hint, status line,
   button, the setup panel `#setup-panel` with `setup-status` and, inside
-  `#setup-controls`, the move question `move-prompt` and `setup-mint` (the
-  explicit replace and its confirm are gone: UI round 1, U3), the placement controls `setup-pin` / `pin-label` / `pin-save` /
+  `#setup-controls`, the move question `move-prompt` (the code is measured
+  on its own: the measure button, the explicit replace and its confirm are
+  gone, UI round 1, U3), the placement controls `setup-pin` / `pin-label` / `pin-save` /
   `pin-cancel` / `setup-photo`; then `setup-finish`, and LAST, outside
   the controls because it works on the page too, the object list
   `#object-list` (drawn by `object-list.ts`, M4; last so that in AR it
@@ -84,7 +85,7 @@ its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns
 `replace-help-generic`, `replace-help-drive`, `replace-help-share`)), `visitor-screen`,
 `stats`, `error`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`,
 `setup-panel`, `setup-status`, `size-offer`, `size-offer-text`,
-`size-offer-use`, `size-offer-keep`, `setup-controls`, `setup-mint`,
+`size-offer-use`, `size-offer-keep`, `setup-controls`,
 `object-list` (its rows carry
 `object-row`, `object-title`, `object-detail`, `object-edit`,
 `object-move`, `object-delete`, `object-edit-input`,

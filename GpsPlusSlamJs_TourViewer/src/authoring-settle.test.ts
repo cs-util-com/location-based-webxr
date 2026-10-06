@@ -177,7 +177,6 @@ const DOM_KEYS = [
   "sizeInput",
   "printPanel",
   "status",
-  "mintButton",
   "finishButton",
   "finishStatus",
   "downloadButton",
@@ -473,14 +472,19 @@ function authoring(
     }
   }
 
-  /** Measure the code: stable, then "Save the measured position". */
+  /** Measure the code: stable, and the gate open, it is measured on its
+   *  own (UI round 1, U3). */
   async function mint(): Promise<void> {
+    const measured = () =>
+      dispatched.filter((x) => x.type === "tourAuthoring/codeMeasured").length;
+    const before = measured();
     seeTheCode();
-    expect(dom.mintButton.disabled, "the mint gate should be open").toBe(false);
-    dom.mintButton.click();
     await vi.waitFor(() => {
+      expect(measured()).toBeGreaterThan(before);
       expect(ctx.mintedLevel).not.toBeNull();
     });
+    // The measurement's own end (its render; Finish waits for it).
+    await flush();
   }
 
   /** The AR session ends: the creator setup settles FIRST (while the
@@ -1296,10 +1300,11 @@ describe(
       return first.ctx.mintedLevel!;
     }
 
-    it("keeps an earlier visit's measurement as the reference when the code is measured again", async () => {
+    it("keeps an earlier visit's measurement as the reference when the code is seen again", async () => {
       // Why this test matters: "newest wins" re-minted the code through
       // the second visit's GPS, moving it away from the notes the first
-      // visit had settled against it.
+      // visit had settled against it. Since U3 a stored code in hand is
+      // not even re-measured: its sighting corrects the visit.
       const a = authoring();
       await a.mint();
       a.endVisit();
@@ -1307,11 +1312,14 @@ describe(
       const codeLocal = mintedOdom(a.dispatched);
       a.beginVisit();
       a.setAlignment(SECOND);
-      await a.mint();
+      a.seeTheCode();
+      await flush();
+      a.setup.renderAuthorReadout();
 
       expect(a.ctx.mintedLevel).toEqual(stored);
-      expect(lastKept(a)).toBe("level-in-hand");
-      expect(a.dom.status.textContent).toMatch(/saved position stays/);
+      expect(
+        a.dispatched.filter((x) => x.type === "tourAuthoring/codeMeasured"),
+      ).toHaveLength(1);
       await a.placePin("Later", [3, 0, 1]);
       a.endVisit();
       const last = a.settledLogs().at(-1)!.payload;
@@ -1342,7 +1350,7 @@ describe(
       expect(a.ctx.mintedLevel).toEqual(hosted);
       expect(lastKept(a)).toBe("hosted-level");
       // The panel says the saved position stays - never that it is replaced.
-      expect(a.dom.status.textContent).toMatch(/saved position stays/);
+      expect(a.dom.status.textContent).toMatch(/Saved position kept/);
       expect(a.dom.status.textContent).not.toMatch(/replaces/);
       await a.placePin("Later", [3, 0, 1]);
       a.dom.finishButton.click();
@@ -1370,14 +1378,21 @@ describe(
       expect(a.settledLogs().at(-1)!.payload.basis).toBe("measured-here");
     });
 
-    it("lets a second measurement in the same visit replace the first", async () => {
+    it("measures a code once per visit: seeing it again does not re-measure it (UI round 1, U3)", async () => {
+      // Why: measuring is automatic now; re-measuring on every sighting
+      // would churn the code's pick and its level all visit long. The
+      // settle refines nothing from later sightings of a code measured here
+      // - it re-mints from the measurement through its own pick (D33).
       const a = authoring();
       await a.mint();
       const firstJson = a.ctx.mintedLevel!.json;
       a.setAlignment(yawAlignment(3, [1, 400, 1]));
-      await a.mint();
-      expect(lastKept(a)).toBe("measurement");
-      expect(a.ctx.mintedLevel!.json).not.toBe(firstJson);
+      a.seeTheCode();
+      await flush();
+      expect(
+        a.dispatched.filter((x) => x.type === "tourAuthoring/codeMeasured"),
+      ).toHaveLength(1);
+      expect(a.ctx.mintedLevel!.json).toBe(firstJson);
     });
   },
 );

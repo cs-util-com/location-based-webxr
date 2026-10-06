@@ -529,8 +529,12 @@ export async function enterArAndMeasure(page) {
     )
     .toMatch(/waiting for GPS alignment/i);
   await seedAlignment(page);
-  await expect(page.getByTestId("setup-mint")).toBeEnabled({ timeout: 10000 });
-  await page.getByTestId("setup-mint").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /Code measured/,
+    {
+      timeout: 10000,
+    },
+  );
   await expect(page.getByTestId("setup-pin")).toBeEnabled();
 }
 

@@ -7,8 +7,7 @@ measured automatically (UI round 1, U3:
 `GpsPlusSlamJs_Docs/docs/2026-10-06-1020-tour-viewer-ui-round-1-plan.md`;
 owner decisions 2026-10-06: automatic, one question left; the walk rule
 depends on GPS accuracy; a real move keeps the pins). It replaces the
-"Save the measured position" and "Replace the code's saved position"
-buttons and the replace's confirm. Pure.
+"Save the measured position" and "Replace the code's saved position" buttons and the replace's confirm (the code is measured on its own: `creator-setup.ts` "Automatic measuring"). Pure.
 
 ## Public API
 

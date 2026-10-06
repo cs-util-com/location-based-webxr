@@ -421,7 +421,8 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
       { timeout: 15000 },
     )
     .toMatch(/waiting for GPS alignment/i);
-  await expect(page.getByTestId("setup-mint")).toBeDisabled();
+  // Nothing is measured before the gate opens: Finish stays off.
+  await expect(page.getByTestId("setup-finish")).toBeDisabled();
   // The size input is locked while the session runs — the solves used the
   // captured value (milestone review #3).
   await expect(page.getByTestId("author-size")).toBeDisabled();
@@ -435,7 +436,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
     });
   });
   await expect(page.getByTestId("setup-status")).toHaveText(/0 of 3 fixes/i);
-  await expect(page.getByTestId("setup-mint")).toBeDisabled();
+  await expect(page.getByTestId("setup-finish")).toBeDisabled();
 
   // Feed the REAL alignment solve: three odom↔GPS pairs, ~15 m apart, in a
   // consistent identity-ish mapping around the zero reference.
@@ -464,12 +465,12 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
       });
     }
   });
-  await expect(page.getByTestId("setup-status")).toHaveText(
-    /save the position/i,
+  // Measured on its own once the gate opens (UI round 1, U3).
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /Code measured/i,
     { timeout: 10000 },
   );
 
-  await page.getByTestId("setup-mint").click();
   // The hosted zip already stores this code's pose, so the new measurement
   // does NOT replace it: the stored pose stays the reference and the
   // measurement only lines this visit up with it (authoring plan
@@ -665,7 +666,6 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
       { timeout: 15000 },
     )
     .toMatch(/0 of 3 fixes/i);
-  await expect(page.getByTestId("setup-mint")).toBeDisabled();
   // Placement waits for THIS session's alignment too (M4 review #2): the
   // level survived the session end, the fixes did not.
   await expect(page.getByTestId("setup-pin")).toBeDisabled();
@@ -677,8 +677,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // so batch two rebuilt from it and batch one vanished from tour.json
   // along with its photo bytes.
   await seedAlignment(page);
-  await expect(page.getByTestId("setup-mint")).toBeEnabled();
-  await page.getByTestId("setup-mint").click();
+  // The code in hand is stored now: this visit only sees it (U3).
   // The surface came back (the no-surface case above turned it off).
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.reticleVisible = true;
@@ -790,8 +789,12 @@ test("a first measurement of a code the tour does not store is minted into the r
       });
     }
   });
-  await expect(page.getByTestId("setup-mint")).toBeEnabled({ timeout: 10000 });
-  await page.getByTestId("setup-mint").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /Code measured/,
+    {
+      timeout: 10000,
+    },
+  );
   // Nothing stored, nothing kept: the measurement IS the code's position.
   await expect(page.getByTestId("setup-status")).toContainText(
     /Position saved\. Place content/,
@@ -827,7 +830,7 @@ test("a first measurement of a code the tour does not store is minted into the r
   // The quality block records the alignment the stored geo CAME FROM
   // (milestone review #7) - M5's error attribution reads these. Since the
   // authoring settle (M2c) that is the Finish-time re-mint, not the tap:
-  // the 3 fixes solved in at "Save the position" plus the 3 seeded after
+  // the 3 fixes solved in at the measurement (automatic since U3) plus the 3 seeded after
   // it, i.e. 6 (visit-settle.ts.md, "Why the block describes the
   // SETTLE"). 3 would mean the tap's level reached the zip unsettled.
   expect(level.qr.mintQuality?.alignmentSampleCount).toBe(6);
@@ -911,10 +914,9 @@ test("a failed finish says so with priority and can be retried; the panel shows 
     .toMatch(/waiting for GPS alignment/i);
   await seedAlignment(page);
   await expect(page.getByTestId("setup-status")).toContainText(
-    /save the position/i,
+    /Code measured/i,
     { timeout: 10000 },
   );
-  await page.getByTestId("setup-mint").click();
   await expect(page.getByTestId("setup-finish")).toBeEnabled();
   // The size note tells the creator what the rebuild will copy.
   await expect(page.getByTestId("setup-status")).toContainText(/MB/);
@@ -2052,8 +2054,12 @@ async function measureTheCode(page) {
     )
     .toMatch(/waiting for GPS alignment/i);
   await seedAlignment(page);
-  await expect(page.getByTestId("setup-mint")).toBeEnabled({ timeout: 10000 });
-  await page.getByTestId("setup-mint").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /Code measured/,
+    {
+      timeout: 10000,
+    },
+  );
   await expect(page.getByTestId("setup-pin")).toBeEnabled();
 }
 
