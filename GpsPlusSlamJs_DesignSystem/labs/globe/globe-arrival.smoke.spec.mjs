@@ -15,7 +15,11 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { routeCityData, withPreRound4Look } from "./globe-smoke-helpers.mjs";
+import {
+  plainGlobe,
+  routeCityData,
+  withPreRound4Look,
+} from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const COLOGNE = { latitude: 50.94128, longitude: 6.95817 };
@@ -35,7 +39,7 @@ async function boot(page, context, hash = VIEW) {
   page.on("request", (r) => requests.push(r.url()));
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(COLOGNE);
-  await page.goto(`/labs/globe/#${hash}`);
+  await page.goto(`/labs/globe/#${plainGlobe(hash)}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
     null,
@@ -192,5 +196,55 @@ test("stopping the flight aborts the prefetch and says so", async ({
   );
   expect((await arrival(page)).line).toMatch(/stopped/i);
   city.release();
+  expect(errors).toEqual([]);
+});
+
+// WHY (the city plan 2026-10-05-0040, K0): a link that names a place warms
+// its city data from load, while the globe still turns, not only from the
+// pin's press, so a direct link to Zurich lands warm. With prefetch=0 it
+// waits, as every other smoke does by pinning cityWarm=0.
+test("a link that names a place warms its city data before any press", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(240_000);
+  const ZURICH =
+    "at=47.3769,8.5417&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&handOver=0";
+  const city = await routeCityData(page);
+  const { errors, requests } = await boot(
+    page,
+    context,
+    `${ZURICH}&cityWarm=1`,
+  );
+  await page.waitForFunction(
+    () => window.__globeLab.state().pin.arrival?.counts?.overpass?.total > 0,
+    null,
+    { timeout: 120_000 },
+  );
+  const warming = await arrival(page);
+  console.log(
+    `warm from load at Zurich: pin ${warming.pin}, overpass ${JSON.stringify(warming.counts.overpass)}, line "${warming.line}", city requests ${city.seen.overpass}`,
+  );
+  expect(warming.pin).toBe("idle");
+  expect(prefetchGraph(requests).length).toBeGreaterThan(0);
+  expect(city.seen.overpass).toBeGreaterThan(0);
+  expect(errors).toEqual([]);
+});
+
+test("with prefetch=0 a link that names a place loads no city data", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(240_000);
+  await routeCityData(page);
+  const { errors, requests } = await boot(
+    page,
+    context,
+    "at=47.3769,8.5417&spinMs=0&turnMs=0&cloudDrift=0&handOver=0&cityWarm=1&prefetch=0",
+  );
+  expect(
+    await page.evaluate(() => window.__globeLab.state().pin.arrival),
+  ).toBeNull();
+  expect(prefetchGraph(requests)).toEqual([]);
   expect(errors).toEqual([]);
 });

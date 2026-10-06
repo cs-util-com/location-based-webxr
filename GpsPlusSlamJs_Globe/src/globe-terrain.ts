@@ -36,6 +36,10 @@ import {
 } from "./globe-detail.js";
 import { litCopy, tileMeshes } from "./globe-surface.js";
 import {
+  type HeightKeeper,
+  installHeightKeeper,
+} from "./globe-height-keeper.js";
+import {
   installLazyHeightScale,
   type LazyHeightScale,
 } from "./globe-lazy-height-scale.js";
@@ -60,6 +64,12 @@ export const GLOBE_TERRAIN = Object.freeze({
    */
   cacheBytes: 64 * 1024 * 1024,
   cacheFloorBytes: 48 * 1024 * 1024,
+  /**
+   * The decoded heights kept past their tiles (owner decision 2026-10-04,
+   * DEC-N1; `globe-height-keeper.ts`): a source grid is 258 x 258 floats,
+   * about 266 KB, so this keeps about 60 of them, a descent's worth.
+   */
+  keepHeightsBytes: 16 * 1024 * 1024,
   /** One half-float step at `heightM` (10 mantissa bits). */
   halfFloatStepM: (heightM: number): number =>
     heightM === 0 ? 0 : 2 ** (Math.floor(Math.log2(Math.abs(heightM))) - 10),
@@ -376,6 +386,8 @@ export interface GlobeTerrain {
   litTiles(): number;
   /** The deferred height-scale refresh's counters (`installLazyHeightScale`). */
   heightScaleStats(): ReturnType<LazyHeightScale["stats"]>;
+  /** The kept heights' counters (`installHeightKeeper`). */
+  heightKeeperStats(): ReturnType<HeightKeeper["stats"]>;
   dispose(): void;
 }
 
@@ -399,6 +411,7 @@ export function createGlobeTerrain(options: {
   heightScale: number;
   maxZoom?: number;
   lazyHeightScale?: boolean;
+  keepHeightsBytes?: number;
 }): GlobeTerrain {
   const {
     url,
@@ -407,6 +420,7 @@ export function createGlobeTerrain(options: {
     heightScale,
     maxZoom = 12,
     lazyHeightScale: lazy = true,
+    keepHeightsBytes = GLOBE_TERRAIN.keepHeightsBytes,
   } = options;
   if (typeof url !== "string" || url.length === 0) {
     throw new RangeError("the terrain needs a tile url");
@@ -457,6 +471,10 @@ export function createGlobeTerrain(options: {
   // An E step refreshes only the volumes that are read, not the whole tree
   // (globe-lazy-height-scale.ts; perf plan 2026-10-03-2017 H1).
   const lazyHeightScale = lazy ? installLazyHeightScale(tiles, plugin) : null;
+  // A return into the band finds its decoded heights (DEC-N1).
+  const heightKeeper = installHeightKeeper(plugin, {
+    maxBytes: keepHeightsBytes,
+  });
   const owned = new Set<THREE.Material>();
   const detail = createGlobeDetailUniforms();
   // The last retired lit material stays alive, so the relief's program
@@ -493,8 +511,10 @@ export function createGlobeTerrain(options: {
         deferredRefreshes: 0,
         scaleChanges: 0,
       },
+    heightKeeperStats: () => heightKeeper.stats(),
     litTiles: () => owned.size,
     dispose() {
+      heightKeeper.dispose();
       for (const lit of owned) lit.dispose();
       owned.clear();
       retirer.dispose();
