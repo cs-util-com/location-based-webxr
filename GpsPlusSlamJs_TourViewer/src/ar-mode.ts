@@ -98,10 +98,10 @@ export function arButtonView(
       // The way out of AR (UI round 1, U2, review F2). The creator's work
       // stays in the draft; the page then leads with saving it.
       return {
-        label:
-          mode === "creator"
-            ? "Exit AR - your work stays on this phone"
-            : "Exit AR",
+        // One label for both: "your work stays on this phone" was a
+        // promise the page cannot keep without a draft backup (U2
+        // milestone review #3); the page after AR leads with the save.
+        label: "Exit AR",
         disabled: false,
       };
     case "error":

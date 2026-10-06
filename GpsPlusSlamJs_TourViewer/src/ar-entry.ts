@@ -184,16 +184,36 @@ export function wireArEntry(deps: {
     // line stays for the creator and for a visitor's `?debug=1`. The state
     // name is the stable channel for the page's styling and the tests.
     const plain = visitorStatus(input);
-    dom.arStatus.dataset.state = plain.state;
-    dom.arStatus.textContent =
-      mode === "visitor" && !ctx.debug ? plain.text : arStatusLine(input);
+    const visitor = mode === "visitor";
+    const line = visitor && !ctx.debug ? plain.text : arStatusLine(input);
+    dom.arStatus.textContent = line;
+    // The visitor's state machine only (a creator's would mislead), and
+    // the gate for both (U1 milestone review #8, #9).
+    if (visitor) dom.arStatus.dataset.state = plain.state;
+    else delete dom.arStatus.dataset.state;
+    dom.arStatus.dataset.gate = gateName(ctx.scanGate);
+    // The live region: the visitor's sentence, and a creator's line only
+    // outside a session - inside one it changes with every camera frame.
+    const live = visitor
+      ? plain.text
+      : input.arStatus === "running"
+        ? null
+        : line;
     if (
-      mode === "visitor" &&
+      live !== null &&
       dom.arStatusLive !== undefined &&
-      dom.arStatusLive.textContent !== plain.text
+      dom.arStatusLive.textContent !== live
     ) {
-      dom.arStatusLive.textContent = plain.text;
+      dom.arStatusLive.textContent = live;
     }
+  }
+
+  /** The scan gate as one word (`data-gate`): "passed-code" proves the
+   *  CODE passed it, not GPS. */
+  function gateName(gate: TourViewerSession["scanGate"]): string {
+    if (gate.kind === "passed") return `passed-${gate.via}`;
+    if (gate.kind === "not-required") return `not-required-${gate.reason}`;
+    return gate.kind;
   }
 
   /** The ?debug=1 block: the controller state and each code's counts. */

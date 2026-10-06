@@ -94,7 +94,7 @@ describe("visitorStatus - one plain sentence per state", () => {
       "a code that cannot line up the tour",
       { qr: qr({ unusableCode: "https://example.test/t" }) },
       "code-unusable",
-      "This code can't line up the tour. Point your phone at another of the tour's codes, or continue with GPS only.",
+      "This code can't line up the tour. Point your phone at another of the tour's codes.",
     ],
     [
       "a code the moved-code check ignores",
@@ -139,7 +139,7 @@ describe("visitorStatus - one plain sentence per state", () => {
         },
       },
       "placing",
-      "Loading photos (3 of 12)…",
+      "Loading the photos…",
     ],
     [
       "reading the walk",
@@ -209,7 +209,7 @@ describe("visitorStatus - one plain sentence per state", () => {
         },
       },
       "placing",
-      "Loading photos (1 of 4)…",
+      "Loading the photos…",
     ],
     [
       "a tour with nothing to show",
@@ -229,7 +229,7 @@ describe("visitorStatus - why AR did not start, in plain words (review F5)", () 
   it.each<[string, string, string]>([
     [
       "a blocked camera or AR permission",
-      "NotAllowedError: Permission denied",
+      "NotAllowedError",
       "Camera access was blocked. Allow the camera for this site in the browser settings, then tap Try again.",
     ],
     [
@@ -249,6 +249,151 @@ describe("visitorStatus - why AR did not start, in plain words (review F5)", () 
         text,
       },
     );
+  });
+});
+
+describe("visitorStatus - states the first version got wrong (U1 milestone review)", () => {
+  // Why: the review drove the reachable states the example table missed,
+  // and each one below read a stuck or misleading sentence.
+  it("a tour with no codes whose photo join declined says there is nothing to show, not 'Placing' forever (#2, the F3 case)", () => {
+    expect(
+      visitorStatus(
+        input({
+          tour: { kind: "open", levelCount: 0 },
+          gate: { kind: "not-required", reason: "no-lockable-level" },
+          placement: { kind: "declined", reason: "no recording in this tour" },
+        }),
+      ),
+    ).toEqual({
+      state: "nothing",
+      text: "This tour has nothing to show here.",
+    });
+  });
+
+  it("after the GPS escape, a declined photo join with nothing placed asks for the code instead of placing forever (#2)", () => {
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "skipped" },
+          placement: { kind: "declined", reason: "no recording in this tour" },
+        }),
+      ),
+    ).toEqual({
+      state: "needs-code",
+      text: "Nothing to show by GPS alone. Point your phone at the tour's code to show the photos.",
+    });
+  });
+
+  it("a stray code does not take over a placed tour (#3)", () => {
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "code" },
+          qr: qr({ unknownCode: "https://shop.example/product" }),
+          placement: { kind: "placed", placedKind: "ring", count: 3 },
+        }),
+      ),
+    ).toEqual({ state: "placed", text: "Tour placed. Look around." });
+  });
+
+  it("the unusable-code sentence mentions the GPS escape only while it is offered (#3)", () => {
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "scanning", escapeOffered: true },
+          qr: qr({ unusableCode: "https://example.test/t" }),
+        }),
+      ).text,
+    ).toBe(
+      "This code can't line up the tour. Point your phone at another of the tour's codes, or tap Continue with GPS only below.",
+    );
+  });
+
+  it("after the escape, a code that then locked lined the tour up: no more 'find the code' (#4)", () => {
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "skipped" },
+          qr: qr({ status: "tracking", lockedText: "t", votedLocks: 2 }),
+          placement: { kind: "placed", placedKind: "ring", count: 3 },
+        }),
+      ),
+    ).toEqual({ state: "placed", text: "Tour placed. Look around." });
+  });
+
+  it.each<[string, ArStatusInput["gate"], string]>([
+    [
+      "the code file unreadable",
+      { kind: "not-required", reason: "levels-unavailable" },
+      "Tour placed by GPS (less exact). Look around.",
+    ],
+    [
+      "the code seems moved",
+      { kind: "passed", via: "ignored" },
+      "Tour placed by GPS (less exact): its code seems to have been moved. Look around.",
+    ],
+  ])(
+    "placed by GPS because %s: no 'find the code' that cannot help (#4)",
+    (_n, gate, text) => {
+      expect(
+        visitorStatus(
+          input({ gate, content: { kind: "placed", count: 2, skipped: 0 } }),
+        ),
+      ).toEqual({ state: "placed-gps", text });
+    },
+  );
+
+  it("a moved code does not hide the progress while the tour is still loading (#4)", () => {
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "ignored" },
+          qr: qr({ ignoredCode: "https://example.test/t" }),
+          placement: {
+            kind: "placing",
+            phase: "loading-photos",
+            done: 1,
+            total: 4,
+          },
+        }),
+      ).state,
+    ).toBe("placing");
+  });
+
+  it("the framework's location refusal reads as location, not camera (#5)", () => {
+    expect(
+      visitorStatus(
+        input({
+          arStatus: "error",
+          arError: "Location permission is required for GPS AR.",
+        }),
+      ),
+    ).toEqual({
+      state: "error",
+      text: "Location access was blocked. Allow location for this site in the browser settings, then tap Try again.",
+    });
+  });
+
+  it("AR with no tour open says so (#6)", () => {
+    expect(visitorStatus(input({ tour: { kind: "none" } }))).toEqual({
+      state: "no-tour",
+      text: "No tour is open here, so there is nothing to show. Open the tour's link again.",
+    });
+  });
+
+  it("tracking lost after placing reads the framework's hint, not 'Look around' (#7)", () => {
+    expect(
+      visitorStatus(
+        input({
+          gate: { kind: "passed", via: "code" },
+          placement: { kind: "placed", placedKind: "ring", count: 3 },
+          readiness: {
+            phase: "ar-lost",
+            hint: "Tracking lost - move slowly.",
+          } as never,
+        }),
+      ),
+    ).toEqual({ state: "tracking-lost", text: "Tracking lost - move slowly." });
   });
 });
 

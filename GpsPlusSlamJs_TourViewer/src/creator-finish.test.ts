@@ -1153,3 +1153,39 @@ describe("the save cannot be forgotten (UI round 1, U2)", () => {
     expect(dom.finishButton.textContent).toBe("Finish and save your changes");
   });
 });
+
+describe("after the Finish, the save leads (UI round 1, U2 milestone review #2, #5)", () => {
+  // Why: the page used to scroll to the top of step 4 and lead with
+  // "Start AR setup" and Finish again; and a "keep the walk" ticked after a
+  // Finish could not change the file waiting to be saved.
+  it("focuses the save, and on a phone hides Finish once AR has ended", async () => {
+    const { dom, ctx, setup, arStatus } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+    });
+    let focused = false;
+    (dom.downloadButton as unknown as { focus: () => void }).focus = () => {
+      focused = true;
+    };
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(focused).toBe(true);
+    arStatus.value = "ready"; // the Finish ended the session
+    setup.renderAuthorReadout();
+    expect(dom.finishButton.hidden).toBe(true);
+    expect(dom.finishBlock.hidden).toBe(false);
+  });
+
+  it("hides the keep-the-walk switch while a rebuilt file waits", async () => {
+    const { dom, ctx, setup, arStatus } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      hostedContent: [{ path: "actions/000001.json", data: "x" }],
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    arStatus.value = "ready";
+    setup.renderAuthorReadout();
+    expect(dom.keepScanRow.hidden).toBe(true);
+  });
+});

@@ -12,7 +12,8 @@ the page knows.
 ## Public API
 
 - `type FinishGuardInput` - `{ sessionLive, arAvailable, placedCount,
-deletedCount, rebuilt: { delivered } | null }`.
+deletedCount, rebuilt: { delivered } | null, draftPersists,
+finishFailed }`.
 - `unsavedWork(input)` - changes since the last Finish, or a rebuilt file
   not saved.
 - `finishButtonText(input)` - "Finish - rebuild the zip", or "Finish and
@@ -21,23 +22,30 @@ deletedCount, rebuilt: { delivered } | null }`.
 - `hideFinishForResult(input)` - on a phone, Finish steps aside while the
   rebuilt file waits for its save (the save is the page's one primary
   action); a desktop keeps it (editing on the page and finishing again is
-  its flow, plan review D-8).
-- `leaveNeedsConfirm(input)` - only while a rebuilt file was not saved;
-  unfinished changes are in the draft and offered again, so they never ask.
-- `LEAVE_UNSAVED_QUESTION` - the question `main.ts` asks before another
-  tour replaces the open one.
+  its flow, plan review D-8); never after a failed Finish, so its retry
+  stays reachable (U2 milestone review #4).
+- `leaveNeedsConfirm(input)` - while a rebuilt file was not saved, and,
+  when no draft backs them up (`draftPersists` false), while there are
+  unfinished changes at all; with the draft they are offered again, so they
+  never ask (U2 milestone review #3).
+- `leaveQuestion(input)` - what `main.ts` asks then: it promises "your
+  changes stay on this phone" only while the draft backs them up.
 
 ## Invariants & assumptions
 
 - "Delivered" is the hand-off's own report (`HandoffOutcome.delivered`):
-  a dismissed picker or share sheet keeps asking.
+  a dismissed picker or share sheet keeps asking. The anchor-download
+  fallback reports delivered whatever happened (the browser gives no
+  signal).
+- `draftPersists` is false once the page noted a failed backup
+  (`creator-setup.ts`'s `noteNoPersistence`).
 - `beforeunload` (wired in `main.ts`) is partial on Android: a closed tab,
   a swipe-away or an OS discard do not fire it. The draft is what survives
   those.
 
 ## Tests
 
-`finish-guard.test.ts` (each rule); `creator-finish.test.ts` ("the save
-cannot be forgotten": asks before a save, stops after a delivered one, keeps
-asking after a dismissed one, the Finish label after a back-gesture exit;
-the keep-the-walk switch hidden in AR).
+`finish-guard.test.ts` (each rule, the backup and failed-Finish cases);
+`creator-finish.test.ts` ("the save cannot be forgotten", "after the
+Finish, the save leads"); `archive-open.test.ts` (a declined question
+leaves the open tour untouched).

@@ -211,7 +211,11 @@ export function clearCacheLabel(removed: number): string {
 export function arStatusLine(input: ArStatusInput): string {
   const mode = input.mode === "creator" ? "Creator mode" : "Visitor mode";
   if (input.arStatus !== "running") {
-    return `${mode} — ${input.arStatus}`;
+    // The cause of a failed start, for the creator and ?debug=1: the button
+    // only says "Try again" since UI round 1 (U1 milestone review #1).
+    return input.arStatus === "error" && input.arError != null
+      ? `${mode} — error: ${input.arError}`
+      : `${mode} — ${input.arStatus}`;
   }
   // A declined join on a tour that also has no printed codes is the
   // "nothing to place" case - derived here so the caller never has to

@@ -19,6 +19,7 @@ type VisitorStatusState =
   | "stopping"
   | "unsupported"
   | "error"
+  | "no-tour"
   | "scan"
   | "measuring-code"
   | "code-other-tour"
@@ -29,6 +30,8 @@ type VisitorStatusState =
   | "placing"
   | "placed"
   | "placed-gps"
+  | "tracking-lost"
+  | "needs-code"
   | "nothing";
 
 export interface VisitorStatus {
@@ -39,6 +42,26 @@ export interface VisitorStatus {
 }
 
 const LOOK_AROUND = "Look around.";
+const GPS_PLACED = "Tour placed by GPS (less exact)";
+
+/** Why AR did not start, from the controller's error message (the
+ *  framework keeps only the message, not the exception's name): the causes
+ *  a visitor can act on, else a plain retry. */
+function startFailureText(error: string | null | undefined): string {
+  if (error != null && /location permission/i.test(error)) {
+    return "Location access was blocked. Allow location for this site in the browser settings, then tap Try again.";
+  }
+  if (
+    error != null &&
+    /NotAllowedError|camera|permission denied/i.test(error)
+  ) {
+    return "Camera access was blocked. Allow the camera for this site in the browser settings, then tap Try again.";
+  }
+  if (error != null && /NotSupportedError|not supported/i.test(error)) {
+    return "This phone can't start AR for this tour. Open this page in Chrome on an Android phone that supports AR.";
+  }
+  return "AR could not start. Tap Try again.";
+}
 
 /** Before or around the session: the button and the visitor screen carry
  *  the action; the line says only what is happening. */
@@ -68,19 +91,6 @@ function beforeRunning(
   }
 }
 
-/** Why AR did not start, from the browser's error (its DOMException name
- *  leads the message): the two causes a visitor can act on, else a plain
- *  retry. */
-function startFailureText(error: string | null | undefined): string {
-  if (error != null && /NotAllowedError|permission/i.test(error)) {
-    return "Camera access was blocked. Allow the camera for this site in the browser settings, then tap Try again.";
-  }
-  if (error != null && /NotSupportedError/.test(error)) {
-    return "This phone can't start AR for this tour. Open this page in Chrome on an Android phone that supports AR.";
-  }
-  return "AR could not start. Tap Try again.";
-}
-
 /** What could not load, as sentences after the state's own. */
 function loadNotes(input: ArStatusInput): string[] {
   const notes: string[] = [];
@@ -105,20 +115,62 @@ function gpsOnly(gate: ArStatusInput["gate"]): boolean {
   );
 }
 
+/** A code lined the tour up: its votes were cast (after the escape too -
+ *  the gate stays "skipped" when a later lock votes). */
+function codeLinedUp(input: ArStatusInput): boolean {
+  return input.qr.lockedText !== null && input.qr.votedLocks > 0;
+}
+
+/** The tour has no code that can lock (the photo ring needs one). */
+function noUsableCodes(input: ArStatusInput): boolean {
+  const { tour, gate } = input;
+  return (
+    (tour.kind === "open" && tour.levelCount === 0) ||
+    (gate.kind === "not-required" &&
+      (gate.reason === "no-lockable-level" ||
+        gate.reason === "levels-unavailable"))
+  );
+}
+
 function isPlaced(input: ArStatusInput): boolean {
   return input.placement.kind === "placed" || input.content.kind === "placed";
 }
 
-/** The code situations that outrank placement: they need the visitor to
- *  point elsewhere, or explain why GPS places the tour. */
-function codeSentence(input: ArStatusInput): VisitorStatus | null {
-  const { qr, gate } = input;
-  if (qr.ignoredCode != null) {
+/** Placed: through the code, or by GPS - with the one hint that can still
+ *  help (find the code) only after the escape, never when the code cannot
+ *  line the tour up. */
+function placedSentence(input: ArStatusInput): VisitorStatus {
+  const { gate } = input;
+  if (!gpsOnly(gate) || codeLinedUp(input)) {
+    return { state: "placed", text: `Tour placed. ${LOOK_AROUND}` };
+  }
+  if (gate.kind === "not-required" && gate.reason === "no-detector") {
     return {
-      state: "code-moved",
-      text: "This code seems to have been moved, so the tour is placed by GPS (less exact).",
+      state: "placed-gps",
+      text: `${GPS_PLACED}: this browser can't read codes. ${LOOK_AROUND}`,
     };
   }
+  if (gate.kind === "passed" && gate.via === "ignored") {
+    return {
+      state: "placed-gps",
+      text: `${GPS_PLACED}: its code seems to have been moved. ${LOOK_AROUND}`,
+    };
+  }
+  if (gate.kind === "passed" && gate.via === "skipped") {
+    return {
+      state: "placed-gps",
+      text: `${GPS_PLACED}. ${LOOK_AROUND} Find the poster's code to line it up.`,
+    };
+  }
+  return { state: "placed-gps", text: `${GPS_PLACED}. ${LOOK_AROUND}` };
+}
+
+/** The code situations that come before placement: they need the visitor
+ *  to point elsewhere. Never once the tour is placed (a passing product
+ *  code must not take over a placed tour; U1 review #3). */
+function codeSentence(input: ArStatusInput): VisitorStatus | null {
+  const { qr, gate } = input;
+  const escape = gate.kind === "scanning" && gate.escapeOffered;
   if (qr.unknownCode !== null) {
     return {
       state: "code-other-tour",
@@ -128,7 +180,9 @@ function codeSentence(input: ArStatusInput): VisitorStatus | null {
   if (qr.unusableCode != null) {
     return {
       state: "code-unusable",
-      text: "This code can't line up the tour. Point your phone at another of the tour's codes, or continue with GPS only.",
+      text: escape
+        ? "This code can't line up the tour. Point your phone at another of the tour's codes, or tap Continue with GPS only below."
+        : "This code can't line up the tour. Point your phone at another of the tour's codes.",
     };
   }
   // The code is in view and its pose still settles (plan §66's hint):
@@ -139,7 +193,7 @@ function codeSentence(input: ArStatusInput): VisitorStatus | null {
   if (gate.kind === "scanning") {
     return {
       state: "scan",
-      text: gate.escapeOffered
+      text: escape
         ? "Point your phone at the tour's code (on the poster), or tap Continue with GPS only below."
         : "Point your phone at the tour's code (on the poster).",
     };
@@ -147,37 +201,18 @@ function codeSentence(input: ArStatusInput): VisitorStatus | null {
   return null;
 }
 
-/** Placed: through the code, or by GPS (and why, when the browser cannot
- *  read codes at all). */
-function placedSentence(gate: ArStatusInput["gate"]): VisitorStatus {
-  if (!gpsOnly(gate)) {
-    return { state: "placed", text: `Tour placed. ${LOOK_AROUND}` };
-  }
-  return {
-    state: "placed-gps",
-    text:
-      gate.kind === "not-required" && gate.reason === "no-detector"
-        ? `Tour placed by GPS (less exact): this browser can't read codes. ${LOOK_AROUND}`
-        : `Tour placed by GPS (less exact). ${LOOK_AROUND} Find the poster's code to line it up.`,
-  };
-}
-
-/** The placement's sentence once the code situation is settled. */
+/** Nothing placed yet, the code situation settled: what is happening. */
 function placementSentence(input: ArStatusInput): VisitorStatus {
-  const { placement, gate } = input;
-  if (placement.kind === "nothing-to-place") {
-    return { state: "nothing", text: "This tour has nothing to show here." };
-  }
+  const { placement, gate, qr } = input;
   if (placement.kind === "placing") {
     return {
       state: "placing",
       text:
         placement.phase === "loading-photos"
-          ? `Loading photos (${String(placement.done)} of ${String(placement.total)})…`
+          ? "Loading the photos…"
           : "Placing the photos…",
     };
   }
-  if (isPlaced(input)) return placedSentence(gate);
   if (placement.kind === "waiting-ready") {
     return {
       state: "warming-up",
@@ -185,6 +220,26 @@ function placementSentence(input: ArStatusInput): VisitorStatus {
       text:
         input.readiness?.hint ??
         "Move the phone slowly so it can see the surroundings.",
+    };
+  }
+  const declined =
+    placement.kind === "declined" || placement.kind === "nothing-to-place";
+  // A declined photo join leaves the ring, which needs a code (U1 review
+  // #2, the F3 case): with no code to lock there is nothing to show; after
+  // the escape, the code would still show the photos.
+  if (declined && noUsableCodes(input)) {
+    return { state: "nothing", text: "This tour has nothing to show here." };
+  }
+  if (declined && gate.kind === "passed" && gate.via === "skipped") {
+    return {
+      state: "needs-code",
+      text: "Nothing to show by GPS alone. Point your phone at the tour's code to show the photos.",
+    };
+  }
+  if (qr.ignoredCode != null) {
+    return {
+      state: "code-moved",
+      text: "This code seems to have been moved, so the tour is placed by GPS (less exact).",
     };
   }
   if (gate.kind === "passed" && gate.via === "code") {
@@ -198,12 +253,30 @@ function placementSentence(input: ArStatusInput): VisitorStatus {
   };
 }
 
+function runningSentence(input: ArStatusInput): VisitorStatus {
+  if (input.tour.kind === "none") {
+    return {
+      state: "no-tour",
+      text: "No tour is open here, so there is nothing to show. Open the tour's link again.",
+    };
+  }
+  if (isPlaced(input)) {
+    // Tracking lost after placing: the framework's hint (DEC-H3), since
+    // the placed tour drifts until it recovers (U1 review #7).
+    if (input.readiness?.phase === "ar-lost") {
+      return { state: "tracking-lost", text: input.readiness.hint };
+    }
+    return placedSentence(input);
+  }
+  return codeSentence(input) ?? placementSentence(input);
+}
+
 /** The visitor's status for a state of the page. */
 export function visitorStatus(input: ArStatusInput): VisitorStatus {
   if (input.arStatus !== "running") {
     return beforeRunning(input.arStatus, input.arError);
   }
-  const main = codeSentence(input) ?? placementSentence(input);
+  const main = runningSentence(input);
   const notes = loadNotes(input);
   return notes.length === 0
     ? main

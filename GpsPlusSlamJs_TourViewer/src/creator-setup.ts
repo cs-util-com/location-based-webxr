@@ -96,6 +96,7 @@ import {
   finishButtonText,
   hideFinishForResult,
   leaveNeedsConfirm,
+  leaveQuestion,
   type FinishGuardInput,
 } from "./finish-guard.js";
 import { scanEntryNames } from "./tour-read-set.js";
@@ -335,6 +336,8 @@ export interface CreatorSetup {
   /** True while leaving (the page, or for another tour) should ask first:
    *  a rebuilt tour file was not saved (UI round 1, U2, `finish-guard`). */
   leaveNeedsConfirm: () => boolean;
+  /** The question to ask then (`finish-guard`'s `leaveQuestion`). */
+  leaveQuestion: () => string;
   /** Creates the author tracking controller for THIS AR entry; false (with
    *  the reason in the panel) keeps AR unstarted. */
   startAuthorPipeline: () => boolean;
@@ -2849,6 +2852,10 @@ export function wireCreatorSetup(deps: {
         ctx.rebuiltZip === null
           ? null
           : { delivered: ctx.rebuiltZip.delivered === true },
+      // A failed backup write is noted once; from then on the page cannot
+      // promise the phone keeps the work (U2 milestone review #3).
+      draftPersists: !warnedAboutPersistence,
+      finishFailed: ctx.finishError !== null,
     };
   }
 
@@ -2883,7 +2890,10 @@ export function wireCreatorSetup(deps: {
     }
     // Chosen on the page before AR (UI round 1, U2): hidden in a session,
     // since the Finish there reads it.
-    dom.keepScanRow.hidden = sessionLive() || scanMemo.count === 0;
+    // ... and while a rebuilt file waits: the next Finish rebuilds from it,
+    // so a changed tick could not change it (U2 milestone review #2).
+    dom.keepScanRow.hidden =
+      sessionLive() || ctx.rebuiltZip !== null || scanMemo.count === 0;
   }
 
   /**
@@ -3188,6 +3198,9 @@ export function wireCreatorSetup(deps: {
           ctx.finishError = FINISH_LABELS.failed(
             err instanceof Error ? err.message : String(err),
           );
+          // A file this Finish already made stays reachable with the
+          // retry (U2 milestone review #4).
+          if (ctx.rebuiltZip !== null) dom.finishBlock.hidden = false;
         }
       } finally {
         // A Finish that wrote no zip leaves its visit unsettled again while
@@ -3312,6 +3325,7 @@ export function wireCreatorSetup(deps: {
   return {
     renderAuthorReadout,
     leaveNeedsConfirm: () => leaveNeedsConfirm(guardInput()),
+    leaveQuestion: () => leaveQuestion(guardInput()),
     startAuthorPipeline,
     beginAuthorVisit: () => {
       if (!creator) return;

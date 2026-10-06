@@ -88,6 +88,7 @@ function harness(
     errorBox: el(),
     escapeButton: el(),
     arDebug: el(),
+    arStatusLive: el(),
   };
   const arStore = createTourViewerStore();
   const seams = {
@@ -223,6 +224,9 @@ describe("wireArEntry QR readout and visitor hint", () => {
 
   it("shows the fused pose's hint from the last evaluation while tracking", () => {
     const h = harness({ arStatus: "running" });
+    // A tour is open, as on a phone (with none, the visitor reads "No tour
+    // is open" since the U1 review, #6).
+    h.ctx.session = {} as never;
     h.ctx.viewerQrStatus = "tracking";
     h.ctx.viewerLastEvaluation = {
       text: "https://gps.csutil.com/tour/?qr=x",
@@ -283,5 +287,46 @@ describe("the button is the way out of AR (UI round 1, U2, review F2)", () => {
     await h.enter();
     expect(h.arController.disable).toHaveBeenCalledTimes(1);
     expect(h.arController.enable).not.toHaveBeenCalled();
+  });
+});
+
+describe("the status line's channels (U1 milestone review #8, #9)", () => {
+  // Why: the live region is what a screen reader announces; written per
+  // camera frame it would re-announce endlessly, and the creator lost every
+  // announcement when the visible line stopped being live. data-gate is the
+  // e2e's proof that the CODE passed the gate (not GPS).
+  it("writes the visitor's live sentence only when it changes", () => {
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.scanGate = { kind: "scanning", escapeOffered: false };
+    let writes = 0;
+    let text = "";
+    Object.defineProperty(h.dom.arStatusLive, "textContent", {
+      get: () => text,
+      set: (v: string) => {
+        writes += 1;
+        text = v;
+      },
+    });
+    h.entry.renderArStatus();
+    h.entry.renderArStatus();
+    h.ctx.cameraFrameCount = 99;
+    h.entry.renderArStatus();
+    expect(writes).toBe(1);
+    expect(text).toBe("Point your phone at the tour's code (on the poster).");
+  });
+
+  it("announces a creator's failed start, with its cause", () => {
+    const h = harness({ arStatus: "error", mode: "creator" });
+    h.entry.renderArStatus();
+    expect(h.dom.arStatusLive.textContent).toBe("Creator mode — error");
+  });
+
+  it("names the gate on the line, for tests and styling", () => {
+    const h = harness({ arStatus: "running" });
+    h.ctx.session = {} as never;
+    h.ctx.scanGate = { kind: "passed", via: "code" };
+    h.entry.renderArStatus();
+    expect(h.dom.arStatus.dataset.gate).toBe("passed-code");
   });
 });

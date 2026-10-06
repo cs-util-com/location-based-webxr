@@ -206,3 +206,51 @@ describe("the teardown clears tour-scoped state only when a tour closes", () => 
     expect(reset).toHaveBeenCalledOnce();
   });
 });
+
+describe("opening another tour asks first while the creator's file is unsaved (UI round 1, U2)", () => {
+  // Why: replacing the open tour drops its rebuilt file; a creator who says
+  // "stay" must keep the tour, its file and an untouched page - no stuck
+  // "Opening…" button, no teardown.
+  it("a declined question leaves everything as it was", async () => {
+    const ctx = createTourViewerSession();
+    const close = vi.fn(() => Promise.resolve());
+    ctx.session = { close } as never;
+    const generation = ctx.openGeneration;
+    const hooks = createUnwiredHooks();
+    hooks.confirmLeaveTour = () => false;
+    const dom = {
+      form: el(),
+      linkInput: el(),
+      openButton: el(),
+      openFileButton: el(),
+      fileInput: el(),
+      fileAdvice: el(),
+      openFileAdviceButton: el(),
+      fileStatus: el(),
+      tourTrust: el(),
+      statsPanel: el(),
+      statsHeadline: el(),
+      statsDetail: el(),
+      errorBox: el(),
+      gallery: el(),
+      storagePanel: el(),
+      clearCacheButton: el(),
+    };
+    dom.openButton.textContent = "Open tour";
+    wireArchiveOpen({
+      ctx,
+      dom: dom as unknown as ArchiveOpenDom,
+      cacheStore: undefined,
+      corsProxyBaseUrl: "https://proxy.test",
+      hooks,
+      mode: "creator",
+    });
+    dom.linkInput.value = "https://example.com/other-tour.zip";
+    dom.form.fire("submit");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(close).not.toHaveBeenCalled();
+    expect(ctx.openGeneration).toBe(generation);
+    expect(dom.openButton.textContent).toBe("Open tour");
+    expect(dom.openButton.disabled).toBe(false);
+  });
+});

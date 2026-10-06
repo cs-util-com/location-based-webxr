@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   finishButtonText,
+  leaveQuestion,
   hideFinishForResult,
   leaveNeedsConfirm,
   unsavedWork,
@@ -23,6 +24,8 @@ function input(overrides: Partial<FinishGuardInput> = {}): FinishGuardInput {
     placedCount: 0,
     deletedCount: 0,
     rebuilt: null,
+    draftPersists: true,
+    finishFailed: false,
     ...overrides,
   };
 }
@@ -95,5 +98,37 @@ describe("leaveNeedsConfirm", () => {
     );
     // Unfinished pins survive in the draft and are offered again: no ask.
     expect(leaveNeedsConfirm(input({ placedCount: 3 }))).toBe(false);
+  });
+});
+
+describe("the guard without a backup, and after a failed Finish (U2 milestone review #3, #4)", () => {
+  // Why: "your changes stay on this phone" was a promise the page could
+  // not keep on a device whose draft backup failed - leaving then lost the
+  // work without a word; and a Finish that failed after its file was made
+  // hid Finish for good, leaving neither a retry nor a save.
+  it("asks before leaving with unfinished changes when nothing backs them up", () => {
+    expect(
+      leaveNeedsConfirm(input({ placedCount: 2, draftPersists: false })),
+    ).toBe(true);
+    expect(leaveNeedsConfirm(input({ placedCount: 2 }))).toBe(false);
+  });
+
+  it("never promises the phone keeps work that no backup holds", () => {
+    expect(leaveQuestion(input({ rebuilt: { delivered: false } }))).toMatch(
+      /stay on this phone/,
+    );
+    const noBackup = leaveQuestion(
+      input({ placedCount: 1, draftPersists: false }),
+    );
+    expect(noBackup).not.toMatch(/stay on this phone/);
+    expect(noBackup).toMatch(/not saved anywhere/);
+  });
+
+  it("keeps Finish after a failed Finish, whatever file it left", () => {
+    expect(
+      hideFinishForResult(
+        input({ rebuilt: { delivered: false }, finishFailed: true }),
+      ),
+    ).toBe(false);
   });
 });

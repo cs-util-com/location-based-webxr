@@ -47,12 +47,13 @@ async function lockTheCode(page) {
         await page.evaluate(() => {
           /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
         });
-        return page.getByTestId("ar-status").getAttribute("data-state");
+        return page.getByTestId("ar-status").getAttribute("data-gate");
       },
       { timeout: 20000 },
     )
-    // Past the scan gate (UI round 1: the state, not the wording).
-    .toMatch(/^(locking|warming-up|placing|placed)$/);
+    // The CODE passed the gate (U1 milestone review #9: the visitor's state
+    // alone also reads "placing" after a GPS-only pass).
+    .toBe("passed-code");
 }
 
 test("a station tour: the code finds the first station, its knight speaks and asks, a walk finds the next, the last is skipped", async ({

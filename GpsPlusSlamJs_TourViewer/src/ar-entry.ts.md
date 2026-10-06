@@ -48,11 +48,7 @@ since the flows plan M6.
     object; assigned to `hooks.renderArStatus` by `main.ts` so the other
     modules can call it without importing this one. A VISITOR without
     `?debug=1` reads `visitorStatus`'s one plain sentence; the creator and
-    `?debug=1` keep the technical `arStatusLine`. `data-state` always
-    carries `visitorStatus`'s state (the stable channel for tests and
-    styling), and `arStatusLive` (the screen reader's live region) is
-    written only when the visitor's sentence changes, never per camera
-    frame (UI round 1, U1, review F14).
+    `?debug=1` keep the technical `arStatusLine`. `data-state` carries `visitorStatus`'s state for a visitor (none for a creator, whose session it would mislead), `data-gate` the scan gate as one word for both (`passed-code` proves the code passed it); `arStatusLive` (the screen reader's live region) is written only when its text changes: the visitor's sentence, and a creator's line outside a session (a failed start with its cause), never per camera frame (UI round 1, U1, review F14; U1 milestone review #8, #9).
   - Subscribes the button renderer to the controller and binds the click:
     during a running session the click ENDS it ("Exit AR", UI round 1, U2),
     through the same teardown as the back gesture.

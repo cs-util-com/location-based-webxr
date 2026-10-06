@@ -127,8 +127,7 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   phone, Finish steps aside while the rebuilt file waits for its save
   (`hideFinishForResult`); after AR ends without a Finish (the back
   gesture), Finish reads "Finish and save your changes"; a delivered save
-  marks `ctx.rebuiltZip.delivered`; `leaveNeedsConfirm()` (exported) is
-  what `main.ts` asks before another tour or leaving the page.
+  marks `ctx.rebuiltZip.delivered`; `leaveNeedsConfirm()` and `leaveQuestion()` (exported) are what `main.ts` asks before another tour or leaving the page. A failed Finish reveals a file it already made, and the keep-the-walk switch hides while a rebuilt file waits (the next Finish rebuilds from it; U2 milestone review #2, #4).
 - **The published copy leaves the creator's walk out** (scan-pass plan
   S1, S-D10): unless the creator ticks "Keep the walk recording in the tour
   file" (`keepScanRow` / `keepScanInput`, on the page BEFORE AR since UI

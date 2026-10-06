@@ -174,3 +174,17 @@ describe("describeOpenError for a visitor (UI round 1, U1, review F11)", () => {
     );
   });
 });
+
+describe("describeOpenError - a refused Drive file for a visitor (U1 milestone review #10)", () => {
+  // Why: "check that the file is shared publicly" is advice only the
+  // creator can follow.
+  it("names who can fix it instead of the sharing settings", () => {
+    const text = describeOpenError(
+      new OpenRemoteArchiveError("x", "unusable-link"),
+      "https://drive.google.com/file/d/abc/view",
+      "visitor",
+    );
+    expect(text).not.toMatch(/shared publicly/);
+    expect(text).toMatch(/tell the person who put up the poster/i);
+  });
+});

@@ -66,10 +66,14 @@ export function locationRequestNotice(outcome: LocationRequestOutcome): {
     case "unavailable":
       return {
         error: "",
-        hint: "No GPS fix yet - that is fine outdoors, the tour keeps trying once it starts. Tap Start the tour.",
+        hint: "No GPS fix yet - that is fine outdoors, the tour keeps trying once it starts. Tap Start the tour, then point your phone at the tour's code (on the poster).",
       };
     case "granted":
-      return { error: "", hint: "Location allowed - now tap Start the tour." };
+      // Keeps what to do once AR starts (U1 milestone review #10).
+      return {
+        error: "",
+        hint: "Location allowed - now tap Start the tour, then point your phone at the tour's code (on the poster).",
+      };
   }
 }
 

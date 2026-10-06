@@ -113,6 +113,11 @@ export function describeOpenError(
     // read as the generic archive error and hide the actual cause
     // (drive-proxy plan Rev 2, review finding 12).
     if (url !== undefined && isDriveUrl(url)) {
+      // The sharing settings are the creator's to fix (U1 milestone
+      // review #10).
+      if (audience === "visitor") {
+        return "The tour's file on Google Drive could not be opened. Tell the person who put up the poster.";
+      }
       return "Google Drive refused that file — check that the file is shared publicly (“Anyone with the link”) and the link carries a valid file id.";
     }
     return "That link cannot be opened as an archive.";

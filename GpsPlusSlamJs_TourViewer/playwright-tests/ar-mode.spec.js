@@ -93,13 +93,13 @@ async function lockTheCode(page) {
         await page.evaluate(() => {
           /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
         });
-        return page.getByTestId("ar-status").getAttribute("data-state");
+        return page.getByTestId("ar-status").getAttribute("data-gate");
       },
       { timeout: 20000 },
     )
-    // Past the scan gate (UI round 1: the state, not the wording, which
-    // differs with and without ?debug=1).
-    .toMatch(/^(locking|warming-up|placing|placed)$/);
+    // The CODE passed the gate (U1 milestone review #9: the visitor's state
+    // alone also reads "placing" after a GPS-only pass).
+    .toBe("passed-code");
 }
 
 /**
@@ -290,9 +290,7 @@ test("creator mode (the plain page) boots the same foundation under its own labe
   await page.goto("/");
   await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup");
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText(
-    "Exit AR - your work stays on this phone",
-  );
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   await expect(page.getByTestId("ar-status")).toContainText("Creator mode");
 
   const wiring = await page.evaluate(() => {
@@ -338,9 +336,7 @@ test("a system session end tears the runtime down, and a re-entry starts a clean
   // alignment solve.
   await page.goto("/");
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText(
-    "Exit AR - your work stays on this phone",
-  );
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
 
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.endXrSession();
@@ -357,9 +353,7 @@ test("a system session end tears the runtime down, and a re-entry starts a clean
   expect(afterEnd.isRecording).toBe(false);
 
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText(
-    "Exit AR - your work stays on this phone",
-  );
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   const afterReenter = await page.evaluate(() => {
     const t = /** @type {any} */ (window).__tourViewerTest;
     return {
@@ -406,9 +400,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   await enterAr(page);
   await expect(page.getByTestId("setup-controls")).toBeVisible();
   await expect(page.getByTestId("setup-finish")).toBeDisabled(); // not measured
-  await expect(page.getByTestId("enter-ar")).toHaveText(
-    "Exit AR - your work stays on this phone",
-  );
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   await expect(page.getByTestId("setup-status")).toHaveText(
     /hold the phone on the printed code/i,
   );
@@ -661,9 +653,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // origins. The snapshot makes the count session-relative. (The finish
   // above already ended the session.)
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText(
-    "Exit AR - your work stays on this phone",
-  );
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   await expect
     .poll(
       async () => {
@@ -945,9 +935,7 @@ test("a failed finish says so with priority and can be retried; the panel shows 
     /finishing failed/i,
   );
   await expect(page.getByTestId("setup-finish")).toBeEnabled();
-  await expect(page.getByTestId("enter-ar")).toHaveText(
-    "Exit AR - your work stays on this phone",
-  ); // the session survived
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR"); // the session survived
 
   // Retry with the network back: progress, then step 5.
   await page.unroute("http://127.0.0.1:5197/**");
@@ -1254,6 +1242,10 @@ test("a visitor reads one plain sentence per state, never the debug readout (UI 
         await page.evaluate(() => {
           /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
         });
+        // The fakes send frames but no poses, so tracking quality decays to
+        // "lost", which the placed line now reports (U1 milestone review
+        // #7); a real session keeps reporting. Re-assert it is fine.
+        await forceTrackingReady(page);
         return status.getAttribute("data-state");
       },
       { timeout: 20000 },
@@ -1272,6 +1264,63 @@ test("a visitor reads one plain sentence per state, never the debug readout (UI 
   ]) {
     await expect(status).not.toContainText(word);
   }
+});
+
+test("a visitor's plain line says when a tour has nothing to show, and when GPS placed it (U1 milestone review #2, #4)", async ({
+  page,
+}) => {
+  // Why this matters: the first plain line read "Placing the tour…"
+  // forever on a tour with no recording and no codes (the F3 case, now
+  // without ?debug=1), and the GPS escape needs its own honest sentence.
+  await openAsVisitor(page, PLAIN_ARCHIVE);
+  await enterAr(page);
+  await seedAlignment(page);
+  await forceTrackingReady(page);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").getAttribute("data-state");
+      },
+      { timeout: 20000 },
+    )
+    .toBe("nothing");
+  await expect(page.getByTestId("ar-status")).toHaveText(
+    "This tour has nothing to show here.",
+  );
+
+  // A tour with a code, the visitor taking the GPS escape.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.endXrSession();
+  });
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  await enterAr(page);
+  await seedAlignment(page);
+  await forceTrackingReady(page);
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.fireTimers();
+  });
+  await page.getByTestId("scan-escape").click();
+  await expect(page.getByTestId("ar-status")).toHaveAttribute(
+    "data-gate",
+    "passed-skipped",
+  );
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").getAttribute("data-state");
+      },
+      { timeout: 20000 },
+    )
+    .toBe("placed-gps");
+  await expect(page.getByTestId("ar-status")).toContainText(
+    "Tour placed by GPS (less exact).",
+  );
 });
 
 test("without a QR detector the photos still land at capture spots (review #2)", async ({

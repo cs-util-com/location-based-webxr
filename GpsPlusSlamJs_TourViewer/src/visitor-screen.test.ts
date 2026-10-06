@@ -129,7 +129,7 @@ describe("wireVisitorScreen", () => {
     // The silent second tap (UI round 1, U1, review F11): the hint now
     // says what the button just turned into.
     expect(d.arHint.textContent).toBe(
-      "Location allowed - now tap Start the tour.",
+      "Location allowed - now tap Start the tour, then point your phone at the tour's code (on the poster).",
     );
   });
 

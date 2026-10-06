@@ -177,6 +177,19 @@ describe("arStatusLine - the fixed prefix", () => {
     ).toBe("Creator mode — starting");
   });
 
+  it("names the start failure's cause for the creator and ?debug=1 (U1 milestone review #1)", () => {
+    // Why: the start button became a plain "Try again"; without this line
+    // a creator read "error" with no cause anywhere.
+    expect(
+      arStatusLine({
+        ...RUNNING_BASE,
+        mode: "creator",
+        arStatus: "error",
+        arError: "Location permission is required for GPS AR.",
+      }),
+    ).toBe("Creator mode — error: Location permission is required for GPS AR.");
+  });
+
   it("keeps the e2e-pinned running prefix exactly", () => {
     // ar-mode.spec.js asserts this literal text; the prefix is a contract.
     expect(arStatusLine(RUNNING_BASE)).toBe(
