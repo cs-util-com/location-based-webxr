@@ -313,7 +313,8 @@ const PARAMS = {
   // The relief (F1, DEC-GL5-9): 1 draws the library's terrain tiles as the
   // surface, exaggerated by altitude (`exaggerationAt`), in place of the
   // generated globe tiles; 0 (the default until F2) keeps the globe as it
-  // was. `reliefNear` is the near-ground exaggeration (3, DEC-GL5-5).
+  // was. `reliefNear` is the near-ground exaggeration: 1, true heights, since
+  // the owner's D-K1 (city plan 2026-10-05-0040 §11); 3 was DEC-GL5-5.
   // The default since F2a (DEC-GL5-15); 0 keeps the plain globe.
   relief: { fallback: 1, min: 0, max: 1 },
   reliefNear: { fallback: GLOBE_FLIGHT.exaggerationNear, min: 1, max: 5 },

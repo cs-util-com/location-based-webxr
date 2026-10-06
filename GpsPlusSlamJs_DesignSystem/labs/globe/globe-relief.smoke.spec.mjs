@@ -23,8 +23,13 @@ import { bootGlobe } from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const TARGET = { latitude: 46.5, longitude: 9.0 };
+// `reliefNear=3`: these tests are about the exaggerated relief (its law, the
+// band, the clearance over a ridge drawn three times as high). Since the
+// owner's D-K1 (city plan 2026-10-05-0040 §11) the default is true heights,
+// E 1, at which they would pass while testing nothing; the default's own
+// test is the last one in this file.
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&relief=1&reliefHeights=synthetic&diveMs=6000&handOver=0";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&relief=1&reliefHeights=synthetic&diveMs=6000&handOver=0&reliefNear=3";
 
 /** The exaggeration law (globe-flight.ts), for the expected value. */
 const exaggerationAt = (altM, near = 3) => {
@@ -712,4 +717,43 @@ test("a carrier's cache is released only after it stays out of the band", async 
     expect(r.maxPerFrame).toBeGreaterThan(0);
     expect(r.maxPerFrame).toBeLessThanOrEqual(8);
   }
+});
+
+// WHY (owner, 2026-10-06, city plan §11 D-K1): true heights everywhere by
+// default, so the city's buildings can stand on the relief as drawn. A link
+// without `reliefNear` lands with the relief at E 1, its drawn ground the
+// synthetic heights themselves (the crest's 1.6-2.2 km, not 4.8-6.6 km).
+test("the default relief is drawn at true heights near the ground", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(300_000);
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation({ latitude: 46.545, longitude: 9.125 });
+  const errors = await bootGlobe(
+    page,
+    `${BASE.replace("&reliefNear=3", "")}&handOverKm=5`,
+  );
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => {
+      const st = window.__globeLab.state();
+      return (
+        st.phase === "landed" &&
+        st.pin.phase === "idle" &&
+        st.relief?.groundUnderCameraM !== null &&
+        st.relief.settled
+      );
+    },
+    null,
+    { timeout: 180_000 },
+  );
+  const st = await page.evaluate(() => window.__globeLab.state());
+  console.log(
+    `default relief at a 5 km hold over the crest: E ${st.relief.heightScale}, drawn ground under the camera ${(st.relief.groundUnderCameraM / 1000).toFixed(2)} km`,
+  );
+  expect(errors).toEqual([]);
+  expect(st.relief.heightScale).toBe(1);
+  // The crest's synthetic heights are 1.6-2.2 km; at E 3 they drew 4.8-6.6.
+  expect(st.relief.groundUnderCameraM).toBeLessThan(2_600);
 });

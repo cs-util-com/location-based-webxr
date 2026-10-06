@@ -374,13 +374,15 @@
     otherwise the live Terrarium tiles, credited in the credits line.
   - Every frame the relief's exaggeration is `exaggerationAt` of the
     camera's altitude (`/globe/globe-flight.js`: 1 at globe scale, the
-    near value `reliefNear` (default 3, DEC-GL5-5) from 20 km down, 2.2 at
-    the 150 km hold), in steps of 0.1. `reliefGround` above 0 adds the
+    near value `reliefNear` from 20 km down: default 1, true heights at
+    every altitude since the owner's D-K1 (city plan 2026-10-05-0040
+    §11); 3 was DEC-GL5-5, and `reliefNear=3` draws it, 2.2 at the
+    150 km hold), in steps of 0.1. `reliefGround` above 0 adds the
     third band (city plan 2026-10-05-0040 K1): E eases from the near value
     at 8 km to `reliefGround` (capped at the near value) at 2 km and
     below, so a city can stand on true heights (1); the dive's floor reads
     the same law, and so does the cloud shell (3 km x E), which then sinks
-    with it. `reliefNear=1` draws true heights at every altitude.
+    with it.
   - The pin's dive is the oblique approach (`planDive`'s pitch law; the
     `pitchLow` key, 30-90, default 45; 90 flies the old straight-down
     dive), ending at the hand-over altitude or the clearance rule's floor

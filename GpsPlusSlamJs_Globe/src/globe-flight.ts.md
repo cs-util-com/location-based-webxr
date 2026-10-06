@@ -7,7 +7,8 @@
   - `GLOBE_FLIGHT`: `pitchHighM` 5,000 km and `pitchLowM` 1,000 km (the
     pitch law's band), `pitchLowDeg` 45 (the plan's default of its 30-60
     sweep), `exaggerationFarM` 2,000 km and `exaggerationNearM` 20 km (the
-    exaggeration's band), `exaggerationNear` 3 (DEC-GL5-5),
+    exaggeration's band), `exaggerationNear` 1 (true heights at every altitude, the owner's D-K1,
+    city plan 2026-10-05-0040 §11; it was 3, DEC-GL5-5),
     `exaggerationStep` 0.1, `groundBandTopM` 8 km and `groundBandBottomM` 2 km
     (the third band, K1), `clearanceM` 300, `radiusM` 6,371 km (the frame
     metric's sphere), `horizonMarginDeg` 5 (the least the view looks below
@@ -24,7 +25,7 @@
     `exaggerationFarM`, `near` from `exaggerationNearM` down, smoothstep in
     the logarithm between, rounded to `exaggerationStep` (so the tile tree
     is not re-traversed every frame); never falls as the camera descends.
-    2.2 at the 150 km hold. With `ground` (1 to `near`; city plan
+    2.2 at the 150 km hold with `near` 3. With `ground` (1 to `near`; city plan
     2026-10-05-0040 K1) a third band eases it from `near` at
     `groundBandTopM` to `ground` at `groundBandBottomM` and below,
     smoothstep in the logarithm, so a city can stand on true heights;

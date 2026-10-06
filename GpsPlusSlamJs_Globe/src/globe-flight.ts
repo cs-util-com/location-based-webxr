@@ -19,8 +19,13 @@ export const GLOBE_FLIGHT = Object.freeze({
   exaggerationFarM: 2_000_000,
   /** E is the near value at and below this. */
   exaggerationNearM: 20_000,
-  /** The near-ground E: 3 (DEC-GL5-5). */
-  exaggerationNear: 3,
+  /**
+   * The near-ground E: 1, true heights at every altitude (the owner's D-K1,
+   * city plan 2026-10-05-0040 §11: the city's buildings stand on the real
+   * ground). It was 3 (DEC-GL5-5); the law and its `near` option stay, so
+   * a link can still ask for the exaggerated relief.
+   */
+  exaggerationNear: 1,
   /** E moves in these steps, so the tile tree is not re-traversed each frame. */
   exaggerationStep: 0.1,
   /**

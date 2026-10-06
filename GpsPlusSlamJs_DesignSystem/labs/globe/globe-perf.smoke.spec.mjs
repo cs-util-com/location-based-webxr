@@ -24,8 +24,11 @@ import { expect, test } from "@playwright/test";
 
 import { bootGlobe } from "./globe-smoke-helpers.mjs";
 
+// `reliefNear=3`: the recorder times the relief's height steps (E changes),
+// and at the default E 1 (true heights, city plan 2026-10-05-0040 §11 D-K1)
+// there are none to time.
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&reliefHeights=synthetic";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&reliefHeights=synthetic&reliefNear=3";
 /**
  * The recorder's paths cross the band in seconds; with round 6's gate and
  * sharp takeover (bandGate, bandSharp, plan 2026-10-04-1050 G6-1) the
