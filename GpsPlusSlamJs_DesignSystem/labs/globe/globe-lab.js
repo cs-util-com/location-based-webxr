@@ -20,6 +20,7 @@ import {
   createGlobeImagery,
   createGlobeSurface,
 } from "/globe/globe-surface.js";
+import { CLOUD_VOLUME } from "/globe/globe-cloud-volume.js";
 import { creditsFor } from "/globe/globe-credits.js";
 import { GIBS_ACKNOWLEDGEMENT } from "/globe/globe-sources.js";
 import {
@@ -1655,6 +1656,8 @@ async function start() {
    * scale in the scene (the globe's sun intensity).
    */
   let skyHandOver = { weight: 0, exposure: Number.NaN };
+  /** The view direction the cloud volume centres its disc along (§15). */
+  const volumeView = new THREE.Vector3();
   /** The observer's height over the ellipsoid's image (km), this frame. */
   let observerKm = Number.POSITIVE_INFINITY;
   let shellThickness = null;
@@ -2503,6 +2506,14 @@ async function start() {
         fadeKm: params.cloudVolumeFadeKm,
         cover: params.cloudVolumeCover,
         shellHeightM: globe.cloudShell.heightM(),
+        // The disc where the view meets the deck (§15); variant 1 keeps it
+        // on the camera, where the shell's hole is.
+        view: {
+          position: camera.position.toArray(),
+          direction: camera.getWorldDirection(volumeView).toArray(),
+        },
+        maxAheadM:
+          params.cloudVolume === 1 ? 0 : CLOUD_VOLUME.maxAheadKm * 1000,
       });
       globe.cloudShell.setHole(
         params.cloudVolume === 1 && volume.radiusM > 0

@@ -27,7 +27,13 @@ and ending at the relief, so a ridge in front of a cloud hides it.
     the same clear patch under every place (2026-10-06). The slab's reach
     (`setCloudReach`) follows the disc, at least the default 21 km, so the
     volume reaches toward the horizon (volume-cloud plan §13, R2: the
-    default ended it 21 km from the camera); disabling restores it.
+    default ended it 21 km from the camera); disabling restores it. With
+    `view` (`{ position, direction }`) and `maxAheadM`, the disc is
+    centred where the view meets the deck (`cloudVolumeDiscCentre`;
+    volume-cloud plan §15: the owner saw it around the camera, not where
+    he looked), for the slab and its shadow, and the reach runs to the
+    disc's far side; the lab passes `maxAheadM` 0 in variant 1, where the
+    shell's hole is around the camera.
   - `render(camera, relief)`: after the Earth, nothing at share 0: the
     relief's depth pass, the slab from the lifted camera, the composite.
   - `patchShadow(tiles)` and `setShadow(on)` (C3): the volume's shadow on

@@ -36,6 +36,7 @@ import {
 import { CloudShadow } from "/fw/visualization/atmosphere/cloud-shadow.js";
 import {
   CLOUD_VOLUME_COVERAGE_GLSL,
+  cloudVolumeDiscCentre,
   cloudVolumeNoiseOffset,
   cloudVolumeShare,
 } from "/globe/globe-cloud-volume.js";
@@ -143,6 +144,8 @@ export function createGlobeCloudVolume(
   let drawn = 0;
   /** The reach's end last handed to the slab (m), or null (the default). */
   let lastReachEndM = null;
+  /** How far ahead of the camera the disc's centre is (m), this frame. */
+  let aheadM = 0;
 
   const slab = () => skyScene.getObjectByName("atmosphere-cloud-slab");
   const fit = (target) => {
@@ -165,6 +168,7 @@ export function createGlobeCloudVolume(
         atmosphere.setCloudSceneDepth(null);
         atmosphere.setCloudDiscRadius(null);
         atmosphere.setCloudReach(null);
+        atmosphere.setCloudDiscCentre(null);
         lastReachEndM = null;
         atmosphere.configure({ cloudMode: "dome", cloudCover: 0 });
       }
@@ -182,6 +186,8 @@ export function createGlobeCloudVolume(
       fadeKm = 10,
       cover = 1,
       shellHeightM,
+      view = null,
+      maxAheadM = 0,
     }) {
       gainUniform.value = cover;
       share =
@@ -213,12 +219,32 @@ export function createGlobeCloudVolume(
           atmosphere.cloudUniforms.atmCloudOffset.value.set(u, v);
         }
       }
+      // The disc's centre (volume-cloud plan §15): where the view meets the
+      // deck (the shell's height), at most `maxAheadM` ahead; the camera
+      // without a view or with no reach ahead.
+      const centre =
+        view === null
+          ? null
+          : cloudVolumeDiscCentre({
+              camera: view.position,
+              direction: view.direction,
+              deckY: shellHeightM,
+              maxAheadM,
+            });
+      aheadM = centre?.aheadM ?? 0;
+      const discCentre =
+        centre === null || maxAheadM === 0
+          ? null
+          : { x: centre.x, z: centre.z };
       if (enabled) {
         atmosphere.setCloudDiscRadius(radiusM > 0 ? radiusM : null);
-        // The slab's reach follows the disc (volume-cloud plan §13, R2): its
-        // default ends 21 km from the camera, which left the horizon the
-        // owner looked at without volume clouds (2026-10-06).
-        const reachEndM = Math.max(radiusM, MIN_REACH_END_M);
+        atmosphere.setCloudDiscCentre(discCentre);
+        // The slab's reach follows the disc (volume-cloud plan §13, R2; §15:
+        // out to the disc's far side): its default ends 21 km from the
+        // camera, which left the horizon the owner looked at without volume
+        // clouds (2026-10-06). Moved in 1 km steps, not every frame.
+        const reachEndM =
+          Math.ceil(Math.max(aheadM + radiusM, MIN_REACH_END_M) / 1000) * 1000;
         if (reachEndM !== lastReachEndM) {
           lastReachEndM = reachEndM;
           atmosphere.setCloudReach({
@@ -229,6 +255,7 @@ export function createGlobeCloudVolume(
       }
       shadow.setLiftM(liftM);
       if (radiusM > 0) shadow.setDiscRadiusM(radiusM);
+      shadow.setDiscCentre(discCentre);
       shadow.setEnabled(shadowOn && enabled && radiusM > 0);
       return { share, radiusM };
     },
@@ -337,6 +364,7 @@ export function createGlobeCloudVolume(
         enabled,
         share,
         radiusM,
+        aheadM,
         liftM,
         drawn,
         shadow: shadowOn && enabled && radiusM > 0,

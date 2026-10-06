@@ -258,10 +258,13 @@ test("the cloud volume reaches toward the horizon, not only around the camera", 
     (k) => `x${k} ${upper >= UPPER_SHARE * k ? "ok" : "NO"}`,
   ).join(" ");
   console.log(
-    `the volume toward the horizon at ${HOLD_KM} km over 61 N 5.5 E: upper half ${(upper * 100).toFixed(1)} % (bound ${UPPER_SHARE * 100} %: ${verdict}), lower half ${(coverage.lowerShare * 100).toFixed(1)} %, disc ${(volume.radiusM / 1000).toFixed(0)} km`,
+    `the volume toward the horizon at ${HOLD_KM} km over 61 N 5.5 E: upper half ${(upper * 100).toFixed(1)} % (bound ${UPPER_SHARE * 100} %: ${verdict}), lower half ${(coverage.lowerShare * 100).toFixed(1)} %, disc ${(volume.radiusM / 1000).toFixed(0)} km centred ${(volume.aheadM / 1000).toFixed(0)} km ahead`,
   );
   expect(errors).toEqual([]);
   expect(upper).toBeGreaterThanOrEqual(UPPER_SHARE);
+  // §15: in the default variant the disc is centred where the view meets
+  // the deck, ahead of the camera (60 km at most), not on the camera.
+  expect(volume.aheadM).toBeGreaterThan(0);
 });
 
 // WHY (volume-cloud plan §14, the owner's Debug export of 2026-10-06): the
