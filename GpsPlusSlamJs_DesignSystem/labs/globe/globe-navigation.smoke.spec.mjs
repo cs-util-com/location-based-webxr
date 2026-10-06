@@ -20,6 +20,7 @@ import {
   arriveAt,
   luminance,
   meanOf,
+  plainGlobe,
   routeCityData,
   withPreRound4Look,
 } from "./globe-smoke-helpers.mjs";
@@ -41,7 +42,7 @@ async function bootArrived(page, hash = VIEW) {
   page.on("pageerror", (e) => errors.push(e.message));
   // A pin press starts the arrival prefetch: its city data is answered here.
   await routeCityData(page);
-  await page.goto(`/labs/globe/#${hash}`);
+  await page.goto(`/labs/globe/#${plainGlobe(hash)}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
     null,
@@ -144,10 +145,13 @@ test("a drag turns the globe and takes the camera; replay gives it back", async 
 
 // WHY (round-2 plan §1: "zoom in, to try the tile loading"): the wheel
 // takes the camera and zooms in; close to the ground (below 50 km) the
-// library's planes follow it: its near plane stays within its own band
-// (at most 1 km this low) and well under the altitude, and the ground
+// planes follow it: the near plane is the clip planes' fraction (0.3) of
+// the height over the ground and well under the altitude, and the ground
 // under the centre is drawn, not clipped to the black of space. Tiles of
 // the finest committed level, which the fitted view never needs, load.
+// Since F2a (M4, plan 2026-10-03-1922) the lab's own planes replace the
+// library's for every camera owner; the library kept its near within
+// 1 km this low, and that absolute bound described its planes, not these.
 test("a wheel zooms in close to the ground, unclipped, and the finest level loads", async ({
   page,
 }) => {
@@ -166,7 +170,9 @@ test("a wheel zooms in close to the ground, unclipped, and the finest level load
   );
   expect(state.cameraOwner).toBe("controls");
   expect(state.altitudeM).toBeLessThan(50_000);
-  expect(state.near).toBeLessThanOrEqual(1000);
+  // The plain globe (no relief): the ground is the ellipsoid, so the near
+  // plane is 0.3 of the altitude (globe-camera.ts GLOBE_CLIP.nearFraction).
+  expect(state.near / state.altitudeM).toBeCloseTo(0.3, 2);
   expect(state.near).toBeLessThan(state.altitudeM * 0.5);
   // The fitted view needs no level 4 at the default target (globe sky
   // results §3.1); close up it must load some.

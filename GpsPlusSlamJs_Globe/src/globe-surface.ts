@@ -19,6 +19,10 @@ import {
   type GlobeSource,
   type GlobeSourceId,
 } from "./globe-sources.js";
+import {
+  type GlobeCloudShell,
+  createGlobeCloudShell,
+} from "./globe-cloud-shell.js";
 import { celestialToEcefQuaternion } from "./globe-stars.js";
 import { createMaterialRetirer } from "./globe-warm-material.js";
 import {
@@ -137,6 +141,18 @@ export interface GlobeSurface {
     siderealAngleRad: number,
     target?: THREE.Quaternion,
   ): THREE.Quaternion;
+  /**
+   * The clouds' own shell above the ground (`globe-cloud-shell.ts`, round-6
+   * plan G6-2), in the tiles' ECEF frame; hidden until
+   * `setCloudShellShare` gives it a share.
+   */
+  readonly cloudShell: GlobeCloudShell;
+  /**
+   * How much of the clouds the shell draws (0-1); the surface paints the
+   * rest into the ground's colour. 0, the default, is the look before.
+   * RangeError outside 0-1.
+   */
+  setCloudShellShare(share: number): void;
   /** The registry sources on screen, for the credits line. */
   activeSources(): GlobeSourceId[];
   dispose(): void;
@@ -310,6 +326,21 @@ export function createGlobeSurface(
   // it was made with, sits on its target and lights nothing (measured).
   const group = new THREE.Group();
   group.add(tiles.group, sun, sun.target);
+  // The cloud shell in the tiles' frame: a holder that copies their
+  // placement (not inside tiles.group, whose children keep stale world
+  // matrices, as the light's comment says).
+  const cloudShell = createGlobeCloudShell({
+    uniforms: surfaceUniforms,
+    radii: [
+      tiles.ellipsoid.radius.x,
+      tiles.ellipsoid.radius.y,
+      tiles.ellipsoid.radius.z,
+    ],
+  });
+  const cloudFrame = new THREE.Group();
+  cloudFrame.matrixAutoUpdate = false;
+  cloudFrame.add(cloudShell.mesh);
+  group.add(cloudFrame);
   /**
    * The light shines from its position towards its target (the group's
    * origin): the ECEF sun turned by tiles.group's placement within the
@@ -323,6 +354,8 @@ export function createGlobeSurface(
     sun.position
       .copy(surfaceUniforms.uSunEcef.value)
       .transformDirection(tiles.group.matrix);
+    cloudFrame.matrix.copy(tiles.group.matrix);
+    cloudFrame.matrixWorldNeedsUpdate = true;
     // The world-space sun for the cloud shading (review m4): the ECEF sun
     // through every group above the tiles, as the light ends up.
     tiles.group.updateWorldMatrix(true, false);
@@ -408,7 +441,13 @@ export function createGlobeSurface(
         .multiply(celestialToEcefQuaternion(siderealAngleRad));
     },
     activeSources: () => GLOBE_SOURCES.map((s) => s.id),
+    cloudShell,
+    setCloudShellShare(share) {
+      cloudShell.setShare(share);
+      surfaceUniforms.uCloudInSurface.value = 1 - share;
+    },
     dispose() {
+      cloudShell.dispose();
       tiles.dispose();
       retirer.dispose();
       template.dispose();

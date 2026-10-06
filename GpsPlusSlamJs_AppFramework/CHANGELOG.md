@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+### Added
+
+- **The cloud slab's reach**, opt-in: `setCloudSlabReach(slab, reach |
+null)` and `SkyAtmosphere.setCloudReach(reach | null)` move the slab's
+  far fade and march cap out (and scale its mesh to match), so a camera
+  high over a wide deck sees the volume toward the horizon, not only
+  around itself. The default is the old fixed 14 to 21 km, so a page that
+  never calls it draws exactly what it drew. `cloudSlabInterval`,
+  `cloudSlabFarWeight` and `cloudSlabMarch` take the reach too;
+  `CLOUD_SLAB_REACH` and `assertCloudSlabReach` are exported.
+- **`SkyAtmosphere.setObserverAltitudeKm(km)`** and the `observerAltitudeKm`
+  getter: the sky follows the observer's height (0 to 100 km) after
+  construction, synchronously like `setSun` (globe F2 plan, F2b).
+- **`SkyAtmosphere`'s staged rebuild**: the constructor option
+  `rebuild: 'staged'`, `stepRebuild()` (returns a `RebuildStage`) and
+  `rebuildPending`, for a page that renders every frame. A setter records
+  the change and each `stepRebuild()` does one stage (the tables, an
+  asynchronous read, the bake into one reused target), so no frame carries
+  a whole rebuild. The default `'immediate'` path is unchanged.
+- **The cloud slab ends at the scene's depth**, opt-in:
+  `setCloudSlabSceneDepth(slab, depth | null)` and
+  `SkyAtmosphere.setCloudSceneDepth(depth | null)`; with a depth the march
+  stops at the scene and the slab's depth test is off, so a ridge in front
+  of a cloud deck no longer hides the cloud in front of it. Without one the
+  slab is unchanged. `cloudSlabInterval` gains an optional `sceneM`.
+- **The cloud slab and the cloud shadow can take their clouds from a map
+  and fade by distance**, opt-in: `setCloudSlabCoverage(slab, coverage |
+null)` (the caller defines `float atmCloudCoverageAt(vec2 xz)`; the local
+  cover becomes the column's threshold through the noise's quantiles),
+  `setCloudSlabRadius(slab, r | null)` (the clouds fade to clear from 0.7 r
+  to r around the camera), the matching `SkyAtmosphere.setCloudCoverage`
+  and `setCloudDiscRadius`, `CloudShadow.configureMap`, `setLiftM`,
+  `setDiscRadiusM` and `setCover`, the shared module `cloud-coverage.ts`
+  (`cloudCoverThresholds`, `cloudThresholdForCover`, `cloudDiscThreshold`,
+  `CLOUD_COVERAGE_GLSL`, `withCloudCoverage`), and `cloudSlabMarch`'s
+  optional `thresholdAt`. Without them the slab and the shadow are
+  unchanged.
+- **`AtmosphereDevice` gains two OPTIONAL members**,
+  `beginSkyViewRead()` (with the `SkyViewRead` type) and
+  `bakeEnvironmentReused(scene)`; an existing implementation keeps
+  compiling, and the staged rebuild falls back to the synchronous read and
+  a new target per bake without them.
+
 ## [1.26.1] — 2026-10-04
 
 Requires `gps-plus-slam-js` ≥ 1.26.0. The version matches the core library's 1.26.1; 1.25.x was never published.

@@ -158,6 +158,19 @@ final?" must be asked of the snapshot's **radius**, never of the loading flag;
 and the ring reach must match what was fetched. See
 [`refresh-cycle.ts.md`](../GpsPlusSlamJs_OsmDemo/src/refresh-cycle.ts.md) 🟦.
 
+🟦 **The demo does not call the area loader.** The diagram above is the
+library's load path for a consumer that scores the whole working set at once.
+The demo fetches per pass instead: `fetchTilesForScoreWorkingSet(chunk, radius)`
+for the ring it is about to score, then its own loop over
+`CachingSource.fetchTile`, skipping tiles it already loaded. It cannot use
+`ensureWorkingSetLoaded` as written, because that always loads the widest set
+(`SCORE_DISK_MAX_RADIUS`, 6): measured 2026-10-02 over 20 000 random positions
+each in Cologne and Manhattan, about 48 % of first answers would then wait on
+two or three cold tiles instead of about 20 % at radius 2. What the demo's loop
+gives up is the loader's split of rate-limited tiles (`deferred`) from failed
+ones, and the failure cause. Owner decision 2026-10-05: keep both paths, docs
+only.
+
 ---
 
 ## 5. State: what is truth, what is derived
@@ -204,6 +217,10 @@ flowchart LR
   C -->|"tile absent"| E["reported in <b>deferred</b>,<br/>NOT an error"]
   E --> F["cells read as <i>unknown</i>,<br/>never as 'empty'"]
 ```
+
+This is the flow the library offers a consumer. No app in this workspace calls
+`ensureAreaLoaded` or `ensureWorkingSetLoaded` today; the OSM demo loads per
+pass with its own loop (§4).
 
 The rules that make this honest:
 

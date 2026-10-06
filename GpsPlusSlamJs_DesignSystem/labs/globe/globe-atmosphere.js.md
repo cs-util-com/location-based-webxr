@@ -26,7 +26,10 @@
     `worldFromEcef` is the tiles group's world matrix (the ECEF frame's
     placement, identity in the lab), `sunEcef` a unit vector,
     `sunIntensity` the Earth's sun light's, so the air is lit by the same
-    sun as the ground;
+    sun as the ground; `skyShare` (0-1, default 1; RangeError outside)
+    scales the light of the rays that miss the ground, so below the
+    hand-over edge the ground sky (`globe-ground-sky.js`, F2b) takes the
+    sky's pixels while the ground keeps the space pass's veil;
   - `dispose()`.
 - Invariants & assumptions:
   - The frame: ECEF metres are scaled per axis so the WGS84 ellipsoid IS

@@ -34,6 +34,13 @@ import {
   cloudLitRadiance,
 } from './cloud-layer.js';
 import {
+  CLOUD_COVERAGE_GLSL,
+  type CloudCoverage,
+  cloudCoverThresholds,
+  cloudCoverageUniforms,
+  withCloudCoverage,
+} from './cloud-coverage.js';
+import {
   CLOUD_SHEET,
   CLOUD_TOP_LIT_GLSL,
   cloudSheetRingRadii,
@@ -105,6 +112,49 @@ export const CLOUD_SLAB = {
   defaultSteps: 8 satisfies CloudSlabSteps,
 } as const;
 
+/**
+ * How far out the slab draws (metres, horizontal from the camera): full
+ * weight to `farStartM`, none from `farEndM` (globe volume-cloud plan
+ * 2026-10-05-0016 §13, R1).
+ */
+export interface CloudSlabReach {
+  readonly farStartM: number;
+  readonly farEndM: number;
+}
+
+/**
+ * The default reach: the sheet's far fade, which the look-dev page's far
+ * plane (30 km) and the mesh's radius were sized for.
+ */
+export const CLOUD_SLAB_REACH: CloudSlabReach = Object.freeze({
+  farStartM: CLOUD_SHEET.farFadeStartM,
+  farEndM: CLOUD_SHEET.farFadeEndM,
+});
+
+/**
+ * Validates a reach (`CloudSlabReach`).
+ *
+ * @throws RangeError unless 0 <= farStartM < farEndM, both finite.
+ */
+export function assertCloudSlabReach(reach: CloudSlabReach): void {
+  const { farStartM, farEndM } = reach;
+  if (!(
+    Number.isFinite(farStartM) &&
+    Number.isFinite(farEndM) &&
+    farStartM >= 0 &&
+    farStartM < farEndM
+  )) {
+    throw new RangeError(
+      `the reach must fade from 0 <= start < end, got ${farStartM} to ${farEndM}`
+    );
+  }
+}
+
+/** The march cap for a reach: `maxMarchM` scaled with the far fade's end. */
+function maxMarchFor(reach: CloudSlabReach): number {
+  return (CLOUD_SLAB.maxMarchM * reach.farEndM) / CLOUD_SHEET.farFadeEndM;
+}
+
 const T0 = cloudSlabThresholdThicknessM();
 
 /** The noise texture's texel in metres: 24 km over 256 texels, 93.75 m. */
@@ -123,29 +173,48 @@ export function cloudSlabZenithOpacity(
 }
 
 /**
- * The part of a ray from height `y` along `dir` that lies in the slab and
- * inside the far fade, as distances along the ray; null when there is none.
- * Analytic, never from the mesh's faces. GLSL twin: the interval of
- * `CLOUD_SLAB_FRAGMENT_GLSL`.
+ * The interval's input checks; returns the direction's length.
  *
- * @throws RangeError for a non-finite height or a direction that is not
- *   finite or has no length.
+ * @throws RangeError as `cloudSlabInterval`.
  */
-export function cloudSlabInterval(
-  y: number,
-  dir: Vec3
-): { inM: number; outM: number } | null {
+function assertSlabRay(y: number, dir: Vec3, sceneM: number): number {
   const length = Math.hypot(dir[0], dir[1], dir[2]);
   if (!(Number.isFinite(y) && Number.isFinite(length) && length > 0)) {
     throw new RangeError(
       `slab ray needs a finite height and direction, got ${y}, ${dir.join(', ')}`
     );
   }
+  if (!(sceneM >= 0)) {
+    throw new RangeError(`the scene distance must be >= 0, got ${sceneM}`);
+  }
+  return length;
+}
+
+/**
+ * The part of a ray from height `y` along `dir` that lies in the slab and
+ * inside the far fade, as distances along the ray; null when there is none.
+ * Analytic, never from the mesh's faces. `sceneM`, the distance to the
+ * scene along the ray (the scene's depth, F2c), ends it there: a ridge in
+ * front of the slab leaves nothing to march. GLSL twin: the interval of
+ * `CLOUD_SLAB_FRAGMENT_GLSL` (the scene's part behind
+ * `ATM_SLAB_SCENE_DEPTH`).
+ *
+ * @throws RangeError for a non-finite height, a direction that is not
+ *   finite or has no length, or a scene distance that is negative or NaN.
+ */
+export function cloudSlabInterval(
+  y: number,
+  dir: Vec3,
+  sceneM: number = Number.POSITIVE_INFINITY,
+  reach: CloudSlabReach = CLOUD_SLAB_REACH
+): { inM: number; outM: number } | null {
+  assertCloudSlabReach(reach);
+  const length = assertSlabRay(y, dir, sceneM);
   const dy = dir[1] / length;
   const horizontal = Math.hypot(dir[0], dir[2]) / length;
-  const { baseM, topM, maxMarchM } = CLOUD_SLAB;
-  const tFar = CLOUD_SHEET.farFadeEndM / Math.max(horizontal, 1e-6);
-  const cap = Math.min(maxMarchM, tFar);
+  const { baseM, topM } = CLOUD_SLAB;
+  const tFar = reach.farEndM / Math.max(horizontal, 1e-6);
+  const cap = Math.min(maxMarchFor(reach), tFar);
   let inM: number;
   let outM: number;
   if (Math.abs(dy) < 1e-6) {
@@ -158,6 +227,7 @@ export function cloudSlabInterval(
     inM = Math.max(Math.min(tBase, tTop), 0);
     outM = Math.min(Math.max(tBase, tTop), cap);
   }
+  outM = Math.min(outM, sceneM);
   return outM > inM ? { inM, outM } : null;
 }
 
@@ -378,12 +448,18 @@ export function cloudSlabRenderOrder(cameraY: number): number {
   return cameraY > CLOUD_SLAB.baseM ? 1 : -1;
 }
 
-/** A sample's weight by horizontal distance: the sheet's far fade. */
-export function cloudSlabFarWeight(horizontalM: number): number {
-  return (
-    1 -
-    smoothstep(CLOUD_SHEET.farFadeStartM, CLOUD_SHEET.farFadeEndM, horizontalM)
-  );
+/**
+ * A sample's weight by horizontal distance: the reach's far fade (the
+ * sheet's by default).
+ *
+ * @throws RangeError for a reach that does not fade from 0 <= start < end.
+ */
+export function cloudSlabFarWeight(
+  horizontalM: number,
+  reach: CloudSlabReach = CLOUD_SLAB_REACH
+): number {
+  assertCloudSlabReach(reach);
+  return 1 - smoothstep(reach.farStartM, reach.farEndM, horizontalM);
 }
 
 /** The sun and sky a march lights its samples with (`cloudSlabMarch`). */
@@ -410,12 +486,21 @@ export interface CloudSlabMarchInput {
   /** The combined noise at world x/z (metres) and a level of detail. */
   readonly sample: (xM: number, zM: number, lod: number) => number;
   readonly threshold: number;
+  /**
+   * The threshold at world x/z (metres), for a coverage map and the disc
+   * (C1: `cloudThresholdForCover`, `cloudDiscThreshold`,
+   * `cloud-coverage.ts`); omitted: `threshold` everywhere. The shader's
+   * `atmCloudThresholdAt`.
+   */
+  readonly thresholdAt?: (xM: number, zM: number) => number;
   /** Radians per pixel (for the level of detail); 0 ignores the footprint. */
   readonly pixelAngle?: number;
   /** Where in each step the noise is sampled, [0, 1]; 0.5 (the middle) by default. */
   readonly jitter?: number;
   /** Omitted: only the opacity is marched. */
   readonly light?: CloudSlabLight;
+  /** How far out it draws (`CLOUD_SLAB_REACH` when omitted). */
+  readonly reach?: CloudSlabReach;
 }
 
 export interface CloudSlabMarchResult {
@@ -450,7 +535,13 @@ export function cloudSlabMarch(
   const { camera, steps, sample, threshold, light } = input;
   // Validated and normalised here: every position below assumes a unit
   // direction (the interval normalises on its own; the march must too).
-  const interval = cloudSlabInterval(camera[1], input.dir);
+  const { reach } = input;
+  const interval = cloudSlabInterval(
+    camera[1],
+    input.dir,
+    Number.POSITIVE_INFINITY,
+    reach
+  );
   const length = Math.hypot(input.dir[0], input.dir[1], input.dir[2]);
   const dir: Vec3 = [
     input.dir[0] / length,
@@ -474,11 +565,17 @@ export function cloudSlabMarch(
       cloudSlabLod(t, pixelAngle, stepM, horizontal)
     );
   // The thickness BEFORE its clamp: linear in the noise, so linear between
-  // nodes (see `cloudSlabOccupied`).
-  const raw = (noise: number) => T0 + heightScaleM * (noise - threshold);
+  // nodes (see `cloudSlabOccupied`); the threshold read at each node.
+  const raw = (noise: number, th: number) => T0 + heightScaleM * (noise - th);
+  const thresholdAt = input.thresholdAt;
+  const nodeThreshold = (t: number) =>
+    thresholdAt === undefined
+      ? threshold
+      : thresholdAt(camera[0] + dir[0] * t, camera[2] + dir[2] * t);
   const height = (t: number) => camera[1] + dir[1] * t - baseM;
   let ta = interval.inM;
   let na = read(ta, spacing(1 / steps, share) * lengthM);
+  let tha = nodeThreshold(ta);
   let top: [number, number, number] = [0, 0, 0];
   let cosToSun = 0;
   if (light) {
@@ -499,8 +596,9 @@ export function cloudSlabMarch(
   for (let k = 1; k < nodes.length; k++) {
     const tb = interval.inM + nodes[k]!;
     const nb = read(tb, tb - ta);
-    const ra = raw(na);
-    const rb = raw(nb);
+    const thb = nodeThreshold(tb);
+    const ra = raw(na, tha);
+    const rb = raw(nb, thb);
     const occupied =
       tb > ta ? cloudSlabOccupied(ra - height(ta), rb - height(tb)) : null;
     result.stepsTaken = k;
@@ -512,7 +610,7 @@ export function cloudSlabMarch(
       const a = 1 - Math.exp(-tau);
       const tm = 0.5 * (t0 + t1);
       const w =
-        cloudSlabFarWeight(tm * horizontal) *
+        cloudSlabFarWeight(tm * horizontal, reach) *
         Math.exp((-tm * 0.001) / CLOUD_LAYER.aerialKm);
       if (light) {
         const clampDeck = (v: number) => Math.min(Math.max(v, 0), deck);
@@ -532,7 +630,7 @@ export function cloudSlabMarch(
         const under = cloudSlabSourceRadiance(
           light.sunTransmittance,
           cosToSun,
-          cloudDensity(na + (nb - na) * 0.5 * (fa + fb), threshold),
+          cloudDensity(na + (nb - na) * 0.5 * (fa + fb), 0.5 * (tha + thb)),
           light.zenith,
           light.sunDir[1],
           0
@@ -548,6 +646,7 @@ export function cloudSlabMarch(
     }
     ta = tb;
     na = nb;
+    tha = thb;
   }
   result.opacity = 1 - transmittance;
   addForwardGlow(result, light, cosToSun, transmittance);
@@ -628,6 +727,11 @@ uniform mat4 atmSlabInverseProjection;
 uniform mat4 atmSlabCameraWorld;
 uniform vec4 atmSlabViewport;
 uniform float atmSlabPixelAngle;
+// The reach: the far fade's start and end, and the march cap (R1).
+uniform vec3 atmSlabReach;
+#ifdef ATM_SLAB_SCENE_DEPTH
+uniform sampler2D atmSlabSceneDepth;
+#endif
 const float ATM_SLAB_BASE = ${glslFloat(CLOUD_SLAB.baseM)};
 const float ATM_SLAB_TOP = ${glslFloat(CLOUD_SLAB.topM)};
 const float ATM_SLAB_SIGMA = ${glslFloat(CLOUD_SLAB.extinctionPerM)};
@@ -636,16 +740,14 @@ const float ATM_SLAB_HEIGHT_SCALE = ${glslFloat(CLOUD_SLAB.heightScaleM)};
 const float ATM_SLAB_T0 = ${glslFloat(cloudSlabThresholdThicknessM())};
 const float ATM_SLAB_SUN_DEPTH = ${glslFloat(CLOUD_SLAB.sunDepthScale)};
 const float ATM_SLAB_SUN_MU_FLOOR = ${glslFloat(CLOUD_SLAB.sunMuFloor)};
-const float ATM_SLAB_MAX_MARCH = ${glslFloat(CLOUD_SLAB.maxMarchM)};
 const float ATM_SLAB_EARLY_EXIT = ${glslFloat(CLOUD_SLAB.earlyExitTransmittance)};
 const float ATM_SLAB_LEVEL_DIR_Y = ${glslFloat(CLOUD_SLAB.levelDirY)};
-const float ATM_SLAB_FAR_START = ${glslFloat(CLOUD_SHEET.farFadeStartM)};
-const float ATM_SLAB_FAR_END = ${glslFloat(CLOUD_SHEET.farFadeEndM)};
 const float ATM_SLAB_TEXEL = ${glslFloat(TEXEL_M)};
 const float ATM_SLAB_UNIFORM_BLEND = ${glslFloat(CLOUD_SLAB.uniformBlendM)};
 const float ATM_SLAB_LIGHT_SERIES = ${glslFloat(CLOUD_SLAB.lightSeriesX)};
 const float ATM_SLAB_FORWARD_KNOWN = ${glslFloat(CLOUD_SLAB.forwardKnownFactor)};
 
+${CLOUD_COVERAGE_GLSL}
 // Twin of cloudSlabCumulativeM.
 float atmSlabCumulative(float h) {
   if (h <= 0.0) return 0.0;
@@ -686,7 +788,7 @@ void main() {
   float y = cameraPosition.y;
   float horizontal = length(dir.xz);
   // Twin of cloudSlabInterval.
-  float cap = min(ATM_SLAB_MAX_MARCH, ATM_SLAB_FAR_END / max(horizontal, 1e-6));
+  float cap = min(atmSlabReach.z, atmSlabReach.y / max(horizontal, 1e-6));
   float tIn;
   float tOut;
   if (abs(dir.y) < 1e-6) {
@@ -699,6 +801,15 @@ void main() {
     tIn = max(min(tBase, tTop), 0.0);
     tOut = min(max(tBase, tTop), cap);
   }
+#ifdef ATM_SLAB_SCENE_DEPTH
+  float atmSceneDepth = texture2D(atmSlabSceneDepth, (gl_FragCoord.xy - atmSlabViewport.xy) / atmSlabViewport.zw).r;
+  // The march ends at the scene (twin of cloudSlabInterval's sceneM): its
+  // point through the same inverse projection as the ray; 1 is cleared.
+  if (atmSceneDepth < 1.0) {
+    vec4 atmScene = atmSlabInverseProjection * vec4(ndc, atmSceneDepth * 2.0 - 1.0, 1.0);
+    tOut = min(tOut, length(atmScene.xyz / atmScene.w));
+  }
+#endif
   if (tOut <= tIn) discard;
   float lengthM = tOut - tIn;
   // Twin of cloudSlabUniformShare: quadratic from below and inside, uniform
@@ -722,13 +833,15 @@ void main() {
   float first = 1.0 / float(ATM_SLAB_STEPS);
   float ta = tIn;
   float na = atmSlabNoiseAt(ta, mix(first * first, first, share) * lengthM, dir, horizontal);
+  float tha = atmCloudThresholdAt(cameraPosition.xz + dir.xz * ta, atmCloudThreshold, atmCloudCover);
   // atm-slab-loop-begin
   for (int i = 0; i <= ATM_SLAB_STEPS; i++) {
     float u = i == ATM_SLAB_STEPS ? 1.0 : (float(i) + jitter) / float(ATM_SLAB_STEPS);
     float tb = tIn + mix(u * u, u, share) * lengthM;
     float nb = atmSlabNoiseAt(tb, tb - ta, dir, horizontal);
-    float ra = atmSlabRawThickness(na, atmCloudThreshold);
-    float rb = atmSlabRawThickness(nb, atmCloudThreshold);
+    float thb = atmCloudThresholdAt(cameraPosition.xz + dir.xz * tb, atmCloudThreshold, atmCloudCover);
+    float ra = atmSlabRawThickness(na, tha);
+    float rb = atmSlabRawThickness(nb, thb);
     float da = ra - (y + dir.y * ta - ATM_SLAB_BASE);
     float db = rb - (y + dir.y * tb - ATM_SLAB_BASE);
     if (tb > ta && (da >= 0.0 || db >= 0.0)) {
@@ -749,14 +862,14 @@ void main() {
       }
       float a = 1.0 - exp(-tau);
       float tm = 0.5 * (t0 + t1);
-      float w = (1.0 - smoothstep(ATM_SLAB_FAR_START, ATM_SLAB_FAR_END, tm * horizontal))
+      float w = (1.0 - smoothstep(atmSlabReach.x, atmSlabReach.y, tm * horizontal))
         * exp(-tm * 0.001 / ATM_CLOUD_AERIAL_KM);
       // The sun's depth at each end, through the interpolated column above it.
       float c0 = clamp(mix(ra, rb, fa), 0.0, deck);
       float c1 = clamp(mix(ra, rb, fb), 0.0, deck);
       highp float sunA = sunScale * (atmSlabCumulative(c0) - atmSlabCumulative(min(h0, c0)));
       highp float sunB = sunScale * (atmSlabCumulative(c1) - atmSlabCumulative(min(h1, c1)));
-      vec3 under = mix(under0, under1, atmCloudDensity(mix(na, nb, 0.5 * (fa + fb)), atmCloudThreshold));
+      vec3 under = mix(under0, under1, atmCloudDensity(mix(na, nb, 0.5 * (fa + fb)), 0.5 * (tha + thb)));
       colour += transmittance * w * (under * a + (top - under) * atmSlabInStepLight(tau, sunA, sunB));
       alpha += transmittance * a * w;
       transmittance *= exp(-tau);
@@ -764,6 +877,7 @@ void main() {
     }
     ta = tb;
     na = nb;
+    tha = thb;
   }
   // atm-slab-loop-end
   // Premultiplied: back to straight colour, with a floor against division.
@@ -860,6 +974,116 @@ export function setCloudSlabSteps(slab: THREE.Mesh, steps: number): void {
 }
 
 /**
+ * Gives the slab the scene's depth (globe F2 plan 2026-10-03-1922, F2c), or
+ * takes it away (null). With a depth the march ends at the scene and the
+ * depth test is OFF: as a back-faced prism under the depth test, a ridge in
+ * front of the prism's far face hid the cloud in front of the ridge too.
+ * Without one the slab is today's. The depth must cover the same viewport
+ * as the slab's render and must not be attached to the target the slab
+ * draws into (a read of an attached depth is a feedback loop). Only a
+ * switch between depth and none builds a new program; swapping one depth
+ * for another (a resize) is a uniform.
+ */
+export function setCloudSlabSceneDepth(
+  slab: THREE.Mesh,
+  depth: THREE.Texture | null
+): void {
+  const material = slab.material as THREE.ShaderMaterial;
+  const uniform = material.uniforms['atmSlabSceneDepth'];
+  if (uniform === undefined) {
+    throw new TypeError('not a cloud slab: it has no scene depth uniform');
+  }
+  const had = uniform.value !== null;
+  uniform.value = depth;
+  if (had === (depth !== null)) return;
+  const { ATM_SLAB_SCENE_DEPTH: _old, ...rest } = material.defines;
+  material.defines =
+    depth === null ? rest : { ...rest, ATM_SLAB_SCENE_DEPTH: 1 };
+  material.depthTest = depth === null;
+  material.needsUpdate = true;
+}
+
+/**
+ * A coverage map for the slab (globe volume-cloud plan 2026-10-05-0016,
+ * C1), or none (null): the caller's chunk defines
+ * `float atmCloudCoverageAt(vec2 xz)`, the local cover (0 … 1) at world x/z
+ * (metres) (`cloud-coverage.ts`); the local cover times the global cover
+ * becomes the column's threshold through the noise's quantiles, so the
+ * volume's clouds sit where the map has them. A new program on each change
+ * (a define and the shader).
+ *
+ * @throws RangeError for a chunk that does not define atmCloudCoverageAt.
+ */
+export function setCloudSlabCoverage(
+  slab: THREE.Mesh,
+  coverage: CloudCoverage | null
+): void {
+  const material = slab.material as THREE.ShaderMaterial;
+  const { ATM_CLOUD_COVERAGE: _old, ...rest } = material.defines;
+  if (coverage === null) {
+    material.defines = rest;
+    material.fragmentShader = CLOUD_SLAB_FRAGMENT_GLSL;
+    material.needsUpdate = true;
+    return;
+  }
+  const fragment = withCloudCoverage(CLOUD_SLAB_FRAGMENT_GLSL, coverage.glsl);
+  Object.assign(material.uniforms, coverage.uniforms);
+  material.uniforms['atmCoverThresholds']!.value = [...cloudCoverThresholds()];
+  material.defines = { ...rest, ATM_CLOUD_COVERAGE: 1 };
+  material.fragmentShader = fragment;
+  material.needsUpdate = true;
+}
+
+/**
+ * The slab's disc around the camera (C1): its clouds fade to clear from 0.7
+ * `radiusM` to `radiusM` horizontally (`cloudDiscThreshold`), so a shell
+ * can draw the clouds beyond; null for no disc. A new program only when the
+ * disc is turned on or off; another radius is a uniform.
+ *
+ * @throws RangeError for a radius that is not positive and finite.
+ */
+export function setCloudSlabRadius(
+  slab: THREE.Mesh,
+  radiusM: number | null
+): void {
+  if (radiusM !== null && !(radiusM > 0 && Number.isFinite(radiusM))) {
+    throw new RangeError(`the disc radius must be positive, got ${radiusM}`);
+  }
+  const material = slab.material as THREE.ShaderMaterial;
+  const had = material.defines['ATM_CLOUD_DISC'] !== undefined;
+  if (radiusM !== null) material.uniforms['atmCoverDiscM']!.value = radiusM;
+  if (had === (radiusM !== null)) return;
+  const { ATM_CLOUD_DISC: _old, ...rest } = material.defines;
+  material.defines = radiusM === null ? rest : { ...rest, ATM_CLOUD_DISC: 1 };
+  material.needsUpdate = true;
+}
+
+/**
+ * How far out the slab draws (globe volume-cloud plan 2026-10-05-0016 §13,
+ * R1), or the default (null): the far fade and the march cap (a uniform,
+ * no new program), and the mesh scaled out horizontally so it still
+ * covers the far fade's end. The look-dev page keeps the default, which
+ * its 30 km far plane was sized for.
+ *
+ * @throws RangeError for a reach that does not fade from 0 <= start < end.
+ */
+export function setCloudSlabReach(
+  slab: THREE.Mesh,
+  reach: CloudSlabReach | null
+): void {
+  const r = reach ?? CLOUD_SLAB_REACH;
+  assertCloudSlabReach(r);
+  const material = slab.material as THREE.ShaderMaterial;
+  (material.uniforms['atmSlabReach']!.value as THREE.Vector3).set(
+    r.farStartM,
+    r.farEndM,
+    reach === null ? CLOUD_SLAB.maxMarchM : maxMarchFor(r)
+  );
+  const k = Math.max(1, r.farEndM / CLOUD_SHEET.farFadeEndM);
+  slab.scale.set(k, 1, k);
+}
+
+/**
  * The slab mesh, reading the given uniforms (the sky's LUTs, sun, scale and
  * the cloud uniforms, spread so one update reaches the sky and the slab) plus
  * its own ray uniforms, which `onBeforeRender` sets from the rendering
@@ -874,6 +1098,21 @@ export function createCloudSlab(
     atmSlabCameraWorld: { value: new THREE.Matrix4() },
     atmSlabViewport: { value: new THREE.Vector4(0, 0, 1, 1) },
     atmSlabPixelAngle: { value: 0 },
+    // Declared from the start, so turning the depth on is a define, not a
+    // new uniform set (`setCloudSlabSceneDepth`).
+    atmSlabSceneDepth: { value: null as THREE.Texture | null },
+    // The reach (R1): the default until setCloudSlabReach.
+    atmSlabReach: {
+      value: new THREE.Vector3(
+        CLOUD_SLAB_REACH.farStartM,
+        CLOUD_SLAB_REACH.farEndM,
+        CLOUD_SLAB.maxMarchM
+      ),
+    },
+    // The coverage map's threshold table and the disc's radius, declared
+    // from the start like the depth (set by setCloudSlabCoverage and
+    // setCloudSlabRadius; unread until their defines are on).
+    ...cloudCoverageUniforms(),
   };
   const material = new THREE.ShaderMaterial({
     name: 'atmosphere-cloud-slab',
