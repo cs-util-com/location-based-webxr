@@ -19,6 +19,14 @@ own cloud map so the swap from the cloud shell never plops.
   metres): the target moved by the point on a flat frame, then the globe's
   mapping (u the longitude, v the latitude) with the drift taken off u.
   RangeError for a non-finite input.
+- `cloudVolumeDiscCentre({ camera, direction, deckY, maxAheadM })`
+  (volume-cloud plan §15): where the volume's disc is centred, in the
+  world frame: where the view's centre meets the deck at `deckY`, along the
+  view's heading, at most `maxAheadM` ahead; that far when the view never
+  meets the deck; under the camera looking straight down. Returns
+  `{ x, z, aheadM }`. RangeError for a non-finite input or a negative
+  reach ahead. `CLOUD_VOLUME.maxAheadKm` is 60 (the slab is flat while
+  the Earth curves: 1.5 km at 140 km, in the far fade).
 - `cloudVolumeNoiseOffset({ latRad, lonRad, lonOffsetRad }, tileM)`: the
   slab's noise offset in tiles, each wrapped to [0, 1): the target's
   distance east (at the map's drift) and south of latitude 0, longitude 0,

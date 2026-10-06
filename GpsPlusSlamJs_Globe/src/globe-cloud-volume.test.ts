@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   CLOUD_VOLUME,
   CLOUD_VOLUME_COVERAGE_GLSL,
+  cloudVolumeDiscCentre,
   cloudVolumeMapUv,
   cloudVolumeNoiseOffset,
   cloudVolumeShare,
@@ -157,5 +158,74 @@ describe("CLOUD_VOLUME_COVERAGE_GLSL", () => {
     }
     expect(g).toContain("0.15915494309189535"); // 1 / 2 pi, as the surface
     expect(g).toContain("0.3183098861837907"); // 1 / pi
+  });
+});
+
+// Why (owner's Debug export, 2026-10-06, volume-cloud plan §15): at 24 km
+// looking 10 degrees down, the view's centre met the deck about 130 km
+// ahead, but the volume's disc was centred on the camera, so the clouds
+// the owner looked at were the shell's, not the volume's. The disc now
+// centres where the view meets the deck, at most `maxAheadM` ahead.
+describe("cloudVolumeDiscCentre", () => {
+  const deckY = 9_000;
+
+  it("is under the camera looking straight down", () => {
+    const c = cloudVolumeDiscCentre({
+      camera: [100, 20_000, -200],
+      direction: [0, -1, 0],
+      deckY,
+      maxAheadM: 60_000,
+    });
+    expect(c).toEqual({ x: 100, z: -200, aheadM: 0 });
+  });
+
+  it("is where the view meets the deck, along the view's heading", () => {
+    // 10 km above the deck, 45 degrees down toward +x: 10 km ahead.
+    const c = cloudVolumeDiscCentre({
+      camera: [0, deckY + 10_000, 0],
+      direction: [Math.SQRT1_2, -Math.SQRT1_2, 0],
+      deckY,
+      maxAheadM: 60_000,
+    });
+    expect(c.x).toBeCloseTo(10_000, 6);
+    expect(c.z).toBeCloseTo(0, 6);
+    expect(c.aheadM).toBeCloseTo(10_000, 6);
+  });
+
+  it("is at most maxAheadM ahead, and that far when the view never meets the deck", () => {
+    const shallow = cloudVolumeDiscCentre({
+      camera: [0, deckY + 15_000, 0],
+      direction: [0, -0.17, -0.985],
+      deckY,
+      maxAheadM: 60_000,
+    });
+    expect(shallow.aheadM).toBe(60_000);
+    expect(shallow.z).toBeCloseTo(-60_000, 6);
+    const up = cloudVolumeDiscCentre({
+      camera: [0, deckY + 15_000, 0],
+      direction: [0.6, 0.8, 0],
+      deckY,
+      maxAheadM: 60_000,
+    });
+    expect(up.aheadM).toBe(60_000);
+  });
+
+  it("refuses a non-finite input or a negative reach ahead", () => {
+    expect(() =>
+      cloudVolumeDiscCentre({
+        camera: [0, Number.NaN, 0],
+        direction: [0, -1, 0],
+        deckY,
+        maxAheadM: 1,
+      }),
+    ).toThrow(RangeError);
+    expect(() =>
+      cloudVolumeDiscCentre({
+        camera: [0, 1, 0],
+        direction: [0, -1, 0],
+        deckY,
+        maxAheadM: -1,
+      }),
+    ).toThrow(RangeError);
   });
 });

@@ -23,8 +23,15 @@ import { smoothstep } from "./globe-ease.js";
 const EARTH_RADIUS_M = 6_371_000;
 
 export const CLOUD_VOLUME = {
-  /** The volume's disc around the camera, km (the plan's R). */
+  /** The volume's disc, km (the plan's R), centred where the view meets the deck. */
   radiusKm: 80,
+  /**
+   * The disc's centre is at most this far ahead of the camera, km (§15).
+   * The slab is flat in the frame while the Earth curves: at this plus the
+   * radius (140 km) the deck stands 1.5 km above the curved shell, in the
+   * far fade, where it gives way to the shell.
+   */
+  maxAheadKm: 60,
   /** No volume at and above this altitude, km. */
   ceilingKm: 40,
   /** It fades in over this much below the ceiling, km. */
@@ -80,6 +87,49 @@ export function cloudVolumeMapUv(
     lon / (2 * Math.PI) + 0.5 - origin.lonOffsetRad / (2 * Math.PI),
     lat / Math.PI + 0.5,
   ];
+}
+
+/**
+ * Where the volume's disc is centred (volume-cloud plan §15): where the
+ * view's centre meets the deck (`deckY`, the frame's height of the
+ * shell), along the view's heading, at most `maxAheadM` ahead of the camera
+ * horizontally; `maxAheadM` ahead when the view never meets the deck
+ * (looking at the horizon, or away from it); under the camera looking
+ * straight down. `camera` and `direction` (unit) are in the world frame
+ * (x east, y up, z south). Returns the centre's x, z and its horizontal
+ * distance ahead. RangeError for a non-finite input or a negative
+ * `maxAheadM`.
+ */
+export function cloudVolumeDiscCentre(input: {
+  camera: readonly [number, number, number];
+  direction: readonly [number, number, number];
+  deckY: number;
+  maxAheadM: number;
+}): { x: number; z: number; aheadM: number } {
+  const { camera, direction, deckY, maxAheadM } = input;
+  const values = [...camera, ...direction, deckY, maxAheadM];
+  if (!values.every(Number.isFinite)) {
+    throw new RangeError(
+      `the camera, direction and deck must be finite, got ${values.join(", ")}`,
+    );
+  }
+  if (maxAheadM < 0) {
+    throw new RangeError(`the reach ahead must be >= 0, got ${maxAheadM}`);
+  }
+  const [cx, cy, cz] = camera;
+  const [dx, dy, dz] = direction;
+  const horizontal = Math.hypot(dx, dz);
+  if (horizontal < 1e-9) return { x: cx, z: cz, aheadM: 0 };
+  const towardDeck = (deckY - cy) * dy > 0;
+  const aheadM = Math.min(
+    towardDeck ? ((deckY - cy) / dy) * horizontal : maxAheadM,
+    maxAheadM,
+  );
+  return {
+    x: cx + (dx / horizontal) * aheadM,
+    z: cz + (dz / horizontal) * aheadM,
+    aheadM,
+  };
 }
 
 /**
