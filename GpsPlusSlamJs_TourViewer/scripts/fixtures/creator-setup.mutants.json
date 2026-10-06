@@ -60,7 +60,7 @@
     {
       "name": "empty visits logged",
       "region": "visit log",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-settle.ts",
       "from": "if (entry.gps.length === 0 && entry.codes.length === 0) return;",
       "to": ""
     },
@@ -68,7 +68,7 @@
       "name": "summary not shown",
       "region": "finish",
       "file": "src/creator-setup.ts",
-      "from": "        showSummary();",
+      "from": "        settle.showSummary();",
       "to": ""
     },
     {
@@ -88,7 +88,7 @@
     {
       "name": "U3 decision not logged when nothing settled",
       "region": "settle",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-settle.ts",
       "from": "        logSettle(visit, trigger, record, [], null, null, decided);",
       "to": ""
     },
@@ -167,28 +167,28 @@
     {
       "name": "result screen outcome not recorded",
       "region": "settle",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-settle.ts",
       "from": "      codePositionOutcomes.push({ decision: position.decision, applied });",
       "to": ""
     },
     {
       "name": "applied decision not kept for a re-settle",
       "region": "settle",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-settle.ts",
       "from": "    if (applied) appliedCode = { visit, plan: position };",
       "to": ""
     },
     {
       "name": "visit settled twice",
       "region": "settle",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-settle.ts",
       "from": "    visitSettles.set(visit, record);",
       "to": ""
     },
     {
       "name": "move boundary not set",
       "region": "settle",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-settle.ts",
       "from": "      movedInVisit.set(position.levelId, visit);",
       "to": ""
     },
@@ -230,7 +230,7 @@
     {
       "name": "refusal line never set",
       "region": "refusal",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-settle.ts",
       "from": "    liveRefusal = refusalOf(choice);",
       "to": "    liveRefusal = null;"
     },
