@@ -404,6 +404,69 @@ describe("buildLookdev with a module Worker", () => {
   });
 });
 
+// WHY (globe city plan 2026-10-05-0040 §12.4 R1): a worker whose modules
+// import packages by bare name loads through the worker view (`/w/`), and the
+// deploy must emit that view exactly as the dev server serves it: the
+// worker and its whole graph under /w/, every specifier a URL in the view,
+// rebased under the deploy base. Without it the preview's worker 404s or
+// fails on its first bare import, on the phone only.
+describe("buildLookdev with a worker in the worker view", () => {
+  let root;
+  let extra;
+  let out;
+  let files;
+  before(() => {
+    root = fixture({
+      "labs/city/index.html":
+        "<title>City lab</title>" +
+        '<script type="importmap">{"imports":{"lib":"/extra/lib.js"}}</script>' +
+        '<script type="module" src="./city.js"></script>',
+      "labs/city/city.js":
+        'import "lib";\n' +
+        'const w = new Worker("/w/extra/worker.js", { type: "module" });\n',
+    });
+    extra = fixture({
+      "worker.js": 'import { H } from "lib";\nimport "./helper.js";\n',
+      "helper.js": "export const H = 1;\n",
+      "lib.js": "export {};\n",
+    });
+    out = mkdtempSync(join(tmpdir(), "lookdev-wview-"));
+    files = buildLookdev({
+      outDir: out,
+      base: "/lookdev/",
+      packageRoot: root,
+      routes: [{ prefix: "/extra/", dir: extra, typescript: false }],
+      workerImports: { lib: "/extra/lib.js" },
+    });
+  });
+  after(() => {
+    for (const dir of [root, extra, out]) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("emits the worker and its graph under /w/", () => {
+    for (const rel of [
+      "w/extra/worker.js",
+      "w/extra/helper.js",
+      "w/extra/lib.js",
+    ]) {
+      assert.ok(files.includes(rel), rel);
+    }
+  });
+
+  it("rewrites the worker's bare imports into the view, rebased", () => {
+    const worker = readFileSync(join(out, "w/extra/worker.js"), "utf8");
+    assert.match(worker, /"\/lookdev\/w\/extra\/lib\.js"/);
+    assert.match(worker, /"\.\/helper\.js"/);
+  });
+
+  it("rebases the page's worker URL under the base", () => {
+    const page = readFileSync(join(out, "labs/city/city.js"), "utf8");
+    assert.match(page, /"\/lookdev\/w\/extra\/worker\.js"/);
+  });
+});
+
 // WHY (globe plan 2026-09-26-0539 §8, the builder review points): the real
 // globe lab must deploy as a CLOSED graph (the library's hashed chunks are
 // found by the crawl, not listed anywhere), with the library's LICENSE
