@@ -261,7 +261,7 @@
     {
       "name": "saved file not marked delivered",
       "region": "handoff",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-handoff.ts",
       "from": "          ctx.rebuiltZip = { ...rebuilt, delivered: true };",
       "to": ""
     },

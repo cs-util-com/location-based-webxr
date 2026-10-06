@@ -382,18 +382,6 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
     sighting of the code in hand (any code while none is measured); it goes
     the moment this visit has one, and never locks a control.
 
-- **A Drive tour's finish SAVES and shows the Drive steps** (Drive replace
-  plan §2 decisions 1 and 4): the route is `finishRoute({canShare,
-drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
-  at wiring - so a Drive tour takes `seams.downloadZip` even on a phone that
-  could share, and its button reads "Save the zip to this phone". Its ready
-  line (`FINISH_LABELS.readyDrive`) warns about an older copy in Downloads
-  BEFORE the tap, and its status after the save is `savedToPhone`. Once the
-  zip is delivered, `replaceHelpDrive` shows `driveReplaceSteps` as numbered
-  lines (textContent; the module stays DOM-free) with the zip's name, and
-  `replaceHelpGeneric` hides; `resetFinishStep` restores the generic text.
-  A hosted name a phone would change is saved as `downloadSafeName` and the
-  steps ask for the same rename on Drive.
 - **The rebuilt zip is named after the hosted file** -
   `session.hostedFileName()`, else `archiveFileName(url)` - because Drive
   offers "Replace" only for the same name (Drive replace plan §2
@@ -453,36 +441,8 @@ drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
     advancing it while still rebuilding from the hosted zip would write a
     manifest naming photos the archive does not contain. Both halves are
     needed, and the e2e finishes twice in one open tour to hold them.
-- **Hand-off:** `seams.shareOrDownloadZip` - the device share sheet where
-  the browser can share FILES, else the framework's picker-or-anchor. The
-  button's LABEL comes from `seams.canShareZip()`, read once at wire time,
-  because a button reading "Download" on a phone that will open a share
-  sheet names the wrong action before it is pressed. Two independent
-  facts come back:
-  - `delivered` reveals the replace instructions (the last thing to do,
-    and only once there is a file to do it with); false - a dismissed
-    picker, or a share sheet that handed nothing over - keeps the button
-    live. Async-UI rule on both branches.
-  - The reveal is ONE-WAY for `replaceHelp` and follows the last DELIVERED
-    hand-off for `replaceHelpShare`. A creator who saved, tapped again and
-    dismissed the picker keeps the step-6 instructions they earned; one who
-    shared and then saved stops being told to go looking in another app.
-    And the whole continuation is guarded on `ctx.openGeneration`, because
-    a share sheet can stay up across a tour close - the reveal would
-    otherwise land on the closed tour's panel and still be on screen when
-    the next tour reached its finish (PR #440 review).
-  - `route` picks the copy, and this is the half that matters: "the link
-    and the printed code stay the same" is TRUE after a save over the
-    hosted file and FALSE after a share, which normally creates a new file
-    with a new id while the printed code still points at the old one. The
-    share route therefore also reveals `#replace-help-share`, one extra
-    sentence saying so. The four outcomes are pure functions
-    (`finishHandoffStatus`, `finishIdleLabel`, `finishBusyLabel` in
-    `qr-author-mode.ts`), tested there, because three of them cannot be
-    reached in a headless browser.
-    `resetFinishStep` (a hook, called when a tour closes) disables the
-    button, clears the status and hides both blocks, so a re-opened tour
-    never shows the previous one's dead download button.
+- **Hand-off and the Drive steps:** `creator-handoff.ts` (split out in
+  the code book plan's M2; its sidecar holds what was here).
 - **Placement (M4, DEC-N9):** allowed only under the mint gate's own
   alignment floor for THIS session (a measured code, a matrix and at least
   `MIN_ALIGNMENT_SAMPLES` fixes since the session started - a level that
