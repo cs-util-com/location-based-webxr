@@ -379,9 +379,14 @@ export function setupHint(state: {
   return `${saved}Place content, or tap Finish to rebuild the zip.`;
 }
 
-/** Whether the finish button may run, and if not, why. */
+/**
+ * Whether the finish button may run, and if not, why. `hasWork`: there is
+ * something to write (code book refactor plan M4d) - a code to write, a
+ * changed or deleted object, or in AR a code in hand whose settle may
+ * change it; without it the state is `not-measured` ("nothing to write").
+ */
 export function finishReadiness(state: {
-  measured: boolean;
+  hasWork: boolean;
   tourOpen: boolean;
   manifest: "pending" | "settled" | "broken";
 }):
@@ -390,7 +395,7 @@ export function finishReadiness(state: {
   | "no-tour"
   | "manifest-pending"
   | "manifest-broken" {
-  if (!state.measured) return "not-measured";
+  if (!state.hasWork) return "not-measured";
   if (!state.tourOpen) return "no-tour";
   if (state.manifest === "pending") return "manifest-pending";
   if (state.manifest === "broken") return "manifest-broken";

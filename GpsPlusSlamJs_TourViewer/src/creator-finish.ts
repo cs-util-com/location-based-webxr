@@ -194,10 +194,25 @@ export function wireCreatorFinish(deps: {
 
   function readiness(): ReturnType<typeof finishReadiness> {
     return finishReadiness({
-      measured: deps.codes.inHand() !== null,
+      hasWork: hasWork(),
       tourOpen: ctx.session !== null,
       manifest: ctx.tourManifestStatus,
     });
+  }
+
+  /**
+   * Something to write (M4d): a code the book would write, an object
+   * changed or deleted, or - in AR - a code in hand, whose settle may
+   * still change it. A desk edit (no AR visit, no code) qualifies; a page
+   * with nothing changed does not, so Finish stays hidden there.
+   */
+  function hasWork(): boolean {
+    return (
+      deps.codes.toWrite().length > 0 ||
+      ctx.placedObjects.length > 0 ||
+      ctx.deletedObjectIds.length > 0 ||
+      (deps.sessionLive() && deps.codes.inHand() !== null)
+    );
   }
 
   function canStart(): boolean {
@@ -214,10 +229,9 @@ export function wireCreatorFinish(deps: {
     // as tapped. A visit already over was settled at its end.
     const settledAtTap = deps.sessionLive() ? ctx.arSessionGeneration : null;
     if (settledAtTap !== null) deps.settle.settleVisit("finish");
-    // Read AFTER the settle, which may re-mint the code in hand. It never
-    // empties the hand, so this return is unreachable; it keeps the type.
+    // Read AFTER the settle, which may re-mint the code in hand. Null for a
+    // desk edit (M4d, §9 D4): no level is written then.
     const minted = deps.codes.inHand();
-    if (minted === null) return;
     // Every code this page changed, captured with the code in hand (M4c-1):
     // a code the zip already holds unchanged is not written again.
     const levels = deps.codes.toWrite();
@@ -431,7 +445,7 @@ export function wireCreatorFinish(deps: {
         deps.settle.afterFinish();
         arStore.dispatch(
           authoringFinished({
-            levelId: minted.id,
+            levelId: minted?.id ?? null,
             manifest: written,
             atMs: Date.now(),
           }),

@@ -180,6 +180,9 @@ export interface CreatorSetupDom {
 /** Properties, not methods: they are handed to the hooks object unbound. */
 export interface CreatorSetup {
   renderAuthorReadout: () => void;
+  /** Every code this page measured or took (code book plan M4d): the
+   *  print step counts them with the hosted ones. */
+  measuredCodeIds: () => string[];
   /** True while leaving (the page, or for another tour) should ask first:
    *  a rebuilt tour file was not saved (UI round 1, U2, `finish-guard`). */
   leaveNeedsConfirm: () => boolean;
@@ -695,6 +698,7 @@ export function wireCreatorSetup(deps: {
 
   return {
     renderAuthorReadout,
+    measuredCodeIds: () => codes.ids(),
     leaveNeedsConfirm: () => leaveNeedsConfirm(guardInput()),
     leaveQuestion: () => leaveQuestion(guardInput()),
     startAuthorPipeline: () => measuring.start(),

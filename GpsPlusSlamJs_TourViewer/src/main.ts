@@ -168,7 +168,14 @@ const print = wirePrintPanel({
   // this one would strand them. Read at print time rather than captured:
   // the levels arrive asynchronously after an open, and a tour can be
   // swapped without the panel being rewired.
-  measuredCodeIds: () => [...(ctx.currentLevels?.keys() ?? [])],
+  // With the codes measured on this page that the tour does not host yet
+  // (code book plan M4d): printing over them strands them too.
+  measuredCodeIds: () => [
+    ...new Set([
+      ...(ctx.currentLevels?.keys() ?? []),
+      ...setup.measuredCodeIds(),
+    ]),
+  ],
 });
 
 const stepStore = stepStoreOrUndefined();

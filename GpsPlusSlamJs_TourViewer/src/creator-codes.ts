@@ -89,6 +89,9 @@ export interface CreatorCodes {
   saveLevel(level: LevelText): void;
   /** This page took `levelId` (measured, restored or kept it). */
   inBook(levelId: string): boolean;
+  /** Every code this page holds, in the order it took them (M4d: the
+   *  print step warns before stranding them). */
+  ids(): string[];
   /** `levelId` was measured in `visit`. */
   measuredIn(levelId: string, visit: number): boolean;
   /** A code not in hand is measured again (a new print size): its
@@ -243,6 +246,10 @@ export function wireCreatorCodes(deps: {
     saveLevel: (level) => {
       book = withSaved(book, level);
       if (ctx.mintedLevel?.id === level.id) ctx.mintedLevel = level;
+    },
+    ids: () => {
+      takeInHand();
+      return [...book.keys()];
     },
     inBook: (levelId) => {
       takeInHand();

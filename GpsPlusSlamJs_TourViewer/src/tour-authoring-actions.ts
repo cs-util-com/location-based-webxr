@@ -288,7 +288,8 @@ interface CodeMoveAnsweredLog {
 }
 
 interface FinishedLog {
-  readonly levelId: string;
+  /** The code in hand; null for a desk edit with none (M4d). */
+  readonly levelId: string | null;
   /** The manifest the rebuilt zip carries. */
   readonly manifest: TourManifest;
   readonly atMs: number;

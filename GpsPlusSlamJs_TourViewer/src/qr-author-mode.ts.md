@@ -73,8 +73,12 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   measured for another tour (named), another tour's code is added to the
   open tour (plan §13), cannot tell; "" when
   quiet. At most 110 characters: it shares the panel with the readout.
-- `finishReadiness({ measured, tourOpen })` → `"ready" | "not-measured" |
-"no-tour"` - the finish button's gate.
+- `finishReadiness({ hasWork, tourOpen, manifest })` → `"ready" |
+"not-measured" | "no-tour" | "manifest-pending" | "manifest-broken"` - the
+  finish button's gate. `hasWork`
+  (code book plan M4d): there is something to write - a code to write, a
+  changed or deleted object, or in AR a code in hand; without it the state
+  is `not-measured`.
 - `MISSING_SIZE_MESSAGE` - what a creator reads when the printed-size
   field is empty at AR entry. The example inside it is interpolated from
   `AUTHOR_DEFAULT_SIZE_M`, so the two cannot drift.

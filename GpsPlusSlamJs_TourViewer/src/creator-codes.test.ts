@@ -292,3 +292,16 @@ describe("creator-codes: the visit's codes for the settle (M4c-2)", () => {
     expect(codes.inBook("z")).toBe(false);
   });
 });
+
+describe("creator-codes: every code this page holds (M4d)", () => {
+  // Why this test matters: the print step warns that printing a code would
+  // strand the tour's MEASURED codes; it read only the hosted ones, so a
+  // code measured on this page and not yet hosted went unwarned.
+  it("lists every code of the book, the code in hand included", () => {
+    const ctx = createTourViewerSession();
+    const codes = wireCreatorCodes({ ctx });
+    codes.setInHand({ id: "a", json: levelJson(47.5) }, MEASUREMENT);
+    ctx.mintedLevel = { id: "b", json: levelJson(47.6) };
+    expect(codes.ids()).toEqual(["a", "b"]);
+  });
+});

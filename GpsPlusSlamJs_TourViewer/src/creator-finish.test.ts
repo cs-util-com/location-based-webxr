@@ -270,6 +270,8 @@ async function wireFinishable(options: {
   sessionExtras?: Record<string, unknown>;
   /** Merged over the in-memory manifest the Finish starts from. */
   manifestExtras?: Partial<TourManifest>;
+  /** No code in hand (a desk edit, code book plan M4d). */
+  noCodeInHand?: boolean;
 }) {
   const blob = await hostedArchive(options.hosted, options.hostedContent);
   const dom = fakeDom();
@@ -285,7 +287,9 @@ async function wireFinishable(options: {
     ) as object),
     ...options.sessionExtras,
   }) as never;
-  ctx.mintedLevel = { id: LEVEL_ID, json: '{"measured":true}' };
+  if (options.noCodeInHand !== true) {
+    ctx.mintedLevel = { id: LEVEL_ID, json: '{"measured":true}' };
+  }
   ctx.tourManifestStatus = "settled";
   ctx.tourManifest = {
     ...createEmptyTourManifest(),
@@ -1225,5 +1229,45 @@ describe("after the Finish, the save leads (UI round 1, U2 milestone review #2, 
     arStatus.value = "ready";
     setup.renderAuthorReadout();
     expect(dom.keepScanRow.hidden).toBe(true);
+  });
+});
+
+describe("desk edits: a Finish with no AR visit (code book plan M4d, §9 D4)", () => {
+  // Why these tests matter: the owner decided a tour can be edited at the
+  // desk - change a pin's text, delete an object - and Finished without
+  // walking to a code. The Finish used to refuse without a code in hand;
+  // now it runs when something changed, and writes no level entry (the
+  // rebuild keeps the hosted ones byte for byte).
+  it("finishes a desk edit with no code in hand, writing no level entry", async () => {
+    const edited: TourObject = { ...pin("b"), label: "the new text" };
+    const { dom, ctx, setup } = await wireFinishable({
+      hosted: [pin("a"), pin("b")],
+      placed: [edited],
+      noCodeInHand: true,
+      arStatus: "idle",
+    });
+    setup.renderAuthorReadout();
+    expect(dom.finishButton.hidden).toBe(false);
+    expect(dom.finishButton.disabled).toBe(false);
+    dom.finishButton.click();
+    await settle(ctx);
+    expect(ctx.finishError).toBeNull();
+    const blob = ctx.rebuiltZip!.blob;
+    const written = await publishedManifest(blob);
+    expect(written.objects[1]).toEqual(edited);
+    // The hosted level file is kept as it was: nothing rewrote it.
+    const names = await entryNamesOf(blob);
+    expect(names).toContain(`${WRAP}qr/${LEVEL_ID}.json`);
+  });
+
+  it("keeps Finish hidden on the page while nothing changed", async () => {
+    const { dom, setup } = await wireFinishable({
+      hosted: [pin("a")],
+      placed: [],
+      noCodeInHand: true,
+      arStatus: "idle",
+    });
+    setup.renderAuthorReadout();
+    expect(dom.finishButton.hidden).toBe(true);
   });
 });

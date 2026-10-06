@@ -82,7 +82,9 @@ were here. What stays is the Finish's side:
     `endAuthorVisit`, and `selectInView` (M4: a tap in AR - an XR select
     the overlay did not cancel - selects the object the `pickObjectInView`
     seam names among the rendered previews for the tap's target ray, or
-    the screen centre when it is null; or clears the selection on a miss).
+    the screen centre when it is null; or clears the selection on a miss),
+    and `measuredCodeIds()` (code book plan M4d: every code the book holds,
+    for the print panel's reprint warning).
   - `CreatorSetup.renderAuthorReadout()` - the measuring readout
     (`authorStatusLine`) joined with the setup hint once measured
     (`setupHint`); a persistent pipeline error (`ctx.authorErrorText`) has

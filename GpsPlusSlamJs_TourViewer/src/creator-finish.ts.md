@@ -31,10 +31,15 @@ M4 makes it write every code of the book, not only the one in hand.
 
 ## Invariants & assumptions
 
-- **Finish** (`finishReadiness`): needs a measured level, an open tour AND
+- **Finish** (`finishReadiness`): needs something to write (`hasWork`,
+  code book plan M4d: a code the book would write, a changed or deleted
+  object, or in AR a code in hand), an open tour AND
   a settled manifest load (pending or broken refuses, with the reason:
   finishing would overwrite a placement it could not read, M3 review #5);
-  runs once at a time (`ctx.finishing`). While it runs the panel shows
+  runs once at a time (`ctx.finishing`). A **desk edit** (no AR visit, no
+  code in hand, §9 D4) finishes too: it writes the objects and no level
+  entry, so the hosted level files are kept byte for byte, and the
+  finished log's `levelId` is null. While it runs the panel shows
   its progress with priority over the measuring readout, and a failure
   stays on the line until the next tap (`ctx.finishProgress`,
   `ctx.finishError`; store dispatches used to erase both). The

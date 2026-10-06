@@ -34,6 +34,8 @@ writes these through it, so that M4c can turn its inside into the code book
     codes were first taken; a stored code kept unchanged is not written;
   - `finished(written)` - a Finish wrote these: each is saved, and its
     text is what the next Finish builds on;
+  - `ids()` - every code in the book, in the order first taken (M4d: the
+    print panel's reprint warning counts them);
   - `notHosted()` - what the draft keeps: every code whose saved text the
     HOSTED zip does not hold yet, a Finish's among them;
   - `dropMeasurement(levelId)` - a code not in hand is measured again (a
