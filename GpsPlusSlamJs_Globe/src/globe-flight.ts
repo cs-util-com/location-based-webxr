@@ -238,3 +238,21 @@ export function clearedAltitudeM(
   if (displacedGroundM === null) return altitudeM;
   return Math.max(altitudeM, Math.max(0, displacedGroundM) + clearanceM);
 }
+
+/**
+ * The city's share of its fade at `altM` (globe city plan 2026-10-05-0040
+ * §12.5 C4): 0 at and above `topM`, 1 at and below two thirds of it,
+ * smoothstep between. RangeError for a non-finite altitude or a `topM` that
+ * is not positive.
+ */
+export function cityShareAt(altM: number, topM: number): number {
+  if (!Number.isFinite(altM)) {
+    throw new RangeError(`the altitude must be finite, got ${altM}`);
+  }
+  if (!(topM > 0 && Number.isFinite(topM))) {
+    throw new RangeError(`the city's top must be positive, got ${topM}`);
+  }
+  const bottomM = (topM * 2) / 3;
+  const x = Math.min(1, Math.max(0, (topM - altM) / (topM - bottomM)));
+  return smoothstep(x);
+}

@@ -17,9 +17,12 @@ three times as high, stood above the ellipsoid's horizon unveiled).
   - `camera`: the camera it was drawn with (the view camera with a near
     plane of at most 10 m); a reader reconstructs a point through its
     `projectionMatrixInverse`, never the view camera's;
-  - `render(viewCamera, relief)`: draws the depth of `relief` (an
-    `Object3D`) into the texture, sized to the drawing buffer; restores the
-    render target and every colour write it turned off;
+  - `render(viewCamera, relief, extra = [])`: draws the depth of `relief`
+    (an `Object3D`) and of each object in `extra` (the city, globe city plan
+    2026-10-05-0040 §12.5 C4, so the space pass and the cloud volume end at
+    buildings too) into the texture, sized to the drawing buffer, cleared
+    once; restores the render target, the renderer's auto-clear and every
+    colour write it turned off;
   - `beginFrame()` and `fresh`: whether the depth was drawn this frame, so
     a reader never uses a stale one;
   - `state()`: `{ frames, fresh, near }`;

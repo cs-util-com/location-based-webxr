@@ -23,9 +23,9 @@ import {
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const COLOGNE = { latitude: 50.94128, longitude: 6.95817 };
-/** A settled daylight view, the hand-over off so the page stays. */
+/** A settled daylight view. */
 const VIEW = withPreRound4Look(
-  "at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&handOver=0",
+  "at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0",
 );
 
 /** Boots with a granted GPS at Cologne; returns console errors and requests. */
@@ -111,7 +111,7 @@ test("the pin loads the prefetch lazily, shows its progress and paces the dive",
   );
   const done = await arrival(page);
   expect(done.line).toMatch(/ready/i);
-  // It lands (held: the hand-over is off) well inside the cap.
+  // It lands (held) well inside the cap.
   await page.waitForFunction(
     () => window.__globeLab.state().pin.phase === "idle",
     null,
@@ -209,7 +209,7 @@ test("a link that names a place warms its city data before any press", async ({
 }) => {
   test.setTimeout(240_000);
   const ZURICH =
-    "at=47.3769,8.5417&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&handOver=0";
+    "at=47.3769,8.5417&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0";
   const city = await routeCityData(page);
   const { errors, requests } = await boot(
     page,
@@ -240,7 +240,7 @@ test("with prefetch=0 a link that names a place loads no city data", async ({
   const { errors, requests } = await boot(
     page,
     context,
-    "at=47.3769,8.5417&spinMs=0&turnMs=0&cloudDrift=0&handOver=0&cityWarm=1&prefetch=0",
+    "at=47.3769,8.5417&spinMs=0&turnMs=0&cloudDrift=0&cityWarm=1&prefetch=0",
   );
   expect(
     await page.evaluate(() => window.__globeLab.state().pin.arrival),

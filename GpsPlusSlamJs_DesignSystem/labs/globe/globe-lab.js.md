@@ -49,8 +49,10 @@
   `turnMs` (0-10000), `diveMs` (the pin's dive, 1000-60000, default
   15000; set in the hash it fixes the dive's length by hand, otherwise
   the arrival prefetch paces it), `prefetch` (the arrival prefetch, on
-  unless 0; no panel control), `handOverKm` (the hand-over altitude, 1-5000, default 150; the
-  plate offers 20, 50, 150), `handOver` (1 opens the city, 0 holds),
+  unless 0; no panel control), `landKm` (where the dive lands, km above the
+  ellipsoid, 1-5000, default 2; the plate offers 2, 5, 20), `land` (1 with
+  an `at=` link flies the dive to that place; the city plan 2026-10-05-0040
+  §12.4 R15),
   `nightGain` (0-4, default 0.7), `waterRoughness`,
   `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default
   0.375, 0.75 x the first 0.5 by the owner's choice, DEC-G6-5),
@@ -368,7 +370,7 @@
     page builds the terrain lab's 256 km region around the target
     (`globe-detail-region.js`, loaded with the relief only) and hands its
     grid of factors to the tiles; it applies at the next pin press.
-  - `handOverKm` goes up to 5,000 km since F1, so a smoke can hold inside
+  - `landKm` goes up to 5,000 km since F1, so a smoke can hold inside
     the band. `reliefHeights=synthetic` serves heights generated
     in the page (`../globe-terrain/synthetic-heights.js`; the smokes),
     otherwise the live Terrarium tiles, credited in the credits line.
@@ -376,8 +378,8 @@
     camera's altitude (`/globe/globe-flight.js`: 1 at globe scale, the
     near value `reliefNear` from 20 km down: default 1, true heights at
     every altitude since the owner's D-K1 (city plan 2026-10-05-0040
-    §11); 3 was DEC-GL5-5, and `reliefNear=3` draws it, 2.2 at the
-    150 km hold), in steps of 0.1. `reliefGround` above 0 adds the
+    §11); 3 was DEC-GL5-5, and `reliefNear=3` draws it, 2.2 at
+    150 km), in steps of 0.1. `reliefGround` above 0 adds the
     third band (city plan 2026-10-05-0040 K1): E eases from the near value
     at 8 km to `reliefGround` (capped at the near value) at 2 km and
     below, so a city can stand on true heights (1); the dive's floor reads
@@ -385,10 +387,10 @@
     with it.
   - The pin's dive is the oblique approach (`planDive`'s pitch law; the
     `pitchLow` key, 30-90, default 45; 90 flies the old straight-down
-    dive), ending at the hand-over altitude or the clearance rule's floor
-    over the target (`minimumAltitudeM` of the ground under it, read from
-    the plugin's height sampler, at the hold's exaggeration), whichever is
-    higher. `handOver` stays default 1 (DEC-GL5-8).
+    dive), ending at `landKm` or the clearance rule's floor over the
+    target (`minimumAltitudeM` of the ground under it, read from the
+    plugin's height sampler, at the landing's exaggeration), whichever is
+    higher.
   - The clearance every frame (review 2026-10-03-1835 major 1): wherever
     the relief draws, the camera is raised to the clearance over the drawn
     ground under it (`clearedAltitudeM` of the plugin's
@@ -441,13 +443,34 @@ globeTiles, detail }` or null; `detail` is the region's state, with its
   - `diving` and `landed`: the pin's dive (below), from the camera's
     current pose, distance and rotation (the rotation fades out over the
     first fifth, so a camera the controls had tilted turns smoothly
-    instead of snapping), then held at the hand-over altitude.
+    instead of snapping), then held at the landing altitude.
 
+- The city in the globe's scene (globe city plan 2026-10-05-0040 §12.5 C4,
+  §14; `globe-city.js`, `globe-city-worker.js`): `city` (default 1, read at
+  start; 0 turns it off) and `cityKm` (30). Once a place is known, the
+  pin's located target or the link's `at=`, and its data is warmed (the
+  prefetch's outcome is no longer null: the two share one store, so
+  building during the warm-up would download the same tiles twice), the lab
+  asks for the city there, once per place. It is built in a worker from the
+  Osm library alone, drawn through `gps-plus-slam-osm/three` (loaded with
+  the first city, so the boot graph stays free of the library), placed on
+  `globe.group` through `ecefFromCityAt`, and faded in by
+  `cityShareAt(altitude, cityKm)`: nothing at and above `cityKm`, all of it
+  below two thirds of it, dithered between. It is off (fade 0, never asked
+  for) while the relief near the ground is exaggerated (`reliefNear` above
+  1, R14). The scene-depth pass draws it with the relief, so the space pass
+  and the cloud volume end at buildings too. `state().city` carries its
+  phase, place, counts, ground height and fade. Test hooks:
+  `__globeLab.cityProbe(max)` (the state, whether the root is drawn, and
+  building vertices in ECEF metres) and `__globeLab.cityExpected(lat, lng,
+heightM)` (the ECEF point of a place, for an independent placement check).
 - The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6 step 1), wired
   into the pin:
   - at the fix, the lab loads `/osm/arrival-prefetch.js` (OsmDemo) with a
-    literal dynamic `import()` and starts it for the target, so the city
-    opens on a warm cache after the hand-over. Its graph (the Osm library,
+    literal dynamic `import()` and starts it for the target, so the
+    city's Overpass tiles are warm when the globe's city builds (they were
+    warmed for OsmDemo's page until the hand-over was removed, §12.5 C6;
+    the city's z12 heights are not part of the plan, a filed finding). Its graph (the Osm library,
     about 1.1 MB of source, and H3, 0.55 MB) loads only then: the import
     map's `h3-js`, `gps-plus-slam-osm` and
     `gps-plus-slam-app-framework/osm-bridge` entries are unused at boot,
@@ -463,10 +486,9 @@ globeTiles, detail }` or null; `detail` is the region's state, with its
     module that does not load counts as done: nothing can be warmed, so
     the dive does not wait;
   - every way a flight stops (a press of the pin, a touch on the globe, a
-    hidden page, the hand-over) aborts the prefetch;
-  - the hand-over does not wait past the dive: the paced dive lands when
-    the data is in or at the cap, and hands over at once. Holding longer
-    is an open decision (the round-5 results, Q2), not built;
+    hidden page) aborts the prefetch;
+  - the landing does not wait past the dive: the paced dive lands when
+    the data is in or at the cap;
   - the status line `#globe-arrival-status` (left of the pin's own,
     hidden when idle, `aria-live="polite"`): the tiles warmed of the
     total, cold or warm, while it runs, then how it ended
@@ -485,7 +507,7 @@ globeTiles, detail }` or null; `detail` is the region's state, with its
   glyph), with a status line to its left. Its phases and labels are
   `/globe/globe-pin.js`'s; the button carries them in `aria-label`,
   `title`, `aria-busy`, `disabled` and `data-state` (`locating`
-  pulses; flying and handing over use the engaged look):
+  pulses; flying uses the engaged look):
   - idle ("Fly to my location") -> a press asks for the position ONCE,
     only then (the framework's `locateOnce` from
     `/fw/utils/locate-state.js`, 15 s as OsmDemo; no prompt on load,
@@ -500,29 +522,18 @@ globeTiles, detail }` or null; `detail` is the region's state, with its
     try again.") and the pin is idle again;
   - flying ("Flying to you - tap to stop"): the intro's `dive`
     (`planDive` / `diveStep` in `/globe/globe-dive.js`) turns over the
-    first 40 % and descends log-evenly over `diveMs` to `handOverKm` above
+    first 40 % and descends log-evenly over `diveMs` to `landKm` above
     the fix, the height taken along the camera's own direction, and a
     tilted start's offset fading out over the first fifth; a press of the
     pin, a touch on the globe, or the page being hidden (another tab, a
-    locked phone: the flight would otherwise run on and hand over the
-    moment it is seen again) stops it and leaves the camera to the
+    locked phone: the flight would otherwise run on out of sight) stops it and leaves the camera to the
     controls; the replay button or a new target ends it too;
-  - handing over ("Opening the city..."): once landed, the page goes to
-    `handOverUrl` (`/globe/globe-handover.js`): OsmDemo beside the lab
-    (`<root>osm/` for a lab at `<root>lookdev/labs/globe/` on the site;
-    on the design system's dev server `/osm/` is only its route to
-    OsmDemo's source files, not the app), `lat`/`lng` and `clat`/`clng`
-    at the fix, `cdist=1800` (the hand-over distance, well inside
-    OsmDemo's fog: the sweep is in `globe-handover.ts.md`), and the globe clock's instant as OsmDemo's `date` (solar
-    date at the fix) and `time` (apparent solar time) when the sun there
-    is at or above -6°; otherwise no time, and OsmDemo boots at its own
-    afternoon sun (the jump is part of the cut). With `handOver=0` the dive
-    holds at the hand-over altitude instead and the pin is idle again
-    ("Arrived 150 km above you (the hand-over is off)."). Back from the
-    city, the browser may restore the lab from its back-forward cache as
-    it was left, handing over: `pageshow` with `persisted` makes the pin
-    idle again ("Back from the city."), and a press flies again from where
-    the view is.
+  - landed: the dive holds `landKm` up over the place, in the globe's own
+    city, and the pin is idle again ("Arrived, 2 km up."). The page used
+    to hand over to OsmDemo's city here (`handOverUrl`, the `handingOver`
+    phase, a `pageshow` return); all of that was removed with the city in
+    the scene (§12.5 C6, the owner's D-K3). `pin.diveTo(place)` flies the
+    same dive to a given place (a `land=1` link).
   - After a failure the button keeps the failure's `data-state`
     (`denied`, `timeout`, `unavailable`: the locate atom's warning dot)
     until the next press.
@@ -539,7 +550,7 @@ bytesDownloaded, tileRequestsByLevel, rendererMemory, appliedHash, radiusM, acti
 loadingShown, loadingVisible, cacheBudgetBytes, cacheFloorBytes,
 creditShorts, mapsLoaded, mapErrors, mapsTotal, refusedTiles, distance,
 cameraOwner, cameraDistanceM, altitudeM, near, far, pin }`;
-  `pin` is `{ phase, label, status, located, handOverUrl }`;
+  `pin` is `{ phase, label, status, located, arrival }`;
   `cameraOwner` is `intro` or `controls`, `altitudeM` the camera's height
   above the ellipsoid, `near`/`far` the camera's clip planes;
   `tuning` is what the shader reads (the uniforms), not the hash;
@@ -791,17 +802,13 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   cancel" (busy, pulsing), then back to idle with the fix named; a second
   tap while it waits cancels, and the late answer changes nothing; with a granted,
   mocked position (Playwright's geolocation) the dive runs under the
-  intro with the near plane falling, and the page goes to the site-relative
-  `/osm/` (answered by the test, since the dev server serves no OsmDemo
-  app there) with the fix, `cdist=1800` and the pinned time as `date=2026-03-20` and an
-  11:2x solar time; with `handOver=0` the dive lands within 500 m of 50 km
-  and 0.01° of the fix and the pin reads "Arrived"; a press on the globe
-  during a 20 s dive stops it (controls own the camera, no hand-over); a
-  press of the pin, a hidden page and a new `at` each stop a 30 s flight
-  without a hand-over (the request is caught with a 204, which keeps the
-  page); at 23:00 UTC in Cologne the link carries no `date` or `time`,
-  and a `pageshow` with `persisted` makes the handing-over pin idle, after
-  which a press flies again.
+  intro with the near plane falling, and it lands about 2 km up and holds,
+  the page never leaving; the dive at `landKm=50` lands within 500 m of
+  50 km and 0.01° of the fix and the pin reads "Arrived, 50 km up"; a
+  press on the globe during a 20 s dive stops it (controls own the
+  camera); a press of the pin, a hidden page and a new `at` each stop a
+  30 s flight, and no navigation to OsmDemo ever happens (one would be
+  caught with a 204). The night hand-over test went with the hand-over.
 - `globe-atmosphere.smoke.spec.mjs` (round-4 DEC-GL4-4/11): against the
   pass off, the lit limb brighter inside and just outside, the night limb
   unchanged, the day side bluer, far space untouched (floors at x0.5-x2);

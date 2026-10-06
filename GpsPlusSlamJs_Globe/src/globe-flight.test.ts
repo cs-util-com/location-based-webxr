@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   GLOBE_FLIGHT,
   carrierShareAt,
+  cityShareAt,
   clearedAltitudeM,
   exaggerationAt,
   frameCheck,
@@ -317,5 +318,33 @@ describe("carrierShareAt, the altitude band between the globe and the relief", (
     expect(() => carrierShareAt(1e6, { highM: 1e6, lowM: 0 })).toThrow(
       RangeError,
     );
+  });
+});
+
+// WHY (globe city plan 2026-10-05-0040 §12.5 C4): the city appears below
+// `cityKm` (30 km) by a dithered fade, so its mass never switches on at once.
+// A 20 m building is about 0.6 px at 30 km, so the band only guards the
+// city's whole extent changing in one frame.
+describe("cityShareAt", () => {
+  it("is 0 at and above the top, 1 at and below two thirds of it, and rises between", () => {
+    expect(cityShareAt(30_000, 30_000)).toBe(0);
+    expect(cityShareAt(120_000, 30_000)).toBe(0);
+    expect(cityShareAt(20_000, 30_000)).toBe(1);
+    expect(cityShareAt(500, 30_000)).toBe(1);
+    expect(cityShareAt(0, 30_000)).toBe(1);
+    let prev = 0;
+    for (let alt = 30_000; alt >= 20_000; alt -= 250) {
+      const s = cityShareAt(alt, 30_000);
+      expect(s).toBeGreaterThanOrEqual(prev);
+      prev = s;
+    }
+    const mid = cityShareAt(25_000, 30_000);
+    expect(mid).toBeGreaterThan(0.2);
+    expect(mid).toBeLessThan(0.8);
+  });
+
+  it("refuses a non-finite altitude or a top that is not positive", () => {
+    expect(() => cityShareAt(Number.NaN, 30_000)).toThrow(RangeError);
+    expect(() => cityShareAt(1_000, 0)).toThrow(RangeError);
   });
 });

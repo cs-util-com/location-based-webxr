@@ -34,7 +34,7 @@ const TARGET = { latitude: 46.545, longitude: 9.125 };
  * control (2026-10-05). Without the fill a clipped ground is magenta.
  */
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&sky=0&relief=1&reliefHeights=synthetic&diveMs=6000&handOver=0&detail=0&holeColor=1&bandFill=0";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&sky=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&holeColor=1&bandFill=0";
 /** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
 const SWEEP = [0.5, 1, 2];
 /** The share of pixels two frames 1 mm apart may differ in. */
@@ -49,7 +49,7 @@ const swept = (value, bound) =>
 async function holdOverRidge(page, context, holdKm, extra = "") {
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(TARGET);
-  const errors = await bootGlobe(page, `${BASE}&handOverKm=${holdKm}${extra}`);
+  const errors = await bootGlobe(page, `${BASE}&landKm=${holdKm}${extra}`);
   await page.locator("#globe-pin").click();
   await page.waitForFunction(
     () => {

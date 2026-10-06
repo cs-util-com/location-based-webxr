@@ -19,7 +19,7 @@ import { bootGlobe } from "./globe-smoke-helpers.mjs";
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const TARGET = { latitude: 46.5, longitude: 9.0 };
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&sky=0&relief=1&reliefHeights=synthetic&diveMs=6000&handOver=0&detail=0&holeColor=1";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&sky=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&holeColor=1";
 
 /**
  * A pixel no carrier drew shows the clear colour, magenta with

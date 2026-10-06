@@ -29,7 +29,7 @@ const TARGET = { latitude: 46.5, longitude: 9.0 };
 // E 1, at which they would pass while testing nothing; the default's own
 // test is the last one in this file.
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&relief=1&reliefHeights=synthetic&diveMs=6000&handOver=0&reliefNear=3";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&relief=1&reliefHeights=synthetic&diveMs=6000&reliefNear=3";
 
 /** The exaggeration law (globe-flight.ts), for the expected value. */
 const exaggerationAt = (altM, near = 3) => {
@@ -283,7 +283,7 @@ test("the band's cross-fade between the globe and the relief is continuous, and 
     // band, 19 levels against 6); both have their own smokes
     // (globe-handover, globe-clouds). Red since round 6 until pinned (the
     // full run of 2026-10-05, bisected to d0bb6cbe and the shell).
-    const base = `${BASE}&handOverKm=${altKm}&detail=0&bandFill=0&cloudShell=0`;
+    const base = `${BASE}&landKm=${altKm}&detail=0&bandFill=0&cloudShell=0`;
     await context.grantPermissions(["geolocation"], { origin: ORIGIN });
     await context.setGeolocation(TARGET);
     const errors = await bootGlobe(page, `${base}&bandShare=0.5`);
@@ -375,7 +375,7 @@ for (const [label, lat] of [
     test.setTimeout(300_000);
     await context.grantPermissions(["geolocation"], { origin: ORIGIN });
     await context.setGeolocation({ latitude: lat, longitude: 9.125 });
-    const errors = await bootGlobe(page, `${BASE}&handOverKm=5`);
+    const errors = await bootGlobe(page, `${BASE}&landKm=5`);
     await page.locator("#globe-pin").click();
     await page.waitForFunction(
       () => {
@@ -419,7 +419,7 @@ test("the band's fade does not shimmer under a moving camera", async ({
   const grid = groundGrid();
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(TARGET);
-  const base = `${BASE}&handOverKm=1100&detail=0`;
+  const base = `${BASE}&landKm=1100&detail=0`;
   const errors = await bootGlobe(page, `${base}&bandShare=0.5`);
   await page.locator("#globe-pin").click();
   await page.waitForFunction(
@@ -641,7 +641,7 @@ test("a carrier's cache is released only after it stays out of the band", async 
   test.setTimeout(900_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(TARGET);
-  const base = `${BASE}&handOverKm=1550&detail=0`;
+  const base = `${BASE}&landKm=1550&detail=0`;
   const errors = await bootGlobe(page, `${base}&bandShare=0.5`);
   await page.locator("#globe-pin").click();
   await page.waitForFunction(
@@ -732,7 +732,7 @@ test("the default relief is drawn at true heights near the ground", async ({
   await context.setGeolocation({ latitude: 46.545, longitude: 9.125 });
   const errors = await bootGlobe(
     page,
-    `${BASE.replace("&reliefNear=3", "")}&handOverKm=5`,
+    `${BASE.replace("&reliefNear=3", "")}&landKm=5`,
   );
   await page.locator("#globe-pin").click();
   await page.waitForFunction(

@@ -575,7 +575,7 @@ async function skyFromInside(page, context, altKm, thickness) {
   // the descent below 2,000 km, and this measures the shell at k itself.
   const errors = await bootGlobe(
     page,
-    `at=0,1.86&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&cloudOpacity=0&stars=0&milkyWay=0&sky=0&atmoStrength=4&atmoThickness=${thickness}&atmoRamp=0&diveMs=1000&handOver=0&handOverKm=${altKm}`,
+    `at=0,1.86&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&cloudOpacity=0&stars=0&milkyWay=0&sky=0&atmoStrength=4&atmoThickness=${thickness}&atmoRamp=0&diveMs=1000&landKm=${altKm}`,
   );
   await page.locator("#globe-pin").click();
   await page.waitForFunction(

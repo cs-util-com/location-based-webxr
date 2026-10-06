@@ -32,7 +32,7 @@ import { bootGlobe, luminance, meanOf } from "./globe-smoke-helpers.mjs";
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const TARGET = { latitude: 46.5, longitude: 9.0 };
 const HOLD_KM = 40;
-const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&handOver=0&detail=0&handOverKm=${HOLD_KM}`;
+const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&landKm=${HOLD_KM}`;
 /** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
 const SWEEP = [0.5, 1, 2];
 const STEP = 1;

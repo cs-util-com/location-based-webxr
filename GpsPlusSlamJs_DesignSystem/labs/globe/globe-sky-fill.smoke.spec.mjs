@@ -94,7 +94,7 @@ test("the globe's look at dusk is the approved one above the band, relief off or
       const hash =
         view === "arrived"
           ? base
-          : `${base}&diveMs=2000&handOver=0&handOverKm=5000`;
+          : `${base}&diveMs=2000&landKm=5000`;
       const errors = await bootGlobe(page, hash);
       if (view !== "arrived") {
         await context.grantPermissions(["geolocation"], { origin: ORIGIN });

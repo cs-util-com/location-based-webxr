@@ -12,6 +12,7 @@
 import * as THREE from "three";
 import type { Ellipsoid } from "3d-tiles-renderer";
 
+import { GLOBE_DETAIL } from "./globe-detail.js";
 import type { LatLng } from "./globe-target.js";
 
 const DEG = Math.PI / 180;
@@ -114,6 +115,41 @@ export function worldFromEcefAt(
   // Local to ECEF: the columns are east, up and south (right-handed).
   local.makeBasis(east, up, south).setPosition(origin);
   return out.copy(local).invert();
+}
+
+const cityScale = new THREE.Matrix4();
+
+/**
+ * Maps a city built in the Osm library's local frame at `target` (x east,
+ * y up, z south, in its metres a degree, the AR core's ruler) to ECEF, into
+ * `out`: the frame's inverse at the target, times a per-axis scale from the
+ * ruler's metres to the true ellipsoid's there (globe city plan 2026-10-05-0040
+ * §12.4 R2, §14 D-K7). The ruler is 0.1-0.2 % off the ellipsoid, which put a
+ * building 2.4 km out 3-4 m from the relief's point of the same latitude and
+ * longitude; scaled, what remains is the flat frame's own error: about
+ * 1.05 m at the window's corners on the equator, growing with tan(lat)
+ * (the parallel's curve and the frame's shear, both inherent, both in AR's
+ * frame too) to 1.57 m at 45 and 3.13 m at 70, for heights up to 1 km;
+ * 0.53 m measured at Bern 2.4 km out (globe-city.smoke). RangeError as
+ * `worldFromEcefAt`.
+ */
+export function ecefFromCityAt(
+  ellipsoid: Ellipsoid,
+  target: LatLng,
+  out: THREE.Matrix4,
+): THREE.Matrix4 {
+  worldFromEcefAt(ellipsoid, target, out).invert();
+  const a = ellipsoid.radius.x;
+  const b = ellipsoid.radius.z;
+  const e2 = 1 - (b * b) / (a * a);
+  const sin = Math.sin(target.lat * DEG);
+  const w = 1 - e2 * sin * sin;
+  // The true metres a degree north and (over cos(lat)) east, against the ruler.
+  const northScale =
+    (DEG * a * (1 - e2)) / w ** 1.5 / GLOBE_DETAIL.metresPerDegLat;
+  const eastScale =
+    (DEG * a) / Math.sqrt(w) / GLOBE_DETAIL.metresPerDegLngEquator;
+  return out.multiply(cityScale.makeScale(eastScale, 1, northScale));
 }
 
 /** A camera pose in ECEF: a position (m) and an orientation. */

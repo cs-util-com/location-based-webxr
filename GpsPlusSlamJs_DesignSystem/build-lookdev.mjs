@@ -338,10 +338,7 @@ export function buildLookdev({
   // RUNTIME ASSETS AND NOTICES: a copyAll route is copied whole when any
   // emitted page or module references its prefix (fetched tiles are invisible
   // to the crawl); a notice ships beside anything emitted from its route.
-  // A file emitted through the worker view counts for its route as well.
-  const crawled = emittedUrls.map((u) =>
-    u.startsWith(WORKER_VIEW) ? u.slice(WORKER_VIEW.length - 1) : u,
-  );
+  const crawled = [...emittedUrls];
   for (const route of routes) {
     const used = crawled.some((u) => u.startsWith(route.prefix));
     const referenced = used || sources.some((t) => t.includes(route.prefix));
@@ -351,8 +348,17 @@ export function buildLookdev({
         if (!emittedUrls.includes(url)) copy(url);
       }
     }
-    if (route.notice && used) {
-      const url = route.prefix + route.notice;
+    // The notice ships BESIDE what it covers: under the plain prefix for
+    // files emitted there, and under the worker view's copy of the prefix
+    // for files emitted through it (a worker's graph lives under `w/`).
+    const viewPrefix = WORKER_VIEW + route.prefix.slice(1);
+    const usedInView = crawled.some((u) => u.startsWith(viewPrefix));
+    for (const [prefix, inUse] of [
+      [route.prefix, used],
+      [viewPrefix, usedInView],
+    ]) {
+      if (!route.notice || !inUse) continue;
+      const url = prefix + route.notice;
       if (!emittedUrls.includes(url)) copy(url);
     }
   }

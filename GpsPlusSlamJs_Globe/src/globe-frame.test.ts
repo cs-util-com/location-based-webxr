@@ -19,10 +19,12 @@ import { describe, expect, it } from "vitest";
 import {
   GLOBE_FRAME,
   applyEcefPose,
+  ecefFromCityAt,
   ecefPoseOf,
   frameRecentreTarget,
   worldFromEcefAt,
 } from "./globe-frame.js";
+import { GLOBE_DETAIL } from "./globe-detail.js";
 
 const DEG = Math.PI / 180;
 
@@ -180,5 +182,98 @@ describe("frameRecentreTarget", () => {
         },
       ),
     );
+  });
+});
+
+// WHY (globe city plan 2026-10-05-0040 §12.4 R2, §14 D-K7): the city is
+// built in the Osm library's local frame, whose metres a degree are the AR
+// core's ruler (0.1-0.2 % off the true ellipsoid, kept so the city agrees
+// with the phone in AR), while the globe draws the true ellipsoid. Placed
+// rigidly, a building 2.4 km out stood 3-4 m from where the relief has its
+// latitude and longitude. `ecefFromCityAt` scales the city per axis back to
+// the true ellipsoid's metres at the target and places it there.
+//
+// THE BOUND IS THE FLAT FRAME'S OWN ERROR, never zero: 1.2 m of curvature
+// and vertical tilt over the window's 3.4 km diagonal for heights up to
+// 1 km, plus two terms that grow with the latitude, because the frame's
+// east scale is fixed at the origin's latitude: a parallel curves on the
+// tangent plane by about e^2 tan(|lat|) / 2R, and a point n metres north is
+// sheared east by about |e| |n| tan(|lat|) / R. Neither is removable by a
+// per-axis scale, and AR's frame has both, so they are inherent. Computed
+// over a dense grid: the worst corner is 1.05 m at the equator, 1.57 m at
+// 45, 3.13 m at 70, and with both terms taken away at most 1.05 m remains
+// everywhere. Earlier fixed bounds (1 m, then 1.5 m) passed only because the
+// random samples rarely reached a corner, so the corners are always
+// included below. Uncorrected, the error is 3-4 m along the axes at 47 N,
+// where both terms are near 0, so a missing scale still fails.
+describe("ecefFromCityAt", () => {
+  const ruler = {
+    north: GLOBE_DETAIL.metresPerDegLat,
+    east: GLOBE_DETAIL.metresPerDegLngEquator,
+  };
+  const R = 6_371_000;
+  const boundM = (lat: number, eastM: number, northM: number) =>
+    1.2 +
+    ((eastM * eastM) / 2 + Math.abs(eastM) * Math.abs(northM)) *
+      (Math.tan(Math.abs(lat) * DEG) / R);
+  it("puts a city point within the flat frame's own error of its latitude, longitude and height", () => {
+    const e = WGS84_ELLIPSOID;
+    let worstShare = 0;
+    const corners: [number, number, number, number, number][] = [];
+    for (const lat of [0, 47, -47, 70, -70]) {
+      for (const [eastM, northM] of [
+        [2400, 2400],
+        [-2400, 2400],
+        [2400, -2400],
+        [-2400, -2400],
+        [2400, 0],
+        [0, 2400],
+      ] as const) {
+        corners.push([lat, 7.4, eastM, northM, 1000]);
+      }
+    }
+    fc.assert(
+      fc.property(
+        fc.double({ min: -70, max: 70, noNaN: true }),
+        fc.double({ min: -179, max: 179, noNaN: true }),
+        fc.double({ min: -2400, max: 2400, noNaN: true }),
+        fc.double({ min: -2400, max: 2400, noNaN: true }),
+        fc.double({ min: 0, max: 1000, noNaN: true }),
+        (lat, lng, eastM, northM, h) => {
+          const m = ecefFromCityAt(e, { lat, lng }, new THREE.Matrix4());
+          // The Osm frame: x east, y up, z south, in the ruler's metres.
+          const placed = new THREE.Vector3(eastM, h, -northM).applyMatrix4(m);
+          const pLat = lat + northM / ruler.north;
+          const pLng = lng + eastM / (ruler.east * Math.cos(lat * DEG));
+          const truth = e.getCartographicToPosition(
+            pLat * DEG,
+            pLng * DEG,
+            h,
+            new THREE.Vector3(),
+          );
+          const d = placed.distanceTo(truth);
+          const bound = boundM(lat, eastM, northM);
+          worstShare = Math.max(worstShare, d / bound);
+          expect(d).toBeLessThan(bound);
+        },
+      ),
+      { numRuns: 400, examples: corners },
+    );
+    console.log(
+      `ecefFromCityAt: worst ${(worstShare * 100).toFixed(0)} % of the bound`,
+    );
+  });
+
+  it("is the frame's inverse at the target, without the scale", () => {
+    const t = { lat: 46.948, lng: 7.4474 };
+    const m = ecefFromCityAt(WGS84_ELLIPSOID, t, new THREE.Matrix4());
+    const origin = new THREE.Vector3().applyMatrix4(m);
+    const ground = WGS84_ELLIPSOID.getCartographicToPosition(
+      t.lat * DEG,
+      t.lng * DEG,
+      0,
+      new THREE.Vector3(),
+    );
+    expect(origin.distanceTo(ground)).toBeLessThan(1e-6);
   });
 });

@@ -387,25 +387,18 @@ async function bootWithGps(page, context, extra) {
 }
 
 // WHY (round-2 DEC-FB2-2/3, M3g): a granted position turns the globe and
-// dives to the hand-over altitude, then opens the OSM demo's city there.
-// The dev server has no /osm/ app, so the page's request is answered here
-// and the URL itself is what is checked: the site-relative path, the user
-// and the camera at the fix, the camera at the demo's farthest, and the
-// globe's pinned time as the demo's solar date and time (the sun is up in
-// Cologne at 11:00 UTC on the equinox).
-test("a granted position dives there and hands over to the city", async ({
+// dives there; the planes follow the dive down.
+// WHY (globe city plan 2026-10-05-0040 §12.5 C6, the owner's D-K3): the
+// dive ends in the globe's own city, held `landKm` (2 km) up over the fix,
+// and the page never leaves. It replaces "a granted position dives there
+// and hands over to the city", which checked the OsmDemo link the page
+// opened at 150 km.
+test("a granted position dives there and lands over it, held, without leaving", async ({
   page,
   context,
 }) => {
   test.setTimeout(300_000);
-  await page.route(`${ORIGIN}/osm/**`, (route) =>
-    route.request().isNavigationRequest()
-      ? route.fulfill({
-          contentType: "text/html",
-          body: "<!doctype html><title>osm stand-in</title>",
-        })
-      : route.fallback(),
-  );
+  const urls = await catchHandOver(page);
   // The default 15 s dive, so the checks below run while it lasts.
   const { errors } = await bootWithGps(page, context, "");
   const fitted = await page.evaluate(() => window.__globeLab.state());
@@ -423,20 +416,26 @@ test("a granted position dives there and hands over to the city", async ({
   // The planes follow the dive down.
   const lower = await page.evaluate(() => window.__globeLab.state());
   expect(lower.near).toBeLessThan(fitted.near);
-  await page.waitForURL(/\/osm\//, { timeout: 60_000 });
-  const url = new URL(page.url());
-  console.log(`hand-over: ${url.href}`);
-  expect(url.origin + url.pathname).toBe(`${ORIGIN}/osm/`);
-  const q = url.searchParams;
-  expect(q.get("lat")).toBe("50.94128");
-  expect(q.get("lng")).toBe("6.95817");
-  expect(q.get("clat")).toBe("50.94128");
-  expect(q.get("clng")).toBe("6.95817");
-  // The hand-over distance, well inside OsmDemo's fog (milestone review M1).
-  expect(q.get("cdist")).toBe("1800");
-  expect(q.get("date")).toBe("2026-03-20");
-  // 11:00 UTC at 6.96°E: +27.8 min of longitude, -7.5 min equation of time.
-  expect(q.get("time")).toMatch(/^11:2\d$/);
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return s.phase === "landed" && s.pin.phase === "idle";
+    },
+    null,
+    { timeout: 60_000 },
+  );
+  const landed = await page.evaluate(() => window.__globeLab.state());
+  console.log(
+    `landed: ${(landed.altitudeM / 1000).toFixed(2)} km up, "${landed.pin.status}"`,
+  );
+  // 2 km above the ellipsoid; the clearance may lift it over high ground,
+  // never lower it.
+  expect(landed.altitudeM).toBeGreaterThan(2_000 - 100);
+  expect(landed.altitudeM).toBeLessThan(2_000 + 1_500);
+  expect(landed.pin.status).toMatch(/Arrived, 2 km up/);
+  await frames(page, 30);
+  expect(urls).toEqual([]);
+  expect(page.url()).toContain("/labs/globe/");
   expect(errors).toEqual([]);
 });
 
@@ -455,20 +454,15 @@ async function applyHashKeepingView(page, extra) {
   );
 }
 
-// WHY (round-2 M3g, §5): with the hand-over off the dive holds at the
-// hand-over altitude over the fix (to look at the {20, 50, 150} km sweep),
-// and the pin is idle again; a press on the globe during a dive stops it
-// and leaves the camera to the controls, with no hand-over.
-test("the dive lands on the fix at the hand-over altitude, and a touch stops a dive", async ({
+// WHY (round-2 M3g, §5): the dive holds at the landing altitude over the
+// fix (`landKm`, here 50 km), and the pin is idle again; a press on the
+// globe during a dive stops it and leaves the camera to the controls.
+test("the dive lands on the fix at the landing altitude, and a touch stops a dive", async ({
   page,
   context,
 }) => {
   test.setTimeout(300_000);
-  const { errors } = await bootWithGps(
-    page,
-    context,
-    "diveMs=3000&handOver=0&handOverKm=50",
-  );
+  const { errors } = await bootWithGps(page, context, "diveMs=3000&landKm=50");
   await page.locator("#globe-pin").click();
   await page.waitForFunction(
     () => {
@@ -489,12 +483,12 @@ test("the dive lands on the fix at the hand-over altitude, and a touch stops a d
   expect(Math.abs(landed.centreLatLon.lng - COLOGNE.longitude)).toBeLessThan(
     0.01,
   );
-  expect(landed.pin.status).toMatch(/Arrived 50 km above you/);
+  expect(landed.pin.status).toMatch(/Arrived, 50 km up/);
   expect(page.url()).toContain("/labs/globe/");
   // A second dive, stopped by a press on the globe early on.
   await page.locator("#globe-replay").click();
   await arriveAt(page, { lat: 30, lng: 15 });
-  await applyHashKeepingView(page, "diveMs=20000&handOver=1&handOverKm=50");
+  await applyHashKeepingView(page, "diveMs=20000&landKm=50");
   const startM = await page.evaluate(() => window.__globeLab.state().altitudeM);
   await page.locator("#globe-pin").click();
   // The press lands once the dive is under way (below its start), not
@@ -515,8 +509,7 @@ test("the dive lands on the fix at the hand-over altitude, and a touch stops a d
   const stopped = await page.evaluate(() => window.__globeLab.state());
   expect(stopped.cameraOwner).toBe("controls");
   // Stopped: after more frames the camera is still where the press left
-  // it, far above the hand-over, and the page stays. (A dive that ran on
-  // would be lower by now, and would hand over at 50 km.)
+  // it, far above the landing. (A dive that ran on would be lower by now.)
   await frames(page, 30);
   const later = await page.evaluate(() => window.__globeLab.state());
   console.log(
@@ -532,14 +525,14 @@ test("the dive lands on the fix at the hand-over altitude, and a touch stops a d
 });
 
 /**
- * Answers the page's hand-over request with 204 No Content, which a
- * browser treats as "stay on this page", and records the URL: the lab then
- * sits in "handing over" as it would when the city opens, without leaving.
+ * Records any navigation to OsmDemo (answered 204 No Content, "stay on this
+ * page"). Since the page hand-over was removed (§12.5 C6) there must never
+ * be one; the tests that use this assert the list stays empty.
  */
 async function catchHandOver(page) {
   const urls = [];
   await page.route(`${ORIGIN}/osm/**`, (route) => {
-    // The hand-over navigation only: the prefix also serves the prefetch.
+    // Navigations only: the prefix also serves the prefetch's modules.
     if (!route.request().isNavigationRequest()) return route.fallback();
     urls.push(route.request().url());
     return route.fulfill({ status: 204 });
@@ -548,11 +541,11 @@ async function catchHandOver(page) {
 }
 
 // WHY (milestone review of the pin, findings m4, m5 a and c): a flight
-// must stop, with no hand-over, whenever the user or the page takes over:
-// a press of the pin, a hidden page (another tab, a locked phone: the dive
-// would otherwise run on and hand over the moment the page is seen again),
-// and a new target in the hash. Each stop leaves the pin idle.
-test("a press, a hidden page and a new target each stop a flight without a hand-over", async ({
+// must stop whenever the user or the page takes over: a press of the pin,
+// a hidden page (another tab, a locked phone: the dive would otherwise run
+// on, out of sight), and a new target in the hash. Each stop leaves the pin
+// idle, and the page never leaves.
+test("a press, a hidden page and a new target each stop a flight, and the page stays", async ({
   page,
   context,
 }) => {
@@ -608,56 +601,7 @@ test("a press, a hidden page and a new target each stop a flight without a hand-
   expect(errors).toEqual([]);
 });
 
-// WHY (milestone review of the pin, findings M2 and m5 b): at night where
-// the user stands (below civil twilight) the link carries no time, since
-// OsmDemo cannot draw that sky, so the city opens at its own afternoon sun;
-// and Back from the city restores the lab from the back-forward cache
-// exactly as it was left, handing over, so the pin must be idle again and
-// a new flight must start.
-test("a night hand-over carries no time, and the pin is idle again back from the city", async ({
-  page,
-  context,
-}) => {
-  test.setTimeout(300_000);
-  const urls = await catchHandOver(page);
-  // 23:00 UTC on the equinox: night in Cologne.
-  const { errors } = await bootWithGps(page, context, "diveMs=2000");
-  await page.evaluate(() => {
-    location.hash = location.hash.replace(
-      "time=2026-03-20T11:00:00Z",
-      "time=2026-03-20T23:00:00Z",
-    );
-  });
-  await page.waitForFunction(() =>
-    window.__globeLab.state().appliedHash.includes("T23:00:00Z"),
-  );
-  await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => window.__globeLab.state().pin.phase === "handingOver",
-    null,
-    { timeout: 60_000 },
-  );
-  await expect.poll(() => urls.length).toBe(1);
-  const q = new URL(urls[0]).searchParams;
-  console.log(`night hand-over: ${urls[0]}`);
-  expect(q.get("lat")).toBe("50.94128");
-  expect(q.has("date")).toBe(false);
-  expect(q.has("time")).toBe(false);
-  expect(await pinView(page)).toMatchObject({ phase: "handingOver" });
-  // Back from the city: the page is shown again from the cache.
-  await page.evaluate(() =>
-    window.dispatchEvent(
-      new PageTransitionEvent("pageshow", { persisted: true }),
-    ),
-  );
-  expect(await pinView(page)).toMatchObject({
-    phase: "idle",
-    disabled: false,
-    status: "Back from the city.",
-  });
-  await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => window.__globeLab.state().pin.phase === "flying",
-  );
-  expect(errors).toEqual([]);
-});
+// "a night hand-over carries no time, and the pin is idle again back from
+// the city" was deleted with the page hand-over (§12.5 C6): no link carries
+// a time any more, and the page never leaves, so there is no Back from a
+// city to come back from. The landing's own test is the granted dive above.

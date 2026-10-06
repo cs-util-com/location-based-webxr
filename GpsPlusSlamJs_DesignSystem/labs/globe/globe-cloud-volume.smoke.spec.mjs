@@ -34,7 +34,7 @@ const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 // nothing, so their verdicts were hollow (volume-cloud plan §11).
 const TARGET = { latitude: 56.5, longitude: 9.0 };
 const HOLD_KM = 12;
-const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&handOver=0&detail=0&handOverKm=${HOLD_KM}`;
+const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&landKm=${HOLD_KM}`;
 /** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
 const SWEEP = [0.5, 1, 2];
 const STEP = 1;
@@ -188,7 +188,7 @@ test("the cloud volume is seen looking down from just above the deck, over an ov
   await context.setGeolocation(OVERCAST);
   const errors = await bootGlobe(
     page,
-    `${BASE.replace(`handOverKm=${HOLD_KM}`, `handOverKm=${NEAR_DECK_KM}`)}&cloudVolumeCover=2`,
+    `${BASE.replace(`landKm=${HOLD_KM}`, `landKm=${NEAR_DECK_KM}`)}&cloudVolumeCover=2`,
   );
   await page.locator("#globe-pin").click();
   await page.waitForFunction(

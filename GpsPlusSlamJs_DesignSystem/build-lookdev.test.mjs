@@ -499,6 +499,34 @@ describe("buildLookdev with the real globe lab", () => {
     assert.ok(chunks.length >= 2, `hashed chunks crawled: ${chunks}`);
   });
 
+  // WHY (globe city plan 2026-10-05-0040 §12.5 C4): the city's worker is
+  // reached by `new Worker`, through the worker view, and its library graph
+  // only through it; the three.js entry by a dynamic import. A missed one is
+  // a preview whose city never builds, while every local smoke passes.
+  it("emits the city: its worker and library graph in the worker view, the three.js entry", () => {
+    for (const rel of [
+      "labs/globe/globe-city.js",
+      "w/labs/globe/globe-city-worker.js",
+      "w/osm-lib/index.js",
+      "w/osm-lib/mesh/city.js",
+      "w/osm-lib/elevation/terrain-field.js",
+      "w/fw/osm-bridge/open-osm-store.js",
+      "w/vendor/h3-js/dist/browser/h3-js.es.js",
+      // The licence beside the copy the worker loads.
+      "w/vendor/h3-js/LICENSE",
+      "osm-lib/three/index.js",
+      "osm-lib/three/city-objects.js",
+    ]) {
+      assert.ok(files.includes(rel), rel);
+    }
+    const worker = readFileSync(
+      join(out, "w/labs/globe/globe-city-worker.js"),
+      "utf8",
+    );
+    assert.match(worker, /"\/lookdev\/w\/osm-lib\/index\.js"/);
+    assert.doesNotMatch(worker, /from "gps-plus-slam-osm"/);
+  });
+
   it("strips the globe's TypeScript and rebases every prefix", () => {
     const surface = readFileSync(join(out, "globe/globe-surface.js"), "utf8");
     assert.doesNotMatch(surface, /^export interface /m);
@@ -514,8 +542,9 @@ describe("buildLookdev with the real globe lab", () => {
 
 // WHY (terrain plan 2026-09-27-0605 §9 findings 2 and 3): the real terrain
 // lab deploys as a CLOSED graph: its worker (reached by `new Worker`, not an
-// import), the Osm library through `/osm-lib/` and OsmDemo's heightfield
-// through `/osm/`, all stripped and rebased. A missed one is a lab that
+// import), the Osm library through `/osm-lib/` (its height field too, since
+// 2026-10-06) and OsmDemo's terrain texture through `/osm/`, all stripped and
+// rebased. A missed one is a lab that
 // stays on "Computing relief..." on the phone.
 describe("buildLookdev with the real terrain lab", () => {
   let out;
@@ -538,7 +567,7 @@ describe("buildLookdev with the real terrain lab", () => {
       "osm-lib/source/compose-signals.js",
       "osm-lib/source/in-flight-requests.js",
       "osm-lib/mesh/enu.js",
-      "osm/heightfield.js",
+      "osm-lib/elevation/heightfield.js",
       "osm/terrain-texture.js",
       // Style C's far field (T2): the globe's source registry and the
       // imagery it names (the Blue Ridge's level-5 tile, the level it
@@ -628,7 +657,7 @@ describe("buildLookdev with the arrival prefetch's import map", () => {
       "osm/arrival-progress.js",
       "osm/osm-tile-cache.js",
       "osm/dem-provider.js",
-      "osm/terrain-field.js",
+      "osm-lib/elevation/terrain-field.js",
       "osm-lib/index.js",
       "osm-lib/source/caching-source.js",
       "osm-lib/source/overpass-source.js",

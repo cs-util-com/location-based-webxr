@@ -42,11 +42,12 @@ export function createGlobeSceneDepth(renderer) {
     /** The camera it was drawn with: the view camera, its near plane small. */
     camera,
     /**
-     * Draws the depth of `relief` (an Object3D) as `viewCamera` sees it,
-     * into the depth texture; restores the render target and every colour
-     * write it turned off.
+     * Draws the depth of `relief` (an Object3D), and of each object in
+     * `extra` (the city, globe city plan 2026-10-05-0040 §12.5 C4), as
+     * `viewCamera` sees them, into the depth texture; restores the render
+     * target, the renderer's auto-clear and every colour write it turned off.
      */
-    render(viewCamera, relief) {
+    render(viewCamera, relief, extra = []) {
       renderer.getDrawingBufferSize(size);
       if (target.width !== size.x || target.height !== size.y) {
         target.setSize(size.x, size.y);
@@ -54,19 +55,25 @@ export function createGlobeSceneDepth(renderer) {
       camera.copy(viewCamera);
       camera.near = Math.min(viewCamera.near, SCENE_DEPTH_NEAR_M);
       camera.updateProjectionMatrix();
+      const drawn = [relief, ...extra];
       const written = [];
-      relief.traverse((o) => {
-        if (o.isMesh && o.material?.colorWrite) {
-          o.material.colorWrite = false;
-          written.push(o.material);
-        }
-      });
+      for (const root of drawn) {
+        root.traverse((o) => {
+          if (o.isMesh && o.material?.colorWrite) {
+            o.material.colorWrite = false;
+            written.push(o.material);
+          }
+        });
+      }
       const previous = renderer.getRenderTarget();
+      const autoClear = renderer.autoClear;
+      renderer.autoClear = false;
       renderer.setRenderTarget(target);
       renderer.clear(false, true, false);
-      renderer.render(relief, camera);
+      for (const root of drawn) renderer.render(root, camera);
       for (const m of written) m.colorWrite = true;
       renderer.setRenderTarget(previous);
+      renderer.autoClear = autoClear;
       frames += 1;
       fresh = true;
     },

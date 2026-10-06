@@ -37,8 +37,10 @@ followDynamic? })` → the written paths relative to `outDir`. `base`
     dev server serves it, so its bare names resolve through
     `workerImports` (default `WORKER_IMPORTS`) and its whole graph is
     emitted under `w/`, rebased like any route (`w` is one of the
-    rebaser's prefixes); a notice or `copyAll` route counts a file emitted
-    through the view as used.
+    rebaser's prefixes); a route's notice ships beside what it covers,
+    under `w/` for files emitted through the view (h3-js's LICENSE at
+    `w/vendor/h3-js/LICENSE` for the globe city's worker), so a worker's
+    graph never adds a plain-path file to a page's boot graph.
     Any other `new URL("x", import.meta.url)` is crawled when it names a
     `.js`/`.mjs` module and copied byte for byte otherwise;
   - follows literal dynamic `import("x")`s in our own sources, outside

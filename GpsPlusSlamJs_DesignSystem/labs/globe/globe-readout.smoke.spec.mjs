@@ -94,7 +94,7 @@ test("during a dive the readout follows the camera and names the distance to the
   await context.setGeolocation(COLOGNE);
   const errors = await boot(
     page,
-    `${VIEW}&diveMs=4000&handOver=0&handOverKm=50`,
+    `${VIEW}&diveMs=4000&landKm=50`,
   );
   const before = altitudeKm(
     await page.evaluate(() => window.__globeLab.state().readoutShown),

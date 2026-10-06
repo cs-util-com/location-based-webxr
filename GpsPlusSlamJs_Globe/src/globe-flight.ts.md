@@ -21,6 +21,10 @@
     stays in view (review 2026-10-03-1835 minor 7: a low pitch of 30 looked
     past the horizon between about 985 and 1,300 km). RangeError for a
     non-finite altitude or a low pitch outside 0-90.
+  - `cityShareAt(altM, topM)`: the city's fade (globe city plan
+    2026-10-05-0040 §12.5 C4): 0 at and above `topM`, 1 at and below two
+    thirds of it, smoothstep between. RangeError for a non-finite altitude
+    or a `topM` that is not positive.
   - `exaggerationAt(altM, { near?, ground? })`: 1 above
     `exaggerationFarM`, `near` from `exaggerationNearM` down, smoothstep in
     the logarithm between, rounded to `exaggerationStep` (so the tile tree

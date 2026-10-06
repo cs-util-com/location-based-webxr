@@ -61,7 +61,6 @@ import { FLIGHT_PACE_DEFAULTS } from "/globe/flight-pace.js";
 import { arrivalStatusText, createDiveClock } from "/globe/globe-arrival.js";
 import { globePinView, nextPinPhase } from "/globe/globe-pin.js";
 import { globeReadoutText, readoutThrottle } from "/globe/globe-readout.js";
-import { handOverUrl } from "/globe/globe-handover.js";
 import {
   GLOBE_INTRO,
   INTRO_VARIANTS,
@@ -88,6 +87,7 @@ import { SKY_FILL } from "/globe/sky-level.js";
 import {
   GLOBE_FLIGHT,
   carrierShareAt,
+  cityShareAt,
   clearedAltitudeM,
   exaggerationAt,
   minimumAltitudeM,
@@ -110,16 +110,13 @@ import { createGlobeGroundSky } from "./globe-ground-sky.js";
 import { createGlobeHaze } from "./globe-haze.js";
 import { createGlobeCloudVolume } from "./globe-cloud-volume.js";
 import { createGlobeSceneDepth } from "./globe-scene-depth.js";
+import { createGlobeCity } from "./globe-city.js";
 import { EARTH_ATMOSPHERE } from "/fw/visualization/atmosphere/atmosphere-model.js";
 import {
   GLOBE_SKY_HAND_OVER,
   shellThicknessAt,
 } from "/globe/globe-sky-hand-over.js";
-import {
-  apparentSolarTimeHours,
-  solarDateAt,
-  solarPosition,
-} from "/fw/geo/solar-position.js";
+import { solarPosition } from "/fw/geo/solar-position.js";
 import { labelFor, locateAdvice, locateOnce } from "/fw/utils/locate-state.js";
 import { createGlobeDebug } from "./globe-debug.js";
 import { createDebugLog } from "./globe-debug-log.js";
@@ -385,13 +382,20 @@ const PARAMS = {
   // globe-albedo's detail on the relief's tiles (the terrain lab's style B
   // high-pass, `globe-detail-region.js`): its weight, 0 off.
   detail: { fallback: GLOBE_ALBEDO.detail, min: 0, max: 1 },
-  // Up to 5,000 km since F1, so a smoke can hold inside the altitude band.
-  handOverKm: {
-    fallback: GLOBE_DIVE.handOverAltitudeM / 1000,
+  // Where the dive lands, km above the ellipsoid (2: about 1.5 km over
+  // Bern and Zurich, the city plan 2026-10-05-0040 §12.5 C6; the per-frame
+  // clearance keeps it over higher ground). Up to 5,000 km, so a smoke can
+  // hold inside the altitude band. It was `handOverKm`, 150, where the page
+  // handed over to OsmDemo; that hand-over was removed (D-K3).
+  landKm: {
+    fallback: GLOBE_DIVE.landAltitudeM / 1000,
     min: 1,
     max: 5000,
   },
-  handOver: { fallback: 1, min: 0, max: 1 },
+  // `land=1` with an `at=` link flies the dive to that place, as the pin
+  // does to the device's (§12.4 R15: the owner can land in Zurich or Bern
+  // from anywhere).
+  land: { fallback: 0, min: 0, max: 1 },
   // The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6): on unless 0.
   // While it runs it paces the dive (`/globe/flight-pace.js`, at most the
   // 30 s of DEC-GL5-6) unless `diveMs` is set in the hash, which keeps
@@ -490,6 +494,14 @@ const PARAMS = {
   // The city's data warmed from load when the link names a place (`at=`;
   // the city plan 2026-10-05-0040, K0); 0 waits for the pin's press.
   cityWarm: { fallback: 1, min: 0, max: 1 },
+  // The city in the globe's scene (the city plan 2026-10-05-0040 §12.5 C4,
+  // §14): built from the Osm library in a worker once the place is known and
+  // its data warmed, drawn below `cityKm` by a dithered fade. 0 turns it
+  // off; read at start. Off by itself while the relief near the ground is
+  // exaggerated (`reliefNear` above 1), where true-height buildings would
+  // stand buried in a hillside drawn too high (R14).
+  city: { fallback: 1, min: 0, max: 1 },
+  cityKm: { fallback: 30, min: 1, max: 200 },
   // The reference image's looks (round-4 plan 2026-09-28-2105 DEC-GL4-8),
   // each 0 (off, the look before) to 1: a blue grade over the ground,
   // shaded clouds, a soft blue-grey night with warm lights, navy space and
@@ -1117,18 +1129,17 @@ function currentPose({ position, quaternion }) {
 /**
  * The pin (round-2 plan 2026-09-26-2055 M3g, DEC-FB2-2/3), bottom right as
  * in OsmDemo: a press asks for the position (the framework's `locateOnce`),
- * the globe then turns and dives there over `diveMs` to `handOverKm`, and
- * the page opens OsmDemo's city at that place (`handOverUrl`), with the
- * globe's time when the sun is up there. Its phases and labels are
+ * the globe then turns and dives there over `diveMs` and lands `landKm`
+ * up, in the globe's own city (the city plan 2026-10-05-0040 §12.5 C6; the
+ * page used to hand over to OsmDemo's city there). `diveTo(place)` flies
+ * the same dive to a given place (a `land=1` link). Its phases and labels are
  * `/globe/globe-pin.js`'s; the button carries them in its `aria-label`,
  * `title`, `aria-busy`, `disabled` and `data-state` (the design system's
  * locate atom: `locating` pulses), and the status line beside it shows the
  * in-progress label or the failure with its fix (`labelFor`,
  * `locateAdvice`). A press or a touch on the globe stops the flight and
  * leaves the camera to the controls; a restart of the intro (the replay
- * button, a new target) ends a flight too. `handOver=0` holds at the
- * hand-over altitude instead of leaving, to look at it. `navigate` is
- * `location.assign` (the page leaves).
+ * button, a new target) ends a flight too.
  *
  * THE ARRIVAL PREFETCH (round-5 plan 2026-10-01-0945 §3.6 step 1): once the
  * position is known, the lab loads OsmDemo's `/osm/arrival-prefetch.js`
@@ -1151,8 +1162,6 @@ function bindPin({
   controls,
   camera,
   getParams,
-  sceneMs,
-  navigate,
   diveFloorM = () => 0,
   onLocated = () => {},
   ecefCamera,
@@ -1160,7 +1169,6 @@ function bindPin({
 }) {
   let phase = "idle";
   let message = "";
-  let lastUrl = null;
   let located = null;
   /** The last failure (denied, timeout, unavailable), until the next press. */
   let failure = null;
@@ -1270,16 +1278,6 @@ function bindPin({
     phase = nextPinPhase(phase, event);
     render();
   };
-  /** The globe's instant as OsmDemo reads it, at the target. */
-  const sunAt = (target) => {
-    const ms = sceneMs();
-    return {
-      date: solarDateAt(ms, target.lng),
-      solarHours: apparentSolarTimeHours(ms, target.lng),
-      elevationDeg:
-        solarPosition(ms, target.lat, target.lng).elevationRad / DEG,
-    };
-  };
   /** Bumped by every press, so an answer to a cancelled request is dropped. */
   let request = 0;
   pinButton.addEventListener("click", async () => {
@@ -1312,7 +1310,15 @@ function bindPin({
       go("failed");
       return;
     }
-    located = { lat: outcome.fix.lat, lng: outcome.fix.lng };
+    startDive({ lat: outcome.fix.lat, lng: outcome.fix.lng });
+  });
+  /**
+   * The dive to `place`, from wherever the camera is: the frame moved to
+   * it, its city data warmed (pacing the dive), the camera turned and
+   * descended to `landKm` over it.
+   */
+  function startDive(place) {
+    located = { lat: place.lat, lng: place.lng };
     const params = getParams();
     onLocated(located, params);
     // The intro takes the camera: no drag or momentum left to resume.
@@ -1334,14 +1340,31 @@ function bindPin({
         durationMs: params.diveMs,
         // The clearance rule (one-scene plan §3.4): never closer to the
         // exaggerated ground under the target than the clearance.
-        toAltitudeM: Math.max(params.handOverKm * 1000, diveFloorM(located)),
+        toAltitudeM: Math.max(params.landKm * 1000, diveFloorM(located)),
         clock,
       },
     );
     go("located");
-  });
+  }
   render();
   return {
+    /**
+     * Flies the dive to `place` ({ lat, lng }) without asking for the
+     * device's position (a `land=1` link, §12.4 R15), as a press would
+     * once located. Only from idle; RangeError for a place that is not
+     * finite.
+     */
+    diveTo(place) {
+      if (!(Number.isFinite(place?.lat) && Number.isFinite(place?.lng))) {
+        throw new RangeError(`a dive needs a finite place, got ${place}`);
+      }
+      if (phase !== "idle") return;
+      request += 1;
+      failure = null;
+      message = "";
+      go("press");
+      startDive(place);
+    },
     /**
      * Starts the city's prefetch for `target` before any press (the city
      * plan 2026-10-05-0040, K0): a link that names a place warms its data
@@ -1373,43 +1396,20 @@ function bindPin({
       message = "Stopped: the page was hidden. Tap the pin to fly again.";
       go("touch");
     },
-    /**
-     * Back from the city: the browser restored this page from its
-     * back-forward cache as it was left, handing over (milestone review M2).
-     * The pin is idle again; the view holds where the dive ended, and a
-     * press starts a new flight from there.
-     */
-    returned() {
-      if (phase !== "handingOver") return;
-      message = "Back from the city.";
-      go("returned");
-    },
-    /** Per frame: the status line follows; a landed dive hands over (or holds). */
+    /** Per frame: the status line follows; a landed dive holds. */
     frame() {
       renderArrival();
       if (phase !== "flying" || flight.state().phase !== "landed") return;
-      if (getParams().handOver === 0) {
-        message = `Arrived ${shown(getParams().handOverKm)} km above you (the hand-over is off).`;
-        go("held");
-        return;
-      }
-      lastUrl = handOverUrl({
-        pageHref: location.href,
-        target: located,
-        sun: sunAt(located),
-      });
-      go("arrived");
-      // The dive has landed: the data is in, or the cap has passed. Nothing
-      // waits longer (the round-5 results' Q2); the page leaves now.
-      stopArrival();
-      navigate(lastUrl);
+      // Landed (the data is in, or the pace's cap has passed): the camera
+      // holds over the city, the controls take it from here.
+      message = `Arrived, ${shown(getParams().landKm)} km up.`;
+      go("held");
     },
     state: () => ({
       phase,
       label: globePinView(phase).label,
       status: pinStatus.textContent,
       located,
-      handOverUrl: lastUrl,
       // The arrival prefetch of the current flight (null before one).
       arrival: arrival && {
         outcome: arrival.outcome,
@@ -1973,6 +1973,17 @@ async function start() {
     pin?.cameraTaken();
   };
   let params = readHashParams();
+  // The city, on the globe's Earth-centred group (its matrix is the frame),
+  // so a frame recentre moves nothing (§12.4 R16).
+  const city =
+    terrain && params.city === 1
+      ? createGlobeCity({
+          parent: globe.group,
+          ellipsoid: globe.tiles.ellipsoid,
+        })
+      : null;
+  /** The place the city was last asked for, as "lat,lng". */
+  let cityKey = null;
   let appliedHash = location.hash.slice(1);
   /** The globe's one clock; restarted only when its setting changes. */
   const startClock = () =>
@@ -2150,9 +2161,6 @@ async function start() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") pin?.hidden();
   });
-  window.addEventListener("pageshow", (event) => {
-    if (event.persisted) pin?.returned();
-  });
   /** The relief's height law as the hash sets it (`exaggerationAt`). */
   const heightLaw = () =>
     params.reliefGround > 0
@@ -2174,7 +2182,7 @@ async function start() {
     );
     if (ground === null) return 0;
     const heightM = ground / Math.max(terrain.plugin.heightScale, 1);
-    const e = exaggerationAt(params.handOverKm * 1000, heightLaw());
+    const e = exaggerationAt(params.landKm * 1000, heightLaw());
     return minimumAltitudeM(heightM, e, GLOBE_FLIGHT.clearanceM);
   };
   pin = bindPin({
@@ -2192,12 +2200,12 @@ async function start() {
     controls,
     camera,
     getParams: () => params,
-    sceneMs,
-    navigate: (url) => location.assign(url),
   });
   // A link that names a place (`at=`) warms the city's data from load (the
   // city plan K0), not only from the pin's press.
   if (params.url && params.cityWarm === 1) pin.warm(params.url);
+  // `land=1`: the link flies to its own place (§12.4 R15).
+  if (params.url && params.land === 1) pin.diveTo(params.url);
 
   /** The frame-hitch recorder (`#perf=1` only, `globe-perf.js`), or null. */
   let perf = null;
@@ -2330,6 +2338,23 @@ async function start() {
           globe.tiles.group.worldToLocal(camera.position.clone()),
         ),
       );
+      if (city) {
+        // The flight's place, or the link's: built once its data is warmed
+        // (the prefetch and the city share one store, so building during
+        // the warm-up would download the same tiles twice).
+        const { located, arrival } = pin.state();
+        const place = located ?? params.url;
+        const warming = arrival != null && arrival.outcome === null;
+        const trueHeights = exaggerationAt(0, heightLaw()) === 1;
+        const key = place ? `${place.lat},${place.lng}` : null;
+        if (key !== null && key !== cityKey && !warming && trueHeights) {
+          city.build(place);
+          cityKey = key;
+        }
+        city.setFade(
+          trueHeights ? cityShareAt(altitudeM, params.cityKm * 1000) : 0,
+        );
+      }
       const highM = params.bandHigh * 1000;
       const targetShare =
         params.bandShare ??
@@ -2662,7 +2687,7 @@ async function start() {
       skyHandOver.weight > 0 &&
       (costMode === null ? params.atmo !== 0 : costMode === "on")
     ) {
-      sceneDepth.render(camera, terrain.tiles.group);
+      sceneDepth.render(camera, terrain.tiles.group, city ? [city.root] : []);
     }
     if (cloudVolume) cloudVolume.render(camera, terrain.tiles.group);
     // The air over the Earth and the sky, lit by the same sun (or, while
@@ -2903,6 +2928,8 @@ async function start() {
       // The sky hand-over (F2b): the ground sky's state, and the observer's
       // height over the ellipsoid's image it is fed from (km).
       groundSky: { ...groundSky.state(), observerAltitudeKm: observerKm },
+      // The city (§12.5 C4): its phase, place, counts, ground and fade.
+      city: city?.state() ?? null,
       // The clip planes in effect and the drawn ground they were fitted to.
       // The haze (F2b) and the renderer's program count (a fog that came
       // and went at the edge would recompile every material).
@@ -3262,6 +3289,44 @@ async function start() {
     },
     hideRelief(on) {
       reliefHidden = Boolean(on);
+    },
+    /**
+     * A test hook (the city plan 2026-10-05-0040 §12.5 C4): the city's
+     * state, whether its root is drawn, and up to `max` of its building
+     * vertices in ECEF metres (through the root's world matrix and the
+     * frame's inverse), so a smoke checks the placement against an
+     * independent ECEF computation, not against the root's own transform
+     * (R16). Null without a city.
+     */
+    cityProbe(max = 400) {
+      if (!city) return null;
+      city.root.updateMatrixWorld(true);
+      const ecefFromWorld = new THREE.Matrix4()
+        .copy(globe.tiles.group.matrixWorld)
+        .invert();
+      const vertices = [];
+      const v = new THREE.Vector3();
+      city.root.traverse((o) => {
+        if (!o.isMesh || o.isInstancedMesh || !o.userData.solid) return;
+        const p = o.geometry.getAttribute("position");
+        for (let i = 0; i < p.count && vertices.length < max; i++) {
+          v.fromBufferAttribute(p, i)
+            .applyMatrix4(o.matrixWorld)
+            .applyMatrix4(ecefFromWorld);
+          vertices.push([v.x, v.y, v.z]);
+        }
+      });
+      return { ...city.state(), drawn: city.root.visible, vertices };
+    },
+    /** The ECEF point (m) of a latitude, longitude and height (test hook). */
+    cityExpected(lat, lng, heightM) {
+      const p = globe.tiles.ellipsoid.getCartographicToPosition(
+        lat * DEG,
+        lng * DEG,
+        heightM,
+        new THREE.Vector3(),
+      );
+      return [p.x, p.y, p.z];
     },
     /**
      * Hides the cloud shell (true) or shows it as the hash says, so a

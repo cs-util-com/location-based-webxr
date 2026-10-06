@@ -14,6 +14,17 @@
     are written out (east along the parallel, up the geodetic normal,
     north = up x east), because the library's ENU axes are NaN at a pole.
     RangeError for a latitude outside [-90, 90] or a non-finite longitude.
+  - `ecefFromCityAt(ellipsoid, { lat, lng }, out)`: maps a city built in
+    the Osm library's local frame at the target (x east, y up, z south, in
+    its metres a degree, the AR core's ruler) to ECEF: the frame's inverse
+    times a per-axis scale from the ruler to the true ellipsoid's metres
+    there (globe city plan 2026-10-05-0040 §12.4 R2, §14 D-K7). Uncorrected,
+    a building 2.4 km out stood 3-4 m off; what remains is the flat frame's
+    own error, about 1.05 m at the window's corners on the equator,
+    growing with tan(lat) (the parallel's curve and the frame's shear,
+    inherent and shared with AR's frame) to 1.57 m at 45 and 3.13 m at 70.
+    The ruler is `GLOBE_DETAIL`'s, held
+    equal to the Osm frame's by a design-system test.
   - `applyEcefPose(camera, { position, quaternion }, worldFromEcef)`:
     places the camera at an ECEF pose through the frame and updates its
     world matrix. It is the one way the page writes a camera pose.
@@ -45,7 +56,11 @@ group)`) and the tiles read the group's world matrix, so they follow
   applyEcefPose(camera, before, frame); // the view unchanged
   ```
 
-- Tests: `globe-frame.test.ts` covers the axes at a target, 1 km up
+- Tests: `globe-frame.test.ts` covers `ecefFromCityAt` (a property: a
+  city point within the flat frame's own error, 1.2 m plus its two
+  latitude terms, of its latitude, longitude and height on the ellipsoid
+  over 2.4 km and heights to 1 km, the window's corners always sampled; the origin on the target's
+  ground point), the axes at a target, 1 km up
   landing at y = 1,000, the refusals, a fast-check round trip over any
   target and camera (the poles and the antimeridian included), and the
   identity; `frameRecentreTarget`'s far and near cases, its altitude cap
