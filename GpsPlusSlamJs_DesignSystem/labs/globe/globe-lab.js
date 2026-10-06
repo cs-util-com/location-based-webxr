@@ -312,6 +312,11 @@ const PARAMS = {
   // The default since F2a (DEC-GL5-15); 0 keeps the plain globe.
   relief: { fallback: 1, min: 0, max: 1 },
   reliefNear: { fallback: GLOBE_FLIGHT.exaggerationNear, min: 1, max: 5 },
+  // The height law's third band (city plan 2026-10-05-0040 K1): above 0,
+  // E eases from `reliefNear` at 8 km to this value at 2 km and below, so
+  // a city can stand on true heights (1); 0 (the default) keeps the law
+  // without it. Capped at `reliefNear`.
+  reliefGround: { fallback: 0, min: 0, max: 5 },
   // The altitude band (one-scene plan §3.2; km): above `bandHigh` the
   // globe's own surface draws alone, at and below `bandLow` the relief's
   // tiles, a dithered cross-fade between (`carrierShareAt`). Outside the
@@ -461,9 +466,11 @@ const PARAMS = {
   cloudVolumeKm: { fallback: 20, min: 5, max: 40 },
   cloudVolumeCeilingKm: { fallback: 40, min: 10, max: 100 },
   // Its fade-in below the ceiling (km), and the cover's gain on the map
-  // (thinner below 1): the knobs the no-plop sweep measured (C4).
+  // (thinner below 1). The gain is 1, the map's own cloud (the owner,
+  // 2026-10-06): the 0.5 the no-plop sweep (C4) chose was measured where
+  // the volume drew almost nothing (volume-cloud plan §11).
   cloudVolumeFadeKm: { fallback: 25, min: 1, max: 40 },
-  cloudVolumeCover: { fallback: 0.5, min: 0, max: 2 },
+  cloudVolumeCover: { fallback: 1, min: 0, max: 2 },
   // Whose shadow the ground gets (C3): 0 the shell's soft one (as before), 1
   // the volume's, from the same map through the volume's own clouds.
   cloudShadowFrom: { fallback: 0, min: 0, max: 1 },
@@ -2034,6 +2041,14 @@ async function start() {
   window.addEventListener("pageshow", (event) => {
     if (event.persisted) pin?.returned();
   });
+  /** The relief's height law as the hash sets it (`exaggerationAt`). */
+  const heightLaw = () =>
+    params.reliefGround > 0
+      ? {
+          near: params.reliefNear,
+          ground: Math.min(params.reliefGround, params.reliefNear),
+        }
+      : { near: params.reliefNear };
   /**
    * The least altitude over `target` (the clearance rule, F1): its ground
    * from a ray down onto the drawn relief, exaggerated as at the hand-over
@@ -2047,9 +2062,7 @@ async function start() {
     );
     if (ground === null) return 0;
     const heightM = ground / Math.max(terrain.plugin.heightScale, 1);
-    const e = exaggerationAt(params.handOverKm * 1000, {
-      near: params.reliefNear,
-    });
+    const e = exaggerationAt(params.handOverKm * 1000, heightLaw());
     return minimumAltitudeM(heightM, e, GLOBE_FLIGHT.clearanceM);
   };
   pin = bindPin({
@@ -2385,11 +2398,7 @@ async function start() {
         );
         // An E step re-walks the relief's tile tree (frame-hitch plan H1):
         // the assignment is timed for the recorder.
-        const e =
-          eOverride ??
-          exaggerationAt(altitudeM, {
-            near: params.reliefNear,
-          });
+        const e = eOverride ?? exaggerationAt(altitudeM, heightLaw());
         if (e !== terrain.plugin.heightScale) {
           const t0 = performance.now();
           terrain.plugin.heightScale = e;

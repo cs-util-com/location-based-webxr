@@ -366,7 +366,12 @@
   - Every frame the relief's exaggeration is `exaggerationAt` of the
     camera's altitude (`/globe/globe-flight.js`: 1 at globe scale, the
     near value `reliefNear` (default 3, DEC-GL5-5) from 20 km down, 2.2 at
-    the 150 km hold), in steps of 0.1.
+    the 150 km hold), in steps of 0.1. `reliefGround` above 0 adds the
+    third band (city plan 2026-10-05-0040 K1): E eases from the near value
+    at 8 km to `reliefGround` (capped at the near value) at 2 km and
+    below, so a city can stand on true heights (1); the dive's floor reads
+    the same law, and so does the cloud shell (3 km x E), which then sinks
+    with it. `reliefNear=1` draws true heights at every altitude.
   - The pin's dive is the oblique approach (`planDive`'s pitch law; the
     `pitchLow` key, 30-90, default 45; 90 flies the old straight-down
     dive), ending at the hand-over altitude or the clearance rule's floor
@@ -563,19 +568,23 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   `bootGlobe` and every direct page load go through `plainGlobe(hash)`,
   which adds `relief=0` to a hash that names no relief.
 - The cloud volume (volume-cloud plan 2026-10-05-0016, C2;
-  `globe-cloud-volume.js`): `cloudVolume` 0 the shell only, 1 (default) the
-  volume within the disc and the shell outside it, 2 the volume over the
-  shell; `cloudVolumeKm` (20) the disc, `cloudVolumeCeilingKm` (40) the
-  ceiling it fades in under (10 km). Each frame after the sky hand-over its
-  share and disc are set and the shell's hole matches the disc (variant
-  1); after the Earth it draws the slab from the ground sky, ending at the
-  relief's depth. The state's `cloudVolume` carries its share, disc, lift
+  `globe-cloud-volume.js`): `cloudVolume` 0 the shell only, 1 the volume
+  within the disc and the shell outside it, 2 (default, the owner's choice
+  of 2026-10-05) the volume over the shell; `cloudVolumeKm` (20) the disc,
+  `cloudVolumeCeilingKm` (40) the ceiling it fades in under over
+  `cloudVolumeFadeKm` (25); `cloudVolumeCover` (1, the owner 2026-10-06;
+  0.5 before, chosen where the volume drew almost nothing) the gain on the
+  map's cover. Each frame after the sky hand-over its share and disc are
+  set and, in variant 1, the shell's hole matches the disc; after the Earth
+  it draws the slab from the ground sky, ending at the relief's depth. The state's `cloudVolume` carries its share, disc, lift
   and drawn frames. `cloudShadowFrom` (C3) picks the ground's cloud shadow:
   0 the shell's soft one (the default, as before), 1 the volume's (the
   shell's then off). Measured at the 12 km hold: the shell's darkens by a
   mean 0.93 levels, the volume's by 0.07 in sparse patches up to 9.5, and
   the two patterns do not correlate (-0.03); whether the volume's shadow
-  is placed right is not yet verified.
+  is placed right is not yet verified, and these numbers were taken where
+  the volume drew almost nothing (at 46.5 N 9 E, gain 0.5, the same clear
+  noise patch under every target), so they are to be measured again.
 - The sky hand-over (F2 plan 2026-10-03-1922 F2b; `globe-ground-sky.js`):
   each frame, before the sky pass, the observer's height over the
   ellipsoid's image (`observerAltitudeKm`) feeds the ground sky
