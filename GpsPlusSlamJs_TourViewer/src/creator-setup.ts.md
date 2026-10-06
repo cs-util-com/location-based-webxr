@@ -6,7 +6,9 @@ The creator's AR setup (guided-setup plan M3; `author-mode.ts` until
 2026-09-08): the panel inside `#ar-root` that guides the creator through
 measuring the hung code (the mint gate: a stable pose AND a GPS alignment
 with at least `MIN_ALIGNMENT_SAMPLES` fixes since this session started; measured on its own since UI round 1 U3, see "Automatic measuring" below), keeps the measured level in the session, and on Finish rebuilds the hosted
-zip in the browser (DEC-N6) with `qr/<id>.json` and `tour.json`, ends the
+zip in the browser (DEC-N6) with `qr/<id>.json` and `tour.json` (the file
+list from `finish-entries.ts`; the one-code slot is being replaced by
+`code-book.ts`, code book refactor plan M1-M5), ends the
 AR session and reveals the download at the END of step 4, where it is its
 own tap (a download needs its own user gesture).
 

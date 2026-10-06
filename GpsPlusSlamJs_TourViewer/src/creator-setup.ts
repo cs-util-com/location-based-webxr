@@ -61,10 +61,7 @@ import {
 import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
-import {
-  qrLevelEntryName,
-  qrLevelIdFromEntryName,
-} from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
+import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import {
   AUTHOR_DEFAULT_SIZE_M,
   MIN_ALIGNMENT_SAMPLES,
@@ -109,6 +106,7 @@ import {
   type FinishGuardInput,
 } from "./finish-guard.js";
 import { scanEntryNames } from "./tour-read-set.js";
+import { finishEntries, type FinishEntry } from "./finish-entries.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
@@ -2987,13 +2985,6 @@ export function wireCreatorSetup(deps: {
         // rejects (a duplicate id) must fail the finish visibly, not throw
         // past `finishing = true` and freeze the panel.
         const entryNames = current.entries.map((e) => e.filename);
-        // A zip in the tolerated wrapped shape (`mytour/qr/<id>.json`,
-        // `mytour/tour.json`) keeps its files where they are; adding a
-        // second copy at the root would leave a stale duplicate on every
-        // finish.
-        const existingLevelPath = entryNames.find(
-          (name) => qrLevelIdFromEntryName(name) === minted.id,
-        );
         // The session derived this prefix when it opened the zip; deriving
         // it a second time here is how the writer and the reader drifted
         // apart in the first place (PR #435 review).
@@ -3046,22 +3037,22 @@ export function wireCreatorSetup(deps: {
           ...signatureNames,
           ...(listed === null && listName !== undefined ? [listName] : []),
         ];
-        const entries = [
-          {
-            // A listed tour's new level goes inside the tour's folder, where
-            // its list can name it (R7); others keep the root, as before.
-            path:
-              existingLevelPath ??
-              `${listed === null ? "" : wrap}${qrLevelEntryName(minted.id)}`,
-            data: minted.json,
-          },
-          { path: manifestPath, data: serializeTourManifest(written) },
-          ...ctx.placedObjects.flatMap((p) =>
+        // The level replaced where the zip holds it (also wrapped), a new
+        // one inside a listed tour's folder or at the root
+        // (`finish-entries.ts`), then the manifest and the photos.
+        const entries: FinishEntry[] = finishEntries({
+          entryNames,
+          levels: [minted],
+          wrap,
+          listed: listed !== null,
+          manifestPath,
+          manifestJson: serializeTourManifest(written),
+          photos: ctx.placedObjects.flatMap((p) =>
             p.object.kind === "photo" && p.blob !== undefined
-              ? [{ path: `${wrap}${p.object.image}`, data: p.blob }]
+              ? [{ image: p.object.image, blob: p.blob }]
               : [],
           ),
-        ];
+        });
         // The input is the NEWEST bytes for this tour: a previous finish's
         // rebuild when there is one, because it already carries that
         // batch's content entries - rebuilding from the hosted zip again
