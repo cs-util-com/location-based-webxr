@@ -39,7 +39,7 @@
     {
       "name": "once-per-visit ignored",
       "region": "measuring",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-measuring.ts",
       "from": "const tried = autoMeasured.has(visitKeyOf(text));",
       "to": "const tried = false;"
     },
@@ -54,7 +54,7 @@
       "name": "Finish not held for a measurement",
       "region": "readout",
       "file": "src/creator-setup.ts",
-      "from": "readiness !== \"ready\" || measuring > 0;",
+      "from": "readiness !== \"ready\" || measuring.inFlight();",
       "to": "readiness !== \"ready\";"
     },
     {
@@ -74,14 +74,14 @@
     {
       "name": "code not measured again",
       "region": "size offer",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-measuring.ts",
       "from": "    autoMeasured.clear();\n    endQrPipeline(ctx);",
       "to": "    endQrPipeline(ctx);"
     },
     {
       "name": "other stored codes not kept",
       "region": "sightings",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-measuring.ts",
       "from": "      storedCodeSightings.set(id, {",
       "to": "      void ({"
     },
@@ -237,7 +237,7 @@
     {
       "name": "text's level id not remembered",
       "region": "measuring",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-measuring.ts",
       "from": "      codeIds.set(mintedText, id);",
       "to": "",
       "expected": "equivalent",
@@ -246,14 +246,14 @@
     {
       "name": "in-flight count never drops",
       "region": "measuring",
-      "file": "src/creator-setup.ts",
-      "from": "      measuring -= 1;",
+      "file": "src/creator-measuring.ts",
+      "from": "      inFlight -= 1;",
       "to": ""
     },
     {
       "name": "identity derived again for every frame",
       "region": "measuring",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-measuring.ts",
       "from": "    identifying.add(text);",
       "to": ""
     },
@@ -261,7 +261,7 @@
       "name": "a code written by Finish not recorded",
       "region": "measuring",
       "file": "src/creator-setup.ts",
-      "from": "        finishedLevelIds.add(minted.id);",
+      "from": "        measuring.noteFinished(minted.id);",
       "to": ""
     },
     {
@@ -274,14 +274,14 @@
     {
       "name": "adopted size not announced",
       "region": "size offer",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-measuring.ts",
       "from": "    adoptedNote = adoptedSizeNote(sizeM);",
       "to": ""
     },
     {
       "name": "sightings carried into the next visit",
       "region": "visit hooks",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-measuring.ts",
       "from": "      storedCodeSightings.clear();",
       "to": "",
       "expected": "equivalent",
