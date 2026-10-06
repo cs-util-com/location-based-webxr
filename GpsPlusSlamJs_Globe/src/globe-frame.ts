@@ -24,6 +24,63 @@ const local = new THREE.Matrix4();
 const rotation = new THREE.Quaternion();
 const scratchScale = new THREE.Vector3();
 const scratchPosition = new THREE.Vector3();
+const frameGround = new THREE.Vector3();
+const cameraGround = new THREE.Vector3();
+
+export const GLOBE_FRAME = Object.freeze({
+  /**
+   * The frame moves under the camera once the camera's ground point is
+   * further than this from the frame's origin (m): at 20 km the flat frame
+   * is 31 m off the curved ground and 0.18 degrees off its vertical, which
+   * nothing drawn in the frame can show.
+   */
+  recentreDriftM: 20_000,
+  /**
+   * ... and only below this altitude (m): above it the frame's flatness
+   * matters to nothing drawn (the ground sky, the haze and the volume live
+   * below the hand-over edge, 80 km), and an orbiting camera would move it
+   * every few frames.
+   */
+  recentreBelowM: 150_000,
+});
+
+/**
+ * Where the world frame should move (volume-cloud plan §14): the camera's
+ * ground point `nadir` when it is further than `recentreDriftM` from the
+ * frame's origin `frame` and the camera is below `recentreBelowM`, else
+ * null (no frame: null). The distance is the chord between the two ground
+ * points on `ellipsoid`, within metres of the arc at this range.
+ * RangeError for a non-finite position or altitude.
+ */
+export function frameRecentreTarget(
+  ellipsoid: Ellipsoid,
+  frame: LatLng | null,
+  nadir: LatLng,
+  altitudeM: number,
+): LatLng | null {
+  const values = [nadir.lat, nadir.lng, altitudeM];
+  if (!values.every(Number.isFinite)) {
+    throw new RangeError(
+      `the camera's ground point and altitude must be finite, got ${values.join(", ")}`,
+    );
+  }
+  if (frame === null || altitudeM > GLOBE_FRAME.recentreBelowM) return null;
+  ellipsoid.getCartographicToPosition(
+    frame.lat * DEG,
+    frame.lng * DEG,
+    0,
+    frameGround,
+  );
+  ellipsoid.getCartographicToPosition(
+    nadir.lat * DEG,
+    nadir.lng * DEG,
+    0,
+    cameraGround,
+  );
+  return frameGround.distanceTo(cameraGround) > GLOBE_FRAME.recentreDriftM
+    ? { lat: nadir.lat, lng: nadir.lng }
+    : null;
+}
 
 /**
  * The matrix from ECEF to the local world at `target`: the target's ground

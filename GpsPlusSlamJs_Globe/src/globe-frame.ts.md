@@ -19,6 +19,15 @@
     world matrix. It is the one way the page writes a camera pose.
   - `ecefPoseOf(camera, worldFromEcef)`: the camera's ECEF pose (fresh
     vectors), the one way it is read.
+  - `GLOBE_FRAME` and `frameRecentreTarget(ellipsoid, frame, nadir,
+altitudeM)` (volume-cloud plan 2026-10-05-0016 §14): where the frame
+    should move, the camera's ground point `nadir` once it is further than
+    `recentreDriftM` (20 km: 31 m off the curved ground and 0.18 degrees
+    off its vertical) from the frame's origin and the camera is below
+    `recentreBelowM` (150 km), else null (and null without a frame). The
+    distance is the chord between the two ground points, within metres of
+    the arc at this range. RangeError for a non-finite position or
+    altitude.
 - Invariants & assumptions:
   - The frame is a rigid transform (rotation and translation, no scale).
   - The identity frame is ECEF: before any target the page's world equals
@@ -39,6 +48,8 @@ group)`) and the tiles read the group's world matrix, so they follow
 - Tests: `globe-frame.test.ts` covers the axes at a target, 1 km up
   landing at y = 1,000, the refusals, a fast-check round trip over any
   target and camera (the poles and the antimeridian included), and the
-  identity. In the browser the globe lab's `globe-frame.smoke.spec.mjs`
+  identity; `frameRecentreTarget`'s far and near cases, its altitude cap
+  and no-frame case, its refusals, and a property that it moves the frame
+  exactly when the ground distance exceeds the drift. In the browser the globe lab's `globe-frame.smoke.spec.mjs`
   checks the view and the ECEF pose across a switch at the hold (0.00
   levels, 0 m) and that a dive lands in the target's frame.

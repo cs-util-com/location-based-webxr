@@ -16,7 +16,13 @@ import fc from "fast-check";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 import { describe, expect, it } from "vitest";
 
-import { applyEcefPose, ecefPoseOf, worldFromEcefAt } from "./globe-frame.js";
+import {
+  GLOBE_FRAME,
+  applyEcefPose,
+  ecefPoseOf,
+  frameRecentreTarget,
+  worldFromEcefAt,
+} from "./globe-frame.js";
 
 const DEG = Math.PI / 180;
 
@@ -107,5 +113,72 @@ describe("applyEcefPose and ecefPoseOf", () => {
     applyEcefPose(camera, { position, quaternion }, new THREE.Matrix4());
     expect(camera.position.toArray()).toEqual([1, 2, 3]);
     expect(1 - Math.abs(camera.quaternion.dot(quaternion))).toBeLessThan(1e-12);
+  });
+});
+
+// Why (owner's phone, 2026-10-06): the frame stayed on the link's target
+// while the owner flew 244 km by hand; there the flat frame stood 4.7 km
+// off the curved ground and 2.2 degrees off its vertical, so the cloud
+// deck, flat in the frame, floated above an 11 km camera as clouds in the
+// sky. The frame follows the camera once it drifts too far from it.
+describe("frameRecentreTarget", () => {
+  const e = WGS84_ELLIPSOID;
+  const bern = { lat: 46.948, lng: 7.4474 };
+
+  it("moves the frame under the camera once it is further than the drift allows", () => {
+    const far = { lat: 46.0157, lng: 10.3156 };
+    expect(frameRecentreTarget(e, bern, far, 11_200)).toEqual(far);
+  });
+
+  it("keeps the frame within the drift, high above the ground, and without a frame", () => {
+    const near = { lat: 46.948, lng: 7.6 }; // about 11.6 km east
+    expect(frameRecentreTarget(e, bern, near, 11_200)).toBeNull();
+    const far = { lat: 46.0157, lng: 10.3156 };
+    expect(
+      frameRecentreTarget(e, bern, far, GLOBE_FRAME.recentreBelowM + 1),
+    ).toBeNull();
+    expect(frameRecentreTarget(e, null, far, 11_200)).toBeNull();
+  });
+
+  it("refuses a non-finite position or altitude", () => {
+    expect(() =>
+      frameRecentreTarget(e, bern, { lat: Number.NaN, lng: 0 }, 1_000),
+    ).toThrow(RangeError);
+    expect(() =>
+      frameRecentreTarget(e, bern, bern, Number.POSITIVE_INFINITY),
+    ).toThrow(RangeError);
+  });
+
+  // A property: the result is null or exactly the camera's ground point,
+  // and it is the ground point exactly when the drift is beyond the bound
+  // (the bound swept against the ellipsoid's own distance).
+  it("recentres exactly when the ground distance exceeds the drift", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -60, max: 60, noNaN: true }),
+        fc.double({ min: -179, max: 179, noNaN: true }),
+        fc.double({ min: -0.6, max: 0.6, noNaN: true }),
+        fc.double({ min: -0.6, max: 0.6, noNaN: true }),
+        (lat, lng, dLat, dLng) => {
+          const frame = { lat, lng };
+          const camera = { lat: lat + dLat, lng: lng + dLng };
+          const a = e.getCartographicToPosition(
+            (lat * Math.PI) / 180,
+            (lng * Math.PI) / 180,
+            0,
+            new THREE.Vector3(),
+          );
+          const b = e.getCartographicToPosition(
+            (camera.lat * Math.PI) / 180,
+            (camera.lng * Math.PI) / 180,
+            0,
+            new THREE.Vector3(),
+          );
+          const result = frameRecentreTarget(e, frame, camera, 5_000);
+          const beyond = a.distanceTo(b) > GLOBE_FRAME.recentreDriftM;
+          expect(result).toEqual(beyond ? camera : null);
+        },
+      ),
+    );
   });
 });
