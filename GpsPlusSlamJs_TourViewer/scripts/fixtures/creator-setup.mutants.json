@@ -10,7 +10,7 @@
     {
       "name": "placement backup failure not noted",
       "region": "draft",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-draft.ts",
       "from": "      if (!ok) noteNoPersistence();\n    });\n  }\n\n  /**\n   * Record one AR visit",
       "to": "    });\n  }\n\n  /**\n   * Record one AR visit"
     },
@@ -94,44 +94,44 @@
     {
       "name": "claimed id stays rejected",
       "region": "draft",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-draft.ts",
       "from": "draftRejected = draftRejected.filter((rejected) => rejected !== id);",
       "to": "draftRejected = [...draftRejected];"
     },
     {
       "name": "backup notice repeated every time",
       "region": "draft",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-draft.ts",
       "from": "    if (warnedAboutPersistence) return;\n",
       "to": ""
     },
     {
       "name": "backup notice never repeats its guard",
       "region": "draft",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-draft.ts",
       "from": "    warnedAboutPersistence = true;\n",
       "to": ""
     },
     {
       "name": "discard does not record the rejection",
       "region": "draft",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-draft.ts",
       "from": "    draftRejected = rejectedIds;\n",
       "to": ""
     },
     {
       "name": "draft url not kept for later writes",
       "region": "draft",
-      "file": "src/creator-setup.ts",
-      "from": "        draftTourUrl = tourUrl;\n",
+      "file": "src/creator-draft.ts",
+      "from": "      draftTourUrl = tourUrl;\n",
       "to": ""
     },
     {
       "name": "stored answers not merged at open",
       "region": "draft",
-      "file": "src/creator-setup.ts",
-      "from": "        moveAnswers = [...(stored?.moveAnswers ?? []), ...moveAnswers].reduce<",
-      "to": "        moveAnswers = [...moveAnswers].reduce<"
+      "file": "src/creator-draft.ts",
+      "from": "      moveAnswers = [...(stored?.moveAnswers ?? []), ...moveAnswers].reduce<",
+      "to": "      moveAnswers = [...moveAnswers].reduce<"
     },
     {
       "name": "Undo not offered after Yes",

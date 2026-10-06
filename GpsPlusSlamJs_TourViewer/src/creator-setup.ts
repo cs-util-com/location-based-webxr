@@ -44,7 +44,6 @@ import {
   type MoveAnswer,
   type MovePrompt,
   type MovePromptOnset,
-  type RememberedMoveAnswer,
 } from "./code-move-prompt.js";
 import {
   measurementRole,
@@ -61,7 +60,7 @@ import {
 import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
-import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
+
 import {
   AUTHOR_DEFAULT_SIZE_M,
   MIN_ALIGNMENT_SAMPLES,
@@ -108,6 +107,7 @@ import {
 import { scanEntryNames } from "./tour-read-set.js";
 import { finishEntries, type FinishEntry } from "./finish-entries.js";
 import { wireCreatorHandoff } from "./creator-handoff.js";
+import { hostedLevelJson, wireCreatorDraft } from "./creator-draft.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
@@ -126,7 +126,6 @@ import { odomNueFromWebXr } from "./visit-anchoring.js";
 import { createVisitAlignmentTracker } from "./visit-alignment-picks.js";
 import { createGpsExtentTracker } from "gps-plus-slam-app-framework/state/gps-extent-tracker";
 import { createWalkedDistanceTracker } from "./walked-distance-tracker.js";
-import { createKeyedChain } from "./keyed-chain.js";
 
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import type { SelectTargetRay } from "gps-plus-slam-app-framework/ar";
@@ -136,32 +135,16 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import {
   applyObjectChanges,
   contentEntriesToRemove,
-  draftDeletionsNotYetHosted,
-  draftHasUnhostedLevel,
-  draftIsSpent,
-  draftKeyForTour,
-  draftObjectsNotYetHosted,
   objectContentKey,
-  restoredText,
-  restoreOfferText,
 } from "./authoring-draft.js";
 import {
-  readDraft,
   removeDraftDeletion,
-  removeDraftObject,
   writeDraftDeletion,
-  writeDraftMeta,
   writeDraftObject,
-  writeDraftVisit,
 } from "./draft-persistence.js";
 import { buildSummaryModel } from "./summary-model.js";
 import type { SummaryPanel } from "./summary-panel.js";
-import {
-  buildVisitLogEntry,
-  createVisitLog,
-  newVisitId,
-  type VisitLogEntry,
-} from "./visit-log.js";
+import { buildVisitLogEntry, createVisitLog, newVisitId } from "./visit-log.js";
 import {
   authoringObjects,
   upsertPlaced,
@@ -394,54 +377,6 @@ export function wireCreatorSetup(deps: {
   const openDraftStore =
     deps.openDraftStore ?? (() => Promise.resolve(undefined));
 
-  /** This tour's draft store, once a tour is open. */
-  let draftStore: DraftFileStore | undefined;
-  /**
-   * The ids this tour's meta records as rejected, carried so that EVERY
-   * meta write re-states them.
-   *
-   * A write that dropped the list would un-reject a draft whose files are
-   * still on disk, which is the resurrection this design exists to
-   * prevent. Set from the read (already pruned to ids that still have
-   * files), reset when the tour closes, and never shared between tours.
-   */
-  let draftRejected: readonly string[] = [];
-  /**
-   * The draft's writes, queued so that each lands after the ones issued
-   * before it: one queue per tour's META, one per OBJECT ID within a tour
-   * (an id's record, photo and tombstone move together). Keys from
-   * {@link metaChainKey} and {@link objectChainKey}.
-   *
-   * The meta: every write for a tour targets one key in one directory, and
-   * the mint and finish ones are unawaited - so an earlier write landing
-   * later would overwrite a newer one, including a rejection or a measured
-   * level (PR #456 review).
-   *
-   * An object: a placement's write is unawaited too, so without the queue a
-   * quick delete of it could land first and the placement come back on the
-   * next open (M4 review #7; the M2c review's filed #7). Queued per id, an
-   * operation that takes several steps - a claim of a rejected id, then
-   * the write (see `writeForObject`) - is also never interleaved with
-   * another operation on the same id.
-   *
-   * KEYED BY THE NAMESPACE KEY, not by the raw url - `draftKeyForTour`
-   * trims, so two urls differing only in surrounding whitespace share one
-   * directory and one meta key. Keyed by the raw url they would get two
-   * independent chains, which is the same clobber through another door,
-   * and it is reachable: the paste paths trim before opening, but the
-   * `?qr=` boot passes the decoded payload through untouched, and that is
-   * external data (PR #460 review). That makes
-   * both properties structural rather than remembered: a tour that stalls
-   * blocks only itself, and the ordering survives any interleaving of
-   * opens. Two earlier shapes each held only half of that - one chain per
-   * session blocked every tour behind a stall, and one chain plus "the
-   * last tour seen" lost the ordering for A after B was opened in between
-   * (PR #457 and #459 reviews).
-   *
-   * A key is dropped once its queue drains, so this holds only work in
-   * flight.
-   */
-  const draftWrites = createKeyedChain();
   /**
    * The creator's AR visits, page-side (authoring plan 2026-09-28-0953 §3.3
    * and §7 #4, M3b): the store forgets a visit's walk and alignment at its
@@ -453,12 +388,6 @@ export function wireCreatorSetup(deps: {
   /** This page load's id: a visit id is this plus the visit's generation,
    *  which restarts at 0 on every load (`newVisitId`). */
   const pageId = newObjectId();
-  function metaChainKey(tourUrl: string): string {
-    return JSON.stringify(["meta", draftKeyForTour(tourUrl)]);
-  }
-  function objectChainKey(tourUrl: string, id: string): string {
-    return JSON.stringify(["object", draftKeyForTour(tourUrl), id]);
-  }
   /** Each decoded code text's level id (`qrCodeId`, a hash - async), so a
    *  detection can be matched to the level in hand synchronously. */
   const codeIds = new Map<string, string>();
@@ -532,259 +461,22 @@ export function wireCreatorSetup(deps: {
     alignmentPicks.reset();
     pickedFrom = null;
   }
-  /** The creator-facing url of the open tour, for later draft writes. */
-  let draftTourUrl: string | null = null;
-  /** What a draft is offering, until the creator answers. */
-  let offered: {
-    objects: readonly TourObject[];
-    /** EVERY id the READ saw on disk - not just the unhosted ones the
-     *  offer shows, and not just the ones that parsed. Rejecting a draft
-     *  deletes what was there: objects the hosted zip already carries
-     *  (filtered out of the offer but still files), and records `readDraft`
-     *  refused - an older version's shape, or a photo whose bytes never
-     *  landed. `clear` used to sweep those and nothing else does now. */
-    storedIds: readonly string[];
-    photos: ReadonlyMap<string, Blob>;
-    /** The measured level and the size it was measured at - the other
-     *  half of a lost walk, and what makes Finish reachable again. */
-    level: { id: string; json: string } | null;
-    sizeM: number;
-    /** The deletions the hosted zip still carries (tombstones, plan
-     *  §3.4, M4). */
-    deleted: readonly string[];
-    /** How `objects` splits into new placements and changes of objects
-     *  the hosted zip carries - the offer's and the restore's words. */
-    counts: { placed: number; changed: number };
-    /** The draft's AR visits (M3b), for the summary after Finish. */
-    visits: readonly VisitLogEntry[];
-  } | null = null;
-  /** Said once, not per placement: a creator mid-walk cannot act on it. */
-  let warnedAboutPersistence = false;
-
-  /**
-   * Record something placed. Fire-and-forget on purpose: the placement
-   * already happened in memory, and the draft is a safety net - a storage
-   * problem must never fail the tap that made it.
-   */
-  /** Say once that the walk is not being backed up. A creator mid-session
-   *  cannot act on it more often than that, and repeating it would push
-   *  the measuring readout off the line. */
-  function noteNoPersistence(): void {
-    if (warnedAboutPersistence) return;
-    warnedAboutPersistence = true;
-    ctx.placementNote =
-      "This device is not saving a backup copy - finish and download before closing the page.";
-    renderAuthorReadout();
-  }
-
-  function recordPlacement(object: TourObject, blob?: Blob): void {
-    const store = draftStore;
-    const tourUrl = draftTourUrl;
-    if (store === undefined || tourUrl === null) {
-      // No draft namespace YET - no tour open, or its draft still opening -
-      // is not a storage failure: the draft writes these when it opens
-      // (scan-to-open plan §9 #5). Only an opened namespace without a store
-      // is one.
-      if (draftTourUrl !== null) noteNoPersistence();
-      return;
-    }
-    void writeForObject(store, tourUrl, object.id, (s) =>
-      writeDraftObject(s, object, blob),
-    ).then((ok) => {
-      if (!ok) noteNoPersistence();
-    });
-  }
-
-  /**
-   * Record one AR visit's log (M3b) in memory and in the draft, the way a
-   * placement is recorded: fire-and-forget, in the id's queue, and before
-   * the tour's draft is open it is written when it opens.
-   */
-  function recordVisit(entry: VisitLogEntry): void {
-    visitLog.record(entry);
-    const store = draftStore;
-    const tourUrl = draftTourUrl;
-    if (store === undefined || tourUrl === null) {
-      if (draftTourUrl !== null) noteNoPersistence();
-      return;
-    }
-    writeVisit(store, tourUrl, entry);
-  }
-
-  function writeVisit(
-    store: DraftFileStore,
-    tourUrl: string,
-    entry: VisitLogEntry,
-  ): void {
-    void writeForObject(store, tourUrl, entry.visitId, (s) =>
-      writeDraftVisit(s, entry),
-    ).then((ok) => {
-      if (!ok) noteNoPersistence();
-    });
-  }
-
-  /**
-   * Write something FOR object `id` - its record and bytes, or its
-   * tombstone - in that id's queue, and only once the meta no longer
-   * rejects the id (M4 review #1).
-   *
-   * THE META OUTRANKS AN OBJECT'S FILES (`readDraft`), so a change to an
-   * id the meta rejects - a published tour reopened and its spent draft
-   * swept, or "Delete it" - was hidden by the next read and swept by the
-   * next open: the edit lost, or the deleted object back at the next
-   * Finish. A change made now is newer than that rejection, so the id is
-   * CLAIMED first, in this order, each step awaited:
-   *   1. the rejected files are removed - once the meta stops rejecting
-   *      the id, a stale file of the rejected draft must not be there to
-   *      come back if the tab dies before step 3;
-   *   2. the meta is rewritten without the id;
-   *   3. the change is written.
-   * A crash between any two steps leaves either the rejection or nothing
-   * for the id, never the rejected draft's version. A refused meta write
-   * still lets the change be written - it is newer than anything on disk -
-   * and reports false, so the creator hears it is not backed up.
-   *
-   * Only while `store` is still the open tour's: `draftRejected` is that
-   * tour's list.
-   */
-  function writeForObject(
-    store: DraftFileStore,
-    tourUrl: string,
-    id: string,
-    write: (store: DraftFileStore) => Promise<boolean>,
-  ): Promise<boolean> {
-    return draftWrites.run(objectChainKey(tourUrl, id), async () => {
-      let claimed = true;
-      if (draftStore === store && draftRejected.includes(id)) {
-        await removeDraftObject(store, id);
-        draftRejected = draftRejected.filter((rejected) => rejected !== id);
-        claimed = await recordMeta(tourUrl);
-      }
-      const wrote = await write(store);
-      return claimed && wrote;
-    });
-  }
-
-  /**
-   * Remove a rejected id's files (a discard, a spent draft, an unfinished
-   * earlier sweep) in that id's queue - and only if it is STILL rejected
-   * when its turn comes: a change made since claimed it, and the file on
-   * disk is that change now (`writeForObject`). Skipped too once another
-   * tour is open: the next open of this one sweeps what the meta rejects.
-   */
-  function sweepRejected(
-    store: DraftFileStore,
-    tourUrl: string,
-    id: string,
-  ): void {
-    void draftWrites.run(objectChainKey(tourUrl, id), async () => {
-      if (draftStore === store && draftRejected.includes(id)) {
-        await removeDraftObject(store, id);
-      }
-    });
-  }
-
-  /**
-   * `ids` minus those the creator changed or deleted in this page (M4):
-   * an edit of a hosted object keeps its id, so its file on disk is the
-   * live change's now, and a sweep of an older draft must not take it.
-   */
-  function notLive(ids: readonly string[]): string[] {
-    const live = new Set([
-      ...ctx.placedObjects.map((p) => p.object.id),
-      ...ctx.deletedObjectIds,
-      // This page's visits (M3b): a read racing their first write may list
-      // them, and they are this page's work, never the old draft's.
-      ...visitLog.ids(),
-    ]);
-    return ids.filter((id) => !live.has(id));
-  }
-
-  /**
-   * One draft write for the object list's actions (authoring plan
-   * 2026-09-28-0953 §3.4, M4), AWAITED: the row shows its in-progress state
-   * until this settles and then says whether the change reached the draft.
-   * Before the tour's draft namespace exists there is nothing to write yet
-   * and nothing failed - `presentDraftForTour` writes what was made
-   * meanwhile - so that reads as landed.
-   */
-  function draftWrite(
-    id: string,
-    write: (store: DraftFileStore) => Promise<boolean>,
-  ): Promise<boolean> {
-    const store = draftStore;
-    const tourUrl = draftTourUrl;
-    if (tourUrl === null) return Promise.resolve(true);
-    if (store === undefined) {
-      noteNoPersistence();
-      return Promise.resolve(false);
-    }
-    return writeForObject(store, tourUrl, id, write).catch(() => false);
-  }
-
-  /**
-   * What the HOSTED zip currently stores for `levelId`, or null.
-   *
-   * The CONTENT, not just the presence of the id: a level's id is a hash of
-   * the printed TEXT, so re-measuring the same poster writes a new
-   * measurement under the same id. "The zip has a level with this id" is
-   * therefore not evidence that it has THIS measurement, and deleting a
-   * draft on that basis would throw away a re-measure - the most expensive
-   * thing a creator does.
-   */
-  async function hostedLevelJson(levelId: string): Promise<string | null> {
-    const session = ctx.session;
-    if (session === null) return null;
-    const entry = session.entries.find(
-      (e) => qrLevelIdFromEntryName(e.filename) === levelId,
-    );
-    if (entry === undefined) return null;
-    try {
-      // Under the text cap, like every JSON the session reads (K0
-      // milestone review R10): a level file is text on the JS heap.
-      return await session.loadEntryText(entry.filename);
-    } catch {
-      // Unreadable is not proof of anything, and the safe direction is to
-      // KEEP the draft.
-      return null;
-    }
-  }
-
-  /**
-   * Record the tour, the printed size and the measured level.
-   *
-   * @param tourUrl the CREATOR-FACING url, which is what the store is keyed
-   *   by. `ctx.session.archive.url` is normalised - for a Drive tour it is
-   *   the proxy route - so writing that here would make the field disagree
-   *   with the key and with its own documentation.
-   */
-  function recordMeta(tourUrl: string): Promise<boolean> {
-    const store = draftStore;
-    if (store === undefined) return Promise.resolve(false);
-    // The size comes from the FIELD, not from `ctx.activeSizeM`: that is
-    // only assigned at AR entry, so before the first session it still holds
-    // the previous tour's value.
-    const sizeM = Number(dom.sizeInput.value);
-    const meta = {
-      tourUrl,
-      sizeM:
-        Number.isFinite(sizeM) && sizeM > 0 ? sizeM : AUTHOR_DEFAULT_SIZE_M,
-      level: ctx.mintedLevel,
-      // Re-stated on every write, not only on the discard's: this file is
-      // rewritten on each mint, each finish and each tour open, and one
-      // that omitted the list would hand a rejected draft back on the next
-      // read. (NOT on each placement - `recordPlacement` writes the object
-      // file only and never reaches here; PR #456 review.)
-      rejected: draftRejected,
-      // The move prompt's answers (M5b), re-stated like the rejections.
-      moveAnswers,
-    };
-    // Values captured NOW, write ordered by call within this tour. The
-    // chain keeps one refused write from breaking the queue behind it.
-    return draftWrites.run(metaChainKey(tourUrl), () =>
-      writeDraftMeta(store, meta),
-    );
-  }
+  /** The tour's on-device draft (`creator-draft.ts`): the offer, the
+   *  ordered writes, the rejections and the move prompt's answers. */
+  const draft = wireCreatorDraft({
+    ctx,
+    dom,
+    openDraftStore,
+    visitLog,
+    wizard,
+    sessionLive,
+    syncPreviews: () => {
+      syncPreviews();
+    },
+    render: () => {
+      renderAuthorReadout();
+    },
+  });
 
   dom.panel.hidden = !creator;
   // ONE TAP, ONE EVENT (the PhysicsDemo pattern, `ar-mode.ts`): a tap on
@@ -838,22 +530,13 @@ export function wireCreatorSetup(deps: {
     }),
     codes: storedCodes,
     saveDraftObject: (object, blob) =>
-      draftWrite(object.id, (store) => writeDraftObject(store, object, blob)),
+      draft.write(object.id, (store) => writeDraftObject(store, object, blob)),
     saveDraftDeletion: (id) =>
-      draftWrite(id, (store) => writeDraftDeletion(store, id)),
+      draft.write(id, (store) => writeDraftDeletion(store, id)),
     forgetDraftDeletion: (id) =>
-      draftWrite(id, (store) => removeDraftDeletion(store, id)),
+      draft.write(id, (store) => removeDraftDeletion(store, id)),
     schedule: (fn, ms) => seams.schedule(fn, ms),
-    forgetDraftObject: (id) => {
-      const store = draftStore;
-      const tourUrl = draftTourUrl;
-      if (store === undefined || tourUrl === null) return Promise.resolve();
-      // In the id's queue: a placement's write still in flight lands first,
-      // and this removal after it (M4 review #7).
-      return draftWrites.run(objectChainKey(tourUrl, id), () =>
-        removeDraftObject(store, id),
-      );
-    },
+    forgetDraftObject: (id) => draft.forgetObject(id),
     syncPreviews: () => {
       syncPreviews();
     },
@@ -1018,9 +701,6 @@ export function wireCreatorSetup(deps: {
   let movePrompt: MovePrompt | null = null;
   /** The onset the shown prompt was logged for: one log per ask. */
   let movePromptLogged: MovePromptOnset | null = null;
-  /** Every answer, per level and spot - read from the draft's meta at tour
-   *  open, re-stated by every meta write. */
-  let moveAnswers: RememberedMoveAnswer[] = [];
   /** The store's fix count at the last refusal re-evaluation: a new fix
    *  re-judges the latest sighting through the new alignment - the
    *  refusal only, never the earlier objects' frame (§7m #8). */
@@ -1089,7 +769,7 @@ export function wireCreatorSetup(deps: {
       fixCount: clock.count,
       lastFixMs: clock.lastMs,
       savedKey: level === null ? null : savedPoseKey(level.json),
-      answers: moveAnswers,
+      answers: draft.moveAnswers(),
     });
     moveOnset = tracked.onset;
     movePrompt = tracked.prompt;
@@ -1155,16 +835,17 @@ export function wireCreatorSetup(deps: {
   /** Remember an answer for the prompt's spot, in memory and in the
    *  draft's meta (a refused write is the one backup notice). */
   function rememberAnswer(prompt: MovePrompt, answer: MoveAnswer): void {
-    moveAnswers = rememberMoveAnswer(moveAnswers, {
-      levelId: prompt.levelId,
-      northM: prompt.northM,
-      eastM: prompt.eastM,
-      answer,
-      savedKey: prompt.savedKey,
-    });
-    if (draftTourUrl === null) return;
-    void recordMeta(draftTourUrl).then((ok) => {
-      if (!ok) noteNoPersistence();
+    draft.setMoveAnswers(
+      rememberMoveAnswer(draft.moveAnswers(), {
+        levelId: prompt.levelId,
+        northM: prompt.northM,
+        eastM: prompt.eastM,
+        answer,
+        savedKey: prompt.savedKey,
+      }),
+    );
+    void draft.saveMeta().then((ok) => {
+      if (!ok) draft.warnNoBackup();
     });
   }
 
@@ -1556,175 +1237,6 @@ export function wireCreatorSetup(deps: {
     );
   }
 
-  /** Put a restored draft's objects and deletions back into the lists
-   *  a live placement fills (see the restore below). */
-  function restoreWork(waiting: NonNullable<typeof offered>): void {
-    // Live work on the same id is newer than the draft's, and wins.
-    const live = new Set([
-      ...ctx.placedObjects.map((p) => p.object.id),
-      ...ctx.deletedObjectIds,
-    ]);
-    for (const object of waiting.objects) {
-      if (live.has(object.id)) continue;
-      const blob = waiting.photos.get(object.id);
-      ctx.placedObjects = upsertPlaced(
-        ctx.placedObjects,
-        blob === undefined ? { object } : { object, blob },
-      );
-    }
-    // The deletions come back as the tombstones they are (plan §3.4).
-    for (const id of waiting.deleted) {
-      if (!live.has(id)) ctx.deletedObjectIds = [...ctx.deletedObjectIds, id];
-    }
-  }
-
-  dom.draftRestore.addEventListener("click", () => {
-    const waiting = offered;
-    dom.draftOffer.hidden = true;
-    offered = null;
-    if (waiting === null) return;
-    // Into the SAME list a live placement fills, so the finish needs no
-    // second path: it writes these into the manifest exactly as it writes
-    // anything else (an edit of a hosted object replaces it by id), and
-    // the photo bytes as content entries. Live work on the same id is
-    // newer than the draft's, and wins.
-    restoreWork(waiting);
-    // And the visits it measured (M3b): the summary after Finish combines
-    // them with this page's.
-    visitLog.restore(waiting.visits);
-    // The measured level comes back too, and it is what unlocks Finish
-    // without walking to the poster again. Only when the session has not
-    // already measured one: a live measurement is newer than a draft.
-    if (ctx.mintedLevel === null && waiting.level !== null) {
-      ctx.mintedLevel = waiting.level;
-    }
-    // And the printed size, which the page rewrites from the framework
-    // default on every load - so without this a re-entry would solve
-    // against 16 cm for a poster printed at 20.
-    if (Number.isFinite(waiting.sizeM) && waiting.sizeM > 0) {
-      dom.sizeInput.value = String(waiting.sizeM);
-      ctx.activeSizeM = waiting.sizeM;
-    }
-    // Render them, or the readout says "5 objects placed" over an empty
-    // scene and the creator places them again - new ids, real duplicates
-    // at the same spot in the published zip. The sync guards against a
-    // dead scene, so this is safe outside a session too.
-    syncPreviews();
-    ctx.placementNote = restoredText(
-      waiting.counts.placed,
-      waiting.level !== null,
-      {
-        changed: waiting.counts.changed,
-        deleted: waiting.deleted.length,
-        visits: waiting.visits.length,
-      },
-    );
-    renderAuthorReadout();
-  });
-
-  dom.draftDismiss.addEventListener("click", () => {
-    // Declining is NOT deleting: a mis-tap must not become the loss this
-    // whole feature exists to prevent. It is offered again next time.
-    dom.draftOffer.hidden = true;
-    offered = null;
-  });
-
-  dom.draftDiscard.addEventListener("click", () => {
-    dom.draftOffer.hidden = true;
-    // Captured BEFORE the offer is dropped: this is the list of what the
-    // creator is rejecting, and it is the only thing that gets deleted.
-    // Minus the ids changed live since (`notLive`, M4).
-    const rejectedIds = notLive(offered?.storedIds ?? []);
-    offered = null;
-    const store = draftStore;
-    if (store === undefined) return;
-    // The one way a creator can throw a draft away deliberately - and the
-    // escape hatch for a draft that would otherwise be offered forever.
-    //
-    // DELETE WHAT WAS REJECTED, and nothing else.
-    //
-    // This used to empty the whole namespace and then write back the meta
-    // and every placement still live. That shape - delete everything, then
-    // restore what should have stayed - is what produced FOUR silent
-    // data-loss defects in this feature, because `clear` cannot tell the
-    // rejected draft's files from ones written seconds earlier by a
-    // creator who left the offer on screen and carried on working. Each
-    // fix restored a little more, and each left a window in which the
-    // survivors existed only in memory: a reload there lost them.
-    //
-    // There is no window now. The ids come from the offer, which is what
-    // `readDraft` returned, so nothing this session wrote is ever a
-    // candidate for deletion and nothing has to be put back.
-    //
-    // The meta is REWRITTEN rather than deleted, which also drops the
-    // rejected level: `recordMeta` writes `ctx.mintedLevel`, so a creator
-    // who measured before tapping keeps THIS session's measurement. That
-    // is deliberate - "Delete it" rejects the OLD draft, not work done
-    // afterwards - and it converges, because a later discard runs with no
-    // minted level and writes a spent meta.
-    //
-    // THAT WRITE IS THE COMMIT POINT. It now carries the rejected ids, so
-    // the next read refuses them whether or not their files are still
-    // there, and the deletes below are housekeeping: they may fail, be
-    // interrupted by the tab closing, or never run, and the draft stays
-    // gone. Nothing is removed BEFORE the write lands, so the wait costs
-    // nothing in the other direction either - a reload during it sees the
-    // draft exactly as it was.
-    const tourUrl = draftTourUrl;
-    // Assigned together with `draftStore` and cleared with it, so this is
-    // unreachable in practice. Returning rather than deleting is still the
-    // right branch: with no meta write there is no commit point, and
-    // deleting without one is the shape that lost work four times.
-    if (tourUrl === null) return;
-    // Assigned BEFORE the call, not after: a mint or finish issued in the
-    // same tick must carry the rejection too, or its write would drop it.
-    const wasRejected = draftRejected;
-    draftRejected = rejectedIds;
-    // ENQUEUED synchronously, with the values captured at the tap. The
-    // chain guarantees ordering, not immediacy: the `put` itself is issued
-    // from a `then`, so it is a microtask away at best (PR #457 review).
-    const committed = recordMeta(tourUrl);
-    void (async () => {
-      if (!(await committed)) {
-        // The rejection is not on disk, so it must not stay in memory: a
-        // later mint or finish would write it and commit a discard this
-        // branch is about to report as failed. Guarded on the tour still
-        // being open, since a tour change has already reset the list from
-        // its own read (PR #456 review).
-        //
-        // The second write is what covers a payload ALREADY queued behind
-        // this one: that copied the list at its own call, so restoring the
-        // variable cannot unbake it. Queued last, it lands last and puts
-        // the old list back. Best-effort by nature - the store that just
-        // refused may refuse this too - which is why the note below is not
-        // conditional on it (PR #457 review).
-        if (draftStore === store && draftTourUrl === tourUrl) {
-          draftRejected = wasRejected;
-          void recordMeta(tourUrl);
-        }
-        // ITS OWN NOTE, AND UNGATED. The first version of this branch
-        // called `noteNoPersistence`, which is wrong twice over
-        // (PR #456 review):
-        //
-        // - it fires ONCE per wiring. A quota wall is rarely a one-off, so
-        //   an earlier failed placement burns the flag, the next pin tap
-        //   clears the note from screen, and this branch then says
-        //   NOTHING - which is exactly the silence it was added to close.
-        // - its wording is about backups, not about the thing the creator
-        //   just asked for. "Not saving a backup copy" does not tell them
-        //   the draft they tapped Delete on is still there.
-        //
-        // A tap the creator made deserves an answer about that tap, every
-        // time it fails.
-        ctx.placementNote =
-          "Could not delete the saved draft - it is still there, and will be offered again next time.";
-        renderAuthorReadout();
-        return;
-      }
-      for (const id of rejectedIds) sweepRejected(store, tourUrl, id);
-    })();
-  });
-
   dom.pinButton.addEventListener("click", () => {
     ctx.placementNote = null;
     if (!placementAllowed()) {
@@ -1804,7 +1316,7 @@ export function wireCreatorSetup(deps: {
           },
     );
     if (local !== null) notePlaced(pin.id);
-    recordPlacement(pin);
+    draft.recordPlacement(pin);
     logPlacement(pin, { reticleWorld: position });
     dom.pinLabel.value = "";
     hideLabelInput();
@@ -1865,7 +1377,7 @@ export function wireCreatorSetup(deps: {
           // the world group's frame, never composed by hand (plan §3.2).
           placement: { visit, local: odomNueFromWebXr(cameraPose) },
         });
-        recordPlacement(photo, jpeg.blob);
+        draft.recordPlacement(photo, jpeg.blob);
         logPlacement(photo, { cameraOdomPose: cameraPose });
         if (settled !== undefined) {
           logSettle(
@@ -1993,7 +1505,7 @@ export function wireCreatorSetup(deps: {
     arStore.dispatch(clearQrMarker({ text: offer.text }));
     startAuthorPipeline();
     adoptedNote = adoptedSizeNote(sizeM);
-    if (draftTourUrl !== null) void recordMeta(draftTourUrl);
+    void draft.saveMeta();
     renderAuthorReadout();
   }
   dom.sizeOfferUse.addEventListener("click", adoptMeasuredSize);
@@ -2247,7 +1759,7 @@ export function wireCreatorSetup(deps: {
         answerAt: (offset) =>
           level === null
             ? null
-            : answerAtSpot(moveAnswers, {
+            : answerAtSpot(draft.moveAnswers(), {
                 levelId: level.id,
                 savedKey: savedPoseKey(level.json),
                 offset,
@@ -2296,11 +1808,16 @@ export function wireCreatorSetup(deps: {
     // A "Yes, it moved" holds for its visit only: applied now, or asked
     // again next time - never applied later, out of Undo's reach (U3
     // milestone review #5).
-    if (level !== null && moveAnswers.some((a) => a.answer === "moved")) {
-      moveAnswers = moveAnswers.filter(
-        (a) => !(a.answer === "moved" && a.levelId === level.id),
+    if (
+      level !== null &&
+      draft.moveAnswers().some((a) => a.answer === "moved")
+    ) {
+      draft.setMoveAnswers(
+        draft
+          .moveAnswers()
+          .filter((a) => !(a.answer === "moved" && a.levelId === level.id)),
       );
-      if (draftTourUrl !== null) void recordMeta(draftTourUrl);
+      void draft.saveMeta();
     }
     logVisit(visit, state, choice?.alignment ?? null, plan?.level ?? null);
     if (choice === null || zero === null) return;
@@ -2344,11 +1861,11 @@ export function wireCreatorSetup(deps: {
       if (entry === undefined) continue;
       ctx.placedObjects[index] = { ...entry, object };
       // The record only: a photo's bytes did not change.
-      recordPlacement(object);
+      draft.recordPlacement(object);
     }
     if (plan.level !== null) {
       ctx.mintedLevel = plan.level;
-      if (draftTourUrl !== null) void recordMeta(draftTourUrl);
+      void draft.saveMeta();
     }
     // An IMPROVED position takes the pins and photos near it along, so
     // they keep their place next to the poster (owner decision
@@ -2406,7 +1923,7 @@ export function wireCreatorSetup(deps: {
         ...(entry.placed ?? {}),
         object,
       });
-      recordPlacement(object);
+      draft.recordPlacement(object);
       moved.push({ id: object.id, before, after });
     }
     if (moved.length > 0) syncPreviews();
@@ -2475,7 +1992,7 @@ export function wireCreatorSetup(deps: {
     });
     // A visit with no fix and no code has nothing to show or to combine.
     if (entry.gps.length === 0 && entry.codes.length === 0) return;
-    recordVisit(entry);
+    draft.recordVisit(entry);
   }
 
   /**
@@ -2501,7 +2018,7 @@ export function wireCreatorSetup(deps: {
     });
     return (
       offset !== null &&
-      isSecondCopySpot(moveAnswers, {
+      isSecondCopySpot(draft.moveAnswers(), {
         levelId: level.id,
         savedKey: savedPoseKey(level.json),
         offset,
@@ -2606,7 +2123,7 @@ export function wireCreatorSetup(deps: {
     openAtTap: number,
   ): Promise<string | null> {
     if (inHand?.id === levelId) return null;
-    const json = await hostedLevelJson(levelId);
+    const json = await hostedLevelJson(ctx.session, levelId);
     return ctx.openGeneration === openAtTap ? json : null;
   }
 
@@ -2764,9 +2281,7 @@ export function wireCreatorSetup(deps: {
           kept: role.kept,
         }),
       );
-      if (draftTourUrl !== null) {
-        void recordMeta(draftTourUrl).catch(() => false);
-      }
+      void draft.saveMeta().catch(() => false);
       return { kind: role.kept === "measurement" ? "measured" : "kept" };
     })().finally(() => {
       measuring -= 1;
@@ -2864,7 +2379,7 @@ export function wireCreatorSetup(deps: {
           : { delivered: ctx.rebuiltZip.delivered === true },
       // A failed backup write is noted once; from then on the page cannot
       // promise the phone keeps the work (U2 milestone review #3).
-      draftPersists: !warnedAboutPersistence,
+      draftPersists: draft.persists(),
       finishFailed: ctx.finishError !== null,
     };
   }
@@ -3180,7 +2695,7 @@ export function wireCreatorSetup(deps: {
         // only in the creator's hands, not yet in the file the world sees.
         // It is cleared when a re-opened tour turns out to carry these ids
         // (see presentDraftForTour) - the one signal that is proof.
-        if (draftTourUrl !== null) void recordMeta(draftTourUrl);
+        void draft.saveMeta();
         // The session ends so the creator lands on the page, where the
         // download button is a fresh tap (a download needs its own user
         // gesture, plan §2.4) - unless it already ended and another one
@@ -3299,12 +2814,9 @@ export function wireCreatorSetup(deps: {
       // offering it goes away with it (M3 review #6) - otherwise a newly
       // opened tour shows a dead download button from the previous one.
       dom.finishBlock.hidden = true;
-      // The offer belonged to the tour that just closed.
-      dom.draftOffer.hidden = true;
-      offered = null;
-      draftStore = undefined;
-      draftTourUrl = null;
-      draftRejected = [];
+      // The offer, the draft namespace, its rejections and the move
+      // prompt's answers belonged to the tour that just closed.
+      draft.reset();
       // The closing tour's previews, photo bytes and list (M4).
       clearPreviews();
       finishedPhotoBlobs.clear();
@@ -3312,8 +2824,7 @@ export function wireCreatorSetup(deps: {
       // The summary and the visits belonged to the closing tour (M3b).
       deps.summary?.hide();
       visitLog.clear();
-      // And the move prompt's answers, boundaries and undo (M5b).
-      moveAnswers = [];
+      // And the move prompt's boundaries and undo (M5b).
       movedInVisit.clear();
       undoable = null;
       codePositionOutcomes = [];
@@ -3324,195 +2835,12 @@ export function wireCreatorSetup(deps: {
     },
     presentDraftForTour: (tourUrl) => {
       if (!creator) return; // a visitor authors nothing
-      // EVERY continuation below re-checks this. Without it, tour A's draft
-      // resumes after the creator has opened tour B and then: writes B's
-      // placements into A's namespace, offers A's objects for B's zip, and
-      // deletes whichever namespace `draftStore` happens to point at. All
-      // three are the data loss this milestone exists to prevent, and the
-      // open path already guards every other continuation this way.
-      const generation = ctx.openGeneration;
-      const stale = (): boolean => generation !== ctx.openGeneration;
       // The manifest just settled: its objects join the previews and the
       // list (M4 - an author reopening a tour sees what is already there).
       syncPreviews();
       editing.render();
-      void (async () => {
-        const store = await openDraftStore(draftKeyForTour(tourUrl));
-        if (stale()) return;
-        draftStore = store;
-        draftTourUrl = tourUrl;
-        if (store === undefined) {
-          // No persistence at all - a browser without OPFS, blocked site
-          // data, a quota wall. The creator must hear it ONCE, here: this
-          // is the path where they are least protected and least likely to
-          // notice, because no write ever fails to tell them so.
-          noteNoPersistence();
-          return;
-        }
-        const stored = await readDraft(store);
-        if (stale()) return;
-        // Per-tour state: never carry the previous tour's rejections into
-        // this one's meta.
-        draftRejected = stored?.rejectedIds ?? [];
-        // The move prompt's answers (M5b): read whether or not the draft
-        // is restored - they describe the codes, not the draft's work - and
-        // merged with any given before the draft opened.
-        moveAnswers = [...(stored?.moveAnswers ?? []), ...moveAnswers].reduce<
-          RememberedMoveAnswer[]
-        >((list, answer) => rememberMoveAnswer(list, answer), []);
-        // Deletes that did not finish last time. `rejectedIds` is exactly
-        // the ids the meta rejects whose files are still on disk, so this
-        // is the only thing that reclaims them - and it is safe to repeat,
-        // because removing a key that is not there is not a failure.
-        for (const id of draftRejected) sweepRejected(store, tourUrl, id);
-        // Work made before this draft opened - with no tour open, or while
-        // the manifest settled - was never written (scan-to-open plan §9
-        // #5). AFTER the read on purpose: every branch below deletes only
-        // what the read returned, so these cannot be swept as a spent or
-        // rejected draft's.
-        //
-        // ALL of it, not only ids the draft has no file for: an edit or a
-        // deletion of a hosted object keeps its id, so the draft may hold an
-        // OLDER change of it, and skipping the id left that older change on
-        // disk for a crash to bring back (M4 review #2). The live change is
-        // newer than anything the read saw, and each write is queued behind
-        // the sweep above for its id and claims it from the rejected list
-        // first (`writeForObject`).
-        for (const entry of ctx.placedObjects) {
-          recordPlacement(entry.object, entry.blob);
-        }
-        // And this page's visits (M3b), for the same reason.
-        for (const entry of visitLog.entries()) {
-          writeVisit(store, tourUrl, entry);
-        }
-        for (const id of ctx.deletedObjectIds) {
-          void writeForObject(store, tourUrl, id, (s) =>
-            writeDraftDeletion(s, id),
-          ).then((ok) => {
-            if (!ok) noteNoPersistence();
-          });
-        }
-        if (stored === undefined) {
-          // No draft yet, but there will be: record what is already known,
-          // so a crash before the first placement still leaves the tour and
-          // the printed size behind.
-          void recordMeta(tourUrl);
-          return;
-        }
-        const waiting = draftObjectsNotYetHosted(
-          stored.draft,
-          ctx.tourManifest,
-        );
-        const waitingDeletions = draftDeletionsNotYetHosted(
-          stored.draft,
-          ctx.tourManifest,
-        );
-        const hostedLevel =
-          stored.draft.level === null
-            ? null
-            : await hostedLevelJson(stored.draft.level.id);
-        if (stale()) return;
-        if (
-          draftIsSpent(
-            stored.draft,
-            ctx.tourManifest,
-            hostedLevel,
-            stored.visits.length,
-          )
-        ) {
-          // SPENT: the hosted zip carries every object AND the measurement,
-          // and the draft holds no AR visit (the zip never carries those,
-          // M3a/M3b review #5). That is the only proof the content reached
-          // the file the world sees, and the only thing that deletes a
-          // draft.
-          // No re-open. It existed only because `clear` used to remove the
-          // namespace directory and invalidate this handle; the store now
-          // empties in place and stays usable. Re-opening would carry the
-          // same failure forward: `openDraftStore` returns undefined on any
-          // transient refusal, and assigning that over a WORKING store turns
-          // persistence off for the rest of the tour, silently (PR #443
-          // review).
-          // Same rule as the discard: delete exactly what `readDraft`
-          // returned. A spent draft is one the hosted zip already carries
-          // in full, so every id here is safe to drop - and anything this
-          // session placed during the awaits above is not in that list and
-          // is therefore never touched. That reachability is not
-          // hypothetical: `draftStore` is assigned BEFORE those awaits and
-          // `hostedLevelJson` reads a zip entry, which is a network round
-          // trip for a remote archive, while neither the mint button nor
-          // `placementAllowed()` waits for the chain to settle.
-          // `storedIds`, not `draft.objects`: the latter is what parsed,
-          // and a record this read refused still has files. Nothing
-          // reclaims those since `clear` lost its last caller.
-          // Minus what the creator changed or deleted during the awaits
-          // above (M4): an edit of a hosted object keeps its id, so unlike a
-          // new placement it CAN be in this list, and its file is now the
-          // live change's.
-          const sweep = notLive(stored.storedIds);
-          draftRejected = sweep;
-          // Same commit point as the discard, for the same reason: an
-          // interrupted sweep must not bring a spent draft back - and the
-          // same notice when it does not land.
-          if (!(await recordMeta(tourUrl))) {
-            noteNoPersistence();
-            return;
-          }
-          if (stale()) return;
-          for (const id of sweep) sweepRejected(store, tourUrl, id);
-          return;
-        }
-        const hasLevel = draftHasUnhostedLevel(stored.draft, hostedLevel);
-        // New placements, and changes of objects the hosted zip carries.
-        const hostedIds = new Set(
-          (ctx.tourManifest?.objects ?? []).map((o) => o.id),
-        );
-        const changed = waiting.filter((o) => hostedIds.has(o.id)).length;
-        const counts = { placed: waiting.length - changed, changed };
-        // A level measured before this open is newer than the offered
-        // draft's and would otherwise live only in memory; a mint after the
-        // open would write it the same way.
-        if (ctx.mintedLevel !== null) void recordMeta(tourUrl);
-        offered = {
-          objects: waiting,
-          storedIds: stored.storedIds,
-          photos: stored.photos,
-          // ALWAYS handed back when the draft has one, even if the hosted
-          // zip already stores the same measurement: the finish refuses to
-          // run without `mintedLevel`, so withholding it would leave a
-          // creator with restorable objects and no way to publish them.
-          // `hasLevel` only decides the WORDS and whether the draft counts
-          // as spent.
-          level: stored.draft.level,
-          sizeM: stored.draft.sizeM,
-          deleted: waitingDeletions,
-          counts,
-          visits: stored.visits,
-        };
-        dom.draftOfferText.textContent = restoreOfferText(
-          counts.placed,
-          hasLevel,
-          {
-            changed: counts.changed,
-            deleted: waitingDeletions.length,
-            visits: stored.visits.length,
-          },
-        );
-        dom.draftOffer.hidden = false;
-        // The offer is outside the AR overlay, so a creator whose scan
-        // opened the tour mid-session would not see it and would place the
-        // same content again (milestone review #4).
-        if (sessionLive()) {
-          ctx.placementNote =
-            "Unsaved work for this tour is on this device - restore it after leaving AR.";
-          renderAuthorReadout();
-        }
-        // The offer lives inside step 4, which is usually COLLAPSED when a
-        // tour opens (the wizard lands on the remembered step, or step 2).
-        // Un-hiding an element inside a closed disclosure is zero pixels
-        // and no signal, so the step is revealed - without collapsing
-        // whatever the creator was reading.
-        wizard.revealStep("measure");
-      })();
+      // Then its draft: offered, swept as spent, or started.
+      draft.present(tourUrl);
     },
     selectInView: (tap) => {
       if (!creator || !sessionLive()) return;
