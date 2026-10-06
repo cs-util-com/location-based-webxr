@@ -30,6 +30,11 @@ and ending at the relief, so a ridge in front of a cloud hides it.
     the clouds the volume draws; patched before the haze (which is applied
     last); on only while the volume draws.
   - `state()`: `{ enabled, share, radiusM, liftM, drawn, shadow }`.
+  - `coverage()` (debug, a synchronous read-back): `{ share, lowerShare,
+maxAlpha }`, the share of the last volume frame's pixels its clouds
+    cover (alpha over 0.05), overall and in the lower half (the view down);
+    null before the first frame. The lab exposes it as
+    `__globeLab.cloudVolumeCoverage()`.
   - `dispose()`.
 
 ## Invariants & assumptions
@@ -43,15 +48,25 @@ and ending at the relief, so a ridge in front of a cloud hides it.
   drawn from a copy of the camera lowered by the lift, which raises it to
   the shell's height (3 km x E). Noise, depth and distances are unchanged
   by a vertical shift. Its thickness (400 m) is not scaled with E.
+- **Its own near plane** (`VOLUME_NEAR_M`, 10 m at most): the depth pass
+  and the slab are drawn from a copy of the camera with this near plane,
+  never the camera's own. The camera's is fitted to the ground (0.3 x the
+  clearance, 2.77 km at the 12 km hold), and the deck can be far nearer
+  than the ground (3 km below the camera there): with it every view down
+  clipped the deck away, and only grazing distant views kept any cloud
+  (found 2026-10-06 after the owner saw no volume clouds on r777). The two
+  passes share the projection because the slab reads the depth back
+  through its own inverse projection.
 - **The ground sky draws its sky without the slab** (it hides the slab in
   its own pass), so the clouds are drawn once, after the Earth.
 - **The composite**: the slab's target holds premultiplied colour (three's
   normal blending into a cleared, alpha-0 target); the composite divides
   it back, tone-maps the straight colour and blends it by its alpha, as a
   direct draw to the canvas would.
-- **Variant 1** (the lab's default): the shell's hole (`setHole`) has the
-  disc's radius, both scaled by the share, so the clouds are drawn once at
-  every altitude. Variant 2 keeps the whole shell.
+- **Variant 1**: the shell's hole (`setHole`) has the disc's radius, both
+  scaled by the share, so the clouds are drawn once at every altitude.
+  **Variant 2** (the lab's default since the owner's choice of 2026-10-05)
+  keeps the whole shell and draws the volume over it.
 - Only in the target's local frame (F2a), with the relief, below the
   ceiling, where the ground sky is supported.
 
@@ -79,6 +94,9 @@ volume.render(camera, terrain.tiles.group);
 
 `globe-cloud-volume.smoke.spec.mjs`: the frame-to-frame step through the
 volume's fade-in (45 to 15 km) against the shell only, that it draws at
-the hold without a console error, and its frame cost. The arithmetic is in
+the hold without a console error, and its frame cost; that its clouds are
+SEEN looking down from the 12 km hold over a cloudy part of the map (the
+lower half's covered share, the guard for the near-plane clipping); and
+its shadow against the shell's. The arithmetic is in
 `GpsPlusSlamJs_Globe/src/globe-cloud-volume.test.ts`, the slab's coverage
 and disc in the framework's `cloud-slab.test.ts`.

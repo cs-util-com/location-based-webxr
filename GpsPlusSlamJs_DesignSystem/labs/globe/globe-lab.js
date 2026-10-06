@@ -3130,6 +3130,12 @@ async function start() {
     hideCloudShell(on) {
       cloudShellHidden = Boolean(on);
     },
+    /**
+     * The cloud volume's last frame read back (`globe-cloud-volume.js`
+     * `coverage()`): the share of pixels its clouds cover, overall and in
+     * the lower half. Null without a volume or before its first frame.
+     */
+    cloudVolumeCoverage: () => cloudVolume?.coverage() ?? null,
     /** The frame-hitch recorder's smoke API once it is loaded, else null. */
     perf: null,
     /** The Debug panel's smoke API (`globe-debug.js`). */

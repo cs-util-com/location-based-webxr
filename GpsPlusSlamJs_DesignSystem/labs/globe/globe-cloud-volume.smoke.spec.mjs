@@ -154,6 +154,66 @@ test("the cloud volume fades in on the descent without a jump, ending at the rel
   expect(worstStep).toBeLessThanOrEqual(STEP);
 });
 
+// WHY: the owner zoomed in on r777 and saw no volume clouds, while the test
+// above was green ("the frame differs from the shell-only frame" held on a
+// few distant pixels). One cause was the near plane: the volume was drawn
+// with the camera's own, fitted to the GROUND (0.3 x the clearance), and
+// once the deck is nearer than that (at 10.5 km, the deck's top 1.3 km
+// below and the ground ~8 km: a 2.3 km near plane) every view down clipped
+// the deck away (2026-10-06). This holds the view down just above the deck,
+// over an OVERCAST part of the map (61 N 5.5 E, off western Norway: the
+// map's least value over a 0.6 x 0.8 degree box is 0.83, so with the
+// opacity 0.8 and gain 2 the cover saturates at 1). The noise patch under a
+// landed camera is always the same one (the frame is centred on the target)
+// and at a partial cover it can be clear (an offset sweep at cover 0.5 read
+// 20-100 % in the lower half), so only a saturated cover makes the view
+// down a test of the clipping and not of the patch. Without the fix the
+// lower half read 1.8 % (100 % with it); the bound, swept x0.5/x1/x2, is
+// half of it.
+const OVERCAST = { latitude: 61.0, longitude: 5.5 };
+const NEAR_DECK_KM = 10.5;
+const LOWER_SHARE = 0.5;
+
+test("the cloud volume is seen looking down from just above the deck, over an overcast part of the map", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(600_000);
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation(OVERCAST);
+  const errors = await bootGlobe(
+    page,
+    `${BASE.replace(`handOverKm=${HOLD_KM}`, `handOverKm=${NEAR_DECK_KM}`)}&cloudVolumeCover=2`,
+  );
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return (
+        s.phase === "landed" && s.pin.phase === "idle" && s.relief?.settled
+      );
+    },
+    null,
+    { timeout: 300_000 },
+  );
+  await page.evaluate(() => window.__globeLab.timeFrames(3));
+  const { coverage, volume, near } = await page.evaluate(() => {
+    const lab = window.__globeLab;
+    const s = lab.state();
+    return {
+      coverage: lab.cloudVolumeCoverage(),
+      volume: s.cloudVolume,
+      near: s.planes.near,
+    };
+  });
+  console.log(
+    `the volume looking down at ${NEAR_DECK_KM} km over 61 N 5.5 E: it covers ${(coverage.share * 100).toFixed(1)} % of the frame and ${(coverage.lowerShare * 100).toFixed(1)} % of its lower half, ${verdict(-coverage.lowerShare, -LOWER_SHARE)} (negated: at least the bound), max alpha ${coverage.maxAlpha.toFixed(2)}; the camera's near plane ${near.toFixed(0)} m`,
+  );
+  expect(errors).toEqual([]);
+  expect(volume.share).toBe(1);
+  expect(coverage.lowerShare).toBeGreaterThanOrEqual(LOWER_SHARE);
+});
+
 // WHY (C3): the owner asked for the volume's shadows compared against the
 // 2D layer's. The same ground pixels at the 12 km hold, looking down, with
 // no cloud shadow, the shell's soft shadow (the default) and the volume's

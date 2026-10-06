@@ -58,6 +58,13 @@ void main() {
 const SLAB_MIDDLE_M = (CLOUD_SLAB.baseM + CLOUD_SLAB.topM) / 2;
 
 /**
+ * The volume's near plane at most (m): small against any deck distance, and
+ * the depth texture (24 bits or more) still resolves the relief to about
+ * 2.5 m at 20 km (z^2 / (near x 2^24)).
+ */
+const VOLUME_NEAR_M = 10;
+
+/**
  * The volume for `renderer`, drawing the ground sky's `atmosphere` slab
  * found in `skyScene`, its coverage from the globe's `surfaceUniforms`.
  */
@@ -95,6 +102,7 @@ export function createGlobeCloudVolume(
   const compositeScene = new THREE.Scene();
   compositeScene.add(triangle);
   const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const near = new THREE.PerspectiveCamera();
   const lifted = new THREE.PerspectiveCamera();
   const size = new THREE.Vector2();
   const clearColour = new THREE.Color();
@@ -194,6 +202,15 @@ export function createGlobeCloudVolume(
       fit(depthTarget);
       fit(volumeTarget);
       const previous = renderer.getRenderTarget();
+      // The volume's own near plane: the camera's is fitted to the ground
+      // (0.3 x the clearance), and the deck can be far nearer than the
+      // ground (3 km under a 2.8 km near plane at the 12 km hold), so with
+      // it every view down clipped the deck away. The depth pass and the
+      // slab share this projection: the slab reads the depth back through
+      // its own inverse.
+      near.copy(camera);
+      near.near = Math.min(camera.near, VOLUME_NEAR_M);
+      near.updateProjectionMatrix();
       // The relief's depth: its own meshes (the displacement is in their
       // vertex shader), colour off.
       const written = [];
@@ -205,10 +222,10 @@ export function createGlobeCloudVolume(
       });
       renderer.setRenderTarget(depthTarget);
       renderer.clear(false, true, false);
-      renderer.render(relief, camera);
+      renderer.render(relief, near);
       for (const m of written) m.colorWrite = true;
       // The slab alone, from the lifted camera, into a clear target.
-      lifted.copy(camera);
+      lifted.copy(near);
       lifted.position.y -= liftM;
       lifted.updateMatrixWorld();
       const hidden = [];
@@ -242,6 +259,37 @@ export function createGlobeCloudVolume(
     /** The volume's shadow on (C3, `cloudShadowFrom=1`) or off. */
     setShadow(on) {
       shadowOn = Boolean(on);
+    },
+    /**
+     * The last volume frame read back (debug, slow): the share of its pixels
+     * the clouds cover (alpha over 0.05), over the whole frame and over its
+     * lower half (the view down, where the deck is nearest), and the largest
+     * alpha. Null before a frame was drawn.
+     */
+    coverage() {
+      if (drawn === 0) return null;
+      const w = volumeTarget.width;
+      const h = volumeTarget.height;
+      const pixels = new Uint16Array(w * h * 4);
+      renderer.readRenderTargetPixels(volumeTarget, 0, 0, w, h, pixels);
+      let covered = 0;
+      let lower = 0;
+      let maxAlpha = 0;
+      // Read back bottom row first: the lower half is the first h/2 rows.
+      const lowerEnd = Math.floor(h / 2) * w * 4;
+      for (let i = 3; i < pixels.length; i += 4) {
+        const a = THREE.DataUtils.fromHalfFloat(pixels[i]);
+        if (a > 0.05) {
+          covered += 1;
+          if (i < lowerEnd) lower += 1;
+        }
+        if (a > maxAlpha) maxAlpha = a;
+      }
+      return {
+        share: covered / (w * h),
+        lowerShare: lower / (Math.floor(h / 2) * w),
+        maxAlpha,
+      };
     },
     state() {
       return {
