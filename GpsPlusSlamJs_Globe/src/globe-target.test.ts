@@ -14,7 +14,9 @@ import { describe, expect, it } from "vitest";
 import {
   GLOBE_FALLBACK_TARGET,
   chooseGlobeTarget,
+  formatViewText,
   parseLatLngText,
+  parseViewText,
 } from "./globe-target.js";
 
 describe("parseLatLngText", () => {
@@ -125,6 +127,86 @@ describe("chooseGlobeTarget", () => {
           expect(got.target === null).toBe(got.source === "waiting");
           // A URL target always wins.
           expect(u === undefined || got.target === u).toBe(true);
+        },
+      ),
+    );
+  });
+});
+
+// Why (owner, 2026-10-06): the Debug export gives the exact pose the owner
+// saw, but a link could only name a place (`at=`), so the links sent back
+// never put the owner where he was. A `view=` token carries the pose
+// (latitude, longitude, altitude km, heading and pitch degrees); a
+// malformed one must read as absent, never as a camera at (0, 0).
+describe("parseViewText and formatViewText", () => {
+  it("reads a pose and writes it back", () => {
+    expect(parseViewText("45.70106,7.54552,17.471,352.0,-25.4")).toEqual({
+      lat: 45.70106,
+      lng: 7.54552,
+      altitudeKm: 17.471,
+      headingDeg: 352,
+      pitchDeg: -25.4,
+    });
+    expect(
+      formatViewText({
+        lat: 45.701058527,
+        lng: 7.545524398,
+        altitudeKm: 17.47098793,
+        headingDeg: 351.98198,
+        pitchDeg: -25.398294,
+      }),
+    ).toBe("45.70106,7.54552,17.471,352.0,-25.4");
+  });
+
+  it("reads anything malformed or out of range as absent", () => {
+    for (const bad of [
+      null,
+      "",
+      "45,7,17,0",
+      "45,7,17,0,0,1",
+      "45,7,,0,0",
+      "91,7,17,0,0",
+      "45,181,17,0,0",
+      "45,7,0,0,0",
+      "45,7,60000,0,0",
+      "45,7,17,0,91",
+      "45,7,17,Infinity,0",
+      "45,7,17,0x10,0",
+    ]) {
+      expect(parseViewText(bad)).toBeUndefined();
+    }
+  });
+
+  it("wraps the heading into [0, 360)", () => {
+    expect(parseViewText("45,7,17,-10,0")?.headingDeg).toBe(350);
+    expect(parseViewText("45,7,17,370,0")?.headingDeg).toBe(10);
+  });
+
+  // The round trip: a written pose reads back within the written precision
+  // (about a metre in place and height, 0.05 degrees in angle).
+  it("reads back what it writes, within the written precision", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -89.9, max: 89.9, noNaN: true }),
+        fc.double({ min: -179.9, max: 179.9, noNaN: true }),
+        fc.double({ min: 0.01, max: 40_000, noNaN: true }),
+        fc.double({ min: 0, max: 359.9, noNaN: true }),
+        fc.double({ min: -89.9, max: 89.9, noNaN: true }),
+        (lat, lng, altitudeKm, headingDeg, pitchDeg) => {
+          const back = parseViewText(
+            formatViewText({ lat, lng, altitudeKm, headingDeg, pitchDeg }),
+          );
+          expect(back).toBeDefined();
+          expect(Math.abs(back!.lat - lat)).toBeLessThanOrEqual(5e-6);
+          expect(Math.abs(back!.lng - lng)).toBeLessThanOrEqual(5e-6);
+          expect(Math.abs(back!.altitudeKm - altitudeKm)).toBeLessThanOrEqual(
+            5e-4,
+          );
+          const dh = Math.abs(back!.headingDeg - headingDeg);
+          expect(Math.min(dh, 360 - dh)).toBeLessThanOrEqual(0.05 + 1e-9);
+          expect(Math.abs(back!.pitchDeg - pitchDeg)).toBeLessThanOrEqual(
+            0.05 + 1e-9,
+          );
         },
       ),
     );
