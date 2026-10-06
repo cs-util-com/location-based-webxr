@@ -173,7 +173,7 @@ were here. What stays is the Finish's side:
   session is live run `settleVisit`: `planVisitSettle` (`visit-settle.ts`)
   recomputes the geo of the code measured in this visit and of every object
   placed in it - since D33 each through the first mature alignment after its
-  own moment (`visit-alignment-picks.ts`, fed by `syncAlignmentPicks` on
+  own moment (`visit-alignment-picks.ts`, fed by `creator-alignment-picks.ts` on
   every store change with the alignment, the zero, the session GPS extent
   and the walked distance (`walked-distance-tracker.ts`, reviews R1 and R3 of
   D33);

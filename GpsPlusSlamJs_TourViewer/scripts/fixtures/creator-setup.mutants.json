@@ -286,6 +286,29 @@
       "to": "",
       "expected": "equivalent",
       "why": "each kept sighting carries its visit, and the visit log reads only its own visit's"
+    },
+    {
+      "name": "placement noted before the picks saw the alignment",
+      "region": "picks",
+      "file": "src/creator-alignment-picks.ts",
+      "from": "    syncAlignmentPicks();\n    alignmentPicks.notePlacement(id, Date.now());",
+      "to": "    alignmentPicks.notePlacement(id, Date.now());",
+      "expected": "known-gap",
+      "why": "the store subscription syncs the picks on every store change, so a placement finds them current; only a store change the subscription has not delivered yet would expose this sync, and no harness (nor, as far as known, production) produces one - belt and braces, not proven equivalent"
+    },
+    {
+      "name": "sighting not kept on the session",
+      "region": "picks",
+      "file": "src/creator-alignment-picks.ts",
+      "from": "    ctx.visitCodeSighting = sighting;\n",
+      "to": ""
+    },
+    {
+      "name": "measured code gets no pick",
+      "region": "picks",
+      "file": "src/creator-alignment-picks.ts",
+      "from": "      alignmentPicks.noteMeasurement(atMs);\n",
+      "to": ""
     }
   ]
 }
