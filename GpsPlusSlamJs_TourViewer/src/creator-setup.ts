@@ -19,8 +19,6 @@ import { usablePhotoFrame } from "./photo-frame.js";
 import {
   authoringFinished,
   codeMeasured,
-  codeMoveAnswered,
-  codeMovePrompted,
   objectPlaced,
   visitSettled,
 } from "./tour-authoring-actions.js";
@@ -36,14 +34,7 @@ import { moveWithCode, withinCodeReach } from "./move-with-code.js";
 import {
   answerAtSpot,
   isSecondCopySpot,
-  MOVE_PROMPT_LABELS,
-  movePromptText,
-  rememberMoveAnswer,
   savedPoseKey,
-  trackMovePrompt,
-  type MoveAnswer,
-  type MovePrompt,
-  type MovePromptOnset,
 } from "./code-move-prompt.js";
 import {
   measurementRole,
@@ -110,6 +101,7 @@ import { wireCreatorHandoff } from "./creator-handoff.js";
 import { hostedLevelJson, wireCreatorDraft } from "./creator-draft.js";
 import { wireCreatorPreviews } from "./creator-previews.js";
 import { wireCreatorAlignmentPicks } from "./creator-alignment-picks.js";
+import { wireCreatorMovePrompt } from "./creator-move-prompt.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
 
@@ -628,200 +620,35 @@ export function wireCreatorSetup(deps: {
     renderAuthorReadout();
   });
 
-  // -------------------------------------------------------------------------
-  // The moved-code prompt (authoring plan 2026-09-28-0953 §3.6 "Authoring
-  // (D20 ask once)", milestone M5b; UI round 1, U3: "Did the poster move
-  // here?"). WHEN it asks is `code-move-prompt.ts`'s; WHAT a "Yes" does is
-  // the settle's (`code-position-settle.ts`): the new spot is saved at the
-  // visit's end once the visit walked enough. This is the state and the DOM.
-  // -------------------------------------------------------------------------
-
-  /** Where the running offset beyond the prompt's trigger began (the
-   *  tracker's state). */
-  let moveOnset: MovePromptOnset | null = null;
-  /** The prompt on screen. */
-  let movePrompt: MovePrompt | null = null;
-  /** The onset the shown prompt was logged for: one log per ask. */
-  let movePromptLogged: MovePromptOnset | null = null;
-  /** The store's fix count at the last refusal re-evaluation: a new fix
-   *  re-judges the latest sighting through the new alignment - the
-   *  refusal only, never the earlier objects' frame (§7m #8). */
-  let moveFixCount = -1;
+  /** The moved-code prompt and its undo (`creator-move-prompt.ts`; UI
+   *  round 1, U3: "Did the poster move here?"). */
+  const movePrompt = wireCreatorMovePrompt({
+    ctx,
+    arStore,
+    dom,
+    draft,
+    sessionLive,
+    levelInHandIsStored: () => levelInHandIsStored(),
+    judgeRefusal: () => {
+      judgeRefusal();
+    },
+    settled: (visit) => visitSettles.has(visit),
+    alignmentInfo: () => authorAlignmentInfo(),
+    render: () => {
+      renderAuthorReadout();
+    },
+  });
   /** Codes moved to the poster's new spot (a "Yes, it moved" the settle
    *  applied), by the visit that moved them: the visit log's move boundary
    *  (§7j #12). An improved position of the same poster is no boundary:
    *  every visit saw that one poster. */
   const movedInVisit = new Map<string, number>();
-  /** The latest "Yes, it moved", undoable while its visit runs - the settle
-   *  at the visit's end applies it, and nothing before that has changed. */
-  let undoable: { prompt: MovePrompt; visit: number } | null = null;
   /** What each settle since the last Finish decided for the code in hand:
    *  the result screen's line (`codePositionSentence`). */
   let codePositionOutcomes: CodePositionOutcome[] = [];
   /** The visit whose settle CHANGED the code's saved position, and the
    *  plan it applied - re-applied when a failed Finish settles it again. */
   let appliedCode: { visit: number; plan: CodePositionPlan } | null = null;
-
-  /** The store's GPS fix count and the latest fix's own time. */
-  function fixClock(): { count: number; lastMs: number | null } {
-    const positions = selectGpsPositions(arStore.getState());
-    const last = positions.at(-1) as { timestamp?: unknown } | undefined;
-    const t = last?.timestamp;
-    return {
-      count: positions.length,
-      lastMs: typeof t === "number" && Number.isFinite(t) ? t : null,
-    };
-  }
-
-  /**
-   * Re-run the tracker on the latest sighting's offset (its own trigger,
-   * D26), re-judge the refusal for the panel line when a fix landed since
-   * the last look, and log a new ask once.
-   */
-  function updateMovePrompt(): void {
-    const level = ctx.mintedLevel;
-    const clock = fixClock();
-    if (sessionLive() && clock.count !== moveFixCount) {
-      moveFixCount = clock.count;
-      judgeRefusal();
-    }
-    const live = sessionLive() && !ctx.finishing && levelInHandIsStored();
-    // Its own trigger (D26): the sighting's offset, whether or not the
-    // settle refuses the correction.
-    const offset =
-      !live || level === null
-        ? null
-        : (() => {
-            const state = arStore.getState();
-            return sightedCodeOffset({
-              visit: ctx.arSessionGeneration,
-              alignment: selectAlignmentMatrix(state),
-              zero: selectZeroReference(state),
-              mintedLevel: level,
-              measurement: ctx.codeMeasurement,
-              sighting: ctx.visitCodeSighting,
-            });
-          })();
-    const alignment = authorAlignmentInfo();
-    const tracked = trackMovePrompt(moveOnset, {
-      levelId: level?.id ?? null,
-      offset,
-      gateOpen:
-        alignment.hasMatrix && alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES,
-      fixCount: clock.count,
-      lastFixMs: clock.lastMs,
-      savedKey: level === null ? null : savedPoseKey(level.json),
-      answers: draft.moveAnswers(),
-    });
-    moveOnset = tracked.onset;
-    movePrompt = tracked.prompt;
-    if (movePrompt !== null && movePromptLogged !== moveOnset) {
-      movePromptLogged = moveOnset;
-      arStore.dispatch(
-        codeMovePrompted({
-          levelId: movePrompt.levelId,
-          arVisitIndex: ctx.arSessionGeneration,
-          atMs: Date.now(),
-          horizontalM: movePrompt.horizontalM,
-          northM: movePrompt.northM,
-          eastM: movePrompt.eastM,
-          yawDeg: movePrompt.yawDeg,
-          maxHorizontalM: movePrompt.triggerM,
-          fixes: movePrompt.fixes,
-          seconds: movePrompt.seconds,
-        }),
-      );
-    }
-  }
-
-  /** The prompt and the undo on screen. */
-  function renderMovePrompt(): void {
-    updateMovePrompt();
-    dom.movePrompt.hidden = movePrompt === null;
-    if (movePrompt !== null) {
-      dom.movePromptText.textContent = movePromptText(movePrompt.horizontalM);
-    }
-    dom.movePromptUse.textContent = MOVE_PROMPT_LABELS.use;
-    dom.movePromptCopy.textContent = MOVE_PROMPT_LABELS.secondCopy;
-    dom.movePromptLater.textContent = MOVE_PROMPT_LABELS.notNow;
-    dom.movePromptUse.disabled = false;
-    // Only while the answer's visit runs and has not settled: the settle
-    // applies it, and after that there is nothing left to take back.
-    const live =
-      undoable !== null &&
-      undoable.visit === ctx.arSessionGeneration &&
-      !visitSettles.has(undoable.visit) &&
-      sessionLive();
-    dom.moveUndo.hidden = !live || ctx.finishing;
-    dom.moveUndoText.textContent = MOVE_PROMPT_LABELS.movedHint;
-    dom.moveUndoButton.textContent = MOVE_PROMPT_LABELS.undo;
-  }
-
-  function logMoveAnswer(prompt: MovePrompt, answer: MoveAnswer): void {
-    arStore.dispatch(
-      codeMoveAnswered({
-        levelId: prompt.levelId,
-        arVisitIndex: ctx.arSessionGeneration,
-        atMs: Date.now(),
-        answer,
-        horizontalM: prompt.horizontalM,
-        northM: prompt.northM,
-        eastM: prompt.eastM,
-        // Nothing is replaced at an answer since U3: the settle decides.
-        replaced: false,
-        error: null,
-      }),
-    );
-  }
-
-  /** Remember an answer for the prompt's spot, in memory and in the
-   *  draft's meta (a refused write is the one backup notice). */
-  function rememberAnswer(prompt: MovePrompt, answer: MoveAnswer): void {
-    draft.setMoveAnswers(
-      rememberMoveAnswer(draft.moveAnswers(), {
-        levelId: prompt.levelId,
-        northM: prompt.northM,
-        eastM: prompt.eastM,
-        answer,
-        savedKey: prompt.savedKey,
-      }),
-    );
-    void draft.saveMeta().then((ok) => {
-      if (!ok) draft.warnNoBackup();
-    });
-  }
-
-  for (const [button, answer] of [
-    [dom.movePromptUse, "moved"],
-    [dom.movePromptCopy, "second-copy"],
-    [dom.movePromptLater, "not-now"],
-  ] as const) {
-    button.addEventListener("click", () => {
-      const prompt = movePrompt;
-      if (prompt === null) return;
-      rememberAnswer(prompt, answer);
-      logMoveAnswer(prompt, answer);
-      movePrompt = null;
-      if (answer === "moved") {
-        undoable = { prompt, visit: ctx.arSessionGeneration };
-        ctx.placementNote = MOVE_PROMPT_LABELS.moved;
-      }
-      renderAuthorReadout();
-    });
-  }
-
-  /** Undo a "Yes, it moved" before its visit settles: the spot is answered
-   *  "Not now" instead (the newest answer for a spot is the one that
-   *  counts), so the prompt does not ask again at once. */
-  dom.moveUndoButton.addEventListener("click", () => {
-    const u = undoable;
-    if (u === null || ctx.finishing || visitSettles.has(u.visit)) return;
-    undoable = null;
-    rememberAnswer(u.prompt, "not-now");
-    logMoveAnswer(u.prompt, "not-now");
-    ctx.placementNote = MOVE_PROMPT_LABELS.undone;
-    renderAuthorReadout();
-  });
 
   function renderAuthorReadout(): void {
     renderSizeOffer();
@@ -831,7 +658,7 @@ export function wireCreatorSetup(deps: {
     dom.status.dataset["clamped"] =
       sessionLive() && !statusExpanded ? "true" : "false";
     renderPlacementButtons();
-    renderMovePrompt();
+    movePrompt.render();
     editing.render();
     // F11: the AR controls belong to the AR session. On the setup page they
     // were a row of greyed-out buttons under "AR not supported", which is
@@ -1477,7 +1304,7 @@ export function wireCreatorSetup(deps: {
     // The settle applies a "Yes, it moved" or not: after it there is
     // nothing to take back, even if a failed Finish settles again (U3
     // milestone review #4).
-    if (undoable?.visit === visit) undoable = null;
+    movePrompt.settling(visit);
     // The picks see the alignment as it stands at the end (the fallback).
     alignmentPicks.sync();
     const state = arStore.getState();
@@ -2443,7 +2270,7 @@ export function wireCreatorSetup(deps: {
         previews.sync();
         wroteZip = true;
         finishedLevelIds.add(minted.id);
-        undoable = null;
+        movePrompt.clearUndo();
         // The result screen said them; the next Finish reports its own.
         codePositionOutcomes = [];
         arStore.dispatch(
@@ -2543,9 +2370,7 @@ export function wireCreatorSetup(deps: {
       ctx.visitCodeSighting = null;
       storedCodeSightings.clear();
       liveRefusal = null;
-      moveOnset = null;
-      movePrompt = null;
-      moveFixCount = -1;
+      movePrompt.endVisit();
       statusExpanded = false;
       // What the previews were made from, and the earlier visits' frame.
       previews.endVisit();
@@ -2574,12 +2399,10 @@ export function wireCreatorSetup(deps: {
       visitLog.clear();
       // And the move prompt's boundaries and undo (M5b).
       movedInVisit.clear();
-      undoable = null;
+      movePrompt.reset();
       codePositionOutcomes = [];
       appliedCode = null;
       finishedLevelIds.clear();
-      moveOnset = null;
-      movePrompt = null;
     },
     presentDraftForTour: (tourUrl) => {
       if (!creator) return; // a visitor authors nothing

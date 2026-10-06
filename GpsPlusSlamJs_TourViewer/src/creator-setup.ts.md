@@ -509,40 +509,17 @@ were here. What stays is the Finish's side:
       (also for a visit that settled nothing else), and the result screen's
       line after Finish is `codePositionSentence` over the settles since
       the last Finish.
-  - **The moved-code prompt** (authoring plan §3.6 "Authoring (D20 ask
-    once)", M5b; `code-move-prompt.ts` decides WHEN): on every readout
-    render the tracker is fed the latest sighting's offset through the
-    current GPS alignment (`sightedCodeOffset`; its own 15 m trigger since
-    D26, whether or not the settle refuses the correction, so between 15 m
-    and the refusal bound the visit follows the code while the prompt
-    asks; the refusal itself is still re-judged whenever a fix landed,
-    `judgeRefusal`, for the panel line, never moving the earlier objects), the
-    mint gate's alignment half, the store's fix count and the latest
-    fix's time, and the remembered answers. It asks only for a stored
-    level in hand, in a live session, outside a Finish. A new ask logs
-    `tourAuthoring/codeMovePrompted` once per run beyond the trigger.
-    - Every answer ("Yes, it moved", "No, it's a second poster", "Not now") is remembered per level and spot
-      (`rememberMoveAnswer`), in memory and in the draft's meta
-      (`creator-draft.ts`, re-stated by every meta write, read at tour open
-      whether or not the draft is restored and merged with answers given
-      before it opened); a refused meta write is the backup notice.
-      A sighting of the code in hand at a spot answered "It's a second
+  - **The moved-code prompt** and its undo: `creator-move-prompt.ts` (its
+    sidecar holds the rules that were here). What the settle and the visit
+    log do with its answers stays here:
+    - A sighting of the code in hand at a spot answered "It's a second
       copy" (`isSecondCopySpot`, through the visit's plain alignment, as
       the prompt saw it) is kept out of the visit log (`logVisit`): it is
       another print, so it must not count as a visit of the stored code
       in `codeVisitPoses` (M5b review #11). "Not now" leaves it a visit.
-    - "Yes, it moved" changes nothing at once: the status line says the
-      new spot is saved when the visit ends if the creator walked enough,
-      and the settle applies it (above). Logged as
-      `tourAuthoring/codeMoveAnswered` `moved` (`replaced` false).
     - **The move boundary**: a move the settle APPLIED records its visit as
       the code's move boundary (`movedInVisit`, set before the visit is
       logged); an improved position of the same poster is no boundary.
-    - **Undo until the visit settles**: a "Yes, it moved" can be taken back
-      until its visit settles (a session end or a Finish - also one that
-      fails afterwards); Undo re-answers the spot "Not now" (logged as
-      such), so the prompt does not ask again at once. Nothing else needs
-      restoring: nothing changed before the settle.
   - The readout's "N objects placed" counts only objects the zip does not
     carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,

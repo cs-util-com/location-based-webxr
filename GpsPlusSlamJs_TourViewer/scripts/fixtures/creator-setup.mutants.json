@@ -25,7 +25,7 @@
     {
       "name": "answer not remembered",
       "region": "move prompt",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-move-prompt.ts",
       "from": "      rememberAnswer(prompt, answer);\n      logMoveAnswer(prompt, answer);",
       "to": "      logMoveAnswer(prompt, answer);"
     },
@@ -137,28 +137,28 @@
     {
       "name": "Undo not offered after Yes",
       "region": "move prompt",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-move-prompt.ts",
       "from": "        undoable = { prompt, visit: ctx.arSessionGeneration };",
       "to": ""
     },
     {
       "name": "Undo kept after the settle",
       "region": "move prompt",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-move-prompt.ts",
       "from": "    if (undoable?.visit === visit) undoable = null;",
       "to": ""
     },
     {
       "name": "an ask logged on every render",
       "region": "move prompt",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-move-prompt.ts",
       "from": "      movePromptLogged = moveOnset;",
       "to": ""
     },
     {
       "name": "refusal re-judged on every render",
       "region": "move prompt",
-      "file": "src/creator-setup.ts",
+      "file": "src/creator-move-prompt.ts",
       "from": "      moveFixCount = clock.count;",
       "to": "",
       "expected": "equivalent",
