@@ -26,7 +26,9 @@ import { GIBS_ACKNOWLEDGEMENT } from "/globe/globe-sources.js";
 import {
   GLOBE_FALLBACK_TARGET,
   chooseGlobeTarget,
+  formatViewText,
   parseLatLngText,
+  parseViewText,
 } from "/globe/globe-target.js";
 import {
   applyOrbitPose,
@@ -584,6 +586,9 @@ function readHashParams() {
     reliefHeights:
       params.get("reliefHeights") === "synthetic" ? "synthetic" : "terrarium",
     url: parseLatLngText(params.get("at")),
+    // A camera pose to open at (volume-cloud plan §16): the Debug export's
+    // `link`; the intro is skipped and the camera handed to the controls.
+    view: parseViewText(params.get("view")),
     // The fly-in's variant (round-5 plan §3.1): one of INTRO_VARIANTS,
     // `narrow` (the default case) when absent or unknown.
     intro: INTRO_VARIANTS.includes(params.get("intro"))
@@ -1653,6 +1658,51 @@ async function start() {
     );
     if (next) setFrameTarget(next);
   };
+  /**
+   * Puts the camera at a view (`view=`, the Debug export's pose; volume-cloud
+   * plan §16): the frame moved under it first, the intro yielded, the camera
+   * placed looking along the heading and pitch. `hold` keeps the controls
+   * off (the smokes' held view); without it the user has the camera.
+   * RangeError for a pose that is not finite.
+   */
+  const applyView = (
+    { lat, lng, altitudeKm, headingDeg, pitchDeg },
+    { hold },
+  ) => {
+    const values = [lat, lng, altitudeKm, headingDeg, pitchDeg];
+    if (!values.every(Number.isFinite)) {
+      throw new RangeError(`a view needs finite values, got ${values}`);
+    }
+    flight.yieldToUser(performance.now());
+    pin?.cameraTaken();
+    heldView = hold;
+    setFrameTarget({ lat, lng });
+    const ellipsoid = globe.tiles.ellipsoid;
+    const position = ellipsoid.getCartographicToPosition(
+      lat * DEG,
+      lng * DEG,
+      altitudeKm * 1000,
+      new THREE.Vector3(),
+    );
+    const east = new THREE.Vector3();
+    const north = new THREE.Vector3();
+    const up = new THREE.Vector3();
+    ellipsoid.getEastNorthUpAxes(lat * DEG, lng * DEG, east, north, up);
+    const h = headingDeg * DEG;
+    const p = pitchDeg * DEG;
+    const forward = east
+      .clone()
+      .multiplyScalar(Math.sin(h) * Math.cos(p))
+      .addScaledVector(north, Math.cos(h) * Math.cos(p))
+      .addScaledVector(up, Math.sin(p));
+    // A camera looks down its -z: lookAt(eye, target) points -z at target.
+    const look = new THREE.Matrix4().lookAt(new THREE.Vector3(), forward, up);
+    placeCameraEcef(
+      position,
+      new THREE.Quaternion().setFromRotationMatrix(look),
+    );
+    camera.updateMatrixWorld();
+  };
   /** The Earth's centre in the world (the origin of ECEF, through the frame). */
   const earthCentre = new THREE.Vector3();
   const earthCentreWorld = () =>
@@ -1983,9 +2033,15 @@ async function start() {
     const next = readHashParams();
     const restart = flightKey(next) !== flightKey(params);
     const clockChanged = !sameGlobeClockSetting(next.clock, params.clock);
+    const viewText = (p) => (p.view ? formatViewText(p.view) : null);
+    const viewChanged = viewText(next) !== viewText(params);
     params = next;
     if (clockChanged) clock = startClock();
     if (restart) giveBackToIntro();
+    // A new view= (or the intro restarted under one) puts the camera there.
+    if (params.view && (viewChanged || restart)) {
+      applyView(params.view, { hold: false });
+    }
     applyLive();
     syncPanel();
     appliedHash = location.hash.slice(1);
@@ -2051,6 +2107,8 @@ async function start() {
   // The world frame at the at= target from load (F2a), else ECEF.
   setFrameTarget(params.url);
   flight.restart(performance.now(), params);
+  // A view= link opens at its pose, the intro skipped (volume-cloud §16).
+  if (params.view) applyView(params.view, { hold: false });
   applyLive();
   syncPanel();
   // The permission rule (round-5 plan §3.1): a position only where it is
@@ -3215,39 +3273,8 @@ async function start() {
      * (degrees, the heading from north toward east, the pitch above the
      * local horizontal), so a smoke can stand where the owner stood.
      */
-    placeView({ lat, lng, altitudeKm, headingDeg, pitchDeg }) {
-      const values = [lat, lng, altitudeKm, headingDeg, pitchDeg];
-      if (!values.every(Number.isFinite)) {
-        throw new RangeError(`a view needs finite values, got ${values}`);
-      }
-      flight.yieldToUser(performance.now());
-      pin?.cameraTaken();
-      heldView = true;
-      const ellipsoid = globe.tiles.ellipsoid;
-      const position = ellipsoid.getCartographicToPosition(
-        lat * DEG,
-        lng * DEG,
-        altitudeKm * 1000,
-        new THREE.Vector3(),
-      );
-      const east = new THREE.Vector3();
-      const north = new THREE.Vector3();
-      const up = new THREE.Vector3();
-      ellipsoid.getEastNorthUpAxes(lat * DEG, lng * DEG, east, north, up);
-      const h = headingDeg * DEG;
-      const p = pitchDeg * DEG;
-      const forward = east
-        .clone()
-        .multiplyScalar(Math.sin(h) * Math.cos(p))
-        .addScaledVector(north, Math.cos(h) * Math.cos(p))
-        .addScaledVector(up, Math.sin(p));
-      // A camera looks down its -z: lookAt(eye, target) points -z at target.
-      const look = new THREE.Matrix4().lookAt(new THREE.Vector3(), forward, up);
-      placeCameraEcef(
-        position,
-        new THREE.Quaternion().setFromRotationMatrix(look),
-      );
-      camera.updateMatrixWorld();
+    placeView(view) {
+      applyView(view, { hold: true });
       frame();
     },
     hideCloudShell(on) {

@@ -234,6 +234,10 @@
   - The fitted distance is computed at `fovY` (the disc filling 90 % of
     the narrower side), not at the camera's field of view, which the
     fly-in varies.
+  - A view: `#view=<lat>,<lng>,<altitude km>,<heading>,<pitch>` (the Debug
+    export's `link`; volume-cloud plan §16) opens at that pose: the frame
+    moved under it, the intro skipped, the camera handed to the controls
+    (`applyView`); a new `view=` in the hash does the same.
   - The target: `#at=<lat>,<lng>` if given; else a position, but only
     where the geolocation permission is ALREADY granted
     (`geolocationPermissionState` from the framework's import-free

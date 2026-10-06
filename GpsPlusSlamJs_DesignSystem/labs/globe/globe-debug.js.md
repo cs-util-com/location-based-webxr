@@ -18,7 +18,10 @@
 - Public API: `createGlobeDebug({ log, live, device })` -> the frame hooks
   the lab fans out to (`frameStart`, `frameEnd`, `mark`) and `api` for the
   smokes (`exportText()`, `recording()`, `lastExport()`). `live()` returns
-  plain numbers and strings, and `device()` the device block.
+  plain numbers and strings, and `device()` the device block. The export's
+  `link` is the page's URL with `view=` set to the live pose
+  (`formatViewText`; volume-cloud plan §16), so an export pasted back opens
+  exactly that view; null without a readable pose.
 - Invariants: the frame statistics are the framework's (`createFrameRun`
   and `formatFrameRunSummary` through `globe-perf-stats.js`, DEC-H3). The
   recorder core and the share helpers are the frame-hitch recorder's

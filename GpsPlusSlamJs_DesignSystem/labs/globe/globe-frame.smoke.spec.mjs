@@ -183,3 +183,54 @@ test("the frame never moves under a drag in progress, and follows once the contr
   expect(turned).toBeGreaterThan(1e-5);
   expect(after).not.toEqual(before);
 });
+
+// WHY (owner, 2026-10-06): the links sent back after a Debug export never
+// put the owner where he was: a link could only name a place (`at=`), and
+// the intro flew its own approach. A `view=` link opens at the export's
+// pose, the intro skipped and the camera his; the export carries that link
+// itself. This opens the owner's pose of 2026-10-06 (17.5 km over the
+// Aosta valley, looking north) and holds that the camera is there (to a
+// metre and 0.1 degree, the link's own precision; swept x0.5/x1/x2 on the
+// angle), that the controls have it, and that the export's link reads
+// back the same view.
+test("a view= link opens at the Debug export's pose, the camera with the controls", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const view = "45.70106,7.54552,17.471,352.0,-25.4";
+  const errors = await bootGlobe(page, `${BASE}&view=${view}`, {
+    phase: "user",
+  });
+  await page.evaluate(() => window.__globeLab.timeFrames(3));
+  const out = await page.evaluate(() => {
+    const exported = JSON.parse(window.__globeLab.debug.exportText());
+    return {
+      live: exported.live,
+      link: exported.link,
+      owner: window.__globeLab.state().cameraOwner,
+    };
+  });
+  const { live } = out;
+  const angle = (a, b) => {
+    const d = Math.abs(a - b) % 360;
+    return Math.min(d, 360 - d);
+  };
+  const headingErr = angle(live.headingDeg, 352);
+  const pitchErr = Math.abs(live.pitchDeg - -25.4);
+  const verdict = [0.5, 1, 2]
+    .map(
+      (k) => `x${k} ${Math.max(headingErr, pitchErr) <= 0.1 * k ? "ok" : "NO"}`,
+    )
+    .join(" ");
+  console.log(
+    `view link: at ${live.lat.toFixed(5)}, ${live.lng.toFixed(5)}, ${live.altitudeKm.toFixed(3)} km, heading ${live.headingDeg.toFixed(2)}, pitch ${live.pitchDeg.toFixed(2)} (angles within 0.1: ${verdict}); owner ${out.owner}; export link ${out.link}`,
+  );
+  expect(errors).toEqual([]);
+  expect(Math.abs(live.lat - 45.70106)).toBeLessThan(1e-4);
+  expect(Math.abs(live.lng - 7.54552)).toBeLessThan(1e-4);
+  expect(Math.abs(live.altitudeKm - 17.471)).toBeLessThan(0.002);
+  expect(headingErr).toBeLessThan(0.1);
+  expect(pitchErr).toBeLessThan(0.1);
+  expect(out.owner).toBe("controls");
+  expect(out.link).toContain(`view=${view}`);
+});

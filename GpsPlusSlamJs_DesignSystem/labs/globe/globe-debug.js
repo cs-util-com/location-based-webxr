@@ -12,6 +12,8 @@
  *
  * @see globe-debug.js.md
  */
+import { formatViewText } from "/globe/globe-target.js";
+
 import { debugExportText } from "./globe-debug-log.js";
 
 /** The thresholds counted (ms), as the recorder's (globe-perf.js). */
@@ -128,13 +130,32 @@ export function createGlobeDebug({ log, live, device }) {
     ].join("\n");
   };
 
-  const exportText = () =>
-    debugExportText({
+  /**
+   * The page's link with `view=` set to the live pose (volume-cloud plan
+   * §16), so an export pasted back opens exactly this view; null without a
+   * readable pose.
+   */
+  const viewLink = (s) => {
+    const pose = [s.lat, s.lng, s.altitudeKm, s.headingDeg, s.pitchDeg];
+    if (!pose.every(Number.isFinite) || !(s.altitudeKm > 0)) return null;
+    const params = new URLSearchParams(location.hash.slice(1));
+    params.set("view", formatViewText(s));
+    const hash = params
+      .toString()
+      .replaceAll("%2C", ",")
+      .replaceAll("%3A", ":");
+    return `${location.origin}${location.pathname}#${hash}`;
+  };
+  const exportText = () => {
+    const s = live();
+    return debugExportText({
       device: device(),
-      live: live(),
+      live: s,
       recording,
       events: log.entries(),
+      link: viewLink(s),
     });
+  };
 
   toggle.addEventListener("click", () => {
     panel.hidden = !panel.hidden;
