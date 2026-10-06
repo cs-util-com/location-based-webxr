@@ -26,7 +26,9 @@ M4 replaces its one code in hand with the code book.
   - `outcome(text)` / `maybeMeasure(canMint, measure)` - the
     classification below, and the measurement it asks for.
   - `inFlight()` - a measurement is running (Finish waits).
-  - `endVisit()` - the visit's tries go.
+  - `endVisit()` - the visit's tries go; `reset()` - a tour closed: the
+    sizes adopted for its codes go.
+  - `sizeOf(text)` - the printed size a code is solved at (M4c-3).
 - The code in hand, the stored codes' sightings and the levels a Finish
   wrote live in `creator-codes.ts` since M4a; this module reads and writes
   them through it.
@@ -86,6 +88,17 @@ M4 replaces its one code in hand with the code book.
   replaces the tap's "measure again": the settle refines a code measured
   here through its own pick (D33), not through later sightings.
 
+- **A printed size per code (M4c-3).** Each code is solved at the size
+  adopted for it from the print-size offer, else the size the tour stores
+  for it (`physicalSizeM`), else the size field's. The controller asks
+  `sizeFor(text)` when it fetches the code's level - before it solves the
+  code - and the fused source, the mint, the measurement, the print-size
+  check, the debug view and the placement record read the same size
+  (`sizeOf(text)`). Adopting an offer sets ITS code's size and, as before,
+  the field (the size new codes are solved at); a code the tour stores at
+  its own size keeps that, and only the offered code's measurement is
+  dropped - another code in hand stays. `reset()` forgets the adopted
+  sizes when the tour closes.
 - **Several codes in a visit (M4c-2)**: each measurement keeps its own
   pick (`noteMeasurement(atMs, levelId)`), and a stable sighting of a code
   NOT in hand - one measured in this visit, or a stored one - is noted to

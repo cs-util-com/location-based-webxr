@@ -414,6 +414,29 @@
       "file": "src/creator-measuring.ts",
       "from": "(id === inHand?.id || deps.codes.measuredIn(id, ctx.arSessionGeneration))",
       "to": "id === inHand?.id"
+    },
+    {
+      "name": "a code's stored size ignored",
+      "region": "size per code",
+      "file": "src/creator-measuring.ts",
+      "from": "typeof stored === \"number\" && Number.isFinite(stored) && stored > 0",
+      "to": "false"
+    },
+    {
+      "name": "the fused source at one size",
+      "region": "size per code",
+      "file": "src/creator-measuring.ts",
+      "from": "optionsFor: (text) => ({ sizeM: sizeByText.get(text) ?? sizeM }),",
+      "to": "optionsFor: () => ({ sizeM }),",
+      "expected": "known-gap",
+      "why": "the fused tracker uses its size only for entries that carry no raw pose (and the motion tracker); every entry of the composed harness carries one, so the size is inert there. The viewer documents the same as inert (viewer-placement.ts); for the creator real detections this is not verified (code book plan M4c-3)."
+    },
+    {
+      "name": "adoption clears the code in hand",
+      "region": "size per code",
+      "file": "src/creator-measuring.ts",
+      "from": "if (offeredId === undefined || offeredId === deps.codes.inHand()?.id) {",
+      "to": "if (true) {"
     }
   ]
 }

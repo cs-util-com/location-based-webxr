@@ -50,6 +50,10 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   N m from its saved position" (or "turned N°" when only the yaw broke the
   bound) "- a second print or a moved poster? Not used; this visit follows
   GPS".
+- `buildAuthorControllerConfig(sizeM, deps)`'s optional `deps.sizeFor(text)`
+  (code book plan M4c-3) - each code's printed size: `fetchLevel(text)`
+  resolves the geo-less level at that size; a rejection or a size that is
+  not positive falls back to `sizeM`, and the fetch never rejects.
 - `autoMeasureAllowed(relation)` (code book plan §11 D5, extended by the owner; M4c-2) - whether the creator panel measures the code in view on its own: every code seen while a tour is open (`this-tour`, `other-tour`, `unknown`, `not-a-tour` - a stray QR is "another anchor"); never `no-tour-open` or `resolving`. The risk named with the decision: a code on something that moves; M5's per-code move question guards it. Before M4c-2 only the tour's own code, or the first code of a tour with none (UI round 1, U3).
 - `CodeReadyState` and `authorStatusLine(..., ready)` (U3) - the ready line says what became of the code once the gate is open: "Code measured." (`measured`, the default), "Measuring the code…", "Code seen.", or "Code seen - not measured: it is not a code of the open tour." (`not-measured`), or "Code seen - not measured yet: Finish first, to save the code you measured before." (`finish-first`: a new code while the code in hand is not saved in the tour; each Finish writes one code); the print-size hint follows any of them. The gate being open is no longer "measured".
 - `setupHint({ measured, tourOpen, inTour, keptStored? })` - what the

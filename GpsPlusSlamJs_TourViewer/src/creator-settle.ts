@@ -287,7 +287,7 @@ export function wireCreatorSettle(deps: {
           extentM: alignmentGpsExtentM ?? null,
           accuracyM: gpsAccuracyM ?? null,
         },
-        sizeM: ctx.activeSizeM,
+        sizeM: deps.codes.measurement()?.sizeM ?? ctx.activeSizeM,
         answerAt: (offset) =>
           level === null
             ? null

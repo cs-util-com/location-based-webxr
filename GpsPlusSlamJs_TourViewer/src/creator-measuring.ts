@@ -80,6 +80,11 @@ export interface CreatorMeasuring {
   inFlight(): boolean;
   /** A visit ended: its tries go. */
   endVisit(): void;
+  /** A tour closed: the sizes adopted for its codes go. */
+  reset(): void;
+  /** The printed size `text` is solved at (M4c-3): adopted, else stored,
+   *  else the field's. */
+  sizeOf(text: string | null): number;
 }
 
 export function wireCreatorMeasuring(deps: {
@@ -109,6 +114,7 @@ export function wireCreatorMeasuring(deps: {
     | "noteStoredSighting"
     | "inBook"
     | "measuredIn"
+    | "dropMeasurement"
   >;
   sessionLive: () => boolean;
   alignmentInfo: () => MintAlignmentInfo;
@@ -137,7 +143,7 @@ export function wireCreatorMeasuring(deps: {
     dom.sizeOfferUse.hidden = offer === null;
     dom.sizeOfferKeep.hidden = offer === null;
     if (offer !== null) {
-      const view = sizeOfferView(offer.sizeM, ctx.activeSizeM);
+      const view = sizeOfferView(offer.sizeM, sizeOf(offer.text));
       dom.sizeOffer.hidden = false;
       dom.sizeOfferText.textContent = view.text;
       dom.sizeOfferUse.textContent = view.useLabel;
@@ -146,6 +152,42 @@ export function wireCreatorMeasuring(deps: {
     }
     dom.sizeOffer.hidden = adoptedNote === null;
     dom.sizeOfferText.textContent = adoptedNote ?? "";
+  }
+
+  /**
+   * Each code's printed size for the running pipeline (code book refactor
+   * plan M4c-3): the size adopted for it from the print-size offer, else
+   * the size the tour stores for it, else the size field's. Filled when the
+   * controller fetches the code's level, which it does before it solves the
+   * code, so the fused source and the mint read it afterwards.
+   */
+  const sizeByText = new Map<string, number>();
+  /** Sizes adopted from the print-size offer, per code text (the tour's). */
+  const adoptedSizes = new Map<string, number>();
+
+  /** The size `text` is solved at; the field's before its level is known. */
+  function sizeOf(text: string | null): number {
+    return (
+      (text === null ? undefined : sizeByText.get(text)) ?? ctx.activeSizeM
+    );
+  }
+
+  async function sizeFor(text: string, fieldSizeM: number): Promise<number> {
+    let size = adoptedSizes.get(text);
+    if (size === undefined) {
+      const id =
+        codeIds.get(text) ?? (await qrCodeId(text).catch(() => undefined));
+      const stored =
+        id === undefined
+          ? undefined
+          : ctx.currentLevels?.get(id)?.qr.physicalSizeM;
+      size =
+        typeof stored === "number" && Number.isFinite(stored) && stored > 0
+          ? stored
+          : fieldSizeM;
+    }
+    sizeByText.set(text, size);
+    return size;
   }
 
   function startAuthorPipeline(): boolean {
@@ -178,10 +220,12 @@ export function wireCreatorMeasuring(deps: {
     // pipeline start (per AR session), at the size the author entered.
     // Its counts feed the ?debug=1 readout (plan §66).
     const sizeM = ctx.activeSizeM;
+    // A new controller fetches every code's level again.
+    sizeByText.clear();
     const tallies: FusedTallies = new Map();
     const fusedPose = createFusedQrPoseSource({
       entriesOf: (text) => selectQrFusedEntries(arStore.getState(), text),
-      optionsFor: () => ({ sizeM }),
+      optionsFor: (text) => ({ sizeM: sizeByText.get(text) ?? sizeM }),
       onEvaluated: (result, _ms, text) => {
         tallyEvaluation(tallies, text, result);
       },
@@ -193,6 +237,7 @@ export function wireCreatorMeasuring(deps: {
         frontEnd,
         solvePose: (input) => seams.solveQrPose(input),
         getIntrinsics: (image) => seams.getIntrinsics(image),
+        sizeFor: (text) => sizeFor(text, sizeM),
         recordDetection: (event) => {
           ctx.authorErrorText = null; // a live detection supersedes a stale error
           ctx.lastDetectedText = event.text;
@@ -206,9 +251,13 @@ export function wireCreatorMeasuring(deps: {
           fusedPose.evaluate(event.text);
           const fused = fusedPose.last(event.text);
           noteSighting(event.text, fused);
-          ctx.printSizeCheck?.onDetection(event.text, fused, ctx.activeSizeM);
+          ctx.printSizeCheck?.onDetection(
+            event.text,
+            fused,
+            sizeOf(event.text),
+          );
           if (fused?.status === "stable") adoptedNote = null;
-          ctx.qrDebugView?.update(event.qrPoseWorld, ctx.activeSizeM);
+          ctx.qrDebugView?.update(event.qrPoseWorld, sizeOf(event.text));
           deps.render();
         },
         onError: (message) => {
@@ -232,9 +281,19 @@ export function wireCreatorMeasuring(deps: {
     if (offer === null || !deps.sessionLive()) return;
     const sizeM = Math.round(offer.sizeM * 1000) / 1000;
     ctx.printSizeCheck?.answer(offer.text, "adopted");
+    // For ITS code (M4c-3); the field too, the size new codes are solved
+    // at - a code the tour stores at its own size keeps that.
+    adoptedSizes.set(offer.text, sizeM);
     dom.sizeInput.value = String(sizeM);
     ctx.mintGeneration += 1;
-    deps.codes.clearInHand();
+    // That code's measurement no longer counts; another code in hand keeps
+    // its own.
+    const offeredId = codeIds.get(offer.text);
+    if (offeredId === undefined || offeredId === deps.codes.inHand()?.id) {
+      deps.codes.clearInHand();
+    } else {
+      deps.codes.dropMeasurement(offeredId);
+    }
     // The code is measured again at the new size.
     autoMeasured.clear();
     endQrPipeline(ctx);
@@ -380,7 +439,7 @@ export function wireCreatorMeasuring(deps: {
       alignmentMatrix: selectAlignmentMatrix(state),
       zero: selectZeroReference(state),
       alignment: deps.alignmentInfo(),
-      sizeM: ctx.activeSizeM,
+      sizeM: sizeOf(ctx.lastDetectedText),
       nowIso: new Date().toISOString(),
     });
     if (!result.ok) {
@@ -403,7 +462,7 @@ export function wireCreatorMeasuring(deps: {
     const measured = {
       text: mintedText,
       fusedOdomPose: stablePose,
-      sizeM: ctx.activeSizeM,
+      sizeM: sizeOf(mintedText),
       alignmentMatrix: selectAlignmentMatrix(state),
       alignment: deps.alignmentInfo(),
       levelJson: result.json,
@@ -578,5 +637,9 @@ export function wireCreatorMeasuring(deps: {
     endVisit: () => {
       autoMeasured.clear();
     },
+    reset: () => {
+      adoptedSizes.clear();
+    },
+    sizeOf,
   };
 }

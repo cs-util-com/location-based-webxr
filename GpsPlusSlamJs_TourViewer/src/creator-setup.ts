@@ -594,6 +594,7 @@ export function wireCreatorSetup(deps: {
     draft,
     previews,
     alignmentInfo: () => authorAlignmentInfo(),
+    sizeOf: (text) => measuring.sizeOf(text),
     settledVisit: (visit) => settle.record(visit),
     lateArrival: (visit, photo) => {
       settle.lateArrival(visit, photo);
@@ -751,6 +752,7 @@ export function wireCreatorSetup(deps: {
       settle.reset();
       movePrompt.reset();
       codes.reset();
+      measuring.reset();
     },
     presentDraftForTour: (tourUrl) => {
       if (!creator) return; // a visitor authors nothing

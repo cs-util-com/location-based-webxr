@@ -97,6 +97,37 @@ describe("buildAuthorControllerConfig", () => {
     expect(level).toEqual({ version: 1, qr: { physicalSizeM: 0.25 } });
   });
 
+  // Why this test matters (code book plan M4c-3): each code is solved at
+  // its OWN printed size - the size the tour stores for it, else the size
+  // field - so the level the controller fetches carries the size per text.
+  it("resolves each text at the size `sizeFor` gives it", async () => {
+    const config = buildAuthorControllerConfig(0.16, {
+      ...fakeDeps(),
+      sizeFor: (text) => Promise.resolve(text.endsWith("big") ? 0.3 : 0.16),
+    });
+    expect(await config.fetchLevel("https://x/?qr=big")).toEqual({
+      version: 1,
+      qr: { physicalSizeM: 0.3 },
+    });
+    expect(await config.fetchLevel("https://x/?qr=small")).toEqual({
+      version: 1,
+      qr: { physicalSizeM: 0.16 },
+    });
+  });
+
+  // Why: a size that cannot be resolved must not reject the fetch (the
+  // controller would flap); the pipeline's size stands.
+  it("falls back to the pipeline's size when `sizeFor` fails", async () => {
+    const config = buildAuthorControllerConfig(0.2, {
+      ...fakeDeps(),
+      sizeFor: () => Promise.reject(new Error("no crypto")),
+    });
+    expect(await config.fetchLevel("t")).toEqual({
+      version: 1,
+      qr: { physicalSizeM: 0.2 },
+    });
+  });
+
   it("runs minIntervalMs 0 — the frame source is the single cadence owner", () => {
     const config = buildAuthorControllerConfig(0.2, fakeDeps());
     expect(config.minIntervalMs).toBe(0);

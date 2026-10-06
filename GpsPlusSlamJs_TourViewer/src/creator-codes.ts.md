@@ -36,6 +36,9 @@ writes these through it, so that M4c can turn its inside into the code book
     text is what the next Finish builds on;
   - `notHosted()` - what the draft keeps: every code whose saved text the
     HOSTED zip does not hold yet, a Finish's among them;
+  - `dropMeasurement(levelId)` - a code not in hand is measured again (a
+    new print size, M4c-3): its measurement is dropped and its saved text
+    falls back to the zip's;
   - `restoreLevels(levels)` - a restored draft's codes, in its order, saved
     and taken as references; a code changed live keeps its live text.
 - The visit's stored-code sightings: `noteStoredSighting(levelId, visit,

@@ -91,6 +91,9 @@ export interface CreatorCodes {
   inBook(levelId: string): boolean;
   /** `levelId` was measured in `visit`. */
   measuredIn(levelId: string, visit: number): boolean;
+  /** A code not in hand is measured again (a new print size): its
+   *  measurement is dropped and its saved text falls back to the zip's. */
+  dropMeasurement(levelId: string): void;
   /** The codes the draft keeps: every code of the book whose saved text
    *  the HOSTED zip does not hold yet, a Finish's among them (its zip
    *  reaches the world only with the upload). */
@@ -244,6 +247,10 @@ export function wireCreatorCodes(deps: {
     inBook: (levelId) => {
       takeInHand();
       return book.has(levelId);
+    },
+    dropMeasurement: (levelId) => {
+      takeInHand();
+      book = withoutMeasurement(book, levelId);
     },
     measuredIn: (levelId, visit) => {
       takeInHand();

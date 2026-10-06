@@ -77,6 +77,14 @@ export interface AuthorPipelineDeps {
   /** Controller failures MUST surface (async-UI rule) — a throwing detector
    *  otherwise leaves the panel saying "point the camera" forever. */
   onError(message: string): void;
+  /**
+   * Each code's printed size by its decoded text (code book refactor plan
+   * M4c-3): the size the tour stores for it, else the size field. Absent:
+   * every text at the pipeline's size. A rejection, or a size that is not a
+   * positive number, falls back to the pipeline's size - the fetch never
+   * rejects (the controller would flap its status).
+   */
+  sizeFor?(text: string): Promise<number>;
 }
 
 /**
@@ -92,7 +100,19 @@ export function buildAuthorControllerConfig(
   return {
     frontEnd: deps.frontEnd,
     solvePose: (input) => deps.solvePose(input),
-    fetchLevel: () => Promise.resolve(level),
+    fetchLevel: (text) =>
+      deps.sizeFor === undefined
+        ? Promise.resolve(level)
+        : deps.sizeFor(text).then(
+            (size) => {
+              try {
+                return syntheticAuthorLevel(size);
+              } catch {
+                return level;
+              }
+            },
+            () => level,
+          ),
     dispatchVotes: () => {
       // Unreachable: a geo-less level never produces votes. Kept explicit
       // so a future schema change fails a test here instead of silently

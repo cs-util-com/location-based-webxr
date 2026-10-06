@@ -581,6 +581,49 @@ describe("the creator measures and mints with the fused pose", () => {
     expect(c.ctx.codeMeasurement?.sizeM).toBe(0.155);
   });
 
+  // Code book plan M4c-3: a size offer is adopted for ITS code - another
+  // code in hand keeps its measurement and stays in hand.
+  it("adopts a size for the offered code only, leaving another code in hand", async () => {
+    const c = creator({ aligned: true });
+    for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    const first = c.ctx.mintedLevel!.id;
+    const second = "https://gps.csutil.com/tour/?qr=second";
+    for (let i = 0; i < 7; i++) c.detectText(second, i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel?.id).not.toBe(first);
+    });
+    const inHand = c.ctx.mintedLevel!;
+    sizeCheck.offer = { text: TEXT, sizeM: 0.2 };
+    c.detect(7);
+    c.dom.sizeOfferUse.click();
+    sizeCheck.offer = null;
+    expect(c.ctx.mintedLevel).toEqual(inHand);
+    expect(c.ctx.codeMeasurement?.levelId).toBe(inHand.id);
+  });
+
+  // Code book plan M4c-3: a code the tour stores at its own printed size
+  // is solved and measured at THAT size, not the size field's - two codes
+  // printed at different sizes no longer share one.
+  it("solves and measures a code at the size the tour stores for it", async () => {
+    const c = creator({ aligned: true });
+    const id = await qrCodeId(TEXT);
+    c.ctx.currentLevels = new Map([
+      [id, { version: 1, qr: { text: TEXT, physicalSizeM: 0.3 } } as never],
+    ]);
+    // The controller fetches a code's level before it solves the code.
+    const level = await captured.configs.at(-1)!.fetchLevel(TEXT);
+    expect(level.qr.physicalSizeM).toBe(0.3);
+    expect(Number(c.dom.sizeInput.value)).not.toBe(0.3);
+    for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    expect(c.ctx.codeMeasurement?.sizeM).toBe(0.3);
+  });
+
   // Code book plan M4c-2 (replacing U3 milestone review #7's "Finish
   // first"): a Finish writes every code of the book since M4c-1, so a new
   // code is measured past an unsaved one and neither is dropped.

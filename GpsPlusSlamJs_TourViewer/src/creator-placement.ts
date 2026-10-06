@@ -66,6 +66,8 @@ export function wireCreatorPlacement(deps: {
   previews: Pick<CreatorPreviews, "sync">;
   codes: Pick<CreatorCodes, "inHand">;
   alignmentInfo: () => MintAlignmentInfo;
+  /** The printed size a code text is solved at (M4c-3). */
+  sizeOf: (text: string | null) => number;
   /** The settle record of a visit that already settled, if any. */
   settledVisit: (
     visit: number,
@@ -168,7 +170,7 @@ export function wireCreatorPlacement(deps: {
             ? null
             : group.matrixWorld.toArray(),
         code: codeInView(),
-        codeSizeM: ctx.activeSizeM,
+        codeSizeM: deps.sizeOf(ctx.lastDetectedText),
       }),
     );
   }
