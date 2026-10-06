@@ -74,14 +74,61 @@ export function openCodeBook(input: {
   for (const [id, json] of input.hosted) {
     book = put(book, { ...blank(id), saved: json, hosted: json });
   }
-  for (const { id, json } of input.draft ?? []) {
-    book = put(book, {
-      ...(book.get(id) ?? blank(id)),
-      saved: json,
+  return withDraft(book, input.draft ?? []);
+}
+
+/** What the zip the next Finish rebuilds from holds for the code: the
+ *  last Finish's text, else the hosted file's (M1 review #1 - the next
+ *  Finish builds on the previous Finish's zip, not on the hosted one). */
+function baseline(code: TourCode): string | null {
+  return code.finished ?? code.hosted;
+}
+
+/** Work done live in this page: a measurement, or a saved pose that is
+ *  not what the zip holds. */
+function changedLive(code: TourCode): boolean {
+  return (
+    code.measurement !== null ||
+    (code.saved !== null && code.saved !== baseline(code))
+  );
+}
+
+/**
+ * A restored draft's codes, taken as references and saved - except where
+ * this page has already changed the code live: that work is newer than
+ * the draft and wins (M1 review #2; the restore is a tap on an offer that
+ * comes after the tour opened).
+ */
+export function withDraft(
+  book: CodeBook,
+  draft: readonly LevelText[],
+): CodeBook {
+  let next = book;
+  for (const { id, json } of draft) {
+    const code = next.get(id) ?? blank(id);
+    next = put(next, {
+      ...code,
+      saved: changedLive(code) ? code.saved : json,
       reference: true,
     });
   }
-  return book;
+  return next;
+}
+
+/**
+ * A code to be measured again (a new printed size, M1 review #2): its
+ * measurement and its reference are dropped, and its saved pose falls
+ * back to what the zip holds - none for a code no Finish has written.
+ */
+export function withoutMeasurement(book: CodeBook, levelId: string): CodeBook {
+  const code = book.get(levelId);
+  if (code === undefined) return book;
+  return put(book, {
+    ...code,
+    measurement: null,
+    reference: false,
+    saved: baseline(code),
+  });
 }
 
 /** The hosted levels, arrived after the book was opened: each code gets
@@ -128,13 +175,11 @@ export function withSaved(book: CodeBook, level: LevelText): CodeBook {
   return put(book, { ...code, saved: level.json });
 }
 
-/** The codes a Finish must write: a saved pose that is neither the hosted
- *  file's nor the one the last Finish wrote, in the book's order. */
+/** The codes a Finish must write: a saved pose that differs from what the
+ *  zip it rebuilds from holds (`baseline`), in the book's order. */
 export function codesToWrite(book: CodeBook): LevelText[] {
   return [...book.values()].flatMap((code) =>
-    code.saved !== null &&
-    code.saved !== code.hosted &&
-    code.saved !== code.finished
+    code.saved !== null && code.saved !== baseline(code)
       ? [{ id: code.levelId, json: code.saved }]
       : [],
   );

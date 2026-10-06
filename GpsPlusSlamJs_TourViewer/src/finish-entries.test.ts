@@ -54,6 +54,18 @@ describe("finishEntries", () => {
     );
   });
 
+  it("replaces a level a listed tour already holds where it is (the held path beats the folder rule)", () => {
+    const held = qrLevelEntryName(A);
+    expect(
+      finishEntries({
+        ...base,
+        entryNames: [held],
+        wrap: "mytour/",
+        listed: true,
+      })[0]?.path,
+    ).toBe(held);
+  });
+
   it("writes every level it is given (M4: several codes per Finish)", () => {
     const entries = finishEntries({
       ...base,

@@ -103,6 +103,25 @@ describe("loadQrLevels", () => {
     await session.close();
   });
 
+  // Why (code book plan M1, second review #8): the Finish must know what
+  // the hosted zip holds for each code to know what to write; the text is
+  // read at open anyway, and reading it again is a zip round trip.
+  it("keeps the raw text of every level file it read, parseable or not", async () => {
+    const fetchImpl = rangeServer(
+      await buildZip({ "qr/1.json": "{not json", "qr/3.json": LEVEL_JSON }),
+    );
+    const session = await openTourSession("https://x/tour.zip", { fetchImpl });
+    expect(session.levelTexts()).toEqual(new Map());
+    await session.loadQrLevels();
+    expect(session.levelTexts()).toEqual(
+      new Map([
+        ["1", "{not json"],
+        ["3", LEVEL_JSON],
+      ]),
+    );
+    await session.close();
+  });
+
   it("skips a corrupt level file instead of failing the archive (null-tolerant)", async () => {
     const fetchImpl = rangeServer(
       await buildZip({

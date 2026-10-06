@@ -19,6 +19,8 @@ import {
   withHosted,
   withMeasurement,
   withReference,
+  withDraft,
+  withoutMeasurement,
   withSaved,
   type CodeBook,
 } from "./code-book";
@@ -148,57 +150,152 @@ describe("afterFinish", () => {
   });
 });
 
-describe("properties", () => {
+describe("after a Finish, the next one builds on that Finish's file (M1 review #1)", () => {
+  // Why: the next Finish rebuilds from the previous Finish's zip, not from
+  // the hosted one. A code reverting to the hosted text after a Finish
+  // wrote something else must be written again, or the zip keeps the
+  // stale pose.
+  it("writes a code that went back to the hosted text after a Finish wrote another", () => {
+    let book = withSaved(openCodeBook({ hosted }), { id: "a", json: "X" });
+    book = afterFinish(book, codesToWrite(book));
+    book = withSaved(book, { id: "a", json: '{"a":1}' });
+    expect(codesToWrite(book)).toEqual([{ id: "a", json: '{"a":1}' }]);
+  });
+});
+
+describe("withDraft - a draft restored after the tour opened", () => {
+  // Why (M1 review #2): restoring is a tap on an offer that comes after
+  // the open; a code measured live since is newer than the draft and wins.
+  it("restores the draft's codes, but never over a code measured live", () => {
+    let book = withMeasurement(
+      openCodeBook({ hosted }),
+      { id: "a", json: "live" },
+      measurement("a"),
+    );
+    book = withDraft(book, [
+      { id: "a", json: "draft-a" },
+      { id: "c", json: "draft-c" },
+    ]);
+    expect(book.get("a")?.saved).toBe("live");
+    expect(book.get("c")?.saved).toBe("draft-c");
+    expect(referenceCodes(book)).toEqual(["a", "c"]);
+  });
+});
+
+describe("withoutMeasurement - a code to be measured again (a new print size)", () => {
+  // Why (M1 review #2): adopting a measured print size drops what was
+  // measured at the old size; the code falls back to what the zip holds,
+  // and is measured again.
+  it("drops the measurement and falls back to the zip's text", () => {
+    let book = withMeasurement(
+      openCodeBook({ hosted }),
+      { id: "a", json: "old-size" },
+      measurement("a"),
+    );
+    book = withoutMeasurement(book, "a");
+    expect(book.get("a")).toMatchObject({
+      saved: '{"a":1}',
+      measurement: null,
+      reference: false,
+    });
+    expect(codesToWrite(book)).toEqual([]);
+    // A new code measured and dropped before any Finish has nothing left.
+    book = withMeasurement(book, { id: "n", json: "n1" }, measurement("n"));
+    book = withoutMeasurement(book, "n");
+    expect(book.get("n")?.saved).toBeNull();
+    expect(codesToWrite(book)).toEqual([]);
+  });
+});
+
+describe("properties, against a model of the zip", () => {
+  // The model is independent of the implementation: the hosted files,
+  // with every Finish's writes applied. What it proves: a Finish brings the
+  // zip to every saved pose, and never rewrites a file with what it holds.
   const ids = fc.constantFrom("a", "b", "c", "d");
+  type Op =
+    | { kind: "measure" | "save" | "draft"; id: string; v: number }
+    | { kind: "reference" | "unmeasure"; id: string }
+    | { kind: "finish" };
   const op: fc.Arbitrary<Op> = fc.oneof(
-    fc.record({ kind: fc.constant("measure" as const), id: ids, v: fc.nat(3) }),
-    fc.record({ kind: fc.constant("save" as const), id: ids, v: fc.nat(3) }),
-    fc.record({ kind: fc.constant("reference" as const), id: ids }),
+    fc.record({
+      kind: fc.constantFrom(
+        "measure" as const,
+        "save" as const,
+        "draft" as const,
+      ),
+      id: ids,
+      v: fc.nat(3),
+    }),
+    fc.record({
+      kind: fc.constantFrom("reference" as const, "unmeasure" as const),
+      id: ids,
+    }),
     fc.record({ kind: fc.constant("finish" as const) }),
   );
-  type Op =
-    | { kind: "measure" | "save"; id: string; v: number }
-    | { kind: "reference"; id: string }
-    | { kind: "finish" };
-  function run(ops: readonly Op[]): CodeBook {
-    let book = openCodeBook({ hosted });
+
+  // Hosted texts the generated ones can equal ("a0", "b0"): without that
+  // no sequence ever reverts a code to its hosted text, and the property
+  // misses the baseline bug it exists for (checked by mutation).
+  const zipHosted = new Map([
+    ["a", "a0"],
+    ["b", "b0"],
+  ]);
+  function run(ops: readonly Op[]) {
+    let book: CodeBook = openCodeBook({ hosted: zipHosted });
+    const zip = new Map(zipHosted);
+    let rewroteHeld = false;
+    const finish = () => {
+      const written = codesToWrite(book);
+      for (const { id, json } of written) {
+        if (zip.get(id) === json) rewroteHeld = true;
+        zip.set(id, json);
+      }
+      book = afterFinish(book, written);
+    };
     for (const o of ops) {
+      const json = "v" in o ? `${o.id}${String(o.v)}` : "";
       if (o.kind === "measure") {
-        book = withMeasurement(
-          book,
-          { id: o.id, json: `${o.id}${String(o.v)}` },
-          measurement(o.id),
-        );
+        book = withMeasurement(book, { id: o.id, json }, measurement(o.id));
       } else if (o.kind === "save") {
-        book = withSaved(book, { id: o.id, json: `${o.id}${String(o.v)}` });
+        book = withSaved(book, { id: o.id, json });
+      } else if (o.kind === "draft") {
+        book = withDraft(book, [{ id: o.id, json }]);
       } else if (o.kind === "reference") {
         book = withReference(book, o.id);
+      } else if (o.kind === "unmeasure") {
+        book = withoutMeasurement(book, o.id);
       } else {
-        book = afterFinish(book, codesToWrite(book));
+        finish();
       }
     }
-    return book;
+    return { book, zip, rewroteHeld };
   }
 
-  it("never writes a code whose saved pose equals the hosted file or the last Finish", () => {
+  it("a Finish brings the zip to every saved pose, and leaves nothing to write", () => {
     fc.assert(
-      fc.property(fc.array(op, { maxLength: 20 }), (ops) => {
-        const book = run(ops);
-        for (const { id, json } of codesToWrite(book)) {
-          const code = book.get(id)!;
-          expect(json).toBe(code.saved);
-          expect(json === code.hosted || json === code.finished).toBe(false);
+      fc.property(fc.array(op, { maxLength: 24 }), (ops) => {
+        const r = run([...ops, { kind: "finish" }]);
+        const saved = [...r.book.values()].filter((c) => c.saved !== null);
+        for (const code of saved) {
+          expect(r.zip.get(code.levelId)).toBe(code.saved);
         }
+        expect(codesToWrite(r.book)).toEqual([]);
       }),
     );
   });
 
-  it("a Finish leaves nothing to write, and every measured code is a reference", () => {
+  it("never rewrites a file with the text the zip already holds", () => {
     fc.assert(
-      fc.property(fc.array(op, { maxLength: 20 }), (ops) => {
-        const book = run(ops);
-        expect(codesToWrite(afterFinish(book, codesToWrite(book)))).toEqual([]);
-        for (const code of book.values()) {
+      fc.property(fc.array(op, { maxLength: 24 }), (ops) => {
+        expect(run(ops).rewroteHeld).toBe(false);
+      }),
+    );
+  });
+
+  it("every measured code is a reference", () => {
+    fc.assert(
+      fc.property(fc.array(op, { maxLength: 24 }), (ops) => {
+        for (const code of run(ops).book.values()) {
           expect(code.measurement === null || code.reference).toBe(true);
         }
       }),

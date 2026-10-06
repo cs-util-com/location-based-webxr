@@ -1,0 +1,285 @@
+{
+  "tests": [
+    "src/authoring-settle.test.ts",
+    "src/creator-finish.test.ts",
+    "src/creator-setup.test.ts",
+    "src/fused-pose-wiring.test.ts",
+    "src/ar-entry.test.ts"
+  ],
+  "mutants": [
+    {
+      "name": "placement backup failure not noted",
+      "region": "draft",
+      "file": "src/creator-setup.ts",
+      "from": "      if (!ok) noteNoPersistence();\n    });\n  }\n\n  /**\n   * Record one AR visit",
+      "to": "    });\n  }\n\n  /**\n   * Record one AR visit"
+    },
+    {
+      "name": "manifest not advanced",
+      "region": "finish",
+      "file": "src/creator-setup.ts",
+      "from": "        ctx.tourManifest = written;",
+      "to": ""
+    },
+    {
+      "name": "answer not remembered",
+      "region": "move prompt",
+      "file": "src/creator-setup.ts",
+      "from": "      rememberAnswer(prompt, answer);\n      logMoveAnswer(prompt, answer);",
+      "to": "      logMoveAnswer(prompt, answer);"
+    },
+    {
+      "name": "corrected frame not inverted",
+      "region": "previews",
+      "file": "src/creator-setup.ts",
+      "from": "frame.matrix.fromArray(choice.alignment).invert();",
+      "to": "frame.matrix.fromArray(choice.alignment);"
+    },
+    {
+      "name": "once-per-visit ignored",
+      "region": "measuring",
+      "file": "src/creator-setup.ts",
+      "from": "const tried = autoMeasured.has(visitKeyOf(text));",
+      "to": "const tried = false;"
+    },
+    {
+      "name": "placements not counted",
+      "region": "finish guard",
+      "file": "src/creator-setup.ts",
+      "from": "placedCount: ctx.placedObjects.length,",
+      "to": "placedCount: 0,"
+    },
+    {
+      "name": "Finish not held for a measurement",
+      "region": "readout",
+      "file": "src/creator-setup.ts",
+      "from": "readiness !== \"ready\" || measuring > 0;",
+      "to": "readiness !== \"ready\";"
+    },
+    {
+      "name": "empty visits logged",
+      "region": "visit log",
+      "file": "src/creator-setup.ts",
+      "from": "if (entry.gps.length === 0 && entry.codes.length === 0) return;",
+      "to": ""
+    },
+    {
+      "name": "summary not shown",
+      "region": "finish",
+      "file": "src/creator-setup.ts",
+      "from": "        showSummary();",
+      "to": ""
+    },
+    {
+      "name": "code not measured again",
+      "region": "size offer",
+      "file": "src/creator-setup.ts",
+      "from": "    autoMeasured.clear();\n    endQrPipeline(ctx);",
+      "to": "    endQrPipeline(ctx);"
+    },
+    {
+      "name": "other stored codes not kept",
+      "region": "sightings",
+      "file": "src/creator-setup.ts",
+      "from": "      storedCodeSightings.set(id, {",
+      "to": "      void ({"
+    },
+    {
+      "name": "U3 decision not logged when nothing settled",
+      "region": "settle",
+      "file": "src/creator-setup.ts",
+      "from": "        logSettle(visit, trigger, record, [], null, null, decided);",
+      "to": ""
+    },
+    {
+      "name": "claimed id stays rejected",
+      "region": "draft",
+      "file": "src/creator-setup.ts",
+      "from": "draftRejected = draftRejected.filter((rejected) => rejected !== id);",
+      "to": "draftRejected = [...draftRejected];"
+    },
+    {
+      "name": "backup notice repeated every time",
+      "region": "draft",
+      "file": "src/creator-setup.ts",
+      "from": "    if (warnedAboutPersistence) return;\n",
+      "to": ""
+    },
+    {
+      "name": "backup notice never repeats its guard",
+      "region": "draft",
+      "file": "src/creator-setup.ts",
+      "from": "    warnedAboutPersistence = true;\n",
+      "to": ""
+    },
+    {
+      "name": "discard does not record the rejection",
+      "region": "draft",
+      "file": "src/creator-setup.ts",
+      "from": "    draftRejected = rejectedIds;\n",
+      "to": ""
+    },
+    {
+      "name": "draft url not kept for later writes",
+      "region": "draft",
+      "file": "src/creator-setup.ts",
+      "from": "        draftTourUrl = tourUrl;\n",
+      "to": ""
+    },
+    {
+      "name": "stored answers not merged at open",
+      "region": "draft",
+      "file": "src/creator-setup.ts",
+      "from": "        moveAnswers = [...(stored?.moveAnswers ?? []), ...moveAnswers].reduce<",
+      "to": "        moveAnswers = [...moveAnswers].reduce<"
+    },
+    {
+      "name": "Undo not offered after Yes",
+      "region": "move prompt",
+      "file": "src/creator-setup.ts",
+      "from": "        undoable = { prompt, visit: ctx.arSessionGeneration };",
+      "to": ""
+    },
+    {
+      "name": "Undo kept after the settle",
+      "region": "move prompt",
+      "file": "src/creator-setup.ts",
+      "from": "    if (undoable?.visit === visit) undoable = null;",
+      "to": ""
+    },
+    {
+      "name": "an ask logged on every render",
+      "region": "move prompt",
+      "file": "src/creator-setup.ts",
+      "from": "      movePromptLogged = moveOnset;",
+      "to": ""
+    },
+    {
+      "name": "refusal re-judged on every render",
+      "region": "move prompt",
+      "file": "src/creator-setup.ts",
+      "from": "      moveFixCount = clock.count;",
+      "to": "",
+      "expected": "equivalent",
+      "why": "the same re-judge at the same state gives the same refusal; only the work per render grows"
+    },
+    {
+      "name": "result screen outcome not recorded",
+      "region": "settle",
+      "file": "src/creator-setup.ts",
+      "from": "      codePositionOutcomes.push({ decision: position.decision, applied });",
+      "to": ""
+    },
+    {
+      "name": "applied decision not kept for a re-settle",
+      "region": "settle",
+      "file": "src/creator-setup.ts",
+      "from": "    if (applied) appliedCode = { visit, plan: position };",
+      "to": ""
+    },
+    {
+      "name": "visit settled twice",
+      "region": "settle",
+      "file": "src/creator-setup.ts",
+      "from": "    visitSettles.set(visit, record);",
+      "to": ""
+    },
+    {
+      "name": "move boundary not set",
+      "region": "settle",
+      "file": "src/creator-setup.ts",
+      "from": "      movedInVisit.set(position.levelId, visit);",
+      "to": ""
+    },
+    {
+      "name": "frame left at the scene root",
+      "region": "previews",
+      "file": "src/creator-setup.ts",
+      "from": "        earlierFrameUnderGroup = true;",
+      "to": ""
+    },
+    {
+      "name": "no resync once the zero lands",
+      "region": "previews",
+      "file": "src/creator-setup.ts",
+      "from": "    previewsWaitForZero = zero === null;",
+      "to": "    previewsWaitForZero = false;"
+    },
+    {
+      "name": "finished photo bytes dropped",
+      "region": "previews",
+      "file": "src/creator-setup.ts",
+      "from": "            finishedPhotoBlobs.set(p.object.id, p.blob);",
+      "to": "",
+      "expected": "known-gap",
+      "why": "no unit test can decode a photo texture (decodeFrameTexture needs a browser) and the e2e never re-renders a finished photo; M2 injects the decoder into the previews module and adds the test"
+    },
+    {
+      "name": "status never expands",
+      "region": "readout",
+      "file": "src/creator-setup.ts",
+      "from": "    statusExpanded = !statusExpanded;",
+      "to": ""
+    },
+    {
+      "name": "refusal line never set",
+      "region": "refusal",
+      "file": "src/creator-setup.ts",
+      "from": "    liveRefusal = refusalOf(choice);",
+      "to": "    liveRefusal = null;"
+    },
+    {
+      "name": "text's level id not remembered",
+      "region": "measuring",
+      "file": "src/creator-setup.ts",
+      "from": "      codeIds.set(mintedText, id);",
+      "to": "",
+      "expected": "equivalent",
+      "why": "the stable sighting identifies the text (identify) before a measurement can depend on it"
+    },
+    {
+      "name": "in-flight count never drops",
+      "region": "measuring",
+      "file": "src/creator-setup.ts",
+      "from": "      measuring -= 1;",
+      "to": ""
+    },
+    {
+      "name": "identity derived again for every frame",
+      "region": "measuring",
+      "file": "src/creator-setup.ts",
+      "from": "    identifying.add(text);",
+      "to": ""
+    },
+    {
+      "name": "a code written by Finish not recorded",
+      "region": "measuring",
+      "file": "src/creator-setup.ts",
+      "from": "        finishedLevelIds.add(minted.id);",
+      "to": ""
+    },
+    {
+      "name": "saved file not marked delivered",
+      "region": "handoff",
+      "file": "src/creator-setup.ts",
+      "from": "          ctx.rebuiltZip = { ...rebuilt, delivered: true };",
+      "to": ""
+    },
+    {
+      "name": "adopted size not announced",
+      "region": "size offer",
+      "file": "src/creator-setup.ts",
+      "from": "    adoptedNote = adoptedSizeNote(sizeM);",
+      "to": ""
+    },
+    {
+      "name": "sightings carried into the next visit",
+      "region": "visit hooks",
+      "file": "src/creator-setup.ts",
+      "from": "      storedCodeSightings.clear();",
+      "to": "",
+      "expected": "equivalent",
+      "why": "each kept sighting carries its visit, and the visit log reads only its own visit's"
+    }
+  ]
+}

@@ -37,7 +37,10 @@ import {
   type RecordedAction,
 } from "gps-plus-slam-app-framework/storage";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
-import { parseQrLevelEntries } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
+import {
+  parseQrLevelEntries,
+  qrLevelIdFromEntryName,
+} from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import {
   readTourManifestFromEntries,
   TOUR_MANIFEST_ENTRY,
@@ -172,6 +175,13 @@ export interface TourSession {
    * "that code has no level" — it must never brick the whole archive.
    */
   loadQrLevels(): Promise<ReadonlyMap<string, QrLevel>>;
+  /**
+   * The raw text of every level file `loadQrLevels` read, by id - also
+   * the ones that did not parse (code book plan M1): what the hosted zip
+   * holds for each code, which the Finish compares against. Empty until
+   * `loadQrLevels` ran.
+   */
+  levelTexts(): ReadonlyMap<string, string>;
   /**
    * The recording's action stream, range-streamed and parsed — the input
    * to the capture-geo join's gates and replay. NULL when the archive has
@@ -618,6 +628,8 @@ async function buildSession(
     cap: number = limits.maxTextEntryBytes,
   ): Promise<string> => (await readBlob(entry, "text/plain", cap)).text();
   const byName = new Map<string, FileEntry>();
+  /** Each level file's text as `loadQrLevels` read it (`levelTexts`). */
+  const levelTexts = new Map<string, string>();
   const entries: TourEntry[] = [];
   const entryNamed = (filename: string): FileEntry => {
     const entry = byName.get(filename);
@@ -690,8 +702,12 @@ async function buildSession(
       parseQrLevelEntries([...byName.keys()], async (name) => {
         const entry = byName.get(name);
         if (entry === undefined) throw new Error(`missing entry: ${name}`);
-        return readText(entry);
+        const text = await readText(entry);
+        const id = qrLevelIdFromEntryName(name);
+        if (id !== null) levelTexts.set(id, text);
+        return text;
       }),
+    levelTexts: () => levelTexts,
     loadRecordingActions: async () => {
       if (!hasRecording) {
         return null; // a hand-built tour zip is normal, not an error

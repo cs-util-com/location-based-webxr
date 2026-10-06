@@ -265,6 +265,35 @@ describe("the meta's own validation", () => {
   });
 });
 
+describe("a meta written before the code book (one level) stays readable (code book plan M1)", () => {
+  // Why: M4 writes several codes (`levels`); a draft a creator left behind
+  // before that must still restore its one measured code, its size, its
+  // rejections and its move answers. This is the meta EXACTLY as the
+  // creator setup writes it today (`recordMeta`), frozen as text.
+  const BEFORE_M4 =
+    '{"tourUrl":"https://h/t.zip","sizeM":0.2,"level":{"id":"a1b2c3d4e5f6","json":"{\\"version\\":1}"},"rejected":["gone"],"moveAnswers":[{"levelId":"a1b2c3d4e5f6","northM":40,"eastM":0,"answer":"not-now","savedKey":"k1"}]}';
+
+  it("reads its level, size, rejections and answers", async () => {
+    const store = memoryStore();
+    await store.put("meta", BEFORE_M4);
+    const read = await readDraft(store);
+    expect(read?.draft.level).toEqual({
+      id: "a1b2c3d4e5f6",
+      json: '{"version":1}',
+    });
+    expect(read?.draft.sizeM).toBe(0.2);
+    expect(read?.moveAnswers).toEqual([
+      {
+        levelId: "a1b2c3d4e5f6",
+        northM: 40,
+        eastM: 0,
+        answer: "not-now",
+        savedKey: "k1",
+      },
+    ]);
+  });
+});
+
 describe("a rejection recorded in the meta is the commit point", () => {
   /**
    * Why these tests matter. Until now a discard rewrote the meta and then

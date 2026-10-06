@@ -218,6 +218,10 @@ export interface TourViewerSession {
   session: TourSession | null;
   /** The open tour's authored QR levels — the viewer pipeline's level source. */
   currentLevels: ReadonlyMap<string, QrLevel> | null;
+  /** The same levels' raw file texts, parseable or not
+   *  (`TourSession.levelTexts`): what the hosted zip holds for each code
+   *  (code book plan M1). */
+  currentLevelTexts: ReadonlyMap<string, string> | null;
   /** The open tour's `tour.json` (null: none, or not loaded yet). The
    *  finish step writes it back, so content already in the zip survives a
    *  re-measure. */
@@ -494,6 +498,7 @@ export function createTourViewerSession(): TourViewerSession {
   return {
     session: null,
     currentLevels: null,
+    currentLevelTexts: null,
     tourManifest: null,
     tourManifestStatus: "settled",
     scanEntries: new Set(),

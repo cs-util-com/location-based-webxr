@@ -994,6 +994,15 @@ describe(
       a.seeTheCode();
       await flush();
       expect(a.inWorldGroup("Gate").distanceTo(atCode)).toBeGreaterThan(20);
+      // At its geo in the SCENE (code book plan M1, a sampled mutant): the
+      // frame moved back to the scene root, not left under the AR world
+      // group with an identity matrix, which would put it 60 m off.
+      const gate = a.ctx.placedObjects[0]!.object;
+      const shown = [...a.labels].reverse().find((o) => o.name === "Gate")!;
+      a.scene.updateMatrixWorld(true);
+      expect(
+        shown.getWorldPosition(new Vector3()).distanceTo(worldOf(gate.geo)),
+      ).toBeLessThan(1e-3);
     });
   },
 );
@@ -2661,7 +2670,7 @@ describe(
       // Why: the failed Finish drops the visit's settle record, and Undo
       // then offered to take back a move that had already been saved -
       // writing "Not now" against the old pose and saying it was undone.
-      const { store } = memoryDraftStore();
+      const { store, files } = memoryDraftStore();
       const { a, stored, fix, walk } = await secondVisitFarFromTheCode(store);
       a.ctx.tourManifestStatus = "settled";
       fix(MOVE_PROMPT_RULE.minFixes);
@@ -2685,6 +2694,14 @@ describe(
           codeWorldOf(moved.json),
         ),
       ).toBeLessThan(0.01);
+      // And the re-settle REAPPLIED the decision (code book plan M1, a
+      // sampled mutant; U3 milestone review #8): the visit log still marks
+      // the pose this visit saved, so the summary grades it by this visit.
+      await flush();
+      expect(
+        lastVisitFile(files).codes.find((c) => c.levelId === stored.id)
+          ?.savedGeo,
+      ).toBeDefined();
     });
 
     it("'Not now' and 'It's a second copy' whose draft write is refused say the walk is not backed up", async () => {
@@ -2941,6 +2958,58 @@ describe(
       a.setup.renderAuthorReadout();
       await flush();
       expect(a.ctx.placementNote).toBeNull();
+      // Positive control (M1 review #7): in the NEXT visit the code is tried
+      // again - so the silence above is the once-per-visit rule, not a
+      // retry that merely had not landed yet.
+      a.endVisit();
+      a.beginVisit();
+      a.seeTheCode();
+      await flush();
+      expect(a.ctx.placementNote).toMatch(/GPS alignment/);
+    });
+
+    it("says that nothing is backed up ONCE, however many writes cannot be made", async () => {
+      // A creator mid-walk cannot act on it more often, and repeating it
+      // would push the live readout off the line.
+      const a = authoring();
+      await openFinishableTour(a);
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      expect(a.ctx.placementNote).toContain("not saving a backup copy");
+      a.ctx.placementNote = null;
+      // Another write that cannot be made: the visit's log at its end (a
+      // visit with a fix IS logged, so the write is really attempted).
+      a.setWalk({
+        fixes: [{ latitude: ZERO.lat, longitude: ZERO.lon, timestamp: 1 }],
+        odometry: [[0, 0, 0]],
+      });
+      a.endVisit();
+      await flush();
+      expect(a.ctx.placementNote).toBeNull();
+    });
+
+    it("measures a new code once the code in hand was written by a Finish", async () => {
+      // Each Finish writes one code, so a new code waits for one ("Finish
+      // first"); once it ran, the code in hand is saved and the new code is
+      // measured (the hosted zip still lacks it until the creator uploads).
+      const a = authoring();
+      await openFinishableTour(a);
+      await a.mint();
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).toBeNull();
+      a.beginVisit();
+      for (let i = 0; i < 8; i += 1) {
+        captured.configs.at(-1)?.onDetection?.({
+          ...detection(i),
+          text: `${TEXT}&n=2`,
+        });
+      }
+      await vi.waitFor(() => {
+        expect(
+          a.dispatched.filter((x) => x.type === "tourAuthoring/codeMeasured"),
+        ).toHaveLength(2);
+      });
     });
 
     it("keeps a visit with no fix and no code out of the visit log", async () => {
@@ -2952,9 +3021,20 @@ describe(
       a.setWalk({ fixes: [], odometry: [] });
       a.endVisit();
       await flush();
-      expect(
-        [...files.keys()].filter((k) => k.startsWith(visitKey(""))),
-      ).toEqual([]);
+      const visitFiles = () =>
+        [...files.keys()].filter((k) => k.startsWith(visitKey("")));
+      expect(visitFiles()).toEqual([]);
+      // Positive control (M1 review #7): the next visit, with one fix, IS
+      // logged - so the empty list above is the rule, not a write that had
+      // not landed yet.
+      a.beginVisit();
+      a.setWalk({
+        fixes: [{ latitude: ZERO.lat, longitude: ZERO.lon, timestamp: 1 }],
+        odometry: [[0, 0, 0]],
+      });
+      a.endVisit();
+      await flush();
+      expect(visitFiles()).toHaveLength(1);
     });
   },
 );

@@ -133,6 +133,7 @@ export function wireArchiveOpen(deps: {
     // The viewer pipeline's level source and the placed planes belong to the
     // closing tour — a newly opened tour must not relocalize against them.
     ctx.currentLevels = null;
+    ctx.currentLevelTexts = null;
     ctx.tourManifest = null;
     // The closing tour's story and HUD (tour kit plan K4).
     hooks.stopStations();
@@ -494,6 +495,7 @@ export function wireArchiveOpen(deps: {
         .then((levels) => {
           if (ctx.session !== opened) return;
           ctx.currentLevels = levels;
+          ctx.currentLevelTexts = opened.levelTexts();
           hooks.renderAuthorReadout();
           hooks.reconsiderScanGate(levels);
           // The controller caches a level (or the negative-cache

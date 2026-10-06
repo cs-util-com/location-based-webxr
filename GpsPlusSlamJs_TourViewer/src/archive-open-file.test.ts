@@ -75,6 +75,7 @@ function fakeSession(url: string) {
     }),
     loadTourManifest: () => Promise.resolve(null),
     loadQrLevels: () => Promise.resolve(new Map()),
+    levelTexts: () => new Map(),
     integrity: { kind: "none" },
     integrityFailure: () => null,
     close: vi.fn(() => Promise.resolve()),
@@ -162,6 +163,20 @@ describe("open a file", () => {
     await vi.waitFor(() =>
       expect(hooks.presentDraftForTour).toHaveBeenCalledWith("local-file:abc"),
     );
+  });
+
+  // Why (code book plan M1): what the hosted zip holds for each code is the
+  // Finish's baseline; it is kept with the levels, as they arrive.
+  it("keeps the opened tour's level texts with its levels", async () => {
+    const texts = new Map([["lvl", '{"version":1}']]);
+    mocks.openTourFile.mockResolvedValueOnce({
+      ...fakeSession("local-file:abc"),
+      levelTexts: () => texts,
+    });
+    const { dom, ctx } = wire();
+    pick(dom, new File(["zip"], "tour.zip"));
+    await vi.waitFor(() => expect(ctx.currentLevels).not.toBeNull());
+    expect(ctx.currentLevelTexts).toBe(texts);
   });
 
   it("reports a failed file open and restores every button", async () => {

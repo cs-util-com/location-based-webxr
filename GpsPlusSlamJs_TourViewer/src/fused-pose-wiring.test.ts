@@ -537,6 +537,11 @@ describe("the creator measures and mints with the fused pose", () => {
       });
       c.setup.renderAuthorReadout();
       expect(c.dom.finishButton.disabled).toBe(true);
+      // And the click guard, not only the button state (M1 review #7): a
+      // Finish tapped in that window does not start.
+      c.dom.finishButton.disabled = false;
+      c.dom.finishButton.click();
+      expect(c.ctx.finishing).toBe(false);
       release();
       await vi.waitFor(() => {
         expect(c.ctx.mintedLevel?.id).not.toBe("hosted");
