@@ -264,7 +264,7 @@
       "name": "a code written by Finish not recorded",
       "region": "measuring",
       "file": "src/creator-finish.ts",
-      "from": "        deps.codes.noteFinished(minted.id);",
+      "from": "        deps.codes.finished(levels);",
       "to": ""
     },
     {

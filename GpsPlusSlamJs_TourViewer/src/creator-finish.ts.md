@@ -42,8 +42,10 @@ M4 makes it write every code of the book, not only the one in hand.
   session only if it is still the one it started in
   (`ctx.arSessionGeneration`). An existing level for the same id (also in
   the tolerated wrapped shape) is replaced in place, never duplicated.
-  The size note next to the button says what the rebuild will copy. Entries: the level at
-  `qrLevelEntryName(id)` and `tour.json` from `ctx.tourManifest` (what the
+  The size note next to the button says what the rebuild will copy. Entries: each level the code
+  book says changed (`creator-codes.ts` `toWrite()`, captured after the
+  settle; since M4c-1 - a code the zip already holds unchanged is not
+  written again) at `qrLevelEntryName(id)` and `tour.json` from `ctx.tourManifest` (what the
   zip already carried, so a re-measure never drops placed content) or an
   empty manifest, plus each placed photo's bytes under
   `session.manifestWrap` (the session's own prefix, never re-derived).

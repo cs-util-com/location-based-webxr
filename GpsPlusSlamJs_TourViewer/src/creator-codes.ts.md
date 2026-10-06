@@ -26,12 +26,20 @@ writes these through it, so that M4c can turn its inside into the code book
     once, then the tour's others (geo null for a level without one);
     `storedPoses()` - the ones that read, same order;
   - `isSaved(levelId)` - hosted by the open tour, or written by a Finish of
-    this page (`noteFinished`); what lets a new code take the hand.
+    this page (`finished`); what lets a new code take the hand.
+- The book of codes a Finish writes (M4c-1, `code-book.ts`):
+  - `toWrite()` - every code this page took whose saved text differs from
+    what the zip the Finish rebuilds from holds (the last Finish's text,
+    else the hosted one from `ctx.currentLevelTexts`), in the order the
+    codes were first taken; a stored code kept unchanged is not written;
+  - `finished(written)` - a Finish wrote these: each is saved, and its
+    text is what the next Finish builds on.
 - The visit's stored-code sightings: `noteStoredSighting(levelId, visit,
 sighting)` keeps the latest per code; `storedSightings()` lists them (the
   visit log reads them).
 - `endVisit()` - the visit's sightings go (the stored codes' and the code
-  in hand's); `reset()` - a tour closed: the levels its Finishes wrote go.
+  in hand's); `reset()` - a tour closed: the book and the levels its
+  Finishes wrote go.
 
 ## Invariants & assumptions
 
@@ -41,6 +49,12 @@ sighting)` keeps the latest per code; `storedSightings()` lists them (the
   so this module reads them back on every call rather than keeping a copy
   that a close could leave stale. Within the creator modules nothing else
   writes them.
+- **The book takes the code in hand whenever it is read**: until M5 the
+  session field `ctx.mintedLevel` is still written from outside (the
+  composed tests; the tour's close clears it), so a level found there that
+  the book does not hold yet is taken in as saved and as a reference. A
+  new print size (`clearInHand`) drops the code's measurement and puts its
+  saved text back to the zip's.
 - A stored code's sighting is tagged with its visit; the visit log reads
   only its own visit's, and `endVisit` empties the map anyway.
 - Pure state, no I/O: every method is synchronous and total.

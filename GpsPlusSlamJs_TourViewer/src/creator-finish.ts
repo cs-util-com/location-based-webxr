@@ -100,7 +100,7 @@ export function wireCreatorFinish(deps: {
   wizard: Pick<Wizard, "openStep">;
   dom: CreatorFinishDom;
   measuring: Pick<CreatorMeasuring, "inFlight">;
-  codes: Pick<CreatorCodes, "inHand" | "noteFinished">;
+  codes: Pick<CreatorCodes, "inHand" | "toWrite" | "finished">;
   settle: Pick<
     CreatorSettle,
     | "settleVisit"
@@ -218,6 +218,9 @@ export function wireCreatorFinish(deps: {
     // empties the hand, so this return is unreachable; it keeps the type.
     const minted = deps.codes.inHand();
     if (minted === null) return;
+    // Every code this page changed, captured with the code in hand (M4c-1):
+    // a code the zip already holds unchanged is not written again.
+    const levels = deps.codes.toWrite();
     // Both guards for the continuation: the tour may be re-opened and the
     // AR session may end (and a new one start) while the rebuild runs; the
     // result must not land in a session or a tour it was not made for
@@ -292,7 +295,7 @@ export function wireCreatorFinish(deps: {
         // (`finish-entries.ts`), then the manifest and the photos.
         const entries: FinishEntry[] = finishEntries({
           entryNames,
-          levels: [minted],
+          levels,
           wrap,
           listed: listed !== null,
           manifestPath,
@@ -422,7 +425,7 @@ export function wireCreatorFinish(deps: {
         );
         deps.previews.sync();
         wroteZip = true;
-        deps.codes.noteFinished(minted.id);
+        deps.codes.finished(levels);
         deps.movePrompt.clearUndo();
         // The result screen said them; the next Finish reports its own.
         deps.settle.afterFinish();

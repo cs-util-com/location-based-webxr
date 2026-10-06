@@ -17,7 +17,17 @@
  */
 
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
-import type { LevelText } from "./code-book.js";
+import {
+  afterFinish,
+  codesToWrite,
+  withHosted,
+  withMeasurement,
+  withoutMeasurement,
+  withReference,
+  withSaved,
+  type CodeBook,
+  type LevelText,
+} from "./code-book.js";
 import type { TourViewerSession } from "./tour-viewer-session.js";
 import {
   storedGeo,
@@ -63,13 +73,18 @@ export interface CreatorCodes {
     sighting: CodeSighting,
   ): void;
   storedSightings(): IterableIterator<StoredSighting>;
-  /** A Finish of this page wrote `levelId` into the tour. */
-  noteFinished(levelId: string): void;
   /** `levelId` is saved in the tour: hosted, or written by a Finish. */
   isSaved(levelId: string): boolean;
+  /** The codes a Finish writes now: every code of the book whose saved
+   *  text differs from what the zip it rebuilds from holds (the last
+   *  Finish's text, else the hosted one), in the order they were taken. */
+  toWrite(): LevelText[];
+  /** A Finish wrote `written`: each is saved (`isSaved`) and its text is
+   *  what the next Finish builds on. */
+  finished(written: readonly LevelText[]): void;
   /** A visit ended: its sightings go. */
   endVisit(): void;
-  /** A tour closed: the levels its Finishes wrote go. */
+  /** A tour closed: the book and the levels its Finishes wrote go. */
   reset(): void;
 }
 
@@ -90,6 +105,26 @@ export function wireCreatorCodes(deps: {
   /** The levels a Finish in this page wrote into the tour: saved, so a
    *  new code may take the hand from them (`codeOutcome`). */
   const finishedLevelIds = new Set<string>();
+  /**
+   * Every code this page took, with its saved text, measurement and what
+   * the last Finish wrote (`code-book.ts`). Until M5 the session field
+   * `ctx.mintedLevel` is still written from outside (the composed tests;
+   * the tour's close clears it), so the code in hand is taken into the
+   * book whenever the book is read ({@link takeInHand}).
+   */
+  let book: CodeBook = new Map();
+
+  function takeInHand(): void {
+    const level = ctx.mintedLevel;
+    if (level === null || book.get(level.id)?.saved === level.json) return;
+    book = withReference(withSaved(book, level), level.id);
+  }
+
+  /** The book with the hosted texts filled in (the Finish's baseline). */
+  function withHostedTexts(): CodeBook {
+    takeInHand();
+    return withHosted(book, ctx.currentLevelTexts ?? new Map());
+  }
 
   function references(): { levelId: string; geo: QrGeoPose | null }[] {
     const inHand = ctx.mintedLevel;
@@ -111,18 +146,29 @@ export function wireCreatorCodes(deps: {
     setInHand: (level, measurement) => {
       ctx.mintedLevel = level;
       ctx.codeMeasurement = measurement;
+      if (level === null) return;
+      book =
+        measurement === null
+          ? withReference(withSaved(book, level), level.id)
+          : withMeasurement(book, level, measurement);
     },
     remint: (level) => {
       ctx.mintedLevel = level;
+      book = withSaved(book, level);
     },
     restoreInHand: (level) => {
       if (ctx.mintedLevel !== null) return false;
       ctx.mintedLevel = level;
+      book = withReference(withSaved(book, level), level.id);
       return true;
     },
     clearInHand: () => {
+      // The code in hand is measured again (a new print size): its new
+      // pose no longer counts, and its saved text falls back to the zip's.
+      const id = ctx.mintedLevel?.id;
       ctx.mintedLevel = null;
       ctx.codeMeasurement = null;
+      if (id !== undefined) book = withoutMeasurement(book, id);
     },
     setSighting: (sighting) => {
       ctx.visitCodeSighting = sighting;
@@ -141,18 +187,21 @@ export function wireCreatorCodes(deps: {
       storedCodeSightings.set(levelId, { visit, sighting });
     },
     storedSightings: () => storedCodeSightings.values(),
-    noteFinished: (levelId) => {
-      finishedLevelIds.add(levelId);
-    },
     isSaved: (levelId) =>
       (ctx.currentLevels?.has(levelId) ?? false) ||
       finishedLevelIds.has(levelId),
+    toWrite: () => codesToWrite(withHostedTexts()),
+    finished: (written) => {
+      book = afterFinish(withHostedTexts(), written);
+      for (const { id } of written) finishedLevelIds.add(id);
+    },
     endVisit: () => {
       storedCodeSightings.clear();
       ctx.visitCodeSighting = null;
     },
     reset: () => {
       finishedLevelIds.clear();
+      book = new Map();
     },
   };
 }

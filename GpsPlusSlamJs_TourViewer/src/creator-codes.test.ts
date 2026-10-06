@@ -156,7 +156,7 @@ describe("creator-codes: stored codes and what Finish wrote", () => {
     const codes = wireCreatorCodes({ ctx });
     expect(codes.isSaved("h")).toBe(true);
     expect(codes.isSaved("a")).toBe(false);
-    codes.noteFinished("a");
+    codes.finished([{ id: "a", json: levelJson(47.5) }]);
     expect(codes.isSaved("a")).toBe(true);
     codes.reset();
     expect(codes.isSaved("a")).toBe(false);
@@ -176,5 +176,68 @@ describe("creator-codes: stored codes and what Finish wrote", () => {
     codes.endVisit();
     expect([...codes.storedSightings()]).toEqual([]);
     expect(codes.sighting()).toBeNull();
+  });
+});
+
+describe("creator-codes: the book of codes a Finish writes (M4c-1)", () => {
+  // Why this test matters: each Finish wrote ONE level, the code in hand;
+  // the book keeps every code this page took, and a Finish writes each one
+  // whose saved text differs from what the zip it rebuilds from holds -
+  // the last Finish's text, else the hosted one (M1 review #1).
+  it("writes every code changed in this page, and after a Finish only what changed since", () => {
+    const ctx = createTourViewerSession();
+    ctx.currentLevelTexts = new Map([["h", levelJson(47.3)]]);
+    const codes = wireCreatorCodes({ ctx });
+    const a = { id: "a", json: levelJson(47.5) };
+    codes.setInHand(a, MEASUREMENT);
+    expect(codes.toWrite()).toEqual([a]);
+    codes.finished([a]);
+    expect(codes.toWrite()).toEqual([]);
+    expect(codes.isSaved("a")).toBe(true);
+    const b = { id: "b", json: levelJson(47.6) };
+    codes.setInHand(b, { ...MEASUREMENT, levelId: "b" });
+    // Both are in the book; only B changed since the Finish.
+    expect(codes.toWrite()).toEqual([b]);
+    const a2 = { id: "a", json: levelJson(47.55) };
+    codes.setInHand(a2, MEASUREMENT);
+    // In the order the codes were first taken.
+    expect(codes.toWrite()).toEqual([a2, b]);
+  });
+
+  // Why this test matters: a stored code kept as the reference (its saved
+  // pose unchanged) is already in the zip - writing it again changes
+  // nothing, and leaving it out keeps the Finish's file list honest.
+  it("does not write a hosted code whose saved text is unchanged", () => {
+    const ctx = createTourViewerSession();
+    const hosted = levelJson(47.3);
+    ctx.currentLevelTexts = new Map([["h", hosted]]);
+    const codes = wireCreatorCodes({ ctx });
+    codes.setInHand({ id: "h", json: hosted }, null);
+    expect(codes.toWrite()).toEqual([]);
+    const improved = { id: "h", json: levelJson(47.31) };
+    codes.remint(improved);
+    expect(codes.toWrite()).toEqual([improved]);
+  });
+
+  // Why this test matters: until M5 the session field is still written
+  // from outside this module (the composed tests, and the tour's close),
+  // so the book takes whatever is in hand when it is read.
+  it("takes a level written straight into the session field into the book", () => {
+    const ctx = createTourViewerSession();
+    const codes = wireCreatorCodes({ ctx });
+    const a = { id: "a", json: levelJson(47.5) };
+    ctx.mintedLevel = a;
+    expect(codes.toWrite()).toEqual([a]);
+  });
+
+  // Why this test matters: the book belongs to the tour - a closed tour's
+  // codes must not be written into the next tour's zip.
+  it("empties the book when the tour closes", () => {
+    const ctx = createTourViewerSession();
+    const codes = wireCreatorCodes({ ctx });
+    codes.setInHand({ id: "a", json: levelJson(47.5) }, MEASUREMENT);
+    ctx.mintedLevel = null;
+    codes.reset();
+    expect(codes.toWrite()).toEqual([]);
   });
 });
