@@ -349,35 +349,9 @@ were here. What stays is the Finish's side:
     needed, and the e2e finishes twice in one open tour to hold them.
 - **Hand-off and the Drive steps:** `creator-handoff.ts` (split out in
   the code book plan's M2; its sidecar holds what was here).
-- **Placement (M4, DEC-N9):** allowed only under the mint gate's own
-  alignment floor for THIS session (a measured code, a matrix and at least
-  `MIN_ALIGNMENT_SAMPLES` fixes since the session started - a level that
-  survived a session end does not open it, M4 review #2), a running
-  session and no rebuild in flight; re-checked at every tap. "Place a pin
-  here" reads the hit-test reticle (a surface must be under it, else the
-  panel says so), opens the overlay label input (with a Cancel), and Save
-  mints a `pin` record from the reticle's GPS-world position
-  (`content-placement.ts`; the reticle rides the lerped visual alignment,
-  which converges within ~0.3 s of a correction - the one frame difference
-  to the photo's target-matrix mint, accepted);
-  "Capture a photo here" encodes the latest camera frame's pixels
-  (`ctx.latestFrame.image`) through `seams.encodeFrameJpeg` and mints a
-  `photo` record from THAT frame's raw capture pose
-  (`ctx.latestFrame.cameraPose`) through the session alignment, keeping the
-  JPEG for the rebuild. The photo and its placement therefore describe the
-  same moment; the pose used to be read at tap time (QR perf plan 2026-09-23
-  M4). A frame older than `PHOTO_FRAME_MAX_AGE_MS` (1 s) is refused -
-  `photo-frame.ts`, because frames stop during a tracking loss while
-  `latestFrame` keeps the last one. Each placement renders its own preview (`renderTourObjects`;
-  `ctx.placedPreviews`, one handle per object, so two placements cannot
-  race each other's disposal and a photo is decoded once). A preview of an
-  object placed in the RUNNING visit is rigid (decision D2, plan §3.2, M2c):
-  it goes under the AR world group at its odometry pose, kept in
-  `placedObjects[i].placement` (`{ visit, local }`; a pin's reticle through
-  `worldToLocal`, a photo's capture pose through `odomNueFromWebXr`), so a
-  GPS re-solve moves it together with the camera instead of sliding it
-  against the world (symptom A). Anything else - a restored draft object,
-  an earlier visit's - has only its geo and is placed from it. The outcome of a placement is `ctx.placementNote`, shown until
+- **Placement (M4, DEC-N9):** the gate, the pin and the photo are
+  `creator-placement.ts` (its sidecar holds the rules that were here).
+  The outcome of a placement is `ctx.placementNote`, shown until
   the next tap AHEAD of the live readout, never instead of it: it gates no
   control (it used to replace the readout and lock Save, which on a device
   without OPFS - the backup notice fires at tour open - left Save locked

@@ -309,6 +309,34 @@
       "file": "src/creator-alignment-picks.ts",
       "from": "      alignmentPicks.noteMeasurement(atMs);\n",
       "to": ""
+    },
+    {
+      "name": "placement allowed outside a running session",
+      "region": "placement",
+      "file": "src/creator-placement.ts",
+      "from": "      arController.getState().status === \"running\" &&\n",
+      "to": ""
+    },
+    {
+      "name": "placement allowed before the alignment floor",
+      "region": "placement",
+      "file": "src/creator-placement.ts",
+      "from": "      alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES &&\n",
+      "to": ""
+    },
+    {
+      "name": "late photo minted through the store alignment",
+      "region": "placement",
+      "file": "src/creator-placement.ts",
+      "from": "            settled === undefined\n",
+      "to": "            true\n"
+    },
+    {
+      "name": "late photo not logged as a late arrival",
+      "region": "placement",
+      "file": "src/creator-placement.ts",
+      "from": "        if (settled !== undefined) deps.lateArrival(visit, photo);\n",
+      "to": ""
     }
   ]
 }

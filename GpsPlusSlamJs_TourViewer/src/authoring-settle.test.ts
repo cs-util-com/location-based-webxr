@@ -3038,3 +3038,39 @@ describe(
     });
   },
 );
+
+describe(
+  "placement waits for its gate (code book plan M2)",
+  { timeout: SLOW_MS },
+  () => {
+    // Why these tests matter: placement is allowed only in a RUNNING
+    // session with this session's fixes solved in (the mint gate's floor -
+    // the matrix alone is the identity from the first fix, M4 review #2).
+    // A pin placed outside that gate is minted through an alignment that
+    // describes nothing, and lands metres from where the creator stood.
+    // No unit test held either half until the M2 split's sampled mutants
+    // showed both surviving.
+    it("refuses a pin while the session is not running, and places it once it runs", async () => {
+      const a = authoring();
+      a.ctx.mintedLevel = { id: "lvl", json: "{}" };
+      a.device.live = false;
+      await a.placePin("Gate", [2, 0, -1]);
+      expect(a.ctx.placedObjects).toEqual([]);
+      a.device.live = true;
+      await a.placePin("Gate", [2, 0, -1]);
+      expect(a.ctx.placedObjects).toHaveLength(1);
+    });
+
+    it("refuses a pin before this session's fixes reach the alignment floor", async () => {
+      const a = authoring();
+      a.ctx.mintedLevel = { id: "lvl", json: "{}" };
+      // One fix of the store's was there before this session started.
+      a.ctx.gpsSamplesAtSessionStart = 1;
+      await a.placePin("Gate", [2, 0, -1]);
+      expect(a.ctx.placedObjects).toEqual([]);
+      a.ctx.gpsSamplesAtSessionStart = 0;
+      await a.placePin("Gate", [2, 0, -1]);
+      expect(a.ctx.placedObjects).toHaveLength(1);
+    });
+  },
+);
