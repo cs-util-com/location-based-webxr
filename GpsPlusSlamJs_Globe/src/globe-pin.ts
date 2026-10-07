@@ -46,11 +46,24 @@ const TRANSITIONS: Readonly<
   flying: { press: "idle", touch: "idle", held: "idle" },
 };
 
-/** The next phase (see `TRANSITIONS`). */
+/**
+ * Whether the camera already moves while the pin locates: the continuous
+ * flight (`flight=2`, continuous-flight plan 2026-10-07-0941 CF3) holds
+ * above the band from the press, so a touch there cancels too.
+ */
+export interface PinOptions {
+  readonly moving?: boolean;
+}
+
+/** The next phase (see `TRANSITIONS`; with `moving`, a touch cancels a locate). */
 export function nextPinPhase(
   phase: GlobePinPhase,
   event: GlobePinEvent,
+  options: PinOptions = {},
 ): GlobePinPhase {
+  if (options.moving && phase === "locating" && event === "touch") {
+    return "idle";
+  }
   return TRANSITIONS[phase][event] ?? phase;
 }
 
@@ -60,7 +73,10 @@ export function nextPinPhase(
  * only while the page leaves: a press cancels the wait for the fix, and
  * stops the flight.
  */
-export function globePinView(phase: GlobePinPhase): {
+export function globePinView(
+  phase: GlobePinPhase,
+  options: PinOptions = {},
+): {
   label: string;
   disabled: boolean;
   busy: boolean;
@@ -70,7 +86,9 @@ export function globePinView(phase: GlobePinPhase): {
       return { label: "Fly to my location", disabled: false, busy: false };
     case "locating":
       return {
-        label: "Finding you... - tap to cancel",
+        label: options.moving
+          ? "Finding you, descending - tap to cancel"
+          : "Finding you... - tap to cancel",
         disabled: false,
         busy: true,
       };

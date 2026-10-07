@@ -131,3 +131,27 @@ describe("globePinView", () => {
     }
   });
 });
+
+// WHY (continuous-flight plan CF3, cold review finding 8): with the
+// continuous flight (`flight=2`) the camera moves from the press, holding
+// above the band while the fix is found, so a touch on the globe cancels in
+// every moving phase, locating included, and the label says the camera is
+// already descending. Today's dive keeps its rule (nothing moves while it
+// locates) until the switch's default changes.
+describe("the pin with the continuous flight", () => {
+  it("lets a touch cancel while it locates", () => {
+    expect(nextPinPhase("locating", "touch", { moving: true })).toBe("idle");
+    expect(nextPinPhase("locating", "touch")).toBe("locating");
+    expect(nextPinPhase("flying", "touch", { moving: true })).toBe("idle");
+  });
+
+  it("says it is descending while it finds you", () => {
+    const view = globePinView("locating", { moving: true });
+    expect(view.label).toBe("Finding you, descending - tap to cancel");
+    expect(view.busy).toBe(true);
+    expect(view.disabled).toBe(false);
+    expect(globePinView("locating").label).toBe(
+      "Finding you... - tap to cancel",
+    );
+  });
+});

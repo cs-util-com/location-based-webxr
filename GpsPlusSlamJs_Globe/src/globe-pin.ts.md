@@ -26,6 +26,12 @@
   - `globePinView(phase)` -> `{ label, disabled, busy }`: "Fly to my
     location" (enabled), "Finding you... - tap to cancel" (enabled, busy),
     "Flying to you - tap to stop" (enabled, busy). No phase is disabled.
+  - Both take `{ moving }` (`PinOptions`): with the continuous flight
+    (`flight=2`, continuous-flight plan 2026-10-07-0941 CF3, cold review
+    finding 8) the camera moves from the press, holding above the band
+    while the fix is found, so a touch cancels while locating too (-> idle),
+    and the label reads "Finding you, descending - tap to cancel". Without
+    it, today's dive keeps its rule until the switch's default changes.
 - Label choice: "Finding you..." rather than OsmDemo's "locating…"
   (`labelFor`): the globe's pin shows its phase as visible text in a
   status line (OsmDemo's icon button keeps its words in `aria-label`), and
