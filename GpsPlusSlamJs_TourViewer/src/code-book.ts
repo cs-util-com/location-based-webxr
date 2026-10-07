@@ -137,10 +137,12 @@ export function withHosted(
   book: CodeBook,
   hosted: ReadonlyMap<string, string>,
 ): CodeBook {
-  let next = book;
+  // One copy, not one per hosted level: the Finish readiness asks for this
+  // several times per render (webxr PR #556 review).
+  const next = new Map(book);
   for (const [id, json] of hosted) {
     const code = next.get(id) ?? blank(id);
-    next = put(next, { ...code, hosted: json, saved: code.saved ?? json });
+    next.set(id, { ...code, hosted: json, saved: code.saved ?? json });
   }
   return next;
 }

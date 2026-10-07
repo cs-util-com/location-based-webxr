@@ -61,17 +61,21 @@ hosted, measurement, reference, finished }`:
 - Every measured code is a reference.
 - Text identity, not parsed equality: a level re-serialized differently is
   written again (harmless: the Finish replaces the file in place).
-- What M4 must map from today's slot: `measurementRole` and
-  `hostedCandidate` read "the level in hand"; with the book, the code's own
-  entry is that input.
-- Not wired yet in M1; M4 replaces the slot with it.
+- Wired since M4 through `creator-codes.ts`, which starts from an EMPTY
+  book (codes enter as they are measured, kept or restored) and folds the
+  hosted texts in only when it asks (`withHosted`, one map copy per call).
+- Test-only today (webxr PR #556 review): `openCodeBook` and
+  `referenceCodes`; the `reference` field is written everywhere and read
+  only by `referenceCodes`. M5's one "has a stored pose" predicate decides
+  whether they stay (code book plan §12, M4 review #8).
 
 ## Examples
 
 ```ts
-let book = openCodeBook({ hosted: ctx.currentLevelTexts ?? new Map() });
+// As creator-codes.ts uses it:
+let book: CodeBook = new Map();
 book = withMeasurement(book, { id, json }, measurement);
-const entries = codesToWrite(book); // every changed code
+const entries = codesToWrite(withHosted(book, hostedTexts)); // every changed code
 book = afterFinish(book, entries);
 ```
 
