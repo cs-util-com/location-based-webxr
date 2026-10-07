@@ -55,6 +55,7 @@ import { buildVisitLogEntry, newVisitId, type VisitLog } from "./visit-log.js";
 import {
   planVisitSettle,
   settleAlignment,
+  visitEndChoice,
   sightedCodeOffset,
   storedGeo,
   type CodeSighting,
@@ -325,7 +326,6 @@ export function wireCreatorSettle(deps: {
           ? picks
           : { ...picks, measurement: position.pick },
     };
-    const choice = settleAlignment(input);
     // The visit's codes (M4c-2): the code in hand first - with this
     // settle's re-mint when its position changed - then every other code
     // the visit measured, or sighted with a stored pose. One code: the
@@ -354,13 +354,17 @@ export function wireCreatorSettle(deps: {
               },
               ...others,
             ];
+    const settleInput = codes === undefined ? input : { ...input, codes };
+    // The visit's END choice - late photos, the visit log's path, the
+    // settled log's basis - through the code seen last (code book plan
+    // M5a); it exists whenever the alignment and the zero read, also for a
+    // visit that settles nothing else (M5 design review #1).
+    const choice = visitEndChoice(settleInput);
     // Pure, so planned before the log: the log marks the pose this settle
     // saves for the code, which is how the summary grades what visitors
     // get (M3a/M3b review #2).
     const plan =
-      choice === null || zero === null
-        ? null
-        : planVisitSettle(codes === undefined ? input : { ...input, codes });
+      choice === null || zero === null ? null : planVisitSettle(settleInput);
     const applied =
       position !== null &&
       remint !== null &&
@@ -396,9 +400,8 @@ export function wireCreatorSettle(deps: {
       alignment: choice.alignment,
       visitAlignment,
       zero,
-      sighting:
-        choice.basis === "code-corrected" ? deps.codes.sighting() : null,
-      referenceLevel: deps.codes.inHand(),
+      sighting: choice.basis === "code-corrected" ? choice.sighting : null,
+      referenceLevel: choice.level,
       refused: choice.refused,
     };
     visitSettles.set(visit, record);
@@ -422,7 +425,7 @@ export function wireCreatorSettle(deps: {
       // Nothing to recompute, but a decision about the code is still the
       // recording's to keep.
       if (decided !== undefined) {
-        logSettle(visit, trigger, record, [], null, null, decided);
+        logSettle(visit, trigger, record, [], null, null, [], decided);
       }
       return;
     }
@@ -460,6 +463,7 @@ export function wireCreatorSettle(deps: {
       plan.objects,
       plan.level,
       plan.levelAlignment,
+      plan.levels,
       decided === undefined ? undefined : { ...decided, movedWithCode },
     );
   }
@@ -656,6 +660,7 @@ export function wireCreatorSettle(deps: {
     objects: readonly ({ object: TourObject } & SettleChoice)[],
     level: { id: string; json: string } | null,
     levelAlignment: number[] | null,
+    levels: readonly { id: string; json: string; alignment: number[] }[],
     codePosition?: Parameters<typeof visitSettled>[0]["codePosition"],
   ): void {
     arStore.dispatch(
@@ -678,6 +683,7 @@ export function wireCreatorSettle(deps: {
         })),
         levelAlignment,
         level,
+        ...(levels.length === 0 ? {} : { levels }),
         referenceLevel: record.referenceLevel,
         zero: record.zero,
         refusedCorrection: record.refused,
@@ -705,6 +711,7 @@ export function wireCreatorSettle(deps: {
         ],
         null,
         null,
+        [],
       );
     },
     unsettle: unsettleRunningVisit,

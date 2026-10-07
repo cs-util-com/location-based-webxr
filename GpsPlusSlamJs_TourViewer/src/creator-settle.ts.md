@@ -61,7 +61,11 @@ M4 settles every code of the book, not only the one in hand.
   re-minted through it (review R7 of D33).
   - **Each visit settles once, keyed by the visit the settle ran for**
     (`visitSettles`, M2c review #1): the record holds the basis, the
-    alignment used, the store's alignment, the zero and the sighting. A
+    alignment used, the store's alignment, the zero and the sighting. Since
+    M5a the record is `visitEndChoice` over the visit's codes - the code
+    seen LAST, its level as `referenceLevel`, its sighting - not the code
+    in hand's `settleAlignment`; it exists whenever the alignment and the
+    zero read, exactly as before. A
     Finish tapped during a visit settles it at the tap, so the session end
     the Finish causes finds the record and does not re-mint the code a
     moment later (the draft's level would then differ from the one just

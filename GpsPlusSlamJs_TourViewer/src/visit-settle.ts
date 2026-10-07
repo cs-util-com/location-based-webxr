@@ -760,6 +760,47 @@ export interface VisitSettle {
  *   alignment or zero can be read (then every record keeps its tap-time
  *   geo, which is also what a killed tab keeps).
  */
+/** The visit's end choice and the code it went through. */
+export interface VisitEndChoice extends SettleChoice {
+  /** The code seen last (with one code, the code in hand); null without
+   *  one. */
+  readonly level: { id: string; json: string } | null;
+  /** That code's latest sighting in the visit, if any. */
+  readonly sighting: CodeSighting | null;
+}
+
+/**
+ * The visit's END choice (code book plan M5a): what lands after the settle
+ * (a photo still encoding), the visit log's path and the settled log's
+ * basis go through it. It is the code seen LAST - the latest event of any
+ * code of the visit (`latestCode`) - and with one code it equals
+ * {@link settleAlignment}. Unlike {@link planVisitSettle} it exists for a
+ * visit that placed and measured nothing (M5 design review #1): that is the
+ * visit a late photo most needs it for.
+ *
+ * @returns null when the alignment does not read or there is no zero.
+ */
+export function visitEndChoice(input: VisitSettleInput): VisitEndChoice | null {
+  const end = readAlignment(input.alignment);
+  if (end === null || input.zero === null) return null;
+  return endChoiceOf(codeViews(input), input, end, input.zero);
+}
+
+/** {@link visitEndChoice} over views already built. */
+function endChoiceOf(
+  views: readonly VisitSettleInput[],
+  input: VisitSettleInput,
+  end: number[],
+  zero: LatLong,
+): VisitEndChoice {
+  const view = views[latestCode(views)] ?? input;
+  return {
+    ...choiceFor(view, end, zero, null, end),
+    level: view.mintedLevel,
+    sighting: view.sighting,
+  };
+}
+
 export function planVisitSettle(input: VisitSettleInput): VisitSettle | null {
   const targets = input.placed.flatMap((entry, index) =>
     entry.placement !== undefined && entry.placement.visit === input.visit
@@ -780,13 +821,7 @@ export function planVisitSettle(input: VisitSettleInput): VisitSettle | null {
   }));
   // A photo that lands after the settle is at the visit's end: the code
   // seen last (with one code, the code in hand, as before).
-  const choice = choiceFor(
-    views[latestCode(views)] ?? input,
-    end,
-    zero,
-    null,
-    end,
-  );
+  const choice = endChoiceOf(views, input, end, zero);
   const objects = targets.flatMap(({ index, object, local }) => {
     const timed = input.picks?.objects.get(object.id) ?? null;
     const own = readAlignment(timed?.alignment ?? null) ?? end;

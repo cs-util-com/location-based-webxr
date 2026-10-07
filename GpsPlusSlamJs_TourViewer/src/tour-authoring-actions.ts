@@ -205,6 +205,14 @@ interface VisitSettledLog {
   /** The code re-minted through `levelAlignment` when this visit measured
    *  it; null otherwise. */
   readonly level: { readonly id: string; readonly json: string } | null;
+  /** Every level this settle re-minted, each with the alignment it went
+   *  through (code book plan M5a); `level` is one of them. Absent in
+   *  older recordings and on a late arrival. */
+  readonly levels?: readonly {
+    readonly id: string;
+    readonly json: string;
+    readonly alignment: readonly number[];
+  }[];
   /** The level in hand when the settle ran, before any re-mint: the stored
    *  pose a code correction mapped this visit onto. With `zero`,
    *  `visitAlignment` and `sighting` a replay recomputes the END choice's

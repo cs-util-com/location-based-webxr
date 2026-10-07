@@ -124,6 +124,15 @@ draft and logs `tourAuthoring/settled`.
   distance to the code); `storedSizeM(json)` - a level's printed size, or
   null when it is not a positive number (the size a code is solved at,
   `creator-measuring.ts`).
+- `visitEndChoice(input): VisitEndChoice | null` (code book plan M5a) - the
+  visit's END choice through the code seen LAST (the latest event of any
+  code of the visit), with that code's `level` and `sighting`: what a late
+  photo, the visit log's path and the settled log's basis go through. With
+  one code it equals `settleAlignment` (the golden seeds hold it). Unlike
+  `planVisitSettle` it exists for a visit that placed and measured nothing
+  (M5 design review #1); null only when the alignment or the zero do not
+  read. `planVisitSettle`'s `basis` / `alignment` / `refused` are the same
+  choice.
 - `planVisitSettle(input): VisitSettle | null` - the settled records by
   index into `placed` (only objects whose `placement.visit` is this visit),
   each with its own `SettleChoice` (D33: its pick by id; near a code event

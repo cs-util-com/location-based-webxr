@@ -29,6 +29,7 @@ import {
   CODE_EVENT_REACH_M,
   planVisitSettle,
   storedGeo,
+  visitEndChoice,
   type CodeMeasurement,
   type CodeSighting,
 } from "./visit-settle.js";
@@ -289,6 +290,57 @@ describe("the settle with several codes: each note follows the nearest code even
     expect(alone.objects[0]!.basis).toBe("code-corrected");
     expect(withFar.objects[0]!.object).toEqual(alone.objects[0]!.object);
     expect(withFar.objects[0]!.basis).toBe(alone.objects[0]!.basis);
+  });
+
+  // Why this test matters (code book plan M5a): the end choice used to be
+  // the code in hand's. It is the code seen LAST - temporal, not spatial -
+  // and it exists when the visit placed nothing (the plan is null then),
+  // which is when a late photo needs it.
+  it("ends the visit through the code seen last, even when nothing was placed", () => {
+    const input = {
+      visit: 1,
+      placed: [],
+      alignment: aVisit,
+      zero: ZERO,
+      mintedLevel: storedA,
+      measurement: null,
+      sighting: sightingOf(ID_A, TEXT_A, POSE_A),
+      gpsAccuracyM: 4,
+      alignmentInfo: INFO,
+      nowIso: NOW,
+      codes: [
+        { level: storedA, measurement: null },
+        { level: storedB, measurement: null },
+      ],
+      picks: {
+        objects: new Map(),
+        measurement: null,
+        sightings: [
+          {
+            atMs: 0,
+            walkedM: 0,
+            alignment: aVisit,
+            sighting: sightingOf(ID_A, TEXT_A, POSE_A),
+          },
+          {
+            atMs: 30_000,
+            walkedM: 30,
+            alignment: aVisit,
+            sighting: sightingOf(ID_B, TEXT_B, POSE_B),
+          },
+        ],
+      },
+    };
+    expect(planVisitSettle(input)).toBeNull();
+    const end = visitEndChoice(input)!;
+    expect(end.basis).toBe("code-corrected");
+    expect(end.level).toEqual(storedB);
+    expect(end.sighting?.levelId).toBe(ID_B);
+    // Through B's stored frame: a spot next to B lands where B's storing
+    // visit put it.
+    expect(
+      through(NEAR_B, end.alignment).distanceTo(through(NEAR_B, aStoredB)),
+    ).toBeLessThan(1e-3);
   });
 
   it("keeps a note out of reach of every code event on its own alignment", () => {

@@ -36,6 +36,7 @@ import {
   planMove,
   planVisitSettle,
   settleAlignment,
+  visitEndChoice,
   sightedCodeOffset,
   storedGeo,
   type CodeMeasurement,
@@ -397,6 +398,29 @@ function legacyPlan(
   }
   return legacy;
 }
+
+// Why this test matters (code book plan M5a): the visit's END choice - what
+// a late photo, the visit log's path and the settled log's basis go through -
+// moved from `settleAlignment(input)` (the code in hand) to
+// `visitEndChoice` (the code seen last). With one code they must agree on
+// every seed, the seeds whose plan is null included (a visit that placed and
+// measured nothing still keeps its end choice for a photo still encoding).
+describe("the end choice with one code (code book plan M5a)", () => {
+  it("equals settleAlignment on every seeded one-code visit", () => {
+    for (let seed = 0; seed < SCENARIOS; seed += 1) {
+      const { input } = scenario(seed);
+      const legacy = settleAlignment(input);
+      const end = visitEndChoice(input);
+      expect(end === null, `seed ${String(seed)}`).toBe(legacy === null);
+      if (end === null || legacy === null) continue;
+      expect(
+        { basis: end.basis, alignment: end.alignment, refused: end.refused },
+        `seed ${String(seed)}`,
+      ).toEqual(legacy);
+      expect(end.level, `seed ${String(seed)}`).toEqual(input.mintedLevel);
+    }
+  });
+});
 
 describe("the one-code settle oracle (frozen before M4)", () => {
   const now = Array.from({ length: SCENARIOS }, (_, seed) => outputs(seed));

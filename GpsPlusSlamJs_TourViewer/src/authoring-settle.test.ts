@@ -539,6 +539,8 @@ function authoring(
         /** Since D33: the alignment the level was re-minted through. */
         levelAlignment?: number[] | null;
         level: { id: string; json: string } | null;
+        /** Since M5a: every level the settle re-minted. */
+        levels?: { id: string; json: string; alignment: number[] }[];
         referenceLevel: { id: string; json: string } | null;
         zero: { lat: number; lon: number } | null;
         sighting: { odomPose: Pose } | null;
@@ -1183,6 +1185,62 @@ describe(
         1e-2,
       );
       expect(a.settledLogs().at(-1)!.payload.basis).toBe("code-corrected");
+    });
+
+    // Why this test matters (code book plan M5a, M4 milestone review #4):
+    // a photo whose encode lands after the visit closed is minted through
+    // the visit's END choice. That was the code in hand's - here B,
+    // measured new - though the creator had walked back to stored A and
+    // taken the photo there. It is the code seen last.
+    it("settles a late photo through the code seen last, not the code in hand", async () => {
+      const first = authoring();
+      first.setAlignment(yawAlignment(0, [0, 400, 0]));
+      await first.mint();
+      first.endVisit();
+      const stored = first.ctx.mintedLevel!;
+
+      const a = authoring();
+      await openFinishableTour(a, { levels: [stored] });
+      // As the tour's open sets them (`archive-open.ts`): the parsed levels
+      // and their texts.
+      a.ctx.currentLevels = new Map([
+        [stored.id, parseQrLevel(JSON.parse(stored.json) as unknown)],
+      ]);
+      a.ctx.currentLevelTexts = new Map([[stored.id, stored.json]]);
+      a.setAlignment(yawAlignment(30, [20, 401, -8]));
+      // B, new: measured first, it takes the hand.
+      await a.mint(
+        new Matrix4().makeTranslation(20, 0, 0),
+        "https://gps.csutil.com/tour/?qr=second",
+        10_000,
+      );
+      expect(a.ctx.mintedLevel?.id).not.toBe(stored.id);
+      // Back at A: seen last, then a photo still encoding as the visit ends.
+      // A fresh page derives A's level id first (an async hash), so the
+      // first look only identifies it; the second is the sighting.
+      a.seeTheCode(undefined, TEXT, 20_000);
+      await qrCodeId(TEXT);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      a.seeTheCode(undefined, TEXT, 30_000);
+      await flush();
+      a.encodes.hold = true;
+      a.tapPhoto(CAMERA);
+      a.endVisit();
+      a.setAlignment(yawAlignment(-20, [9, 398, 7]));
+      for (const land of a.encodes.waiting.splice(0)) land();
+      await flush();
+
+      const late = a.settledLogs().at(-1)!.payload;
+      expect(late.trigger).toBe("late-arrival");
+      expect(late.basis).toBe("code-corrected");
+      const photo = a.ctx.placedObjects.at(-1)!.object;
+      // A sits at the same odometry spot in both visits, so A's correction
+      // is the first visit's alignment.
+      expect(
+        worldOf(photo.geo).distanceTo(
+          settledPhotoAt(yawAlignment(0, [0, 400, 0])),
+        ),
+      ).toBeLessThan(1e-2);
     });
 
     it("after a Finish that failed, settles the running visit again at its end, with what was placed since", async () => {
@@ -3212,6 +3270,29 @@ describe(
     // "Finish first" and was never measured; now both are measured, both
     // re-minted by the settle, and the draft keeps both levels for the
     // Finish.
+    // Why this test matters (code book plan M5a; M4 milestone review #6):
+    // the settled log named one re-minted level, so a replay of a visit
+    // that measured two codes could not see the second one's new pose.
+    it("logs every level the settle re-minted", async () => {
+      const a = authoring();
+      await a.mint();
+      const first = a.ctx.mintedLevel!;
+      await a.mint(
+        new Matrix4().makeTranslation(20, 0, 0),
+        "https://gps.csutil.com/tour/?qr=second",
+        10_000,
+      );
+      const second = a.ctx.mintedLevel!;
+      a.endVisit();
+      const settled = a.settledLogs().at(-1)!.payload;
+      expect(settled.levels?.map((l) => l.id).sort()).toEqual(
+        [first.id, second.id].sort(),
+      );
+      for (const level of settled.levels ?? []) {
+        expect(level.alignment, level.id).toHaveLength(16);
+      }
+    });
+
     it("measures both codes, and the draft keeps both levels", async () => {
       const { store, files } = memoryDraftStore();
       const a = authoring({ store });
