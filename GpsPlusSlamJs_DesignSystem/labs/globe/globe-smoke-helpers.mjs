@@ -12,15 +12,42 @@ import { expect } from "@playwright/test";
  * has arrived at its target, and returns the list the page's console
  * errors collect into.
  */
-export async function bootGlobe(page, hash, { phase = "arrived" } = {}) {
+/**
+ * The hash with `relief=0` added when it names no relief (the relief is the
+ * lab's default since F2a, DEC-GL5-15, and a smoke that does not ask for it
+ * measures the plain globe it was written for), and `cityWarm=0` when it
+ * names no warm-up (K0: no city data before a press).
+ */
+export function plainGlobe(hash) {
+  const named = new URLSearchParams(hash);
+  // The city's warm-up at load (K0, the city plan 2026-10-05-0040) is on by
+  // default; a smoke that does not name it keeps the old behaviour: no
+  // city data before a press (most smokes use `at=` only for the view).
+  const warm = named.has("cityWarm") ? "" : "cityWarm=0&";
+  return named.has("relief") ? `${warm}${hash}` : `relief=0&${warm}${hash}`;
+}
+
+/**
+ * Boots the lab at `hash` and waits for `phase`; returns the page's console
+ * errors. `plain: false` loads the hash as given, so the page's own
+ * defaults (the relief among them) apply. `routeCity: false` leaves the
+ * city's data (Overpass, the height tiles) to the test's own routes.
+ */
+export async function bootGlobe(
+  page,
+  hash,
+  { phase = "arrived", plain = true, routeCity = true } = {},
+) {
   const errors = [];
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
   page.on("pageerror", (e) => errors.push(e.message));
-  // A pin press starts the arrival prefetch: its city data is answered here.
-  await routeCityData(page);
-  await page.goto(`/labs/globe/#${hash}`);
+  // A pin press starts the arrival prefetch: its city data is answered here,
+  // unless the test routes the city itself (`routeCity: false`; page routes
+  // win over context routes, and a worker's requests are the page's).
+  if (routeCity) await routeCityData(page);
+  await page.goto(`/labs/globe/#${plain ? plainGlobe(hash) : hash}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
     null,
@@ -38,9 +65,10 @@ export async function bootGlobe(page, hash, { phase = "arrived" } = {}) {
 /**
  * Waits until the page has arrived at `target` and its tiles have settled.
  * A new view loads every committed level under SwiftShader: 30-50 s
- * measured, so 60 s timed out once on a loaded machine.
+ * measured, so 60 s timed out once on a loaded machine. `timeoutMs` for a
+ * place measured slower (the Alps at 46.5 N 9 E: 107-116 s, 2026-10-05).
  */
-export async function arriveAt(page, target) {
+export async function arriveAt(page, target, { timeoutMs = 120_000 } = {}) {
   const started = Date.now();
   // Children of a just-parsed tile are queued only at the next update, so
   // one poll can see "nothing pending" between two levels: the tile count
@@ -65,7 +93,7 @@ export async function arriveAt(page, target) {
       return performance.now() - w.__settleSince >= 1000;
     },
     target,
-    { timeout: 120_000, polling: 100 },
+    { timeout: timeoutMs, polling: 100 },
   );
   // The settle time per view: a slow creep shows here long before 120 s.
   console.log(
@@ -98,6 +126,11 @@ export async function applyHash(page, hash) {
  * rather than re-measuring against a brighter default.
  */
 const PRE_ROUND4_LOOK = {
+  // The plain globe: the relief is the default since F2a (DEC-GL5-15), and
+  // these floors were measured without it.
+  relief: "0",
+  // No city data before a press (K0 warms it from load by default).
+  cityWarm: "0",
   sunIntensity: String(Math.PI),
   nightGain: "1",
   sunSize: "0.533",

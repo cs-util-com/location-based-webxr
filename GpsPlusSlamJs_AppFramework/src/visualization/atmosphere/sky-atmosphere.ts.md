@@ -18,6 +18,36 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   First call renders all three LUTs; later calls only the sky view; an
   unchanged sun does nothing.
 - `setVisibilityKm(km)` — rebuilds every LUT.
+- `observerAltitudeKm` (getter) and `setObserverAltitudeKm(km)` (globe F2
+  plan 2026-10-03-1922, F2b) — the observer's height in [0, 100) km;
+  re-renders the sky view and re-bakes (the transmittance and
+  multi-scattering tables cover every height), rescales (the sun-relative
+  unit is the reference sun's transmittance from the observer); an
+  unchanged height is free; synchronous like `setSun` unless staged;
+  `RangeError` before any change. The haze follows through its `sync()`.
+- `setCloudCoverage({ glsl, uniforms } | null)` and
+  `setCloudDiscRadius(radiusM | null)` (globe volume-cloud plan
+  2026-10-05-0016, C1): the slab's coverage map and disc around the camera
+  (`cloud-slab.ts.md`), kept across modes and handed to a slab made later
+  like the scene depth; the radius validated before it is kept.
+- `setCloudDiscCentre({ x, z } | null)` (volume-cloud plan §15): the slab
+  disc's centre in the world, or the camera (null, the default), kept
+  across modes like the disc; validated before it is kept.
+- `setCloudReach(reach | null)` (volume-cloud plan §13, R1): how far out
+  the slab draws (`setCloudSlabReach`), kept across modes and handed to a
+  slab made later like the disc; validated before it is kept; null the
+  default.
+- `setCloudSceneDepth(depth | null)` (F2c): the scene's depth for the slab,
+  kept across modes and handed to a slab made later; the sheet and the
+  dome ignore it; no GPU work (`cloud-slab.ts.md`).
+- `rebuild: 'staged'` (constructor option; default `'immediate'`),
+  `stepRebuild()` → `RebuildStage` and `rebuildPending` (getter) — for a
+  page that renders every frame: setters only record the change, and
+  `stepRebuild()` once a frame does at most ONE stage of a pass: `'luts'`
+  (the tables), `'waiting'` (the asynchronous read not done yet), `'read'`
+  (the horizon and the exposure), `'bake'` (into one reused target), or
+  `'idle'`. Immediate mode is unchanged and its `stepRebuild()` is always
+  `'idle'` (OsmDemo never calls it).
 - `configure({ sunDirection?, visibilityKm?, cloudCover?, cloudMode?, cloudSlabSteps?, sunThroughClouds? })` — all at once,
   ONE rebuild or re-bake (a preset change); validates everything before
   changing anything. `setSun`, `setVisibilityKm` and `setClouds` delegate
@@ -98,6 +128,13 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
 
 ## Invariants & assumptions
 
+- **The staged rebuild** (F2b): a pass is the tables, then the read, then
+  the bake, one per `stepRebuild()`. A change during a pass is recorded and
+  applied by ONE further pass after it (the medium flag ORs), so a change
+  every frame delays the sky by at most two passes and never starves the
+  bake. A context restore abandons the pass in flight (its read cancelled)
+  and records a full one; `dispose()` cancels a read in flight. Staged and
+  immediate measure the same sky identically (a test compares them).
 - One scale: `radianceToScene = sunIntensity × exposure / (T_ref × 1000)`.
 - Exposure = auto-exposure (partial adaptation, `atmosphere-exposure.ts`)
   × 2^compensation. It scales natural light only; `renderer.toneMapping` and
@@ -158,4 +195,8 @@ work, exposure-free bake, the bake gain against both half-float ends (CPU
 sky at −6° to −3°, single-scattering glow next to a 2° to 90° sun), a failed
 readback exposed from the CPU estimate (−1°, −3°, −6°, held below),
 auto-exposure response, sun light, horizon colour,
-context restore, sky mesh flags, disposal.
+context restore, sky mesh flags, disposal; the observer's setter (sky view
+only, the rescale, free when unchanged, refusals); the staged rebuild (one
+stage per step, the same exposure as immediate, the reused target, a change
+in flight, the medium, a device without the optional calls, a failed read,
+context restore, dispose, the immediate default untouched).

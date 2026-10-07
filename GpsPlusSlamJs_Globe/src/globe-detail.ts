@@ -12,8 +12,15 @@ import * as THREE from "three";
 import { smoothstep } from "./globe-camera.js";
 
 export const GLOBE_DETAIL = Object.freeze({
-  /** The lab's ENU frame (`enuFrameAt`): metres a degree of latitude. */
-  metresPerDegLat: 111_320,
+  /**
+   * The lab's ENU frame (the Osm library's `enuFrameAt`): metres a degree
+   * of latitude, and of longitude at the equator (times cos(lat)). The AR
+   * core's numbers since 2026-10-06 (globe city plan 2026-10-05-0040 §14,
+   * D-K7; both were 111,320 before); they must equal the frame's or the
+   * detail slides against the region it was baked for.
+   */
+  metresPerDegLat: 39_940_652.7422 / 360,
+  metresPerDegLngEquator: 40_075_016.6856 / 360,
   /** The detail fades out from this share of the drawn half extent. */
   fadeFrom: 0.9,
 });
@@ -53,7 +60,8 @@ export function detailPlace(
 ): { u: number; v: number; fade: number } {
   let dLng = lngDeg - centre.lng;
   dLng -= 360 * Math.floor((dLng + 180) / 360);
-  const x = dLng * Math.cos(centre.lat * DEG) * GLOBE_DETAIL.metresPerDegLat;
+  const x =
+    dLng * Math.cos(centre.lat * DEG) * GLOBE_DETAIL.metresPerDegLngEquator;
   const y = (latDeg - centre.lat) * GLOBE_DETAIL.metresPerDegLat;
   const spacing = (2 * grid.extentM) / (grid.side - 1);
   const edge = Math.max(Math.abs(x), Math.abs(y));
@@ -160,7 +168,7 @@ export const DETAIL_FRAGMENT = /* glsl */ `
   float detailLat = degrees( asin( clamp( detailN.z, -1.0, 1.0 ) ) );
   float detailLng = degrees( atan( detailN.y, detailN.x ) ) - uDetailRegion.y;
   detailLng -= 360.0 * floor( ( detailLng + 180.0 ) / 360.0 );
-  vec2 detailEnu = vec2( detailLng * cos( radians( uDetailRegion.x ) ), detailLat - uDetailRegion.x ) * ${GLOBE_DETAIL.metresPerDegLat.toFixed(1)};
+  vec2 detailEnu = vec2( detailLng * cos( radians( uDetailRegion.x ) ) * ${GLOBE_DETAIL.metresPerDegLngEquator.toFixed(4)}, ( detailLat - uDetailRegion.x ) * ${GLOBE_DETAIL.metresPerDegLat.toFixed(4)} );
   float detailSpacing = 2.0 * uDetailRegion.z / ( uDetailRegion.w - 1.0 );
   vec2 detailUv = ( ( detailEnu + uDetailRegion.z ) / detailSpacing + 0.5 ) / uDetailRegion.w;
   float detailEdge = max( abs( detailEnu.x ), abs( detailEnu.y ) );

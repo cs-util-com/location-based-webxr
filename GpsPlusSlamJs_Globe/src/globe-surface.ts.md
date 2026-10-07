@@ -19,7 +19,13 @@
     relief: the template compiles the altitude band's code) returns `{ tiles, group, plugin, overlay,
 options, sun, surfaceUniforms, template, setSun(directionEcef), update(camera,
 renderer), state(), celestialToWorld(siderealAngleRad, target?),
-activeSources(), dispose() }`.
+activeSources(), cloudShell, setCloudShellShare(share), dispose() }`.
+    - `cloudShell` (`globe-cloud-shell.ts`, round-6 plan G6-2) sits in a
+      group that copies `tiles.group`'s matrix on every sun sync, so it
+      stays in the tiles' ECEF frame; hidden until it has a share.
+      `setCloudShellShare(s)` gives the shell `s` of the clouds and the
+      paint `1 - s` (`uCloudInSurface`); 0, the default, is the look
+      before. RangeError outside 0-1.
     - The caller adds `group` to its scene, points the sun with `setSun`
       and calls `update` every frame before rendering.
     - `template`: the patched `MeshStandardMaterial` every tile's lit copy

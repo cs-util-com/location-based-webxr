@@ -29,7 +29,7 @@ import {
   toWorldPixel,
 } from "/osm-lib/elevation/terrarium.js";
 import { enuFrameAt } from "/osm-lib/mesh/enu.js";
-import { buildHeightfieldData } from "/osm/heightfield.js";
+import { buildHeightfieldData } from "/osm-lib/elevation/heightfield.js";
 import { terrainTextureFrom } from "/osm/terrain-texture.js";
 import { reliefField } from "./terrain-pipeline.js";
 import {
