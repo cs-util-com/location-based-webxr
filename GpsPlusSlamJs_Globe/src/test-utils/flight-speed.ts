@@ -5,9 +5,13 @@
  * app build with the rest of `src/test-utils`).
  *
  * The speed is v = sqrt((d ln h/dt)^2 + (ground speed / h)^2), per second,
- * between consecutive samples. The window runs from 0.5 s after the press
- * to the final descent through 3 x the landing (the last sample above it,
- * so a start already low, one that climbs first, is measured too).
+ * between consecutive samples of a point (the CAMERA, CF1 milestone review
+ * finding 2: the view's centre moves at a constant speed by construction,
+ * so measuring it was close to circular). The flight's criterion is judged
+ * over its cruise (`windowBetween`, from the ramp's end to the settle's
+ * start); `criterionWindow` (0.5 s after the press to the final descent
+ * through 3 x the landing) serves a flight that has no declared phases,
+ * today's dive in the positive control.
  */
 
 import type * as THREE from "three";
@@ -21,17 +25,18 @@ export interface SpeedSample {
   readonly v: number;
 }
 
-interface Frame {
+/** A sampled point: its altitude and its direction from the centre. */
+interface Point {
   readonly altitudeM: number;
-  readonly centre: THREE.Vector3;
+  readonly direction: THREE.Vector3;
 }
 
 /**
  * Samples `at` every 1/`hz` s over `durationMs`; the ground speed is the
- * angle between consecutive view centres on a sphere of `radiusM`.
+ * angle between consecutive directions on a sphere of `radiusM`.
  */
 export function speedSamples(
-  at: (tMs: number) => Frame,
+  at: (tMs: number) => Point,
   durationMs: number,
   hz: number,
   radiusM: number,
@@ -43,7 +48,19 @@ export function speedSamples(
     const now = at(t);
     const dLog = Math.log(now.altitudeM / prev.altitudeM);
     const ground =
-      Math.acos(Math.min(1, prev.centre.dot(now.centre))) * radiusM;
+      // The chord form: acos loses the small angles of one frame near the
+      // ground (0.1 m resolution); 2 asin(|a - b| / 2) keeps them.
+      2 *
+      Math.asin(
+        Math.min(
+          1,
+          prev.direction
+            .clone()
+            .normalize()
+            .distanceTo(now.direction.clone().normalize()) / 2,
+        ),
+      ) *
+      radiusM;
     const h = (now.altitudeM + prev.altitudeM) / 2;
     out.push({
       t,
@@ -55,7 +72,16 @@ export function speedSamples(
   return out;
 }
 
-/** The criterion's window (see the file's comment). */
+/** The samples from `fromMs` to `toMs` (the flight's cruise). */
+export function windowBetween(
+  samples: readonly SpeedSample[],
+  fromMs: number,
+  toMs: number,
+): SpeedSample[] {
+  return samples.filter((s) => s.t >= fromMs && s.t <= toMs);
+}
+
+/** The positive control's window (see the file's comment). */
 export function criterionWindow(
   samples: readonly SpeedSample[],
   landingM: number,
