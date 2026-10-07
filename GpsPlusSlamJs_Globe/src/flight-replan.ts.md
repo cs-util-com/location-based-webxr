@@ -31,7 +31,8 @@ transition" the owner reported.
   - A replanned flight answers from its replan on and keeps no history: the
     old flight is never evaluated again.
   - `join` is the velocity correction of its replan, or null.
-- `FlightJoin` is `{ atMs, spanMs, lnAltitudePerMs, axis, radiansPerMs }`.
+- `FlightJoin` (module-internal, the type of `Flight.join`) is `{ atMs,
+spanMs, lnAltitudePerMs, axis, radiansPerMs }`.
 - `startFlight(ellipsoid, start, target, options, atMs)` creates a flight
   whose path time 0 is at the clock time `atMs`. RangeError for a time that
   is not finite.

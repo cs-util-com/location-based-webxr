@@ -69,7 +69,7 @@ export const FLIGHT_REPLAN = Object.freeze({
  * path's first one, as a rate of the altitude's logarithm and a ground
  * velocity (a rotation axis and radians per ms).
  */
-export interface FlightJoin {
+interface FlightJoin {
   readonly atMs: number;
   /** How long the correction lasts: `joinMs`, or the flight if shorter. */
   readonly spanMs: number;

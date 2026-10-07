@@ -75,7 +75,7 @@ export const PIN_FLIGHT = Object.freeze({
   arrivalMargin: 1.25,
 });
 
-export type PinFlightPhase =
+type PinFlightPhase =
   "holding" | "approaching" | "descending" | "landed" | "failed" | "cancelled";
 
 /** The pin's flight: its phase, its CF2 flight, its gate and its clock. */
