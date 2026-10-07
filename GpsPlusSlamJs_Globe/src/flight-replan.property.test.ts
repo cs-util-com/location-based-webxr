@@ -89,9 +89,15 @@ describe("flight replan properties", () => {
         // One-sided over a quarter millisecond, each from the replan's own
         // point: a difference straddling it measured the braking of a
         // replan in the final settle (5 % in 6 ms) as a jump.
-        // Small against the join too: a replan in the flight's last
-        // millisecond has a join that short.
-        const h = Math.min(0.25, (second.join?.spanMs ?? 25) / 100);
+        // Small against the join and the flight's time left too (CF3 review
+        // finding 4): in the last milliseconds the braking is hard, and a
+        // step a tenth of them measured it as a 5 % jump.
+        const left = Math.max(first.endsAtMs - atMs, 1e-3);
+        const h = Math.min(
+          0.25,
+          (second.join?.spanMs ?? 250) / 1_000,
+          left / 1_000,
+        );
         const p = flightCameraAt(first, atMs).position;
         const before = p
           .clone()
@@ -108,7 +114,14 @@ describe("flight replan properties", () => {
           v(second, atMs + 500).length(),
           1e-6,
         );
-        expect(after.clone().sub(before).length() / scale).toBeLessThan(0.05);
+        // Plus the positions' own resolution over the step: near the end the
+        // camera is all but at rest, and a float64 position at the Earth's
+        // radius resolves to about 1e-9 m, i.e. 1e-5 m/ms over a 1e-4 ms
+        // step, which read as a 33 % jump of nothing.
+        const resolution = (4 * p.length() * Number.EPSILON) / h;
+        expect(after.clone().sub(before).length()).toBeLessThan(
+          0.05 * scale + resolution,
+        );
       }),
       { numRuns: 150 },
     );

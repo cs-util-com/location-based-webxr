@@ -273,9 +273,14 @@ describe("retargetFlight", () => {
   // the ramp to the last half second.
   it("leaves the flight unchanged when nothing changes, at any moment", () => {
     const bad: string[] = [];
-    for (const atMs of [
-      100, 300, 500, 3_000, 9_000, 13_000, 14_500, 14_900, 14_990,
-    ]) {
+    // Every 350 ms across the flight, and its last moments (CF3 review
+    // finding 3: a sparse list skipped the failing 8.8-11.6 s window).
+    const moments = [
+      ...Array.from({ length: 43 }, (_, i) => 100 + i * 350),
+      14_900,
+      14_990,
+    ];
+    for (const atMs of moments) {
       const first = flyFrom(NEW_YORK, BERN);
       const same = retargetFlight(
         first,
@@ -304,6 +309,116 @@ describe("retargetFlight", () => {
         );
     }
     expect(bad).toEqual([]);
+  });
+
+  // WHY (CF3 review finding 2): a fix late in the hold (its settle) must
+  // fly on at a normal pace: braking on applies only to the SAME
+  // destination; a new one crawled for up to 60 s.
+  it("flies a new place at a normal pace even from the old flight's settle", () => {
+    const hold = startFlight(
+      WGS84_ELLIPSOID,
+      orbitStart(NEW_YORK, 10_100 * KM),
+      orbitPose(WGS84_ELLIPSOID, NEW_YORK),
+      { landingM: 2_000 * KM, viewLandingM: 2 * KM, durationMs: 15_000 },
+      0,
+    );
+    const fresh = startFlight(
+      WGS84_ELLIPSOID,
+      orbitStart(NEW_YORK, 2_100 * KM),
+      orbitPose(WGS84_ELLIPSOID, BERN),
+      { landingM: 2 * KM, durationMs: 15_000 },
+      0,
+    );
+    for (const atMs of [9_000, 12_000, 14_000]) {
+      const replanned = retargetFlight(
+        hold,
+        atMs,
+        orbitPose(WGS84_ELLIPSOID, BERN),
+        { landingM: 2 * KM },
+      );
+      expect(replanned.path.durationMs, `at ${atMs} ms`).toBeLessThan(
+        1.5 * fresh.path.durationMs,
+      );
+    }
+  });
+
+  // WHY (CF3 review finding 5): the view's pitch blended from the start to
+  // the law with a weight whose slope is 0 at the start, so every replan
+  // froze the view's turn (14 deg/s to 0) for a moment. The new path
+  // carries the turn on.
+  it("keeps the view turning across a replan", () => {
+    const rate = (flight: Flight, t: number) =>
+      flightCameraAt(flight, t + 5).quaternion.angleTo(
+        flightCameraAt(flight, t).quaternion,
+      ) / 5;
+    for (const atMs of [6_000, 12_000]) {
+      const first = flyFrom(NEW_YORK, BERN);
+      const same = retargetFlight(
+        first,
+        atMs,
+        orbitPose(WGS84_ELLIPSOID, BERN),
+        {
+          landingM: 2 * KM,
+        },
+      );
+      const before = rate(first, atMs - 5);
+      const after = rate(same, atMs);
+      expect(Math.abs(after - before) / before, `at ${atMs} ms`).toBeLessThan(
+        0.2,
+      );
+    }
+  });
+
+  // WHY (CF3 review finding 8, J1): the join's shape x (1 - x/T)^3 is
+  // claimed C2 at its end; the squared form left an acceleration jump of
+  // 2 dv / T there that no test saw.
+  it("ends its join without a jump in the acceleration", () => {
+    const first = flyFrom(NEW_YORK, BERN);
+    const replanned = retargetFlight(
+      first,
+      6_000,
+      orbitPose(WGS84_ELLIPSOID, ZURICH),
+      { landingM: 2 * KM },
+    );
+    const end = 6_000 + (replanned.join?.spanMs ?? 0);
+    const h = 2;
+    const acc = (t: number) => {
+      const p = (x: number) => flightCameraAt(replanned, x).position;
+      return p(t + h)
+        .add(p(t - h))
+        .sub(p(t).multiplyScalar(2))
+        .divideScalar(h * h);
+    };
+    const before = acc(end - 3 * h);
+    const after = acc(end + 3 * h);
+    const scale = Math.max(before.length(), after.length());
+    expect(after.clone().sub(before).length() / scale).toBeLessThan(0.1);
+  });
+
+  // WHY (CF3 review finding 8, J2): a replan in a flight's last moments
+  // brakes over a few milliseconds; a join longer than that held the
+  // landed camera below its landing (measured 1.6 %).
+  it("never lets a join outlive its flight", () => {
+    const first = flyFrom(NEW_YORK, BERN);
+    for (const left of [200, 20, 2]) {
+      const atMs = first.endsAtMs - left;
+      const replanned = retargetFlight(
+        first,
+        atMs,
+        orbitPose(WGS84_ELLIPSOID, BERN),
+        { landingM: 2 * KM },
+      );
+      expect(replanned.join?.spanMs ?? 0).toBeLessThanOrEqual(
+        replanned.path.durationMs,
+      );
+      let lowest = Infinity;
+      for (let t = atMs; t <= replanned.endsAtMs + 50; t += left / 50) {
+        lowest = Math.min(lowest, flightFrameAt(replanned, t).altitudeM);
+      }
+      expect(lowest, `${left} ms left`).toBeGreaterThanOrEqual(
+        2 * KM * (1 - 1e-9),
+      );
+    }
   });
 
   // WHY: a replan that missed its own end would land somewhere else.

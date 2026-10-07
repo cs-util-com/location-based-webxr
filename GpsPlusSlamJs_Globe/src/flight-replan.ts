@@ -56,7 +56,7 @@ export const FLIGHT_REPLAN = Object.freeze({
   clearanceM: 300,
   /** A replanned flight lasts at least this, ms... */
   minDurationMs: 2_000,
-  /** ...and at most this (DEC-CF-5's safety cap), ms. */
+  /** ...and at most this (one replanned path's length, as DEC-CF-5's cap), ms. */
   maxDurationMs: 60_000,
   /** Rounds of `clearedLandingM`'s raise (each samples the whole flight). */
   clearanceRounds: 6,
@@ -202,7 +202,7 @@ export function flightCameraAt(
 }
 
 /**
- * The join from the camera's velocity at `atMs` (a central difference of
+ * The join from the camera's velocity at `atMs` (a backward difference of
  * the old flight) to the new path's first one (a forward difference).
  */
 function joinFrom(old: Flight, atMs: number, path: FlightPath): FlightJoin {
@@ -236,7 +236,7 @@ function joinFrom(old: Flight, atMs: number, path: FlightPath): FlightJoin {
 
 /**
  * The camera's speed at `nowMs` by the flight's measure (geodesic length
- * per ms: sqrt((d ln h)^2 + (ground / h)^2) / dt), by a central difference.
+ * per ms: sqrt((d ln h)^2 + (ground / h)^2) / dt), by a backward difference.
  */
 function speedAt(flight: Flight, nowMs: number): number {
   const dt = differenceStepMs(flight, nowMs);
@@ -312,6 +312,9 @@ export function retargetFlight(
     rampMs: timing.rampMs,
     rampFromShare: timing.rampFromShare,
     brake: timing.brake ?? false,
+    ...(timing.settleLength === undefined
+      ? {}
+      : { settleLength: timing.settleLength }),
     startSpeed: speed,
   });
   return {
@@ -357,22 +360,37 @@ function replanTiming(
   rampMs: number;
   rampFromShare: number;
   brake?: boolean;
+  settleLength?: number;
 } {
   const probe = planFlight(flight.ellipsoid, start, target, options);
   const length = probe.geodesicLength;
-  const settle = Math.min(
-    Math.log(options.settleFactor ?? FLIGHT_PATH.settleFactor),
-    length / 3,
-  );
+  // The same destination (a new landing at most): its settle keeps the old
+  // flight's length, so it starts where the old one would have (CF3 review
+  // finding 3); a new place settles as a fresh flight would.
+  const sameDestination =
+    flight.path.target.distanceTo(target.direction.clone().normalize()) *
+      FLIGHT_PATH.radiusM <
+    Math.max(options.landingM, 1_000);
+  const settle =
+    sameDestination && flight.path.settleLength > 0
+      ? Math.min(flight.path.settleLength, length)
+      : Math.min(
+          Math.log(options.settleFactor ?? FLIGHT_PATH.settleFactor),
+          length / 3,
+        );
   const fresh = (length + settle) / FLIGHT_PATH.durationMs;
   const v = Math.max(flight.path.cruiseSpeed, fresh);
   const ramp = replanRamp(flight, atMs, speed, v);
   const c = rampCruiseShare(ramp.rampFromShare);
   const cruiseLength =
     length - ramp.rampMs * (speed * (1 - c) + v * c) - settle;
+  // Braking on only towards the same destination (CF3 review finding 2: a
+  // new place reached from the old settle, a fix late in the hold, crawled
+  // for up to 60 s).
   const settling =
-    flight.path.cruise === null ||
-    atMs >= flight.startedAtMs + flight.path.cruise.toMs;
+    sameDestination &&
+    (flight.path.cruise === null ||
+      atMs >= flight.startedAtMs + flight.path.cruise.toMs);
   if (speed > 0 && (settling || cruiseLength < 0)) {
     // Braking on from the camera's speed, as the old flight was: a Hermite
     // from that speed to rest over 2L / s0 (constant braking's length).
@@ -393,6 +411,7 @@ function replanTiming(
       Math.max(FLIGHT_REPLAN.minDurationMs, d),
     ),
     ...ramp,
+    ...(sameDestination ? { settleLength: settle } : {}),
   };
 }
 

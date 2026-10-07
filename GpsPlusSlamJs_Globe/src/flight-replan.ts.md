@@ -24,7 +24,8 @@ transition" the owner reported.
 ## Public API
 
 - `FLIGHT_REPLAN`: `joinMs` 1,500, `clearanceM` 300, `minDurationMs`
-  2,000, `maxDurationMs` 60,000 (DEC-CF-5's safety cap),
+  2,000, `maxDurationMs` 60,000 (one replanned path's length, as DEC-CF-5's
+  cap),
   `clearanceRounds` 6, `clearanceSamples` 240.
 - `Flight` is `{ ellipsoid, path, startedAtMs, endsAtMs, join }`.
   - A replanned flight answers from its replan on and keeps no history: the
@@ -98,9 +99,16 @@ Implemented in `replanTiming` (CF2 review finding 1):
     exactly the old ramp's tail (`rampMs`, `rampFromShare`);
   - otherwise it lasts the speed gap's share of `FLIGHT_PATH.rampMs`, and
     is none when the speeds already match.
-- **In the old flight's settle**, or when the path is too short for a
-  cruise, the new path brakes on from the camera's speed (`brake`, a cubic
-  Hermite) over 2L / s0.
+- **The same destination** (the old target within one landing; a new
+  landing at most) keeps the old settle's length (`settleLength`), so the
+  settle starts where the old one would have (CF3 review finding 3: a
+  shorter settle recomputed from the shorter path moved the flight by up
+  to 12 % between 8.8 and 11.6 s).
+- **In the old flight's settle towards the same destination**, or when the
+  path is too short for a cruise, the new path brakes on from the camera's
+  speed (`brake`, a cubic Hermite) over 2L / s0. A NEW place reached from
+  an old settle (a fix late in the hold) flies a normal cruise instead (CF3
+  review finding 2: braking crawled for up to 60 s).
   - A cruise there re-accelerated and settled a second time.
   - Its join could outlive the flight and dip up to 1.6 % below the landing.
 - **Velocities** come from backward or forward differences with a step that
@@ -126,10 +134,18 @@ Each one is tested.
   ends.
   - The property test covers random flights at any moment, from the press
     to after the landing.
-  - It uses one-sided differences over a step small against the join.
+  - It uses one-sided differences over a step small against the join and
+    the time left, and allows the positions' float64 resolution over that
+    step (near the landing the camera is all but at rest, and 1e-9 m over
+    1e-4 ms read as a 33 % jump of nothing).
+- The view keeps turning across a replan (its turn rate within 20 %): the
+  pitch blends the start's offset from the law, not the law itself (CF3
+  review finding 5: every replan froze the turn).
+- The join ends without a jump in the acceleration, and never outlives its
+  flight (both killed their mutants).
 - **A replan to the same target and landing leaves the flight unchanged**
-  at every moment, the ramp and the settle included: within 5 % of the
-  altitude, and ending within 3 %.
+  at every moment, sampled every 350 ms and in the last moments: within 5 %
+  of the altitude, and ending within 3 %.
 - **The "never stops" criterion holds across the replans the design
   makes** (10, 60 and 120 Hz, all three tolerances):
   - a nearby new place (95 and 690 km) while above the band;
@@ -138,7 +154,9 @@ Each one is tested.
 - A replan lands exactly at its new target and altitude, and never goes
   below the lowest of its start and its landings (to rounding: the worst
   over 3,000 random replans was 1.9e-12).
-- A replan made while the camera is slow cruises like a fresh flight.
+- A replan made while the camera is slow cruises like a fresh flight, and
+  a new place reached from an old settle (9, 12, 14 s into a hold) takes
+  under 1.5 x a fresh flight's time.
 - `clearedLandingM` raises a landing over a 3,000 m ring until the approach
   clears it, and leaves alone a plateau that only the start sits on.
 

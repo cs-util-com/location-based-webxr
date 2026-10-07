@@ -300,11 +300,11 @@ describe("planFlight and flightAt", () => {
     }
   });
 
-  // WHY (CF3): the pin flies to a commit point 100 km over the target and
-  // replans to the landing once the data is ready. If that stop looked
-  // like a landing (45 degrees), the view would steepen at 100 km and swing
-  // back at the replan; it must look as the whole flight would there.
-  it("looks as the final flight would when it stops short at a commit point", () => {
+  // WHY (CF3): the pin's hold flies to 2,000 km over where the camera
+  // looks and replans to the real landing at the fix. If that stop looked
+  // like a landing (45 degrees), the view would steepen and swing back at
+  // the replan; it must look as the whole flight would there.
+  it("looks as the final flight would when it stops short of its landing", () => {
     const viewLandingM = 2 * KM;
     const path = planFlight(
       WGS84_ELLIPSOID,

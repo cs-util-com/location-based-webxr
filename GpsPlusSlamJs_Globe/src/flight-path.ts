@@ -262,6 +262,8 @@ function geodesic(h0: number, h1: number, d: number): Geodesic {
 /** The clock: the path length travelled by a time, and the cruise between. */
 interface Clock {
   readonly at: (tMs: number) => number;
+  /** The settle's path length (0 for a short path's Hermite). */
+  readonly settle: number;
   /** The cruise speed (path length per ms; 0 for a short path's Hermite). */
   readonly speed: number;
   readonly cruise: { readonly fromMs: number; readonly toMs: number } | null;
@@ -292,10 +294,14 @@ function flightClock(
   rampMs: number,
   rampFromShare: number,
   brake: boolean,
+  settleLength: number | null,
 ): Clock {
   if (brake) return hermiteClock(length, durationMs, startSpeed);
   const ramp = Math.min(rampMs, durationMs / 4);
-  const settle = Math.min(Math.log(settleFactor), length / 3);
+  const settle =
+    settleLength === null
+      ? Math.min(Math.log(settleFactor), length / 3)
+      : Math.min(settleLength, length);
   // The cruise speed that ends the path at the duration (see the md): a
   // ramp covers ramp (s0 (1 - c) + v c), c from `rampCruiseShare`.
   const c = rampCruiseShare(rampFromShare);
@@ -315,6 +321,7 @@ function flightClock(
   const k = (v - startSpeed) / (1 - s0Share);
   const i0 = smoothIntegral(x0);
   return {
+    settle,
     speed: v,
     cruise: { fromMs: ramp, toMs: ramp + cruiseMs },
     at: (t) => {
@@ -348,6 +355,7 @@ function hermiteClock(
 ): Clock {
   const m0 = Math.min(startSpeed * durationMs, 3 * length);
   return {
+    settle: 0,
     speed: 0,
     cruise: null,
     at: (t) => {
@@ -387,6 +395,10 @@ export interface FlightPath {
   readonly travelledAt: (tMs: number) => number;
   /** The cruise's speed, path length per ms (0 for a short path). */
   readonly cruiseSpeed: number;
+  /** The settle's path length (0 for a short path). */
+  readonly settleLength: number;
+  /** The view law's pitch at the start's altitude (the start blends from it). */
+  readonly startLawDeg: number;
   /** Where in its smoothstep the ramp started (0 for a full ramp). */
   readonly rampFromShare: number;
   /** The cruise, between the ramp and the settle (null for a short path). */
@@ -448,6 +460,7 @@ function flightOptions(
     rampMs: or(options.rampMs, FLIGHT_PATH.rampMs),
     rampFromShare: or(options.rampFromShare, 0),
     brake: or(options.brake, false),
+    settleLength: or(options.settleLength, null),
     viewLandingM: or(options.viewLandingM, options.landingM),
   };
   requirePositive("landingM", o.landingM);
@@ -460,6 +473,8 @@ function flightOptions(
   requireAtLeast("startSpeed", o.startSpeed, 0);
   requireAbove("settleFactor", o.settleFactor, 1);
   requireAtLeast("rampMs", o.rampMs, 0);
+  if (o.settleLength !== null)
+    requireAtLeast("settleLength", o.settleLength, 0);
   if (!(o.rampFromShare >= 0 && o.rampFromShare < 1)) {
     throw new RangeError(
       `rampFromShare must be in [0, 1), got ${o.rampFromShare}`,
@@ -536,7 +551,7 @@ export function planFlight(
     readonly settleFactor?: number;
     /**
      * The landing the view's law refers to (default: `landingM`). A path
-     * that stops short of the real landing (CF3's commit point) passes the
+     * that stops short of the real landing (CF3's hold) passes the
      * real one, so it looks there as the whole flight would.
      */
     readonly viewLandingM?: number;
@@ -558,6 +573,12 @@ export function planFlight(
      * cruise would have re-accelerated.
      */
     readonly brake?: boolean;
+    /**
+     * The settle's path length, overriding min(ln(settleFactor), L / 3):
+     * a replan to the same destination keeps the old flight's, so its
+     * settle starts where the old one would have (CF3 review finding 3).
+     */
+    readonly settleLength?: number;
   },
 ): FlightPath {
   const o = flightOptions(start, options);
@@ -610,6 +631,7 @@ export function planFlight(
     o.rampMs,
     o.rampFromShare,
     o.brake,
+    o.settleLength,
   );
   const startRollRad = startRoll(normal, cameraStart, startUp);
   const { durationMs, entryPitchDeg, startPitchDeg } = o;
@@ -639,9 +661,15 @@ export function planFlight(
     geodesicLength: path.length,
     travelledAt: clock.at,
     cruiseSpeed: clock.speed,
+    settleLength: clock.settle,
     rampFromShare: o.rampFromShare,
     cruise: clock.cruise,
     startPitchDeg,
+    startLawDeg: descentPitchDeg(h0, {
+      landingM: o.viewLandingM,
+      entryDeg: o.entryPitchDeg,
+      landingDeg: o.landingPitchDeg,
+    }),
     startRollRad,
     startOffset: start.quaternion
       ? reference.invert().multiply(start.quaternion)
@@ -736,7 +764,10 @@ export function flightAt(path: FlightPath, tMs: number): FlightFrame {
   });
   const pitchDeg = done
     ? path.endPitchDeg
-    : path.startPitchDeg + (law - path.startPitchDeg) * (1 - startWeight);
+    : // The start's OFFSET from the law blends out, so the view turns with
+      // the law from the first instant (CF3 review finding 5: blending the
+      // law in froze the turn at every replan).
+      law + (path.startPitchDeg - path.startLawDeg) * startWeight;
   const view = viewFromCamera(
     path.ellipsoid,
     camera,

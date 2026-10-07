@@ -64,7 +64,8 @@ Returns a `FlightPath`.
     down). CF2's replan passes the current one.
 - `target` is an orbit pose. Only its direction is used.
 - `options` is `{ landingM, durationMs?, entryPitchDeg?, landingPitchDeg?,
-startSpeed?, settleFactor?, viewLandingM?, rampMs?, rampFromShare?, brake? }`.
+startSpeed?, settleFactor?, settleLength?, viewLandingM?, rampMs?,
+rampFromShare?, brake? }`.
   - `startSpeed` is in geodesic length per ms.
   - `viewLandingM` is the landing the view's law refers to (default
     `landingM`). A path that stops short of the real landing (CF3's
@@ -74,6 +75,10 @@ startSpeed?, settleFactor?, viewLandingM?, rampMs?, rampFromShare?, brake? }`.
     default 0): a replan continuing an old ramp passes its remaining time
     and the share of the smoothstep it had reached, so the speed follows
     the old ramp's tail exactly.
+  - `settleLength` (geodesic length, at most the path's): the settle's
+    length, given instead of the one from `settleFactor`. A replan towards
+    the same destination keeps its old flight's settle with it, so the
+    settle starts where it would have (CF3 review finding 3).
   - `brake`: brake from `startSpeed` to rest over the whole flight (a
     cubic Hermite), no cruise: a replan in the final settle.
 - RangeError for any of:
@@ -82,12 +87,13 @@ startSpeed?, settleFactor?, viewLandingM?, rampMs?, rampFromShare?, brake? }`.
   - a negative start speed;
   - a settle factor not above 1;
   - a negative ramp, or a ramp share outside [0, 1);
+  - a negative settle length;
   - an up parallel to the direction.
 - Also exposed, for CF2 and the tests:
   - `cruise`: `{ fromMs, toMs }`, between the ramp and the settle. It is
     null for a short path.
   - `travelledAt(t)`: the clock.
-  - `cruiseSpeed` (0 for a short path) and `rampFromShare`.
+  - `cruiseSpeed` (0 for a short path), `rampFromShare` and `settleLength`.
   - `viewLandingM` and `endPitchDeg`.
   - `geodesicLength`.
   - `cameraStart`, `cameraEnd`, `courseNormal`.
@@ -198,6 +204,11 @@ The geodesic's formulas:
     point.
 - The start's pitch, roll and tilt blend out over the first fifth of the
   flight.
+  - The pitch blends the start's OFFSET from the law (`startLawDeg`, the
+    law at the start's altitude), so a replan whose start already follows
+    the law keeps turning with it. Blending the start's pitch itself held
+    it fixed and froze the view's turn at every replan (CF3 review
+    finding 5).
 
 ## Invariants
 

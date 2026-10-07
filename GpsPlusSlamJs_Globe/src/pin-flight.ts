@@ -8,15 +8,22 @@
  *   the intro's fallback target is New York); a fix flies on (a CF2 replan
  *   above the band); a failure ends at the hold.
  * - DEC-CF-3b: with a target the flight flies its final path at once, and
- *   its own clock is GATED: while the data is not ready the clock runs at
- *   `coldRate` and eases to a stop just before the path reaches `commitM`,
- *   so the camera never goes lower before its data; the data releases it
- *   (the rate returns to 1 with `rateLagMs`). Below `commitM` the clock
- *   always runs at 1, so nothing near the ground changes speed with data.
- *   One path and no replan for the data: a replan from a commit point
+ *   its own clock is GATED: it never carries the camera down through
+ *   `commitM` before the data is ready; the data releases it (the rate
+ *   climbs to 1 with `rateLagMs`, so a camera stretched slow crosses the
+ *   gate still accelerating). Once released, nothing changes the speed with
+ *   data. One path and no replan for the data: a replan from a commit point
  *   cross-faded two geodesics and dipped the speed (measured).
+ * - DEC-CF-6 (owner, after the CF3 milestone review measured a stop at
+ *   about 110 km on cold data): predict and stretch. The data's time left
+ *   (its progress so far, extrapolated; before any, `assumedDataMs`)
+ *   sets the high stretch's rate, so the camera reaches the gate's ease
+ *   zone about when the data is in; only data later than predicted meets
+ *   the ease into the gate. Data that reports no progress until it is all
+ *   in (one big tile) cannot be predicted beyond the assumption.
  * - DEC-CF-5: `safetyCapMs` after the press the gate opens regardless.
- * - A touch cancels in every moving phase (the camera is the controls').
+ * - A touch cancels in every moving phase, a failed hold included (the
+ *   camera is the controls'). A press already below `commitM` has no gate.
  *
  * The flight clock (`clockMs`) is the CF2 `Flight`'s time axis; the pace
  * scales how fast it runs against the page's clock.
@@ -29,6 +36,7 @@ import type { Ellipsoid } from "3d-tiles-renderer";
 
 import type { OrbitPose } from "./globe-camera.js";
 import { smoothstep } from "./globe-ease.js";
+import { surfaceRadiusAlong } from "./globe-dive.js";
 import type { FlightStart } from "./flight-path.js";
 import {
   flightCameraAt,
@@ -53,6 +61,18 @@ export const PIN_FLIGHT = Object.freeze({
   gateEaseMs: 2_000,
   /** Samples to find where the path crosses `commitM`. */
   gateSamples: 256,
+  /**
+   * DEC-CF-6: before any progress, how long the data is assumed to take, ms
+   * (a cold first visit: round 5 measured 15-90 s for a tile). Swept 20, 30
+   * and 45 s on 2026-10-07: data reporting progress does not care; data that
+   * arrives at once (one big tile) flew without a stop-and-go (0.2) up to
+   * 10, 20 and 30 s respectively, at about 1-2 s more for quick data.
+   */
+  assumedDataMs: 45_000,
+  /** The slowest the high stretch flies while it waits for its data. */
+  minRate: 0.05,
+  /** The stretch aims to meet the data this much later than predicted. */
+  arrivalMargin: 1.25,
 });
 
 export type PinFlightPhase =
@@ -79,6 +99,8 @@ export interface PinFlight {
   readonly rate: number;
   /** The flight clock at which the path reaches `commitM` (null: no gate). */
   readonly gateClockMs: number | null;
+  /** When the current target's data started (its fix or link), page ms. */
+  readonly dataStartMs: number;
 }
 
 function requireTime(nowMs: number): void {
@@ -95,18 +117,27 @@ const released = (pin: PinFlight, nowMs: number) =>
   pin.progress >= 1 || nowMs - pin.pressedAtMs >= PIN_FLIGHT.safetyCapMs;
 
 /**
- * The flight clock at which `flight` first reaches `commitM` going down
- * (a coarse scan, then bisection); its start if it starts there or lower,
- * null if it never gets there.
+ * The flight clock at which `flight` first comes down through `commitM`
+ * from above (a coarse scan, then bisection); null if it never does.
  */
 function gateOf(flight: Flight): number | null {
   const at = (t: number) => flightFrameAt(flight, t).altitudeM;
   const { startedAtMs: a, endsAtMs: b } = flight;
-  if (at(a) <= PIN_FLIGHT.commitM) return a;
+  // Only where the path comes DOWN through the commit altitude: a press
+  // already below it has nothing to wait above (CF3 review finding 7: the
+  // gate at its start froze the camera); an arch that climbs above it
+  // gets its gate on the way down.
+  let above = at(a) > PIN_FLIGHT.commitM;
   let prev = a;
   for (let i = 1; i <= PIN_FLIGHT.gateSamples; i++) {
     const t = a + ((b - a) * i) / PIN_FLIGHT.gateSamples;
-    if (at(t) <= PIN_FLIGHT.commitM) {
+    const h = at(t);
+    if (!above) {
+      above = h > PIN_FLIGHT.commitM;
+      prev = t;
+      continue;
+    }
+    if (h <= PIN_FLIGHT.commitM) {
       let lo = prev;
       let hi = t;
       for (let k = 0; k < 40; k++) {
@@ -129,15 +160,20 @@ function flyTo(pin: PinFlight, target: OrbitPose, landingM: number): Flight {
     : startFlight(pin.ellipsoid, pin.hover, target, options, pin.clockMs);
 }
 
-/** With a target: fly the final path, gated until the data is ready. */
+/**
+ * With a target: fly the final path, gated until ITS data is ready (the
+ * progress starts from nothing: any reported before belonged to no target,
+ * CF3 review finding 9).
+ */
 function towardTarget(pin: PinFlight, target: OrbitPose): PinFlight {
   const flight = flyTo(pin, target, pin.landingM);
+  const next = { ...pin, progress: 0, dataStartMs: pin.nowMs };
   return {
-    ...pin,
+    ...next,
     target,
     flight,
     gateClockMs: gateOf(flight),
-    phase: released(pin, pin.nowMs) ? "descending" : "approaching",
+    phase: released(next, pin.nowMs) ? "descending" : "approaching",
   };
 }
 
@@ -152,11 +188,33 @@ function holdOver(pin: PinFlight): PinFlight {
     flight: startFlight(
       pin.ellipsoid,
       start,
-      { direction: start.pose.direction, up: start.pose.up },
+      { direction: lookedAt(pin.ellipsoid, start), up: start.pose.up },
       { landingM: PIN_FLIGHT.holdM, viewLandingM: pin.landingM },
       pin.clockMs,
     ),
   };
+}
+
+/**
+ * Where a camera looks: its view's ray against the surface under it (a
+ * sphere of that radius), or straight down when it looks past the Earth
+ * (CF3 review finding 10: a tilted camera held over its own nadir,
+ * thousands of km from its view).
+ */
+function lookedAt(ellipsoid: Ellipsoid, start: FlightStart): THREE.Vector3 {
+  const nadir = start.pose.direction.clone().normalize();
+  if (!start.quaternion) return nadir;
+  const origin = nadir.clone().multiplyScalar(start.distanceM);
+  const ray = new THREE.Vector3(0, 0, -1).applyQuaternion(start.quaternion);
+  const r = surfaceRadiusAlong(ellipsoid, nadir);
+  // |origin + t ray| = r: t^2 + 2 (origin . ray) t + |origin|^2 - r^2 = 0.
+  const b = origin.dot(ray);
+  const c = origin.lengthSq() - r * r;
+  const disc = b * b - c;
+  if (disc < 0) return nadir;
+  const t = -b - Math.sqrt(disc);
+  if (t <= 0) return nadir;
+  return origin.addScaledVector(ray, t).normalize();
 }
 
 /**
@@ -193,8 +251,11 @@ export function pressPin(
     clockMs: 0,
     rate: PIN_FLIGHT.coldRate,
     gateClockMs: null,
+    dataStartMs: nowMs,
   };
-  return options.target ? towardTarget(base, options.target) : holdOver(base);
+  if (!options.target) return holdOver(base);
+  const flying = towardTarget(base, options.target);
+  return opened({ ...flying, progress: base.progress });
 }
 
 /** The device's fix (or a link's place) arrives: fly on to it. */
@@ -220,6 +281,7 @@ export function pinProgress(
   progress: number,
 ): PinFlight {
   const now = advance(pin, nowMs);
+  if (!now.target) return now; // no target yet: its data has not started
   return opened({
     ...now,
     progress: Math.max(now.progress, clampProgress(progress)),
@@ -257,22 +319,59 @@ export function pinLanding(
 /** A touch on the globe: the controls take the camera. */
 export function pinTouch(pin: PinFlight, nowMs: number): PinFlight {
   const now = advance(pin, nowMs);
-  const moving = ["holding", "approaching", "descending"].includes(now.phase);
+  // A failed hold is still moving too (CF3 review finding 6).
+  const moving = ["holding", "approaching", "descending", "failed"].includes(
+    now.phase,
+  );
   return moving ? { ...now, phase: "cancelled", flight: null } : now;
 }
 
 /**
- * The rate the clock steers towards: 1 once released or past the gate;
- * else the cold pace, eased to 0 over `gateEaseMs` of flight time before
- * the gate.
+ * The data's time still to come, page ms (DEC-CF-6): its progress so far
+ * over the time since it started, extrapolated; before any progress, the
+ * assumed time less what has passed.
+ */
+function dataLeftMs(pin: PinFlight, nowMs: number): number {
+  const since = Math.max(nowMs - pin.dataStartMs, 1);
+  if (pin.progress > 0) return ((1 - pin.progress) / pin.progress) * since;
+  // Overdue data with no progress is assumed to need half again as long
+  // as it has taken: a shrinking guess sped the camera at a gate it then
+  // had to stop at.
+  return Math.max(PIN_FLIGHT.assumedDataMs - since, since / 2);
+}
+
+/**
+ * The rate the clock steers towards. The hold: the cold pace. Released or
+ * descending: 1. Approaching (DEC-CF-6, owner 2026-10-07, after the CF3
+ * review measured a stop at about 110 km on cold data): STRETCHED so the
+ * camera meets its data at the gate (the flight time left to the gate over
+ * `arrivalMargin` x the data's time left, between `minRate` and 1), and
+ * eased to 0 over `gateEaseMs` before the gate, the fallback when the data
+ * is later than predicted.
  */
 function targetRate(pin: PinFlight, nowMs: number): number {
   if (pin.phase === "descending") return 1;
-  const cold = PIN_FLIGHT.coldRate + (1 - PIN_FLIGHT.coldRate) * pin.progress;
-  if (pin.phase !== "approaching" || pin.gateClockMs === null) return cold;
-  if (released(pin, nowMs)) return 1;
+  if (pin.phase !== "approaching") return PIN_FLIGHT.coldRate;
+  if (released(pin, nowMs) || pin.gateClockMs === null) return 1;
   const toGate = pin.gateClockMs - pin.clockMs;
-  return cold * smoothstep(toGate / PIN_FLIGHT.gateEaseMs);
+  // The ease zone in the page's time, by the rate the clock actually runs
+  // at (it lags its target by `rateLagMs`): sized in flight time it took
+  // up to 9 s of the page's at a stretched rate and braked for data that
+  // was on time; sized by the target alone, a camera still fast met a small
+  // zone and stopped at the clamp.
+  const zone =
+    (PIN_FLIGHT.gateEaseMs + 2 * PIN_FLIGHT.rateLagMs) *
+    Math.max(pin.rate, PIN_FLIGHT.minRate);
+  // Stretched to reach the zone's start, not the gate, as the data ends.
+  const stretch = Math.min(
+    1,
+    Math.max(
+      PIN_FLIGHT.minRate,
+      Math.max(toGate - zone, 0) /
+        (PIN_FLIGHT.arrivalMargin * dataLeftMs(pin, nowMs)),
+    ),
+  );
+  return stretch * smoothstep(toGate / zone);
 }
 
 /**

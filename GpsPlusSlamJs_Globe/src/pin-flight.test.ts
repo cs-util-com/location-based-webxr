@@ -436,3 +436,225 @@ describe("the pin's flight", () => {
     ).toThrow(RangeError);
   });
 });
+
+describe("the pin's flight, CF3 milestone review", () => {
+  const fixAndData = (dataMs: number, kind: "linear" | "step") => {
+    const pin = pressPin(
+      WGS84_ELLIPSOID,
+      0,
+      cameraOver(NEW_YORK, 10_100 * KM),
+      { target: null, landingM: 2 * KM, progress: 0 },
+    );
+    const fixAt = 1_500;
+    return run(pin, 120_000, (t, p) => {
+      let q = p;
+      if (t >= fixAt && q.phase === "holding") q = pinFix(q, t, bernPose);
+      const x = (t - fixAt) / dataMs;
+      const progress =
+        kind === "linear" ? Math.min(1, Math.max(0, x)) : x >= 1 ? 1 : 0;
+      return pinProgress(q, t, progress);
+    });
+  };
+
+  // WHY (DEC-CF-6, owner 2026-10-07, after review finding 1: with cold
+  // data, 15-90 s on a first visit, the gate stopped the camera at about
+  // 110 km): the flight predicts from the download's progress how long the
+  // data still needs and stretches the high stretch to meet it at the
+  // gate, so the camera does not wait there, and still never goes below
+  // the commit altitude before its data.
+  it("stretches the high stretch to meet slow data at the gate, without waiting", () => {
+    for (const dataMs of [15_000, 30_000, 45_000]) {
+      const { pin, samples } = fixAndData(dataMs, "linear");
+      const tag = `data over ${dataMs} ms`;
+      expect(pin.phase, tag).toBe("landed");
+      const readyAt = 1_500 + dataMs;
+      const early = samples.filter((s) => s.t < readyAt - 100);
+      expect(Math.min(...early.map((s) => s.h)), tag).toBeGreaterThanOrEqual(
+        PIN_FLIGHT.commitM * 0.999,
+      );
+      // Never waiting: from a second after the fix to the final settle, the
+      // camera never falls under 10 % of its median speed (a wait at the
+      // gate read 0.01-0.05), and never slows between two faster stretches.
+      const vs = speeds(samples);
+      let end = vs.length;
+      while (end > 0 && (vs[end - 1]?.h ?? 0) <= 3 * 2 * KM) end -= 1;
+      const v = vs
+        .slice(0, end)
+        .filter((s) => s.t >= 2_500)
+        .map((s) => s.v);
+      expect(noStall(v, 0.1), tag).toBe(true);
+      expect(noStopAndGo(v, 0.2), tag).toBe(true);
+    }
+  });
+
+  // WHY (DEC-CF-6's limit): data that reports no progress until it is all
+  // in (one step) cannot be predicted; the flight then eases into a short
+  // wait at the gate, never below it.
+  it("waits at the gate, never below it, for data that gives no warning", () => {
+    const { pin, samples } = fixAndData(40_000, "step");
+    expect(pin.phase).toBe("landed");
+    const early = samples.filter((s) => s.t < 41_400);
+    expect(Math.min(...early.map((s) => s.h))).toBeGreaterThanOrEqual(
+      PIN_FLIGHT.commitM * 0.999,
+    );
+  });
+
+  // WHY (review finding 6): a failed position leaves the hold moving; a
+  // touch must still give the camera to the controls.
+  it("is cancelled by a touch after a failure while the hold still moves", () => {
+    const pin = pressPin(
+      WGS84_ELLIPSOID,
+      0,
+      cameraOver(NEW_YORK, 10_100 * KM),
+      {
+        target: null,
+        landingM: 2 * KM,
+        progress: 0,
+      },
+    );
+    const failed = pinFailed(run(pin, 2_000).pin, 2_000);
+    const touched = pinTouch(failed, 4_000);
+    expect(touched.phase).toBe("cancelled");
+    expect(pinFrame(touched, 4_100).camera).toBeNull();
+  });
+
+  // WHY (review finding 7): a press already below the commit altitude with
+  // cold data froze the camera (the gate sat at its start); the gate only
+  // stands where the path comes down through the commit altitude.
+  it("moves from a press below the commit altitude, data or not", () => {
+    for (const km of [50, 99]) {
+      const pin = pressPin(
+        WGS84_ELLIPSOID,
+        0,
+        cameraOver({ lat: 41.9, lng: 12.5 }, km * KM),
+        { target: bernPose, landingM: 2 * KM, progress: 0 },
+      );
+      const { samples } = run(pin, 10_000);
+      const moved = Math.abs((samples.at(-1)?.h ?? 0) - km * KM);
+      expect(moved, `from ${km} km`).toBeGreaterThan(1 * KM);
+    }
+  });
+
+  // WHY (review finding 8: the rate lag, the clamp at the gate and the
+  // gate's ease had no test that could fail).
+  it("raises the rate gradually at release, and never passes a closed gate in one long frame", () => {
+    const pin = pressPin(
+      WGS84_ELLIPSOID,
+      0,
+      cameraOver(NEW_YORK, 10_100 * KM),
+      {
+        target: bernPose,
+        landingM: 2 * KM,
+        progress: 0,
+      },
+    );
+    const atGate = run(pin, 50_000).pin;
+    expect(atGate.phase).toBe("approaching");
+    // One very long frame never carries the clock past a closed gate.
+    const long = pinFrame(atGate, 59_000).pin;
+    expect(long.clockMs).toBeLessThanOrEqual((long.gateClockMs ?? 0) + 1e-6);
+    // Released, the rate climbs with its lag: one 60 Hz frame moves it a
+    // little, not all the way.
+    const released = pinProgress(atGate, 50_000, 1);
+    const next = pinFrame(released, 50_000 + 1000 / 60).pin;
+    expect(next.rate - atGate.rate).toBeGreaterThan(0);
+    expect(next.rate).toBeLessThan(0.5);
+  });
+
+  // WHY (review finding 8, mutant M1): once the data is in, the flight is
+  // not paced any more; a descent left at the cold pace would take twice as
+  // long and still pass every other test.
+  it("flies at full pace once its data is in", () => {
+    const pin = pressPin(
+      WGS84_ELLIPSOID,
+      0,
+      cameraOver(NEW_YORK, 10_100 * KM),
+      { target: bernPose, landingM: 2 * KM, progress: 1 },
+    );
+    expect(pin.phase).toBe("descending");
+    const flight = pin.flight;
+    if (!flight) throw new Error("no flight");
+    const pathMs = flight.endsAtMs - flight.startedAtMs;
+    const { pin: end, samples } = run(pin, 3 * pathMs);
+    expect(end.phase).toBe("landed");
+    const landedAt = samples.find((s) => s.phase === "landed")?.t ?? Infinity;
+    // Only the rate's lag from the cold pace at the press is lost.
+    expect(landedAt).toBeLessThan(pathMs + 2 * PIN_FLIGHT.rateLagMs);
+  });
+
+  it("eases into the gate rather than stopping hard", () => {
+    const pin = pressPin(
+      WGS84_ELLIPSOID,
+      0,
+      cameraOver(NEW_YORK, 10_100 * KM),
+      {
+        target: bernPose,
+        landingM: 2 * KM,
+        progress: 0,
+      },
+    );
+    const { samples } = run(pin, 50_000);
+    const vs = speeds(samples).filter((s) => s.v > 0);
+    // No single frame loses more than a tenth of the speed it had.
+    let worst = 0;
+    for (let i = 1; i < vs.length; i++) {
+      const a = vs[i - 1]?.v ?? 0;
+      const b = vs[i]?.v ?? 0;
+      if (a > 1e-4) worst = Math.max(worst, (a - b) / a);
+    }
+    expect(worst).toBeLessThan(0.1);
+  });
+
+  // WHY (review finding 9): progress reported during the hold belongs to no
+  // target; the fix starts its own data.
+  it("starts the fix's data from nothing", () => {
+    const pin = pressPin(
+      WGS84_ELLIPSOID,
+      0,
+      cameraOver(NEW_YORK, 10_100 * KM),
+      {
+        target: null,
+        landingM: 2 * KM,
+        progress: 0,
+      },
+    );
+    const reported = pinProgress(run(pin, 1_000).pin, 1_000, 1);
+    const fixed = pinFix(reported, 1_100, bernPose);
+    expect(fixed.progress).toBe(0);
+    expect(fixed.phase).toBe("approaching");
+  });
+
+  // WHY (review finding 10): a tilted camera holds over where it looks,
+  // not over its own nadir thousands of km away.
+  it("holds over where a tilted camera looks", () => {
+    const pose = orbitPose(WGS84_ELLIPSOID, NEW_YORK);
+    const tilted = obliqueCamera(WGS84_ELLIPSOID, pose, 9_000 * KM, 70);
+    const camDir = tilted.position.clone().normalize();
+    const pin = pressPin(
+      WGS84_ELLIPSOID,
+      0,
+      {
+        pose: {
+          direction: camDir,
+          up: pose.up.clone().projectOnPlane(camDir).normalize(),
+        },
+        distanceM: tilted.position.length(),
+        quaternion: tilted.quaternion,
+        pitchDeg: 70,
+      },
+      { target: null, landingM: 2 * KM, progress: 0 },
+    );
+    const { samples } = run(pin, 40_000);
+    const last = samples.at(-1);
+    const looked = pose.direction;
+    const d = Math.acos(
+      Math.min(
+        1,
+        (last?.dir.x ?? 0) * looked.x +
+          (last?.dir.y ?? 0) * looked.y +
+          (last?.dir.z ?? 0) * looked.z,
+      ),
+    );
+    expect((d * R) / KM).toBeLessThan(1_000);
+  });
+});
