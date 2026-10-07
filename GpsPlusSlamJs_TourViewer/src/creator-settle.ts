@@ -329,27 +329,31 @@ export function wireCreatorSettle(deps: {
     // The visit's codes (M4c-2): the code in hand first - with this
     // settle's re-mint when its position changed - then every other code
     // the visit measured, or sighted with a stored pose. One code: the
-    // legacy fields decide, exactly as before.
+    // legacy fields decide, exactly as before. An EMPTY hand (a size
+    // adoption for it) still settles the others (webxr PR #556 review).
     const others = deps.codes
       .visitCodes(visit)
-      .filter((c) => c.level.id !== level?.id);
+      .filter((c) => c.level.id !== level?.id)
+      .map((c) => ({
+        ...c,
+        measurementPick: picks.measurements?.get(c.level.id) ?? null,
+      }));
     const codes =
-      level === null || others.length === 0
+      others.length === 0
         ? undefined
-        : [
-            {
-              level,
-              measurement: input.measurement,
-              measurementPick:
-                remint !== null && position !== null
-                  ? position.pick
-                  : (picks.measurements?.get(level.id) ?? null),
-            },
-            ...others.map((c) => ({
-              ...c,
-              measurementPick: picks.measurements?.get(c.level.id) ?? null,
-            })),
-          ];
+        : level === null
+          ? others
+          : [
+              {
+                level,
+                measurement: input.measurement,
+                measurementPick:
+                  remint !== null && position !== null
+                    ? position.pick
+                    : (picks.measurements?.get(level.id) ?? null),
+              },
+              ...others,
+            ];
     // Pure, so planned before the log: the log marks the pose this settle
     // saves for the code, which is how the summary grades what visitors
     // get (M3a/M3b review #2).
@@ -429,10 +433,14 @@ export function wireCreatorSettle(deps: {
       // The record only: a photo's bytes did not change.
       deps.draft.recordPlacement(object);
     }
-    if (plan.level !== null) deps.codes.remint(plan.level);
+    // The code in hand, re-minted; with an empty hand `plan.level` is
+    // another code's, which must not take the hand.
+    const inHandLevel =
+      plan.level !== null && plan.level.id === level?.id ? plan.level : null;
+    if (inHandLevel !== null) deps.codes.remint(inHandLevel);
     // The visit's other measured codes, re-minted too (M4c-2).
     for (const other of plan.levels) {
-      if (other.id !== plan.level?.id) deps.codes.saveLevel(other);
+      if (other.id !== inHandLevel?.id) deps.codes.saveLevel(other);
     }
     if (plan.levels.length > 0) void deps.draft.saveMeta();
     // An IMPROVED position takes the pins and photos near it along, so

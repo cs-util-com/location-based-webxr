@@ -3266,6 +3266,37 @@ describe(
       }
     });
 
+    // Why this test matters (webxr PR #556 review; M4 milestone review
+    // #7): "Use this size" for the code in hand empties the hand, and the
+    // settle then took the old one-code path - every OTHER code the visit
+    // measured was dropped from it: not re-minted through its own pick,
+    // no saved pose in the visit log, while its notes still settled. The
+    // visit's other codes are settled with an empty hand too, and none of
+    // them takes the hand.
+    it("settles the visit's other measured codes when the hand is empty", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = authoring({ store });
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      await a.mint();
+      const first = a.ctx.mintedLevel!;
+      await a.mint(
+        new Matrix4().makeTranslation(20, 0, 0),
+        "https://gps.csutil.com/tour/?qr=second",
+        10_000,
+      );
+      // The hand emptied, as a size adoption for the code in hand does.
+      a.ctx.mintedLevel = null;
+      a.ctx.codeMeasurement = null;
+      a.endVisit();
+      await flush();
+      const key = [...files.keys()].find((k) => k.startsWith(visitKey("")))!;
+      const entry = parseVisitLogEntry(files.get(key) as string)!;
+      const firstCode = entry.codes.find((c) => c.levelId === first.id);
+      expect(firstCode?.savedGeo, "the first code was settled").toBeDefined();
+      expect(a.ctx.mintedLevel).toBeNull();
+    });
+
     // Why this test matters: each code keeps its OWN measurement pick
     // (M4c-2). With one pick, the second code's replaced the first's, and
     // the first code was re-minted through the wrong moment's alignment -
