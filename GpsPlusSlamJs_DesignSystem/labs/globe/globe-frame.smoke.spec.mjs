@@ -137,7 +137,12 @@ test("the frame never moves under a drag in progress, and follows once the contr
   test.setTimeout(600_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(TARGET);
-  const errors = await bootGlobe(page, BASE);
+  // At the 150 km hold this was written at (r790 city plan K4): there the
+  // oblique camera stands about 210 km from the target, past the frame's
+  // 20 km drift, so the frame has somewhere to follow once the press ends.
+  // From the 2 km landing it stood 2.8 km off, the shift moved it 150 m,
+  // and the frame rightly stayed (measured 2026-10-07).
+  const errors = await bootGlobe(page, `${BASE}&landKm=150`);
   await page.locator("#globe-pin").click();
   await page.waitForFunction(
     () => {
