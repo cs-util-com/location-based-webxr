@@ -62,9 +62,12 @@
   (DEC-CF-3b, 60 s cap DEC-CF-5); the prefetch's progress and the landing's
   floor (`diveFloorM`, a rise over 50 m replans) feed it every frame; a
   denied position ends at the hold; a touch or a hidden page cancels it in
-  every moving phase, and the pin says "Finding you, descending"; the world
-  frame follows the camera during it; `land=1` flies it to its link's
-  place; `holdDiveAt` and `diveAltitudeAt` read its path at its own clock,
+  every moving phase (the intro's `yieldToUser` calls `pinTouch`, so its
+  phase reads `cancelled`), and the pin says "Finding you, descending";
+  with the prefetch off (`prefetch=0`) its progress reads 1, so nothing
+  waits at the gate; the distance-to-target readout shows once the place
+  is known (`aimPin`); the world frame follows the camera during it;
+  `land=1` flies it to its link's place; `holdDiveAt` and `diveAltitudeAt` read its path at its own clock,
   and `state().pin.flight` reports its phase, clock, rate, landing,
   progress, gate and end),
   `nightGain` (0-4, default 0.7), `waterRoughness`,

@@ -66,6 +66,7 @@ import {
   pinFrame,
   pinLanding,
   pinProgress,
+  pinTouch,
   pressPin,
 } from "/globe/pin-flight.js";
 import { flightCameraAt, flightFrameAt } from "/globe/flight-replan.js";
@@ -926,6 +927,9 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
      */
     yieldToUser(now) {
       if (phase === "user") return;
+      // The pin flight hears of it too, so its phase says cancelled (PR
+      // #560 review: every cancel path comes through here).
+      if (pinFlight) pinFlight = pinTouch(pinFlight, now);
       phase = "user";
       note(now);
     },
@@ -956,15 +960,23 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
     },
     /**
      * The continuous flight (`flight=2`, CF4): `pin` (`pressPin`'s)
-     * drives the camera from now on, as the dive would.
+     * drives the camera from now on, as the dive would; `place` is its
+     * target when known (a link), else null until `aimPin`.
      */
-    flyPin(now, pin) {
+    flyPin(now, pin, place = null) {
       pinFlight = pin;
       dive = null;
       diveHoldMs = null;
-      choice = { target: null, source: "pin" };
+      choice = { target: place, source: "pin" };
       phase = "diving";
       note(now);
+    },
+    /**
+     * The pin flight's place once the fix names it, for the distance
+     * readout (DEC-GL4-5; PR #560 review: it stayed null under `flight=2`).
+     */
+    aimPin(place) {
+      if (pinFlight) choice = { target: place, source: "pin" };
     },
     /** Applies `(pin, now) => pin` to the pin flight (an event), if one. */
     updatePin(now, apply) {
@@ -1258,7 +1270,10 @@ function bindPin({
     arrival?.prefetch?.stats().counts ?? { overpass: NO_JOBS, dem: NO_JOBS };
   const arrivalProgress = () => {
     if (!arrival) return 0;
-    if (arrival.gaveUp) return 1;
+    // Nothing to wait for: the prefetch is off (`prefetch=0`) or failed to
+    // load. Without "off" the flight=2 gate waited out its 60 s cap (PR #560
+    // review); the dive is unaffected (its clock is fixed when off).
+    if (arrival.gaveUp || arrival.outcome === "off") return 1;
     return arrival.prefetch?.progress() ?? 0;
   };
   const renderArrival = () => {
@@ -1378,6 +1393,7 @@ function bindPin({
           progress: 0,
         },
       ),
+      place,
     );
   };
   /** The target is known: its data warmed, the frame moved, the flight on. */
@@ -1387,6 +1403,7 @@ function bindPin({
     onLocated(located, params);
     startArrival(located, params);
     setFrameTarget(located);
+    flight.aimPin(located);
     flight.updatePin(performance.now(), (p, now) =>
       pinFix(p, now, orbitPose(ellipsoid, located)),
     );

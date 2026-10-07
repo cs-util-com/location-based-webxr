@@ -430,7 +430,9 @@ async function recordFlight(page, untilMs = 120_000) {
       const s = window.__globeLab?.ready ? window.__globeLab.state() : null;
       if (s) {
         window.__flightSamples.push({
+          t: performance.now() - t0,
           m: s.altitudeM,
+          readout: s.readout,
           phase: s.phase,
           pin: s.pin?.phase,
           flight: s.pin?.flight?.phase ?? null,
@@ -483,6 +485,62 @@ test("flight=2: a land=1 link flies the continuous flight and lands", async ({
   expect(st.pin.flight?.phase).toBe("landed");
   expect(st.pin.phase).toBe("idle");
   expect(st.pin.status).toMatch(/^Arrived, /);
+  // WHY (PR #560 review): the distance to the target (DEC-GL4-5) shows
+  // while the flight is on its way, as it does for the dive.
+  expect(flying.some((s) => /to the target$/.test(s.readout ?? ""))).toBe(true);
+});
+
+// WHY (PR #560 review): with the prefetch off there is no data to wait for;
+// the gate must not hold the camera until its 60 s cap.
+test("flight=2 with the prefetch off lands without waiting at the gate", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(400_000);
+  await routeCity(context, page);
+  await recordFlight(page);
+  const errors = await bootGlobe(page, `${BASE}&land=1&flight=2&prefetch=0`, {
+    plain: false,
+    phase: "landed",
+    routeCity: false,
+  });
+  const all = await page.evaluate(() => window.__flightSamples);
+  const first = all.find((s) => s.flight !== null);
+  const st = await page.evaluate(() => window.__globeLab.state());
+  const tookS = ((all.at(-1)?.t ?? 0) - (first?.t ?? 0)) / 1000;
+  console.log(
+    `flight=2 prefetch=0: landed after ${tookS.toFixed(1)} s, pin flight ${st.pin.flight?.phase}`,
+  );
+  expect(errors).toEqual([]);
+  expect(st.pin.flight?.phase).toBe("landed");
+  expect(tookS).toBeLessThan(45);
+});
+
+// WHY (PR #560 review): a touch takes the camera; the pin flight must say
+// so, not report a flight that is still descending.
+test("flight=2: a touch cancels the pin flight", async ({ page, context }) => {
+  test.setTimeout(400_000);
+  await routeCity(context, page);
+  const errors = await bootGlobe(page, `${BASE}&land=1&flight=2`, {
+    plain: false,
+    phase: "diving",
+    routeCity: false,
+  });
+  await page.waitForFunction(
+    () => window.__globeLab.state().pin.flight !== null,
+    null,
+    { timeout: 120_000 },
+  );
+  const box = await page.locator("#globe-canvas").boundingBox();
+  if (!box) throw new Error("no canvas");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, 300);
+  await page.waitForFunction(
+    () => window.__globeLab.state().pin.flight?.phase === "cancelled",
+    null,
+    { timeout: 60_000 },
+  );
+  expect(errors).toEqual([]);
 });
 
 // WHY (DEC-CF-4b): with the continuous flight the camera moves from the

@@ -83,14 +83,17 @@ The owner's decisions that this module puts into practice:
   tile arrived and the floor rose, cold review finding 11) replans the
   flight to it while approaching or descending (a CF2 replan; the gate is
   found again). RangeError for a landing that is not positive.
-- `pinTouch(pin, nowMs)`: cancels in `holding`, `approaching` and
-  `descending`.
+- `pinTouch(pin, nowMs)`: cancels in `holding`, `approaching`,
+  `descending` and `failed` (a failed hold still moves).
 - `pinFrame(pin, nowMs)` returns `{ pin, camera }`.
   - It advances the clock, lets the cap open the gate, and marks `landed`
     at the flight's end.
   - `camera` is null once the flight is cancelled.
 - Phases: `holding`, `approaching` (gated), `descending`, `landed`,
   `failed`, `cancelled`.
+  - A flight whose path never comes down through `commitM` has no gate
+    and is `descending` from the start: nothing waits for its data, so it
+    reports `landed` when it lands (PR #560 review).
 
 ## How it works
 

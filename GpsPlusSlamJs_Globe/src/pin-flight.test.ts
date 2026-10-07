@@ -535,6 +535,22 @@ describe("the pin's flight, CF3 milestone review", () => {
     }
   });
 
+  // WHY (PR #560 review): a short flight that never comes down through the
+  // commit altitude has no gate, so nothing waits for its data; it must
+  // report its landing when it lands, not at the 60 s cap.
+  it("reports the landing of a flight without a gate when it lands", () => {
+    const pin = pressPin(
+      WGS84_ELLIPSOID,
+      0,
+      cameraOver({ lat: 46.948, lng: 7.58 }, 50 * KM),
+      { target: bernPose, landingM: 2 * KM, progress: 0 },
+    );
+    expect(pin.gateClockMs).toBeNull();
+    const landedAt =
+      run(pin, 40_000).samples.find((x) => x.phase === "landed")?.t ?? Infinity;
+    expect(landedAt).toBeLessThan(20_000);
+  });
+
   // WHY (review finding 8: the rate lag, the clamp at the gate and the
   // gate's ease had no test that could fail).
   it("raises the rate gradually at release, and never passes a closed gate in one long frame", () => {

@@ -112,9 +112,16 @@ function requireTime(nowMs: number): void {
 const clampProgress = (p: number) =>
   p >= 1 ? 1 : p > 0 && Number.isFinite(p) ? p : 0;
 
-/** Whether the data or the cap opens the gate at `nowMs`. */
+/**
+ * Whether nothing holds the flight at `nowMs`: the data or the cap opened
+ * the gate, or its path has no gate (it never comes down through the
+ * commit altitude; PR #560 review: such a flight landed but reported
+ * `approaching` until the cap).
+ */
 const released = (pin: PinFlight, nowMs: number) =>
-  pin.progress >= 1 || nowMs - pin.pressedAtMs >= PIN_FLIGHT.safetyCapMs;
+  pin.gateClockMs === null ||
+  pin.progress >= 1 ||
+  nowMs - pin.pressedAtMs >= PIN_FLIGHT.safetyCapMs;
 
 /**
  * The flight clock at which `flight` first comes down through `commitM`
@@ -167,12 +174,16 @@ function flyTo(pin: PinFlight, target: OrbitPose, landingM: number): Flight {
  */
 function towardTarget(pin: PinFlight, target: OrbitPose): PinFlight {
   const flight = flyTo(pin, target, pin.landingM);
-  const next = { ...pin, progress: 0, dataStartMs: pin.nowMs };
+  const next = {
+    ...pin,
+    progress: 0,
+    dataStartMs: pin.nowMs,
+    gateClockMs: gateOf(flight),
+  };
   return {
     ...next,
     target,
     flight,
-    gateClockMs: gateOf(flight),
     phase: released(next, pin.nowMs) ? "descending" : "approaching",
   };
 }
