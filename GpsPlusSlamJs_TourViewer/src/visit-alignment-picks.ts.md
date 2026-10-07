@@ -72,6 +72,9 @@ lives here.
     at), absent when the caller never passed one. The settle reads it for
     "near a code event" (reviews R1 and R3 of D33).
   - `reset()` - a new visit.
+  - `forgetCode(levelId)` - that code's sightings and measurement pick go
+    (its printed size was adopted: they were solved at the old size; M5a
+    milestone review #1).
 
 ## Invariants & assumptions
 

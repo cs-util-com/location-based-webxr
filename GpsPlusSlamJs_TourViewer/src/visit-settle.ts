@@ -753,13 +753,6 @@ export interface VisitSettle {
   readonly refused: CorrectionRefusal | null;
 }
 
-/**
- * Settle one visit.
- *
- * @returns null when the visit placed and measured nothing, or when no
- *   alignment or zero can be read (then every record keeps its tap-time
- *   geo, which is also what a killed tab keeps).
- */
 /** The visit's end choice and the code it went through. */
 export interface VisitEndChoice extends SettleChoice {
   /** The code seen last (with one code, the code in hand); null without
@@ -801,6 +794,13 @@ function endChoiceOf(
   };
 }
 
+/**
+ * Settle one visit.
+ *
+ * @returns null when the visit placed and measured nothing, or when no
+ *   alignment or zero can be read (then every record keeps its tap-time
+ *   geo, which is also what a killed tab keeps).
+ */
 export function planVisitSettle(input: VisitSettleInput): VisitSettle | null {
   const targets = input.placed.flatMap((entry, index) =>
     entry.placement !== undefined && entry.placement.visit === input.visit
@@ -961,6 +961,8 @@ function latestCode(views: readonly VisitSettleInput[]): number {
   let bestAt = Number.NEGATIVE_INFINITY;
   for (const [i, view] of views.entries()) {
     for (const e of eventsOf(view)) {
+      // Equal times keep the code listed first, as `nearestCode` does for
+      // an equal gap at an equal time (M5a milestone review #7, rejected).
       if (Number.isFinite(e.atMs) && e.atMs > bestAt) {
         best = i;
         bestAt = e.atMs;

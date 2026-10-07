@@ -50,6 +50,8 @@ export interface CreatorAlignmentPicks {
   ): number;
   /** A new visit's picks start empty. */
   reset(): void;
+  /** A code's sightings and measurement pick of this visit are void. */
+  forgetCode(levelId: string): void;
 }
 
 export function wireCreatorAlignmentPicks(deps: {
@@ -137,5 +139,8 @@ export function wireCreatorAlignmentPicks(deps: {
     picks: () => alignmentPicks.picks(),
     gpsExtent: (positions) => gpsExtent.update(positions),
     reset: resetAlignmentPicks,
+    forgetCode: (levelId) => {
+      alignmentPicks.forgetCode(levelId);
+    },
   };
 }

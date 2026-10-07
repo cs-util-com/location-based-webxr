@@ -179,8 +179,9 @@ interface VisitSettledLog {
    *  arrival uses): `visitAlignment`, or it corrected through the code
    *  (`basis: "code-corrected"`). Each object's own is in `objects`. */
   readonly usedAlignment: readonly number[];
-  /** The LATEST stable sighting of the level in hand (raw WebXR odometry)
-   *  when the end choice was code-corrected; null otherwise. Since D33 each
+  /** The LATEST stable sighting of the code the end choice went through -
+   *  the code seen last since M5a - (raw WebXR odometry) when that choice
+   *  was code-corrected; null otherwise. Since D33 each
    *  object is corrected through the sighting nearest it, whose pose is not
    *  logged: only `objects[].usedAlignment` records that choice. */
   readonly sighting: {
@@ -207,14 +208,16 @@ interface VisitSettledLog {
   readonly level: { readonly id: string; readonly json: string } | null;
   /** Every level this settle re-minted, each with the alignment it went
    *  through (code book plan M5a); `level` is one of them. Absent in
-   *  older recordings and on a late arrival. */
+   *  older recordings, on a late arrival, and when nothing was
+   *  re-minted. */
   readonly levels?: readonly {
     readonly id: string;
     readonly json: string;
     readonly alignment: readonly number[];
   }[];
-  /** The level in hand when the settle ran, before any re-mint: the stored
-   *  pose a code correction mapped this visit onto. With `zero`,
+  /** The code the end choice went through (the code seen last since M5a),
+   *  before any re-mint: the stored pose a code correction mapped this
+   *  visit onto. With `zero`,
    *  `visitAlignment` and `sighting` a replay recomputes the END choice's
    *  corrected `usedAlignment` (`correctedAlignment`, `visit-anchoring.ts`)
    *  - not the per-object choices of D33: their picks and sightings are not

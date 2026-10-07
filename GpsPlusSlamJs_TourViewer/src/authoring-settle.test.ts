@@ -543,7 +543,7 @@ function authoring(
         levels?: { id: string; json: string; alignment: number[] }[];
         referenceLevel: { id: string; json: string } | null;
         zero: { lat: number; lon: number } | null;
-        sighting: { odomPose: Pose } | null;
+        sighting: { odomPose: Pose; levelId: string } | null;
         refusedCorrection: unknown;
       };
     }[];
@@ -1233,6 +1233,10 @@ describe(
       const late = a.settledLogs().at(-1)!.payload;
       expect(late.trigger).toBe("late-arrival");
       expect(late.basis).toBe("code-corrected");
+      // The record names the code it went through, and that code's
+      // sighting (M5a milestone review #2: nothing else pinned it).
+      expect(late.referenceLevel?.id).toBe(stored.id);
+      expect(late.sighting?.levelId).toBe(stored.id);
       const photo = a.ctx.placedObjects.at(-1)!.object;
       // A sits at the same odometry spot in both visits, so A's correction
       // is the first visit's alignment.
@@ -1492,6 +1496,41 @@ describe(
       expect(settle.level).toBeNull();
       // What the zip carries for the code is the hosted file, byte for byte.
       expect(a.ctx.mintedLevel!.json).toBe(hosted.json);
+    });
+
+    // Why this test matters (M5a milestone review #1): "Use this size" for
+    // the stored code in hand empties the hand and starts measuring again
+    // at the new size - the sightings before it were solved at a size now
+    // known to be wrong. They stayed in the visit, and the settle (since it
+    // settles the visit's codes with an empty hand) corrected the visit
+    // through them. A one-code visit then settled differently from before;
+    // with the stale sightings dropped it settles as before: plainly.
+    it("does not correct the visit through sightings from before a size adoption", async () => {
+      const hosted = await storedByAnEarlierPage();
+      const a = authoring();
+      await openFinishableTour(a, { levels: [hosted] });
+      a.ctx.currentLevels = new Map([
+        [hosted.id, parseQrLevel(JSON.parse(hosted.json) as unknown)],
+      ]);
+      a.ctx.currentLevelTexts = new Map([[hosted.id, hosted.json]]);
+      a.setAlignment(SECOND);
+      await a.mint();
+      expect(lastKept(a)).toBe("hosted-level");
+      // A pin placed while the code (at the old size) corrects the visit.
+      await a.placePin("Before", [3, 0, 1]);
+      // The print-size check offers a size for this code; it is adopted.
+      a.ctx.printSizeCheck = {
+        ...a.ctx.printSizeCheck!,
+        offer: () => ({ text: TEXT, sizeM: 0.3 }),
+        answer: () => undefined,
+      };
+      a.dom.sizeOfferUse.click();
+      expect(a.ctx.mintedLevel).toBeNull();
+      a.endVisit();
+      const settled = a.settledLogs().at(-1)!.payload;
+      expect(settled.objects).toHaveLength(1);
+      expect(settled.objects[0]?.basis).toBe("visit-alignment");
+      expect(settled.basis).toBe("visit-alignment");
     });
 
     it("makes the new measurement the reference when the hosted level has no readable pose", async () => {
@@ -3366,7 +3405,10 @@ describe(
         "https://gps.csutil.com/tour/?qr=second",
         10_000,
       );
-      // The hand emptied, as a size adoption for the code in hand does.
+      // The hand emptied by writing the session fields - an emulation: a
+      // size adoption also drops the cleared code's measurement (so here
+      // the second code is still measured and re-minted, which production
+      // would not do). The assertion is about the FIRST code, either way.
       a.ctx.mintedLevel = null;
       a.ctx.codeMeasurement = null;
       a.endVisit();

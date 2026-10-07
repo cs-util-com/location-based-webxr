@@ -73,7 +73,8 @@ interface VisitSettleRecord {
   readonly zero: LatLong;
   /** The sighting a code correction used; null otherwise. */
   readonly sighting: CodeSighting | null;
-  /** The level in hand when the settle ran, before any re-mint. */
+  /** The code the end choice went through - the code seen last (M5a) -
+   *  before any re-mint; null without one. */
   readonly referenceLevel: {
     readonly id: string;
     readonly json: string;

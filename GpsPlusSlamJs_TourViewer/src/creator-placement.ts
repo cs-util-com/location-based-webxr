@@ -297,7 +297,7 @@ export function wireCreatorPlacement(deps: {
           alignmentMatrix:
             settled === undefined
               ? selectAlignmentMatrix(arStore.getState())
-              : // 16 finite numbers: `settleAlignment` checked them.
+              : // 16 finite numbers: `visitEndChoice` checked them.
                 (settled.alignment as unknown as Matrix4),
           zero: settled?.zero ?? selectZeroReference(arStore.getState()),
           imageWidth: jpeg.width,

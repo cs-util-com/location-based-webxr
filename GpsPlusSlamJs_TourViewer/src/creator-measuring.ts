@@ -104,7 +104,7 @@ export function wireCreatorMeasuring(deps: {
   codeTour: Pick<ScanOpen, "onDetection" | "tourOf" | "relation">;
   alignmentPicks: Pick<
     CreatorAlignmentPicks,
-    "setSighting" | "sync" | "noteMeasurement" | "noteSighting"
+    "setSighting" | "sync" | "noteMeasurement" | "noteSighting" | "forgetCode"
   >;
   draft: Pick<CreatorDraft, "saveMeta">;
   /** The codes: the code in hand, the stored ones, what Finish wrote. */
@@ -120,6 +120,7 @@ export function wireCreatorMeasuring(deps: {
     | "inBook"
     | "measuredIn"
     | "dropMeasurement"
+    | "forgetSightings"
   >;
   sessionLive: () => boolean;
   alignmentInfo: () => MintAlignmentInfo;
@@ -311,6 +312,12 @@ export function wireCreatorMeasuring(deps: {
       deps.codes.clearInHand();
     } else {
       deps.codes.dropMeasurement(offeredId);
+    }
+    // Its sightings of this visit were solved at the old size: they no
+    // longer correct anything (M5a milestone review #1).
+    if (offeredId !== undefined) {
+      deps.codes.forgetSightings(offeredId);
+      deps.alignmentPicks.forgetCode(offeredId);
     }
     // The code is measured again at the new size.
     autoMeasured.clear();

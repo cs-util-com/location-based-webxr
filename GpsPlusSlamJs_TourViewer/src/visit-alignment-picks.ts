@@ -79,6 +79,9 @@ export interface VisitAlignmentTracker {
   picks(): VisitAlignmentPicks;
   /** Forget everything (a new visit). */
   reset(): void;
+  /** A code's events are void (its printed size changed, M5a milestone
+   *  review #1): its sightings and its measurement pick go. */
+  forgetCode(levelId: string): void;
 }
 
 interface Timed {
@@ -193,6 +196,12 @@ export function createVisitAlignmentTracker(): VisitAlignmentTracker {
           sighting: t.sighting,
         })),
       };
+    },
+    forgetCode(levelId) {
+      measurements.delete(levelId);
+      for (let i = sightings.length - 1; i >= 0; i -= 1) {
+        if (sightings[i]?.sighting.levelId === levelId) sightings.splice(i, 1);
+      }
     },
     reset() {
       current = NO_ALIGNMENT;

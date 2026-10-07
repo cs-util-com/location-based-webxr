@@ -19,7 +19,9 @@ writes these through it, so that M4c can turn its inside into the code book
     reference with null), `remint(level)` (the settle; the measurement
     stays), `restoreInHand(level)` (a restored draft: only into an empty
     hand, true when taken), `clearInHand()` (a new print size);
-  - `setSighting(sighting)`, `clearSighting()`.
+  - `setSighting(sighting)`, `clearSighting()`; `forgetSightings(levelId)` -
+    a size adoption: that code's stored-code sighting goes, and the visit's
+    sighting if it is that code's.
 - Per code:
   - `hasStoredPose(levelId)` - in hand, in the book with a saved pose, or
     in the open tour with a geo (the book since the M4 milestone review

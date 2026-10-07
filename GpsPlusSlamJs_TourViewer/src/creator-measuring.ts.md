@@ -104,7 +104,10 @@ M4 replaces its one code in hand with the code book.
   milestone review #2). Adopting an offer sets ITS code's size and, as before,
   the field (the size new codes are solved at); a code the tour stores at
   its own size keeps that, and only the offered code's measurement is
-  dropped - another code in hand stays. `reset()` forgets the adopted
+  dropped - another code in hand stays. Its sightings of this visit go too
+  (`codes.forgetSightings`, `alignmentPicks.forgetCode`): they were solved
+  at the old size, and an empty-handed settle would otherwise correct the
+  visit through them (M5a milestone review #1). `reset()` forgets the adopted
   sizes when the tour closes.
 - **Several codes in a visit (M4c-2)**: each measurement keeps its own
   pick (`noteMeasurement(atMs, levelId)`), and a stable sighting of a code

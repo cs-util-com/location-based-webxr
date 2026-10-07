@@ -66,8 +66,9 @@ hosted, measurement, reference, finished }`:
   hosted texts in only when it asks (`withHosted`, one map copy per call).
 - Test-only today (webxr PR #556 review): `openCodeBook` and
   `referenceCodes`; the `reference` field is written everywhere and read
-  only by `referenceCodes`. M5's one "has a stored pose" predicate decides
-  whether they stay (code book plan §12, M4 review #8).
+  only by `referenceCodes`. They stay: the M5 design review (#2) makes
+  `referenceCodes` the placement gate's "the page holds a code" when the
+  hand goes (M5d); `openCodeBook` goes then.
 
 ## Examples
 

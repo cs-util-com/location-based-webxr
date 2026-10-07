@@ -61,6 +61,10 @@ export interface CreatorCodes {
   clearInHand(): void;
   setSighting(sighting: CodeSighting): void;
   clearSighting(): void;
+  /** A code's sightings of this visit are void (its printed size changed):
+   *  its stored-code sighting goes, and the visit's sighting if it is that
+   *  code's. */
+  forgetSightings(levelId: string): void;
   /** `levelId` has a stored pose: in hand, in the book with a saved pose
    *  (measured or kept by this page - M4 review #1), or in the open tour
    *  with geo. */
@@ -215,6 +219,12 @@ export function wireCreatorCodes(deps: {
     },
     setSighting: (sighting) => {
       ctx.visitCodeSighting = sighting;
+    },
+    forgetSightings: (levelId) => {
+      storedCodeSightings.delete(levelId);
+      if (ctx.visitCodeSighting?.levelId === levelId) {
+        ctx.visitCodeSighting = null;
+      }
     },
     clearSighting: () => {
       ctx.visitCodeSighting = null;

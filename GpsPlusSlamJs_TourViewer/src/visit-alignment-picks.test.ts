@@ -227,6 +227,23 @@ describe("createVisitAlignmentTracker (D33)", () => {
     expect(kept.map((s) => s.atMs)).toEqual([800, 900, 1_800, 1_900]);
   });
 
+  // Why this test matters (M5a milestone review #1): a code whose printed
+  // size is adopted was solved at the wrong size until then, so its events
+  // must stop counting - and only ITS events: the other code keeps its own.
+  it("forgets one code's sightings and measurement pick, and nothing else", () => {
+    const t = createVisitAlignmentTracker();
+    t.noteAlignment(moment(1, 100));
+    t.noteMeasurement(0, "a");
+    t.noteMeasurement(10, "b");
+    t.noteSighting(sighting("a", 0), 0);
+    t.noteSighting(sighting("b", 1), 2_000);
+    t.noteSighting(sighting("a", 2), 4_000);
+    t.forgetCode("a");
+    const picks = t.picks();
+    expect(picks.sightings.map((s) => s.sighting.levelId)).toEqual(["b"]);
+    expect([...(picks.measurements?.keys() ?? [])]).toEqual(["b"]);
+  });
+
   it("forgets everything on reset (a new visit)", () => {
     const t = createVisitAlignmentTracker();
     t.noteAlignment(moment(1, 100));

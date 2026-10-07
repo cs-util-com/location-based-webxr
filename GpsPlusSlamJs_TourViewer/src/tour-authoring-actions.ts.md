@@ -36,7 +36,7 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
   through that visit's settle when its encode landed), `basis` (`visit-settle.ts`), `visitAlignment` (the store's, read
   before the teardown), `usedAlignment` (what the geo went through),
   `sighting` (the LATEST sighting of the code the end choice went through -
-  the code seen last since M5a - when it was code-corrected, or null; `levels`
+  the code seen last since M5a - when it was code-corrected, or null), `levels`
   (since M5a, optional): every level the settle re-minted, with its
   alignment; since D33 each object is corrected through
   the sighting nearest it, whose pose is not logged), `objects` (each
@@ -48,8 +48,9 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
   recordings made before D33, and no reader parses them yet: the entry is
   only checked for its place in the action order), `level` (the re-minted
   code, or null) with `levelAlignment` (the measurement's own alignment,
-  D33; optional, absent before D33), `referenceLevel` (the level in hand when the settle ran, before any
-  re-mint - the stored pose a code correction maps onto) and `zero` (M2c
+  D33; optional, absent before D33), `referenceLevel` (the code the end choice went through - the code seen
+  last since M5a - before any re-mint: the stored pose a code correction
+  maps onto) and `zero` (M2c
   review #7): with `visitAlignment` and `sighting` a replay recomputes the
   END choice's code-corrected `usedAlignment` through `correctedAlignment`
   (pinned by the cross-visit test in `authoring-settle.test.ts`), but not
