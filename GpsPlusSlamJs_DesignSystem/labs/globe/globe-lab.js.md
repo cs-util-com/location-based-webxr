@@ -52,7 +52,9 @@
   unless 0; no panel control), `landKm` (where the dive lands, km above the
   ellipsoid, 1-5000, default 2; the plate offers 2, 5, 20), `land` (1 with
   an `at=` link flies the dive to that place; the city plan 2026-10-05-0040
-  §12.4 R15),
+  §12.4 R15; the dive starts on the first frame, from the camera's first
+  placed view, never at load, when the camera has no pose and a dive set
+  off from the ground),
   `nightGain` (0-4, default 0.7), `waterRoughness`,
   `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default
   0.375, 0.75 x the first 0.5 by the owner's choice, DEC-G6-5),

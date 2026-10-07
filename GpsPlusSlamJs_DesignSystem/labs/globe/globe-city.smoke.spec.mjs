@@ -362,3 +362,58 @@ test("a land=1 link flies to its own place, lands and builds its city", async ({
   expect(probe.fade).toBe(1);
   expect(probe.drawn).toBe(true);
 });
+
+// WHY (owner, 2026-10-07, r790 on a phone): a land=1 link "sticks at 2 m
+// and races over the ground instead of coming in slowly from far out". The
+// dive started at load, before any frame had placed the camera, so it set
+// off from the world frame's origin, the ground at the target. The test
+// above saw only where the dive ended. This one reads the altitude every
+// frame from the first: the dive must begin from the intro's view, far out,
+// and never go below the landing altitude before it lands.
+test("a land=1 link's dive starts far out and never skims the ground", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(400_000);
+  await routeCity(context, page);
+  await page.addInitScript(() => {
+    window.__altitudes = [];
+    const sample = () => {
+      const s = window.__globeLab?.ready ? window.__globeLab.state() : null;
+      if (s) {
+        window.__altitudes.push({
+          m: s.altitudeM,
+          phase: s.phase,
+          pin: s.pin?.phase,
+        });
+      }
+      if (s?.phase !== "landed") requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  // 8 s: SwiftShader draws about a frame a second here, and a 4 s dive
+  // left six samples.
+  const errors = await bootGlobe(page, `${BASE}&land=1&diveMs=8000`, {
+    plain: false,
+    phase: "landed",
+    routeCity: false,
+  });
+  const all = await page.evaluate(() => window.__altitudes);
+  // From the dive's start (the pin leaves idle): the page reports ready
+  // before its first frame, so earlier samples read the unplaced camera.
+  const diveAt = all.findIndex((s) => s.pin && s.pin !== "idle");
+  expect(diveAt).toBeGreaterThanOrEqual(0);
+  const samples = all.slice(diveAt);
+  const landKm = 2;
+  const startKm = samples[0].m / 1000;
+  const flying = samples.filter((s) => s.phase !== "landed");
+  const lowestKm = Math.min(...flying.map((s) => s.m)) / 1000;
+  const FAR_KM = 1_000;
+  console.log(
+    `land=1 path: ${samples.length} of ${all.length} frames from the dive's start (pin ${samples[0].pin}), first at ${startKm.toFixed(1)} km (far: ${[0.5, 1, 2].map((k) => `x${k} ${startKm > FAR_KM * k ? "ok" : "NO"}`).join(" ")}), lowest before landing ${lowestKm.toFixed(3)} km (landing ${landKm} km)`,
+  );
+  expect(errors).toEqual([]);
+  expect(samples.length).toBeGreaterThan(10);
+  expect(startKm).toBeGreaterThan(FAR_KM);
+  expect(lowestKm).toBeGreaterThan(landKm * 0.9);
+});

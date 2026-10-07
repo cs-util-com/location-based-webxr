@@ -2211,8 +2211,11 @@ async function start() {
   // A link that names a place (`at=`) warms the city's data from load (the
   // city plan K0), not only from the pin's press.
   if (params.url && params.cityWarm === 1) pin.warm(params.url);
-  // `land=1`: the link flies to its own place (§12.4 R15).
-  if (params.url && params.land === 1) pin.diveTo(params.url);
+  // `land=1`: the link flies to its own place (§12.4 R15), from the intro's
+  // first placed view (the frame loop starts it): at load the camera has no
+  // pose yet, and a dive from there set off from the ground (owner,
+  // 2026-10-07: "sticks at 2 m and races over the ground").
+  let landPending = Boolean(params.url && params.land === 1);
 
   /** The frame-hitch recorder (`#perf=1` only, `globe-perf.js`), or null. */
   let perf = null;
@@ -2333,6 +2336,11 @@ async function start() {
       controls.pickFrom(surfaceTiles().group);
       if (!heldView) controls.update();
       recentreFrame();
+    }
+    // The camera has its first pose now, whoever placed it.
+    if (landPending) {
+      landPending = false;
+      pin.diveTo(params.url);
     }
     pin.frame();
     if (terrain) {
