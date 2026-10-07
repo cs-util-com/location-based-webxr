@@ -44,7 +44,7 @@ import { moveWithCode, takesAlong } from "./move-with-code.js";
 import { authoringObjects, upsertPlaced } from "./object-editing.js";
 import { correctionRefusedLine } from "./qr-author-mode.js";
 import type { TourViewerSeams } from "./seams.js";
-import { buildSummaryModel } from "./summary-model.js";
+import { buildSummaryModel, codeLabel } from "./summary-model.js";
 import type { SummaryPanel } from "./summary-panel.js";
 import { visitSettled } from "./tour-authoring-actions.js";
 import type {
@@ -54,8 +54,11 @@ import type {
 import { buildVisitLogEntry, newVisitId, type VisitLog } from "./visit-log.js";
 import {
   planVisitSettle,
-  settleAlignment,
   visitEndChoice,
+  liveCodeChoices,
+  type CodeMeasurement,
+  type LiveCodeChoices,
+  type VisitSettleInput,
   sightedCodeOffset,
   storedGeo,
   type CodeSighting,
@@ -97,6 +100,11 @@ export interface CreatorSettle {
   refusalLead(): string;
   /** Re-judge the latest sighting's refusal, moving nothing. */
   judgeRefusal(): void;
+  /** Re-judge the refusal when a GPS fix landed since the last look (the
+   *  new alignment may admit or refuse the correction), moving nothing;
+   *  called on every render (M5b: it used to ride the move prompt, which
+   *  M6 removes). */
+  judgeOnNewFix(): void;
   /** Move the earlier visits' frame for this visit's choice. */
   placeEarlierObjects(): void;
   /** The result screen's line about the code's position. */
@@ -137,6 +145,7 @@ export function wireCreatorSettle(deps: {
     | "saveLevel"
     | "visitCodes"
     | "references"
+    | "numbering"
     | "storedSightings"
   >;
   /** The page-side visit log (`creator-setup.ts` owns it). */
@@ -169,15 +178,80 @@ export function wireCreatorSettle(deps: {
 
   /** A refused correction's line, as the live line's lead. */
   function refusalLead(): string {
-    return liveRefusal === null
-      ? ""
-      : `${correctionRefusedLine(liveRefusal)} · `;
+    if (liveRefusal === null) return "";
+    // With several codes the line names its code, by the one numbering the
+    // summary uses too (M5b).
+    const numbering = deps.codes.numbering();
+    const index =
+      liveRefusalCode === null ? -1 : numbering.indexOf(liveRefusalCode);
+    const name =
+      numbering.length > 1 && index >= 0
+        ? `${codeLabel(index, numbering.length)}: `
+        : "";
+    return `${name}${correctionRefusedLine(liveRefusal)} · `;
   }
 
-  function refusalOf(
-    choice: ReturnType<typeof settleAlignment>,
-  ): CorrectionRefusal | null {
-    return choice === null ? null : choice.refused;
+  /**
+   * The visit's codes for the settle and the live judge (M4c-2; one builder
+   * since M5a's review): the code in hand first - with `inHandPick` as its
+   * measurement pick when a changed position is re-minted through a
+   * sighting's pick - then every other code the visit measured, or sighted
+   * with a stored pose. Undefined with one code: the legacy fields decide.
+   * An EMPTY hand still lists the others (webxr PR #556 review).
+   */
+  function visitCodeList(
+    visit: number,
+    level: { id: string; json: string } | null,
+    measurement: CodeMeasurement | null,
+    picks: ReturnType<typeof deps.alignmentPicks.picks>,
+    inHandPick?: ReturnType<typeof deps.alignmentPicks.picks>["measurement"],
+  ): VisitSettleInput["codes"] {
+    const others = deps.codes
+      .visitCodes(visit)
+      .filter((c) => c.level.id !== level?.id)
+      .map((c) => ({
+        ...c,
+        measurementPick: picks.measurements?.get(c.level.id) ?? null,
+      }));
+    if (others.length === 0) return undefined;
+    if (level === null) return others;
+    return [
+      {
+        level,
+        measurement,
+        measurementPick:
+          inHandPick ?? picks.measurements?.get(level.id) ?? null,
+      },
+      ...others,
+    ];
+  }
+
+  /** This visit's live choices (M5b): each code's, and the code seen last.
+   *  Null outside a visit, before the scene exists, or without an
+   *  alignment and a zero. */
+  function liveChoices(): LiveCodeChoices | null {
+    if (!deps.previews.inVisit() || seams.getScene() === null) return null;
+    const state = arStore.getState();
+    const visit = ctx.arSessionGeneration;
+    const level = deps.codes.inHand();
+    const measurement = deps.codes.measurement();
+    const picks = deps.alignmentPicks.picks();
+    const codes = visitCodeList(visit, level, measurement, picks);
+    const input: VisitSettleInput = {
+      visit,
+      placed: [],
+      alignment: selectAlignmentMatrix(state),
+      zero: selectZeroReference(state),
+      mintedLevel: level,
+      measurement,
+      sighting: deps.codes.sighting(),
+      gpsAccuracyM: deps.alignmentInfo().gpsAccuracyM,
+      alignmentInfo: deps.alignmentInfo(),
+      nowIso: new Date().toISOString(),
+      picks,
+      ...(codes === undefined ? {} : { codes }),
+    };
+    return liveCodeChoices(input);
   }
 
   /**
@@ -189,27 +263,38 @@ export function wireCreatorSettle(deps: {
    * complaint). Null, with `liveRefusal` left as it was, outside a visit
    * (no frame) or before the scene exists.
    */
-  function judgeRefusal(): ReturnType<typeof settleAlignment> {
+  /** The code the live refusal was judged for (the code seen last). */
+  let liveRefusalCode: string | null = null;
+  /** The visit and fix count of the last per-fix re-judge. */
+  let judgedAt: { visit: number; count: number } | null = null;
+
+  function judgeRefusal(): LiveCodeChoices | null {
     // Nothing to judge outside a visit - and nothing to read either.
-    if (!deps.previews.inVisit() || seams.getScene() === null) return null;
-    const state = arStore.getState();
-    const choice = settleAlignment({
-      visit: ctx.arSessionGeneration,
-      alignment: selectAlignmentMatrix(state),
-      zero: selectZeroReference(state),
-      mintedLevel: deps.codes.inHand(),
-      measurement: deps.codes.measurement(),
-      sighting: deps.codes.sighting(),
-      gpsAccuracyM: deps.alignmentInfo().gpsAccuracyM,
-    });
-    liveRefusal = refusalOf(choice);
-    return choice;
+    const live = liveChoices();
+    if (live === null) return null;
+    // The line is judged for the code seen last (M5b).
+    const last = live.last === null ? undefined : live.byCode.get(live.last);
+    liveRefusal = last?.refused ?? null;
+    liveRefusalCode = live.last;
+    return live;
   }
 
-  /** Move the earlier visits' frame to where this visit's knowledge of the
-   *  code puts it (`creator-previews.ts`). Cheap: one matrix. */
+  /** Draw the earlier visits' objects through the codes this visit sighted
+   *  (`creator-previews.ts`, M5b): one frame per code whose correction was
+   *  accepted, at that code's stored pose. Cheap: one matrix per code. */
   function placeEarlierObjects(): void {
-    deps.previews.placeEarlier(judgeRefusal());
+    const live = judgeRefusal();
+    if (live === null) return;
+    const geoById = new Map(
+      deps.codes.references().map((r) => [r.levelId, r.geo] as const),
+    );
+    const frames = [...live.byCode].flatMap(([levelId, choice]) => {
+      const geo = geoById.get(levelId) ?? null;
+      return choice.basis === "code-corrected" && geo !== null
+        ? [{ levelId, alignment: choice.alignment, geo }]
+        : [];
+    });
+    deps.previews.placeEarlier(frames);
   }
 
   /**
@@ -332,29 +417,13 @@ export function wireCreatorSettle(deps: {
     // the visit measured, or sighted with a stored pose. One code: the
     // legacy fields decide, exactly as before. An EMPTY hand (a size
     // adoption for it) still settles the others (webxr PR #556 review).
-    const others = deps.codes
-      .visitCodes(visit)
-      .filter((c) => c.level.id !== level?.id)
-      .map((c) => ({
-        ...c,
-        measurementPick: picks.measurements?.get(c.level.id) ?? null,
-      }));
-    const codes =
-      others.length === 0
-        ? undefined
-        : level === null
-          ? others
-          : [
-              {
-                level,
-                measurement: input.measurement,
-                measurementPick:
-                  remint !== null && position !== null
-                    ? position.pick
-                    : (picks.measurements?.get(level.id) ?? null),
-              },
-              ...others,
-            ];
+    const codes = visitCodeList(
+      visit,
+      level,
+      input.measurement,
+      picks,
+      remint !== null && position !== null ? position.pick : undefined,
+    );
     const settleInput = codes === undefined ? input : { ...input, codes };
     // The visit's END choice - late photos, the visit log's path, the
     // settled log's basis - through the code seen last (code book plan
@@ -632,13 +701,30 @@ export function wireCreatorSettle(deps: {
       summary.show(
         buildSummaryModel({
           visits: deps.visitLog.entries(),
-          references: deps.codes.references(),
+          // One numbering for every label (M5b): the summary's "Code N".
+          references: byNumbering(
+            deps.codes.references(),
+            deps.codes.numbering(),
+          ),
           objects: ctx.tourManifest?.objects ?? [],
         }),
       );
     } catch {
       summary.hide();
     }
+  }
+
+  /** `references` in the numbering's order; one it does not list keeps
+   *  its place after them. */
+  function byNumbering<T extends { levelId: string }>(
+    references: readonly T[],
+    numbering: readonly string[],
+  ): T[] {
+    const rank = (id: string): number => {
+      const i = numbering.indexOf(id);
+      return i < 0 ? numbering.length : i;
+    };
+    return [...references].sort((a, b) => rank(a.levelId) - rank(b.levelId));
   }
 
   /** Forget the settle of `visit` if it is still the running visit, so
@@ -718,6 +804,13 @@ export function wireCreatorSettle(deps: {
     unsettle: unsettleRunningVisit,
     refusalLead,
     judgeRefusal: () => {
+      judgeRefusal();
+    },
+    judgeOnNewFix: () => {
+      const count = selectGpsPositions(arStore.getState()).length;
+      const visit = ctx.arSessionGeneration;
+      if (judgedAt?.visit === visit && judgedAt.count === count) return;
+      judgedAt = { visit, count };
       judgeRefusal();
     },
     placeEarlierObjects,

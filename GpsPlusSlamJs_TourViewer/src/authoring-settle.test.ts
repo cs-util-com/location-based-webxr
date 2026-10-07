@@ -927,6 +927,55 @@ describe(
       expect(last.refusedCorrection.maxHorizontalM).toBeLessThan(60);
     });
 
+    // Why this test matters (the stale refused line filed in the M2 review,
+    // fixed in M5b): "Use this size" voids the code's sightings - they were
+    // solved at the old size - but the refused-correction line judged from
+    // them stayed on the panel until the next GPS fix.
+    // Why this test matters (code book plan M5b): with several codes the
+    // refused line must say WHICH code it means, by the same numbering the
+    // summary uses - the tour's codes first, so the number never follows
+    // whichever code is in hand.
+    it("names the code in the refused line when the tour has several", async () => {
+      const a = await firstVisit();
+      // The tour also holds another code, listed before this page's.
+      a.ctx.currentLevels = new Map([
+        [
+          "other0000001",
+          {
+            version: 1,
+            qr: {
+              text: "https://example.invalid/?qr=other",
+              physicalSizeM: 0.16,
+            },
+          } as never,
+        ],
+      ]);
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [60, 400, 0]));
+      a.seeTheCode();
+      await flush();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.status.textContent).toMatch(/Code 2: Code seen 60 m/);
+    });
+
+    it("drops the refused line at once when the code's size is adopted", async () => {
+      const a = await firstVisit();
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [60, 400, 0]));
+      a.seeTheCode();
+      await flush();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.status.textContent).toMatch(/Code seen 60 m/);
+      a.ctx.printSizeCheck = {
+        ...a.ctx.printSizeCheck!,
+        offer: () => ({ text: TEXT, sizeM: 0.3 }),
+        answer: () => undefined,
+      };
+      a.dom.sizeOfferUse.click();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.status.textContent).not.toMatch(/Code seen 60 m/);
+    });
+
     it("without a sighting of the code, keeps the plain visit alignment (and its GPS difference)", async () => {
       const a = await firstVisit();
       a.beginVisit();
@@ -1016,6 +1065,73 @@ describe(
       expect(
         shown.getWorldPosition(new Vector3()).distanceTo(worldOf(gate.geo)),
       ).toBeLessThan(1e-3);
+    });
+
+    // Why this test matters (code book plan M5b): the earlier visits'
+    // objects were drawn in ONE frame, the code in hand's - so with two
+    // codes whose stored poses disagree (minted 8 degrees and 3 m apart in
+    // GPS), the notes next to the other code were drawn off by that
+    // disagreement during the whole visit. Each is drawn through the code
+    // nearest it that this visit sighted.
+    it("draws each earlier note through the code nearest it that this visit sighted", async () => {
+      const a = authoring();
+      // A GPS extent of 59 m (every pick mature at its own moment), and an
+      // odometry that stands still at A, then walks 20 m before B: each
+      // note is tied to the code it was placed beside (D2).
+      const fixes = Array.from({ length: 60 }, (_, i) => ({
+        id: `fix-${String(i)}`,
+        timestamp: 1_000 + i * 1000,
+        coordinates: [i, 0, 0],
+        latitude: ZERO.lat,
+        longitude: ZERO.lon,
+      }));
+      const atA = { fixes, odometry: fixes.map(() => [0, 0, 0]) };
+      const walked = Array.from({ length: 20 }, (_, i) => ({
+        id: `walk-${String(i)}`,
+        timestamp: 100_000 + i * 1000,
+        coordinates: [59, 0, 0],
+        latitude: ZERO.lat,
+        longitude: ZERO.lon,
+      }));
+      const atB = {
+        fixes: [...fixes, ...walked],
+        odometry: [...atA.odometry, ...walked.map((_, i) => [i + 1, 0, 0])],
+      };
+      a.setWalk(atA);
+      a.setAlignment(yawAlignment(0, [0, 400, 0]));
+      a.setZero(ZERO);
+      await a.mint();
+      await a.placePin("Near A", [2, 0, -1]);
+      // The GPS moves before code B is measured, 20 m away.
+      a.setWalk(atB);
+      a.setAlignment(yawAlignment(8, [3, 400, 0]));
+      a.setZero(ZERO);
+      const twentyAway = new Matrix4().makeTranslation(20, 0, 0);
+      const SECOND_TEXT = "https://gps.csutil.com/tour/?qr=second";
+      await a.mint(twentyAway, SECOND_TEXT, 10_000);
+      // Odometry north/up/east: B is 20 m EAST (WebXR x), so beside it is
+      // 2 m north and 21 m east.
+      await a.placePin("Near B", [2, 0, 21]);
+      a.endVisit();
+
+      a.beginVisit();
+      a.setWalk(atA);
+      // This visit's GPS is off again, by an amount both codes' plausibility
+      // bound accepts.
+      a.setAlignment(yawAlignment(4, [5, 400, 2]));
+      a.setZero(ZERO);
+      a.seeTheCode(undefined, TEXT, 20_000);
+      a.seeTheCode(twentyAway, SECOND_TEXT, 30_000);
+      await flush();
+      // Both codes sit at the same odometry spots in this visit, so each
+      // note is back at the odometry spot it was placed at - through ITS
+      // code, whichever code is in hand.
+      expect(
+        a.inWorldGroup("Near A").distanceTo(new Vector3(2, 0, -1)),
+      ).toBeLessThan(1e-2);
+      expect(
+        a.inWorldGroup("Near B").distanceTo(new Vector3(2, 0, 21)),
+      ).toBeLessThan(1e-2);
     });
   },
 );
@@ -2629,6 +2745,33 @@ describe(
       expect(
         entry.codes.find((c) => c.levelId === inHand.id)?.savedGeo,
       ).toBeDefined();
+    });
+
+    // Why this test matters (code book plan M5b): the summary numbered its
+    // codes in an order that put the code in hand first, so after a second
+    // code took the hand the first one became "Code 2". It numbers them as
+    // every label does: the tour's codes, then this page's, in the order
+    // they were taken.
+    it("numbers the codes in the order they were taken, not by the hand", async () => {
+      const summary = summaryFake();
+      const a = authoring({ summary });
+      await openFinishableTour(a);
+      await a.mint();
+      const first = a.ctx.mintedLevel!;
+      await a.mint(
+        new Matrix4().makeTranslation(20, 0, 0),
+        "https://gps.csutil.com/tour/?qr=second",
+        10_000,
+      );
+      const second = a.ctx.mintedLevel!;
+      a.ctx.tourManifestStatus = "settled";
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).toBeNull();
+      expect(summary.shown.at(-1)?.codes.map((c) => c.levelId)).toEqual([
+        first.id,
+        second.id,
+      ]);
     });
 
     it("drops the summary and the visits when the tour closes", async () => {

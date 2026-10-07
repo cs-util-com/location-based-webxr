@@ -27,6 +27,9 @@ landmarks (D19). Pure.
 - `withinCodeReach(object, code): boolean` - horizontal distance at most
   `CODE_EVENT_REACH_M` (40 m), the same reach D33 ties notes to a code
   event with.
+- `horizontalM(from, to): number` - the horizontal distance (m) between
+  two positions; also the earlier objects' nearest code in
+  `creator-previews.ts` (M5b), this package's one copy.
 - `takesAlong(object, code, others): boolean` - what an improved code
   takes with it (code book refactor plan M4b, the owner's choice after the
   M3 sweep): within the reach AND no nearer to any of the tour's `others`

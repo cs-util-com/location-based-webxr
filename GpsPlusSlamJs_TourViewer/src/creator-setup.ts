@@ -439,9 +439,6 @@ export function wireCreatorSetup(deps: {
     codes,
     sessionLive,
     levelInHandIsStored: () => levelInHandIsStored(),
-    judgeRefusal: () => {
-      settle.judgeRefusal();
-    },
     settled: (visit) => settle.record(visit) !== undefined,
     alignmentInfo: () => authorAlignmentInfo(),
     render: () => {
@@ -457,6 +454,9 @@ export function wireCreatorSetup(deps: {
     dom.status.dataset["clamped"] =
       sessionLive() && !statusExpanded ? "true" : "false";
     placement.renderButtons();
+    // A new fix re-judges the refusal line (§7m #8; the line only, never the
+    // earlier objects' frame).
+    settle.judgeOnNewFix();
     movePrompt.render();
     editing.render();
     // F11: the AR controls belong to the AR session. On the setup page they

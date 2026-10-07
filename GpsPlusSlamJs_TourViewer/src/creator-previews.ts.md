@@ -28,9 +28,15 @@ photo is decoded from.
     previews were made from and the frame go (the previews themselves are
     disposed by the entry's teardown, `placedPreviews`).
   - `inVisit()` - the frame exists (the refusal re-judge reads it).
-  - `placeEarlier(choice)` - a `code-corrected` choice moves the frame
-    under the world group with the corrected alignment's inverse; anything
-    else puts it back at the scene root with the identity.
+  - `placeEarlier(frames)` (code book plan M5b) - one frame per code this
+    visit sighted with an accepted correction (`EarlierCodeFrame`: its
+    corrected alignment and stored geo), under the world group with the
+    alignment's inverse. Each earlier object is drawn in the frame of the
+    code nearest it horizontally (`horizontalM`, no reach limit: with one
+    code every object stays in its frame, as before); with none, from geo
+    in the plain frame at the scene root. An object's preview key names
+    its frame, so a changed assignment re-renders it; a code no longer
+    listed loses its frame.
   - `keepFinishedPhoto(id, blob)`, `reset()` - a finished photo's bytes,
     kept until the tour closes; `reset` disposes every preview and forgets
     them.

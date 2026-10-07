@@ -779,6 +779,45 @@ export function visitEndChoice(input: VisitSettleInput): VisitEndChoice | null {
   return endChoiceOf(codeViews(input), input, end, input.zero);
 }
 
+/** Each code's live choice, and the code seen last. */
+export interface LiveCodeChoices {
+  /** Each code of the visit, by level id: its choice through the CURRENT
+   *  alignment. */
+  readonly byCode: ReadonlyMap<string, VisitEndChoice>;
+  /** The code seen last (its choice names the refusal line); null without
+   *  a code. */
+  readonly last: string | null;
+}
+
+/**
+ * Each code's choice through the CURRENT alignment, while the visit runs
+ * (code book plan M5b): the earlier visits' objects are drawn through the
+ * code nearest each of them, and the refusal line is judged for the code
+ * seen last. Unlike the settle at the visit's end, nothing here goes
+ * through a pick: the live frame follows the alignment as it stands (which
+ * code was seen last is still read from the picks' events). With one code
+ * its entry equals {@link settleAlignment} over the input.
+ */
+export function liveCodeChoices(input: VisitSettleInput): LiveCodeChoices {
+  const end = readAlignment(input.alignment);
+  const zero = input.zero;
+  if (end === null || zero === null) return { byCode: new Map(), last: null };
+  const views = codeViews(input);
+  const byCode = new Map<string, VisitEndChoice>();
+  for (const view of views) {
+    const level = view.mintedLevel;
+    if (level === null) continue;
+    const live = { ...view, picks: undefined };
+    byCode.set(level.id, {
+      ...choiceFor(live, end, zero, null, end),
+      level,
+      sighting: view.sighting,
+    });
+  }
+  const last = views[latestCode(views)]?.mintedLevel?.id ?? null;
+  return { byCode, last };
+}
+
 /** {@link visitEndChoice} over views already built. */
 function endChoiceOf(
   views: readonly VisitSettleInput[],

@@ -46,6 +46,10 @@ writes these through it, so that M4c can turn its inside into the code book
     text is what the next Finish builds on;
   - `ids()` - every code in the book, in the order first taken (M4d: the
     print panel's reprint warning counts them);
+  - `numbering()` - the one order every label uses ("Code 2", M5b): the
+    open tour's codes in the tour's order, then this page's, in the order
+    taken - never moved by the hand (the summary sorts by it, the refused
+    line names its code by it);
   - `notHosted()` - what the draft keeps: every code whose saved text the
     HOSTED zip does not hold yet, a Finish's among them;
   - `dropMeasurement(levelId)` - a code not in hand is measured again (a

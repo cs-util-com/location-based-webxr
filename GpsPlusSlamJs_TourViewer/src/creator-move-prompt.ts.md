@@ -12,14 +12,15 @@ M5 asks it per code in view.
 
 ## Public API
 
-- `wireCreatorMovePrompt({ ctx, arStore, dom, draft, codes, sessionLive, levelInHandIsStored, judgeRefusal, settled, alignmentInfo, render }): CreatorMovePrompt`
+- `wireCreatorMovePrompt({ ctx, arStore, dom, draft, codes, sessionLive, levelInHandIsStored, settled, alignmentInfo, render }): CreatorMovePrompt`
   - `dom` (`CreatorMovePromptDom`): `movePrompt`, `movePromptText`, the
     three answers `movePromptUse` / `movePromptCopy` / `movePromptLater`,
     and `moveUndo`, `moveUndoText`, `moveUndoButton`.
   - `draft` - where the answers are remembered (`creator-draft.ts`).
   - `settled(visit)` - the visit has settled (`creator-settle.ts`'s
-    `visitSettles`); `judgeRefusal()` re-judges the latest sighting's
-    refusal for the panel line.
+    `visitSettles`). The refusal line's per-fix re-judge is no longer
+    here: since M5b it is `creator-settle.ts`'s `judgeOnNewFix`, so it
+    survives this prompt's removal in M6.
 - `CreatorMovePrompt`:
   - `render()` - re-run the tracker (logging a new ask once) and draw the
     prompt and the undo; called from the readout render.
@@ -36,8 +37,8 @@ M5 asks it per code in view.
   current GPS alignment (`sightedCodeOffset`; its own 15 m trigger since
   D26, whether or not the settle refuses the correction, so between 15 m
   and the refusal bound the visit follows the code while the prompt
-  asks; the refusal itself is still re-judged whenever a fix landed,
-  `judgeRefusal`, for the panel line, never moving the earlier objects), the
+  asks; the refusal itself is re-judged whenever a fix landed, by the
+  settle since M5b, for the panel line, never moving the earlier objects), the
   mint gate's alignment half, the store's fix count and the latest
   fix's time, and the remembered answers. It asks only for a stored
   level in hand, in a live session, outside a Finish. A new ask logs

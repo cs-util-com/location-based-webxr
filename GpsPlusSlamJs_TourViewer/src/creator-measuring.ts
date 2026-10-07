@@ -319,6 +319,10 @@ export function wireCreatorMeasuring(deps: {
       deps.codes.forgetSightings(offeredId);
       deps.alignmentPicks.forgetCode(offeredId);
     }
+    // ...and nothing judged from them stays on the panel: the refused line
+    // and the earlier objects' frames are judged again now, not at the next
+    // fix (the stale line filed in the M2 review).
+    deps.placeEarlierObjects();
     // The code is measured again at the new size.
     autoMeasured.clear();
     endQrPipeline(ctx);

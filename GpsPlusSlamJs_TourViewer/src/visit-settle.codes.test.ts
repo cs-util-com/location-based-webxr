@@ -30,6 +30,8 @@ import {
   planVisitSettle,
   storedGeo,
   visitEndChoice,
+  liveCodeChoices,
+  settleAlignment,
   type CodeMeasurement,
   type CodeSighting,
 } from "./visit-settle.js";
@@ -341,6 +343,75 @@ describe("the settle with several codes: each note follows the nearest code even
     expect(
       through(NEAR_B, end.alignment).distanceTo(through(NEAR_B, aStoredB)),
     ).toBeLessThan(1e-3);
+  });
+
+  // Why this test matters (code book plan M5b): while the visit runs, the
+  // earlier objects are drawn through the code nearest each of them - so
+  // each code needs its OWN live choice, through its own stored pose, not
+  // the code in hand's. With one code the choice must stay what the panel
+  // and the frame always used (`settleAlignment`).
+  it("judges each code live through its own stored pose, and names the code seen last", () => {
+    const plan = twoStoredSettle([]);
+    expect(plan).toBeNull();
+    const input = {
+      visit: 1,
+      placed: [],
+      alignment: aVisit,
+      zero: ZERO,
+      mintedLevel: storedA,
+      measurement: null,
+      sighting: sightingOf(ID_B, TEXT_B, POSE_B),
+      gpsAccuracyM: 4,
+      alignmentInfo: INFO,
+      nowIso: NOW,
+      codes: [
+        { level: storedA, measurement: null },
+        { level: storedB, measurement: null },
+      ],
+      picks: {
+        objects: new Map(),
+        measurement: null,
+        sightings: [
+          {
+            atMs: 0,
+            walkedM: 0,
+            alignment: aVisit,
+            sighting: sightingOf(ID_A, TEXT_A, POSE_A),
+          },
+          {
+            atMs: 30_000,
+            walkedM: 30,
+            alignment: aVisit,
+            sighting: sightingOf(ID_B, TEXT_B, POSE_B),
+          },
+        ],
+      },
+    };
+    const live = liveCodeChoices(input);
+    expect(live.last).toBe(ID_B);
+    const a = live.byCode.get(ID_A)!;
+    const b = live.byCode.get(ID_B)!;
+    expect(a.basis).toBe("code-corrected");
+    expect(b.basis).toBe("code-corrected");
+    expect(
+      through(NEAR_A, a.alignment).distanceTo(through(NEAR_A, aStoredA)),
+    ).toBeLessThan(1e-3);
+    expect(
+      through(NEAR_B, b.alignment).distanceTo(through(NEAR_B, aStoredB)),
+    ).toBeLessThan(1e-3);
+    // One code: the live choice is settleAlignment's.
+    const one = {
+      ...input,
+      codes: undefined,
+      sighting: sightingOf(ID_A, TEXT_A, POSE_A),
+    };
+    const single = liveCodeChoices(one).byCode.get(ID_A)!;
+    const legacy = settleAlignment(one)!;
+    expect({
+      basis: single.basis,
+      alignment: single.alignment,
+      refused: single.refused,
+    }).toEqual(legacy);
   });
 
   it("keeps a note out of reach of every code event on its own alignment", () => {

@@ -162,12 +162,12 @@
     },
     {
       "name": "refusal re-judged on every render",
-      "region": "move prompt",
-      "file": "src/creator-move-prompt.ts",
-      "from": "      moveFixCount = clock.count;",
+      "region": "refusal",
+      "file": "src/creator-settle.ts",
+      "from": "      judgedAt = { visit, count };",
       "to": "",
-      "expected": "known-gap",
-      "why": "NOT equivalent (M2 review #4): after a size adoption or a failed identity clears the level, the refused-correction line stays until the next fix, where re-judging every render clears it at once. No test covers that window yet; the stale line is filed as a small pre-existing defect in the code book plan (section 12, M2 review)."
+      "expected": "equivalent",
+      "why": "Since M5b the per-fix re-judge is the settle's. The stale window it once left after a size adoption is closed by a re-judge at the adoption itself (tested); a failed identity puts the prior hand back, so the line judged from it stays valid. Judging on every render then yields the same line from the same state - only the cost differs."
     },
     {
       "name": "result screen outcome not recorded",
@@ -201,7 +201,7 @@
       "name": "frame left at the scene root",
       "region": "previews",
       "file": "src/creator-previews.ts",
-      "from": "        earlierFrameUnderGroup = true;",
+      "from": "        group?.add(node);",
       "to": ""
     },
     {

@@ -17,6 +17,7 @@ import {
   renderTourObjects,
   type TourObjectRendererDeps,
 } from "./content-placement.js";
+import { horizontalM } from "./move-with-code.js";
 import type { AuthoringObject } from "./object-editing.js";
 import type { TourViewerSeams } from "./seams.js";
 import type {
@@ -24,11 +25,18 @@ import type {
   TourViewerStore,
 } from "./tour-viewer-session.js";
 
-/** What a settle chose, as far as the earlier visits' frame cares. */
-type EarlierChoice = {
-  readonly basis: string;
+/**
+ * A code this visit sighted with an accepted correction (code book plan
+ * M5b): the earlier visits' objects nearest it are drawn through it.
+ */
+interface EarlierCodeFrame {
+  readonly levelId: string;
+  /** The code's corrected alignment for this visit (GPS-world from
+   *  odometry). */
   readonly alignment: readonly number[];
-} | null;
+  /** The code's stored pose: which objects are nearest it. */
+  readonly geo: LatLong;
+}
 
 export interface CreatorPreviews {
   /** Bring the previews in line with the tour's objects now. */
@@ -42,8 +50,10 @@ export interface CreatorPreviews {
   endVisit(): void;
   /** A visit is running (its earlier-visits frame exists). */
   inVisit(): boolean;
-  /** Move the earlier visits' frame for this visit's choice. */
-  placeEarlier(choice: EarlierChoice): void;
+  /** Draw the earlier visits' objects through the frames of the codes this
+   *  visit sighted, each object through the code nearest it (M5b); none:
+   *  from geo at the scene root. */
+  placeEarlier(frames: readonly EarlierCodeFrame[]): void;
   /** Keep a finished photo's bytes for its preview. */
   keepFinishedPhoto(id: string, blob: Blob): void;
   /** A tour closed: its previews and kept photo bytes go. */
@@ -79,9 +89,32 @@ export function wireCreatorPreviews(deps: {
    */
   let earlierFrame: Group | null = null;
 
-  /** Where `earlierFrame` is attached. Tracked, not read from `parent`:
-   *  the e2e fakes' scene nodes do not set it. */
-  let earlierFrameUnderGroup = false;
+  /**
+   * One frame per code this visit sighted with an accepted correction (code
+   * book plan M5b), under the AR world group with that code's corrected
+   * alignment's inverse. `earlierFrame` stays at the scene root for the
+   * objects no such code is nearest to (none sighted yet).
+   */
+  const codeFrames = new Map<
+    string,
+    { readonly group: Group; geo: EarlierCodeFrame["geo"] }
+  >();
+
+  /** Where an object that is not rigid in AR is drawn: the frame of the
+   *  sighted code nearest it, horizontally; "plain" without one. No reach
+   *  limit: with one code every object stays in its frame, as before. */
+  function frameKeyOf(geo: EarlierCodeFrame["geo"]): string {
+    let best = "plain";
+    let bestM = Number.POSITIVE_INFINITY;
+    for (const [levelId, frame] of codeFrames) {
+      const m = horizontalM(frame.geo, geo);
+      if (m < bestM) {
+        best = levelId;
+        bestM = m;
+      }
+    }
+    return best;
+  }
 
   /**
    * Where a preview goes. An object placed in THIS visit is RIGID in AR
@@ -133,6 +166,8 @@ export function wireCreatorPreviews(deps: {
       object.kind,
       object.kind === "pin" ? object.label : object.image,
       rigid ? placement.local : object.geo,
+      // The frame it is drawn in: a change re-renders it there (M5b).
+      rigid ? "rigid" : frameKeyOf(object.geo),
     ]);
   }
 
@@ -166,7 +201,8 @@ export function wireCreatorPreviews(deps: {
     if (zero === null) return;
     for (const entry of desired.values()) {
       if (!previewKeys.has(entry.object.id)) {
-        renderPreview(entry, zero, earlierFrame ?? scene);
+        const frame = codeFrames.get(frameKeyOf(entry.object.geo))?.group;
+        renderPreview(entry, zero, frame ?? earlierFrame ?? scene);
       }
     }
   }
@@ -231,32 +267,40 @@ export function wireCreatorPreviews(deps: {
     );
   }
 
-  /** Move the earlier visits' frame to where this visit's knowledge of the
-   *  code puts it (see `earlierFrame`): under the world group with the
-   *  corrected alignment's inverse, else at the scene root. Cheap: one
-   *  matrix. */
-  function placeEarlier(choice: EarlierChoice): void {
-    const frame = earlierFrame;
-    const scene = seams.getScene();
-    if (frame === null || scene === null) return;
+  /**
+   * Draw the earlier visits' objects through the codes this visit sighted
+   * (code book plan M5b): one frame per code, under the world group with
+   * the code's corrected alignment's inverse - rigid in AR, where the code
+   * says - and each object in the frame of the code nearest it. A code no
+   * longer listed loses its frame; an object whose nearest code changed is
+   * drawn again in its new frame (its preview key names the frame). Cheap
+   * while nothing is reassigned: one matrix per code.
+   */
+  function placeEarlier(frames: readonly EarlierCodeFrame[]): void {
+    if (earlierFrame === null || seams.getScene() === null) return;
     const group = seams.getArWorldGroup();
-    if (choice?.basis === "code-corrected" && group !== null) {
-      frame.matrix.fromArray(choice.alignment).invert();
-      frame.matrixWorldNeedsUpdate = true;
-      if (!earlierFrameUnderGroup) {
-        scene.remove(frame);
-        group.add(frame);
-        earlierFrameUnderGroup = true;
+    const listed = group === null ? [] : frames;
+    const keep = new Set(listed.map((f) => f.levelId));
+    for (const [levelId, frame] of codeFrames) {
+      if (keep.has(levelId)) continue;
+      frame.group.removeFromParent();
+      codeFrames.delete(levelId);
+    }
+    for (const f of listed) {
+      let frame = codeFrames.get(f.levelId);
+      if (frame === undefined) {
+        const node = new Group();
+        node.name = `earlier-visits-${f.levelId}`;
+        node.matrixAutoUpdate = false;
+        group?.add(node);
+        frame = { group: node, geo: f.geo };
+        codeFrames.set(f.levelId, frame);
       }
-      return;
+      frame.geo = f.geo;
+      frame.group.matrix.fromArray(f.alignment).invert();
+      frame.group.matrixWorldNeedsUpdate = true;
     }
-    frame.matrix.identity();
-    frame.matrixWorldNeedsUpdate = true;
-    if (earlierFrameUnderGroup) {
-      group?.remove(frame);
-      scene.add(frame);
-      earlierFrameUnderGroup = false;
-    }
+    syncPreviews();
   }
 
   /** A creator's AR visit began: a fresh earlier-visits frame at the scene
@@ -265,8 +309,9 @@ export function wireCreatorPreviews(deps: {
     earlierFrame = new Group();
     earlierFrame.name = "earlier-visits";
     earlierFrame.matrixAutoUpdate = false;
-    earlierFrameUnderGroup = false;
     scene.add(earlierFrame);
+    for (const frame of codeFrames.values()) frame.group.removeFromParent();
+    codeFrames.clear();
     // Everything is rendered afresh into this visit's frames - the
     // hosted zip's objects too (M4) - keyed by id.
     clearPreviews();
@@ -285,6 +330,8 @@ export function wireCreatorPreviews(deps: {
       previewKeys.clear();
       earlierFrame?.removeFromParent();
       earlierFrame = null;
+      for (const frame of codeFrames.values()) frame.group.removeFromParent();
+      codeFrames.clear();
     },
     inVisit: () => earlierFrame !== null,
     placeEarlier,

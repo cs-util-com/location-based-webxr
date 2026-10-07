@@ -102,6 +102,10 @@ export interface CreatorCodes {
   /** Every code this page holds, in the order it took them (M4d: the
    *  print step warns before stranding them). */
   ids(): string[];
+  /** The one numbering every label uses ("Code 2", code book plan M5b):
+   *  the open tour's codes in the tour's order, then the codes this page
+   *  added, in the order it took them - never moved by the hand. */
+  numbering(): string[];
   /** `levelId` was measured in `visit`. */
   measuredIn(levelId: string, visit: number): boolean;
   /** A code not in hand is measured again (a new print size): its
@@ -276,6 +280,13 @@ export function wireCreatorCodes(deps: {
     saveLevel: (level) => {
       book = withSaved(book, level);
       if (ctx.mintedLevel?.id === level.id) ctx.mintedLevel = level;
+    },
+    numbering: () => {
+      takeInHand();
+      const ids = [...(ctx.currentLevels?.keys() ?? [])];
+      const listed = new Set(ids);
+      for (const id of book.keys()) if (!listed.has(id)) ids.push(id);
+      return ids;
     },
     ids: () => {
       takeInHand();

@@ -217,7 +217,9 @@ function turnDeg(a: number, b: number): number {
   return d > 180 ? 360 - d : d;
 }
 
-function codeLabel(index: number, count: number): string {
+/** A code's name in labels: "The code" alone, else "Code N" by the
+ *  numbering (`creator-codes.ts` `numbering`). */
+export function codeLabel(index: number, count: number): string {
   return count === 1 ? "The code" : `Code ${String(index + 1)}`;
 }
 

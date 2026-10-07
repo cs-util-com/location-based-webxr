@@ -133,6 +133,13 @@ draft and logs `tourAuthoring/settled`.
   (M5 design review #1); null only when the alignment or the zero do not
   read. `planVisitSettle`'s `basis` / `alignment` / `refused` are the same
   choice.
+- `liveCodeChoices(input): LiveCodeChoices` (code book plan M5b) - while
+  the visit runs: each code's choice through the CURRENT alignment (no
+  pick: the live frame follows the alignment as it stands), keyed by
+  level, and the code seen last (`last`, read from the picks' events).
+  The earlier objects are drawn through the nearest corrected code; the
+  refused line is judged for `last`. With one code its entry equals
+  `settleAlignment` over the input.
 - `planVisitSettle(input): VisitSettle | null` - the settled records by
   index into `placed` (only objects whose `placement.visit` is this visit),
   each with its own `SettleChoice` (D33: its pick by id; near a code event

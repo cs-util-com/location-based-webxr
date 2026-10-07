@@ -14,6 +14,7 @@ import { Matrix4, Quaternion, Vector3 } from "three";
 import {
   calcGpsCoords,
   calcRelativeCoordsInMeters,
+  type LatLong,
 } from "gps-plus-slam-app-framework/core";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 
@@ -117,8 +118,9 @@ export function takesAlong(
   return others.every((other) => own <= horizontalM(other, object));
 }
 
-/** Horizontal distance from `from` to `to` (m). */
-function horizontalM(from: QrGeoPose, to: QrGeoPose): number {
+/** Horizontal distance from `from` to `to` (m); the earlier objects' frame
+ *  per code reads it too (`creator-previews.ts`). */
+export function horizontalM(from: LatLong, to: LatLong): number {
   const r = calcRelativeCoordsInMeters(from, to);
   return Math.hypot(r[0], r[2]);
 }

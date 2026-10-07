@@ -338,6 +338,31 @@ describe("creator-codes: the visit's codes for the settle (M4c-2)", () => {
   });
 });
 
+describe("creator-codes: one numbering for every label (code book plan M5b)", () => {
+  // Why this test matters: "Code 2" was the index in an order that put the
+  // code in hand first, so a code's number changed whenever another code
+  // took the hand - the summary and the panel could name the same code
+  // differently. The tour's own codes come first in the tour's order, then
+  // the codes this page added, in the order it took them.
+  it("numbers the tour's codes first, then this page's, whatever is in hand", () => {
+    const ctx = createTourViewerSession();
+    ctx.currentLevels = new Map([
+      ["h1", hostedLevel(47.1)],
+      ["h2", hostedLevel(47.2)],
+    ]);
+    const codes = wireCreatorCodes({ ctx });
+    codes.setInHand({ id: "n1", json: levelJson(47.5) }, MEASUREMENT);
+    const before = codes.numbering();
+    codes.setInHand(
+      { id: "n2", json: levelJson(47.6) },
+      { ...MEASUREMENT, levelId: "n2" },
+    );
+    codes.setInHand({ id: "h2", json: levelJson(47.2) }, null);
+    expect(before).toEqual(["h1", "h2", "n1"]);
+    expect(codes.numbering()).toEqual(["h1", "h2", "n1", "n2"]);
+  });
+});
+
 describe("creator-codes: every code this page holds (M4d)", () => {
   // Why this test matters: the print step warns that printing a code would
   // strand the tour's MEASURED codes; it read only the hosted ones, so a

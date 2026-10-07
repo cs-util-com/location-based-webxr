@@ -79,8 +79,6 @@ export function wireCreatorMovePrompt(deps: {
   sessionLive: () => boolean;
   /** The level in hand is a stored one (only those are asked about). */
   levelInHandIsStored: () => boolean;
-  /** Re-judge the latest sighting's refusal for the panel line. */
-  judgeRefusal: () => void;
   /** The visit has settled (`visitSettles`). */
   settled: (visit: number) => boolean;
   alignmentInfo: () => MintAlignmentInfo;
@@ -94,10 +92,6 @@ export function wireCreatorMovePrompt(deps: {
   let shown: MovePrompt | null = null;
   /** The onset the shown prompt was logged for: one log per ask. */
   let movePromptLogged: MovePromptOnset | null = null;
-  /** The store's fix count at the last refusal re-evaluation: a new fix
-   *  re-judges the latest sighting through the new alignment - the
-   *  refusal only, never the earlier objects' frame (§7m #8). */
-  let moveFixCount = -1;
   /** The latest "Yes, it moved", undoable while its visit runs - the settle
    *  at the visit's end applies it, and nothing before that has changed. */
   let undoable: { prompt: MovePrompt; visit: number } | null = null;
@@ -115,16 +109,12 @@ export function wireCreatorMovePrompt(deps: {
 
   /**
    * Re-run the tracker on the latest sighting's offset (its own trigger,
-   * D26), re-judge the refusal for the panel line when a fix landed since
-   * the last look, and log a new ask once.
+   * D26), and log a new ask once. (The refusal line's re-judge on a new
+   * fix is the settle's since M5b.)
    */
   function updateMovePrompt(): void {
     const level = deps.codes.inHand();
     const clock = fixClock();
-    if (deps.sessionLive() && clock.count !== moveFixCount) {
-      moveFixCount = clock.count;
-      deps.judgeRefusal();
-    }
     const live =
       deps.sessionLive() && !ctx.finishing && deps.levelInHandIsStored();
     // Its own trigger (D26): the sighting's offset, whether or not the
@@ -275,7 +265,6 @@ export function wireCreatorMovePrompt(deps: {
     endVisit: () => {
       moveOnset = null;
       shown = null;
-      moveFixCount = -1;
     },
     reset: () => {
       undoable = null;

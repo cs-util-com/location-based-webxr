@@ -25,9 +25,16 @@ M4 settles every code of the book, not only the one in hand.
     is minted through it); `lateArrival(visit, photo)` logs such a photo
     as that settle's; `unsettle(visit)` forgets the running visit's settle
     (a Finish that wrote nothing, so the session end settles it again).
-  - `refusalLead()`, `judgeRefusal()`, `placeEarlierObjects()` - the
-    refused correction's line, its re-judge on a new fix (moving nothing),
-    and the earlier visits' frame chosen from the settle's choice.
+  - `refusalLead()`, `judgeRefusal()`, `judgeOnNewFix()`,
+    `placeEarlierObjects()` - the refused correction's line (naming its
+    code by `codes.numbering()` when the tour has several), its re-judge,
+    the per-fix re-judge called on every render (moving nothing; since M5b
+    the settle's, no longer the move prompt's), and the earlier visits'
+    frames. Since M5b all of them read `liveCodeChoices` (`visit-settle.ts`)
+    over the visit's codes - the same list the settle uses
+    (`visitCodeList`): each code's choice through the CURRENT alignment,
+    the line for the code seen last, one frame per code whose correction
+    was accepted.
   - `positionSentence()` / `afterFinish()` - the result screen's line
     about the code's position, over the settles since the last Finish.
   - `showSummary()` - the summary after Finish.
@@ -117,8 +124,9 @@ M4 settles every code of the book, not only the one in hand.
       new fix in the store re-judges the LATEST sighting through the
       CURRENT alignment (`judgeRefusal`) - but that updates the refusal
       (`liveRefusal`: the panel line) only. The objects'
-      frame is re-chosen only by `placeEarlierObjects`: a stable sighting
-      of the code in hand, and the explicit paths (a measurement of the code, the visit's start). So
+      frames are re-chosen only by `placeEarlierObjects`: a stable sighting
+      of the code in hand, a size adoption (M5b: the code's sightings were
+      voided), and the explicit paths (a measurement of the code, the visit's start). So
       while the code is out of view the objects stay where its last
       sighting put them, however far GPS drifts (M5b had re-placed them
       on every fix, a jump of at least the plausibility bound - 13.5 m at
