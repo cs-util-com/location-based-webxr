@@ -194,15 +194,18 @@ describe("frameRecentreTarget", () => {
 // the true ellipsoid's metres at the target and places it there.
 //
 // THE BOUND IS THE FLAT FRAME'S OWN ERROR, never zero: 1.2 m of curvature
-// and vertical tilt over the window's 3.4 km diagonal for heights up to
-// 1 km, plus two terms that grow with the latitude, because the frame's
+// over the window's 3.4 km diagonal, plus the frame's vertical: it is the
+// target's, so a point h metres up and d metres out leans by about
+// h d / R (heights to 4.8 km, the Alps' peaks: the r790 milestone review
+// F3 found the bound failing from 2 km up while the test stopped at 1 km),
+// plus two terms that grow with the latitude, because the frame's
 // east scale is fixed at the origin's latitude: a parallel curves on the
 // tangent plane by about e^2 tan(|lat|) / 2R, and a point n metres north is
 // sheared east by about |e| |n| tan(|lat|) / R. Neither is removable by a
 // per-axis scale, and AR's frame has both, so they are inherent. Computed
 // over a dense grid: the worst corner is 1.05 m at the equator, 1.57 m at
-// 45, 3.13 m at 70, and with both terms taken away at most 1.05 m remains
-// everywhere. Earlier fixed bounds (1 m, then 1.5 m) passed only because the
+// 45, 3.13 m at 70; with the three terms taken away at most 0.90 m remains
+// anywhere, to 4.8 km up. Earlier fixed bounds (1 m, then 1.5 m) passed only because the
 // random samples rarely reached a corner, so the corners are always
 // included below. Uncorrected, the error is 3-4 m along the axes at 47 N,
 // where both terms are near 0, so a missing scale still fails.
@@ -212,8 +215,9 @@ describe("ecefFromCityAt", () => {
     east: GLOBE_DETAIL.metresPerDegLngEquator,
   };
   const R = 6_371_000;
-  const boundM = (lat: number, eastM: number, northM: number) =>
+  const boundM = (lat: number, eastM: number, northM: number, h: number) =>
     1.2 +
+    (h * Math.hypot(eastM, northM)) / R +
     ((eastM * eastM) / 2 + Math.abs(eastM) * Math.abs(northM)) *
       (Math.tan(Math.abs(lat) * DEG) / R);
   it("puts a city point within the flat frame's own error of its latitude, longitude and height", () => {
@@ -229,7 +233,8 @@ describe("ecefFromCityAt", () => {
         [2400, 0],
         [0, 2400],
       ] as const) {
-        corners.push([lat, 7.4, eastM, northM, 1000]);
+        corners.push([lat, 7.4, eastM, northM, 4800]);
+        corners.push([lat, 7.4, eastM, northM, 0]);
       }
     }
     fc.assert(
@@ -238,7 +243,7 @@ describe("ecefFromCityAt", () => {
         fc.double({ min: -179, max: 179, noNaN: true }),
         fc.double({ min: -2400, max: 2400, noNaN: true }),
         fc.double({ min: -2400, max: 2400, noNaN: true }),
-        fc.double({ min: 0, max: 1000, noNaN: true }),
+        fc.double({ min: 0, max: 4800, noNaN: true }),
         (lat, lng, eastM, northM, h) => {
           const m = ecefFromCityAt(e, { lat, lng }, new THREE.Matrix4());
           // The Osm frame: x east, y up, z south, in the ruler's metres.
@@ -252,7 +257,7 @@ describe("ecefFromCityAt", () => {
             new THREE.Vector3(),
           );
           const d = placed.distanceTo(truth);
-          const bound = boundM(lat, eastM, northM);
+          const bound = boundM(lat, eastM, northM, h);
           worstShare = Math.max(worstShare, d / bound);
           expect(d).toBeLessThan(bound);
         },

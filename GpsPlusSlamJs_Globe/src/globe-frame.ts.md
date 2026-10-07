@@ -59,7 +59,8 @@ group)`) and the tiles read the group's world matrix, so they follow
 - Tests: `globe-frame.test.ts` covers `ecefFromCityAt` (a property: a
   city point within the flat frame's own error, 1.2 m plus its two
   latitude terms, of its latitude, longitude and height on the ellipsoid
-  over 2.4 km and heights to 1 km, the window's corners always sampled; the origin on the target's
+  over 2.4 km and heights to 4.8 km (plus h d / R for the frame's vertical),
+  the window's corners always sampled at 0 and 4.8 km; the origin on the target's
   ground point), the axes at a target, 1 km up
   landing at y = 1,000, the refusals, a fast-check round trip over any
   target and camera (the poles and the antimeridian included), and the

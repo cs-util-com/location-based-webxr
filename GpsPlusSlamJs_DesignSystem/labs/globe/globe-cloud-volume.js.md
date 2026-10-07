@@ -36,7 +36,8 @@ sceneDepth })`
     he looked), for the slab and its shadow, and the reach runs to the
     disc's far side; the lab passes `maxAheadM` 0 in variant 1, where the
     shell's hole is around the camera.
-  - `render(camera, relief)`: after the Earth, nothing at share 0: the
+  - `render(camera, relief, extra = [])` (`extra`: the city, drawn into the
+    depth too): after the Earth, nothing at share 0: the
     relief's depth (drawn here unless the lab already drew it this frame
     for the space pass), the slab from the lifted camera, the composite.
   - `patchShadow(tiles)` and `setShadow(on)` (C3): the volume's shadow on

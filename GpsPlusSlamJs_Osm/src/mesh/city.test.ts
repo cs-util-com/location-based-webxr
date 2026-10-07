@@ -184,13 +184,25 @@ describe("buildCity within a window", () => {
     position: { lat: 50.9713, lng: 6.959 },
   };
 
-  it("drops volumes and trees whose position lies outside the window", () => {
+  // A wall about 3.3 km north, beside the far house.
+  const farWall: OsmFeature = {
+    type: "way",
+    id: 7,
+    tags: { barrier: "wall", height: "3" },
+    geometry: [
+      { lat: 50.9711, lng: 6.9581 },
+      { lat: 50.9711, lng: 6.9586 },
+    ],
+  };
+
+  it("drops volumes, barriers and trees whose position lies outside the window", () => {
     const city = buildCity(
-      [near, far, TREE, farTree],
+      [near, far, TREE, farTree, WALL, farWall],
       { frame },
       { withinM: 2400 },
     );
     expect(city.volumes.map((v) => v.feature)).toEqual(["way/1"]);
+    expect(city.barriers.map((b) => b.feature)).toEqual(["way/3"]);
     expect(city.trees.map((t) => t.feature)).toEqual(["node/4"]);
   });
 

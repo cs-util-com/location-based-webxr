@@ -223,6 +223,80 @@ test("the city builds at Bern from a link, through the Osm library, where its la
   expect(probe.drawn).toBe(true);
   expect(probe.vertices.length).toBeGreaterThan(100);
   expect(worst).toBeLessThan(1.5);
+
+  // WHY (r790 milestone review F2): the horizontal check above cannot see a
+  // city at the wrong height (a datum sign, another zoom or source, the
+  // geoid), which is D-K1's whole premise: the city and the relief read the
+  // same numbers. Each tested building's base (its lowest vertex, measured
+  // along the geodetic normal) must stand on the relief's own height, the
+  // lowest under its corners (a base sits on the lowest ground of its ring).
+  //
+  // THE BOUND STATES A KNOWN MISMATCH. The Osm library's `sampleTile` puts a
+  // Terrarium sample at its pixel's corner, the relief's plugin at its
+  // centre (measured here: the city's field at the target equals the
+  // relief's height 13 m, half a z12 pixel, east of it). Which is right is
+  // an open library question (its 2026-08-18 follow-up: "verify against the
+  // spec first"; the format document is silent), filed as validation
+  // finding F11. So each base may differ by the relief's own rise over half
+  // a pixel in each axis, plus 1 m of interpolation; a datum, zoom or source
+  // error is tens to hundreds of metres and still fails.
+  const vertical = await page.evaluate(
+    ({ vertices, buildings }) => {
+      const lab = window.__globeLab;
+      const HALF_PIXEL_M = 13;
+      const out = [];
+      for (const ring of buildings) {
+        const ground = Math.min(
+          ...ring.map((c) => lab.reliefHeightAt(c.lat, c.lng) ?? Infinity),
+        );
+        const c = ring[0];
+        const dLat = HALF_PIXEL_M / 110_946;
+        const dLng = dLat / Math.cos((c.lat * Math.PI) / 180);
+        const rise = (a, b) => Math.abs((a ?? NaN) - (b ?? NaN));
+        const allowed =
+          1 +
+          rise(
+            lab.reliefHeightAt(c.lat, c.lng + dLng),
+            lab.reliefHeightAt(c.lat, c.lng - dLng),
+          ) /
+            2 +
+          rise(
+            lab.reliefHeightAt(c.lat + dLat, c.lng),
+            lab.reliefHeightAt(c.lat - dLat, c.lng),
+          ) /
+            2;
+        const q = lab.cityExpected(c.lat, c.lng, 0);
+        const q1 = lab.cityExpected(c.lat, c.lng, 1000);
+        const up = q1.map((v, k) => (v - q[k]) / 1000);
+        let base = Infinity;
+        for (const p of vertices) {
+          const d = [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
+          const along = d[0] * up[0] + d[1] * up[1] + d[2] * up[2];
+          const flat = Math.hypot(
+            d[0] - along * up[0],
+            d[1] - along * up[1],
+            d[2] - along * up[2],
+          );
+          // This building's vertices only (30 m footprints, 200 m apart).
+          if (flat < 40) base = Math.min(base, along);
+        }
+        out.push({ gap: base - ground, allowed });
+      }
+      return out;
+    },
+    {
+      vertices: probe.vertices,
+      buildings: [corners(0, 0), corners(2, 2), corners(-2, 1), corners(8, -9)],
+    },
+  );
+  const worstShare = Math.max(
+    ...vertical.map((v) => Math.abs(v.gap) / v.allowed),
+  );
+  console.log(
+    `city bases against the relief's height: ${vertical.map((v) => `${v.gap.toFixed(2)}/${v.allowed.toFixed(2)}`).join(" ")} m (gap/allowed; worst ${(worstShare * 100).toFixed(0)} %: ${[0.5, 1, 2].map((k) => `x${k} ${worstShare <= k ? "ok" : "NO"}`).join(" ")})`,
+  );
+  expect(vertical.every((v) => Number.isFinite(v.gap))).toBe(true);
+  expect(worstShare).toBeLessThan(1);
 });
 
 // WHY (§12.5 C4, R17): the city appears below `cityKm` (30 km) by a dithered

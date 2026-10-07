@@ -49,6 +49,13 @@ export const GLOBE_TERRAIN = Object.freeze({
   /** The program key shared by every terrain tile's lit material. */
   programKey: "globe-terrain-lit",
   /**
+   * The finest Terrarium zoom the relief loads (its default `maxZoom`). The
+   * globe's city samples its heights at this zoom from the same source, so
+   * the city and the relief read the same numbers (globe city plan
+   * 2026-10-05-0040 §12.4 R13); the lab passes it to the city's worker.
+   */
+  maxZoom: 12,
+  /**
    * The tiles' error target, picked by the look on real heights over the
    * Alps (review 2026-10-02-1235 major 4): 2 draws what the library's default 1 draws
    * (mean 0.12 levels, 95th percentile 0 at 30 km) for 9.9 MiB of heights
@@ -418,7 +425,7 @@ export function createGlobeTerrain(options: {
     imagery,
     template,
     heightScale,
-    maxZoom = 12,
+    maxZoom = GLOBE_TERRAIN.maxZoom,
     lazyHeightScale: lazy = true,
     keepHeightsBytes = GLOBE_TERRAIN.keepHeightsBytes,
   } = options;

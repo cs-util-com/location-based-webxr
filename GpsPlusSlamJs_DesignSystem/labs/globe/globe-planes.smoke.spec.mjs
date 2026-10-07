@@ -33,8 +33,11 @@ const TARGET = { latitude: 46.545, longitude: 9.125 };
  * colour, and the first run read 0 background even for the positive
  * control (2026-10-05). Without the fill a clipped ground is magenta.
  */
+// `reliefNear=3`: measured with the ridge drawn at E 3 (6.6 km), so the 5 km
+// hold exercises the failure; at the default E 1 it would not (r790
+// milestone review F1).
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&sky=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&holeColor=1&bandFill=0";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&sky=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&holeColor=1&bandFill=0&reliefNear=3";
 /** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
 const SWEEP = [0.5, 1, 2];
 /** The share of pixels two frames 1 mm apart may differ in. */

@@ -301,7 +301,11 @@ export function buildLookdev({
       const text = load(url);
       sources.push(text);
       const scope = worker ? null : imports;
-      const ours = !url.startsWith("/vendor/");
+      // Vendored code is not ours, through the worker view too (`/w/vendor/`):
+      // its comments are not stripped and its dynamic imports not followed.
+      const ours = !url
+        .replace(new RegExp(`^${WORKER_VIEW}`), "/")
+        .startsWith("/vendor/");
       const code = ours ? text.replace(COMMENTS, "$1") : text;
       for (const match of code.matchAll(SPECIFIER)) {
         queue.push({ url: resolveSpecifier(match[1], url, scope), worker });

@@ -220,6 +220,26 @@ export function latticeWindow(
   return { origin: nearestPixel(centre, zoom), reach };
 }
 
+/** The grid a field answers with before it holds any height. */
+function noField(
+  total: number,
+  extentM: number,
+  centreEnu: EnuPoint,
+): HeightfieldData {
+  return {
+    heights: new Float32Array(0),
+    side: 0,
+    extentM,
+    centreEnu,
+    datum: 0,
+    hasData: false,
+    missing: total,
+    total,
+    reliefM: 0,
+    nearReliefM: 0,
+  };
+}
+
 /**
  * The datum an absolute (ellipsoidal) field asks for, given the geoid
  * undulation at the origin.
@@ -245,26 +265,6 @@ export function latticeWindow(
  * conversion doubles the error rather than cancelling it; fix that at the
  * sensor boundary so this function keeps its single, checkable meaning.
  */
-/** The grid a field answers with before it holds any height. */
-function noField(
-  total: number,
-  extentM: number,
-  centreEnu: EnuPoint,
-): HeightfieldData {
-  return {
-    heights: new Float32Array(0),
-    side: 0,
-    extentM,
-    centreEnu,
-    datum: 0,
-    hasData: false,
-    missing: total,
-    total,
-    reliefM: 0,
-    nearReliefM: 0,
-  };
-}
-
 export function absoluteDatumFor(undulationMetres: number): number {
   return -undulationMetres;
 }

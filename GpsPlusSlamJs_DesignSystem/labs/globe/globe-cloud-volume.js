@@ -248,10 +248,11 @@ export function createGlobeCloudVolume(
     },
     /**
      * Draws the volume over the frame, after the Earth: the relief's depth
-     * (`globe-scene-depth.js`, drawn here unless already drawn this frame),
+     * and `extra`'s (the city; `globe-scene-depth.js`, drawn here unless
+     * already drawn this frame),
      * the slab with the lifted camera, the composite. Nothing at share 0.
      */
-    render(camera, relief) {
+    render(camera, relief, extra = []) {
       const mesh = slab();
       if (!enabled || share <= 0 || mesh === undefined) return;
       renderer.getDrawingBufferSize(size);
@@ -262,7 +263,7 @@ export function createGlobeCloudVolume(
       // under a 2.8 km near plane at the 12 km hold), so with it every view
       // down clipped the deck away. The slab reads the depth back through
       // its own inverse projection, so it draws from that camera too.
-      if (!sceneDepth.fresh) sceneDepth.render(camera, relief);
+      if (!sceneDepth.fresh) sceneDepth.render(camera, relief, extra);
       // The slab alone, from the lifted camera, into a clear target.
       lifted.copy(sceneDepth.camera);
       lifted.position.y -= liftM;

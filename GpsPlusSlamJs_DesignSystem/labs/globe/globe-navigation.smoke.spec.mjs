@@ -432,7 +432,7 @@ test("a granted position dives there and lands over it, held, without leaving", 
   // never lower it.
   expect(landed.altitudeM).toBeGreaterThan(2_000 - 100);
   expect(landed.altitudeM).toBeLessThan(2_000 + 1_500);
-  expect(landed.pin.status).toMatch(/Arrived, 2 km up/);
+  expect(landed.pin.status).toMatch(/Arrived, 2 km above sea level/);
   await frames(page, 30);
   expect(urls).toEqual([]);
   expect(page.url()).toContain("/labs/globe/");
@@ -483,7 +483,7 @@ test("the dive lands on the fix at the landing altitude, and a touch stops a div
   expect(Math.abs(landed.centreLatLon.lng - COLOGNE.longitude)).toBeLessThan(
     0.01,
   );
-  expect(landed.pin.status).toMatch(/Arrived, 50 km up/);
+  expect(landed.pin.status).toMatch(/Arrived, 50 km above sea level/);
   expect(page.url()).toContain("/labs/globe/");
   // A second dive, stopped by a press on the globe early on.
   await page.locator("#globe-replay").click();

@@ -298,10 +298,8 @@ const PARAMS = {
   // `intro=` text key (`readHashParams`).
   maxKm: { fallback: GLOBE_INTRO.maxKm, min: 20_000, max: 100_000 },
   turnCap: { fallback: GLOBE_INTRO.turnCapDeg, min: 0, max: 180 },
-  // The pin's dive (round-2 plan 2026-09-26-2055 M3g): its length, the
-  // altitude it hands over at (km; the {20, 50, 150} sweep for the look),
-  // and whether it then opens the city (0 holds at the hand-over altitude,
-  // to look at it).
+  // The pin's dive (round-2 plan 2026-09-26-2055 M3g): its length (where
+  // it lands is `landKm`, below).
   diveMs: { fallback: GLOBE_DIVE.durationMs, min: 1000, max: 60_000 },
   // The oblique flight (round-5 plan §3.5, F1): the low pitch of the pitch
   // law (degrees below the horizontal from 1,000 km down; 90 flies the old
@@ -667,7 +665,7 @@ const asArray = (v) => [v.x, v.y, v.z];
  * The intro's states (globe plan §7.6): `spin` until a target is chosen,
  * `turning` towards it, then `arrived`, holding it; `user` once the user
  * has taken the camera (round-2 plan 2026-09-26-2055 M3a); `diving` down
- * to the pin's position and `landed` at the hand-over altitude (M3g).
+ * to the pin's position and `landed` at the landing altitude (M3g).
  * `pose(now)` returns either an orbit `pose` (the fitted distance
  * applies) or, during the dive, the camera's `position` and `quaternion`
  * (`diveStep` in `/globe/globe-dive.js`). `history` records each
@@ -1151,9 +1149,9 @@ function currentPose({ position, quaternion }) {
  * dive instead, and `prefetch=0` turns it off. A module that does not
  * load counts as done (nothing can be warmed, so nothing is waited for).
  * Every way a flight stops (a press, a touch, a hidden page) aborts it.
- * The hand-over does not wait past the dive: the paced dive lands when the
- * data is in or at the cap, and then hands over at once (holding longer is
- * an open decision, the round-5 results' Q2). The status line beside the
+ * The landing does not wait past the dive: the paced dive lands when the
+ * data is in or at the cap (the city may still be building then; it fades
+ * in as it arrives). The status line beside the
  * pin (`#globe-arrival-status`) shows the tiles warmed of the total, cold
  * or warm, then how it ended (`arrivalStatusText`).
  */
@@ -1386,7 +1384,7 @@ function bindPin({
      * The page is hidden (another tab, a locked phone) while flying: the
      * flight stops as a touch stops it, and the camera stays where it is,
      * for the controls. Without it the dive would run on in the background
-     * and hand over the moment the page is seen again (milestone review m4;
+     * out of sight until the page is seen again (milestone review m4;
      * pausing the dive's clock instead would need a second clock).
      */
     hidden() {
@@ -1402,7 +1400,7 @@ function bindPin({
       if (phase !== "flying" || flight.state().phase !== "landed") return;
       // Landed (the data is in, or the pace's cap has passed): the camera
       // holds over the city, the controls take it from here.
-      message = `Arrived, ${shown(getParams().landKm)} km up.`;
+      message = `Arrived, ${shown(getParams().landKm)} km above sea level.`;
       go("held");
     },
     state: () => ({
@@ -1984,6 +1982,15 @@ async function start() {
       : null;
   /** The place the city was last asked for, as "lat,lng". */
   let cityKey = null;
+  /**
+   * A failed build is asked for again after a pause, a few times, so a
+   * passing Overpass or DEM failure does not leave the place without a city
+   * for the session (r790 milestone review F6).
+   */
+  const CITY_RETRY_MS = 10_000;
+  const CITY_RETRIES = 3;
+  let cityTries = 0;
+  let cityFailedAt = null;
   let appliedHash = location.hash.slice(1);
   /** The globe's one clock; restarted only when its setting changes. */
   const startClock = () =>
@@ -2345,14 +2352,29 @@ async function start() {
         const { located, arrival } = pin.state();
         const place = located ?? params.url;
         const warming = arrival != null && arrival.outcome === null;
-        const trueHeights = exaggerationAt(0, heightLaw()) === 1;
+        const groundTrue = exaggerationAt(0, heightLaw()) === 1;
         const key = place ? `${place.lat},${place.lng}` : null;
-        if (key !== null && key !== cityKey && !warming && trueHeights) {
-          city.build(place);
-          cityKey = key;
+        if (key !== cityKey) cityTries = 0;
+        const now = performance.now();
+        const cityState = city.state();
+        if (key !== null && key === cityKey && cityState.phase === "failed") {
+          cityFailedAt ??= now;
+          if (now - cityFailedAt > CITY_RETRY_MS && cityTries < CITY_RETRIES) {
+            cityKey = null; // asks again below
+          }
         }
+        if (key !== null && key !== cityKey && !warming && groundTrue) {
+          city.build(place, { zoom: GLOBE_TERRAIN.maxZoom });
+          cityKey = key;
+          cityTries += 1;
+          cityFailedAt = null;
+        }
+        // Drawn only where the relief is drawn at true heights NOW (R14,
+        // review F8): with `reliefGround` the relief is exaggerated above
+        // 2-8 km, and true-height buildings would stand buried in it there.
+        const trueNow = exaggerationAt(altitudeM, heightLaw()) === 1;
         city.setFade(
-          trueHeights ? cityShareAt(altitudeM, params.cityKm * 1000) : 0,
+          trueNow ? cityShareAt(altitudeM, params.cityKm * 1000) : 0,
         );
       }
       const highM = params.bandHigh * 1000;
@@ -2689,7 +2711,9 @@ async function start() {
     ) {
       sceneDepth.render(camera, terrain.tiles.group, city ? [city.root] : []);
     }
-    if (cloudVolume) cloudVolume.render(camera, terrain.tiles.group);
+    if (cloudVolume) {
+      cloudVolume.render(camera, terrain.tiles.group, city ? [city.root] : []);
+    }
     // The air over the Earth and the sky, lit by the same sun (or, while
     // its cost is measured, as the measurement says).
     if (costMode === null ? params.atmo !== 0 : costMode === "on") {
@@ -3317,6 +3341,19 @@ async function start() {
         }
       });
       return { ...city.state(), drawn: city.root.visible, vertices };
+    },
+    /**
+     * The relief's own height (m, unexaggerated) at a latitude and longitude,
+     * from its height sampler, or null where no tile is loaded (test hook:
+     * the city's vertical check, r790 milestone review F2).
+     */
+    reliefHeightAt(lat, lng) {
+      if (!terrain) return null;
+      const h = terrain.plugin.sampleCartographicElevation(
+        lat * DEG,
+        lng * DEG,
+      );
+      return h === null ? null : h / Math.max(terrain.plugin.heightScale, 1);
     },
     /** The ECEF point (m) of a latitude, longitude and height (test hook). */
     cityExpected(lat, lng, heightM) {

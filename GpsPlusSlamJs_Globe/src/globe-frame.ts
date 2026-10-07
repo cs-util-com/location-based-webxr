@@ -129,7 +129,8 @@ const cityScale = new THREE.Matrix4();
  * longitude; scaled, what remains is the flat frame's own error: about
  * 1.05 m at the window's corners on the equator, growing with tan(lat)
  * (the parallel's curve and the frame's shear, both inherent, both in AR's
- * frame too) to 1.57 m at 45 and 3.13 m at 70, for heights up to 1 km;
+ * frame too) to 1.57 m at 45 and 3.13 m at 70, plus h d / R for a point h
+ * metres up and d out (the frame's vertical is the target's);
  * 0.53 m measured at Bern 2.4 km out (globe-city.smoke). RangeError as
  * `worldFromEcefAt`.
  */

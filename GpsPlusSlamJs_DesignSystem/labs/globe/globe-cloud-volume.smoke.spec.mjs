@@ -34,7 +34,11 @@ const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 // nothing, so their verdicts were hollow (volume-cloud plan §11).
 const TARGET = { latitude: 56.5, longitude: 9.0 };
 const HOLD_KM = 12;
-const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&landKm=${HOLD_KM}`;
+// `reliefNear=3`: these smokes were measured with the exaggerated deck
+// (3 km x E 3 = 9 km), and the near-deck clipping guard needs it: at the
+// default E 1 (true heights since 2026-10-06) the deck lies far below any
+// near plane, so that test could not fail (r790 milestone review F1).
+const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&landKm=${HOLD_KM}&reliefNear=3`;
 /** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
 const SWEEP = [0.5, 1, 2];
 const STEP = 1;

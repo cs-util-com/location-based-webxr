@@ -458,12 +458,18 @@ globeTiles, detail }` or null; `detail` is the region's state, with its
   `cityShareAt(altitude, cityKm)`: nothing at and above `cityKm`, all of it
   below two thirds of it, dithered between. It is off (fade 0, never asked
   for) while the relief near the ground is exaggerated (`reliefNear` above
-  1, R14). The scene-depth pass draws it with the relief, so the space pass
+  1, R14), and drawn only where the relief is drawn at true heights at the
+  current altitude (with `reliefGround` the relief is exaggerated above
+  2-8 km). A failed build is asked for again after 10 s, three times at
+  most. The pin's landing message says "km above sea level" (the altitude
+  is above the ellipsoid, not the ground). The scene-depth pass draws it with the relief, so the space pass
   and the cloud volume end at buildings too. `state().city` carries its
   phase, place, counts, ground height and fade. Test hooks:
   `__globeLab.cityProbe(max)` (the state, whether the root is drawn, and
-  building vertices in ECEF metres) and `__globeLab.cityExpected(lat, lng,
-heightM)` (the ECEF point of a place, for an independent placement check).
+  building vertices in ECEF metres), `__globeLab.cityExpected(lat, lng,
+heightM)` (the ECEF point of a place, for an independent placement check)
+  and `__globeLab.reliefHeightAt(lat, lng)` (the relief's own height there,
+  from its sampler, for the vertical check).
 - The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6 step 1), wired
   into the pin:
   - at the fix, the lab loads `/osm/arrival-prefetch.js` (OsmDemo) with a
