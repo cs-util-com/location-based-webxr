@@ -97,6 +97,9 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
     answer is applied by the settle) and `error`. `use-new-spot` and
     `tourAuthoring/codeReplaceUndone` (the immediate replace and its undo)
     exist in older recordings only.
+- `visitSettled` gains `codePositions` (code book plan M5c): one entry per
+  stored code the visit saw, in the shape below; `codePosition` is the
+  first of them.
 - `visitSettled` gains `codePosition` (UI round 1, U3;
   `code-position-settle.ts`): for a stored code the visit saw, the
   `decision` (keep with its reason, replace, move, move-waits), the

@@ -36,7 +36,9 @@ M4 settles every code of the book, not only the one in hand.
     the line for the code seen last, one frame per code whose correction
     was accepted.
   - `positionSentence()` / `afterFinish()` - the result screen's line
-    about the code's position, over the settles since the last Finish.
+    about the codes' positions, over the settles since the last Finish:
+    one sentence per code, named by `codes.numbering()` ("Code 2: ...")
+    when the tour has several (M5c).
   - `showSummary()` - the summary after Finish.
   - `endVisit()` / `reset()` - a visit ended (its refusal goes); a tour
     closed (its move boundaries and decisions go).
@@ -165,7 +167,8 @@ M4 settles every code of the book, not only the one in hand.
     owner decisions 2026-10-06; U3 milestone review #1-#5, #8): no button
     replaces a stored code. At each visit's settle `planCodePosition`
     (`code-position-settle.ts`) judges this visit's latest sighting of the
-    stored code in hand with `decideCodePosition` (`code-position-rule.ts`),
+    stored code in hand - since M5c of EVERY stored code the visit sighted,
+    each through its own latest sighting and pick - with `decideCodePosition` (`code-position-rule.ts`),
     through ONE source that the re-mint then takes: the sighting's own pick
     when its walk is reliable, else the end alignment (a pick freezes at
     40 m of GPS spread, which phones at more than about 8 m accuracy never
@@ -194,10 +197,22 @@ M4 settles every code of the book, not only the one in hand.
     - Every "Yes, it moved" of the code is forgotten at the settle, applied
       or not: a waiting one is asked again next time, never applied in a
       later visit out of Undo's reach.
-    - The decision is logged on `tourAuthoring/settled` as `codePosition`
-      (also for a visit that settled nothing else), and the result screen's
-      line after Finish is `codePositionSentence` over the settles since
-      the last Finish.
+    - **Per code (M5c).** Each decision folds into its own code's entry
+      of the code list (`visitCodeList`'s `otherRemints`), is re-applied
+      by a settle redone after a failed Finish (`appliedCodes`, by
+      level), and clears its own code's "moved" answers. An improved
+      code takes along the objects that belong to it: every code's pose
+      is snapshotted BEFORE the settle re-mints any (`poseBefore`), and an
+      object goes with one code at most (`claimed`) - two improved codes
+      used to move one object twice (M5 design review #7). Drawing
+      during a visit (nearest SIGHTED code, any distance) and moving with
+      an improved code (nearest of ALL the tour's codes, 40 m) are
+      different rules on purpose: see the plan's M5c design notes.
+    - The decisions are logged on `tourAuthoring/settled` as
+      `codePositions` (every one) and `codePosition` (the first, for older
+      readers), also for a visit that settled nothing else; the result
+      screen's line after Finish is `positionSentence` over the settles
+      since the last Finish.
 
 ## The page-side visit log (authoring plan 2026-09-28-0953 §3.3 and §7 #4, M3b)
 

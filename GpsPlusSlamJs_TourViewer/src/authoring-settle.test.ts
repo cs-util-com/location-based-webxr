@@ -2425,6 +2425,99 @@ describe(
       ).codePosition;
     }
 
+    /** Every code-position decision of the last settle (M5c). */
+    function codePositions(a: ReturnType<typeof authoring>) {
+      const settled = a.dispatched.filter(
+        (x) => x.type === "tourAuthoring/settled",
+      );
+      return (
+        (
+          settled.at(-1)?.payload as {
+            codePositions?: {
+              levelId: string;
+              decision: { kind: string };
+              applied: boolean;
+              movedWithCode: { id: string }[];
+            }[];
+          }
+        ).codePositions ?? []
+      );
+    }
+
+    /**
+     * A first visit measures A, places "near A" and "between" (2 m from A,
+     * 18 m from B), then B 20 m east with "near B"; the second visit sees
+     * both stored codes through an alignment 20 degrees turned and 3 m
+     * shifted, after a reliable 30 m walk.
+     */
+    async function twoStoredCodesSeenAgain() {
+      const a = authoring();
+      await a.mint();
+      await a.placePin("near A", [2, 0, -1]);
+      const twentyAway = new Matrix4().makeTranslation(20, 0, 0);
+      const SECOND_TEXT = "https://gps.csutil.com/tour/?qr=second";
+      await a.mint(twentyAway, SECOND_TEXT, 10_000);
+      await a.placePin("near B", [2, 0, 21]);
+      a.endVisit();
+      const pins = () =>
+        new Map(
+          a.ctx.placedObjects.map((p) => [
+            p.object.kind === "pin" ? p.object.label : p.object.id,
+            p.object.geo,
+          ]),
+        );
+      const before = pins();
+      a.beginVisit();
+      a.setAccuracy(5);
+      a.setAlignment(yawAlignment(20, [3, 400, 0]));
+      a.setWalk(walkOf(30, 30));
+      a.seeTheCode(undefined, TEXT, 20_000);
+      a.seeTheCode(twentyAway, SECOND_TEXT, 30_000);
+      await flush();
+      return { a, before, pins };
+    }
+
+    // Why this test matters (code book plan M5c): the position of a stored
+    // code was decided for the code IN HAND only, so a creator who walked
+    // past two posters improved one of them. Every stored code the visit
+    // saw gets its own decision.
+    it("decides the saved position of every stored code the visit saw", async () => {
+      const { a } = await twoStoredCodesSeenAgain();
+      a.endVisit();
+      const decisions = codePositions(a);
+      expect(decisions).toHaveLength(2);
+      expect(decisions.map((d) => d.decision.kind)).toEqual([
+        "replace",
+        "replace",
+      ]);
+      expect(decisions.every((d) => d.applied)).toBe(true);
+    });
+
+    // Why this test matters (M5 design review #7): with two improved codes
+    // a pin within reach of both was taken along twice. Each object goes
+    // with the one code it belongs to (the nearest, before the settle).
+    it("takes each earlier pin along with one improved code only", async () => {
+      const { a } = await twoStoredCodesSeenAgain();
+      a.endVisit();
+      const moved = codePositions(a).flatMap((d) =>
+        d.movedWithCode.map((m) => m.id),
+      );
+      expect(new Set(moved).size).toBe(moved.length);
+      expect(moved).toHaveLength(2);
+    });
+
+    // Why this test matters (M5c; my wording choice): with several codes
+    // the result screen says which code's position changed.
+    it("names each code on the result screen when the tour has several", async () => {
+      const { a } = await twoStoredCodesSeenAgain();
+      await openFinishableTour(a);
+      a.ctx.tourManifestStatus = "settled";
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.dom.finishStatus.textContent).toMatch(/Code 1: /);
+      expect(a.dom.finishStatus.textContent).toMatch(/Code 2: /);
+    });
+
     it("replaces a stored position of unknown quality after a reliable walk, and takes the pin next to the code along", async () => {
       const { a, stored, before, pins } = await secondVisit({
         yawDeg: 20,

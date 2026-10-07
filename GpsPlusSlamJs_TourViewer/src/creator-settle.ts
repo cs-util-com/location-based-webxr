@@ -166,10 +166,14 @@ export function wireCreatorSettle(deps: {
   const movedInVisit = new Map<string, number>();
   /** What each settle since the last Finish decided for the code in hand:
    *  the result screen's line (`codePositionSentence`). */
-  let codePositionOutcomes: CodePositionOutcome[] = [];
-  /** The visit whose settle CHANGED the code's saved position, and the
-   *  plan it applied - re-applied when a failed Finish settles it again. */
-  let appliedCode: { visit: number; plan: CodePositionPlan } | null = null;
+  let codePositionOutcomes: (CodePositionOutcome & { levelId: string })[] = [];
+  /** By level: the visit whose settle CHANGED that code's saved position,
+   *  and the plan it applied - re-applied when a failed Finish settles it
+   *  again (M5c: one per code). */
+  const appliedCodes = new Map<
+    string,
+    { visit: number; plan: CodePositionPlan }
+  >();
 
   /** The code correction this visit's latest sighting would make, when
    *  the plausibility bound refused it (M2c review #2): the panel says so
@@ -205,14 +209,32 @@ export function wireCreatorSettle(deps: {
     measurement: CodeMeasurement | null,
     picks: ReturnType<typeof deps.alignmentPicks.picks>,
     inHandPick?: ReturnType<typeof deps.alignmentPicks.picks>["measurement"],
+    /** Other stored codes whose position this settle changes (M5c): each
+     *  is re-minted from its measurement through its pick. */
+    otherRemints: ReadonlyMap<
+      string,
+      {
+        measurement: CodeMeasurement;
+        pick: ReturnType<typeof deps.alignmentPicks.picks>["measurement"];
+      }
+    > = new Map(),
   ): VisitSettleInput["codes"] {
     const others = deps.codes
       .visitCodes(visit)
       .filter((c) => c.level.id !== level?.id)
-      .map((c) => ({
-        ...c,
-        measurementPick: picks.measurements?.get(c.level.id) ?? null,
-      }));
+      .map((c) => {
+        const remint = otherRemints.get(c.level.id);
+        return remint === undefined
+          ? {
+              ...c,
+              measurementPick: picks.measurements?.get(c.level.id) ?? null,
+            }
+          : {
+              ...c,
+              measurement: remint.measurement,
+              measurementPick: remint.pick,
+            };
+      });
     if (others.length === 0) return undefined;
     if (level === null) return others;
     return [
@@ -371,43 +393,81 @@ export function wireCreatorSettle(deps: {
     // handing the settle a measurement of the code, so it is re-minted as
     // if measured here - through the sighting's own pick.
     const level = deps.codes.inHand();
-    // A settle redone after a failed Finish re-applies the decision it
-    // already made: the code is in hand at its new spot, the objects near
-    // it have moved once, and the visit log keeps the saved pose (U3
-    // milestone review #8).
-    const reapplied =
-      appliedCode !== null && appliedCode.visit === visit
-        ? appliedCode.plan
-        : null;
-    const position =
-      reapplied ??
-      planCodePosition({
-        visit,
-        mintedLevel: level,
-        measurement: deps.codes.measurement(),
-        sighting: deps.codes.sighting(),
-        picks,
-        alignment: visitAlignment,
-        zero,
-        endQuality: {
-          extentM: alignmentGpsExtentM ?? null,
-          accuracyM: gpsAccuracyM ?? null,
-        },
-        // The size the code was solved at in this visit: its measurement's,
-        // else its sighting's - a stored code is solved at the size the
-        // tour stores for it, not the field's (M4 milestone review #2).
-        sizeM:
-          deps.codes.measurement()?.sizeM ??
-          sizeOfSighting(deps.codes.sighting()),
-        answerAt: (offset) =>
-          level === null
-            ? null
-            : answerAtSpot(deps.draft.moveAnswers(), {
-                levelId: level.id,
-                savedKey: savedPoseKey(level.json),
-                offset,
-              }),
-      });
+    // U3 per code (code book plan M5c): every STORED code the visit saw
+    // gets its own decision - the code in hand, and each other code it
+    // sighted - each through its own latest sighting and pick
+    // (`planCodePosition` filters the picks by level). A settle redone after
+    // a failed Finish re-applies the decision it already made for a code:
+    // the code is at its new spot, the objects near it have moved once,
+    // and the visit log keeps the saved pose (U3 milestone review #8).
+    const decide = (
+      code: { id: string; json: string },
+      measurement: CodeMeasurement | null,
+      sighting: CodeSighting | null,
+    ): { plan: CodePositionPlan | null; reapplied: boolean } => {
+      const done = appliedCodes.get(code.id);
+      if (done !== undefined && done.visit === visit) {
+        return { plan: done.plan, reapplied: true };
+      }
+      const seen =
+        sighting ??
+        picks.sightings.filter((s) => s.sighting.levelId === code.id).at(-1)
+          ?.sighting ??
+        null;
+      return {
+        plan: planCodePosition({
+          visit,
+          mintedLevel: code,
+          measurement,
+          sighting,
+          picks,
+          alignment: visitAlignment,
+          zero,
+          endQuality: {
+            extentM: alignmentGpsExtentM ?? null,
+            accuracyM: gpsAccuracyM ?? null,
+          },
+          // The size the code was solved at in this visit: its
+          // measurement's, else its sighting's - a stored code is solved at
+          // the size the tour stores for it, not the field's (M4 milestone
+          // review #2).
+          sizeM: measurement?.sizeM ?? sizeOfSighting(seen),
+          answerAt: (offset) =>
+            answerAtSpot(deps.draft.moveAnswers(), {
+              levelId: code.id,
+              savedKey: savedPoseKey(code.json),
+              offset,
+            }),
+        }),
+        reapplied: false,
+      };
+    };
+    const inHandDecision =
+      level === null
+        ? { plan: null, reapplied: false }
+        : decide(level, deps.codes.measurement(), deps.codes.sighting());
+    const position = inHandDecision.plan;
+    // The other stored codes the visit sighted (not measured here): each
+    // with its own decision, folded into ITS entry of the code list.
+    const otherDecisions = new Map<
+      string,
+      {
+        code: { id: string; json: string };
+        plan: CodePositionPlan;
+        reapplied: boolean;
+      }
+    >();
+    for (const c of deps.codes.visitCodes(visit)) {
+      if (c.level.id === level?.id || c.measurement !== null) continue;
+      const d = decide(c.level, null, null);
+      if (d.plan !== null) {
+        otherDecisions.set(c.level.id, {
+          code: c.level,
+          plan: d.plan,
+          reapplied: d.reapplied,
+        });
+      }
+    }
     const remint = position?.measurement ?? null;
     const input = {
       visit,
@@ -430,15 +490,23 @@ export function wireCreatorSettle(deps: {
     };
     // The visit's codes (M4c-2): the code in hand first - with this
     // settle's re-mint when its position changed - then every other code
-    // the visit measured, or sighted with a stored pose. One code: the
-    // legacy fields decide, exactly as before. An EMPTY hand (a size
-    // adoption for it) still settles the others (webxr PR #556 review).
+    // the visit measured, or sighted with a stored pose, each with its own
+    // re-mint (M5c). One code: the legacy fields decide, exactly as before.
+    // An EMPTY hand still settles the others (webxr PR #556 review).
+    const otherRemints = new Map(
+      [...otherDecisions].flatMap(([id, d]) =>
+        d.plan.measurement === null
+          ? []
+          : [[id, { measurement: d.plan.measurement, pick: d.plan.pick }]],
+      ),
+    );
     const codes = visitCodeList(
       visit,
       level,
       input.measurement,
       picks,
       remint !== null && position !== null ? position.pick : undefined,
+      otherRemints,
     );
     const settleInput = codes === undefined ? input : { ...input, codes };
     // The visit's END choice - late photos, the visit log's path, the
@@ -451,31 +519,63 @@ export function wireCreatorSettle(deps: {
     // get (M3a/M3b review #2).
     const plan =
       choice === null || zero === null ? null : planVisitSettle(settleInput);
+    /** The settle re-minted `levelId`: its decision was applied. */
+    const remintedHere = (levelId: string): boolean =>
+      plan?.levels.some((l) => l.id === levelId) ?? false;
     const applied =
       position !== null &&
       remint !== null &&
       plan !== null &&
-      plan.level !== null;
-    // A real move is the visit log's boundary (§7j #12), set before the
-    // log is written.
-    if (applied && position.decision.kind === "move") {
-      movedInVisit.set(position.levelId, visit);
-    }
-    if (applied) appliedCode = { visit, plan: position };
-    if (position !== null && reapplied === null) {
-      codePositionOutcomes.push({ decision: position.decision, applied });
+      level !== null &&
+      remintedHere(level.id);
+    // Every decision of this settle, the code in hand's first.
+    const decisions = [
+      ...(position === null || level === null
+        ? []
+        : [
+            {
+              code: level,
+              plan: position,
+              reapplied: inHandDecision.reapplied,
+              applied,
+            },
+          ]),
+      ...[...otherDecisions.values()].map((d) => ({
+        ...d,
+        applied: d.plan.measurement !== null && remintedHere(d.code.id),
+      })),
+    ];
+    for (const d of decisions) {
+      // A real move is the visit log's boundary (§7j #12), set before the
+      // log is written.
+      if (d.applied && d.plan.decision.kind === "move") {
+        movedInVisit.set(d.plan.levelId, visit);
+      }
+      if (d.applied) appliedCodes.set(d.code.id, { visit, plan: d.plan });
+      if (!d.reapplied) {
+        codePositionOutcomes.push({
+          decision: d.plan.decision,
+          applied: d.applied,
+          levelId: d.code.id,
+        });
+      }
     }
     // A "Yes, it moved" holds for its visit only: applied now, or asked
     // again next time - never applied later, out of Undo's reach (U3
-    // milestone review #5).
+    // milestone review #5). For every code this settle decided.
+    const decidedIds = new Set([
+      ...(level === null ? [] : [level.id]),
+      ...decisions.map((d) => d.code.id),
+    ]);
     if (
-      level !== null &&
-      deps.draft.moveAnswers().some((a) => a.answer === "moved")
+      deps.draft
+        .moveAnswers()
+        .some((a) => a.answer === "moved" && decidedIds.has(a.levelId))
     ) {
       deps.draft.setMoveAnswers(
         deps.draft
           .moveAnswers()
-          .filter((a) => !(a.answer === "moved" && a.levelId === level.id)),
+          .filter((a) => !(a.answer === "moved" && decidedIds.has(a.levelId))),
       );
       void deps.draft.saveMeta();
     }
@@ -491,27 +591,24 @@ export function wireCreatorSettle(deps: {
       refused: choice.refused,
     };
     visitSettles.set(visit, record);
-    const decided =
-      position === null
-        ? undefined
-        : {
-            levelId: position.levelId,
-            decision: position.decision,
-            offsetM: position.offsetM,
-            candidate: position.candidate,
-            stored: position.stored,
-            applied,
-            movedWithCode: [] as {
-              id: string;
-              before: QrGeoPose;
-              after: QrGeoPose;
-            }[],
-          };
+    const logged = decisions.map((d) => ({
+      levelId: d.plan.levelId,
+      decision: d.plan.decision,
+      offsetM: d.plan.offsetM,
+      candidate: d.plan.candidate,
+      stored: d.plan.stored,
+      applied: d.applied,
+      movedWithCode: [] as {
+        id: string;
+        before: QrGeoPose;
+        after: QrGeoPose;
+      }[],
+    }));
     if (plan === null) {
-      // Nothing to recompute, but a decision about the code is still the
+      // Nothing to recompute, but a decision about a code is still the
       // recording's to keep.
-      if (decided !== undefined) {
-        logSettle(visit, trigger, record, [], null, null, [], decided);
+      if (logged.length > 0) {
+        logSettle(visit, trigger, record, [], null, null, [], logged);
       }
       return;
     }
@@ -522,6 +619,10 @@ export function wireCreatorSettle(deps: {
       // The record only: a photo's bytes did not change.
       deps.draft.recordPlacement(object);
     }
+    // Every code's pose BEFORE this settle re-mints any: each earlier
+    // object belongs to one code, judged against these (M5 design review
+    // #7 - two improved codes moved one object twice).
+    const poseBefore = deps.codes.references();
     // The code in hand, re-minted; with an empty hand `plan.level` is
     // another code's, which must not take the hand.
     const inHandLevel =
@@ -534,14 +635,25 @@ export function wireCreatorSettle(deps: {
     if (plan.levels.length > 0) void deps.draft.saveMeta();
     // An IMPROVED position takes the pins and photos near it along, so
     // they keep their place next to the poster (owner decision
-    // 2026-10-06); a real move leaves them where they are (D19).
-    const movedWithCode =
-      applied &&
-      reapplied === null &&
-      position.decision.kind === "replace" &&
-      level !== null
-        ? moveEarlierWithCode(visit, level.id, level.json, plan.level.json)
-        : [];
+    // 2026-10-06); a real move leaves them where they are (D19). Each
+    // object goes with ONE code at most.
+    const claimed = new Set<string>();
+    decisions.forEach((d, i) => {
+      if (!d.applied || d.reapplied || d.plan.decision.kind !== "replace") {
+        return;
+      }
+      const after = plan.levels.find((l) => l.id === d.code.id);
+      if (after === undefined) return;
+      const moved = moveEarlierWithCode(
+        visit,
+        d.code.id,
+        d.code.json,
+        after.json,
+        poseBefore,
+        claimed,
+      );
+      logged[i]?.movedWithCode.push(...moved);
+    });
     logSettle(
       visit,
       trigger,
@@ -550,7 +662,7 @@ export function wireCreatorSettle(deps: {
       plan.level,
       plan.levelAlignment,
       plan.levels,
-      decided === undefined ? undefined : { ...decided, movedWithCode },
+      logged,
     );
   }
 
@@ -567,15 +679,20 @@ export function wireCreatorSettle(deps: {
     levelId: string,
     beforeJson: string,
     afterJson: string,
+    /** Every code's pose before the settle re-minted any (M5c). */
+    poseBefore: readonly { levelId: string; geo: QrGeoPose | null }[],
+    /** Objects another improved code already took along: skipped, and
+     *  this code's are added (one code per object, M5 design review #7). */
+    claimed: Set<string>,
   ): { id: string; before: QrGeoPose; after: QrGeoPose }[] {
     const from = storedGeo(beforeJson);
     const to = storedGeo(afterJson);
     if (from === null || to === null) return [];
-    // The tour's other codes: an object nearer one of them stays with it
-    // (M4b, `takesAlong`).
-    const others = deps.codes
-      .references()
-      .flatMap((r) => (r.levelId === levelId || r.geo === null ? [] : [r.geo]));
+    // The tour's other codes, as they were before this settle: an object
+    // nearer one of them stays with it (M4b, `takesAlong`).
+    const others = poseBefore.flatMap((r) =>
+      r.levelId === levelId || r.geo === null ? [] : [r.geo],
+    );
     const moved: { id: string; before: QrGeoPose; after: QrGeoPose }[] = [];
     for (const entry of authoringObjects(
       ctx.tourManifest?.objects ?? [],
@@ -583,8 +700,10 @@ export function wireCreatorSettle(deps: {
       ctx.deletedObjectIds,
     )) {
       if (entry.placed?.placement?.visit === visit) continue;
+      if (claimed.has(entry.object.id)) continue;
       const before = entry.object.geo;
       if (!takesAlong(before, from, others)) continue;
+      claimed.add(entry.object.id);
       const turned = moveWithCode(before, from, to);
       const after: QrGeoPose =
         entry.object.kind === "pin"
@@ -600,6 +719,29 @@ export function wireCreatorSettle(deps: {
     }
     if (moved.length > 0) deps.previews.sync();
     return moved;
+  }
+
+  /** The result screen's line about the codes' positions since the last
+   *  Finish: one sentence per code, named by the numbering when the tour
+   *  has several (M5c; my wording choice). */
+  function positionSentence(): string {
+    const numbering = deps.codes.numbering();
+    const ids = [...new Set(codePositionOutcomes.map((o) => o.levelId))];
+    if (ids.length <= 1 || numbering.length <= 1) {
+      return codePositionSentence(codePositionOutcomes);
+    }
+    return ids
+      .map((id) => {
+        const line = codePositionSentence(
+          codePositionOutcomes.filter((o) => o.levelId === id),
+        );
+        const index = numbering.indexOf(id);
+        return line === "" || index < 0
+          ? line
+          : `${codeLabel(index, numbering.length)}: ${line}`;
+      })
+      .filter((line) => line !== "")
+      .join(" ");
   }
 
   /** The size a sighting's code is solved at; the field's without one. */
@@ -764,11 +906,17 @@ export function wireCreatorSettle(deps: {
     level: { id: string; json: string } | null,
     levelAlignment: number[] | null,
     levels: readonly { id: string; json: string; alignment: number[] }[],
-    codePosition?: Parameters<typeof visitSettled>[0]["codePosition"],
+    /** Every code-position decision of this settle (M5c); the first is
+     *  also logged as `codePosition` for older readers. */
+    codePositions: readonly NonNullable<
+      Parameters<typeof visitSettled>[0]["codePosition"]
+    >[] = [],
   ): void {
     arStore.dispatch(
       visitSettled({
-        ...(codePosition === undefined ? {} : { codePosition }),
+        ...(codePositions.length === 0
+          ? {}
+          : { codePosition: codePositions[0], codePositions }),
         arVisitIndex: visit,
         atMs: Date.now(),
         trigger,
@@ -830,7 +978,7 @@ export function wireCreatorSettle(deps: {
       judgeRefusal();
     },
     placeEarlierObjects,
-    positionSentence: () => codePositionSentence(codePositionOutcomes),
+    positionSentence,
     afterFinish: () => {
       codePositionOutcomes = [];
     },
@@ -841,7 +989,7 @@ export function wireCreatorSettle(deps: {
     reset: () => {
       movedInVisit.clear();
       codePositionOutcomes = [];
-      appliedCode = null;
+      appliedCodes.clear();
     },
   };
 }

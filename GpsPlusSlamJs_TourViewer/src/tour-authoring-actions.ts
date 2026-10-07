@@ -253,6 +253,12 @@ interface VisitSettledLog {
       readonly after: QrGeoPose;
     }[];
   };
+  /** Every code-position decision of this settle, one per stored code the
+   *  visit saw (code book plan M5c); `codePosition` is the first. Absent
+   *  in older recordings. */
+  readonly codePositions?: readonly NonNullable<
+    VisitSettledLog["codePosition"]
+  >[];
 }
 
 /**
