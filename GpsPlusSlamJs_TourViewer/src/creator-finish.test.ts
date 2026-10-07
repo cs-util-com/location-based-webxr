@@ -1270,4 +1270,21 @@ describe("desk edits: a Finish with no AR visit (code book plan M4d, §9 D4)", (
     setup.renderAuthorReadout();
     expect(dom.finishButton.hidden).toBe(true);
   });
+
+  // Why this test matters (code book plan M4e; the sampled mutant "finish
+  // guard: placements not counted"): with a code to write, the guard calls
+  // the page changed anyway, so no other test noticed a guard blind to
+  // changed objects. A desk edit changes objects and no code: Finish must
+  // still lead with saving them.
+  it("leads with saving a desk edit that is not finished", async () => {
+    const edited: TourObject = { ...pin("b"), label: "the new text" };
+    const { dom, setup } = await wireFinishable({
+      hosted: [pin("a"), pin("b")],
+      placed: [edited],
+      noCodeInHand: true,
+      arStatus: "idle",
+    });
+    setup.renderAuthorReadout();
+    expect(dom.finishButton.textContent).toBe("Finish and save your changes");
+  });
 });

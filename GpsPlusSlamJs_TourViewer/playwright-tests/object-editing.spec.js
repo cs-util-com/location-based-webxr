@@ -72,13 +72,19 @@ async function downloadedZip(page, index) {
 /**
  * Finish, then download: the zip lands in the fake's downloads as the
  * `index`-th. The Finish button is disabled while the zip is rebuilt, so
- * waiting for it to come back is waiting for THIS rebuild - a second Finish
- * finds the first one's download button already live.
+ * waiting for it to leave that state is waiting for THIS rebuild - a second
+ * Finish finds the first one's download button already live. It leaves it
+ * enabled when work remains, or hidden when nothing is left to write
+ * (code book plan M4d: an unchanged stored code is not work).
  */
 async function finishAndDownload(page, index) {
   const finish = page.getByTestId("setup-finish");
   await finish.click();
-  await expect(finish).toBeEnabled({ timeout: 30000 });
+  await expect
+    .poll(async () => (await finish.isHidden()) || (await finish.isEnabled()), {
+      timeout: 30000,
+    })
+    .toBe(true);
   await expect(page.getByTestId("finish-block")).toBeVisible();
   await page.getByTestId("finish-download").click();
   await expect
@@ -152,22 +158,10 @@ test("a desk edit is finished without entering AR, and the hosted code's level i
   // The AR session was never started.
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
 
-  // Not `finishAndDownload`: it waits for the button to come back, and
-  // after a desk Finish nothing is left to write, so it stays hidden.
   const finish = page.getByTestId("setup-finish");
   await expect(finish).toBeEnabled();
-  await finish.click();
-  await expect(page.getByTestId("finish-block")).toBeVisible({
-    timeout: 30000,
-  });
-  await page.getByTestId("finish-download").click();
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => /** @type {any} */ (window).__tourViewerTest.downloads.length,
-      ),
-    )
-    .toBe(1);
+  await finishAndDownload(page, 0);
+  // Nothing is left to write after it.
   await expect(finish).toBeHidden();
   const zip = await downloadedZip(page, 0);
   const pins = zip.manifest.objects.filter((o) => o.id === FIXTURE_PIN);

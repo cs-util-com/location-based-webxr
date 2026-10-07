@@ -312,7 +312,7 @@
       "name": "measured code gets no pick",
       "region": "picks",
       "file": "src/creator-alignment-picks.ts",
-      "from": "      alignmentPicks.noteMeasurement(atMs);\n",
+      "from": "      alignmentPicks.noteMeasurement(atMs, levelId);\n",
       "to": ""
     },
     {
