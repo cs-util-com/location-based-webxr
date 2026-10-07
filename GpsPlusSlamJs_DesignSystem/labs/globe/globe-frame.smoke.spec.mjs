@@ -55,7 +55,14 @@ test("the world frame switches without moving the view, and a dive lands in the 
   test.setTimeout(600_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(TARGET);
-  const errors = await bootGlobe(page, BASE);
+  // At the 150 km hold this was written at, not the dive's default 2 km
+  // (r790 city plan K4): below it the layers the frame exists for draw
+  // only in the target's frame (the haze, measured: density 1 there, 0 in
+  // ECEF; the sky and the cloud slab by the frame's design, not measured
+  // one by one), so the two pictures differ. Measured at the same pose,
+  // frame against ECEF: 23 levels at 2 km (27 with the haze off), 30 at 10,
+  // 16 at 50, 0 at 150.
+  const errors = await bootGlobe(page, `${BASE}&landKm=150`);
   expect(
     await page.evaluate(() => window.__globeLab.state().worldFrame),
   ).toBeNull();

@@ -37,6 +37,15 @@ const HOLE_MIN = 240;
  */
 const FILLS_FRAME_KM = 2_100;
 
+/**
+ * The zoom out and the return land at 150 km, the hold these checks were
+ * written at, not at the dive's default 2 km (r790 city plan K4). Both
+ * cross the band at 2,000 km within a wheel budget, and a wheel step scales
+ * the altitude by a fixed factor, so from 2 km the budget ended at 15 km
+ * (measured): the band was never reached. The dive itself keeps the default.
+ */
+const HOLD_150 = "&landKm=150";
+
 /** Points over the lower half of the frame, where the ground is in the dive. */
 function lowerGrid() {
   const grid = [];
@@ -109,7 +118,7 @@ async function zoomOutAndCount(page, context, gate) {
     page,
     // The old rule also released every tile at once, the coarsest
     // included (`bandDrainTiles=0`); the new drain keeps them.
-    `${BASE}&bandGate=${gate}&bandFill=${gate}&bandReleaseMs=1000${gate === 1 ? "" : "&bandDrainTiles=0"}`,
+    `${BASE}${HOLD_150}&bandGate=${gate}&bandFill=${gate}&bandReleaseMs=1000${gate === 1 ? "" : "&bandDrainTiles=0"}`,
   );
   await page.locator("#globe-pin").click();
   // Landed, the relief has every pixel, and the globe's cache is drained.
@@ -251,7 +260,7 @@ async function returnIntoBand(page, context, keepMiB) {
   await context.setGeolocation(TARGET);
   const errors = await bootGlobe(
     page,
-    `${BASE}&bandReleaseMs=1000&keepHeightsMiB=${keepMiB}`,
+    `${BASE}${HOLD_150}&bandReleaseMs=1000&keepHeightsMiB=${keepMiB}`,
   );
   await page.locator("#globe-pin").click();
   const state = () => page.evaluate(() => window.__globeLab.state());

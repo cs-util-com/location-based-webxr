@@ -31,6 +31,13 @@ const TARGET = { latitude: 46.5, longitude: 9.0 };
 const BASE =
   "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&relief=1&reliefHeights=synthetic&diveMs=6000&reliefNear=3";
 
+/**
+ * The dives that hold at 150 km, where these checks were written, not at
+ * the default 2 km (r790 city plan K4; measured: the oblique dive landed
+ * 3.4 km up, the clearance lifting it over the synthetic crest).
+ */
+const HOLD_150 = "&landKm=150";
+
 /** The exaggeration law (globe-flight.ts), for the expected value. */
 const exaggerationAt = (altM, near = 3) => {
   const share =
@@ -84,7 +91,7 @@ test("the dive ends over the target, oblique, with the relief exaggerated by alt
   context,
 }) => {
   test.setTimeout(300_000);
-  const errors = await diveAndLand(page, context, BASE);
+  const errors = await diveAndLand(page, context, `${BASE}${HOLD_150}`);
   const s = await page.evaluate(() => window.__globeLab.state());
   const [top] = await page.evaluate(() =>
     window.__globeLab.readPixels([[0.5, 0.02]]),
@@ -117,7 +124,7 @@ test("the pitch law's low pitch, swept over 30, 45 and 60 degrees", async ({
   for (const pitch of [30, 45, 60]) {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await diveAndLand(page, context, `${BASE}&pitchLow=${pitch}`);
+    await diveAndLand(page, context, `${BASE}${HOLD_150}&pitchLow=${pitch}`);
     const s = await page.evaluate(() => window.__globeLab.state());
     const [top] = await page.evaluate(() =>
       window.__globeLab.readPixels([[0.5, 0.02]]),
@@ -176,7 +183,11 @@ test("the relief's tiles take the terrain lab's detail under the hold", async ({
     const context = await browser.newContext();
     const page = await context.newPage();
     const weight = detail === "0b" ? 0 : detail;
-    const errors = await diveAndLand(page, context, `${BASE}&detail=${weight}`);
+    const errors = await diveAndLand(
+      page,
+      context,
+      `${BASE}${HOLD_150}&detail=${weight}`,
+    );
     if (weight > 0) {
       await page.waitForFunction(
         () => {
@@ -518,7 +529,7 @@ test("outside the band the other carrier fetches nothing and holds no memory, on
   const page = await context.newPage();
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(TARGET);
-  const errors = await bootGlobe(page, BASE);
+  const errors = await bootGlobe(page, `${BASE}${HOLD_150}`);
   await page.waitForFunction(
     () => window.__globeLab.state().pendingTiles === 0,
     null,
@@ -589,7 +600,7 @@ test("a planted detail grid lands where it is placed: east of the target brighte
   const errors = await diveAndLand(
     page,
     context,
-    `${BASE}&detail=0&bandSharp=0&cloudShell=0`,
+    `${BASE}${HOLD_150}&detail=0&bandSharp=0&cloudShell=0`,
   );
   const half = (left) => {
     const g = [];

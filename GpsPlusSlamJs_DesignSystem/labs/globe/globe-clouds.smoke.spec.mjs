@@ -24,8 +24,16 @@ import { bootGlobe } from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const TARGET = { latitude: 46.5, longitude: 9.0 };
+// The hold is at 150 km, where these checks were written, not at the dive's
+// default 2 km (r790 city plan K4). "The shadow darkens somewhere" needs a
+// footprint wider than the clouds' texels: from 2 km the view spans a few
+// km, the shadow reads one patch of cloud about 4 km toward the sun and is
+// uniform and faint there (measured at the landing: at most 2.7 levels, 0
+// of 96 points past 3). At 10 km the ground under the hidden shell read
+// 10.7 levels off the cloud-free ground (2 and 50 km: 0), not attributed
+// yet: filed in the r790 validation findings.
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&landKm=150";
 
 /** A 12 x 8 grid over the frame below the horizon at the hold. */
 function holdGrid() {
