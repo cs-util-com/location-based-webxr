@@ -4,6 +4,7 @@ import {
   DEFAULT_MAX_FIXED_ROTATION_SPREAD_DEG,
   maxPairwiseRotationDeg,
   mintQrAnchorFromSightings,
+  qrMintHeadingMarker,
   QR_MINT_HEADING_UNCERTAIN_EXTENT_M,
 } from './qr-anchor-mint.js';
 import { calcRelativeCoordsInMeters } from '../../core/index.js';
@@ -763,6 +764,25 @@ describe('mintQrAnchorFromSightings - the uncertain-heading marker (D31)', () =>
       expect(qualityOf(mintWithExtent(bad))).not.toHaveProperty(
         'headingUncertain'
       );
+    }
+  });
+
+  // Why this test matters: the Tour Viewer's settle re-mints a code through
+  // an alignment of its own choosing (D33) and must mark it the same way
+  // (review R7 of D33; DEC-H3: one marker rule, not a copy). The exported
+  // helper is that rule: both fields for a usable extent, nothing for an
+  // unknown or broken one.
+  it('exports the marker rule itself, for every other re-mint', () => {
+    expect(qrMintHeadingMarker(4)).toEqual({
+      alignmentGpsExtentM: 4,
+      headingUncertain: true,
+    });
+    expect(qrMintHeadingMarker(10)).toEqual({
+      alignmentGpsExtentM: 10,
+      headingUncertain: false,
+    });
+    for (const bad of [undefined, Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+      expect(qrMintHeadingMarker(bad)).toEqual({});
     }
   });
 

@@ -41,11 +41,15 @@ export interface GpsExtentTracker {
 /** The horizontal (north, east) of a fix that counts, or `null`: device
  *  fixes only (a synthetic QR vote is a re-projection of an older code's
  *  anchor, not a place anybody walked, and an unrecognised stamp is never
- *  rounded to device), with finite coordinates. */
+ *  rounded to device), with finite coordinates. A fix without coordinates
+ *  (external data: an older stored shape, a partial record) is skipped. */
 function horizontalOf(p: GpsExtentPoint): [number, number] | null {
   if (gpsPointSourceOf(p) !== GPS_POINT_SOURCE_DEVICE) return null;
-  const n = p.coordinates[0];
-  const e = p.coordinates[2];
+  const coordinates = p.coordinates as
+    GpsExtentPoint['coordinates'] | undefined;
+  if (!Array.isArray(coordinates)) return null;
+  const n = coordinates[0];
+  const e = coordinates[2];
   return Number.isFinite(n) && Number.isFinite(e) ? [n, e] : null;
 }
 

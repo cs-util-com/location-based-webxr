@@ -47,8 +47,11 @@ lives here.
     with the level) and `visitCodeSighting` (the anchor code's latest stable
     pose in the running AR visit, cleared at the visit's end) - both for the
     settle (authoring plan 2026-09-28-0953 §3.2, M2c),
-    `finishing`, `rebuiltZip`, `tourLabel` (set by archive-open); the open
-    tour's `tourManifest` (archive-open.ts); the placement layer (M4):
+    `finishing`, `rebuiltZip` (with the `manifest.json` list it carries,
+    for the next Finish, K1 milestone review R7), `tourLabel` (set by
+    archive-open); the open
+    tour's `tourManifest` (archive-open.ts) and `scanEntries` (the creator's
+    walk, from `tour-read-set.ts`; empty without a manifest); the placement layer (M4):
     `placedObjects` (each with an optional `placement`: the odometry-NUE
     pose in the world group and the AR visit it belongs to, authoring plan
     2026-09-28-0953 M2c; an edit or a move of a hosted object is an entry
@@ -64,6 +67,12 @@ lives here.
     `scanGate`, `cancelEscapeClock`, `contentRendered`, `contentAttempted`,
     `contentError`; the hooks `startScanGate` / `resetScanGate` /
     `reconsiderScanGate(levels | "unavailable")`;
+  - the visitor's stations (tour kit plan K4, `visitor-stations.ts`):
+    no session fields (the station run lives in the guide, keyed by the
+    open tour's stations); the hooks `tickStations` (a store change or a
+    camera frame), `stationCodeLocked(levelId)` (a trusted lock, after the
+    scan gate's part), `unlockStationAudio` (inside the start tap) and
+    `stopStations` (the session ended or the tour closed);
   - the viewer QR line and the placement (`viewer-placement.ts`): the six
     `viewer*` line inputs, `latestReprojectionPx`, `viewerKeepAlive` (the
     code keep-alive, created per AR entry by `startViewerPipeline`, stopped
@@ -95,7 +104,8 @@ lives here.
 - `interface TourViewerHooks` / `createUnwiredHooks()` - the late-bound
   cross-module calls (`renderArStatus`, `renderArEntry`, `renderAuthorReadout`,
   `tryPlaceTour`, `startAuthorPipeline`, `startViewerPipeline`,
-  `presentTourForPrint`, `beginAuthorVisit` / `endAuthorVisit` - the
+  `presentTourForPrint`, `presentLocalTour` (a tour opened from a file:
+  no link to print, tour kit plan K0), `beginAuthorVisit` / `endAuthorVisit` - the
   creator's AR visit start and its settle, M2c), no-ops until their owner
   module is wired.
   (`QrController` and `QrDebugView` are module-private: reached through
@@ -155,3 +165,11 @@ re-arms every code while keeping both objects. `viewer-votes.test.ts`
 drives a reopened tour through it. Otherwise no logic to test;
 the fields' behaviour is pinned by the owning modules' tests and the e2e suite (`playwright-tests/*.spec.js`), which runs
 unchanged across the split (the split's behaviour-neutrality proof).
+
+## UI round 1 additions
+
+- `TourViewerHooks.confirmLeaveTour()` - false when the creator declined to
+  leave an unsaved rebuilt file for another tour (U2; `main.ts` binds it,
+  `createUnwiredHooks` returns true).
+- `rebuiltZip.delivered` - a save delivered the rebuilt file (U2).
+- `scanEntries` - see the S1 note above.

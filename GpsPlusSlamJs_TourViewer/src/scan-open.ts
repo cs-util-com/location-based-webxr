@@ -16,7 +16,12 @@
 
 import type { RangeProbeRejectCause } from "gps-plus-slam-app-framework/storage";
 
-import { resolveCodeTour, tourRelation, type CodeTour } from "./code-tour.js";
+import {
+  resolveCodeTour,
+  tourRelation,
+  type CodeTour,
+  type TourRelation,
+} from "./code-tour.js";
 import { tourLabel } from "./tour-session.js";
 import type { TourViewerSession } from "./tour-viewer-session.js";
 
@@ -25,6 +30,8 @@ export type OpenOutcome =
   | { kind: "opened" }
   /** A newer open replaced this one; not a failure of this link. */
   | { kind: "superseded" }
+  /** The creator chose to stay with an unsaved rebuilt file (U2). */
+  | { kind: "cancelled" }
   | { kind: "failed"; cause: RangeProbeRejectCause | "other" };
 
 /** What the creator's panel says about the code in view. */
@@ -58,7 +65,7 @@ export interface ScanOpenDeps {
   /** Which tour a code names; `resolveCodeTour` with the proxy base. */
   resolve: (text: string) => Promise<CodeTour>;
   /** Open `url` as the tour (never rejects; the outcome says how it went). */
-  open: (url: string) => Promise<OpenOutcome>;
+  open: (url: string, codeText: string) => Promise<OpenOutcome>;
   /** Any open in flight, from step 1 as much as from a scan. */
   isOpening: () => boolean;
   now: () => number;
@@ -73,12 +80,20 @@ export interface ScanOpen {
   status(text: string | null): CodeTourStatus;
   /** The normalised link of the tour `text` names, once read; else null. */
   tourOf(text: string): string | null;
+  /** How `text` relates to the open tour, once read; "resolving" before
+   *  (UI round 1, U3: what the creator's panel may measure on its own). */
+  relation(text: string): TourRelation | "resolving";
 }
 
 /** Causes a creator can fix while standing at the poster: a file uploaded
- *  or shared a moment later, a host that let the browser in on retry.
- *  Anything else would fail the same way every time. */
-const RETRIED_CAUSES: ReadonlySet<string> = new Set(["missing", "cors"]);
+ *  or shared a moment later, a host that let the browser in on retry, a
+ *  phone that is back online (tour kit plan K0 split `offline` out of
+ *  `cors`). Anything else would fail the same way every time. */
+const RETRIED_CAUSES: ReadonlySet<string> = new Set([
+  "missing",
+  "cors",
+  "offline",
+]);
 const FIRST_RETRY_MS = 10_000;
 /** A retry costs one small request; a creator who just fixed the upload
  *  should not wait minutes at the poster (milestone review #10). */
@@ -128,7 +143,7 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
     );
   }
 
-  function tryOpen(code: CodeTour & { kind: "tour" }): void {
+  function tryOpen(code: CodeTour & { kind: "tour" }, text: string): void {
     const previous = attemptFor(code.normalizedUrl);
     if (
       previous !== null &&
@@ -141,7 +156,7 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
     inFlight = target;
     deps.render();
     void deps
-      .open(code.url)
+      .open(code.url, text)
       .catch((): OpenOutcome => ({ kind: "failed", cause: "other" }))
       .then((outcome) => {
         if (inFlight === target) inFlight = null;
@@ -169,9 +184,13 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
     const known = codes.get(text);
     if (known === undefined || known === "resolving") return;
     if (known.kind !== "tour" || deps.isOpening()) return;
-    const relation = tourRelation(known, ctx.session?.archive.url ?? null);
+    const relation = tourRelation(
+      known,
+      ctx.session?.archive.url ?? null,
+      ctx.currentLevels,
+    );
     if (relation === "no-tour-open" && !measuredForAnother(known)) {
-      tryOpen(known);
+      tryOpen(known, text);
     }
   }
 
@@ -209,7 +228,11 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
         return tourOpen ? { kind: "quiet" } : { kind: "not-a-tour" };
       }
       if (inFlight === known.normalizedUrl) return { kind: "opening" };
-      const relation = tourRelation(known, ctx.session?.archive.url ?? null);
+      const relation = tourRelation(
+        known,
+        ctx.session?.archive.url ?? null,
+        ctx.currentLevels,
+      );
       if (relation === "this-tour") return { kind: "quiet" };
       if (relation === "unknown") return { kind: "unknown" };
       if (relation === "other-tour") return { kind: "added-to-open-tour" };
@@ -237,6 +260,16 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
         known.kind === "tour"
         ? known.normalizedUrl
         : null;
+    },
+
+    relation(text) {
+      const known = codes.get(text);
+      if (known === undefined || known === "resolving") return "resolving";
+      return tourRelation(
+        known,
+        ctx.session?.archive.url ?? null,
+        ctx.currentLevels,
+      );
     },
   };
 }

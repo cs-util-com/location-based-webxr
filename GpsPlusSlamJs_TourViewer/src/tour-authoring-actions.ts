@@ -32,6 +32,10 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
+import type {
+  CodePositionDecision,
+  PositionQuality,
+} from "./code-position-rule.js";
 import type { CorrectionRefusal, SettleBasis } from "./visit-settle.js";
 
 /** The store's alignment matrix (the library's tuple), or null. */
@@ -98,8 +102,9 @@ interface CodeMeasuredLog {
   readonly kept?: "measurement" | "level-in-hand" | "hosted-level";
   /** The stored pose this measurement deliberately REPLACED, when the
    *  creator confirmed "Replace the code's saved position"
-   *  (authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5). Absent for
-   *  every other measurement - those never replace a stored pose. */
+   *  (authoring plan 2026-09-28-0953 §3.4, M4; M2c review #5). In
+   *  recordings from before UI round 1 U3 only: since U3 the settle
+   *  decides (`tourAuthoring/settled` `codePosition`). */
   readonly replaced?: { readonly id: string; readonly json: string };
 }
 
@@ -170,25 +175,53 @@ interface VisitSettledLog {
   readonly basis: SettleBasis;
   /** The store's alignment when the settle ran - before the teardown. */
   readonly visitAlignment: AlignmentMatrix;
-  /** The alignment the geo was recomputed through: `visitAlignment`, or
-   *  it corrected through the code (`basis: "code-corrected"`). */
+  /** The choice for an object placed at the visit's END (what a late
+   *  arrival uses): `visitAlignment`, or it corrected through the code
+   *  (`basis: "code-corrected"`). Each object's own is in `objects`. */
   readonly usedAlignment: readonly number[];
-  /** The code sighting a correction used: this visit's stable fused pose
-   *  (raw WebXR odometry) of the level in hand. Null otherwise. */
+  /** The LATEST stable sighting of the code the end choice went through -
+   *  the code seen last since M5a - (raw WebXR odometry) when that choice
+   *  was code-corrected; null otherwise. Since D33 each
+   *  object is corrected through the sighting nearest it, whose pose is not
+   *  logged: only `objects[].usedAlignment` records that choice. */
   readonly sighting: {
     readonly text: string;
     readonly levelId: string;
     readonly odomPose: Pose;
   } | null;
-  /** Each settled object's new geo. */
-  readonly objects: readonly { readonly id: string; readonly geo: QrGeoPose }[];
-  /** The code re-minted through `usedAlignment` when this visit measured
+  /** Each settled object's new geo, and (since D33, absent in older
+   *  recordings) its own choice: each object goes through the first mature
+   *  alignment after its own moment, so `usedAlignment` above is only the
+   *  choice for an object placed at the visit's end. */
+  readonly objects: readonly {
+    readonly id: string;
+    readonly geo: QrGeoPose;
+    readonly basis?: SettleBasis;
+    readonly usedAlignment?: readonly number[];
+    readonly refusedCorrection?: CorrectionRefusal | null;
+  }[];
+  /** The alignment `level` was re-minted through (the measurement's own,
+   *  D33); null without a level. Absent in older recordings. */
+  readonly levelAlignment?: readonly number[] | null;
+  /** The code re-minted through `levelAlignment` when this visit measured
    *  it; null otherwise. */
   readonly level: { readonly id: string; readonly json: string } | null;
-  /** The level in hand when the settle ran, before any re-mint: the stored
-   *  pose a code correction mapped this visit onto. With `zero`,
-   *  `visitAlignment` and `sighting` a replay recomputes a corrected
-   *  `usedAlignment` (`correctedAlignment`, `visit-anchoring.ts`). */
+  /** Every level this settle re-minted, each with the alignment it went
+   *  through (code book plan M5a); `level` is one of them. Absent in
+   *  older recordings, on a late arrival, and when nothing was
+   *  re-minted. */
+  readonly levels?: readonly {
+    readonly id: string;
+    readonly json: string;
+    readonly alignment: readonly number[];
+  }[];
+  /** The code the end choice went through (the code seen last since M5a),
+   *  before any re-mint: the stored pose a code correction mapped this
+   *  visit onto. With `zero`,
+   *  `visitAlignment` and `sighting` a replay recomputes the END choice's
+   *  corrected `usedAlignment` (`correctedAlignment`, `visit-anchoring.ts`)
+   *  - not the per-object choices of D33: their picks and sightings are not
+   *  logged, so a replay reads them from `objects` instead. */
   readonly referenceLevel: {
     readonly id: string;
     readonly json: string;
@@ -199,6 +232,27 @@ interface VisitSettledLog {
    *  (its size and the bounds; M2c review #2) - the visit then settled
    *  through its plain alignment. Null otherwise. */
   readonly refusedCorrection: CorrectionRefusal | null;
+  /** What this settle decided for the STORED code in hand (UI round 1, U3;
+   *  `code-position-settle.ts`): kept, replaced by a better walk, moved
+   *  on the creator's answer, or a move waiting for more walking - with
+   *  the qualities compared and the objects moved with an improved code.
+   *  Absent when there was nothing to decide (and in older recordings). */
+  readonly codePosition?: {
+    readonly levelId: string;
+    readonly decision: CodePositionDecision;
+    readonly offsetM: number;
+    readonly candidate: PositionQuality;
+    readonly stored: PositionQuality;
+    /** Applied: the re-mint succeeded (`level` above is the new spot). */
+    readonly applied: boolean;
+    /** The earlier objects that moved with an improved code (their new geo
+     *  in `objects` is not logged; the draft and the zip carry it). */
+    readonly movedWithCode: readonly {
+      readonly id: string;
+      readonly before: QrGeoPose;
+      readonly after: QrGeoPose;
+    }[];
+  };
 }
 
 /**
@@ -224,39 +278,32 @@ interface CodeMovePromptedLog {
   readonly seconds: number | null;
 }
 
-/** The author's answer to the move prompt, and whether the replace
- *  happened ("Use the new spot" only; a failed one says why). */
+/** The author's answer to the move prompt. "moved" (UI round 1, U3)
+ *  changes nothing at the answer - the settle saves the new spot once the
+ *  visit walked enough (`tourAuthoring/settled` `codePosition`); an Undo
+ *  of it is logged as a "not-now". "use-new-spot" (an immediate replace,
+ *  with `replaced` and `error`) is in recordings from before U3 only. */
 interface CodeMoveAnsweredLog {
   readonly levelId: string;
   readonly arVisitIndex: number;
   readonly atMs: number;
-  readonly answer: "use-new-spot" | "second-copy" | "not-now";
+  readonly answer: "use-new-spot" | "moved" | "second-copy" | "not-now";
   readonly horizontalM: number;
   readonly northM: number;
   readonly eastM: number;
-  /** The saved position was replaced (true only for a "Use the new spot"
-   *  that reached `codeMeasured` with `replaced`). */
+  /** The saved position was replaced at the answer: only an old
+   *  "use-new-spot" could; false since U3. */
   readonly replaced: boolean;
-  /** Why a "Use the new spot" did not replace; null otherwise. */
+  /** Why an old "use-new-spot" did not replace; null otherwise. */
   readonly error: string | null;
 }
 
-/** A replace of the code's saved position undone before Finish (M5b). */
-interface CodeReplaceUndoneLog {
-  readonly levelId: string;
-  readonly arVisitIndex: number;
-  readonly atMs: number;
-  /** The level back in hand: the `replaced` of the undone measurement. */
-  readonly restored: { readonly id: string; readonly json: string };
-  /** The level the undo took out of hand. */
-  readonly undone: { readonly id: string; readonly json: string } | null;
-  /** The replace came from the move prompt (its spot is then remembered
-   *  as "not-now"), not from the Replace button. */
-  readonly fromPrompt: boolean;
-}
-
 interface FinishedLog {
-  readonly levelId: string;
+  /** The code in hand; null for a desk edit with none (M4d). */
+  readonly levelId: string | null;
+  /** Every level the Finish wrote, in the book's order (M4 milestone
+   *  review #6); empty when it wrote none. */
+  readonly levelIds: readonly string[];
   /** The manifest the rebuilt zip carries. */
   readonly manifest: TourManifest;
   readonly atMs: number;
@@ -276,9 +323,6 @@ export const codeMovePrompted = logAction<CodeMovePromptedLog>()(
 );
 export const codeMoveAnswered = logAction<CodeMoveAnsweredLog>()(
   "tourAuthoring/codeMoveAnswered",
-);
-export const codeReplaceUndone = logAction<CodeReplaceUndoneLog>()(
-  "tourAuthoring/codeReplaceUndone",
 );
 export const authoringFinished = logAction<FinishedLog>()(
   "tourAuthoring/finished",
