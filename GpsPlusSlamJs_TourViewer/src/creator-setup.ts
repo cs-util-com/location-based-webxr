@@ -708,9 +708,10 @@ export function wireCreatorSetup(deps: {
       const scene = seams.getScene();
       if (scene === null) return;
       // Earlier visits' objects (plan §3.2): each keeps only its geo in this
-      // visit, so they go into one frame that starts at the scene root -
-      // placed from geo, like the viewer's content - and moves under the
-      // world group once the code is seen (`placeEarlierObjects`).
+      // visit, so they start in the plain frame at the scene root - placed
+      // from geo, like the viewer's content - and move into the frame of
+      // the code nearest them once this visit sees it (`placeEarlierObjects`,
+      // M5b).
       alignmentPicks.reset();
       previews.beginVisit(scene);
       settle.placeEarlierObjects();

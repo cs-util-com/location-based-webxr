@@ -374,6 +374,9 @@ export function wireCreatorMeasuring(deps: {
       // code in hand's sighting.
       if (deps.codes.inBook(id) || deps.codes.hasStoredPose(id)) {
         deps.alignmentPicks.noteSighting(sighting);
+        // Its frame is (re)drawn now, not at the next sighting of the code
+        // in hand (M5b review #1).
+        deps.placeEarlierObjects();
       }
       return;
     }

@@ -219,8 +219,12 @@ export function wireCreatorSettle(deps: {
       {
         level,
         measurement,
+        // An explicit null pick is a pick (M5b review #10); only an absent
+        // one falls back to the measurement's.
         measurementPick:
-          inHandPick ?? picks.measurements?.get(level.id) ?? null,
+          inHandPick !== undefined
+            ? inHandPick
+            : (picks.measurements?.get(level.id) ?? null),
       },
       ...others,
     ];
@@ -254,20 +258,20 @@ export function wireCreatorSettle(deps: {
     return liveCodeChoices(input);
   }
 
-  /**
-   * Re-judge this visit's latest sighting through the CURRENT alignment -
-   * the settle's choice - and update `liveRefusal` from it, WITHOUT moving
-   * the earlier objects: the move prompt calls this on every new fix, and
-   * the objects' frame changes only in `placeEarlierObjects` (a sighting
-   * of the code or an explicit action; §7m #8, the owner's drift
-   * complaint). Null, with `liveRefusal` left as it was, outside a visit
-   * (no frame) or before the scene exists.
-   */
   /** The code the live refusal was judged for (the code seen last). */
   let liveRefusalCode: string | null = null;
   /** The visit and fix count of the last per-fix re-judge. */
   let judgedAt: { visit: number; count: number } | null = null;
 
+  /**
+   * Re-judge the refusal through the CURRENT alignment - for the code seen
+   * last (M5b) - and update `liveRefusal` from it, WITHOUT moving the
+   * earlier objects: `judgeOnNewFix` calls it on every new fix, and the
+   * objects' frames change only in `placeEarlierObjects` (a sighting of a
+   * code or an explicit action; §7m #8, the owner's drift complaint). Null,
+   * with `liveRefusal` left as it was, outside a visit (no frame) or before
+   * the scene exists.
+   */
   function judgeRefusal(): LiveCodeChoices | null {
     // Nothing to judge outside a visit - and nothing to read either.
     const live = liveChoices();
@@ -288,10 +292,22 @@ export function wireCreatorSettle(deps: {
     const geoById = new Map(
       deps.codes.references().map((r) => [r.levelId, r.geo] as const),
     );
-    const frames = [...live.byCode].flatMap(([levelId, choice]) => {
+    // A corrected code draws its nearest objects through its correction; a
+    // code measured here draws them plainly (no stored pose to correct
+    // through, M5 design review #6); a refused or unsighted one not at all.
+    type Frame = {
+      levelId: string;
+      alignment: readonly number[] | null;
+      geo: QrGeoPose;
+    };
+    const frames = [...live.byCode].flatMap(([levelId, choice]): Frame[] => {
       const geo = geoById.get(levelId) ?? null;
-      return choice.basis === "code-corrected" && geo !== null
-        ? [{ levelId, alignment: choice.alignment, geo }]
+      if (geo === null) return [];
+      if (choice.basis === "code-corrected") {
+        return [{ levelId, alignment: choice.alignment, geo }];
+      }
+      return choice.basis === "measured-here"
+        ? [{ levelId, alignment: null, geo }]
         : [];
     });
     deps.previews.placeEarlier(frames);

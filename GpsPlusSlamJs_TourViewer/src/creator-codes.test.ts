@@ -361,6 +361,23 @@ describe("creator-codes: one numbering for every label (code book plan M5b)", ()
     expect(before).toEqual(["h1", "h2", "n1"]);
     expect(codes.numbering()).toEqual(["h1", "h2", "n1", "n2"]);
   });
+
+  // Why this test matters (M5b review #6): a code with no saved pose (one
+  // this page measured, then voided by a size adoption before any Finish)
+  // is not among the summary's references, so numbering it shifted every
+  // later code's number between the panel and the summary.
+  it("leaves out a code with no saved pose", () => {
+    const ctx = createTourViewerSession();
+    const codes = wireCreatorCodes({ ctx });
+    codes.setInHand({ id: "x", json: levelJson(47.5) }, MEASUREMENT);
+    codes.setInHand(
+      { id: "y", json: levelJson(47.6) },
+      { ...MEASUREMENT, levelId: "y" },
+    );
+    codes.dropMeasurement("x");
+    expect(codes.savedText("x")).toBeNull();
+    expect(codes.numbering()).toEqual(["y"]);
+  });
 });
 
 describe("creator-codes: every code this page holds (M4d)", () => {

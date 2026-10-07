@@ -285,7 +285,11 @@ export function wireCreatorCodes(deps: {
       takeInHand();
       const ids = [...(ctx.currentLevels?.keys() ?? [])];
       const listed = new Set(ids);
-      for (const id of book.keys()) if (!listed.has(id)) ids.push(id);
+      // A code with no saved pose is not among the references the summary
+      // numbers (M5b review #6).
+      for (const [id, code] of book) {
+        if (!listed.has(id) && code.saved !== null) ids.push(id);
+      }
       return ids;
     },
     ids: () => {

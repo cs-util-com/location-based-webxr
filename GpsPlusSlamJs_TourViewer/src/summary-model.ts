@@ -144,8 +144,9 @@ export interface SummaryModel {
 
 export interface SummaryInput {
   readonly visits: readonly VisitLogEntry[];
-  /** The codes' stored poses, the level in hand first, then the tour's
-   *  other levels (a null geo: a level without a pose). */
+  /** The codes' stored poses, in the numbering every label uses
+   *  (`creator-codes.ts` `numbering`, M5b; a null geo: a level without a
+   *  pose). */
   readonly references: readonly {
     readonly levelId: string;
     readonly geo: QrGeoPose | null;

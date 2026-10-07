@@ -1,9 +1,9 @@
 /**
  * The creator's previews of the tour's objects (code book refactor plan M2,
- * split out of `creator-setup.ts` unchanged): each object rendered by id,
- * rigid in AR when placed in this visit and from geo otherwise, inside the
- * earlier visits' frame that a sighting of the code moves; and the bytes of
- * photos a Finish took out of the placed list.
+ * split out of `creator-setup.ts`): each object rendered by id, rigid in
+ * AR when placed in this visit and from geo otherwise - inside the frame of
+ * the code nearest it that this visit sighted (M5b), or plainly at the
+ * scene root; and the bytes of photos a Finish took out of the placed list.
  *
  * @see creator-previews.ts.md
  */
@@ -26,14 +26,16 @@ import type {
 } from "./tour-viewer-session.js";
 
 /**
- * A code this visit sighted with an accepted correction (code book plan
- * M5b): the earlier visits' objects nearest it are drawn through it.
+ * A code this visit sighted or measured (code book plan M5b): the earlier
+ * visits' objects nearest it are drawn through it.
  */
 interface EarlierCodeFrame {
   readonly levelId: string;
   /** The code's corrected alignment for this visit (GPS-world from
-   *  odometry). */
-  readonly alignment: readonly number[];
+   *  odometry); null for a code MEASURED in this visit, whose nearest
+   *  objects are drawn plainly from geo (it has no stored pose to correct
+   *  through, M5 design review #6). */
+  readonly alignment: readonly number[] | null;
   /** The code's stored pose: which objects are nearest it. */
   readonly geo: LatLong;
 }
@@ -79,41 +81,72 @@ export function wireCreatorPreviews(deps: {
   let previewsWaitForZero = false;
 
   /**
-   * The frame the earlier visits' objects are shown in during this AR visit
+   * The plain frame for the earlier visits' objects during this AR visit
    * (plan §3.2 "Earlier visits' objects on re-entry"): at the scene root
-   * with the identity while they can only be placed from geo, under the AR
-   * world group with the corrected alignment's inverse once the code has
-   * been seen - which puts each where the code says, rigid in AR, because
-   * the corrected alignment does not depend on the visit's GPS alignment
-   * (`visit-anchoring.ts`). Null outside a visit.
+   * with the identity, placing an object from its geo like the viewer's
+   * content. Null outside a visit.
    */
   let earlierFrame: Group | null = null;
 
   /**
-   * One frame per code this visit sighted with an accepted correction (code
-   * book plan M5b), under the AR world group with that code's corrected
-   * alignment's inverse. `earlierFrame` stays at the scene root for the
-   * objects no such code is nearest to (none sighted yet).
+   * The codes the earlier objects are drawn through (code book plan M5b),
+   * by level: each code this visit sighted with an accepted correction has
+   * a frame under the AR world group with the corrected alignment's inverse
+   * - which puts each object where the code says, rigid in AR, because the
+   * corrected alignment does not depend on the visit's GPS alignment
+   * (`visit-anchoring.ts`); a code measured in this visit has none (its
+   * objects are drawn plainly). `holder` is what the frame was added to:
+   * it is removed through it (the e2e fakes' nodes set no `parent`).
    */
-  const codeFrames = new Map<
+  const anchors = new Map<
     string,
-    { readonly group: Group; geo: EarlierCodeFrame["geo"] }
+    {
+      geo: EarlierCodeFrame["geo"];
+      frame: { readonly group: Group; readonly holder: Object3D } | null;
+    }
   >();
 
-  /** Where an object that is not rigid in AR is drawn: the frame of the
-   *  sighted code nearest it, horizontally; "plain" without one. No reach
-   *  limit: with one code every object stays in its frame, as before. */
-  function frameKeyOf(geo: EarlierCodeFrame["geo"]): string {
-    let best = "plain";
+  /** The node an object that is not rigid in AR is drawn in: the frame of
+   *  the code nearest it horizontally (plain for a code measured here), or
+   *  the plain frame with none. No reach limit: with one code every object
+   *  stays in its frame, as before. */
+  function frameFor(geo: EarlierCodeFrame["geo"]): Object3D | null {
+    let best: Group | null = null;
     let bestM = Number.POSITIVE_INFINITY;
-    for (const [levelId, frame] of codeFrames) {
-      const m = horizontalM(frame.geo, geo);
+    for (const anchor of anchors.values()) {
+      const m = horizontalM(anchor.geo, geo);
       if (m < bestM) {
-        best = levelId;
+        best = anchor.frame?.group ?? null;
         bestM = m;
       }
     }
-    return best;
+    return best ?? earlierFrame;
+  }
+
+  /** An entry placed in THIS visit is rigid in AR and in no code's frame. */
+  function isRigid(entry: AuthoringObject): boolean {
+    const placement = entry.placed?.placement;
+    return (
+      placement !== undefined && placement.visit === ctx.arSessionGeneration
+    );
+  }
+
+  /** Put a rendered preview in the frame its object belongs to now - a
+   *  move, never a new render (M5b review #3: a re-render blinked every
+   *  earlier object and decoded every hosted photo again). */
+  function attach(entry: AuthoringObject, root: Object3D): void {
+    if (isRigid(entry)) return;
+    const target = frameFor(entry.object.geo);
+    if (target !== null && root.parent !== target) target.add(root);
+  }
+
+  /** Remove a code's frame through the node it was added to. */
+  function dropFrame(
+    frame: { readonly group: Group; readonly holder: Object3D } | null,
+  ): void {
+    if (frame === null) return;
+    frame.holder.remove(frame.group);
+    frame.group.removeFromParent();
   }
 
   /**
@@ -166,8 +199,6 @@ export function wireCreatorPreviews(deps: {
       object.kind,
       object.kind === "pin" ? object.label : object.image,
       rigid ? placement.local : object.geo,
-      // The frame it is drawn in: a change re-renders it there (M5b).
-      rigid ? "rigid" : frameKeyOf(object.geo),
     ]);
   }
 
@@ -201,8 +232,7 @@ export function wireCreatorPreviews(deps: {
     if (zero === null) return;
     for (const entry of desired.values()) {
       if (!previewKeys.has(entry.object.id)) {
-        const frame = codeFrames.get(frameKeyOf(entry.object.geo))?.group;
-        renderPreview(entry, zero, frame ?? earlierFrame ?? scene);
+        renderPreview(entry, zero, frameFor(entry.object.geo) ?? scene);
       }
     }
   }
@@ -259,6 +289,8 @@ export function wireCreatorPreviews(deps: {
         }
         ctx.placedPreviews.get(id)?.dispose();
         ctx.placedPreviews.set(id, rendered);
+        // Its code's frame may have changed while it rendered.
+        attach(entry, rendered.root);
       },
       () => {
         // A throwing label or plane: forget it, so a later sync may retry.
@@ -269,38 +301,50 @@ export function wireCreatorPreviews(deps: {
 
   /**
    * Draw the earlier visits' objects through the codes this visit sighted
-   * (code book plan M5b): one frame per code, under the world group with
-   * the code's corrected alignment's inverse - rigid in AR, where the code
-   * says - and each object in the frame of the code nearest it. A code no
-   * longer listed loses its frame; an object whose nearest code changed is
-   * drawn again in its new frame (its preview key names the frame). Cheap
-   * while nothing is reassigned: one matrix per code.
+   * or measured (code book plan M5b): one frame per corrected code, under
+   * the world group with the code's corrected alignment's inverse; each
+   * object moved into the frame of the code nearest it (plainly for a code
+   * measured here). A code no longer listed loses its frame, after its
+   * objects moved out. Cheap: one matrix per code, a move per reassigned
+   * object, no render.
    */
   function placeEarlier(frames: readonly EarlierCodeFrame[]): void {
     if (earlierFrame === null || seams.getScene() === null) return;
     const group = seams.getArWorldGroup();
     const listed = group === null ? [] : frames;
+    type Frame = { readonly group: Group; readonly holder: Object3D } | null;
+    const stale: Frame[] = [];
     const keep = new Set(listed.map((f) => f.levelId));
-    for (const [levelId, frame] of codeFrames) {
+    for (const [levelId, anchor] of anchors) {
       if (keep.has(levelId)) continue;
-      frame.group.removeFromParent();
-      codeFrames.delete(levelId);
+      stale.push(anchor.frame);
+      anchors.delete(levelId);
     }
     for (const f of listed) {
-      let frame = codeFrames.get(f.levelId);
-      if (frame === undefined) {
-        const node = new Group();
-        node.name = `earlier-visits-${f.levelId}`;
-        node.matrixAutoUpdate = false;
-        group?.add(node);
-        frame = { group: node, geo: f.geo };
-        codeFrames.set(f.levelId, frame);
+      const anchor = anchors.get(f.levelId) ?? { geo: f.geo, frame: null };
+      anchor.geo = f.geo;
+      if (f.alignment === null) {
+        stale.push(anchor.frame);
+        anchor.frame = null;
+      } else if (group !== null) {
+        if (anchor.frame === null) {
+          const node = new Group();
+          node.name = `earlier-visits-${f.levelId}`;
+          node.matrixAutoUpdate = false;
+          group.add(node);
+          anchor.frame = { group: node, holder: group };
+        }
+        anchor.frame.group.matrix.fromArray(f.alignment).invert();
+        anchor.frame.group.matrixWorldNeedsUpdate = true;
       }
-      frame.geo = f.geo;
-      frame.group.matrix.fromArray(f.alignment).invert();
-      frame.group.matrixWorldNeedsUpdate = true;
+      anchors.set(f.levelId, anchor);
     }
-    syncPreviews();
+    const byId = new Map(deps.objects().map((e) => [e.object.id, e]));
+    for (const [id, rendered] of ctx.placedPreviews) {
+      const entry = byId.get(id);
+      if (entry !== undefined) attach(entry, rendered.root);
+    }
+    for (const frame of stale) dropFrame(frame);
   }
 
   /** A creator's AR visit began: a fresh earlier-visits frame at the scene
@@ -310,8 +354,8 @@ export function wireCreatorPreviews(deps: {
     earlierFrame.name = "earlier-visits";
     earlierFrame.matrixAutoUpdate = false;
     scene.add(earlierFrame);
-    for (const frame of codeFrames.values()) frame.group.removeFromParent();
-    codeFrames.clear();
+    for (const anchor of anchors.values()) dropFrame(anchor.frame);
+    anchors.clear();
     // Everything is rendered afresh into this visit's frames - the
     // hosted zip's objects too (M4) - keyed by id.
     clearPreviews();
@@ -330,8 +374,8 @@ export function wireCreatorPreviews(deps: {
       previewKeys.clear();
       earlierFrame?.removeFromParent();
       earlierFrame = null;
-      for (const frame of codeFrames.values()) frame.group.removeFromParent();
-      codeFrames.clear();
+      for (const anchor of anchors.values()) dropFrame(anchor.frame);
+      anchors.clear();
     },
     inVisit: () => earlierFrame !== null,
     placeEarlier,

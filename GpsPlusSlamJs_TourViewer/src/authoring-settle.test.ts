@@ -1073,6 +1073,116 @@ describe(
     // GPS), the notes next to the other code were drawn off by that
     // disagreement during the whole visit. Each is drawn through the code
     // nearest it that this visit sighted.
+    /**
+     * Walk 1 measures A, places "Near A", then (the GPS moved 8 degrees and
+     * 3 m, the odometry 20 m) measures B 20 m east and places "Near B":
+     * two codes whose stored poses disagree. Walk 2 begins with a GPS
+     * offset both codes' plausibility bound accepts.
+     */
+    async function twoCodesThenNextVisit() {
+      const a = authoring();
+      // A GPS extent of 59 m (every pick mature at its own moment), and an
+      // odometry that stands still at A, then walks 20 m before B: each
+      // note is tied to the code it was placed beside (D2).
+      const fixes = Array.from({ length: 60 }, (_, i) => ({
+        id: `fix-${String(i)}`,
+        timestamp: 1_000 + i * 1000,
+        coordinates: [i, 0, 0],
+        latitude: ZERO.lat,
+        longitude: ZERO.lon,
+      }));
+      const atA = { fixes, odometry: fixes.map(() => [0, 0, 0]) };
+      const walked = Array.from({ length: 20 }, (_, i) => ({
+        id: `walk-${String(i)}`,
+        timestamp: 100_000 + i * 1000,
+        coordinates: [59, 0, 0],
+        latitude: ZERO.lat,
+        longitude: ZERO.lon,
+      }));
+      const atB = {
+        fixes: [...fixes, ...walked],
+        odometry: [...atA.odometry, ...walked.map((_, i) => [i + 1, 0, 0])],
+      };
+      a.setWalk(atA);
+      a.setAlignment(yawAlignment(0, [0, 400, 0]));
+      a.setZero(ZERO);
+      await a.mint();
+      await a.placePin("Near A", [2, 0, -1]);
+      // The GPS moves before code B is measured, 20 m away.
+      a.setWalk(atB);
+      a.setAlignment(yawAlignment(8, [3, 400, 0]));
+      a.setZero(ZERO);
+      const twentyAway = new Matrix4().makeTranslation(20, 0, 0);
+      const SECOND_TEXT = "https://gps.csutil.com/tour/?qr=second";
+      await a.mint(twentyAway, SECOND_TEXT, 10_000);
+      // Odometry north/up/east: B is 20 m EAST (WebXR x), so beside it is
+      // 2 m north and 21 m east.
+      await a.placePin("Near B", [2, 0, 21]);
+      a.endVisit();
+
+      a.beginVisit();
+      a.setWalk(atA);
+      a.setAlignment(yawAlignment(4, [5, 400, 2]));
+      a.setZero(ZERO);
+      return { a, twentyAway, SECOND_TEXT };
+    }
+
+    // Why this test matters (M5b review #1): only a sighting of the code IN
+    // HAND redrew the frames, so a walk that reached the other code saw its
+    // notes drawn through the first code's frame. The order of the
+    // sightings must not matter.
+    it("draws each earlier note through its code whichever code is sighted first", async () => {
+      const { a, twentyAway, SECOND_TEXT } = await twoCodesThenNextVisit();
+      // B (in hand) first, then A.
+      a.seeTheCode(twentyAway, SECOND_TEXT, 20_000);
+      a.seeTheCode(undefined, TEXT, 30_000);
+      await flush();
+      expect(
+        a.inWorldGroup("Near A").distanceTo(new Vector3(2, 0, -1)),
+      ).toBeLessThan(1e-2);
+      expect(
+        a.inWorldGroup("Near B").distanceTo(new Vector3(2, 0, 21)),
+      ).toBeLessThan(1e-2);
+    });
+
+    // Why this test matters (M5b review #3): drawing an object in another
+    // frame re-rendered it - every earlier note blinked and every hosted
+    // photo was read from the zip and decoded again at the code's first
+    // sighting. It is moved, not rendered again.
+    it("moves an earlier note into its code's frame without rendering it again", async () => {
+      const { a } = await twoCodesThenNextVisit();
+      const rendered = () => a.labels.filter((o) => o.name === "Near A").length;
+      const before = rendered();
+      expect(before).toBeGreaterThan(0);
+      a.seeTheCode(undefined, TEXT, 30_000);
+      await flush();
+      expect(rendered()).toBe(before);
+      expect(
+        a.inWorldGroup("Near A").distanceTo(new Vector3(2, 0, -1)),
+      ).toBeLessThan(1e-2);
+    });
+
+    // Why this test matters (M5b review #2; M5 design review #6): a code
+    // MEASURED in this visit has no stored pose to correct through, so the
+    // notes nearest it are drawn plainly from geo - not through a farther
+    // code's correction.
+    it("draws a note nearest a code measured in this visit plainly, not through a farther code", async () => {
+      const { a, twentyAway, SECOND_TEXT } = await twoCodesThenNextVisit();
+      a.seeTheCode(twentyAway, SECOND_TEXT, 20_000);
+      await flush();
+      // A new code C, measured where A hangs (A itself is not seen).
+      await a.mint(undefined, "https://gps.csutil.com/tour/?qr=third", 40_000);
+      await flush();
+      const near = [...a.labels].reverse().find((o) => o.name === "Near A")!;
+      a.scene.updateMatrixWorld(true);
+      const gate = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin" && p.object.label === "Near A",
+      )!.object;
+      expect(
+        near.getWorldPosition(new Vector3()).distanceTo(worldOf(gate.geo)),
+      ).toBeLessThan(1e-3);
+    });
+
     it("draws each earlier note through the code nearest it that this visit sighted", async () => {
       const a = authoring();
       // A GPS extent of 59 m (every pick mature at its own moment), and an

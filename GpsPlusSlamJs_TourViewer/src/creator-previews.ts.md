@@ -34,9 +34,14 @@ photo is decoded from.
     alignment's inverse. Each earlier object is drawn in the frame of the
     code nearest it horizontally (`horizontalM`, no reach limit: with one
     code every object stays in its frame, as before); with none, from geo
-    in the plain frame at the scene root. An object's preview key names
-    its frame, so a changed assignment re-renders it; a code no longer
-    listed loses its frame.
+    in the plain frame at the scene root. A code MEASURED in this visit is
+    a plain anchor: its nearest objects are drawn from geo (M5b review #2).
+    A changed assignment MOVES the rendered object into its new frame -
+    never a new render (M5b review #3: a re-render blinked every object
+    and decoded every hosted photo again); a preview still rendering is
+    attached to its frame when it lands. A code no longer listed loses its
+    frame, after its objects moved out; frames are removed through the
+    node they were added to.
   - `keepFinishedPhoto(id, blob)`, `reset()` - a finished photo's bytes,
     kept until the tour closes; `reset` disposes every preview and forgets
     them.
