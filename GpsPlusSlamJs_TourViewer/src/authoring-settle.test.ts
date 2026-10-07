@@ -139,7 +139,12 @@ function inOrigin(pose: Pose, origin?: Matrix4): Pose {
 /** The i-th detection of the code, from a camera stepping sideways
  *  (the fused-pose wiring test's walk: stable after about seven), in the
  *  odometry of a session whose origin is `origin` away from the first. */
-function detection(i: number, origin?: Matrix4): QrDetectionEvent {
+function detection(
+  i: number,
+  origin?: Matrix4,
+  text = TEXT,
+  startMs = 0,
+): QrDetectionEvent {
   const dx = -0.3 + 0.1 * i;
   const corners = buildObjectPoints(SIZE_M).map((p) => {
     const w = rotateVectorByQuaternion(TRUE_CODE.rotation, p);
@@ -150,8 +155,8 @@ function detection(i: number, origin?: Matrix4): QrDetectionEvent {
     rotation: yawQ(6 + ((i % 3) - 1) * 6),
   };
   return {
-    text: TEXT,
-    timestamp: i * 125,
+    text,
+    timestamp: startMs + i * 125,
     corners,
     cameraPose: inOrigin(
       { position: [dx, 0, 1.2], rotation: [0, 0, 0, 1] },
@@ -177,7 +182,6 @@ const DOM_KEYS = [
   "sizeInput",
   "printPanel",
   "status",
-  "mintButton",
   "finishButton",
   "finishStatus",
   "downloadButton",
@@ -196,11 +200,6 @@ const DOM_KEYS = [
   "sizeOfferUse",
   "sizeOfferKeep",
   "objectList",
-  "replaceCodeButton",
-  "replaceCodeConfirm",
-  "replaceCodeConfirmText",
-  "replaceCodeYes",
-  "replaceCodeNo",
   "movePrompt",
   "movePromptText",
   "movePromptUse",
@@ -209,6 +208,8 @@ const DOM_KEYS = [
   "moveUndo",
   "moveUndoText",
   "moveUndoButton",
+  "keepScanRow",
+  "keepScanInput",
 ] as const;
 
 function el() {
@@ -345,6 +346,8 @@ function authoring(
     zero: { lat: number; lon: number } | null;
     /** The visit's device fixes and odometry, when a test walks. */
     walk: { fixes: unknown[]; odometry: number[][] } | null;
+    /** The store's median GPS accuracy (m); unset: unknown. */
+    accuracyM?: number;
   } = { alignment: yawAlignment(0, [0, 400, 0]), zero: ZERO, walk: null };
   const dispatched: { type: string; payload?: unknown }[] = [];
   const arStore = {
@@ -363,6 +366,9 @@ function authoring(
                 lon: ZERO.lon,
               })),
             odometryPositions: gps.walk?.odometry ?? [],
+            ...(gps.accuracyM === undefined
+              ? {}
+              : { gpsAccuracyMedian: gps.accuracyM }),
           },
         },
       }) as never,
@@ -465,20 +471,31 @@ function authoring(
   expect(setup.startAuthorPipeline()).toBe(true);
 
   /** Walk the code until its fused pose is stable. */
-  function seeTheCode(origin?: Matrix4): void {
+  function seeTheCode(origin?: Matrix4, text = TEXT, startMs = 0): void {
     for (let i = 0; i < 8; i += 1) {
-      captured.configs.at(-1)?.onDetection?.(detection(i, origin));
+      captured.configs
+        .at(-1)
+        ?.onDetection?.(detection(i, origin, text, startMs));
     }
   }
 
-  /** Measure the code: stable, then "Save the measured position". */
-  async function mint(): Promise<void> {
-    seeTheCode();
-    expect(dom.mintButton.disabled, "the mint gate should be open").toBe(false);
-    dom.mintButton.click();
+  /** Measure the code: stable, and the gate open, it is measured on its
+   *  own (UI round 1, U3). */
+  async function mint(
+    origin?: Matrix4,
+    text = TEXT,
+    startMs = 0,
+  ): Promise<void> {
+    const measured = () =>
+      dispatched.filter((x) => x.type === "tourAuthoring/codeMeasured").length;
+    const before = measured();
+    seeTheCode(origin, text, startMs);
     await vi.waitFor(() => {
+      expect(measured()).toBeGreaterThan(before);
       expect(ctx.mintedLevel).not.toBeNull();
     });
+    // The measurement's own end (its render; Finish waits for it).
+    await flush();
   }
 
   /** The AR session ends: the creator setup settles FIRST (while the
@@ -511,7 +528,16 @@ function authoring(
         basis: string;
         visitAlignment: unknown;
         usedAlignment: number[];
-        objects: { id: string; geo: TourObject["geo"] }[];
+        /** Since D33 each object carries its own choice. */
+        objects: {
+          id: string;
+          geo: TourObject["geo"];
+          basis?: string;
+          usedAlignment?: number[];
+          refusedCorrection?: unknown;
+        }[];
+        /** Since D33: the alignment the level was re-minted through. */
+        levelAlignment?: number[] | null;
         level: { id: string; json: string } | null;
         referenceLevel: { id: string; json: string } | null;
         zero: { lat: number; lon: number } | null;
@@ -585,6 +611,10 @@ function authoring(
      *  them (cleared by the next `setWalk(null)`). */
     setWalk: (walk: { fixes: unknown[]; odometry: number[][] } | null) => {
       gps.walk = walk;
+    },
+    /** The store's median GPS accuracy (m). */
+    setAccuracy: (accuracyM: number): void => {
+      gps.accuracyM = accuracyM;
     },
   };
 }
@@ -709,13 +739,19 @@ describe(
       expect(payload.basis).toBe("measured-here");
       expect(payload.visitAlignment).toEqual(end);
       expect(payload.usedAlignment).toEqual(end);
+      // Since D33 each object also logs its own choice. This visit never
+      // reached 40 m of GPS extent, so the pin fell back to the end alignment.
       expect(payload.objects).toEqual([
         {
           id: a.ctx.placedObjects[0]!.object.id,
           geo: a.ctx.placedObjects[0]!.object.geo,
+          basis: "measured-here",
+          usedAlignment: end,
+          refusedCorrection: null,
         },
       ]);
       expect(payload.level).toEqual(a.ctx.mintedLevel);
+      expect(payload.levelAlignment).toEqual(end);
       // The level in hand BEFORE the settle and the zero (review #7): what a
       // replay needs to recompute a code-corrected settle.
       expect(payload.referenceLevel).toEqual(tapLevel);
@@ -969,6 +1005,15 @@ describe(
       a.seeTheCode();
       await flush();
       expect(a.inWorldGroup("Gate").distanceTo(atCode)).toBeGreaterThan(20);
+      // At its geo in the SCENE (code book plan M1, a sampled mutant): the
+      // frame moved back to the scene root, not left under the AR world
+      // group with an identity matrix, which would put it 60 m off.
+      const gate = a.ctx.placedObjects[0]!.object;
+      const shown = [...a.labels].reverse().find((o) => o.name === "Gate")!;
+      a.scene.updateMatrixWorld(true);
+      expect(
+        shown.getWorldPosition(new Vector3()).distanceTo(worldOf(gate.geo)),
+      ).toBeLessThan(1e-3);
     });
   },
 );
@@ -1006,6 +1051,7 @@ async function openFinishableTour(
       ...levels.map((l) => ({ filename: l.path })),
     ],
     manifestWrap: "",
+    integrity: { kind: "none" },
     readWholeArchive: () =>
       options.holdArchive === true
         ? new Promise<Blob>((resolve) => {
@@ -1018,6 +1064,8 @@ async function openFinishableTour(
       Promise.resolve(
         new Blob([levels.find((l) => l.path === filename)?.data ?? ""]),
       ),
+    loadEntryText: (filename: string) =>
+      Promise.resolve(levels.find((l) => l.path === filename)?.data ?? ""),
   } as never;
   a.ctx.tourManifestStatus = "settled";
   a.ctx.tourManifest = createEmptyTourManifest();
@@ -1272,10 +1320,11 @@ describe(
       return first.ctx.mintedLevel!;
     }
 
-    it("keeps an earlier visit's measurement as the reference when the code is measured again", async () => {
+    it("keeps an earlier visit's measurement as the reference when the code is seen again", async () => {
       // Why this test matters: "newest wins" re-minted the code through
       // the second visit's GPS, moving it away from the notes the first
-      // visit had settled against it.
+      // visit had settled against it. Since U3 a stored code in hand is
+      // not even re-measured: its sighting corrects the visit.
       const a = authoring();
       await a.mint();
       a.endVisit();
@@ -1283,11 +1332,14 @@ describe(
       const codeLocal = mintedOdom(a.dispatched);
       a.beginVisit();
       a.setAlignment(SECOND);
-      await a.mint();
+      a.seeTheCode();
+      await flush();
+      a.setup.renderAuthorReadout();
 
       expect(a.ctx.mintedLevel).toEqual(stored);
-      expect(lastKept(a)).toBe("level-in-hand");
-      expect(a.dom.status.textContent).toMatch(/saved position stays/);
+      expect(
+        a.dispatched.filter((x) => x.type === "tourAuthoring/codeMeasured"),
+      ).toHaveLength(1);
       await a.placePin("Later", [3, 0, 1]);
       a.endVisit();
       const last = a.settledLogs().at(-1)!.payload;
@@ -1296,6 +1348,58 @@ describe(
       const offset = worldOf(a.ctx.placedObjects[0]!.object.geo).sub(
         codeWorldOf(stored.json),
       );
+      expect(
+        offset.distanceTo(new Vector3(3, 0, 1).sub(codeLocal)),
+      ).toBeLessThan(1e-2);
+    });
+
+    // Why this test matters (code book plan M4 milestone review #1): a code
+    // measured on this page that another code then took the hand from was
+    // not "stored" to the measuring - only the code in hand and the hosted
+    // ones were. A later visit measured it from scratch through ITS GPS,
+    // replaced its saved pose, and left the notes the first visit placed
+    // beside it behind by the two visits' GPS difference (here 20 m).
+    it("keeps a code measured earlier on this page as the reference in a later visit, though another code is in hand", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = authoring({ store });
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      await a.mint();
+      const codeLocal = mintedOdom(a.dispatched);
+      await a.mint(
+        new Matrix4().makeTranslation(20, 0, 0),
+        "https://gps.csutil.com/tour/?qr=second",
+        10_000,
+      );
+      a.endVisit();
+      await flush();
+      const savedA = () =>
+        (
+          JSON.parse(String(files.get(META_KEY))) as {
+            levels: { id: string; json: string }[];
+          }
+        ).levels[0]!;
+      const stored = savedA();
+      const measured = () =>
+        a.dispatched.filter((x) => x.type === "tourAuthoring/codeMeasured")
+          .length;
+      const before = measured();
+
+      a.beginVisit();
+      a.setAlignment(SECOND);
+      a.seeTheCode(undefined, TEXT, 20_000);
+      await flush();
+      await a.placePin("Beside A", [3, 0, 1]);
+      a.endVisit();
+      await flush();
+
+      expect(measured()).toBe(before);
+      expect(savedA()).toEqual(stored);
+      const pin = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin" && p.object.label === "Beside A",
+      )!.object;
+      // Placed relative to the code as it was stored, not 20 m off.
+      const offset = worldOf(pin.geo).sub(codeWorldOf(stored.json));
       expect(
         offset.distanceTo(new Vector3(3, 0, 1).sub(codeLocal)),
       ).toBeLessThan(1e-2);
@@ -1318,7 +1422,7 @@ describe(
       expect(a.ctx.mintedLevel).toEqual(hosted);
       expect(lastKept(a)).toBe("hosted-level");
       // The panel says the saved position stays - never that it is replaced.
-      expect(a.dom.status.textContent).toMatch(/saved position stays/);
+      expect(a.dom.status.textContent).toMatch(/Saved position kept/);
       expect(a.dom.status.textContent).not.toMatch(/replaces/);
       await a.placePin("Later", [3, 0, 1]);
       a.dom.finishButton.click();
@@ -1346,14 +1450,21 @@ describe(
       expect(a.settledLogs().at(-1)!.payload.basis).toBe("measured-here");
     });
 
-    it("lets a second measurement in the same visit replace the first", async () => {
+    it("measures a code once per visit: seeing it again does not re-measure it (UI round 1, U3)", async () => {
+      // Why: measuring is automatic now; re-measuring on every sighting
+      // would churn the code's pick and its level all visit long. The
+      // settle refines nothing from later sightings of a code measured here
+      // - it re-mints from the measurement through its own pick (D33).
       const a = authoring();
       await a.mint();
       const firstJson = a.ctx.mintedLevel!.json;
       a.setAlignment(yawAlignment(3, [1, 400, 1]));
-      await a.mint();
-      expect(lastKept(a)).toBe("measurement");
-      expect(a.ctx.mintedLevel!.json).not.toBe(firstJson);
+      a.seeTheCode();
+      await flush();
+      expect(
+        a.dispatched.filter((x) => x.type === "tourAuthoring/codeMeasured"),
+      ).toHaveLength(1);
+      expect(a.ctx.mintedLevel!.json).toBe(firstJson);
     });
   },
 );
@@ -1465,7 +1576,7 @@ describe(
     ) {
       const a = authoring(store === undefined ? {} : { store });
       await openFinishableTour(a);
-      a.ctx.tourManifest = { version: 1, objects };
+      a.ctx.tourManifest = { ...createEmptyTourManifest(), objects };
       a.setup.presentDraftForTour("https://example.test/tour.zip");
       await flush();
       a.beginVisit();
@@ -1915,78 +2026,256 @@ describe(
 );
 
 describe(
-  "re-measuring a stored code on purpose (M4; M2c review #5)",
+  "the code's saved position, decided at the settle (UI round 1, U3)",
   { timeout: SLOW_MS },
   () => {
-    // Why these tests matter: since M2c a new measurement of a stored code
-    // only corrects its visit - replacing the stored pose became an
-    // explicit action. It must exist, ask first, say what it does, and be
-    // recorded; and without it the stored pose must stay.
-    async function secondVisitAtStoredCode() {
+    // Why these tests matter: the measure and replace buttons are gone, so
+    // the settle alone decides whether this visit's view of a STORED code
+    // replaces its saved position. A wrong replace turns the whole tour for
+    // every visitor placed by GPS (the r778 field recording: a standing
+    // re-measure turned it 41 degrees); a replace that leaves the nearby
+    // pins behind shifts them against the poster; a real move must leave
+    // the pins at their landmarks (D19).
+    const T0 = 1_756_150_000_000;
+
+    /** `n` one-second device fixes spread `spanM` north (the extent the
+     *  rule reads), in the store's own shape. */
+    function walkOf(n: number, spanM: number) {
+      const fixes = Array.from({ length: n }, (_, i) => ({
+        id: `fix-${String(i)}`,
+        timestamp: T0 + i * 1000,
+        coordinates: [(spanM * i) / Math.max(1, n - 1), 0, 0],
+        latitude: ZERO.lat,
+        longitude: ZERO.lon,
+      }));
+      return { fixes, odometry: fixes.map(() => [0, 0, 0]) };
+    }
+
+    /**
+     * A first visit measures the code and places a pin next to it and one
+     * 60 m away; the second visit sees the stored code through an
+     * alignment `yawDeg` turned and `northM` shifted, at `accuracyM`, and
+     * walks `walkM`.
+     */
+    async function secondVisit(opts: {
+      yawDeg: number;
+      northM: number;
+      walkM: number;
+      accuracyM?: number;
+    }) {
       const a = authoring();
       await a.mint();
+      await a.placePin("near", [2, 0, -1]);
+      await a.placePin("far", [60, 0, 0]);
       a.endVisit();
       const stored = a.ctx.mintedLevel!;
+      const pins = () =>
+        new Map(
+          a.ctx.placedObjects.map((p) => [
+            p.object.kind === "pin" ? p.object.label : p.object.id,
+            p.object.geo,
+          ]),
+        );
+      const before = pins();
       a.beginVisit();
-      a.setAlignment(yawAlignment(30, [20, 401, -8]));
+      a.setAccuracy(opts.accuracyM ?? 5);
+      a.setAlignment(yawAlignment(opts.yawDeg, [opts.northM, 400, 0]));
+      a.setWalk(walkOf(30, opts.walkM));
       a.seeTheCode();
       await flush();
       a.setup.renderAuthorReadout();
-      return { a, stored };
+      return { a, stored, before, pins };
     }
 
-    it("offers the replace for the stored code in view, asks first, then replaces it and records what it replaced", async () => {
-      const { a, stored } = await secondVisitAtStoredCode();
-      expect(a.dom.replaceCodeButton.hidden).toBe(false);
-      expect(a.dom.replaceCodeButton.disabled).toBe(false);
-      a.dom.replaceCodeButton.click();
-      expect(a.dom.replaceCodeConfirm.hidden).toBe(false);
-      expect(a.dom.replaceCodeConfirmText.textContent).toMatch(
-        /Everyone who opens the tour/,
+    function codePosition(a: ReturnType<typeof authoring>) {
+      const settled = a.dispatched.filter(
+        (x) => x.type === "tourAuthoring/settled",
       );
-      // With the size this visit sees (M4 review #3): its GPS alignment is
-      // 30 degrees off the visit that stored the code, so the code turns 30
-      // degrees, and earlier notes will appear shifted by it.
-      expect(a.dom.replaceCodeConfirmText.textContent).toMatch(
-        /it moves about \d+(\.\d)? m and turns 30°/,
-      );
-      expect(a.dom.replaceCodeConfirmText.textContent).toMatch(
-        /will appear shifted by about that much/,
-      );
-      // Nothing changed yet: the confirm step comes first.
-      expect(a.ctx.mintedLevel).toEqual(stored);
-      a.dom.replaceCodeYes.click();
-      await vi.waitFor(() => {
-        expect(a.ctx.mintedLevel).not.toBeNull();
-        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      return (
+        settled.at(-1)?.payload as {
+          codePosition?: {
+            decision: { kind: string; reason?: string };
+            applied: boolean;
+            movedWithCode: { id: string }[];
+          };
+        }
+      ).codePosition;
+    }
+
+    it("replaces a stored position of unknown quality after a reliable walk, and takes the pin next to the code along", async () => {
+      const { a, stored, before, pins } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
       });
+      a.endVisit();
       expect(a.ctx.mintedLevel?.id).toBe(stored.id);
-      expect(a.ctx.codeMeasurement?.visit).toBe(a.ctx.arSessionGeneration);
-      const log = a.dispatched.filter(
-        (x) => x.type === "tourAuthoring/codeMeasured",
-      ) as { payload: { kept: string; replaced?: unknown } }[];
-      expect(log.at(-1)?.payload.kept).toBe("measurement");
-      expect(log.at(-1)?.payload.replaced).toEqual(stored);
-      // Measured here now: the offer goes away.
-      a.setup.renderAuthorReadout();
-      expect(a.dom.replaceCodeButton.hidden).toBe(true);
+      expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      expect(codePosition(a)?.decision).toEqual({ kind: "replace" });
+      expect(codePosition(a)?.applied).toBe(true);
+      const after = pins();
+      // The near pin keeps its place relative to the code...
+      const oldCode = codeWorldOf(stored.json);
+      const newCode = codeWorldOf(a.ctx.mintedLevel!.json);
+      const near0 = worldOf(before.get("near")!).sub(oldCode);
+      const near1 = worldOf(after.get("near")!).sub(newCode);
+      expect(near1.length()).toBeCloseTo(near0.length(), 2);
+      expect(
+        worldOf(after.get("near")!).distanceTo(worldOf(before.get("near")!)),
+      ).toBeGreaterThan(0.5);
+      // ...and the pin 60 m away keeps its GPS position (the owner's 40 m).
+      expect(after.get("far")).toEqual(before.get("far"));
+      expect(codePosition(a)?.movedWithCode).toHaveLength(1);
     });
 
-    it("keeps the stored pose when the creator declines", async () => {
-      const { a, stored } = await secondVisitAtStoredCode();
-      a.dom.replaceCodeButton.click();
-      a.dom.replaceCodeNo.click();
-      expect(a.dom.replaceCodeConfirm.hidden).toBe(true);
-      expect(a.dom.replaceCodeButton.hidden).toBe(false);
-      await flush();
+    // Why this test matters (code book plan M4b, the owner's choice after
+    // the M3 sweep): an improved code took every pin within 40 m along,
+    // including pins that belong to ANOTHER code nearby - dragging them off
+    // that code. A pin nearer another code of the tour stays put.
+    it("leaves a pin nearer another code of the tour where it is", async () => {
+      const { a, stored, before, pins } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      // A second code of the tour stands right at the near pin.
+      a.ctx.currentLevels = new Map([
+        [
+          "other0000001",
+          {
+            version: 1,
+            qr: {
+              text: "https://example.invalid/?qr=other",
+              physicalSizeM: 0.16,
+              geo: { ...before.get("near")!, rotation: [0, 0, 0, 1] },
+            },
+          } as never,
+        ],
+      ]);
+      a.endVisit();
+      expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      expect(codePosition(a)?.applied).toBe(true);
+      expect(pins().get("near")).toEqual(before.get("near"));
+      expect(codePosition(a)?.movedWithCode).toHaveLength(0);
+    });
+
+    it("moves a pin the hosted zip carries too, as an edit by id the Finish writes", async () => {
+      // Why: in the field the pins near the code come from the tour file,
+      // not from this page's earlier visits; they must move the same way.
+      const { a, before } = await secondVisit({
+        yawDeg: 20,
+        northM: 3,
+        walkM: 30,
+      });
+      const hosted = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin" && p.object.label === "near",
+      )!.object;
+      a.ctx.placedObjects = a.ctx.placedObjects.filter(
+        (p) => p.object.id !== hosted.id,
+      );
+      a.ctx.tourManifest = {
+        ...createEmptyTourManifest(),
+        objects: [hosted],
+      };
+      a.endVisit();
+      const edit = a.ctx.placedObjects.find((p) => p.object.id === hosted.id);
+      expect(edit, "an edit by id in placedObjects").toBeDefined();
+      expect(edit!.object.geo).not.toEqual(before.get("near"));
+      expect(edit!.placement).toBeUndefined();
+    });
+
+    it("keeps the stored position for a standing re-measure (R1: too little walking for the GPS accuracy)", async () => {
+      const { a, stored, before, pins } = await secondVisit({
+        yawDeg: 41,
+        northM: 0.9,
+        walkM: 6,
+        accuracyM: 7,
+      });
+      a.endVisit();
       expect(a.ctx.mintedLevel).toEqual(stored);
+      expect(codePosition(a)?.decision).toMatchObject({
+        kind: "keep",
+        reason: "not-walked",
+      });
+      expect(pins()).toEqual(before);
     });
 
-    it("is not offered for a code measured in this visit - that measurement is already the reference", async () => {
+    it("keeps a stored position whose own walk was good, however well this visit walked", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 10,
+        northM: 2,
+        walkM: 30,
+      });
+      a.endVisit();
+      const improved = a.ctx.mintedLevel!;
+      expect(improved.json).not.toBe(stored.json);
+      // A third visit: the improved position recorded its walk (D31) and
+      // stays.
+      a.beginVisit();
+      a.setAlignment(yawAlignment(-10, [1, 400, 0]));
+      a.setWalk(walkOf(30, 30));
+      a.seeTheCode();
+      await flush();
+      a.endVisit();
+      expect(a.ctx.mintedLevel).toEqual(improved);
+      expect(codePosition(a)?.decision).toEqual({
+        kind: "keep",
+        reason: "stored-good",
+      });
+    });
+
+    // Why this test matters (code book plan M4 milestone review #2): since
+    // M4c-3 a stored code is solved at the size the tour stores for it, but
+    // a replaced position was re-minted at the size FIELD's value. A tour
+    // printed at 0.30 m, opened in a page whose field says 0.16, got a pose
+    // solved at 0.30 written into a level labelled 0.16 - and visitors
+    // solving at 0.16 put the code at about half its true distance.
+    it("re-mints a replaced stored code at the size it was solved at, not the size field's", async () => {
+      const first = authoring();
+      await first.mint();
+      first.endVisit();
+      const earlier = first.ctx.mintedLevel!;
+      const parsed = JSON.parse(earlier.json) as {
+        qr: { physicalSizeM: number };
+      };
+      parsed.qr.physicalSizeM = 0.3;
+      const hosted = { id: earlier.id, json: JSON.stringify(parsed) };
+
       const a = authoring();
+      await openFinishableTour(a, { levels: [hosted] });
+      a.ctx.currentLevels = new Map([[hosted.id, parseQrLevel(parsed)]]);
+      expect(a.ctx.activeSizeM).not.toBeCloseTo(0.3, 3);
+      a.setAccuracy(5);
+      a.setAlignment(yawAlignment(20, [3, 400, 0]));
+      a.setWalk(walkOf(30, 30));
       await a.mint();
-      a.setup.renderAuthorReadout();
-      expect(a.dom.replaceCodeButton.hidden).toBe(true);
+      a.endVisit();
+
+      expect(codePosition(a)?.decision).toEqual({ kind: "replace" });
+      const replaced = parseQrLevel(
+        JSON.parse(a.ctx.mintedLevel!.json) as unknown,
+      );
+      expect(replaced.qr.physicalSizeM).toBeCloseTo(0.3, 9);
+    });
+
+    it("says on the result screen why the position was kept", async () => {
+      const a = authoring();
+      await openFinishableTour(a);
+      await a.mint();
+      a.endVisit();
+      a.beginVisit();
+      a.setAccuracy(5);
+      a.setWalk(walkOf(30, 4));
+      a.seeTheCode();
+      await flush();
+      a.ctx.tourManifestStatus = "settled";
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).toBeNull();
+      expect(a.dom.finishStatus.textContent).toMatch(
+        // 4 m walked against the 24 m that 5 m accuracy needs.
+        /The code's saved position was kept: this visit's walk was about 20 m too short for the GPS accuracy to improve it\./,
+      );
     });
   },
 );
@@ -2264,16 +2553,16 @@ describe(
 );
 
 describe(
-  "the moved-code prompt (authoring plan 2026-09-28-0953 §3.6, D20, M5b)",
+  "the moved-code prompt (authoring plan 2026-09-28-0953 §3.6, D20, M5b; UI round 1, U3)",
   { timeout: SLOW_MS },
   () => {
-    // Why these tests matter: "Use the new spot" moves the code for every
-    // visitor, so the composed setup must ask only once a refusal of the
-    // code in hand has LASTED with the mint gate open (§7j #8, #9), show
-    // the replace's progress and its outcome (the async-UI rule, §7j #10),
-    // count it as answered only once the replace happened, remember the
-    // other two answers in the draft (§7j #14), undo until Finish, mark
-    // the move in the visit log (§7j #12) and log all of it (§7j #15).
+    // Why these tests matter: a "Yes, it moved" moves the code for every
+    // visitor, so the composed setup must ask only once the offset has
+    // LASTED with the mint gate open (§7j #8, #9), remember every answer in
+    // the draft (§7j #14), apply a "Yes" only at the settle and only after
+    // enough walking (UI round 1, U3), keep the pins where they are (D19),
+    // offer Undo while the visit runs, mark the move in the visit log
+    // (§7j #12) and log all of it (§7j #15).
     const TOUR = "https://example.test/tour.zip";
     const T0 = 1_756_150_000_000;
 
@@ -2317,7 +2606,27 @@ describe(
         }
       };
       fix(3);
-      return { a, stored, fix };
+      /** Walk on: `n` more fixes, each `stepM` further north (the GPS
+       *  spread the U3 rule reads), at 5 m accuracy. */
+      const walk = (n: number, stepM: number): void => {
+        a.setAccuracy(5);
+        for (let i = 0; i < n; i += 1) {
+          fixes.push({
+            id: `walk-${String(fixes.length)}`,
+            latitude: ZERO.lat,
+            longitude: ZERO.lon,
+            latLongAccuracy: 5,
+            timestamp: T0 + fixes.length * 1000,
+            coordinates: [stepM * (i + 1), 0, 0],
+          });
+          a.setWalk({
+            fixes: [...fixes],
+            odometry: fixes.map(() => [0, 0, 0]),
+          });
+          a.setup.renderAuthorReadout();
+        }
+      };
+      return { a, stored, fix, walk };
     }
 
     function logs(a: ReturnType<typeof authoring>, type: string) {
@@ -2334,7 +2643,7 @@ describe(
       fix(1);
       expect(a.dom.movePrompt.hidden).toBe(false);
       expect(a.dom.movePromptText.textContent).toBe(
-        "This code seems to have moved about 60 m. Use the new spot?",
+        "The code is about 60 m from its saved spot. Did the poster move here?",
       );
       expect(a.dom.movePromptUse.disabled).toBe(false);
       fix(5);
@@ -2364,7 +2673,7 @@ describe(
       fix(1);
       expect(a.dom.movePrompt.hidden).toBe(false);
       expect(a.dom.movePromptText.textContent).toBe(
-        "This code seems to have moved about 18 m. Use the new spot?",
+        "The code is about 18 m from its saved spot. Did the poster move here?",
       );
       const asked = logs(a, "codeMovePrompted");
       expect(asked).toHaveLength(1);
@@ -2387,99 +2696,151 @@ describe(
       expect(a.dom.movePrompt.hidden).toBe(true);
     });
 
-    it("'Use the new spot' shows its progress, replaces the saved position, logs it, and offers Undo", async () => {
-      const { a, stored, fix } = await secondVisitFarFromTheCode();
+    it("'Yes, it moved' changes nothing at once, is logged and remembered, and offers Undo while the visit runs", async () => {
+      // Why (UI round 1, U3): a standing answer must not turn the tour -
+      // the settle applies the move only after enough walking - and the
+      // creator must be told what will happen.
+      const { store, files } = memoryDraftStore();
+      const { a, stored, fix } = await secondVisitFarFromTheCode(store);
       fix(MOVE_PROMPT_RULE.minFixes);
+      expect(a.dom.movePromptUse.textContent).toBe("Yes, it moved");
       a.dom.movePromptUse.click();
-      // In progress until the replace lands.
-      expect(a.dom.movePromptUse.textContent).toBe("Using the new spot…");
-      expect(a.dom.movePromptUse.disabled).toBe(true);
-      expect(a.dom.movePromptCopy.disabled).toBe(true);
-      await vi.waitFor(() => {
-        expect(a.ctx.mintedLevel).not.toBeNull();
-        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
-      });
       await flush();
-      expect(a.ctx.mintedLevel?.id).toBe(stored.id);
+      expect(a.ctx.mintedLevel).toEqual(stored);
       expect(a.dom.movePrompt.hidden).toBe(true);
-      expect(a.dom.movePromptUse.textContent).toBe("Use the new spot");
       expect(a.dom.status.textContent).toContain(
-        "The code's saved position is now the new spot",
+        "saved when this visit ends, if you walked enough",
       );
       expect(a.dom.moveUndo.hidden).toBe(false);
-      const measured = logs(a, "codeMeasured").at(-1)!;
-      expect(measured["replaced"]).toEqual(stored);
       expect(logs(a, "codeMoveAnswered")).toEqual([
-        expect.objectContaining({
-          answer: "use-new-spot",
-          replaced: true,
-          error: null,
-        }),
+        expect.objectContaining({ answer: "moved", replaced: false }),
       ]);
-      // Measured here now: no refusal, so no prompt however long.
+      const meta = JSON.parse(files.get(META_KEY) as string) as {
+        moveAnswers: { answer: string }[];
+      };
+      expect(meta.moveAnswers).toEqual([
+        expect.objectContaining({ answer: "moved" }),
+      ]);
+      // Answered: not asked again for this spot.
       fix(MOVE_PROMPT_RULE.minFixes + 5);
       expect(a.dom.movePrompt.hidden).toBe(true);
     });
 
-    it("'Use the new spot' says it is done only once the draft holds the new spot (M5b review #7)", async () => {
-      // Why: the async-UI rule asks for the DURABLE end state. The replace
-      // lands in memory at once, but a reload reads the draft: confirming
-      // before its write landed claimed a backup that might never exist.
-      const slow = slowDraftStore();
-      const { a, stored, fix } = await secondVisitFarFromTheCode(slow.store);
-      await slow.release();
+    it("the settle saves a 'moved' poster's new spot once the visit walked enough, moves no pin, and marks the move in the visit log", async () => {
+      const { store, files } = memoryDraftStore();
+      const { a, stored, fix, walk } = await secondVisitFarFromTheCode(store);
       fix(MOVE_PROMPT_RULE.minFixes);
       a.dom.movePromptUse.click();
-      await vi.waitFor(() => {
-        expect(a.ctx.mintedLevel?.json).toBeDefined();
-        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
-      });
+      walk(30, 1);
+      a.endVisit();
       await flush();
-      // Replaced in memory, the draft's write still held: in progress.
-      expect(a.dom.movePromptUse.textContent).toBe("Using the new spot…");
-      expect(a.dom.movePromptUse.disabled).toBe(true);
-      expect(a.dom.status.textContent).not.toContain(
-        "The code's saved position is now the new spot",
-      );
-      await slow.release();
-      expect(a.dom.status.textContent).toContain(
-        "The code's saved position is now the new spot",
-      );
-      expect(a.dom.movePrompt.hidden).toBe(true);
-      const meta = JSON.parse(slow.files.get(META_KEY) as string) as {
-        level: { json: string };
+      expect(a.ctx.mintedLevel?.id).toBe(stored.id);
+      expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      // The code now sits where this visit saw it, about 60 m north.
+      expect(
+        codeWorldOf(a.ctx.mintedLevel!.json).distanceTo(
+          codeWorldOf(stored.json),
+        ),
+      ).toBeCloseTo(60, 0);
+      const settled = logs(a, "settled").at(-1)!["codePosition"] as {
+        decision: { kind: string };
+        applied: boolean;
+        movedWithCode: unknown[];
       };
-      expect(meta.level.json).toBe(a.ctx.mintedLevel!.json);
+      expect(settled.decision.kind).toBe("move");
+      expect(settled.applied).toBe(true);
+      // A real move keeps the pins where they are (D19).
+      expect(settled.movedWithCode).toEqual([]);
+      expect(
+        lastVisitFile(files).codes.find((c) => c.levelId === stored.id)?.moved,
+      ).toBe(true);
     });
 
-    it("'Use the new spot' whose draft write is refused says the new spot is not backed up", async () => {
-      // Why: a refused write is the one failure the creator can still act
-      // on (finish and download); "now the new spot" alone would hide it.
-      const slow = slowDraftStore();
-      const { a, stored, fix } = await secondVisitFarFromTheCode(slow.store);
-      await slow.release();
+    it("holds a 'moved' answer until the visit walked enough, and says so on the result screen", async () => {
+      const { store } = memoryDraftStore();
+      const { a, stored, fix } = await secondVisitFarFromTheCode(store);
+      a.ctx.tourManifestStatus = "settled";
       fix(MOVE_PROMPT_RULE.minFixes);
-      slow.mode.refuse = true;
       a.dom.movePromptUse.click();
-      await vi.waitFor(() => {
-        expect(a.ctx.mintedLevel?.json).toBeDefined();
-        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
-      });
-      await slow.release();
-      expect(a.dom.movePromptUse.textContent).toBe("Use the new spot");
-      expect(a.dom.status.textContent).toContain(
-        "this device could not save the change",
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).toBeNull();
+      expect(a.ctx.mintedLevel).toEqual(stored);
+      expect(a.dom.finishStatus.textContent).toMatch(
+        /The poster's move was not saved: this visit's walk was about \d+ m too short for the GPS accuracy\. Next time, walk farther in AR and answer "Yes, it moved" again\./,
       );
-      expect(logs(a, "codeMoveAnswered")).toEqual([
-        expect.objectContaining({ answer: "use-new-spot", replaced: true }),
-      ]);
+    });
+
+    it("forgets a 'Yes, it moved' its visit could not apply, so the next visit asks again (U3 milestone review #5)", async () => {
+      // Why: a waiting "Yes" kept in the draft would silence the prompt
+      // and be applied in whichever later visit walked enough - long after
+      // its Undo was gone.
+      const { store, files } = memoryDraftStore();
+      const { a, stored, fix } = await secondVisitFarFromTheCode(store);
+      fix(MOVE_PROMPT_RULE.minFixes);
+      a.dom.movePromptUse.click();
+      a.endVisit();
+      await flush();
+      expect(a.ctx.mintedLevel).toEqual(stored);
+      const meta = JSON.parse(files.get(META_KEY) as string) as {
+        moveAnswers: { answer: string }[];
+      };
+      expect(meta.moveAnswers.map((x) => x.answer)).not.toContain("moved");
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [60, 400, 0]));
+      a.seeTheCode();
+      await flush();
+      fix(MOVE_PROMPT_RULE.minFixes + 1);
+      expect(a.dom.movePrompt.hidden).toBe(false);
+    });
+
+    it("does not bring Undo back after a failed Finish whose settle applied the move (U3 milestone review #4)", async () => {
+      // Why: the failed Finish drops the visit's settle record, and Undo
+      // then offered to take back a move that had already been saved -
+      // writing "Not now" against the old pose and saying it was undone.
+      const { store, files } = memoryDraftStore();
+      const { a, stored, fix, walk } = await secondVisitFarFromTheCode(store);
+      a.ctx.tourManifestStatus = "settled";
+      fix(MOVE_PROMPT_RULE.minFixes);
+      a.dom.movePromptUse.click();
+      walk(30, 1);
+      (
+        a.ctx.session as unknown as { readWholeArchive: () => Promise<Blob> }
+      ).readWholeArchive = () => Promise.reject(new Error("offline"));
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).not.toBeNull();
+      expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      a.setup.renderAuthorReadout();
+      expect(a.dom.moveUndo.hidden).toBe(true);
+      // The visit settles again at its end, re-applying the same decision:
+      // the code stays at its new spot.
+      const moved = a.ctx.mintedLevel!;
+      a.endVisit();
+      expect(
+        codeWorldOf(a.ctx.mintedLevel!.json).distanceTo(
+          codeWorldOf(moved.json),
+        ),
+      ).toBeLessThan(0.01);
+      // And the re-settle REAPPLIED the decision (code book plan M1, a
+      // sampled mutant; U3 milestone review #8): the visit log still marks
+      // the pose this visit saved, so the summary grades it by this visit.
+      await flush();
+      expect(
+        lastVisitFile(files).codes.find((c) => c.levelId === stored.id)
+          ?.savedGeo,
+      ).toBeDefined();
     });
 
     it("'Not now' and 'It's a second copy' whose draft write is refused say the walk is not backed up", async () => {
       // Why: both answers are remembered for a reload through the draft's
       // meta only; a refused write must reach the creator, through the one
       // backup notice.
-      for (const button of ["movePromptLater", "movePromptCopy"] as const) {
+      for (const button of [
+        "movePromptLater",
+        "movePromptCopy",
+        "movePromptUse",
+      ] as const) {
         const slow = slowDraftStore();
         const { a, fix } = await secondVisitFarFromTheCode(slow.store);
         await slow.release();
@@ -2492,30 +2853,6 @@ describe(
           "This device is not saving a backup copy",
         );
       }
-    });
-
-    it("'Use the new spot' that cannot replace says why, keeps the saved position, and the prompt comes back", async () => {
-      const { a, stored, fix } = await secondVisitFarFromTheCode();
-      fix(MOVE_PROMPT_RULE.minFixes);
-      // The camera lost the code between the render and the tap.
-      a.ctx.lastDetectedText = null;
-      a.dom.movePromptUse.click();
-      await flush();
-      expect(a.ctx.mintedLevel).toEqual(stored);
-      expect(a.dom.status.textContent).toContain("Could not use the new spot");
-      expect(logs(a, "codeMoveAnswered")).toEqual([
-        expect.objectContaining({
-          answer: "use-new-spot",
-          replaced: false,
-          error: expect.stringMatching(/./) as unknown,
-        }),
-      ]);
-      // Not counted as asked: with the code back in view it asks again.
-      a.seeTheCode();
-      fix(1);
-      expect(a.dom.movePrompt.hidden).toBe(false);
-      expect(a.dom.movePromptUse.textContent).toBe("Use the new spot");
-      expect(a.dom.moveUndo.hidden).toBe(true);
     });
 
     it("'Not now' and 'It's a second copy' keep the saved position, are logged, and are not asked again for the same spot - after a reload too", async () => {
@@ -2575,95 +2912,42 @@ describe(
       }
     });
 
-    it("Undo until Finish restores the saved position, drops the visit's move boundary, logs it, and does not ask again for that spot", async () => {
-      const slow = slowDraftStore();
-      const { a, stored, fix } = await secondVisitFarFromTheCode(slow.store);
-      await slow.release();
+    it("Undo before the visit ends takes 'Yes, it moved' back: the settle keeps the saved position, and the spot counts as 'Not now'", async () => {
+      const { store, files } = memoryDraftStore();
+      const { a, stored, fix, walk } = await secondVisitFarFromTheCode(store);
       fix(MOVE_PROMPT_RULE.minFixes);
       a.dom.movePromptUse.click();
-      await vi.waitFor(() => {
-        expect(a.ctx.mintedLevel).not.toBeNull();
-        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
-      });
-      await slow.release();
-      // The visit ends: its log marks the move.
-      a.endVisit();
-      await slow.release();
-      const visitFile = () =>
-        [...slow.files.entries()]
-          .filter(([k]) => k.startsWith(visitKey("")))
-          .map(([, v]) => parseVisitLogEntry(v as string)!)
-          .sort((x, y) => x.atMs - y.atMs)
-          .at(-1)!;
-      expect(
-        visitFile().codes.find((c) => c.levelId === stored.id)?.moved,
-      ).toBe(true);
-
+      await flush();
       a.dom.moveUndoButton.click();
-      // In progress until the draft holds the undo.
-      expect(a.dom.moveUndoButton.textContent).toBe("Undoing…");
-      expect(a.dom.moveUndoButton.disabled).toBe(true);
-      await slow.release();
-      expect(a.ctx.mintedLevel).toEqual(stored);
+      await flush();
       expect(a.dom.moveUndo.hidden).toBe(true);
-      expect(a.dom.status.textContent).toContain(
-        "The code's saved position is back where it was",
-      );
-      expect(
-        visitFile().codes.find((c) => c.levelId === stored.id)?.moved,
-      ).toBeUndefined();
-      const meta = JSON.parse(slow.files.get(META_KEY) as string) as {
-        level: { json: string };
+      expect(a.dom.status.textContent).toContain("Not marked as moved.");
+      expect(logs(a, "codeMoveAnswered").map((x) => x["answer"])).toEqual([
+        "moved",
+        "not-now",
+      ]);
+      const meta = JSON.parse(files.get(META_KEY) as string) as {
         moveAnswers: { answer: string }[];
       };
-      expect(meta.level.json).toBe(stored.json);
       expect(meta.moveAnswers).toEqual([
         expect.objectContaining({ answer: "not-now" }),
       ]);
-      expect(logs(a, "codeReplaceUndone")).toEqual([
-        expect.objectContaining({
-          levelId: stored.id,
-          restored: stored,
-          fromPrompt: true,
-        }),
-      ]);
-    });
-
-    it("an Undo whose draft write is refused says the undo is not backed up", async () => {
-      const slow = slowDraftStore();
-      const { a, stored, fix } = await secondVisitFarFromTheCode(slow.store);
-      await slow.release();
-      fix(MOVE_PROMPT_RULE.minFixes);
-      a.dom.movePromptUse.click();
-      await vi.waitFor(() => {
-        expect(a.ctx.mintedLevel).not.toBeNull();
-        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
-      });
-      await slow.release();
-      slow.mode.refuse = true;
-      a.dom.moveUndoButton.click();
-      await slow.release();
+      // Walked enough now, but the answer is gone: far stays far.
+      walk(30, 1);
+      a.endVisit();
       expect(a.ctx.mintedLevel).toEqual(stored);
-      expect(a.dom.status.textContent).toContain(
-        "this device could not save the change",
-      );
     });
 
-    it("Undo ends with a Finish", async () => {
+    it("Undo goes once the visit has settled (a Finish)", async () => {
       const { store } = memoryDraftStore();
-      const { a, stored, fix } = await secondVisitFarFromTheCode(store);
+      const { a, fix } = await secondVisitFarFromTheCode(store);
       a.ctx.tourManifestStatus = "settled";
       fix(MOVE_PROMPT_RULE.minFixes);
       a.dom.movePromptUse.click();
-      await vi.waitFor(() => {
-        expect(a.ctx.mintedLevel).not.toBeNull();
-        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
-      });
       await flush();
       expect(a.dom.moveUndo.hidden).toBe(false);
       a.dom.finishButton.click();
       await finished(a.ctx);
-      expect(a.ctx.finishError).toBeNull();
       await flush();
       expect(a.dom.moveUndo.hidden).toBe(true);
     });
@@ -2675,21 +2959,6 @@ describe(
         .map(([, v]) => parseVisitLogEntry(v as string)!)
         .sort((x, y) => x.atMs - y.atMs)
         .at(-1)!;
-    }
-
-    /** "Replace the code's saved position" through its confirm. */
-    async function replaceWithTheButton(
-      a: ReturnType<typeof authoring>,
-      stored: { json: string },
-    ): Promise<void> {
-      a.setup.renderAuthorReadout();
-      a.dom.replaceCodeButton.click();
-      a.dom.replaceCodeYes.click();
-      await vi.waitFor(() => {
-        expect(a.ctx.mintedLevel).not.toBeNull();
-        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
-      });
-      await flush();
     }
 
     it("does not log a sighting answered 'It's a second copy' as a visit of the stored code; 'Not now' still does (M5b review #11)", async () => {
@@ -2719,81 +2988,379 @@ describe(
         ).toBe(logged);
       }
     });
+  },
+);
 
-    it("keeps Undo through a later measurement of the same code, whose level is briefly not in hand (M5b review #4)", async () => {
-      // Why: a measurement empties the level in hand while its identity
-      // hash is computed; a render in that moment (any fix) read that as
-      // "another level took over" and withdrew Undo for good.
-      const { a, stored, fix } = await secondVisitFarFromTheCode();
-      fix(MOVE_PROMPT_RULE.minFixes);
-      a.dom.movePromptUse.click();
-      await vi.waitFor(() => {
-        expect(a.ctx.mintedLevel?.json).toBeDefined();
-        expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+describe(
+  "the settle at each object's own moment (D33)",
+  { timeout: SLOW_MS },
+  () => {
+    // Why these tests matter: the pure planner is tested on its own; these
+    // pin the WIRING - the creator setup feeds the picks the session's GPS
+    // extent and the alignment at each moment, so a pin placed after the
+    // session matured settles through the alignment at its placement, and
+    // the drift folded into the alignment by the visit's end never reaches
+    // it. A visit that never matures still falls back to the end alignment.
+
+    /** Twelve device fixes spanning `spanM` m North, with the coordinates
+     *  the GPS extent reads. */
+    function walkSpanning(spanM: number): {
+      fixes: unknown[];
+      odometry: number[][];
+    } {
+      const fixes = Array.from({ length: 12 }, (_, i) => {
+        const n = (spanM * i) / 11;
+        return {
+          id: `gps-${String(i)}`,
+          timestamp: 1_000 * i,
+          coordinates: [n, 400, 0],
+          latitude: ZERO.lat + (n / 6_371_000) * (180 / Math.PI),
+          longitude: ZERO.lon,
+          latLongAccuracy: 4,
+        };
       });
-      await flush();
-      expect(a.dom.moveUndo.hidden).toBe(false);
-      a.setup.renderAuthorReadout();
-      a.dom.mintButton.click();
-      expect(a.ctx.mintedLevel).toBeNull();
-      a.setup.renderAuthorReadout();
-      await vi.waitFor(() => {
-        expect(a.ctx.mintedLevel?.id).toBe(stored.id);
-      });
-      await flush();
-      expect(a.dom.moveUndo.hidden).toBe(false);
+      return { fixes, odometry: fixes.map((_, i) => [(spanM * i) / 11, 0, 0]) };
+    }
+
+    const atPlacement = yawAlignment(0, [0, 400, 0]);
+    const drifted = yawAlignment(9, [6, 400, -3]);
+
+    it("settles a pin placed after the session matured through the alignment at its placement", async () => {
+      const a = authoring();
+      a.setWalk(walkSpanning(100));
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      // By the visit's end the alignment has the walk's drift folded in.
+      a.setAlignment(drifted);
+      a.endVisit();
+      const log = a.settledLogs().at(-1)!.payload;
+      expect(log.objects[0]!.usedAlignment).toEqual(atPlacement);
+      expect(log.levelAlignment).toEqual(atPlacement);
+      const pin = a.ctx.placedObjects[0]!.object;
+      const expected = throughAlignment(
+        { position: [2, 0, -1], rotation: [0, 0, 0, 1] },
+        atPlacement,
+      )!.position;
+      expect(
+        new Vector3(...objectPoseNue(pin.geo, ZERO).positionNue).distanceTo(
+          new Vector3(...expected),
+        ),
+      ).toBeLessThan(1e-3);
     });
 
-    it("marks the visit's move boundary for a Replace-button replace too, not only for the prompt's (M5b review #3)", async () => {
-      // Why: the boundary tells the summary which of the code's visits
-      // came before the move. A replace moves the code whichever button
-      // made it, so a visit replaced through the Replace button that
-      // carried no mark was combined with the visits before the move.
-      const { store, files } = memoryDraftStore();
-      const { a, stored } = await secondVisitFarFromTheCode(store);
-      await replaceWithTheButton(a, stored);
+    it("falls back to the end alignment when the session never matures", async () => {
+      const a = authoring();
+      a.setWalk(walkSpanning(30));
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      a.setAlignment(drifted);
+      a.endVisit();
+      const log = a.settledLogs().at(-1)!.payload;
+      expect(log.objects[0]!.usedAlignment).toEqual(drifted);
+      expect(log.levelAlignment).toEqual(drifted);
+    });
+  },
+);
+
+describe(
+  "characterization before the split (code book plan M1: a sampled mutation pass found these unpinned)",
+  { timeout: SLOW_MS },
+  () => {
+    // Why these tests matter: M2 moves creator-setup.ts into modules and is
+    // verified by the composed tests passing unchanged. A sampled mutation
+    // pass (twelve hand-made mutants, 2026-10-06) found four behaviours no
+    // test could notice; each is pinned here so the split cannot drop one
+    // (Finish held during a measurement: fused-pose-wiring.test.ts, which
+    // can hold the identity hash).
+
+    it("does not retry a measurement the mint refused on every render (once per visit and code)", async () => {
+      // No zero yet: the gate is open, the mint refuses. Retrying it on
+      // every frame would rewrite the note at frame rate and never stop.
+      const a = authoring();
+      a.setZero(null);
+      a.seeTheCode();
+      await flush();
+      expect(a.ctx.placementNote).toMatch(/GPS alignment/);
+      a.ctx.placementNote = null;
+      a.seeTheCode();
+      a.setup.renderAuthorReadout();
+      await flush();
+      expect(a.ctx.placementNote).toBeNull();
+      // Positive control (M1 review #7): in the NEXT visit the code is tried
+      // again - so the silence above is the once-per-visit rule, not a
+      // retry that merely had not landed yet.
+      a.endVisit();
+      a.beginVisit();
+      a.seeTheCode();
+      await flush();
+      expect(a.ctx.placementNote).toMatch(/GPS alignment/);
+    });
+
+    it("says that nothing is backed up ONCE, however many writes cannot be made", async () => {
+      // A creator mid-walk cannot act on it more often, and repeating it
+      // would push the live readout off the line.
+      const a = authoring();
+      await openFinishableTour(a);
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      expect(a.ctx.placementNote).toContain("not saving a backup copy");
+      a.ctx.placementNote = null;
+      // Another write that cannot be made: the visit's log at its end (a
+      // visit with a fix IS logged, so the write is really attempted).
+      a.setWalk({
+        fixes: [{ latitude: ZERO.lat, longitude: ZERO.lon, timestamp: 1 }],
+        odometry: [[0, 0, 0]],
+      });
       a.endVisit();
       await flush();
-      expect(
-        lastVisitFile(files).codes.find((c) => c.levelId === stored.id)?.moved,
-      ).toBe(true);
+      expect(a.ctx.placementNote).toBeNull();
     });
 
-    it("undoes a Replace-button replace as not from the prompt, leaves the remembered answers alone, and the prompt can return (M5b review #6)", async () => {
-      // Why: Undo serves any replace (M5b review #3), but only a prompt's
-      // replace answered a prompt. Logged as `fromPrompt: true`, or
-      // remembered as a "Not now" for the spot, a Replace-button undo would
-      // misreport the creator's answer and silence a prompt nobody was
-      // ever shown for that spot.
-      const { store, files } = memoryDraftStore();
-      const { a, stored, fix } = await secondVisitFarFromTheCode(store);
-      await replaceWithTheButton(a, stored);
-      expect(a.dom.moveUndo.hidden).toBe(false);
-      a.dom.moveUndoButton.click();
+    it("measures a new code once the code in hand was written by a Finish", async () => {
+      // Each Finish writes one code, so a new code waits for one ("Finish
+      // first"); once it ran, the code in hand is saved and the new code is
+      // measured (the hosted zip still lacks it until the creator uploads).
+      const a = authoring();
+      await openFinishableTour(a);
+      await a.mint();
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).toBeNull();
+      a.beginVisit();
+      for (let i = 0; i < 8; i += 1) {
+        captured.configs.at(-1)?.onDetection?.({
+          ...detection(i),
+          text: `${TEXT}&n=2`,
+        });
+      }
       await vi.waitFor(() => {
-        expect(a.dom.status.textContent).toContain(
-          "The code's saved position is back where it was",
-        );
+        expect(
+          a.dispatched.filter((x) => x.type === "tourAuthoring/codeMeasured"),
+        ).toHaveLength(2);
       });
-      expect(a.ctx.mintedLevel).toEqual(stored);
-      expect(logs(a, "codeReplaceUndone")).toEqual([
-        expect.objectContaining({
-          levelId: stored.id,
-          restored: stored,
-          fromPrompt: false,
-        }),
-      ]);
-      const meta = JSON.parse(files.get(META_KEY) as string) as {
-        level: { json: string };
-        moveAnswers: unknown[];
+    });
+
+    it("keeps a visit with no fix and no code out of the visit log", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = authoring({ store });
+      await openFinishableTour(a);
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      a.setWalk({ fixes: [], odometry: [] });
+      a.endVisit();
+      await flush();
+      const visitFiles = () =>
+        [...files.keys()].filter((k) => k.startsWith(visitKey("")));
+      expect(visitFiles()).toEqual([]);
+      // Positive control (M1 review #7): the next visit, with one fix, IS
+      // logged - so the empty list above is the rule, not a write that had
+      // not landed yet.
+      a.beginVisit();
+      a.setWalk({
+        fixes: [{ latitude: ZERO.lat, longitude: ZERO.lon, timestamp: 1 }],
+        odometry: [[0, 0, 0]],
+      });
+      a.endVisit();
+      await flush();
+      expect(visitFiles()).toHaveLength(1);
+    });
+  },
+);
+
+describe(
+  "placement waits for its gate (code book plan M2)",
+  { timeout: SLOW_MS },
+  () => {
+    // Why these tests matter: placement is allowed only in a RUNNING
+    // session with this session's fixes solved in (the mint gate's floor -
+    // the matrix alone is the identity from the first fix, M4 review #2).
+    // A pin placed outside that gate is minted through an alignment that
+    // describes nothing, and lands metres from where the creator stood.
+    // No unit test held either half until the M2 split's sampled mutants
+    // showed both surviving.
+    it("refuses a pin while the session is not running, and places it once it runs", async () => {
+      const a = authoring();
+      a.ctx.mintedLevel = { id: "lvl", json: "{}" };
+      a.device.live = false;
+      await a.placePin("Gate", [2, 0, -1]);
+      expect(a.ctx.placedObjects).toEqual([]);
+      a.device.live = true;
+      await a.placePin("Gate", [2, 0, -1]);
+      expect(a.ctx.placedObjects).toHaveLength(1);
+    });
+
+    it("refuses a pin before this session's fixes reach the alignment floor", async () => {
+      const a = authoring();
+      a.ctx.mintedLevel = { id: "lvl", json: "{}" };
+      // One fix of the store's was there before this session started.
+      a.ctx.gpsSamplesAtSessionStart = 1;
+      await a.placePin("Gate", [2, 0, -1]);
+      expect(a.ctx.placedObjects).toEqual([]);
+      a.ctx.gpsSamplesAtSessionStart = 0;
+      await a.placePin("Gate", [2, 0, -1]);
+      expect(a.ctx.placedObjects).toHaveLength(1);
+    });
+  },
+);
+
+describe(
+  "two new codes in one visit (code book plan M4c-2, the owner's case)",
+  { timeout: SLOW_MS },
+  () => {
+    // Why this test matters: the owner's case - two codes printed 20 m
+    // apart, both measured in ONE visit. With one slot the second showed
+    // "Finish first" and was never measured; now both are measured, both
+    // re-minted by the settle, and the draft keeps both levels for the
+    // Finish.
+    it("measures both codes, and the draft keeps both levels", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = authoring({ store });
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      await a.mint();
+      const first = a.ctx.mintedLevel!;
+      // Code B: its own print, 20 m away.
+      const twentyAway = new Matrix4().makeTranslation(20, 0, 0);
+      await a.mint(
+        twentyAway,
+        "https://gps.csutil.com/tour/?qr=second",
+        10_000,
+      );
+      const second = a.ctx.mintedLevel!;
+      expect(second.id).not.toBe(first.id);
+      a.endVisit();
+      await flush();
+      const meta = JSON.parse(String(files.get(META_KEY))) as {
+        levels: { id: string }[];
       };
-      expect(meta.level.json).toBe(stored.json);
-      expect(meta.moveAnswers).toEqual([]);
-      // The refusal stands again against the restored pose: once it has
-      // lasted, the prompt asks.
-      fix(MOVE_PROMPT_RULE.minFixes);
-      expect(a.dom.movePrompt.hidden).toBe(false);
-      expect(logs(a, "codeMovePrompted")).toHaveLength(1);
+      expect(meta.levels.map((l) => l.id)).toEqual([first.id, second.id]);
+    });
+
+    // Why this test matters (code book plan M4e, found by the two-code
+    // e2e): the visit log recorded the code in hand's measurement only, so
+    // the first of two codes measured in one visit had no visit record and
+    // no saved pose in it - the summary after Finish could not say where it
+    // is, or grade its saved pose by the visit it came from.
+    it("logs both codes measured in the visit, each with the pose its settle saved", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = authoring({ store });
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      await a.mint();
+      const first = a.ctx.mintedLevel!;
+      await a.mint(
+        new Matrix4().makeTranslation(20, 0, 0),
+        "https://gps.csutil.com/tour/?qr=second",
+        10_000,
+      );
+      const second = a.ctx.mintedLevel!;
+      a.endVisit();
+      await flush();
+      const key = [...files.keys()].find((k) => k.startsWith(visitKey("")))!;
+      const entry = parseVisitLogEntry(files.get(key) as string)!;
+      expect(entry.codes.map((c) => c.levelId).sort()).toEqual(
+        [first.id, second.id].sort(),
+      );
+      for (const code of entry.codes) {
+        expect(code.savedGeo, code.levelId).toBeDefined();
+      }
+    });
+
+    // Why this test matters: each code keeps its OWN measurement pick
+    // (M4c-2). With one pick, the second code's replaced the first's, and
+    // the first code was re-minted through the wrong moment's alignment -
+    // here 3 m and 8 degrees off where it was measured.
+    it("re-mints each code through the alignment of its own measurement", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = authoring({ store });
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      // A walk wide enough for the alignment to be mature from the start,
+      // so each pick freezes at its own moment.
+      const fixes = Array.from({ length: 60 }, (_, i) => ({
+        id: `fix-${String(i)}`,
+        timestamp: 1_000 + i * 1000,
+        coordinates: [i, 0, 0],
+        latitude: ZERO.lat,
+        longitude: ZERO.lon,
+      }));
+      a.setWalk({ fixes, odometry: fixes.map(() => [0, 0, 0]) });
+      const atA = yawAlignment(0, [0, 400, 0]);
+      a.setAlignment(atA);
+      a.setZero(ZERO);
+      await a.mint();
+      const first = a.ctx.mintedLevel!;
+      // The alignment moves before code B is measured.
+      a.setAlignment(yawAlignment(8, [3, 400, 0]));
+      a.setZero(ZERO);
+      await a.mint(
+        new Matrix4().makeTranslation(20, 0, 0),
+        "https://gps.csutil.com/tour/?qr=second",
+        10_000,
+      );
+      a.endVisit();
+      await flush();
+      const meta = JSON.parse(String(files.get(META_KEY))) as {
+        levels: { id: string; json: string }[];
+      };
+      const settledA = meta.levels.find((l) => l.id === first.id)!;
+      // Re-minted through A's own pick: where it was measured.
+      expect(
+        codeWorldOf(settledA.json).distanceTo(codeWorldOf(first.json)),
+      ).toBeLessThan(0.01);
+    });
+
+    // Why this test matters (code book plan M4e; the sampled mutant "other
+    // codes' sightings not noted", filed at M4c-2): a stored code seen while
+    // ANOTHER code is in hand is a code event the settle ties notes to (D2).
+    // Without it the pin placed beside the stored code is tied to the code in
+    // hand instead, and settled through this visit's GPS - here 20 m and 30
+    // degrees off - rather than corrected through the stored code it was
+    // placed next to.
+    it("ties a pin to the stored code it was placed beside, though another code is in hand", async () => {
+      const a = authoring();
+      a.setAlignment(yawAlignment(0, [0, 400, 0]));
+      await a.mint();
+      const stored = a.ctx.mintedLevel!;
+      a.endVisit();
+      // Code A is the tour's now, as a hosted level.
+      a.ctx.currentLevels = new Map([
+        [stored.id, parseQrLevel(JSON.parse(stored.json) as unknown)],
+      ]);
+
+      a.beginVisit();
+      // Walked distances must be known for the nearest-code rule; a GPS
+      // extent of 59 m makes every pick mature at its own moment.
+      const fixes = Array.from({ length: 60 }, (_, i) => ({
+        id: `fix-${String(i)}`,
+        timestamp: 1_000 + i * 1000,
+        coordinates: [i, 0, 0],
+        latitude: ZERO.lat,
+        longitude: ZERO.lon,
+      }));
+      a.setWalk({ fixes, odometry: fixes.map(() => [0, 0, 0]) });
+      a.setAlignment(yawAlignment(30, [20, 401, -8]));
+      a.setZero(ZERO);
+      // Code B, new, measured first: it takes the hand.
+      await a.mint(
+        new Matrix4().makeTranslation(20, 0, 0),
+        "https://gps.csutil.com/tour/?qr=second",
+        10_000,
+      );
+      expect(a.ctx.mintedLevel?.id).not.toBe(stored.id);
+      // Then code A is seen again, and a pin placed beside it.
+      a.seeTheCode(undefined, TEXT, 20_000);
+      await flush();
+      await a.placePin("Beside A", [3, 0, 1]);
+      a.endVisit();
+
+      const pin = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin" && p.object.label === "Beside A",
+      )!.object;
+      const settled = a.settledLogs().at(-1)!.payload;
+      expect(settled.objects.find((o) => o.id === pin.id)?.basis).toBe(
+        "code-corrected",
+      );
     });
   },
 );

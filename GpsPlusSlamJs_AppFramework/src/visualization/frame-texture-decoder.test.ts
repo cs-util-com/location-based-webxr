@@ -149,3 +149,40 @@ describe('decodeFrameTexture', () => {
     expect(texture).toBeNull();
   });
 });
+
+/** A PNG signature plus IHDR stating `width` x `height` (no pixels). */
+function pngHeader(width: number, height: number): Uint8Array<ArrayBuffer> {
+  const b = new Uint8Array(24);
+  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  b.set([0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52], 8);
+  new DataView(b.buffer).setUint32(16, width);
+  new DataView(b.buffer).setUint32(20, height);
+  return b;
+}
+
+describe('decodeFrameTexture - the pixel cap (tour kit K4 review R2)', () => {
+  // Why: the decoder decodes at the size the file states, so a crafted
+  // header makes it allocate gigabytes before any resize. With a cap it
+  // reads the header first and never decodes what is over it, or what
+  // it cannot measure.
+  it('never decodes an image over the cap, or one whose size it cannot read', async () => {
+    const decode = vi.fn().mockResolvedValue({
+      width: 4,
+      height: 4,
+      close: vi.fn(),
+    });
+    vi.stubGlobal('createImageBitmap', decode);
+    const cap = { maxPixels: 4096 * 4096 };
+    expect(
+      await decodeFrameTexture(new Blob([pngHeader(8192, 8192)]), 1, cap)
+    ).toBeNull();
+    expect(
+      await decodeFrameTexture(new Blob(['not an image']), 1, cap)
+    ).toBeNull();
+    expect(decode).not.toHaveBeenCalled();
+    expect(
+      await decodeFrameTexture(new Blob([pngHeader(2048, 2048)]), 1, cap)
+    ).not.toBeNull();
+    expect(decode).toHaveBeenCalledTimes(1);
+  });
+});

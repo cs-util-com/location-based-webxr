@@ -5,7 +5,15 @@ import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 
 import {
+  advanceMatureAlignmentPick,
+  openMatureAlignmentPick,
+  type AlignmentMoment,
+  type MatureAlignmentPick,
+} from "gps-plus-slam-app-framework/state/alignment-maturity";
+
+import {
   computeCaptureGeoJoin,
+  createCapturePickTracker,
   type ReplayedJoinState,
 } from "./capture-geo-join";
 
@@ -86,6 +94,88 @@ describe("capture-geo-join — round-trip property", () => {
           expect(nue[2]).toBeCloseTo(pE + tE, 2);
         },
       ),
+    );
+  });
+});
+
+/**
+ * Why this property matters (S1 milestone review #10): the pick tracker
+ * runs over every action of a walk, at the Finish and in the viewer. Folding
+ * each open photo's pick on every action costs actions x open photos, which
+ * on a long walk that never settles is tens of millions of steps. The
+ * tracker shares one "latest usable" moment instead; this property pins that
+ * it picks EXACTLY what the per-photo fold of the shared rule
+ * (`state/alignment-maturity`) picks, for any sequence.
+ */
+describe("createCapturePickTracker - equals the per-photo fold of the maturity rule", () => {
+  type Step =
+    | { kind: "tick"; matrix: number | null; extentM: number }
+    | { kind: "photo"; file: number; matrix: number | null; extentM: number };
+  const matrixOf = (m: number) => Array.from({ length: 16 }, (_, i) => m + i);
+  interface Moment extends AlignmentMoment {
+    readonly id: number;
+  }
+
+  it("for any walk of ticks and photos", () => {
+    const step = fc.oneof(
+      fc.record({
+        kind: fc.constant("tick" as const),
+        matrix: fc.option(fc.integer({ min: 1, max: 50 }), { nil: null }),
+        extentM: fc.double({ min: 0, max: 80, noNaN: true }),
+      }),
+      fc.record({
+        kind: fc.constant("photo" as const),
+        file: fc.integer({ min: 0, max: 6 }),
+        matrix: fc.option(fc.integer({ min: 1, max: 50 }), { nil: null }),
+        extentM: fc.double({ min: 0, max: 80, noNaN: true }),
+      }),
+    );
+    fc.assert(
+      fc.property(fc.array(step, { maxLength: 60 }), (steps: Step[]) => {
+        const extents = new WeakMap<object, number>();
+        const tracker = createCapturePickTracker({
+          extentOf: (state) => extents.get(state) ?? 0,
+        });
+        // The reference: one pick per photo, advanced on every step.
+        const reference = new Map<string, MatureAlignmentPick<Moment>>();
+        steps.forEach((s, id) => {
+          const matrix = s.matrix === null ? null : matrixOf(s.matrix);
+          const state = {
+            gpsData: {
+              zero: { lat: 47.5, lon: 8.7 },
+              gpsEvents: {
+                gpsPositions: [],
+                alignmentMatrix: matrix,
+                alignmentRotation: [0, 0, 0, 1] as const,
+              },
+            },
+          };
+          extents.set(state, s.extentM);
+          const now: Moment = {
+            id,
+            alignmentMatrix: matrix,
+            zero: { lat: 47.5, lon: 8.7 },
+            gpsExtentM: s.extentM,
+          };
+          for (const [file, pick] of reference) {
+            reference.set(file, advanceMatureAlignmentPick(pick, now));
+          }
+          const file =
+            s.kind === "photo" ? `images/f${String(s.file)}.jpg` : null;
+          if (file !== null) reference.set(file, openMatureAlignmentPick(now));
+          tracker.observe(
+            file === null
+              ? { type: "gpsData/recordGpsEvent" }
+              : { type: "gpsData/add2dImage", payload: { imageFile: file } },
+            state as never,
+          );
+        });
+        for (const [file, pick] of reference) {
+          const expected = pick.alignment.alignmentMatrix;
+          expect(tracker.alignmentFor(file)?.matrix ?? null).toEqual(expected);
+        }
+      }),
+      { numRuns: 300 },
     );
   });
 });

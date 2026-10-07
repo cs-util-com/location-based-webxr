@@ -43,6 +43,7 @@ import {
   type MockOPFSDirectoryHandle,
 } from "gps-plus-slam-app-framework/test-utils/browser-mocks";
 import { BlobReader, ZipReader } from "@zip.js/zip.js";
+import { createEmptyTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { Group } from "three";
 
 import {
@@ -298,7 +299,8 @@ describe("the creator's troubleshooting recording", () => {
     store.dispatch(
       authoringFinished({
         levelId: "lvl",
-        manifest: { version: 1, objects: [] },
+        levelIds: ["lvl"],
+        manifest: createEmptyTourManifest(),
         atMs: T0 + 5000,
       }),
     );
@@ -755,7 +757,8 @@ describe("the order the page writes", () => {
     store.dispatch(
       authoringFinished({
         levelId: "lvl",
-        manifest: { version: 1, objects: [] },
+        levelIds: ["lvl"],
+        manifest: createEmptyTourManifest(),
         atMs: T0 + 4000,
       }),
     );

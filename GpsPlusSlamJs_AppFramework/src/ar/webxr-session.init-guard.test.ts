@@ -159,6 +159,34 @@ describe('initAR re-entry guard', () => {
     // guard has released and a new session can initialize.
     await expect(initAR(container, MINIMAL_ISOLATION)).resolves.toBeUndefined();
   });
+
+  /**
+   * Why this test matters: initAR() builds the renderer and inserts its
+   * canvas BEFORE it asks for the XR session, and requestSession() rejects
+   * whenever the user declines the AR/camera permission prompt. The
+   * half-built session used to stay behind, so every retry hit the re-entry
+   * guard ("AR session already initialized") until a page reload - the Tour
+   * Viewer's "Try again" (owner report 2026-10-07), and earlier OsmDemo and
+   * AnchorStarter, which each patched around it. A failed initAR() leaves
+   * nothing behind: the retry starts cleanly, and no stray canvas remains.
+   */
+  it('leaves nothing behind when the session request is declined, so a retry starts cleanly', async () => {
+    const declined = new Error('The user denied permission');
+    const requestSession = vi
+      .fn()
+      .mockRejectedValueOnce(declined)
+      .mockResolvedValue({
+        addEventListener: vi.fn(),
+        end: vi.fn().mockResolvedValue(undefined),
+      });
+    vi.stubGlobal('navigator', { xr: { requestSession } });
+
+    await expect(initAR(container, MINIMAL_ISOLATION)).rejects.toBe(declined);
+    expect(container.querySelectorAll('canvas')).toHaveLength(0);
+
+    await expect(initAR(container, MINIMAL_ISOLATION)).resolves.toBeUndefined();
+    expect(container.querySelectorAll('canvas')).toHaveLength(1);
+  });
 });
 
 describe('initAR Chromium workaround wiring (quality-review G-7)', () => {

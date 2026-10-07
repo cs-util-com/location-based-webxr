@@ -100,6 +100,59 @@ function extremeMtime(roots, pick) {
   return result;
 }
 
+/**
+ * Every path whose change can change `dist`. Over-approximate on purpose:
+ * an extra input only costs an extra build, a missing one a stale `dist`.
+ *
+ * @param {string} packageDir
+ * @returns {string[]} absolute files or directories
+ */
+export function buildInputs(packageDir) {
+  // tsdown builds with the package's `tsconfig.app.json` (and a config that
+  // may sit at the root), so a change there changes `dist` as surely as a
+  // source edit (milestone review R8, gate-speed plan 2026-10-04). Every root
+  // `tsconfig*.json` and `tsdown.config.*` counts.
+  /** @type {string[]} */
+  let rootConfigs = [];
+  try {
+    rootConfigs = readdirSync(packageDir)
+      .filter((name) => /^tsconfig.*\.json$|^tsdown\.config\./.test(name))
+      .map((name) => path.join(packageDir, name));
+  } catch {
+    // An unreadable package dir fails open in decideBuild (no inputs found).
+  }
+  return [
+    path.join(packageDir, 'src'),
+    path.join(packageDir, 'config'),
+    path.join(packageDir, 'package.json'),
+    ...rootConfigs,
+  ];
+}
+
+/**
+ * The whole decision for one package, failing open: any error means build.
+ *
+ * @param {string} packageDir
+ * @returns {{ required: boolean, reason: string }}
+ */
+export function decideBuild(packageDir) {
+  try {
+    const newestInput = extremeMtime(buildInputs(packageDir), 'newest');
+    const oldestOutput = extremeMtime([path.join(packageDir, 'dist')], 'oldest');
+    const required = isBuildRequired(newestInput, oldestOutput);
+    return {
+      required,
+      reason: required
+        ? oldestOutput === null
+          ? 'dist missing or empty'
+          : 'inputs newer than dist'
+        : 'dist newer than every input',
+    };
+  } catch (error) {
+    return { required: true, reason: `staleness check failed (${String(error)})` };
+  }
+}
+
 // Execute only when run directly, not when imported by the unit test.
 // pathToFileURL keeps this correct on Windows (same pattern as the other
 // root scripts).
@@ -112,30 +165,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const packageDir = path.join(WORKSPACE_ROOT, dirName);
   const label = `build-if-stale(${packageName})`;
 
-  /** @type {boolean} */
-  let buildRequired = true;
-  /** @type {string} */
-  let reason = 'fail-open default';
-  try {
-    const newestInput = extremeMtime(
-      [
-        path.join(packageDir, 'src'),
-        path.join(packageDir, 'config'),
-        path.join(packageDir, 'package.json'),
-      ],
-      'newest'
-    );
-    const oldestOutput = extremeMtime([path.join(packageDir, 'dist')], 'oldest');
-    buildRequired = isBuildRequired(newestInput, oldestOutput);
-    reason = buildRequired
-      ? oldestOutput === null
-        ? 'dist missing or empty'
-        : 'inputs newer than dist'
-      : 'dist newer than every input';
-  } catch (error) {
-    buildRequired = true;
-    reason = `staleness check failed (${String(error)})`;
-  }
+  const { required: buildRequired, reason } = decideBuild(packageDir);
 
   if (!buildRequired) {
     console.log(`${label}: skipping build — ${reason}`);

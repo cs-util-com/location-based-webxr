@@ -1,1 +1,3 @@
 docs/test-timings.md
+# Generated test oracles (GOLDEN_UPDATE=1 rewrites them): data, not code.
+src/__golden__/

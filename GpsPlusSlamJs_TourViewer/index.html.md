@@ -15,7 +15,17 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   session, F10 - it was six):
   1. **Host** (`#step-host`): three numbered sub-steps - get a zip (the
      optional starter-zip button), upload it, then paste and **test** the
-     link (`#open-form`, whose button reads "Test link", F6).
+     link (`#open-form`, whose button reads "Test link", F6) - or open a
+     tour zip from the device (`#open-file`, "Open a file", tour kit plan
+     K0; a file has no link, so its code is printed once the zip is
+     hosted). The picker itself (`#file-input`) and the line naming a
+     file-opened tour (`#file-status`) and the open tour's signature lines
+     (`#tour-trust`, tour kit plan K1: who signed it or that nobody did,
+     trust warnings, linked tours; `white-space: pre-line`) sit under
+     `#error`, outside the
+     wizard, so a visitor reaches them too - with `#file-advice`, the
+     "Open the downloaded file" button shown under a "host blocks
+     browsers" error.
   2. **Print** (`#print-panel`): the printed code, on the page and as a
      PDF of N numbered posters (`#print-count`, `#print-paper`,
      `#print-pdf`) - the print dialog's "fit to page" silently rescales,
@@ -41,9 +51,9 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   summary "Other settings" - something you normally do not open, F9).
 - Shared: `#error`, `#ar-root` (the DOM-overlay root: hint, status line,
   button, the setup panel `#setup-panel` with `setup-status` and, inside
-  `#setup-controls`, `setup-mint`, the explicit replace `replace-code`
-  with its confirm `replace-code-confirm` (authoring plan 2026-09-28-0953
-  M4), the placement controls `setup-pin` / `pin-label` / `pin-save` /
+  `#setup-controls`, the move question `move-prompt` (the code is measured
+  on its own: the measure button, the explicit replace and its confirm are
+  gone, UI round 1, U3), the placement controls `setup-pin` / `pin-label` / `pin-save` /
   `pin-cancel` / `setup-photo`; then `setup-finish`, and LAST, outside
   the controls because it works on the page too, the object list
   `#object-list` (drawn by `object-list.ts`, M4; last so that in AR it
@@ -58,7 +68,9 @@ Behaviour lives in the wiring modules composed by `src/main.ts` (see
 ## Public API
 
 The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
-`starter-zip`, `link-input`, `open-button`, `storage-panel`,
+`starter-zip`, `link-input`, `open-button`, `open-file-button`,
+`file-input`, `file-status`, `tour-trust`, `file-advice`, `open-file-advice`,
+`storage-panel`,
 `clear-cache`, `print-panel` (owns `print-url-ask`, `print-url`,
 `print-url-shown`, `author-size`, `author-c`, `print-generate`,
 `print-info`, `print-canvas`, `print-button`, `print-url-out`,
@@ -73,9 +85,8 @@ its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns
 `replace-help-generic`, `replace-help-drive`, `replace-help-share`)), `visitor-screen`,
 `stats`, `error`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`,
 `setup-panel`, `setup-status`, `size-offer`, `size-offer-text`,
-`size-offer-use`, `size-offer-keep`, `setup-controls`, `setup-mint`,
-`replace-code`, `replace-code-confirm` (owns `replace-code-confirm-text`,
-`replace-code-yes`, `replace-code-no`), `object-list` (its rows carry
+`size-offer-use`, `size-offer-keep`, `setup-controls`,
+`object-list` (its rows carry
 `object-row`, `object-title`, `object-detail`, `object-edit`,
 `object-move`, `object-delete`, `object-edit-input`,
 `object-edit-save`, `object-edit-cancel`, `object-busy`, and the list
@@ -85,7 +96,10 @@ beside it after a delete, `object-undo`; in AR the chooser
 `object-chooser` with `object-previous`, `object-position`,
 `object-next`),
 `setup-pin`, `pin-label`, `pin-save`, `pin-cancel`, `setup-photo`,
-`setup-finish`, `scan-escape`, `recording-block` (owns `recording-offer`
+`setup-finish`, `scan-escape`, `station-line`, `station-skip`, `scene-panel`
+(owns `scene-title`, `scene-speaker`, `scene-image`, `scene-text`,
+`scene-status`, `scene-choices` with its `scene-choice` buttons,
+`scene-continue`), `scene-play-next`, `recording-block` (owns `recording-offer`
 with `recording-offer-text`, `recording-offer-save`,
 `recording-offer-dismiss`, `recording-offer-discard`; `record-session`,
 `recording-privacy`, `recording-notice`, `recording-save`,
@@ -116,6 +130,15 @@ height down, below the overlay's edge (owner's r750 field test;
 `playwright-tests/ar-layout.spec.js` pins every panel control on screen at
 360x640, 360x800 and 390x844). `#size-offer` is the panel's FIRST child,
 above `#setup-status`.
+The visitor's stations (tour kit plan K4): `#station-line` (the next
+station and its distance, `aria-live`), `#station-skip` (first "Can't get
+there?", then the labelled skip), the story panel `#scene-panel` and
+`#scene-play-next` ("Play: <title>", a station waiting behind the story
+playing) are inside `#ar-root`: the visitor stays in AR the whole tour
+(K-D9). All start hidden; `station-guide.ts` and `scene-view.ts` show
+them. `#relocate-note` ("Test mode: this tour was moved to where you
+are.") shows only when the test switch `?relocate=here` moved the tour
+(`tour-relocation.ts`).
 `#ar-debug` (a `<pre>` in `#ar-root`, hidden unless `?debug=1`) holds the
 QR readout (QR near-frontal pose plan §66).
 Renaming one is an e2e-breaking change. `#ar-hint`, `#ar-status`,
