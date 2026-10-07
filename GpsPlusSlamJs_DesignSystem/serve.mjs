@@ -38,7 +38,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { networkInterfaces } from "node:os";
 
-import { contentType, defaultRoutes, resolveRequest } from "./serve-routes.mjs";
+import {
+  contentType,
+  defaultRoutes,
+  resolveRequest,
+  workerModule,
+} from "./serve-routes.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "..");
@@ -67,9 +72,15 @@ const server = createServer(async (req, res) => {
   }
   try {
     const raw = await readFile(target.file);
-    const body = target.typescript
+    const stripped = target.typescript
       ? stripTypeScriptTypes(raw.toString("utf8"))
       : raw;
+    // The worker view (`/w/`): a module with its specifiers inside the view,
+    // as the deploy builder emits it (serve-routes.mjs `workerModule`).
+    const body =
+      target.worker && /\.m?js$/.test(path)
+        ? workerModule(stripped.toString(), path)
+        : stripped;
     res.writeHead(200, {
       "content-type": contentType(target.file, target.typescript),
       "cache-control": "no-store",

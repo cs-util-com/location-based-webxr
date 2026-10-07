@@ -4,9 +4,20 @@
  * seconds and the dive 15 s more, so the button must say what is happening
  * at every step, must let a press cancel the wait for the fix (a browser
  * can leave the request pending) and stop the flight, and must come back
- * to idle after any failure and after the user comes back from the city:
- * a pin stuck on "Finding you..." or "Opening the city..." is the one
- * outcome worse than an error message.
+ * to idle after any failure and after the landing: a pin stuck on
+ * "Finding you..." is the one outcome worse than an error message.
+ *
+ * Since the page hand-over was removed (globe city plan 2026-10-05-0040
+ * §12.5 C6, the owner's D-K3: the dive lands in the globe's own city), the
+ * flight's only end is the landing (`held`), and the machine has no phase
+ * that waits for the page to leave or for the user to come back from
+ * OsmDemo. Deleted with it, each with what replaces it: "runs the granted
+ * path ... handing over" (the path now ends in the landing, below), "holds
+ * at the end of the dive with the hand-over off" (that IS the path now),
+ * "stays handing over while the page leaves" (no phase is left by leaving:
+ * "every phase can return to idle"), "is idle again when the user comes
+ * back from the city" (nobody leaves), and the view's "disabled while the
+ * page leaves" ("never disabled").
  */
 
 import fc from "fast-check";
@@ -21,18 +32,14 @@ import {
 } from "./globe-pin.js";
 
 describe("nextPinPhase", () => {
-  it("runs the granted path: idle, locating, flying, handing over", () => {
+  it("runs the granted path: idle, locating, flying, landed and pressable again", () => {
     let phase: GlobePinPhase = "idle";
     phase = nextPinPhase(phase, "press");
     expect(phase).toBe("locating");
     phase = nextPinPhase(phase, "located");
     expect(phase).toBe("flying");
-    phase = nextPinPhase(phase, "arrived");
-    expect(phase).toBe("handingOver");
-  });
-
-  it("holds at the end of the dive with the hand-over off, pressable again", () => {
-    expect(nextPinPhase("flying", "held")).toBe("idle");
+    phase = nextPinPhase(phase, "held");
+    expect(phase).toBe("idle");
   });
 
   it("returns to idle after a failed locate", () => {
@@ -55,19 +62,14 @@ describe("nextPinPhase", () => {
     expect(nextPinPhase("locating", "touch")).toBe("locating");
   });
 
-  it("stays handing over while the page leaves, whatever else happens", () => {
-    for (const event of GLOBE_PIN_EVENTS.filter((e) => e !== "returned")) {
-      expect(nextPinPhase("handingOver", event)).toBe("handingOver");
-    }
-  });
-
-  it("is idle again when the user comes back from the city", () => {
-    // Milestone review, finding M2: Back restores the lab from the
-    // back-forward cache as it was left, handing over; without this the
-    // pin would be disabled for good.
-    expect(nextPinPhase("handingOver", "returned")).toBe("idle");
-    for (const phase of ["idle", "locating", "flying"] as const) {
-      expect(nextPinPhase(phase, "returned")).toBe(phase);
+  it("lets every phase return to idle", () => {
+    // No phase waits for something outside the page (it used to wait for
+    // the page to leave, then for Back).
+    for (const phase of GLOBE_PIN_PHASES) {
+      const back = GLOBE_PIN_EVENTS.some(
+        (event) => nextPinPhase(phase, event) === "idle",
+      );
+      expect(back || phase === "idle", phase).toBe(true);
     }
   });
 
@@ -75,7 +77,6 @@ describe("nextPinPhase", () => {
     // A fix or an arrival that comes after a cancel must not restart a
     // flight nobody is waiting for.
     expect(nextPinPhase("idle", "located")).toBe("idle");
-    expect(nextPinPhase("idle", "arrived")).toBe("idle");
     expect(nextPinPhase("idle", "failed")).toBe("idle");
     expect(nextPinPhase("idle", "held")).toBe("idle");
     expect(nextPinPhase("locating", "held")).toBe("locating");
@@ -120,14 +121,13 @@ describe("globePinView", () => {
     expect(view.label).toMatch(/stop/i);
   });
 
-  it("is idle and pressable at rest, and disabled while the page leaves", () => {
+  it("is idle and pressable at rest, and never disabled", () => {
     expect(globePinView("idle")).toMatchObject({
       disabled: false,
       busy: false,
     });
-    expect(globePinView("handingOver")).toMatchObject({
-      disabled: true,
-      busy: true,
-    });
+    for (const phase of GLOBE_PIN_PHASES) {
+      expect(globePinView(phase).disabled, phase).toBe(false);
+    }
   });
 });
