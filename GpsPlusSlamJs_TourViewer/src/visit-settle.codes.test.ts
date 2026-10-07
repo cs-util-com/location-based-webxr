@@ -235,6 +235,62 @@ describe("the settle with several codes: each note follows the nearest code even
     expect(plan.alignment).not.toEqual(plan.objects[0]!.alignment);
   });
 
+  // Why this test matters (plan §5's guard, M4 milestone review #6): a
+  // second code must change nothing near the first. A note beside A, with
+  // another code sighted 100 m of walking away, settles exactly as the
+  // one-code settle puts it - the run-merge, the per-code views and the
+  // nearest-event rule all leave it alone.
+  it("leaves a note beside A exactly as the one-code settle puts it, when a second code is 100 m away", () => {
+    const base = {
+      visit: 1,
+      placed: [placedPin("a", NEAR_A)],
+      alignment: aVisit,
+      zero: ZERO,
+      mintedLevel: storedA,
+      measurement: null,
+      sighting: sightingOf(ID_A, TEXT_A, POSE_A),
+      gpsAccuracyM: 4,
+      alignmentInfo: INFO,
+      nowIso: NOW,
+    };
+    const seenA = {
+      atMs: 0,
+      walkedM: 0,
+      alignment: aVisit,
+      sighting: sightingOf(ID_A, TEXT_A, POSE_A),
+    };
+    const objects = new Map([
+      ["a", { atMs: 3_000, walkedM: 3, alignment: aVisit }],
+    ]);
+    const alone = planVisitSettle({
+      ...base,
+      picks: { objects, measurement: null, sightings: [seenA] },
+    })!;
+    const withFar = planVisitSettle({
+      ...base,
+      codes: [
+        { level: storedA, measurement: null },
+        { level: storedB, measurement: null },
+      ],
+      picks: {
+        objects,
+        measurement: null,
+        sightings: [
+          seenA,
+          {
+            atMs: 100_000,
+            walkedM: 100,
+            alignment: aVisit,
+            sighting: sightingOf(ID_B, TEXT_B, POSE_B),
+          },
+        ],
+      },
+    })!;
+    expect(alone.objects[0]!.basis).toBe("code-corrected");
+    expect(withFar.objects[0]!.object).toEqual(alone.objects[0]!.object);
+    expect(withFar.objects[0]!.basis).toBe(alone.objects[0]!.basis);
+  });
+
   it("keeps a note out of reach of every code event on its own alignment", () => {
     const plan = twoStoredSettle([
       { id: "far", local: NEAR_B, walkedM: 30 + CODE_EVENT_REACH_M + 1 },

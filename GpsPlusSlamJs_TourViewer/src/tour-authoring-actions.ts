@@ -290,6 +290,9 @@ interface CodeMoveAnsweredLog {
 interface FinishedLog {
   /** The code in hand; null for a desk edit with none (M4d). */
   readonly levelId: string | null;
+  /** Every level the Finish wrote, in the book's order (M4 milestone
+   *  review #6); empty when it wrote none. */
+  readonly levelIds: readonly string[];
   /** The manifest the rebuilt zip carries. */
   readonly manifest: TourManifest;
   readonly atMs: number;

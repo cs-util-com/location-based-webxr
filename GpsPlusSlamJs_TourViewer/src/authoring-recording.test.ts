@@ -299,6 +299,7 @@ describe("the creator's troubleshooting recording", () => {
     store.dispatch(
       authoringFinished({
         levelId: "lvl",
+        levelIds: ["lvl"],
         manifest: createEmptyTourManifest(),
         atMs: T0 + 5000,
       }),
@@ -756,6 +757,7 @@ describe("the order the page writes", () => {
     store.dispatch(
       authoringFinished({
         levelId: "lvl",
+        levelIds: ["lvl"],
         manifest: createEmptyTourManifest(),
         atMs: T0 + 4000,
       }),

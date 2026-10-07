@@ -805,6 +805,31 @@ describe("the troubleshooting recording's log of the finish", () => {
       "new-one",
     ]);
   });
+
+  // Why this test matters (code book plan §3, M4 milestone review #6): a
+  // Finish writes every changed code, but its log named only the code in
+  // hand - which may not even be among the levels written. A replay of a
+  // "the code is in the wrong place" report needs every level it wrote.
+  it("lists every level the Finish wrote in its log", async () => {
+    const { dom, ctx, setup, dispatched } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+    });
+    // The page reads the book (the first code enters it), then a second
+    // code is taken: the hand holds it.
+    setup.renderAuthorReadout();
+    ctx.mintedLevel = { id: "secondcode01", json: '{"measured":2}' };
+
+    dom.finishButton.click();
+    await settle(ctx);
+
+    const finished = dispatched.filter(
+      (a) => (a as { type: string }).type === "tourAuthoring/finished",
+    ) as { payload: { levelId: string; levelIds: string[] } }[];
+    expect(finished).toHaveLength(1);
+    expect(finished[0]!.payload.levelId).toBe("secondcode01");
+    expect(finished[0]!.payload.levelIds).toEqual([LEVEL_ID, "secondcode01"]);
+  });
 });
 
 describe("the finish settles the AR visit still running (authoring plan 2026-09-28-0953 §3.2, M2c)", () => {

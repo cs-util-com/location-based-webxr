@@ -446,6 +446,7 @@ export function wireCreatorFinish(deps: {
         arStore.dispatch(
           authoringFinished({
             levelId: minted?.id ?? null,
+            levelIds: levels.map((l) => l.id),
             manifest: written,
             atMs: Date.now(),
           }),

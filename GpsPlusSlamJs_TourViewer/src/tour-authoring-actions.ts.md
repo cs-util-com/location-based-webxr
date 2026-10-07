@@ -57,8 +57,10 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
   yaw and the bounds - after which the visit settled through its plain
   alignment; null otherwise; M2c review #2). The tap-time geo of `objectPlaced`/`codeMeasured` is what a killed
   tab keeps; this is what the zip carries, so a replay needs it.
-- `authoringFinished(payload)` - `tourAuthoring/finished`: `levelId`,
-  `manifest` (what the rebuilt zip carries), `atMs`.
+- `authoringFinished(payload)` - `tourAuthoring/finished`: `levelId` (the
+  code in hand, null for a desk edit), `levelIds` (every level the Finish
+  wrote, M4 milestone review #6), `manifest` (what the rebuilt zip
+  carries), `atMs`.
 - Editing (plan §3.4, M4; `object-editing.ts`):
   - `objectEdited(payload)` - `tourAuthoring/objectEdited`: `before`,
     `after` (the records), `arVisitIndex`, `atMs`, `surface` (`page` or
@@ -129,7 +131,12 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
 
 ```ts
 arStore.dispatch(
-  authoringFinished({ levelId, manifest: written, atMs: Date.now() }),
+  authoringFinished({
+    levelId,
+    levelIds: levels.map((l) => l.id),
+    manifest: written,
+    atMs: Date.now(),
+  }),
 );
 ```
 

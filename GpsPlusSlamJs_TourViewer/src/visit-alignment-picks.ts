@@ -72,7 +72,8 @@ export interface VisitAlignmentTracker {
    *  `levelId` keys it per code (M4c-2), absent for a caller that knows
    *  only one code. */
   noteMeasurement(atMs: number, levelId?: string): void;
-  /** A stable sighting of the code in hand at `atMs`. */
+  /** A stable sighting of a code at `atMs`; a code's sightings within a
+   *  second at one walked distance merge into its newest. */
   noteSighting(sighting: CodeSighting, atMs: number): void;
   /** What the settle reads: every pick as it stands now. */
   picks(): VisitAlignmentPicks;
@@ -155,14 +156,22 @@ export function createVisitAlignmentTracker(): VisitAlignmentTracker {
       if (levelId !== undefined) measurements.set(levelId, measurement);
     },
     noteSighting(sighting, atMs) {
-      const last = sightings.at(-1);
+      // The run is per code (M4 milestone review #6): two codes seen in
+      // turn would otherwise add an entry per detection.
+      let index = sightings.length - 1;
+      while (
+        index >= 0 &&
+        sightings[index]?.sighting.levelId !== sighting.levelId
+      ) {
+        index -= 1;
+      }
+      const last = index < 0 ? undefined : sightings[index];
       const entry = open(atMs);
       const sameRun =
         last !== undefined &&
-        last.sighting.levelId === sighting.levelId &&
         last.walkedM === entry.walkedM &&
         atMs - last.windowStartMs < SIGHTING_SPACING_MS;
-      if (sameRun) sightings.pop();
+      if (sameRun) sightings.splice(index, 1);
       sightings.push({
         ...entry,
         sighting,

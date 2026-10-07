@@ -203,6 +203,30 @@ describe("createVisitAlignmentTracker (D33)", () => {
     ]);
   });
 
+  // Why this test matters (code book plan M4 milestone review #6; §8 #14's
+  // run-merge PER CODE): with two codes in view at once, each detection
+  // alternates between them. Merged only with the very last entry, every
+  // detection became an entry - 8 a second for a whole visit, each advanced
+  // on every alignment and scanned for every note. Each code's run merges
+  // with that code's own latest entry.
+  it("keeps one sighting per second per code while two codes are seen in turn", () => {
+    const t = createVisitAlignmentTracker();
+    t.noteAlignment(moment(1, 100));
+    for (let ms = 0; ms < 2_000; ms += 100) {
+      t.noteSighting(sighting(ms % 200 === 0 ? "a" : "b", ms), ms);
+    }
+    const kept = t.picks().sightings;
+    expect(kept).toHaveLength(4);
+    expect(kept.map((s) => s.sighting.levelId).sort()).toEqual([
+      "a",
+      "a",
+      "b",
+      "b",
+    ]);
+    // Still in time order, each the newest of its run.
+    expect(kept.map((s) => s.atMs)).toEqual([800, 900, 1_800, 1_900]);
+  });
+
   it("forgets everything on reset (a new visit)", () => {
     const t = createVisitAlignmentTracker();
     t.noteAlignment(moment(1, 100));

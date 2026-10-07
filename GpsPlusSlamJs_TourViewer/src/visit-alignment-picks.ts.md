@@ -43,7 +43,10 @@ lives here.
   drift, about 1 cm per second; it would matter only above tens of seconds.
   A run also ends when the walked distance changed since it began (a GPS
   fix moved it): an entry never claims a walked distance its merged
-  sightings did not have (R3 of D33 picks by walked distance).
+  sightings did not have (R3 of D33 picks by walked distance). The run is
+  per code (M4 milestone review #6): a sighting merges with ITS code's
+  latest entry, not only the very last one, so two codes seen in turn keep
+  one entry per second each instead of one per detection.
 - `createVisitAlignmentTracker(): VisitAlignmentTracker`
   - `noteAlignment(now)` - the alignment as it stands now
     (`{ alignmentMatrix, zero, gpsExtentM, alignmentInfo?, walkedM? }`,
@@ -119,7 +122,7 @@ picks.reset();
   usable alignment otherwise; a move re-opens; a placement before any
   alignment; one sighting per second of looking with its own time and pick;
   a run split where the walked distance changed;
-  two codes never merged; the mint info and the GPS extent travel with
+  two codes never merged, and two codes seen in turn merged per code; the mint info and the GPS extent travel with
   their pick; each event
   stamped with the walked distance of its own moment; reset; copies; a property test against the search
   over the alignment history.
