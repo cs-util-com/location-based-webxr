@@ -604,6 +604,35 @@ describe("the creator measures and mints with the fused pose", () => {
     expect(c.ctx.codeMeasurement?.levelId).toBe(inHand.id);
   });
 
+  // Why this test matters (code book plan M4 milestone review #3): adopting
+  // a size also sets the field, and a code measured on this page - not
+  // hosted - was then solved at the field's NEW size, while its level said
+  // the old one. A correction through its later sightings was off by
+  // (ratio - 1) x the camera distance. It keeps the size it was measured at.
+  it("keeps the size a code was measured at when another code's size is adopted", async () => {
+    const c = creator({ aligned: true });
+    const fieldM = Number(c.dom.sizeInput.value);
+    for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    const first = c.ctx.mintedLevel!.id;
+    const second = "https://gps.csutil.com/tour/?qr=second";
+    for (let i = 0; i < 7; i++) c.detectText(second, i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel?.id).not.toBe(first);
+    });
+    sizeCheck.offer = { text: second, sizeM: 0.3 };
+    c.detectText(second, 7);
+    c.dom.sizeOfferUse.click();
+    sizeCheck.offer = null;
+    expect(Number(c.dom.sizeInput.value)).toBe(0.3);
+    // The restarted pipeline fetches each code's level before solving it.
+    const config = captured.configs.at(-1)!;
+    expect((await config.fetchLevel(TEXT)).qr.physicalSizeM).toBe(fieldM);
+    expect((await config.fetchLevel(second)).qr.physicalSizeM).toBe(0.3);
+  });
+
   // Code book plan M4c-3: a code the tour stores at its own printed size
   // is solved and measured at THAT size, not the size field's - two codes
   // printed at different sizes no longer share one.

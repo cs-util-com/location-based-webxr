@@ -43,7 +43,11 @@ import {
   type TourViewerSession,
   type TourViewerStore,
 } from "./tour-viewer-session.js";
-import { measurementRole, type CodeMeasurement } from "./visit-settle.js";
+import {
+  measurementRole,
+  storedSizeM,
+  type CodeMeasurement,
+} from "./visit-settle.js";
 import type { Wizard } from "./wizard.js";
 
 /** Why a measurement found no stable pose: the gate closed since the
@@ -166,27 +170,40 @@ export function wireCreatorMeasuring(deps: {
   /** Sizes adopted from the print-size offer, per code text (the tour's). */
   const adoptedSizes = new Map<string, number>();
 
-  /** The size `text` is solved at; the field's before its level is known. */
+  /**
+   * The size stored for code `id`: the book's saved level first - a code
+   * this page measured or restored keeps the size it was measured at when
+   * the field later changes (M4 milestone review #3) - then the hosted one.
+   */
+  function storedSize(id: string | undefined): number | undefined {
+    if (id === undefined) return undefined;
+    const saved = deps.codes.savedText(id);
+    const fromBook = saved === null ? null : storedSizeM(saved);
+    if (fromBook !== null) return fromBook;
+    const hosted = ctx.currentLevels?.get(id)?.qr.physicalSizeM;
+    return typeof hosted === "number" && Number.isFinite(hosted) && hosted > 0
+      ? hosted
+      : undefined;
+  }
+
+  /** The size `text` is solved at: as `sizeFor` resolved it for the
+   *  controller, else by the same rule from what is known now (the
+   *  settle's re-mint asks before any fetch, M4 milestone review #2); the
+   *  field's for a code not known yet. */
   function sizeOf(text: string | null): number {
+    if (text === null) return ctx.activeSizeM;
     return (
-      (text === null ? undefined : sizeByText.get(text)) ?? ctx.activeSizeM
+      adoptedSizes.get(text) ??
+      sizeByText.get(text) ??
+      storedSize(codeIds.get(text)) ??
+      ctx.activeSizeM
     );
   }
 
   async function sizeFor(text: string, fieldSizeM: number): Promise<number> {
-    let size = adoptedSizes.get(text);
-    if (size === undefined) {
-      const id =
-        codeIds.get(text) ?? (await qrCodeId(text).catch(() => undefined));
-      const stored =
-        id === undefined
-          ? undefined
-          : ctx.currentLevels?.get(id)?.qr.physicalSizeM;
-      size =
-        typeof stored === "number" && Number.isFinite(stored) && stored > 0
-          ? stored
-          : fieldSizeM;
-    }
+    const id =
+      codeIds.get(text) ?? (await qrCodeId(text).catch(() => undefined));
+    const size = adoptedSizes.get(text) ?? storedSize(id) ?? fieldSizeM;
     sizeByText.set(text, size);
     return size;
   }

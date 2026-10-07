@@ -2224,6 +2224,40 @@ describe(
       });
     });
 
+    // Why this test matters (code book plan M4 milestone review #2): since
+    // M4c-3 a stored code is solved at the size the tour stores for it, but
+    // a replaced position was re-minted at the size FIELD's value. A tour
+    // printed at 0.30 m, opened in a page whose field says 0.16, got a pose
+    // solved at 0.30 written into a level labelled 0.16 - and visitors
+    // solving at 0.16 put the code at about half its true distance.
+    it("re-mints a replaced stored code at the size it was solved at, not the size field's", async () => {
+      const first = authoring();
+      await first.mint();
+      first.endVisit();
+      const earlier = first.ctx.mintedLevel!;
+      const parsed = JSON.parse(earlier.json) as {
+        qr: { physicalSizeM: number };
+      };
+      parsed.qr.physicalSizeM = 0.3;
+      const hosted = { id: earlier.id, json: JSON.stringify(parsed) };
+
+      const a = authoring();
+      await openFinishableTour(a, { levels: [hosted] });
+      a.ctx.currentLevels = new Map([[hosted.id, parseQrLevel(parsed)]]);
+      expect(a.ctx.activeSizeM).not.toBeCloseTo(0.3, 3);
+      a.setAccuracy(5);
+      a.setAlignment(yawAlignment(20, [3, 400, 0]));
+      a.setWalk(walkOf(30, 30));
+      await a.mint();
+      a.endVisit();
+
+      expect(codePosition(a)?.decision).toEqual({ kind: "replace" });
+      const replaced = parseQrLevel(
+        JSON.parse(a.ctx.mintedLevel!.json) as unknown,
+      );
+      expect(replaced.qr.physicalSizeM).toBeCloseTo(0.3, 9);
+    });
+
     it("says on the result screen why the position was kept", async () => {
       const a = authoring();
       await openFinishableTour(a);

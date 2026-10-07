@@ -91,12 +91,17 @@ M4 replaces its one code in hand with the code book.
   here through its own pick (D33), not through later sightings.
 
 - **A printed size per code (M4c-3).** Each code is solved at the size
-  adopted for it from the print-size offer, else the size the tour stores
-  for it (`physicalSizeM`), else the size field's. The controller asks
+  adopted for it from the print-size offer, else the size its level
+  stores (`physicalSizeM`: the book's saved level first - a code this page
+  measured or restored keeps the size it was measured at when the field
+  later changes, M4 milestone review #3 - then the hosted one), else the
+  size field's. The controller asks
   `sizeFor(text)` when it fetches the code's level - before it solves the
   code - and the fused source, the mint, the measurement, the print-size
   check, the debug view and the placement record read the same size
-  (`sizeOf(text)`). Adopting an offer sets ITS code's size and, as before,
+  (`sizeOf(text)`, which resolves by the same rule when the controller
+  has not fetched the code yet - the settle's re-mint asks it, M4
+  milestone review #2). Adopting an offer sets ITS code's size and, as before,
   the field (the size new codes are solved at); a code the tour stores at
   its own size keeps that, and only the offered code's measurement is
   dropped - another code in hand stays. `reset()` forgets the adopted

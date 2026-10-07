@@ -242,6 +242,19 @@ export function storedGeo(json: string): QrGeoPose | null {
   }
 }
 
+/** A level's printed size (m), or null when the JSON is not a level or its
+ *  size is not a positive number (external data: a zip, a draft). */
+export function storedSizeM(json: string): number | null {
+  try {
+    const size = parseQrLevel(JSON.parse(json) as unknown).qr.physicalSizeM;
+    return size !== undefined && Number.isFinite(size) && size > 0
+      ? size
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The stored code's pose in GPS-world NUE and the GPS accuracy its mint
  *  recorded, or null when the level carries no pose that reads. */
 function storedCode(

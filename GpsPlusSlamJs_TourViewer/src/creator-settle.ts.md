@@ -13,7 +13,10 @@ M4 settles every code of the book, not only the one in hand.
 
 ## Public API
 
-- `wireCreatorSettle({ ctx, arStore, seams, previews, alignmentPicks, draft, movePrompt, codes, visitLog, pageId, summary?, alignmentInfo }): CreatorSettle`
+- `wireCreatorSettle({ ctx, arStore, seams, previews, alignmentPicks, draft, movePrompt, codes, visitLog, pageId, summary?, alignmentInfo, sizeOf }): CreatorSettle` - `sizeOf(text)`: the size a
+  code is solved at (`creator-measuring.ts`); a replaced or moved stored
+  code is re-minted at its sighting's size, not the field's (M4 milestone
+  review #2)
 - `CreatorSettle`:
   - `settleVisit(trigger)` - settle the running visit (`"visit-end"` from
     `endAuthorVisit`, `"finish"` from a Finish tapped in a session). READS

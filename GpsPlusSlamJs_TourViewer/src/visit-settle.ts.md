@@ -121,7 +121,9 @@ draft and logs `tourAuthoring/settled`.
   this visit sees the code minus its stored position - the spot the move
   prompt (`code-move-prompt.ts`, M5b) remembers an answer for.
 - `storedGeo(json)` - a level's stored geo, or null (the object list's
-  distance to the code).
+  distance to the code); `storedSizeM(json)` - a level's printed size, or
+  null when it is not a positive number (the size a code is solved at,
+  `creator-measuring.ts`).
 - `planVisitSettle(input): VisitSettle | null` - the settled records by
   index into `placed` (only objects whose `placement.visit` is this visit),
   each with its own `SettleChoice` (D33: its pick by id; near a code event

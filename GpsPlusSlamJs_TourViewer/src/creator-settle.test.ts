@@ -115,6 +115,7 @@ describe("the settle hands the planner every code of the visit (M4c-2)", () => {
       ctx,
       arStore: arStore as never,
       seams: { getScene: () => null },
+      sizeOf: () => 0.16,
       previews: {
         inVisit: () => false,
         placeEarlier: () => undefined,

@@ -644,6 +644,7 @@ export function wireCreatorSetup(deps: {
     pageId,
     ...(deps.summary === undefined ? {} : { summary: deps.summary }),
     alignmentInfo: () => authorAlignmentInfo(),
+    sizeOf: (text) => measuring.sizeOf(text),
   });
 
   /** What the save guard reads (`finish-guard.ts`). */

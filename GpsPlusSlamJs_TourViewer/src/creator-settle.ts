@@ -143,6 +143,9 @@ export function wireCreatorSettle(deps: {
   pageId: string;
   summary?: Pick<SummaryPanel, "show" | "hide">;
   alignmentInfo: () => MintAlignmentInfo;
+  /** The printed size a code's text is solved at (`creator-measuring`'s
+   *  `sizeOf`, M4c-3). */
+  sizeOf: (text: string) => number;
 }): CreatorSettle {
   const { ctx, arStore, seams } = deps;
   /** Codes moved to the poster's new spot (a "Yes, it moved" the settle
@@ -287,7 +290,12 @@ export function wireCreatorSettle(deps: {
           extentM: alignmentGpsExtentM ?? null,
           accuracyM: gpsAccuracyM ?? null,
         },
-        sizeM: deps.codes.measurement()?.sizeM ?? ctx.activeSizeM,
+        // The size the code was solved at in this visit: its measurement's,
+        // else its sighting's - a stored code is solved at the size the
+        // tour stores for it, not the field's (M4 milestone review #2).
+        sizeM:
+          deps.codes.measurement()?.sizeM ??
+          sizeOfSighting(deps.codes.sighting()),
         answerAt: (offset) =>
           level === null
             ? null
@@ -494,6 +502,11 @@ export function wireCreatorSettle(deps: {
     }
     if (moved.length > 0) deps.previews.sync();
     return moved;
+  }
+
+  /** The size a sighting's code is solved at; the field's without one. */
+  function sizeOfSighting(sighting: CodeSighting | null): number {
+    return sighting === null ? ctx.activeSizeM : deps.sizeOf(sighting.text);
   }
 
   /**
