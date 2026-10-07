@@ -60,6 +60,15 @@ import {
 import { FLIGHT_PACE_DEFAULTS } from "/globe/flight-pace.js";
 import { arrivalStatusText, createDiveClock } from "/globe/globe-arrival.js";
 import { globePinView, nextPinPhase } from "/globe/globe-pin.js";
+import {
+  pinFailed,
+  pinFix,
+  pinFrame,
+  pinLanding,
+  pinProgress,
+  pressPin,
+} from "/globe/pin-flight.js";
+import { flightCameraAt, flightFrameAt } from "/globe/flight-replan.js";
 import { globeReadoutText, readoutThrottle } from "/globe/globe-readout.js";
 import {
   GLOBE_INTRO,
@@ -394,6 +403,11 @@ const PARAMS = {
   // does to the device's (§12.4 R15: the owner can land in Zurich or Bern
   // from anywhere).
   land: { fallback: 0, min: 0, max: 1 },
+  // The continuous flight (continuous-flight plan 2026-10-07-0941, CF4): 2
+  // flies the pin's flight (`/globe/pin-flight.js`: from the press, a hold
+  // above the band until the fix, one path gated on its data, replans that
+  // never stop); 1 today's dive, until the owner's phone run (CF5).
+  flight: { fallback: 1, min: 1, max: 2 },
   // The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6): on unless 0.
   // While it runs it paces the dive (`/globe/flight-pace.js`, at most the
   // 30 s of DEC-GL5-6) unless `diveMs` is set in the hash, which keeps
@@ -710,6 +724,35 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
   /** A fixed dive time (ms) the pose holds at, for the smokes; null: run. */
   let diveHoldMs = null;
   /**
+   * The continuous flight (`flight=2`): the pin flight
+   * (`/globe/pin-flight.js`) that drives the camera instead of `dive`.
+   */
+  let pinFlight = null;
+  /** The pin flight's camera this frame (a held time for the smokes). */
+  const pinPose = (now) => {
+    if (diveHoldMs !== null && pinFlight.flight) {
+      const held = flightCameraAt(pinFlight.flight, diveHoldMs);
+      return { position: held.position, quaternion: held.quaternion };
+    }
+    const out = pinFrame(pinFlight, now);
+    pinFlight = out.pin;
+    if (pinFlight.phase === "landed" && phase === "diving") {
+      phase = "landed";
+      note(now);
+    }
+    // A cancelled flight has no camera: it stays where it was last drawn
+    // (the binding yields it to the controls at once).
+    if (out.camera) {
+      lastPinPose = {
+        position: out.camera.position,
+        quaternion: out.camera.quaternion,
+      };
+    }
+    return lastPinPose ?? introPose(now);
+  };
+  /** The pin flight's last drawn pose. */
+  let lastPinPose = null;
+  /**
    * The target's arrival: when, the spin's direction then, and how long the
    * start blends from it (0 when no spin frame was drawn).
    */
@@ -744,6 +787,7 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
     history = [];
     runs += 1;
     dive = null;
+    pinFlight = null;
     arrival = null;
     spinShown = false;
     firstTurn = null;
@@ -911,20 +955,50 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
       note(now);
     },
     /**
+     * The continuous flight (`flight=2`, CF4): `pin` (`pressPin`'s)
+     * drives the camera from now on, as the dive would.
+     */
+    flyPin(now, pin) {
+      pinFlight = pin;
+      dive = null;
+      diveHoldMs = null;
+      choice = { target: null, source: "pin" };
+      phase = "diving";
+      note(now);
+    },
+    /** Applies `(pin, now) => pin` to the pin flight (an event), if one. */
+    updatePin(now, apply) {
+      if (pinFlight) pinFlight = apply(pinFlight, now);
+    },
+    /** The pin flight, or null. */
+    get pinFlight() {
+      return pinFlight;
+    },
+    /**
      * For the smokes: hold the camera at a dive time (ms, null to run on),
      * and read the dive's altitude at a time without moving the camera.
-     * Null without a dive.
+     * Null without a dive. With the pin flight the time is its own clock.
      */
     holdDiveAt(ms) {
+      if (pinFlight?.flight) {
+        diveHoldMs = ms;
+        return flightFrameAt(pinFlight.flight, ms ?? 0).altitudeM;
+      }
       if (!dive) return null;
       diveHoldMs = ms;
       return diveStep(dive, ms ?? 0).altitudeM;
     },
     diveAltitudeAt(ms) {
+      if (pinFlight?.flight) {
+        return flightFrameAt(pinFlight.flight, ms).altitudeM;
+      }
       return dive ? diveStep(dive, ms).altitudeM : null;
     },
     /** The pose for this frame, advancing the states. */
     pose(now) {
+      if (pinFlight && (phase === "diving" || phase === "landed")) {
+        return pinPose(now);
+      }
       if (phase === "diving" || phase === "landed") {
         const step = diveStep(
           dive,
@@ -1160,6 +1234,7 @@ function bindPin({
   controls,
   camera,
   getParams,
+  ellipsoid,
   diveFloorM = () => 0,
   onLocated = () => {},
   ecefCamera,
@@ -1256,8 +1331,10 @@ function bindPin({
     renderArrival();
     return (elapsedMs) => clock.elapsedMs(elapsedMs, arrivalProgress());
   };
+  /** The continuous flight moves the camera from the press (CF4). */
+  const moving = () => getParams().flight === 2;
   const render = () => {
-    const view = globePinView(phase);
+    const view = globePinView(phase, { moving: moving() });
     pinButton.setAttribute("aria-label", view.label);
     pinButton.title = view.label;
     pinButton.setAttribute("aria-busy", String(view.busy));
@@ -1273,8 +1350,47 @@ function bindPin({
     pinStatus.textContent = phase === "idle" ? message : view.label;
   };
   const go = (event) => {
-    phase = nextPinPhase(phase, event);
+    phase = nextPinPhase(phase, event, { moving: moving() });
     render();
+  };
+  /**
+   * The continuous flight from the camera as it is, to `place` if known
+   * (a link), else held above the band until the fix (DEC-CF-4b).
+   */
+  const beginPinFlight = (place) => {
+    const params = getParams();
+    controls.release();
+    const start = ecefCamera();
+    const now = performance.now();
+    flight.flyPin(
+      now,
+      pressPin(
+        ellipsoid,
+        now,
+        {
+          pose: currentPose(start),
+          distanceM: start.position.length(),
+          quaternion: start.quaternion,
+        },
+        {
+          target: place ? orbitPose(ellipsoid, place) : null,
+          landingM: params.landKm * 1000,
+          progress: 0,
+        },
+      ),
+    );
+  };
+  /** The target is known: its data warmed, the frame moved, the flight on. */
+  const pinLocated = (place) => {
+    located = { lat: place.lat, lng: place.lng };
+    const params = getParams();
+    onLocated(located, params);
+    startArrival(located, params);
+    setFrameTarget(located);
+    flight.updatePin(performance.now(), (p, now) =>
+      pinFix(p, now, orbitPose(ellipsoid, located)),
+    );
+    go("located");
   };
   /** Bumped by every press, so an answer to a cancelled request is dropped. */
   let request = 0;
@@ -1291,13 +1407,16 @@ function bindPin({
     }
     if (before === "locating") {
       // Cancelled: a browser can leave the request pending (an open
-      // permission prompt), and the pin must not be stuck with it.
+      // permission prompt), and the pin must not be stuck with it. The
+      // continuous flight was already moving: the camera stops there.
+      if (moving()) flight.yieldToUser(performance.now());
       message = "Stopped looking for your location.";
       render();
       return;
     }
     if (phase !== "locating") return;
     message = "";
+    if (moving()) beginPinFlight(null);
     const outcome = await locateOnce(navigator.geolocation, {
       timeoutMs: LOCATE_TIMEOUT_MS,
     });
@@ -1305,10 +1424,14 @@ function bindPin({
     if (outcome.kind === "failed") {
       message = `${labelFor(outcome.state)}: ${locateAdvice(outcome.state)}`;
       failure = outcome.state;
+      // The continuous flight ends at its hold (DEC-CF-4b).
+      if (moving()) flight.updatePin(performance.now(), pinFailed);
       go("failed");
       return;
     }
-    startDive({ lat: outcome.fix.lat, lng: outcome.fix.lng });
+    const fix = { lat: outcome.fix.lat, lng: outcome.fix.lng };
+    if (moving()) pinLocated(fix);
+    else startDive(fix);
   });
   /**
    * The dive to `place`, from wherever the camera is: the frame moved to
@@ -1361,7 +1484,12 @@ function bindPin({
       failure = null;
       message = "";
       go("press");
-      startDive(place);
+      if (moving()) {
+        beginPinFlight(place);
+        pinLocated(place);
+      } else {
+        startDive(place);
+      }
     },
     /**
      * Starts the city's prefetch for `target` before any press (the city
@@ -1376,7 +1504,8 @@ function bindPin({
     },
     /** The controls took the camera, or the intro restarted. */
     cameraTaken() {
-      if (phase !== "flying") return;
+      const inFlight = phase === "flying" || (moving() && phase === "locating");
+      if (!inFlight) return;
       stopArrival();
       go("touch");
     },
@@ -1388,7 +1517,8 @@ function bindPin({
      * pausing the dive's clock instead would need a second clock).
      */
     hidden() {
-      if (phase !== "flying") return;
+      const inFlight = phase === "flying" || (moving() && phase === "locating");
+      if (!inFlight) return;
       flight.yieldToUser(performance.now());
       stopArrival();
       message = "Stopped: the page was hidden. Tap the pin to fly again.";
@@ -1397,15 +1527,41 @@ function bindPin({
     /** Per frame: the status line follows; a landed dive holds. */
     frame() {
       renderArrival();
+      if (moving() && phase === "flying" && located) {
+        const now = performance.now();
+        flight.updatePin(now, (p, t) => pinProgress(p, t, arrivalProgress()));
+        // The landing's floor once the target's heights are in (cold review
+        // finding 11): a rise of more than 50 m replans the landing.
+        const floor = Math.max(getParams().landKm * 1000, diveFloorM(located));
+        const pinNow = flight.pinFlight;
+        if (pinNow && floor > pinNow.landingM + 50) {
+          flight.updatePin(now, (p, t) => pinLanding(p, t, floor));
+        }
+      }
       if (phase !== "flying" || flight.state().phase !== "landed") return;
       // Landed (the data is in, or the pace's cap has passed): the camera
       // holds over the city, the controls take it from here.
-      message = `Arrived, ${shown(getParams().landKm)} km above sea level.`;
+      // The continuous flight may have raised its landing over high ground.
+      const landedKm =
+        moving() && flight.pinFlight
+          ? flight.pinFlight.landingM / 1000
+          : getParams().landKm;
+      message = `Arrived, ${shown(landedKm)} km above sea level.`;
       go("held");
     },
     state: () => ({
       phase,
-      label: globePinView(phase).label,
+      label: globePinView(phase, { moving: moving() }).label,
+      // The continuous flight (flight=2), for the smokes; null without one.
+      flight: flight.pinFlight && {
+        phase: flight.pinFlight.phase,
+        clockMs: flight.pinFlight.clockMs,
+        rate: flight.pinFlight.rate,
+        landingM: flight.pinFlight.landingM,
+        progress: flight.pinFlight.progress,
+        gateClockMs: flight.pinFlight.gateClockMs,
+        endsAtMs: flight.pinFlight.flight?.endsAtMs ?? null,
+      },
       status: pinStatus.textContent,
       located,
       // The arrival prefetch of the current flight (null before one).
@@ -2193,6 +2349,7 @@ async function start() {
     return minimumAltitudeM(heightM, e, GLOBE_FLIGHT.clearanceM);
   };
   pin = bindPin({
+    ellipsoid: globe.tiles.ellipsoid,
     diveFloorM,
     ecefCamera,
     setFrameTarget,
@@ -2330,6 +2487,7 @@ async function start() {
       }
       camera.updateMatrixWorld();
       controls.followIntro();
+      if (params.flight === 2 && flight.pinFlight) recentreFrame();
     } else {
       // The user took the camera, perhaps mid-fly-in: ease back to fovY.
       returnFov(now);

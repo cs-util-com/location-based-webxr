@@ -417,3 +417,102 @@ test("a land=1 link's dive starts far out and never skims the ground", async ({
   expect(startKm).toBeGreaterThan(FAR_KM);
   expect(lowestKm).toBeGreaterThan(landKm * 0.9);
 });
+
+/**
+ * Records the camera's altitude and the pin's flight every frame from the
+ * page's start, until landed (or `untilMs` of page time).
+ */
+async function recordFlight(page, untilMs = 120_000) {
+  await page.addInitScript((until) => {
+    window.__flightSamples = [];
+    const t0 = performance.now();
+    const sample = () => {
+      const s = window.__globeLab?.ready ? window.__globeLab.state() : null;
+      if (s) {
+        window.__flightSamples.push({
+          m: s.altitudeM,
+          phase: s.phase,
+          pin: s.pin?.phase,
+          flight: s.pin?.flight?.phase ?? null,
+        });
+      }
+      const done = s?.phase === "landed" || performance.now() - t0 > until;
+      if (!done) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  }, untilMs);
+}
+
+// WHY (continuous-flight plan 2026-10-07-0941, CF4): the owner's "one
+// continuous flight" behind `flight=2`, in the page: a land=1 link flies the
+// pin flight from far out, through the gate (its data is routed, so it is
+// ready at once), down to the landing and no lower, and lands; the pin's
+// flight goes approaching or descending, then landed. The speed criterion
+// itself is the unit tests' (SwiftShader draws about a frame a second).
+test("flight=2: a land=1 link flies the continuous flight and lands", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(400_000);
+  await routeCity(context, page);
+  await recordFlight(page);
+  const errors = await bootGlobe(page, `${BASE}&land=1&flight=2`, {
+    plain: false,
+    phase: "landed",
+    routeCity: false,
+  });
+  const all = await page.evaluate(() => window.__flightSamples);
+  const startAt = all.findIndex((s) => s.flight !== null);
+  expect(startAt).toBeGreaterThanOrEqual(0);
+  const samples = all.slice(startAt);
+  const flying = samples.filter((s) => s.phase !== "landed");
+  const startKm = samples[0].m / 1000;
+  const lowestKm = Math.min(...flying.map((s) => s.m)) / 1000;
+  const phases = [...new Set(samples.map((s) => s.flight))];
+  const st = await page.evaluate(() => window.__globeLab.state());
+  console.log(
+    `flight=2 land=1: ${samples.length} frames, first at ${startKm.toFixed(0)} km, lowest before landing ${lowestKm.toFixed(2)} km, landed at ${(st.altitudeM / 1000).toFixed(2)} km; pin flight phases ${phases.join(" > ")}; "${st.pin.status}"`,
+  );
+  expect(errors).toEqual([]);
+  expect(startKm).toBeGreaterThan(1_000);
+  expect(lowestKm).toBeGreaterThan(2 * 0.9);
+  expect(st.altitudeM).toBeLessThan(3_500);
+  // The sampler can miss the landed frame (the boot returns on it), so the
+  // end is read from the final state.
+  expect(phases).toContain("descending");
+  expect(st.pin.flight?.phase).toBe("landed");
+  expect(st.pin.phase).toBe("idle");
+  expect(st.pin.status).toMatch(/^Arrived, /);
+});
+
+// WHY (DEC-CF-4b): with the continuous flight the camera moves from the
+// press, holding above the band, and a denied position ends the flight at
+// the hold, never landing on a guess; the pin explains why.
+test("flight=2: a denied position ends at the hold above 2,000 km", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  // No geolocation granted: headless Chromium denies the request.
+  const errors = await bootGlobe(
+    page,
+    `${BASE.replace(/&at=[^&]*/, "")}&flight=2`,
+    { plain: false },
+  );
+  const before = await page.evaluate(() => window.__globeLab.state().altitudeM);
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => window.__globeLab.state().pin.phase === "idle",
+    null,
+    { timeout: 60_000 },
+  );
+  await page.evaluate(() => window.__globeLab.timeFrames(10));
+  const st = await page.evaluate(() => window.__globeLab.state());
+  console.log(
+    `flight=2 denied: ${(before / 1000).toFixed(0)} km at the press, ${(st.altitudeM / 1000).toFixed(0)} km after; pin flight ${st.pin.flight?.phase}; "${st.pin.status}"`,
+  );
+  expect(errors).toEqual([]);
+  expect(st.pin.flight?.phase).toBe("failed");
+  expect(st.altitudeM).toBeLessThan(before);
+  expect(st.altitudeM).toBeGreaterThan(2_000_000 * 0.999);
+  expect(st.pin.status.length).toBeGreaterThan(0);
+});

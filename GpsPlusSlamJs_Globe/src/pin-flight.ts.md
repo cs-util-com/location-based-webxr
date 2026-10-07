@@ -48,6 +48,10 @@ The owner's decisions that this module puts into practice:
 - `pinFailed(pin, nowMs)`: while holding, ends at the hold (phase `failed`).
 - `pinProgress(pin, nowMs, progress)`: the data's progress, ratcheted. At 1
   the gate opens.
+- `pinLanding(pin, nowMs, landingM)`: a new landing (the target's height
+  tile arrived and the floor rose, cold review finding 11) replans the
+  flight to it while approaching or descending (a CF2 replan; the gate is
+  found again). RangeError for a landing that is not positive.
 - `pinTouch(pin, nowMs)`: cancels in `holding`, `approaching` and
   `descending`.
 - `pinFrame(pin, nowMs)` returns `{ pin, camera }`.
@@ -94,6 +98,8 @@ Each one is tested, simulated at 60 Hz on the camera.
   Below `commitM`, a late progress report changes nothing.
 - A failure ends at the hold, and the camera is still drawn.
 - A touch cancels in every moving phase.
+- A landing raised mid-flight (at 3, 8 and 12 s) lands exactly there,
+  without a stop-and-go.
 
 ## Tests
 

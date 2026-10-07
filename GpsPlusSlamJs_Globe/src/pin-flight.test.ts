@@ -27,6 +27,7 @@ import {
   pinFailed,
   pinFix,
   pinFrame,
+  pinLanding,
   pinProgress,
   pinTouch,
   pressPin,
@@ -309,6 +310,53 @@ describe("the pin's flight", () => {
     const b = flown(true);
     const low = (s: Sample[]) => s.filter((x) => x.h < PIN_FLIGHT.commitM);
     expect(low(b).map((x) => x.h)).toEqual(low(a).map((x) => x.h));
+  });
+
+  // WHY (cold review finding 11, CF4): the landing's floor is sampled
+  // when the target's height tile arrives, usually mid-flight; a raised
+  // landing replans the flight (a CF2 replan) and it lands exactly there,
+  // still without a stop.
+  it("lands at a landing raised mid-flight", () => {
+    for (const raiseAt of [3_000, 8_000, 12_000]) {
+      const pin = pressPin(
+        WGS84_ELLIPSOID,
+        0,
+        cameraOver(NEW_YORK, 10_100 * KM),
+        { target: bernPose, landingM: 2 * KM, progress: 1 },
+      );
+      const { pin: after, samples } = run(pin, 60_000, (t, p) =>
+        t >= raiseAt && p.landingM === 2 * KM ? pinLanding(p, t, 3.5 * KM) : p,
+      );
+      const tag = `raised at ${raiseAt} ms`;
+      expect(after.phase, tag).toBe("landed");
+      expect(samples.at(-1)?.h, tag).toBeCloseTo(3.5 * KM, 3);
+      const vs = speeds(samples);
+      let end = vs.length;
+      while (end > 0 && (vs[end - 1]?.h ?? 0) <= 3 * 3.5 * KM) end -= 1;
+      const w = vs.slice(0, end).filter((x) => x.t >= 1_000);
+      expect(
+        noStopAndGo(
+          w.map((x) => x.v),
+          0.2,
+        ),
+        tag,
+      ).toBe(true);
+    }
+  });
+
+  it("ignores a landing for a flight that is not flying", () => {
+    const pin = pressPin(
+      WGS84_ELLIPSOID,
+      0,
+      cameraOver(NEW_YORK, 10_100 * KM),
+      {
+        target: null,
+        landingM: 2 * KM,
+        progress: 0,
+      },
+    );
+    expect(pinLanding(pin, 100, 3 * KM).landingM).toBe(2 * KM);
+    expect(() => pinLanding(pin, 100, 0)).toThrow(RangeError);
   });
 
   // WHY (DEC-CF-4b): a denied or failed position ends at the hold.

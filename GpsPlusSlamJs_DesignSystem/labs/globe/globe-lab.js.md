@@ -54,7 +54,19 @@
   an `at=` link flies the dive to that place; the city plan 2026-10-05-0040
   §12.4 R15; the dive starts on the first frame, from the camera's first
   placed view, never at load, when the camera has no pose and a dive set
-  off from the ground),
+  off from the ground), `flight` (1 today's dive, the default; 2 the
+  continuous flight of the continuous-flight plan 2026-10-07-0941, CF4:
+  the pin's press starts `/globe/pin-flight.js` at once, holding above about
+  2,000 km until the fix (DEC-CF-4b), then one path to the landing whose
+  clock is gated just above 100 km until the arrival prefetch is ready
+  (DEC-CF-3b, 60 s cap DEC-CF-5); the prefetch's progress and the landing's
+  floor (`diveFloorM`, a rise over 50 m replans) feed it every frame; a
+  denied position ends at the hold; a touch or a hidden page cancels it in
+  every moving phase, and the pin says "Finding you, descending"; the world
+  frame follows the camera during it; `land=1` flies it to its link's
+  place; `holdDiveAt` and `diveAltitudeAt` read its path at its own clock,
+  and `state().pin.flight` reports its phase, clock, rate, landing,
+  progress, gate and end),
   `nightGain` (0-4, default 0.7), `waterRoughness`,
   `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default
   0.375, 0.75 x the first 0.5 by the owner's choice, DEC-G6-5),

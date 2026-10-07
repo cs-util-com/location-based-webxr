@@ -232,6 +232,28 @@ const opened = (pin: PinFlight): PinFlight =>
     ? { ...pin, phase: "descending" }
     : pin;
 
+/**
+ * A new landing (the target's height tile arrived and the floor rose;
+ * cold review finding 11): the flight replans to it (a CF2 replan, the
+ * gate found again). Only while flying to a target; RangeError for a
+ * landing that is not a positive number.
+ */
+export function pinLanding(
+  pin: PinFlight,
+  nowMs: number,
+  landingM: number,
+): PinFlight {
+  if (!(landingM > 0 && Number.isFinite(landingM))) {
+    throw new RangeError(`landingM must be a positive number, got ${landingM}`);
+  }
+  const now = advance(pin, nowMs);
+  const flying = now.phase === "approaching" || now.phase === "descending";
+  if (!flying || !now.target || landingM === now.landingM) return now;
+  const next = { ...now, landingM };
+  const flight = flyTo(next, now.target, landingM);
+  return { ...next, flight, gateClockMs: gateOf(flight) };
+}
+
 /** A touch on the globe: the controls take the camera. */
 export function pinTouch(pin: PinFlight, nowMs: number): PinFlight {
   const now = advance(pin, nowMs);
