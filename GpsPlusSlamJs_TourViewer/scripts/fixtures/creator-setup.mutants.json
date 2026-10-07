@@ -244,9 +244,7 @@
       "region": "measuring",
       "file": "src/creator-measuring.ts",
       "from": "      codeIds.set(mintedText, id);",
-      "to": "",
-      "expected": "equivalent",
-      "why": "the stable sighting identifies the text (identify) before a measurement can depend on it"
+      "to": ""
     },
     {
       "name": "in-flight count never drops",
@@ -288,9 +286,7 @@
       "region": "visit hooks",
       "file": "src/creator-codes.ts",
       "from": "      storedCodeSightings.clear();",
-      "to": "",
-      "expected": "equivalent",
-      "why": "each kept sighting carries its visit, and the visit log reads only its own visit's"
+      "to": ""
     },
     {
       "name": "placement noted before the picks saw the alignment",
