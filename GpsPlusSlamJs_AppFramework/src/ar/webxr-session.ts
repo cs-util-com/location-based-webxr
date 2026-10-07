@@ -1043,10 +1043,7 @@ async function startArSession(
     sessionFeatures
   );
 
-  const xrSession = await xr.requestSession(
-    'immersive-ar',
-    sessionOptions
-  );
+  const xrSession = await xr.requestSession('immersive-ar', sessionOptions);
   activeSession.xrSession = xrSession;
 
   // Handle session end — BOTH trigger paths funnel through this listener:
