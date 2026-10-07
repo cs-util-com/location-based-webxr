@@ -386,7 +386,13 @@ export function wireArEntry(deps: {
       }),
     );
     // Failure states surface via the subscribed button view (Retry — <reason>).
-    if (!result.ok) return;
+    // No session ran, so no session end disposes the pipeline started above;
+    // a retry would build another on top of it (a declined permission
+    // prompt, 2026-10-07).
+    if (!result.ok) {
+      endQrPipeline(ctx);
+      return;
+    }
     const runtime = startTourArRuntime(arStore, {
       getArWorldGroup: () => seams.getArWorldGroup(),
       enableArWorldGroupAlignment: (options) =>

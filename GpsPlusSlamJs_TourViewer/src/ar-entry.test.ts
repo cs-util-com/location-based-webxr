@@ -193,6 +193,18 @@ describe("wireArEntry session end", () => {
     expect(h.ctx.qrController).toBeNull();
     expect(h.ctx.fusedPose).toBeNull();
   });
+
+  // Why this test matters (owner report 2026-10-07): the pipeline starts
+  // BEFORE the session is requested, and a declined permission prompt
+  // fails the start. No session ever ran, so no session end disposed it,
+  // and every "Try again" built another on top of it.
+  it("disposes the QR controller it started when AR does not start", async () => {
+    const h = harness();
+    await h.enter();
+    expect(h.arController.enable).toHaveBeenCalledTimes(1);
+    expect(h.dispose).toHaveBeenCalledTimes(1);
+    expect(h.ctx.qrController).toBeNull();
+  });
 });
 
 // Plan §66-§67: the render reads the fused pose's debug state and hint. It

@@ -22,7 +22,10 @@ since the flows plan M6.
     `seams.startDepthCapture(RECORDING_DEPTH)` starts the sampler, and the
     session end stops it.
   - `mode` (`"creator" | "visitor"`, guided-setup plan DEC-N1) replaces the
-    flows plan's `authorMode`; creator mode runs the author pipeline.
+    flows plan's `authorMode`; creator mode runs the author pipeline. The
+    pipeline starts before the session is requested, so a start that fails
+    (a declined permission prompt) disposes it (`endQrPipeline`): no session
+    end would, and a retry built another on top (2026-10-07).
   - `locationGate` (from `visitor-screen.ts`, DEC-N2): while `pending()`,
     a tap requests the location and returns without starting a session;
     the button reads "Allow location" through `arButtonView`.
