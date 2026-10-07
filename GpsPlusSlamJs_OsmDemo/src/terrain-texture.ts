@@ -31,7 +31,7 @@
  * @see terrain-texture.ts.md
  */
 
-import type { HeightfieldData } from "./heightfield.js";
+import type { HeightfieldData } from "gps-plus-slam-osm";
 
 /** A height field ready to become a `DataTexture`. */
 export interface TerrainTexture {
