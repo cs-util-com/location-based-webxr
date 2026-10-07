@@ -363,21 +363,25 @@ function tangent(v: THREE.Vector3, direction: THREE.Vector3): THREE.Vector3 {
   return v.clone().projectOnPlane(direction).normalize();
 }
 
-/** The course's normal: along the great circle to the target, or the start's heading. */
+/**
+ * The course's normal: along the great circle from the camera's start
+ * (`from`) to the target, or the start's heading for a target nearer than
+ * one landing.
+ */
 function courseNormal(
-  startCentre: THREE.Vector3,
+  from: THREE.Vector3,
   target: THREE.Vector3,
   startUp: THREE.Vector3,
   landingM: number,
 ): THREE.Vector3 {
-  const cross = new THREE.Vector3().crossVectors(startCentre, target);
-  const arc = Math.atan2(cross.length(), startCentre.dot(target));
+  const cross = new THREE.Vector3().crossVectors(from, target);
+  const arc = Math.atan2(cross.length(), from.dot(target));
   if (arc * FLIGHT_PATH.radiusM >= landingM && cross.length() > 1e-12) {
     return cross.normalize();
   }
   if (arc * FLIGHT_PATH.radiusM >= landingM) {
     // Antipodes: over the start's up, as `turnPose` does.
-    return new THREE.Vector3().crossVectors(startCentre, startUp).normalize();
+    return new THREE.Vector3().crossVectors(from, startUp).normalize();
   }
   // A target nearer than one landing: the start's heading, at the target.
   const up = tangent(startUp, target);
@@ -496,7 +500,9 @@ export function planFlight(
     o.startPitchDeg,
   );
   const arcRad = startCentre.angleTo(to);
-  const normal = courseNormal(startCentre, to, startUp, landingM);
+  // From the camera, which travels: an oblique view can look past the
+  // target, and a course from its centre pointed back at the camera.
+  const normal = courseNormal(cameraStart, to, startUp, landingM);
 
   // The camera's end: behind the target along the course, at the landing.
   const cameraEnd = to

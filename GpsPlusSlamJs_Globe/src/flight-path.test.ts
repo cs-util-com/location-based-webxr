@@ -267,6 +267,39 @@ describe("planFlight and flightAt", () => {
     expect(c.quaternion.angleTo(oblique.quaternion)).toBeLessThan(1e-4);
   });
 
+  // WHY (found by CF2's replan probe, 2026-10-07): the course was taken
+  // from the start's VIEW CENTRE to the target. An oblique camera low and
+  // near the target looks past it (at 79 km and 22.5 degrees the centre is
+  // 190 km ahead), so that great circle pointed back at the camera and the
+  // view rolled 180 degrees to look behind. The course runs from the
+  // camera, which is what travels.
+  it("keeps heading to the target when its oblique view looks past it", () => {
+    const west = orbitPose(WGS84_ELLIPSOID, awayFromBern(-1));
+    const cam = obliqueCamera(WGS84_ELLIPSOID, west, 79 * KM, 90);
+    const camDir = cam.position.clone().normalize();
+    const east = BERN_DIR.clone()
+      .sub(camDir)
+      .projectOnPlane(camDir)
+      .normalize();
+    const path = planFlight(
+      WGS84_ELLIPSOID,
+      {
+        pose: { direction: camDir, up: east },
+        distanceM: cam.position.length(),
+        pitchDeg: 22.5,
+      },
+      orbitPose(WGS84_ELLIPSOID, BERN),
+      { landingM },
+    );
+    expect(Math.abs(path.startRollRad) / DEG).toBeLessThan(2);
+    for (const t of [0, 1_000, 3_000, 6_000]) {
+      const f = flightAt(path, t);
+      const ahead = f.centre.clone().sub(f.camera).projectOnPlane(f.camera);
+      const toTarget = BERN_DIR.clone().sub(f.camera).projectOnPlane(f.camera);
+      expect(ahead.angleTo(toTarget) / DEG, `at ${t} ms`).toBeLessThan(2);
+    }
+  });
+
   // WHY: a missed end is a landing somewhere else.
   it("ends exactly at the landing over the target, at the landing pitch", () => {
     const path = fly(awayFromBern(30), 10_100 * KM);
