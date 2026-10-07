@@ -145,6 +145,17 @@ export async function installTourViewerArFakes(page, options = {}) {
         },
         /** Photos "encoded" by the fake (a 3-byte stand-in per capture). */
         encodedFrames: 0,
+        /** The stations' HUD (tour kit plan K4): the targets getter the
+         *  page handed the last HUD it started, how many it started, and
+         *  whether that one was disposed. */
+        hud: /** @type {null | { getTargets: () => any[], disposed: boolean }} */ (
+          null
+        ),
+        hudStarts: 0,
+        /** Every source the stories' one audio element was asked to play
+         *  (K4), and how many audio elements the page made. */
+        audioPlays: /** @type {string[]} */ ([]),
+        audioElements: 0,
         /** The scan gate's escape clock (M5): armed timers the spec fires. */
         timers:
           /** @type {{ fn: () => void, ms: number, cancelled: boolean }[]} */ ([]),
@@ -427,11 +438,38 @@ export async function installTourViewerArFakes(page, options = {}) {
             timer.cancelled = true;
           };
         },
-        createLabel: (text) => {
-          // A bare three Object3D stands in for the canvas-backed sprite.
-          const object = { name: `label:${text}`, position: { set() {} } };
-          return { object, dispose() {} };
+        // The stations' HUD (K4): no camera here, so the spec reads the
+        // targets the page would point at.
+        createWayfindingHud: (options) => {
+          test.hudStarts += 1;
+          const handle = { getTargets: options.getTargets, disposed: false };
+          test.hud = handle;
+          return {
+            dispose() {
+              handle.disposed = true;
+            },
+          };
         },
+        // The stories' audio element (K4): headless Chromium cannot play
+        // the fixture's bytes, so this records what would play.
+        createAudioElement: () => {
+          test.audioElements += 1;
+          return {
+            src: "",
+            onended: null,
+            play() {
+              test.audioPlays.push(this.src);
+              return Promise.resolve();
+            },
+            pause() {},
+          };
+        },
+        // No `loadGlbModel` fake: the real seam runs three's GLTFLoader on
+        // the fixture's minimal `.glb`.
+        // No `createLabel` fake: Chromium has the canvas the real text
+        // sprite needs. A plain-object stand-in was REFUSED by three's
+        // Object3D.add (only a console error), so no spec saw a pin label
+        // in the scene graph.
         stopCameraFrameCapture: () => {
           test.stopCaptureCalls += 1;
         },
@@ -491,8 +529,12 @@ export async function enterArAndMeasure(page) {
     )
     .toMatch(/waiting for GPS alignment/i);
   await seedAlignment(page);
-  await expect(page.getByTestId("setup-mint")).toBeEnabled({ timeout: 10000 });
-  await page.getByTestId("setup-mint").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /Code measured/,
+    {
+      timeout: 10000,
+    },
+  );
   await expect(page.getByTestId("setup-pin")).toBeEnabled();
 }
 
@@ -533,4 +575,47 @@ export async function seedAlignment(page) {
       });
     }
   });
+}
+
+/** Metres to degrees at the fakes' zero (47.5, 8.7). */
+const DEG_PER_M_LAT = 8.9832e-6;
+const DEG_PER_M_LON = 1.32966e-5;
+
+/**
+ * One device fix with the phone `north`/`east` metres from the zero in
+ * GPS-world terms: the fix reads that spot, and the AR pose is that spot
+ * taken back through the store's CURRENT alignment (whatever the code's
+ * votes made of it), so the camera stands exactly there.
+ */
+export async function standAt(page, north, east, second) {
+  await page.evaluate(
+    ({ north, east, lat, lon, timestamp }) => {
+      const test = /** @type {any} */ (window).__tourViewerTest;
+      const m =
+        test.alignmentStore.getState().gpsData?.gpsEvents?.alignmentMatrix;
+      const a =
+        m != null && m.length === 16
+          ? Array.from(m)
+          : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+      // World NUE -> odometry NUE: the rigid inverse R^T (w - t).
+      const d = [north - a[12], 1.4 - a[13], east - a[14]];
+      const n = a[0] * d[0] + a[1] * d[1] + a[2] * d[2];
+      const u = a[4] * d[0] + a[5] * d[1] + a[6] * d[2];
+      const e = a[8] * d[0] + a[9] * d[1] + a[10] * d[2];
+      test.emitGps({
+        lat,
+        lon,
+        accuracy: 4,
+        timestamp,
+        arPosition: [e, u, -n], // raw WebXR: x East, y Up, z South
+      });
+    },
+    {
+      north,
+      east,
+      lat: 47.5 + north * DEG_PER_M_LAT,
+      lon: 8.7 + east * DEG_PER_M_LON,
+      timestamp: 1_790_000_000_000 + second * 1000,
+    },
+  );
 }

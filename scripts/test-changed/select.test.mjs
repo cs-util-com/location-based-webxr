@@ -4,7 +4,12 @@
 // documented footgun (root-file blindness, untracked-file blindness, or the
 // generated-timings-file feedback loop).
 import { describe, it, expect } from 'vitest';
-import { selectPackages, gateCommands } from './select.mjs';
+import {
+  selectPackages,
+  gateCommands,
+  cascadeCommands,
+  FRAMEWORK_BUILD_IF_STALE,
+} from './select.mjs';
 
 const DIRS = [
   'GpsPlusSlamJs_AppFramework',
@@ -122,19 +127,64 @@ describe('gateCommands', () => {
     const commands = gateCommands(['gps-plus-slam-osm'], {
       skipBrowserEnv: ENV,
     });
-    expect(commands).toHaveLength(3);
+    expect(commands).toHaveLength(4);
 
     expect(commands[0].command).toBe('pnpm run test:repo-config');
+    expect(commands[1].command).toBe(FRAMEWORK_BUILD_IF_STALE);
 
     // The changed package: plain `--filter`, no env, so its own e2e runs.
-    expect(commands[1].command).toContain('--filter gps-plus-slam-osm');
-    expect(commands[1].command).not.toContain('...');
-    expect(commands[1].env).toEqual({});
+    expect(commands[2].command).toContain('--filter gps-plus-slam-osm');
+    expect(commands[2].command).not.toContain('...');
+    expect(commands[2].env).toEqual({});
 
     // Dependents: the closure MINUS the package that just ran, in skip mode.
-    expect(commands[2].command).toContain('--filter "...gps-plus-slam-osm"');
-    expect(commands[2].command).toContain('--filter "!gps-plus-slam-osm"');
-    expect(commands[2].env).toEqual({ [ENV]: '1' });
+    expect(commands[3].command).toContain('--filter "...gps-plus-slam-osm"');
+    expect(commands[3].command).toContain('--filter "!gps-plus-slam-osm"');
+    expect(commands[3].env).toEqual({ [ENV]: '1' });
+  });
+
+  // Why this test matters (stale-dist follow-up 2026-09-28-1910, option 1):
+  // the Tour Viewer, AnchorStarter and the other demo apps resolve the
+  // framework through its package `exports`, i.e. through `dist`, and their
+  // own `build:framework` stage comes AFTER `typecheck` and `test:unit`. On a
+  // framework change the framework's own gate builds nothing, so without this
+  // step a dependent type-checked and unit-tested against whatever `dist` was
+  // on disk: a false green whenever the source had removed an export the old
+  // `dist` still had. CI was safe only because it builds first.
+  it('builds the framework dist (when stale) before ANY package gate runs', () => {
+    const commands = gateCommands(['gps-plus-slam-app-framework'], {
+      skipBrowserEnv: ENV,
+    });
+    const build = commands.findIndex(
+      (c) => c.command === FRAMEWORK_BUILD_IF_STALE
+    );
+    expect(build).toBeGreaterThan(-1);
+    commands.forEach((c, i) => {
+      if (/\btest$/.test(c.command)) {
+        expect(i).toBeGreaterThan(build);
+      }
+    });
+    // Through the staleness check, never an unconditional build: a fresh dist
+    // costs an mtime walk, not a ~5 s build per commit.
+    expect(FRAMEWORK_BUILD_IF_STALE).toContain(
+      'build-workspace-package-if-stale.mjs gps-plus-slam-app-framework GpsPlusSlamJs_AppFramework'
+    );
+  });
+
+  it('runs no build when no package gate runs', () => {
+    expect(
+      gateCommands([], { skipBrowserEnv: ENV }).map((c) => c.command)
+    ).not.toContain(FRAMEWORK_BUILD_IF_STALE);
+  });
+
+  // The full-cascade fallback gets the same step: the cascade runs knip
+  // (which resolves workspace packages through their `dist`) before any
+  // package stage has built the framework.
+  it('builds the framework (when stale) before the full cascade too', () => {
+    expect(cascadeCommands()).toEqual([
+      { command: FRAMEWORK_BUILD_IF_STALE, env: {} },
+      { command: 'pnpm test', env: {} },
+    ]);
   });
 
   it('never puts the changed packages in skip mode', () => {
@@ -150,7 +200,7 @@ describe('gateCommands', () => {
   });
 
   it('subtracts every changed package from the dependent run', () => {
-    const [, , dependents] = gateCommands(['a', 'b', 'c'], {
+    const [, , , dependents] = gateCommands(['a', 'b', 'c'], {
       skipBrowserEnv: ENV,
     });
     for (const name of ['a', 'b', 'c']) {

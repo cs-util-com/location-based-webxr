@@ -249,7 +249,7 @@ function storedLines(stored: CodeVerdict): string[] {
     );
     if (stored.kind !== "good") {
       lines.push(
-        'Visitors keep this position until you replace it: measure the code again and tap "Replace the code\'s saved position".',
+        "Visitors keep this position until a better one replaces it: see the code in AR, then walk farther - the position improves on its own once the walk is long enough for the GPS accuracy.",
       );
     }
   }

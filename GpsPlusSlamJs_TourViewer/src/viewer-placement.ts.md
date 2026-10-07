@@ -36,7 +36,11 @@ recording. Its own module since the flows plan M6.
     could not be read) waives a scanning gate that cannot lock. The
     controller's `onLocked` with a lockable level whose code has cast
     votes in this entry (`hasVoted`; authoring plan M2b, §2.2 B3) passes
-    the gate - a lock that cast none corrected nothing; the
+    the gate - a lock that cast none corrected nothing (`gateOnLock`); AFTER
+    it, every such lock of a code with a known level id goes to
+    `hooks.stationCodeLocked` (tour kit plan K4: the lock that passes the
+    gate may also find the station the code anchors; an ignored code
+    reaches `onIgnoredLock` instead, D20); the
     escape button passes it as "skipped"; both place first and render the
     line after. Nothing is placed until the gate allows it (DEC-N3): the
     capture-spot join, the tour's content, AND the ring placed on a voted
@@ -95,8 +99,11 @@ recording. Its own module since the flows plan M6.
     runs the capture join ONCE per session+tour
     (`ctx.placementAttempted`) as soon as
     `isPlacementReady(selectTrackingQuality(state))`; until then sets
-    `waiting-ready`. A tour without a recording declines at once (the ring
-    waits for a lock). Cheap by design: a few predicate reads per dispatch.
+    `waiting-ready`. It also waits while `tour.json` is still loading
+    (`tourManifestStatus === "pending"`; the manifest's settle calls it
+    again), because the baked spots live there. A tour with neither a
+    recording nor baked spots declines at once (the ring waits for a
+    lock). Cheap by design: a few predicate reads per dispatch.
 
 ## The moved-code veto (D20, M5c; owner approval 2026-10-02)
 
@@ -148,6 +155,15 @@ recording. Its own module since the flows plan M6.
   of the ≤ 10 budgeted locks retries (`imagePlanes === null &&
 !imagePlanesLoading`, review #4); a lock after a placement changes the
   status only.
+- **The photos' spots come from `tour.json` when the creator's Finish
+  baked them** (`captureSpots`, scan-pass plan S1, S-D11): no download of
+  the walk, no replay, and the status line reports the baked fixes. A tour
+  without them runs the SAME bake here (`capture-bake.ts`: each photo
+  through the first settled alignment after it was taken), so both show
+  the photos at the same spots.
+- **The ring's photos are never the walk's** (`entriesForVisitor` over
+  `ctx.scanEntries`): the first three images outside the walk, never a
+  frame of a walk the copy kept for a co-author.
 - **A declined join is remembered** (`joinDeclined`) so a later lock goes
   straight to the ring instead of replaying the walk (seconds of CPU).
 - **Liveness inside the async runs is the controller status (`running`)
@@ -238,6 +254,11 @@ recording. Its own module since the flows plan M6.
   cleared on tour teardown (`archive-open.ts`), not on session end - the
   same tour's codes stay valid across AR re-entries, and the QR
   controller's `reset()` re-resolves any text that locks again.
+- Every tour image this module decodes (the placed photo planes, the
+  capture planes, the ring) carries the tour pixel cap
+  (`decodeFrameTexture`'s `maxPixels: TOUR_MAX_IMAGE_PIXELS`, tour kit K4
+  review R2): an image over 4096 x 4096, or one whose size cannot be read,
+  is never decoded and leaves its plane out.
 - Capture planes decode at divisor 2 (the framework decoder's OOM
   mitigation; geo-join review finding 4).
 
