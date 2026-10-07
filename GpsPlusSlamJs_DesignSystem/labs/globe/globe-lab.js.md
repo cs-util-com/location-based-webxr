@@ -70,7 +70,10 @@
   `flight=2` one (the hash switches modes without a restart); the world frame follows the camera during it;
   `land=1` flies it to its link's place; `holdDiveAt` and `diveAltitudeAt` read its path at its own clock,
   and `state().pin.flight` reports its phase, clock, rate, landing,
-  progress, gate and end),
+  progress, gate and end), `flightStartKm` (0-100,000, default 65,000: a
+  `land=1&flight=2` link's flight starts this far up over the camera's
+  first view, round-2 plan DEC-FR2-3; 0 from the camera as placed; the
+  pin's press always flies from where the camera is),
   `nightGain` (0-4, default 0.7), `waterRoughness`,
   `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default
   0.375, 0.75 x the first 0.5 by the owner's choice, DEC-G6-5),

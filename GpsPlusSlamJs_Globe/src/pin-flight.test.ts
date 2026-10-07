@@ -163,8 +163,10 @@ describe("the pin's flight", () => {
     // It looks down at about 80 degrees there: the camera stands a few
     // hundred km behind its view, never a continent away.
     expect(drift).toBeLessThan(600 * KM);
-    // And it moved from the press: no hovering in place.
-    expect(samples[60]?.h ?? Infinity).toBeLessThan(10_000 * KM);
+    // And it moves from the press: no hovering in place. The hold is slow
+    // by design (DEC-FR2-9: its pace is about the stretch a fix then sets,
+    // 0.15, so the fix never brakes); 10 s in it is clearly lower.
+    expect(samples[600]?.h ?? Infinity).toBeLessThan(0.95 * 10_100 * KM);
   });
 
   // WHY (DEC-CF-3b): the data is guaranteed time to load: the camera does
@@ -263,9 +265,13 @@ describe("the pin's flight", () => {
       while (end > 0 && (vs[end - 1]?.h ?? 0) <= 3 * 2 * KM) end -= 1;
       const w = vs.slice(0, end).filter((s) => s.t >= fixAt + 1_000);
       const v = w.map((s) => s.v);
-      // (a) at 0.3, not 0.5: the cold pace flies the high stretch at half
-      // speed by design (DEC-CF-3b), which a stall check must allow.
-      expect(noStall(v, 0.3), tag).toBe(true);
+      // (a) at 0.3, from a second after the data is in: before it, the
+      // pace is the stretch, slow by design (DEC-CF-3b; DEC-FR2-9 starts a
+      // link at it, about 0.14, where it used to start at 0.5), and one
+      // acceleration out of it is not a stall. (b) and (c) still judge the
+      // whole window, the slow part included.
+      const released = w.filter((s) => s.t >= readyAt + 1_000).map((s) => s.v);
+      expect(noStall(released, 0.3), tag).toBe(true);
       expect(noStopAndGo(v, 0.2), tag).toBe(true);
       expect(noLateSurge(w, 1.25), tag).toBe(true);
     }
@@ -688,5 +694,82 @@ describe("the pin's flight, CF3 milestone review", () => {
       ),
     );
     expect((d * R) / KM).toBeLessThan(1_000);
+  });
+});
+
+describe("the pin's pace never slows while it approaches (round-2 plan DEC-FR2-9)", () => {
+  // WHY (round-2 plan 2026-10-07-2350 §8): the owner saw "fast, then a
+  // stop, then slow". Measured in the browser: the rate fell from the cold
+  // 0.5 to 0.14 within a second, then followed the data's lumpy progress
+  // (an Overpass tile weighs 21 MB against 0.2 MB for a height tile), up to
+  // 0.78 and down to 0.27. The pace must start where it will stay and only
+  // rise while it approaches; only the gate's ease, for data later than
+  // predicted, may slow it.
+  const profiles: Record<string, (x: number) => number> = {
+    "all at once": (x) => (x >= 1 ? 1 : 0),
+    "0.9 then a stall": (x) => (x >= 1 ? 1 : x >= 0.6 ? 0.9 : 0),
+    "two halves": (x) => (x >= 1 ? 1 : x >= 0.5 ? 0.5 : 0),
+    steady: (x) => Math.min(1, Math.max(0, x)),
+  };
+  it("starts at its pace and never dips in the high stretch, whatever the data", () => {
+    const failures: string[] = [];
+    for (const startKm of [43_600, 65_000]) {
+      for (const [name, profile] of Object.entries(profiles)) {
+        for (const dataS of [2, 5, 10, 20, 30, 45, 60, 90]) {
+          const pin = pressPin(
+            WGS84_ELLIPSOID,
+            0,
+            cameraOver({ lat: 30, lng: 15 }, startKm * KM),
+            { target: bernPose, landingM: 2 * KM, progress: 0 },
+          );
+          const { samples } = run(pin, 150_000, (t, p) =>
+            pinProgress(p, t, profile(t / (dataS * 1000))),
+          );
+          const tag = `${startKm} km, ${name}, ${dataS} s`;
+          const high = speeds(samples).filter(
+            (s) => s.t >= 1_000 && s.h > 2.5 * PIN_FLIGHT.commitM,
+          );
+          const v = high.map((s) => s.v);
+          if (!noStopAndGo(v, 0.2)) failures.push(`${tag}: stop-and-go`);
+          const early = Math.max(...v.slice(0, 30));
+          const later = v.slice(120, 180);
+          if (later.length > 0 && early > 1.25 * Math.max(...later)) {
+            failures.push(`${tag}: starts fast, then slows`);
+          }
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  // WHY (DEC-FR2-9): the pin's own press holds until the fix; the hold's
+  // pace must not be faster than the stretch the fix then sets, or the fix
+  // reads as a brake.
+  it("never dips when the fix comes during the hold, whatever the data", () => {
+    const failures: string[] = [];
+    for (const fixAt of [1_500, 5_000, 12_000]) {
+      for (const [name, profile] of Object.entries(profiles)) {
+        for (const dataS of [2, 10, 30, 60]) {
+          const pin = pressPin(
+            WGS84_ELLIPSOID,
+            0,
+            cameraOver(NEW_YORK, 25_600 * KM),
+            { target: null, landingM: 2 * KM, progress: 0 },
+          );
+          const { samples } = run(pin, 150_000, (t, p) => {
+            const q =
+              t >= fixAt && p.phase === "holding" ? pinFix(p, t, bernPose) : p;
+            return pinProgress(q, t, profile((t - fixAt) / (dataS * 1000)));
+          });
+          const v = speeds(samples)
+            .filter((s) => s.t >= 1_000 && s.h > 2.5 * PIN_FLIGHT.commitM)
+            .map((s) => s.v);
+          if (!noStopAndGo(v, 0.2)) {
+            failures.push(`fix ${fixAt}, ${name}, ${dataS} s: stop-and-go`);
+          }
+        }
+      }
+    }
+    expect(failures).toEqual([]);
   });
 });

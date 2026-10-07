@@ -469,15 +469,27 @@ test("flight=2: a land=1 link flies the continuous flight and lands", async ({
   expect(startAt).toBeGreaterThanOrEqual(0);
   const samples = all.slice(startAt);
   const flying = samples.filter((s) => s.phase !== "landed");
-  const startKm = samples[0].m / 1000;
+  // The flight's first sample can still read the camera the intro placed
+  // (the pin flight moves it on its first frame): the start is the highest
+  // of the first few.
+  const startKm = Math.max(...samples.slice(0, 5).map((s) => s.m)) / 1000;
   const lowestKm = Math.min(...flying.map((s) => s.m)) / 1000;
   const phases = [...new Set(samples.map((s) => s.flight))];
   const st = await page.evaluate(() => window.__globeLab.state());
   console.log(
-    `flight=2 land=1: ${samples.length} frames, first at ${startKm.toFixed(0)} km, lowest before landing ${lowestKm.toFixed(2)} km, landed at ${(st.altitudeM / 1000).toFixed(2)} km; pin flight phases ${phases.join(" > ")}; "${st.pin.status}"`,
+    `flight=2 land=1: ${samples.length} frames, first ${samples
+      .slice(0, 5)
+      .map((s) => (s.m / 1000).toFixed(0))
+      .join(
+        "/",
+      )} km, lowest before landing ${lowestKm.toFixed(2)} km, landed at ${(st.altitudeM / 1000).toFixed(2)} km; pin flight phases ${phases.join(" > ")}; "${st.pin.status}"`,
   );
   expect(errors).toEqual([]);
-  expect(startKm).toBeGreaterThan(1_000);
+  // WHY (round-2 plan DEC-FR2-3, owner 2026-10-07: "start at about 65,000
+  // km and approach slowly"): a link's flight starts far out, wherever the
+  // intro happens to be.
+  expect(startKm).toBeGreaterThan(64_000);
+  expect(startKm).toBeLessThan(66_000);
   expect(lowestKm).toBeGreaterThan(2 * 0.9);
   expect(st.altitudeM).toBeLessThan(3_500);
   // The sampler can miss the landed frame (the boot returns on it), so the

@@ -56,6 +56,7 @@ import {
   diveStep,
   obliqueCamera,
   planDive,
+  surfaceRadiusAlong,
 } from "/globe/globe-dive.js";
 import { FLIGHT_PACE_DEFAULTS } from "/globe/flight-pace.js";
 import { arrivalStatusText, createDiveClock } from "/globe/globe-arrival.js";
@@ -409,6 +410,12 @@ const PARAMS = {
   // above the band until the fix, one path gated on its data, replans that
   // never stop); 1 today's dive, until the owner's phone run (CF5).
   flight: { fallback: 1, min: 1, max: 2 },
+  // Where a link's continuous flight (`land=1&flight=2`) starts, km of
+  // altitude over the camera's first view (round-2 plan DEC-FR2-3, owner
+  // 2026-10-07: "start at about 65,000 km and approach slowly"); 0 starts
+  // from the camera as the intro placed it. The pin's press always flies
+  // from where the camera is.
+  flightStartKm: { fallback: 65_000, min: 0, max: 100_000 },
   // The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6): on unless 0.
   // While it runs it paces the dive (`/globe/flight-pace.js`, at most the
   // 30 s of DEC-GL5-6) unless `diveMs` is set in the hash, which keeps
@@ -1376,10 +1383,19 @@ function bindPin({
    * The continuous flight from the camera as it is, to `place` if known
    * (a link), else held above the band until the fix (DEC-CF-4b).
    */
-  const beginPinFlight = (place) => {
+  const beginPinFlight = (place, { fromAltitudeM = 0 } = {}) => {
     const params = getParams();
     controls.release();
     const start = ecefCamera();
+    if (fromAltitudeM > 0) {
+      // Out along the camera's own direction, its rotation kept.
+      const direction = start.position.clone().normalize();
+      start.position.copy(
+        direction.multiplyScalar(
+          surfaceRadiusAlong(ellipsoid, direction) + fromAltitudeM,
+        ),
+      );
+    }
     const now = performance.now();
     flight.flyPin(
       now,
@@ -1506,7 +1522,9 @@ function bindPin({
       message = "";
       go("press");
       if (moving()) {
-        beginPinFlight(place);
+        beginPinFlight(place, {
+          fromAltitudeM: getParams().flightStartKm * 1000,
+        });
         pinLocated(place);
       } else {
         startDive(place);

@@ -16,11 +16,13 @@
  *   cross-faded two geodesics and dipped the speed (measured).
  * - DEC-CF-6 (owner, after the CF3 milestone review measured a stop at
  *   about 110 km on cold data): predict and stretch. The data's time left
- *   (its progress so far, extrapolated; before any, `assumedDataMs`)
- *   sets the high stretch's rate, so the camera reaches the gate's ease
- *   zone about when the data is in; only data later than predicted meets
- *   the ease into the gate. Data that reports no progress until it is all
- *   in (one big tile) cannot be predicted beyond the assumption.
+ *   (`assumedDataMs` less the time passed) sets the high stretch's rate,
+ *   so the camera reaches the gate's ease zone about when the data is in;
+ *   only data later than that meets the ease into the gate.
+ * - DEC-FR2-9 (round-2 plan 2026-10-07-2350 §8, after the owner saw "fast,
+ *   then a stop, then slow"): the pace starts where it will stay and never
+ *   falls while approaching (`paceFloor`), except into the gate; partial
+ *   progress is not extrapolated (it is lumpy).
  * - DEC-CF-5: `safetyCapMs` after the press the gate opens regardless.
  * - A touch cancels in every moving phase, a failed hold included (the
  *   camera is the controls'). A press already below `commitM` has no gate.
@@ -53,8 +55,12 @@ export const PIN_FLIGHT = Object.freeze({
   commitM: 100_000,
   /** DEC-CF-5: after this from the press the gate opens regardless, ms. */
   safetyCapMs: 60_000,
-  /** The flight clock's rate with no data yet (1 with all of it). */
-  coldRate: 0.5,
+  /**
+   * The hold's pace, before a target (DEC-FR2-9): about the stretch a fix
+   * then sets, so the fix never brakes (swept 0.1-0.2; 0.5 braked by 3x,
+   * 0.1 slowed a stretch below its floor).
+   */
+  coldRate: 0.15,
   /** The rate's lag behind its target, ms (as `flight-pace`'s 800 ms). */
   rateLagMs: 800,
   /** The gate eases the clock to a stop over this much flight time before it, ms. */
@@ -101,6 +107,11 @@ export interface PinFlight {
   readonly gateClockMs: number | null;
   /** When the current target's data started (its fix or link), page ms. */
   readonly dataStartMs: number;
+  /**
+   * The highest stretch reached while approaching this target: the pace
+   * never falls below it, except into the gate (round-2 plan DEC-FR2-9).
+   */
+  readonly paceFloor: number;
 }
 
 function requireTime(nowMs: number): void {
@@ -179,14 +190,21 @@ function towardTarget(pin: PinFlight, target: OrbitPose): PinFlight {
     ...pin,
     progress: 0,
     dataStartMs: pin.nowMs,
+    paceFloor: 0,
     gateClockMs: gateOf(flight),
   };
-  return {
+  const flying: PinFlight = {
     ...next,
     target,
     flight,
     phase: released(next, pin.nowMs) ? "descending" : "approaching",
   };
+  if (flying.phase !== "approaching" || pin.flight) return flying;
+  // A press that knows its target (a link) starts at the pace it will
+  // keep: from the cold rate it fell 4x within a second (DEC-FR2-9).
+  const { stretch } = pace(flying, pin.nowMs);
+  const started = { ...flying, paceFloor: stretch };
+  return { ...started, rate: targetRate(started, pin.nowMs) };
 }
 
 /** The hold: down to `holdM` over where the camera looks; none if already lower. */
@@ -264,6 +282,7 @@ export function pressPin(
     rate: PIN_FLIGHT.coldRate,
     gateClockMs: null,
     dataStartMs: nowMs,
+    paceFloor: 0,
   };
   if (!options.target) return holdOver(base);
   const flying = towardTarget(base, options.target);
@@ -340,13 +359,16 @@ export function pinTouch(pin: PinFlight, nowMs: number): PinFlight {
 }
 
 /**
- * The data's time still to come, page ms (DEC-CF-6): its progress so far
- * over the time since it started, extrapolated; before any progress, the
- * assumed time less what has passed.
+ * The data's time still to come, page ms (DEC-CF-6, narrowed by DEC-FR2-9):
+ * the assumed time less what has passed. Partial progress is NOT
+ * extrapolated: the progress is lumpy by design (each job weighted by its
+ * bytes, one Overpass tile most of it), and following it predicted too
+ * early, then too late. Measured over a 0.9 step that stalls: 3-15 s of
+ * waiting at the gate when extrapolated, none without. The pace rises once
+ * all of it is in (the gate opens).
  */
 function dataLeftMs(pin: PinFlight, nowMs: number): number {
   const since = Math.max(nowMs - pin.dataStartMs, 1);
-  if (pin.progress > 0) return ((1 - pin.progress) / pin.progress) * since;
   // Overdue data with no progress is assumed to need half again as long
   // as it has taken: a shrinking guess sped the camera at a gate it then
   // had to stop at.
@@ -362,10 +384,17 @@ function dataLeftMs(pin: PinFlight, nowMs: number): number {
  * eased to 0 over `gateEaseMs` before the gate, the fallback when the data
  * is later than predicted.
  */
-function targetRate(pin: PinFlight, nowMs: number): number {
-  if (pin.phase === "descending") return 1;
-  if (pin.phase !== "approaching") return PIN_FLIGHT.coldRate;
-  if (released(pin, nowMs) || pin.gateClockMs === null) return 1;
+function pace(
+  pin: PinFlight,
+  nowMs: number,
+): { readonly stretch: number; readonly ease: number } {
+  if (pin.phase === "descending") return { stretch: 1, ease: 1 };
+  if (pin.phase !== "approaching") {
+    return { stretch: PIN_FLIGHT.coldRate, ease: 1 };
+  }
+  if (released(pin, nowMs) || pin.gateClockMs === null) {
+    return { stretch: 1, ease: 1 };
+  }
   const toGate = pin.gateClockMs - pin.clockMs;
   // The ease zone in the page's time, by the rate the clock actually runs
   // at (it lags its target by `rateLagMs`): sized in flight time it took
@@ -384,7 +413,19 @@ function targetRate(pin: PinFlight, nowMs: number): number {
         (PIN_FLIGHT.arrivalMargin * dataLeftMs(pin, nowMs)),
     ),
   );
-  return stretch * smoothstep(toGate / zone);
+  return { stretch, ease: smoothstep(toGate / zone) };
+}
+
+/**
+ * The rate the clock steers towards: the pace's stretch, never below the
+ * floor it has reached while approaching (DEC-FR2-9: the data's progress
+ * is lumpy, and following it down slowed the camera mid-air), times the
+ * gate's ease.
+ */
+function targetRate(pin: PinFlight, nowMs: number): number {
+  const { stretch, ease } = pace(pin, nowMs);
+  const floor = pin.phase === "approaching" ? pin.paceFloor : 0;
+  return Math.max(floor, stretch) * ease;
 }
 
 /**
@@ -409,7 +450,11 @@ function advance(pin: PinFlight, nowMs: number): PinFlight {
   if (closed && pin.gateClockMs !== null) {
     clockMs = Math.min(clockMs, pin.gateClockMs);
   }
-  return { ...pin, nowMs, clockMs, rate };
+  const paceFloor =
+    pin.phase === "approaching"
+      ? Math.max(pin.paceFloor, pace(pin, nowMs).stretch)
+      : pin.paceFloor;
+  return { ...pin, nowMs, clockMs, rate, paceFloor };
 }
 
 /** The flight's camera at the pin's clock, or the hover point. */

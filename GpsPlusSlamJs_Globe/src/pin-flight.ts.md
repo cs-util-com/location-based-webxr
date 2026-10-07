@@ -32,10 +32,10 @@ The owner's decisions that this module puts into practice:
 - **DEC-CF-6** (owner, after the CF3 milestone review measured a stop at
   about 110 km when the data took longer than the flight): predict and
   stretch.
-  - The data's time left is its progress so far extrapolated over the
-    time since it started (its fix or link); before any progress,
-    `assumedDataMs` (45 s) less the time passed, and once that has run out,
-    half again as long as it has taken.
+  - The data's time left is `assumedDataMs` (45 s) less the time since it
+    started (its fix or link), and once that has run out, half again as
+    long as it has taken. Partial progress is not extrapolated (DEC-FR2-9,
+    below).
   - The high stretch's rate is the flight time left to the gate's ease
     zone over `arrivalMargin` (1.25) x the data's time left, between
     `minRate` (0.05) and 1: the camera reaches the zone about when the data
@@ -104,10 +104,24 @@ The owner's decisions that this module puts into practice:
   rates agree.
 - The target rate:
   - 1 once released or descending;
-  - while holding, `coldRate`;
-  - while approaching, DEC-CF-6's stretch times smoothstep(time to the
-    gate / the ease zone); the clock never passes a closed gate, even in
-    one long frame.
+  - while holding, `coldRate` (0.15);
+  - while approaching, DEC-CF-6's stretch, never below the highest it has
+    reached (`paceFloor`), times smoothstep(time to the gate / the ease
+    zone); the clock never passes a closed gate, even in one long frame.
+- **DEC-FR2-9** (round-2 plan 2026-10-07-2350 §8; the owner saw "fast, then
+  a stop, then slow", measured in the browser as the rate following the
+  data's lumpy progress: 0.5, 0.14, 0.78, 0.27, 1):
+  - a press that knows its target starts at its stretch, not at the cold
+    rate;
+  - while approaching the pace only rises, except into the gate;
+  - partial progress is not extrapolated: weighted by bytes, one Overpass
+    tile is most of it, and extrapolating a 0.9 step that stalls cost 3-15
+    s at the gate (none without; swept over four progress shapes and 2-90
+    s of data, from 43,600 and 65,000 km). The cost: steady data lands a
+    few seconds later (24 s instead of 20 s at 10 s of data);
+  - the hold's pace is about the stretch a fix then sets (0.15; swept
+    0.1-0.2), so a fix during the hold never brakes; 0.5 braked by about
+    3x.
 - The gate is the flight time where the path first comes down through
   `commitM` from above (a 256-sample scan, then bisection), or none.
 - Not `flight-pace`'s `stepPace`, which the plan's CF3 named: it paces
