@@ -40,8 +40,11 @@ const replan = fc.record({
     fc.constant(0),
     fc.double({ min: 0.01, max: 2, noNaN: true }),
   ),
-  /** When, as a share of the first flight. */
-  share: fc.double({ min: 0.05, max: 0.95, noNaN: true }),
+  /**
+   * When, as a share of the first flight: the whole of it, its ramp and
+   * its settle included (CF2 review finding 1: 5-95 % missed both).
+   */
+  share: fc.double({ min: 0, max: 1, noNaN: true }),
 });
 
 type Replan = typeof replan extends fc.Arbitrary<infer T> ? T : never;
@@ -77,13 +80,34 @@ describe("flight replan properties", () => {
         const a = flightCameraAt(first, atMs).position;
         const b = flightCameraAt(second, atMs).position;
         expect(b.distanceTo(a)).toBeLessThan(1e-3 + 1e-9 * a.length());
-        const v = (t: number) =>
-          flightCameraAt(second, t + 1)
-            .position.sub(flightCameraAt(second, t - 1).position)
+        // A replanned flight answers from its replan on: the velocity
+        // before it is the first flight's.
+        const v = (flight: typeof first, t: number) =>
+          flightCameraAt(flight, t + 1)
+            .position.sub(flightCameraAt(flight, t - 1).position)
             .divideScalar(2);
-        const before = v(atMs - 3);
-        const after = v(atMs + 3);
-        const scale = Math.max(before.length(), after.length(), 1e-6);
+        // One-sided over a quarter millisecond, each from the replan's own
+        // point: a difference straddling it measured the braking of a
+        // replan in the final settle (5 % in 6 ms) as a jump.
+        // Small against the join too: a replan in the flight's last
+        // millisecond has a join that short.
+        const h = Math.min(0.25, (second.join?.spanMs ?? 25) / 100);
+        const p = flightCameraAt(first, atMs).position;
+        const before = p
+          .clone()
+          .sub(flightCameraAt(first, atMs - h).position)
+          .divideScalar(h);
+        const after = flightCameraAt(second, atMs + h)
+          .position.sub(p)
+          .divideScalar(h);
+        // Against the speed half a second on as well: a replan at the press
+        // itself meets a camera at rest, where both sides are near zero.
+        const scale = Math.max(
+          before.length(),
+          after.length(),
+          v(second, atMs + 500).length(),
+          1e-6,
+        );
         expect(after.clone().sub(before).length() / scale).toBeLessThan(0.05);
       }),
       { numRuns: 150 },
@@ -93,18 +117,20 @@ describe("flight replan properties", () => {
   it("lands exactly at the new place and altitude, never below the lowest of its start and landings", () => {
     fc.assert(
       fc.property(replan, (r) => {
-        const { second, place } = setUp(r);
+        const { first, second, atMs, place } = setUp(r);
         const end = flightFrameAt(second, second.endsAtMs);
         expect(end.done).toBe(true);
         expect(end.altitudeM).toBe(r.newLandingM);
         expect(
-          end.centre.angleTo(orbitPose(WGS84_ELLIPSOID, place).direction),
+          // The chord: angleTo's acos cannot tell under 1.5e-8 rad from 0.
+          end.centre.distanceTo(orbitPose(WGS84_ELLIPSOID, place).direction),
         ).toBeLessThan(1e-9);
         const floor =
           Math.min(r.startKm * 1_000, r.landingM, r.newLandingM) * (1 - 1e-9);
         let lowest = Infinity;
         for (let t = 0; t <= second.endsAtMs; t += second.endsAtMs / 300) {
-          lowest = Math.min(lowest, flightFrameAt(second, t).altitudeM);
+          const flight = t < atMs ? first : second;
+          lowest = Math.min(lowest, flightFrameAt(flight, t).altitudeM);
         }
         expect(lowest).toBeGreaterThanOrEqual(floor);
       }),

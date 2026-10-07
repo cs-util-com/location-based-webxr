@@ -300,6 +300,37 @@ describe("planFlight and flightAt", () => {
     }
   });
 
+  // WHY (CF3): the pin flies to a commit point 100 km over the target and
+  // replans to the landing once the data is ready. If that stop looked
+  // like a landing (45 degrees), the view would steepen at 100 km and swing
+  // back at the replan; it must look as the whole flight would there.
+  it("looks as the final flight would when it stops short at a commit point", () => {
+    const viewLandingM = 2 * KM;
+    const path = planFlight(
+      WGS84_ELLIPSOID,
+      startAt(awayFromBern(30), 10_100 * KM),
+      orbitPose(WGS84_ELLIPSOID, BERN),
+      { landingM: 100 * KM, viewLandingM },
+    );
+    const law = descentPitchDeg(100 * KM, { landingM: viewLandingM });
+    const end = flightAt(path, path.durationMs);
+    expect(end.pitchDeg).toBeCloseTo(law, 6);
+    expect(end.altitudeM).toBe(100 * KM);
+    expect(end.centre.distanceTo(BERN_DIR)).toBeLessThan(1e-9);
+    // The frame before the end is the end within a metre: no snap.
+    const before = flightCamera(path, path.durationMs - 1).position;
+    const atEnd = flightCamera(path, path.durationMs).position;
+    expect(before.distanceTo(atEnd)).toBeLessThan(1);
+    for (let t = 0; t < path.durationMs; t += 250) {
+      const f = flightAt(path, t);
+      if (f.startWeight > 0) continue;
+      expect(f.pitchDeg).toBeCloseTo(
+        descentPitchDeg(f.altitudeM, { landingM: viewLandingM }),
+        6,
+      );
+    }
+  });
+
   // WHY: a missed end is a landing somewhere else.
   it("ends exactly at the landing over the target, at the landing pitch", () => {
     const path = fly(awayFromBern(30), 10_100 * KM);
@@ -308,7 +339,7 @@ describe("planFlight and flightAt", () => {
     expect(end.altitudeM).toBeCloseTo(landingM, 6);
     expect(end.arcRad).toBeCloseTo(0, 9);
     expect(end.pitchDeg).toBeCloseTo(45, 6);
-    expect(end.centre.angleTo(BERN_DIR)).toBeLessThan(1e-9);
+    expect(end.centre.distanceTo(BERN_DIR)).toBeLessThan(1e-9);
     expect(flightAt(path, path.durationMs - 1).done).toBe(false);
     // The last frame before the end is the end within a metre: no snap.
     const before = flightCamera(path, path.durationMs - 1).position;

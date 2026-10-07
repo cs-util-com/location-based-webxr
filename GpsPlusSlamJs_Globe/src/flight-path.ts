@@ -262,37 +262,69 @@ function geodesic(h0: number, h1: number, d: number): Geodesic {
 /** The clock: the path length travelled by a time, and the cruise between. */
 interface Clock {
   readonly at: (tMs: number) => number;
+  /** The cruise speed (path length per ms; 0 for a short path's Hermite). */
+  readonly speed: number;
   readonly cruise: { readonly fromMs: number; readonly toMs: number } | null;
 }
 
 /** The integral of smoothstep from 0 to x. */
 const smoothIntegral = (x: number) => x ** 3 - x ** 4 / 2;
 
+/**
+ * The share c of a ramp's span flown at the cruise speed: a ramp from s0
+ * to v over T covers T (s0 (1 - c) + v c). A full smoothstep ramp has
+ * c = 1/2; one that starts at `fromShare` of its smoothstep (a replan
+ * continuing an old ramp's tail) has c = (Q - S0) / (1 - S0), S0 the
+ * smoothstep there and Q its mean over the rest.
+ */
+export function rampCruiseShare(fromShare: number): number {
+  const s0 = smoothstep(fromShare);
+  if (s0 >= 1) return 1;
+  const q = (0.5 - smoothIntegral(fromShare)) / (1 - fromShare);
+  return (q - s0) / (1 - s0);
+}
+
 function flightClock(
   length: number,
   durationMs: number,
   startSpeed: number,
   settleFactor: number,
+  rampMs: number,
+  rampFromShare: number,
+  brake: boolean,
 ): Clock {
-  const ramp = Math.min(FLIGHT_PATH.rampMs, durationMs / 4);
+  if (brake) return hermiteClock(length, durationMs, startSpeed);
+  const ramp = Math.min(rampMs, durationMs / 4);
   const settle = Math.min(Math.log(settleFactor), length / 3);
-  // The cruise speed that ends the path at the duration (see the md).
+  // The cruise speed that ends the path at the duration (see the md): a
+  // ramp covers ramp (s0 (1 - c) + v c), c from `rampCruiseShare`.
+  const c = rampCruiseShare(rampFromShare);
   const v =
-    (length + settle - (startSpeed * ramp) / 2) / (durationMs - ramp / 2);
+    (length + settle - startSpeed * ramp * (1 - c)) /
+    (durationMs - ramp * (1 - c));
   const settleMs = settle > 0 && v > 0 ? (2 * settle) / v : 0;
   const cruiseMs = durationMs - ramp - settleMs;
-  const rampLength = (ramp * (startSpeed + v)) / 2;
+  const rampLength = ramp * (startSpeed * (1 - c) + v * c);
   if (!(v > 0) || cruiseMs < 0 || rampLength + settle > length) {
     return hermiteClock(length, durationMs, startSpeed);
   }
+  // The ramp's speed: the tail of a smoothstep from `rampFromShare`, scaled
+  // to run from s0 to v (a full one from 0 is the press's ramp).
+  const x0 = rampFromShare;
+  const s0Share = smoothstep(x0);
+  const k = (v - startSpeed) / (1 - s0Share);
+  const i0 = smoothIntegral(x0);
   return {
+    speed: v,
     cruise: { fromMs: ramp, toMs: ramp + cruiseMs },
     at: (t) => {
       if (t <= 0) return 0;
       if (t >= durationMs) return length;
       if (t < ramp) {
-        const x = t / ramp;
-        return ramp * (startSpeed * x + (v - startSpeed) * smoothIntegral(x));
+        const u = t / ramp;
+        const tail =
+          (smoothIntegral(x0 + (1 - x0) * u) - i0) / (1 - x0) - s0Share * u;
+        return ramp * (startSpeed * u + k * tail);
       }
       if (t < ramp + cruiseMs) return rampLength + v * (t - ramp);
       const x = (t - ramp - cruiseMs) / settleMs;
@@ -316,6 +348,7 @@ function hermiteClock(
 ): Clock {
   const m0 = Math.min(startSpeed * durationMs, 3 * length);
   return {
+    speed: 0,
     cruise: null,
     at: (t) => {
       if (t <= 0) return 0;
@@ -335,6 +368,9 @@ export interface FlightPath {
   readonly landingM: number;
   readonly entryPitchDeg: number;
   readonly landingPitchDeg: number;
+  /** The landing the view's law refers to, and the view's pitch at the end. */
+  readonly viewLandingM: number;
+  readonly endPitchDeg: number;
   /** The target's direction, a unit vector. */
   readonly target: THREE.Vector3;
   /** The course's great circle, by its normal: the view looks ahead about it. */
@@ -349,6 +385,10 @@ export interface FlightPath {
   readonly geodesicLength: number;
   /** The path length travelled by a time after the press. */
   readonly travelledAt: (tMs: number) => number;
+  /** The cruise's speed, path length per ms (0 for a short path). */
+  readonly cruiseSpeed: number;
+  /** Where in its smoothstep the ramp started (0 for a full ramp). */
+  readonly rampFromShare: number;
   /** The cruise, between the ramp and the settle (null for a short path). */
   readonly cruise: { readonly fromMs: number; readonly toMs: number } | null;
   /** The start's pitch, the roll from its up to the course, and its tilt. */
@@ -388,6 +428,10 @@ function courseNormal(
   return new THREE.Vector3().crossVectors(target, up).normalize();
 }
 
+/** An option, or its default. */
+const or = <T>(value: T | undefined, fallback: T): T =>
+  value === undefined ? fallback : value;
+
 /** The options with their defaults, validated (see `planFlight`). */
 function flightOptions(
   start: FlightStart,
@@ -395,21 +439,32 @@ function flightOptions(
 ) {
   const o = {
     landingM: options.landingM,
-    durationMs: options.durationMs ?? FLIGHT_PATH.durationMs,
-    entryPitchDeg: options.entryPitchDeg ?? FLIGHT_PATH.entryPitchDeg,
-    landingPitchDeg: options.landingPitchDeg ?? FLIGHT_PATH.landingPitchDeg,
-    startPitchDeg: start.pitchDeg ?? 90,
-    startSpeed: options.startSpeed ?? 0,
-    settleFactor: options.settleFactor ?? FLIGHT_PATH.settleFactor,
+    durationMs: or(options.durationMs, FLIGHT_PATH.durationMs),
+    entryPitchDeg: or(options.entryPitchDeg, FLIGHT_PATH.entryPitchDeg),
+    landingPitchDeg: or(options.landingPitchDeg, FLIGHT_PATH.landingPitchDeg),
+    startPitchDeg: or(start.pitchDeg, 90),
+    startSpeed: or(options.startSpeed, 0),
+    settleFactor: or(options.settleFactor, FLIGHT_PATH.settleFactor),
+    rampMs: or(options.rampMs, FLIGHT_PATH.rampMs),
+    rampFromShare: or(options.rampFromShare, 0),
+    brake: or(options.brake, false),
+    viewLandingM: or(options.viewLandingM, options.landingM),
   };
   requirePositive("landingM", o.landingM);
   requirePositive("durationMs", o.durationMs);
   requirePositive("start.distanceM", start.distanceM);
   requirePitch("entryPitchDeg", o.entryPitchDeg);
   requirePitch("landingPitchDeg", o.landingPitchDeg);
+  requirePositive("viewLandingM", o.viewLandingM);
   requirePitch("start.pitchDeg", o.startPitchDeg);
   requireAtLeast("startSpeed", o.startSpeed, 0);
   requireAbove("settleFactor", o.settleFactor, 1);
+  requireAtLeast("rampMs", o.rampMs, 0);
+  if (!(o.rampFromShare >= 0 && o.rampFromShare < 1)) {
+    throw new RangeError(
+      `rampFromShare must be in [0, 1), got ${o.rampFromShare}`,
+    );
+  }
   return o;
 }
 
@@ -479,10 +534,40 @@ export function planFlight(
     readonly landingPitchDeg?: number;
     readonly startSpeed?: number;
     readonly settleFactor?: number;
+    /**
+     * The landing the view's law refers to (default: `landingM`). A path
+     * that stops short of the real landing (CF3's commit point) passes the
+     * real one, so it looks there as the whole flight would.
+     */
+    readonly viewLandingM?: number;
+    /**
+     * The speed's ramp from `startSpeed` to the cruise, ms (default
+     * `FLIGHT_PATH.rampMs`; a replan passes what its old ramp had left, or
+     * none when the speeds already match).
+     */
+    readonly rampMs?: number;
+    /**
+     * Where in a smoothstep ramp this one starts, 0-1 (default 0): a replan
+     * continuing an old ramp passes the share it had reached, so the speed
+     * follows the old ramp's tail exactly.
+     */
+    readonly rampFromShare?: number;
+    /**
+     * Brake from `startSpeed` to rest over the whole flight (a cubic
+     * Hermite), with no cruise: a replan in the final settle, which a
+     * cruise would have re-accelerated.
+     */
+    readonly brake?: boolean;
   },
 ): FlightPath {
   const o = flightOptions(start, options);
-  const { landingM, landingPitchDeg } = o;
+  const { landingM } = o;
+  // The view at the end: the law of the landing the view refers to.
+  const endPitchDeg = descentPitchDeg(landingM, {
+    landingM: o.viewLandingM,
+    entryDeg: o.entryPitchDeg,
+    landingDeg: o.landingPitchDeg,
+  });
   const cameraStart = start.pose.direction.clone().normalize();
   const up0 = start.pose.up.clone().projectOnPlane(cameraStart);
   if (!(up0.length() > 1e-9)) {
@@ -509,11 +594,7 @@ export function planFlight(
     .clone()
     .applyAxisAngle(
       normal,
-      -lookBackRad(
-        surfaceRadiusAlong(ellipsoid, to),
-        landingM,
-        landingPitchDeg,
-      ),
+      -lookBackRad(surfaceRadiusAlong(ellipsoid, to), landingM, endPitchDeg),
     );
   const camCross = new THREE.Vector3().crossVectors(cameraStart, cameraEnd);
   const cameraArcRad = Math.atan2(
@@ -526,6 +607,9 @@ export function planFlight(
     o.durationMs,
     o.startSpeed,
     o.settleFactor,
+    o.rampMs,
+    o.rampFromShare,
+    o.brake,
   );
   const startRollRad = startRoll(normal, cameraStart, startUp);
   const { durationMs, entryPitchDeg, startPitchDeg } = o;
@@ -541,8 +625,10 @@ export function planFlight(
     ellipsoid,
     durationMs,
     landingM,
+    viewLandingM: o.viewLandingM,
+    endPitchDeg,
     entryPitchDeg,
-    landingPitchDeg,
+    landingPitchDeg: o.landingPitchDeg,
     target: to,
     courseNormal: normal,
     arcRad,
@@ -552,6 +638,8 @@ export function planFlight(
     cameraArcRad,
     geodesicLength: path.length,
     travelledAt: clock.at,
+    cruiseSpeed: clock.speed,
+    rampFromShare: o.rampFromShare,
     cruise: clock.cruise,
     startPitchDeg,
     startRollRad,
@@ -562,6 +650,29 @@ export function planFlight(
   };
 }
 
+/**
+ * The view of a camera in direction `camera` heading along `heading` (a
+ * tangent there), `altitudeM` up, looking `pitchDeg` below its horizontal:
+ * the ground point it looks at, ahead along the heading (over the surface
+ * under that point, as `obliqueCamera` measures it), and the screen's up
+ * there. The flight builds its view from its camera with it, and so does a
+ * replan's join (which moves the camera, never the view: CF3 found that
+ * moving the view and placing the camera behind it at a corrected altitude
+ * slid the camera sideways).
+ */
+export function viewFromCamera(
+  ellipsoid: Ellipsoid,
+  camera: THREE.Vector3,
+  heading: THREE.Vector3,
+  altitudeM: number,
+  pitchDeg: number,
+): { centre: THREE.Vector3; up: THREE.Vector3 } {
+  const axis = new THREE.Vector3().crossVectors(camera, heading).normalize();
+  const centre = centreAhead(ellipsoid, camera, axis, altitudeM, pitchDeg);
+  const up = heading.clone().applyAxisAngle(axis, camera.angleTo(centre));
+  return { centre, up: tangent(up, centre) };
+}
+
 /** One instant of a flight. */
 export interface FlightFrame {
   /** The view's centre, a unit vector. */
@@ -570,6 +681,8 @@ export interface FlightFrame {
   readonly up: THREE.Vector3;
   /** The camera's direction from the Earth's centre, a unit vector. */
   readonly camera: THREE.Vector3;
+  /** The camera's heading, a tangent at the camera. */
+  readonly heading: THREE.Vector3;
   /** The camera's height above the surface, metres. */
   readonly altitudeM: number;
   /** The angle from the view's centre to the target, radians. */
@@ -617,23 +730,26 @@ export function flightAt(path: FlightPath, tMs: number): FlightFrame {
     -path.startRollRad * startWeight,
   );
   const law = descentPitchDeg(point.h, {
-    landingM: path.landingM,
+    landingM: path.viewLandingM,
     entryDeg: path.entryPitchDeg,
     landingDeg: path.landingPitchDeg,
   });
   const pitchDeg = done
-    ? path.landingPitchDeg
+    ? path.endPitchDeg
     : path.startPitchDeg + (law - path.startPitchDeg) * (1 - startWeight);
-  // The view's centre: ahead of the camera along its heading.
-  const axis = new THREE.Vector3().crossVectors(camera, heading).normalize();
-  const ahead = centreAhead(path.ellipsoid, camera, axis, point.h, pitchDeg);
-  const back = camera.angleTo(ahead);
-  const centre = done ? path.target.clone() : ahead;
-  const up = heading.applyAxisAngle(axis, back);
+  const view = viewFromCamera(
+    path.ellipsoid,
+    camera,
+    heading,
+    point.h,
+    pitchDeg,
+  );
+  const centre = done ? path.target.clone() : view.centre;
   return {
     centre,
-    up: tangent(up, centre),
+    up: tangent(view.up, centre),
     camera,
+    heading,
     altitudeM: point.h,
     arcRad: done ? 0 : centre.angleTo(path.target),
     pitchDeg,

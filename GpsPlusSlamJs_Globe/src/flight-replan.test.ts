@@ -48,11 +48,25 @@ const ZURICH = { lat: 47.3769, lng: 8.5417 };
 const NEW_YORK = { lat: 40.7128, lng: -74.006 };
 const ROME = { lat: 41.9028, lng: 12.4964 };
 
-/** The camera of a flight as a sampled point. */
-const cameraPoint = (flight: Flight) => (t: number) => {
-  const c = flightCameraAt(flight, t);
-  return { altitudeM: c.altitudeM, direction: c.position.clone().normalize() };
-};
+/**
+ * The flight in force at `t` among a flight and its replans (a replanned
+ * `Flight` answers from its replan on: it keeps no history).
+ */
+const pick =
+  (...flights: Flight[]) =>
+  (t: number): Flight =>
+    flights.filter((f) => f.startedAtMs <= t).at(-1) ?? (flights[0] as Flight);
+
+/** The camera of a flight and its replans as a sampled point. */
+const cameraPoint =
+  (...flights: Flight[]) =>
+  (t: number) => {
+    const c = flightCameraAt(pick(...flights)(t), t);
+    return {
+      altitudeM: c.altitudeM,
+      direction: c.position.clone().normalize(),
+    };
+  };
 
 function orbitStart(place: { lat: number; lng: number }, altitudeM: number) {
   const pose = orbitPose(WGS84_ELLIPSOID, place);
@@ -110,7 +124,7 @@ function judgeReplan(c: {
   const tag = `${JSON.stringify(c.to)} landing ${c.landingM} at ${c.atMs} ms`;
   return [10, 60, 120].flatMap((hz) =>
     criterionAt(
-      speedSamples(cameraPoint(replanned), replanned.endsAtMs, hz, R),
+      speedSamples(cameraPoint(first, replanned), replanned.endsAtMs, hz, R),
       fromMs,
       toMs,
       `${tag}, ${hz} Hz`,
@@ -165,11 +179,20 @@ describe("retargetFlight", () => {
         orbitPose(WGS84_ELLIPSOID, ZURICH),
         { landingM: 2 * KM },
       );
-      const pos = (t: number) => flightCameraAt(replanned, t).position;
-      const before = cameraVelocity(pos, atMs - 2);
-      const after = cameraVelocity(pos, atMs + 2);
-      const scale = Math.max(before.length(), 1e-9);
-      expect(after.clone().sub(before).length() / scale).toBeLessThan(0.02);
+      const pos = (t: number) =>
+        flightCameraAt(pick(flight, replanned)(t), t).position;
+      // At the replan, and where the join ends (CF2 review finding 3: at
+      // the replan the two coincide, so any join shape is continuous there;
+      // only its end can show a wrong one).
+      for (const at of [atMs, atMs + FLIGHT_REPLAN.joinMs]) {
+        const before = cameraVelocity(pos, at - 2);
+        const after = cameraVelocity(pos, at + 2);
+        const scale = Math.max(before.length(), 1e-9);
+        expect(
+          after.clone().sub(before).length() / scale,
+          `at ${at} ms`,
+        ).toBeLessThan(0.02);
+      }
     }
   });
 
@@ -201,18 +224,20 @@ describe("retargetFlight", () => {
   // WHY (the documented limit, continuous-flight plan CF2): a new PLACE
   // low down (a new link mid-flight; the design's own fix comes above the
   // band) turns the course, or the descent into a climb (the van Wijk
-  // arch), and the 1.5 s cross-fade between the two flights dips and surges
-  // the speed: measured 2026-10-07 at 0.62-0.84 and up to 2.74 x the speed
-  // before (Zurich from 79 km, Rome from 609 and from 10 km, which climbs
-  // to 345 km). It must still never stall and must land exactly; a C1 turn
-  // in place of the cross-fade is the filed follow-up should such replans
-  // become part of the design.
-  it("bends to a new place low down without stalling, and lands exactly", () => {
-    for (const [to, atMs] of [
-      [ZURICH, 8_000],
-      [ROME, 5_000],
-      [ROME, 11_000],
-    ] as const) {
+  // arch). The join corrects the velocity, so a moderate turn dips but
+  // never stalls (measured 2026-10-07: 0.79 from Zurich at 79 km, 0.81
+  // from Rome at 609 km), while a full REVERSAL (Rome from 10 km: a fast
+  // descent becomes a climb to 345 km) passes through a near-stop, 0.03 of
+  // its speed for about 0.2 s, as any velocity blend must; only a turn at
+  // a constant speed avoids it, the filed follow-up should such replans
+  // become part of the design. Both land exactly.
+  it("bends to a new place low down: moderate turns never stall, a reversal turns around, all land exactly", () => {
+    const cases = [
+      { to: ZURICH, atMs: 8_000, reversal: false },
+      { to: ROME, atMs: 5_000, reversal: false },
+      { to: ROME, atMs: 11_000, reversal: true },
+    ];
+    for (const { to, atMs, reversal } of cases) {
       const first = flyFrom(NEW_YORK, BERN);
       const replanned = retargetFlight(
         first,
@@ -220,16 +245,65 @@ describe("retargetFlight", () => {
         orbitPose(WGS84_ELLIPSOID, to),
         { landingM: 2 * KM },
       );
+      const tag = `${JSON.stringify(to)} at ${atMs} ms`;
       const w = windowBetween(
-        speedSamples(cameraPoint(replanned), replanned.endsAtMs, 60, R),
+        speedSamples(cameraPoint(first, replanned), replanned.endsAtMs, 60, R),
         first.path.cruise?.fromMs ?? 0,
         replanned.startedAtMs + (replanned.path.cruise?.toMs ?? 0),
       ).map((x) => x.v);
-      expect(noStall(w, 0.5), `${JSON.stringify(to)} at ${atMs} ms`).toBe(true);
+      let top = 0;
+      for (let t = atMs; t < replanned.endsAtMs; t += 50) {
+        top = Math.max(top, flightFrameAt(replanned, t).altitudeM);
+      }
+      // A reversal climbs well above where it turned; a turn does not.
+      const turnedAt = flightFrameAt(first, atMs).altitudeM;
+      expect(top > 1.5 * turnedAt, tag).toBe(reversal);
+      expect(noStall(w, 0.5), tag).toBe(!reversal);
       const end = flightFrameAt(replanned, replanned.endsAtMs);
       const place = orbitPose(WGS84_ELLIPSOID, to).direction;
-      expect(end.centre.angleTo(place)).toBeLessThan(1e-9);
+      expect(end.centre.distanceTo(place), tag).toBeLessThan(1e-9);
     }
+  });
+
+  // WHY (CF2 review finding 1): a replan to the SAME target and landing
+  // must leave the flight as it was, at any moment: in the press's ramp a
+  // replan copied the instant speed and the flight crawled to the 60 s cap;
+  // in the final settle it cruised at the settle's speed and settled again
+  // (and dipped up to 7.6 m below a 1 km landing, measured). Checked from
+  // the ramp to the last half second.
+  it("leaves the flight unchanged when nothing changes, at any moment", () => {
+    const bad: string[] = [];
+    for (const atMs of [
+      100, 300, 500, 3_000, 9_000, 13_000, 14_500, 14_900, 14_990,
+    ]) {
+      const first = flyFrom(NEW_YORK, BERN);
+      const same = retargetFlight(
+        first,
+        atMs,
+        orbitPose(WGS84_ELLIPSOID, BERN),
+        { landingM: 2 * KM },
+      );
+      if (Math.abs(same.endsAtMs - first.endsAtMs) > 0.03 * 15_000) {
+        bad.push(
+          `at ${atMs} ms: ends at ${same.endsAtMs.toFixed(0)} ms, not ${first.endsAtMs}`,
+        );
+      }
+      let worst = 0;
+      for (let t = atMs; t <= first.endsAtMs; t += 25) {
+        const a = flightCameraAt(first, t);
+        const b = flightCameraAt(same, t);
+        worst = Math.max(
+          worst,
+          a.position.distanceTo(b.position) / a.altitudeM,
+        );
+      }
+      // Within 5 % of the altitude at every moment (timing, not place).
+      if (worst > 0.05)
+        bad.push(
+          `at ${atMs} ms: apart up to ${(worst * 100).toFixed(1)} % of the altitude`,
+        );
+    }
+    expect(bad).toEqual([]);
   });
 
   // WHY: a replan that missed its own end would land somewhere else.
@@ -244,27 +318,28 @@ describe("retargetFlight", () => {
     expect(end.done).toBe(true);
     expect(end.altitudeM).toBeCloseTo(3 * KM, 6);
     const zurich = orbitPose(WGS84_ELLIPSOID, ZURICH).direction;
-    expect(end.centre.angleTo(zurich)).toBeLessThan(1e-9);
+    expect(end.centre.distanceTo(zurich)).toBeLessThan(1e-9);
     expect(flightFrameAt(replanned, replanned.endsAtMs - 1).done).toBe(false);
   });
 
   // WHY: a second replan (the landing rising after the fix) can come
-  // while the first still blends.
-  it("takes a replan within a blend without a jump", () => {
+  // while the first still joins.
+  it("takes a replan within a join without a jump", () => {
     const first = retargetFlight(
       flyFrom(NEW_YORK, BERN),
       5_000,
       orbitPose(WGS84_ELLIPSOID, ZURICH),
       { landingM: 2 * KM },
     );
-    const atMs = 5_000 + FLIGHT_REPLAN.blendMs / 2;
+    const atMs = 5_000 + FLIGHT_REPLAN.joinMs / 2;
     const second = retargetFlight(
       first,
       atMs,
       orbitPose(WGS84_ELLIPSOID, ZURICH),
       { landingM: 2.5 * KM },
     );
-    const pos = (t: number) => flightCameraAt(second, t).position;
+    const pos = (t: number) =>
+      flightCameraAt(pick(first, second)(t), t).position;
     expect(
       pos(atMs).distanceTo(flightCameraAt(first, atMs).position),
     ).toBeLessThan(1e-3);
@@ -346,6 +421,25 @@ describe("clearedLandingM", () => {
     }
     expect(landingM).toBeGreaterThan(2 * KM);
     expect(worst).toBeGreaterThanOrEqual(FLIGHT_REPLAN.clearanceM - 1);
+  });
+
+  // WHY (CF2 review finding 4): a shortfall the landing cannot change (a
+  // start already too low over a plateau) was added again every round: a
+  // start at 2,000 m over a 1,800 m plateau got a 2,600 m landing where
+  // 2,100 m clears it.
+  it("raises only for ground the landing can clear", () => {
+    const plateau = () => 1_800;
+    const landingM = clearedLandingM(
+      WGS84_ELLIPSOID,
+      orbitStart(ZURICH, 2 * KM),
+      orbitPose(WGS84_ELLIPSOID, BERN),
+      { landingM: 2 * KM, durationMs: 15_000 },
+      plateau,
+    );
+    expect(landingM).toBeGreaterThanOrEqual(
+      1_800 + FLIGHT_REPLAN.clearanceM - 1,
+    );
+    expect(landingM).toBeLessThan(1_800 + FLIGHT_REPLAN.clearanceM + 50);
   });
 
   it("keeps the landing where the approach already clears", () => {

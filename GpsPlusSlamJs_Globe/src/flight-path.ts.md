@@ -64,18 +64,31 @@ Returns a `FlightPath`.
     down). CF2's replan passes the current one.
 - `target` is an orbit pose. Only its direction is used.
 - `options` is `{ landingM, durationMs?, entryPitchDeg?, landingPitchDeg?,
-startSpeed?, settleFactor? }`.
+startSpeed?, settleFactor?, viewLandingM?, rampMs?, rampFromShare?, brake? }`.
   - `startSpeed` is in geodesic length per ms.
+  - `viewLandingM` is the landing the view's law refers to (default
+    `landingM`). A path that stops short of the real landing (CF3's
+    hold at 2,000 km) passes the real one, so it looks there as the whole
+    flight would; its end pitch is that law's, not 45.
+  - `rampMs` (default `FLIGHT_PATH.rampMs`) and `rampFromShare` (0-1,
+    default 0): a replan continuing an old ramp passes its remaining time
+    and the share of the smoothstep it had reached, so the speed follows
+    the old ramp's tail exactly.
+  - `brake`: brake from `startSpeed` to rest over the whole flight (a
+    cubic Hermite), no cruise: a replan in the final settle.
 - RangeError for any of:
   - a landing, duration or start distance that is not positive;
   - a pitch outside (0, 90];
   - a negative start speed;
   - a settle factor not above 1;
+  - a negative ramp, or a ramp share outside [0, 1);
   - an up parallel to the direction.
 - Also exposed, for CF2 and the tests:
   - `cruise`: `{ fromMs, toMs }`, between the ramp and the settle. It is
     null for a short path.
   - `travelledAt(t)`: the clock.
+  - `cruiseSpeed` (0 for a short path) and `rampFromShare`.
+  - `viewLandingM` and `endPitchDeg`.
   - `geodesicLength`.
   - `cameraStart`, `cameraEnd`, `courseNormal`.
 
@@ -83,7 +96,8 @@ startSpeed?, settleFactor? }`.
 
 Returns a `FlightFrame`:
 
-- `centre`, `up`, `camera` (the camera's direction), `altitudeM`.
+- `centre`, `up`, `camera` (the camera's direction), `heading` (a
+  tangent at the camera), `altitudeM`.
 - `arcRad`: the angle from the view's centre to the target.
 - `pitchDeg`.
 - `startWeight`: from 1 down to 0.
@@ -91,6 +105,19 @@ Returns a `FlightFrame`:
 
 The ends are exact and held outside [0, durationMs]. A NaN time throws a
 RangeError.
+
+### `viewFromCamera(ellipsoid, camera, heading, altitudeM, pitchDeg)`
+
+Returns `{ centre, up }`: the ground point a camera looks at, ahead along
+its heading, and the screen's up there. `flightAt` builds its view with
+it, and so does a replan's join, which moves the camera and never the
+view.
+
+### `rampCruiseShare(fromShare)`
+
+The share c of a ramp's span flown at the cruise speed, for the clock's
+formula: a ramp from s0 to v over T covers T (s0 (1 - c) + v c). A full
+ramp has c = 1/2.
 
 ### `flightCamera(path, tMs)`
 
@@ -141,14 +168,16 @@ The geodesic's formulas:
 - A constant cruise.
 - One settle over the last ln(`settleFactor`) of the path, starting at about
   `settleFactor` x the landing. That is 3.3 s of the default flight.
-- The cruise speed is v = (L + settle - startSpeed x ramp / 2) / (duration -
-  ramp / 2).
+- The cruise speed is v = (L + settle - startSpeed x ramp (1 - c)) /
+  (duration - ramp (1 - c)), with c from `rampCruiseShare` (1/2 for a full
+  ramp).
 - A path too short for a cruise uses a cubic Hermite, from the start's speed
   to rest.
   - Its start speed is capped at 3 x the length over the duration. Faster
     than that, the curve would pass the end.
-  - This cap is the one case where the start's speed is not kept. CF2
-    chooses its duration so that it never reaches the cap.
+  - This cap is the one case where the start's speed is not kept. CF2's
+    replans brake over 2L / s0, where the speed is 2L / D, inside the cap;
+    a pinned test holds the cap itself.
 
 ### The view
 
