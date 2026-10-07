@@ -61,8 +61,13 @@ export interface CreatorCodes {
   clearInHand(): void;
   setSighting(sighting: CodeSighting): void;
   clearSighting(): void;
-  /** `levelId` has a stored pose: in hand, or in the open tour with geo. */
+  /** `levelId` has a stored pose: in hand, in the book with a saved pose
+   *  (measured or kept by this page - M4 review #1), or in the open tour
+   *  with geo. */
   hasStoredPose(levelId: string): boolean;
+  /** The book's saved level text for `levelId` (what the next Finish
+   *  writes); null when the book does not hold the code. */
+  savedText(levelId: string): string | null;
   /** Every code's stored pose: the code in hand first, then the book's
    *  others at the pose the next Finish writes (M4e), then the open tour's
    *  others (geo null for a level that carries none); each code once. */
@@ -216,7 +221,13 @@ export function wireCreatorCodes(deps: {
     },
     hasStoredPose: (levelId) => {
       if (ctx.mintedLevel?.id === levelId) return true;
+      const saved = book.get(levelId)?.saved ?? null;
+      if (saved !== null && storedGeo(saved) !== null) return true;
       return ctx.currentLevels?.get(levelId)?.qr.geo !== undefined;
+    },
+    savedText: (levelId) => {
+      takeInHand();
+      return book.get(levelId)?.saved ?? null;
     },
     references,
     storedPoses: () =>

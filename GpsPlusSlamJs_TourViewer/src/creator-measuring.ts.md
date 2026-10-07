@@ -42,10 +42,12 @@ M4 replaces its one code in hand with the code book.
   button stays off.
   - **A stored pose stays the reference** (D10b, M2c review #5): the level
     in hand before the tap is captured, and once the id lands
-    `measurementRole` (`visit-settle.ts`) decides - with the hosted zip's
-    `qr/<id>.json` read through `hostedLevelJson` (`session.loadEntryText`,
-    under the text cap, K0 milestone review R10) when nothing of this code
-    is in hand (ignored if another tour was opened meanwhile). A kept
+    `measurementRole` (`visit-settle.ts`) decides - with the stored
+    candidate when nothing of this code is in hand (`storedCandidate`): the
+    book's saved text for a code this page measured or kept (M4 milestone
+    review #1), else the hosted zip's `qr/<id>.json` read through
+    `hostedLevelJson` (`session.loadEntryText`, under the text cap, K0
+    milestone review R10; ignored if another tour was opened meanwhile). A kept
     reference stays `mintedLevel` (so Finish writes the hosted file back
     byte for byte), the measurement becomes this visit's sighting, the
     line says "Code seen - its saved position stays, and this visit is

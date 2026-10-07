@@ -111,6 +111,7 @@ export function wireCreatorMeasuring(deps: {
     | "setInHand"
     | "clearInHand"
     | "hasStoredPose"
+    | "savedText"
     | "noteStoredSighting"
     | "inBook"
     | "measuredIn"
@@ -374,17 +375,20 @@ export function wireCreatorMeasuring(deps: {
   }
 
   /**
-   * The hosted zip's level file for `levelId`, when nothing of this code
-   * is in hand (then the hand's level is the candidate); null too when
-   * another tour was opened since the tap - that is not the tour the code
-   * was read from.
+   * The stored level file for `levelId` when the code is not in hand
+   * (then the hand's level is the candidate): the book's saved text - a
+   * code this page measured or kept is a stored code (M4 review #1) - else
+   * the hosted zip's; null too when another tour was opened since the tap -
+   * that is not the tour the code was read from.
    */
-  async function hostedCandidate(
+  async function storedCandidate(
     levelId: string,
     inHand: { id: string } | null,
     openAtTap: number,
   ): Promise<string | null> {
     if (inHand?.id === levelId) return null;
+    const saved = deps.codes.savedText(levelId);
+    if (saved !== null) return saved;
     const json = await hostedLevelJson(ctx.session, levelId);
     return ctx.openGeneration === openAtTap ? json : null;
   }
@@ -497,7 +501,7 @@ export function wireCreatorMeasuring(deps: {
         return { kind: "failed", reason: "no code identity" };
       }
       if (mintGeneration !== ctx.mintGeneration) return { kind: "superseded" };
-      const hostedJson = await hostedCandidate(id, prior.level, openAtTap);
+      const hostedJson = await storedCandidate(id, prior.level, openAtTap);
       if (mintGeneration !== ctx.mintGeneration) return { kind: "superseded" };
       const role = measurementRole({
         levelId: id,

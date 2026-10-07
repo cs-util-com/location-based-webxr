@@ -147,6 +147,26 @@ describe("creator-codes: stored codes and what Finish wrote", () => {
     expect(codes.storedPoses().map((g) => g.lat)).toEqual([47.5, 47.3]);
   });
 
+  // Why this test matters (M4 milestone review #1): measuring asks
+  // `hasStoredPose` whether a code it sees is a reference to keep or a
+  // code to measure. A code this page measured, after another one took the
+  // hand, must stay a reference - else a later visit re-measures it through
+  // its own GPS and replaces the pose its notes were placed against.
+  it("counts a code of the book as stored, and hands out its saved text", () => {
+    const ctx = createTourViewerSession();
+    const codes = wireCreatorCodes({ ctx });
+    const a = { id: "a", json: levelJson(47.5) };
+    codes.setInHand(a, MEASUREMENT);
+    codes.setInHand(
+      { id: "b", json: levelJson(47.6) },
+      { ...MEASUREMENT, levelId: "b" },
+    );
+    expect(codes.hasStoredPose("a")).toBe(true);
+    expect(codes.savedText("a")).toBe(a.json);
+    expect(codes.hasStoredPose("z")).toBe(false);
+    expect(codes.savedText("z")).toBeNull();
+  });
+
   // Why this test matters (code book plan M4e): a code measured on this
   // page and then followed by another one leaves the hand, but it is still
   // a code of the tour - the next Finish writes it. The summary listed only

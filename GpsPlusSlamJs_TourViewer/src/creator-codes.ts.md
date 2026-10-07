@@ -21,7 +21,12 @@ writes these through it, so that M4c can turn its inside into the code book
     hand, true when taken), `clearInHand()` (a new print size);
   - `setSighting(sighting)`, `clearSighting()`.
 - Per code:
-  - `hasStoredPose(levelId)` - in hand, or in the open tour with a geo;
+  - `hasStoredPose(levelId)` - in hand, in the book with a saved pose, or
+    in the open tour with a geo (the book since the M4 milestone review
+    #1: a code this page measured and another code then took the hand
+    from stays a reference, never re-measured in a later visit);
+    `savedText(levelId)` - the book's saved level text, null when the
+    book does not hold the code;
   - `references()` - every code's stored pose, each code once: the code
     in hand first, then the book's other codes at their saved pose (the
     pose the next Finish writes, which replaces a hosted one; M4e - the

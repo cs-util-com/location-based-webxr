@@ -1353,6 +1353,58 @@ describe(
       ).toBeLessThan(1e-2);
     });
 
+    // Why this test matters (code book plan M4 milestone review #1): a code
+    // measured on this page that another code then took the hand from was
+    // not "stored" to the measuring - only the code in hand and the hosted
+    // ones were. A later visit measured it from scratch through ITS GPS,
+    // replaced its saved pose, and left the notes the first visit placed
+    // beside it behind by the two visits' GPS difference (here 20 m).
+    it("keeps a code measured earlier on this page as the reference in a later visit, though another code is in hand", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = authoring({ store });
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      await a.mint();
+      const codeLocal = mintedOdom(a.dispatched);
+      await a.mint(
+        new Matrix4().makeTranslation(20, 0, 0),
+        "https://gps.csutil.com/tour/?qr=second",
+        10_000,
+      );
+      a.endVisit();
+      await flush();
+      const savedA = () =>
+        (
+          JSON.parse(String(files.get(META_KEY))) as {
+            levels: { id: string; json: string }[];
+          }
+        ).levels[0]!;
+      const stored = savedA();
+      const measured = () =>
+        a.dispatched.filter((x) => x.type === "tourAuthoring/codeMeasured")
+          .length;
+      const before = measured();
+
+      a.beginVisit();
+      a.setAlignment(SECOND);
+      a.seeTheCode(undefined, TEXT, 20_000);
+      await flush();
+      await a.placePin("Beside A", [3, 0, 1]);
+      a.endVisit();
+      await flush();
+
+      expect(measured()).toBe(before);
+      expect(savedA()).toEqual(stored);
+      const pin = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin" && p.object.label === "Beside A",
+      )!.object;
+      // Placed relative to the code as it was stored, not 20 m off.
+      const offset = worldOf(pin.geo).sub(codeWorldOf(stored.json));
+      expect(
+        offset.distanceTo(new Vector3(3, 0, 1).sub(codeLocal)),
+      ).toBeLessThan(1e-2);
+    });
+
     it("keeps the hosted zip's code as the reference in a new page, and Finish writes it back unchanged", async () => {
       // Symptom B across sessions: a hosted tour opened in a new page must
       // be measured before Finish, and that measurement used to REPLACE
