@@ -238,9 +238,14 @@ describe('CloudShadow uniforms', () => {
     );
     expect(body).not.toContain('atmColumnDrawn');
     expect(body).not.toContain('fromCamera');
+    // The threshold where the light crosses the layer (C3): without a map
+    // or a disc (this material) atmCloudThresholdAt returns the sky's own,
+    // so the shadow is the same from every viewpoint; only a configured
+    // disc (the volume's, centred on the camera) depends on the camera.
     expect(body).toContain(
-      'light.color *= exp(-atmColumnOpticalDepth(noise, atmShadowCloudThreshold, world.y, toLight.y));'
+      'light.color *= exp(-atmColumnOpticalDepth(noise, threshold, lifted.y, toLight.y));'
     );
+    expect(f).not.toContain('#define ATM_CLOUD_DISC');
   });
 
   // Patched materials read the SAME uniform objects: one switch reaches all.
@@ -256,5 +261,80 @@ describe('CloudShadow uniforms', () => {
     shadow.setEnabled(false);
     expect(ua.atmShadowCloudOn!.value).toBe(0);
     expect(shadow.enabled).toBe(false);
+  });
+});
+
+describe('CloudShadow with a coverage map, a disc and a lift (globe volume-cloud plan 2026-10-05-0016, C3)', () => {
+  const chunk = {
+    glsl: 'uniform float uFlat;\nfloat atmCloudCoverageAt(vec2 xz) { return uFlat; }',
+    uniforms: { uFlat: { value: 0.5 } },
+  };
+
+  // WHY: the volume's shadow must fall from exactly the clouds the volume
+  // draws: the same map, the same disc, at the same (lifted) height. The
+  // map and the disc change the shader text, so they are fixed before the
+  // first patched material, and the program key says so.
+  it('reads the threshold where the light crosses the layer, from the shared chunk', () => {
+    const shadow = new CloudShadow();
+    shadow.configureMap({ coverage: chunk, disc: true });
+    const m = new THREE.MeshStandardMaterial();
+    shadow.apply(m);
+    const shader = compileWith(m, 'standard');
+    const fs = shader.fragmentShader;
+    expect(fs).toContain('#define ATM_CLOUD_COVERAGE');
+    expect(fs).toContain('#define ATM_CLOUD_DISC');
+    expect(fs).toContain(chunk.glsl);
+    expect(fs).toContain('atmCloudThresholdAt(');
+    expect(fs).toContain('world.y - atmShadowLiftM');
+    expect(shader.uniforms['uFlat']!.value).toBe(0.5);
+    expect(shader.uniforms['atmCoverThresholds']!.value).toHaveLength(33);
+    expect(m.customProgramCacheKey()).toContain('|cloud-shadow-map-disc');
+  });
+
+  it('keeps the plain path, and its program key, without a map', () => {
+    const shadow = new CloudShadow();
+    const m = new THREE.MeshStandardMaterial();
+    shadow.apply(m);
+    const fs = compileWith(m, 'standard').fragmentShader;
+    expect(fs).not.toContain('#define ATM_CLOUD_COVERAGE');
+    expect(fs).not.toContain('#define ATM_CLOUD_DISC');
+    expect(m.customProgramCacheKey().endsWith('|cloud-shadow')).toBe(true);
+  });
+
+  it('takes the lift, the disc radius and the cover live, as uniforms', () => {
+    const shadow = new CloudShadow();
+    shadow.configureMap({ coverage: chunk, disc: true });
+    const m = new THREE.MeshStandardMaterial();
+    shadow.apply(m);
+    const u = compileWith(m, 'standard').uniforms;
+    shadow.setLiftM(7_000);
+    shadow.setDiscRadiusM(20_000);
+    shadow.setCover(0.5);
+    expect(u['atmShadowLiftM']!.value).toBe(7_000);
+    expect(u['atmCoverDiscM']!.value).toBe(20_000);
+    expect(u['atmShadowCover']!.value).toBe(0.5);
+    expect(() => shadow.setDiscRadiusM(0)).toThrow(RangeError);
+    // The disc's centre (volume-cloud plan §15): a world point, or the camera.
+    const centre = u['atmCoverDiscCentre']!.value as THREE.Vector3;
+    shadow.setDiscCentre({ x: 5_000, z: 7_000 });
+    expect(centre.toArray()).toEqual([5_000, 7_000, 0]);
+    shadow.setDiscCentre(null);
+    expect(centre.z).toBe(1);
+    expect(() => shadow.setDiscCentre({ x: 0, z: Number.NaN })).toThrow(
+      RangeError
+    );
+    expect(() => shadow.setLiftM(Number.NaN)).toThrow(RangeError);
+    expect(() => shadow.setCover(-1)).toThrow(RangeError);
+  });
+
+  it('refuses a map change after the first patched material, and a bad chunk', () => {
+    const shadow = new CloudShadow();
+    expect(() =>
+      shadow.configureMap({
+        coverage: { glsl: 'float x() { return 0.0; }', uniforms: {} },
+      })
+    ).toThrow(RangeError);
+    shadow.apply(new THREE.MeshStandardMaterial());
+    expect(() => shadow.configureMap({ coverage: chunk })).toThrow(Error);
   });
 });

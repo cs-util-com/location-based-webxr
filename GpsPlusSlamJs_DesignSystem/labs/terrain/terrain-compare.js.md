@@ -10,7 +10,8 @@
     `globe-bands`, `globe-classes` at colour width 12 and 24. Another agent's styles join by appending a row (one line
     each).
   - `COMPARE_PLAN`: the place (`alps`), the capture altitudes (300, 100, 30,
-    10 km), the hand-over altitude (150 km, the globe's `handOverKm`), the
+    10 km), the hand-over altitude it compares at (150 km, the globe's page
+    hand-over until the globe city plan 2026-10-05-0040 §12.5 C6), the
     suns (day `2026-06-21T11:00:00Z`, low `2026-06-21T18:00:00Z`), the
     contrast grid (11 x 11 posts, 1 km apart or wider, `minPostPx` 3), the
     hand-over grid (21 x 21, 4 km apart), the footprint samples (5 x 5),

@@ -20,7 +20,7 @@ import { enuFrameAt } from "gps-plus-slam-osm";
 import type { ElevationProvider, LatLng } from "gps-plus-slam-osm";
 
 import { planRoute } from "../agent-route.js";
-import { buildHeightfieldData, heightfieldFrom } from "../heightfield.js";
+import { buildHeightfieldData, heightfieldFrom } from "gps-plus-slam-osm";
 
 const FRAME = enuFrameAt({ lat: 50.9413, lng: 6.9583 });
 

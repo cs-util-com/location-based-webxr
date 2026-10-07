@@ -14,7 +14,11 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { routeCityData, withPreRound4Look } from "./globe-smoke-helpers.mjs";
+import {
+  plainGlobe,
+  routeCityData,
+  withPreRound4Look,
+} from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const VIEW = withPreRound4Look(
@@ -38,7 +42,7 @@ async function boot(page, hash) {
   page.on("pageerror", (e) => errors.push(e.message));
   // A pin press starts the arrival prefetch: its city data is answered here.
   await routeCityData(page);
-  await page.goto(`/labs/globe/#${hash}`);
+  await page.goto(`/labs/globe/#${plainGlobe(hash)}`);
   await page.waitForFunction(
     () => window.__globeLab?.ready || window.__globeLab?.error,
     null,
@@ -88,10 +92,7 @@ test("during a dive the readout follows the camera and names the distance to the
   test.setTimeout(120_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(COLOGNE);
-  const errors = await boot(
-    page,
-    `${VIEW}&diveMs=4000&handOver=0&handOverKm=50`,
-  );
+  const errors = await boot(page, `${VIEW}&diveMs=4000&landKm=50`);
   const before = altitudeKm(
     await page.evaluate(() => window.__globeLab.state().readoutShown),
   );

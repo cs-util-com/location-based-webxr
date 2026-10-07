@@ -21,12 +21,31 @@
   - `setLook(partial)` - any of them (`globe-atmosphere-frame.js`
     `atmosphereLook`: RangeError outside steps 2-64, strength 0-4,
     thickness 1-10); a new step count recompiles the march;
-  - `render(camera, { worldFromEcef, sunEcef, sunIntensity })` - draws the
+  - `render(camera, { worldFromEcef, sunEcef, sunIntensity, skyShare,
+groundShare, sceneDepth, sceneDepthWeight })` - draws the
     pass over the current frame (the lab calls it after the Earth).
     `worldFromEcef` is the tiles group's world matrix (the ECEF frame's
     placement, identity in the lab), `sunEcef` a unit vector,
     `sunIntensity` the Earth's sun light's, so the air is lit by the same
-    sun as the ground;
+    sun as the ground; `skyShare` (0-1, default 1; RangeError outside)
+    scales the light of the rays that miss the ground, so below the
+    hand-over edge the ground sky (`globe-ground-sky.js`, F2b) takes the
+    sky's pixels; `groundShare` (0-1, default 1; RangeError outside) scales
+    the veil over the ground (the lab keeps it at 1: fading it with the
+    sky's broke the hand-over's continuity smoke, worst step 4.8 against a
+    bound of 1). `sceneDepth` (optional, `globe-scene-depth.js`) is the
+    drawn relief's depth; when it was drawn this frame (`fresh`), a ray
+    ends at the relief rather than the ellipsoid and a relief pixel counts
+    as ground (volume-cloud plan §17, 2026-10-06). Without it relief
+    standing above the ellipsoid's limb was treated as sky, whose share is
+    0 below the edge, and drawn unveiled: the owner's hard edge at the
+    horizon. `sceneDepthWeight` (0-1, default 1; RangeError outside)
+    scales that: a ray's end moves from the ellipsoid (or the air's top)
+    to the relief, and the pixel from sky to ground, in proportion. The
+    lab passes the hand-over's weight, so at the 80 km edge the pass is
+    exactly the one without the depth (switching it on at full strength
+    there was a jump the continuity smoke caught). Nothing is drawn when
+    both shares are 0;
   - `dispose()`.
 - Invariants & assumptions:
   - The frame: ECEF metres are scaled per axis so the WGS84 ellipsoid IS
