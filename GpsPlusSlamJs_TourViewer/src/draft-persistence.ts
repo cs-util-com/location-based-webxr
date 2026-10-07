@@ -167,6 +167,14 @@ interface DraftMeta {
   sizeM: number;
   level: { id: string; json: string } | null;
   /**
+   * Every code this page measured or changed that the hosted zip does not
+   * hold yet (code book refactor plan M4c-1), `level` among them. OPTIONAL
+   * like `rejected`: absent from every meta written before, where `level`
+   * is the only code. Each entry is validated like `level`; one that does
+   * not read costs itself.
+   */
+  levels?: readonly { id: string; json: string }[];
+  /**
    * Object ids the creator has thrown away, which `readDraft` refuses
    * whether or not their files are still on disk.
    *
@@ -404,6 +412,15 @@ export async function readDraft(
       tourUrl: meta.tourUrl,
       sizeM: meta.sizeM,
       level: meta.level,
+      // From the raw parsed value, like `rejected`: `isMeta` does not
+      // validate it. An older meta's one level is the list.
+      levels: Array.isArray(meta.levels)
+        ? (meta.levels as unknown[]).filter(
+            (l): l is { id: string; json: string } => l !== null && isLevel(l),
+          )
+        : meta.level === null
+          ? []
+          : [meta.level],
       objects,
       deleted: deleted.sort(),
     },

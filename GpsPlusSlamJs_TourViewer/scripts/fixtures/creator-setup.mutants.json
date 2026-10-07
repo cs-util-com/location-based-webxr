@@ -1,0 +1,436 @@
+{
+  "tests": [
+    "src/authoring-settle.test.ts",
+    "src/creator-finish.test.ts",
+    "src/creator-setup.test.ts",
+    "src/fused-pose-wiring.test.ts",
+    "src/ar-entry.test.ts",
+    "src/creator-previews.test.ts",
+    "src/visit-settle.codes.test.ts",
+    "src/visit-settle.test.ts",
+    "src/visit-settle.golden.test.ts",
+    "src/creator-settle.test.ts",
+    "src/creator-codes.test.ts"
+  ],
+  "mutants": [
+    {
+      "name": "placement backup failure not noted",
+      "region": "draft",
+      "file": "src/creator-draft.ts",
+      "from": "      if (!ok) noteNoPersistence();\n    });\n  }\n\n  /**\n   * Record one AR visit",
+      "to": "    });\n  }\n\n  /**\n   * Record one AR visit"
+    },
+    {
+      "name": "manifest not advanced",
+      "region": "finish",
+      "file": "src/creator-finish.ts",
+      "from": "        ctx.tourManifest = written;",
+      "to": ""
+    },
+    {
+      "name": "answer not remembered",
+      "region": "move prompt",
+      "file": "src/creator-move-prompt.ts",
+      "from": "      rememberAnswer(prompt, answer);\n      logMoveAnswer(prompt, answer);",
+      "to": "      logMoveAnswer(prompt, answer);"
+    },
+    {
+      "name": "corrected frame not inverted",
+      "region": "previews",
+      "file": "src/creator-previews.ts",
+      "from": "frame.matrix.fromArray(choice.alignment).invert();",
+      "to": "frame.matrix.fromArray(choice.alignment);"
+    },
+    {
+      "name": "once-per-visit ignored",
+      "region": "measuring",
+      "file": "src/creator-measuring.ts",
+      "from": "const tried = autoMeasured.has(visitKeyOf(text));",
+      "to": "const tried = false;"
+    },
+    {
+      "name": "placements not counted",
+      "region": "finish guard",
+      "file": "src/creator-setup.ts",
+      "from": "placedCount: ctx.placedObjects.length,",
+      "to": "placedCount: 0,"
+    },
+    {
+      "name": "Finish not held for a measurement",
+      "region": "finish",
+      "file": "src/creator-finish.ts",
+      "from": "readiness() === \"ready\" && !deps.measuring.inFlight() && !ctx.finishing",
+      "to": "readiness() === \"ready\" && !ctx.finishing"
+    },
+    {
+      "name": "empty visits logged",
+      "region": "visit log",
+      "file": "src/creator-settle.ts",
+      "from": "if (entry.gps.length === 0 && entry.codes.length === 0) return;",
+      "to": ""
+    },
+    {
+      "name": "summary not shown",
+      "region": "finish",
+      "file": "src/creator-finish.ts",
+      "from": "        deps.settle.showSummary();",
+      "to": ""
+    },
+    {
+      "name": "code not measured again",
+      "region": "size offer",
+      "file": "src/creator-measuring.ts",
+      "from": "    autoMeasured.clear();\n    endQrPipeline(ctx);",
+      "to": "    endQrPipeline(ctx);"
+    },
+    {
+      "name": "other stored codes not kept",
+      "region": "sightings",
+      "file": "src/creator-measuring.ts",
+      "from": "      deps.codes.noteStoredSighting(id, ctx.arSessionGeneration, sighting);",
+      "to": "      void sighting;"
+    },
+    {
+      "name": "U3 decision not logged when nothing settled",
+      "region": "settle",
+      "file": "src/creator-settle.ts",
+      "from": "        logSettle(visit, trigger, record, [], null, null, decided);",
+      "to": ""
+    },
+    {
+      "name": "claimed id stays rejected",
+      "region": "draft",
+      "file": "src/creator-draft.ts",
+      "from": "draftRejected = draftRejected.filter((rejected) => rejected !== id);",
+      "to": "draftRejected = [...draftRejected];"
+    },
+    {
+      "name": "backup notice repeated every time",
+      "region": "draft",
+      "file": "src/creator-draft.ts",
+      "from": "    if (warnedAboutPersistence) return;\n",
+      "to": ""
+    },
+    {
+      "name": "backup notice never repeats its guard",
+      "region": "draft",
+      "file": "src/creator-draft.ts",
+      "from": "    warnedAboutPersistence = true;\n",
+      "to": ""
+    },
+    {
+      "name": "discard does not record the rejection",
+      "region": "draft",
+      "file": "src/creator-draft.ts",
+      "from": "    draftRejected = rejectedIds;\n",
+      "to": ""
+    },
+    {
+      "name": "draft url not kept for later writes",
+      "region": "draft",
+      "file": "src/creator-draft.ts",
+      "from": "      draftTourUrl = tourUrl;\n",
+      "to": ""
+    },
+    {
+      "name": "stored answers not merged at open",
+      "region": "draft",
+      "file": "src/creator-draft.ts",
+      "from": "      moveAnswers = [...(stored?.moveAnswers ?? []), ...moveAnswers].reduce<",
+      "to": "      moveAnswers = [...moveAnswers].reduce<"
+    },
+    {
+      "name": "Undo not offered after Yes",
+      "region": "move prompt",
+      "file": "src/creator-move-prompt.ts",
+      "from": "        undoable = { prompt, visit: ctx.arSessionGeneration };",
+      "to": ""
+    },
+    {
+      "name": "Undo kept after the settle",
+      "region": "move prompt",
+      "file": "src/creator-move-prompt.ts",
+      "from": "    if (undoable?.visit === visit) undoable = null;",
+      "to": ""
+    },
+    {
+      "name": "an ask logged on every render",
+      "region": "move prompt",
+      "file": "src/creator-move-prompt.ts",
+      "from": "      movePromptLogged = moveOnset;",
+      "to": ""
+    },
+    {
+      "name": "refusal re-judged on every render",
+      "region": "move prompt",
+      "file": "src/creator-move-prompt.ts",
+      "from": "      moveFixCount = clock.count;",
+      "to": "",
+      "expected": "known-gap",
+      "why": "NOT equivalent (M2 review #4): after a size adoption or a failed identity clears the level, the refused-correction line stays until the next fix, where re-judging every render clears it at once. No test covers that window yet; the stale line is filed as a small pre-existing defect in the code book plan (section 12, M2 review)."
+    },
+    {
+      "name": "result screen outcome not recorded",
+      "region": "settle",
+      "file": "src/creator-settle.ts",
+      "from": "      codePositionOutcomes.push({ decision: position.decision, applied });",
+      "to": ""
+    },
+    {
+      "name": "applied decision not kept for a re-settle",
+      "region": "settle",
+      "file": "src/creator-settle.ts",
+      "from": "    if (applied) appliedCode = { visit, plan: position };",
+      "to": ""
+    },
+    {
+      "name": "visit settled twice",
+      "region": "settle",
+      "file": "src/creator-settle.ts",
+      "from": "    visitSettles.set(visit, record);",
+      "to": ""
+    },
+    {
+      "name": "move boundary not set",
+      "region": "settle",
+      "file": "src/creator-settle.ts",
+      "from": "      movedInVisit.set(position.levelId, visit);",
+      "to": ""
+    },
+    {
+      "name": "frame left at the scene root",
+      "region": "previews",
+      "file": "src/creator-previews.ts",
+      "from": "        earlierFrameUnderGroup = true;",
+      "to": ""
+    },
+    {
+      "name": "no resync once the zero lands",
+      "region": "previews",
+      "file": "src/creator-previews.ts",
+      "from": "    previewsWaitForZero = zero === null;",
+      "to": "    previewsWaitForZero = false;"
+    },
+    {
+      "name": "finished photo bytes dropped",
+      "region": "previews",
+      "file": "src/creator-finish.ts",
+      "from": "            deps.previews.keepFinishedPhoto(p.object.id, p.blob);\n",
+      "to": ""
+    },
+    {
+      "name": "kept photo bytes not stored",
+      "region": "previews",
+      "file": "src/creator-previews.ts",
+      "from": "      finishedPhotoBlobs.set(id, blob);",
+      "to": ""
+    },
+    {
+      "name": "status never expands",
+      "region": "readout",
+      "file": "src/creator-setup.ts",
+      "from": "    statusExpanded = !statusExpanded;",
+      "to": ""
+    },
+    {
+      "name": "refusal line never set",
+      "region": "refusal",
+      "file": "src/creator-settle.ts",
+      "from": "    liveRefusal = refusalOf(choice);",
+      "to": "    liveRefusal = null;"
+    },
+    {
+      "name": "text's level id not remembered",
+      "region": "measuring",
+      "file": "src/creator-measuring.ts",
+      "from": "      codeIds.set(mintedText, id);",
+      "to": ""
+    },
+    {
+      "name": "in-flight count never drops",
+      "region": "measuring",
+      "file": "src/creator-measuring.ts",
+      "from": "      inFlight -= 1;",
+      "to": ""
+    },
+    {
+      "name": "identity derived again for every frame",
+      "region": "measuring",
+      "file": "src/creator-measuring.ts",
+      "from": "    identifying.add(text);",
+      "to": ""
+    },
+    {
+      "name": "a code written by Finish not recorded",
+      "region": "measuring",
+      "file": "src/creator-finish.ts",
+      "from": "        deps.codes.finished(levels);",
+      "to": ""
+    },
+    {
+      "name": "saved file not marked delivered",
+      "region": "handoff",
+      "file": "src/creator-handoff.ts",
+      "from": "          ctx.rebuiltZip = { ...rebuilt, delivered: true };",
+      "to": ""
+    },
+    {
+      "name": "adopted size not announced",
+      "region": "size offer",
+      "file": "src/creator-measuring.ts",
+      "from": "    adoptedNote = adoptedSizeNote(sizeM);",
+      "to": ""
+    },
+    {
+      "name": "sightings carried into the next visit",
+      "region": "visit hooks",
+      "file": "src/creator-codes.ts",
+      "from": "      storedCodeSightings.clear();",
+      "to": ""
+    },
+    {
+      "name": "placement noted before the picks saw the alignment",
+      "region": "picks",
+      "file": "src/creator-alignment-picks.ts",
+      "from": "    syncAlignmentPicks();\n    alignmentPicks.notePlacement(id, Date.now());",
+      "to": "    alignmentPicks.notePlacement(id, Date.now());",
+      "expected": "known-gap",
+      "why": "testable, not yet tested (M2 review #3): a harness whose store never notifies (creator-finish, creator-setup and ar-entry tests) would show a placement noted without its walked distance, which changes the walked-distance tie-break. In production it holds while store notifications are synchronous. The test is filed for M4, whose per-code run-merge compares walked distances."
+    },
+    {
+      "name": "sighting not kept on the session",
+      "region": "picks",
+      "file": "src/creator-codes.ts",
+      "from": "    ctx.visitCodeSighting = sighting;\n",
+      "to": ""
+    },
+    {
+      "name": "measured code gets no pick",
+      "region": "picks",
+      "file": "src/creator-alignment-picks.ts",
+      "from": "      alignmentPicks.noteMeasurement(atMs, levelId);\n",
+      "to": ""
+    },
+    {
+      "name": "placement allowed outside a running session",
+      "region": "placement",
+      "file": "src/creator-placement.ts",
+      "from": "      arController.getState().status === \"running\" &&\n",
+      "to": ""
+    },
+    {
+      "name": "placement allowed before the alignment floor",
+      "region": "placement",
+      "file": "src/creator-placement.ts",
+      "from": "      alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES &&\n",
+      "to": ""
+    },
+    {
+      "name": "late photo minted through the store alignment",
+      "region": "placement",
+      "file": "src/creator-placement.ts",
+      "from": "            settled === undefined\n",
+      "to": "            true\n"
+    },
+    {
+      "name": "late photo not logged as a late arrival",
+      "region": "placement",
+      "file": "src/creator-placement.ts",
+      "from": "        if (settled !== undefined) deps.lateArrival(visit, photo);\n",
+      "to": ""
+    },
+    {
+      "name": "every object through the first code",
+      "region": "settle per code",
+      "file": "src/visit-settle.ts",
+      "from": "  if (views.length <= 1 || at === null || !finite(at.walkedM)) return 0;",
+      "to": "  return 0;"
+    },
+    {
+      "name": "late arrival through the first code",
+      "region": "settle per code",
+      "file": "src/visit-settle.ts",
+      "from": "function latestCode(views: readonly VisitSettleInput[]): number {\n  let best = 0;",
+      "to": "function latestCode(views: readonly VisitSettleInput[]): number {\n  return 0;\n  let best = 0;"
+    },
+    {
+      "name": "only the first code re-minted",
+      "region": "settle per code",
+      "file": "src/visit-settle.ts",
+      "from": "    reminted: measuredHere(view) ? remintedCode(view, end, zero) : null,",
+      "to": "    reminted: measuredHere(view) && view === views[0] ? remintedCode(view, end, zero) : null,"
+    },
+    {
+      "name": "a code's own measurement pick lost",
+      "region": "settle per code",
+      "file": "src/visit-settle.ts",
+      "from": "              measurement: code.measurementPick ?? null,",
+      "to": "              measurement: null,"
+    },
+    {
+      "name": "a stored code's events never counted",
+      "region": "settle per code",
+      "file": "src/visit-settle.ts",
+      "from": "    ...(view.picks?.sightings ?? []),",
+      "to": ""
+    },
+    {
+      "name": "the settle ignores the visit's codes",
+      "region": "measure several",
+      "file": "src/creator-settle.ts",
+      "from": "planVisitSettle(codes === undefined ? input : { ...input, codes })",
+      "to": "planVisitSettle(input)"
+    },
+    {
+      "name": "other codes' re-mints dropped",
+      "region": "measure several",
+      "file": "src/creator-settle.ts",
+      "from": "      if (other.id !== plan.level?.id) deps.codes.saveLevel(other);",
+      "to": "      void other;"
+    },
+    {
+      "name": "other codes' sightings not noted",
+      "region": "measure several",
+      "file": "src/creator-measuring.ts",
+      "from": "        deps.alignmentPicks.noteSighting(sighting);",
+      "to": ""
+    },
+    {
+      "name": "measurement picks lose their code",
+      "region": "measure several",
+      "file": "src/creator-measuring.ts",
+      "from": "deps.alignmentPicks.noteMeasurement(measured.atMs, id);",
+      "to": "deps.alignmentPicks.noteMeasurement(measured.atMs, \"\");"
+    },
+    {
+      "name": "a code measured earlier in the visit reads as new",
+      "region": "measure several",
+      "file": "src/creator-measuring.ts",
+      "from": "(id === inHand?.id || deps.codes.measuredIn(id, ctx.arSessionGeneration))",
+      "to": "id === inHand?.id"
+    },
+    {
+      "name": "a code's stored size ignored",
+      "region": "size per code",
+      "file": "src/creator-measuring.ts",
+      "from": "typeof stored === \"number\" && Number.isFinite(stored) && stored > 0",
+      "to": "false"
+    },
+    {
+      "name": "the fused source at one size",
+      "region": "size per code",
+      "file": "src/creator-measuring.ts",
+      "from": "optionsFor: (text) => ({ sizeM: sizeByText.get(text) ?? sizeM }),",
+      "to": "optionsFor: () => ({ sizeM }),",
+      "expected": "known-gap",
+      "why": "the fused tracker uses its size only for entries that carry no raw pose (and the motion tracker); every entry of the composed harness carries one, so the size is inert there. The viewer documents the same as inert (viewer-placement.ts); for the creator real detections this is not verified (code book plan M4c-3)."
+    },
+    {
+      "name": "adoption clears the code in hand",
+      "region": "size per code",
+      "file": "src/creator-measuring.ts",
+      "from": "if (offeredId === undefined || offeredId === deps.codes.inHand()?.id) {",
+      "to": "if (true) {"
+    }
+  ]
+}

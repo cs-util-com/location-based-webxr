@@ -19,6 +19,7 @@ import { describe, expect, it } from "vitest";
 import { MOVED_CODE_FLOOR_M } from "./code-displacement.js";
 import {
   isSecondCopySpot,
+  answerAtSpot,
   MOVE_ANSWERS_MAX,
   MOVE_PROMPT_FLOOR_M,
   MOVE_PROMPT_LABELS,
@@ -330,6 +331,8 @@ describe("the remembered answers (kept in the draft's meta)", () => {
         { levelId: "x", northM: "1", eastM: 1, answer: "not-now" },
         { levelId: "x", northM: 1, eastM: Number.NaN, answer: "not-now" },
         { levelId: "x", northM: 1, eastM: 1, answer: "yes", savedKey: "k1" },
+        // "moved" (UI round 1, U3) reads back.
+        { ...a(200), answer: "moved" },
         // An answer written before the saved-pose key existed (or with an
         // unreadable one) is dropped, never trusted for any pose.
         { levelId: "x", northM: 1, eastM: 1, answer: "not-now" },
@@ -339,7 +342,7 @@ describe("the remembered answers (kept in the draft's meta)", () => {
         7,
         a(90, "second-copy"),
       ]),
-    ).toEqual([a(40), a(90, "second-copy")]);
+    ).toEqual([a(40), { ...a(200), answer: "moved" }, a(90, "second-copy")]);
     expect(parseMoveAnswers(undefined)).toEqual([]);
     expect(parseMoveAnswers({ length: 3 })).toEqual([]);
     expect(
@@ -351,19 +354,61 @@ describe("the remembered answers (kept in the draft's meta)", () => {
 });
 
 describe("movePromptText", () => {
-  it("names the distance in whole metres", () => {
+  // Why (UI round 1, U3; review F5): the question asks what the creator
+  // knows - did the poster move? - not what the app should do with it.
+  it("asks whether the poster moved, with the distance in whole metres", () => {
     expect(movePromptText(41.6)).toBe(
-      "This code seems to have moved about 42 m. Use the new spot?",
+      "The code is about 42 m from its saved spot. Did the poster move here?",
     );
   });
 
-  // Why this test matters (M5b review #5): Undo lives in this page's
-  // memory only - a reload loses it before any Finish - so the hint must
-  // not promise it "until Finish" alone.
-  it("says Undo lasts only while this page stays open", () => {
-    expect(MOVE_PROMPT_LABELS.replacedHint).toBe(
-      "The code's saved position was replaced. Undo is possible until Finish, while this page stays open.",
+  // Why: "Yes" no longer moves anything at once - the settle saves the new
+  // spot only after enough walking - and the pins stay (D19); the line must
+  // not promise more.
+  it("says a 'moved' answer is saved at the visit's end, after enough walking, and the pins stay", () => {
+    expect(MOVE_PROMPT_LABELS.moved).toMatch(/saved when this visit ends/);
+    expect(MOVE_PROMPT_LABELS.moved).toMatch(/walked enough/);
+    expect(MOVE_PROMPT_LABELS.moved).toMatch(/keep their places/);
+  });
+});
+
+describe("answerAtSpot (UI round 1, U3)", () => {
+  const at = (northM: number, savedKey = "k1") => ({
+    levelId: "lvl",
+    savedKey,
+    offset: { northM, eastM: 0 },
+  });
+  const answer = (
+    northM: number,
+    a: "moved" | "second-copy" | "not-now",
+  ): RememberedMoveAnswer => ({
+    levelId: "lvl",
+    northM,
+    eastM: 0,
+    answer: a,
+    savedKey: "k1",
+  });
+
+  // Why: the settle saves a moved poster's new spot only for the spot the
+  // creator answered, against the saved pose it was asked about.
+  it("reads 'moved' and 'second-copy' for the same spot and saved pose, never 'not-now'", () => {
+    expect(answerAtSpot([answer(40, "moved")], at(45))).toBe("moved");
+    expect(answerAtSpot([answer(40, "second-copy")], at(45))).toBe(
+      "second-copy",
     );
+    expect(answerAtSpot([answer(40, "not-now")], at(45))).toBeNull();
+    expect(answerAtSpot([answer(40, "moved")], at(80))).toBeNull();
+    expect(answerAtSpot([answer(40, "moved")], at(40, "k2"))).toBeNull();
+    expect(answerAtSpot([], at(40))).toBeNull();
+    expect(answerAtSpot([answer(40, "moved")], at(Number.NaN))).toBeNull();
+  });
+
+  it("lets the newest covering answer count (an Undo re-answers 'not-now')", () => {
+    const undone = rememberMoveAnswer(
+      [answer(40, "moved")],
+      answer(41, "not-now"),
+    );
+    expect(answerAtSpot(undone, at(40))).toBeNull();
   });
 });
 
