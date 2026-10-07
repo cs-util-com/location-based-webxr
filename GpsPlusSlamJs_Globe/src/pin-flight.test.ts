@@ -551,6 +551,22 @@ describe("the pin's flight, CF3 milestone review", () => {
     expect(landedAt).toBeLessThan(20_000);
   });
 
+  // WHY (PR #560 R0 review): a landing raised above the commit altitude
+  // leaves the new path without a gate, so the flight is released at once,
+  // not one frame later.
+  it("is released at once when a new landing removes the gate", () => {
+    const pin = pressPin(
+      WGS84_ELLIPSOID,
+      0,
+      cameraOver(NEW_YORK, 10_100 * KM),
+      { target: bernPose, landingM: 2 * KM, progress: 0 },
+    );
+    expect(pin.phase).toBe("approaching");
+    const raised = pinLanding(run(pin, 1_000).pin, 1_000, 150 * KM);
+    expect(raised.gateClockMs).toBeNull();
+    expect(raised.phase).toBe("descending");
+  });
+
   // WHY (review finding 8: the rate lag, the clamp at the gate and the
   // gate's ease had no test that could fail).
   it("raises the rate gradually at release, and never passes a closed gate in one long frame", () => {

@@ -14,6 +14,7 @@ import { expect, test } from "@playwright/test";
 import { applyHash, bootGlobe } from "./globe-smoke-helpers.mjs";
 
 const BERN = { lat: 46.948, lng: 7.4474 };
+const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const BASE = `spinMs=0&turnMs=0&time=2026-10-05T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&detail=0&cloudShell=0&cloudVolume=0&at=${BERN.lat},${BERN.lng}`;
 
 /**
@@ -513,7 +514,77 @@ test("flight=2 with the prefetch off lands without waiting at the gate", async (
   );
   expect(errors).toEqual([]);
   expect(st.pin.flight?.phase).toBe("landed");
+  // Measured 15.6 s on 2026-10-08 (68.5 s before the fix: the 60 s cap).
+  // The sampler stops 120 s after the page's start, so the landing must
+  // come well before that for the time to mean anything.
+  expect(all.at(-1)?.t ?? Infinity).toBeLessThan(115_000);
   expect(tookS).toBeLessThan(45);
+});
+
+// WHY (PR #560 R0 review): the pin's own press (no link): the flight holds,
+// the fix names the place, and the distance readout follows it (DEC-GL4-5).
+test("flight=2: a press with a position shows the distance to it", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(400_000);
+  await routeCity(context, page);
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation({ latitude: BERN.lat, longitude: BERN.lng });
+  await recordFlight(page, 300_000);
+  const errors = await bootGlobe(
+    page,
+    `${BASE.replace(/&at=[^&]*/, "")}&flight=2`,
+    { plain: false, routeCity: false },
+  );
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => window.__globeLab.state().pin.flight?.phase === "landed",
+    null,
+    { timeout: 240_000 },
+  );
+  const all = await page.evaluate(() => window.__flightSamples);
+  const flying = all.filter((s) => s.flight && s.flight !== "landed");
+  expect(errors).toEqual([]);
+  expect(flying.some((s) => /to the target$/.test(s.readout ?? ""))).toBe(true);
+  // Height tiles still in flight must not outlive the page.
+  await context.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+// WHY (PR #560 R0 review): the hash switches flight modes without a
+// restart; a cancelled flight=2 flight must not drive a later flight=1
+// dive (it froze the camera, and the dive never landed).
+test("a flight=1 dive lands after a cancelled flight=2 flight", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(400_000);
+  await routeCity(context, page);
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation({ latitude: BERN.lat, longitude: BERN.lng });
+  const errors = await bootGlobe(page, `${BASE}&land=1&flight=2`, {
+    plain: false,
+    phase: "diving",
+    routeCity: false,
+  });
+  const box = await page.locator("#globe-canvas").boundingBox();
+  if (!box) throw new Error("no canvas");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, 300);
+  await page.waitForFunction(
+    () => window.__globeLab.state().pin.flight?.phase === "cancelled",
+    null,
+    { timeout: 60_000 },
+  );
+  await applyHash(page, `${BASE}&flight=1`);
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => window.__globeLab.state().phase === "landed",
+    null,
+    { timeout: 240_000 },
+  );
+  expect(errors).toEqual([]);
+  await context.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 // WHY (PR #560 review): a touch takes the camera; the pin flight must say

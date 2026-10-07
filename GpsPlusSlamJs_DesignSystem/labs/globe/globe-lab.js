@@ -954,6 +954,10 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
       diveStartedAt = now;
       diveHoldMs = null;
       diveClock = clock ?? ((elapsedMs) => elapsedMs);
+      // A pin flight left from `flight=2` (the hash can switch modes
+      // without a restart) must not drive this dive's pose (PR #560 R0
+      // review: a cancelled one froze the camera).
+      pinFlight = null;
       choice = { target, source: "pin" };
       phase = "diving";
       note(now);

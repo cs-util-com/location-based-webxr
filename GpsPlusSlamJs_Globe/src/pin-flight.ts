@@ -113,8 +113,9 @@ const clampProgress = (p: number) =>
   p >= 1 ? 1 : p > 0 && Number.isFinite(p) ? p : 0;
 
 /**
- * Whether nothing holds the flight at `nowMs`: the data or the cap opened
- * the gate, or its path has no gate (it never comes down through the
+ * Whether nothing holds a flight TO A TARGET at `nowMs` (every caller
+ * checks `approaching` first; a hold has no gate and is not asked): the
+ * data or the cap opened the gate, or its path has no gate (it never comes down through the
  * commit altitude; PR #560 review: such a flight landed but reported
  * `approaching` until the cap).
  */
@@ -324,7 +325,8 @@ export function pinLanding(
   if (!flying || !now.target || landingM === now.landingM) return now;
   const next = { ...now, landingM };
   const flight = flyTo(next, now.target, landingM);
-  return { ...next, flight, gateClockMs: gateOf(flight) };
+  // A replan whose new path has no gate has nothing to wait for (opened).
+  return opened({ ...next, flight, gateClockMs: gateOf(flight) });
 }
 
 /** A touch on the globe: the controls take the camera. */

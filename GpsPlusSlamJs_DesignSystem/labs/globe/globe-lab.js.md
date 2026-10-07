@@ -66,7 +66,8 @@
   phase reads `cancelled`), and the pin says "Finding you, descending";
   with the prefetch off (`prefetch=0`) its progress reads 1, so nothing
   waits at the gate; the distance-to-target readout shows once the place
-  is known (`aimPin`); the world frame follows the camera during it;
+  is known (`aimPin`); a `flight=1` dive drops any pin flight left from a
+  `flight=2` one (the hash switches modes without a restart); the world frame follows the camera during it;
   `land=1` flies it to its link's place; `holdDiveAt` and `diveAltitudeAt` read its path at its own clock,
   and `state().pin.flight` reports its phase, clock, rate, landing,
   progress, gate and end),

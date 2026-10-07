@@ -93,7 +93,8 @@ The owner's decisions that this module puts into practice:
   `failed`, `cancelled`.
   - A flight whose path never comes down through `commitM` has no gate
     and is `descending` from the start: nothing waits for its data, so it
-    reports `landed` when it lands (PR #560 review).
+    reports `landed` when it lands (PR #560 review); so is a flight whose
+    new landing (`pinLanding`) removes its gate, at once.
 
 ## How it works
 
