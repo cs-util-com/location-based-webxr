@@ -204,6 +204,9 @@ describe("wireArEntry session end", () => {
     expect(h.arController.enable).toHaveBeenCalledTimes(1);
     expect(h.dispose).toHaveBeenCalledTimes(1);
     expect(h.ctx.qrController).toBeNull();
+    // The half that keeps a late evaluation of a dead pipeline out of the
+    // next entry (webxr PR #559 review).
+    expect(h.ctx.fusedPose).toBeNull();
   });
 });
 
