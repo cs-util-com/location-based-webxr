@@ -95,19 +95,100 @@ export function bendAltitudeM(landingM: number): number {
 }
 
 /**
- * The flight-path angle at `altitudeM` for a flight landing at `landingM`,
- * degrees below the horizontal: 90 from the bend up, `landingAngleDeg` at
- * the landing and below, a smoothstep in the altitude's logarithm between.
- * RangeError for an altitude or landing that is not a positive number.
+ * The angle below the horizontal, degrees, of a straight line through space
+ * meeting the landing at `meteorDeg` (a meteor), at `altitudeM`:
+ * cos(gamma) = (R + landing) cos(beta) / (R + h).
  */
-export function travelLawDeg(altitudeM: number, landingM: number): number {
+function lineAngleDeg(
+  altitudeM: number,
+  landingM: number,
+  meteorDeg: number,
+): number {
+  const R = FLIGHT_TRAVEL.radiusM;
+  const c = ((R + landingM) * Math.cos(meteorDeg * DEG)) / (R + altitudeM);
+  return Math.acos(Math.min(1, Math.max(-1, c))) / DEG;
+}
+
+/**
+ * The flight-path angle at `altitudeM` for a flight landing at `landingM`,
+ * degrees below the horizontal. `meteorDeg` (beta, round-3 plan
+ * 2026-10-08-2345 F1; the owner: "like a meteor, flat from the start"):
+ * above the bend the straight line meeting the landing at beta, below it an
+ * ease from the line's own angle at the bend to `landingAngleDeg` at the
+ * landing (a smoothstep in the altitude's logarithm; continuous at the bend
+ * for every beta). Beta 90 (the default) is R1 exactly: 90 from the bend up.
+ * RangeError for an altitude or landing that is not a positive number, or a
+ * beta outside (0, 90].
+ */
+export function travelLawDeg(
+  altitudeM: number,
+  landingM: number,
+  meteorDeg = 90,
+): number {
   requirePositive("altitudeM", altitudeM);
+  if (!(meteorDeg > 0 && meteorDeg <= 90)) {
+    throw new RangeError(`meteorDeg must be in (0, 90], got ${meteorDeg}`);
+  }
   const bend = bendAltitudeM(landingM);
-  if (altitudeM >= bend) return 90;
+  const line = (h: number) =>
+    meteorDeg >= 90 ? 90 : lineAngleDeg(h, landingM, meteorDeg);
+  if (altitudeM >= bend) return line(altitudeM);
   const land = FLIGHT_TRAVEL.landingAngleDeg;
   if (altitudeM <= landingM) return land;
   const x = Math.log(altitudeM / landingM) / Math.log(bend / landingM);
-  return land + (90 - land) * smoothstep(x);
+  return land + (line(bend) - land) * smoothstep(x);
+}
+
+/**
+ * The ground arc (radians) the law with `meteorDeg` sweeps from `h0` down
+ * to the landing: the integral of cot(gamma) h / (R + h) over ln h (Simpson,
+ * 2,048 steps). The meteor's line sweeps acos(p / r) - beta (about 41.4
+ * degrees from 65,000 km at beta 45); R1 (beta 90) about 16 km.
+ */
+export function meteorDiveArcRad(
+  h0: number,
+  landingM: number,
+  meteorDeg: number,
+): number {
+  requirePositive("h0", h0);
+  requirePositive("landingM", landingM);
+  if (!(h0 > landingM)) return 0;
+  const R = FLIGHT_TRAVEL.radiusM;
+  const n = 2_048;
+  const a = Math.log(landingM);
+  const step = (Math.log(h0) - a) / n;
+  let sum = 0;
+  for (let i = 0; i <= n; i++) {
+    const h = Math.exp(a + i * step);
+    const angle = travelLawDeg(h, landingM, meteorDeg) * DEG;
+    const f = ((Math.cos(angle) / Math.sin(angle)) * h) / (R + h);
+    sum += f * (i === 0 || i === n ? 1 : i % 2 === 1 ? 4 : 2);
+  }
+  return (sum * step) / 3;
+}
+
+/**
+ * The flattest beta, no flatter than `meteorDeg`, whose dive sweeps no more
+ * than `arcRad` from `h0` (bisection: the sweep falls strictly with beta).
+ * A press over its own place has almost no arc: it gets 90 (R1), and never
+ * backs off. An arc of the asked beta's sweep or more gets that beta.
+ */
+export function fitMeteorDeg(
+  h0: number,
+  landingM: number,
+  arcRad: number,
+  meteorDeg: number,
+): number {
+  if (meteorDiveArcRad(h0, landingM, meteorDeg) <= arcRad) return meteorDeg;
+  if (!(meteorDiveArcRad(h0, landingM, 90) < arcRad)) return 90;
+  let flat = meteorDeg;
+  let steep = 90;
+  for (let i = 0; i < 40; i++) {
+    const mid = (flat + steep) / 2;
+    if (meteorDiveArcRad(h0, landingM, mid) <= arcRad) steep = mid;
+    else flat = mid;
+  }
+  return steep;
 }
 
 /** A cubic Hermite between (0, a, slope ma) and (1, b, slope mb), at u. */
@@ -242,7 +323,12 @@ function clampPitch(deg: number, h: number): number {
  * looks by the law of its landing (45 degrees at a landing), as the flight
  * ends.
  */
-function levelPan(arcRad: number, h1: number, landingM: number): TravelCurve {
+function levelPan(
+  arcRad: number,
+  h1: number,
+  landingM: number,
+  meteorDeg: number,
+): TravelCurve {
   const length = (Math.abs(arcRad) * FLIGHT_TRAVEL.radiusM) / h1;
   return {
     length,
@@ -251,7 +337,7 @@ function levelPan(arcRad: number, h1: number, landingM: number): TravelCurve {
       const share = length > 0 ? Math.min(1, Math.max(0, s / length)) : 1;
       return { share, angle: share * arcRad, residualLeft: 1 - share, h: h1 };
     },
-    pitchAt: () => clampPitch(travelLawDeg(h1, landingM), h1),
+    pitchAt: () => clampPitch(travelLawDeg(h1, landingM, meteorDeg), h1),
   };
 }
 
@@ -267,7 +353,7 @@ export function planTravel(
   h0: number,
   h1: number,
   arcRad: number,
-  options: { readonly landingM: number },
+  options: { readonly landingM: number; readonly meteorDeg?: number },
 ): TravelCurve {
   requirePositive("h0", h0);
   requirePositive("h1", h1);
@@ -276,7 +362,11 @@ export function planTravel(
     throw new RangeError(`the arc must be finite, got ${arcRad}`);
   }
   const dw = Math.log(h1) - Math.log(h0);
-  if (Math.abs(dw) < 1e-9) return levelPan(arcRad, h1, options.landingM);
+  // The meteor's beta (F1): 90 is R1, straight down above the bend.
+  const meteorDeg = options.meteorDeg ?? 90;
+  if (Math.abs(dw) < 1e-9) {
+    return levelPan(arcRad, h1, options.landingM, meteorDeg);
+  }
   const R = FLIGHT_TRAVEL.radiusM;
   const bend = bendAltitudeM(options.landingM);
   const hAt = (sigma: number) => h0 * Math.exp(dw * sigma);
@@ -284,7 +374,7 @@ export function planTravel(
   // from the landing up. A climb (a landing raised over the camera) has none.
   const diveSlopeW = (h: number) => {
     if (dw > 0) return 0;
-    const angle = travelLawDeg(h, options.landingM) * DEG;
+    const angle = travelLawDeg(h, options.landingM, meteorDeg) * DEG;
     return ((Math.cos(angle) / Math.sin(angle)) * h) / (R + h);
   };
   const diveSlope = (sigma: number) => diveSlopeW(hAt(sigma)) * dw;
@@ -375,10 +465,14 @@ export function planTravel(
     },
     pitchAt: (pathS) => {
       const sigma = sigmaAt(pathS);
-      if (sigma >= 1) return clampPitch(travelLawDeg(h1, options.landingM), h1);
+      if (sigma >= 1) {
+        return clampPitch(travelLawDeg(h1, options.landingM, meteorDeg), h1);
+      }
       const h = hAt(sigma);
-      if (h >= bend) return 90;
-      const law = travelLawDeg(h, options.landingM);
+      // R1 turns first above the bend, looking straight down; a meteor
+      // looks along its travel at every altitude (F1).
+      if (h >= bend && meteorDeg >= 90) return 90;
+      const law = travelLawDeg(h, options.landingM, meteorDeg);
       // A climb travels up; it looks by the law instead (45 at a landing
       // below the bend), so it ends where the landing looks, without a snap.
       if (dw > 0) return clampPitch(law, h);

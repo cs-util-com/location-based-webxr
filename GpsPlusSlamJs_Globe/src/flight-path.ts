@@ -258,6 +258,8 @@ export interface FlightPath {
   /** The landing the view's law refers to, and the view's pitch at the end. */
   readonly viewLandingM: number;
   readonly endPitchDeg: number;
+  /** The meteor's beta the path flies (90: R1). */
+  readonly meteorDeg: number;
   /** The target's direction, a unit vector. */
   readonly target: THREE.Vector3;
   /** The course's great circle, by its normal: the view looks ahead about it. */
@@ -367,7 +369,11 @@ function flightOptions(
     brake: or(options.brake, false),
     settleLength: or(options.settleLength, null),
     viewLandingM: or(options.viewLandingM, options.landingM),
+    meteorDeg: or(options.meteorDeg, 90),
   };
+  if (!(o.meteorDeg > 0 && o.meteorDeg <= 90)) {
+    throw new RangeError(`meteorDeg must be in (0, 90], got ${o.meteorDeg}`);
+  }
   requirePositive("landingM", o.landingM);
   requirePositive("durationMs", o.durationMs);
   requirePositive("start.distanceM", start.distanceM);
@@ -480,13 +486,19 @@ export function planFlight(
      * settle starts where the old one would have (CF3 review finding 3).
      */
     readonly settleLength?: number;
+    /**
+     * The meteor's entry angle beta (round-3 plan 2026-10-08-2345 F1): the
+     * travel law is the straight line meeting the landing at beta, eased
+     * to 45 below the bend. 90 (the default) is R1.
+     */
+    readonly meteorDeg?: number;
   },
 ): FlightPath {
   const o = flightOptions(start, options);
   const { landingM } = o;
   // The view at the end: the travel law of the landing the view refers to
   // (45 degrees at a real landing; straight down at a hold above the bend).
-  const endPitchDeg = travelLawDeg(landingM, o.viewLandingM);
+  const endPitchDeg = travelLawDeg(landingM, o.viewLandingM, o.meteorDeg);
   const cameraStart = start.pose.direction.clone().normalize();
   const up0 = start.pose.up.clone().projectOnPlane(cameraStart);
   if (!(up0.length() > 1e-9)) {
@@ -533,6 +545,7 @@ export function planFlight(
   );
   const path = planTravel(h0, landingM, cameraArcRad, {
     landingM: o.viewLandingM,
+    meteorDeg: o.meteorDeg,
   });
   const clock = flightClock(
     path.length,
@@ -559,6 +572,7 @@ export function planFlight(
     durationMs,
     landingM,
     viewLandingM: o.viewLandingM,
+    meteorDeg: o.meteorDeg,
     endPitchDeg,
     target: to,
     courseNormal: normal,

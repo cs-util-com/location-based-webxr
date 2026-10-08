@@ -72,6 +72,7 @@ import {
   pinTouch,
   pressPin,
 } from "/globe/pin-flight.js";
+import { meteorDiveArcRad } from "/globe/flight-travel.js";
 import { flightCameraAt, flightFrameAt } from "/globe/flight-replan.js";
 import { globeReadoutText, readoutThrottle } from "/globe/globe-readout.js";
 import {
@@ -419,6 +420,14 @@ const PARAMS = {
   // from the camera as the intro placed it. The pin's press always flies
   // from where the camera is.
   flightStartKm: { fallback: 65_000, min: 0, max: 100_000 },
+  // The meteor (round-3 plan 2026-10-08-2345 F1; the owner on r805: "like a
+  // meteor, flat from the start"): `meteorDeg` the line's entry angle (45;
+  // smaller is flatter in the middle; 90 is round 2's straight down, R1). A
+  // link starts on the line; a press over its own place flies the flattest
+  // line its arc allows, unless `pressMeteor` 1 flies the full meteor,
+  // backing off first. `flight=2` only.
+  meteorDeg: { fallback: 45, min: 10, max: 90 },
+  pressMeteor: { fallback: 0, min: 0, max: 1 },
   // The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6): on unless 0.
   // While it runs it paces the dive (`/globe/flight-pace.js`, at most the
   // 30 s of DEC-GL5-6) unless `diveMs` is set in the hash, which keeps
@@ -1411,7 +1420,38 @@ function bindPin({
     const params = getParams();
     controls.release();
     const start = ecefCamera();
-    if (fromAltitudeM > 0) {
+    if (fromAltitudeM > 0 && place && params.meteorDeg < 90) {
+      // A link starts ON the meteor's line (F1): the line's sweep from this
+      // altitude (1 % more, so the asked beta fits by construction) away
+      // from its place, on the side the camera already is (north when it
+      // is right overhead), looking straight down with the place ahead,
+      // which is the path's own view up here (the horizon floor), so the
+      // start's view never swings.
+      const to = orbitPose(ellipsoid, place).direction.clone().normalize();
+      const here = start.position.clone().normalize();
+      const side = here.clone().addScaledVector(to, -here.dot(to));
+      if (side.length() < 1e-6) {
+        side.set(0, 0, 1).addScaledVector(to, -to.z);
+      }
+      side.normalize();
+      const sweep =
+        1.01 *
+        meteorDiveArcRad(fromAltitudeM, params.landKm * 1000, params.meteorDeg);
+      const direction = to
+        .clone()
+        .multiplyScalar(Math.cos(sweep))
+        .addScaledVector(side, Math.sin(sweep));
+      const up = to.clone().addScaledVector(direction, -to.dot(direction));
+      const view = obliqueCamera(
+        ellipsoid,
+        { direction, up: up.normalize() },
+        fromAltitudeM,
+        90,
+      );
+      start.position.copy(view.position);
+      start.quaternion.copy(view.quaternion);
+      placeCameraEcef(start.position, start.quaternion);
+    } else if (fromAltitudeM > 0) {
       // Out along the camera's own direction, its rotation kept.
       const direction = start.position.clone().normalize();
       start.position.copy(
@@ -1437,6 +1477,8 @@ function bindPin({
           target: place ? orbitPose(ellipsoid, place) : null,
           landingM: params.landKm * 1000,
           progress: 0,
+          meteorDeg: params.meteorDeg,
+          pressMeteor: params.pressMeteor === 1,
         },
       ),
       place,

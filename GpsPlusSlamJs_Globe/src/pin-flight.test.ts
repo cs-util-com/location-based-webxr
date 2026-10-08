@@ -22,6 +22,7 @@ import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 import { orbitPose } from "./globe-camera.js";
 import { obliqueCamera } from "./globe-dive.js";
 import { FLIGHT_PATH } from "./flight-path.js";
+import { meteorDiveArcRad } from "./flight-travel.js";
 import {
   PIN_FLIGHT,
   pinFailed,
@@ -866,5 +867,83 @@ describe("the pin's pace never slows while it approaches (round-2 plan DEC-FR2-9
       }
     }
     expect(failures).toEqual([]);
+  });
+});
+
+// WHY (round-3 plan 2026-10-08-2345 F1, the second plan review): a link
+// (a target known at the press, started on the meteor's line) flies the
+// meteor the owner asked for; a press over its own place has no room for
+// the line's 3,000-odd km of sweep, so it fits the flattest line that its
+// arc allows and never backs off, unless `pressMeteor` asks for the full
+// meteor; a landing raise keeps the beta it chose.
+describe("the pin's meteor (meteorDeg, pressMeteor)", () => {
+  const bernDir = bernPose.direction.clone().normalize();
+  const angleFromBern = (s: { dir: { x: number; y: number; z: number } }) =>
+    Math.acos(
+      Math.min(
+        1,
+        s.dir.x * bernDir.x + s.dir.y * bernDir.y + s.dir.z * bernDir.z,
+      ),
+    );
+
+  it("flies a link on the asked meteor", () => {
+    const sweepDeg =
+      (meteorDiveArcRad(65_000 * KM, 2 * KM, 45) * 180) / Math.PI;
+    // The lab starts a link 1 % further out than the line's sweep, so the
+    // asked beta fits by construction (the camera's arc ends one landing
+    // short of the target); the residual turn absorbs the 1 %.
+    const start = cameraOver(
+      { lat: BERN.lat - sweepDeg * 1.01, lng: BERN.lng },
+      65_000 * KM,
+    );
+    const pin = pressPin(WGS84_ELLIPSOID, 0, start, {
+      target: bernPose,
+      landingM: 2 * KM,
+      progress: 1,
+      meteorDeg: 45,
+    });
+    expect(pin.flight?.path.meteorDeg).toBe(45);
+    const raised = pinLanding(pin, 1_000, 3 * KM);
+    expect(raised.flight?.path.meteorDeg).toBe(45);
+  });
+
+  const overOwnPlace = (pressMeteor: boolean) => {
+    const pin = pressPin(WGS84_ELLIPSOID, 0, cameraOver(BERN, 10_100 * KM), {
+      target: null,
+      landingM: 2 * KM,
+      progress: 0,
+      meteorDeg: 45,
+      pressMeteor,
+    });
+    return run(pin, 40_000, (t, p) =>
+      t >= 2_000 && p.phase === "holding"
+        ? pinProgress(pinFix(p, t, bernPose), t, 1)
+        : p,
+    );
+  };
+
+  it("fits a steeper line over its own place, backing off no more than R1's own dive", () => {
+    const { pin, samples } = overOwnPlace(false);
+    expect(pin.flight?.path.meteorDeg ?? 0).toBeGreaterThan(45);
+    // Straight overhead, even R1 steps back its own dive track (about 16 km
+    // at a 2 km landing) to dive in at 45; never the meteor's thousands of km.
+    const after = samples.filter((s) => s.t > 2_100);
+    let backward = 0;
+    for (let i = 1; i < after.length; i++) {
+      backward += Math.max(
+        0,
+        angleFromBern(after[i]!) - angleFromBern(after[i - 1]!),
+      );
+    }
+    expect(backward * R).toBeLessThan(25 * KM);
+  });
+
+  it("flies the full meteor over its own place with pressMeteor, backing off first", () => {
+    const { pin, samples } = overOwnPlace(true);
+    expect(pin.flight?.path.meteorDeg).toBe(45);
+    // Measured 4.6 degrees (about 510 km) from 10,100 km; R1 steps back
+    // 0.16 (17.5 km).
+    const widest = Math.max(...samples.map(angleFromBern));
+    expect((widest * 180) / Math.PI).toBeGreaterThan(1);
   });
 });

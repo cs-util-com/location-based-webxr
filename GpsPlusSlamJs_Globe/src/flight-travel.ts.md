@@ -135,3 +135,26 @@ Each one is tested (`flight-travel.test.ts`).
 - `flight-travel.test.ts`; the flights built on it in `flight-path.test.ts`,
   `flight-path.property.test.ts`, `flight-replan.test.ts` and
   `pin-flight.test.ts`.
+
+## The meteor (round-3 plan 2026-10-08-2345, F1)
+
+The owner on r805: "very steep, then 45 rather late; like a meteor, flat
+from the start". `travelLawDeg(h, landing, meteorDeg)` with beta below 90 is
+a straight line through space meeting the landing at beta, cos(gamma) =
+(R + landing) cos(beta) / (R + h), above the bend, and below it an ease
+from the line's own angle at the bend to 45 at the landing (continuous for
+every beta; beta 90, the default, is R1 exactly). `planTravel` takes
+`meteorDeg`: a meteor looks along its travel at every altitude (R1 looks
+straight down above the bend), still held by the horizon floor (dip + 5
+degrees), which binds above about 15,800 km at beta 45.
+
+- `meteorDiveArcRad(h0, landing, beta)`: the ground arc the law sweeps from
+  h0 to the landing (Simpson in ln h): about 41.4 degrees from 65,000 km at
+  beta 45, about 16 km for R1.
+- `fitMeteorDeg(h0, landing, arc, beta)`: the flattest beta, no flatter than
+  asked, whose sweep fits the arc (bisection; the sweep falls strictly with
+  beta): a press over its own place gets about 90.
+
+Tests: the law (R1 at 90, the line above the bend, continuous at the bend,
+45 at the landing), the sweep and the fit, and a curve on the line looking
+along it below the floor's reach and at the floor above it.

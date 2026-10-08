@@ -646,6 +646,15 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   `drift`, `direction` and `shown`; `dustSample(n)` the first n visible
   streaks projected and the focus of expansion
   (`globe-dust.smoke.spec.mjs`).
+  `meteorDeg` (45; 90 is round 2's R1) and `pressMeteor` (0) fly the meteor
+  (round-3 plan 2026-10-08-2345 F1, `flight=2` only): a `land=1` link starts
+  on the line (its sweep from `flightStartKm`, 1 % more, away from its place
+  on the side the camera already is, looking straight down with the place
+  ahead: the path's own view up there, so nothing swings); a press flies
+  the flattest line its arc allows, or with `pressMeteor` 1 the full meteor.
+  Measured (`globe-meteor.smoke.spec.mjs`): 73.8 degrees below the
+  horizontal at 9,718 km, 64.4 at 4,060, 52.3 at 1,003 (the line: 73.7,
+  64.4, 52.3), 45.0 at the landing.
   `cloudNoiseCoordAt(lat, lng)` (a test hook) returns the cloud noise
   coordinate a ground point reads under the current frame; a recentre must
   leave it unchanged (`globe-cloud-volume.smoke.spec.mjs`).

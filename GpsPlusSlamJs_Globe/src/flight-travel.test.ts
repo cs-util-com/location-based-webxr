@@ -22,6 +22,8 @@ import {
   bendAltitudeM,
   planTravel,
   travelLawDeg,
+  fitMeteorDeg,
+  meteorDiveArcRad,
 } from "./flight-travel.js";
 
 const KM = 1_000;
@@ -317,5 +319,159 @@ describe("planTravel", () => {
     expect(() =>
       planTravel(10 * KM, 2 * KM, Number.NaN, { landingM: 2 * KM }),
     ).toThrow(RangeError);
+  });
+});
+
+// WHY (round-3 plan 2026-10-08-2345, F1; the owner on r805: "very steep,
+// then 45 rather late; like a meteor, flat from the start"): a meteor
+// arrives on a straight line, cos(gamma) = p / r with p = (R + landing)
+// cos(beta). The law with \`meteorDeg\` beta is that line above the bend
+// and an ease from the line's own angle at the bend to 45 at the landing;
+// beta 90 is R1 exactly.
+describe("the meteor law (travelLawDeg with meteorDeg)", () => {
+  const line = (h: number, landing: number, beta: number) =>
+    Math.acos(Math.min(1, ((R + landing) * Math.cos(beta * DEG)) / (R + h))) /
+    DEG;
+
+  it("is R1 exactly at beta 90", () => {
+    for (const h of [1, 3, 30, 300, 3_000, 30_000].map((k) => k * KM)) {
+      for (const landing of [1, 2, 12].map((k) => k * KM)) {
+        expect(travelLawDeg(h, landing, 90)).toBe(travelLawDeg(h, landing));
+      }
+    }
+  });
+
+  it("follows the straight line above the bend", () => {
+    for (const beta of [30, 45, 60]) {
+      for (const hKm of [65_000, 10_000, 4_000, 1_000, 200]) {
+        expect(
+          travelLawDeg(hKm * KM, 2 * KM, beta),
+          `${beta} at ${hKm}`,
+        ).toBeCloseTo(line(hKm * KM, 2 * KM, beta), 9);
+      }
+    }
+    // The owner's numbers at beta 45: 3.6, 16.0, 25.8, 37.7 off the vertical.
+    expect(90 - travelLawDeg(65_000 * KM, 2 * KM, 45)).toBeCloseTo(3.6, 1);
+    expect(90 - travelLawDeg(4_000 * KM, 2 * KM, 45)).toBeCloseTo(25.8, 1);
+  });
+
+  // Continuous at the bend for every beta (the second plan review: R1's
+  // ease from 90 jumped about 44 degrees after the line), 45 at the landing.
+  it("is continuous at the bend and ends at 45, for every beta", () => {
+    for (const beta of [20, 30, 45, 60, 75, 89]) {
+      for (const landing of [1, 2, 12].map((k) => k * KM)) {
+        const bend = bendAltitudeM(landing);
+        expect(
+          Math.abs(
+            travelLawDeg(bend * 1.0001, landing, beta) -
+              travelLawDeg(bend * 0.9999, landing, beta),
+          ),
+          `${beta}, ${landing}`,
+        ).toBeLessThan(0.01);
+        expect(travelLawDeg(landing, landing, beta)).toBe(45);
+      }
+    }
+  });
+});
+
+describe("the meteor's dive track and its fit (meteorDiveArcRad, fitMeteorDeg)", () => {
+  // The line sweeps acos(p / r) - beta of arc from r to the landing: from
+  // 65,000 km at beta 45 about 41.4 degrees (the review's 41.38).
+  it("sweeps the line's arc", () => {
+    expect(meteorDiveArcRad(65_000 * KM, 2 * KM, 45) / DEG).toBeCloseTo(
+      41.4,
+      0,
+    );
+    // Falls strictly as beta rises (bisection needs it); R1's is tiny.
+    let last = Infinity;
+    for (const beta of [20, 30, 45, 60, 75, 85, 90]) {
+      const arc = meteorDiveArcRad(2_000 * KM, 2 * KM, beta);
+      expect(arc).toBeLessThan(last);
+      last = arc;
+    }
+    expect((meteorDiveArcRad(2_000 * KM, 2 * KM, 90) * R) / KM).toBeLessThan(
+      20,
+    );
+  });
+
+  // A press whose arc is shorter than the line's sweep takes the flattest
+  // beta, no flatter than the asked one, whose sweep fits: it never backs
+  // off; one with room flies the asked beta.
+  it("fits the flattest beta that fits the arc, no flatter than asked", () => {
+    const h0 = 10_000 * KM;
+    const full = meteorDiveArcRad(h0, 2 * KM, 45);
+    expect(fitMeteorDeg(h0, 2 * KM, full * 1.2, 45)).toBe(45);
+    const half = fitMeteorDeg(h0, 2 * KM, full / 2, 45);
+    expect(half).toBeGreaterThan(45);
+    expect(meteorDiveArcRad(h0, 2 * KM, half)).toBeLessThanOrEqual(
+      full / 2 + 1e-6,
+    );
+    expect(meteorDiveArcRad(h0, 2 * KM, half)).toBeGreaterThan(full / 2 - 1e-3);
+    expect(fitMeteorDeg(h0, 2 * KM, 0, 45)).toBe(90);
+    expect(fitMeteorDeg(h0, 2 * KM, -0.1, 45)).toBe(90);
+  });
+});
+
+// WHY (F1): a link starts ON the meteor's line, so its curve is the line
+// itself (no residual turn), and the view looks along the travel at every
+// altitude, except where the horizon floor (dip + 5 degrees) keeps the
+// Earth on screen (above about 15,800 km at beta 45, the second review).
+describe("planTravel on the meteor's line (meteorDeg)", () => {
+  const landing = 2 * KM;
+  const h0 = 65_000 * KM;
+  const beta = 45;
+  const arc = meteorDiveArcRad(h0, landing, beta);
+  const curve = planTravel(h0, landing, arc, {
+    landingM: landing,
+    meteorDeg: beta,
+  });
+
+  /** The curve's point and pitch at the altitude h (found along its length). */
+  const atAltitude = (h: number) => {
+    let lo = 0;
+    let hi = curve.length;
+    for (let i = 0; i < 60; i++) {
+      const mid = (lo + hi) / 2;
+      if (curve.at(mid).h > h) lo = mid;
+      else hi = mid;
+    }
+    return { s: lo, pitch: curve.pitchAt(lo) };
+  };
+  const floorAt = (h: number) =>
+    Math.acos(R / (R + h)) / DEG + FLIGHT_TRAVEL.horizonMarginDeg;
+
+  it("looks along the line below the floor's reach, at the floor above it", () => {
+    for (const hKm of [10_000, 4_000, 1_000, 300]) {
+      const h = hKm * KM;
+      const { pitch } = atAltitude(h);
+      const expected = Math.max(travelLawDeg(h, landing, beta), floorAt(h));
+      expect(pitch, `${hKm} km`).toBeCloseTo(expected, 0);
+    }
+    for (const hKm of [60_000, 30_000]) {
+      const h = hKm * KM;
+      expect(atAltitude(h).pitch, `${hKm} km`).toBeCloseTo(floorAt(h), 0);
+    }
+    expect(curve.pitchAt(curve.length)).toBeCloseTo(45, 6);
+  });
+
+  it("flies the line: its ground track at each altitude is the line's own", () => {
+    for (const hKm of [10_000, 1_000, 100]) {
+      const h = hKm * KM;
+      const { s } = atAltitude(h);
+      const sweptToHere = (arc - meteorDiveArcRad(h, landing, beta)) / arc;
+      expect(curve.at(s).share, `${hKm} km`).toBeCloseTo(sweptToHere, 2);
+    }
+  });
+
+  it("is R1 exactly without a meteorDeg", () => {
+    const r1 = planTravel(10_000 * KM, landing, 0.3, { landingM: landing });
+    const same = planTravel(10_000 * KM, landing, 0.3, {
+      landingM: landing,
+      meteorDeg: 90,
+    });
+    for (const k of [0, 0.25, 0.5, 0.9]) {
+      expect(same.at(r1.length * k)).toEqual(r1.at(r1.length * k));
+      expect(same.pitchAt(r1.length * k)).toBe(r1.pitchAt(r1.length * k));
+    }
   });
 });

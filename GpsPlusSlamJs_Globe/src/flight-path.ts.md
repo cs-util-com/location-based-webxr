@@ -296,3 +296,10 @@ const { position, quaternion, done } = flightCamera(path, now - pressedAt);
   - a view that does not look ahead.
   - (CF1's "no climb" mutant no longer applies: the travel curve does
     not climb.)
+
+## The meteor (F1)
+
+`planFlight`'s `meteorDeg` (default 90, R1) is passed to the travel curve and
+kept on the path (`path.meteorDeg`); the end view is the law at the landing
+(45 for any beta). `retargetFlight` keeps the flight's beta unless its
+caller passes another, so a landing raise never changes the law mid-flight.

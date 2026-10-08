@@ -47,6 +47,7 @@ import {
   startFlight,
   type Flight,
 } from "./flight-replan.js";
+import { fitMeteorDeg } from "./flight-travel.js";
 
 export const PIN_FLIGHT = Object.freeze({
   /** DEC-CF-4b: without a target, the flight holds above this, m. */
@@ -115,6 +116,15 @@ export interface PinFlight {
    * never falls below it, except into the gate (round-2 plan DEC-FR2-9).
    */
   readonly paceFloor: number;
+  /**
+   * The meteor (round-3 plan 2026-10-08-2345 F1): the beta asked for, whether
+   * a press flies it in full even when it must back off first, and the beta
+   * the flight to the current target flies (90, R1, before a target and in
+   * the hold, which keeps its vertical law).
+   */
+  readonly meteorAskedDeg: number;
+  readonly pressMeteor: boolean;
+  readonly meteorDeg: number;
 }
 
 function requireTime(nowMs: number): void {
@@ -175,8 +185,13 @@ function gateOf(flight: Flight): number | null {
 }
 
 /** A flight to `target`, from the hover point or replanned at the clock. */
-function flyTo(pin: PinFlight, target: OrbitPose, landingM: number): Flight {
-  const options = { landingM, viewLandingM: pin.landingM };
+function flyTo(
+  pin: PinFlight,
+  target: OrbitPose,
+  landingM: number,
+  meteorDeg: number = pin.meteorDeg,
+): Flight {
+  const options = { landingM, viewLandingM: pin.landingM, meteorDeg };
   return pin.flight
     ? retargetFlight(pin.flight, pin.clockMs, target, options)
     : startFlight(pin.ellipsoid, pin.hover, target, options, pin.clockMs);
@@ -188,9 +203,10 @@ function flyTo(pin: PinFlight, target: OrbitPose, landingM: number): Flight {
  * CF3 review finding 9).
  */
 function towardTarget(pin: PinFlight, target: OrbitPose): PinFlight {
-  const flight = flyTo(pin, target, pin.landingM);
+  const { flight, meteorDeg } = meteorTo(pin, target);
   const next = {
     ...pin,
+    meteorDeg,
     progress: 0,
     dataStartMs: pin.nowMs,
     paceFloor: 0,
@@ -209,6 +225,32 @@ function towardTarget(pin: PinFlight, target: OrbitPose): PinFlight {
   const { stretch } = pace(flying, pin.nowMs);
   const started = { ...flying, paceFloor: stretch };
   return { ...started, rate: targetRate(started, pin.nowMs) };
+}
+
+/**
+ * The first flight to a target and its beta: the asked meteor when its
+ * arc has room for the line's sweep (a link started on the line), else the
+ * flattest beta, no flatter than asked, that fits the arc (a press over its
+ * own place: no back-off beyond R1's own dive), unless `pressMeteor` asks
+ * for the full meteor, back-off and all. Chosen once; replans keep it.
+ */
+function meteorTo(
+  pin: PinFlight,
+  target: OrbitPose,
+): { flight: Flight; meteorDeg: number } {
+  const asked = pin.meteorAskedDeg;
+  const flight = flyTo(pin, target, pin.landingM, asked);
+  if (asked >= 90 || pin.pressMeteor) return { flight, meteorDeg: asked };
+  const h0 = flightFrameAt(flight, flight.startedAtMs).altitudeM;
+  const fitted = fitMeteorDeg(
+    h0,
+    pin.landingM,
+    flight.path.cameraArcRad,
+    asked,
+  );
+  return fitted === asked
+    ? { flight, meteorDeg: asked }
+    : { flight: flyTo(pin, target, pin.landingM, fitted), meteorDeg: fitted };
 }
 
 /** The hold: down to `holdM` over where the camera looks; none if already lower. */
@@ -264,9 +306,17 @@ export function pressPin(
     readonly target: OrbitPose | null;
     readonly landingM: number;
     readonly progress: number;
+    /** The meteor's beta (F1; 90, the default, is R1). */
+    readonly meteorDeg?: number;
+    /** A press flies the full meteor even if it must back off first. */
+    readonly pressMeteor?: boolean;
   },
 ): PinFlight {
   requireTime(nowMs);
+  const meteorAskedDeg = options.meteorDeg ?? 90;
+  if (!(meteorAskedDeg > 0 && meteorAskedDeg <= 90)) {
+    throw new RangeError(`meteorDeg must be in (0, 90], got ${meteorAskedDeg}`);
+  }
   if (!(options.landingM > 0 && Number.isFinite(options.landingM))) {
     throw new RangeError(
       `landingM must be a positive number, got ${options.landingM}`,
@@ -287,6 +337,9 @@ export function pressPin(
     gateClockMs: null,
     dataStartMs: nowMs,
     paceFloor: 0,
+    meteorAskedDeg,
+    pressMeteor: options.pressMeteor ?? false,
+    meteorDeg: 90,
   };
   if (!options.target) return holdOver(base);
   const flying = opened({

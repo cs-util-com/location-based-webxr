@@ -328,6 +328,9 @@ export function retargetFlight(
   const timing = replanTiming(flight, atMs, start, target, options, speed);
   const path = planFlight(flight.ellipsoid, start, target, {
     ...options,
+    // A replan keeps the flight's beta unless its caller chose another (F1):
+    // a landing raise never changes the law mid-flight.
+    meteorDeg: options.meteorDeg ?? flight.path.meteorDeg,
     durationMs: options.durationMs ?? timing.durationMs,
     rampMs: timing.rampMs,
     rampFromShare: timing.rampFromShare,
