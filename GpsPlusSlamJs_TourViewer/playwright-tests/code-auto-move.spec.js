@@ -163,7 +163,6 @@ test("a code seen 36 m from its saved spot after a reliable walk is moved at the
   await expect(page.getByTestId("finish-status")).toContainText(
     "The code's saved position moved to the poster's new spot",
   );
-  await page.getByTestId("finish-download").click();
   await expect
     .poll(() =>
       page.evaluate(

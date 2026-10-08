@@ -2,80 +2,78 @@
 
 ## Purpose
 
-The rebuilt zip's hand-off after a Finish: the download / share / Drive-save
-button, its labels per open tour, the result line, and the "replace the
-hosted file" steps it earns. Split out of `creator-setup.ts` unchanged in
-the code book refactor plan's M2
-(`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan.md`).
+The rebuilt zip's hand-off after a Finish: the Finish saves the zip by
+itself and the one button left saves it again, the result line, and the
+"replace the hosted file" steps a save earns (the 2026-10-08 field test,
+F4; owner decisions D-F4a, D-F4b). Split out of `creator-setup.ts` in the
+code book refactor plan's M2
+(`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan.md`);
+the automatic save is in
+`GpsPlusSlamJs_Docs/docs/2026-10-08-1455-tour-recording-field-test-2-findings.md`
+§8.
 
 ## Public API
 
-- `wireCreatorHandoff({ ctx, seams, dom, render }): CreatorHandoff` -
-  wires the download button (`dom`: `downloadButton`, `finishStatus`,
-  `replaceHelp`, `replaceHelpShare`, `replaceHelpGeneric`,
-  `replaceHelpDrive`); `render` re-renders the creator panel when a
-  delivered file changes the save guard.
+- `wireCreatorHandoff({ ctx, seams, dom, render }): CreatorHandoff` - wires
+  the button (`dom`: `downloadButton`, `finishStatus`, `replaceHelp`,
+  `replaceHelpGeneric`, `replaceHelpDrive`); `seams.downloadZip` is the save;
+  `render` re-renders the creator panel when a delivered file changes the
+  save guard.
 - `CreatorHandoff`:
-  - `drive()` - the open tour is on Google Drive (it saves, never shares);
-  - `route()` - `finishRoute({ canShare, drive })` for the open tour;
-  - `idleLabel()` - the button's idle label for the open tour (the Finish
-    sets it when it reveals the button);
-  - `reset()` - a tour closed: the button disabled with its idle label,
-    the line cleared, the replace steps hidden and the generic text back.
+  - `drive()` - the open tour is on Google Drive (its steps are the Drive
+    website's);
+  - `save(notes?)` - save the rebuilt zip to this phone. The Finish calls it
+    once the zip is rebuilt, with its result sentences (the code's
+    position, a walk left out, photos not placed) as `notes`; the button
+    calls it without them, and the notes stay;
+  - `reset()` - a tour closed: the button disabled with its label, the line
+    and the notes cleared, the replace steps hidden and the generic text
+    back.
 
 ## Invariants & assumptions
 
-- **A Drive tour's finish SAVES and shows the Drive steps** (Drive replace
-  plan §2 decisions 1 and 4): the route is `finishRoute({canShare,
-drive})`, per open tour (`isDriveUrl` of the archive link) - never frozen
-  at wiring - so a Drive tour takes `seams.downloadZip` even on a phone that
-  could share, and its button reads "Save the zip to this phone". Its ready
-  line (`FINISH_LABELS.readyDrive`) warns about an older copy in Downloads
-  BEFORE the tap, and its status after the save is `savedToPhone`. Once the
-  zip is delivered, `replaceHelpDrive` shows `driveReplaceSteps` as numbered
-  lines (textContent; the module stays DOM-free) with the zip's name, and
-  `replaceHelpGeneric` hides; `resetFinishStep` restores the generic text.
-  A hosted name a phone would change is saved as `downloadSafeName` and the
-  steps ask for the same rename on Drive.
-- **Hand-off:** `seams.shareOrDownloadZip` - the device share sheet where
-  the browser can share FILES, else the framework's picker-or-anchor. The
-  button's LABEL comes from `seams.canShareZip()`, read once at wire time,
-  because a button reading "Download" on a phone that will open a share
-  sheet names the wrong action before it is pressed. Two independent
-  facts come back:
-  - `delivered` reveals the replace instructions (the last thing to do,
-    and only once there is a file to do it with); false - a dismissed
-    picker, or a share sheet that handed nothing over - keeps the button
-    live. Async-UI rule on both branches.
-  - The reveal is ONE-WAY for `replaceHelp` and follows the last DELIVERED
-    hand-off for `replaceHelpShare`. A creator who saved, tapped again and
-    dismissed the picker keeps the step-6 instructions they earned; one who
-    shared and then saved stops being told to go looking in another app.
-    And the whole continuation is guarded on `ctx.openGeneration`, because
-    a share sheet can stay up across a tour close - the reveal would
-    otherwise land on the closed tour's panel and still be on screen when
-    the next tour reached its finish (PR #440 review).
-  - `route` picks the copy, and this is the half that matters: "the link
-    and the printed code stay the same" is TRUE after a save over the
-    hosted file and FALSE after a share, which normally creates a new file
-    with a new id while the printed code still points at the old one. The
-    share route therefore also reveals `#replace-help-share`, one extra
-    sentence saying so. The four outcomes are pure functions
-    (`finishHandoffStatus`, `finishIdleLabel`, `finishBusyLabel` in
-    `qr-author-mode.ts`), tested there, because three of them cannot be
-    reached in a headless browser.
-    `resetFinishStep` (a hook, called when a tour closes) disables the
-    button, clears the status and hides both blocks, so a re-opened tour
-    never shows the previous one's dead download button.
+- **The Finish saves; the button saves again** (D-F4a, D-F4b). The owner's
+  second field test ended with only the troubleshooting recording on the
+  phone: the tour zip waited on a button they never saw. The save is
+  always the plain one (`seams.downloadZip`), also where the phone could
+  share - a share sheet needs a fresh tap, which the Finish's own save does
+  not have. On a desktop the save picker needs one too; without it the
+  framework falls back to a plain download, which does not.
+- **The status line is the save's sentence, then the Finish's notes**, so
+  the code's position line (and its large-turn warning) stays on screen
+  through every save.
+- **Async-UI rule:** "Saving…" and a disabled button before the await; the
+  durable end state after - "Saved as …" (a Drive tour: "… in Downloads",
+  and the Drive steps), or "Not saved", or the failure, each with the
+  button live again ("Save the tour zip again"). A seam that throws is a
+  failure on the line, never a broken Finish.
+- **Delivered:** a save that delivered marks `ctx.rebuiltZip.delivered`, so
+  the leave guard stops asking and Finish comes back (U2).
+- **The replace steps are earned, one way:** they appear on a delivered
+  save; a later save that did not go through takes nothing back - they are
+  the flow's last instruction (PR #439 review #3). Only `reset` hides them.
+  A Drive tour gets `driveReplaceSteps` with the hosted file's name (or the
+  zip's, with a check-the-name step), in place of the generic text.
+- **A tour closed under an open save:** every post-await path re-checks
+  `ctx.openGeneration`, so a save that settles after a close changes
+  nothing on the next tour's panel (PR #440 review); `reset` restores the
+  button's label for the same reason (PR #441 review).
 
-- `seams.canShareZip()` is asked once, at wiring; the ROUTE is derived per
-  open tour.
-- A delivered save marks `ctx.rebuiltZip.delivered` (the U2 save guard
-  stops asking) and re-renders the panel.
+## Examples
+
+```ts
+const handoff = wireCreatorHandoff({ ctx, seams, dom, render });
+// At the end of a Finish, the zip rebuilt and on the page:
+handoff.save(notes);
+```
 
 ## Tests
 
-Composed: `creator-finish.test.ts` (the hand-off routes, the reveal rules,
-the generation guard, the delivered mark) and the e2e finish specs; the
-pure labels in `qr-author-mode.test.ts`. The sampled mutant "saved file
-not marked delivered" (`scripts/fixtures/creator-setup.mutants.json`) is killed.
+- `creator-finish.test.ts` "the save cannot be forgotten": the Finish saves
+  once by itself under the hosted name; a save that did not go through says
+  so, keeps the leave question, and the button saves again; a later failed
+  save keeps the replace steps; a save that throws reports it.
+- `qr-author-mode.test.ts` "the finish saves the tour zip by itself" and the
+  Drive steps: the copy.
+- `playwright-tests/ar-mode.spec.js`: the Finish's own save in a browser,
+  the button's save again, the Drive tour's name and steps.

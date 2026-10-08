@@ -127,6 +127,11 @@ describe.skipIf(ZIP === undefined)("a Tour Viewer field recording", () => {
       );
     }
     say(`zip: ${(bytes.length / 1e6).toFixed(2)} MB`);
+    // What else the zip holds besides the recording's actions (a tour's
+    // tour.json and qr/ levels, or only session.json).
+    say(
+      `entries besides actions/: ${[...sizeOf.keys()].filter((n) => !n.startsWith("actions/")).join(", ")}`,
+    );
     const writtenDepth = writtenByType.get("recording/recordDepthSample") ?? 0;
     const writtenAll = [...writtenByType.values()].reduce((s, n) => s + n, 0);
     say(

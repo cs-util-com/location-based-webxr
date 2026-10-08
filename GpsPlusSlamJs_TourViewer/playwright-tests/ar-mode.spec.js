@@ -536,37 +536,40 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   );
 
   // FINISH (guided-setup plan M3, DEC-N6): the zip is rebuilt in the
-  // browser from the session's bytes, the AR session ends, and the
-  // download appears at the END of step 4 - it was step 5 until the flow
-  // rework (F10), which is not a setup step but the end of this one. The
-  // download is a fresh tap (its own gesture).
+  // browser from the session's bytes, the AR session ends, and the Finish
+  // SAVES it by itself at the END of step 4 (field test 2, F4; owner
+  // decision D-F4a: a save behind a button was missed). The button left
+  // saves it again (D-F4b). The save that did not go through first
+  // (async-UI rule: the failure branch).
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.saveOutcome = false;
+  });
   await page.getByTestId("setup-finish").click();
   await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup", {
     timeout: 15000,
   });
   await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
   await expect(page.getByTestId("finish-block")).toBeVisible();
+  await expect(page.getByTestId("finish-status")).toContainText(/not saved/i);
   // The replace instructions wait for a file to actually exist.
   await expect(page.getByTestId("replace-help")).toBeHidden();
-  await expect(page.getByTestId("finish-status")).toContainText(/ready/i);
   const download = page.getByTestId("finish-download");
   await expect(download).toBeEnabled();
-  // The dismissed-picker path first (async-UI rule: the failure branch).
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.saveOutcome = false;
-  });
-  await download.click();
-  await expect(page.getByTestId("finish-status")).toContainText(/not saved/i);
-  await expect(download).toBeEnabled();
+  await expect(download).toHaveText("Save the tour zip again");
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.saveOutcome = true;
   });
   await download.click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
   await expect(page.getByTestId("replace-help")).toBeVisible();
-  // The share route's extra paragraph is noise on the save route: this
-  // creator overwrote the hosted file, so their link IS unchanged.
-  await expect(page.getByTestId("replace-help-share")).toBeHidden();
+  // Always the plain save, never the share sheet (D-F4b).
+  expect(
+    await page.evaluate(() =>
+      /** @type {any} */ (window).__tourViewerTest.downloads
+        .slice(-2)
+        .map((/** @type {{ seam: string }} */ d) => d.seam),
+    ),
+  ).toEqual(["download", "download"]);
   // A tour NOT on Drive keeps the other hosts' text; the Drive steps are
   // for Drive only (Drive replace plan §3 M3, milestone review #2).
   await expect(page.getByTestId("replace-help-generic")).toBeVisible();
@@ -699,8 +702,6 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup", {
     timeout: 15000,
   });
-  await expect(page.getByTestId("finish-status")).toContainText(/ready/i);
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   const second = await readDownloadedZip(page, 2);
@@ -821,7 +822,6 @@ test("a first measurement of a code the tour does not store is minted into the r
   await expect(page.getByTestId("finish-block")).toBeVisible({
     timeout: 30000,
   });
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   const rebuilt = await readDownloadedZip(page, 0);
@@ -947,7 +947,6 @@ test("two new codes 20 m apart, measured in one visit, both reach the zip with o
   await expect(page.getByTestId("finish-block")).toBeVisible({
     timeout: 30000,
   });
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   const rebuilt = await readDownloadedZip(page, 0);
@@ -996,7 +995,6 @@ test("a later visit adds a new code beside a stored one; the stored code's level
   await expect(page.getByTestId("finish-block")).toBeVisible({
     timeout: 30000,
   });
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   const rebuilt = await readDownloadedZip(page, 0);
@@ -2290,7 +2288,6 @@ test("a crash does not lose the walk: placed content survives a reload and lands
   await expect(page.getByTestId("finish-block")).toBeVisible({
     timeout: 30000,
   });
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   const rebuilt = await readDownloadedZip(page, 0);
@@ -2628,7 +2625,6 @@ test("a draft accumulates ACROSS finishes: both batches land in the zip", async 
   await expect(page.getByTestId("finish-block")).toBeVisible({
     timeout: 30000,
   });
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   // Batch two, without ever uploading batch one to the host.
@@ -2659,7 +2655,6 @@ test("a draft accumulates ACROSS finishes: both batches land in the zip", async 
   await expect(page.getByTestId("finish-block")).toBeVisible({
     timeout: 30000,
   });
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   // Index 0, not 1: the reload reset the page, and with it the fake's
@@ -2846,24 +2841,20 @@ test("a Drive tour saves the zip under the Drive file's name, with the Drive ste
   // "Replace existing file" only for the SAME name - which a Drive link does
   // not carry, so it comes from the host's content-disposition. The fake
   // records WHICH seam ran, so a share here would fail the test (§5 #4).
-  await installTourViewerArFakes(page, { shareRoute: true });
+  await installTourViewerArFakes(page, {
+    shareRoute: true,
+    saveOutcome: false,
+  });
   await measureAndFinish(page, DRIVE_ARCHIVE);
   const download = page.getByTestId("finish-download");
   const status = page.getByTestId("finish-status");
-  await expect(download).toHaveText("Save the zip to this phone");
-  // The "(1)" warning is read BEFORE the tap - afterwards it is too late
-  // (milestone review #1).
-  await expect(status).toContainText("Before you save");
-  await expect(status).toContainText("My tour (1).zip");
-  // A dismissed save keeps the button live and reveals no steps (async-UI
-  // rule: the failure path of the Drive route, milestone review #2).
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.saveOutcome = false;
-  });
-  await download.click();
+  // The Finish saved by itself (field test 2, F4) - here a save that did
+  // not go through: the button stays live to save again and no steps
+  // appear (async-UI rule, milestone review #2). The "(1)" name a repeat
+  // download gets is checked by the Drive steps after the save.
   await expect(status).toContainText(/not saved/i);
   await expect(download).toBeEnabled();
-  await expect(download).toHaveText("Save the zip to this phone");
+  await expect(download).toHaveText("Save the tour zip again");
   await expect(page.getByTestId("replace-help-drive")).toBeHidden();
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.saveOutcome = true;
@@ -2888,7 +2879,6 @@ test("a Drive tour saves the zip under the Drive file's name, with the Drive ste
   await expect(steps).toContainText("Replace existing file");
   await expect(steps).toContainText("Desktop site");
   await expect(page.getByTestId("replace-help-generic")).toBeHidden();
-  await expect(page.getByTestId("replace-help-share")).toBeHidden();
 });
 
 test("a Drive tour whose host sends no name asks the creator to check it", async ({
@@ -2898,7 +2888,6 @@ test("a Drive tour whose host sends no name asks the creator to check it", async
   // link (tour.zip) - so the steps say to check the Drive file carries it,
   // instead of risking a silent second copy.
   await measureAndFinish(page, DRIVE_ARCHIVE_UNNAMED);
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(
     /saved as tour\.zip/i,
   );
@@ -2978,7 +2967,6 @@ test("an opted-in authoring session is recorded across the finish and saved as i
 
   // The published tour zip carries no recording: no actions, and the
   // hosted zip's own session.json untouched.
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
   const tour = await readDownloadedZip(page, 0);
   expect(

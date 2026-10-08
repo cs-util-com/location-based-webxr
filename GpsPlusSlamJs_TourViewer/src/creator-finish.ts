@@ -108,7 +108,7 @@ export function wireCreatorFinish(deps: {
     | "showSummary"
     | "unsettle"
   >;
-  handoff: Pick<CreatorHandoff, "drive" | "route" | "idleLabel">;
+  handoff: Pick<CreatorHandoff, "save">;
   previews: Pick<CreatorPreviews, "keepFinishedPhoto" | "sync">;
   draft: Pick<CreatorDraft, "saveMeta">;
   sessionLive: () => boolean;
@@ -387,10 +387,9 @@ export function wireCreatorFinish(deps: {
                 ? hosted
                 : downloadSafeName(hosted),
         };
-        dom.finishStatus.textContent = [
-          deps.handoff.drive()
-            ? FINISH_LABELS.readyDrive(blob.size, ctx.rebuiltZip.filename)
-            : FINISH_LABELS.ready(blob.size, deps.handoff.route() === "share"),
+        // The Finish's result sentences: they stay on the line under the
+        // save's status (`creator-handoff.ts`).
+        const notes = [
           ...(scanLeftOut.length === 0
             ? []
             : [FINISH_LABELS.scanLeftOut(scanLeftOut.length)]),
@@ -403,8 +402,12 @@ export function wireCreatorFinish(deps: {
         ]
           .filter((line) => line !== "")
           .join(" ");
-        dom.downloadButton.textContent = deps.handoff.idleLabel();
-        dom.downloadButton.disabled = false;
+        dom.finishStatus.textContent = [
+          FINISH_LABELS.savingTour(blob.size),
+          notes,
+        ]
+          .filter((line) => line !== "")
+          .join(" ");
         // The placed objects are in the zip now; the next finish (a
         // re-measure, a re-opened tour) must not append them again - and
         // the in-memory manifest has to ADVANCE to what was just written,
@@ -454,8 +457,7 @@ export function wireCreatorFinish(deps: {
         // (see presentDraftForTour) - the one signal that is proof.
         void deps.draft.saveMeta();
         // The session ends so the creator lands on the page, where the
-        // download button is a fresh tap (a download needs its own user
-        // gesture, plan §2.4) - unless it already ended and another one
+        // result and the save are - unless it already ended and another one
         // started, which is then not ours to end.
         if (sessionGeneration === ctx.arSessionGeneration) {
           await deps.arController.disable();
@@ -470,12 +472,16 @@ export function wireCreatorFinish(deps: {
         // a session that is still compositing.
         deps.wizard.openStep("measure");
         dom.finishBlock.hidden = false;
-        // The summary of every visit (M3b), on the page with the download.
+        // The summary of every visit (M3b), on the page with the save.
         deps.settle.showSummary();
-        // The save is the one thing left (UI round 1, U2): brought into
-        // view and focused, rather than the top of step 4.
-        dom.downloadButton.scrollIntoView?.({ block: "center" });
-        dom.downloadButton.focus?.();
+        // The Finish saves the rebuilt zip itself (the 2026-10-08 field
+        // test, F4; owner decision D-F4a): the creator once left with only
+        // the troubleshooting recording, the tour zip waiting on a button
+        // they never saw. The button stays, to save it again.
+        deps.handoff.save(notes);
+        // What the save did, brought into view rather than the top of
+        // step 4 (UI round 1, U2).
+        dom.finishStatus.scrollIntoView?.({ block: "center" });
       } catch (err) {
         if (ctx.session === current) {
           ctx.finishError = FINISH_LABELS.failed(

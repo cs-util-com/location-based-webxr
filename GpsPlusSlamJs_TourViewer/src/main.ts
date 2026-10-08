@@ -310,7 +310,6 @@ const setup = wireCreatorSetup({
     keepScanInput: element<HTMLInputElement>("keep-scan"),
     finishStatus: element("finish-status"),
     downloadButton: element("finish-download"),
-    replaceHelpShare: element("replace-help-share"),
     replaceHelpGeneric: element("replace-help-generic"),
     replaceHelpDrive: element("replace-help-drive"),
     pinButton: element("setup-pin"),

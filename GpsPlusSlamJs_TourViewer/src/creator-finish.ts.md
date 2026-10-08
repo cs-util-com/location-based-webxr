@@ -16,6 +16,11 @@ M4 makes it write every code of the book, not only the one in hand.
   - `dom` (`CreatorFinishDom`): `finishButton` (whose click this module
     handles), `keepScanRow`, `keepScanInput`, `finishStatus`,
     `downloadButton`, `finishBlock`.
+  - A Finish that wrote the zip saves it by itself once its block is on
+    the page (`handoff.save(notes)`; the 2026-10-08 field test, F4; owner
+    decision D-F4a), with its result sentences as the notes that stay on
+    the line under the save's status, and brings that line into view. The
+    status reads `savingTour` until the save settles.
   - The Finish settles a visit still running FIRST
     (`settle.settleVisit("finish")`), and forgets that settle again when
     no zip was written (`settle.unsettle`).

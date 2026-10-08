@@ -412,6 +412,8 @@ function authoring(
       tap: { targetRayInViewer: readonly number[] } | null,
     ) => pick.fn(targets, tap),
     canShareZip: () => false,
+    // The Finish saves the rebuilt zip by itself (field test 2, F4).
+    downloadZip: () => Promise.resolve(true),
     createQrFrontEnd: () => ({
       kind: "barcode-detector",
       detect: () => Promise.resolve(null),

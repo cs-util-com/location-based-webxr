@@ -65,6 +65,7 @@ import {
 import { openTourFile, type TourSession } from "./tour-session.js";
 import { describeTourTrust } from "./tour-trust-view.js";
 import { linkTrustKey, type TrustStorage } from "./tour-trust.js";
+import { FINISH_LABELS } from "./qr-author-mode.js";
 
 /** The element surface `creator-setup` writes to, and nothing else. */
 interface FakeEl {
@@ -108,7 +109,6 @@ const DOM_KEYS = [
   "controls",
   "finishBlock",
   "replaceHelp",
-  "replaceHelpShare",
   "replaceHelpGeneric",
   "replaceHelpDrive",
   "sizeInput",
@@ -1162,43 +1162,119 @@ describe("the save cannot be forgotten (UI round 1, U2)", () => {
   // Leaving with an unsaved file asks first; a delivered save stops asking;
   // a session ended without Finish (the back gesture) makes Finish say what
   // is waiting.
-  it("asks before leaving while the rebuilt file is unsaved, and stops once a save delivered it", async () => {
+  /** Let the Finish's own save, and a tap's, settle. */
+  async function saved(): Promise<void> {
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  // Why (the 2026-10-08 field test, F4; owner decision D-F4a): the owner
+  // ended a visit with only the troubleshooting recording on the phone -
+  // the tour zip waited on a button they did not see. The Finish now saves
+  // it by itself, once, under the hosted file's name.
+  it("saves the rebuilt file by itself at Finish, and stops asking once it is saved", async () => {
+    const saves: { blob: Blob; filename: string }[] = [];
     const { dom, ctx, setup } = await wireFinishable({
       hosted: [],
       placed: [pin("new-one")],
       seamsExtras: {
-        downloadZip: () => Promise.resolve(true),
-        shareOrDownloadZip: () =>
-          Promise.resolve({ route: "download", delivered: true }),
+        downloadZip: (blob: Blob, filename: string) => {
+          saves.push({ blob, filename });
+          return Promise.resolve(true);
+        },
       },
     });
     expect(setup.leaveNeedsConfirm()).toBe(false);
+    dom.replaceHelp.hidden = true; // as the page starts
     dom.finishButton.click();
     await settle(ctx);
-    expect(setup.leaveNeedsConfirm()).toBe(true);
-    dom.downloadButton.click();
-    for (let i = 0; i < 20; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    await saved();
+    expect(saves).toHaveLength(1);
+    expect(saves[0]!.blob).toBe(ctx.rebuiltZip?.blob);
+    expect(saves[0]!.filename).toBe(ctx.rebuiltZip?.filename);
     expect(ctx.rebuiltZip?.delivered).toBe(true);
     expect(setup.leaveNeedsConfirm()).toBe(false);
+    expect(dom.finishStatus.textContent).toContain(
+      FINISH_LABELS.saved(ctx.rebuiltZip!.filename),
+    );
+    expect(dom.replaceHelp.hidden).toBe(false);
+    expect(dom.downloadButton.textContent).toBe(FINISH_LABELS.saveAgain);
   });
 
-  it("a dismissed save keeps asking", async () => {
+  // Why (async-UI rule; D-F4b): a save that did not go through says so,
+  // keeps the leave question, and the one button saves again the same way.
+  it("says when the save did not go through, keeps asking, and saves again from the button", async () => {
+    let outcome = false;
+    let calls = 0;
     const { dom, ctx, setup } = await wireFinishable({
       hosted: [],
       placed: [pin("new-one")],
       seamsExtras: {
-        shareOrDownloadZip: () =>
-          Promise.resolve({ route: "download", delivered: false }),
+        downloadZip: () => {
+          calls += 1;
+          return Promise.resolve(outcome);
+        },
       },
     });
+    dom.replaceHelp.hidden = true; // as the page starts
     dom.finishButton.click();
     await settle(ctx);
+    await saved();
+    expect(calls).toBe(1);
+    expect(dom.finishStatus.textContent).toContain(FINISH_LABELS.notSaved);
+    expect(setup.leaveNeedsConfirm()).toBe(true);
+    expect(dom.downloadButton.disabled).toBe(false);
+    expect(dom.downloadButton.textContent).toBe(FINISH_LABELS.saveAgain);
+    expect(dom.replaceHelp.hidden).toBe(true);
+    outcome = true;
     dom.downloadButton.click();
-    for (let i = 0; i < 20; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    expect(dom.downloadButton.textContent).toBe(FINISH_LABELS.saving);
+    await saved();
+    expect(calls).toBe(2);
+    expect(ctx.rebuiltZip?.delivered).toBe(true);
+    expect(setup.leaveNeedsConfirm()).toBe(false);
+    expect(dom.replaceHelp.hidden).toBe(false);
+  });
+
+  // Why (PR #439 review #3, kept): the replace steps are earned by a save
+  // that delivered; a later save that did not go through takes nothing
+  // back - they are the flow's last instruction.
+  it("keeps the replace steps when a later save does not go through", async () => {
+    let outcome = true;
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      seamsExtras: { downloadZip: () => Promise.resolve(outcome) },
+    });
+    dom.replaceHelp.hidden = true; // as the page starts
+    dom.finishButton.click();
+    await settle(ctx);
+    await saved();
+    expect(dom.replaceHelp.hidden).toBe(false);
+    outcome = false;
+    dom.downloadButton.click();
+    await saved();
+    expect(dom.finishStatus.textContent).toContain(FINISH_LABELS.notSaved);
+    expect(dom.replaceHelp.hidden).toBe(false);
+  });
+
+  // Why (async-UI rule): a save that throws reports it, and the button
+  // stays live for another try.
+  it("reports a save that failed, and leaves the button to try again", async () => {
+    const { dom, ctx, setup } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      seamsExtras: {
+        downloadZip: () => Promise.reject(new Error("disk full")),
+      },
+    });
+    dom.replaceHelp.hidden = true; // as the page starts
+    dom.finishButton.click();
+    await settle(ctx);
+    await saved();
+    expect(dom.finishStatus.textContent).toContain("disk full");
+    expect(dom.downloadButton.disabled).toBe(false);
     expect(setup.leaveNeedsConfirm()).toBe(true);
   });
 
@@ -1217,18 +1293,22 @@ describe("after the Finish, the save leads (UI round 1, U2 milestone review #2, 
   // Why: the page used to scroll to the top of step 4 and lead with
   // "Start AR setup" and Finish again; and a "keep the walk" ticked after a
   // Finish could not change the file waiting to be saved.
-  it("focuses the save, and on a phone hides Finish once AR has ended", async () => {
+  it("brings what the save did into view, and on a phone hides Finish once AR has ended", async () => {
     const { dom, ctx, setup, arStatus } = await wireFinishable({
       hosted: [],
       placed: [pin("new-one")],
     });
-    let focused = false;
-    (dom.downloadButton as unknown as { focus: () => void }).focus = () => {
-      focused = true;
+    // The Finish saves by itself (field test 2, F4): what leads now is the
+    // line saying what the save did, not the button.
+    let shown = false;
+    (
+      dom.finishStatus as unknown as { scrollIntoView: () => void }
+    ).scrollIntoView = () => {
+      shown = true;
     };
     dom.finishButton.click();
     await settle(ctx);
-    expect(focused).toBe(true);
+    expect(shown).toBe(true);
     arStatus.value = "ready"; // the Finish ended the session
     setup.renderAuthorReadout();
     expect(dom.finishButton.hidden).toBe(true);

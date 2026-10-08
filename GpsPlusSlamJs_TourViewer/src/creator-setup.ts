@@ -116,7 +116,6 @@ export interface CreatorSetupDom {
   replaceHelp: HTMLElement;
   /** The share route's extra sentence inside the replace instructions -
    *  hidden on the download route, where it would be noise. */
-  replaceHelpShare: HTMLElement;
   /** The replace instructions for Dropbox, GitHub and OneDrive... */
   replaceHelpGeneric: HTMLElement;
   /** ...and a Drive tour's own numbered steps with the zip's name, written

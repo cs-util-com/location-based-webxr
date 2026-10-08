@@ -104,33 +104,25 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
     is legitimate and only the creator knows whether the measurement was
     worth keeping. What they must not have is silence.
 - `FINISH_LABELS` - the finish step's copy through its async cycle
-  (reading, rebuilding N of M, ready, failed, download, saving, saved as,
-  not saved) AND the share route's own (share, sharing, shared, nothing
-  was shared).
-  A Drive tour has its own two: `readyDrive(bytes, filename)` carries the
-  "delete any older copy first" warning - the only moment it can prevent a
-  repeat download's "name (1).zip" - and `savedToPhone(filename)` names
+  (reading, placing photos, rebuilding N of M, failed) and the save's
+  (`savingTour(bytes)` while the Finish saves the zip by itself, the button's
+  `saveAgain` and `saving`, `saved`, `savedToPhone`, `notSaved`). Since the
+  2026-10-08 field test (F4; owner decisions D-F4a, D-F4b) the Finish saves
+  the rebuilt zip itself and the one button saves it again the same way:
+  no share route, no "press the button" ready line. `saved` and
+  `savedToPhone` promise that the link and the printed code stay the same,
+  which holds for a save over the hosted file; `savedToPhone` names
   Downloads and the Drive steps.
 - `driveReplaceSteps(name, nameKnown)` - the numbered Drive steps shown
   after the save: an optional rename/check-the-name step, then a check that
-  the saved file is not "name (1).zip" (if it is: delete every copy, save
-  again - picking "name.zip" beside it would upload the OLD zip), the new
-  tab with "Desktop site", the folder upload, "Replace existing file".
-- `finishIdleLabel(canShare)`, `finishBusyLabel(canShare)`,
-  `finishHandoffStatus({ route, delivered }, filename, drive)` - the
-  button's words and the status line, as pure functions.
-  - They are pure, and here rather than inline in the click handler,
-    because THREE of the four outcomes cannot be reached in an e2e run: a
-    headless browser has no share sheet, so this is the only place the
-    share copy is ever checked.
-  - The rule they encode: `saved` promises that the link and the printed
-    code stay the same, which is true when the creator overwrites the
-    hosted file and false when they share - sharing normally creates a new
-    file with a new id while the printed code still points at the old one.
-    `shared` therefore promises nothing and asks them to check.
-  - And `notShared` does not say "you cancelled": the Web Share API reports
-    a cancelled sheet and a failed share as the same error, so any such
-    copy would be a guess stated as a fact.
+  the saved file is not "name (1).zip" (if it is: delete every copy, tap
+  "Save the tour zip again" - picking "name.zip" beside it would upload the
+  OLD zip), the new tab with "Desktop site", the folder upload, "Replace
+  existing file". With the save automatic, this check is the only guard
+  against a repeat download's name (the warning that once came before the
+  tap has no moment left to be read).
+- `finishSaveStatus(delivered, filename, drive)` - the status line after a
+  save: where it went, or that nothing was saved and which button saves it.
 - `buildAuthorControllerConfig` wires `onError` too — a throwing detector
   must surface, not leave the panel saying "point the camera" forever.
 

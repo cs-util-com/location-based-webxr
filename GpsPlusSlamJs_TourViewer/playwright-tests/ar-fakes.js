@@ -15,7 +15,7 @@ import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
 
 /**
  * @param {import('@playwright/test').Page} page
- * @param {{ shareRoute?: boolean, printSizeM?: number }} [options]
+ * @param {{ shareRoute?: boolean, printSizeM?: number, saveOutcome?: boolean }} [options]
  *   `printSizeM`: what the print-size estimate reports (QR size consensus
  *   plan S3a) - one new independent window per call, so the creator's offer
  *   appears after three detections; absent = the estimate refuses.
@@ -27,8 +27,11 @@ import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
 export async function installTourViewerArFakes(page, options = {}) {
   const shareRoute = options.shareRoute === true;
   const printSizeM = options.printSizeM ?? null;
+  // The first save's outcome: the Finish saves by itself (field test 2,
+  // F4), so a spec that needs it to fail says so before the page loads.
+  const saveOutcome = options.saveOutcome ?? true;
   await page.addInitScript(
-    ({ shareRoute, printSizeM }) => {
+    ({ shareRoute, printSizeM, saveOutcome }) => {
       const test = {
         /** @type {{ hasCameraFrame: boolean, isolationOptions: unknown }[]} */
         initARCalls: [],
@@ -105,7 +108,7 @@ export async function installTourViewerArFakes(page, options = {}) {
          *  reports (false = the picker was dismissed). */
         downloads:
           /** @type {{ filename: string, blob: Blob, seam?: "share-or-download" | "download" }[]} */ ([]),
-        saveOutcome: true,
+        saveOutcome,
         /** Which route the zip hand-off should take. False (the default)
          *  keeps every existing test on the save path; true makes the app
          *  label its buttons "share" and report the share copy. */
@@ -483,7 +486,7 @@ export async function installTourViewerArFakes(page, options = {}) {
         },
       };
     },
-    { shareRoute, printSizeM },
+    { shareRoute, printSizeM, saveOutcome },
   );
 }
 
@@ -678,7 +681,7 @@ export async function finishAndDownload(page, index) {
     })
     .toBe(true);
   await expect(page.getByTestId("finish-block")).toBeVisible();
-  await page.getByTestId("finish-download").click();
+  // The Finish saves the zip by itself (field test 2, F4).
   await expect
     .poll(() =>
       page.evaluate(

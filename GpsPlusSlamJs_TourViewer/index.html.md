@@ -83,7 +83,7 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`,
 authoring plan 2026-09-28-0953 M3b: owns `summary-codes`, `summary-map`,
 `summary-map-status`, `summary-start-ar`; written by `summary-panel.ts`,
 its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns
-`replace-help-generic`, `replace-help-drive`, `replace-help-share`)), `visitor-screen`,
+`replace-help-generic`, `replace-help-drive`)), `visitor-screen`,
 `stats`, `error`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`,
 `setup-panel`, `setup-status`, `size-offer`, `size-offer-text`,
 `size-offer-use`, `size-offer-keep`, `setup-controls`,

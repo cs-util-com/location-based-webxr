@@ -19,11 +19,7 @@ import {
   syntheticAuthorLevel,
   reprintOrphanWarning,
   FINISH_LABELS,
-  finishHandoffStatus,
-  finishHelpVisibility,
-  finishIdleLabel,
-  finishBusyLabel,
-  finishRoute,
+  finishSaveStatus,
   driveReplaceSteps,
   sizeOfferView,
   adoptedSizeNote,
@@ -387,123 +383,6 @@ describe("codeIndexFromInput", () => {
   });
 });
 
-describe("the finish step's hand-off copy", () => {
-  /**
-   * Why these tests matter: the finish button now takes one of two routes
-   * and each can fail, and THREE of those four outcomes are unreachable in
-   * an e2e run - a headless browser has no share sheet. The copy is also
-   * the half that was wrong: \`saved\` states as fact that the link and the
-   * printed code are unchanged, which is true when the creator overwrites
-   * the hosted file and FALSE when they share, because sharing hands the
-   * zip to another app that normally stores it as a new file with a new
-   * id. A creator who reads "the link stays the same" after a share walks
-   * away believing a poster works when it points at the old file.
-   */
-  it("promises an unchanged link ONLY on the save route", () => {
-    const saved = finishHandoffStatus(
-      { route: "download", delivered: true },
-      "tour.zip",
-    );
-    expect(saved).toContain("stay the same");
-
-    const shared = finishHandoffStatus(
-      { route: "share", delivered: true },
-      "tour.zip",
-    );
-    expect(shared).not.toContain("stay the same");
-    expect(shared).not.toContain("stays the same");
-    // And it must say what still has to happen. Not "make sure it
-    // replaced": sharing to a cloud app CREATES a file, so framing a
-    // near-certainty as a coin flip lets a creator walk away believing the
-    // poster is probably fine (M2 review #6).
-    expect(shared).toMatch(/replace it/i);
-    expect(shared).toMatch(/NEW file/);
-    expect(shared).toContain("tour.zip");
-  });
-
-  it("says nothing happened, without blaming the user, when nothing was delivered", () => {
-    // The Web Share API reports a cancelled sheet and a failed share as
-    // the same AbortError, so copy that said "you cancelled" would be a
-    // guess presented as a fact.
-    const notShared = finishHandoffStatus(
-      { route: "share", delivered: false },
-      "tour.zip",
-    );
-    expect(notShared).toMatch(/nothing was shared/i);
-    expect(notShared.toLowerCase()).not.toContain("cancel");
-
-    expect(
-      finishHandoffStatus({ route: "download", delivered: false }, "tour.zip"),
-    ).toMatch(/not saved/i);
-  });
-
-  it("labels the button with the action it will actually take", () => {
-    expect(finishIdleLabel(true).toLowerCase()).toContain("share");
-    expect(finishIdleLabel(true).toLowerCase()).not.toContain("download");
-    expect(finishIdleLabel(false).toLowerCase()).toContain("download");
-    expect(finishIdleLabel(false).toLowerCase()).not.toContain("share");
-    expect(finishBusyLabel(true)).not.toBe(finishBusyLabel(false));
-  });
-
-  it("covers all four outcomes with distinct copy", () => {
-    const all = [
-      { route: "share" as const, delivered: true },
-      { route: "share" as const, delivered: false },
-      { route: "download" as const, delivered: true },
-      { route: "download" as const, delivered: false },
-    ].map((outcome) => finishHandoffStatus(outcome, "tour.zip"));
-    expect(new Set(all).size).toBe(4);
-  });
-});
-
-describe("which help the finish step reveals", () => {
-  /**
-   * Why this test matters: the replace instructions are what keeps a
-   * printed code working, and they used to appear exactly when a file had
-   * been written to the device. On the share route no file lands here at
-   * all - it is inside whichever app the creator picked - so the same
-   * block now needs one extra sentence saying where to find it. That
-   * branch is otherwise reachable only by walking a full AR setup on a
-   * phone with a share sheet, which is to say by nothing that runs in CI.
-   */
-  it("shows nothing until something has actually gone somewhere", () => {
-    for (const route of ["share", "download"] as const) {
-      expect(finishHelpVisibility({ route, delivered: false })).toEqual({
-        replaceHelp: false,
-        shareNote: false,
-      });
-    }
-  });
-
-  it("always shows the replace instructions once delivered, and the share note only on the share route", () => {
-    expect(
-      finishHelpVisibility({ route: "download", delivered: true }),
-    ).toEqual({ replaceHelp: true, shareNote: false });
-    expect(finishHelpVisibility({ route: "share", delivered: true })).toEqual({
-      replaceHelp: true,
-      shareNote: true,
-    });
-  });
-});
-
-describe("the help blocks are EARNED, and a later failure does not take them back", () => {
-  // Why this test matters: the reveal used to be a one-way assignment and
-  // briefly became a two-way one. A creator who saved the zip, then tapped
-  // again and dismissed the picker, would have had the step-6 replace
-  // instructions disappear - the flow's last instruction, removed at the
-  // moment they most need it, by an action that changed nothing.
-  //
-  // The function answers "what does THIS outcome earn", and the caller only
-  // ever reveals. Only closing the tour hides them again.
-  it("earns nothing when nothing was delivered, so a retry cannot un-earn", () => {
-    for (const route of ["share", "download"] as const) {
-      const earned = finishHelpVisibility({ route, delivered: false });
-      expect(earned.replaceHelp).toBe(false);
-      expect(earned.shareNote).toBe(false);
-    }
-  });
-});
-
 describe("printing a code that would strand an existing measurement", () => {
   /**
    * Why this test matters: a printed code's identity is a hash of the text
@@ -568,45 +447,6 @@ describe("printing a code that would strand an existing measurement", () => {
     expect(
       reprintOrphanWarning(["new1", "new2", "new3"], ["a", "b", "c"]),
     ).not.toBeNull();
-  });
-});
-
-describe("the share note follows the LAST delivered route", () => {
-  // Why this test matters: `replaceHelp` is true of any delivered hand-off
-  // and is earned once. `shareNote` is a claim about WHICH hand-off
-  // happened, and making it earned-and-kept let it outlive its truth: a
-  // share followed by a save on the retry left "you shared it rather than
-  // saving it, so it is now wherever that app put it" on screen beside a
-  // file that is on disk, sending the creator to hunt for it in an app.
-  //
-  // The caller reveals `replaceHelp` one-way and sets `shareNote` from the
-  // last DELIVERED outcome, so this function has to answer for the route,
-  // not for the panel.
-  it("claims a share only for a delivered share", () => {
-    expect(
-      finishHelpVisibility({ route: "share", delivered: true }).shareNote,
-    ).toBe(true);
-    expect(
-      finishHelpVisibility({ route: "download", delivered: true }).shareNote,
-    ).toBe(false);
-    // A hand-off that delivered nothing changed nothing, so it must not
-    // move the note in either direction - the caller checks `delivered`
-    // before applying it, and this is the value it would apply.
-    expect(
-      finishHelpVisibility({ route: "share", delivered: false }).shareNote,
-    ).toBe(false);
-  });
-});
-
-describe("the ready line names the action the button will take", () => {
-  // Why: this is the sentence a creator reads immediately before pressing
-  // the button. It said "Download it" on every device, including one whose
-  // button says "Share the rebuilt zip" (M2 review #3).
-  it("says share where the button says share, and download where it says download", () => {
-    expect(FINISH_LABELS.ready(1_000_000, true)).toContain("Share it");
-    expect(FINISH_LABELS.ready(1_000_000, true)).not.toContain("Download it");
-    expect(FINISH_LABELS.ready(1_000_000, false)).toContain("Download it");
-    expect(FINISH_LABELS.ready(1_000_000, false)).not.toContain("Share it");
   });
 });
 
@@ -685,20 +525,50 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
   });
 });
 
-describe("the finish copy points at steps that exist", () => {
-  it("never names a step beyond 4", () => {
-    // Why this matters (Drive replace plan §5 #5, a pre-existing bug): the
-    // download and the replace instructions were steps 5 and 6 until the
-    // flow rework folded them into the end of step 4 (F10). The finish
-    // messages kept saying "step 6" - the line a creator reads right after
-    // saving the zip sent them to a step that is not on the page.
-    const lines = [
-      FINISH_LABELS.ready(1_000_000, false),
-      FINISH_LABELS.ready(1_000_000, true),
+describe("the finish saves the tour zip by itself (field test 2, F4)", () => {
+  // Why these tests matter (owner decisions D-F4a, D-F4b): the owner's
+  // second field test ended with one zip on the phone - the troubleshooting
+  // recording - because the tour zip waited on a button they did not see.
+  // The Finish now saves the tour zip itself, and the one button left saves
+  // it again the same way. The copy must say what is happening and what
+  // happened; the old copy told the creator to press a button first.
+  it("says the zip is being saved while it is, and never asks for a tap first", () => {
+    const line = FINISH_LABELS.savingTour(2_400_000);
+    expect(line).toContain("2.4 MB");
+    expect(line).toMatch(/being saved to this phone/);
+    expect(line).not.toMatch(/tap|press|download it|share it/i);
+  });
+
+  it("names the saved file, and the Drive steps for a Drive tour", () => {
+    expect(finishSaveStatus(true, "tour.zip", false)).toBe(
       FINISH_LABELS.saved("tour.zip"),
-      FINISH_LABELS.shared("tour.zip"),
-      FINISH_LABELS.readyDrive(1_000_000, "tour.zip"),
+    );
+    expect(finishSaveStatus(true, "tour.zip", true)).toBe(
       FINISH_LABELS.savedToPhone("tour.zip"),
+    );
+    // A save over the hosted file keeps the link and the printed code.
+    expect(finishSaveStatus(true, "tour.zip", true)).toContain("stay the same");
+  });
+
+  it("names the button to tap when nothing was saved", () => {
+    const line = finishSaveStatus(false, "tour.zip", true);
+    expect(line).toMatch(/not saved/i);
+    expect(line).toContain(FINISH_LABELS.saveAgain);
+  });
+
+  it("labels the one button left as saving the tour zip again", () => {
+    expect(FINISH_LABELS.saveAgain).toBe("Save the tour zip again");
+  });
+
+  it("never names a step beyond 4", () => {
+    // Why (Drive replace plan §5 #5): the download and the replace
+    // instructions were steps 5 and 6 until the flow rework folded them
+    // into the end of step 4 (F10).
+    const lines = [
+      FINISH_LABELS.savingTour(1_000_000),
+      FINISH_LABELS.saved("tour.zip"),
+      FINISH_LABELS.savedToPhone("tour.zip"),
+      FINISH_LABELS.notSaved,
     ];
     for (const line of lines) expect(line).not.toMatch(/step [5-9]/i);
   });
@@ -710,18 +580,6 @@ describe("the finish on a Drive-hosted tour (Drive replace plan §2, §5)", () =
   // which needs the zip saved on the phone (decision 4) and asks "Replace
   // existing file" only for the SAME name. A share hands the zip to another
   // app instead, and the Drive app cannot replace.
-  it("saves to the phone for a Drive tour, shares elsewhere where it can", () => {
-    expect(finishRoute({ canShare: true, drive: true })).toBe("download");
-    expect(finishRoute({ canShare: false, drive: true })).toBe("download");
-    expect(finishRoute({ canShare: true, drive: false })).toBe("share");
-    expect(finishRoute({ canShare: false, drive: false })).toBe("download");
-  });
-
-  it("labels the Drive save as a save to the phone", () => {
-    expect(finishIdleLabel(false, true)).toBe("Save the zip to this phone");
-    expect(finishIdleLabel(false)).toBe("Download the rebuilt zip");
-  });
-
   it("gives the owner's working steps, with the file's own name", () => {
     const { rename, steps } = driveReplaceSteps("My tour.zip");
     expect(rename).toBeNull();
@@ -739,7 +597,7 @@ describe("the finish on a Drive-hosted tour (Drive replace plan §2, §5)", () =
     // #1: "pick X" would otherwise pick the OLD zip).
     expect(steps[0]).toContain("My tour (1).zip");
     expect(steps[0]).toMatch(/delete every copy/i);
-    expect(steps[0]).toMatch(/Save the zip to this phone.*again/);
+    expect(steps[0]).toMatch(/Save the tour zip again/);
     expect(text, "and what to do if Drive does not ask").toMatch(
       /does not ask/i,
     );
@@ -767,27 +625,13 @@ describe("the finish on a Drive-hosted tour (Drive replace plan §2, §5)", () =
     expect(driveReplaceSteps("tour.zip").steps[0]).not.toMatch(/Check that/);
   });
 
-  it("warns about an older copy BEFORE the save, in the button's words", () => {
-    // Why (milestone review #1): Chrome names a repeat download
-    // "name (1).zip", and Drive then offers no "Replace". Only a warning
-    // read before the tap can prevent that; the ready line is the sentence
-    // the creator reads right before pressing "Save the zip to this phone".
-    const line = FINISH_LABELS.readyDrive(1_000_000, "My tour.zip");
-    expect(line).toMatch(/Before you save/);
-    expect(line).toContain("My tour.zip");
-    expect(line).toContain("My tour (1).zip");
-    expect(line).toMatch(/Save the zip to this phone/);
-    expect(line).not.toMatch(/Download it|Share it/);
-  });
-
   it("says where a Drive save went and what comes next", () => {
     // Plan §5 #5: the file is in Downloads, and the Drive steps follow.
-    const outcome = { route: "download", delivered: true } as const;
-    const status = finishHandoffStatus(outcome, "My tour.zip", true);
+    const status = finishSaveStatus(true, "My tour.zip", true);
     expect(status).toBe(FINISH_LABELS.savedToPhone("My tour.zip"));
     expect(status).toMatch(/Downloads/);
     expect(status).toMatch(/Drive steps below/);
-    expect(finishHandoffStatus(outcome, "My tour.zip")).toBe(
+    expect(finishSaveStatus(true, "My tour.zip", false)).toBe(
       FINISH_LABELS.saved("My tour.zip"),
     );
   });

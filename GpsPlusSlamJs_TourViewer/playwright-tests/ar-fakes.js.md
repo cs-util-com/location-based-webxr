@@ -50,7 +50,9 @@ camera, so `installTourViewerArFakes(page)` installs
   were made); `downloads` + `saveOutcome` (the zips the setup offered
   for download - the fake `shareOrDownloadZip` captures the blob instead
   of saving, and reports `saveOutcome`, false meaning nothing left the
-  page). The ROUTE is chosen by the installer's `{ shareRoute }` option
+  page; the installer's `{ saveOutcome }` sets the first save's, since the
+  Finish saves by itself before a spec can flip it). The ROUTE is chosen by
+  the installer's `{ shareRoute }` option
   rather than through `__tourViewerTest`, and deliberately so: the app
   reads the share capability once while wiring its buttons, so a spec
   flipping it after load would get the share copy under a download label.
@@ -120,9 +122,9 @@ guarantee it relies on is unit-tested in `src/seams.test.ts`.
 - `downloadedZip(page, index)` returns the entry names, the manifest and
   the level files of the n-th download in the fakes' `downloads`.
 - `finishAndDownload(page, index)` taps Finish, waits for THIS rebuild,
-  then downloads. The result line stands only between the Finish and the
-  save, so a spec that reads it taps the two itself
-  (`code-auto-move.spec.js`).
+  then for the Finish's own save (field test 2, F4) to land as the
+  `index`-th download. The result line keeps the Finish's sentences under
+  the save's status.
 
 These moved here from `object-editing.spec.js` so that
 `code-auto-move.spec.js` shares them instead of copying them.

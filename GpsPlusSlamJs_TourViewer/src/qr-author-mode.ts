@@ -439,18 +439,12 @@ export const FINISH_LABELS = {
     `Finishing - placing the recorded photos (${String(done)} of ${String(total)} steps of the walk)…`,
   rebuilding: (done: number, total: number) =>
     `Finishing - rebuilding ${String(done)} of ${String(total)} entries…`,
-  /** The line the creator reads immediately BEFORE pressing the button, so
-   *  it has to name the same action the button does (M2 review #3). */
-  ready: (bytes: number, canShare = false) =>
-    `The rebuilt zip is ready (${(bytes / 1_000_000).toFixed(1)} MB). ${
-      canShare ? "Share it" : "Download it"
-    }, then put it in place of the hosted file - the steps appear below.`,
-  /** A Drive tour's ready line. It carries the one warning that only helps
-   *  BEFORE the tap: a repeat download is saved as "name (1).zip", which
-   *  Drive treats as a new file (Drive replace plan §5 #1, milestone
-   *  review #1). */
-  readyDrive: (bytes: number, filename: string) =>
-    `The rebuilt zip is ready (${(bytes / 1_000_000).toFixed(1)} MB). Before you save: delete any older ${filename} from this phone's Downloads, or the phone names the new one "${repeatDownloadName(filename)}". Then tap "Save the zip to this phone" - the Drive steps appear below.`,
+  /** The line shown while the Finish saves the rebuilt zip by itself (the
+   *  2026-10-08 field test, F4; owner decision D-F4a): no tap is asked
+   *  for. A Drive tour's repeat-download check ("name (1).zip") is in the
+   *  Drive steps that follow the save. */
+  savingTour: (bytes: number) =>
+    `The tour zip is ready (${(bytes / 1_000_000).toFixed(1)} MB) and is being saved to this phone…`,
   /** Appended to the ready line when the Finish left the walk out of
    *  the copy (scan-pass plan S-D10): the hosted file may be the creator's
    *  only copy of it. */
@@ -462,71 +456,16 @@ export const FINISH_LABELS = {
   photosNotPlaced: (reason: string) =>
     `The recorded photos could not be placed (${reason}), so the walk recording stays in the zip.`,
   failed: (reason: string) => `Finishing failed: ${reason}`,
-  download: "Download the rebuilt zip",
-  /** A Drive tour's route: the zip must land in Downloads for the Drive
-   *  website's upload (Drive replace plan §2 decision 4). */
-  saveToPhone: "Save the zip to this phone",
+  /** The one button left after a Finish: the same save again (owner
+   *  decision D-F4b). */
+  saveAgain: "Save the tour zip again",
   saving: "Saving…",
   saved: (filename: string) =>
     `Saved as ${filename}. Now replace the hosted zip (steps below) - the link and the printed code stay the same.`,
   savedToPhone: (filename: string) =>
     `Saved as ${filename} in Downloads. Now follow the Drive steps below - the link and the printed code stay the same.`,
-  notSaved: "Not saved - tap the button again.",
-  /** The share route's label and copy. Separate from the download route's
-   *  because the two do different things to the hosted file, and `saved`
-   *  states as fact something that is FALSE after a share: sharing hands
-   *  the zip to another app, which normally stores it as a NEW file with a
-   *  new id and a new link, while the printed code still points at the
-   *  old one. */
-  share: "Share the rebuilt zip",
-  sharing: "Sharing…",
-  shared: (filename: string) =>
-    `Sent ${filename} to the app you chose. It has almost certainly saved a NEW file - so the printed code still points at the old one until you replace it (steps below).`,
-  /** Deliberately not "you cancelled": the Web Share API reports a
-   *  cancelled sheet and a failed share as the same error. */
-  notShared: "Nothing was shared - tap the button again.",
+  notSaved: 'Not saved - tap "Save the tour zip again".',
 } as const;
-
-/** What the hand-off did: which mechanism ran, and whether the file left
- *  the page. Mirrors the framework's `ShareOrDownloadResult` without
- *  importing it, so this module stays free of storage types. */
-export interface HandoffOutcome {
-  route: "share" | "download";
-  delivered: boolean;
-}
-
-/**
- * The finish step's button labels and status line, as pure functions of the
- * capability and the outcome.
- *
- * They are pure, and separate from the click handler, because three of the
- * four outcomes cannot be reached in an e2e run: a headless browser has no
- * share sheet, so the only way the SHARE copy is ever checked is here. The
- * copy is also the part that was wrong - `saved` states as fact that the
- * link and printed code are unchanged, which is true after a save and false
- * after a share, since sharing normally creates a new file with a new id.
- */
-export function finishIdleLabel(canShare: boolean, drive = false): string {
-  if (canShare) return FINISH_LABELS.share;
-  return drive ? FINISH_LABELS.saveToPhone : FINISH_LABELS.download;
-}
-
-/** How the rebuilt zip leaves the page. */
-export type FinishRoute = "share" | "download";
-
-/**
- * A Drive-hosted tour always SAVES to the device (Drive replace plan §2
- * decision 4): the only replace that works on a phone is the Drive
- * website's upload, which needs the zip in Downloads - a share hands it to
- * another app instead. Other hosts share where the device prefers it.
- */
-export function finishRoute(state: {
-  canShare: boolean;
-  drive: boolean;
-}): FinishRoute {
-  if (state.drive) return "download";
-  return state.canShare ? "share" : "download";
-}
 
 /**
  * The Drive steps for putting the rebuilt zip in place of the hosted one
@@ -565,7 +504,7 @@ export function driveReplaceSteps(
       // After the save, so a check rather than a warning (the warning is
       // `readyDrive`): picking "name.zip" beside a new "name (1).zip"
       // would upload the OLD zip over the tour (milestone review #1).
-      `Check the new file in Downloads is named ${saved}. If it is "${repeatDownloadName(saved)}", delete every copy of ${saved}, then tap "Save the zip to this phone" again.`,
+      `Check the new file in Downloads is named ${saved}. If it is "${repeatDownloadName(saved)}", delete every copy of ${saved}, then tap "${FINISH_LABELS.saveAgain}".`,
       `Open a new tab in Chrome (or your browser), type drive.google.com, then tick "Desktop site" in the ⋮ menu.`,
       `Open the folder with your tour, tap New, then File upload, and pick ${saved}.`,
       `Choose "Replace existing file", then Upload. If Drive does not ask, it uploaded a second copy - delete that copy. Keep the tab open until the upload finishes.`,
@@ -578,43 +517,21 @@ function repeatDownloadName(filename: string): string {
   return `${filename.replace(/\.zip$/i, "")} (1).zip`;
 }
 
-export function finishBusyLabel(canShare: boolean): string {
-  return canShare ? FINISH_LABELS.sharing : FINISH_LABELS.saving;
-}
-
 /**
- * Which of the finish step's two help blocks to reveal.
- *
- * A pure function because the alternative is a branch reachable only by
- * completing an AR walkthrough on a device with a share sheet - i.e. by
- * nothing that runs in CI. `replaceHelp` is the instruction that keeps the
- * printed code working and belongs on both routes; `shareNote` is the
- * sentence that only makes sense when the zip went to another app.
+ * The status line after the Finish's save of the rebuilt zip (owner
+ * decisions D-F4a, D-F4b: always a plain save, never a share): where the
+ * file went and what comes next, or that nothing was saved and which
+ * button saves it. A Drive tour's names Downloads and the Drive steps
+ * (Drive replace plan §5 #5).
  */
-export function finishHelpVisibility(outcome: HandoffOutcome): {
-  replaceHelp: boolean;
-  shareNote: boolean;
-} {
-  if (!outcome.delivered) return { replaceHelp: false, shareNote: false };
-  return { replaceHelp: true, shareNote: outcome.route === "share" };
-}
-
-export function finishHandoffStatus(
-  outcome: HandoffOutcome,
+export function finishSaveStatus(
+  delivered: boolean,
   filename: string,
-  /** A Drive tour's save names Downloads and the Drive steps (plan §5 #5). */
-  drive = false,
+  drive: boolean,
 ): string {
-  if (!outcome.delivered) {
-    return outcome.route === "share"
-      ? FINISH_LABELS.notShared
-      : FINISH_LABELS.notSaved;
-  }
-  if (drive && outcome.route === "download") {
-    return FINISH_LABELS.savedToPhone(filename);
-  }
-  return outcome.route === "share"
-    ? FINISH_LABELS.shared(filename)
+  if (!delivered) return FINISH_LABELS.notSaved;
+  return drive
+    ? FINISH_LABELS.savedToPhone(filename)
     : FINISH_LABELS.saved(filename);
 }
 
