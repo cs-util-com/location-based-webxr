@@ -26,6 +26,7 @@ import {
   type FlightPaceParams,
   type FlightPaceState,
 } from "./flight-pace.js";
+import { unitShare } from "./test-utils/arbitraries.js";
 
 const params = fc
   .record({
@@ -143,7 +144,7 @@ describe("the flight clock, over random networks and frame rates", () => {
     fc.assert(
       fc.property(
         params,
-        fc.array(fc.double({ min: 0, max: 1, noNaN: true }), { maxLength: 4 }),
+        fc.array(unitShare(fc), { maxLength: 4 }),
         (p, values) => {
           // Progress steps on multiples of 48 ms, which both frame rates hit.
           const steps = values.map((value, i) => ({
@@ -176,7 +177,7 @@ describe("the flight clock, over random networks and frame rates", () => {
         fc.array(
           fc.record({
             atMs: fc.integer({ min: 1, max: 40_000 }),
-            value: fc.double({ min: 0, max: 1, noNaN: true }),
+            value: unitShare(fc),
           }),
           { maxLength: 5 },
         ),

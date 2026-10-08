@@ -14,9 +14,10 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { GLOBE_FLIGHT, exaggerationAt } from "./globe-flight.js";
+import { unitShare } from "./test-utils/arbitraries.js";
 
 const nearE = fc.double({ min: 1, max: 5, noNaN: true });
-const share = fc.double({ min: 0, max: 1, noNaN: true });
+const share = unitShare(fc);
 const altitude = fc.double({ min: 0, max: 6_000_000, noNaN: true });
 
 describe("exaggerationAt with a ground value (properties)", () => {

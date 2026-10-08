@@ -16,6 +16,7 @@ import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
 import { orbitPose } from "./globe-camera.js";
 import { obliqueCamera } from "./globe-dive.js";
+import { unitShare } from "./test-utils/arbitraries.js";
 import {
   flightCameraAt,
   flightFrameAt,
@@ -44,7 +45,9 @@ const replan = fc.record({
    * When, as a share of the first flight: the whole of it, its ramp and
    * its settle included (CF2 review finding 1: 5-95 % missed both).
    */
-  share: fc.double({ min: 0, max: 1, noNaN: true }),
+  // Even over the flight, both ends included (`unitShare`): a plain
+  // double almost never drew a replan mid-flight.
+  share: unitShare(fc),
 });
 
 type Replan = typeof replan extends fc.Arbitrary<infer T> ? T : never;
