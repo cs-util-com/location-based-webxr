@@ -28,6 +28,7 @@ import { recordedGpsEventPayloads } from '../utils/gps-event-actions';
 import { createLogger } from '../utils/logger';
 import { DEFAULT_ARCHIVE_LIMITS } from './archive-limits';
 import { DecompressionBudget, readZipEntryText } from './capped-zip-entries';
+import { unpackDepthAction } from './depth-sample-codec';
 
 const log = createLogger('ZipReader');
 
@@ -176,6 +177,42 @@ export async function loadActionsFromZip(
 }
 
 /**
+ * The action one entry's text holds, or null - with a warning naming the
+ * file - when it holds none: malformed JSON, no `type` string, or a
+ * damaged packed depth grid. A packed depth sample (scan pass S2,
+ * `depth-sample-codec.ts`) gets its points back here, so every reader sees
+ * the action as it was dispatched.
+ */
+function parseActionText(
+  text: string,
+  filename: string
+): RecordedAction | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    log.warn(`Skipping malformed JSON in "${filename}": parse failed`);
+    return null;
+  }
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    typeof (parsed as RecordedAction).type !== 'string'
+  ) {
+    log.warn(
+      `Skipping "${filename}": parsed JSON is not a valid action (missing "type" string)`
+    );
+    return null;
+  }
+  const unpacked = unpackDepthAction(parsed);
+  if (!unpacked.ok) {
+    log.warn(`Skipping "${filename}": ${unpacked.reason}`);
+    return null;
+  }
+  return unpacked.action as RecordedAction;
+}
+
+/**
  * The parse of {@link loadActionsFromZip} over an entry list the caller
  * ALREADY HOLDS, each action entry read through `readText`. For a caller
  * that has checked its list and must not let a second read of the
@@ -222,27 +259,11 @@ export async function loadActionsFromEntries(
             'The file will still be processed.'
         );
       }
-      const text = await read(entry, maxFileSize);
-      let action: RecordedAction;
-      try {
-        const parsed: unknown = JSON.parse(text);
-        if (
-          typeof parsed !== 'object' ||
-          parsed === null ||
-          typeof (parsed as RecordedAction).type !== 'string'
-        ) {
-          log.warn(
-            `Skipping "${entry.filename}": parsed JSON is not a valid action (missing "type" string)`
-          );
-          continue;
-        }
-        action = parsed as RecordedAction;
-      } catch {
-        log.warn(
-          `Skipping malformed JSON in "${entry.filename}": parse failed`
-        );
-        continue;
-      }
+      const action = parseActionText(
+        await read(entry, maxFileSize),
+        entry.filename
+      );
+      if (action === null) continue;
       results.push({
         index,
         filename: entry.filename,

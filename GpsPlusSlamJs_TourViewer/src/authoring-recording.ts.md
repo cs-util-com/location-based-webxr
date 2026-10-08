@@ -151,36 +151,43 @@ loads. Plan:
 
 ## Storage cost and the low-storage threshold
 
-MEASURED (2026-09-28, `authoring-recording.test.ts` "what a recording costs
-on disk"): the framework's real depth sampler at `RECORDING_DEPTH`, over
-float32 depths, pose and projection matrix (a phone's digit counts), written
-through the real store into the OPFS mock and read back as bytes:
+MEASURED (`authoring-recording.test.ts` "what a recording costs on disk"):
+the framework's real depth sampler at `RECORDING_DEPTH`, over float32
+depths, pose and projection matrix (a phone's digit counts), written through
+the real store into the OPFS mock and read back as bytes:
 
-- one depth sample: 34 285 bytes (the review's arithmetic said about 30 KB;
-  the files are pretty-printed JSON, `JSON.stringify(action, null, 2)`, which
-  the arithmetic left out);
-- one GPS fix with its paired pose: 357 bytes (a minimal test fix; a phone's fix carries more optional fields, not measured here - about 1 % of the total either way);
-- so one second of recording (both at 1 Hz) writes about 34.6 KB, about
-  125 MB (119 MiB) an hour - the review's 110 MB was about 12 % low. `RECORDING_BYTES_PER_SECOND` = 40 000 covers that, and
-  the test holds it within 25 % above the measurement, so a bigger grid or a
-  format change cannot drift past it unseen.
-- NOT counted: QR detections (written only while a code is in view, one per
-  lock), the `tourAuthoring/*` log actions (one per tap), and the file
-  system's own per-file overhead (one file per action). A long stretch with a
-  code in view writes more than this rate.
+- one depth sample: **1 829 bytes since scan pass S2** (2026-10-08: the grid
+  packed as float32 and the JSON compact, framework
+  `depth-sample-codec.ts`); 34 285 bytes before, as pretty-printed JSON
+  (2026-09-28);
+- the other actions - GPS fixes, QR detections while a code is in view, the
+  `tourAuthoring/*` log - at the owner's field recording's rate
+  (`FIELD_OTHER_ACTIONS_BYTES_PER_SECOND` = 3 430: 0.72 of 7.46 MB in 210 s,
+  2026-10-06). That recording was written as pretty JSON, so the rate is an
+  upper bound for the compact files written since. Before S2 these were
+  about 10 % of a second's bytes and were left out; now they are most of
+  it;
+- so one second of recording writes at most about 5.3 KB, about 19 MB an
+  hour. `RECORDING_BYTES_PER_SECOND` = 6 000 covers that, and the test
+  holds it within 25 % above the sum, so a bigger grid or a format change
+  cannot drift past it unseen.
+- NOT counted: the file system's own per-file overhead (one file per
+  action).
+- **The storage is not what ends a long recording.** The archive's entry cap
+  (20 000 files, `archive-limits.ts`) is reached after about 1.7 h at the
+  field recording's 3.3 actions a second, long before the bytes matter
+  (scan pass S2 plan §2, an owner question).
 
-`LOW_STORAGE_BYTES` = one hour at that rate (144 MB, 137 MiB). Weighed over a
-plausible range of 15 minutes to 2 hours of headroom (34 to 275 MiB
-MB):
+`LOW_STORAGE_BYTES` = one hour at that rate (21.6 MB, 20.6 MiB). Weighed over
+a plausible range of 15 minutes to 2 hours of headroom (5.4 to 43 MB):
 
 - An authoring visit (measure a code, place a handful of notes, finish) is
-  minutes to tens of minutes; an hour covers a long one with a margin for the
-  uncounted items above.
+  minutes to tens of minutes; an hour covers a long one with a margin.
 - Too high costs a warning on a phone that had room (it never blocks); too
   low lets a recording run into the wall, where its writes fail part-way
   (counted on the marker) and the zip is incomplete. The cheaper mistake is
   the false warning, so the threshold sits at the upper-middle of the range.
-- What would change it: a measured write rate well above 40 KB/s (a
+- What would change it: a measured write rate well above 6 KB/s (a
   field recording with long code-in-view stretches), or sessions routinely
   longer than an hour - either argues for 2 hours. Below 15 minutes of
   headroom the warning would miss a normal session and is not considered.

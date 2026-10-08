@@ -22,6 +22,10 @@ import {
   type ZipActionEntry,
 } from './zip-reader';
 import { ArchiveLimitError } from './archive-limits';
+import {
+  DEPTH_SAMPLE_ACTION_TYPE,
+  packDepthAction,
+} from './depth-sample-codec';
 import { DecompressionBudget } from './capped-zip-entries';
 import {
   produceTestZip,
@@ -370,6 +374,74 @@ describe('zip-reader', () => {
 
       const result = await loadActionsFromZip(data);
       expect(result).toHaveLength(0);
+    });
+  });
+
+  describe('packed depth samples (scan pass S2)', () => {
+    // Why: every reader of a recording goes through this parse, so this is
+    // where a packed sample becomes today's sample again - for a recording
+    // written before S2, after it, and across the change.
+    const points = [0, 1, 2, 3].map((i) => ({
+      screenX: ((i % 2) + 1) / 3,
+      screenY: (Math.floor(i / 2) + 1) / 3,
+      depthM: Math.fround(1.1 + i),
+      rgb: [i, 2 * i, 255 - i],
+    }));
+    const depth = {
+      type: DEPTH_SAMPLE_ACTION_TYPE,
+      payload: {
+        timestamp: 1,
+        cameraPos: [0, 1, 0],
+        cameraRot: [0, 0, 0, 1],
+        points,
+      },
+    };
+    async function zipOf(texts: string[]): Promise<Uint8Array> {
+      const { ZipWriter, Uint8ArrayWriter, TextReader } =
+        await import('@zip.js/zip.js');
+      const zipWriter = new ZipWriter(new Uint8ArrayWriter());
+      for (const [i, text] of texts.entries()) {
+        const name = `actions/${String(i + 1).padStart(6, '0')}.json`;
+        await zipWriter.add(name, new TextReader(text));
+      }
+      return new Uint8Array(await zipWriter.close());
+    }
+
+    it('reads the JSON form and the packed form to the same action', async () => {
+      const data = await zipOf([
+        JSON.stringify(depth, null, 2),
+        JSON.stringify(packDepthAction(depth)),
+      ]);
+      const result = await loadActionsFromZip(data);
+      expect(result.map((r) => r.index)).toEqual([1, 2]);
+      expect(result[0]!.action).toEqual(depth);
+      expect(result[1]!.action).toEqual(depth);
+    });
+
+    it('skips a damaged packed grid with a warning, and keeps the rest', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const packed = packDepthAction(depth) as {
+        payload: { grid: Record<string, unknown> };
+      };
+      const damaged = {
+        ...packed,
+        payload: {
+          ...packed.payload,
+          grid: { ...packed.payload.grid, size: 3 },
+        },
+      };
+      const data = await zipOf([
+        JSON.stringify(damaged),
+        '{"type":"recording/endSession"}',
+      ]);
+      const result = await loadActionsFromZip(data);
+      expect(result.map((r) => r.action.type)).toEqual([
+        'recording/endSession',
+      ]);
+      expect(
+        warnSpy.mock.calls.map((call) => call.join(' ')).join('\n')
+      ).toMatch(/000001\.json.*damaged/);
+      warnSpy.mockRestore();
     });
   });
 

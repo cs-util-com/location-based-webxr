@@ -3027,6 +3027,16 @@ test("an opted-in authoring session is recorded across the finish and saved as i
   expect(types).toContain("tourAuthoring/codeMeasured");
   expect(types).toContain("recording/recordDepthSample");
   expect(types.some((t) => t.startsWith("qrDetected/"))).toBe(true);
+  // The depth sample is written packed (scan pass S2): no points, its
+  // grid as little-endian float32 in base64url - written by the framework
+  // in a real browser (the unit tests run the codec in Node only). The
+  // fake sampler's one point is a full 1 x 1 grid at 1.5 m.
+  const packed = actions.find((a) => a.type === "recording/recordDepthSample");
+  expect(packed.payload.points).toEqual([]);
+  expect(packed.payload.grid).toMatchObject({ v: 1, size: 1 });
+  expect(
+    Buffer.from(packed.payload.grid.depthF32, "base64url").readFloatLE(0),
+  ).toBe(1.5);
   const placed = actions.find((a) => a.type === "tourAuthoring/objectPlaced");
   expect(placed.payload.object.label).toBe("Recorded gate");
   // The logged odometry, taken back through the logged group matrix, is

@@ -4,6 +4,16 @@
 
 ### Changed
 
+- **Recorded depth samples are written packed, and every action file is
+  compact JSON** (scan pass S2). `writeAction` writes a
+  `recording/recordDepthSample` whose grid the packed form holds exactly
+  with `points: []` and a `grid` (float32 depths and byte colours,
+  base64url): about 18x smaller per sample. `loadActionsFromEntries`
+  unpacks it, so every reader of a recording sees the action as dispatched.
+  A reader built before this release reads such a sample with no points.
+  New: `storage/depth-sample-codec` (`packDepthAction`,
+  `unpackDepthAction`).
+
 - **The alignment maturity floor is 40 m of session GPS extent, not 80 m**
   (owner decision D34, 2026-10-04). The QR mint's
   `QR_MINT_MATURE_GPS_EXTENT_M` is now an alias of `MATURE_GPS_EXTENT_M`
