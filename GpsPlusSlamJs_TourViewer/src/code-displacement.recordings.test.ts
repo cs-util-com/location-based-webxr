@@ -22,6 +22,9 @@
  *   pose and the alignment in effect. `D20_REAL_SHARD=i/n` splits the corpus.
  * - `D20_REAL=sweep` reads the cache and prints the tables (`D20R {...}`
  *   lines and a report file in the cache directory).
+ * - `D20_REAL=m6` reads the same cache for the code book plan's M6 spike
+ *   (which move trigger; does a visit soon after a biased one share its
+ *   bias) and writes `d20-m6-report.txt`.
  *
  * Corpus: `D20_REAL_CORPUS` (default: the primary repo's `TestDataJs`, the
  * Investigation's main outdoor corpus, plus the labelled indoor and compass
@@ -89,6 +92,7 @@ import {
 import { alignmentNorthBearingDeg, fitGaussMarkov } from "./gps-noise-fit.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import { throughAlignment, type NuePose } from "./visit-anchoring.js";
+import { isReliable } from "./code-position-rule.js";
 import { correctionBoundM } from "./visit-settle.js";
 
 // ---------------------------------------------------------------------------
@@ -2713,6 +2717,434 @@ function sweepShippedRule(
     rows,
   );
 }
+
+// ---------------------------------------------------------------------------
+// M6 spike (code book plan, "M6 v3 - cold review"): which move trigger, and
+// does a visit minutes later share the first one's GPS bias?
+// (D20_REAL=m6: reads the cache only, like the sweep.)
+// ---------------------------------------------------------------------------
+
+/** The largest horizontal distance between two device fixes up to `upTo`
+ *  (inclusive): the production GPS extent (`gps-extent-tracker.ts`). */
+function gpsExtentUpTo(fixes: readonly WalkFix[], upTo: number): number {
+  let best = 0;
+  const last = Math.min(upTo, fixes.length - 1);
+  for (let i = 0; i <= last; i += 1)
+    for (let j = 0; j < i; j += 1)
+      best = Math.max(
+        best,
+        Math.hypot(
+          fixes[i]!.g[0] - fixes[j]!.g[0],
+          fixes[i]!.g[1] - fixes[j]!.g[1],
+        ),
+      );
+  return best;
+}
+
+/** A walk's view of a code at its mark, as the settle's
+ *  `planCodePosition` reads it: through the mark's own alignment when that
+ *  was reliable at the mark (its pick), else the end alignment. */
+interface Candidate {
+  /** Odometry-free position (NUE metres) in the walk's own zero. */
+  readonly position: readonly number[];
+  readonly reliable: boolean;
+  readonly accuracyM: number | null;
+}
+
+function candidateOf(o: Obs): Candidate | null {
+  const fixes = o.w.fixes!;
+  const idx = fixIndexAt(fixes, o.m.t);
+  if (idx < 0) return null;
+  const pickQ = {
+    extentM: gpsExtentUpTo(fixes, idx),
+    accuracyM: accMedian(fixes, idx),
+  };
+  const throughPick = o.m.a !== null && isReliable(pickQ);
+  const last = fixes.length - 1;
+  const q = throughPick
+    ? pickQ
+    : {
+        extentM: gpsExtentUpTo(fixes, last),
+        accuracyM: accMedian(fixes, last),
+      };
+  const alignment = throughPick ? o.m.a : (fixes[last]?.a ?? null);
+  if (alignment === null) return null;
+  const seen = throughAlignment(
+    poseAt(nueOdom(o.m.position), o.m.rotation),
+    alignment,
+  );
+  if (seen === null) return null;
+  return {
+    position: seen.position,
+    reliable: isReliable(q),
+    accuracyM: q.accuracyM,
+  };
+}
+
+interface M6Pair {
+  readonly p: PairResult;
+  /** B's candidate minus A's saved pose (north, east; m). */
+  readonly offset: readonly [number, number];
+  readonly reliable: boolean;
+  readonly candAccM: number | null;
+  readonly storedAccM: number | null;
+  /** Hours between the two walks' starts. */
+  readonly gapH: number;
+}
+
+function m6Pairs(walks: readonly Walk[]): M6Pair[] {
+  const every = allPairs(walks);
+  const { kept } = withoutCollisions(
+    every,
+    nameCollisions(markSites(walks), COLLISION_RULE),
+  );
+  const main = kept.filter((p) => p.rawGpsM <= PAIR_MAX_RAW_M);
+  const obs = new Map<string, Obs>();
+  for (const o of usableMarks(walks))
+    obs.set(`${o.w.key}|${o.m.key}|${String(o.m.t)}`, o);
+  const byWalkKey = new Map<string, Obs[]>();
+  for (const o of obs.values()) {
+    const k = `${o.w.key}|${o.m.key}`;
+    byWalkKey.set(k, [...(byWalkKey.get(k) ?? []), o]);
+  }
+  const candCache = new Map<Obs, Candidate | null>();
+  const cand = (o: Obs) => {
+    if (!candCache.has(o)) candCache.set(o, candidateOf(o));
+    return candCache.get(o)!;
+  };
+  const out: M6Pair[] = [];
+  // allPairs pairs every mark of A with every mark of B; the settle judges
+  // the visit's LATEST sighting, so keep the pair built on B's last mark.
+  const lastMark = (walk: string, key: string): Obs | undefined =>
+    byWalkKey.get(`${walk}|${key}`)?.reduce((a, b) => (b.m.t > a.m.t ? b : a));
+  const seen = new Set<string>();
+  for (const p of main) {
+    const id = `${p.walkA}|${p.walkB}|${p.key}`;
+    if (seen.has(id)) continue;
+    const A = lastMark(p.walkA, p.key);
+    const B = lastMark(p.walkB, p.key);
+    if (A === undefined || B === undefined) continue;
+    seen.add(id);
+    const storedA = throughAlignment(
+      poseAt(nueOdom(A.m.position), A.m.rotation),
+      A.m.a!,
+    );
+    const c = cand(B);
+    if (storedA === null || c === null) continue;
+    const stored = nueToOtherZero(storedA.position, A.w.zero!, B.w.zero!);
+    const pb = pairResult(A, B);
+    if (pb === null) continue;
+    out.push({
+      p: pb,
+      offset: [c.position[0]! - stored[0], c.position[2]! - stored[2]],
+      reliable: c.reliable,
+      candAccM: c.accuracyM,
+      storedAccM: accMedian(A.w.fixes!, fixIndexAt(A.w.fixes!, A.m.t)),
+      gapH: Math.abs(B.w.fixes![0]!.t - A.w.fixes![0]!.t) / 3600_000,
+    });
+  }
+  return out;
+}
+
+const M6_FLOORS_M = [20, 25, 30] as const;
+const M6_FACTORS = [2, 3, 4] as const;
+const M6_MOVES_M = [20, 30, 50] as const;
+
+/** v3's trigger: a reliable candidate beyond max(floor, bound). */
+function offsetTrigger(
+  x: M6Pair,
+  floorM: number,
+  factor: number,
+  move: readonly [number, number] = [0, 0],
+): boolean {
+  if (!x.reliable) return false;
+  const bound = correctionBoundM(x.candAccM, x.storedAccM, {
+    accuracyFactor: factor,
+  });
+  return (
+    Math.hypot(x.offset[0] + move[0], x.offset[1] + move[1]) >=
+    Math.max(floorM, bound)
+  );
+}
+
+/** Alternative C: the viewer's shipped rigid fit over the whole visit,
+ *  position half, floor alone, on a reliable walk. */
+function fitTrigger(
+  x: M6Pair,
+  floorM: number,
+  move: readonly [number, number] = [0, 0],
+): boolean {
+  if (!x.reliable) return false;
+  return (
+    firstShipped(
+      x.p.all,
+      Number.POSITIVE_INFINITY,
+      false,
+      { move: { ...CODE_MOVE_RULE, floorM }, turn: CODE_TURN_RULE },
+      move,
+    ) !== null
+  );
+}
+
+/** The settle's one batch fit: the visit's last gated rigid-fit
+ *  estimate (all its fixes; up to the harness horizon), or null. */
+function settleFit(x: M6Pair): readonly [number, number] | null {
+  const tr = x.p.all;
+  for (let k = tr.tS.length - 1; k >= 0; k -= 1)
+    if (
+      tr.span[k]! >= CODE_MOVE_RULE.minSpanS &&
+      tr.spread[k]! >= CODE_MOVE_RULE.minSpreadM
+    )
+      return [tr.dn[k]!, tr.de[k]!];
+  return null;
+}
+
+/** Alternative C at the settle: the batch fit at least the floor away. */
+function settleTrigger(
+  x: M6Pair,
+  floorM: number,
+  move: readonly [number, number] = [0, 0],
+): boolean {
+  const d = settleFit(x);
+  return (
+    x.reliable &&
+    d !== null &&
+    Math.hypot(d[0] + move[0], d[1] + move[1]) >= floorM
+  );
+}
+
+/** The batch fit within r of a spot: the code "seen there". With a move
+ *  injected, the spot is the one it moved FROM: a false undo. */
+function seenAt(
+  x: M6Pair,
+  rM: number,
+  move: readonly [number, number] = [0, 0],
+): boolean {
+  const d = settleFit(x);
+  return d !== null && Math.hypot(d[0] + move[0], d[1] + move[1]) < rM;
+}
+
+const GAP_BINS_H: readonly [string, number, number][] = [
+  ["< 15 min", 0, 0.25],
+  ["15 min - 3 h", 0.25, 3],
+  ["3 h - 1 day", 3, 24],
+  ["> 1 day", 24, Number.POSITIVE_INFINITY],
+];
+
+function sweepM6(walks: readonly Walk[]): void {
+  const pairs = m6Pairs(walks);
+  const sets: [string, M6Pair[]][] = [
+    ["cross-day", pairs.filter((x) => x.p.crossDay)],
+    ["same-day", pairs.filter((x) => !x.p.crossDay)],
+  ];
+  emit(
+    "M6 spike: the pairs (B's LATEST mark; reliable = U3's walk model on the candidate)",
+    sets.map(([label, xs]) => ({
+      set: label,
+      pairs: xs.length,
+      reliable: kOfN(xs.filter((x) => x.reliable).length, xs.length),
+      points: new Set(xs.map((x) => x.p.key)).size,
+    })),
+  );
+  emit(
+    "M6 spike: unmoved false triggers per ordered pair, v3's offset rule (reliable AND offset >= max(floor, bound at factor))",
+    sets.flatMap(([label, xs]) =>
+      M6_FLOORS_M.flatMap((f) =>
+        M6_FACTORS.map((k) => ({
+          set: label,
+          floorM: f,
+          factor: k,
+          ...rate(
+            xs.map((x) => pairOutcome(x.p, offsetTrigger(x, f, k))),
+            "points",
+          ),
+        })),
+      ),
+    ),
+  );
+  emit(
+    "M6 spike: unmoved false triggers per ordered pair, alternative C (reliable AND the viewer's rigid fit over the whole visit, floor alone)",
+    sets.flatMap(([label, xs]) =>
+      M6_FLOORS_M.map((f) => ({
+        set: label,
+        floorM: f,
+        ...rate(
+          xs.map((x) => pairOutcome(x.p, fitTrigger(x, f))),
+          "points",
+        ),
+      })),
+    ),
+  );
+  const cross = sets[0]![1];
+  emit(
+    "M6 spike: detection of injected moves on cross-day pairs (x 4 bearings), both triggers; offset rule at factor 3",
+    M6_FLOORS_M.flatMap((f) =>
+      M6_MOVES_M.map((d) => {
+        const det = (hit: (x: M6Pair, mv: [number, number]) => boolean) =>
+          rate(
+            cross.flatMap((x) =>
+              MOVE_BEARINGS_DEG.map((b) =>
+                pairOutcome(x.p, hit(x, bearingMove(d, b))),
+              ),
+            ),
+            "points",
+            false,
+          );
+        return {
+          floorM: f,
+          moveM: d,
+          offsetRule: det((x, mv) => offsetTrigger(x, f, 3, mv)),
+          rigidFit: det((x, mv) => fitTrigger(x, f, mv)),
+        };
+      }),
+    ),
+  );
+  emit(
+    "M6 spike: alternative C at the SETTLE (one batch fit over the visit, gated), unmoved false triggers and injected-move detection (x 4 bearings, cross-day)",
+    M6_FLOORS_M.map((f) => ({
+      floorM: f,
+      faCross: rate(
+        cross.map((x) => pairOutcome(x.p, settleTrigger(x, f))),
+        "points",
+      ),
+      faSame: rate(
+        sets[1]![1].map((x) => pairOutcome(x.p, settleTrigger(x, f))),
+        "points",
+      )["all"],
+      ...Object.fromEntries(
+        M6_MOVES_M.map((d) => [
+          `det${String(d)}`,
+          rate(
+            cross.flatMap((x) =>
+              MOVE_BEARINGS_DEG.map((b) =>
+                pairOutcome(x.p, settleTrigger(x, f, bearingMove(d, b))),
+              ),
+            ),
+            "points",
+            false,
+          ),
+        ]),
+      ),
+    })),
+  );
+  emit(
+    'M6 spike: "seen at a spot" by the batch fit within r, cross-day - unmoved (the true spot recognised) and after an injected move (the OLD spot recognised: a false undo; x 4 bearings)',
+    [6, 8, 10].map((r) => ({
+      rM: r,
+      unmovedSeen: rate(
+        cross.map((x) => pairOutcome(x.p, seenAt(x, r))),
+        "points",
+      )["all"],
+      ...Object.fromEntries(
+        M6_MOVES_M.map((d) => [
+          `falseUndo${String(d)}`,
+          rate(
+            cross.flatMap((x) =>
+              MOVE_BEARINGS_DEG.map((b) =>
+                pairOutcome(x.p, seenAt(x, r, bearingMove(d, b))),
+              ),
+            ),
+            "points",
+            false,
+          ),
+        ]),
+      ),
+      noFit: kOfN(
+        cross.filter((x) => settleFit(x) === null).length,
+        cross.length,
+      ),
+    })),
+  );
+  // Bias persistence (review #2): does a walk soon after a BIASED one see
+  // the code where the biased one did? Per point, each walk's error is its
+  // candidate minus the point's median candidate (all walks, one frame).
+  type Err = { walk: string; key: string; tMs: number; e: [number, number] };
+  const errs: Err[] = [];
+  const byKey = new Map<string, Obs[]>();
+  for (const o of usableMarks(walks)) {
+    const list = byKey.get(o.m.key) ?? [];
+    const i = list.findIndex((x) => x.w.key === o.w.key);
+    if (i < 0) list.push(o);
+    else if (o.m.t > list[i]!.m.t) list[i] = o;
+    byKey.set(o.m.key, list);
+  }
+  for (const [key, list] of byKey) {
+    if (list.length < 3) continue;
+    const frame = list[0]!.w.zero!;
+    const pts = list.flatMap((o) => {
+      const c = candidateOf(o);
+      if (c === null || !c.reliable) return [];
+      const p = nueToOtherZero(c.position, o.w.zero!, frame);
+      return [{ o, n: p[0], e: p[2] }];
+    });
+    if (pts.length < 3) continue;
+    const mn = quantile(
+      pts.map((x) => x.n),
+      0.5,
+    );
+    const me = quantile(
+      pts.map((x) => x.e),
+      0.5,
+    );
+    for (const x of pts)
+      errs.push({
+        walk: x.o.w.key,
+        key,
+        tMs: x.o.w.fixes![0]!.t,
+        e: [x.n - mn, x.e - me],
+      });
+  }
+  const BIASED_M = 15;
+  emit(
+    `M6 spike: bias persistence - for two reliable walks at one point, the share whose errors agree within r, by the gap between them; "biased": the earlier walk's error >= ${BIASED_M} m`,
+    GAP_BINS_H.flatMap(([label, lo, hi]) =>
+      [6, 8, 10].map((r) => {
+        const all: Outcome[] = [];
+        const biased: Outcome[] = [];
+        for (const a of errs)
+          for (const b of errs) {
+            if (a.key !== b.key || b.tMs <= a.tMs) continue;
+            const gapH = (b.tMs - a.tMs) / 3600_000;
+            if (gapH < lo || gapH >= hi) continue;
+            const hit = Math.hypot(a.e[0] - b.e[0], a.e[1] - b.e[1]) <= r;
+            const o = { hit, unit: a.key, walks: [a.walk, b.walk] };
+            all.push(o);
+            if (Math.hypot(a.e[0], a.e[1]) >= BIASED_M) biased.push(o);
+          }
+        return {
+          gap: label,
+          rM: r,
+          agreeAll: rate(all, "points", false)["all"],
+          agreeAfterBiased: rate(biased, "points", false)["all"],
+        };
+      }),
+    ),
+  );
+}
+
+describe.runIf(MODE === "m6")("D20 real walks: the M6 spike", () => {
+  it(
+    "prints the move-trigger and bias-persistence tables",
+    () => {
+      createTourViewerStore();
+      const { kept } = corpusZips();
+      const keys = new Set(kept.map((z) => z.key));
+      const walks = loadWalks().filter(
+        (w) =>
+          keys.has(w.key) &&
+          w.skipped === undefined &&
+          (w.fixes?.length ?? 0) >= MIN_FIXES,
+      );
+      sweepM6(walks);
+      fs.writeFileSync(
+        path.join(path.dirname(CACHE_DIR), "d20-m6-report.txt"),
+        REPORT.join("\n"),
+      );
+      expect(walks.length).toBeGreaterThan(0);
+    },
+    3 * 3600_000,
+  );
+});
 
 describe.runIf(MODE === "sweep")("D20 real walks: the sweep", () => {
   it(
