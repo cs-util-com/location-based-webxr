@@ -3537,6 +3537,36 @@ describe(
       });
     });
 
+    // Why (M6 follow-ups #6): a code NOT in hand is moved and undone
+    // through the book (`saveLevel`), not through the hand - a path no
+    // composed test walked. Code A is put down when code B takes the hand.
+    it("moves and undoes a code that is not in hand", async () => {
+      const { a, original } = await storedCode();
+      const first = a.codes.inHand()!.id;
+      a.beginVisit();
+      await a.mint(
+        new Matrix4().makeTranslation(6, 0, 0),
+        "https://gps.csutil.com/tour/?qr=second",
+        10_000,
+      );
+      a.endVisit();
+      await flush();
+      expect(a.codes.inHand()!.id).not.toBe(first);
+      const spotsOfFirst = () => readCodeSpots(a.codes.savedText(first)!)!;
+      await visitSeeing(a, 30);
+      const moved = spotsOfFirst();
+      expect(northOf(moved.current.geo) - northOf(original.geo)).toBeCloseTo(
+        30,
+        0,
+      );
+      expect(moved.previous).toEqual(original);
+      await visitSeeing(a, 0);
+      const undone = spotsOfFirst();
+      expect(undone.current).toEqual(original);
+      expect(undone.previous).toBeNull();
+      expect(undone.copies).toEqual([moved.current]);
+    });
+
     // Under the floor it is the same spot: U3 may still IMPROVE a weakly
     // saved pose (its 15 m cap), but nothing is remembered as moved.
     it("does not move a code seen 12 m off (under the floor)", async () => {
