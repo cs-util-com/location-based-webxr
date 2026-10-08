@@ -164,7 +164,9 @@ the real store into the OPFS mock and read back as bytes:
   `tourAuthoring/*` log - at the owner's field recording's rate
   (`FIELD_OTHER_ACTIONS_BYTES_PER_SECOND` = 1 950: 411 617 bytes in 211 s
   as written since S2, measured by the opt-in field test on the 2026-10-06
-  recording; 3 430 as the pretty JSON it was written in). Before S2 these
+  recording; 3 430 as the pretty JSON it was written in). A typical rate,
+  not a bound (PR #569 review): the 2026-10-08 recording wrote 1 580 B/s,
+  and a visit that lingers at codes or places many objects writes more. Before S2 these
   were about 10 % of a second's bytes and were left out; now they are about
   half of it;
 - so one second of recording writes about 3.8 KB, about 13.6 MB an hour

@@ -51,6 +51,12 @@ the JSON form, and read back to exactly the points the JSON form gave.
   freezes it; packing builds a new action.
 - **Never throws on write.** Any exception gives the action back unpacked:
   a throw in `writeAction` would fail every depth sample's write.
+- **The bound binds both sides, so it may only ever be raised.** A packed
+  grid wider than `MAX_PACKED_GRID_SIZE` is refused on read and its sample
+  dropped; lowering the bound once packed recordings exist would drop their
+  depth. (It fell from 128 to 64 before any packed recording shipped.) The
+  Recorder's grid-size setting is held within it by a test
+  (`recording-options.test.ts`, PR #569 review).
 - **Untrusted on read.** A visitor's live join reads a tour's recording, so
   the decoder checks the version, the size (an integer in 1..64) and the
   text lengths of both fields BEFORE decoding or allocating, and refuses

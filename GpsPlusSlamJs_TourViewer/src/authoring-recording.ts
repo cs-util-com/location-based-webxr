@@ -71,7 +71,11 @@ export const RECORDING_DEPTH: Partial<DepthSamplerConfig> = {
  * The non-depth actions per second of the owner's field recording
  * (2026-10-06, 211 s - GPS fixes, QR detections, authoring events), as
  * written since scan pass S2 (compact JSON): 411 617 bytes, MEASURED by the
- * opt-in field test (`tour-recording.field.test.ts`).
+ * opt-in field test (`tour-recording.field.test.ts`). A TYPICAL rate, not a
+ * bound (PR #569 review): the 2026-10-08 recording wrote 1 580 B/s, and a
+ * visit that lingers at codes (QR detections) or places many objects
+ * writes more - so the minutes the low-storage warning names are an
+ * estimate.
  */
 export const FIELD_OTHER_ACTIONS_BYTES_PER_SECOND = 1_950;
 
