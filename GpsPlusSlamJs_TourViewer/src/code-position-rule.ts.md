@@ -93,3 +93,10 @@ settle logs it when the code was seen back at the spot an automatic move
 left. `codePositionSentence` says so. A replace still outranks every other
 outcome, and of a move and its undo since the last Finish, the later one
 speaks, because that is where the code now is.
+
+- `keep` / `far-unjudged` (M6 milestone review #3) is set by the settle
+  when the code-spot rule could not judge a code seen far off. Its line:
+  "The code was seen about N m from its saved spot, but this visit could
+  not tell whether the poster moved: walk with the code in view for a
+  minute or more." An automatic move also needs the floor
+  (`MOVED_CODE_FLOOR_M`), even when re-planned (review #9).

@@ -41,6 +41,11 @@ export function isReliable(q: PositionQuality): boolean {
 
 export type CodePositionDecision =
   | { kind: "keep"; reason: "stored-good" | "far" }
+  /** Seen far from its saved spot in a visit that could not judge whether
+   *  the poster moved (too short a walk, no gated fit, or a tracking
+   *  restart; M6 milestone review #3). Never decided here: the settle
+   *  sets it from the code-spot rule's "not judged". */
+  | { kind: "keep"; reason: "far-unjudged"; offsetM: number }
   | { kind: "keep"; reason: "not-walked"; walkMoreM: number }
   | { kind: "replace" }
   | { kind: "move" }
@@ -160,6 +165,9 @@ export function codePositionSentence(
   // How much farther: this visit's GPS spread against what its accuracy
   // needs.
   const more = (m: number) => String(Math.max(1, Math.round(m)));
+  if (decision.kind === "keep" && decision.reason === "far-unjudged") {
+    return `The code was seen about ${more(decision.offsetM)} m from its saved spot, but this visit could not tell whether the poster moved: walk with the code in view for a minute or more.`;
+  }
   if (decision.kind === "keep" && decision.reason === "not-walked") {
     return `The code's saved position was kept: this visit's walk was about ${more(decision.walkMoreM)} m too short for the GPS accuracy to improve it.`;
   }

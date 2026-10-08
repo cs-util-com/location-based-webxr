@@ -318,3 +318,19 @@ second prints and the spots automatic moves left, this code's own
 included. A pin next to a second print stays when the code's saved spot is
 improved. Codes the visit did not see contribute only their current pose:
 a known limitation.
+
+**After the M6 milestone review:**
+
+- **An undo excludes every sighting at a known spot other than the one it
+  restores**, a copy included (review #1). This is defensive: one code
+  corrects through its latest sighting today.
+- **A silent improvement never lands within the floor of another known
+  spot** (`withinSpots`, review #2). Such a replace is kept as `far`, so
+  two known spots never sit closer than the floor.
+- **A far code the visit could not judge** (too short a walk, no gated
+  fit, or a frame change) is logged as `keep` / `far-unjudged` with its
+  offset. The result line asks for a longer walk with the code in view
+  (review #3).
+- **A sighting without a fit, live and at the settle,** belongs to
+  another known spot only within half the floor of it (`spotByAlignment`,
+  review #6). After a frame change the fit classifies nothing (review #5).

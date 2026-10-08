@@ -3701,9 +3701,11 @@ describe(
     it("leaves a pin by the code's second print where it is when the code's position is improved", async () => {
       const a = authoring();
       await a.mint();
-      await a.placePin("by the copy", [22, 0, 0]);
+      // A copy 30 m away: an improvement of 5 m stays more than the floor
+      // from it (M6 milestone review #2 keeps one that would not).
+      await a.placePin("by the copy", [30, 0, 0]);
       a.endVisit();
-      await visitSeeing(a, 22);
+      await visitSeeing(a, 30);
       await visitSeeing(a, 0);
       expect(spotsOf(a).copies).toHaveLength(1);
       const pinBefore = a.ctx.placedObjects.find(
@@ -3726,6 +3728,178 @@ describe(
       expect(worldOf(pinAfter).distanceTo(worldOf(pinBefore))).toBeLessThan(
         1e-6,
       );
+    });
+
+    // Why (M6 milestone review #1): an undo visit that also saw ANOTHER
+    // second print kept that sighting, and a pin placed by it could settle
+    // through the restored spot - 30 m off. This held before the fix too
+    // (one code corrects through its latest sighting, and the visit log
+    // keeps only that one); it pins the defensive exclusion.
+    it("an undo corrects nothing through another second print the same visit saw", async () => {
+      const { a, original } = await storedCode();
+      await visitSeeing(a, 30); // moved to B
+      await visitSeeing(a, 0); // undone: B is a second print
+      await visitSeeing(a, -30); // moved to C, previous A, copies [B]
+      expect(spotsOf(a).previous?.geo).toEqual(original.geo);
+      expect(spotsOf(a).copies).toHaveLength(1);
+      // Two sightings of one code merge into one run within a second
+      // (`SIGHTING_SPACING_MS`): the clock moves on between the prints.
+      const visitStartMs = Date.now();
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        vi.setSystemTime(visitStartMs);
+        a.beginVisit();
+        a.setAlignment(yawAlignment(0, [0, 400, 0]));
+        walkThrough(a, 0);
+        // The print at B, 30 m north, with a pin beside it; then the code
+        // at A.
+        a.seeTheCode(new Matrix4().makeTranslation(0, 0, -30));
+        await flush();
+        await a.placePin("by B", [31, 0, 1]);
+        vi.setSystemTime(visitStartMs + 5_000);
+        a.seeTheCode();
+        await flush();
+        a.endVisit();
+        await flush();
+      } finally {
+        vi.useRealTimers();
+      }
+      // Undone back to A.
+      expect(spotsOf(a).current.geo).toEqual(original.geo);
+      const pin = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin" && p.object.label === "by B",
+      )!.object;
+      expect(Math.abs(worldOf(pin.geo).x - 31)).toBeLessThan(2);
+    });
+
+    // Why (M6 milestone review #2): a silent improvement may shift the saved
+    // spot by up to 15 m; toward a known second print it would leave two
+    // spots closer than the floor, and every later sighting would flip
+    // between them.
+    it("never improves the saved spot to within the floor of a known second print", async () => {
+      const { a, original } = await storedCode();
+      await visitSeeing(a, 22);
+      await visitSeeing(a, 0);
+      expect(spotsOf(a).copies).toHaveLength(1);
+      // Seen 8 m off its weakly saved spot after a reliable walk: an
+      // improvement, 14 m from the second print.
+      await visitSeeing(a, 8);
+      expect(
+        (a.settledLogs().at(-1)!.payload as { codePositions?: unknown })
+          .codePositions,
+      ).toEqual([
+        expect.objectContaining({ decision: { kind: "keep", reason: "far" } }),
+      ]);
+      expect(spotsOf(a).current.geo).toEqual(original.geo);
+    });
+
+    // Why (M6 milestone review #3): the move prompt used to tell a creator
+    // whose walk was too short to walk farther; without it, a poster that
+    // really moved got no word at all.
+    it("says so when a code is seen far off in a visit that cannot judge it", async () => {
+      const { a } = await storedCode();
+      a.beginVisit();
+      a.ctx.frameEpochAtSessionStart = -1;
+      a.setAlignment(yawAlignment(0, [30, 400, 0]));
+      a.seeTheCode();
+      await flush();
+      walkThrough(a, 30);
+      a.endVisit();
+      await flush();
+      const positions = (
+        a.settledLogs().at(-1)!.payload as {
+          codePositions?: { decision: { kind: string; reason?: string } }[];
+        }
+      ).codePositions;
+      expect(positions?.[0]?.decision).toMatchObject({
+        kind: "keep",
+        reason: "far-unjudged",
+      });
+    });
+
+    // Why (M6 milestone review #4, v5.1 #4): a failed Finish unsettles its
+    // visit, which settles again at its end. Judged again against the level
+    // the first settle already restored, the undo would be lost or doubled.
+    it("re-applies an undo after a failed Finish, exactly once", async () => {
+      const { store } = memoryDraftStore();
+      const a = authoring({ store });
+      await openFinishableTour(a);
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      await a.mint();
+      a.endVisit();
+      const original = spotsOf(a).current;
+      await visitSeeing(a, 30);
+      const moved = spotsOf(a).current;
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [0, 400, 0]));
+      a.seeTheCode();
+      await flush();
+      walkThrough(a, 0);
+      (
+        a.ctx.session as unknown as { readWholeArchive: () => Promise<Blob> }
+      ).readWholeArchive = () => Promise.reject(new Error("offline"));
+      a.ctx.tourManifestStatus = "settled";
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).not.toBeNull();
+      expect(spotsOf(a).current).toEqual(original);
+      expect(spotsOf(a).copies).toEqual([moved]);
+      a.endVisit();
+      await flush();
+      expect(spotsOf(a).current).toEqual(original);
+      expect(spotsOf(a).copies).toEqual([moved]);
+      expect(spotsOf(a).previous).toBeNull();
+    });
+
+    // Why (M6 milestone review #4): the confirmation's clock and write are
+    // wiring, not rule - a sign flipped on the day, or a write dropped,
+    // would pass the rule's own tests.
+    it("confirms a move a day later: the spot it left becomes a second print", async () => {
+      const { a, original } = await storedCode();
+      await visitSeeing(a, 30);
+      // The same day: nothing changes.
+      await visitSeeing(a, 30);
+      expect(spotsOf(a).previous).toEqual(original);
+      const sameDayMs = Date.now();
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        vi.setSystemTime(sameDayMs + 25 * 3_600_000);
+        await visitSeeing(a, 30);
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(spotsOf(a).previous).toBeNull();
+      expect(spotsOf(a).copies).toEqual([original]);
+    });
+
+    // Why (M6 milestone review #4; D19, §7j #12): a real move leaves the
+    // pins where they are, and is the visit log's boundary for the code.
+    it("a move takes no pin along and marks the move in the visit log", async () => {
+      const { store, files } = memoryDraftStore();
+      const a = authoring({ store });
+      await openFinishableTour(a);
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      await a.mint();
+      await a.placePin("near the code", [2, 0, -1]);
+      a.endVisit();
+      await flush();
+      const pinBefore = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin",
+      )!.object.geo;
+      await visitSeeing(a, 30);
+      const pinAfter = a.ctx.placedObjects.find((p) => p.object.kind === "pin")!
+        .object.geo;
+      expect(pinAfter).toEqual(pinBefore);
+      const entries = [...files.keys()]
+        .filter((k) => k.startsWith(visitKey("")))
+        .map((k) => parseVisitLogEntry(files.get(k) as string)!)
+        .sort((x, y) => x.atMs - y.atMs);
+      expect(
+        entries.at(-1)!.codes.find((c) => c.levelId === a.ctx.mintedLevel!.id)
+          ?.moved,
+      ).toBe(true);
     });
   },
 );

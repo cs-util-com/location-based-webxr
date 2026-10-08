@@ -33,6 +33,7 @@ import {
 import { isReliable } from "./code-position-rule.js";
 import {
   displacementSamples,
+  MOVED_CODE_FLOOR_M,
   type DisplacementSample,
 } from "./code-displacement.js";
 import {
@@ -127,6 +128,9 @@ interface VisitSpots {
   readonly excluded: Set<CodeSighting>;
   /** Codes undone in this settle (said once). */
   readonly undone: string[];
+  /** Codes the rule could not judge (too short a walk, no gated fit, a
+   *  frame change): a far one says so on the result screen. */
+  readonly unjudged: Set<string>;
   readonly logged: { levelId: string; decision: CodeSpotDecision }[];
 }
 
@@ -176,9 +180,19 @@ function spotResult(
   sightings: readonly CodeSighting[],
   memoryBefore: CodeSpotMemory<StoredSpot>,
 ): CodeSpotResult {
-  // After an undo the sightings at the old CURRENT spot are the ones at a
-  // second print.
-  const second = decision.kind === "undo" ? atHome : atOther;
+  // After an undo every sighting at a known spot other than the one it
+  // restores is at a second print: the old current one, and any copy (M6
+  // milestone review #1).
+  const second =
+    decision.kind === "undo"
+      ? (c: SpotRef | "new" | null | undefined) =>
+          atHome(c) ||
+          (atOther(c) &&
+            c !== undefined &&
+            c !== null &&
+            c !== "new" &&
+            c.kind !== "previous")
+      : atOther;
   return {
     decision,
     memoryBefore,
@@ -628,10 +642,71 @@ export function wireCreatorSettle(deps: {
         reapplied: false,
       };
     };
+    /** The keep-or-replace plan as the code's known spots allow it (M6
+     *  milestone review #2, #3): an improvement that would land within the
+     *  floor of another known spot is kept instead, so two spots never sit
+     *  closer than the floor; a far code the visit could not judge says
+     *  so. */
+    const withinSpots = (
+      code: { id: string; json: string },
+      plan: CodePositionPlan | null,
+    ): CodePositionPlan | null => {
+      if (plan === null || zero === null) return plan;
+      if (plan.decision.kind === "replace" && nearAnotherSpot(code, plan)) {
+        return {
+          ...plan,
+          decision: { kind: "keep", reason: "far" },
+          measurement: null,
+          pick: null,
+        };
+      }
+      if (
+        spots.unjudged.has(code.id) &&
+        plan.decision.kind === "keep" &&
+        plan.decision.reason === "far"
+      ) {
+        return {
+          ...plan,
+          decision: {
+            kind: "keep",
+            reason: "far-unjudged",
+            offsetM: plan.offsetM,
+          },
+        };
+      }
+      return plan;
+    };
+    /** A decision as the spots allow it; a re-applied one stays as made. */
+    const adjusted = (
+      code: { id: string; json: string },
+      d: { plan: CodePositionPlan | null; reapplied: boolean },
+    ) => (d.reapplied ? d : { ...d, plan: withinSpots(code, d.plan) });
+    /** The pose a replace would mint lies within the floor of a known spot
+     *  of the code other than its current one. */
+    const nearAnotherSpot = (
+      code: { id: string; json: string },
+      plan: CodePositionPlan,
+    ): boolean => {
+      const memory = readCodeSpots(code.json);
+      if (memory === null || zero === null) return false;
+      const known = knownSpotsNue(memory, zero);
+      const home = known[0]!.pose.position;
+      const n = home[0] + plan.offsetNorthM;
+      const e = home[2] + plan.offsetEastM;
+      return known.some(
+        ({ spot, pose }) =>
+          spot.kind !== "current" &&
+          Math.hypot(pose.position[0] - n, pose.position[2] - e) <
+            MOVED_CODE_FLOOR_M,
+      );
+    };
     const inHandDecision =
       level === null
         ? { plan: null, reapplied: false }
-        : decide(level, deps.codes.measurement(), inHandSighting);
+        : adjusted(
+            level,
+            decide(level, deps.codes.measurement(), inHandSighting),
+          );
     const position = inHandDecision.plan;
     // The other stored codes the visit sighted (not measured here): each
     // with its own decision, folded into ITS entry of the code list.
@@ -645,7 +720,7 @@ export function wireCreatorSettle(deps: {
     >();
     for (const c of deps.codes.visitCodes(visit)) {
       if (c.level.id === level?.id || c.measurement !== null) continue;
-      const d = decide(c.level, null, null);
+      const d = adjusted(c.level, decide(c.level, null, null));
       if (d.plan !== null) {
         otherDecisions.set(c.level.id, {
           code: c.level,
@@ -935,6 +1010,7 @@ export function wireCreatorSettle(deps: {
       skip: new Set(),
       excluded: new Set(),
       undone: [],
+      unjudged: new Set(),
       logged: [],
     };
     if (zero === null) return out;
@@ -1062,6 +1138,12 @@ export function wireCreatorSettle(deps: {
     if (result.skipU3) out.skip.add(levelId);
     if (result.decision.kind === "move") {
       out.moves.set(levelId, result.memoryBefore);
+    }
+    if (
+      result.decision.kind === "none" &&
+      result.decision.reason === "not-judged"
+    ) {
+      out.unjudged.add(levelId);
     }
     // An undo is the visit log's boundary, as a move is.
     if (result.decision.kind === "undo") movedInVisit.set(levelId, visit);

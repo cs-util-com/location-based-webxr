@@ -283,6 +283,19 @@ describe("codePositionSentence - the result screen's line (U3)", () => {
     );
   });
 
+  // Why (M6 milestone review #3): the system decides by itself, but a visit
+  // too short to decide must say so, or a poster that really moved goes
+  // unmentioned while the visit keeps correcting through the old spot.
+  it("says when a code seen far off could not be judged, and what to do", () => {
+    expect(
+      codePositionSentence([
+        outcome({ kind: "keep", reason: "far-unjudged", offsetM: 31.4 }, false),
+      ]),
+    ).toBe(
+      "The code was seen about 31 m from its saved spot, but this visit could not tell whether the poster moved: walk with the code in view for a minute or more.",
+    );
+  });
+
   it("says nothing when the position was good already, far (the code-spot rule's), not applied, or not decided", () => {
     expect(
       codePositionSentence([outcome({ kind: "keep", reason: "stored-good" })]),
