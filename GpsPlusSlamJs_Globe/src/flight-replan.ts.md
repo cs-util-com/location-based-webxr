@@ -33,7 +33,7 @@ transition" the owner reported.
     old flight is never evaluated again.
   - `join` is the velocity correction of its replan, or null.
 - `FlightJoin` (module-internal, the type of `Flight.join`) is `{ atMs,
-spanMs, lnAltitudePerMs, axis, radiansPerMs }`.
+spanMs, lnAltitudePerMs, floorM, axis, radiansPerMs }`.
 - `startFlight(ellipsoid, start, target, options, atMs)` creates a flight
   whose path time 0 is at the clock time `atMs`. RangeError for a time that
   is not finite.
@@ -76,6 +76,12 @@ The join moves the CAMERA, not the view:
 - The ground part of dv is a rotation about an axis through the Earth's
   centre.
 - The radial part is a rate of change of the altitude's logarithm.
+- The radial part never takes the camera below `floorM`, the lower of its
+  altitude at the replan and the new landing (unless the path itself is
+  lower there). A replan a few metres above the landing to a place a
+  kilometre away carried the old descent into a nearly level path and went
+  up to 0.31 m under the landing (a property counterexample, 2026-10-08).
+  The floor bends the velocity only where it would otherwise go under.
 - The view is then built from the moved camera with `viewFromCamera`.
 - Moving the view instead, and placing the camera behind it at the corrected
   altitude, slid the camera sideways (found while building CF3).
@@ -160,7 +166,9 @@ Each one is tested.
   pitch blends the start's offset from the law, not the law itself (CF3
   review finding 5: every replan froze the turn).
 - The join ends without a jump in the acceleration, and never outlives its
-  flight (both killed their mutants).
+  flight (both killed their mutants), and never takes the camera below its
+  landing (a nearly level replan low down, swept over three shifts and
+  three moments, sampled 3,000 times; red before the floor).
 - **A replan to the same target and landing leaves the flight unchanged**
   at every moment, sampled every 350 ms and in the last moments: within 5 %
   of the altitude, and ending within 3 %.

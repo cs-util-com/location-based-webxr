@@ -83,6 +83,11 @@ interface FlightJoin {
   /** How long the correction lasts: `joinMs`, or the flight if shorter. */
   readonly spanMs: number;
   readonly lnAltitudePerMs: number;
+  /**
+   * The lowest the correction may take the camera, m: the lower of its
+   * altitude at the replan and the new landing.
+   */
+  readonly floorM: number;
   readonly axis: THREE.Vector3 | null;
   readonly radiansPerMs: number;
 }
@@ -154,7 +159,12 @@ export function flightFrameAt(flight: Flight, nowMs: number): FlightFrame {
     join.axis ? v.clone().applyAxisAngle(join.axis, angle) : v.clone();
   const camera = turn(own.camera);
   const heading = turn(own.heading).projectOnPlane(camera).normalize();
-  const altitudeM = own.altitudeM * Math.exp(join.lnAltitudePerMs * phi);
+  // Never below the replan's floor: the old descent carried into a nearly
+  // level path took the camera up to 0.31 m under its landing (2026-10-08).
+  const altitudeM = Math.max(
+    own.altitudeM * Math.exp(join.lnAltitudePerMs * phi),
+    Math.min(own.altitudeM, join.floorM),
+  );
   const view = viewFromCamera(
     flight.ellipsoid,
     camera,
@@ -238,6 +248,7 @@ function joinFrom(old: Flight, atMs: number, path: FlightPath): FlightJoin {
     // landed camera below its landing (measured up to 1.6 %).
     spanMs: Math.min(FLIGHT_REPLAN.joinMs, path.durationMs),
     lnAltitudePerMs: dRadial / flightAt(path, 0).altitudeM,
+    floorM: Math.min(flightAt(path, 0).altitudeM, path.landingM),
     axis: axis.length() > 1e-15 ? axis.normalize() : null,
     radiansPerMs: ground.length() / p0.length(),
   };

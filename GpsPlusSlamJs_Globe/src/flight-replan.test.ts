@@ -527,6 +527,52 @@ describe("retargetFlight", () => {
     }
   });
 
+  // WHY (a property counterexample, 2026-10-08): a replan a few metres
+  // above the landing to a place a kilometre away carried the old descent
+  // into a nearly level path and took the camera 0.8 mm below its landing
+  // (sampled densely; 1.3 um at the property's 300 samples). The landing
+  // is the lowest the camera may go, so the join must respect it.
+  it("never lets a join take the camera below its landing", () => {
+    const failures: string[] = [];
+    for (const shiftDeg of [0.005, 0.01, 0.05]) {
+      for (const share of [0.95, 0.9685, 0.99]) {
+        const pose = orbitPose(WGS84_ELLIPSOID, { lat: 0, lng: 0 });
+        const cam = obliqueCamera(WGS84_ELLIPSOID, pose, 3_000 * KM, 90);
+        const first = startFlight(
+          WGS84_ELLIPSOID,
+          {
+            pose,
+            distanceM: cam.position.length(),
+            quaternion: cam.quaternion,
+          },
+          pose,
+          { landingM: KM, durationMs: 15_000 },
+          0,
+        );
+        const atMs = share * first.endsAtMs;
+        const second = retargetFlight(
+          first,
+          atMs,
+          orbitPose(WGS84_ELLIPSOID, { lat: shiftDeg, lng: 0 }),
+          { landingM: KM },
+        );
+        const floor =
+          Math.min(flightFrameAt(first, atMs).altitudeM, KM) * (1 - 1e-12);
+        let lowest = Infinity;
+        for (let i = 0; i <= 3_000; i++) {
+          const t = atMs + ((second.endsAtMs - atMs) * i) / 3_000;
+          lowest = Math.min(lowest, flightFrameAt(second, t).altitudeM);
+        }
+        if (lowest < floor) {
+          failures.push(
+            `${shiftDeg} deg at ${share}: ${(lowest - floor).toExponential(2)} m`,
+          );
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
   // WHY: a replan that missed its own end would land somewhere else.
   it("lands exactly at the new target and altitude", () => {
     const replanned = retargetFlight(
