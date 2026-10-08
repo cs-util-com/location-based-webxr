@@ -150,9 +150,11 @@ export interface GlobeSurface {
   /**
    * How much of the clouds the shell draws (0-1); the surface paints the
    * rest into the ground's colour. 0, the default, is the look before.
-   * RangeError outside 0-1.
+   * `flat` (0-1, default 1) fades both forms and the water's cloud mask
+   * by the flat layer's share by altitude (round-2 plan DEC-FR2-5). RangeError
+   * outside 0-1.
    */
-  setCloudShellShare(share: number): void;
+  setCloudShellShare(share: number, flat?: number): void;
   /** The registry sources on screen, for the credits line. */
   activeSources(): GlobeSourceId[];
   dispose(): void;
@@ -442,9 +444,18 @@ export function createGlobeSurface(
     },
     activeSources: () => GLOBE_SOURCES.map((s) => s.id),
     cloudShell,
-    setCloudShellShare(share) {
-      cloudShell.setShare(share);
-      surfaceUniforms.uCloudInSurface.value = 1 - share;
+    setCloudShellShare(share, flat = 1) {
+      for (const [name, v] of [
+        ["share", share],
+        ["flat share", flat],
+      ] as const) {
+        if (!(v >= 0 && v <= 1)) {
+          throw new RangeError(`the ${name} must be in [0, 1], got ${v}`);
+        }
+      }
+      cloudShell.setShare(share * flat);
+      surfaceUniforms.uCloudInSurface.value = (1 - share) * flat;
+      surfaceUniforms.uCloudFlat.value = flat;
     },
     dispose() {
       cloudShell.dispose();

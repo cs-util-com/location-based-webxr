@@ -434,6 +434,7 @@ async function recordFlight(page, untilMs = 120_000) {
           t: performance.now() - t0,
           m: s.altitudeM,
           readout: s.readout,
+          cloudFlat: s.cloudFlat,
           phase: s.phase,
           pin: s.pin?.phase,
           flight: s.pin?.flight?.phase ?? null,
@@ -499,6 +500,14 @@ test("flight=2: a land=1 link flies the continuous flight and lands", async ({
   // WHY (PR #560 review): the distance to the target (DEC-GL4-5) shows
   // while the flight is on its way, as it does for the dive.
   expect(flying.some((s) => /to the target$/.test(s.readout ?? ""))).toBe(true);
+  // WHY (round-2 plan DEC-FR2-5, the owner: the flat cloud layer "still too
+  // visible at 1,000 and 100 km"): full high up, weak low down (the volume
+  // is off here, so it only weakens; its hand-over is the unit tests').
+  const high = flying.filter((s) => s.m > 6_000 * 1000);
+  const low = flying.filter((s) => s.m < 90 * 1000);
+  expect(high.every((s) => s.cloudFlat === 1)).toBe(true);
+  expect(low.length).toBeGreaterThan(0);
+  expect(low.every((s) => Math.abs(s.cloudFlat - 0.3) < 1e-6)).toBe(true);
 });
 
 // WHY (PR #560 review): with the prefetch off there is no data to wait for;

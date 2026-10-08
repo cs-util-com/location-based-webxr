@@ -293,6 +293,26 @@ describe("createGlobeSurface", () => {
     globe.dispose();
   });
 
+  // Why (round-2 plan 2026-10-07-2350 DEC-FR2-5): the flat cloud layer
+  // fades with altitude; both its forms (the paint and the shell) and the
+  // water's cloud mask fade together, never the global cloud opacity (the
+  // volume reads that too).
+  it("fades both of the clouds' forms, and the glint's cloud mask, by a flat share", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const u = globe.surfaceUniforms;
+    expect(u.uCloudFlat.value).toBe(1);
+    globe.setCloudShellShare(0.25, 0.5);
+    expect(globe.cloudShell.share()).toBe(0.125);
+    expect(u.uCloudInSurface.value).toBe(0.375);
+    expect(u.uCloudFlat.value).toBe(0.5);
+    const opacity = u.uCloudOpacity.value;
+    globe.setCloudShellShare(0.25);
+    expect(u.uCloudFlat.value).toBe(1);
+    expect(u.uCloudOpacity.value).toBe(opacity);
+    expect(() => globe.setCloudShellShare(0.25, 1.5)).toThrow(RangeError);
+    globe.dispose();
+  });
+
   // Stream F review, finding 4: the stars' frame left out the tile group's
   // placement, which the sun's light includes, so once phase 5 re-centres
   // the tiles the stars would wheel against the sun. The celestial rotation

@@ -40,7 +40,7 @@ export const GLOBE_SURFACE_TUNING = {
 export const GLOBE_CLOUD_DRIFT_DEG_PER_S = 0.375;
 
 /** Every tile's program is the same one: three shares it by this key. */
-export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v9";
+export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v10";
 
 /** The one uniforms object every tile's shader reads. */
 export interface GlobeSurfaceUniforms {
@@ -94,6 +94,13 @@ export interface GlobeSurfaceUniforms {
    */
   readonly uCloudInSurface: { value: number };
   /**
+   * The flat cloud layer's share by altitude (round-2 plan DEC-FR2-5,
+   * `globe-cloud-flat-fade.ts`), 1 the look before: the water's glint is
+   * masked only by this much of the cloud (`uCloudInSurface` and the shell
+   * already carry it).
+   */
+  readonly uCloudFlat: { value: number };
+  /**
    * The soft cloud shadow on the ground (DEC-G6-4), 0 (none) to 1: the
    * share of the diffuse colour a full cloud on the shell toward the sun
    * takes away.
@@ -142,6 +149,7 @@ export function createGlobeSurfaceUniforms(textures: {
     uCarrierShare: { value: 0 },
     uSunRadiance: { value: new THREE.Vector3(0, 0, 0) },
     uCloudInSurface: { value: 1 },
+    uCloudFlat: { value: 1 },
     uCloudShadow: { value: 0 },
     uCloudShellM: { value: 0 },
   };
@@ -245,6 +253,7 @@ uniform float uSkyShare;
 uniform float uCarrierShare;
 uniform vec3 uSunRadiance;
 uniform float uCloudInSurface;
+uniform float uCloudFlat;
 uniform float uCloudShadow;
 uniform float uCloudShellM;
 const vec3 GLOBE_WARM_LIGHTS = vec3( 1.4, 0.95, 0.5 );
@@ -313,7 +322,7 @@ diffuseColor.rgb = mix( diffuseColor.rgb, globeLuma * vec3( 0.7, 0.88, 1.2 ), uG
 
 /** Water, where no cloud covers it, is smooth: the sun's glint. */
 const FRAGMENT_GLINT = /* glsl */ `
-roughnessFactor = mix( roughnessFactor, uWaterRoughness, globeWater * ( 1.0 - globeCloud ) );`;
+roughnessFactor = mix( roughnessFactor, uWaterRoughness, globeWater * ( 1.0 - globeCloud * uCloudFlat ) );`;
 
 /**
  * The twilight look (DEC-GL4-8 item 3) on a diffuse colour, by the sun's

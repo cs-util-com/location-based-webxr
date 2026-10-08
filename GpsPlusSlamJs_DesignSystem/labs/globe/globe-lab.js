@@ -21,6 +21,7 @@ import {
   createGlobeSurface,
 } from "/globe/globe-surface.js";
 import { CLOUD_VOLUME } from "/globe/globe-cloud-volume.js";
+import { flatCloudShare } from "/globe/globe-cloud-flat-fade.js";
 import { creditsFor } from "/globe/globe-credits.js";
 import { GIBS_ACKNOWLEDGEMENT } from "/globe/globe-sources.js";
 import {
@@ -511,6 +512,13 @@ const PARAMS = {
   // Whose shadow the ground gets (C3): 0 the shell's soft one (as before), 1
   // the volume's, from the same map through the volume's own clouds.
   cloudShadowFrom: { fallback: 0, min: 0, max: 1 },
+  // The flat cloud layer's fade with altitude (round-2 plan 2026-10-07-2350
+  // DEC-FR2-5, `/globe/globe-cloud-flat-fade.js`): 1 on, 0 the look before;
+  // full from `cloudFlatTopKm` up, weakening to `cloudFlatWeak` by 100 km,
+  // then handing over to the volume through its own fade.
+  cloudFlat: { fallback: 1, min: 0, max: 1 },
+  cloudFlatTopKm: { fallback: 5_000, min: 200, max: 50_000 },
+  cloudFlatWeak: { fallback: 0.3, min: 0, max: 1 },
   // The city's data warmed from load when the link names a place (`at=`;
   // the city plan 2026-10-05-0040, K0); 0 waits for the pin's press.
   cityWarm: { fallback: 1, min: 0, max: 1 },
@@ -1931,6 +1939,8 @@ async function start() {
   const volumeView = new THREE.Vector3();
   /** The observer's height over the ellipsoid's image (km), this frame. */
   let observerKm = Number.POSITIVE_INFINITY;
+  /** The flat cloud layer's last share by altitude (DEC-FR2-5), for state(). */
+  let cloudFlatShare = 1;
   let shellThickness = null;
   scene.add(globe.group);
   // The relief (F1): the library's terrain tiles wearing the globe's look,
@@ -2790,13 +2800,30 @@ async function start() {
     // the paint, because each draw is tone-mapped and then blended in
     // display space; the paint mixes before the tone mapping.
     const shellShare = params.cloudShell === 1 && terrain ? bandShare : 0;
-    globe.setCloudShellShare(shellShare);
+    // The flat layer's share by the camera's altitude now (the last
+    // frame's lagged a fast dive by kilometres): it hands over to the volume
+    // where one is drawn, else it only weakens.
+    const volumeOn = Boolean(cloudVolume) && params.cloudVolume > 0;
+    const cameraAltM = globe.tiles.ellipsoid.getPositionElevation(
+      globe.tiles.group.worldToLocal(camera.position.clone()),
+    );
+    const flat =
+      params.cloudFlat === 1 && Number.isFinite(cameraAltM)
+        ? flatCloudShare(Math.max(0, cameraAltM), {
+            ceilingKm: volumeOn ? params.cloudVolumeCeilingKm : 0,
+            fadeKm: volumeOn ? params.cloudVolumeFadeKm : 1,
+            topM: params.cloudFlatTopKm * 1000,
+            weakShare: params.cloudFlatWeak,
+          })
+        : 1;
+    globe.setCloudShellShare(shellShare, flat);
+    cloudFlatShare = flat;
     if (cloudShellHidden) globe.cloudShell.mesh.visible = false;
     // The shell's soft shadow, unless the volume's is chosen (C3).
     globe.surfaceUniforms.uCloudShadow.value =
       params.cloudShadowFrom === 1 && cloudVolume
         ? 0
-        : params.cloudShadow * shellShare;
+        : params.cloudShadow * shellShare * flat;
     status.update(globe.state());
     readoutText = readoutNow();
     readout.offer(readoutText, performance.now());
@@ -3221,6 +3248,7 @@ async function start() {
       // The readout's text as of the last frame, and what the line shows
       // (the line is throttled, so it may lag by up to 250 ms).
       readout: readoutText,
+      cloudFlat: cloudFlatShare,
       readoutShown: readoutLine.textContent,
       altitudeM: globe.tiles.ellipsoid.getPositionElevation(
         globe.tiles.group.worldToLocal(camera.position.clone()),

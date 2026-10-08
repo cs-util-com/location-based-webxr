@@ -96,6 +96,7 @@ describe("patchGlobeSurfaceShader", () => {
       "uCloudRelief",
       "uTwilight",
       "uSunWorld",
+      "uCloudFlat",
     ]) {
       expect(shader.uniforms[name]).toBe(
         uniforms[name as keyof typeof uniforms],
@@ -109,6 +110,8 @@ describe("patchGlobeSurfaceShader", () => {
     expect(at("#include <roughnessmap_fragment>")).toBeLessThan(
       at("uWaterRoughness, globeWater"),
     );
+    // The glint's cloud mask fades with the flat layer (DEC-FR2-5).
+    expect(fs).toContain("globeWater * ( 1.0 - globeCloud * uCloudFlat )");
     expect(at("#include <emissivemap_fragment>")).toBeLessThan(
       at("totalEmissiveRadiance += globeNight"),
     );
@@ -506,6 +509,6 @@ describe("the clouds in the surface or on their own shell", () => {
   });
 
   it("keeps the program key in step with the shader", () => {
-    expect(GLOBE_SURFACE_CACHE_KEY).toBe("gps-plus-slam-globe-surface-v9");
+    expect(GLOBE_SURFACE_CACHE_KEY).toBe("gps-plus-slam-globe-surface-v10");
   });
 });
