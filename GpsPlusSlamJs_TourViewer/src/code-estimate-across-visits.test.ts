@@ -80,7 +80,7 @@
  *   `qr-anchor-mint.start-at-code.test.ts`), and `accumulatorEstimate`
  *   below passes the visit's end alignment as that. Since D28 was revised
  *   the same day the Recorder passes the FIRST MATURE alignment (80 m of
- *   GPS extent) at or after the code's last sighting, and the end
+ *   GPS extent then; 40 m since D34, 2026-10-04) at or after the code's last sighting, and the end
  *   alignment only while the walk has not matured
  *   (`qr-mint-alignment-tracker`), so this arm is the shipped path for a
  *   visit whose GPS extent stays under 80 m after its last look, and not

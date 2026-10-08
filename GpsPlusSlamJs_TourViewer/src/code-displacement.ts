@@ -348,7 +348,8 @@ export interface CodeMoveRule {
  * The VIEWER's floor (`CODE_MOVE_RULE.floorM`, judged against it ALONE since
  * the owner's decision of 2026-10-02). Until D26 the authoring prompt
  * shared it; since D26 (2026-10-02) the prompt has its own 15 m trigger
- * (`MOVE_PROMPT_FLOOR_M`, `code-move-prompt.ts`): the prompt only ASKS the
+ * (`MOVE_PROMPT_FLOOR_M`, the former `code-move-prompt.ts`; removed in code
+ * book plan M6, whose automatic rule is `code-spots.ts`): the prompt only ASKED the
  * author, the viewer acts on its own.
  *
  * Parameters it rests on (the viewer's half, real recordings, results doc

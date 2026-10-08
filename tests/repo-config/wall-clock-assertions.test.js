@@ -102,10 +102,6 @@ const ALLOWLIST = new Map([
     'MIGRATED (M2): the absolute bound is replaced by the GAP between the two callers settle times. A shared budget releases both on one deadline (gap ~0); a per-caller budget settles the second ~200 ms later. Scheduler lateness moves both stamps equally and cancels.',
   ],
   [
-    'GpsPlusSlamJs_AppFramework/src/state/persistence-middleware.performance.test.ts',
-    'MIGRATED (M3): the ratio now accumulates a 200 ms measurement window instead of dividing by a ~1 ms one, which is what let a bound of 4 be observed at 9.53. Separately filed: the test does not appear to exercise the queue at all.',
-  ],
-  [
     'GpsPlusSlamJs_OsmDemo/src/refresh-payload.test.ts',
     'MIGRATED (M3): the zero-margin comparison and the small-denominator ratio are replaced by a payload-size assertion. The one clock left is a LOWER bound at the cap, which contention can only push away from failing.',
   ],

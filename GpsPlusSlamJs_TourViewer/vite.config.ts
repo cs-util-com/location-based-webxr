@@ -1,7 +1,7 @@
-import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vite';
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "vite";
 
-import { createBuildMetadataDefine } from '../GpsPlusSlamJs_AppFramework/scripts/build-metadata-define.mjs';
+import { createBuildMetadataDefine } from "../GpsPlusSlamJs_AppFramework/scripts/build-metadata-define.mjs";
 
 // Tour-viewer Vite config. AppFramework resolves through the pnpm workspace
 // symlink. Port allocation lives in ../docs/dev-server-ports.md — this
@@ -18,6 +18,17 @@ export default defineConfig({
   // (commit, versions, build time), read by the framework's
   // `utils/build-info`. The same block as the Recorder's.
   define: createBuildMetadataDefine(
-    fileURLToPath(new URL('.', import.meta.url)),
+    fileURLToPath(new URL(".", import.meta.url)),
   ),
+  build: {
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL("index.html", import.meta.url)),
+        // On-device measurement page, linked from nothing
+        // (`write-probe.html.md`). An entry so that it is built and therefore
+        // reachable on a deployed branch preview; nothing imports it.
+        writeProbe: fileURLToPath(new URL("write-probe.html", import.meta.url)),
+      },
+    },
+  },
 });

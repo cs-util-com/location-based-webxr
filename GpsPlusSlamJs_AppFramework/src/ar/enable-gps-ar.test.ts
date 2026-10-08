@@ -908,4 +908,47 @@ describe('createEnableGpsArController — session end (system or external)', () 
     expect(result.ok).toBe(false);
     expect(controller.getState().status).toBe('error');
   });
+
+  /**
+   * Why this test matters (Tour Viewer M5a milestone review #3): the same
+   * rollback must not tell the APP its session ended - enable() reports a
+   * failure, so the app never had a session. Chained regardless, the Tour
+   * Viewer ran its whole session-end teardown and ended a creator visit that
+   * never began (initAR's own failed start had the same defect, fixed in
+   * webxr-session.ts).
+   */
+  it('does not call the app onSessionEnd when the rollback ends a session enable() reports as failed', async () => {
+    const deps = makeDeps({
+      startGpsWatch: vi.fn(() => {
+        throw new Error('watch blew up');
+      }),
+    });
+    let capturedEnd: ((info: { requestedByApp: boolean }) => void) | undefined;
+    const captureInitAR: EnableGpsArDeps['initAR'] = (
+      _c,
+      _i,
+      _f,
+      callbacks
+    ) => {
+      capturedEnd = callbacks?.onSessionEnd;
+      return Promise.resolve();
+    };
+    deps.initAR = vi.fn(captureInitAR);
+    deps.endARSession = vi.fn(() => {
+      capturedEnd?.({ requestedByApp: true });
+      return Promise.resolve();
+    });
+    const appOnSessionEnd = vi.fn();
+    const controller = createEnableGpsArController(deps);
+
+    const result = await controller.enable({
+      container: fakeContainer(),
+      onGpsPosition: vi.fn(),
+      callbacks: { onSessionEnd: appOnSessionEnd },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(deps.endARSession).toHaveBeenCalledTimes(1);
+    expect(appOnSessionEnd).not.toHaveBeenCalled();
+  });
 });

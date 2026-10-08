@@ -16,6 +16,7 @@ import {
   tourManifestEntryOf,
 } from './tour-archive';
 import {
+  createEmptyTourManifest,
   parseTourManifest,
   TourManifestValidationError,
 } from './tour-manifest';
@@ -35,6 +36,23 @@ describe('tourContentEntryName', () => {
   ])('rejects an unsafe id or extension (%s, %s)', (id, ext) => {
     expect(() => tourContentEntryName(id, ext)).toThrow(TypeError);
   });
+
+  // Why (tour kit plan K0, review D12): a tour's content must stay inert,
+  // so only the media allowlist names a content file - before K0 any 1-5
+  // characters passed, `svg` and `html` included.
+  it.each(['svg', 'html', 'js', 'xml', 'gltf', 'exe'])(
+    'refuses a content type outside the media allowlist (%s)',
+    (ext) => {
+      expect(() => tourContentEntryName('ok', ext)).toThrow(TypeError);
+    }
+  );
+
+  it.each(['png', 'webp', 'glb', 'mp3', 'mp4'])(
+    'names allowlisted media (%s)',
+    (ext) => {
+      expect(tourContentEntryName('ok', ext)).toBe(`content/ok.${ext}`);
+    }
+  );
 });
 
 describe('tourManifestEntryOf', () => {
@@ -76,7 +94,8 @@ describe('readTourManifestFromEntries', () => {
         },
         parseTourManifest
       )
-    ).resolves.toEqual({ version: 1, objects: [] });
+      // A version 1 file is read MIGRATED to version 2 (tour kit plan K1).
+    ).resolves.toEqual(createEmptyTourManifest());
   });
 
   it('REJECTS a manifest that exists but is broken - never a silently empty tour', async () => {
