@@ -24,6 +24,7 @@ import { CLOUD_VOLUME } from "/globe/globe-cloud-volume.js";
 import { flatCloudShare } from "/globe/globe-cloud-flat-fade.js";
 import {
   createDustField,
+  dustFade,
   dustShare,
   wrapDust,
 } from "/globe/globe-space-dust.js";
@@ -1975,10 +1976,14 @@ async function start() {
         "position",
         new THREE.BufferAttribute(positions, 3),
       );
+      // Each point's colour: the dust's tint times its fade at the box's
+      // faces (additive, so darker is fainter: a wrap never pops in).
+      const colours = new Float32Array(positions.length);
+      geometry.setAttribute("color", new THREE.BufferAttribute(colours, 3));
       const points = new THREE.Points(
         geometry,
         new THREE.PointsMaterial({
-          color: 0xdde6ff,
+          vertexColors: true,
           size: 1.5,
           sizeAttenuation: false,
           transparent: true,
@@ -1994,12 +1999,22 @@ async function start() {
       holder.matrixAutoUpdate = false;
       holder.add(points);
       globe.group.add(holder);
-      dust = { holder, points, positions };
+      const fade = new Float32Array(positions.length / 3);
+      dust = { holder, points, positions, colours, fade };
     }
     dust.points.visible = dustOpacity > 0;
     if (!dust.points.visible) return;
-    wrapDust(dust.positions, ecef.toArray(), altitudeM);
+    const at = ecef.toArray();
+    wrapDust(dust.positions, at, altitudeM);
     dust.points.geometry.attributes.position.needsUpdate = true;
+    dustFade(dust.positions, at, altitudeM, dust.fade);
+    for (let i = 0; i < dust.fade.length; i++) {
+      const f = dust.fade[i];
+      dust.colours[3 * i] = 0.87 * f;
+      dust.colours[3 * i + 1] = 0.9 * f;
+      dust.colours[3 * i + 2] = f;
+    }
+    dust.points.geometry.attributes.color.needsUpdate = true;
     dust.points.material.opacity = dustOpacity;
     dust.holder.matrix.copy(globe.tiles.group.matrix);
     dust.holder.matrixWorldNeedsUpdate = true;

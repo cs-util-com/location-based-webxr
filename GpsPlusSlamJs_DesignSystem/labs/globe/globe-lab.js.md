@@ -640,7 +640,8 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   that copies the tiles' placement each frame (a `flight=2` flight
   recentres the world frame), wrapped around the camera at its altitude
   just before the scene is drawn, additive, opacity full from 2,000 km and
-  gone by 300 km. Built on the first frame that asks; never picked or ray
+  gone by 300 km, each point coloured by its fade at the box's faces
+  (`dustFade`), so a wrap never pops in. Built on the first frame that asks; never picked or ray
   cast. The state's `dust` (`{ count, opacity, shown }`) reports it
   (`globe-dust.smoke.spec.mjs`).
   `cloudShadowFrom` (C3) picks the ground's cloud shadow:

@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   GLOBE_SPACE_DUST,
   createDustField,
+  dustFade,
   dustShare,
   wrapDust,
 } from "./globe-space-dust.js";
@@ -92,6 +93,67 @@ describe("the space dust", () => {
     expect(points).toEqual(before);
     expect(() => createDustField(CAM, 1_000 * KM, 0)).toThrow(RangeError);
     expect(() => createDustField(CAM, -1, 10)).toThrow(RangeError);
+  });
+
+  // WHY (R4/R5 milestone review): a point that leaves the box comes back
+  // at the opposite face, often towards the Earth and in view; at full
+  // brightness it popped in (about 3 % of the points a frame on a fast
+  // descent at 10 Hz). Each point fades to nothing at the box's faces, so
+  // a wrap happens where it cannot be seen.
+  it("fades each point out at the box's faces, so a wrap never pops", () => {
+    const half = GLOBE_SPACE_DUST.boxShare * 1_000 * KM;
+    const points = new Float32Array([
+      CAM[0],
+      0,
+      0, // the centre
+      CAM[0] + half * 0.999,
+      0,
+      0, // at a face
+      CAM[0],
+      half * 0.5,
+      -half * 0.5, // halfway
+      CAM[0] - half * 0.999,
+      half * 0.999,
+      0, // at an edge
+    ]);
+    const fade = new Float32Array(4);
+    dustFade(points, CAM, 1_000 * KM, fade);
+    expect(fade[0]).toBe(1);
+    expect(fade[1]).toBeLessThan(0.01);
+    expect(fade[2]).toBe(1);
+    expect(fade[3]).toBeLessThan(0.01);
+    // Through a whole descent at 5 % a frame (a dive is about 0.11 e-folds a
+    // second: 1.1 % at 10 Hz, 2.3 % at 5 Hz; the 0.25 band of the first
+    // version popped from about 3.4 %) no point that wraps is visible on either side of its wrap:
+    // as last drawn (the previous frame's box) and as drawn next.
+    const field = createDustField(CAM, 10_000 * KM, 2_000);
+    let shown = new Float32Array(2_000);
+    dustFade(field, CAM, 10_000 * KM, shown);
+    const next = new Float32Array(2_000);
+    const popped: string[] = [];
+    let wraps = 0;
+    for (let h = 10_000 * KM * 0.95; h > 300 * KM; h *= 0.95) {
+      const old = Float32Array.from(field);
+      wrapDust(field, CAM, h);
+      dustFade(field, CAM, h, next);
+      for (let i = 0; i < 2_000; i++) {
+        const moved = [0, 1, 2].some(
+          (k) => Math.abs((field[3 * i + k] ?? 0) - (old[3 * i + k] ?? 0)) > 1,
+        );
+        if (!moved) continue;
+        wraps += 1;
+        const was = shown[i] ?? 0;
+        const is = next[i] ?? 0;
+        if (was >= 0.05 || is >= 0.05) {
+          popped.push(
+            `${(h / KM).toFixed(0)} km: ${was.toFixed(2)} -> ${is.toFixed(2)}`,
+          );
+        }
+      }
+      shown = Float32Array.from(next);
+    }
+    expect(wraps).toBeGreaterThan(100);
+    expect(popped).toEqual([]);
   });
 
   it("is full high up and gone before the sky", () => {

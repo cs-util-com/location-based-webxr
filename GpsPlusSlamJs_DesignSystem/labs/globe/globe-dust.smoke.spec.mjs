@@ -13,6 +13,21 @@ const BASE =
 // Level at 8,000 km: the Earth below, space above, where the dust shows.
 const HIGH = "view=46.9,7.4,8000,0,0";
 const LOW = "view=46.9,7.4,150,0,-30";
+// Straight down from 10,000 km, the flight's own view: the Earth fills
+// the middle, and the dust is drawn over its lit face.
+const DOWN = "view=46.9,7.4,10000,0,-90";
+
+/** The frame's mean luminance (levels). */
+async function meanLevel(page) {
+  const stats = await page.evaluate(() =>
+    window.__globeLab.regionStats({ cx: 0.5, cy: 0.5, rPx: 0 }, 255),
+  );
+  const size = await page.evaluate(() => {
+    const c = document.querySelector("canvas");
+    return c.width * c.height;
+  });
+  return stats.outsideSum / size;
+}
 
 /** Pixels brighter than 60 levels over the whole frame. */
 async function brightPixels(page) {
@@ -56,6 +71,14 @@ test("the space dust shows high up, is gone low down, and is off by default", as
   const onBright = await brightPixels(page);
   const onMs = await frameMs(page);
 
+  // Over the Earth (logged for the owner's judgement, not asserted).
+  await applyHash(page, `${BASE}&dust=1&${DOWN}`);
+  await page.waitForFunction(() => window.__globeLab.state().dust.shown);
+  const downOn = await meanLevel(page);
+  await applyHash(page, `${BASE}&dust=0&${DOWN}`);
+  await page.waitForFunction(() => !window.__globeLab.state().dust.shown);
+  const downOff = await meanLevel(page);
+
   await applyHash(page, `${BASE}&dust=1&${LOW}`);
   await page.waitForFunction(
     () => window.__globeLab.state().dust.shown === false,
@@ -64,6 +87,9 @@ test("the space dust shows high up, is gone low down, and is off by default", as
 
   console.log(
     `dust: off ${offBright} bright px (${offMs.toFixed(1)} ms/frame), on ${onBright} (${onMs.toFixed(1)} ms/frame), ${high.count} points; opacity ${high.opacity} high, ${low.opacity} at 150 km`,
+  );
+  console.log(
+    `dust over the Earth from 10,000 km: mean level ${downOff.toFixed(2)} off, ${downOn.toFixed(2)} on`,
   );
   expect(errors).toEqual([]);
   expect(off).toEqual({ count: 0, opacity: 0, shown: false });

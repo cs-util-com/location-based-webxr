@@ -22,6 +22,10 @@ whether it looks good".
   (half size `boxShare` x the altitude): a point that left it through a face
   comes back through the opposite one; a point inside stays. In place. A
   non-finite camera or a non-positive altitude leaves the points alone.
+- `dustFade(points, camera, altitudeM, out)`: each point's brightness by
+  its place in the box, into `out` (one per point): 1 inside, fading to 0 at
+  the faces over `faceFadeShare` (0.4) of the half size, by the axis
+  nearest a face. Bad input leaves `out` alone.
 - `dustShare(altitudeM)`: the dust's opacity, 1 from `fullM` up, 0 from
   `goneM` down, a smoothstep in the altitude's logarithm between (0 for a
   non-number).
@@ -35,13 +39,23 @@ whether it looks good".
 - As the camera descends, the box shrinks: the points kept are the ones
   nearer the view, so they stream outward from its centre (the classic
   warp look) without any motion of their own.
+- Each point fades out towards the box's faces, so a point that wraps
+  leaves dark and comes back dark: without it about 3 % of the points
+  popped in at full brightness each frame of a fast descent at 10 Hz (R4/R5
+  milestone review). A wrapped point lands about (1 - r) / r of the half
+  size inside the face for a frame that shrinks the box by r: the 0.4 band
+  keeps it under 5 % bright up to about 5 % a frame (a dive is about 0.11
+  e-folds a second, 1.1 % a frame at 10 Hz, 2.3 % at 5 Hz); 0.25 popped
+  from about 3.4 %.
 - They fade out by 300 km, where the sky begins to show, so they never
-  hang in the atmosphere.
+  hang in the atmosphere. DEC-FR2-7 said about 100 km; 300 km is a
+  deliberate change, since below it the points hung in the haze.
 
 ## Invariants
 
 Each one is tested (`globe-space-dust.test.ts`): a repeatable field inside
-its box; a box reaching at least three times as far as the camera's near
+its box; every point dark at the faces, and none that wraps visible on
+either side of the wrap through a descent; a box reaching at least three times as far as the camera's near
 plane (`GLOBE_CLIP.nearFraction` of the altitude; a box of 0.3, the first
 draft, would have been clipped away almost whole); nothing moves while the camera holds still; only points outside
 the box wrap, to the opposite face; every point stays in the box as the

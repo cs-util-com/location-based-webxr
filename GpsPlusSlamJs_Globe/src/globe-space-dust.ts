@@ -26,6 +26,11 @@ export const GLOBE_SPACE_DUST = {
    * point nearer than that.
    */
   boxShare: 1,
+  /**
+   * The share of the box's half size over which a point fades out towards
+   * its faces, so a wrap happens where it cannot be seen.
+   */
+  faceFadeShare: 0.4,
   /** Full above this altitude, m. */
   fullM: 2_000_000,
   /** Gone below this altitude, m (where the sky begins to show). */
@@ -91,6 +96,35 @@ export function wrapDust(
     const offset = (points[i] ?? 0) - c;
     if (offset >= -half && offset < half) continue;
     points[i] = c + offset - size * Math.floor((offset + half) / size);
+  }
+}
+
+/**
+ * Each point's brightness by its place in the box (written into `out`, one
+ * per point): 1 inside, fading to 0 at the box's faces over `faceFadeShare`
+ * of its half size, by the axis nearest a face. A point that wraps leaves
+ * at one face and comes back at the opposite one, both dark, so it never
+ * pops in. A non-finite camera or an altitude that is not a positive
+ * number leaves `out` as it is.
+ */
+export function dustFade(
+  points: Float32Array,
+  camera: readonly [number, number, number],
+  altitudeM: number,
+  out: Float32Array,
+): void {
+  if (!(altitudeM > 0 && Number.isFinite(altitudeM))) return;
+  if (!camera.every((c) => Number.isFinite(c))) return;
+  const half = GLOBE_SPACE_DUST.boxShare * altitudeM;
+  const band = GLOBE_SPACE_DUST.faceFadeShare;
+  const n = Math.min(out.length, Math.floor(points.length / 3));
+  for (let i = 0; i < n; i++) {
+    let reach = 0;
+    for (let k = 0; k < 3; k++) {
+      const offset = (points[3 * i + k] ?? 0) - (camera[k] ?? 0);
+      reach = Math.max(reach, Math.abs(offset) / half);
+    }
+    out[i] = smoothstep((1 - reach) / band);
   }
 }
 
