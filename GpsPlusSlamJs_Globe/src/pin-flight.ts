@@ -57,8 +57,10 @@ export const PIN_FLIGHT = Object.freeze({
   safetyCapMs: 60_000,
   /**
    * The hold's pace, before a target (DEC-FR2-9): about the stretch a fix
-   * then sets, so the fix never brakes (swept 0.1-0.2; 0.5 braked by 3x,
-   * 0.1 slowed a stretch below its floor).
+   * then sets, so the pace does not brake at the fix (swept 0.1-0.2; 0.5
+   * braked by 3x). The replan's own path speed can still dip briefly at a
+   * far fix from a low hold (R2 milestone review; the round-2 R1 path
+   * replaces it). It makes the hold slow: about 80 s to 2,000 km.
    */
   coldRate: 0.15,
   /** The rate's lag behind its target, ms (as `flight-pace`'s 800 ms). */
@@ -68,13 +70,15 @@ export const PIN_FLIGHT = Object.freeze({
   /** Samples to find where the path crosses `commitM`. */
   gateSamples: 256,
   /**
-   * DEC-CF-6: before any progress, how long the data is assumed to take, ms
-   * (a cold first visit: round 5 measured 15-90 s for a tile). Swept 20, 30
-   * and 45 s on 2026-10-07: data reporting progress does not care; data that
-   * arrives at once (one big tile) flew without a stop-and-go (0.2) up to
-   * 10, 20 and 30 s respectively, at about 1-2 s more for quick data.
+   * DEC-CF-6: how long the data is assumed to take, ms (a cold first visit:
+   * round 5 measured 15-90 s for a tile). With DEC-FR2-9's floor it is a
+   * schedule: the camera reaches the gate about 1.15 x this after the data
+   * started. 55 s puts that after DEC-CF-5's 60 s cap, so the camera never
+   * waits at the gate (R2 milestone review: 45 s waited about 5.5 s for data
+   * of 55 s or more; swept 35-65 s, 55 s costs about 1 s of landing for data
+   * of 20-30 s, 65 s about 1.5 s).
    */
-  assumedDataMs: 45_000,
+  assumedDataMs: 55_000,
   /** The slowest the high stretch flies while it waits for its data. */
   minRate: 0.05,
   /** The stretch aims to meet the data this much later than predicted. */
@@ -201,7 +205,8 @@ function towardTarget(pin: PinFlight, target: OrbitPose): PinFlight {
   };
   if (flying.phase !== "approaching" || pin.flight) return flying;
   // A press that knows its target (a link) starts at the pace it will
-  // keep: from the cold rate it fell 4x within a second (DEC-FR2-9).
+  // keep: from the old cold rate, 0.5, it fell 4x within a second
+  // (DEC-FR2-9).
   const { stretch } = pace(flying, pin.nowMs);
   const started = { ...flying, paceFloor: stretch };
   return { ...started, rate: targetRate(started, pin.nowMs) };
@@ -285,8 +290,12 @@ export function pressPin(
     paceFloor: 0,
   };
   if (!options.target) return holdOver(base);
-  const flying = towardTarget(base, options.target);
-  return opened({ ...flying, progress: base.progress });
+  const flying = opened({
+    ...towardTarget(base, options.target),
+    progress: base.progress,
+  });
+  // Data already in: nothing to pace, so it starts at full pace.
+  return flying.phase === "descending" ? { ...flying, rate: 1 } : flying;
 }
 
 /** The device's fix (or a link's place) arrives: fly on to it. */
@@ -369,9 +378,9 @@ export function pinTouch(pin: PinFlight, nowMs: number): PinFlight {
  */
 function dataLeftMs(pin: PinFlight, nowMs: number): number {
   const since = Math.max(nowMs - pin.dataStartMs, 1);
-  // Overdue data with no progress is assumed to need half again as long
-  // as it has taken: a shrinking guess sped the camera at a gate it then
-  // had to stop at.
+  // Overdue data is assumed to need half again as long as it has taken.
+  // With the floor this can no longer slow the camera; it only keeps the
+  // stretch from rising for data that is already late.
   return Math.max(PIN_FLIGHT.assumedDataMs - since, since / 2);
 }
 
@@ -388,7 +397,11 @@ function pace(
   pin: PinFlight,
   nowMs: number,
 ): { readonly stretch: number; readonly ease: number } {
-  if (pin.phase === "descending") return { stretch: 1, ease: 1 };
+  // Descending, or a failed hold (nothing left to wait for: the slow hold
+  // crept on under the failure's text, R2 milestone review): full pace.
+  if (pin.phase === "descending" || pin.phase === "failed") {
+    return { stretch: 1, ease: 1 };
+  }
   if (pin.phase !== "approaching") {
     return { stretch: PIN_FLIGHT.coldRate, ease: 1 };
   }

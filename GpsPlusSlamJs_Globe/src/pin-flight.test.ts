@@ -165,8 +165,9 @@ describe("the pin's flight", () => {
     expect(drift).toBeLessThan(600 * KM);
     // And it moves from the press: no hovering in place. The hold is slow
     // by design (DEC-FR2-9: its pace is about the stretch a fix then sets,
-    // 0.15, so the fix never brakes); 10 s in it is clearly lower.
-    expect(samples[600]?.h ?? Infinity).toBeLessThan(0.95 * 10_100 * KM);
+    // 0.15, so the fix never brakes); 10 s in it is clearly lower (measured
+    // about 15 %).
+    expect(samples[600]?.h ?? Infinity).toBeLessThan(0.9 * 10_100 * KM);
   });
 
   // WHY (DEC-CF-3b): the data is guaranteed time to load: the camera does
@@ -493,10 +494,10 @@ describe("the pin's flight, CF3 milestone review", () => {
     }
   });
 
-  // WHY (DEC-CF-6's limit): data that reports no progress until it is all
-  // in (one step) cannot be predicted; the flight then eases into a short
-  // wait at the gate, never below it.
-  it("waits at the gate, never below it, for data that gives no warning", () => {
+  // WHY (DEC-CF-3b): data that reports no progress until it is all in (one
+  // step) cannot be predicted; the camera still never goes below the gate
+  // before it.
+  it("never goes below the gate for data that gives no warning", () => {
     const { pin, samples } = fixAndData(40_000, "step");
     expect(pin.phase).toBe("landed");
     const early = samples.filter((s) => s.t < 41_400);
@@ -616,8 +617,9 @@ describe("the pin's flight, CF3 milestone review", () => {
     const { pin: end, samples } = run(pin, 3 * pathMs);
     expect(end.phase).toBe("landed");
     const landedAt = samples.find((s) => s.phase === "landed")?.t ?? Infinity;
-    // Only the rate's lag from the cold pace at the press is lost.
-    expect(landedAt).toBeLessThan(pathMs + 2 * PIN_FLIGHT.rateLagMs);
+    // Data already in: nothing to pace, so it starts at full pace (the R2
+    // review: it started at the stretch, about 0.13, and eased up).
+    expect(landedAt).toBeLessThan(pathMs + 300);
   });
 
   it("eases into the gate rather than stopping hard", () => {
@@ -740,6 +742,60 @@ describe("the pin's pace never slows while it approaches (round-2 plan DEC-FR2-9
       }
     }
     expect(failures).toEqual([]);
+  });
+
+  // WHY (R2 milestone review): with the floor, a camera paced for data
+  // assumed to take `assumedDataMs` reached the gate before the 60 s cap
+  // and stopped there for about 5.5 s when the data took longer; paced for
+  // the cap, it never waits at the gate for data within it, and later data
+  // is released by the cap itself (DEC-CF-5).
+  it("never waits at the gate, whatever the data takes", () => {
+    const failures: string[] = [];
+    for (const startKm of [65_000, 43_600, 10_100]) {
+      for (const [name, profile] of Object.entries(profiles)) {
+        for (const dataS of [20, 45, 55, 60, 90]) {
+          const pin = pressPin(
+            WGS84_ELLIPSOID,
+            0,
+            cameraOver({ lat: 30, lng: 15 }, startKm * KM),
+            { target: bernPose, landingM: 2 * KM, progress: 0 },
+          );
+          let waited = 0;
+          run(pin, 150_000, (t, p) => {
+            if (
+              p.phase === "approaching" &&
+              p.gateClockMs !== null &&
+              p.gateClockMs - p.clockMs < 50
+            ) {
+              waited += DT;
+            }
+            return pinProgress(p, t, profile(t / (dataS * 1000)));
+          });
+          if (waited > 200) {
+            failures.push(
+              `${startKm} km, ${name}, ${dataS} s: waited ${(waited / 1000).toFixed(1)} s`,
+            );
+          }
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  // WHY (R2 milestone review): after a failure nothing is left to wait for;
+  // the slow hold (0.15) crept on for about 90 s under the failure's text.
+  it("finishes a failed hold at full pace", () => {
+    const pin = pressPin(
+      WGS84_ELLIPSOID,
+      0,
+      cameraOver(NEW_YORK, 10_100 * KM),
+      { target: null, landingM: 2 * KM, progress: 0 },
+    );
+    const { samples } = run(pin, 30_000, (t, p) =>
+      t >= 2_000 && p.phase === "holding" ? pinFailed(p, t) : p,
+    );
+    const at25 = samples.find((x) => x.t >= 25_000)?.h ?? Infinity;
+    expect(at25).toBeLessThan(PIN_FLIGHT.holdM * 1.01);
   });
 
   // WHY (DEC-FR2-9): the pin's own press holds until the fix; the hold's

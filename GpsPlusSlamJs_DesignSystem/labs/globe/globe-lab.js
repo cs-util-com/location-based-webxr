@@ -1261,6 +1261,7 @@ function bindPin({
   diveFloorM = () => 0,
   onLocated = () => {},
   ecefCamera,
+  placeCameraEcef = () => {},
   setFrameTarget = () => {},
 }) {
   let phase = "idle";
@@ -1395,6 +1396,8 @@ function bindPin({
           surfaceRadiusAlong(ellipsoid, direction) + fromAltitudeM,
         ),
       );
+      // Placed there at once, so no frame shows the intro's camera first.
+      placeCameraEcef(start.position, start.quaternion);
     }
     const now = performance.now();
     flight.flyPin(
@@ -2391,6 +2394,7 @@ async function start() {
     ellipsoid: globe.tiles.ellipsoid,
     diveFloorM,
     ecefCamera,
+    placeCameraEcef,
     setFrameTarget,
     // The relief's detail colour over the target's region, built while
     // the dive runs.

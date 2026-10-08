@@ -44,14 +44,12 @@ The owner's decisions that this module puts into practice:
     rate the clock actually runs at (sized in flight time it braked for
     data that was on time; sized by the target rate alone, a camera still
     fast met a small zone and stopped at the clamp).
-  - Swept on 2026-10-07 (data over 2-60 s, fix at 0, 1.5 and 5 s): data
-    that reports progress flies without a wait from 2 to 60 s (no
-    stop-and-go at 0.3; at 0.1-0.2 only 45-60 s of data, a mild slow-then-
-    faster, worst 0.89 of the median, where the 60 s cap opens the gate
-    first); data that arrives all at once (one big tile) cannot be
-    predicted beyond the assumption: no stop-and-go at 0.2 up to 30 s with
-    45 s assumed (10 and 20 s with 20 and 30 s assumed), an eased wait
-    beyond. The guarantee held in every case.
+  - With DEC-FR2-9's floor, `assumedDataMs` is a schedule: the camera
+    reaches the gate about 1.15 x it after the data started. At 55 s that
+    is after the 60 s cap, so it never waits at the gate, whatever the data
+    takes (tested over four progress shapes, 20-90 s, from 65,000, 43,600
+    and 10,100 km); later data is released by the cap. The R2 milestone
+    review measured 45 s waiting about 5.5 s for data of 55 s or more.
 - **DEC-CF-5.** `safetyCapMs` (60 s) after the press, the gate opens
   regardless.
 - **Cancelling.** A touch cancels in every moving phase, a failed hold
@@ -120,8 +118,13 @@ The owner's decisions that this module puts into practice:
     s of data, from 43,600 and 65,000 km). The cost: steady data lands a
     few seconds later (24 s instead of 20 s at 10 s of data);
   - the hold's pace is about the stretch a fix then sets (0.15; swept
-    0.1-0.2), so a fix during the hold never brakes; 0.5 braked by about
-    3x.
+    0.1-0.2), so the pace does not brake at the fix (0.5 braked by about
+    3x). The camera can still dip briefly at a far fix from a low hold:
+    the replan's own path speed (from 10,100 km, Tokyo and Sydney 0.57-0.85
+    of the speed before; R2 milestone review), left to the round-2 R1 path.
+    The hold is slow: about 80 s to 2,000 km; a failed hold finishes at full
+    pace;
+  - a press whose data is already in starts at full pace.
 - The gate is the flight time where the path first comes down through
   `commitM` from above (a 256-sample scan, then bisection), or none.
 - Not `flight-pace`'s `stepPace`, which the plan's CF3 named: it paces
@@ -140,8 +143,8 @@ Each one is tested, simulated at 60 Hz on the camera.
   ready (also a property over random presses, targets, landings, fix times
   and data, steady or all at once: `pin-flight.property.test.ts`).
 - Data over 15, 30 and 45 s (steady) is met at the gate without a wait (no
-  speed under 10 % of the median, no stop-and-go at 0.2); data all at once
-  after 40 s waits at the gate, never below it.
+  speed under 10 % of the median, no stop-and-go at 0.2); no data shape
+  over 20-90 s waits at the gate.
 - After 60 s it goes on regardless and lands.
 - **The flight is continuous when the fix and the data come during it.**
   - The fix can arrive during the hold, from a hold over New York, for Bern,

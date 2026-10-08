@@ -469,10 +469,8 @@ test("flight=2: a land=1 link flies the continuous flight and lands", async ({
   expect(startAt).toBeGreaterThanOrEqual(0);
   const samples = all.slice(startAt);
   const flying = samples.filter((s) => s.phase !== "landed");
-  // The flight's first sample can still read the camera the intro placed
-  // (the pin flight moves it on its first frame): the start is the highest
-  // of the first few.
-  const startKm = Math.max(...samples.slice(0, 5).map((s) => s.m)) / 1000;
+  // The camera is placed there at once: the flight's first sample is out.
+  const startKm = samples[0].m / 1000;
   const lowestKm = Math.min(...flying.map((s) => s.m)) / 1000;
   const phases = [...new Set(samples.map((s) => s.flight))];
   const st = await page.evaluate(() => window.__globeLab.state());
