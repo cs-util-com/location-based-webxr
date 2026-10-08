@@ -248,7 +248,7 @@ function joinFrom(old: Flight, atMs: number, path: FlightPath): FlightJoin {
     // landed camera below its landing (measured up to 1.6 %).
     spanMs: Math.min(FLIGHT_REPLAN.joinMs, path.durationMs),
     lnAltitudePerMs: dRadial / flightAt(path, 0).altitudeM,
-    floorM: Math.min(flightAt(path, 0).altitudeM, path.landingM),
+    floorM: Math.min(path.landingM, old.path.landingM),
     axis: axis.length() > 1e-15 ? axis.normalize() : null,
     radiansPerMs: ground.length() / p0.length(),
   };

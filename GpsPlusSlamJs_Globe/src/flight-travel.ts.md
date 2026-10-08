@@ -80,9 +80,13 @@ towards the Earth's centre first, then bending".
     the altitude; of one from 500 km, 0.11-0.26 %, and 1.43 % for a replan at
     8 km, inside the 1.5 s velocity join, gone when it ends: filed). A turn eased over a window from the
     start reshaped the rest at every replan (measured while building R1).
-- **A climb** (a landing raised over the camera) eases its residual over
-  its whole path with a smoothstep: front-loaded, its sideways motion came
-  at its lowest altitude.
+- **A climb** (a landing raised over the camera) spreads its residual
+  evenly over its whole path (linear in sigma): front-loaded, its sideways
+  motion came at its lowest altitude; a smoothstep, whose slope is 0 at the
+  start, left straight up and turned sideways within about a millisecond, a
+  corner a replan's join could not hide (14 of 138 climb replans jumped up
+  to 28 % in velocity; R4/R5 milestone review, 2026-10-08). Linear has no
+  corner at the start, and the clock's settle brakes its end.
 - **The view.**
   - Above the bend: straight down (the turn the owner asked for first).
   - Below it, descending: the camera's actual direction of travel, the

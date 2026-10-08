@@ -333,17 +333,14 @@ export function planTravel(
   };
   const p = FLIGHT_TRAVEL.turnPower;
   // q(sigma): the share of the residual still to fly, and its slope. A
-  // climb (a landing raised over the camera) eases it over its whole path
-  // instead: front-loaded, its sideways motion came at its lowest altitude.
+  // climb (a landing raised over the camera) spreads it evenly over its
+  // whole path instead: front-loaded, its sideways motion came at its lowest
+  // altitude; a smoothstep left straight up and turned within a millisecond.
   const q = (sigma: number) =>
-    dw > 0
-      ? 1 - smoothstep(sigma)
-      : sigma >= window
-        ? 0
-        : (1 - sigma / window) ** p;
+    dw > 0 ? 1 - sigma : sigma >= window ? 0 : (1 - sigma / window) ** p;
   const qSlope = (sigma: number) =>
     dw > 0
-      ? -6 * sigma * (1 - sigma)
+      ? -1
       : sigma >= window
         ? 0
         : (-p * (1 - sigma / window) ** (p - 1)) / window;

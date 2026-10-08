@@ -528,9 +528,10 @@ describe("retargetFlight", () => {
   });
 
   // WHY (a property counterexample, 2026-10-08): a replan a few metres
-  // above the landing to a place a kilometre away carried the old descent
-  // into a nearly level path and took the camera 0.8 mm below its landing
-  // (sampled densely; 1.3 um at the property's 300 samples). The landing
+  // above the landing to a place 100 m to 10 km away, in the last few
+  // percent of a flight, carried the old descent into a nearly level path:
+  // up to 0.65 m under a 1 km landing and 1.8 m under a 5 km one (1.3 um
+  // at the property's 300 samples; R4/R5 milestone review). The landing
   // is the lowest the camera may go, so the join must respect it.
   it("never lets a join take the camera below its landing", () => {
     const failures: string[] = [];
@@ -571,6 +572,47 @@ describe("retargetFlight", () => {
       }
     }
     expect(failures).toEqual([]);
+  });
+
+  // WHY (R4/R5 milestone review): a landing raised over the camera (a
+  // late height tile over mountains) is a climb replan. A join floor at
+  // the replan's own altitude stopped the camera's descent dead there
+  // (radial velocity -0.457 to 0 m/ms), a jump of the whole speed.
+  it("joins a climb to a raised landing without a jump in the velocity", () => {
+    const pose = orbitPose(WGS84_ELLIPSOID, BERN);
+    const cam = obliqueCamera(WGS84_ELLIPSOID, pose, 40_000 * KM, 90);
+    const first = startFlight(
+      WGS84_ELLIPSOID,
+      { pose, distanceM: cam.position.length(), quaternion: cam.quaternion },
+      orbitPose(WGS84_ELLIPSOID, ZURICH),
+      { landingM: KM, durationMs: 15_000 },
+      0,
+    );
+    for (const share of [0.85, 0.9, 0.95]) {
+      const atMs = share * first.endsAtMs;
+      const second = retargetFlight(
+        first,
+        atMs,
+        orbitPose(WGS84_ELLIPSOID, {
+          lat: ZURICH.lat + 0.5,
+          lng: ZURICH.lng,
+        }),
+        { landingM: 1.5 * KM },
+      );
+      const h = 0.25;
+      const p = flightCameraAt(first, atMs).position;
+      const before = p
+        .clone()
+        .sub(flightCameraAt(first, atMs - h).position)
+        .divideScalar(h);
+      const after = flightCameraAt(second, atMs + h)
+        .position.sub(p)
+        .divideScalar(h);
+      expect(
+        after.clone().sub(before).length() / before.length(),
+        `at ${share}`,
+      ).toBeLessThan(0.05);
+    }
   });
 
   // WHY: a replan that missed its own end would land somewhere else.

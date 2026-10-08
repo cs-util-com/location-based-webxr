@@ -76,12 +76,17 @@ The join moves the CAMERA, not the view:
 - The ground part of dv is a rotation about an axis through the Earth's
   centre.
 - The radial part is a rate of change of the altitude's logarithm.
-- The radial part never takes the camera below `floorM`, the lower of its
-  altitude at the replan and the new landing (unless the path itself is
-  lower there). A replan a few metres above the landing to a place a
-  kilometre away carried the old descent into a nearly level path and went
-  up to 0.31 m under the landing (a property counterexample, 2026-10-08).
-  The floor bends the velocity only where it would otherwise go under.
+- The radial part never takes the camera below `floorM`, the lower of the
+  old and the new landing (unless the path itself is lower there). A
+  replan in the last few percent of a flight (shares 0.97-0.995), to a
+  place 100 m to 10 km away, carried the old descent into a nearly level
+  path and went up to 0.65 m under a 1 km landing and 1.8 m under a 5 km
+  one (a property counterexample, 2026-10-08; measured densely by the R4/R5
+  milestone review). The floor bends the velocity only where it would
+  otherwise go under. Its first version, the lower of the altitude at the
+  replan and the new landing, stopped a climb replan's descent dead (a
+  landing raised over the camera: radial velocity -0.457 to 0 m/ms);
+  between the two landings it never acts on a climb.
 - The view is then built from the moved camera with `viewFromCamera`.
 - Moving the view instead, and placing the camera behind it at the corrected
   altitude, slid the camera sideways (found while building CF3).

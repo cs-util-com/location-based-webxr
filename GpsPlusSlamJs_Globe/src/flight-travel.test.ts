@@ -282,6 +282,34 @@ describe("planTravel", () => {
     }
   });
 
+  // WHY (R4/R5 milestone review, 2026-10-08): a climb eased its residual
+  // with a smoothstep, whose slope is 0 at the start, so every climb left
+  // straight up and turned sideways within about a millisecond: a corner
+  // in the camera's motion that a replan's join could not hide (14 of 138
+  // climb replans jumped up to 28 % in velocity). The direction of travel
+  // (the CF1 measure's two parts) must turn smoothly from the first instant.
+  it("leaves a climb in a smooth direction, with no corner at its start", () => {
+    const climbs = [
+      { name: "a raised landing", h0: 12.6 * KM, h1: 14.7 * KM, arc: 0.0275 },
+      { name: "low and near", h0: 2 * KM, h1: 20 * KM, arc: 0.01 },
+      { name: "a little higher, far", h0: 5 * KM, h1: 6 * KM, arc: 0.3 },
+    ];
+    for (const { name, h0, h1, arc } of climbs) {
+      const curve = planTravel(h0, h1, arc, { landingM: h1 });
+      const direction = (from: number, to: number) => {
+        const a = curve.at(from);
+        const b = curve.at(to);
+        const h = (a.h + b.h) / 2;
+        return Math.atan2(Math.log(b.h / a.h), (R * (b.angle - a.angle)) / h);
+      };
+      for (const share of [1e-5, 1e-4, 1e-3]) {
+        const e = share * curve.length;
+        const turn = Math.abs(direction(0, e) - direction(e, 2 * e)) / DEG;
+        expect(turn, `${name} at ${share}`).toBeLessThan(2);
+      }
+    }
+  });
+
   it("rejects altitudes that are not positive and an arc that is not finite", () => {
     expect(() => planTravel(0, 2 * KM, 1, { landingM: 2 * KM })).toThrow(
       RangeError,
