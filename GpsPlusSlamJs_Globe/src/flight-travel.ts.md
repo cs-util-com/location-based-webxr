@@ -26,10 +26,12 @@ towards the Earth's centre first, then bending".
   - `landingAngleDeg` 45;
   - `turnPower` 3: the residual dies out as the cube of the log altitude
     left to its end;
-  - `marginPerTurn` 0.5, `endMarginEFolds` 0.01, `maxMarginEFolds` 2: a start
-    must lie above its turn's end by e-folds in proportion to the turn it
-    has left (its sideways distance over its altitude, x 0.5), between 0.01
-    and 2, else the next end down. A big turn from just above the bend
+  - `marginPerTurn` 0.1, `endMarginEFolds` 0.01, `maxMarginEFolds` 0.5: a
+    start must lie above its turn's end by e-folds in proportion to the turn
+    it has left (its sideways distance over its altitude, x 0.1), between
+    0.01 and 0.5, else the next end down (the R1 re-review's sweep: 0.5 and
+    at most 2 spilled big turns below the bend for starts up to 739 km, the
+    view 70-89 degrees off the travel there). A big turn from just above the bend
     crammed into a sliver of descent turned into the dive at a corner (the
     speed read 0.79 there); none at all stalled a start a hair above the
     bend in a window of 1e-15; a fixed 0.5 snapped the view at the bend
@@ -73,8 +75,10 @@ towards the Earth's centre first, then bending".
   - else the bend's and the landing's geometric middle;
   - else the landing.
   - Self-similar: a replan from any point of the curve, to the same target
-    and landing, flies on along the very same curve (tested from 1,000 km
-    down to 10 km, every band and its edges, within 0.2 % of the altitude). A turn eased over a window from the
+    and landing, flies on along the very same curve (tested: replans
+    of a flight from 10,100 km, from 1,000 down to 10 km, within 0.2 % of
+    the altitude; of one from 500 km, 0.11-0.26 %, and 1.43 % for a replan at
+    8 km, inside the 1.5 s velocity join, gone when it ends: filed). A turn eased over a window from the
     start reshaped the rest at every replan (measured while building R1).
 - **A climb** (a landing raised over the camera) eases its residual over
   its whole path with a smoothstep: front-loaded, its sideways motion came

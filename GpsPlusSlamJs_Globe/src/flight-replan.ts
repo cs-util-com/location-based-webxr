@@ -19,8 +19,8 @@
  * within a join starts from the joined camera, so joins nest; the old
  * flight is never evaluated again.
  *
- * `clearedLandingM` raises a landing until the camera's whole approach
- * clears the ground under it (cold review finding 11): at 45 degrees the
+ * `clearedLandingM` raises a landing until the camera, wherever the landing
+ * reaches it (half a metre per metre), clears the ground under it (cold review finding 11): at 45 degrees the
  * camera lands about one landing altitude behind the target, over ground
  * the target's own height does not describe.
  *

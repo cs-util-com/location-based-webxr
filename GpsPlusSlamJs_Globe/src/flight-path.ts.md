@@ -128,9 +128,12 @@ start to its own landing point (behind the target, so it ends looking at the
 target 45 degrees down):
 
 - high up it turns first while looking straight down, the turn done by the
-  bend (100 km, or 25 landings);
+  bend (100 km, or 25 landings) for a start at least 1.65 x the bend up (a
+  big turn from just above the bend continues below it, the view by the
+  law there);
 - below the bend it dives along the law's track, bending into 45 degrees at
-  the landing, its view the direction of travel;
+  the landing, its view the direction of travel (never shallower than the
+  dive's own angle);
 - a start nearer than the dive's own track backs off first; a start below
   the bend and far away pans at its own altitude (it gave up van Wijk's
   climb, one path family; the documented limit);
@@ -210,7 +213,8 @@ Each one is tested, on the camera.
 - The camera never moves away from its landing point, but to make room for
   the dive: a start nearer than the dive's own track backs off, never
   further than that track.
-- From a start above the bend, below it the camera's remaining ground
+- From a start at least 1.65 x the bend up (e^0.5, the largest margin a turn
+  takes), below the bend the camera's remaining ground
   distance is at most 2 x the height above the landing, plus one landing
   altitude. A start below the bend never climbs.
 - The view looks straight down above the bend and lands 45 degrees down;
@@ -223,7 +227,15 @@ Each one is tested, on the camera.
   limit, is not covered).
 - The camera travels the way it looks below the bend: from a start over the
   target or 0.5-3 km off it (the view's heading and the ground travel
-  within 5 degrees), and never against it from any start (a property).
+  within 5 degrees); from 200-600 km with turns of 6-90 degrees (its view
+  within 2 degrees of its 3D velocity below the bend); and, over random
+  flights, never against it where the view clearly looks ahead after the
+  start's blend (a property: it cannot see a turn that spills below the
+  bend, the example tests do). Limits, documented: a press 3-10 km up
+  within one landing of its target backs off about 4.7 km looking straight
+  down (view and travel 53-67 degrees apart for about half the flight);
+  a start just over one landing out, its target behind its screen's up,
+  rolls its heading 180 degrees over the first fifth.
 - After the start's blend, the view looks ahead along the course.
 - The start's speed is kept, except at the documented cap.
 - **The "never stops in between" criterion** holds on the camera over the

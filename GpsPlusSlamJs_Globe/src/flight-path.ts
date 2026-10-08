@@ -24,7 +24,8 @@
  *
  * THE VIEW looks from the camera at a centre ahead of it along its course,
  * at the curve's pitch: straight down above the bend, the camera's own
- * direction of travel below it, so it ends looking at the target 45
+ * direction of travel below it (never shallower than the dive's own angle),
+ * so it ends looking at the target 45
  * degrees down. The course runs along the great circle to the target; a
  * target nearer than one landing keeps the start's heading (CF1 review
  * finding 5). The start's own pitch, heading (one roll, fixed when planned:

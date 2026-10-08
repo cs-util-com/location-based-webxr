@@ -30,7 +30,9 @@
  * THE VIEW. Above the bend the camera looks straight down at the Earth (the
  * turn the owner asked for first; looking along it would show the horizon).
  * Below it, the view's pitch is the camera's ACTUAL direction of travel,
- * residual included, never nearer the horizon than `horizonMarginDeg`.
+ * residual included, but never shallower than the law (the dive's own
+ * angle: in the dive the two agree), never nearer the horizon than
+ * `horizonMarginDeg`.
  *
  * THE MEASURE. Path length is the CF1 criterion's, ds^2 = (d ln h)^2 +
  * (ground / h)^2 with the ground on the mean radius, so `flight-path`'s clock
@@ -60,14 +62,16 @@ export const FLIGHT_TRAVEL = Object.freeze({
    * else the next end down. A big turn from a start just above the bend
    * crammed into a sliver of descent and turned into the dive at a corner
    * (the speed read 0.79 there); along an existing curve the turn left at a
-   * replan is tiny (it dies out as a cube), so a replan finds the same end
-   * and flies on exactly.
+   * replan is tiny (it dies out as a cube), so a replan finds the same end.
+   * 0.1 and at most 0.5 (the R1 re-review's sweep): 0.5 and at most 2
+   * spilled big turns below the bend for starts up to 739 km (the view 70-89
+   * degrees off the travel there) and sent replans from them off their curve.
    */
-  marginPerTurn: 0.5,
+  marginPerTurn: 0.1,
   /** At least this (a start a hair above the bend stalled in a 1e-15 window). */
   endMarginEFolds: 0.01,
   /** At most this. */
-  maxMarginEFolds: 2,
+  maxMarginEFolds: 0.5,
   /** The least the view looks below the horizon, degrees. */
   horizonMarginDeg: 5,
   /** Intervals of the curve's table (each interpolated as a cubic). */

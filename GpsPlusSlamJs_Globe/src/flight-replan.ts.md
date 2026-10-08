@@ -137,6 +137,11 @@ divided by how much the camera there rises with the landing.
   280 m; the 10 km start over a ridge under itself gets 2,100 m; a level
   pan over the plateau gets the 2,205 m that lifts its second half (the
   part the landing governs) clear.
+- Known gaps, to settle before it is wired (the R1 re-review): ridges that
+  straddle the 0.5 cut are partly cleared (200 m from a 10 km start 70 km
+  out; 246-279 m elsewhere), and ground under the first stretch of a low
+  start gets no raise (43-96 m of clearance); a call takes 6-16 ms warm on
+  a desktop, so it must not run inside a frame on a phone (DEC-PERF).
 
 ## Invariants
 

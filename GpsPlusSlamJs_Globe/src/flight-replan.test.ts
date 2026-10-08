@@ -151,6 +151,34 @@ function criterionAt(
   return bad;
 }
 
+/**
+ * A same-target replan of `flight` where it reaches `km`: the worst
+ * distance, over the altitude, between the replanned flight and the original
+ * at the same altitude (timing aside: the same curve or not).
+ */
+function sameCurveDeviation(flight: Flight, km: number): number {
+  let atMs = 0;
+  while (flightFrameAt(flight, atMs).altitudeM > km * KM) atMs += 1;
+  const same = retargetFlight(flight, atMs, orbitPose(WGS84_ELLIPSOID, BERN), {
+    landingM: 2 * KM,
+  });
+  const old: { h: number; dir: THREE.Vector3 }[] = [];
+  for (let t = atMs; t <= flight.endsAtMs; t += 2) {
+    const f = flightFrameAt(flight, t);
+    old.push({ h: f.altitudeM, dir: f.camera.clone() });
+  }
+  let worst = 0;
+  let j = 0;
+  for (let t = atMs + 50; t < same.endsAtMs - 50; t += 10) {
+    const f = flightFrameAt(same, t);
+    while (j < old.length - 1 && (old[j + 1]?.h ?? 0) >= f.altitudeM) j++;
+    const o = old[j];
+    if (!o) continue;
+    worst = Math.max(worst, (o.dir.angleTo(f.camera) * R) / f.altitudeM);
+  }
+  return worst;
+}
+
 describe("retargetFlight", () => {
   // WHY: a replan that starts anywhere but the camera snaps the view.
   it("starts exactly at the camera's current frame", () => {
@@ -331,39 +359,30 @@ describe("retargetFlight", () => {
   // broke that between the bend and 1.65 x it (0.8-2.5 % of the altitude
   // apart), which the timing test above, at 5 %, let through.
   it("flies on along the same curve when nothing changes, from any altitude", () => {
-    const first = flyFrom(NEW_YORK, BERN);
-    const reaching = (km: number) => {
-      let t = 0;
-      while (flightFrameAt(first, t).altitudeM > km * KM) t += 1;
-      return t;
-    };
     const bad: string[] = [];
+    const first = flyFrom(NEW_YORK, BERN);
     for (const km of [1_000, 170, 164, 150, 130, 101, 99, 50, 24, 22, 10]) {
-      const atMs = reaching(km);
-      const same = retargetFlight(
-        first,
-        atMs,
-        orbitPose(WGS84_ELLIPSOID, BERN),
-        { landingM: 2 * KM },
-      );
-      const old: { h: number; dir: THREE.Vector3 }[] = [];
-      for (let t = atMs; t <= first.endsAtMs; t += 2) {
-        const f = flightFrameAt(first, t);
-        old.push({ h: f.altitudeM, dir: f.camera.clone() });
-      }
-      let worst = 0;
-      let j = 0;
-      for (let t = atMs + 50; t < same.endsAtMs - 50; t += 10) {
-        const f = flightFrameAt(same, t);
-        while (j < old.length - 1 && (old[j + 1]?.h ?? 0) >= f.altitudeM) j++;
-        const o = old[j];
-        if (!o) continue;
-        worst = Math.max(worst, (o.dir.angleTo(f.camera) * R) / f.altitudeM);
-      }
-      if (worst > 2e-3) {
-        bad.push(
-          `from ${km} km: ${(worst * 100).toFixed(2)} % of the altitude`,
-        );
+      const worst = sameCurveDeviation(first, km);
+      if (worst > 2e-3)
+        bad.push(`from ${km} km: ${(worst * 100).toFixed(2)} %`);
+    }
+    // And from a start a few hundred km up (R1 re-review finding 2: a
+    // replan's own turn left chose a lower end, and the flight went up to
+    // 7,778 % of the altitude off its curve). Measured 0.11-0.26 %, and
+    // 1.43 % for a replan at 8 km: inside the velocity join (up to 50 m at
+    // 3.6 km, gone when it ends), a small velocity mismatch filed for a
+    // look (the plan, §9).
+    const low = startFlight(
+      WGS84_ELLIPSOID,
+      orbitStart(NEW_YORK, 500 * KM),
+      orbitPose(WGS84_ELLIPSOID, BERN),
+      { landingM: 2 * KM, durationMs: 15_000 },
+      0,
+    );
+    for (const km of [101, 60, 40, 30, 15, 8]) {
+      const worst = sameCurveDeviation(low, km);
+      if (worst > 2e-2) {
+        bad.push(`500 km start, from ${km} km: ${(worst * 100).toFixed(2)} %`);
       }
     }
     expect(bad).toEqual([]);
@@ -642,11 +661,12 @@ describe("clearedLandingM", () => {
       d.angleTo(zurich) * R < 5 * KM ? 9_800 : 1_800;
     const need = 1_800 + FLIGHT_REPLAN.clearanceM;
     // The level pan (a start at the landing's altitude) is a climb to the
-    // landing; the landing governs its second half (half a metre per metre
-    // and more), where halfway the altitude is the geometric mean of start
-    // and landing: it must reach need^2 / 2,000 = 2,205 m. The descent from
-    // 10 km clears the plateau at the plain need, the ridge under its start
-    // out of the landing's reach.
+    // landing; with the 0.5 floor the landing governs its second half, where
+    // halfway the altitude is the geometric mean of start and landing, so it
+    // comes to need^2 / 2,000 = 2,205 m (a regression pin of that rule, not
+    // a requirement: the pan's first half stays under the clearance). The
+    // descent from 10 km clears the plateau at the plain need, the ridge
+    // under its start out of the landing's reach.
     for (const [startM, groundAt, low, high] of [
       [
         2 * KM,

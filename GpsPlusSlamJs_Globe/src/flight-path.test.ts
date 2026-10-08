@@ -256,6 +256,38 @@ describe("looks the way it travels (round-2 R1 milestone review)", () => {
     }
   });
 
+  // WHY (R1 re-review finding 1): a margin sized by the turn left moved big
+  // turns below the bend for starts up to 739 km: the view and the camera's
+  // velocity were 70-89 degrees apart for 5-9 s. From 200-600 km, a turn
+  // of 6-90 degrees of longitude is done by the bend, and below it the
+  // camera looks where it flies (its view within 2 degrees of its 3D
+  // velocity).
+  it("looks where it flies below the bend from a start a few hundred km up", () => {
+    const bad: string[] = [];
+    for (const startKm of [200, 300, 500, 600]) {
+      for (const deg of [6, 30, 90]) {
+        const path = fly(awayFromBern(deg), startKm * KM);
+        let worst = 0;
+        for (let t = 50; t < path.durationMs - 50; t += 50) {
+          const c = flightCamera(path, t);
+          if (
+            c.altitudeM > bendAltitudeM(2 * KM) * 0.98 ||
+            c.altitudeM < 2.2 * KM
+          )
+            continue;
+          const v = flightCamera(path, t + 10)
+            .position.clone()
+            .sub(flightCamera(path, t - 10).position);
+          const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(c.quaternion);
+          worst = Math.max(worst, v.angleTo(fwd) / DEG);
+        }
+        if (worst > 2)
+          bad.push(`${startKm} km, ${deg} deg: ${worst.toFixed(1)} deg`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
   // WHY (R1 review finding 2): a start between the bend and 1.65 x it
   // still turned below the bend while the view looked straight down above
   // it: the pitch snapped by up to 75 degrees in one frame.
