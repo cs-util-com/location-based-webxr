@@ -107,6 +107,12 @@ const { available, used } = await checkStorageQuota();
 1. `initOpfsStorage()` must be called before any other operations
 2. `createSession()` must be called before `writeAction()`/`writeFrame()`
 3. Action indices are 1-based and zero-padded to 6 digits (000001.json)
+   - Each action file is compact JSON (since scan pass S2, 2026-10-08; it
+     was indented before), and a `recording/recordDepthSample` whose grid
+     the packed form holds exactly is written packed (`depth-sample-codec.ts`:
+     `points: []` plus a base64url float32 `grid`). The in-memory action is
+     never changed; `zip-reader.ts`' shared parse unpacks it, so every reader
+     of a recording sees the action as it was dispatched.
 4. Frame filenames follow the pattern `frame-{index}.jpg`
 5. Session folders are named `recording-YYYY-MM-DD_HH-MM-SSutc` (an underscore/dash-separated UTC stamp, NOT ISO 8601 — colons are illegal in directory names). The timestamp is whole-second resolution, so `createSession()` probes for an existing directory and appends a numeric suffix (`-2`, `-3`, …) on collision — two recordings started within the same UTC second get distinct directories instead of silently reusing and mixing one. The first session in a given second keeps the bare timestamp name.
    - The probe distinguishes error names (PR #158 review): `NotFoundError` → name free; `TypeMismatchError` (a **file** occupies the name — `{ create: true }` could not replace it either) → name taken, probe advances to the next suffix; any other error (`InvalidStateError`, …) is a storage failure and is **rethrown** so `createSession` fails loudly — treating it as "taken" would loop the suffix probe forever, treating it as "free" would crash later with a misleading create-time error.

@@ -1161,6 +1161,40 @@ function viewPixels(y: number, pitch: number) {
   return pixels;
 }
 
+/**
+ * The 1024-step reference for every pixel of a view, in `viewPixels` order,
+ * memoised per view, sun and cover. It depends on nothing else, and every
+ * case below compares two or four marches against the SAME reference; it
+ * was recomputed per comparison and was most of this file's time (gate-speed
+ * plan 2026-10-04, G3). `referenceMarch` is pure, so the numbers are
+ * identical.
+ */
+const referenceCache = new Map<string, ReturnType<typeof referenceMarch>[]>();
+function referenceView(
+  view: { y: number; pitch: number },
+  sunEl: number,
+  cover: number
+): readonly ReturnType<typeof referenceMarch>[] {
+  const key = `${view.y}|${view.pitch}|${sunEl}|${cover}`;
+  let refs = referenceCache.get(key);
+  if (refs === undefined) {
+    const light = lightAt(sunEl);
+    const threshold = cloudThreshold(cover);
+    refs = viewPixels(view.y, view.pitch).map((p) =>
+      referenceMarch({
+        camera: p.camera,
+        dir: p.dir,
+        sample: shaderNoise,
+        threshold,
+        light,
+        steps: 1024,
+      })
+    );
+    referenceCache.set(key, refs);
+  }
+  return refs;
+}
+
 const rmsOf = (v: number[]) =>
   Math.sqrt(v.reduce((s, x) => s + x * x, 0) / Math.max(v.length, 1));
 const sum = (c: readonly number[]) => c[0]! + c[1]! + c[2]!;
@@ -1185,9 +1219,10 @@ function viewError(
     cloudTopRadiance(light.sunTransmittance, light.sunDir[1], light.zenith)
   );
   const threshold = cloudThreshold(cover);
+  const refs = referenceView(view, sunEl, cover);
   const bias: number[] = [];
   const single: number[] = [];
-  for (const p of viewPixels(view.y, view.pitch)) {
+  for (const [i, p] of viewPixels(view.y, view.pitch).entries()) {
     const base = {
       camera: p.camera,
       dir: p.dir,
@@ -1195,7 +1230,7 @@ function viewError(
       threshold,
       light,
     };
-    const ref = referenceMarch({ ...base, steps: 1024 });
+    const ref = refs[i]!;
     let colour = 0;
     let alpha = 0;
     for (let k = 0; k < 8; k++) {

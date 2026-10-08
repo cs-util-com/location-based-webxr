@@ -5,7 +5,7 @@
  *
  * WHICH ALIGNMENT (owner decision D28, revised 2026-10-02). A code is
  * minted through the FIRST MATURE alignment at or after its last sighting,
- * maturity being a session GPS extent of 80 m
+ * maturity being a session GPS extent of 40 m (D34)
  * (`QR_MINT_MATURE_GPS_EXTENT_M`). Until then its snapshot follows the
  * alignment; a new sighting re-opens it. A recording saved before that
  * falls back to the alignment at save; a tracking restart or loop closure

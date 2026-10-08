@@ -18,7 +18,9 @@
  * the open proceeds remote.
  */
 
+import { ArchiveLimitError, DEFAULT_ARCHIVE_LIMITS } from './archive-limits.js';
 import { SwitchableByteSource, type ByteSource } from './byte-source.js';
+import { readResponseBodyCapped } from './capped-response-body.js';
 import {
   LocalCacheByteSource,
   requestPersistentStorage,
@@ -66,6 +68,28 @@ export interface OpenRemoteArchiveOptions {
   warm?: boolean;
   /** Bypass the cache lookup — the poisoned-copy reopen path. */
   skipCache?: boolean;
+  /** The transport cap (`archive-limits.ts`); defaults to
+   *  `DEFAULT_ARCHIVE_LIMITS.maxArchiveBytes`. Above it the open rejects
+   *  with cause `'too-large'`, before the body is fetched when the size is
+   *  announced. */
+  maxArchiveBytes?: number;
+  /**
+   * Called with every COMPLETE copy of the archive this module produces -
+   * the warm download, a range-ignore recovery, an eager or a full
+   * download - before that copy backs the session or reaches the store. A
+   * rejection keeps it out of both: the warm leaves the session remote
+   * (`warmed` false), a recovery fails its read, an eager or full download
+   * fails the open with the rejection. A copy served FROM the store is not
+   * passed here: it was accepted when it was stored, and a consumer that
+   * needs to re-check an older copy does so itself. The Tour Viewer checks a
+   * signed tour as a whole here, so a copy that fails is never cached (tour
+   * kit plan K1, §8 D3).
+   */
+  acceptLocalCopy?: (blob: Blob) => Promise<void>;
+  /** Whether the browser reports a network (`navigator.onLine`), asked only
+   *  after a fetch rejected before any HTTP status: false turns cause
+   *  `'cors'` into `'offline'`. Injected for tests. */
+  isOnline?: () => boolean;
 }
 
 export interface OpenedArchive {
@@ -97,8 +121,14 @@ export class OpenRemoteArchiveError extends Error {
   override readonly name = 'OpenRemoteArchiveError';
   readonly rejectCause: RangeProbeRejectCause;
 
-  constructor(message: string, rejectCause: RangeProbeRejectCause) {
-    super(message);
+  /** `options.cause` carries the underlying error where one explains the
+   *  rejection in plain words (the `ArchiveLimitError` of `'too-large'`). */
+  constructor(
+    message: string,
+    rejectCause: RangeProbeRejectCause,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
     this.rejectCause = rejectCause;
   }
 }
@@ -119,38 +149,85 @@ export async function openRemoteArchive(
   });
   const store = options.cacheStore;
 
+  // The saved copy is tried FIRST: it is also what makes "offline" and
+  // "the host blocks browsers" (below) advice for the no-copy case only.
   const fromCache = await tryOpenFromCache(url, store, options, fetchImpl);
-  if (fromCache !== null) return fromCache;
+  if ('opened' in fromCache) return fromCache.opened;
 
   let probe;
   try {
-    probe = await probeRemote(url, fetchImpl);
+    probe = await probeRemote(url, fetchImpl, maxArchiveBytesOf(options));
   } catch (err) {
-    // In a browser, a CORS block and a dead network both reject as TypeError —
-    // indistinguishable. Either way the link is unusable from here.
+    if (err instanceof ArchiveLimitError) throw tooLarge(url, err);
+    // A saved copy exists but is over the cap (K0 milestone review R12):
+    // that, not the network, is why this visitor cannot open the tour.
+    if (fromCache.refused !== null) throw tooLarge(url, fromCache.refused);
+    // In a browser, a CORS block and a dead network both reject as TypeError
+    // and cannot be told apart from the error. The browser's own network
+    // flag can: `onLine === false` is reliable (true is not - a captive
+    // portal is "online"), so only a known-offline browser gets 'offline'.
+    const offline = (options.isOnline ?? browserIsOnline)() === false;
     throw new OpenRemoteArchiveError(
-      `opening ${url} failed before any HTTP status (network down or CORS-blocked): ${String(err)}`,
-      'cors'
+      `opening ${url} failed before any HTTP status (${
+        offline ? 'the browser is offline' : 'network down or CORS-blocked'
+      }): ${String(err)}`,
+      offline ? 'offline' : 'cors'
     );
   }
   return openPerDecision(url, probe, fetchImpl, store, options);
 }
 
-/** The revalidated cache lookup; null means "proceed to the network". */
+function maxArchiveBytesOf(options: OpenRemoteArchiveOptions): number {
+  return options.maxArchiveBytes ?? DEFAULT_ARCHIVE_LIMITS.maxArchiveBytes;
+}
+
+/** `navigator.onLine`, or true where there is no navigator (Node). */
+function browserIsOnline(): boolean {
+  return (globalThis.navigator as Navigator | undefined)?.onLine !== false;
+}
+
+function tooLarge(url: string, err: ArchiveLimitError): OpenRemoteArchiveError {
+  return new OpenRemoteArchiveError(
+    `opening ${url} refused: ${err.message}`,
+    'too-large',
+    { cause: err }
+  );
+}
+
+/** The revalidated cache lookup: the opened copy, or why there is none to
+ *  serve (`refused`: a copy over the cap, kept; null: no usable copy) -
+ *  either way the caller proceeds to the network. */
 async function tryOpenFromCache(
   url: string,
   store: LocalCacheStore | undefined,
   options: OpenRemoteArchiveOptions,
   fetchImpl: FetchImpl
-): Promise<OpenedArchive | null> {
-  if (store === undefined || options.skipCache === true) return null;
+): Promise<{ opened: OpenedArchive } | { refused: ArchiveLimitError | null }> {
+  if (store === undefined || options.skipCache === true) {
+    return { refused: null };
+  }
   const cached = await store.get(url);
-  if (cached === undefined) return null;
+  if (cached === undefined) return { refused: null };
+  // A copy above the cap (saved before the cap existed, or under a larger
+  // one) is not served: the cap holds for every source of the bytes. It is
+  // KEPT, though (K0 milestone review R12): it is the visitor's own
+  // download, and a cap that refuses it today must not destroy it. A fresh
+  // download that fits replaces it through the warm.
+  const maxBytes = maxArchiveBytesOf(options);
+  if (cached.blob.size > maxBytes) {
+    return {
+      refused: new ArchiveLimitError(
+        'archive-bytes',
+        maxBytes,
+        cached.blob.size
+      ),
+    };
+  }
   if (await isCachedCopyServable(url, cached, fetchImpl)) {
-    return openLocal(url, cached, store, options, 'cache');
+    return { opened: await openLocal(url, cached, store, options, 'cache') };
   }
   await store.delete(url); // stale — the author overwrote the archive
-  return null;
+  return { refused: null };
 }
 
 function openPerDecision(
@@ -165,16 +242,14 @@ function openPerDecision(
     case 'ranges':
       return openRanged(url, decision.size, probe.validators, options, store);
     case 'eager-local':
-      return openLocal(
+      return openAccepted(
         url,
         {
           blob: new Blob([decision.body as BlobPart]),
           validators: probe.validators,
         },
         store,
-        options,
-        'network',
-        { persist: true }
+        options
       );
     case 'full-download':
       return openFullDownload(url, probe.validators, fetchImpl, store, options);
@@ -215,6 +290,18 @@ function cachedCopyMatchesLive(
     return cv.lastModified === lv.lastModified;
   }
   return live.size === null || live.size === cached.blob.size;
+}
+
+/** A whole archive downloaded at open (eager or full): offered to
+ *  `acceptLocalCopy` first, then served and persisted. */
+async function openAccepted(
+  url: string,
+  entry: CachedArchive,
+  store: LocalCacheStore | undefined,
+  options: OpenRemoteArchiveOptions
+): Promise<OpenedArchive> {
+  await options.acceptLocalCopy?.(entry.blob);
+  return openLocal(url, entry, store, options, 'network', { persist: true });
 }
 
 /** Serve a complete local blob; persist it first when asked to. */
@@ -301,7 +388,17 @@ function openRanged(
         `range-ignore recovery download of ${url} failed (${res.status})`
       );
     }
-    const blob = await res.blob();
+    // Capped at the session's own size: any byte past it is already the
+    // "file changed mid-session" case checked below.
+    const blob = await readResponseBodyCapped(res, Math.max(1, size)).catch(
+      (err: unknown) => {
+        throw err instanceof ArchiveLimitError
+          ? new StructuralReadError(
+              `range-ignore recovery of ${url} streamed more than the expected ${size} bytes - the file changed mid-session`
+            )
+          : err;
+      }
+    );
     // The recovery pulled the WHOLE archive over the network; without this
     // synthetic event a stats consumer proves "how little was fetched" with
     // an inverted headline (PR #359 review — the warm-path twin of the
@@ -312,6 +409,7 @@ function openRanged(
         `range-ignore recovery downloaded ${blob.size} bytes, expected ${size} — the file changed mid-session`
       );
     }
+    await options.acceptLocalCopy?.(blob);
     const local = instrument(new LocalCacheByteSource(blob), 'cache', options);
     if (switchable.switchTo(local) && store !== undefined && !evicted) {
       await requestPersistentStorage();
@@ -423,11 +521,20 @@ async function warmToCache(
       ]),
     });
     if (!res.ok) return false;
-    const blob = await res.blob();
+    // Capped at the session's size: a longer body is the wrong file, and
+    // the swap below would refuse it anyway - after holding all of it.
+    const blob = await readResponseBodyCapped(
+      res,
+      Math.max(1, switchable.size)
+    );
     // The warm pulled the WHOLE archive over the network; report it, or the
     // stats headline shows "132 KB fetched · serving from cache" after the
     // full file crossed the wire (PR #359 review).
     options.onRead?.({ origin: 'network', offset: 0, length: blob.size });
+    // The switch refuses another size; only a copy it could take is offered
+    // for acceptance (a refusal throws into the catch below: stay remote).
+    if (blob.size !== switchable.size) return false;
+    await options.acceptLocalCopy?.(blob);
     const local = instrument(new LocalCacheByteSource(blob), 'cache', options);
     if (!switchable.switchTo(local)) return false;
     if (isEvicted()) return true; // swapped local, but never repersist
@@ -460,14 +567,17 @@ async function openFullDownload(
       isDefinitivelyGone(res.status) ? 'missing' : 'unusable-link'
     );
   }
-  const blob = await res.blob();
-  return openLocal(
+  const blob = await readResponseBodyCapped(
+    res,
+    maxArchiveBytesOf(options)
+  ).catch((err: unknown) => {
+    throw err instanceof ArchiveLimitError ? tooLarge(url, err) : err;
+  });
+  return openAccepted(
     url,
     { blob, ...(validators !== undefined ? { validators } : {}) },
     store,
-    options,
-    'network',
-    { persist: true }
+    options
   );
 }
 
