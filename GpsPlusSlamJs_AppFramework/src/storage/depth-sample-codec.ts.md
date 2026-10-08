@@ -11,7 +11,8 @@ the JSON form, and read back to exactly the points the JSON form gave.
 ## Public API
 
 - `DEPTH_SAMPLE_ACTION_TYPE` - `'recording/recordDepthSample'`.
-- `MAX_PACKED_GRID_SIZE` - 128: the largest grid side either side accepts.
+- `MAX_PACKED_GRID_SIZE` - 64: the largest grid side either side accepts -
+  the largest any app records (the Recorder's setting allows 2..64).
 - `packDepthAction(action: unknown): unknown` - the action as the recording
   writes it. A depth sample the packed form holds exactly comes back as a
   new action with `payload.points: []` and `payload.grid`:
@@ -32,7 +33,7 @@ the JSON form, and read back to exactly the points the JSON form gave.
 - **Lossless.** For every action, unpacking what was packed and written as
   JSON gives what the JSON form gave (the property test). A sample is packed
   only when:
-  - its points form a full g x g grid (1 <= g <= 128) at the sampler's
+  - its points form a full g x g grid (1 <= g <= 64) at the sampler's
     positions, `screenX = (col + 1) / (g + 1)`, `screenY = (row + 1) /
 (g + 1)`, row-major (`depth-sampler.ts` `sampleGrid`; the depth-grid
     lookup indexes the same way);
@@ -51,7 +52,7 @@ the JSON form, and read back to exactly the points the JSON form gave.
 - **Never throws on write.** Any exception gives the action back unpacked:
   a throw in `writeAction` would fail every depth sample's write.
 - **Untrusted on read.** A visitor's live join reads a tour's recording, so
-  the decoder checks the version, the size (an integer in 1..128) and the
+  the decoder checks the version, the size (an integer in 1..64) and the
   text lengths of both fields BEFORE decoding or allocating, and refuses
   rather than throws. A grid written next to non-empty points is not one
   the writer makes; the points are kept as written.

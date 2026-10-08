@@ -25,9 +25,12 @@ import {
 /** The one action type this codec packs. */
 export const DEPTH_SAMPLE_ACTION_TYPE = 'recording/recordDepthSample';
 
-/** The largest grid side either side accepts (the samplers use 16 and 24):
- *  it bounds what an untrusted recording can make a reader allocate. */
-export const MAX_PACKED_GRID_SIZE = 128;
+/** The largest grid side either side accepts: the largest any app
+ *  records (the Recorder's setting allows 2..64; the samplers default to
+ *  16 and 24). It bounds what one entry of an untrusted recording can make
+ *  a reader allocate - 4 096 points (the M5d + S2 milestone review's #6);
+ *  a larger grid is written as JSON, still losslessly. */
+export const MAX_PACKED_GRID_SIZE = 64;
 
 /** The packed form's version; a reader refuses any other. */
 const GRID_VERSION = 1;
