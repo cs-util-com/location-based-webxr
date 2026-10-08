@@ -10,8 +10,10 @@ content cannot become invisible through a drifted entry name.
 
 - `TOUR_MANIFEST_ENTRY = 'tour.json'`, `TOUR_CONTENT_FOLDER = 'content'`.
 - `tourContentEntryName(id, extension): string` → `content/<id>.<ext>`;
-  throws `TypeError` for an id or extension that is not one path-safe
-  segment (both reach a zip path).
+  throws `TypeError` for an id that is not one path-safe segment, or an
+  extension outside the media allowlist (`tour-media.ts`: raster images,
+  `glb`, browser-decoded audio and video; tour kit plan K0 - before it any
+  1-5 characters passed, `svg` and `html` included).
 - `tourManifestEntryOf(entryNames): string | null` - the manifest entry,
   tolerating a wrapping folder (`mytour/tour.json`, any depth, like the
   level reader); the entry with the fewest path segments wins.

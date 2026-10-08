@@ -149,9 +149,6 @@
       #setup-panel,
       #setup-controls,
       #object-list,
-      #replace-code-confirm,
-      #move-prompt,
-      #move-undo,
       #draft-offer,
       #recording-offer,
       #finish-block,
@@ -252,6 +249,11 @@
       #replace-help-drive {
         white-space: pre-line;
       }
+      /* Who signed the open tour, the trust warnings, the linked tours
+         (tour kit plan K1): one line each, as textContent. */
+      #tour-trust {
+        white-space: pre-line;
+      }
       /* The summary after Finish (authoring plan 2026-09-28-0953 M3b):
          one row per code, its verdict, the numbers folded away, then the
          map. Written by summary-panel.ts; the map's layers are Leaflet's
@@ -340,6 +342,15 @@
          sheet's plateless-legibility halo. It used to be #333 with a WHITE
          halo, which measures 1.16:1 on the page's own ground - invisible,
          and independently reported as "a weird white shadow" (F14). */
+      /* Read by screen readers, not shown (UI round 1, U1). */
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
       #ar-status {
         font-size: var(--size-hint);
         margin-bottom: var(--space-2);
@@ -363,6 +374,47 @@
         margin-left: var(--space-2);
         background: none;
         box-shadow: none;
+      }
+      /* The visitor's stations (tour kit plan K4): over the camera, so the
+         line and the story's words wear the status line's halo. The skip
+         is the quiet choice, flat like the gate's escape. */
+      #station-line,
+      #scene-panel {
+        text-shadow: var(--halo-text);
+      }
+      #station-line {
+        font-weight: 600;
+        margin: 0 0 var(--space-2);
+      }
+      #station-skip {
+        background: none;
+        box-shadow: none;
+      }
+      #scene-panel {
+        display: grid;
+        gap: var(--space-2);
+        max-width: 26rem;
+        margin: var(--space-2) 0;
+      }
+      #scene-panel h3,
+      #scene-panel p {
+        margin: 0;
+      }
+      #scene-speaker {
+        font-weight: 600;
+      }
+      #scene-status {
+        font-size: var(--size-hint);
+      }
+      #scene-image {
+        max-width: 100%;
+        max-height: 40vh;
+        object-fit: contain;
+      }
+      #scene-choices {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
       }
       /* The one link on the page. The UA default is a blue that belongs to
          no palette here and reads as an artefact on the dark ground. */
@@ -583,6 +635,24 @@
                     Test link
                   </button>
                 </form>
+                <!-- "Open a file" (tour kit plan K0): a zip on this device,
+                     for a host that does not let browsers read its files.
+                     The picker is #file-input, outside the wizard, which
+                     the visitor's advice button uses too. -->
+                <p class="step-copy hint--dim">
+                  Or open a tour zip from this device. A file has no link, so
+                  its code can be printed only once the zip is hosted.
+                </p>
+                <div class="step-body">
+                  <button
+                    type="button"
+                    id="open-file"
+                    class="btn btn--prose"
+                    data-testid="open-file-button"
+                  >
+                    Open a file
+                  </button>
+                </div>
               </li>
             </ol>
           </details>
@@ -785,6 +855,38 @@
         </li>
       </ol>
       <div id="error" class="prose" role="alert" data-testid="error"></div>
+      <!-- Both modes (tour kit plan K0): the advice's button under a "host
+           blocks browsers" error, the line naming a file-opened tour, and
+           the one file picker both "open a file" buttons click. -->
+      <div id="file-advice" hidden data-testid="file-advice">
+        <button
+          type="button"
+          id="open-file-advice"
+          class="btn"
+          data-testid="open-file-advice"
+        >
+          Open the downloaded file
+        </button>
+      </div>
+      <p
+        id="file-status"
+        class="prose hint--dim"
+        hidden
+        data-testid="file-status"
+      ></p>
+      <p
+        id="tour-trust"
+        class="prose hint--dim"
+        hidden
+        data-testid="tour-trust"
+      ></p>
+      <input
+        id="file-input"
+        type="file"
+        accept=".zip,application/zip,application/x-zip-compressed"
+        hidden
+        data-testid="file-input"
+      />
       <!-- Step 4 wraps the AR section. Under WebXR DOM Overlay only the
            subtree of the element passed to initAR composites over the camera
            feed, so everything a person needs DURING a session (the status
@@ -836,6 +938,22 @@
              over as its own zip - never inside the tour zip. A creator's,
              and a visitor's only with ?debug=1 (M1b): main.ts unhides it,
              so it is not .creator-only. -->
+        <!-- What the published copy carries (scan-pass plan S1, S-D10),
+             chosen BEFORE AR (UI round 1, U2, review #6: the Finish's
+             rebuild reads it, so it cannot follow the Finish), shown only
+             for a tour that carries a walk; unticked, Finish leaves it
+             out. -->
+        <label
+          class="switch"
+          id="keep-scan-row"
+          data-testid="keep-scan-row"
+          hidden
+        >
+          <input type="checkbox" id="keep-scan" data-testid="keep-scan" />
+          <span class="switch-track"></span>
+          Keep the walk recording in the tour file (for a co-author; visitors
+          never need it)
+        </label>
         <div id="recording-block" data-testid="recording-block" hidden>
           <!-- A recording a killed tab left unsaved (M1b,
                recording-offer.ts). OFFERED, never applied, with the draft
@@ -920,7 +1038,17 @@
             says it is measured; walking a few metres with GPS reception lets
             the phone align to the map.
           </p>
-          <div id="ar-status" data-testid="ar-status" aria-live="polite"></div>
+          <!-- The visible line changes per camera frame for a creator and
+               with ?debug=1, so it is NOT a live region; a visitor's
+               sentence reaches screen readers through #ar-status-live,
+               written only when it changes (UI round 1, U1, review F14). -->
+          <div id="ar-status" data-testid="ar-status"></div>
+          <p
+            id="ar-status-live"
+            class="visually-hidden"
+            data-testid="ar-status-live"
+            aria-live="polite"
+          ></p>
           <!-- Up while the troubleshooting recording runs: over the camera,
                and on the page (recording-panel.ts). -->
           <p id="recording-marker" data-testid="recording-marker" hidden></p>
@@ -947,6 +1075,63 @@
           >
             Continue with GPS only (less accurate)
           </button>
+          <!-- The visitor's stations (tour kit plan K4): the station line,
+               the labelled skip (§8 D5) and the story panel. Inside
+               #ar-root because the visitor stays in AR the whole tour
+               (K-D9); station-guide.ts and scene-view.ts show them. -->
+          <p
+            id="station-line"
+            data-testid="station-line"
+            aria-live="polite"
+            hidden
+          ></p>
+          <!-- The test switch ?relocate=here (tour-relocation.ts): shown once
+               the tour's stations were moved to the phone's first fix. -->
+          <p
+            id="relocate-note"
+            data-testid="relocate-note"
+            role="status"
+            hidden
+          >
+            Test mode: this tour was moved to where you are.
+          </p>
+          <button
+            type="button"
+            id="station-skip"
+            class="btn btn--prose"
+            data-testid="station-skip"
+            hidden
+          >
+            Can't get there?
+          </button>
+          <section
+            id="scene-panel"
+            data-testid="scene-panel"
+            aria-live="polite"
+            hidden
+          >
+            <h3 id="scene-title" data-testid="scene-title"></h3>
+            <p id="scene-speaker" data-testid="scene-speaker" hidden></p>
+            <img id="scene-image" data-testid="scene-image" alt="" hidden />
+            <p id="scene-text" data-testid="scene-text"></p>
+            <p id="scene-status" data-testid="scene-status"></p>
+            <div id="scene-choices" data-testid="scene-choices"></div>
+            <button
+              type="button"
+              id="scene-continue"
+              class="btn"
+              data-testid="scene-continue"
+            >
+              Continue
+            </button>
+          </section>
+          <button
+            type="button"
+            id="scene-play-next"
+            class="btn btn--prose"
+            data-testid="scene-play-next"
+            hidden
+          ></button>
           <!-- The setup panel (guided-setup plan M3). Inside #ar-root on
                purpose: it must stay visible while the AR session composites
                the DOM overlay. Measure (save the code's position), then
@@ -982,109 +1167,7 @@
               ></button>
             </div>
             <div id="setup-status" data-testid="setup-status"></div>
-            <!-- Undo of a replace of the code's saved position (authoring
-                 plan 2026-09-28-0953 §3.6, M5b): until Finish, in AR and
-                 on the page, so outside #setup-controls. -->
-            <div id="move-undo" data-testid="move-undo" hidden>
-              <p id="move-undo-text" data-testid="move-undo-text"></p>
-              <button
-                type="button"
-                id="move-undo-button"
-                class="btn btn--prose"
-                data-testid="move-undo-button"
-              >
-                Undo
-              </button>
-            </div>
             <div id="setup-controls" data-testid="setup-controls" hidden>
-              <!-- The moved-code prompt (authoring plan 2026-09-28-0953
-                   §3.6, D20, M5b): asked once a refusal of the code in hand
-                   has lasted; creator-setup.ts decides when it shows. -->
-              <div
-                id="move-prompt"
-                data-testid="move-prompt"
-                role="group"
-                aria-live="polite"
-                hidden
-              >
-                <p id="move-prompt-text" data-testid="move-prompt-text"></p>
-                <button
-                  type="button"
-                  id="move-prompt-use"
-                  class="btn btn--prose"
-                  data-testid="move-prompt-use"
-                  disabled
-                >
-                  Use the new spot
-                </button>
-                <button
-                  type="button"
-                  id="move-prompt-copy"
-                  class="btn"
-                  data-testid="move-prompt-copy"
-                >
-                  It's a second copy
-                </button>
-                <button
-                  type="button"
-                  id="move-prompt-later"
-                  class="btn"
-                  data-testid="move-prompt-later"
-                >
-                  Not now
-                </button>
-              </div>
-              <button
-                type="button"
-                id="setup-mint"
-                class="btn btn--prose"
-                data-testid="setup-mint"
-                disabled
-              >
-                Save the measured position
-              </button>
-              <!-- The explicit replace of a STORED code pose (authoring plan
-                   2026-09-28-0953 §3.4, M4): without it a new measurement
-                   of a stored code only corrects this visit (D10b). A
-                   confirm step first - it moves the code for every
-                   visitor. creator-setup.ts decides when it shows. -->
-              <button
-                type="button"
-                id="replace-code"
-                class="btn btn--prose"
-                data-testid="replace-code"
-                hidden
-                disabled
-              >
-                Replace the code's saved position
-              </button>
-              <div
-                id="replace-code-confirm"
-                data-testid="replace-code-confirm"
-                hidden
-              >
-                <p
-                  id="replace-code-confirm-text"
-                  data-testid="replace-code-confirm-text"
-                ></p>
-                <button
-                  type="button"
-                  id="replace-code-yes"
-                  class="btn btn--prose"
-                  data-testid="replace-code-yes"
-                  disabled
-                >
-                  Replace the saved position
-                </button>
-                <button
-                  type="button"
-                  id="replace-code-no"
-                  class="btn"
-                  data-testid="replace-code-no"
-                >
-                  Keep the saved position
-                </button>
-              </div>
               <!-- Placement (M4): a pin at the reticle with a typed label
                    (the input is an overlay control: window.prompt is
                    unavailable in an XR session), a photo of the current

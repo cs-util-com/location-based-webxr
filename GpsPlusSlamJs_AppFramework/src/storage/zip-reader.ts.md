@@ -22,17 +22,22 @@ Opens a ZIP file and returns all entries (directories and files). Uses `@zip.js/
 - **Output:** Array of `Entry` objects from `@zip.js/zip.js`
 - **Errors:** Throws if the data is not a valid ZIP file
 
-### `loadActionsFromZip(data: ZipSource, maxFileSize?: number): Promise<ZipActionEntry[]>`
+### `loadActionsFromZip(data: ZipSource, maxFileSize?: number, budget?: DecompressionBudget): Promise<ZipActionEntry[]>`
 
 Extracts all action JSON files from the `actions/` directory in the ZIP, parses them, and returns them sorted by filename — chronological because `formatActionFilename` zero-pads the index to six digits (see the invariant below).
 
-- **Input:** ZIP file bytes as `Uint8Array`; optional `maxFileSize` (defaults to `MAX_ACTION_FILE_SIZE` = 1 MB)
+- **Input:** ZIP file bytes as `Uint8Array`; optional `maxFileSize` (defaults to `MAX_ACTION_FILE_SIZE` = 1 MB). It lists the archive's entries itself and then runs `loadActionsFromEntries` over them, reading each action entry with `readZipEntryText` under `budget`.
 - **Output:** Array of `ZipActionEntry` objects, each containing:
   - `index` — 1-based numeric index from zero-padded filename (e.g., 1 from `000001.json`). Returns `NaN` for non-numeric filenames.
   - `filename` — original path within the ZIP (e.g., `actions/000001.json`)
   - `action` — parsed Redux action (`RecordedAction`: `{ type: string; payload?: unknown }`)
 - **Warnings:** Logs a warning via `createLogger('ZipReader')` for any action file whose filename doesn't match the expected numeric pattern (e.g., `actions/my-notes.json`). The file is still processed and included in results. Also logs a warning for any action file that fails JSON parsing — the file is skipped, and remaining actions are still returned.
-- **Errors:** Throws if any action entry's `uncompressedSize` exceeds `maxFileSize` (DoS protection). Malformed JSON in individual action files is handled gracefully (skip + warn) rather than aborting the entire load — consistent with `loadGpsPathFromBlob`'s error-handling pattern.
+- **Decompression caps (tour kit plan K0, 2026-10-03):** each action is inflated through `readZipEntryText` (`capped-zip-entries.ts`), which counts the bytes ACTUALLY produced against `maxFileSize` and charges them to `budget` - the archive's total allowance. The declared-size check below stays as the cheap early refusal, but a declared size is never the only guard: before K0 many entries each just under 1 MB declared (kilobytes deflated) added up without any limit. Without a `budget` one is sized from the archive (`DecompressionBudget.forArchive`, after the listing so a lazy Reader knows its size; a Reader still reporting no size gets the absolute ceiling, never the small-archive floor, which would refuse a real long recording - the largest measured action stream is 214 MB). The Tour Viewer passes its session's one budget, so the action stream and the content share a total.
+- **Errors:** Throws if any action entry's `uncompressedSize` exceeds `maxFileSize` (DoS protection), and `ArchiveLimitError` when the inflated bytes pass a cap. Malformed JSON in individual action files is handled gracefully (skip + warn) rather than aborting the entire load — consistent with `loadGpsPathFromBlob`'s error-handling pattern.
+
+### `loadActionsFromEntries(entries: readonly Entry[], read: (entry, maxBytes) => Promise<string>, maxFileSize?: number): Promise<ZipActionEntry[]>`
+
+The same parse over an entry list the caller ALREADY HOLDS, each action entry read through `read` (given `maxFileSize`; its rejection is the parse's). For a caller that has checked its list and must not let a second directory read replace it: the Tour Viewer reads a signed tour's recording from the list tier 1 checked, every entry through its own capped and hashing read (tour kit plan K1, milestone review R1 - re-listing a live range source could return another directory, with entries the check never saw). Directories in `entries` are skipped. It replaces the `readText` parameter `loadActionsFromZip` had during K1, which re-listed the archive.
 
 ### `loadSessionMetadata(data: Uint8Array, maxFileSize?: number): Promise<Record<string, unknown> | null>`
 
@@ -40,7 +45,7 @@ Reads `session.json` from the ZIP if present. Returns `null` when the file is ab
 
 - **Input:** ZIP file bytes as `Uint8Array`; optional `maxFileSize` (defaults to `MAX_ACTION_FILE_SIZE` = 1 MB)
 - **Output:** Parsed metadata object, or `null` if `session.json` is missing
-- **Errors:** Throws if `session.json` `uncompressedSize` exceeds `maxFileSize` (DoS protection)
+- **Errors:** Throws if `session.json` `uncompressedSize` exceeds `maxFileSize` (DoS protection), and `ArchiveLimitError` when the bytes actually inflated pass it (the declared size is not trusted alone, K0)
 
 ### `loadSessionMetadataFromBlob(blob: Blob, maxFileSize?: number): Promise<Record<string, unknown> | null>`
 
@@ -129,6 +134,7 @@ const meta = await loadSessionMetadata(data);
 
 ## Tests
 
-- Unit tests: `zip-reader.test.ts` — covering entry reading, action loading, index extraction, payload preservation, graceful null return for missing `session.json`, size-limit enforcement for both actions and session metadata, warning logging for non-numeric action filenames, malformed JSON resilience (skip + warn + return remaining valid actions), `loadSessionMetadataFromBlob` (Blob-based metadata reading with BlobReader), `loadGpsPathFromBlob` (GPS-only extraction including happy path, filtering, device fixes only (synthetic QR votes and unknown stamps left out), empty GPS, corrupted zip, File support, and chronological ordering), and the `ZipSource` lazy-Reader path (result equivalence vs `Uint8Array` for all four helpers, lazy `getText()` after helper return, concurrent triple use of one shared Reader instance, `toZipReader` capability-marker pin).
+- Unit tests: `zip-reader.test.ts` — covering entry reading, action loading, index extraction, payload preservation, graceful null return for missing `session.json`, size-limit enforcement for both actions and session metadata, warning logging for non-numeric action filenames, malformed JSON resilience (skip + warn + return remaining valid actions), `loadSessionMetadataFromBlob` (Blob-based metadata reading with BlobReader), `loadGpsPathFromBlob` (GPS-only extraction including happy path, filtering, device fixes only (synthetic QR votes and unknown stamps left out), empty GPS, corrupted zip, File support, and chronological ordering), and the `ZipSource` lazy-Reader path (result equivalence vs `Uint8Array` for all four helpers, lazy `getText()` after helper return, concurrent triple use of one shared Reader instance, `toZipReader` capability-marker pin), and the decompression budget (the archive total, also when every action entry carries ONE name - K0 milestone review R3).
+- `zip-reader-session-count.test.ts` - the `session.json` count alone stopping an entry that understates its size. It replaces zip.js's reader with one that inflates without zip.js's own declared-size check, because with zip.js 2.11.2 that check (or the declared-size refusal) always fires first, so no real archive can show the count working (K0 milestone review R11).
 - Integration consumer: `recording-replay.integration.test.ts` — uses `loadActionsFromZip` and `loadSessionMetadata` for full replay verification.
 - Test data: produced programmatically via `produceTestZip()` from `test-utils/zip-round-trip-helpers.ts` — no static test zip files.

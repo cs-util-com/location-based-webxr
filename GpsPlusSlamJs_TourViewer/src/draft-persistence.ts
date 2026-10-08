@@ -25,10 +25,6 @@ import {
 import { isWritableQrLevelId } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 
-import {
-  parseMoveAnswers,
-  type RememberedMoveAnswer,
-} from "./code-move-prompt.js";
 import type { AuthoringDraft } from "./authoring-draft.js";
 import {
   parseVisitLogEntry,
@@ -167,6 +163,14 @@ interface DraftMeta {
   sizeM: number;
   level: { id: string; json: string } | null;
   /**
+   * Every code this page measured or changed that the hosted zip does not
+   * hold yet (code book refactor plan M4c-1), `level` among them. OPTIONAL
+   * like `rejected`: absent from every meta written before, where `level`
+   * is the only code. Each entry is validated like `level`; one that does
+   * not read costs itself.
+   */
+  levels?: readonly { id: string; json: string }[];
+  /**
    * Object ids the creator has thrown away, which `readDraft` refuses
    * whether or not their files are still on disk.
    *
@@ -176,14 +180,6 @@ interface DraftMeta {
    * list, so it cannot grow for the life of a tour.
    */
   rejected?: readonly string[];
-  /**
-   * The move prompt's remembered answers (authoring plan 2026-09-28-0953
-   * §3.6, M5b): "It's a second copy" and "Not now", per level and spot,
-   * so a reload does not ask again. OPTIONAL like `rejected`, bounded by
-   * `MOVE_ANSWERS_MAX`, re-stated on every write; an unreadable list
-   * reads as no answers (the cost is one prompt asked again).
-   */
-  moveAnswers?: readonly RememberedMoveAnswer[];
 }
 
 /**
@@ -274,8 +270,6 @@ export interface StoredDraft {
    * `storedIds`, so a discard or a spent draft sweeps it with the rest.
    */
   visits: readonly VisitLogEntry[];
-  /** The move prompt's remembered answers (M5b), well-formed ones only. */
-  moveAnswers: readonly RememberedMoveAnswer[];
   /**
    * EVERY object id this read saw on disk, including the ones it refused
    * and the ones the meta rejects.
@@ -404,15 +398,21 @@ export async function readDraft(
       tourUrl: meta.tourUrl,
       sizeM: meta.sizeM,
       level: meta.level,
+      // From the raw parsed value, like `rejected`: `isMeta` does not
+      // validate it. An older meta's one level is the list.
+      levels: Array.isArray(meta.levels)
+        ? (meta.levels as unknown[]).filter(
+            (l): l is { id: string; json: string } => l !== null && isLevel(l),
+          )
+        : meta.level === null
+          ? []
+          : [meta.level],
       objects,
       deleted: deleted.sort(),
     },
     photos,
     rejectedIds: [...rejected].filter((id) => onDisk.has(id)),
     visits,
-    // From the raw parsed value, like `rejected`: `isMeta` does not
-    // validate it, `parseMoveAnswers` does.
-    moveAnswers: parseMoveAnswers(meta.moveAnswers),
     storedIds,
   };
 }

@@ -24,6 +24,8 @@ import type {
 } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { qrFrameChanged } from "gps-plus-slam-app-framework/state";
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
+import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
+import type * as QrCodeIdModule from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { Matrix4 } from "three";
 import type { TourViewerSeams } from "./seams.js";
 import {
@@ -57,6 +59,34 @@ vi.mock("gps-plus-slam-app-framework/ar/qr/qr-tracking-controller", () => ({
 // The creator's print-size check (QR size consensus plan S3a) is tested on
 // its own (print-size-check.test.ts); here a controllable stand-in, whose
 // defaults (no offer, nothing pending) leave the other tests as they were.
+/** The identity hash, passed through - except that a test can hold the
+ *  `holdCall`-th call for a text until `release` (code book plan M1:
+ *  the window while a measurement is in flight is one hash long). */
+const idHold = vi.hoisted(() => ({
+  text: null as string | null,
+  holdCall: 0,
+  calls: 0,
+  gate: null as Promise<void> | null,
+}));
+vi.mock(
+  "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id",
+  async (importOriginal) => {
+    const real = await importOriginal<typeof QrCodeIdModule>();
+    return {
+      ...real,
+      qrCodeId: async (text: string) => {
+        if (text === idHold.text) {
+          idHold.calls += 1;
+          if (idHold.calls === idHold.holdCall && idHold.gate !== null) {
+            await idHold.gate;
+          }
+        }
+        return real.qrCodeId(text);
+      },
+    };
+  },
+);
+
 const sizeCheck = vi.hoisted(() => ({
   offer: null as { text: string; sizeM: number } | null,
   detections: [] as string[],
@@ -248,7 +278,6 @@ describe("the creator measures and mints with the fused pose", () => {
     "sizeInput",
     "printPanel",
     "status",
-    "mintButton",
     "finishButton",
     "finishStatus",
     "downloadButton",
@@ -267,19 +296,8 @@ describe("the creator measures and mints with the fused pose", () => {
     "sizeOfferUse",
     "sizeOfferKeep",
     "objectList",
-    "replaceCodeButton",
-    "replaceCodeConfirm",
-    "replaceCodeConfirmText",
-    "replaceCodeYes",
-    "replaceCodeNo",
-    "movePrompt",
-    "movePromptText",
-    "movePromptUse",
-    "movePromptCopy",
-    "movePromptLater",
-    "moveUndo",
-    "moveUndoText",
-    "moveUndoButton",
+    "keepScanRow",
+    "keepScanInput",
   ] as const;
   function el() {
     const handlers = new Map<string, () => void>();
@@ -323,7 +341,10 @@ describe("the creator measures and mints with the fused pose", () => {
   function creator(
     options: {
       aligned?: boolean;
-      codeTour?: Pick<ScanOpen, "onDetection" | "status" | "tourOf">;
+      codeTour?: Pick<
+        ScanOpen,
+        "onDetection" | "status" | "tourOf" | "relation"
+      >;
     } = {},
   ) {
     captured.configs.length = 0;
@@ -360,6 +381,9 @@ describe("the creator measures and mints with the fused pose", () => {
       arStore,
       setup,
       detect: (i: number) => config.onDetection?.(fusedEvent(TEXT, i)),
+      /** A detection of another code (code book plan M4c-2). */
+      detectText: (text: string, i: number) =>
+        config.onDetection?.(fusedEvent(text, i)),
     };
   }
 
@@ -399,7 +423,7 @@ describe("the creator measures and mints with the fused pose", () => {
       expect(c.arStore.getState().qrDetected.markers[TEXT]).toBeUndefined();
       expect(c.dom.sizeOfferUse.hidden).toBe(true);
       expect(c.dom.sizeOfferText.textContent).toBe(
-        "Now using 15.5 cm (0.155 m) - walk slowly around the code again, then save the position.",
+        "Now using 15.5 cm (0.155 m) - walk slowly around the code again to measure it at this size.",
       );
     });
 
@@ -426,30 +450,245 @@ describe("the creator measures and mints with the fused pose", () => {
 
   // Milestone review of b4b #1: the readout and the mint read the fused
   // result; a cached one survives a tracking restart, and minting from it
-  // would stamp the OLD frame's pose into the printed code.
-  it("does not mint the old frame's pose after a tracking restart", () => {
+  // would stamp the OLD frame's pose into the printed code. Since U3 the
+  // measurement follows the readout on its own, so the readout must not
+  // read the old frame's pose either.
+  it("does not read the old frame's pose after a tracking restart", () => {
     const c = creator();
     for (let i = 0; i < 7; i++) c.detect(i);
     c.arStore.dispatch(qrFrameChanged());
-    c.dom.mintButton.click();
-    expect(c.dom.status.textContent).not.toMatch(/no usable gps alignment/i);
+    c.setup.renderAuthorReadout();
     expect(c.dom.status.textContent).not.toMatch(/pose stable/i);
+    expect(c.ctx.mintedLevel).toBeNull();
   });
 
   it("reads the fused pose as stable where the single frames scatter", () => {
     const c = creator();
     for (let i = 0; i < 7; i++) c.detect(i);
-    // Stable; the mint then waits only for the GPS alignment.
+    // Stable; the measurement then waits only for the GPS alignment.
     expect(c.dom.status.textContent).toMatch(/pose stable/i);
+    expect(c.ctx.mintedLevel).toBeNull();
+  });
+
+  // UI round 1, U3: no "Save the measured position" button - the code is
+  // measured on its own once the gate is open, ONCE per visit and code
+  // (plan review #1), so later detections do not keep re-measuring it.
+  it("measures the code on its own once stable and aligned, once per visit", async () => {
+    const c = creator({ aligned: true });
+    for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    expect(c.dom.status.textContent).toMatch(/Code measured/);
+    const generation = c.ctx.mintGeneration;
+    for (let i = 7; i < 14; i++) c.detect(i);
+    c.setup.renderAuthorReadout();
+    expect(c.ctx.mintGeneration).toBe(generation);
+  });
+
+  // UI round 1, U3: with a code in hand, a NEW code (no saved position
+  // anywhere) is still measured on its own - that is how a tour gains its
+  // second code (each Finish writes the code in hand) - while another
+  // STORED code stays a sighting (authoring-settle.test.ts).
+  it("measures a new code while another code is in hand, once that one is saved in the tour", async () => {
+    const c = creator({ aligned: true });
+    c.ctx.mintedLevel = { id: "an-earlier-code", json: "{}" };
+    // Hosted: the tour already carries it.
+    c.ctx.currentLevels = new Map([["an-earlier-code", { qr: {} } as never]]);
+    for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel?.id).not.toBe("an-earlier-code");
+    });
+    expect(c.ctx.mintedLevel?.id).toBe(await qrCodeId(TEXT));
+  });
+
+  // Code book plan M1 (a sampled mutation pass found it unpinned): Finish
+  // is held while a measurement is in flight - the level it lands may be
+  // the one the zip should carry.
+  it("holds Finish while a measurement is in flight", async () => {
+    const c = creator({ aligned: true });
+    c.ctx.session = {
+      archive: { url: "https://h.test/a.zip", size: 1 },
+      entries: [],
+      hostedFileName: () => null,
+    } as never;
+    c.ctx.tourManifestStatus = "settled";
+    c.ctx.mintedLevel = { id: "hosted", json: "{}" };
+    c.ctx.currentLevels = new Map([["hosted", { qr: {} } as never]]);
+    let release: () => void = () => undefined;
+    idHold.text = TEXT;
+    idHold.calls = 0;
+    // Call 1 identifies the sighting; call 2 is the measurement's.
+    idHold.holdCall = 2;
+    idHold.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      c.setup.renderAuthorReadout();
+      expect(c.dom.finishButton.disabled).toBe(false);
+      for (let i = 0; i < 7; i++) c.detect(i);
+      await vi.waitFor(() => {
+        expect(idHold.calls).toBe(2);
+      });
+      c.setup.renderAuthorReadout();
+      expect(c.dom.finishButton.disabled).toBe(true);
+      // And the click guard, not only the button state (M1 review #7): a
+      // Finish tapped in that window does not start.
+      c.dom.finishButton.disabled = false;
+      c.dom.finishButton.click();
+      expect(c.ctx.finishing).toBe(false);
+      release();
+      await vi.waitFor(() => {
+        expect(c.ctx.mintedLevel?.id).not.toBe("hosted");
+      });
+      await vi.waitFor(() => {
+        expect(c.dom.finishButton.disabled).toBe(false);
+      });
+    } finally {
+      release();
+      idHold.text = null;
+      idHold.gate = null;
+    }
+  });
+
+  // Code book plan M1: adopting a measured print size empties the code in
+  // hand; the code must then be measured again, at the new size.
+  it("measures the code again at a newly adopted print size", async () => {
+    const c = creator({ aligned: true });
+    for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    sizeCheck.offer = { text: TEXT, sizeM: 0.1554 };
+    c.detect(7);
+    c.dom.sizeOfferUse.click();
+    sizeCheck.offer = null;
+    expect(c.ctx.mintedLevel).toBeNull();
+    for (let i = 8; i < 16; i++) {
+      captured.configs.at(-1)?.onDetection?.(fusedEvent(TEXT, i));
+    }
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    expect(c.ctx.codeMeasurement?.sizeM).toBe(0.155);
+  });
+
+  // Code book plan M4c-3: a size offer is adopted for ITS code - another
+  // code in hand keeps its measurement and stays in hand.
+  it("adopts a size for the offered code only, leaving another code in hand", async () => {
+    const c = creator({ aligned: true });
+    for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    const first = c.ctx.mintedLevel!.id;
+    const second = "https://gps.csutil.com/tour/?qr=second";
+    for (let i = 0; i < 7; i++) c.detectText(second, i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel?.id).not.toBe(first);
+    });
+    const inHand = c.ctx.mintedLevel!;
+    sizeCheck.offer = { text: TEXT, sizeM: 0.2 };
+    c.detect(7);
+    c.dom.sizeOfferUse.click();
+    sizeCheck.offer = null;
+    expect(c.ctx.mintedLevel).toEqual(inHand);
+    expect(c.ctx.codeMeasurement?.levelId).toBe(inHand.id);
+  });
+
+  // Why this test matters (code book plan M4 milestone review #3): adopting
+  // a size also sets the field, and a code measured on this page - not
+  // hosted - was then solved at the field's NEW size, while its level said
+  // the old one. A correction through its later sightings was off by
+  // (ratio - 1) x the camera distance. It keeps the size it was measured at.
+  it("keeps the size a code was measured at when another code's size is adopted", async () => {
+    const c = creator({ aligned: true });
+    const fieldM = Number(c.dom.sizeInput.value);
+    for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    const first = c.ctx.mintedLevel!.id;
+    const second = "https://gps.csutil.com/tour/?qr=second";
+    for (let i = 0; i < 7; i++) c.detectText(second, i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel?.id).not.toBe(first);
+    });
+    sizeCheck.offer = { text: second, sizeM: 0.3 };
+    c.detectText(second, 7);
+    c.dom.sizeOfferUse.click();
+    sizeCheck.offer = null;
+    expect(Number(c.dom.sizeInput.value)).toBe(0.3);
+    // The restarted pipeline fetches each code's level before solving it.
+    const config = captured.configs.at(-1)!;
+    expect((await config.fetchLevel(TEXT)).qr.physicalSizeM).toBe(fieldM);
+    expect((await config.fetchLevel(second)).qr.physicalSizeM).toBe(0.3);
+  });
+
+  // Code book plan M4c-3: a code the tour stores at its own printed size
+  // is solved and measured at THAT size, not the size field's - two codes
+  // printed at different sizes no longer share one.
+  it("solves and measures a code at the size the tour stores for it", async () => {
+    const c = creator({ aligned: true });
+    const id = await qrCodeId(TEXT);
+    c.ctx.currentLevels = new Map([
+      [id, { version: 1, qr: { text: TEXT, physicalSizeM: 0.3 } } as never],
+    ]);
+    // The controller fetches a code's level before it solves the code.
+    const level = await captured.configs.at(-1)!.fetchLevel(TEXT);
+    expect(level.qr.physicalSizeM).toBe(0.3);
+    expect(Number(c.dom.sizeInput.value)).not.toBe(0.3);
+    for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    expect(c.ctx.codeMeasurement?.sizeM).toBe(0.3);
+  });
+
+  // Code book plan M4c-2 (replacing U3 milestone review #7's "Finish
+  // first"): a Finish writes every code of the book since M4c-1, so a new
+  // code is measured past an unsaved one and neither is dropped.
+  it("measures a new code past one not saved yet", async () => {
+    const c = creator({ aligned: true });
+    c.ctx.mintedLevel = { id: "measured-not-finished", json: "{}" };
+    for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel?.id).not.toBe("measured-not-finished");
+    });
+    expect(c.dom.status.textContent).not.toMatch(/Finish first/);
+  });
+
+  // Code book plan M4c-2: a code measured earlier in the visit is still
+  // "measured" once another code has taken the hand - not "seen", and
+  // never measured a second time.
+  it("still reads a code measured earlier in the visit as measured after a second code", async () => {
+    const c = creator({ aligned: true });
+    for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    const first = c.ctx.mintedLevel!.id;
+    const second = "https://gps.csutil.com/tour/?qr=second";
+    for (let i = 0; i < 7; i++) c.detectText(second, i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel?.id).not.toBe(first);
+    });
+    // Each measurement bumps the mint generation.
+    const before = c.ctx.mintGeneration;
+    for (let i = 7; i < 14; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.dom.status.textContent).toMatch(/Code measured/);
+    });
+    expect(c.ctx.mintGeneration).toBe(before);
   });
 
   // TourViewer scan-to-open plan §5 #13 (a pre-existing bug): a note in
   // the panel - "not saving a backup copy", a restored draft, a failed
-  // delete - replaced the live readout and locked Save until the next Pin
-  // or Photo tap. On a device without OPFS the backup note fires when the
-  // tour opens, before any measuring, so Save could never unlock: Pin and
-  // Photo need a saved position first.
-  it("keeps Save and the live readout when the panel carries a note", async () => {
+  // delete - replaced the live readout and locked measuring until the next
+  // Pin or Photo tap. Since U3 the automatic measurement must also leave
+  // the note standing (plan review #1): nothing the creator did asked for
+  // it.
+  it("measures, and keeps the live readout and the note, when the panel carries a note", async () => {
     const c = creator({ aligned: true });
     c.setup.presentDraftForTour("https://example.test/tour.zip");
     for (let i = 0; i < 12; i += 1) await Promise.resolve();
@@ -458,17 +697,23 @@ describe("the creator measures and mints with the fused pose", () => {
       "the no-backup note must have fired, or this proves nothing",
     ).toContain("not saving a backup copy");
     for (let i = 0; i < 7; i++) c.detect(i);
+    await vi.waitFor(() => {
+      expect(c.ctx.mintedLevel).not.toBeNull();
+    });
+    expect(c.ctx.placementNote).toContain("not saving a backup copy");
     expect(c.dom.status.textContent).toContain("not saving a backup copy");
-    expect(c.dom.status.textContent).toMatch(/measured and stable/i);
-    expect(c.dom.mintButton.disabled).toBe(false);
+    expect(c.dom.status.textContent).toMatch(/Code measured/);
   });
 
   // TourViewer scan-to-open plan §9 #4, #9, #10: the panel feeds every
   // detection to scan-to-open, says what it reports about the code in view,
-  // names the open tour, keeps Save off for a code of another tour, and the
-  // mint remembers which tour its code named.
+  // names the open tour, and the measurement remembers which tour its code
+  // named. UI round 1, U3: which codes are measured on their own.
   describe("step 4's scan-to-open in the panel", () => {
-    function stub(status: CodeTourStatus) {
+    function stub(
+      status: CodeTourStatus,
+      relation: ReturnType<ScanOpen["relation"]> = "this-tour",
+    ) {
       const seen: string[] = [];
       return {
         seen,
@@ -478,8 +723,13 @@ describe("the creator measures and mints with the fused pose", () => {
           },
           status: () => status,
           tourOf: () => "https://h.test/a.zip",
+          relation: () => relation,
         },
       };
+    }
+
+    async function settled(): Promise<void> {
+      for (let i = 0; i < 12; i += 1) await Promise.resolve();
     }
 
     it("feeds every detection and shows the code's status", () => {
@@ -490,27 +740,48 @@ describe("the creator measures and mints with the fused pose", () => {
       expect(c.dom.status.textContent).toMatch(/Could not open the tour/);
     });
 
-    it("keeps Save on for a code of another tour: it joins the open tour", () => {
-      // Plan §13 (owner): in authoring there is no wrong code.
-      const s = stub({ kind: "added-to-open-tour" });
-      const c = creator({ aligned: true, codeTour: s.codeTour });
-      for (let i = 0; i < 7; i++) c.detect(i);
-      expect(c.dom.status.textContent).toMatch(/measured and stable/i);
-      expect(c.dom.status.textContent).toMatch(/added to the open tour/);
-      expect(c.dom.mintButton.disabled).toBe(false);
+    // Code book plan §11 D5, extended by the owner: every code seen while
+    // a tour is open is measured - another tour's too, also for a tour
+    // that has codes (before M4c-2 only for a tour with none).
+    it("measures another tour's code, for a tour with codes too", async () => {
+      const s = stub({ kind: "added-to-open-tour" }, "other-tour");
+      const first = creator({ aligned: true, codeTour: s.codeTour });
+      for (let i = 0; i < 7; i++) first.detect(i);
+      await vi.waitFor(() => {
+        expect(first.ctx.mintedLevel).not.toBeNull();
+      });
+      expect(first.dom.status.textContent).toMatch(/added to the open tour/);
+
+      const withCodes = creator({ aligned: true, codeTour: s.codeTour });
+      withCodes.ctx.currentLevels = new Map([["other", { qr: {} } as never]]);
+      for (let i = 0; i < 7; i++) withCodes.detect(i);
+      await vi.waitFor(() => {
+        expect(withCodes.ctx.mintedLevel).not.toBeNull();
+      });
+      expect(withCodes.dom.status.textContent).not.toMatch(/not measured/);
     });
 
-    it("keeps Save on when the level in hand was measured for another tour", () => {
-      // Milestone review #6: with no tour open, a level bound to a tour that
-      // never opens must not block measuring this code - a new measurement
-      // replaces it.
-      const s = stub({ kind: "measured-for-another", label: "x.zip" });
+    it("measures nothing with no tour open", async () => {
+      // ...and the line never claims a measurement (U3: "ready" is not
+      // "measured").
+      const s = stub({ kind: "quiet" }, "no-tour-open");
       const c = creator({ aligned: true, codeTour: s.codeTour });
       for (let i = 0; i < 7; i++) c.detect(i);
-      expect(c.dom.status.textContent).toMatch(
-        /You measured the code of x.zip/,
-      );
-      expect(c.dom.mintButton.disabled).toBe(false);
+      await settled();
+      expect(c.ctx.mintedLevel).toBeNull();
+      expect(c.dom.status.textContent).toMatch(/Code seen\./);
+      expect(c.dom.status.textContent).not.toMatch(/Code measured/);
+    });
+
+    // The owner's extension of D5: a stray QR that names no tour is
+    // "another anchor that can stabilize the virtual objects".
+    it("measures a code naming no tour while a tour is open", async () => {
+      const s = stub({ kind: "quiet" }, "not-a-tour");
+      const c = creator({ aligned: true, codeTour: s.codeTour });
+      for (let i = 0; i < 7; i++) c.detect(i);
+      await vi.waitFor(() => {
+        expect(c.ctx.mintedLevel).not.toBeNull();
+      });
     });
 
     it("names the open tour", () => {
@@ -529,23 +800,11 @@ describe("the creator measures and mints with the fused pose", () => {
         codeTour: stub({ kind: "quiet" }).codeTour,
       });
       for (let i = 0; i < 7; i++) c.detect(i);
-      expect(c.dom.mintButton.disabled).toBe(false);
-      c.dom.mintButton.click();
       await vi.waitFor(() => expect(c.ctx.mintedLevel).not.toBeNull());
       expect(c.ctx.mintedLevelTour).toEqual({
         levelId: c.ctx.mintedLevel?.id,
         tourUrl: "https://h.test/a.zip",
       });
     });
-  });
-
-  it("mints from the fused pose: the tap reaches the mint, which needs the alignment next", () => {
-    const c = creator();
-    for (let i = 0; i < 7; i++) c.detect(i);
-    const before = c.dom.status.textContent;
-    c.dom.mintButton.click();
-    // A mint that found no stable pose returns without a word; one that
-    // found it reports what the mint itself refused (no alignment here).
-    expect(c.dom.status.textContent).not.toBe(before);
   });
 });

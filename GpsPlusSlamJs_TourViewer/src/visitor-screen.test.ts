@@ -4,7 +4,7 @@ import fc from "fast-check";
 import { realSeams, type TourViewerSeams } from "./seams";
 import {
   gateAfterRequest,
-  locationRequestMessage,
+  locationRequestNotice,
   locationTapNeeded,
   wireVisitorScreen,
   type LocationPermission,
@@ -93,7 +93,7 @@ describe("wireVisitorScreen", () => {
     // visitor page could ever open it - and its content is their Start
     // button (M3, F4).
     expect(d.measureStep.open).toBe(true);
-    expect(d.arHint.textContent).toContain("printed code");
+    expect(d.arHint.textContent).toContain("the tour's code (on the poster)");
     // Pessimistic before the query answers.
     expect(screen.locationGate.pending()).toBe(true);
     await vi.waitFor(() => expect(renderArEntry).toHaveBeenCalled());
@@ -126,6 +126,11 @@ describe("wireVisitorScreen", () => {
     await expect(screen.locationGate.request()).resolves.toBe("granted");
     expect(screen.locationGate.pending()).toBe(false);
     expect(d.errorBox.textContent).toBe("");
+    // The silent second tap (UI round 1, U1, review F11): the hint now
+    // says what the button just turned into.
+    expect(d.arHint.textContent).toBe(
+      "Location allowed - now tap Start the tour, then point your phone at the tour's code (on the poster).",
+    );
   });
 
   it("clears the gate when the permission is fine but no fix came (M2 review #1), and shows busy while a request runs", async () => {
@@ -155,7 +160,10 @@ describe("wireVisitorScreen", () => {
     await expect(request).resolves.toBe("unavailable");
     expect(screen.locationGate.busy()).toBe(false);
     expect(screen.locationGate.pending()).toBe(false);
-    expect(d.errorBox.textContent).toMatch(/no gps fix yet/i);
+    // A benign note, not an error: the hint, never the red alert box
+    // (UI round 1, U1, review F11).
+    expect(d.errorBox.textContent).toBe("");
+    expect(d.arHint.textContent).toMatch(/no gps fix yet/i);
   });
 
   it("the pure rules: only a denial keeps the gate; every outcome but a grant has a message (property)", () => {
@@ -168,9 +176,10 @@ describe("wireVisitorScreen", () => {
         ),
         (outcome) => {
           expect(gateAfterRequest(outcome)).toBe(outcome === "denied");
-          expect(locationRequestMessage(outcome) === "").toBe(
-            outcome === "granted",
-          );
+          const notice = locationRequestNotice(outcome);
+          // Only a denial is an error; every other outcome says what next.
+          expect(notice.error === "").toBe(outcome !== "denied");
+          expect(notice.hint === null).toBe(outcome === "denied");
         },
       ),
     );
