@@ -332,6 +332,27 @@ describe("planFlight and flightAt", () => {
     expect(c.quaternion.angleTo(start.quaternion)).toBeLessThan(1e-6);
   });
 
+  // WHY (a property counterexample, 2026-10-08): from a start a hair off
+  // the target's antipode the course's normal came from a cross product
+  // about 1e-12 long, the target lay off the course's plane, and the
+  // path's last moment missed its end by micrometres: a snap at the
+  // landing. The curve must end on its end.
+  it("ends on its end from a start at the target's antipode", () => {
+    const R = 6_371_000;
+    for (const lng of [180, 179.99999999994273, 179.9999, 179.9]) {
+      const pose = orbitPose(WGS84_ELLIPSOID, { lat: 0, lng });
+      const cam = obliqueCamera(WGS84_ELLIPSOID, pose, 3_000 * KM, 90);
+      const path = planFlight(
+        WGS84_ELLIPSOID,
+        { pose, distanceM: cam.position.length(), quaternion: cam.quaternion },
+        orbitPose(WGS84_ELLIPSOID, { lat: 0, lng: 0 }),
+        { landingM: KM },
+      );
+      const last = flightAt(path, path.durationMs * (1 - 1e-12)).camera;
+      expect(last.distanceTo(path.cameraEnd) * R, `${lng}`).toBeLessThan(1e-6);
+    }
+  });
+
   // WHY (CF2 replans from a camera mid-flight): an oblique start, its view
   // on a centre ahead of it, must start exactly where it is too.
   it("starts exactly where an oblique camera is", () => {

@@ -311,9 +311,23 @@ function tangent(v: THREE.Vector3, direction: THREE.Vector3): THREE.Vector3 {
 /**
  * The course's normal: along the great circle from the camera's start
  * (`from`) to the target, or the start's heading for a target nearer than
- * one landing.
+ * one landing. Exactly perpendicular to the target, so the target and the
+ * camera's end lie in the course's plane: near the antipode the cross
+ * product is about 1e-12 long, its normal off by about 1e-4, and the
+ * path's end missed `cameraEnd` by micrometres, a snap at the landing
+ * (a property counterexample, 2026-10-08).
  */
 function courseNormal(
+  from: THREE.Vector3,
+  target: THREE.Vector3,
+  startUp: THREE.Vector3,
+  landingM: number,
+): THREE.Vector3 {
+  const n = rawCourseNormal(from, target, startUp, landingM);
+  return n.addScaledVector(target, -n.dot(target)).normalize();
+}
+
+function rawCourseNormal(
   from: THREE.Vector3,
   target: THREE.Vector3,
   startUp: THREE.Vector3,

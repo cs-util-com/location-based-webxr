@@ -158,6 +158,14 @@ milestone review, finding 1). A start within one landing of the target can
 lie off the plane, which runs along its own heading there; that offset
 fades out with the curve's residual, so both ends stay exact.
 
+The course's normal is made exactly perpendicular to the target, in every
+branch. From a start a hair off the target's antipode the cross product is
+about 1e-12 long, its normal was off by about 1e-4, the target and the
+camera's end lay off the plane, and the curve's last moment missed the end
+by 6.4 micrometres, a snap at the landing (a property counterexample,
+2026-10-08; tested from 180, 179.99999999994273, 179.9999 and 179.9
+degrees).
+
 ### The clock
 
 - A ramp from `startSpeed` to the cruise speed over `rampMs`. The speed
