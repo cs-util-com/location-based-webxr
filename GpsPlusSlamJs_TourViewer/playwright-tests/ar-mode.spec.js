@@ -2860,7 +2860,9 @@ test("a Drive tour saves the zip under the Drive file's name, with the Drive ste
     /** @type {any} */ (window).__tourViewerTest.saveOutcome = true;
   });
   await download.click();
-  await expect(status).toContainText(/saved as My tour\.zip in Downloads/i);
+  await expect(status).toContainText(
+    /saved to downloads - check that it is named My tour\.zip/i,
+  );
   const saved = await page.evaluate(() => {
     const d = /** @type {any} */ (window).__tourViewerTest.downloads;
     return d.map((/** @type {any} */ x) => ({
@@ -2889,7 +2891,7 @@ test("a Drive tour whose host sends no name asks the creator to check it", async
   // instead of risking a silent second copy.
   await measureAndFinish(page, DRIVE_ARCHIVE_UNNAMED);
   await expect(page.getByTestId("finish-status")).toContainText(
-    /saved as tour\.zip/i,
+    /check that it is named tour\.zip/i,
   );
   await expect(page.getByTestId("replace-help-drive")).toContainText(
     'Check that the file on Drive is named "tour.zip"',

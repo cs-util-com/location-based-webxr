@@ -89,7 +89,6 @@ const DOM_KEYS = [
   "controls",
   "finishBlock",
   "replaceHelp",
-  "replaceHelpShare",
   "replaceHelpGeneric",
   "replaceHelpDrive",
   "sizeInput",

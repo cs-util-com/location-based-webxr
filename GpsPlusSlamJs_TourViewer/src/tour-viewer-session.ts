@@ -304,7 +304,8 @@ export interface TourViewerSession {
   /** The last finish failure, shown with priority until the next tap
    *  (the readout used to erase it on the next store dispatch, M3 review #1). */
   finishError: string | null;
-  /** The rebuilt zip awaiting download in step 5, with the list its
+  /** The rebuilt zip of the last Finish, saved at the end of step 4 (and
+   *  again from its button), with the list its
    *  `manifest.json` carries when the tour has one (K1 milestone review
    *  R7): a second Finish rebuilds from this zip, so its list starts there. */
   rebuiltZip: {

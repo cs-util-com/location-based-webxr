@@ -21,6 +21,13 @@ M4 makes it write every code of the book, not only the one in hand.
     decision D-F4a), with its result sentences as the notes that stay on
     the line under the save's status, and brings that line into view. The
     status reads `savingTour` until the save settles.
+  - With an AR session running (a new one began during the rebuild, or
+    ending the session failed) the zip is offered on the button instead
+    (`handoff.offer`): no download inside AR (F4 milestone review #6).
+  - A Finish that fails AFTER making its zip still hands that zip over the
+    same way (review #1); an earlier Finish's zip stays saveable from the
+    button. The button is disabled while a Finish runs, so a tap cannot
+    save the previous zip just before the new one (review #5).
   - The Finish settles a visit still running FIRST
     (`settle.settleVisit("finish")`), and forgets that settle again when
     no zip was written (`settle.unsettle`).

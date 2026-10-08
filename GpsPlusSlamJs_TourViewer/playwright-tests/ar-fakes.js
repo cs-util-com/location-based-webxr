@@ -109,9 +109,9 @@ export async function installTourViewerArFakes(page, options = {}) {
         downloads:
           /** @type {{ filename: string, blob: Blob, seam?: "share-or-download" | "download" }[]} */ ([]),
         saveOutcome,
-        /** Which route the zip hand-off should take. False (the default)
-         *  keeps every existing test on the save path; true makes the app
-         *  label its buttons "share" and report the share copy. */
+        /** Whether the device could share files. The tour zip is always
+         *  saved (field test 2, F4); the starter zip and the recording
+         *  still share where they can, and label their buttons so. */
         shareRoute,
         /** Hold downloadPdf open so a test can observe the busy state. */
         holdPdfSave: false,

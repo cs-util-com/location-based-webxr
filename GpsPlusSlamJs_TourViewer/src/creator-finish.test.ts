@@ -307,11 +307,16 @@ async function wireFinishable(options: {
       getState: () => ({ status: arStatus.value }),
       disable: () => {
         options.onDisable?.(ctx);
+        // The session ends, as it does on a phone: the Finish saves on the
+        // page (field test 2, F4).
+        arStatus.value = "ready";
         return Promise.resolve();
       },
     } as never,
     seams: {
       canShareZip: () => false,
+      // The Finish saves the rebuilt zip by itself (field test 2, F4).
+      downloadZip: () => Promise.resolve(true),
       getScene: () => null,
       ...options.seamsExtras,
     } as never,
@@ -1276,6 +1281,179 @@ describe("the save cannot be forgotten (UI round 1, U2)", () => {
     expect(dom.finishStatus.textContent).toContain("disk full");
     expect(dom.downloadButton.disabled).toBe(false);
     expect(setup.leaveNeedsConfirm()).toBe(true);
+  });
+
+  // Why (F4 milestone review #1): a Finish that made the zip and then
+  // failed - here the AR session's end rejects - must still save it; the
+  // block used to appear with a disabled button and a line saying the zip
+  // was being saved, with no way to save it.
+  it("saves the zip it made when the Finish fails afterwards", async () => {
+    const saves: string[] = [];
+    const status = { value: "running" };
+    const { dom, ctx, arStatus } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      onDisable: () => {
+        status.value = "ready"; // the session is down, then the end throws
+        throw new Error("the session would not end cleanly");
+      },
+      seamsExtras: {
+        downloadZip: (_blob: Blob, filename: string) => {
+          saves.push(filename);
+          return Promise.resolve(true);
+        },
+      },
+    });
+    Object.defineProperty(status, "value", {
+      get: () => arStatus.value,
+      set: (v: string) => {
+        arStatus.value = v;
+      },
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    await saved();
+    expect(ctx.finishError).not.toBeNull();
+    expect(saves).toHaveLength(1);
+    expect(dom.finishBlock.hidden).toBe(false);
+    expect(dom.downloadButton.disabled).toBe(false);
+    expect(dom.finishStatus.textContent).toContain(
+      FINISH_LABELS.saved(ctx.rebuiltZip!.filename),
+    );
+  });
+
+  // ...and with the session still running after that failure, the zip is
+  // offered on the button instead: no download inside an AR session.
+  it("offers the zip it made on the button when the session is still running", async () => {
+    let saves = 0;
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      onDisable: () => {
+        throw new Error("the session would not end");
+      },
+      seamsExtras: {
+        downloadZip: () => {
+          saves += 1;
+          return Promise.resolve(true);
+        },
+      },
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    await saved();
+    expect(saves).toBe(0);
+    expect(dom.downloadButton.disabled).toBe(false);
+    expect(dom.finishStatus.textContent).toContain(FINISH_LABELS.notSaved);
+    expect(dom.finishStatus.textContent).not.toMatch(/being saved/);
+  });
+
+  // Why (F4 milestone review #4a; async-UI rule): while the Finish's own
+  // save runs, the button is busy and the line says the zip is being saved.
+  it("shows the save in progress until it settles", async () => {
+    let release: (delivered: boolean) => void = () => undefined;
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      seamsExtras: {
+        downloadZip: () =>
+          new Promise<boolean>((resolve) => {
+            release = resolve;
+          }),
+      },
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    await saved();
+    expect(dom.downloadButton.disabled).toBe(true);
+    expect(dom.downloadButton.textContent).toBe(FINISH_LABELS.saving);
+    expect(dom.finishStatus.textContent).toMatch(/being saved to this phone/);
+    release(true);
+    await saved();
+    expect(dom.downloadButton.disabled).toBe(false);
+    expect(dom.finishStatus.textContent).toContain("Saved as");
+  });
+
+  // Why (F4 milestone review #4c; D-F4b): a phone that could share still
+  // saves - an automatic save has no fresh tap, which a share sheet needs.
+  it("saves, never shares, on a phone that could share", async () => {
+    let shared = 0;
+    let downloads = 0;
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      seamsExtras: {
+        canShareZip: () => true,
+        shareOrDownloadZip: () => {
+          shared += 1;
+          return Promise.resolve({ route: "share", delivered: true });
+        },
+        downloadZip: () => {
+          downloads += 1;
+          return Promise.resolve(true);
+        },
+      },
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    await saved();
+    dom.downloadButton.click();
+    await saved();
+    expect(downloads).toBe(2);
+    expect(shared).toBe(0);
+  });
+
+  // Why (F4 milestone review #5): a tap during a second Finish's rebuild
+  // would save the OLD zip just before the new one is saved under the same
+  // name (which a browser then names "(1)").
+  it("takes the button away while a Finish runs", async () => {
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      seamsExtras: { downloadZip: () => Promise.resolve(true) },
+    });
+    dom.finishButton.click();
+    await settle(ctx);
+    await saved();
+    expect(dom.downloadButton.disabled).toBe(false);
+    ctx.placedObjects = [{ object: pin("another-one") }];
+    dom.finishButton.click();
+    expect(ctx.finishing).toBe(true);
+    expect(dom.downloadButton.disabled).toBe(true);
+    await settle(ctx);
+    await saved();
+    expect(dom.downloadButton.disabled).toBe(false);
+  });
+
+  // Why (F4 milestone review #6): when a new AR session started while the
+  // zip was rebuilt, the Finish does not end it - and a download must not
+  // start inside it. The button saves once the creator is on the page.
+  it("leaves the save to the button when a new AR session is running", async () => {
+    let saves = 0;
+    const { dom, ctx } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      seamsExtras: {
+        downloadZip: () => {
+          saves += 1;
+          return Promise.resolve(true);
+        },
+      },
+    });
+    const session = ctx.session as unknown as {
+      readWholeArchive: () => Promise<Blob>;
+    };
+    const read = session.readWholeArchive.bind(session);
+    session.readWholeArchive = () => {
+      ctx.arSessionGeneration += 1; // a new AR session began meanwhile
+      return read();
+    };
+    dom.finishButton.click();
+    await settle(ctx);
+    await saved();
+    expect(saves).toBe(0);
+    expect(dom.downloadButton.disabled).toBe(false);
+    expect(dom.finishStatus.textContent).toContain(FINISH_LABELS.notSaved);
   });
 
   it("after AR ends without a Finish, Finish leads with saving the changes", async () => {

@@ -462,9 +462,17 @@ export const FINISH_LABELS = {
   saving: "Saving…",
   saved: (filename: string) =>
     `Saved as ${filename}. Now replace the hosted zip (steps below) - the link and the printed code stay the same.`,
+  /** It cannot know the name the phone gave the file: a repeat download
+   *  is saved as "name (1).zip", which Drive treats as a new file - and
+   *  with the save automatic, there is no moment before it to warn (F4
+   *  milestone review #2). */
   savedToPhone: (filename: string) =>
-    `Saved as ${filename} in Downloads. Now follow the Drive steps below - the link and the printed code stay the same.`,
+    `Saved to Downloads - check that it is named ${filename}, not "${repeatDownloadName(filename)}" (step 1 below). Then follow the Drive steps - the link and the printed code stay the same.`,
   notSaved: 'Not saved - tap "Save the tour zip again".',
+  /** The save failed, not the Finish: the zip is made (F4 milestone review
+   *  #9). */
+  saveFailed: (reason: string) =>
+    `The tour zip could not be saved (${reason}) - tap "Save the tour zip again".`,
 } as const;
 
 /**
@@ -501,9 +509,10 @@ export function driveReplaceSteps(
     rename,
     steps: [
       ...first,
-      // After the save, so a check rather than a warning (the warning is
-      // `readyDrive`): picking "name.zip" beside a new "name (1).zip"
-      // would upload the OLD zip over the tour (milestone review #1).
+      // After the save, so a check rather than a warning - and since the
+      // Finish saves by itself, the only guard (field test 2, F4): picking
+      // "name.zip" beside a new "name (1).zip" would upload the OLD zip
+      // over the tour (milestone review #1).
       `Check the new file in Downloads is named ${saved}. If it is "${repeatDownloadName(saved)}", delete every copy of ${saved}, then tap "${FINISH_LABELS.saveAgain}".`,
       `Open a new tab in Chrome (or your browser), type drive.google.com, then tick "Desktop site" in the ⋮ menu.`,
       `Open the folder with your tour, tap New, then File upload, and pick ${saved}.`,

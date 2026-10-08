@@ -34,8 +34,9 @@ finishFailed }`. `codeCount` (code book plan M4c-1): codes measured or
 
 ## Invariants & assumptions
 
-- "Delivered" is the hand-off's own report (`HandoffOutcome.delivered`):
-  a dismissed picker or share sheet keeps asking. The anchor-download
+- "Delivered" is the save's own report (`seams.downloadZip`'s result, the
+  Finish's own save or the button's; field test 2, F4): a dismissed picker
+  keeps asking. The anchor-download
   fallback reports delivered whatever happened (the browser gives no
   signal).
 - `draftPersists` is false once the page noted a failed backup

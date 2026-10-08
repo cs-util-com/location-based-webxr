@@ -108,7 +108,7 @@ export function wireCreatorFinish(deps: {
     | "showSummary"
     | "unsettle"
   >;
-  handoff: Pick<CreatorHandoff, "save">;
+  handoff: Pick<CreatorHandoff, "save" | "offer">;
   previews: Pick<CreatorPreviews, "keepFinishedPhoto" | "sync">;
   draft: Pick<CreatorDraft, "saveMeta">;
   sessionLive: () => boolean;
@@ -239,11 +239,24 @@ export function wireCreatorFinish(deps: {
     // (M3 review #2).
     const sessionGeneration = ctx.arSessionGeneration;
     ctx.finishing = true;
+    // A tap now would save the previous Finish's zip just before this one
+    // saves the new one under the same name (F4 milestone review #5).
+    dom.downloadButton.disabled = true;
     ctx.finishError = null;
     ctx.placementNote = null;
     ctx.finishProgress = FINISH_LABELS.reading(current.archive.size);
     deps.render();
     let wroteZip = false;
+    /** The zip THIS Finish made, and its result sentences: a failure after
+     *  it still hands the zip over (F4 milestone review #1). */
+    let madeZip: typeof ctx.rebuiltZip = null;
+    let notes = "";
+    /** Save the zip off AR; with a session running, leave it to the button
+     *  (a download must not start inside an AR session, review #6). */
+    const handOver = (): void => {
+      if (deps.sessionLive()) deps.handoff.offer(notes);
+      else deps.handoff.save(notes);
+    };
     void (async () => {
       try {
         // Assembled INSIDE the try (M4 review #1): a manifest the reader
@@ -387,9 +400,10 @@ export function wireCreatorFinish(deps: {
                 ? hosted
                 : downloadSafeName(hosted),
         };
+        madeZip = ctx.rebuiltZip;
         // The Finish's result sentences: they stay on the line under the
         // save's status (`creator-handoff.ts`).
-        const notes = [
+        notes = [
           ...(scanLeftOut.length === 0
             ? []
             : [FINISH_LABELS.scanLeftOut(scanLeftOut.length)]),
@@ -466,10 +480,10 @@ export function wireCreatorFinish(deps: {
           if (ctx.session !== current) return;
         }
         // The download used to be step 5. It is the END of step 4 (F10):
-        // the creator finished in AR, the session is closing, and what they
-        // need next is one tap in the step they are already in. The reveal
-        // happens AFTER the disable above, so the block cannot appear over
-        // a session that is still compositing.
+        // the creator finished in AR, the session is closing, and the save
+        // happens in the step they are already in. The reveal happens
+        // AFTER the disable above, so the block cannot appear over a
+        // session that is still compositing.
         deps.wizard.openStep("measure");
         dom.finishBlock.hidden = false;
         // The summary of every visit (M3b), on the page with the save.
@@ -478,7 +492,7 @@ export function wireCreatorFinish(deps: {
         // test, F4; owner decision D-F4a): the creator once left with only
         // the troubleshooting recording, the tour zip waiting on a button
         // they never saw. The button stays, to save it again.
-        deps.handoff.save(notes);
+        handOver();
         // What the save did, brought into view rather than the top of
         // step 4 (UI round 1, U2).
         dom.finishStatus.scrollIntoView?.({ block: "center" });
@@ -488,8 +502,14 @@ export function wireCreatorFinish(deps: {
             err instanceof Error ? err.message : String(err),
           );
           // A file this Finish already made stays reachable with the
-          // retry (U2 milestone review #4).
+          // retry (U2 milestone review #4) - and is handed over: saved off
+          // AR, else offered on the button (F4 milestone review #1). An
+          // earlier Finish's file stays saveable from the button.
           if (ctx.rebuiltZip !== null) dom.finishBlock.hidden = false;
+          if (madeZip !== null && ctx.rebuiltZip === madeZip) handOver();
+          else if (ctx.rebuiltZip !== null) {
+            dom.downloadButton.disabled = false;
+          }
         }
       } finally {
         // A Finish that wrote no zip leaves its visit unsettled again while

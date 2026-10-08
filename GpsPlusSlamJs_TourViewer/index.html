@@ -929,7 +929,8 @@
           tour's link, so the tour opens on this device the moment the camera
           reads it. Hold the phone on the code until it is measured, then place
           text pins and photos where the tour should show them. Finish inside AR
-          when you are done - the rebuilt zip appears here afterwards.
+          when you are done - the rebuilt zip is then saved to this phone by
+          itself, with the steps to put it in place of the hosted one.
         </p>
         <!-- The troubleshooting recording (authoring recording plan
              2026-09-28-0953, M1a). OPT-IN and page-side: the switch arms it
@@ -1290,12 +1291,17 @@
         <!-- The end of step 4, on the page rather than in the overlay (F10;
              steps 5 and 6 used to be separate setup steps, which they never
              were - they describe what happens when this step finishes). The
-             download is deliberately OUTSIDE #ar-root: it is tapped after
-             the session ends, because a download needs its own user
-             gesture, and putting it over the camera would promise
-             otherwise. -->
+             save is deliberately OUTSIDE #ar-root: the Finish saves the zip
+             by itself once the session has ended (field test 2, F4), and the
+             button saves it again; over the camera it would promise a save
+             inside AR. -->
         <div id="finish-block" data-testid="finish-block" hidden>
-          <div id="finish-status" data-testid="finish-status"></div>
+          <div
+            id="finish-status"
+            data-testid="finish-status"
+            role="status"
+            aria-live="polite"
+          ></div>
           <button
             type="button"
             id="finish-download"

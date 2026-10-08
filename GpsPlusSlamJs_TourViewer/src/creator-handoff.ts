@@ -27,8 +27,6 @@ export interface CreatorHandoffDom {
 }
 
 export interface CreatorHandoff {
-  /** The open tour is on Google Drive (its steps are the Drive website's). */
-  drive(): boolean;
   /**
    * Save the rebuilt zip to this phone - the Finish's own save, and the
    * button's. `notes`: the result sentences the Finish shows after the
@@ -37,6 +35,12 @@ export interface CreatorHandoff {
    * without them.
    */
   save(notes?: string): void;
+  /**
+   * The rebuilt zip waits for the button: a save would start inside an AR
+   * session still running (F4 milestone review #1, #6). The line says it is
+   * not saved, with the Finish's `notes`, and the button is live.
+   */
+  offer(notes: string): void;
   /** A tour closed: the button, the line and the steps are stale. */
   reset(): void;
 }
@@ -116,7 +120,7 @@ export function wireCreatorHandoff(deps: {
           dom.downloadButton.disabled = false;
           dom.downloadButton.textContent = FINISH_LABELS.saveAgain;
           showStatus(
-            FINISH_LABELS.failed(
+            FINISH_LABELS.saveFailed(
               err instanceof Error ? err.message : String(err),
             ),
           );
@@ -129,8 +133,13 @@ export function wireCreatorHandoff(deps: {
   });
 
   return {
-    drive,
     save,
+    offer: (next) => {
+      notes = next;
+      dom.downloadButton.disabled = ctx.rebuiltZip === null;
+      dom.downloadButton.textContent = FINISH_LABELS.saveAgain;
+      showStatus(FINISH_LABELS.notSaved);
+    },
     reset: () => {
       notes = "";
       dom.downloadButton.disabled = true;

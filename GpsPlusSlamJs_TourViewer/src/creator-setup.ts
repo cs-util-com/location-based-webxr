@@ -108,14 +108,12 @@ export interface CreatorSetupDom {
    *  live: on a desktop they sat greyed out under an "AR not supported"
    *  button, misaligned and meaningless (second testing session, F11). */
   controls: HTMLElement;
-  /** Step 4's tail: the rebuilt zip's status and download (F10). Outside
-   *  `#ar-root` - the download is tapped after the session ends. */
+  /** Step 4's tail: the rebuilt zip's status and save (F10). Outside
+   *  `#ar-root` - the Finish saves the zip once the session has ended. */
   finishBlock: HTMLElement;
   /** The "put it back where the old one is" copy, revealed once the zip
    *  has actually been saved. Was step 6 until the flow rework. */
   replaceHelp: HTMLElement;
-  /** The share route's extra sentence inside the replace instructions -
-   *  hidden on the download route, where it would be noise. */
   /** The replace instructions for Dropbox, GitHub and OneDrive... */
   replaceHelpGeneric: HTMLElement;
   /** ...and a Drive tour's own numbered steps with the zip's name, written
@@ -622,8 +620,8 @@ export function wireCreatorSetup(deps: {
     };
   }
 
-  // The rebuilt zip's hand-off: download, share or Drive save, and the
-  // replace steps it earns (`creator-handoff.ts`).
+  // The rebuilt zip's hand-off: the Finish's own save, the button's save
+  // again, and the replace steps a save earns (`creator-handoff.ts`).
   const handoff = wireCreatorHandoff({
     ctx,
     seams,

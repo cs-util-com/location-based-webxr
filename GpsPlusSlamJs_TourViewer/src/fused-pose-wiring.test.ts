@@ -167,6 +167,8 @@ const seams = {
   getIntrinsics: () => null,
   getScene: () => null,
   canShareZip: () => false,
+  // The Finish saves the rebuilt zip by itself (field test 2, F4).
+  downloadZip: () => Promise.resolve(true),
 } as unknown as TourViewerSeams;
 
 describe("the viewer votes with the fused pose", () => {
@@ -279,7 +281,6 @@ describe("the creator measures and mints with the fused pose", () => {
     "controls",
     "finishBlock",
     "replaceHelp",
-    "replaceHelpShare",
     "replaceHelpGeneric",
     "replaceHelpDrive",
     "sizeInput",

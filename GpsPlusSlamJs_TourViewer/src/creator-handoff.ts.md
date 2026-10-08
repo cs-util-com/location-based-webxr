@@ -20,12 +20,14 @@ the automatic save is in
   `render` re-renders the creator panel when a delivered file changes the
   save guard.
 - `CreatorHandoff`:
-  - `drive()` - the open tour is on Google Drive (its steps are the Drive
-    website's);
   - `save(notes?)` - save the rebuilt zip to this phone. The Finish calls it
     once the zip is rebuilt, with its result sentences (the code's
     position, a walk left out, photos not placed) as `notes`; the button
     calls it without them, and the notes stay;
+  - `offer(notes)` - the zip waits for the button instead: an AR session is
+    still running, and a download must not start inside it (F4 milestone
+    review #1, #6). The line says "Not saved" with the notes; the button is
+    live;
   - `reset()` - a tour closed: the button disabled with its label, the line
     and the notes cleared, the replace steps hidden and the generic text
     back.
@@ -37,8 +39,17 @@ the automatic save is in
   phone: the tour zip waited on a button they never saw. The save is
   always the plain one (`seams.downloadZip`), also where the phone could
   share - a share sheet needs a fresh tap, which the Finish's own save does
-  not have. On a desktop the save picker needs one too; without it the
-  framework falls back to a plain download, which does not.
+  not have. On a desktop (F4 milestone review #8) a Finish quick enough to
+  end inside the tap's activation window opens the save picker; after it,
+  the picker refuses and the framework falls back to a plain download
+  (with a logged warning), which needs no tap.
+- **A Drive save asks to check the name** (`savedToPhone`, F4 milestone
+  review #2): the page cannot know the name the phone gave the file, and a
+  repeat download's "name (1).zip" is a new file to Drive. With the save
+  automatic there is no moment before it to warn; step 1 of the Drive steps
+  is the check.
+- **A failed save is not a failed Finish** (`saveFailed`, review #9): the
+  zip is made; the line says it could not be saved and names the button.
 - **The status line is the save's sentence, then the Finish's notes**, so
   the code's position line (and its large-turn warning) stays on screen
   through every save.

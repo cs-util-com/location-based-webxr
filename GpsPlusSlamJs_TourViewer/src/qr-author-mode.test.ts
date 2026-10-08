@@ -630,7 +630,11 @@ describe("the finish on a Drive-hosted tour (Drive replace plan §2, §5)", () =
     const status = finishSaveStatus(true, "My tour.zip", true);
     expect(status).toBe(FINISH_LABELS.savedToPhone("My tour.zip"));
     expect(status).toMatch(/Downloads/);
-    expect(status).toMatch(/Drive steps below/);
+    // It cannot know the name the phone gave the file (F4 milestone review
+    // #2): it asks to check it, before the Drive steps.
+    expect(status).toContain("My tour (1).zip");
+    expect(status).toMatch(/step 1 below/);
+    expect(status).toMatch(/Drive steps/);
     expect(finishSaveStatus(true, "My tour.zip", false)).toBe(
       FINISH_LABELS.saved("My tour.zip"),
     );

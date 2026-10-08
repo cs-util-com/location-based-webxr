@@ -106,13 +106,17 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
 - `FINISH_LABELS` - the finish step's copy through its async cycle
   (reading, placing photos, rebuilding N of M, failed) and the save's
   (`savingTour(bytes)` while the Finish saves the zip by itself, the button's
-  `saveAgain` and `saving`, `saved`, `savedToPhone`, `notSaved`). Since the
+  `saveAgain` and `saving`, `saved`, `savedToPhone`, `notSaved`,
+  `saveFailed(reason)`). Since the
   2026-10-08 field test (F4; owner decisions D-F4a, D-F4b) the Finish saves
   the rebuilt zip itself and the one button saves it again the same way:
   no share route, no "press the button" ready line. `saved` and
   `savedToPhone` promise that the link and the printed code stay the same,
-  which holds for a save over the hosted file; `savedToPhone` names
-  Downloads and the Drive steps.
+  which holds for a save over the hosted file. `savedToPhone` names
+  Downloads and asks to check the file is not "name (1).zip" before the
+  Drive steps (F4 milestone review #2: the page cannot know the name the
+  phone gave it). `saveFailed` says the save, not the Finish, failed
+  (review #9).
 - `driveReplaceSteps(name, nameKnown)` - the numbered Drive steps shown
   after the save: an optional rename/check-the-name step, then a check that
   the saved file is not "name (1).zip" (if it is: delete every copy, tap
