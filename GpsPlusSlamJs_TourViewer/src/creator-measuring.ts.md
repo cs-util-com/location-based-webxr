@@ -53,7 +53,9 @@ M4 replaces its one code in hand with the code book.
     line says "Code seen - its saved position stays, and this visit is
     lined up with it", and `setupHint` says "Saved position kept" rather
     than "replaces". `tourAuthoring/codeMeasured` logs which happened
-    (`kept`). A failed identity hash restores the level in hand. A hosted
+    (`kept`). A failed identity hash measures nothing and says so; the
+    level in hand is left as it was (it is never touched while the identity
+    is derived, U3). A hosted
     level whose file cannot be read, or carries no geo, is not a
     reference: the measurement is, as before.
 - **Automatic measuring** (UI round 1, U3; plan review #1; U3 milestone

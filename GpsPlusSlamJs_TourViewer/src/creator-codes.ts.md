@@ -104,7 +104,7 @@ codes.saveLevel(remintedLevel); // the settle's re-mint, measurement kept
 ## Tests
 
 `creator-codes.test.ts` (the code in hand, its measurement and sighting;
-the hand's own measurement against the book's; a failed identity's empty
+the hand's own measurement against the book's; a null level's empty
 hand; the draft restore into an empty hand, at a live text and over a code
 only kept at its hosted pose; the hand's text over a draft's; the re-mint;
 the close; stored poses, the references' order, the visit's sightings). Composed, through `wireCreatorSetup`: every creator suite, and

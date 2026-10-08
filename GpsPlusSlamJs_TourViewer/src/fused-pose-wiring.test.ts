@@ -67,6 +67,10 @@ const idHold = vi.hoisted(() => ({
   holdCall: 0,
   calls: 0,
   gate: null as Promise<void> | null,
+  /** From this call of `text` on, its identity cannot be derived (0:
+   *  never) - the measurement's own derivation, after the sighting's
+   *  succeeded. */
+  failFrom: 0,
 }));
 vi.mock(
   "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id",
@@ -77,6 +81,9 @@ vi.mock(
       qrCodeId: async (text: string) => {
         if (text === idHold.text) {
           idHold.calls += 1;
+          if (idHold.failFrom > 0 && idHold.calls >= idHold.failFrom) {
+            throw new Error("no Web Crypto");
+          }
           if (idHold.calls === idHold.holdCall && idHold.gate !== null) {
             await idHold.gate;
           }
@@ -498,6 +505,33 @@ describe("the creator measures and mints with the fused pose", () => {
       expect(c.codes.inHand()?.id).not.toBe("an-earlier-code");
     });
     expect(c.codes.inHand()?.id).toBe(await qrCodeId(TEXT));
+  });
+
+  // Why (M6 follow-ups #10): a code whose identity cannot be derived when
+  // it is measured is not measured, the creator is told so, and the code in
+  // hand stays exactly as it was - the hand is never touched while the
+  // identity is derived (U3), so nothing has to be put back. (On a phone
+  // without Web Crypto the sighting's derivation fails first and no
+  // measurement starts; the seam fails only the measurement's own.)
+  it("measures nothing, says so, and keeps the hand when a code's identity fails", async () => {
+    const c = creator({ aligned: true });
+    const earlier = { id: "an-earlier-code", json: "{}" };
+    c.codes.setInHand(earlier, null);
+    c.ctx.currentLevels = new Map([["an-earlier-code", { qr: {} } as never]]);
+    idHold.text = TEXT;
+    idHold.calls = 0;
+    idHold.failFrom = 2;
+    try {
+      for (let i = 0; i < 7; i++) c.detect(i);
+      await vi.waitFor(() => {
+        expect(c.ctx.placementNote).toMatch(/Could not derive the code/);
+      });
+      expect(c.codes.inHand()).toEqual(earlier);
+      expect(c.codes.measurement()).toBeNull();
+    } finally {
+      idHold.text = null;
+      idHold.failFrom = 0;
+    }
   });
 
   // Code book plan M1 (a sampled mutation pass found it unpinned): Finish

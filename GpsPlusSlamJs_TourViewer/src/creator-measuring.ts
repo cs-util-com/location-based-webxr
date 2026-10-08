@@ -525,8 +525,8 @@ export function wireCreatorMeasuring(deps: {
         if (mintGeneration !== ctx.mintGeneration) {
           return { kind: "superseded" };
         }
-        // A failed identity must not lose the reference in hand.
-        deps.codes.setInHand(prior.level, prior.measurement);
+        // The hand was not touched while the identity was derived (U3),
+        // so there is nothing to put back (M6 follow-ups #10).
         ctx.placementNote =
           "Could not derive the code's identity on this device, so it was not measured.";
         return { kind: "failed", reason: "no code identity" };

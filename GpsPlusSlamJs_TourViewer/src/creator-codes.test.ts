@@ -84,8 +84,9 @@ describe("creator-codes: the code in hand", () => {
     expect(codes.measuredIn("a", 0)).toBe(true);
   });
 
-  // Why this test matters: a failed identity hands back an empty hand
-  // (`creator-measuring.ts`); the book keeps what it holds.
+  // Why this test matters: a null level empties the hand and keeps the
+  // book - the composed tests' way to empty the hand without a new print
+  // size (no production caller since M6 follow-ups #10).
   it("empties the hand on a null level and keeps the book", () => {
     const ctx = createTourViewerSession();
     const codes = wireCreatorCodes({ ctx });

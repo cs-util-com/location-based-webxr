@@ -132,7 +132,7 @@
       "from": "      judgedAt = { visit, count };",
       "to": "",
       "expected": "equivalent",
-      "why": "Since M5b the per-fix re-judge is the settle's, and every state change that can change the line re-judges on its own: a sighting of ANY code redraws through placeEarlierObjects, which judges (the M5b review's #5 counter-example was the not-in-hand sighting, fixed in the same review); a size adoption re-judges at once; a failed identity puts the prior hand back. Judging on every render then yields the same line from the same state - only the cost differs."
+      "why": "Since M5b the per-fix re-judge is the settle's, and every state change that can change the line re-judges on its own: a sighting of ANY code redraws through placeEarlierObjects, which judges (the M5b review's #5 counter-example was the not-in-hand sighting, fixed in the same review); a size adoption re-judges at once; a failed identity leaves the hand untouched. Judging on every render then yields the same line from the same state - only the cost differs."
     },
     {
       "name": "result screen outcome not recorded",

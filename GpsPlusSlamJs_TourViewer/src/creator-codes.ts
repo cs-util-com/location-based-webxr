@@ -55,7 +55,7 @@ export interface CreatorCodes {
    *  was taken (a live measurement is newer than a draft: a code changed
    *  live in this page is taken at its live text). */
   restoreInHand(level: LevelText): boolean;
-  /** Nothing in hand (a new print size, a failed identity's empty prior). */
+  /** Nothing in hand (a new print size). */
   clearInHand(): void;
   setSighting(sighting: CodeSighting): void;
   /** A code's sightings of this visit are void (its printed size changed):
