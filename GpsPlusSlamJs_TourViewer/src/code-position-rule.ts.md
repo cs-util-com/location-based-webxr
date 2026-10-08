@@ -83,3 +83,11 @@ accuracy, a property tying `isReliable` to the walk model, each decision
 branch (a "Yes" near the saved spot ignored, `far` below 15 m), a property
 that nothing unreliable ever replaces or moves, the result line, and
 `qualityOfLevel` on new, old and broken files.
+
+## The undo outcome (code book plan M6 v5.1)
+
+`CodePositionDecision` has an `undo` kind. It is never decided here: the
+settle logs it when the code was seen back at the spot an automatic move
+left. `codePositionSentence` says so. A replace still outranks every other
+outcome, and of a move and its undo since the last Finish, the later one
+speaks, because that is where the code now is.

@@ -70,6 +70,10 @@ export interface CodePositionPlan {
   readonly decision: CodePositionDecision;
   /** How far this visit sees the code from its saved spot (m). */
   readonly offsetM: number;
+  /** The same offset north and east (m): where a move would mint the code,
+   *  relative to its saved spot (code book plan M6). */
+  readonly offsetNorthM: number;
+  readonly offsetEastM: number;
   readonly candidate: PositionQuality;
   readonly stored: PositionQuality;
   /** The creator had answered "Yes, it moved" for this spot: the caller
@@ -158,6 +162,8 @@ export function planCodePosition(
     levelId: level.id,
     decision,
     offsetM: offset.horizontalM,
+    offsetNorthM: offset.northM,
+    offsetEastM: offset.eastM,
     candidate,
     stored,
     answeredMoved: answer === "moved",

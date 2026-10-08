@@ -39,7 +39,11 @@ export type CodePositionDecision =
   | { kind: "keep"; reason: "not-walked"; walkMoreM: number }
   | { kind: "replace" }
   | { kind: "move" }
-  | { kind: "move-waits"; walkMoreM: number };
+  | { kind: "move-waits"; walkMoreM: number }
+  /** The code was seen back at the spot an automatic move left: that spot
+   *  was restored (code book plan M6 v5.1, `code-spots.ts`). Never
+   *  decided here; the settle logs it with the rest. */
+  | { kind: "undo" };
 
 /** How much more walking `q` needs to be reliable (m); 5 m accuracy is
  *  assumed when it is unknown, only for this figure. */
@@ -127,12 +131,19 @@ export function codePositionSentence(
   const changed = outcomes.filter(
     (o) =>
       o.applied &&
-      (o.decision.kind === "replace" || o.decision.kind === "move"),
+      (o.decision.kind === "replace" ||
+        o.decision.kind === "move" ||
+        o.decision.kind === "undo"),
   );
   if (changed.some((o) => o.decision.kind === "replace")) {
     return "The code's saved position was improved by this walk; pins and photos within 40 m moved with it.";
   }
-  if (changed.length > 0) {
+  // Of a move and its undo, the later one is where the code now is.
+  const lastChange = changed.at(-1);
+  if (lastChange?.decision.kind === "undo") {
+    return "The code was seen back at its earlier spot: its saved position went back there, and the print at the other spot counts as a second copy.";
+  }
+  if (lastChange !== undefined) {
     return "The code's saved position moved to the poster's new spot; pins and photos kept their places.";
   }
   const latest = outcomes.at(-1);

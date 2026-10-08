@@ -163,3 +163,8 @@ arStore.dispatch(
 - `authoring-settle.test.ts` ("editing placed objects", "re-measuring a
   stored code on purpose"): `objectEdited`, `objectMoved` (with the
   correction's inputs), `objectDeleted`, `objectDeleteUndone`, and `codeMeasured.replaced`.
+
+- `visitSettled` gains `codeSpots` (code book plan M6 v5.1): every
+  automatic code-spot decision of the settle, `{ levelId, decision }` as
+  `code-spots.ts` returns it. That is a move, an undo, a second print
+  seen, a confirmation, or nothing and why.

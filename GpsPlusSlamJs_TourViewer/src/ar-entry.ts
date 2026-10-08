@@ -415,6 +415,8 @@ export function wireArEntry(deps: {
     ctx.gpsSamplesAtSessionStart = selectGpsPositions(
       arStore.getState(),
     ).length;
+    ctx.frameEpochAtSessionStart =
+      arStore.getState().qrDetected.frameEpoch ?? 0;
     // BOTH modes glue the marker to detections — the author's accuracy check
     // and the viewer's "it relocalized" proof are the same axis+cube.
     const worldGroup = seams.getArWorldGroup();

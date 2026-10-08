@@ -138,3 +138,7 @@ hint's evaluation and keeps the counts. A recorded entry (the
 the recording's rate, dispatches each sample into the store, and stops it at
 the session end; an unrecorded one asks for none. The pure pieces: `ar-mode.test.ts`,
 `tour-flow.test.ts`.
+
+- The runtime start also snapshots `ctx.frameEpochAtSessionStart` (code
+  book plan M6 v5.1), next to `gpsSamplesAtSessionStart`
+  (`ar-entry.test.ts`, "snapshots the odometry frame's epoch").

@@ -133,3 +133,9 @@ const memory = applyCodeSpotDecision(
   - an unmoved print read within the floor never changes it.
 - Five hand mutations were each caught: the guard, the floor boundary, the
   minted-pose check, the copy on undo, and the tie.
+
+- `MOVE_CONFIRM_AFTER_MS` (24 h) is how long after an automatic move a
+  sighting at the new spot confirms it. The caller computes
+  `previousExpires` from the current spot's `mintedAtIso`. The spike found
+  that a later day repeats a bias far less often than the same day: 5 of
+  39 against 4 of 8.

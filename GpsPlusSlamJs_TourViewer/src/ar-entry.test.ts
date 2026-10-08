@@ -176,6 +176,20 @@ describe("wireArEntry session end", () => {
     expect(settle).toBeLessThan(order.indexOf(resetGpsSessionData.type));
   });
 
+  // Why this test matters (code book plan M6 v5.1): the settle compares the
+  // odometry frame's epoch with the one at the visit's start, and decides no
+  // automatic code move in a visit whose frame changed (two frames mixed).
+  // A snapshot taken at the wrong moment, or never, would compare against
+  // a stale epoch and judge every visit after a page's first restart.
+  it("snapshots the odometry frame's epoch when the session's runtime starts", async () => {
+    const h = harness({ mode: "creator", enableOk: true });
+    h.arStore.dispatch({ type: "qrDetected/qrFrameChanged" } as never);
+    h.arStore.dispatch({ type: "qrDetected/qrFrameChanged" } as never);
+    expect(h.arStore.getState().qrDetected.frameEpoch).toBe(2);
+    await h.enter();
+    expect(h.ctx.frameEpochAtSessionStart).toBe(2);
+  });
+
   it("does not settle anything when a visitor's session ends", async () => {
     const h = harness();
     let settled = 0;

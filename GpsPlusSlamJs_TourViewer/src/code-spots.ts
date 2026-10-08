@@ -58,6 +58,11 @@ export type CodeSpotDecision =
    *  move stands, and the spot it left becomes a copy (M6 v5.1). */
   | { readonly kind: "confirm" };
 
+/** How long after an automatic move a sighting at the new spot confirms
+ *  it (M6 v5.1; review #2): a later day's GPS repeats a bias far less
+ *  often than the same day's (spike: 5 of 39 against 4 of 8). */
+export const MOVE_CONFIRM_AFTER_MS = 24 * 3_600_000;
+
 /** The second prints a level remembers; the oldest is dropped first. */
 export const MAX_CODE_COPIES = 4;
 

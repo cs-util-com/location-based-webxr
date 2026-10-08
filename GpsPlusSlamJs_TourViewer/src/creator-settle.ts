@@ -35,6 +35,30 @@ import {
   planCodePosition,
   type CodePositionPlan,
 } from "./code-position-settle.js";
+import { isReliable } from "./code-position-rule.js";
+import {
+  displacementSamples,
+  type DisplacementSample,
+} from "./code-displacement.js";
+import { judgeCodeSpots, type SpotSighting } from "./code-spot-settle.js";
+import {
+  applyCodeSpotDecision,
+  MOVE_CONFIRM_AFTER_MS,
+  type CodeSpotDecision,
+  type CodeSpotMemory,
+  type SpotRef,
+} from "./code-spots.js";
+import { objectPoseNue } from "./content-placement.js";
+import {
+  readCodeSpots,
+  writeCodeSpots,
+  type StoredSpot,
+} from "./level-spots.js";
+import {
+  odomNueFromWebXr,
+  throughAlignment,
+  type NuePose,
+} from "./visit-anchoring.js";
 import type { CreatorAlignmentPicks } from "./creator-alignment-picks.js";
 import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorCodes } from "./creator-codes.js";
@@ -65,6 +89,8 @@ import {
   type CorrectionRefusal,
   type SettleBasis,
   type SettleChoice,
+  readAlignment,
+  type VisitAlignmentPicks,
 } from "./visit-settle.js";
 
 /** What a visit settled through (`visitSettles`). */
@@ -84,6 +110,86 @@ interface VisitSettleRecord {
   } | null;
   /** A code correction the plausibility bound refused; null otherwise. */
   readonly refused: CorrectionRefusal | null;
+}
+
+/** One code's automatic code-spot result in a visit (M6 v5.1). */
+interface CodeSpotResult {
+  readonly decision: CodeSpotDecision;
+  readonly memoryBefore: CodeSpotMemory<StoredSpot>;
+  /** Sightings at a second print: they correct nothing. */
+  readonly excluded: readonly CodeSighting[];
+  /** No keep-or-replace for the code in this visit. */
+  readonly skipU3: boolean;
+}
+
+/** The visit's automatic code-spot results, as the settle uses them. */
+interface VisitSpots {
+  /** Codes to move, with the memory before the move. */
+  readonly moves: Map<string, CodeSpotMemory<StoredSpot>>;
+  readonly skip: Set<string>;
+  readonly excluded: Set<CodeSighting>;
+  /** Codes undone in this settle (said once). */
+  readonly undone: string[];
+  readonly logged: { levelId: string; decision: CodeSpotDecision }[];
+}
+
+/** What every stored code's spot judgement in one visit shares. */
+interface SpotVisit {
+  readonly visit: number;
+  readonly picks: VisitAlignmentPicks;
+  readonly zero: LatLong;
+  readonly visitAlignment: ReturnType<typeof selectAlignmentMatrix>;
+  /** The visit's end alignment, read: where it saw each sighting. */
+  readonly end: number[] | null;
+  readonly endQuality: { extentM: number | null; accuracyM: number | null };
+  readonly inHandId: string | null;
+  /** THIS visit's device fixes (the store's lists span every visit). */
+  readonly samples: readonly DisplacementSample[];
+  readonly frameChanged: boolean;
+}
+
+/** One kept sighting as the fit reads it: its time, its odometry pose, and
+ *  where the visit's end alignment saw it. */
+function spotSightingOf(
+  s: { atMs: number; sighting: CodeSighting },
+  end: readonly number[] | null,
+): SpotSighting {
+  const codeOdomNue = odomNueFromWebXr(s.sighting.odomPose);
+  const through = end === null ? null : throughAlignment(codeOdomNue, end);
+  return through === null
+    ? { atMs: s.atMs, codeOdomNue }
+    : {
+        atMs: s.atMs,
+        codeOdomNue,
+        seenNue: [through.position[0], through.position[2]],
+      };
+}
+
+const atOther = (c: SpotRef | "new" | null | undefined): boolean =>
+  c !== null && c !== undefined && c !== "new" && c.kind !== "current";
+const atHome = (c: SpotRef | "new" | null | undefined): boolean =>
+  c !== null && c !== undefined && c !== "new" && c.kind === "current";
+
+/** A code's spot decision as the settle applies it: the sightings that
+ *  correct nothing, and whether the keep-or-replace rule runs. */
+function spotResult(
+  decision: CodeSpotDecision,
+  classes: readonly (SpotRef | "new" | null)[],
+  sightings: readonly CodeSighting[],
+  memoryBefore: CodeSpotMemory<StoredSpot>,
+): CodeSpotResult {
+  // After an undo the sightings at the old CURRENT spot are the ones at a
+  // second print.
+  const second = decision.kind === "undo" ? atHome : atOther;
+  return {
+    decision,
+    memoryBefore,
+    excluded: sightings.filter((_, i) => second(classes[i])),
+    skipU3:
+      decision.kind === "undo" ||
+      decision.kind === "copy" ||
+      (decision.kind === "none" && atOther(classes.at(-1))),
+  };
 }
 
 export interface CreatorSettle {
@@ -173,6 +279,14 @@ export function wireCreatorSettle(deps: {
   const appliedCodes = new Map<
     string,
     { visit: number; plan: CodePositionPlan }
+  >();
+  /** By level: the automatic code-spot decision a settle made in its visit
+   *  (code book plan M6 v5.1), re-applied AS MADE when a failed Finish
+   *  settles the visit again - never judged a second time against the level
+   *  it already changed (M6 v5 review #4). */
+  const spotDecisions = new Map<
+    string,
+    { visit: number; result: CodeSpotResult }
   >();
 
   /** The code correction this visit's latest sighting would make, when
@@ -381,13 +495,42 @@ export function wireCreatorSettle(deps: {
     const state = arStore.getState();
     const visitAlignment = selectAlignmentMatrix(state);
     const zero = selectZeroReference(state);
-    const picks = deps.alignmentPicks.picks();
+    const allPicks = deps.alignmentPicks.picks();
     // The end alignment's extent: the D31 marker of a code re-minted
     // through it (R7 of D33).
     const alignmentGpsExtentM = deps.alignmentPicks.gpsExtent(
       selectGpsPositions(state),
     );
     const gpsAccuracyM = deps.alignmentInfo().gpsAccuracyM;
+    const endQuality = {
+      extentM: alignmentGpsExtentM ?? null,
+      accuracyM: gpsAccuracyM ?? null,
+    };
+    // The automatic code spots (code book plan M6 v5.1) come FIRST: an undo
+    // rewrites a code's level, which everything below reads.
+    const spots = settleCodeSpots(
+      visit,
+      state,
+      allPicks,
+      zero,
+      visitAlignment,
+      endQuality,
+    );
+    // A sighting of a second print corrects nothing in this settle.
+    const picks =
+      spots.excluded.size === 0
+        ? allPicks
+        : {
+            ...allPicks,
+            sightings: allPicks.sightings.filter(
+              (s) => !spots.excluded.has(s.sighting),
+            ),
+          };
+    const handSighting = deps.codes.sighting();
+    const inHandSighting =
+      handSighting !== null && spots.excluded.has(handSighting)
+        ? null
+        : handSighting;
     // A STORED code this visit saw: keep its saved position, or replace it
     // with this visit's view of it (UI round 1, U3). A change is made by
     // handing the settle a measurement of the code, so it is re-minted as
@@ -409,6 +552,8 @@ export function wireCreatorSettle(deps: {
       if (done !== undefined && done.visit === visit) {
         return { plan: done.plan, reapplied: true };
       }
+      // Undone, or seen at a second print: no keep-or-replace this visit.
+      if (spots.skip.has(code.id)) return { plan: null, reapplied: false };
       const seen =
         sighting ??
         picks.sightings.filter((s) => s.sighting.levelId === code.id).at(-1)
@@ -423,21 +568,23 @@ export function wireCreatorSettle(deps: {
           picks,
           alignment: visitAlignment,
           zero,
-          endQuality: {
-            extentM: alignmentGpsExtentM ?? null,
-            accuracyM: gpsAccuracyM ?? null,
-          },
+          endQuality,
           // The size the code was solved at in this visit: its
           // measurement's, else its sighting's - a stored code is solved at
           // the size the tour stores for it, not the field's (M4 milestone
           // review #2).
           sizeM: measurement?.sizeM ?? sizeOfSighting(seen),
+          // An automatic move is applied as the creator's "Yes, it moved"
+          // was: the move path, past its 15 m guard (the spot rule needs the
+          // floor, 20 m, from every known spot).
           answerAt: (offset) =>
-            answerAtSpot(deps.draft.moveAnswers(), {
-              levelId: code.id,
-              savedKey: savedPoseKey(code.json),
-              offset,
-            }),
+            spots.moves.has(code.id)
+              ? "moved"
+              : answerAtSpot(deps.draft.moveAnswers(), {
+                  levelId: code.id,
+                  savedKey: savedPoseKey(code.json),
+                  offset,
+                }),
         }),
         reapplied: false,
       };
@@ -445,7 +592,7 @@ export function wireCreatorSettle(deps: {
     const inHandDecision =
       level === null
         ? { plan: null, reapplied: false }
-        : decide(level, deps.codes.measurement(), deps.codes.sighting());
+        : decide(level, deps.codes.measurement(), inHandSighting);
     const position = inHandDecision.plan;
     // The other stored codes the visit sighted (not measured here): each
     // with its own decision, folded into ITS entry of the code list.
@@ -476,7 +623,7 @@ export function wireCreatorSettle(deps: {
       zero,
       mintedLevel: level,
       measurement: remint ?? deps.codes.measurement(),
-      sighting: deps.codes.sighting(),
+      sighting: inHandSighting,
       alignmentInfo: deps.alignmentInfo(),
       alignmentGpsExtentM,
       gpsAccuracyM,
@@ -545,6 +692,13 @@ export function wireCreatorSettle(deps: {
         applied: d.plan.measurement !== null && remintedHere(d.code.id),
       })),
     ];
+    for (const levelId of spots.undone) {
+      codePositionOutcomes.push({
+        decision: { kind: "undo" },
+        applied: true,
+        levelId,
+      });
+    }
     for (const d of decisions) {
       // A real move is the visit log's boundary (§7j #12), set before the
       // log is written.
@@ -579,7 +733,13 @@ export function wireCreatorSettle(deps: {
       );
       void deps.draft.saveMeta();
     }
-    logVisit(visit, state, choice?.alignment ?? null, plan?.levels ?? []);
+    logVisit(
+      visit,
+      state,
+      choice?.alignment ?? null,
+      plan?.levels ?? [],
+      spots.excluded,
+    );
     if (choice === null || zero === null) return;
     const record: VisitSettleRecord = {
       basis: choice.basis,
@@ -607,8 +767,18 @@ export function wireCreatorSettle(deps: {
     if (plan === null) {
       // Nothing to recompute, but a decision about a code is still the
       // recording's to keep.
-      if (logged.length > 0) {
-        logSettle(visit, trigger, record, [], null, null, [], logged);
+      if (logged.length > 0 || spots.logged.length > 0) {
+        logSettle(
+          visit,
+          trigger,
+          record,
+          [],
+          null,
+          null,
+          [],
+          logged,
+          spots.logged,
+        );
       }
       return;
     }
@@ -623,16 +793,46 @@ export function wireCreatorSettle(deps: {
     // object belongs to one code, judged against these (M5 design review
     // #7 - two improved codes moved one object twice).
     const poseBefore = deps.codes.references();
+    // An automatic move's level remembers the spot it left (M6 v5.1); a
+    // move re-applied after a failed Finish already does.
+    const newlyMoved = new Set(
+      decisions.flatMap((d) =>
+        d.applied && !d.reapplied && d.plan.decision.kind === "move"
+          ? [d.code.id]
+          : [],
+      ),
+    );
+    const levels = plan.levels.map((l) => {
+      const before = spots.moves.get(l.id);
+      const now = readCodeSpots(l.json);
+      if (before === undefined || now === null || !newlyMoved.has(l.id)) {
+        return l;
+      }
+      const memory = applyCodeSpotDecision(
+        before,
+        { kind: "move" },
+        now.current,
+      );
+      return { ...l, json: writeCodeSpots(l.json, memory) };
+    });
+    // `plan.level` with the memory written: its own shape, the json swapped.
+    const levelOf = (l: { id: string; json: string } | null) => {
+      if (l === null) return null;
+      const json = levels.find((x) => x.id === l.id)?.json ?? l.json;
+      return json === l.json ? l : { ...l, json };
+    };
     // The code in hand, re-minted; with an empty hand `plan.level` is
     // another code's, which must not take the hand.
     const inHandLevel =
-      plan.level !== null && plan.level.id === level?.id ? plan.level : null;
+      plan.level !== null && plan.level.id === level?.id
+        ? levelOf(plan.level)
+        : null;
     if (inHandLevel !== null) deps.codes.remint(inHandLevel);
     // The visit's other measured codes, re-minted too (M4c-2).
-    for (const other of plan.levels) {
+    for (const other of levels) {
       if (other.id !== inHandLevel?.id) deps.codes.saveLevel(other);
     }
-    if (plan.levels.length > 0) void deps.draft.saveMeta();
+    if (levels.length > 0) void deps.draft.saveMeta();
     // An IMPROVED position takes the pins and photos near it along, so
     // they keep their place next to the poster (owner decision
     // 2026-10-06); a real move leaves them where they are (D19). Each
@@ -642,7 +842,7 @@ export function wireCreatorSettle(deps: {
       if (!d.applied || d.reapplied || d.plan.decision.kind !== "replace") {
         return;
       }
-      const after = plan.levels.find((l) => l.id === d.code.id);
+      const after = levels.find((l) => l.id === d.code.id);
       if (after === undefined) return;
       const moved = moveEarlierWithCode(
         visit,
@@ -659,11 +859,201 @@ export function wireCreatorSettle(deps: {
       trigger,
       record,
       plan.objects,
-      plan.level,
+      levelOf(plan.level),
       plan.levelAlignment,
-      plan.levels,
+      levels,
       logged,
+      spots.logged,
     );
+  }
+
+  /**
+   * The automatic code spots of this visit (code book plan M6 v5.1): for
+   * every STORED code it sighted, the viewer's rigid fit of each kept
+   * sighting against each known spot of the code (`code-spot-settle.ts`),
+   * and `code-spots.ts`'s decision, applied here as far as it rewrites the
+   * code's level BEFORE the settle reads it:
+   * - an undo restores the spot the move left (exactly) and remembers the
+   *   moved-to spot as a second print; it is the visit log's boundary;
+   * - a confirmation keeps the spot the move left as a copy;
+   * - a move is handed to the keep-or-replace path (`moves`), which
+   *   re-mints the code; the settle then writes the memory;
+   * - a sighting at a second print, or at the spot a blocked undo would
+   *   restore, corrects nothing (`excluded`), and its code gets no
+   *   keep-or-replace in this visit (`skip`).
+   * Only this visit's fixes are fitted: the store's lists span every visit
+   * of the page, and an earlier one's odometry has another origin.
+   */
+  function settleCodeSpots(
+    visit: number,
+    state: ReturnType<typeof arStore.getState>,
+    picks: ReturnType<typeof deps.alignmentPicks.picks>,
+    zero: LatLong | null,
+    visitAlignment: ReturnType<typeof selectAlignmentMatrix>,
+    endQuality: { extentM: number | null; accuracyM: number | null },
+  ): VisitSpots {
+    const out: VisitSpots = {
+      moves: new Map(),
+      skip: new Set(),
+      excluded: new Set(),
+      undone: [],
+      logged: [],
+    };
+    if (zero === null) return out;
+    const inHand = deps.codes.inHand();
+    const measured = deps.codes.measurement();
+    const measuredHere = (id: string) =>
+      measured !== null && measured.levelId === id && measured.visit === visit;
+    const stored = [
+      ...(inHand === null || measuredHere(inHand.id) ? [] : [inHand]),
+      ...deps.codes
+        .visitCodes(visit)
+        .filter((c) => c.measurement === null && c.level.id !== inHand?.id)
+        .map((c) => c.level),
+    ];
+    const start = ctx.gpsSamplesAtSessionStart;
+    // Read defensively: a store without the QR slice has no frame changes.
+    const qrSlice = (state as { qrDetected?: { frameEpoch?: number } })
+      .qrDetected;
+    const shared: SpotVisit = {
+      visit,
+      picks,
+      zero,
+      visitAlignment,
+      end: readAlignment(visitAlignment),
+      endQuality,
+      inHandId: inHand?.id ?? null,
+      samples: displacementSamples({
+        gpsPositions: selectGpsPositions(state).slice(start),
+        odometryPositions: selectOdometryPositions(state).slice(start),
+        zero,
+      }),
+      frameChanged: (qrSlice?.frameEpoch ?? 0) !== ctx.frameEpochAtSessionStart,
+    };
+    for (const code of stored) {
+      const done = spotDecisions.get(code.id);
+      if (done !== undefined && done.visit === visit) {
+        recordSpots(out, visit, code.id, done.result, true);
+        continue;
+      }
+      const result = judgeCodeAtSpots(code, shared);
+      if (result === null) continue;
+      if (
+        result.decision.kind === "undo" ||
+        result.decision.kind === "confirm"
+      ) {
+        deps.codes.saveLevel({
+          id: code.id,
+          json: writeCodeSpots(
+            code.json,
+            applyCodeSpotDecision(
+              result.memoryBefore,
+              result.decision,
+              result.memoryBefore.current,
+            ),
+          ),
+        });
+        void deps.draft.saveMeta();
+      }
+      spotDecisions.set(code.id, { visit, result });
+      recordSpots(out, visit, code.id, result, false);
+    }
+    return out;
+  }
+
+  /** One stored code's spot judgement in the visit; null when the code has
+   *  no saved pose or the visit kept no sighting of it. */
+  function judgeCodeAtSpots(
+    code: { id: string; json: string },
+    v: SpotVisit,
+  ): CodeSpotResult | null {
+    const memory = readCodeSpots(code.json);
+    const seen = v.picks.sightings.filter(
+      (s) => s.sighting.levelId === code.id,
+    );
+    if (memory === null || seen.length === 0) return null;
+    const known = knownSpotsNue(memory, v.zero);
+    // Where a move would mint the code, and how reliable that walk is: the
+    // keep-or-replace rule's own candidate (`planCodePosition`).
+    const first = planCodePosition({
+      visit: v.visit,
+      mintedLevel: code,
+      measurement: null,
+      sighting: code.id === v.inHandId ? deps.codes.sighting() : null,
+      picks: v.picks,
+      alignment: v.visitAlignment,
+      zero: v.zero,
+      endQuality: v.endQuality,
+      sizeM: sizeOfSighting(seen.at(-1)?.sighting ?? null),
+      answerAt: () => null,
+    });
+    const home = known[0]!.pose.position;
+    const mintedAt = Date.parse(memory.current.mintQuality?.mintedAtIso ?? "");
+    const { decision, classes } = judgeCodeSpots({
+      spots: known,
+      sightings: seen.map((s) => spotSightingOf(s, v.end)),
+      samples: v.samples,
+      candidate:
+        first === null
+          ? null
+          : [home[0] + first.offsetNorthM, home[2] + first.offsetEastM],
+      reliable: first !== null && isReliable(first.candidate),
+      frameChanged: v.frameChanged,
+      previousExpires:
+        memory.previous !== null &&
+        Number.isFinite(mintedAt) &&
+        Date.now() - mintedAt >= MOVE_CONFIRM_AFTER_MS,
+    });
+    return spotResult(
+      decision,
+      classes,
+      seen.map((s) => s.sighting),
+      memory,
+    );
+  }
+
+  /** Fold one code's spot result into the visit's; `reapplied`: from a
+   *  settle redone after a failed Finish (said and logged once). */
+  function recordSpots(
+    out: VisitSpots,
+    visit: number,
+    levelId: string,
+    result: CodeSpotResult,
+    reapplied: boolean,
+  ): void {
+    for (const s of result.excluded) out.excluded.add(s);
+    if (result.skipU3) out.skip.add(levelId);
+    if (result.decision.kind === "move") {
+      out.moves.set(levelId, result.memoryBefore);
+    }
+    // An undo is the visit log's boundary, as a move is.
+    if (result.decision.kind === "undo") movedInVisit.set(levelId, visit);
+    if (reapplied) return;
+    if (result.decision.kind === "undo") out.undone.push(levelId);
+    out.logged.push({ levelId, decision: result.decision });
+  }
+
+  /** A code's known spots as NUE poses about `zero`: current first. */
+  function knownSpotsNue(
+    memory: CodeSpotMemory<StoredSpot>,
+    zero: LatLong,
+  ): { spot: SpotRef; pose: NuePose }[] {
+    const nue = (s: StoredSpot): NuePose => {
+      const p = objectPoseNue(s.geo, zero);
+      return { position: p.positionNue, rotation: p.rotationNue };
+    };
+    return [
+      { spot: { kind: "current" }, pose: nue(memory.current) },
+      ...(memory.previous === null
+        ? []
+        : [
+            { spot: { kind: "previous" } as const, pose: nue(memory.previous) },
+          ]),
+      ...memory.copies.map((c, index) => ({
+        spot: { kind: "copy", index } as const,
+        pose: nue(c),
+      })),
+    ];
   }
 
   /**
@@ -767,6 +1157,8 @@ export function wireCreatorSettle(deps: {
     state: ReturnType<typeof arStore.getState>,
     pathAlignment: readonly number[] | null,
     savedLevels: readonly { id: string; json: string }[],
+    /** Sightings at a second print (M6 v5.1): never a pose of the code. */
+    excluded: ReadonlySet<CodeSighting> = new Set(),
   ): void {
     const codes: { levelId: string; odomPose: CodeSighting["odomPose"] }[] = [];
     // Every code measured in this visit (M4e), not only the code in hand.
@@ -781,7 +1173,11 @@ export function wireCreatorSettle(deps: {
     // then the code in hand last: the log keeps each code's LAST look.
     // Never a print answered "It's a second copy" (M5b review #11).
     for (const seen of deps.codes.storedSightings()) {
-      if (seen.visit !== visit || isSecondCopy(state, seen.sighting)) {
+      if (
+        seen.visit !== visit ||
+        excluded.has(seen.sighting) ||
+        isSecondCopy(state, seen.sighting)
+      ) {
         continue;
       }
       codes.push({
@@ -790,7 +1186,11 @@ export function wireCreatorSettle(deps: {
       });
     }
     const sighting = deps.codes.sighting();
-    if (sighting !== null && !isSecondCopy(state, sighting)) {
+    if (
+      sighting !== null &&
+      !excluded.has(sighting) &&
+      !isSecondCopy(state, sighting)
+    ) {
       codes.push({ levelId: sighting.levelId, odomPose: sighting.odomPose });
     }
     const entry = buildVisitLogEntry({
@@ -913,9 +1313,14 @@ export function wireCreatorSettle(deps: {
     codePositions: readonly NonNullable<
       Parameters<typeof visitSettled>[0]["codePosition"]
     >[] = [],
+    /** Every automatic code-spot decision of this settle (M6 v5.1). */
+    codeSpots: NonNullable<
+      Parameters<typeof visitSettled>[0]["codeSpots"]
+    > = [],
   ): void {
     arStore.dispatch(
       visitSettled({
+        ...(codeSpots.length === 0 ? {} : { codeSpots }),
         ...(codePositions.length === 0
           ? {}
           : { codePosition: codePositions[0], codePositions }),

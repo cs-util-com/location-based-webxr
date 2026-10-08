@@ -36,6 +36,7 @@ import type {
   CodePositionDecision,
   PositionQuality,
 } from "./code-position-rule.js";
+import type { CodeSpotDecision } from "./code-spots.js";
 import type { CorrectionRefusal, SettleBasis } from "./visit-settle.js";
 
 /** The store's alignment matrix (the library's tuple), or null. */
@@ -258,6 +259,13 @@ interface VisitSettledLog {
   /** Every code-position decision of this settle, one per stored code the
    *  visit saw (code book plan M5c); `codePosition` is the first. Absent
    *  in older recordings. */
+  /** Every automatic code-spot decision of this settle (code book plan
+   *  M6 v5.1, `code-spots.ts`): a move, an undo, a second print seen, a
+   *  confirmation, or nothing and why. */
+  readonly codeSpots?: readonly {
+    readonly levelId: string;
+    readonly decision: CodeSpotDecision;
+  }[];
   readonly codePositions?: readonly NonNullable<
     VisitSettledLog["codePosition"]
   >[];

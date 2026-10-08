@@ -76,3 +76,12 @@ past the need replaces, just short keeps), the plausibility bound below
 15 m, and `answeredMoved`. The composed behaviour is in
 `authoring-settle.test.ts` "the code's saved position, decided at the
 settle" and "the moved-code prompt".
+
+## The candidate's offset (code book plan M6)
+
+The plan carries `offsetNorthM` / `offsetEastM`: where a move would mint
+the code, relative to its saved spot. The automatic code-spot rule
+(`creator-settle.ts`, `settleCodeSpots`) reads them, so its "move" and
+U3's re-mint are the same pose. The one-code oracle
+(`__golden__/visit-settle.golden.json`) was regenerated for the two
+fields only: 96 added lines, nothing changed or removed.

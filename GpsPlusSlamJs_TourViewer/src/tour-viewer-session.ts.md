@@ -173,3 +173,8 @@ unchanged across the split (the split's behaviour-neutrality proof).
   `createUnwiredHooks` returns true).
 - `rebuiltZip.delivered` - a save delivered the rebuilt file (U2).
 - `scanEntries` - see the S1 note above.
+
+- `frameEpochAtSessionStart` (code book plan M6 v5.1): the odometry
+  frame's epoch (`qrDetected.frameEpoch`), taken when the session's
+  runtime started, next to `gpsSamplesAtSessionStart`. A visit whose
+  frame changed since makes no automatic code-spot decision.

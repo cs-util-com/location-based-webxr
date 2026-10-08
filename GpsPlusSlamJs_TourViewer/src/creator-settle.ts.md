@@ -253,3 +253,56 @@ themselves in `visit-settle.test.ts`, `code-position-settle.test.ts` and
 `visit-settle.golden.test.ts` (the one-code oracle). The sampled mutants
 of the regions "settle", "refusal" and "visit log"
 (`scripts/fixtures/creator-setup.mutants.json`) are killed.
+
+## The automatic code spots (code book plan M6 v5.1)
+
+`settleVisit` runs `settleCodeSpots` FIRST, before it reads any code's
+level, because an undo rewrites the level everything below reads. For every
+STORED code the visit sighted, `judgeCodeAtSpots` takes the visit's inputs:
+
+- its kept sightings;
+- THIS visit's device fixes only, sliced at
+  `ctx.gpsSamplesAtSessionStart`, because the store's lists span every
+  visit and an earlier visit's odometry has another origin;
+- the U3 rule's own candidate (`planCodePosition`) and its reliability;
+- whether the odometry frame changed since the visit started
+  (`ctx.frameEpochAtSessionStart`);
+- whether `previous` is a day old (`MOVE_CONFIRM_AFTER_MS`).
+
+It hands these to `judgeCodeSpots` (`code-spot-settle.ts`). The decision
+is applied as follows:
+
+- **undo:** the level is restored with `writeCodeSpots` before anything
+  reads it. It is the visit log's boundary (`movedInVisit`), U3 does not
+  run, and the result screen says so (the `undo` outcome).
+- **confirm:** the memory is written (the spot the move left becomes a
+  copy), and U3 runs as usual.
+- **move:** handed to the keep-or-replace path as the creator's "Yes, it
+  moved" was (`spots.moves`). That path re-mints the code, and the settle
+  then writes the memory into the re-minted level (`previous` = the old
+  spot). No objects are taken along.
+- **copy, or a sighting at a known spot other than the current one:**
+  - the sighting corrects nothing in this settle: it is filtered out of the
+    settle's picks and of the visit log (`spots.excluded`);
+  - U3 does not run for the code.
+
+Each decision is logged on `tourAuthoring/settled` as `codeSpots`. A
+visit whose only change is an undo is logged too.
+
+**A settle redone after a failed Finish** re-applies the decision it made
+(`spotDecisions`), never judging again against the level it already
+changed (M6 v5 review #4). A re-applied move does not write its memory a
+second time.
+
+**Tests** (`authoring-settle.test.ts`, "the automatic code spots at the
+settle"):
+
+- a move at 30 m;
+- nothing at 12 m;
+- an undo restoring the exact pose and quality;
+- a second print changing nothing;
+- a frame change judging nothing;
+- only this visit's fixes fitted;
+- no correction through a second print 22 m away (inside the bound).
+
+Seven hand mutations of the wiring were each caught.

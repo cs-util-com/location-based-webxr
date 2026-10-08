@@ -57,6 +57,7 @@ import {
 import type { SummaryModel } from "./summary-model.js";
 import type { SummaryPanel } from "./summary-panel.js";
 import { parseVisitLogEntry } from "./visit-log.js";
+import { readCodeSpots } from "./level-spots.js";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 import { OUTCOME_HOLD_MS } from "./object-editing.js";
@@ -3887,6 +3888,231 @@ describe(
       )!.object;
       const settled = a.settledLogs().at(-1)!.payload;
       expect(settled.objects.find((o) => o.id === pin.id)?.basis).toBe(
+        "code-corrected",
+      );
+    });
+  },
+);
+
+describe(
+  "the automatic code spots at the settle (code book plan M6 v5.1)",
+  { timeout: SLOW_MS },
+  () => {
+    // Why these tests matter (owner decisions before the AFK days: the
+    // system decides by itself whether a poster moved, one reliable walk is
+    // enough, a code seen again at its OLD spot was a second copy and the
+    // move is undone): the pure rule and the fit are tested on their own;
+    // this pins the WIRING - the visit's own fixes reach the fit, a move
+    // keeps the spot it left, an undo restores that spot exactly before the
+    // visit's objects settle, and a second print changes nothing - across
+    // visits, through the level file, as a creator would live it.
+
+    const R = 6_371_000;
+    const latOf = (northM: number) => ZERO.lat + (northM / R) * (180 / Math.PI);
+
+    /**
+     * Walk 40 m north past the code over two minutes centred on now (the
+     * fit's window is centred on the sighting): each fix where the
+     * alignment `yawAlignment(0, [northM, 400, 0])` puts its odometry, so
+     * the visit's GPS reads the code `northM` north of the odometry's
+     * origin. Reliable at 5 m accuracy (40 m of spread).
+     */
+    function walkThrough(a: ReturnType<typeof authoring>, northM: number) {
+      a.setAccuracy(5);
+      const now = Date.now();
+      const fixes: unknown[] = [];
+      const odometry: number[][] = [];
+      for (let i = 0; i <= 40; i += 1) {
+        const n = i - 20;
+        fixes.push({
+          id: `spot-walk-${String(i)}`,
+          latitude: latOf(n + northM),
+          longitude: ZERO.lon,
+          latLongAccuracy: 5,
+          timestamp: now - 60_000 + i * 3_000,
+          coordinates: [n + northM, 0, 0],
+        });
+        odometry.push([n, 0, 0]);
+      }
+      a.setWalk({ fixes, odometry });
+      a.setup.renderAuthorReadout();
+    }
+
+    /** A visit that sees the code where the GPS puts it `northM` north. */
+    async function visitSeeing(
+      a: ReturnType<typeof authoring>,
+      northM: number,
+    ): Promise<void> {
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [northM, 400, 0]));
+      a.seeTheCode();
+      await flush();
+      walkThrough(a, northM);
+      a.endVisit();
+      await flush();
+    }
+
+    const spotsOf = (a: ReturnType<typeof authoring>) =>
+      readCodeSpots(a.ctx.mintedLevel!.json)!;
+    const northOf = (geo: { lat: number }) =>
+      ((geo.lat - ZERO.lat) * Math.PI * R) / 180;
+
+    async function storedCode() {
+      const a = authoring();
+      await a.mint();
+      a.endVisit();
+      const original = spotsOf(a).current;
+      return { a, original };
+    }
+
+    it("moves a code seen 30 m from its saved spot after one reliable walk, keeping the spot it left", async () => {
+      const { a, original } = await storedCode();
+      await visitSeeing(a, 30);
+      const spots = spotsOf(a);
+      expect(northOf(spots.current.geo) - northOf(original.geo)).toBeCloseTo(
+        30,
+        0,
+      );
+      expect(spots.previous).toEqual(original);
+      expect(spots.copies).toEqual([]);
+      expect(a.settledLogs().at(-1)!.payload).toMatchObject({
+        codePositions: [
+          expect.objectContaining({
+            decision: { kind: "move" },
+            applied: true,
+          }),
+        ],
+      });
+    });
+
+    // Under the floor it is the same spot: U3 may still IMPROVE a weakly
+    // saved pose (its 15 m cap), but nothing is remembered as moved.
+    it("does not move a code seen 12 m off (under the floor)", async () => {
+      const { a } = await storedCode();
+      await visitSeeing(a, 12);
+      expect(spotsOf(a).previous).toBeNull();
+      expect(
+        a.settledLogs().at(-1)!.payload as { codePositions?: unknown[] },
+      ).not.toMatchObject({
+        codePositions: [
+          expect.objectContaining({ decision: { kind: "move" } }),
+        ],
+      });
+    });
+
+    it("undoes the move when the code is seen back at its old spot, and keeps the new spot as a second print", async () => {
+      const { a, original } = await storedCode();
+      await visitSeeing(a, 30);
+      const moved = spotsOf(a).current;
+      await visitSeeing(a, 0);
+      const spots = spotsOf(a);
+      // Exactly the old pose and quality, not a re-mint of this visit.
+      expect(spots.current).toEqual(original);
+      expect(spots.previous).toBeNull();
+      expect(spots.copies).toEqual([moved]);
+    });
+
+    it("changes nothing when the code is seen at its second print", async () => {
+      const { a } = await storedCode();
+      await visitSeeing(a, 30);
+      await visitSeeing(a, 0);
+      const before = a.ctx.mintedLevel!.json;
+      await visitSeeing(a, 30);
+      expect(a.ctx.mintedLevel!.json).toBe(before);
+    });
+
+    it("decides nothing in a visit whose odometry frame changed", async () => {
+      const { a, original } = await storedCode();
+      a.beginVisit();
+      a.ctx.frameEpochAtSessionStart = -1;
+      a.setAlignment(yawAlignment(0, [30, 400, 0]));
+      a.seeTheCode();
+      await flush();
+      walkThrough(a, 30);
+      a.endVisit();
+      await flush();
+      expect(spotsOf(a).current.geo).toEqual(original.geo);
+      expect(spotsOf(a).previous).toBeNull();
+    });
+
+    // Why (M6 v5.1): the store's fix list spans every visit of the page, and
+    // an earlier visit's odometry has another origin. A re-entry inside the
+    // fit's window would mix the two frames and read a move that is not
+    // there.
+    it("fits only this visit's fixes, not an earlier visit's still in the store", async () => {
+      const { a, original } = await storedCode();
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [0, 400, 0]));
+      a.seeTheCode();
+      await flush();
+      a.setAccuracy(5);
+      const now = Date.now();
+      // An earlier visit, minutes ago: its GPS 60 m off this visit's
+      // odometry (another origin), many fixes.
+      const fixes: unknown[] = [];
+      const odometry: number[][] = [];
+      for (let i = 0; i < 120; i += 1) {
+        fixes.push({
+          id: `earlier-${String(i)}`,
+          latitude: latOf(60 + (i % 40) - 20),
+          longitude: ZERO.lon,
+          latLongAccuracy: 5,
+          timestamp: now - 200_000 + i * 1_000,
+          coordinates: [60 + (i % 40) - 20, 0, 0],
+        });
+        odometry.push([(i % 40) - 20, 0, 0]);
+      }
+      a.ctx.gpsSamplesAtSessionStart = fixes.length;
+      for (let i = 0; i <= 40; i += 1) {
+        fixes.push({
+          id: `this-${String(i)}`,
+          latitude: latOf(i - 20),
+          longitude: ZERO.lon,
+          latLongAccuracy: 5,
+          timestamp: now - 60_000 + i * 3_000,
+          coordinates: [i - 20, 0, 0],
+        });
+        odometry.push([i - 20, 0, 0]);
+      }
+      a.setWalk({ fixes, odometry });
+      a.endVisit();
+      await flush();
+      expect(spotsOf(a).previous).toBeNull();
+      // Seen at home (U3 may still re-mint the same spot, to the float).
+      expect(
+        (a.settledLogs().at(-1)!.payload as { codeSpots?: unknown }).codeSpots,
+      ).toEqual([
+        {
+          levelId: a.ctx.mintedLevel!.id,
+          decision: { kind: "none", reason: "at-current" },
+        },
+      ]);
+      expect(
+        Math.abs(northOf(spotsOf(a).current.geo) - northOf(original.geo)),
+      ).toBeLessThan(1);
+    });
+
+    // Why (M6 v5 review #3): a second print 22 m from the saved spot is
+    // inside the correction's bound (about 26 m at 5 m accuracy), so a visit
+    // there used to correct its objects through the SAVED pose - 22 m off.
+    it("corrects nothing through a code seen at its second print", async () => {
+      const { a } = await storedCode();
+      await visitSeeing(a, 22);
+      await visitSeeing(a, 0);
+      expect(spotsOf(a).copies).toHaveLength(1);
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [22, 400, 0]));
+      a.seeTheCode();
+      await flush();
+      walkThrough(a, 22);
+      await a.placePin("at the copy", [3, 0, 1]);
+      a.endVisit();
+      await flush();
+      const pin = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin" && p.object.label === "at the copy",
+      )!.object;
+      const settled = a.settledLogs().at(-1)!.payload;
+      expect(settled.objects.find((o) => o.id === pin.id)?.basis).not.toBe(
         "code-corrected",
       );
     });

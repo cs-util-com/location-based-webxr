@@ -242,6 +242,30 @@ describe("codePositionSentence - the result screen's line (U3)", () => {
     );
   });
 
+  // Why (code book plan M6 v5.1): the system undoes an automatic move by
+  // itself when the code is seen back at its old spot, so the result screen
+  // is the only place the creator learns it - and of a move and its undo
+  // since the last Finish, the later one is where the code now is.
+  it("names an undone move, and the second print it found", () => {
+    const undone =
+      "The code was seen back at its earlier spot: its saved position went back there, and the print at the other spot counts as a second copy.";
+    expect(codePositionSentence([outcome({ kind: "undo" })])).toBe(undone);
+    expect(
+      codePositionSentence([
+        outcome({ kind: "move" }),
+        outcome({ kind: "undo" }),
+      ]),
+    ).toBe(undone);
+    expect(
+      codePositionSentence([
+        outcome({ kind: "undo" }),
+        outcome({ kind: "move" }),
+      ]),
+    ).toBe(
+      "The code's saved position moved to the poster's new spot; pins and photos kept their places.",
+    );
+  });
+
   // Why (U3 milestone review #1, #5): the line says how much walking was
   // MISSING, not the total, and a move that waited is asked again rather
   // than applied in some later visit.

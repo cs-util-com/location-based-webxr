@@ -287,6 +287,11 @@ export interface TourViewerSession {
    *  gate instantly on a re-entry over an alignment blended across two odom
    *  origins (PR #360 review). Only fixes since the snapshot count. */
   gpsSamplesAtSessionStart: number;
+  /** The odometry frame's epoch (`qrDetected.frameEpoch`) when THIS
+   *  session's runtime started: a visit whose frame changed since (a
+   *  tracking restart or loop closure) mixes two frames, so the settle
+   *  makes no automatic code-spot decision in it (code book plan M6 v5.1). */
+  frameEpochAtSessionStart: number;
   /** The measured code, ready to be written as `qr/<id>.json`; null until
    *  the mint's async identity hash landed. */
   mintedLevel: { id: string; json: string } | null;
@@ -516,6 +521,7 @@ export function createTourViewerSession(): TourViewerSession {
     activeSizeM: AUTHOR_DEFAULT_SIZE_M,
     authorErrorText: null,
     gpsSamplesAtSessionStart: 0,
+    frameEpochAtSessionStart: 0,
     mintedLevel: null,
     mintedLevelTour: null,
     mintGeneration: 0,
