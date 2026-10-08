@@ -52,6 +52,7 @@ import {
   cloudThreshold,
   createCloudTexture,
 } from './cloud-layer.js';
+import { CLOUD_NOISE_PERIOD_TILES, hexCloudThreshold } from './cloud-hex.js';
 import { cloudColumnTransmittanceToward } from './cloud-column.js';
 import {
   CLOUD_MODES,
@@ -314,6 +315,8 @@ export class SkyAtmosphere {
     atmCloudCover: { value: 0 },
     atmCloudThreshold: this.threshold,
     atmCloudOffset: { value: new THREE.Vector2() },
+    /** 1: the big-shape octave hex-tiled (`configure({ cloudHex })`). */
+    atmCloudHex: { value: 0 },
     /** The disc's view of the clouds: the real threshold in every mode. */
     atmCloudSunThreshold: this.threshold,
     atmCloudFarFadeM: {
@@ -513,14 +516,15 @@ export class SkyAtmosphere {
 
   /**
    * The cloud layer's uniforms (for the cloud shadow patch): the noise
-   * texture, the REAL threshold in every mode (2 when clear) and the drift
-   * offset. The objects themselves: the offset moves in place as the clouds
-   * drift.
+   * texture, the REAL threshold in every mode (2 when clear), the drift
+   * offset and the hex switch. The objects themselves: the offset moves in
+   * place as the clouds drift.
    */
   get cloudUniforms(): {
     readonly atmCloudTexture: THREE.IUniform<THREE.Texture>;
     readonly atmCloudThreshold: THREE.IUniform<number>;
     readonly atmCloudOffset: THREE.IUniform<THREE.Vector2>;
+    readonly atmCloudHex: THREE.IUniform<number>;
     readonly atmCloudAnchored: THREE.IUniform<number>;
     readonly atmCloudFarFadeM: THREE.IUniform<THREE.Vector2>;
   } {
@@ -573,7 +577,10 @@ export class SkyAtmosphere {
       point,
       [sun.x, sun.y, sun.z],
       threshold,
-      (u, v) => cloudNoiseSample(image.data, image.width, u, v),
+      (u, v) =>
+        cloudNoiseSample(image.data, image.width, u, v, {
+          hex: this.clouds.atmCloudHex.value === 1,
+        }),
       [offset.x, offset.y],
       {
         camera: viewer,
@@ -609,7 +616,10 @@ export class SkyAtmosphere {
       point,
       [sun.x, sun.y, sun.z],
       threshold,
-      (u, v) => cloudNoiseSample(image.data, image.width, u, v),
+      (u, v) =>
+        cloudNoiseSample(image.data, image.width, u, v, {
+          hex: this.clouds.atmCloudHex.value === 1,
+        }),
       [offset.x, offset.y]
     );
   }
@@ -744,6 +754,12 @@ export class SkyAtmosphere {
     cloudSlabSteps?: (typeof CLOUD_SLAB_STEPS)[number];
     /** The sun through clouds; the fields not given keep their value. */
     sunThroughClouds?: Partial<SunThroughClouds>;
+    /**
+     * The big-shape octave hex-tiled (hex-tiling plan H1): no repeat at
+     * 24 km. A uniform (no new program), with the hex field's own cover
+     * threshold; the bake follows, as for a cover change.
+     */
+    cloudHex?: boolean;
   }): void {
     // Validate everything before changing anything.
     const sunFx = this.changedSunThroughClouds(change.sunThroughClouds);
@@ -752,8 +768,9 @@ export class SkyAtmosphere {
     const mie = this.changedMie(change.visibilityKm);
     const sun = this.movedSun(change.sunDirection);
     const cover = this.changedCover(change.cloudCover);
+    const hex = this.changedHex(change.cloudHex);
     const firstSun = this.sun === undefined && sun !== undefined;
-    const cloudsRebake = this.applyCloudLook(cover, sunFx);
+    const cloudsRebake = this.applyCloudLook(cover, sunFx, hex);
     this.applySlabSteps(steps);
     this.applyMode(mode);
     if (mie !== undefined) {
@@ -779,19 +796,33 @@ export class SkyAtmosphere {
   }
 
   /**
-   * Applies a validated cover and sun-through-clouds change (undefined:
-   * none); returns whether the bake must follow (a new cover only).
+   * Applies a validated cover, sun-through-clouds and hex change
+   * (undefined: none); returns whether the bake must follow (a new cover or
+   * a new switch).
    */
   private applyCloudLook(
     cover: number | undefined,
-    sunFx: SunThroughClouds | undefined
+    sunFx: SunThroughClouds | undefined,
+    hex: boolean | undefined
   ): boolean {
-    if (cover !== undefined) this.applyCover(cover);
+    if (hex !== undefined) this.clouds.atmCloudHex.value = hex ? 1 : 0;
+    if (cover !== undefined || hex !== undefined) {
+      this.applyCover(cover ?? this.clouds.atmCloudCover.value);
+    }
     if (sunFx !== undefined) {
       this.clouds.atmCloudDiscExponent.value = sunFx.discExponent;
       this.clouds.atmCloudForward.value.set(sunFx.aureole, sunFx.silverLining);
     }
-    return cover !== undefined;
+    return cover !== undefined || hex !== undefined;
+  }
+
+  /** The new hex switch, or undefined if unchanged. Validates. */
+  private changedHex(hex: boolean | undefined): boolean | undefined {
+    if (hex === undefined) return undefined;
+    if (typeof hex !== 'boolean') {
+      throw new RangeError(`cloudHex must be a boolean, got ${String(hex)}`);
+    }
+    return (this.clouds.atmCloudHex.value === 1) === hex ? undefined : hex;
   }
 
   /**
@@ -826,8 +857,12 @@ export class SkyAtmosphere {
   private applyCover(cover: number): void {
     this.clouds.atmCloudCover.value = cover;
     // Cover 0 gives an infinite threshold; 2 is above any noise value and
-    // keeps the uniform finite.
-    this.clouds.atmCloudThreshold.value = Math.min(cloudThreshold(cover), 2);
+    // keeps the uniform finite. The hex field has its own thresholds.
+    const threshold =
+      this.clouds.atmCloudHex.value === 1
+        ? hexCloudThreshold(cover)
+        : cloudThreshold(cover);
+    this.clouds.atmCloudThreshold.value = Math.min(threshold, 2);
     this.syncVisibleClouds();
   }
 
@@ -1066,7 +1101,10 @@ export class SkyAtmosphere {
     if (!Number.isFinite(seconds) || !Number.isFinite(windKmPerSecond)) return;
     const step = (windKmPerSecond * seconds) / CLOUD_LAYER.tileKm;
     const offset = this.clouds.atmCloudOffset.value;
-    offset.set((offset.x + step) % 1, (offset.y + 0.35 * step) % 1);
+    // At the noise's period, not at one tile: the hex-tiled octave repeats
+    // only there, and a wrap anywhere else is a jump.
+    const period = CLOUD_NOISE_PERIOD_TILES;
+    offset.set((offset.x + step) % period, (offset.y + 0.35 * step) % period);
   }
 
   /** Colour and intensity for the caller's sun light, on the same scale as the sky. */

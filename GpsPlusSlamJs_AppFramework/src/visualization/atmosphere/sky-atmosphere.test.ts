@@ -24,7 +24,9 @@ import {
   CLOUD_TEXTURE_SIZE,
   cloudNoise,
   cloudNoiseSample,
+  cloudThreshold,
 } from './cloud-layer.js';
+import { CLOUD_NOISE_PERIOD_TILES, hexCloudThreshold } from './cloud-hex.js';
 import { SKY_VIEW_LUT_SIZE } from './atmosphere-lut-mapping.js';
 import {
   EARTH_ATMOSPHERE,
@@ -633,6 +635,33 @@ describe('SkyAtmosphere clouds (M2 review fixes)', () => {
     expect(Number.isFinite(few)).toBe(true);
     expect(many).toBeLessThan(few);
     expect(few).toBeLessThanOrEqual(1);
+  });
+
+  // WHY (hex-tiling plan H1, cold review finding 6): the hex-tiled octave
+  // repeats only at CLOUD_NOISE_PERIOD_TILES; a drift wrapped at one tile
+  // jumped it. The offset wraps at the period, and moves on smoothly
+  // across one tile.
+  it('wraps the drift at the noise period, not at one tile', () => {
+    const { atmosphere } = setup();
+    const sky = atmosphere.sky.material as THREE.ShaderMaterial;
+    const offset = sky.uniforms.atmCloudOffset!.value as THREE.Vector2;
+    // 0.012 km/s over 24 km tiles: one tile every 2,000 s.
+    let last = offset.x;
+    let wraps = 0;
+    let largest = 0;
+    for (let i = 0; i < 400; i++) {
+      atmosphere.advanceClouds(500);
+      const step = offset.x - last;
+      if (step < 0) wraps += 1;
+      else largest = Math.max(largest, step);
+      expect(offset.x).toBeGreaterThanOrEqual(0);
+      expect(offset.x).toBeLessThan(CLOUD_NOISE_PERIOD_TILES);
+      expect(offset.y).toBeLessThan(CLOUD_NOISE_PERIOD_TILES);
+      last = offset.x;
+    }
+    // 100 tiles of drift: about 7 wraps of 13 tiles, none at one tile.
+    expect(wraps).toBe(Math.floor(100 / CLOUD_NOISE_PERIOD_TILES));
+    expect(largest).toBeCloseTo(0.25, 9);
   });
 
   // A NaN wind would make the offset NaN for good (review finding 10).
@@ -1528,5 +1557,77 @@ describe('SkyAtmosphere cloud disc centre (globe volume-cloud plan §15)', () =>
     expect(() =>
       atmosphere.setCloudDiscCentre({ x: Number.POSITIVE_INFINITY, z: 0 })
     ).toThrow(RangeError);
+  });
+});
+
+describe('SkyAtmosphere hex-tiled clouds (hex-tiling plan H1)', () => {
+  // WHY (cold review finding 4): a live switch, flipped on the owner's
+  // phone, must change the sky, the bake and the slab together, with the
+  // hex field's own threshold, and without a new program (a recompile is a
+  // >50 ms hitch on a phone).
+  it('switches the hex-tiled clouds live, with their own threshold', () => {
+    const { atmosphere, device } = setup();
+    atmosphere.setSun(UP);
+    atmosphere.configure({ cloudCover: 0.6 });
+    const u = atmosphere.cloudUniforms;
+    const sky = atmosphere.sky.material as THREE.ShaderMaterial;
+    const bake = (device.bakedScene!.children[0] as THREE.Mesh)
+      .material as THREE.ShaderMaterial;
+    const program = sky.fragmentShader;
+    expect(u.atmCloudHex.value).toBe(0);
+    expect(u.atmCloudThreshold.value).toBe(Math.min(cloudThreshold(0.6), 2));
+    atmosphere.configure({ cloudHex: true });
+    expect(u.atmCloudHex.value).toBe(1);
+    expect(u.atmCloudThreshold.value).toBe(Math.min(hexCloudThreshold(0.6), 2));
+    expect(sky.uniforms.atmCloudHex).toBe(u.atmCloudHex);
+    expect(bake.uniforms.atmCloudHex).toBe(u.atmCloudHex);
+    expect(sky.fragmentShader).toBe(program);
+    atmosphere.configure({ cloudHex: false });
+    expect(u.atmCloudHex.value).toBe(0);
+    expect(u.atmCloudThreshold.value).toBe(Math.min(cloudThreshold(0.6), 2));
+  });
+
+  // The CPU twin (the sun dimmed by the clouds, the ground's shadow on the
+  // CPU) reads the field the shader draws.
+  it('reads its CPU twin hex-tiled with the switch on', () => {
+    const { atmosphere } = setup();
+    const sun = { x: 0.3, y: 0.8, z: -0.52 };
+    atmosphere.configure({
+      sunDirection: sun,
+      cloudCover: 0.6,
+      cloudHex: true,
+    });
+    atmosphere.advanceClouds(500);
+    const l = Math.hypot(sun.x, sun.y, sun.z);
+    const dir: [number, number, number] = [sun.x / l, sun.y / l, sun.z / l];
+    const u = atmosphere.cloudUniforms;
+    const data = cloudNoise(CLOUD_TEXTURE_SIZE, 1);
+    let differ = 0;
+    for (const p of [
+      [0, 0, 0],
+      [4000, 0, -2500],
+      [-900, 12, 7000],
+      [12_000, 0, 3_000],
+      [-20_000, 0, -9_000],
+    ] as [number, number, number][]) {
+      const expected = cloudColumnTransmittanceToward(
+        p,
+        dir,
+        u.atmCloudThreshold.value,
+        (a, b) =>
+          cloudNoiseSample(data, CLOUD_TEXTURE_SIZE, a, b, { hex: true }),
+        [u.atmCloudOffset.value.x, u.atmCloudOffset.value.y]
+      );
+      const plain = cloudColumnTransmittanceToward(
+        p,
+        dir,
+        u.atmCloudThreshold.value,
+        (a, b) => cloudNoiseSample(data, CLOUD_TEXTURE_SIZE, a, b),
+        [u.atmCloudOffset.value.x, u.atmCloudOffset.value.y]
+      );
+      expect(atmosphere.cloudShadowToward(p)).toBeCloseTo(expected, 12);
+      if (Math.abs(expected - plain) > 1e-6) differ += 1;
+    }
+    expect(differ).toBeGreaterThan(0);
   });
 });

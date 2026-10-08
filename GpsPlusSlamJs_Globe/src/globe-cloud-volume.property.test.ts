@@ -20,11 +20,17 @@ import {
 
 const R = 6_371_000;
 const TILE_M = 24_000;
+/**
+ * The noise's period in tiles (the hex-tiled octave repeats at 13 tiles,
+ * hex-tiling plan H1): the offset wraps there, not at one tile. These
+ * properties measure modulo the period, so a wrap at one tile fails them.
+ */
+const PERIOD = 13;
 
-/** The distance between two coordinates on the unit circle (wrapped). */
+/** The distance between two coordinates on a circle of PERIOD (wrapped). */
 const wrapped = (a: number, b: number) => {
-  const d = (((a - b) % 1) + 1) % 1;
-  return Math.min(d, 1 - d);
+  const d = (((a - b) % PERIOD) + PERIOD) % PERIOD;
+  return Math.min(d, PERIOD - d);
 };
 
 const latRad = fc.double({ min: -1.3, max: 1.3, noNaN: true });
@@ -34,17 +40,18 @@ const drift = fc.double({ min: -Math.PI, max: Math.PI, noNaN: true });
 const near = fc.double({ min: -0.0047, max: 0.0047, noNaN: true });
 
 describe("cloudVolumeNoiseOffset (properties)", () => {
-  it("is always in [0, 1) on both axes", () => {
+  it("is always in [0, the period) on both axes", () => {
     fc.assert(
       fc.property(latRad, lonRad, drift, (lat, lon, d) => {
         const [u, v] = cloudVolumeNoiseOffset(
           { latRad: lat, lonRad: lon, lonOffsetRad: d },
           TILE_M,
+          PERIOD,
         );
         expect(u).toBeGreaterThanOrEqual(0);
-        expect(u).toBeLessThan(1);
+        expect(u).toBeLessThan(PERIOD);
         expect(v).toBeGreaterThanOrEqual(0);
-        expect(v).toBeLessThan(1);
+        expect(v).toBeLessThan(PERIOD);
       }),
     );
   });
@@ -57,6 +64,7 @@ describe("cloudVolumeNoiseOffset (properties)", () => {
           const [u] = cloudVolumeNoiseOffset(
             { latRad: lat, lonRad: targetLon, lonOffsetRad: d },
             TILE_M,
+            PERIOD,
           );
           const x = R * Math.cos(lat) * (point - targetLon);
           return x / TILE_M + u;
@@ -74,6 +82,7 @@ describe("cloudVolumeNoiseOffset (properties)", () => {
           const [, v] = cloudVolumeNoiseOffset(
             { latRad: targetLat, lonRad: lon, lonOffsetRad: 0 },
             TILE_M,
+            PERIOD,
           );
           const z = -R * (point - targetLat);
           return z / TILE_M + v;

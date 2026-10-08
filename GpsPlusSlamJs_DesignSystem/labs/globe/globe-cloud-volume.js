@@ -29,6 +29,7 @@
 import * as THREE from "three";
 
 import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
+import { CLOUD_NOISE_PERIOD_TILES } from "/fw/visualization/atmosphere/cloud-hex.js";
 import {
   CLOUD_SLAB,
   CLOUD_SLAB_REACH,
@@ -202,6 +203,7 @@ export function createGlobeCloudVolume(
               lonOffsetRad: surfaceUniforms.uCloudLonOffset.value,
             },
             CLOUD_LAYER.tileKm * 1000,
+            CLOUD_NOISE_PERIOD_TILES,
           );
           atmosphere.cloudUniforms.atmCloudOffset.value.set(u, v);
         }

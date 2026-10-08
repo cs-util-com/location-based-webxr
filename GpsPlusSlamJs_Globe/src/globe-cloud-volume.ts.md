@@ -27,12 +27,16 @@ own cloud map so the swap from the cloud shell never plops.
   `{ x, z, aheadM }`. RangeError for a non-finite input or a negative
   reach ahead. `CLOUD_VOLUME.maxAheadKm` is 60 (the slab is flat while
   the Earth curves: 1.5 km at 140 km, in the far fade).
-- `cloudVolumeNoiseOffset({ latRad, lonRad, lonOffsetRad }, tileM)`: the
-  slab's noise offset in tiles, each wrapped to [0, 1): the target's
+- `cloudVolumeNoiseOffset({ latRad, lonRad, lonOffsetRad }, tileM, periodTiles)`:
+  the slab's noise offset in tiles, each wrapped to [0, periodTiles): the target's
   distance east (at the map's drift) and south of latitude 0, longitude 0,
   over the noise tile. Set as the ground sky's `atmCloudOffset`, it anchors
-  the noise to the ground and drifts it east with the map. RangeError for a
-  non-finite origin or a tile that is not positive.
+  the noise to the ground and drifts it east with the map. `periodTiles` is
+  where the noise repeats: 1 for the plain texture, 13 for the hex-tiled
+  octave (the framework's `CLOUD_NOISE_PERIOD_TILES`); wrapped at one tile,
+  the hex field jumped (hex-tiling plan H1, cold review finding 6).
+  RangeError for a non-finite origin, a tile that is not positive or a
+  period that is not a positive whole number.
 - `CLOUD_VOLUME_COVERAGE_GLSL`: the chunk for the framework's
   `setCloudSlabCoverage`, defining `float atmCloudCoverageAt(vec2 xz)` as
   the map at `cloudVolumeMapUv`'s position times `uVolumeOpacity` and
@@ -76,6 +80,7 @@ const share = cloudVolumeShare(altitudeKm);
 mapping's origin, its east and south steps and the drift (the GLSL chunk's
 CPU twin), the noise offset's value, drift direction and refusals, the
 chunk's function and uniforms, and the refusals.
-`globe-cloud-volume.property.test.ts`: the offset stays in [0, 1), and a
+`globe-cloud-volume.property.test.ts`: the offset stays in [0, 13), and a
 ground point reads the same noise for two targets on its parallel or its
-meridian.
+meridian, measured modulo the period (a wrap at one tile fails them: they
+were red on it).

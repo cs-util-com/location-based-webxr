@@ -18,12 +18,14 @@ pure parts; the GLSL (`atmClouds` in `atmosphere-glsl.ts`) mirrors
   literal.
 - `cloudNoiseAt(x, y, size, seed)` → [0, 1], periodic in `size`.
 - `cloudNoise(size, seed)` → 8-bit texture data (cached per size/seed).
-- `cloudNoiseSample(data, size, u, v)` → the two-octave noise at texture
+- `cloudNoiseSample(data, size, u, v, { hex }?)` → the two-octave noise at texture
   coordinates (u, v), as the shader reads it at its finest level
   (`atmCloudNoise` without mips): each octave bilinear between texel
   centres, wrapped; `RangeError` for non-finite coordinates. The CPU twin
   the column's tests and the look-dev page's probes use to predict where the
-  clouds are (round-3 stream D).
+  clouds are (round-3 stream D). With `hex`, the first octave is
+  hex-tiled (`cloud-hex.ts`, the texture's own mean, cached per texture),
+  as the shader draws it with `atmCloudHex` on.
 - `combinedCloudNoise(data, size)` → the two-octave field the shader
   actually samples, per texel.
 - `cloudThresholdForCover(field, cover)` → the noise value above which

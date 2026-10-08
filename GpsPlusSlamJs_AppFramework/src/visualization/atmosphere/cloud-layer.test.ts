@@ -23,6 +23,7 @@ import {
   cloudThresholdForCover,
   combinedCloudNoise,
 } from './cloud-layer.js';
+import { CLOUD_HEX, hexPeriodTiles } from './cloud-hex.js';
 import {
   EARTH_ATMOSPHERE,
   luminance,
@@ -270,5 +271,51 @@ describe("cloudNoiseSample (the CPU twin of the shader's finest read)", () => {
     expect(() => cloudNoiseSample(data, size, Number.NaN, 0)).toThrow(
       RangeError
     );
+  });
+});
+
+describe('cloudNoiseSample with the hex-tiled octave (hex-tiling plan H1)', () => {
+  // WHY: the CPU twin feeds the cover's thresholds, the sun's and the
+  // shadows' columns and the look-dev probes; with hex on it must read the
+  // same field the shader draws: the big-shape octave hex-tiled, repeating
+  // at N tiles and not at one.
+  const size = 64;
+  const data = cloudNoise(size, 3);
+  const n = hexPeriodTiles(CLOUD_HEX.cellsPerTile);
+
+  it('is unchanged without the switch, and differs with it', () => {
+    let differ = 0;
+    for (let i = 0; i < 200; i++) {
+      const u = (i * 0.137) % 5;
+      const v = (i * 0.291) % 5;
+      const plain = cloudNoiseSample(data, size, u, v);
+      expect(cloudNoiseSample(data, size, u, v, { hex: false })).toBe(plain);
+      if (
+        Math.abs(cloudNoiseSample(data, size, u, v, { hex: true }) - plain) >
+        0.01
+      ) {
+        differ += 1;
+      }
+    }
+    expect(differ).toBeGreaterThan(150);
+  });
+
+  it('repeats at N tiles with the switch, not at one', () => {
+    let same = 0;
+    for (let i = 0; i < 200; i++) {
+      const u = (i * 0.137) % 5;
+      const v = (i * 0.291) % 5;
+      const at = cloudNoiseSample(data, size, u, v, { hex: true });
+      expect(
+        cloudNoiseSample(data, size, u + n, v - n, { hex: true })
+      ).toBeCloseTo(at, 9);
+      if (
+        Math.abs(cloudNoiseSample(data, size, u + 1, v, { hex: true }) - at) <
+        1e-6
+      ) {
+        same += 1;
+      }
+    }
+    expect(same).toBeLessThan(10);
   });
 });

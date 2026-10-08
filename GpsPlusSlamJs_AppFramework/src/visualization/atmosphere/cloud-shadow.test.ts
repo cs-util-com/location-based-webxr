@@ -338,3 +338,40 @@ describe('CloudShadow with a coverage map, a disc and a lift (globe volume-cloud
     expect(() => shadow.configureMap({ coverage: chunk })).toThrow(Error);
   });
 });
+
+describe('CloudShadow with the hex-tiled clouds (hex-tiling plan H1)', () => {
+  // WHY: the shadow is the shadow of the clouds the sky draws, so it reads
+  // the same hex-tiled field: the switch is copied at sync (as the cover's
+  // threshold is), and the map's table comes in both versions.
+  it('follows the sky’s switch at sync and carries both tables', () => {
+    const shadow = new CloudShadow();
+    const source = {
+      cloudUniforms: {
+        atmCloudTexture: { value: new THREE.Texture() },
+        atmCloudOffset: { value: new THREE.Vector2() },
+        atmCloudThreshold: { value: 0.4 },
+        atmCloudHex: { value: 1 },
+      },
+    };
+    shadow.sync(source);
+    expect(shadow.uniforms.atmShadowCloudHex.value).toBe(1);
+    source.cloudUniforms.atmCloudHex.value = 0;
+    shadow.sync(source);
+    expect(shadow.uniforms.atmShadowCloudHex.value).toBe(0);
+    shadow.configureMap({
+      coverage: {
+        glsl: 'uniform float uFlat; float atmCloudCoverageAt(vec2 xz) { return uFlat; }',
+        uniforms: { uFlat: { value: 0.5 } },
+      },
+    });
+    const m = new THREE.MeshStandardMaterial();
+    shadow.apply(m);
+    const fs = compileWith(m, 'standard').fragmentShader;
+    expect(fs).toContain('uniform float atmShadowCloudHex;');
+    expect(fs).toContain(
+      'atmCloudThresholdAt(crossing, atmShadowCloudThreshold, atmShadowCover, atmShadowCloudHex)'
+    );
+    expect(fs).toContain('atmCloudHexGrad(atmShadowCloudTexture');
+    expect(shadow.uniforms['atmCoverThresholdsHex']!.value).toHaveLength(33);
+  });
+});

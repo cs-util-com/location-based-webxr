@@ -110,7 +110,16 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   the far fade, as the uniform objects themselves, for the cloud shadow
   patch ([`cloud-shadow.ts.md`](cloud-shadow.ts.md)).
 - `advanceClouds(seconds, windKmPerSecond = 0.012)` — drift; no GPU work;
-  both arguments validated (finite, seconds ≥ 0).
+  both arguments validated (finite, seconds ≥ 0). The offset wraps at
+  `CLOUD_NOISE_PERIOD_TILES` (13), where the hex-tiled field repeats, not
+  at one tile.
+- `configure({ cloudHex })`: the big-shape octave hex-tiled (hex-tiling
+  plan H1): the shared `atmCloudHex` uniform (sky, bake, slab; no new
+  program), the cover's threshold from the hex field's own table
+  (`hexCloudThreshold`), the bake following as for a cover change, and the
+  CPU twins (`cloudTransmittanceToward`, `cloudShadowToward`) reading the
+  hex field. A `CloudShadow` follows at its next `sync`. RangeError for a
+  value that is not a boolean.
 - `applySunLight(light)` — colour (chroma) and intensity
   (`sunIntensity × exposure × model intensity`).
 - `horizonColour()` — the sky at the drawn horizon (dir.y =

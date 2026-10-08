@@ -22,6 +22,7 @@
 import * as THREE from 'three';
 
 import { smoothstep } from '../../utils/smoothstep.js';
+import { HEX_COVER_THRESHOLDS } from './cloud-hex.js';
 import { cloudThreshold } from './cloud-layer.js';
 
 /** The covers the threshold table holds: k / COVER_STEPS, k = 0 … COVER_STEPS. */
@@ -29,6 +30,7 @@ const COVER_STEPS = 32;
 /** The threshold that draws no cloud: above any noise value. */
 const CLEAR_THRESHOLD = 2;
 let coverThresholds: readonly number[] | undefined;
+let hexThresholds: readonly number[] | undefined;
 
 /** A caller's coverage map: GLSL defining `atmCloudCoverageAt`, and its uniforms. */
 export interface CloudCoverage {
@@ -43,9 +45,18 @@ export interface CloudCoverage {
 /**
  * The noise threshold for each cover k / 32, k = 0 … 32: `cloudThreshold`,
  * clear (2) at cover 0 and never above it. Computed once. The shader's
- * `atmCoverThresholds`.
+ * `atmCoverThresholds`. With `hex`, the hex-tiled field's
+ * (`HEX_COVER_THRESHOLDS`, `cloud-hex.ts`), the shader's
+ * `atmCoverThresholdsHex`: both are carried, the switch picks, so a live
+ * switch rewrites no copy.
  */
-export function cloudCoverThresholds(): readonly number[] {
+export function cloudCoverThresholds(hex = false): readonly number[] {
+  if (hex) {
+    hexThresholds ??= HEX_COVER_THRESHOLDS.map((t) =>
+      Math.min(t, CLEAR_THRESHOLD)
+    );
+    return hexThresholds;
+  }
   coverThresholds ??= Array.from({ length: COVER_STEPS + 1 }, (_, k) =>
     Math.min(cloudThreshold(k / COVER_STEPS), CLEAR_THRESHOLD)
   );
@@ -58,11 +69,11 @@ export function cloudCoverThresholds(): readonly number[] {
  *
  * @throws RangeError for a cover that is NaN.
  */
-export function cloudThresholdForCover(cover: number): number {
+export function cloudThresholdForCover(cover: number, hex = false): number {
   if (Number.isNaN(cover)) {
     throw new RangeError('the cover must be a number, got NaN');
   }
-  const table = cloudCoverThresholds();
+  const table = cloudCoverThresholds(hex);
   const c = Math.min(Math.max(cover, 0), 1) * COVER_STEPS;
   const k = Math.min(Math.floor(c), COVER_STEPS - 1);
   const f = c - k;
@@ -107,12 +118,16 @@ const COVERAGE_CHUNK = '// atm-cloud-coverage-chunk';
 export const CLOUD_COVERAGE_GLSL = /* glsl */ `
 #ifdef ATM_CLOUD_COVERAGE
 uniform float atmCoverThresholds[33];
+// The hex-tiled field's table (hex-tiling plan H1), picked by the switch.
+uniform float atmCoverThresholdsHex[33];
 ${COVERAGE_CHUNK}
 // Twin of cloudThresholdForCover.
-float atmCoverThreshold(float cover) {
+float atmCoverThreshold(float cover, float hex) {
   float c = clamp(cover, 0.0, 1.0) * 32.0;
   int k = int(min(floor(c), 31.0));
-  return mix(atmCoverThresholds[k], atmCoverThresholds[k + 1], c - float(k));
+  float plain = mix(atmCoverThresholds[k], atmCoverThresholds[k + 1], c - float(k));
+  float tiled = mix(atmCoverThresholdsHex[k], atmCoverThresholdsHex[k + 1], c - float(k));
+  return hex > 0.5 ? tiled : plain;
 }
 #endif
 #ifdef ATM_CLOUD_DISC
@@ -120,9 +135,9 @@ uniform float atmCoverDiscM;
 // The disc's centre: world x, z, and 1 to follow the camera instead.
 uniform vec3 atmCoverDiscCentre;
 #endif
-float atmCloudThresholdAt(vec2 xz, float threshold, float cover) {
+float atmCloudThresholdAt(vec2 xz, float threshold, float cover, float hex) {
 #ifdef ATM_CLOUD_COVERAGE
-  threshold = atmCoverThreshold(atmCloudCoverageAt(xz) * cover);
+  threshold = atmCoverThreshold(atmCloudCoverageAt(xz) * cover, hex);
 #endif
 #ifdef ATM_CLOUD_DISC
   vec2 atmDiscCentre = mix(atmCoverDiscCentre.xy, cameraPosition.xz, atmCoverDiscCentre.z);
@@ -139,11 +154,15 @@ float atmCloudThresholdAt(vec2 xz, float threshold, float cover) {
  */
 export function cloudCoverageUniforms(): {
   atmCoverThresholds: THREE.IUniform<number[]>;
+  atmCoverThresholdsHex: THREE.IUniform<number[]>;
   atmCoverDiscM: THREE.IUniform<number>;
   atmCoverDiscCentre: THREE.IUniform<THREE.Vector3>;
 } {
   return {
     atmCoverThresholds: {
+      value: new Array<number>(COVER_STEPS + 1).fill(CLEAR_THRESHOLD),
+    },
+    atmCoverThresholdsHex: {
       value: new Array<number>(COVER_STEPS + 1).fill(CLEAR_THRESHOLD),
     },
     atmCoverDiscM: { value: 1 },

@@ -21,6 +21,7 @@ import {
   cloudThresholdForCover,
   withCloudCoverage,
 } from './cloud-coverage.js';
+import { HEX_COVER_THRESHOLDS } from './cloud-hex.js';
 
 describe('the cover table', () => {
   it('tabulates the threshold for 33 covers from the noise quantiles', () => {
@@ -80,8 +81,9 @@ describe('CLOUD_COVERAGE_GLSL', () => {
     expect(g).toContain('uniform float atmCoverThresholds[33];');
     expect(g).toContain('#ifdef ATM_CLOUD_DISC');
     expect(g).toContain('uniform float atmCoverDiscM;');
+    // (The fourth argument, the hex switch, came with hex-tiling plan H1.)
     expect(g).toContain(
-      'float atmCloudThresholdAt(vec2 xz, float threshold, float cover)'
+      'float atmCloudThresholdAt(vec2 xz, float threshold, float cover, float hex)'
     );
     expect(g).toContain('atmCloudCoverageAt(xz) * cover');
   });
@@ -123,5 +125,32 @@ describe('the disc centre', () => {
       'mix(atmCoverDiscCentre.xy, cameraPosition.xz, atmCoverDiscCentre.z)'
     );
     expect(g).not.toContain('length(xz - cameraPosition.xz)');
+  });
+});
+
+describe('the hex-tiled field’s table (hex-tiling plan H1)', () => {
+  // WHY (cold review findings 4 and 5): the hex field needs its own
+  // thresholds (2.2-3.4 % too much cloud on today's), and a live switch
+  // must not rewrite every copy: both tables are carried, the switch picks.
+  it('carries both tables and picks by the switch', () => {
+    const hex = cloudCoverThresholds(true);
+    expect(hex).toHaveLength(33);
+    for (let k = 0; k <= 32; k++) {
+      expect(hex[k]).toBe(Math.min(HEX_COVER_THRESHOLDS[k] ?? 0, 2));
+    }
+    expect(cloudCoverThresholds(false)).toBe(cloudCoverThresholds());
+    expect(cloudThresholdForCover(0.5, true)).toBe(hex[16]);
+    expect(cloudThresholdForCover(0.5, true)).not.toBe(
+      cloudThresholdForCover(0.5)
+    );
+    expect(CLOUD_COVERAGE_GLSL).toContain(
+      'uniform float atmCoverThresholdsHex[33];'
+    );
+    expect(CLOUD_COVERAGE_GLSL).toContain(
+      'float atmCloudThresholdAt(vec2 xz, float threshold, float cover, float hex)'
+    );
+    expect(cloudCoverageUniforms().atmCoverThresholdsHex.value).toHaveLength(
+      33
+    );
   });
 });

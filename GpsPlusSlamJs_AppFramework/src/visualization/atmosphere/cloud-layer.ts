@@ -25,6 +25,7 @@ import * as THREE from 'three';
 
 import { clamp01 } from '../../utils/clamp01.js';
 import type { Rgb } from './atmosphere-model.js';
+import { hexTiledSample } from './cloud-hex.js';
 import { smoothstep } from '../../utils/smoothstep.js';
 
 /** Texture edge length, texels. Power of two for mipmaps. */
@@ -187,11 +188,27 @@ function bilinear(data: Uint8Array, size: number, u: number, v: number) {
   return a + (b - a) * fy;
 }
 
+const meanCache = new WeakMap<Uint8Array, number>();
+
+/** A texture's mean value (0-1), cached per texture data. */
+function textureMean(data: Uint8Array): number {
+  let mean = meanCache.get(data);
+  if (mean === undefined) {
+    let sum = 0;
+    for (const value of data) sum += value;
+    mean = sum / (255 * data.length);
+    meanCache.set(data, mean);
+  }
+  return mean;
+}
+
 /**
  * The two-octave noise at texture coordinates (u, v) (tiles), as the shader
  * reads it at its finest level (`atmCloudNoise` without mips): each octave
  * bilinear between texel centres, wrapped. The CPU twin tests and the
- * look-dev page's probes use it to predict where the clouds are.
+ * look-dev page's probes use it to predict where the clouds are. With
+ * `hex`, the big-shape octave is hex-tiled (`cloud-hex.ts`), as the
+ * shader draws it with `atmCloudHex` on.
  *
  * @throws RangeError for non-finite coordinates.
  */
@@ -199,14 +216,24 @@ export function cloudNoiseSample(
   data: Uint8Array,
   size: number,
   u: number,
-  v: number
+  v: number,
+  options: { readonly hex?: boolean } = {}
 ): number {
   if (!(Number.isFinite(u) && Number.isFinite(v))) {
     throw new RangeError(`noise coordinates must be finite, got ${u}, ${v}`);
   }
   const c = CLOUD_LAYER;
+  const first =
+    options.hex === true
+      ? hexTiledSample(
+          (a, b) => bilinear(data, size, a, b),
+          u,
+          v,
+          textureMean(data)
+        )
+      : bilinear(data, size, u, v);
   return (
-    c.firstOctaveWeight * bilinear(data, size, u, v) +
+    c.firstOctaveWeight * first +
     (1 - c.firstOctaveWeight) *
       bilinear(
         data,

@@ -13,10 +13,15 @@ and C3; DEC-H3, one implementation).
 - `CloudCoverage`: `{ glsl, uniforms }`, the caller's GLSL declaring its
   uniforms and defining `float atmCloudCoverageAt(vec2 xz)`, the local
   cover (0 … 1) at world x/z (metres).
-- `cloudCoverThresholds()`: the noise threshold for each cover k / 32,
-  k = 0 … 32 (`cloudThreshold`, the global cover's own quantile rule), 2
-  (clear) at cover 0; computed once; the shader's `atmCoverThresholds`.
-- `cloudThresholdForCover(cover)`: linear between the table's entries, the
+- `cloudCoverThresholds(hex = false)`: the noise threshold for each cover
+  k / 32, k = 0 … 32 (`cloudThreshold`, the global cover's own quantile
+  rule), 2 (clear) at cover 0; computed once; the shader's
+  `atmCoverThresholds`. With `hex`, the hex-tiled field's table
+  (`HEX_COVER_THRESHOLDS`, `cloud-hex.ts`), the shader's
+  `atmCoverThresholdsHex`: both are carried and the GLSL's
+  `atmCloudThresholdAt(xz, threshold, cover, hex)` picks by its fourth
+  argument, so a live hex switch rewrites no table (hex-tiling plan H1).
+- `cloudThresholdForCover(cover, hex = false)`: linear between the table's entries, the
   cover clamped to [0, 1]; RangeError for NaN.
 - `cloudDiscThreshold(threshold, horizontalM, radiusM)`: the threshold faded
   to clear from 0.7 r to r around the camera (smoothstep); RangeError for a

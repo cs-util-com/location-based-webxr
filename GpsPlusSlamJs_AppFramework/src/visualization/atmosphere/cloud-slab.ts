@@ -835,13 +835,13 @@ void main() {
   float first = 1.0 / float(ATM_SLAB_STEPS);
   float ta = tIn;
   float na = atmSlabNoiseAt(ta, mix(first * first, first, share) * lengthM, dir, horizontal);
-  float tha = atmCloudThresholdAt(cameraPosition.xz + dir.xz * ta, atmCloudThreshold, atmCloudCover);
+  float tha = atmCloudThresholdAt(cameraPosition.xz + dir.xz * ta, atmCloudThreshold, atmCloudCover, atmCloudHex);
   // atm-slab-loop-begin
   for (int i = 0; i <= ATM_SLAB_STEPS; i++) {
     float u = i == ATM_SLAB_STEPS ? 1.0 : (float(i) + jitter) / float(ATM_SLAB_STEPS);
     float tb = tIn + mix(u * u, u, share) * lengthM;
     float nb = atmSlabNoiseAt(tb, tb - ta, dir, horizontal);
-    float thb = atmCloudThresholdAt(cameraPosition.xz + dir.xz * tb, atmCloudThreshold, atmCloudCover);
+    float thb = atmCloudThresholdAt(cameraPosition.xz + dir.xz * tb, atmCloudThreshold, atmCloudCover, atmCloudHex);
     float ra = atmSlabRawThickness(na, tha);
     float rb = atmSlabRawThickness(nb, thb);
     float da = ra - (y + dir.y * ta - ATM_SLAB_BASE);
@@ -1031,6 +1031,9 @@ export function setCloudSlabCoverage(
   const fragment = withCloudCoverage(CLOUD_SLAB_FRAGMENT_GLSL, coverage.glsl);
   Object.assign(material.uniforms, coverage.uniforms);
   material.uniforms['atmCoverThresholds']!.value = [...cloudCoverThresholds()];
+  material.uniforms['atmCoverThresholdsHex']!.value = [
+    ...cloudCoverThresholds(true),
+  ];
   material.defines = { ...rest, ATM_CLOUD_COVERAGE: 1 };
   material.fragmentShader = fragment;
   material.needsUpdate = true;

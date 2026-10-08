@@ -133,19 +133,24 @@ export function cloudVolumeDiscCentre(input: {
 }
 
 /**
- * The slab's noise offset (in tiles, each wrapped to [0, 1)) that anchors
+ * The slab's noise offset (in tiles, each wrapped to [0, periodTiles)) that anchors
  * its noise to the ground: the target's distance east and south of
  * latitude 0, longitude 0, the longitude taken at the map's drift
  * (`lonOffsetRad`), over the noise tile `tileM`. The slab reads its noise at
  * `xz / tile + offset` in the target's local frame (x east, z south), so a
  * ground point reads the same noise whichever target the frame is centred
  * on, and the noise drifts east with the map's clouds. Without it every
- * place put the same patch of noise under its target. RangeError for a
- * non-finite input or a tile that is not positive.
+ * place put the same patch of noise under its target. `periodTiles` is
+ * where the noise repeats: one tile for the plain texture, more for the
+ * hex-tiled octave (13, `hexPeriodTiles` in the framework's
+ * `cloud-hex.ts`); wrapped at one tile, the hex field jumped. RangeError
+ * for a non-finite input, a tile that is not positive or a period that is
+ * not a positive whole number of tiles.
  */
 export function cloudVolumeNoiseOffset(
   origin: { latRad: number; lonRad: number; lonOffsetRad: number },
   tileM: number,
+  periodTiles: number,
 ): [number, number] {
   const values = [origin.latRad, origin.lonRad, origin.lonOffsetRad];
   if (!values.every(Number.isFinite)) {
@@ -154,16 +159,21 @@ export function cloudVolumeNoiseOffset(
   if (!(tileM > 0 && Number.isFinite(tileM))) {
     throw new RangeError(`the noise tile must be positive, got ${tileM}`);
   }
+  if (!(Number.isInteger(periodTiles) && periodTiles > 0)) {
+    throw new RangeError(
+      `the noise period must be a positive whole number of tiles, got ${periodTiles}`,
+    );
+  }
   const east =
     (EARTH_RADIUS_M *
       Math.cos(origin.latRad) *
       (origin.lonRad - origin.lonOffsetRad)) /
     tileM;
   const south = (-EARTH_RADIUS_M * origin.latRad) / tileM;
-  // Wrapped, and never 1 from a rounding just below an integer.
+  // Wrapped, and never the period from a rounding just below a multiple.
   const wrap = (t: number) => {
-    const f = t - Math.floor(t);
-    return f < 1 ? f : 0;
+    const f = t - periodTiles * Math.floor(t / periodTiles);
+    return f < periodTiles ? f : 0;
   };
   return [wrap(east), wrap(south)];
 }

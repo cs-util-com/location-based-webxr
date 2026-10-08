@@ -24,8 +24,9 @@ sceneDepth })`
     disc `radiusKm` x share, the lift (the shell's height minus the slab's
     middle), the origin from `target` (degrees; null before one: no
     volume), and, while enabled, the ground sky's noise offset
-    (`cloudVolumeNoiseOffset` at the map's drift), which anchors the noise
-    to the ground: with the frame centred on the target, a fixed offset put
+    (`cloudVolumeNoiseOffset` at the map's drift, wrapped at
+    `CLOUD_NOISE_PERIOD_TILES`, where the hex-tiled field repeats), which
+    anchors the noise to the ground: with the frame centred on the target, a fixed offset put
     the same clear patch under every place (2026-10-06). The slab's reach
     (`setCloudReach`) follows the disc, at least the default 21 km, so the
     volume reaches toward the horizon (volume-cloud plan §13, R2: the

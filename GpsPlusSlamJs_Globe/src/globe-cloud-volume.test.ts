@@ -106,38 +106,61 @@ describe("cloudVolumeMapUv", () => {
 // the noise belong to the ground, and drift east with the map's clouds.
 describe("cloudVolumeNoiseOffset", () => {
   const TILE_M = 24_000;
+  // The noise repeats at 13 tiles (the hex-tiled octave, hex-tiling plan
+  // H1): wrapped at one tile, the hex field jumped there.
+  const PERIOD = 13;
+  const wrap = (t: number) => t - PERIOD * Math.floor(t / PERIOD);
 
-  it("is the target's east and south distance from (0, 0) in tiles, wrapped to [0, 1)", () => {
+  it("is the target's east and south distance from (0, 0) in tiles, wrapped to [0, the period)", () => {
     const [u, v] = cloudVolumeNoiseOffset(
       { latRad: 0.5, lonRad: 0.1, lonOffsetRad: 0 },
       TILE_M,
+      PERIOD,
     );
     const east = (R * Math.cos(0.5) * 0.1) / TILE_M;
     const south = (-R * 0.5) / TILE_M;
-    expect(u).toBeCloseTo(east - Math.floor(east), 9);
-    expect(v).toBeCloseTo(south - Math.floor(south), 9);
+    expect(u).toBeCloseTo(wrap(east), 9);
+    expect(v).toBeCloseTo(wrap(south), 9);
   });
 
   it("moves the noise east with the map's drift", () => {
     const at = { latRad: 0.8, lonRad: 0.16, lonOffsetRad: 0 };
-    const [u0] = cloudVolumeNoiseOffset(at, TILE_M);
-    const [u1] = cloudVolumeNoiseOffset({ ...at, lonOffsetRad: 1e-4 }, TILE_M);
+    const [u0] = cloudVolumeNoiseOffset(at, TILE_M, PERIOD);
+    const [u1] = cloudVolumeNoiseOffset(
+      { ...at, lonOffsetRad: 1e-4 },
+      TILE_M,
+      PERIOD,
+    );
     // The map is read at (lon - drift): a feature moves east by the drift,
     // so the noise under a fixed point is the noise from further west.
     const step = (R * Math.cos(0.8) * 1e-4) / TILE_M;
     expect((((u0 - u1 - step) % 1) + 1.5) % 1).toBeCloseTo(0.5, 9);
   });
 
-  it("refuses a non-finite position or a tile that is not positive", () => {
+  it("refuses a non-finite position, a tile that is not positive or a period that is not a whole number of tiles", () => {
     expect(() =>
       cloudVolumeNoiseOffset(
         { latRad: Number.NaN, lonRad: 0, lonOffsetRad: 0 },
         TILE_M,
+        PERIOD,
       ),
     ).toThrow(RangeError);
     expect(() =>
-      cloudVolumeNoiseOffset({ latRad: 0, lonRad: 0, lonOffsetRad: 0 }, 0),
+      cloudVolumeNoiseOffset(
+        { latRad: 0, lonRad: 0, lonOffsetRad: 0 },
+        0,
+        PERIOD,
+      ),
     ).toThrow(RangeError);
+    for (const bad of [0, -1, 1.5, Number.NaN]) {
+      expect(() =>
+        cloudVolumeNoiseOffset(
+          { latRad: 0, lonRad: 0, lonOffsetRad: 0 },
+          TILE_M,
+          bad,
+        ),
+      ).toThrow(RangeError);
+    }
   });
 });
 

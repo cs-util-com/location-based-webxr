@@ -18,8 +18,12 @@ shadows drift with the clouds and fall where the sky draws them.
 - `sync(source)`: takes an atmosphere's clouds (`SkyAtmosphere.cloudUniforms`
   satisfies `CloudShadowSource`): the noise texture, the drift offset and
   the far fade as the OBJECTS themselves (the shadows drift with the sky,
-  no per-frame call), the threshold and the anchor as copies (call again
-  after a cover or mode change).
+  no per-frame call), the threshold, the anchor and the hex switch
+  (`atmCloudHex`, hex-tiling plan H1; absent: off) as copies (call again
+  after a cover, mode or hex change). With the switch the shadow's noise
+  hex-tiles its first octave exactly as the sky's, with the continuous
+  uv's gradients, and its map threshold comes from the hex table
+  (`configureMap` sets both).
 - `setEnabled(on)` and `enabled`: a uniform, no recompile.
 - `apply(material)`: patches one lit material (Lambert, Phong, Standard,
   Physical, Toon), chaining its `onBeforeCompile` and adding `|cloud-shadow`
