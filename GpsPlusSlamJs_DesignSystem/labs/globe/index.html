@@ -15,6 +15,7 @@
           "3d-tiles-renderer/plugins": "/vendor/3d-tiles-renderer/build/index.plugins.js",
           "h3-js": "/vendor/h3-js/dist/browser/h3-js.es.js",
           "gps-plus-slam-osm": "/osm-lib/index.js",
+          "gps-plus-slam-osm/three": "/osm-lib/three/index.js",
           "gps-plus-slam-app-framework/osm-bridge": "/fw/osm-bridge/index.js"
         }
       }
@@ -589,18 +590,11 @@
               />
             </label>
             <label class="lookdev-field">
-              <span class="hint">Hand-over altitude (km)</span>
-              <select class="select" data-hash-key="handOverKm">
+              <span class="hint">Landing altitude (km)</span>
+              <select class="select" data-hash-key="landKm">
+                <option value="2">2</option>
+                <option value="5">5</option>
                 <option value="20">20</option>
-                <option value="50">50</option>
-                <option value="150">150</option>
-              </select>
-            </label>
-            <label class="lookdev-field">
-              <span class="hint">Open the city at the end</span>
-              <select class="select" data-hash-key="handOver">
-                <option value="1">Yes</option>
-                <option value="0">No, hold there</option>
               </select>
             </label>
           </div>

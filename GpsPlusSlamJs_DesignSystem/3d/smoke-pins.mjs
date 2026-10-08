@@ -28,6 +28,10 @@ export const SMOKE_PINS = {
   // Off by default today; pinned so the owner flipping it on changes no
   // smoke (stream G).
   godRays: "0",
+  // Hex-tiled clouds (hex-tiling plan 2026-10-07-0919, H2): off by default
+  // until the owner's phone run, pinned so that default can change without
+  // moving any smoke.
+  cloudHex: "0",
   // The water polish's switches that open on (stream W): pinned off so the
   // pond is P50 alone in every smoke but the water polish's own, which
   // names each key.

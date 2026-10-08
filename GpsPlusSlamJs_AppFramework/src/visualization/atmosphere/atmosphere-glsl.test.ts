@@ -175,3 +175,28 @@ describe('the sun through clouds in the sky (round-3 plan 2026-09-27-0532, DEC-F
     );
   });
 });
+
+describe('the cloud chunk’s hex-tiled big shapes (hex-tiling plan H1)', () => {
+  // WHY: one switch, `atmCloudHex`, hex-tiles the first octave in every
+  // consumer of the shared chunk; the implicit read takes the CONTINUOUS
+  // uv's gradients (cold review finding 1), the march an explicit level.
+  it('reads the first octave hex-tiled when atmCloudHex is on', () => {
+    expect(ATMOSPHERE_CLOUD_GLSL).toContain('uniform float atmCloudHex;');
+    expect(ATMOSPHERE_CLOUD_GLSL).toContain('#ifndef ATM_CLOUD_HEX_GLSL');
+    const plain = ATMOSPHERE_CLOUD_GLSL.slice(
+      ATMOSPHERE_CLOUD_GLSL.indexOf('float atmCloudNoise(')
+    );
+    const plainBody = plain.slice(0, plain.indexOf('}'));
+    expect(plainBody).toContain('atmCloudHex > 0.5');
+    expect(plainBody).toContain(
+      'atmCloudHexGrad(atmCloudTexture, uv, dFdx(uv), dFdy(uv), ATM_CLOUD_MEAN)'
+    );
+    const lod = ATMOSPHERE_CLOUD_GLSL.slice(
+      ATMOSPHERE_CLOUD_GLSL.indexOf('float atmCloudNoiseLod(')
+    );
+    const lodBody = lod.slice(0, lod.indexOf('}'));
+    expect(lodBody).toContain(
+      'atmCloudHexLod(atmCloudTexture, uv, lod, ATM_CLOUD_MEAN)'
+    );
+  });
+});

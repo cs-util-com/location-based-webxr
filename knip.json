@@ -11,14 +11,11 @@
         "src/model/index.ts",
         "src/source/index.ts",
         "src/spatial/index.ts",
+        "src/three/index.ts",
         "config/eslint.config.mjs"
       ],
-      "project": [
-        "src/**/*.ts"
-      ],
-      "ignoreDependencies": [
-        "dpdm"
-      ]
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["dpdm"]
     },
     "GpsPlusSlamJs_Globe": {
       "entry": [
@@ -27,21 +24,12 @@
         "scripts/fetch-globe-assets.mjs",
         "config/eslint.config.mjs"
       ],
-      "project": [
-        "src/**/*.ts",
-        "scripts/**/*.mjs"
-      ],
-      "ignoreDependencies": [
-        "dpdm"
-      ]
+      "project": ["src/**/*.ts", "scripts/**/*.mjs"],
+      "ignoreDependencies": ["dpdm"]
     },
     ".": {
-      "entry": [
-        "tests/**/*.test.js"
-      ],
-      "project": [
-        "tests/**/*.js"
-      ]
+      "entry": ["tests/**/*.test.js"],
+      "project": ["tests/**/*.js"]
     },
     "GpsPlusSlamJs_AppFramework": {
       "entry": [
@@ -70,13 +58,8 @@
         "src/ar/qr/qr-anchor-mint.ts",
         "config/eslint.config.mjs"
       ],
-      "project": [
-        "src/**/*.ts"
-      ],
-      "ignoreDependencies": [
-        "dpdm",
-        "redux"
-      ]
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["dpdm", "redux"]
     },
     "GpsPlusSlamJs_RecorderApp": {
       "entry": [
@@ -86,9 +69,7 @@
         "config/eslint.config.mjs",
         "src/timing/alignment-timing-main.ts"
       ],
-      "project": [
-        "src/**/*.ts"
-      ],
+      "project": ["src/**/*.ts"],
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",
         "dependency-cruiser",
@@ -106,9 +87,7 @@
         "playwright-tests/**/*.{js,ts}",
         "config/eslint.config.mjs"
       ],
-      "project": [
-        "src/**/*.ts"
-      ],
+      "project": ["src/**/*.ts"],
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",
         "dependency-cruiser",
@@ -119,9 +98,7 @@
       ]
     },
     "GpsPlusSlamJs_MinimalExample": {
-      "project": [
-        "src/**/*.ts"
-      ]
+      "project": ["src/**/*.ts"]
     },
     "GpsPlusSlamJs_OsmDemo": {
       "entry": [
@@ -131,12 +108,8 @@
         "src/worker/demo-worker.ts",
         "src/gallery-main.ts"
       ],
-      "project": [
-        "src/**/*.ts"
-      ],
-      "ignoreUnresolved": [
-        "/src/ar-compass-control.ts"
-      ],
+      "project": ["src/**/*.ts"],
+      "ignoreUnresolved": ["/src/ar-compass-control.ts"],
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",
         "dependency-cruiser",
@@ -175,9 +148,7 @@
         "playwright-tests/**/*.{js,ts}",
         "config/eslint.config.mjs"
       ],
-      "project": [
-        "src/**/*.ts"
-      ],
+      "project": ["src/**/*.ts"],
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",
         "dependency-cruiser",
@@ -193,9 +164,7 @@
         "playwright-tests/**/*.{js,ts}",
         "config/eslint.config.mjs"
       ],
-      "project": [
-        "src/**/*.ts"
-      ],
+      "project": ["src/**/*.ts"],
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",
         "dependency-cruiser",
@@ -211,9 +180,7 @@
         "playwright-tests/**/*.{js,ts}",
         "config/eslint.config.mjs"
       ],
-      "project": [
-        "src/**/*.ts"
-      ],
+      "project": ["src/**/*.ts"],
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",
         "dependency-cruiser",
@@ -229,9 +196,7 @@
         "playwright-tests/**/*.{js,ts}",
         "config/eslint.config.mjs"
       ],
-      "project": [
-        "src/**/*.ts"
-      ],
+      "project": ["src/**/*.ts"],
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",
         "dependency-cruiser",
@@ -242,25 +207,13 @@
       ]
     },
     "GpsPlusSlamJs_SiteWorker": {
-      "entry": [
-        "src/site-worker.ts"
-      ],
-      "project": [
-        "src/**/*.ts"
-      ]
+      "entry": ["src/site-worker.ts"],
+      "project": ["src/**/*.ts"]
     },
     "GpsPlusSlamJs_DesignSystem": {
-      "entry": [
-        "config/stylelint.config.mjs"
-      ],
-      "project": [
-        "*.mjs",
-        "config/*.mjs"
-      ],
-      "ignoreUnresolved": [
-        "/3d/water-metrics.mjs",
-        "/globe/sky-level.js"
-      ],
+      "entry": ["config/stylelint.config.mjs"],
+      "project": ["*.mjs", "config/*.mjs"],
+      "ignoreUnresolved": ["/3d/water-metrics.mjs", "/globe/sky-level.js"],
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",
         "stylelint-config-standard"

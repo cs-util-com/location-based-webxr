@@ -52,6 +52,7 @@ import {
   cloudThreshold,
   createCloudTexture,
 } from './cloud-layer.js';
+import { CLOUD_NOISE_PERIOD_TILES, hexCloudThreshold } from './cloud-hex.js';
 import { cloudColumnTransmittanceToward } from './cloud-column.js';
 import {
   CLOUD_MODES,
@@ -62,13 +63,22 @@ import {
 import {
   CLOUD_SLAB,
   CLOUD_SLAB_STEPS,
+  assertCloudSlabReach,
   createCloudSlab,
+  setCloudSlabCoverage,
+  setCloudSlabDiscCentre,
+  setCloudSlabRadius,
+  setCloudSlabReach,
+  setCloudSlabSceneDepth,
   setCloudSlabSteps,
+  type CloudSlabReach,
 } from './cloud-slab.js';
+import type { CloudDiscCentre } from './cloud-coverage.js';
 import {
   type AtmosphereDevice,
   type AtmosphereUniforms,
   type LutName,
+  type SkyViewRead,
   WebGlAtmosphereDevice,
 } from './atmosphere-luts.js';
 import {
@@ -165,7 +175,23 @@ export interface SkyAtmosphereOptions {
   readonly observerAltitudeKm?: number;
   /** The sun light's intensity at the reference elevation. Default 1. */
   readonly sunIntensity?: number;
+  /**
+   * When a change rebuilds the sky. `'immediate'` (the default): before the
+   * setter returns, as an on-demand renderer needs. `'staged'`: a setter
+   * only records the change, and `stepRebuild()`, called once a frame by a
+   * page that renders every frame, does at most one stage of the rebuild
+   * (the tables, the asynchronous read, the bake), so no frame carries a
+   * whole rebuild (globe F2 plan 2026-10-03-1922, F2b).
+   */
+  readonly rebuild?: 'immediate' | 'staged';
 }
+
+/**
+ * What one `stepRebuild()` did: rendered the tables, waited for the read
+ * (the GPU has not finished the copy), took the read and the exposure,
+ * baked the environment, or nothing (no rebuild pending).
+ */
+export type RebuildStage = 'luts' | 'waiting' | 'read' | 'bake' | 'idle';
 
 /**
  * The gain the environment is baked with, divided back out of
@@ -196,18 +222,31 @@ export const ENVIRONMENT_BAKE_GAIN = 1024;
  */
 const READBACK_FAILED_MIN_SUN_Y = Math.sin((-6 * Math.PI) / 180);
 
+/** Throws RangeError for an observer outside the model's atmosphere. */
+function validateObserverAltitude(altitude: number): void {
+  const thickness =
+    EARTH_ATMOSPHERE.topRadiusKm - EARTH_ATMOSPHERE.groundRadiusKm;
+  if (!(Number.isFinite(altitude) && altitude >= 0 && altitude < thickness)) {
+    throw new RangeError(
+      `observerAltitudeKm must be in [0, ${thickness}), got ${altitude}`
+    );
+  }
+}
+
 /** Throws RangeError for options that would silently render a black or wrong sky. */
 function validateOptions(options: SkyAtmosphereOptions): void {
   mieExtinctionForVisibility(options.visibilityKm ?? 60);
-  const altitude = options.observerAltitudeKm;
-  const thickness =
-    EARTH_ATMOSPHERE.topRadiusKm - EARTH_ATMOSPHERE.groundRadiusKm;
+  if (options.observerAltitudeKm !== undefined) {
+    validateObserverAltitude(options.observerAltitudeKm);
+  }
+  const rebuild = options.rebuild;
   if (
-    altitude !== undefined &&
-    !(Number.isFinite(altitude) && altitude >= 0 && altitude < thickness)
+    rebuild !== undefined &&
+    rebuild !== 'immediate' &&
+    rebuild !== 'staged'
   ) {
     throw new RangeError(
-      `observerAltitudeKm must be in [0, ${thickness}), got ${altitude}`
+      `rebuild must be 'immediate' or 'staged', got ${String(rebuild)}`
     );
   }
   const intensity = options.sunIntensity;
@@ -234,8 +273,18 @@ export class SkyAtmosphere {
   private readonly bakeScale: THREE.IUniform<number> = { value: 0 };
   private readonly bakeScene = new THREE.Scene();
   private readonly bakeMaterial: THREE.ShaderMaterial;
-  private readonly observerAltitudeKm: number;
+  private observerKm: number;
   private readonly sunIntensity: number;
+  /** `rebuild: 'staged'`: setters record, `stepRebuild()` works. */
+  private readonly staged: boolean;
+  /** The staged rebuild's next pass (medium: every table), if one is due. */
+  private pendingPass: { medium: boolean } | undefined;
+  /** A staged bake due without a pass (a cloud cover change). */
+  private pendingBake = false;
+  /** Where the staged pass in flight is: its read, then its bake. */
+  private stage: 'idle' | 'read' | 'bake' = 'idle';
+  /** The pass's asynchronous read (null: the device reads synchronously). */
+  private read: SkyViewRead | null = null;
   private readonly unsubscribeRestore: () => void;
   private visibility: number;
   private compensationEv = 0;
@@ -266,6 +315,8 @@ export class SkyAtmosphere {
     atmCloudCover: { value: 0 },
     atmCloudThreshold: this.threshold,
     atmCloudOffset: { value: new THREE.Vector2() },
+    /** 1: the big-shape octave hex-tiled (`configure({ cloudHex })`). */
+    atmCloudHex: { value: 0 },
     /** The disc's view of the clouds: the real threshold in every mode. */
     atmCloudSunThreshold: this.threshold,
     atmCloudFarFadeM: {
@@ -296,6 +347,15 @@ export class SkyAtmosphere {
   private cloudMesh: THREE.Mesh | undefined;
   /** The slab's march steps (`configure({ cloudSlabSteps })`), kept across modes. */
   private slabSteps: number = CLOUD_SLAB.defaultSteps;
+  /** The scene's depth for the slab (`setCloudSceneDepth`), kept across modes. */
+  private sceneDepth: THREE.Texture | null = null;
+  /** The slab's coverage map and disc (`setCloudCoverage`, `setCloudDiscRadius`). */
+  private coverage: Parameters<typeof setCloudSlabCoverage>[1] = null;
+  private discRadiusM: number | null = null;
+  /** The slab's reach (`setCloudReach`), kept across modes; null the default. */
+  /** The disc's centre (`setCloudDiscCentre`), kept across modes; null: the camera. */
+  private discCentre: CloudDiscCentre | null = null;
+  private reach: CloudSlabReach | null = null;
 
   constructor(options: SkyAtmosphereOptions) {
     try {
@@ -322,9 +382,10 @@ export class SkyAtmosphere {
     this.device = device;
     this.scene = options.scene;
     this.visibility = options.visibilityKm ?? 60;
-    this.observerAltitudeKm =
+    this.observerKm =
       options.observerAltitudeKm ?? EARTH_ATMOSPHERE.defaultObserverAltitudeKm;
     this.sunIntensity = options.sunIntensity ?? 1;
+    this.staged = options.rebuild === 'staged';
 
     this.uniforms = {
       atmMieExtinction: { value: mieExtinctionForVisibility(this.visibility) },
@@ -334,7 +395,7 @@ export class SkyAtmosphere {
       atmSunDirection: { value: new THREE.Vector3(0, 1, 0) },
       atmSunCosZenith: { value: 1 },
       atmObserverRadius: {
-        value: EARTH_ATMOSPHERE.groundRadiusKm + this.observerAltitudeKm,
+        value: EARTH_ATMOSPHERE.groundRadiusKm + this.observerKm,
       },
       atmRadianceToScene: { value: 0 },
     };
@@ -379,9 +440,11 @@ export class SkyAtmosphere {
     bakeMesh.frustumCulled = false;
     this.bakeScene.add(bakeMesh);
 
-    this.unsubscribeRestore = device.onContextRestored(() =>
-      this.rebuild(true)
-    );
+    this.unsubscribeRestore = device.onContextRestored(() => {
+      // The tables are gone, and so is any staged pass's read.
+      this.abandonPass();
+      this.rebuild(true);
+    });
   }
 
   private skyMaterial(
@@ -418,6 +481,20 @@ export class SkyAtmosphere {
     return this.visibility;
   }
 
+  /** The observer's height above sea level, km. */
+  get observerAltitudeKm(): number {
+    return this.observerKm;
+  }
+
+  /** Whether a staged rebuild has work left (always false when immediate). */
+  get rebuildPending(): boolean {
+    return (
+      this.stage !== 'idle' ||
+      this.pendingPass !== undefined ||
+      this.pendingBake
+    );
+  }
+
   /** The exposure in effect: auto-exposure × 2^compensation. */
   get exposure(): number {
     return this.autoExposureValue * 2 ** this.compensationEv;
@@ -439,14 +516,15 @@ export class SkyAtmosphere {
 
   /**
    * The cloud layer's uniforms (for the cloud shadow patch): the noise
-   * texture, the REAL threshold in every mode (2 when clear) and the drift
-   * offset. The objects themselves: the offset moves in place as the clouds
-   * drift.
+   * texture, the REAL threshold in every mode (2 when clear), the drift
+   * offset and the hex switch. The objects themselves: the offset moves in
+   * place as the clouds drift.
    */
   get cloudUniforms(): {
     readonly atmCloudTexture: THREE.IUniform<THREE.Texture>;
     readonly atmCloudThreshold: THREE.IUniform<number>;
     readonly atmCloudOffset: THREE.IUniform<THREE.Vector2>;
+    readonly atmCloudHex: THREE.IUniform<number>;
     readonly atmCloudAnchored: THREE.IUniform<number>;
     readonly atmCloudFarFadeM: THREE.IUniform<THREE.Vector2>;
   } {
@@ -499,7 +577,10 @@ export class SkyAtmosphere {
       point,
       [sun.x, sun.y, sun.z],
       threshold,
-      (u, v) => cloudNoiseSample(image.data, image.width, u, v),
+      (u, v) =>
+        cloudNoiseSample(image.data, image.width, u, v, {
+          hex: this.clouds.atmCloudHex.value === 1,
+        }),
       [offset.x, offset.y],
       {
         camera: viewer,
@@ -535,7 +616,10 @@ export class SkyAtmosphere {
       point,
       [sun.x, sun.y, sun.z],
       threshold,
-      (u, v) => cloudNoiseSample(image.data, image.width, u, v),
+      (u, v) =>
+        cloudNoiseSample(image.data, image.width, u, v, {
+          hex: this.clouds.atmCloudHex.value === 1,
+        }),
       [offset.x, offset.y]
     );
   }
@@ -548,13 +632,13 @@ export class SkyAtmosphere {
   private params(): AtmosphereParams {
     return {
       visibilityKm: this.visibility,
-      observerAltitudeKm: this.observerAltitudeKm,
+      observerAltitudeKm: this.observerKm,
     };
   }
 
   /** LUT radiance → sun-relative units (sun at the reference elevation = 1). */
   private lutToRelative(): number {
-    const r = EARTH_ATMOSPHERE.groundRadiusKm + this.observerAltitudeKm;
+    const r = EARTH_ATMOSPHERE.groundRadiusKm + this.observerKm;
     const reference = transmittanceToTop(
       r,
       Math.sin(EARTH_ATMOSPHERE.referenceSunElevationRad),
@@ -584,6 +668,72 @@ export class SkyAtmosphere {
     this.configure({ sunDirection: direction });
   }
 
+  /**
+   * Move the observer, km above sea level, in [0, the atmosphere's
+   * thickness). Re-renders the sky view and re-bakes (the other tables cover
+   * every height); an unchanged height does nothing. Synchronous like the
+   * sun's setter unless the rebuild is staged. Validated before any change.
+   *
+   * @throws RangeError for a height outside the atmosphere or non-finite.
+   */
+  setObserverAltitudeKm(km: number): void {
+    validateObserverAltitude(km);
+    if (km === this.observerKm) return;
+    this.observerKm = km;
+    this.uniforms.atmObserverRadius.value =
+      EARTH_ATMOSPHERE.groundRadiusKm + km;
+    this.updateScale();
+    if (this.sun !== undefined) this.rebuild(false);
+  }
+
+  /**
+   * Advance a staged rebuild by at most one stage (`rebuild: 'staged'`);
+   * call once a frame. A pass renders the tables (every one when the medium
+   * changed), takes the sky view's read once the GPU has finished it (the
+   * horizon and the exposure follow), then bakes the environment into one
+   * reused target. A change during a pass is applied by ONE further pass
+   * after it, so a change every frame never starves the bake. Immediate
+   * mode never has work: always `'idle'`.
+   */
+  stepRebuild(): RebuildStage {
+    if (this.stage === 'read') {
+      const read = this.read;
+      if (read !== null && !read.ready()) return 'waiting';
+      this.read = null;
+      this.measure(read !== null ? read.take() : this.device.readSkyView());
+      this.updateScale();
+      this.stage = 'bake';
+      return 'read';
+    }
+    if (this.stage === 'bake') {
+      this.stage = 'idle';
+      this.pendingBake = false;
+      this.rebake();
+      return 'bake';
+    }
+    const pass = this.pendingPass;
+    if (pass !== undefined) {
+      this.pendingPass = undefined;
+      this.renderLuts(pass.medium);
+      this.read = this.device.beginSkyViewRead?.() ?? null;
+      this.stage = 'read';
+      return 'luts';
+    }
+    if (this.pendingBake) {
+      this.pendingBake = false;
+      this.rebake();
+      return 'bake';
+    }
+    return 'idle';
+  }
+
+  /** Drops the staged pass in flight (its read released). */
+  private abandonPass(): void {
+    this.read?.cancel();
+    this.read = null;
+    this.stage = 'idle';
+  }
+
   /** Set the meteorological visibility, km. Rebuilds every LUT. */
   setVisibilityKm(visibilityKm: number): void {
     this.configure({ visibilityKm });
@@ -604,6 +754,12 @@ export class SkyAtmosphere {
     cloudSlabSteps?: (typeof CLOUD_SLAB_STEPS)[number];
     /** The sun through clouds; the fields not given keep their value. */
     sunThroughClouds?: Partial<SunThroughClouds>;
+    /**
+     * The big-shape octave hex-tiled (hex-tiling plan H1): no repeat at
+     * 24 km. A uniform (no new program), with the hex field's own cover
+     * threshold; the bake follows, as for a cover change.
+     */
+    cloudHex?: boolean;
   }): void {
     // Validate everything before changing anything.
     const sunFx = this.changedSunThroughClouds(change.sunThroughClouds);
@@ -612,8 +768,9 @@ export class SkyAtmosphere {
     const mie = this.changedMie(change.visibilityKm);
     const sun = this.movedSun(change.sunDirection);
     const cover = this.changedCover(change.cloudCover);
+    const hex = this.changedHex(change.cloudHex);
     const firstSun = this.sun === undefined && sun !== undefined;
-    const cloudsRebake = this.applyCloudLook(cover, sunFx);
+    const cloudsRebake = this.applyCloudLook(cover, sunFx, hex);
     this.applySlabSteps(steps);
     this.applyMode(mode);
     if (mie !== undefined) {
@@ -632,23 +789,40 @@ export class SkyAtmosphere {
     // The sun-through-cloud knobs never do: the bake has no disc, and no
     // glow (its own zero lobes, below).
     if (skyChanged) this.rebuild(mie !== undefined || firstSun);
-    else if (cloudsRebake) this.rebake();
+    else if (cloudsRebake) {
+      if (this.staged) this.pendingBake = true;
+      else this.rebake();
+    }
   }
 
   /**
-   * Applies a validated cover and sun-through-clouds change (undefined:
-   * none); returns whether the bake must follow (a new cover only).
+   * Applies a validated cover, sun-through-clouds and hex change
+   * (undefined: none); returns whether the bake must follow (a new cover or
+   * a new switch).
    */
   private applyCloudLook(
     cover: number | undefined,
-    sunFx: SunThroughClouds | undefined
+    sunFx: SunThroughClouds | undefined,
+    hex: boolean | undefined
   ): boolean {
-    if (cover !== undefined) this.applyCover(cover);
+    if (hex !== undefined) this.clouds.atmCloudHex.value = hex ? 1 : 0;
+    if (cover !== undefined || hex !== undefined) {
+      this.applyCover(cover ?? this.clouds.atmCloudCover.value);
+    }
     if (sunFx !== undefined) {
       this.clouds.atmCloudDiscExponent.value = sunFx.discExponent;
       this.clouds.atmCloudForward.value.set(sunFx.aureole, sunFx.silverLining);
     }
-    return cover !== undefined;
+    return cover !== undefined || hex !== undefined;
+  }
+
+  /** The new hex switch, or undefined if unchanged. Validates. */
+  private changedHex(hex: boolean | undefined): boolean | undefined {
+    if (hex === undefined) return undefined;
+    if (typeof hex !== 'boolean') {
+      throw new RangeError(`cloudHex must be a boolean, got ${String(hex)}`);
+    }
+    return (this.clouds.atmCloudHex.value === 1) === hex ? undefined : hex;
   }
 
   /**
@@ -683,8 +857,12 @@ export class SkyAtmosphere {
   private applyCover(cover: number): void {
     this.clouds.atmCloudCover.value = cover;
     // Cover 0 gives an infinite threshold; 2 is above any noise value and
-    // keeps the uniform finite.
-    this.clouds.atmCloudThreshold.value = Math.min(cloudThreshold(cover), 2);
+    // keeps the uniform finite. The hex field has its own thresholds.
+    const threshold =
+      this.clouds.atmCloudHex.value === 1
+        ? hexCloudThreshold(cover)
+        : cloudThreshold(cover);
+    this.clouds.atmCloudThreshold.value = Math.min(threshold, 2);
     this.syncVisibleClouds();
   }
 
@@ -704,6 +882,91 @@ export class SkyAtmosphere {
     this.slabSteps = steps;
     if (this.mode === 'slab' && this.cloudMesh !== undefined) {
       setCloudSlabSteps(this.cloudMesh, steps);
+    }
+  }
+
+  /**
+   * The scene's depth for the cloud slab (globe F2 plan 2026-10-03-1922,
+   * F2c), or null for none: the slab's march ends at the scene, so a ridge
+   * in front of a cloud hides it and a deck over a valley ends at the
+   * ground (`setCloudSlabSceneDepth`). Kept across modes and handed to a
+   * slab made later; the sheet and the dome have no march and ignore it.
+   * No GPU work.
+   */
+  setCloudSceneDepth(depth: THREE.Texture | null): void {
+    this.sceneDepth = depth;
+    if (this.mode === 'slab' && this.cloudMesh !== undefined) {
+      setCloudSlabSceneDepth(this.cloudMesh, depth);
+    }
+  }
+
+  /**
+   * A coverage map for the cloud slab, or none (null): the caller's GLSL
+   * defining `float atmCloudCoverageAt(vec2 xz)` and its uniforms (globe
+   * volume-cloud plan 2026-10-05-0016, C1; `setCloudSlabCoverage`). Kept
+   * across modes and handed to a slab made later; the sheet and the dome
+   * ignore it. No GPU work.
+   *
+   * @throws RangeError as `setCloudSlabCoverage` (only once a slab exists).
+   */
+  setCloudCoverage(coverage: Parameters<typeof setCloudSlabCoverage>[1]): void {
+    this.coverage = coverage;
+    if (this.mode === 'slab' && this.cloudMesh !== undefined) {
+      setCloudSlabCoverage(this.cloudMesh, coverage);
+    }
+  }
+
+  /**
+   * The cloud slab's disc around the camera (m), or none (null): its clouds
+   * fade to clear from 0.7 r to r (C1; `setCloudSlabRadius`). Kept across
+   * modes, like the coverage. Validated before it is kept.
+   *
+   * @throws RangeError for a radius that is not positive and finite.
+   */
+  setCloudDiscRadius(radiusM: number | null): void {
+    if (radiusM !== null && !(radiusM > 0 && Number.isFinite(radiusM))) {
+      throw new RangeError(`the disc radius must be positive, got ${radiusM}`);
+    }
+    this.discRadiusM = radiusM;
+    if (this.mode === 'slab' && this.cloudMesh !== undefined) {
+      setCloudSlabRadius(this.cloudMesh, radiusM);
+    }
+  }
+
+  /**
+   * How far out the cloud slab draws (globe volume-cloud plan 2026-10-05-0016
+   * §13, R1; `setCloudSlabReach`), or the default (null). Kept across modes,
+   * like the disc. Validated before it is kept.
+   *
+   * @throws RangeError for a reach that does not fade from 0 <= start < end.
+   */
+  setCloudReach(reach: CloudSlabReach | null): void {
+    if (reach !== null) assertCloudSlabReach(reach);
+    this.reach = reach;
+    if (this.mode === 'slab' && this.cloudMesh !== undefined) {
+      setCloudSlabReach(this.cloudMesh, reach);
+    }
+  }
+
+  /**
+   * The cloud slab's disc centre (globe volume-cloud plan 2026-10-05-0016
+   * §15; `setCloudSlabDiscCentre`): a world point, or the camera (null, the
+   * default). Kept across modes, like the disc. Validated before it is kept.
+   *
+   * @throws RangeError for a centre that is not finite.
+   */
+  setCloudDiscCentre(centre: CloudDiscCentre | null): void {
+    if (
+      centre !== null &&
+      !(Number.isFinite(centre.x) && Number.isFinite(centre.z))
+    ) {
+      throw new RangeError(
+        `the disc centre must be finite, got ${centre.x}, ${centre.z}`
+      );
+    }
+    this.discCentre = centre === null ? null : { x: centre.x, z: centre.z };
+    if (this.mode === 'slab' && this.cloudMesh !== undefined) {
+      setCloudSlabDiscCentre(this.cloudMesh, this.discCentre);
     }
   }
 
@@ -737,10 +1000,24 @@ export class SkyAtmosphere {
     // sky (LUTs, sun, scale, cloud cover, offset and the real threshold).
     const shared = { ...this.uniforms, ...this.clouds };
     if (mode === 'sheet') this.cloudMesh = createCloudSheet(shared);
-    if (mode === 'slab')
+    if (mode === 'slab') {
       this.cloudMesh = createCloudSlab(shared, this.slabSteps);
+      this.applySlabSettings(this.cloudMesh);
+    }
     if (this.cloudMesh !== undefined) this.scene.add(this.cloudMesh);
     this.syncVisibleClouds();
+  }
+
+  /**
+   * Hands a slab made now everything set before it existed: the scene's
+   * depth, the coverage map, the disc, its centre and the reach.
+   */
+  private applySlabSettings(slab: THREE.Mesh): void {
+    if (this.sceneDepth !== null) setCloudSlabSceneDepth(slab, this.sceneDepth);
+    if (this.coverage !== null) setCloudSlabCoverage(slab, this.coverage);
+    if (this.discRadiusM !== null) setCloudSlabRadius(slab, this.discRadiusM);
+    if (this.reach !== null) setCloudSlabReach(slab, this.reach);
+    if (this.discCentre !== null) setCloudSlabDiscCentre(slab, this.discCentre);
   }
 
   private syncVisibleClouds(): void {
@@ -824,7 +1101,10 @@ export class SkyAtmosphere {
     if (!Number.isFinite(seconds) || !Number.isFinite(windKmPerSecond)) return;
     const step = (windKmPerSecond * seconds) / CLOUD_LAYER.tileKm;
     const offset = this.clouds.atmCloudOffset.value;
-    offset.set((offset.x + step) % 1, (offset.y + 0.35 * step) % 1);
+    // At the noise's period, not at one tile: the hex-tiled octave repeats
+    // only there, and a wrap anywhere else is a jump.
+    const period = CLOUD_NOISE_PERIOD_TILES;
+    offset.set((offset.x + step) % period, (offset.y + 0.35 * step) % period);
   }
 
   /** Colour and intensity for the caller's sun light, on the same scale as the sky. */
@@ -853,22 +1133,37 @@ export class SkyAtmosphere {
     return this.device.readTexel(lut, x, y);
   }
 
+  /** Rebuild now, or (staged) record the pass for `stepRebuild()`. */
   private rebuild(medium: boolean): void {
+    if (this.staged) {
+      this.pendingPass = {
+        medium: (this.pendingPass?.medium ?? false) || medium,
+      };
+      return;
+    }
+    this.renderLuts(medium);
+    this.measure(this.device.readSkyView());
+    this.updateScale();
+    this.rebake();
+  }
+
+  private renderLuts(medium: boolean): void {
     if (medium) {
       this.device.render('transmittance', this.uniforms);
       this.device.render('multiScattering', this.uniforms);
     }
     this.device.render('skyView', this.uniforms);
-    this.measure(this.device.readSkyView());
-    this.updateScale();
-    this.rebake();
   }
 
   /** Bake the environment from the current sky; generate, then dispose the old. */
   private rebake(): void {
     // Generate BEFORE disposing, so a throw leaves the previous environment in
     // place rather than none (the rule OsmDemo's first sky rig established).
-    const next = this.device.bakeEnvironment(this.bakeScene);
+    // Staged, into the device's one reused target where it has one.
+    const reused = this.staged
+      ? this.device.bakeEnvironmentReused?.(this.bakeScene)
+      : undefined;
+    const next = reused ?? this.device.bakeEnvironment(this.bakeScene);
     this.environment?.dispose();
     this.environment = next;
     this.scene.environment = next.texture;
@@ -884,7 +1179,7 @@ export class SkyAtmosphere {
     const { width, height } = SKY_VIEW_LUT_SIZE;
     this.readbackFailed = skyView === null;
     if (skyView !== null) {
-      const r = EARTH_ATMOSPHERE.groundRadiusKm + this.observerAltitudeKm;
+      const r = EARTH_ATMOSPHERE.groundRadiusKm + this.observerKm;
       this.horizon = horizonAverage(skyView, width, height, r);
       this.skyIlluminance =
         luminance(skyIrradiance(skyView, width, height, r)) *
@@ -910,6 +1205,7 @@ export class SkyAtmosphere {
   /** Release every GPU resource and clear what this set on the scene. */
   dispose(): void {
     this.unsubscribeRestore();
+    this.abandonPass();
     this.scene.remove(this.sky);
     this.sky.geometry.dispose();
     (this.sky.material as THREE.Material).dispose();

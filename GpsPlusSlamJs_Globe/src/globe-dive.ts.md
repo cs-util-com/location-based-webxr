@@ -8,9 +8,10 @@
   `diveStep`), out.
 - Public API:
   - `GLOBE_DIVE` - `durationMs` 15,000 (the owner's number), and
-    `handOverAltitudeM` 150,000 (round-2 §6 Q1's default: the least soft of
-    the {20, 50, 150} km sweep with the committed z4 imagery), `turnShare`
-    0.4. The lab exposes the first two as `diveMs` and `handOverKm`.
+    `landAltitudeM` 2,000 (the landing in the globe's own city, about 1.5 km
+    over Bern and Zurich, globe city plan 2026-10-05-0040 §12.5 C6; it was
+    150 km, where the page handed over to OsmDemo), `turnShare` 0.4. The lab
+    exposes the first two as `diveMs` and `landKm`.
   - `diveAt(elapsedMs, { durationMs, fromAltitudeM, toAltitudeM, turnShare? })`
     -> `{ turnT, altitudeM, done }`:
     - the altitude moves from `fromAltitudeM` to `toAltitudeM` evenly in its

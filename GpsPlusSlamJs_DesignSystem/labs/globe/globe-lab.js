@@ -20,16 +20,27 @@ import {
   createGlobeImagery,
   createGlobeSurface,
 } from "/globe/globe-surface.js";
+import { CLOUD_VOLUME } from "/globe/globe-cloud-volume.js";
+import { flatCloudShare } from "/globe/globe-cloud-flat-fade.js";
+import {
+  createDustField,
+  dustFade,
+  dustShare,
+  wrapDust,
+} from "/globe/globe-space-dust.js";
 import { creditsFor } from "/globe/globe-credits.js";
 import { GIBS_ACKNOWLEDGEMENT } from "/globe/globe-sources.js";
 import {
   GLOBE_FALLBACK_TARGET,
   chooseGlobeTarget,
+  formatViewText,
   parseLatLngText,
+  parseViewText,
 } from "/globe/globe-target.js";
 import {
   applyOrbitPose,
   clipPlanes,
+  reliefClearanceM,
   orbitDistanceToFit,
   orbitPose,
   smoothstep,
@@ -52,12 +63,22 @@ import {
   diveStep,
   obliqueCamera,
   planDive,
+  surfaceRadiusAlong,
 } from "/globe/globe-dive.js";
 import { FLIGHT_PACE_DEFAULTS } from "/globe/flight-pace.js";
 import { arrivalStatusText, createDiveClock } from "/globe/globe-arrival.js";
 import { globePinView, nextPinPhase } from "/globe/globe-pin.js";
+import {
+  pinFailed,
+  pinFix,
+  pinFrame,
+  pinLanding,
+  pinProgress,
+  pinTouch,
+  pressPin,
+} from "/globe/pin-flight.js";
+import { flightCameraAt, flightFrameAt } from "/globe/flight-replan.js";
 import { globeReadoutText, readoutThrottle } from "/globe/globe-readout.js";
-import { handOverUrl } from "/globe/globe-handover.js";
 import {
   GLOBE_INTRO,
   INTRO_VARIANTS,
@@ -73,11 +94,18 @@ import {
 import { GLOBE_TERRAIN, createGlobeTerrain } from "/globe/globe-terrain.js";
 import { nextDrawnShare, topLevelReady } from "/globe/globe-band-gate.js";
 import { asStencilFill, asStencilWriter } from "/globe/globe-stencil-fill.js";
+import {
+  applyEcefPose,
+  ecefPoseOf,
+  frameRecentreTarget,
+  worldFromEcefAt,
+} from "/globe/globe-frame.js";
 import { drainTileCache, releaseTileCache } from "/globe/globe-tile-cache.js";
 import { SKY_FILL } from "/globe/sky-level.js";
 import {
   GLOBE_FLIGHT,
   carrierShareAt,
+  cityShareAt,
   clearedAltitudeM,
   exaggerationAt,
   minimumAltitudeM,
@@ -94,12 +122,19 @@ import {
   GLOBE_ATMOSPHERE,
   atmosphereCostText,
   defaultAtmosphereSteps,
+  observerAltitudeKm,
 } from "./globe-atmosphere-frame.js";
+import { createGlobeGroundSky } from "./globe-ground-sky.js";
+import { createGlobeHaze } from "./globe-haze.js";
+import { createGlobeCloudVolume } from "./globe-cloud-volume.js";
+import { createGlobeSceneDepth } from "./globe-scene-depth.js";
+import { createGlobeCity } from "./globe-city.js";
+import { EARTH_ATMOSPHERE } from "/fw/visualization/atmosphere/atmosphere-model.js";
 import {
-  apparentSolarTimeHours,
-  solarDateAt,
-  solarPosition,
-} from "/fw/geo/solar-position.js";
+  GLOBE_SKY_HAND_OVER,
+  shellThicknessAt,
+} from "/globe/globe-sky-hand-over.js";
+import { solarPosition } from "/fw/geo/solar-position.js";
 import { labelFor, locateAdvice, locateOnce } from "/fw/utils/locate-state.js";
 import { createGlobeDebug } from "./globe-debug.js";
 import { createDebugLog } from "./globe-debug-log.js";
@@ -281,10 +316,8 @@ const PARAMS = {
   // `intro=` text key (`readHashParams`).
   maxKm: { fallback: GLOBE_INTRO.maxKm, min: 20_000, max: 100_000 },
   turnCap: { fallback: GLOBE_INTRO.turnCapDeg, min: 0, max: 180 },
-  // The pin's dive (round-2 plan 2026-09-26-2055 M3g): its length, the
-  // altitude it hands over at (km; the {20, 50, 150} sweep for the look),
-  // and whether it then opens the city (0 holds at the hand-over altitude,
-  // to look at it).
+  // The pin's dive (round-2 plan 2026-09-26-2055 M3g): its length (where
+  // it lands is `landKm`, below).
   diveMs: { fallback: GLOBE_DIVE.durationMs, min: 1000, max: 60_000 },
   // The oblique flight (round-5 plan §3.5, F1): the low pitch of the pitch
   // law (degrees below the horizontal from 1,000 km down; 90 flies the old
@@ -293,9 +326,16 @@ const PARAMS = {
   // The relief (F1, DEC-GL5-9): 1 draws the library's terrain tiles as the
   // surface, exaggerated by altitude (`exaggerationAt`), in place of the
   // generated globe tiles; 0 (the default until F2) keeps the globe as it
-  // was. `reliefNear` is the near-ground exaggeration (3, DEC-GL5-5).
-  relief: { fallback: 0, min: 0, max: 1 },
+  // was. `reliefNear` is the near-ground exaggeration: 1, true heights, since
+  // the owner's D-K1 (city plan 2026-10-05-0040 §11); 3 was DEC-GL5-5.
+  // The default since F2a (DEC-GL5-15); 0 keeps the plain globe.
+  relief: { fallback: 1, min: 0, max: 1 },
   reliefNear: { fallback: GLOBE_FLIGHT.exaggerationNear, min: 1, max: 5 },
+  // The height law's third band (city plan 2026-10-05-0040 K1): above 0,
+  // E eases from `reliefNear` at 8 km to this value at 2 km and below, so
+  // a city can stand on true heights (1); 0 (the default) keeps the law
+  // without it. Capped at `reliefNear`.
+  reliefGround: { fallback: 0, min: 0, max: 5 },
   // The altitude band (one-scene plan §3.2; km): above `bandHigh` the
   // globe's own surface draws alone, at and below `bandLow` the relief's
   // tiles, a dithered cross-fade between (`carrierShareAt`). Outside the
@@ -326,6 +366,19 @@ const PARAMS = {
   // sharp imagery never gives way to the relief's coarse first tiles
   // (owner 2026-10-04). 0: as soon as its top tiles are loaded.
   bandSharp: { fallback: 1, min: 0, max: 1 },
+  // The relief's decoded heights kept past their tiles (MiB; owner decision
+  // 2026-10-04, DEC-N1), so a return into the band finds them; 0 keeps none,
+  // as before, for a before/after. Read at start.
+  keepHeightsMiB: { fallback: 16, min: 0, max: 256 },
+  // The world frame at the target (F2 plan F2a, M3): 1 draws the globe in a
+  // local frame there (x east, y up, the origin on the ground), which the
+  // framework's sky, haze and slab need below the band; 0 keeps the world
+  // in ECEF, as before, for a before/after.
+  worldFrame: { fallback: 1, min: 0, max: 1 },
+  // The clip planes over the drawn relief (F2 plan F2a, M4): 1 fits them to
+  // the drawn ground and the highest drawn peak; 0 keeps them over the
+  // ellipsoid, as before (the planes smoke's positive control).
+  reliefPlanes: { fallback: 1, min: 0, max: 1 },
   // 1 clears the frame magenta instead of black (with the sky off), so a
   // pixel no carrier drew is unambiguous: the hand-over smokes count holes
   // by it (dark water at an oblique view reads near black).
@@ -345,13 +398,31 @@ const PARAMS = {
   // globe-albedo's detail on the relief's tiles (the terrain lab's style B
   // high-pass, `globe-detail-region.js`): its weight, 0 off.
   detail: { fallback: GLOBE_ALBEDO.detail, min: 0, max: 1 },
-  // Up to 5,000 km since F1, so a smoke can hold inside the altitude band.
-  handOverKm: {
-    fallback: GLOBE_DIVE.handOverAltitudeM / 1000,
+  // Where the dive lands, km above the ellipsoid (2: about 1.5 km over
+  // Bern and Zurich, the city plan 2026-10-05-0040 §12.5 C6; the per-frame
+  // clearance keeps it over higher ground). Up to 5,000 km, so a smoke can
+  // hold inside the altitude band. It was `handOverKm`, 150, where the page
+  // handed over to OsmDemo; that hand-over was removed (D-K3).
+  landKm: {
+    fallback: GLOBE_DIVE.landAltitudeM / 1000,
     min: 1,
     max: 5000,
   },
-  handOver: { fallback: 1, min: 0, max: 1 },
+  // `land=1` with an `at=` link flies the dive to that place, as the pin
+  // does to the device's (§12.4 R15: the owner can land in Zurich or Bern
+  // from anywhere).
+  land: { fallback: 0, min: 0, max: 1 },
+  // The continuous flight (continuous-flight plan 2026-10-07-0941, CF4): 2
+  // flies the pin's flight (`/globe/pin-flight.js`: from the press, a hold
+  // above the band until the fix, one path gated on its data, replans that
+  // never stop); 1 today's dive, until the owner's phone run (CF5).
+  flight: { fallback: 1, min: 1, max: 2 },
+  // Where a link's continuous flight (`land=1&flight=2`) starts, km of
+  // altitude over the camera's first view (round-2 plan DEC-FR2-3, owner
+  // 2026-10-07: "start at about 65,000 km and approach slowly"); 0 starts
+  // from the camera as the intro placed it. The pin's press always flies
+  // from where the camera is.
+  flightStartKm: { fallback: 65_000, min: 0, max: 100_000 },
   // The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6): on unless 0.
   // While it runs it paces the dive (`/globe/flight-pace.js`, at most the
   // 30 s of DEC-GL5-6) unless `diveMs` is set in the hash, which keeps
@@ -389,6 +460,12 @@ const PARAMS = {
   // (1 = as computed) and how many times thicker than the real air the
   // shell is drawn (1 = physical).
   atmo: { fallback: 1, min: 0, max: 1 },
+  // 1 (the default) keeps the space pass's veil over the ground below the
+  // hand-over, its rays ending at the drawn relief (volume-cloud plan §17);
+  // 0 fades it with the sky's share, for a comparison: the framework haze
+  // alone is too thin at 80-40 km, so the ground then darkens by about 54
+  // levels over the cross-fade (the hand-over's continuity smoke fails).
+  atmoGround: { fallback: 1, min: 0, max: 1 },
   // Fewer samples on a touch screen (review B5; `defaultAtmosphereSteps`).
   atmoSteps: {
     fallback: defaultAtmosphereSteps(
@@ -399,12 +476,89 @@ const PARAMS = {
   },
   atmoStrength: { fallback: GLOBE_ATMOSPHERE.strength, min: 0, max: 4 },
   atmoThickness: { fallback: GLOBE_ATMOSPHERE.thickness, min: 1, max: 10 },
+  // The halo's thickness on the descent (F2 plan F2b, DEC-GL5-13): 1 eases
+  // it from atmoThickness above 2,000 km to 1x below 300 km, so the space
+  // pass's shell meets the ground sky; 0 keeps atmoThickness everywhere.
+  atmoRamp: { fallback: 1, min: 0, max: 1 },
+  // The ground sky below the hand-over edge (F2 plan F2b, M1): the
+  // framework's physical sky takes over the sky's pixels, the exposure
+  // eased to its own; 0 keeps the space pass all the way down.
+  groundSky: { fallback: 1, min: 0, max: 1 },
+  // Its edge (km; no ground sky at or above it) and the cross-fade's width
+  // below it (km), swept {30, 50, 80} and {10, 20, 40} by the plan.
+  skyEdgeKm: { fallback: GLOBE_SKY_HAND_OVER.edgeKm, min: 10, max: 95 },
+  skyWidthKm: { fallback: GLOBE_SKY_HAND_OVER.widthKm, min: 1, max: 60 },
+  // The ground sky's observer step (percent of the height): one rebuild a
+  // step, swept {2, 5, 10}.
+  skyStepPct: {
+    fallback: GLOBE_SKY_HAND_OVER.altitudeStepPct,
+    min: 1,
+    max: 20,
+  },
+  // The haze over the relief below the edge (F2b): the physical extinction
+  // times this (0 off), faded in with the ground sky's weight.
+  hazeScale: { fallback: 1, min: 0, max: 10 },
+  // The cloud volume near the camera (volume-cloud plan 2026-10-05-0016,
+  // C2): 0 the shell only (as before), 1 the volume within the disc and the
+  // shell outside it, 2 the volume over the shell (the default: the owner's
+  // choice 2026-10-05, the only variant measured near no-plop; replacing the
+  // shell's soft clouds inside the disc changed the frame by 16 levels).
+  cloudVolume: { fallback: 2, min: 0, max: 2 },
+  // Its disc (km, the plan's R, swept {10, 20, 40}; 80 since 2026-10-06, so
+  // the volume reaches toward the horizon, the slab's reach following it:
+  // volume-cloud plan §13) and its ceiling (km; it fades in below it).
+  cloudVolumeKm: { fallback: 80, min: 5, max: 200 },
+  cloudVolumeCeilingKm: { fallback: 40, min: 10, max: 100 },
+  // Its fade-in below the ceiling (km), and the cover's gain on the map
+  // (thinner below 1). The gain is 1, the map's own cloud (the owner,
+  // 2026-10-06): the 0.5 the no-plop sweep (C4) chose was measured where
+  // the volume drew almost nothing (volume-cloud plan §11).
+  cloudVolumeFadeKm: { fallback: 25, min: 1, max: 40 },
+  cloudVolumeCover: { fallback: 1, min: 0, max: 2 },
+  // Whose shadow the ground gets (C3): 0 the shell's soft one (as before), 1
+  // the volume's, from the same map through the volume's own clouds.
+  cloudShadowFrom: { fallback: 0, min: 0, max: 1 },
+  // The volume's big-shape octave hex-tiled, no repeat at 24 km (hex-tiling
+  // plan 2026-10-07-0919, H2): 0 off (the default until the owner's phone
+  // run), 1 on.
+  cloudHex: { fallback: 0, min: 0, max: 1 },
+  // The flat cloud layer's fade with altitude (round-2 plan 2026-10-07-2350
+  // DEC-FR2-5, `/globe/globe-cloud-flat-fade.js`): 1 on, 0 the look before;
+  // full from `cloudFlatTopKm` up, weakening to `cloudFlatWeak` by 100 km,
+  // then handing over to the volume through its own fade.
+  cloudFlat: { fallback: 1, min: 0, max: 1 },
+  cloudFlatTopKm: { fallback: 5_000, min: 200, max: 50_000 },
+  cloudFlatWeak: { fallback: 0.3, min: 0, max: 1 },
+  // Space dust for a sense of speed on the way in (round-2 plan
+  // 2026-10-07-2350 DEC-FR2-7, `/globe/globe-space-dust.js`): 1 on, an
+  // experiment for the owner to judge; 0 (the default) draws nothing.
+  dust: { fallback: 0, min: 0, max: 1 },
+  // The city's data warmed from load when the link names a place (`at=`;
+  // the city plan 2026-10-05-0040, K0); 0 waits for the pin's press.
+  cityWarm: { fallback: 1, min: 0, max: 1 },
+  // The city in the globe's scene (the city plan 2026-10-05-0040 §12.5 C4,
+  // §14): built from the Osm library in a worker once the place is known and
+  // its data warmed, drawn below `cityKm` by a dithered fade. 0 turns it
+  // off; read at start. Off by itself while the relief near the ground is
+  // exaggerated (`reliefNear` above 1), where true-height buildings would
+  // stand buried in a hillside drawn too high (R14).
+  city: { fallback: 1, min: 0, max: 1 },
+  cityKm: { fallback: 30, min: 1, max: 200 },
   // The reference image's looks (round-4 plan 2026-09-28-2105 DEC-GL4-8),
   // each 0 (off, the look before) to 1: a blue grade over the ground,
   // shaded clouds, a soft blue-grey night with warm lights, navy space and
   // a glow round bright stars.
   grade: { fallback: 0, min: 0, max: 1 },
   cloudRelief: { fallback: 0, min: 0, max: 1 },
+  // The clouds on their own shell above the ground (round-6 plan G6-2,
+  // DEC-G6-3/4): 1 draws them there, so the ground keeps its colour and the
+  // clouds float above the relief; 0 paints them into the ground, as before.
+  cloudShell: { fallback: 1, min: 0, max: 1 },
+  // The shell's height over the ground (km), times the relief's
+  // exaggeration E, as the relief is raised (DEC-G6-3: 3 km x E).
+  cloudShellKm: { fallback: 3, min: 0, max: 30 },
+  // The soft cloud shadow on the ground with the shell (DEC-G6-4), 0 off.
+  cloudShadow: { fallback: 0.6, min: 0, max: 1 },
   twilight: { fallback: 0, min: 0, max: 1 },
   // The sky fill's floor (DEC-GL5-11; the terrain lab's `sky` key, the
   // Globe package's one sky level): what a low sun's ground keeps from the
@@ -446,6 +600,9 @@ const PARAMS = {
 
 /** The sweeps the recorder knows (`/globe/globe-perf-sweep.js`). */
 const PERF_SWEEPS = ["quick", "full", "overhead"];
+
+/** The highest real peak (m, Everest rounded up): the far plane's reach (F2a, M4). */
+const RELIEF_PEAK_M = 8_850;
 
 /** The floor the relief keeps under its cache cap, as a fraction of it. */
 const RELIEF_FLOOR_RATIO =
@@ -491,6 +648,9 @@ function readHashParams() {
     reliefHeights:
       params.get("reliefHeights") === "synthetic" ? "synthetic" : "terrarium",
     url: parseLatLngText(params.get("at")),
+    // A camera pose to open at (volume-cloud plan §16): the Debug export's
+    // `link`; the intro is skipped and the camera handed to the controls.
+    view: parseViewText(params.get("view")),
     // The fly-in's variant (round-5 plan §3.1): one of INTRO_VARIANTS,
     // `narrow` (the default case) when absent or unknown.
     intro: INTRO_VARIANTS.includes(params.get("intro"))
@@ -549,7 +709,7 @@ const asArray = (v) => [v.x, v.y, v.z];
  * The intro's states (globe plan §7.6): `spin` until a target is chosen,
  * `turning` towards it, then `arrived`, holding it; `user` once the user
  * has taken the camera (round-2 plan 2026-09-26-2055 M3a); `diving` down
- * to the pin's position and `landed` at the hand-over altitude (M3g).
+ * to the pin's position and `landed` at the landing altitude (M3g).
  * `pose(now)` returns either an orbit `pose` (the fitted distance
  * applies) or, during the dive, the camera's `position` and `quaternion`
  * (`diveStep` in `/globe/globe-dive.js`). `history` records each
@@ -594,6 +754,35 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
   /** A fixed dive time (ms) the pose holds at, for the smokes; null: run. */
   let diveHoldMs = null;
   /**
+   * The continuous flight (`flight=2`): the pin flight
+   * (`/globe/pin-flight.js`) that drives the camera instead of `dive`.
+   */
+  let pinFlight = null;
+  /** The pin flight's camera this frame (a held time for the smokes). */
+  const pinPose = (now) => {
+    if (diveHoldMs !== null && pinFlight.flight) {
+      const held = flightCameraAt(pinFlight.flight, diveHoldMs);
+      return { position: held.position, quaternion: held.quaternion };
+    }
+    const out = pinFrame(pinFlight, now);
+    pinFlight = out.pin;
+    if (pinFlight.phase === "landed" && phase === "diving") {
+      phase = "landed";
+      note(now);
+    }
+    // A cancelled flight has no camera: it stays where it was last drawn
+    // (the binding yields it to the controls at once).
+    if (out.camera) {
+      lastPinPose = {
+        position: out.camera.position,
+        quaternion: out.camera.quaternion,
+      };
+    }
+    return lastPinPose ?? introPose(now);
+  };
+  /** The pin flight's last drawn pose. */
+  let lastPinPose = null;
+  /**
    * The target's arrival: when, the spin's direction then, and how long the
    * start blends from it (0 when no spin frame was drawn).
    */
@@ -628,6 +817,7 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
     history = [];
     runs += 1;
     dive = null;
+    pinFlight = null;
     arrival = null;
     spinShown = false;
     firstTurn = null;
@@ -766,6 +956,9 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
      */
     yieldToUser(now) {
       if (phase === "user") return;
+      // The pin flight hears of it too, so its phase says cancelled (PR
+      // #560 review: every cancel path comes through here).
+      if (pinFlight) pinFlight = pinTouch(pinFlight, now);
       phase = "user";
       note(now);
     },
@@ -790,25 +983,67 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
       diveStartedAt = now;
       diveHoldMs = null;
       diveClock = clock ?? ((elapsedMs) => elapsedMs);
+      // A pin flight left from `flight=2` (the hash can switch modes
+      // without a restart) must not drive this dive's pose (PR #560 R0
+      // review: a cancelled one froze the camera).
+      pinFlight = null;
       choice = { target, source: "pin" };
       phase = "diving";
       note(now);
     },
     /**
+     * The continuous flight (`flight=2`, CF4): `pin` (`pressPin`'s)
+     * drives the camera from now on, as the dive would; `place` is its
+     * target when known (a link), else null until `aimPin`.
+     */
+    flyPin(now, pin, place = null) {
+      pinFlight = pin;
+      dive = null;
+      diveHoldMs = null;
+      choice = { target: place, source: "pin" };
+      phase = "diving";
+      note(now);
+    },
+    /**
+     * The pin flight's place once the fix names it, for the distance
+     * readout (DEC-GL4-5; PR #560 review: it stayed null under `flight=2`).
+     */
+    aimPin(place) {
+      if (pinFlight) choice = { target: place, source: "pin" };
+    },
+    /** Applies `(pin, now) => pin` to the pin flight (an event), if one. */
+    updatePin(now, apply) {
+      if (pinFlight) pinFlight = apply(pinFlight, now);
+    },
+    /** The pin flight, or null. */
+    get pinFlight() {
+      return pinFlight;
+    },
+    /**
      * For the smokes: hold the camera at a dive time (ms, null to run on),
      * and read the dive's altitude at a time without moving the camera.
-     * Null without a dive.
+     * Null without a dive. With the pin flight the time is its own clock.
      */
     holdDiveAt(ms) {
+      if (pinFlight?.flight) {
+        diveHoldMs = ms;
+        return flightFrameAt(pinFlight.flight, ms ?? 0).altitudeM;
+      }
       if (!dive) return null;
       diveHoldMs = ms;
       return diveStep(dive, ms ?? 0).altitudeM;
     },
     diveAltitudeAt(ms) {
+      if (pinFlight?.flight) {
+        return flightFrameAt(pinFlight.flight, ms).altitudeM;
+      }
       return dive ? diveStep(dive, ms).altitudeM : null;
     },
     /** The pose for this frame, advancing the states. */
     pose(now) {
+      if (pinFlight && (phase === "diving" || phase === "landed")) {
+        return pinPose(now);
+      }
       if (phase === "diving" || phase === "landed") {
         const step = diveStep(
           dive,
@@ -889,26 +1124,66 @@ function introFlight(ellipsoid, { sunEcef, fitDistance, zoomOutM }) {
  * `update` and in `adjustCamera`); `adjustHeight = false` removes both
  * if they show.
  */
-function cameraControls(scene, camera, globe, onTake) {
+function cameraControls(
+  scene,
+  camera,
+  globe,
+  onTake,
+  reliefPlanes = () => ({}),
+) {
   const controls = new GlobeControls(scene, camera, canvas);
   controls.setEllipsoid(globe.tiles.ellipsoid, globe.tiles.group);
   controls.enableDamping = true;
   controls.addEventListener("start", onTake);
   const local = new THREE.Vector3();
+  let picking = scene;
+  /**
+   * The clip planes from the distance to the nearest drawn ground and the
+   * highest drawn peak (F2 plan F2a, M4), whoever owns the camera: after
+   * the intro places it, after the controls' own update (which sets planes
+   * of its own over the ellipsoid), and once more after the clearance's
+   * lift, which moves the camera later in the frame (`fitPlanes`).
+   */
+  const fitPlanes = () => {
+    local.copy(camera.position);
+    globe.tiles.group.worldToLocal(local);
+    const { near, far } = clipPlanes(
+      globe.tiles.ellipsoid,
+      local,
+      reliefPlanes(),
+    );
+    if (camera.near !== near || camera.far !== far) {
+      camera.near = near;
+      camera.far = far;
+      camera.updateProjectionMatrix();
+    }
+  };
   return {
+    /**
+     * Fits the planes to where the camera is now: the frame calls it last,
+     * after every writer (F2a's browser run, 2026-10-05: fitted before the
+     * clearance's lift, the planes belonged to the dive's raw height, 3 km
+     * under the drawn ground, and the near plane cut into the ground).
+     */
+    fitPlanes,
     followIntro() {
-      local.copy(camera.position);
-      globe.tiles.group.worldToLocal(local);
-      const { near, far } = clipPlanes(globe.tiles.ellipsoid, local);
-      if (camera.near !== near || camera.far !== far) {
-        camera.near = near;
-        camera.far = far;
-        camera.updateProjectionMatrix();
-      }
+      fitPlanes();
       controls.getCameraUpDirection(controls.up);
     },
     update() {
       controls.update();
+      fitPlanes();
+    },
+    /**
+     * What the controls' rays hit (F2a, M4; F1 review Major 5): the carrier
+     * drawing most of the frame, not the whole scene (the cloud shell, the
+     * other carrier).
+     */
+    pickFrom(object) {
+      if (picking !== object) {
+        picking = object;
+        controls.setScene(object);
+      }
     },
     /** The farthest the controls zoom out: a getter, metres from the centre. */
     limit(limitM) {
@@ -917,6 +1192,20 @@ function cameraControls(scene, camera, globe, onTake) {
     /** The library's height adjustment (its two raycasts a frame, H5). */
     setAdjustHeight(on) {
       controls.adjustHeight = on;
+    },
+    /**
+     * Whether the controls are in a gesture or still gliding: a pointer
+     * down, a state other than none, or momentum left (the library's own
+     * test, with the globe's spin). Releasing them then would end the
+     * gesture, so a frame move waits (volume-cloud plan §14).
+     */
+    busy() {
+      return (
+        controls.pointerTracker.getPointerCount() > 0 ||
+        controls.state !== 0 ||
+        controls.globeInertiaFactor !== 0 ||
+        Boolean(controls._inertiaNeedsUpdate?.())
+      );
     },
     release() {
       // Toggling `enabled` is the library's own reset: it ends any drag,
@@ -937,14 +1226,15 @@ const LOCATE_TIMEOUT_MS = 15_000;
 /**
  * The camera's current pose as an orbit pose: the direction from the
  * centre, and the screen's up made perpendicular to it (or, looking
- * straight along it, the view's forward direction, then north). The lab's
- * tile group sits at the world's origin unturned, so world = ECEF here.
+ * straight along it, the view's forward direction, then north). From the
+ * camera's ECEF pose (`ecefPoseOf`, F2a): the world is not ECEF once the
+ * frame is at a target.
  */
-function currentPose(camera) {
-  const direction = camera.position.clone().normalize();
+function currentPose({ position, quaternion }) {
+  const direction = position.clone().normalize();
   for (const axis of [
-    new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion),
-    new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion),
+    new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion),
+    new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion),
     new THREE.Vector3(0, 0, 1),
   ]) {
     const up = axis.addScaledVector(direction, -axis.dot(direction));
@@ -956,18 +1246,17 @@ function currentPose(camera) {
 /**
  * The pin (round-2 plan 2026-09-26-2055 M3g, DEC-FB2-2/3), bottom right as
  * in OsmDemo: a press asks for the position (the framework's `locateOnce`),
- * the globe then turns and dives there over `diveMs` to `handOverKm`, and
- * the page opens OsmDemo's city at that place (`handOverUrl`), with the
- * globe's time when the sun is up there. Its phases and labels are
+ * the globe then turns and dives there over `diveMs` and lands `landKm`
+ * up, in the globe's own city (the city plan 2026-10-05-0040 §12.5 C6; the
+ * page used to hand over to OsmDemo's city there). `diveTo(place)` flies
+ * the same dive to a given place (a `land=1` link). Its phases and labels are
  * `/globe/globe-pin.js`'s; the button carries them in its `aria-label`,
  * `title`, `aria-busy`, `disabled` and `data-state` (the design system's
  * locate atom: `locating` pulses), and the status line beside it shows the
  * in-progress label or the failure with its fix (`labelFor`,
  * `locateAdvice`). A press or a touch on the globe stops the flight and
  * leaves the camera to the controls; a restart of the intro (the replay
- * button, a new target) ends a flight too. `handOver=0` holds at the
- * hand-over altitude instead of leaving, to look at it. `navigate` is
- * `location.assign` (the page leaves).
+ * button, a new target) ends a flight too.
  *
  * THE ARRIVAL PREFETCH (round-5 plan 2026-10-01-0945 §3.6 step 1): once the
  * position is known, the lab loads OsmDemo's `/osm/arrival-prefetch.js`
@@ -979,9 +1268,9 @@ function currentPose(camera) {
  * dive instead, and `prefetch=0` turns it off. A module that does not
  * load counts as done (nothing can be warmed, so nothing is waited for).
  * Every way a flight stops (a press, a touch, a hidden page) aborts it.
- * The hand-over does not wait past the dive: the paced dive lands when the
- * data is in or at the cap, and then hands over at once (holding longer is
- * an open decision, the round-5 results' Q2). The status line beside the
+ * The landing does not wait past the dive: the paced dive lands when the
+ * data is in or at the cap (the city may still be building then; it fades
+ * in as it arrives). The status line beside the
  * pin (`#globe-arrival-status`) shows the tiles warmed of the total, cold
  * or warm, then how it ended (`arrivalStatusText`).
  */
@@ -990,14 +1279,15 @@ function bindPin({
   controls,
   camera,
   getParams,
-  sceneMs,
-  navigate,
+  ellipsoid,
   diveFloorM = () => 0,
   onLocated = () => {},
+  ecefCamera,
+  placeCameraEcef = () => {},
+  setFrameTarget = () => {},
 }) {
   let phase = "idle";
   let message = "";
-  let lastUrl = null;
   let located = null;
   /** The last failure (denied, timeout, unavailable), until the next press. */
   let failure = null;
@@ -1014,7 +1304,10 @@ function bindPin({
     arrival?.prefetch?.stats().counts ?? { overpass: NO_JOBS, dem: NO_JOBS };
   const arrivalProgress = () => {
     if (!arrival) return 0;
-    if (arrival.gaveUp) return 1;
+    // Nothing to wait for: the prefetch is off (`prefetch=0`) or failed to
+    // load. Without "off" the flight=2 gate waited out its 60 s cap (PR #560
+    // review); the dive is unaffected (its clock is fixed when off).
+    if (arrival.gaveUp || arrival.outcome === "off") return 1;
     return arrival.prefetch?.progress() ?? 0;
   };
   const renderArrival = () => {
@@ -1087,8 +1380,10 @@ function bindPin({
     renderArrival();
     return (elapsedMs) => clock.elapsedMs(elapsedMs, arrivalProgress());
   };
+  /** The continuous flight moves the camera from the press (CF4). */
+  const moving = () => getParams().flight === 2;
   const render = () => {
-    const view = globePinView(phase);
+    const view = globePinView(phase, { moving: moving() });
     pinButton.setAttribute("aria-label", view.label);
     pinButton.title = view.label;
     pinButton.setAttribute("aria-busy", String(view.busy));
@@ -1104,18 +1399,60 @@ function bindPin({
     pinStatus.textContent = phase === "idle" ? message : view.label;
   };
   const go = (event) => {
-    phase = nextPinPhase(phase, event);
+    phase = nextPinPhase(phase, event, { moving: moving() });
     render();
   };
-  /** The globe's instant as OsmDemo reads it, at the target. */
-  const sunAt = (target) => {
-    const ms = sceneMs();
-    return {
-      date: solarDateAt(ms, target.lng),
-      solarHours: apparentSolarTimeHours(ms, target.lng),
-      elevationDeg:
-        solarPosition(ms, target.lat, target.lng).elevationRad / DEG,
-    };
+  /**
+   * The continuous flight from the camera as it is, to `place` if known
+   * (a link), else held above the band until the fix (DEC-CF-4b).
+   */
+  const beginPinFlight = (place, { fromAltitudeM = 0 } = {}) => {
+    const params = getParams();
+    controls.release();
+    const start = ecefCamera();
+    if (fromAltitudeM > 0) {
+      // Out along the camera's own direction, its rotation kept.
+      const direction = start.position.clone().normalize();
+      start.position.copy(
+        direction.multiplyScalar(
+          surfaceRadiusAlong(ellipsoid, direction) + fromAltitudeM,
+        ),
+      );
+      // Placed there at once, so no frame shows the intro's camera first.
+      placeCameraEcef(start.position, start.quaternion);
+    }
+    const now = performance.now();
+    flight.flyPin(
+      now,
+      pressPin(
+        ellipsoid,
+        now,
+        {
+          pose: currentPose(start),
+          distanceM: start.position.length(),
+          quaternion: start.quaternion,
+        },
+        {
+          target: place ? orbitPose(ellipsoid, place) : null,
+          landingM: params.landKm * 1000,
+          progress: 0,
+        },
+      ),
+      place,
+    );
+  };
+  /** The target is known: its data warmed, the frame moved, the flight on. */
+  const pinLocated = (place) => {
+    located = { lat: place.lat, lng: place.lng };
+    const params = getParams();
+    onLocated(located, params);
+    startArrival(located, params);
+    setFrameTarget(located);
+    flight.aimPin(located);
+    flight.updatePin(performance.now(), (p, now) =>
+      pinFix(p, now, orbitPose(ellipsoid, located)),
+    );
+    go("located");
   };
   /** Bumped by every press, so an answer to a cancelled request is dropped. */
   let request = 0;
@@ -1132,13 +1469,16 @@ function bindPin({
     }
     if (before === "locating") {
       // Cancelled: a browser can leave the request pending (an open
-      // permission prompt), and the pin must not be stuck with it.
+      // permission prompt), and the pin must not be stuck with it. The
+      // continuous flight was already moving: the camera stops there.
+      if (moving()) flight.yieldToUser(performance.now());
       message = "Stopped looking for your location.";
       render();
       return;
     }
     if (phase !== "locating") return;
     message = "";
+    if (moving()) beginPinFlight(null);
     const outcome = await locateOnce(navigator.geolocation, {
       timeoutMs: LOCATE_TIMEOUT_MS,
     });
@@ -1146,38 +1486,90 @@ function bindPin({
     if (outcome.kind === "failed") {
       message = `${labelFor(outcome.state)}: ${locateAdvice(outcome.state)}`;
       failure = outcome.state;
+      // The continuous flight ends at its hold (DEC-CF-4b).
+      if (moving()) flight.updatePin(performance.now(), pinFailed);
       go("failed");
       return;
     }
-    located = { lat: outcome.fix.lat, lng: outcome.fix.lng };
+    const fix = { lat: outcome.fix.lat, lng: outcome.fix.lng };
+    if (moving()) pinLocated(fix);
+    else startDive(fix);
+  });
+  /**
+   * The dive to `place`, from wherever the camera is: the frame moved to
+   * it, its city data warmed (pacing the dive), the camera turned and
+   * descended to `landKm` over it.
+   */
+  function startDive(place) {
+    located = { lat: place.lat, lng: place.lng };
     const params = getParams();
     onLocated(located, params);
     // The intro takes the camera: no drag or momentum left to resume.
     controls.release();
     const clock = startArrival(located, params);
+    // The world frame moves to the target at the press, the view unchanged
+    // (F2a): the dive then runs in the target's local frame.
+    setFrameTarget(located);
+    const start = ecefCamera();
     flight.dive(
       performance.now(),
       located,
       {
-        pose: currentPose(camera),
-        distanceM: camera.position.length(),
-        quaternion: camera.quaternion.clone(),
+        pose: currentPose(start),
+        distanceM: start.position.length(),
+        quaternion: start.quaternion,
       },
       {
         durationMs: params.diveMs,
         // The clearance rule (one-scene plan §3.4): never closer to the
         // exaggerated ground under the target than the clearance.
-        toAltitudeM: Math.max(params.handOverKm * 1000, diveFloorM(located)),
+        toAltitudeM: Math.max(params.landKm * 1000, diveFloorM(located)),
         clock,
       },
     );
     go("located");
-  });
+  }
   render();
   return {
+    /**
+     * Flies the dive to `place` ({ lat, lng }) without asking for the
+     * device's position (a `land=1` link, §12.4 R15), as a press would
+     * once located. Only from idle; RangeError for a place that is not
+     * finite.
+     */
+    diveTo(place) {
+      if (!(Number.isFinite(place?.lat) && Number.isFinite(place?.lng))) {
+        throw new RangeError(`a dive needs a finite place, got ${place}`);
+      }
+      if (phase !== "idle") return;
+      request += 1;
+      failure = null;
+      message = "";
+      go("press");
+      if (moving()) {
+        beginPinFlight(place, {
+          fromAltitudeM: getParams().flightStartKm * 1000,
+        });
+        pinLocated(place);
+      } else {
+        startDive(place);
+      }
+    },
+    /**
+     * Starts the city's prefetch for `target` before any press (the city
+     * plan 2026-10-05-0040, K0): a link that names a place warms its data
+     * while the globe still turns. A later press restarts it for the place
+     * it locates; what was stored counts as warm. Nothing while flying, and
+     * nothing with `prefetch=0`.
+     */
+    warm(target) {
+      if (phase === "flying" || getParams().prefetch === 0) return;
+      startArrival(target, getParams());
+    },
     /** The controls took the camera, or the intro restarted. */
     cameraTaken() {
-      if (phase !== "flying") return;
+      const inFlight = phase === "flying" || (moving() && phase === "locating");
+      if (!inFlight) return;
       stopArrival();
       go("touch");
     },
@@ -1185,53 +1577,57 @@ function bindPin({
      * The page is hidden (another tab, a locked phone) while flying: the
      * flight stops as a touch stops it, and the camera stays where it is,
      * for the controls. Without it the dive would run on in the background
-     * and hand over the moment the page is seen again (milestone review m4;
+     * out of sight until the page is seen again (milestone review m4;
      * pausing the dive's clock instead would need a second clock).
      */
     hidden() {
-      if (phase !== "flying") return;
+      const inFlight = phase === "flying" || (moving() && phase === "locating");
+      if (!inFlight) return;
       flight.yieldToUser(performance.now());
       stopArrival();
       message = "Stopped: the page was hidden. Tap the pin to fly again.";
       go("touch");
     },
-    /**
-     * Back from the city: the browser restored this page from its
-     * back-forward cache as it was left, handing over (milestone review M2).
-     * The pin is idle again; the view holds where the dive ended, and a
-     * press starts a new flight from there.
-     */
-    returned() {
-      if (phase !== "handingOver") return;
-      message = "Back from the city.";
-      go("returned");
-    },
-    /** Per frame: the status line follows; a landed dive hands over (or holds). */
+    /** Per frame: the status line follows; a landed dive holds. */
     frame() {
       renderArrival();
-      if (phase !== "flying" || flight.state().phase !== "landed") return;
-      if (getParams().handOver === 0) {
-        message = `Arrived ${shown(getParams().handOverKm)} km above you (the hand-over is off).`;
-        go("held");
-        return;
+      if (moving() && phase === "flying" && located) {
+        const now = performance.now();
+        flight.updatePin(now, (p, t) => pinProgress(p, t, arrivalProgress()));
+        // The landing's floor once the target's heights are in (cold review
+        // finding 11): a rise of more than 50 m replans the landing.
+        const floor = Math.max(getParams().landKm * 1000, diveFloorM(located));
+        const pinNow = flight.pinFlight;
+        if (pinNow && floor > pinNow.landingM + 50) {
+          flight.updatePin(now, (p, t) => pinLanding(p, t, floor));
+        }
       }
-      lastUrl = handOverUrl({
-        pageHref: location.href,
-        target: located,
-        sun: sunAt(located),
-      });
-      go("arrived");
-      // The dive has landed: the data is in, or the cap has passed. Nothing
-      // waits longer (the round-5 results' Q2); the page leaves now.
-      stopArrival();
-      navigate(lastUrl);
+      if (phase !== "flying" || flight.state().phase !== "landed") return;
+      // Landed (the data is in, or the pace's cap has passed): the camera
+      // holds over the city, the controls take it from here.
+      // The continuous flight may have raised its landing over high ground.
+      const landedKm =
+        moving() && flight.pinFlight
+          ? flight.pinFlight.landingM / 1000
+          : getParams().landKm;
+      message = `Arrived, ${shown(landedKm)} km above sea level.`;
+      go("held");
     },
     state: () => ({
       phase,
-      label: globePinView(phase).label,
+      label: globePinView(phase, { moving: moving() }).label,
+      // The continuous flight (flight=2), for the smokes; null without one.
+      flight: flight.pinFlight && {
+        phase: flight.pinFlight.phase,
+        clockMs: flight.pinFlight.clockMs,
+        rate: flight.pinFlight.rate,
+        landingM: flight.pinFlight.landingM,
+        progress: flight.pinFlight.progress,
+        gateClockMs: flight.pinFlight.gateClockMs,
+        endsAtMs: flight.pinFlight.flight?.endsAtMs ?? null,
+      },
       status: pinStatus.textContent,
       located,
-      handOverUrl: lastUrl,
       // The arrival prefetch of the current flight (null before one).
       arrival: arrival && {
         outcome: arrival.outcome,
@@ -1433,19 +1829,211 @@ async function start() {
     fill: fillAtStart,
   });
   useSurfaceDefaults(globe);
+  // The world frame (F2 plan F2a, M3): one matrix on globe.group, from ECEF
+  // to the target's local frame (x east, y up, the origin on the ground),
+  // or the identity before any target. Every camera pose is written and
+  // read in ECEF through it (`/globe/globe-frame.js`), never by assuming
+  // world = ECEF.
+  const worldFrame = { matrix: new THREE.Matrix4(), target: null };
+  globe.group.matrixAutoUpdate = false;
+  const ecefCamera = () => ecefPoseOf(camera, worldFrame.matrix);
+  const placeCameraEcef = (position, quaternion) =>
+    applyEcefPose(camera, { position, quaternion }, worldFrame.matrix);
+  /** Set once the controls exist: they hold world-space drag state. */
+  let onFrameChange = () => {};
+  /** Moves the world frame to `target` (null: ECEF), the view unchanged. */
+  const setFrameTarget = (target) => {
+    const next = params.worldFrame === 1 && target ? target : null;
+    if (
+      next?.lat === worldFrame.target?.lat &&
+      next?.lng === worldFrame.target?.lng
+    ) {
+      return;
+    }
+    const before = ecefCamera();
+    if (next) worldFromEcefAt(globe.tiles.ellipsoid, next, worldFrame.matrix);
+    else worldFrame.matrix.identity();
+    worldFrame.target = next ? { lat: next.lat, lng: next.lng } : null;
+    globe.group.matrix.copy(worldFrame.matrix);
+    globe.group.matrixWorldNeedsUpdate = true;
+    globe.group.updateMatrixWorld(true);
+    applyEcefPose(camera, before, worldFrame.matrix);
+    onFrameChange();
+    debugLog.log("frame", worldFrame.target);
+  };
+  /**
+   * Moves the frame under the camera once the user has flown it too far
+   * from the frame's origin (volume-cloud plan §14, `frameRecentreTarget`):
+   * a frame left on the link's target while the owner flew 244 km stood
+   * 4.7 km off the curved ground there, and the cloud deck, flat in the
+   * frame, floated above the camera (2026-10-06). The view is unchanged;
+   * the volume's noise is anchored to the ground, so its clouds stay put.
+   * It waits while the controls are busy, so a gesture is never cut short.
+   */
+  const recentreFrame = () => {
+    // Never under a gesture: a frame move releases the controls, which
+    // ended the owner's drags a second in (2026-10-06, r785).
+    if (worldFrame.target === null || controls.busy()) return;
+    const ellipsoid = globe.tiles.ellipsoid;
+    const c = ellipsoid.getPositionToCartographic(ecefCamera().position, {});
+    const next = frameRecentreTarget(
+      ellipsoid,
+      worldFrame.target,
+      { lat: c.lat / DEG, lng: c.lon / DEG },
+      c.height,
+    );
+    if (next) setFrameTarget(next);
+  };
+  /**
+   * Puts the camera at a view (`view=`, the Debug export's pose; volume-cloud
+   * plan §16): the frame moved under it first, the intro yielded, the camera
+   * placed looking along the heading and pitch. `hold` keeps the controls
+   * off (the smokes' held view); without it the user has the camera.
+   * RangeError for a pose that is not finite.
+   */
+  const applyView = (
+    { lat, lng, altitudeKm, headingDeg, pitchDeg },
+    { hold },
+  ) => {
+    const values = [lat, lng, altitudeKm, headingDeg, pitchDeg];
+    if (!values.every(Number.isFinite)) {
+      throw new RangeError(`a view needs finite values, got ${values}`);
+    }
+    flight.yieldToUser(performance.now());
+    pin?.cameraTaken();
+    heldView = hold;
+    setFrameTarget({ lat, lng });
+    const ellipsoid = globe.tiles.ellipsoid;
+    const position = ellipsoid.getCartographicToPosition(
+      lat * DEG,
+      lng * DEG,
+      altitudeKm * 1000,
+      new THREE.Vector3(),
+    );
+    const east = new THREE.Vector3();
+    const north = new THREE.Vector3();
+    const up = new THREE.Vector3();
+    ellipsoid.getEastNorthUpAxes(lat * DEG, lng * DEG, east, north, up);
+    const h = headingDeg * DEG;
+    const p = pitchDeg * DEG;
+    const forward = east
+      .clone()
+      .multiplyScalar(Math.sin(h) * Math.cos(p))
+      .addScaledVector(north, Math.cos(h) * Math.cos(p))
+      .addScaledVector(up, Math.sin(p));
+    // A camera looks down its -z: lookAt(eye, target) points -z at target.
+    const look = new THREE.Matrix4().lookAt(new THREE.Vector3(), forward, up);
+    placeCameraEcef(
+      position,
+      new THREE.Quaternion().setFromRotationMatrix(look),
+    );
+    camera.updateMatrixWorld();
+  };
+  /** The Earth's centre in the world (the origin of ECEF, through the frame). */
+  const earthCentre = new THREE.Vector3();
+  const earthCentreWorld = () =>
+    earthCentre.setFromMatrixPosition(globe.group.matrixWorld);
+  /** A camera for the orbit poses, which are written in ECEF. */
+  const ecefScratch = new THREE.PerspectiveCamera();
   const { radius: radii } = globe.tiles.ellipsoid;
   const atmosphere = createGlobeAtmosphere(renderer, [
     radii.x,
     radii.y,
     radii.z,
   ]);
+  // The ground sky (F2b): the framework's sky below the hand-over edge, in
+  // the framework's units; its eased exposure is the globe's sun intensity.
+  const groundSky = createGlobeGroundSky(renderer);
+  /**
+   * This frame's hand-over: the ground sky's weight and the sun's eased
+   * scale in the scene (the globe's sun intensity).
+   */
+  let skyHandOver = { weight: 0, exposure: Number.NaN };
+  /** The view direction the cloud volume centres its disc along (§15). */
+  const volumeView = new THREE.Vector3();
+  /** The observer's height over the ellipsoid's image (km), this frame. */
+  let observerKm = Number.POSITIVE_INFINITY;
+  /** The flat cloud layer's last share by altitude (DEC-FR2-5), for state(). */
+  let cloudFlatShare = 1;
+  /**
+   * The space dust (DEC-FR2-7, `dust=1`): points still in the Earth-fixed
+   * frame, in a holder that copies the tiles' placement each frame (a
+   * `flight=2` flight recentres the world frame under the camera), wrapped
+   * around the camera at its altitude. Built on the first frame that asks.
+   */
+  let dust = null;
+  let dustOpacity = 0;
+  const dustCamera = new THREE.Vector3();
+  const updateDust = () => {
+    // The camera in the tiles' own frame, the one the holder copies.
+    const ecef = globe.tiles.group.worldToLocal(
+      dustCamera.copy(camera.position),
+    );
+    const altitudeM = globe.tiles.ellipsoid.getPositionElevation(ecef);
+    const on = params.dust === 1 && altitudeM > 0 && Number.isFinite(altitudeM);
+    dustOpacity = on ? dustShare(altitudeM) : 0;
+    if (!on && !dust) return;
+    if (!dust) {
+      const positions = createDustField(ecef.toArray(), altitudeM);
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(positions, 3),
+      );
+      // Each point's colour: the dust's tint times its fade at the box's
+      // faces (additive, so darker is fainter: a wrap never pops in).
+      const colours = new Float32Array(positions.length);
+      geometry.setAttribute("color", new THREE.BufferAttribute(colours, 3));
+      const points = new THREE.Points(
+        geometry,
+        new THREE.PointsMaterial({
+          vertexColors: true,
+          size: 1.5,
+          sizeAttenuation: false,
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        }),
+      );
+      // The points move every frame: no bounding sphere, and no part in a
+      // pick or a clearance ray.
+      points.frustumCulled = false;
+      points.raycast = () => {};
+      const holder = new THREE.Group();
+      holder.matrixAutoUpdate = false;
+      holder.add(points);
+      globe.group.add(holder);
+      const fade = new Float32Array(positions.length / 3);
+      dust = { holder, points, positions, colours, fade };
+    }
+    dust.points.visible = dustOpacity > 0;
+    if (!dust.points.visible) return;
+    const at = ecef.toArray();
+    wrapDust(dust.positions, at, altitudeM);
+    dust.points.geometry.attributes.position.needsUpdate = true;
+    dustFade(dust.positions, at, altitudeM, dust.fade);
+    for (let i = 0; i < dust.fade.length; i++) {
+      const f = dust.fade[i];
+      dust.colours[3 * i] = 0.87 * f;
+      dust.colours[3 * i + 1] = 0.9 * f;
+      dust.colours[3 * i + 2] = f;
+    }
+    dust.points.geometry.attributes.color.needsUpdate = true;
+    dust.points.material.opacity = dustOpacity;
+    dust.holder.matrix.copy(globe.tiles.group.matrix);
+    dust.holder.matrixWorldNeedsUpdate = true;
+  };
+  let shellThickness = null;
   scene.add(globe.group);
   // The relief (F1): the library's terrain tiles wearing the globe's look,
   // in the globe's group, in place of the generated tiles. Created once, on
   // the page's first relief=1; its heights are exaggerated by altitude.
-  if (startParams.relief === 1 && startParams.reliefHeights === "synthetic") {
-    installSyntheticHeights();
-  }
+  // The synthetic heights record each height tile requested: the smokes
+  // count a return into the band's fetches (DEC-N1).
+  const syntheticHeights =
+    startParams.relief === 1 && startParams.reliefHeights === "synthetic"
+      ? installSyntheticHeights()
+      : null;
   // The real heights' source is loaded only for the relief: the boot graph
   // stays free of the Osm library (build-lookdev.test.mjs).
   const terrarium =
@@ -1465,6 +2053,7 @@ async function start() {
           template: globe.template,
           heightScale: 1,
           lazyHeightScale: startParams.lazyE === 1,
+          keepHeightsBytes: startParams.keepHeightsMiB * 2 ** 20,
         })
       : null;
   if (terrain) globe.group.add(terrain.tiles.group);
@@ -1482,6 +2071,28 @@ async function start() {
     roles(terrain.tiles, asStencilWriter);
     roles(globe.tiles, asStencilFill);
   }
+  // The cloud volume (C2; globe-cloud-volume.js): the ground sky's slab, its
+  // clouds from the globe's map, ending at the relief's depth; its shadow
+  // (C3) patches the relief before the haze does.
+  // The drawn relief's depth, once a frame below the hand-over, for the
+  // cloud volume's march and the space pass's rays (§17).
+  const sceneDepth = terrain ? createGlobeSceneDepth(renderer) : null;
+  const cloudVolume =
+    terrain && groundSky.supported
+      ? createGlobeCloudVolume(renderer, {
+          atmosphere: groundSky.atmosphere,
+          skyScene: groundSky.scene,
+          surfaceUniforms: globe.surfaceUniforms,
+          sceneDepth,
+        })
+      : null;
+  if (cloudVolume) cloudVolume.patchShadow(terrain.tiles);
+  // The haze (F2b; globe-haze.js): one fog for the whole page, the relief's
+  // tiles patched last, after their own hooks and the stencil writer.
+  const haze = createGlobeHaze(scene, {
+    visibilityKm: groundSky.atmosphere?.visibilityKm ?? 60,
+  });
+  if (terrain) haze.patch(terrain.tiles);
   // The relief's detail colour, loaded only for the relief (its worker reads
   // the Osm library, which the boot graph must not).
   const detailRegion = terrain
@@ -1568,10 +2179,64 @@ async function start() {
     camera.updateProjectionMatrix();
     if (camera.fov === params.fovY) fovReturn = null;
   };
-  const controls = cameraControls(scene, camera, globe, () => {
-    flight.yieldToUser(performance.now());
-    pin?.cameraTaken();
-  });
+  // The nearest drawn ground and the highest drawn peak for the clip planes
+  // (F2a, M4): the relief's sampler at the camera's ground point and on a
+  // ring of eight points as far out as the camera stands above that ground
+  // (ground farther out is farther than the ground below anyway), the
+  // distance to the nearest of them (`reliefClearanceM`: a ridge beside
+  // the camera counts its horizontal distance however high it stands), and
+  // the highest real peak (8,850 m) times E. The first rule, the height
+  // above the HIGHEST ground nearby, floored the near plane at 1 m under a
+  // ridge (F2a's browser run, 2026-10-05).
+  const planeLocal = new THREE.Vector3();
+  const RING = Array.from({ length: 8 }, (_, k) => (k * Math.PI) / 4);
+  /** The planes' last clearance (m), for the state; null without. */
+  let planeClearanceM = null;
+  let planeSamples = null;
+  const reliefPlanes = () => {
+    if (!terrain || bandShare <= 0 || params.reliefPlanes === 0) return {};
+    const ellipsoid = globe.tiles.ellipsoid;
+    globe.tiles.group.worldToLocal(planeLocal.copy(camera.position));
+    const c = ellipsoid.getPositionToCartographic(planeLocal, {});
+    const altitude = ellipsoid.getPositionElevation(planeLocal);
+    const below = terrain.plugin.sampleCartographicElevation(c.lat, c.lon);
+    const ringM = Math.max(10, altitude - Math.max(0, below ?? 0));
+    const samples = [{ distanceM: 0, groundM: below }];
+    for (const a of RING) {
+      samples.push({
+        distanceM: ringM,
+        groundM: terrain.plugin.sampleCartographicElevation(
+          c.lat + (ringM * Math.cos(a)) / radius,
+          c.lon +
+            (ringM * Math.sin(a)) / (radius * Math.max(Math.cos(c.lat), 0.01)),
+        ),
+      });
+    }
+    const clearanceM = reliefClearanceM(altitude, samples);
+    planeClearanceM = Number.isFinite(clearanceM) ? clearanceM : null;
+    planeSamples = {
+      altitude,
+      below,
+      ringM,
+      ring: samples.slice(1).map((x) => x.groundM),
+    };
+    return {
+      ...(planeClearanceM === null ? {} : { clearanceM }),
+      peakM: RELIEF_PEAK_M * terrain.plugin.heightScale,
+    };
+  };
+  const controls = cameraControls(
+    scene,
+    camera,
+    globe,
+    () => {
+      flight.yieldToUser(performance.now());
+      pin?.cameraTaken();
+    },
+    reliefPlanes,
+  );
+  // A frame change moves the world under the controls' drag state.
+  onFrameChange = () => controls.release();
   /**
    * How far the controls zoom out and where the fly-in starts (review
    * 2026-10-01-2124 Major 1): the largest of `maxKm`, the library's own
@@ -1590,11 +2255,32 @@ async function start() {
   controls.limit(zoomOutM);
   /** The replay button or a new target or timing: the intro again. */
   const giveBackToIntro = () => {
+    setFrameTarget(params.url);
     flight.restart(performance.now(), params);
     controls.release();
     pin?.cameraTaken();
   };
   let params = readHashParams();
+  // The city, on the globe's Earth-centred group (its matrix is the frame),
+  // so a frame recentre moves nothing (§12.4 R16).
+  const city =
+    terrain && params.city === 1
+      ? createGlobeCity({
+          parent: globe.group,
+          ellipsoid: globe.tiles.ellipsoid,
+        })
+      : null;
+  /** The place the city was last asked for, as "lat,lng". */
+  let cityKey = null;
+  /**
+   * A failed build is asked for again after a pause, a few times, so a
+   * passing Overpass or DEM failure does not leave the place without a city
+   * for the session (r790 milestone review F6).
+   */
+  const CITY_RETRY_MS = 10_000;
+  const CITY_RETRIES = 3;
+  let cityTries = 0;
+  let cityFailedAt = null;
   let appliedHash = location.hash.slice(1);
   /** The globe's one clock; restarted only when its setting changes. */
   const startClock = () =>
@@ -1667,9 +2353,15 @@ async function start() {
     const next = readHashParams();
     const restart = flightKey(next) !== flightKey(params);
     const clockChanged = !sameGlobeClockSetting(next.clock, params.clock);
+    const viewText = (p) => (p.view ? formatViewText(p.view) : null);
+    const viewChanged = viewText(next) !== viewText(params);
     params = next;
     if (clockChanged) clock = startClock();
     if (restart) giveBackToIntro();
+    // A new view= (or the intro restarted under one) puts the camera there.
+    if (params.view && (viewChanged || restart)) {
+      applyView(params.view, { hold: false });
+    }
     applyLive();
     syncPanel();
     appliedHash = location.hash.slice(1);
@@ -1732,7 +2424,11 @@ async function start() {
       targetDistanceM,
     });
   };
+  // The world frame at the at= target from load (F2a), else ECEF.
+  setFrameTarget(params.url);
   flight.restart(performance.now(), params);
+  // A view= link opens at its pose, the intro skipped (volume-cloud §16).
+  if (params.view) applyView(params.view, { hold: false });
   applyLive();
   syncPanel();
   // The permission rule (round-5 plan §3.1): a position only where it is
@@ -1762,9 +2458,14 @@ async function start() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") pin?.hidden();
   });
-  window.addEventListener("pageshow", (event) => {
-    if (event.persisted) pin?.returned();
-  });
+  /** The relief's height law as the hash sets it (`exaggerationAt`). */
+  const heightLaw = () =>
+    params.reliefGround > 0
+      ? {
+          near: params.reliefNear,
+          ground: Math.min(params.reliefGround, params.reliefNear),
+        }
+      : { near: params.reliefNear };
   /**
    * The least altitude over `target` (the clearance rule, F1): its ground
    * from a ray down onto the drawn relief, exaggerated as at the hand-over
@@ -1778,13 +2479,15 @@ async function start() {
     );
     if (ground === null) return 0;
     const heightM = ground / Math.max(terrain.plugin.heightScale, 1);
-    const e = exaggerationAt(params.handOverKm * 1000, {
-      near: params.reliefNear,
-    });
+    const e = exaggerationAt(params.landKm * 1000, heightLaw());
     return minimumAltitudeM(heightM, e, GLOBE_FLIGHT.clearanceM);
   };
   pin = bindPin({
+    ellipsoid: globe.tiles.ellipsoid,
     diveFloorM,
+    ecefCamera,
+    placeCameraEcef,
+    setFrameTarget,
     // The relief's detail colour over the target's region, built while
     // the dive runs.
     onLocated: (target, p) => {
@@ -1796,9 +2499,15 @@ async function start() {
     controls,
     camera,
     getParams: () => params,
-    sceneMs,
-    navigate: (url) => location.assign(url),
   });
+  // A link that names a place (`at=`) warms the city's data from load (the
+  // city plan K0), not only from the pin's press.
+  if (params.url && params.cityWarm === 1) pin.warm(params.url);
+  // `land=1`: the link flies to its own place (§12.4 R15), from the intro's
+  // first placed view (the frame loop starts it): at load the camera has no
+  // pose yet, and a dive from there set off from the ground (owner,
+  // 2026-10-07: "sticks at 2 m and races over the ground").
+  let landPending = Boolean(params.url && params.land === 1);
 
   /** The frame-hitch recorder (`#perf=1` only, `globe-perf.js`), or null. */
   let perf = null;
@@ -1816,6 +2525,8 @@ async function start() {
    * so every pixel must come from the globe's fill (round-6 plan G6-1).
    */
   let reliefHidden = false;
+  /** For the cloud smoke: the shell hidden, the ground under it alone. */
+  let cloudShellHidden = false;
   /** Whether the relief's view is refined: nothing of it loading or queued. */
   const reliefSettled = () =>
     terrain.tiles.loadProgress === 1 &&
@@ -1896,8 +2607,9 @@ async function start() {
     } else if (flight.drives) {
       const step = flight.pose(now);
       if (step.pose) {
-        applyOrbitPose(camera, step.pose, step.distanceM ?? distance);
-        flight.cameraPlaced(camera.position.length());
+        applyOrbitPose(ecefScratch, step.pose, step.distanceM ?? distance);
+        placeCameraEcef(ecefScratch.position, ecefScratch.quaternion);
+        flight.cameraPlaced(ecefScratch.position.length());
         if (step.fovDeg !== undefined && camera.fov !== step.fovDeg) {
           camera.fov = step.fovDeg;
           camera.updateProjectionMatrix();
@@ -1905,16 +2617,23 @@ async function start() {
         fovReturn = null;
       } else {
         // The dive sets no field of view: one the fly-in left eases back.
-        camera.position.copy(step.position);
-        camera.quaternion.copy(step.quaternion);
+        placeCameraEcef(step.position, step.quaternion);
         returnFov(now);
       }
       camera.updateMatrixWorld();
       controls.followIntro();
+      if (params.flight === 2 && flight.pinFlight) recentreFrame();
     } else {
       // The user took the camera, perhaps mid-fly-in: ease back to fovY.
       returnFov(now);
+      controls.pickFrom(surfaceTiles().group);
       if (!heldView) controls.update();
+      recentreFrame();
+    }
+    // The camera has its first pose now, whoever placed it.
+    if (landPending) {
+      landPending = false;
+      pin.diveTo(params.url);
     }
     pin.frame();
     if (terrain) {
@@ -1927,6 +2646,38 @@ async function start() {
           globe.tiles.group.worldToLocal(camera.position.clone()),
         ),
       );
+      if (city) {
+        // The flight's place, or the link's: built once its data is warmed
+        // (the prefetch and the city share one store, so building during
+        // the warm-up would download the same tiles twice).
+        const { located, arrival } = pin.state();
+        const place = located ?? params.url;
+        const warming = arrival != null && arrival.outcome === null;
+        const groundTrue = exaggerationAt(0, heightLaw()) === 1;
+        const key = place ? `${place.lat},${place.lng}` : null;
+        if (key !== cityKey) cityTries = 0;
+        const now = performance.now();
+        const cityState = city.state();
+        if (key !== null && key === cityKey && cityState.phase === "failed") {
+          cityFailedAt ??= now;
+          if (now - cityFailedAt > CITY_RETRY_MS && cityTries < CITY_RETRIES) {
+            cityKey = null; // asks again below
+          }
+        }
+        if (key !== null && key !== cityKey && !warming && groundTrue) {
+          city.build(place, { zoom: GLOBE_TERRAIN.maxZoom });
+          cityKey = key;
+          cityTries += 1;
+          cityFailedAt = null;
+        }
+        // Drawn only where the relief is drawn at true heights NOW (R14,
+        // review F8): with `reliefGround` the relief is exaggerated above
+        // 2-8 km, and true-height buildings would stand buried in it there.
+        const trueNow = exaggerationAt(altitudeM, heightLaw()) === 1;
+        city.setFade(
+          trueNow ? cityShareAt(altitudeM, params.cityKm * 1000) : 0,
+        );
+      }
       const highM = params.bandHigh * 1000;
       const targetShare =
         params.bandShare ??
@@ -2075,9 +2826,10 @@ async function start() {
           GLOBE_FLIGHT.clearanceM,
         );
         if (cleared > altitudeM) {
-          const r = camera.position.length();
-          camera.position.multiplyScalar((r + cleared - altitudeM) / r);
-          camera.updateMatrixWorld();
+          const lifted = ecefCamera();
+          const r = lifted.position.length();
+          lifted.position.multiplyScalar((r + cleared - altitudeM) / r);
+          placeCameraEcef(lifted.position, lifted.quaternion);
           clearanceLifts += 1;
         }
       }
@@ -2107,11 +2859,7 @@ async function start() {
         );
         // An E step re-walks the relief's tile tree (frame-hitch plan H1):
         // the assignment is timed for the recorder.
-        const e =
-          eOverride ??
-          exaggerationAt(altitudeM, {
-            near: params.reliefNear,
-          });
+        const e = eOverride ?? exaggerationAt(altitudeM, heightLaw());
         if (e !== terrain.plugin.heightScale) {
           const t0 = performance.now();
           terrain.plugin.heightScale = e;
@@ -2122,6 +2870,42 @@ async function start() {
     } else {
       globe.update(camera, renderer);
     }
+    // The cloud shell rides the relief's exaggeration, as the relief is
+    // raised (round-6 plan G6-2, DEC-G6-3: 3 km x E; E is 1 without one).
+    globe.cloudShell.setHeightM(
+      params.cloudShellKm * 1000 * (terrain?.plugin.heightScale ?? 1),
+    );
+    // The clouds move onto the shell as the relief takes the pixels, so the
+    // orbit keeps the approved painted look exactly, and the relief, where
+    // the paint turned it black and white, gets the shell. Measured
+    // 2026-10-04: from orbit the shell read 25-35 levels (summed) darker than
+    // the paint, because each draw is tone-mapped and then blended in
+    // display space; the paint mixes before the tone mapping.
+    const shellShare = params.cloudShell === 1 && terrain ? bandShare : 0;
+    // The flat layer's share by the camera's altitude now (the last
+    // frame's lagged a fast dive by kilometres): it hands over to the volume
+    // where one is drawn, else it only weakens.
+    const volumeOn = Boolean(cloudVolume) && params.cloudVolume > 0;
+    const cameraAltM = globe.tiles.ellipsoid.getPositionElevation(
+      globe.tiles.group.worldToLocal(camera.position.clone()),
+    );
+    const flat =
+      params.cloudFlat === 1 && Number.isFinite(cameraAltM)
+        ? flatCloudShare(Math.max(0, cameraAltM), {
+            ceilingKm: volumeOn ? params.cloudVolumeCeilingKm : 0,
+            fadeKm: volumeOn ? params.cloudVolumeFadeKm : 1,
+            topM: params.cloudFlatTopKm * 1000,
+            weakShare: params.cloudFlatWeak,
+          })
+        : 1;
+    globe.setCloudShellShare(shellShare, flat);
+    cloudFlatShare = flat;
+    if (cloudShellHidden) globe.cloudShell.mesh.visible = false;
+    // The shell's soft shadow, unless the volume's is chosen (C3).
+    globe.surfaceUniforms.uCloudShadow.value =
+      params.cloudShadowFrom === 1 && cloudVolume
+        ? 0
+        : params.cloudShadow * shellShare * flat;
     status.update(globe.state());
     readoutText = readoutNow();
     readout.offer(readoutText, performance.now());
@@ -2130,6 +2914,77 @@ async function start() {
     if (clock.scale !== 0 && mono - clockShownAt >= 1000) {
       clockShownAt = mono;
       panel.showClock();
+    }
+    // The clip planes where the camera now is, after the clearance's lift.
+    controls.fitPlanes();
+    // The sky hand-over (F2b): the observer's height over the ellipsoid,
+    // the ground sky's weight and its eased exposure, which also scales the
+    // globe's sun; the space pass's shell thins on the way down.
+    observerKm = observerAltitudeKm(
+      ecefCamera().position.toArray(),
+      [radii.x, radii.y, radii.z],
+      EARTH_ATMOSPHERE.groundRadiusKm,
+    );
+    sunWorld
+      .copy(globe.sun.position)
+      .transformDirection(globe.group.matrixWorld);
+    skyHandOver =
+      params.groundSky === 1 && params.sky !== 0
+        ? groundSky.update({
+            altitudeKm: observerKm,
+            sunWorld,
+            framed: worldFrame.target !== null,
+            edgeKm: params.skyEdgeKm,
+            widthKm: Math.min(params.skyWidthKm, params.skyEdgeKm),
+            stepPct: params.skyStepPct,
+            spaceExposure: params.sunIntensity,
+          })
+        : { weight: 0, exposure: params.sunIntensity };
+    // The haze follows the ground sky: its state after each read, its
+    // strength by the weight.
+    if (groundSky.state().lastStage === "read") haze.sync(groundSky.atmosphere);
+    haze.setWeight(skyHandOver.weight, params.hazeScale);
+    // The cloud volume (C2): its share by altitude, its disc, and the
+    // shell's hole of the same size (variant 1), so the clouds are drawn
+    // once at every altitude.
+    if (cloudVolume) {
+      cloudVolume.setEnabled(params.cloudVolume > 0);
+      cloudVolume.setShadow(params.cloudShadowFrom === 1);
+      cloudVolume.setHex(params.cloudHex === 1);
+      const volume = cloudVolume.update({
+        altitudeKm: Math.max(0, observerKm),
+        target: worldFrame.target,
+        radiusKm: params.cloudVolumeKm,
+        ceilingKm: params.cloudVolumeCeilingKm,
+        fadeKm: params.cloudVolumeFadeKm,
+        cover: params.cloudVolumeCover,
+        shellHeightM: globe.cloudShell.heightM(),
+        // The disc where the view meets the deck (§15); variant 1 keeps it
+        // on the camera, where the shell's hole is.
+        view: {
+          position: camera.position.toArray(),
+          direction: camera.getWorldDirection(volumeView).toArray(),
+        },
+        maxAheadM:
+          params.cloudVolume === 1 ? 0 : CLOUD_VOLUME.maxAheadKm * 1000,
+      });
+      globe.cloudShell.setHole(
+        params.cloudVolume === 1 && volume.radiusM > 0
+          ? {
+              radiusM: volume.radiusM,
+              aboveCameraM: globe.cloudShell.heightM() - observerKm * 1000,
+            }
+          : null,
+      );
+    }
+    globe.sun.intensity = skyHandOver.exposure;
+    const thickness =
+      params.atmoRamp === 1
+        ? shellThicknessAt(Math.max(0, observerKm), params.atmoThickness)
+        : params.atmoThickness;
+    if (thickness !== shellThickness) {
+      shellThickness = thickness;
+      atmosphere.setLook({ thickness });
     }
     // The sky pass first, from the direction the Earth is lit from (the
     // light's position in the surface's group, turned into the world), with
@@ -2147,18 +3002,39 @@ async function start() {
       sky.setCelestialRotation(
         globe.celestialToWorld(siderealAngleRad, celestial),
       );
-      // Navy space, lighter towards the Earth (the globe at the origin).
-      const cameraDistance = camera.position.length();
+      // Navy space, lighter towards the Earth (its centre through the frame).
+      earthDirection.copy(earthCentreWorld()).sub(camera.position);
+      const cameraDistance = earthDirection.length();
       sky.setSpace({
         strength: params.space,
-        earthDirection: earthDirection.copy(camera.position).negate(),
+        earthDirection,
         earthAngularRadiusRad: Math.asin(
           Math.min(1, radius / Math.max(cameraDistance, radius)),
         ),
       });
       sky.render(renderer, camera);
+      // The ground sky over the space sky's pixels, before the Earth covers
+      // the ground's (nothing above the edge).
+      groundSky.render(camera);
     }
+    // The dust where the camera now is, after the clearance's lift.
+    updateDust();
     renderer.render(scene, camera);
+    // The cloud volume over the Earth, ending at the relief (C2).
+    // The relief's depth (§17): below the hand-over, for the space pass's
+    // rays (they end at the drawn relief, not the ellipsoid) and the
+    // volume's march; the volume draws it itself when only it needs it.
+    sceneDepth?.beginFrame();
+    if (
+      sceneDepth &&
+      skyHandOver.weight > 0 &&
+      (costMode === null ? params.atmo !== 0 : costMode === "on")
+    ) {
+      sceneDepth.render(camera, terrain.tiles.group, city ? [city.root] : []);
+    }
+    if (cloudVolume) {
+      cloudVolume.render(camera, terrain.tiles.group, city ? [city.root] : []);
+    }
     // The air over the Earth and the sky, lit by the same sun (or, while
     // its cost is measured, as the measurement says).
     if (costMode === null ? params.atmo !== 0 : costMode === "on") {
@@ -2166,6 +3042,13 @@ async function start() {
         worldFromEcef: globe.tiles.group.matrixWorld,
         sunEcef: globe.surfaceUniforms.uSunEcef.value,
         sunIntensity: globe.sun.intensity,
+        skyShare: 1 - skyHandOver.weight,
+        // The ground keeps its veil, its rays ending at the drawn relief
+        // (§17); `atmoGround=0` fades it with the sky's, for a comparison.
+        groundShare: params.atmoGround === 1 ? 1 : 1 - skyHandOver.weight,
+        sceneDepth,
+        // From nothing at the 80 km edge, so the depth is no jump there.
+        sceneDepthWeight: skyHandOver.weight,
       });
     }
     hooks.frameEnd(performance.now());
@@ -2227,6 +3110,7 @@ async function start() {
       reliefVisible: terrain ? terrain.tiles.visibleTiles.size : null,
       reliefPending: rs ? rs.downloading + rs.parsing : null,
       reliefMiB: terrain ? terrain.tiles.lruCache.cachedBytes / 2 ** 20 : null,
+      keptHeights: terrain ? terrain.heightKeeperStats() : null,
       programs: renderer.info.programs?.length ?? null,
       textures: renderer.info.memory.textures,
       hash: location.hash.slice(1, 400),
@@ -2313,7 +3197,8 @@ async function start() {
     const hit = raycaster.intersectObject(surfaceTiles().group, true)[0];
     // A hit beyond the Earth's centre is on the far side: the ray slipped
     // past the near surface, so there is no answer, not a wrong one.
-    if (!hit || hit.distance > camera.position.length()) return null;
+    if (!hit || hit.distance > camera.position.distanceTo(earthCentreWorld()))
+      return null;
     const local = globe.tiles.group.worldToLocal(hit.point.clone());
     const c = globe.tiles.ellipsoid.getPositionToCartographic(local, {});
     return { lat: c.lat / DEG, lng: c.lon / DEG };
@@ -2385,6 +3270,23 @@ async function start() {
       clock: { ...params.clock, scale: clock.scale },
       hourLabel: document.querySelector('output[data-for="hour"]').textContent,
       cloudDrift: params.cloudDrift,
+      // The sky hand-over (F2b): the ground sky's state, and the observer's
+      // height over the ellipsoid's image it is fed from (km).
+      groundSky: { ...groundSky.state(), observerAltitudeKm: observerKm },
+      // The city (§12.5 C4): its phase, place, counts, ground and fade.
+      city: city?.state() ?? null,
+      // The clip planes in effect and the drawn ground they were fitted to.
+      // The haze (F2b) and the renderer's program count (a fog that came
+      // and went at the edge would recompile every material).
+      haze: haze.state(),
+      cloudVolume: cloudVolume?.state() ?? null,
+      programs: renderer.info.programs?.length ?? null,
+      planes: {
+        near: camera.near,
+        far: camera.far,
+        clearanceM: planeClearanceM,
+        samples: planeSamples,
+      },
       // What the shader reads: the clouds' drift east, radians.
       cloudLonOffsetRad: globe.surfaceUniforms.uCloudLonOffset.value,
       sunEcef: globe.surfaceUniforms.uSunEcef.value.toArray(),
@@ -2410,8 +3312,10 @@ async function start() {
       pin: pin.state(),
       // Who moves the camera, and where it is (round-2 plan M3a, M3b).
       cameraOwner: flight.drives ? "intro" : "controls",
-      cameraDistanceM: camera.position.length(),
-      cameraDirection: asArray(camera.position.clone().normalize()),
+      cameraDistanceM: ecefCamera().position.length(),
+      cameraDirection: asArray(ecefCamera().position.normalize()),
+      // The world frame's target (F2a), null in ECEF.
+      worldFrame: worldFrame.target,
       // The view's depression below the local horizontal (the oblique
       // flight's pitch, round-5 plan §3.5), degrees.
       cameraDepressionDeg:
@@ -2419,8 +3323,8 @@ async function start() {
           Math.min(
             1,
             new THREE.Vector3(0, 0, -1)
-              .applyQuaternion(camera.quaternion)
-              .dot(camera.position.clone().negate().normalize()),
+              .applyQuaternion(ecefCamera().quaternion)
+              .dot(ecefCamera().position.negate().normalize()),
           ),
         ) *
           180) /
@@ -2429,6 +3333,19 @@ async function start() {
       // The readout's text as of the last frame, and what the line shows
       // (the line is throttled, so it may lag by up to 250 ms).
       readout: readoutText,
+      cloudFlat: cloudFlatShare,
+      // The space dust (DEC-FR2-7): its points, opacity, and whether drawn.
+      dust: {
+        count: dust ? dust.positions.length / 3 : 0,
+        opacity: dustOpacity,
+        shown: dust?.points.visible ?? false,
+      },
+      // The globe's first look (round-2 plan DEC-FR2-6): its images in, and
+      // its sphere drawn (until the globe can draw its whole view).
+      firstLook: {
+        ready: globe.state().firstLookReady,
+        shown: globe.firstLook.visible,
+      },
       readoutShown: readoutLine.textContent,
       altitudeM: globe.tiles.ellipsoid.getPositionElevation(
         globe.tiles.group.worldToLocal(camera.position.clone()),
@@ -2481,6 +3398,10 @@ async function start() {
             cachedBytes: terrain.tiles.lruCache.cachedBytes,
             globeCachedBytes: globe.tiles.lruCache.cachedBytes,
             releasedBytes: { ...released },
+            // The decoded heights kept past their tiles, and the height
+            // tiles requested so far (synthetic heights only; DEC-N1).
+            keptHeights: terrain.heightKeeperStats(),
+            heightRequests: syntheticHeights?.requests.length ?? null,
             lastRelease: {
               globe: outOfBand.globe.last,
               relief: outOfBand.relief.last,
@@ -2519,8 +3440,11 @@ async function start() {
      * canvas, normalised (0,0 = top-left), for probes at known places.
      */
     project(lat, lng) {
+      // The ground point in ECEF, then through the frame into the world
+      // (F2a: the world is the target's local frame once it has one).
       const p = globe.tiles.ellipsoid
         .getCartographicToPosition(lat * DEG, lng * DEG, 0, new THREE.Vector3())
+        .applyMatrix4(globe.tiles.group.matrixWorld)
         .project(camera);
       return [(p.x + 1) / 2, (1 - p.y) / 2];
     },
@@ -2616,6 +3540,20 @@ async function start() {
         .applyQuaternion(sky.stars.quaternion)
         .toArray();
     },
+    /**
+     * The same direction in ECEF (F2a): the world direction taken back
+     * through the frame, for a smoke that turns it into a latitude and a
+     * longitude (the world is the target's local frame once it has one).
+     */
+    celestialToEcef(v) {
+      frame();
+      return new THREE.Vector3(...v)
+        .applyQuaternion(sky.stars.quaternion)
+        .transformDirection(
+          new THREE.Matrix4().copy(globe.tiles.group.matrixWorld).invert(),
+        )
+        .toArray();
+    },
     /** Where a celestial direction shows on the canvas, or null. */
     projectCelestial(v) {
       frame();
@@ -2647,9 +3585,172 @@ async function start() {
      * Hides the relief's tiles (true) or shows them again, to check that
      * the globe fills every pixel the relief leaves (round-6 plan G6-1).
      */
+    /**
+     * A test hook (F2a, M4): the clip planes at the held view. Renders the
+     * frame, moves the camera `jitterM` along its right axis, renders it
+     * again, and moves it back, with the camera held (not the controls').
+     * Returns the share of pixels whose channels moved by more than
+     * `levels` between the two (z-fighting flips them at any movement),
+     * the share of the first frame's lower two thirds showing the clear
+     * colour (magenta with `holeColor=1`: a clipped ground), the planes,
+     * and the pixel count.
+     */
+    planeProbe({ jitterM, levels }) {
+      if (!(Number.isFinite(jitterM) && Number.isFinite(levels))) {
+        throw new RangeError("jitterM and levels must be finite");
+      }
+      const gl = renderer.getContext();
+      const w = gl.drawingBufferWidth;
+      const h = gl.drawingBufferHeight;
+      const held = heldView;
+      heldView = true;
+      const read = () => {
+        frame();
+        const px = new Uint8Array(w * h * 4);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        return px;
+      };
+      const a = read();
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(
+        camera.quaternion,
+      );
+      camera.position.addScaledVector(right, jitterM);
+      camera.updateMatrixWorld();
+      const b = read();
+      camera.position.addScaledVector(right, -jitterM);
+      camera.updateMatrixWorld();
+      heldView = held;
+      let changed = 0;
+      for (let i = 0; i < a.length; i += 4) {
+        if (
+          Math.abs(a[i] - b[i]) > levels ||
+          Math.abs(a[i + 1] - b[i + 1]) > levels ||
+          Math.abs(a[i + 2] - b[i + 2]) > levels
+        ) {
+          changed += 1;
+        }
+      }
+      // The lower two thirds: rows 0 to 2h/3 (readPixels starts at the
+      // bottom).
+      let background = 0;
+      const rows = Math.floor((2 * h) / 3);
+      for (let i = 0; i < rows * w * 4; i += 4) {
+        if (a[i] >= 240 && a[i + 2] >= 240 && a[i + 1] <= 15) background += 1;
+      }
+      return {
+        changedShare: changed / (w * h),
+        backgroundShare: background / (rows * w),
+        near: camera.near,
+        far: camera.far,
+        pixels: w * h,
+      };
+    },
     hideRelief(on) {
       reliefHidden = Boolean(on);
     },
+    /**
+     * A test hook (the city plan 2026-10-05-0040 §12.5 C4): the city's
+     * state, whether its root is drawn, and up to `max` of its building
+     * vertices in ECEF metres (through the root's world matrix and the
+     * frame's inverse), so a smoke checks the placement against an
+     * independent ECEF computation, not against the root's own transform
+     * (R16). Null without a city.
+     */
+    cityProbe(max = 400) {
+      if (!city) return null;
+      city.root.updateMatrixWorld(true);
+      const ecefFromWorld = new THREE.Matrix4()
+        .copy(globe.tiles.group.matrixWorld)
+        .invert();
+      const vertices = [];
+      const v = new THREE.Vector3();
+      city.root.traverse((o) => {
+        if (!o.isMesh || o.isInstancedMesh || !o.userData.solid) return;
+        const p = o.geometry.getAttribute("position");
+        for (let i = 0; i < p.count && vertices.length < max; i++) {
+          v.fromBufferAttribute(p, i)
+            .applyMatrix4(o.matrixWorld)
+            .applyMatrix4(ecefFromWorld);
+          vertices.push([v.x, v.y, v.z]);
+        }
+      });
+      return { ...city.state(), drawn: city.root.visible, vertices };
+    },
+    /**
+     * The relief's own height (m, unexaggerated) at a latitude and longitude,
+     * from its height sampler, or null where no tile is loaded (test hook:
+     * the city's vertical check, r790 milestone review F2).
+     */
+    reliefHeightAt(lat, lng) {
+      if (!terrain) return null;
+      const h = terrain.plugin.sampleCartographicElevation(
+        lat * DEG,
+        lng * DEG,
+      );
+      return h === null ? null : h / Math.max(terrain.plugin.heightScale, 1);
+    },
+    /** The ECEF point (m) of a latitude, longitude and height (test hook). */
+    cityExpected(lat, lng, heightM) {
+      const p = globe.tiles.ellipsoid.getCartographicToPosition(
+        lat * DEG,
+        lng * DEG,
+        heightM,
+        new THREE.Vector3(),
+      );
+      return [p.x, p.y, p.z];
+    },
+    /**
+     * Hides the cloud shell (true) or shows it as the hash says, so a
+     * smoke reads the ground under it alone (round-6 plan G6-2).
+     */
+    /**
+     * Moves the world frame to a target (null: ECEF), the view unchanged,
+     * so a smoke compares the frame before and after the switch (F2a).
+     */
+    reframe(target) {
+      setFrameTarget(target);
+    },
+    /**
+     * A test hook (volume-cloud plan §14): moves the camera `eastM` east and
+     * `northM` north along the ground under it, its orientation kept,
+     * WITHOUT taking it from the controls (a drag in progress stays one),
+     * so a smoke can fly it far during a press.
+     */
+    shiftCamera(eastM, northM) {
+      if (!Number.isFinite(eastM) || !Number.isFinite(northM)) {
+        throw new RangeError(`a shift must be finite, got ${eastM}, ${northM}`);
+      }
+      const ellipsoid = globe.tiles.ellipsoid;
+      const pose = ecefCamera();
+      const c = ellipsoid.getPositionToCartographic(pose.position, {});
+      const east = new THREE.Vector3();
+      const north = new THREE.Vector3();
+      const up = new THREE.Vector3();
+      ellipsoid.getEastNorthUpAxes(c.lat, c.lon, east, north, up);
+      pose.position.addScaledVector(east, eastM).addScaledVector(north, northM);
+      placeCameraEcef(pose.position, pose.quaternion);
+      camera.updateMatrixWorld();
+      frame();
+    },
+    /**
+     * A test hook (volume-cloud plan §14): places the held camera at a
+     * Debug export's pose, `{ lat, lng, altitudeKm, headingDeg, pitchDeg }`
+     * (degrees, the heading from north toward east, the pitch above the
+     * local horizontal), so a smoke can stand where the owner stood.
+     */
+    placeView(view) {
+      applyView(view, { hold: true });
+      frame();
+    },
+    hideCloudShell(on) {
+      cloudShellHidden = Boolean(on);
+    },
+    /**
+     * The cloud volume's last frame read back (`globe-cloud-volume.js`
+     * `coverage()`): the share of pixels its clouds cover, overall and in
+     * the lower half. Null without a volume or before its first frame.
+     */
+    cloudVolumeCoverage: () => cloudVolume?.coverage() ?? null,
     /** The frame-hitch recorder's smoke API once it is loaded, else null. */
     perf: null,
     /** The Debug panel's smoke API (`globe-debug.js`). */
@@ -2707,9 +3808,7 @@ async function start() {
           altitudeM,
           pitchAtDeg(altitudeM, { pitchLowDeg: params.pitchLow }),
         );
-        camera.position.copy(view.position);
-        camera.quaternion.copy(view.quaternion);
-        camera.updateMatrixWorld();
+        placeCameraEcef(view.position, view.quaternion);
         returnFov(now);
         controls.followIntro();
       },

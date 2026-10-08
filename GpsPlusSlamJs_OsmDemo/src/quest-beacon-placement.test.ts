@@ -5,7 +5,7 @@ import {
   QUEST_BEACON_HOVER_M,
   questBeaconPlacements,
 } from "./quest-beacon-placement.js";
-import { type Heightfield } from "./heightfield.js";
+import { type Heightfield } from "gps-plus-slam-osm";
 
 /**
  * Why these tests matter: this is a coordinate transform, and the fifteenth
