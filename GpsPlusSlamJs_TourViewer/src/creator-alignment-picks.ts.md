@@ -33,8 +33,9 @@ M4 makes the sightings per code, and this is where they will live.
   - `picks()` - the picks so far; `gpsExtent(positions)` - the session's GPS
     extent (40 m maturity, D34; the D31 marker of a re-minted code).
   - `reset()` - a new visit's picks start empty.
-  - `forgetCode(levelId)` - that code's sightings and measurement pick of
-    this visit go (a size adoption).
+  - `forgetCode(levelId)` - a size adoption: that code's measurement pick
+    of this visit goes and its sightings are marked `otherSize` (kept for
+    the objects, owner decision D-F2).
 
 ## Invariants & assumptions
 

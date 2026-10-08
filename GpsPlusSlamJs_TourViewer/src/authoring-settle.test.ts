@@ -1717,14 +1717,17 @@ describe(
       expect(a.codes.inHand()!.json).toBe(hosted.json);
     });
 
-    // Why this test matters (M5a milestone review #1): "Use this size" for
-    // the stored code in hand empties the hand and starts measuring again
-    // at the new size - the sightings before it were solved at a size now
-    // known to be wrong. They stayed in the visit, and the settle (since it
-    // settles the visit's codes with an empty hand) corrected the visit
-    // through them. A one-code visit then settled differently from before;
-    // with the stale sightings dropped it settles as before: plainly.
-    it("does not correct the visit through sightings from before a size adoption", async () => {
+    // Why this test matters: "Use this size" for the stored code in hand
+    // empties the hand and starts measuring again at the new size - the
+    // sightings before it were solved at a size now known to be wrong.
+    // M5a milestone review #1 dropped them, so the visit settled plainly;
+    // the owner's field recording of 2026-10-08 (F2) showed what that
+    // costs: four pins the creator had corrected through the code settled
+    // through the plain GPS alignment, 104 degrees off, 3 to 6 m from
+    // where they were put. Owner decision D-F2: those sightings still
+    // place the visit's objects (the old size errs by centimetres); they
+    // no longer decide anything about the code itself.
+    it("places a pin from before a size adoption through the code, still", async () => {
       const hosted = await storedByAnEarlierPage();
       const a = authoring();
       await openFinishableTour(a, { levels: [hosted] });
@@ -1735,6 +1738,7 @@ describe(
       a.setAlignment(SECOND);
       await a.mint();
       expect(lastKept(a)).toBe("hosted-level");
+      const codeLocal = mintedOdom(a.dispatched);
       // A pin placed while the code (at the old size) corrects the visit.
       await a.placePin("Before", [3, 0, 1]);
       // The print-size check offers a size for this code; it is adopted.
@@ -1748,8 +1752,18 @@ describe(
       a.endVisit();
       const settled = a.settledLogs().at(-1)!.payload;
       expect(settled.objects).toHaveLength(1);
-      expect(settled.objects[0]?.basis).toBe("visit-alignment");
-      expect(settled.basis).toBe("visit-alignment");
+      expect(settled.objects[0]?.basis).toBe("code-corrected");
+      expect(settled.basis).toBe("code-corrected");
+      // Placed relative to the code as it is stored, not 20 m off.
+      const pin = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin",
+      )!.object;
+      const offset = worldOf(pin.geo).sub(codeWorldOf(hosted.json));
+      expect(
+        offset.distanceTo(new Vector3(3, 0, 1).sub(codeLocal)),
+      ).toBeLessThan(1e-2);
+      // And the code itself is not decided from them: nothing re-mints it.
+      expect(settled.level).toBeNull();
     });
 
     it("makes the new measurement the reference when the hosted level has no readable pose", async () => {
@@ -2080,6 +2094,63 @@ describe(
         a.inWorldGroup("Gate").distanceTo(new Vector3(...spot2)),
       ).toBeLessThan(1e-6);
       a.endVisit();
+      expect(
+        worldOf(a.ctx.placedObjects[0]!.object.geo).distanceTo(
+          worldOf(moved.geo),
+        ),
+      ).toBeLessThan(1e-2);
+    });
+
+    // Why (the owner's field recording of 2026-10-08): the four pins the
+    // creator corrected beside the stored code settled through the visit's
+    // plain GPS alignment - turned 104 degrees from the code-corrected one
+    // they were moved through - once the visit walked on and saw the code
+    // again. A move made through the code must settle through the code.
+    it("keeps a pin moved through the code there after the visit walks on and sees the code again", async () => {
+      const a = authoring();
+      a.setAlignment(yawAlignment(0, [0, 400, 0]));
+      await a.mint();
+      await a.placePin("Gate", [2, 0, -1]);
+      a.endVisit();
+      const gate = a.ctx.placedObjects[0]!.object;
+      // The next visit: its GPS is 20 m and 30 degrees off.
+      a.beginVisit();
+      a.setAlignment(yawAlignment(30, [20, 401, -8]));
+      // The walk: still at the code for the move, then 30 m out and back.
+      const fixes: unknown[] = [];
+      const odometry: number[][] = [];
+      for (let i = 0; i <= 65; i += 1) {
+        const n = i < 5 ? 0 : i <= 35 ? i - 5 : 65 - i;
+        fixes.push({
+          latitude: ZERO.lat + (n / 6_371_000) * (180 / Math.PI),
+          longitude: ZERO.lon,
+          latLongAccuracy: 6,
+        });
+        odometry.push([n, 0, 0]);
+      }
+      a.setWalk({ fixes: fixes.slice(0, 5), odometry: odometry.slice(0, 5) });
+      a.seeTheCode();
+      await flush();
+      a.setReticle([4, 0, 2]);
+      a.dom.objectList.listHandlers!.move(gate.id);
+      await flush();
+      const moved = a.ctx.placedObjects[0]!.object;
+      expect(
+        logged(a, "tourAuthoring/objectMoved").at(-1)!.payload["basis"],
+      ).toBe("code-corrected");
+      // Walk on, and see the code again at the end.
+      a.setWalk({ fixes, odometry });
+      a.setup.renderAuthorReadout();
+      a.seeTheCode(undefined, TEXT, 120_000);
+      await flush();
+      a.endVisit();
+      await flush();
+      const settled = a.settledLogs().at(-1)!.payload as {
+        objects?: { id: string; basis: string }[];
+      };
+      expect(settled.objects?.find((o) => o.id === gate.id)?.basis).toBe(
+        "code-corrected",
+      );
       expect(
         worldOf(a.ctx.placedObjects[0]!.object.geo).distanceTo(
           worldOf(moved.geo),
@@ -2527,6 +2598,30 @@ describe(
       a.dom.finishButton.click();
       await finished(a.ctx);
       expect(a.dom.finishStatus.textContent).toMatch(/Code \d: /);
+    });
+
+    // Why (the 2026-10-08 field test, F3; owner decision D-F3): the stored
+    // code's direction disagreed with the visit's GPS by 104 degrees; the
+    // visit was turned that much to fit it, and the result screen said only
+    // that the walk was too short. It now says that the two disagree.
+    it("says on the result screen when the visit was turned a lot to fit the code", async () => {
+      const { a } = await secondVisit({ yawDeg: 100, northM: 3, walkM: 10 });
+      await openFinishableTour(a);
+      a.ctx.tourManifestStatus = "settled";
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.dom.finishStatus.textContent).toMatch(
+        /disagree by about 100 degrees/,
+      );
+    });
+
+    it("says nothing of a turn when the visit fits the code within the threshold", async () => {
+      const { a } = await secondVisit({ yawDeg: 20, northM: 3, walkM: 10 });
+      await openFinishableTour(a);
+      a.ctx.tourManifestStatus = "settled";
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.dom.finishStatus.textContent).not.toMatch(/disagree/);
     });
 
     it("names each code on the result screen when the tour has several", async () => {

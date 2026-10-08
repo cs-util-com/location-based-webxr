@@ -72,9 +72,14 @@ lives here.
     at), absent when the caller never passed one. The settle reads it for
     "near a code event" (reviews R1 and R3 of D33).
   - `reset()` - a new visit.
-  - `forgetCode(levelId)` - that code's sightings and measurement pick go
-    (its printed size was adopted: they were solved at the old size; M5a
-    milestone review #1).
+  - `forgetCode(levelId)` - its printed size was adopted: its measurement
+    pick goes (M5a milestone review #1), and its sightings stay, marked
+    `otherSize: true` in `picks()`. They were solved at the old size, an
+    error of about the size change times the camera's distance to the code
+    (centimetres), so they still place the visit's objects - a pin moved
+    through one settles through it - while the code is decided from none of
+    them (the 2026-10-08 field test, F2; owner decision D-F2). A sighting
+    after the adoption is unmarked.
 
 ## Invariants & assumptions
 

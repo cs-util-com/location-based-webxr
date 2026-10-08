@@ -119,6 +119,10 @@ export interface TimedAlignment {
 /** A stable sighting of the code in hand, at its moment. */
 interface TimedSighting extends TimedAlignment {
   readonly sighting: CodeSighting;
+  /** Solved at a printed size the creator has since replaced (a size
+   *  adoption): it still places the visit's objects, never the code itself
+   *  (the 2026-10-08 field test, owner decision D-F2). */
+  readonly otherSize?: true;
 }
 
 /** Everything the running visit's picks hold (D33). */

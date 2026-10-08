@@ -32,12 +32,22 @@ buttons and the replace's confirm (the code is measured on its own:
   - stored position reliable itself: `keep` / `stored-good` (no churn per
     visit);
   - otherwise `replace`.
-- `CodePositionOutcome { decision, applied }` and
+- `CodePositionOutcome { decision, applied, turnDeg? }` and
   `codePositionSentence(outcomes)` - the result screen's line after Finish
   (no button announces the decision any more): an applied improvement or
   move outranks a later "kept"; otherwise the latest speaks - how many
   metres this visit's walk was short of what its accuracy needs, for
-  `not-walked`; `stored-good` and `far` say nothing.
+  `not-walked`; `stored-good` and `far` say nothing. When the latest
+  outcome's `turnDeg` is at least `LARGE_TURN_DEG`, a sentence follows
+  that this visit's GPS and the code's saved direction disagree by that
+  many degrees, and how to correct the code if it is the wrong one - it
+  blames neither (the 2026-10-08 field test, F3; owner decision D-F3).
+- `LARGE_TURN_DEG` (60) - from this turn on the line warns: a short
+  walk's own GPS direction is off by tens of degrees. Not swept (the
+  corpus replay that would set it is gone; filed).
+- `alignmentTurnDeg(a, b)` - how far one column-major alignment is turned
+  against another about the vertical, 0..180 degrees, either way round;
+  translations ignored.
 - `REPLACE_CAP_M` (15 m) - the farthest a silent replace may shift a saved
   position (U3 milestone review #11). Until M6 it was the move question's
   `MOVE_PROMPT_FLOOR_M`.

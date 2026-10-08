@@ -23,6 +23,7 @@ import {
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
 import {
+  alignmentTurnDeg,
   codePositionSentence,
   type CodePositionOutcome,
 } from "./code-position-rule.js";
@@ -256,6 +257,7 @@ export function wireCreatorSettle(deps: {
     | "references"
     | "numbering"
     | "storedSightings"
+    | "savedText"
   >;
   /** The page-side visit log (`creator-setup.ts` owns it). */
   visitLog: Pick<VisitLog, "entries">;
@@ -352,6 +354,24 @@ export function wireCreatorSettle(deps: {
               measurementPick: remint.pick,
             };
       });
+    // A code whose sightings a size adoption set aside (D-F2) is a code of
+    // the visit for its objects still, at its saved text: the objects
+    // placed or moved through it settle through it. The code itself is
+    // decided from none of them: it is not among the visit's codes
+    // (`visitCodes`) until it is seen again, at the new size.
+    const listed = new Set([level?.id, ...others.map((c) => c.level.id)]);
+    for (const s of picks.sightings) {
+      const id = s.sighting.levelId;
+      if (s.otherSize !== true || listed.has(id)) continue;
+      listed.add(id);
+      const json = deps.codes.savedText(id) ?? ctx.currentLevelTexts?.get(id);
+      if (json === undefined || json === null) continue;
+      others.push({
+        level: { id, json },
+        measurement: null,
+        measurementPick: null,
+      });
+    }
     if (others.length === 0) return undefined;
     if (level === null) return others;
     return [
@@ -818,6 +838,16 @@ export function wireCreatorSettle(deps: {
         levelId,
       });
     }
+    // How far the visit's own alignment was turned to fit the code it was
+    // corrected through: that code's result line says so when it is a lot
+    // (the 2026-10-08 field test, F3; owner decision D-F3).
+    const turnOf = (levelId: string): { turnDeg?: number } =>
+      choice !== null &&
+      choice.basis === "code-corrected" &&
+      choice.level?.id === levelId &&
+      visitAlignment !== null
+        ? { turnDeg: alignmentTurnDeg(choice.alignment, visitAlignment) }
+        : {};
     for (const d of decisions) {
       // A real move is the visit log's boundary (§7j #12), set before the
       // log is written.
@@ -830,6 +860,7 @@ export function wireCreatorSettle(deps: {
           decision: d.plan.decision,
           applied: d.applied,
           levelId: d.code.id,
+          ...turnOf(d.code.id),
         });
       }
     }

@@ -227,10 +227,13 @@ describe("createVisitAlignmentTracker (D33)", () => {
     expect(kept.map((s) => s.atMs)).toEqual([800, 900, 1_800, 1_900]);
   });
 
-  // Why this test matters (M5a milestone review #1): a code whose printed
-  // size is adopted was solved at the wrong size until then, so its events
-  // must stop counting - and only ITS events: the other code keeps its own.
-  it("forgets one code's sightings and measurement pick, and nothing else", () => {
+  // Why this test matters (M5a milestone review #1; the 2026-10-08 field
+  // test, owner decision D-F2): a code whose printed size is adopted was
+  // solved at the wrong size until then, so its measurement pick goes and
+  // its sightings are marked as of another size - kept, because they still
+  // place the visit's objects. Only ITS events: the other code keeps its
+  // own, unmarked.
+  it("marks one code's sightings as of another size and forgets its measurement pick, and nothing else", () => {
     const t = createVisitAlignmentTracker();
     t.noteAlignment(moment(1, 100));
     t.noteMeasurement(0, "a");
@@ -240,8 +243,17 @@ describe("createVisitAlignmentTracker (D33)", () => {
     t.noteSighting(sighting("a", 2), 4_000);
     t.forgetCode("a");
     const picks = t.picks();
-    expect(picks.sightings.map((s) => s.sighting.levelId)).toEqual(["b"]);
+    expect(
+      picks.sightings.map((s) => [s.sighting.levelId, s.otherSize === true]),
+    ).toEqual([
+      ["a", true],
+      ["b", false],
+      ["a", true],
+    ]);
     expect([...(picks.measurements?.keys() ?? [])]).toEqual(["b"]);
+    // A sighting after the adoption is of the new size.
+    t.noteSighting(sighting("a", 3), 6_000);
+    expect(t.picks().sightings.at(-1)?.otherSize).toBeUndefined();
   });
 
   it("forgets everything on reset (a new visit)", () => {

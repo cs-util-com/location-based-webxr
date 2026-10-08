@@ -12,8 +12,10 @@ import { describe, expect, it } from "vitest";
 
 import { walkNeededM } from "./code-verdict";
 import {
+  alignmentTurnDeg,
   codePositionSentence,
   decideCodePosition,
+  LARGE_TURN_DEG,
   isReliable,
   qualityOfLevel,
   type PositionQuality,
@@ -271,6 +273,41 @@ describe("codePositionSentence - the result screen's line (U3)", () => {
     );
   });
 
+  // Why (the 2026-10-08 field test, F3; owner decision D-F3): the stored
+  // code's direction disagreed with the visit's GPS by 104 degrees and
+  // nothing said so - the drawn path just looked wrong. The line names
+  // the disagreement without blaming either side: a short walk's own GPS
+  // direction can be the wrong one.
+  it("adds the disagreement when the visit was turned a lot to fit the code", () => {
+    const kept = {
+      ...outcome(
+        { kind: "keep", reason: "not-walked", walkMoreM: 14.2 },
+        false,
+      ),
+      turnDeg: 103.9,
+    };
+    const line = codePositionSentence([kept]);
+    expect(line).toMatch(/^The code's saved position was kept: /);
+    expect(line).toMatch(
+      / This visit's GPS and the code's saved direction disagree by about 104 degrees./,
+    );
+    expect(
+      codePositionSentence([{ ...kept, turnDeg: LARGE_TURN_DEG - 1 }]),
+    ).not.toMatch(/disagree/);
+    expect(
+      codePositionSentence([{ ...kept, turnDeg: LARGE_TURN_DEG }]),
+    ).toMatch(/disagree by about 60 degrees/);
+    // Alone, when the code's outcome says nothing else.
+    expect(
+      codePositionSentence([
+        {
+          ...outcome({ kind: "keep", reason: "stored-good" }, false),
+          turnDeg: 90,
+        },
+      ]),
+    ).toMatch(/^This visit's GPS and the code's saved direction disagree/);
+  });
+
   // Why (U3 milestone review #1): the line says how much walking was
   // MISSING, not the total.
   it("says how much more walking a kept position needed", () => {
@@ -307,5 +344,58 @@ describe("codePositionSentence - the result screen's line (U3)", () => {
       "",
     );
     expect(codePositionSentence([])).toBe("");
+  });
+});
+
+describe("alignmentTurnDeg - how far one alignment is turned against another", () => {
+  // Why (F3): the warning compares the visit's own alignment with the one
+  // the code corrected it to; only the turn about the vertical counts, and
+  // its direction does not (a 350 and a 10 degree heading are 20 apart).
+  const turned = (deg: number, t: readonly number[] = [0, 0, 0]): number[] => {
+    const r = (deg * Math.PI) / 180;
+    // Column-major: a turn about the vertical (y), then the translation.
+    return [
+      Math.cos(r),
+      0,
+      -Math.sin(r),
+      0,
+      0,
+      1,
+      0,
+      0,
+      Math.sin(r),
+      0,
+      Math.cos(r),
+      0,
+      t[0]!,
+      t[1]!,
+      t[2]!,
+      1,
+    ];
+  };
+  it("is the turn about the vertical, whatever the translation", () => {
+    expect(alignmentTurnDeg(turned(30), turned(0, [20, 400, -8]))).toBeCloseTo(
+      30,
+      9,
+    );
+    expect(alignmentTurnDeg(turned(0), turned(104))).toBeCloseTo(104, 9);
+  });
+  it("is the smaller of the two ways round", () => {
+    expect(alignmentTurnDeg(turned(350), turned(10))).toBeCloseTo(20, 9);
+    expect(alignmentTurnDeg(turned(-170), turned(170))).toBeCloseTo(20, 9);
+  });
+  it("is symmetric and lies in 0..180", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -720, max: 720, noNaN: true }),
+        fc.double({ min: -720, max: 720, noNaN: true }),
+        (a, b) => {
+          const d = alignmentTurnDeg(turned(a), turned(b));
+          expect(d).toBeGreaterThanOrEqual(0);
+          expect(d).toBeLessThanOrEqual(180 + 1e-9);
+          expect(alignmentTurnDeg(turned(b), turned(a))).toBeCloseTo(d, 9);
+        },
+      ),
+    );
   });
 });

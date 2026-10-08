@@ -38,13 +38,22 @@ M4 settles every code of the book, not only the one in hand.
   - `positionSentence()` / `afterFinish()` - the result screen's line
     about the codes' positions, over the settles since the last Finish:
     one sentence per code, named by `codes.numbering()` ("Code 2: ...")
-    when the tour has several (M5c).
+    when the tour has several (M5c). The outcome of the code the visit was
+    corrected through carries the turn between the visit's own alignment
+    and the corrected one (`turnDeg`), so its line can say the two
+    disagree (F3, D-F3).
   - `showSummary()` - the summary after Finish.
   - `endVisit()` / `reset()` - a visit ended (its refusal goes); a tour
     closed (its move boundaries and decisions go).
 
 ## Invariants & assumptions
 
+- **A code set aside by a size adoption is a code of the visit for its
+  objects** (`visitCodeList`; the 2026-10-08 field test, F2; owner decision
+  D-F2): its sightings marked `otherSize` still place the objects placed or
+  moved through it, at its saved text (else the open tour's). The code is
+  decided from none of them: it is not among `visitCodes` until it is seen
+  again, at the new size.
 - **The settle** (authoring plan 2026-09-28-0953 §3.2, M2c; D2, D10b):
   `endAuthorVisit` (called by `ar-entry.ts` FIRST in the session end, before
   the store teardown resets the alignment) and a Finish tapped while the

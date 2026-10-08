@@ -127,6 +127,7 @@ export function createVisitAlignmentTracker(): VisitAlignmentTracker {
   const sightings: (Timed & {
     readonly sighting: CodeSighting;
     readonly windowStartMs: number;
+    readonly otherSize?: true;
   })[] = [];
 
   const open = (atMs: number): Timed => ({
@@ -194,14 +195,20 @@ export function createVisitAlignmentTracker(): VisitAlignmentTracker {
         sightings: sightings.map((t) => ({
           ...timedAlignment(t),
           sighting: t.sighting,
+          ...(t.otherSize === true ? { otherSize: true as const } : {}),
         })),
       };
     },
     forgetCode(levelId) {
       measurements.delete(levelId);
-      for (let i = sightings.length - 1; i >= 0; i -= 1) {
-        if (sightings[i]?.sighting.levelId === levelId) sightings.splice(i, 1);
-      }
+      // Kept, marked: they still place the visit's objects - a pin moved
+      // through one stays where it was moved (D-F2) - but no longer the
+      // code itself.
+      sightings.forEach((t, i) => {
+        if (t.sighting.levelId === levelId) {
+          sightings[i] = { ...t, otherSize: true };
+        }
+      });
     },
     reset() {
       current = NO_ALIGNMENT;

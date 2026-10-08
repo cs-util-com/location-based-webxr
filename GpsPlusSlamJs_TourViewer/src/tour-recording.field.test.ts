@@ -24,6 +24,12 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 import { packDepthAction } from "gps-plus-slam-app-framework/storage/depth-sample-codec";
 import { loadSessionMetadata } from "gps-plus-slam-app-framework/storage/zip-reader";
+import {
+  selectGpsPositions,
+  selectOdometryPositions,
+} from "gps-plus-slam-app-framework/state";
+import { createTourViewerStore } from "./tour-viewer-session.js";
+import { createWalkedDistanceTracker } from "./walked-distance-tracker.js";
 
 const ZIP = process.env.TOUR_RECORDING;
 
@@ -275,6 +281,46 @@ describe.skipIf(ZIP === undefined)("a Tour Viewer field recording", () => {
         say(
           `  settled ${at(p)} trigger=${String(p.trigger)} basis=${JSON.stringify(p.basis)} refused=${JSON.stringify(p.refusedCorrection)} objects=${String(objects.length)} keys=${objects[0] === undefined ? "" : Object.keys(objects[0]).join(",")} levelAlignment=${JSON.stringify(p.levelAlignment)}`,
         );
+        // The correction the code made to the visit's own (GPS) alignment:
+        // the summary map draws the visit's AR path (the cyan "fused"
+        // track) through the alignment the objects settled through, so a
+        // code-corrected visit's path is pinned to the code's STORED pose -
+        // its turn here is how far that path is turned against the GPS.
+        const visitM = (p.visitAlignment ?? null) as number[] | null;
+        const usedM = (p.usedAlignment ?? null) as number[] | null;
+        if (visitM !== null && usedM !== null) {
+          const yaw = (m: readonly number[]) => Math.atan2(m[8]!, m[0]!);
+          let turn = ((yaw(usedM) - yaw(visitM)) * 180) / Math.PI;
+          turn = ((((turn + 180) % 360) + 360) % 360) - 180;
+          say(
+            `    used alignment vs the visit's own: turned ${turn.toFixed(1)} deg, translation ${Math.hypot(usedM[12]! - visitM[12]!, usedM[14]! - visitM[14]!).toFixed(2)} m (horizontal, at the odometry origin)`,
+          );
+        }
+        // Each object's own alignment against the visit's and the code's.
+        if (visitM !== null && usedM !== null) {
+          const yawOf = (m: readonly number[]) => Math.atan2(m[8]!, m[0]!);
+          const deg = (r: number) =>
+            (((((r * 180) / Math.PI + 180) % 360) + 360) % 360) - 180;
+          for (const s of objects) {
+            const m = (s as { usedAlignment?: number[] }).usedAlignment;
+            if (m === undefined) continue;
+            say(
+              `    ${String(s.id)} own alignment: ${deg(yawOf(m) - yawOf(visitM)).toFixed(1)} deg from the visit's, ${deg(yawOf(m) - yawOf(usedM)).toFixed(1)} deg from the code-corrected one; refused ${JSON.stringify((s as { refusedCorrection?: unknown }).refusedCorrection)}`,
+            );
+          }
+        }
+        const ref = p.referenceLevel as {
+          qr?: { geo?: { headingDeg?: number } };
+        } | null;
+        const lvl = p.level as {
+          qr?: { geo?: { headingDeg?: number } };
+        } | null;
+        say(
+          `    the stored code's heading ${String(ref?.qr?.geo?.headingDeg)}, the settle's level heading ${String(lvl?.qr?.geo?.headingDeg)}`,
+        );
+        say(
+          `    codePositions ${JSON.stringify(p.codePositions)} codeSpots ${JSON.stringify(p.codeSpots)} codePosition ${JSON.stringify(p.codePosition)}`,
+        );
         // Did each object settle through the same alignment as the code
         // (then code and objects stay physically consistent)? Largest
         // entry difference between the matrices.
@@ -356,6 +402,47 @@ describe.skipIf(ZIP === undefined)("a Tour Viewer field recording", () => {
     say(
       `qr detections: ${String(detections.length)}, reprojection px p50 ${quantile(reprojection, 0.5).toFixed(2)} p90 ${quantile(reprojection, 0.9).toFixed(2)}`,
     );
+
+    // How far the author had WALKED at each event, as the settle counts it
+    // (the odometry path over the device fixes, `walked-distance-tracker`):
+    // the settle corrects an object through a sighting of the code only
+    // within `CODE_EVENT_REACH_M` walked of it (D33). Replayed through the
+    // page's own store and tracker.
+    const store = createTourViewerStore();
+    const walked = createWalkedDistanceTracker();
+    const walkedAt = (): number => {
+      const s = store.getState();
+      return walked.update({
+        gpsPositions: selectGpsPositions(s),
+        odometryPositions: selectOdometryPositions(s),
+      });
+    };
+    say("walked (m) at each event, replayed through the store:");
+    let lastDetectionSaid = Number.NEGATIVE_INFINITY;
+    for (const a of actions) {
+      try {
+        store.dispatch(a as never);
+      } catch {
+        // An action the store refuses changes nothing here.
+      }
+      const p = a.payload as { atMs?: number; timestamp?: number } | undefined;
+      if (
+        a.type.startsWith("tourAuthoring/") ||
+        a.type === "gpsData/resetGpsSessionData" ||
+        a.type === "qrDetected/clearQrMarker"
+      ) {
+        say(`  ${a.type} walked ${walkedAt().toFixed(1)}`);
+      } else if (a.type === "qrDetected/recordQrDetection") {
+        const w = walkedAt();
+        // One line per 5 m walked while the code is in view.
+        if (w - lastDetectionSaid >= 5) {
+          lastDetectionSaid = w;
+          say(
+            `  code detection walked ${w.toFixed(1)} t=${String(p?.timestamp)}`,
+          );
+        }
+      }
+    }
 
     // stdout, not console: the package's test config keeps console quiet.
     process.stdout.write(`${lines.map((l) => `TR ${l}`).join("\n")}\n`);

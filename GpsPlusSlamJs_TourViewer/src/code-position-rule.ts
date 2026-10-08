@@ -129,6 +129,51 @@ export interface CodePositionOutcome {
   readonly decision: CodePositionDecision;
   /** The change was made (the re-mint succeeded). */
   readonly applied: boolean;
+  /** How far the visit's own alignment was turned to fit this code's
+   *  stored pose (deg; `alignmentTurnDeg`), when the visit was corrected
+   *  through this code; absent otherwise. */
+  readonly turnDeg?: number | undefined;
+}
+
+/**
+ * From this turn (deg) between a visit's own alignment and the one a stored
+ * code corrected it to, the result screen says the two disagree (the
+ * 2026-10-08 field test, F3; owner decision D-F3). A short walk's own GPS
+ * direction is off by tens of degrees, so a lower threshold would mostly
+ * report GPS noise. Not swept: the corpus replay that would set it is gone
+ * (filed in the field test's findings).
+ */
+export const LARGE_TURN_DEG = 60;
+
+/**
+ * How far alignment `a` is turned against `b` about the vertical, in
+ * degrees (0..180, either way round): two column-major alignment matrices
+ * (odometry-NUE to world-NUE); their translations do not count.
+ */
+export function alignmentTurnDeg(
+  a: ArrayLike<number>,
+  b: ArrayLike<number>,
+): number {
+  const yaw = (m: ArrayLike<number>) => Math.atan2(m[8] ?? 0, m[0] ?? 1);
+  const d = Math.abs(yaw(a) - yaw(b)) % (2 * Math.PI);
+  return ((d > Math.PI ? 2 * Math.PI - d : d) * 180) / Math.PI;
+}
+
+/**
+ * The result screen's line about the code's position since the last
+ * Finish (`positionLine`), and - when the latest settle turned the visit a
+ * lot to fit the code (`LARGE_TURN_DEG`) - that the visit's GPS and the
+ * code's saved direction disagree. It blames neither: a short walk's own
+ * GPS direction can be the wrong one.
+ */
+export function codePositionSentence(
+  outcomes: readonly CodePositionOutcome[],
+): string {
+  const line = positionLine(outcomes);
+  const turn = outcomes.at(-1)?.turnDeg;
+  if (turn === undefined || !(turn >= LARGE_TURN_DEG)) return line;
+  const warning = `This visit's GPS and the code's saved direction disagree by about ${String(Math.round(turn))} degrees. If the saved direction is the wrong one, walk a longer loop with the code seen at its start and end: that corrects the code and the pins around it.`;
+  return line === "" ? warning : `${line} ${warning}`;
 }
 
 /**
@@ -138,9 +183,7 @@ export interface CodePositionOutcome {
  * "kept"; otherwise the latest outcome speaks. A position kept because it
  * was good already, or left to the move question, says nothing.
  */
-export function codePositionSentence(
-  outcomes: readonly CodePositionOutcome[],
-): string {
+function positionLine(outcomes: readonly CodePositionOutcome[]): string {
   const changed = outcomes.filter(
     (o) =>
       o.applied &&
