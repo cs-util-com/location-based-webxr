@@ -14,6 +14,7 @@ import {
   CODE_MOVE_ESTIMATOR,
   CODE_MOVE_RULE,
   estimateCodeDisplacement,
+  MOVED_CODE_FLOOR_M,
   pinCode,
   type DisplacementSample,
 } from "./code-displacement.js";
@@ -112,18 +113,39 @@ export function judgeCodeSpots(input: {
     ...(input.floorM === undefined ? {} : { floorM: input.floorM }),
   });
   const classes = input.sightings.map((s, i) => {
-    const byFit = nearestSpot(fits[i]!, input.floorM);
+    // After a frame change the fit mixes two frames: it classifies nothing
+    // either (M6 milestone review #5).
+    const byFit = input.frameChanged
+      ? null
+      : nearestSpot(fits[i]!, input.floorM);
     if (byFit !== null || s.seenNue === undefined) return byFit;
-    const seen = s.seenNue;
-    return nearestSpot(
-      {
-        distancesM: input.spots.map(({ spot, pose }) => ({
-          spot,
-          m: horizontal(pose.position, seen),
-        })),
-      },
-      input.floorM,
-    );
+    return spotByAlignment(s.seenNue, input.spots, input.floorM);
   });
   return { decision, classes };
+}
+
+/**
+ * A sighting placed without a fit, by where the visit's alignment saw it:
+ * GPS alone, so another known spot wins only when the sighting lies well
+ * inside half the floor of it - a wrong "second print" refuses the
+ * correction a sighting at home needs (M6 milestone review #6) - and the
+ * current spot within the floor otherwise.
+ */
+export function spotByAlignment(
+  seen: readonly [number, number],
+  spots: readonly { spot: SpotRef; pose: NuePose }[],
+  floorM = MOVED_CODE_FLOOR_M,
+): SpotRef | "new" | null {
+  const distancesM = spots.map(({ spot, pose }) => ({
+    spot,
+    m: horizontal(pose.position, seen),
+  }));
+  const nearest = nearestSpot({ distancesM }, floorM);
+  if (nearest === null || nearest === "new" || nearest.kind === "current") {
+    return nearest;
+  }
+  const m = distancesM.find((d) => d.spot === nearest)?.m ?? Infinity;
+  if (m < floorM / 2) return nearest;
+  const home = distancesM.find((d) => d.spot.kind === "current");
+  return home !== undefined && home.m < floorM ? home.spot : "new";
 }

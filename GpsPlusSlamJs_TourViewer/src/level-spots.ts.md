@@ -45,8 +45,12 @@ Both are stored as the optional `qr.spots`, next to the level's own pose.
   mint, which builds a fresh level, and the carry runs after it.
 - **Older builds and other devices.** A build without this module re-mints
   without the field, and the memory is lost. Nothing else breaks.
-- **Public.** The level file is published, so a former location and its
-  mint date become public.
+- **Public.** The level file is published, so the code's former
+  locations become public, each with its mint date (`previous` and every
+  copy keep their full `mintQuality`).
+- **Capped on read:** only the newest `MAX_CODE_COPIES` copies are read
+  (the file is external data, and every sighting is fitted against every
+  known spot).
 
 ## Example
 

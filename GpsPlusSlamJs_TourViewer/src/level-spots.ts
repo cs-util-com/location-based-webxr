@@ -17,7 +17,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 
-import type { CodeSpotMemory } from "./code-spots.js";
+import { MAX_CODE_COPIES, type CodeSpotMemory } from "./code-spots.js";
 
 /** One known spot: its pose and, when it was minted, its quality. */
 export interface StoredSpot {
@@ -88,10 +88,13 @@ export function readCodeSpots(json: string): CodeSpotMemory<StoredSpot> | null {
   return {
     current,
     previous: spotOf(raw["previous"]),
-    copies: copies.flatMap((c: unknown) => {
-      const s = spotOf(c);
-      return s === null ? [] : [s];
-    }),
+    // External data: the newest copies only (M6 milestone review #8).
+    copies: copies
+      .flatMap((c: unknown) => {
+        const s = spotOf(c);
+        return s === null ? [] : [s];
+      })
+      .slice(-MAX_CODE_COPIES),
   };
 }
 

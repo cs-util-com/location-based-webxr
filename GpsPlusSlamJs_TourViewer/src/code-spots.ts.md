@@ -91,7 +91,9 @@ The real-walk corpus, cross-day, floor 20 m, 300 s window:
 
 - **False moves:** 0.4 % of unmoved code-visits move the code, at 1 of
   42 points (the church walk).
-- **Detection:** 50 % of 20 m moves and 94 % of 30 m moves are caught.
+- **Detection:** 40 % of 20 m moves and 94 % of 30 m moves are caught
+  (the joint trigger as built: the fit AND the minted candidate at least
+  the floor; the fit alone caught 50 % of 20 m moves).
   The 5.3 % of visits too short for a gated fit judge nothing.
 - **Undo after a false move:** every later walk at the point (70 of 70)
   undoes a false move from a biased visit. A biased SAVE is moved to the

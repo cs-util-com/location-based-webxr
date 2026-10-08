@@ -7,9 +7,11 @@
  * a damaged entry is dropped, never a reason to reject the level (M6 v2
  * review #9).
  */
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
+import { MAX_CODE_COPIES } from "./code-spots";
 import {
   carryCodeSpots,
   readCodeSpots,
@@ -68,6 +70,16 @@ describe("readCodeSpots", () => {
       // recognises the print.
       copies: [Q, { geo: geo(48.2) }],
     });
+  });
+
+  // Why (M6 milestone review #8): the level file is external data, and
+  // every sighting is fitted against every known spot.
+  it("keeps only the newest MAX_CODE_COPIES copies of a long list", () => {
+    const many = Array.from({ length: MAX_CODE_COPIES + 3 }, (_, i) => ({
+      geo: geo(48 + i / 1000),
+    }));
+    const read = readCodeSpots(level({ geo: N.geo, spots: { copies: many } }));
+    expect(read?.copies).toEqual(many.slice(-MAX_CODE_COPIES));
   });
 
   it("ignores a spots field of the wrong shape", () => {
@@ -132,5 +144,22 @@ describe("carryCodeSpots - the one seam every re-mint goes through", () => {
     const fresh = level({ geo: N.geo });
     expect(carryCodeSpots(level({ geo: T.geo }), fresh)).toBe(fresh);
     expect(carryCodeSpots("{", fresh)).toBe(fresh);
+  });
+});
+
+// Why (M6 milestone review #10): the framework's `serializeQrLevel` goes
+// through its parser, which drops `qr.spots`. A stored level re-serialised
+// through it would lose the code's memory without a word; today only the
+// framework's own mint (a fresh level) uses it, and the carry runs after.
+describe("no stored level is re-serialised through the framework parser", () => {
+  it("serializeQrLevel appears in no Tour Viewer source file", () => {
+    const dir = new URL(".", import.meta.url);
+    const users = readdirSync(dir).filter(
+      (name) =>
+        name.endsWith(".ts") &&
+        !name.includes(".test.") &&
+        readFileSync(new URL(name, dir), "utf8").includes("serializeQrLevel"),
+    );
+    expect(users).toEqual([]);
   });
 });

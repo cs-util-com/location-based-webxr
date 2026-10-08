@@ -169,6 +169,55 @@ describe("judgeCodeSpots - the viewer's fit against every known spot", () => {
     expect(r.classes).toEqual([{ kind: "copy", index: 0 }]);
   });
 
+  // Why (M6 milestone review #5): after a frame change the fit mixes two
+  // odometry frames; it decides nothing, and it must not classify either -
+  // a sighting at home read "at a copy" would lose its correction.
+  it("classifies by the alignment's view, not the fit, after a frame change", () => {
+    const r = judge({
+      frameChanged: true,
+      spots: [
+        { spot: current, pose: POSTER },
+        { spot: { kind: "copy", index: 0 }, pose: at(-18, 0) },
+      ],
+      // The fit (40 m off in the mixed frames) would put it at the copy.
+      samples: walk([-18, 0]),
+      sightings: [
+        { ...seenAt(), seenNue: [POSTER.position[0], POSTER.position[2]] },
+      ],
+    });
+    expect(r.decision).toEqual({ kind: "none", reason: "not-judged" });
+    expect(r.classes).toEqual([current]);
+  });
+
+  // Why (M6 milestone review #6): without a fit a sighting is placed by GPS
+  // alone; a wrong "second print" refuses the correction a sighting at home
+  // needs, so another spot wins only when the alignment sees the code well
+  // inside half the floor of it.
+  it("places an unfitted sighting at another known spot only within half the floor of it", () => {
+    const at15 = judge({
+      samples: walk([0, 0], 0, 30),
+      spots: [
+        { spot: current, pose: POSTER },
+        { spot: { kind: "copy", index: 0 }, pose: at(0, 26) },
+      ],
+      sightings: [
+        { ...seenAt(), seenNue: [POSTER.position[0], POSTER.position[2] + 14] },
+      ],
+    });
+    expect(at15.classes).toEqual([current]);
+    const at3 = judge({
+      samples: walk([0, 0], 0, 30),
+      spots: [
+        { spot: current, pose: POSTER },
+        { spot: { kind: "copy", index: 0 }, pose: at(0, 26) },
+      ],
+      sightings: [
+        { ...seenAt(), seenNue: [POSTER.position[0], POSTER.position[2] + 23] },
+      ],
+    });
+    expect(at3.classes).toEqual([{ kind: "copy", index: 0 }]);
+  });
+
   it("places a sighting at the nearest known spot within the floor", () => {
     const r = judge({
       spots: [

@@ -2355,7 +2355,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "move"
+    "kind": "replace"
    },
    "offsetM": 1e-7,
    "offsetNorthM": -1e-7,
@@ -2559,7 +2559,30 @@
    ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.5001594,
+    "lon": 8.6998003,
+    "alt": 400.5281798,
+    "rotation": [
+     0,
+     0.9967773,
+     0,
+     -0.0802181
+    ]
+   },
+   {
+    "lat": 47.500013599999996,
+    "lon": 8.7000311,
+    "alt": 399.5864947,
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ]
+   }
+  ]
  },
  {
   "seed": 7,
@@ -2744,7 +2767,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "move"
+    "kind": "replace"
    },
    "offsetM": 9.4098504,
    "offsetNorthM": -9.1007224,
@@ -2976,7 +2999,41 @@
    ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.499634099999994,
+    "lon": 8.699902699999999,
+    "alt": 400.13890929999997,
+    "rotation": [
+     0,
+     -0.0049806,
+     0,
+     0.9999876
+    ]
+   },
+   {
+    "lat": 47.4997118,
+    "lon": 8.7002689,
+    "alt": 400.90946529999997,
+    "rotation": [
+     0,
+     -0.0049806,
+     0,
+     0.9999876
+    ]
+   },
+   {
+    "lat": 47.500102,
+    "lon": 8.6997147,
+    "alt": 399.2556145,
+    "rotation": [
+     0,
+     -0.5946941,
+     0,
+     0.8039521
+    ]
+   }
+  ]
  },
  {
   "seed": 8,
@@ -7632,7 +7689,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "move"
+    "kind": "replace"
    },
    "offsetM": 2.101368,
    "offsetNorthM": 0.1571947,
@@ -7824,7 +7881,41 @@
    ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.4997179,
+    "lon": 8.6999345,
+    "alt": 399.172493,
+    "rotation": [
+     0,
+     -0.3004558,
+     0,
+     0.9537956999999999
+    ]
+   },
+   {
+    "lat": 47.4999992,
+    "lon": 8.700279199999999,
+    "alt": 399.9444797,
+    "rotation": [
+     0,
+     -0.3004558,
+     0,
+     0.9537956999999999
+    ]
+   },
+   {
+    "lat": 47.5001931,
+    "lon": 8.6996681,
+    "alt": 399.90474869999997,
+    "rotation": [
+     0,
+     -0.52596,
+     0,
+     0.8505092999999999
+    ]
+   }
+  ]
  },
  {
   "seed": 23,
@@ -13630,7 +13721,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "move"
+    "kind": "replace"
    },
    "offsetM": 13.275072,
    "offsetNorthM": -11.9061649,
@@ -13818,7 +13909,41 @@
    ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.499702899999996,
+    "lon": 8.7004465,
+    "alt": 400.3644514,
+    "rotation": [
+     0,
+     0.2381873,
+     0,
+     0.9712192
+    ]
+   },
+   {
+    "lat": 47.499686,
+    "lon": 8.700051199999999,
+    "alt": 400.7820091,
+    "rotation": [
+     0,
+     0.2381873,
+     0,
+     0.9712192
+    ]
+   },
+   {
+    "lat": 47.4998862,
+    "lon": 8.700395499999999,
+    "alt": 400.9208701,
+    "rotation": [
+     0,
+     0.3071821,
+     0,
+     0.9516507
+    ]
+   }
+  ]
  },
  {
   "seed": 38,
@@ -18327,7 +18452,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "move"
+    "kind": "replace"
    },
    "offsetM": 1e-7,
    "offsetNorthM": 0,
@@ -18562,7 +18687,52 @@
    ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.5000267,
+    "lon": 8.700229199999999,
+    "alt": 400.5629945,
+    "rotation": [
+     0,
+     0.9694815,
+     0,
+     0.24516449999999998
+    ]
+   },
+   {
+    "lat": 47.5000937,
+    "lon": 8.7002492,
+    "alt": 399.03736899999996,
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ]
+   },
+   {
+    "lat": 47.4997087,
+    "lon": 8.7002797,
+    "alt": 399.841329,
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ]
+   },
+   {
+    "lat": 47.5001756,
+    "lon": 8.700388799999999,
+    "alt": 399.3652585,
+    "rotation": [
+     0,
+     -0.38636499999999996,
+     0,
+     0.922346
+    ]
+   }
+  ]
  },
  {
   "seed": 52,
@@ -23837,7 +24007,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "move"
+    "kind": "replace"
    },
    "offsetM": 11.890422,
    "offsetNorthM": -11.8901947,
@@ -24069,7 +24239,41 @@
    ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.499580099999996,
+    "lon": 8.700160499999999,
+    "alt": 400.0320925,
+    "rotation": [
+     0,
+     0.07965509999999999,
+     0,
+     0.9968225
+    ]
+   },
+   {
+    "lat": 47.499967899999994,
+    "lon": 8.7000694,
+    "alt": 399.33572649999996,
+    "rotation": [
+     0,
+     0.07965509999999999,
+     0,
+     0.9968225
+    ]
+   },
+   {
+    "lat": 47.499674,
+    "lon": 8.6997406,
+    "alt": 399.5180024,
+    "rotation": [
+     0,
+     -0.486209,
+     0,
+     0.8738425
+    ]
+   }
+  ]
  },
  {
   "seed": 68,
@@ -29106,7 +29310,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "move"
+    "kind": "replace"
    },
    "offsetM": 0,
    "offsetNorthM": 0,
@@ -29296,7 +29500,30 @@
    ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.4999325,
+    "lon": 8.7004416,
+    "alt": 400.0659148,
+    "rotation": [
+     0,
+     0.8794497,
+     0,
+     -0.47599189999999997
+    ]
+   },
+   {
+    "lat": 47.5001445,
+    "lon": 8.7002542,
+    "alt": 399.75873229999996,
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ]
+   }
+  ]
  },
  {
   "seed": 82,
@@ -29481,7 +29708,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "move"
+    "kind": "replace"
    },
    "offsetM": 13.2506218,
    "offsetNorthM": 12.6405525,
@@ -29713,7 +29940,41 @@
    ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.5003098,
+    "lon": 8.7000226,
+    "alt": 400.0565099,
+    "rotation": [
+     0,
+     -0.0177668,
+     0,
+     0.9998421999999999
+    ]
+   },
+   {
+    "lat": 47.4998753,
+    "lon": 8.7000298,
+    "alt": 400.5796947,
+    "rotation": [
+     0,
+     -0.0177668,
+     0,
+     0.9998421999999999
+    ]
+   },
+   {
+    "lat": 47.500144399999996,
+    "lon": 8.7000452,
+    "alt": 399.8938012,
+    "rotation": [
+     0,
+     0.9855267,
+     0,
+     -0.1695205
+    ]
+   }
+  ]
  },
  {
   "seed": 83,
@@ -34367,7 +34628,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "move"
+    "kind": "replace"
    },
    "offsetM": 2.7479434,
    "offsetNorthM": -2.6468639,
@@ -34642,7 +34903,52 @@
    ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.5002712,
+    "lon": 8.7002503,
+    "alt": 400.84483639999996,
+    "rotation": [
+     0,
+     -0.2202972,
+     0,
+     0.9754328
+    ]
+   },
+   {
+    "lat": 47.5000265,
+    "lon": 8.700043299999999,
+    "alt": 400.46296559999996,
+    "rotation": [
+     0,
+     0.029685399999999997,
+     0,
+     0.9995592999999999
+    ]
+   },
+   {
+    "lat": 47.500125399999995,
+    "lon": 8.699929299999999,
+    "alt": 400.4508437,
+    "rotation": [
+     0,
+     0.029685399999999997,
+     0,
+     0.9995592999999999
+    ]
+   },
+   {
+    "lat": 47.5001592,
+    "lon": 8.6998675,
+    "alt": 400.3572427,
+    "rotation": [
+     0,
+     -0.8318669,
+     0,
+     0.5549752
+    ]
+   }
+  ]
  },
  {
   "seed": 97,
@@ -34827,7 +35133,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "move"
+    "kind": "replace"
    },
    "offsetM": 2.6802221,
    "offsetNorthM": -2.073585,
@@ -35015,7 +35321,41 @@
    ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.499701099999996,
+    "lon": 8.699671,
+    "alt": 399.4212508,
+    "rotation": [
+     0,
+     -0.2731361,
+     0,
+     0.9619753999999999
+    ]
+   },
+   {
+    "lat": 47.4999081,
+    "lon": 8.6998675,
+    "alt": 400.7952474,
+    "rotation": [
+     0,
+     -0.2731361,
+     0,
+     0.9619753999999999
+    ]
+   },
+   {
+    "lat": 47.499812399999996,
+    "lon": 8.699969,
+    "alt": 399.3469942,
+    "rotation": [
+     0,
+     0.9964510999999999,
+     0,
+     -0.0841738
+    ]
+   }
+  ]
  },
  {
   "seed": 98,
@@ -39535,7 +39875,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "move"
+    "kind": "replace"
    },
    "offsetM": 11.354016399999999,
    "offsetNorthM": 2.1444288,
@@ -39728,7 +40068,19 @@
    ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.5001949,
+    "lon": 8.700037199999999,
+    "alt": 399.997389,
+    "rotation": [
+     0,
+     0.9927927,
+     0,
+     -0.11984439999999999
+    ]
+   }
+  ]
  },
  {
   "seed": 112,
@@ -39954,7 +40306,8 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "move"
+    "kind": "keep",
+    "reason": "stored-good"
    },
    "offsetM": 9.8741326,
    "offsetNorthM": 3.6099522,
@@ -39967,89 +40320,27 @@
     "extentM": 80,
     "accuracyM": 7.7357564
    },
-   "measurement": {
-    "levelId": "a1b2c3d4e5f6",
-    "text": "https://gps.csutil.com/tour/?qr=golden",
-    "odomPose": {
-     "position": [
-      -0.2244358,
-      1.5,
-      -3.6038666
-     ],
-     "rotation": [
-      0,
-      -0.0016830999999999999,
-      0,
-      0.9999986
-     ]
-    },
-    "sizeM": 0.16,
-    "visit": 2
-   },
-   "pick": {
-    "atMs": 18927,
-    "walkedM": 47.1587995,
-    "alignment": [
-     0.9811458,
-     0,
-     0.1932689,
-     0,
-     0,
-     1,
-     0,
-     0,
-     -0.1932689,
-     0,
-     0.9811458,
-     0,
-     6.0410249,
-     400,
-     -8.1024263,
-     1
-    ],
-    "alignmentInfo": {
-     "hasMatrix": true,
-     "sampleCount": 8,
-     "gpsAccuracyM": 9.4439288
-    },
-    "gpsExtentM": 58.5732321,
-    "sighting": {
-     "text": "https://gps.csutil.com/tour/?qr=golden",
-     "levelId": "a1b2c3d4e5f6",
-     "odomPose": {
-      "position": [
-       -0.2244358,
-       1.5,
-       -3.6038666
-      ],
-      "rotation": [
-       0,
-       -0.0016830999999999999,
-       0,
-       0.9999986
-      ]
-     }
-    }
-   }
+   "measurement": null,
+   "pick": null
   },
   "composed": {
-   "basis": "measured-here",
+   "basis": "code-corrected",
    "alignment": [
-    0.9757853,
+    0.9964523,
     0,
-    -0.2187304,
+    -0.0841596,
     0,
     0,
     1,
     0,
     0,
-    0.2187304,
+    0.0841596,
     0,
-    0.9757853,
+    0.9964523,
     0,
-    -0.5911147999999999,
+    2.4381752,
     400,
-    -3.15334,
+    2.0914031,
     1
    ],
    "objects": [
@@ -40059,8 +40350,8 @@
       "id": "obj-112-0",
       "kind": "pin",
       "geo": {
-       "lat": 47.5000948,
-       "lon": 8.6997206,
+       "lat": 47.500028699999994,
+       "lon": 8.6998464,
        "alt": 400.4075504,
        "rotation": [
         0,
@@ -40073,23 +40364,23 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 0"
      },
-     "basis": "measured-here",
+     "basis": "code-corrected",
      "alignment": [
-      0.9811458,
+      0.9964523,
       0,
-      0.1932689,
+      -0.0841596,
       0,
       0,
       1,
       0,
       0,
-      -0.1932689,
+      0.0841596,
       0,
-      0.9811458,
+      0.9964523,
       0,
-      6.0410249,
+      2.4381752,
       400,
-      -8.1024263,
+      2.0914031,
       1
      ],
      "refused": null
@@ -40100,8 +40391,8 @@
       "id": "obj-112-1",
       "kind": "pin",
       "geo": {
-       "lat": 47.5000888,
-       "lon": 8.6998111,
+       "lat": 47.5000399,
+       "lon": 8.6999358,
        "alt": 399.5364755,
        "rotation": [
         0,
@@ -40114,23 +40405,23 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 1"
      },
-     "basis": "measured-here",
+     "basis": "code-corrected",
      "alignment": [
-      0.9811458,
+      0.9964523,
       0,
-      0.1932689,
+      -0.0841596,
       0,
       0,
       1,
       0,
       0,
-      -0.1932689,
+      0.0841596,
       0,
-      0.9811458,
+      0.9964523,
       0,
-      6.0410249,
+      2.4381752,
       400,
-      -8.1024263,
+      2.0914031,
       1
      ],
      "refused": null
@@ -40141,8 +40432,8 @@
       "id": "obj-112-3",
       "kind": "pin",
       "geo": {
-       "lat": 47.5002589,
-       "lon": 8.700194999999999,
+       "lat": 47.500274999999995,
+       "lon": 8.7002358,
        "alt": 400.51070419999996,
        "rotation": [
         0,
@@ -40155,76 +40446,30 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 3"
      },
-     "basis": "measured-here",
+     "basis": "code-corrected",
      "alignment": [
-      0.9811458,
+      0.9964523,
       0,
-      0.1932689,
+      -0.0841596,
       0,
       0,
       1,
       0,
       0,
-      -0.1932689,
+      0.0841596,
       0,
-      0.9811458,
+      0.9964523,
       0,
-      6.0410249,
+      2.4381752,
       400,
-      -8.1024263,
+      2.0914031,
       1
      ],
      "refused": null
     }
    ],
-   "level": {
-    "id": "a1b2c3d4e5f6",
-    "json": {
-     "json": {
-      "version": 1,
-      "qr": {
-       "physicalSizeM": 0.16,
-       "geo": {
-        "lat": 47.5000867,
-        "lon": 8.6998986,
-        "alt": 401.5,
-        "headingDeg": 101.33647769999999,
-        "rotation": [
-         0,
-         -0.773489,
-         0,
-         0.6338096999999999
-        ]
-       },
-       "mintQuality": {
-        "gpsAccuracyM": 9.4439288,
-        "alignmentSampleCount": 8,
-        "mintedAtIso": "2026-10-06T12:00:00.000Z",
-        "alignmentGpsExtentM": 58.5732321,
-        "headingUncertain": false
-       }
-      }
-     }
-    }
-   },
-   "levelAlignment": [
-    0.9811458,
-    0,
-    0.1932689,
-    0,
-    0,
-    1,
-    0,
-    0,
-    -0.1932689,
-    0,
-    0.9811458,
-    0,
-    6.0410249,
-    400,
-    -8.1024263,
-    1
-   ],
+   "level": null,
+   "levelAlignment": null,
    "refused": null
   },
   "movedWithCode": null

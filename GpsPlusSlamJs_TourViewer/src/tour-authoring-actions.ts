@@ -256,9 +256,6 @@ interface VisitSettledLog {
       readonly after: QrGeoPose;
     }[];
   };
-  /** Every code-position decision of this settle, one per stored code the
-   *  visit saw (code book plan M5c); `codePosition` is the first. Absent
-   *  in older recordings. */
   /** Every automatic code-spot decision of this settle (code book plan
    *  M6 v5.1, `code-spots.ts`): a move, an undo, a second print seen, a
    *  confirmation, or nothing and why. */
@@ -266,6 +263,9 @@ interface VisitSettledLog {
     readonly levelId: string;
     readonly decision: CodeSpotDecision;
   }[];
+  /** Every code-position decision of this settle, one per stored code the
+   *  visit saw (code book plan M5c); `codePosition` is the first. Absent
+   *  in older recordings. */
   readonly codePositions?: readonly NonNullable<
     VisitSettledLog["codePosition"]
   >[];

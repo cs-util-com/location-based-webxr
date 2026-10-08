@@ -35,11 +35,14 @@ import {
   displacementSamples,
   type DisplacementSample,
 } from "./code-displacement.js";
-import { judgeCodeSpots, type SpotSighting } from "./code-spot-settle.js";
+import {
+  judgeCodeSpots,
+  spotByAlignment,
+  type SpotSighting,
+} from "./code-spot-settle.js";
 import {
   applyCodeSpotDecision,
   MOVE_CONFIRM_AFTER_MS,
-  nearestSpot,
   type CodeSpotDecision,
   type CodeSpotMemory,
   type SpotRef,
@@ -137,7 +140,8 @@ interface SpotVisit {
   readonly end: number[] | null;
   readonly endQuality: { extentM: number | null; accuracyM: number | null };
   readonly inHandId: string | null;
-  /** THIS visit's device fixes (the store's lists span every visit). */
+  /** THIS visit's device fixes: sliced at the visit's start, defensively
+   *  (the store resets its lists at every session end, after the settle). */
   readonly samples: readonly DisplacementSample[];
   readonly frameChanged: boolean;
 }
@@ -410,41 +414,36 @@ export function wireCreatorSettle(deps: {
     const end = readAlignment(alignment);
     if (end === null || zero === null) return out;
     const hand = deps.codes.inHand();
-    const jsonById = new Map(
+    // Each level read once per call: this runs on every detection (M6
+    // milestone review #7).
+    const memoryById = new Map(
       [
         ...(hand === null ? [] : [hand]),
         ...deps.codes.visitCodes(visit).map((c) => c.level),
-      ].map((l) => [l.id, l.json]),
+      ].map((l) => [l.id, readCodeSpots(l.json)]),
     );
     for (const s of picks.sightings) {
-      const json = jsonById.get(s.sighting.levelId);
-      if (json !== undefined && atSecondPrint(json, s, end, zero)) {
+      const memory = memoryById.get(s.sighting.levelId) ?? null;
+      if (memory !== null && atSecondPrint(memory, s, end, zero)) {
         out.add(s.sighting);
       }
     }
     return out;
   }
 
-  /** \`s\` lies, as \`end\` sees it, at a known spot of its code (\`json\`)
-   *  other than the current one. */
+  /** `s` lies, as `end` sees it, at a known spot of its code other than
+   *  the current one - by the settle's own rule without a fit, with its
+   *  margin (`spotByAlignment`, M6 milestone review #6). */
   function atSecondPrint(
-    json: string,
+    memory: CodeSpotMemory<StoredSpot>,
     s: { atMs: number; sighting: CodeSighting },
     end: readonly number[],
     zero: LatLong,
   ): boolean {
-    const memory = readCodeSpots(json);
-    if (memory === null) return false;
     if (memory.previous === null && memory.copies.length === 0) return false;
     const seen = spotSightingOf(s, end).seenNue;
     if (seen === undefined) return false;
-    const belongs = nearestSpot({
-      distancesM: knownSpotsNue(memory, zero).map(({ spot, pose }) => ({
-        spot,
-        m: Math.hypot(pose.position[0] - seen[0], pose.position[2] - seen[1]),
-      })),
-    });
-    return atOther(belongs);
+    return atOther(spotByAlignment(seen, knownSpotsNue(memory, zero)));
   }
 
   /** The code the live refusal was judged for (the code seen last). */
@@ -915,11 +914,13 @@ export function wireCreatorSettle(deps: {
    * - a confirmation keeps the spot the move left as a copy;
    * - a move is handed to the keep-or-replace path (`moves`), which
    *   re-mints the code; the settle then writes the memory;
-   * - a sighting at a second print, or at the spot a blocked undo would
-   *   restore, corrects nothing (`excluded`), and its code gets no
+   * - a sighting at a known spot other than the current one (a second
+   *   print, or the spot a move left while the visit also saw the code at
+   *   home) corrects nothing (`excluded`), and its code gets no
    *   keep-or-replace in this visit (`skip`).
-   * Only this visit's fixes are fitted: the store's lists span every visit
-   * of the page, and an earlier one's odometry has another origin.
+   * Only this visit's fixes are fitted, sliced at its start: defensive,
+   * because the store resets its lists at every session end (after the
+   * settle), and an earlier visit's odometry has another origin.
    */
   function settleCodeSpots(
     visit: number,
@@ -1399,6 +1400,7 @@ export function wireCreatorSettle(deps: {
       movedInVisit.clear();
       codePositionOutcomes = [];
       appliedCodes.clear();
+      spotDecisions.clear();
     },
   };
 }

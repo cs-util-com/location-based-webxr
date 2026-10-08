@@ -139,6 +139,21 @@ describe("decideCodePosition", () => {
     ).toEqual({ kind: "move" });
   });
 
+  // Why (M6 milestone review #9): the spot rule moves only beyond the
+  // floor, but a settle redone after a failed Finish re-plans from the
+  // visit's newest sighting, which may be back at home; the rule must not
+  // then mint the code next to the spot it left.
+  it("never applies an automatic move to a code seen within the floor of its saved spot", () => {
+    expect(
+      decideCodePosition({
+        stored: good,
+        candidate: good,
+        offsetM: 12,
+        automaticMove: true,
+      }).kind,
+    ).not.toBe("move");
+  });
+
   // Defensive: the spot rule only moves after a reliable walk, but this
   // rule's own promise (nothing changes from an unreliable measurement)
   // must hold whatever its caller asks.

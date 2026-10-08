@@ -12,6 +12,7 @@
 
 import { parseQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
+import { MOVED_CODE_FLOOR_M } from "./code-displacement.js";
 import { walkNeededM } from "./code-verdict.js";
 /** The farthest a silent replace may shift a saved position (m): beyond
  *  it, or beyond the correction's plausibility bound, the code is "far" -
@@ -75,9 +76,17 @@ export function decideCodePosition(input: {
   far?: boolean;
 }): CodePositionDecision {
   const reliable = isReliable(input.candidate);
-  // The code-spot rule only moves after a reliable walk; checked here too,
-  // so nothing ever changes from an unreliable measurement.
-  if (input.automaticMove === true && reliable) return { kind: "move" };
+  // The code-spot rule only moves after a reliable walk, beyond the floor;
+  // both checked here too, so nothing ever changes from an unreliable
+  // measurement, and a re-planned move never lands next to the spot it
+  // left (M6 milestone review #9).
+  if (
+    input.automaticMove === true &&
+    reliable &&
+    input.offsetM >= MOVED_CODE_FLOOR_M
+  ) {
+    return { kind: "move" };
+  }
   // Far from the saved spot is the code-spot rule's, never a silent
   // replace (D20/D26: the poster may have moved, or be a second print).
   if (input.far ?? input.offsetM >= REPLACE_CAP_M) {
