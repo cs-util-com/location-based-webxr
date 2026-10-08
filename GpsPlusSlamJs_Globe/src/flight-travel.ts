@@ -108,7 +108,7 @@ function hermite(a: number, b: number, ma: number, mb: number, u: number) {
 }
 
 /** One point of the curve. */
-export interface TravelPoint {
+interface TravelPoint {
   /** The share of the arc travelled, 0 at the start, 1 at the end. */
   readonly share: number;
   /** The camera's altitude, m. */
