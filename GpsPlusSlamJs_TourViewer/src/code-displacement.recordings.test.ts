@@ -3071,6 +3071,46 @@ function sweepM6(walks: readonly Walk[]): void {
       }),
     ),
   );
+  // v5.1's trigger (code-spots.ts): the settle fit AND the pose a move
+  // would mint (the candidate) at least the floor from the saved spot, on a
+  // reliable walk (M6 v5 review #6).
+  {
+    const joint = (
+      x: M6Pair,
+      floorM: number,
+      mv: readonly [number, number] = [0, 0],
+    ) =>
+      settleTrigger(x, floorM, mv) &&
+      Math.hypot(x.offset[0] + mv[0], x.offset[1] + mv[1]) >= floorM;
+    emit(
+      "M6 spike: v5.1's JOINT trigger (settle fit AND minted candidate at least the floor), unmoved false triggers and injected-move detection (x 4 bearings, cross-day; same-day false triggers too)",
+      M6_FLOORS_M.map((f) => ({
+        floorM: f,
+        faCross: rate(
+          cross.map((x) => pairOutcome(x.p, joint(x, f))),
+          "points",
+        ),
+        faSame: rate(
+          sets[1]![1].map((x) => pairOutcome(x.p, joint(x, f))),
+          "points",
+        ),
+        ...Object.fromEntries(
+          M6_MOVES_M.map((d) => [
+            `det${String(d)}`,
+            rate(
+              cross.flatMap((x) =>
+                MOVE_BEARINGS_DEG.map((b) =>
+                  pairOutcome(x.p, joint(x, f, bearingMove(d, b))),
+                ),
+              ),
+              "points",
+              false,
+            )["all"],
+          ]),
+        ),
+      })),
+    );
+  }
   for (const windowS of [MOVED_CODE_FIT_WINDOW_S, Number.POSITIVE_INFINITY]) {
     M6_FIT_WINDOW_S = windowS;
     const w = Number.isFinite(windowS) ? `${String(windowS)} s` : "unbounded";
