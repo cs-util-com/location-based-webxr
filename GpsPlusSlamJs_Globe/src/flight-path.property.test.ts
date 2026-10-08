@@ -33,7 +33,7 @@ import {
   flightCamera,
   planFlight,
 } from "./flight-path.js";
-import { bendAltitudeM } from "./flight-travel.js";
+import { FLIGHT_TRAVEL, bendAltitudeM } from "./flight-travel.js";
 import {
   noStall,
   noStopAndGo,
@@ -134,7 +134,12 @@ describe("flight path properties", () => {
   it("leaves only the dive's track below the bend, from a start above it", () => {
     fc.assert(
       fc.property(flight, (f) => {
-        fc.pre(f.startM > 2 * bendAltitudeM(f.landingM));
+        // Beyond the largest margin a turn may need, the turn ends at the
+        // bend (a big turn from just above it spills below, by design).
+        fc.pre(
+          f.startM >
+            bendAltitudeM(f.landingM) * Math.exp(FLIGHT_TRAVEL.maxMarginEFolds),
+        );
         const { path } = plan(f);
         const over: string[] = [];
         for (let i = 1; i < 400; i++) {
@@ -196,10 +201,58 @@ describe("flight path properties", () => {
         // A centimetre: rounding on the sphere, not a backwards slide.
         expect(roomy ? worst : 0).toBeLessThan(0.01);
         expect(farthest).toBeLessThanOrEqual(
-          Math.max(path.cameraArcRad, path.diveArcRad) * R + 0.01,
+          // 5 cm: the camera is rebuilt from its view (centimetres of
+          // rounding at a 100 m climb), not a slide.
+          Math.max(between(path.cameraStart, path.cameraEnd), path.diveArcRad) *
+            R +
+            0.05,
         );
       }),
       { numRuns: 200 },
+    );
+  });
+
+  // WHY (R1 milestone review, finding 1): below the bend the camera
+  // travels the way it looks (a start over its own target flew the whole
+  // dive backwards). Its ground travel and its view's heading never point
+  // more than 90 degrees apart there, from any start.
+  it("never travels against where it looks below the bend", () => {
+    fc.assert(
+      fc.property(flight, (f) => {
+        const { path } = plan(f);
+        const bend = bendAltitudeM(f.landingM);
+        let worst = 0;
+        const step = f.durationMs / 400;
+        for (let i = 1; i < 400; i++) {
+          const t = i * step;
+          const c = flightCamera(path, t);
+          const fr = flightAt(path, t);
+          // Judged where the view clearly looks ahead, on the motion around
+          // the frame: the view follows the travel there, so at a pitch near
+          // 90 the camera moves nearly straight down and the direction of
+          // its centimetres of horizontal motion is noise (it straddled the
+          // instant a back-off reverses into the dive).
+          if (c.altitudeM >= bend || c.altitudeM <= f.landingM * 1.05) continue;
+          if (fr.pitchDeg >= 80) continue;
+          // And after the start's own view has blended out: a start just
+          // over one landing from its target, the target behind its screen's
+          // up, rolls its heading 180 degrees over the first fifth (CF1's
+          // start blend, the documented limit), while it already travels.
+          if (fr.startWeight > 0) continue;
+          const up = c.position.clone().normalize();
+          const travel = flightCamera(path, t + step / 4)
+            .position.clone()
+            .sub(flightCamera(path, t - step / 4).position)
+            .projectOnPlane(up);
+          if (travel.length() > 1e-3) {
+            worst = Math.max(worst, travel.angleTo(fr.heading));
+          }
+        }
+        // At most perpendicular: the instant a back-off reverses into the
+        // dive reads exactly 90 degrees.
+        expect(worst).toBeLessThanOrEqual(Math.PI / 2 + 1e-9);
+      }),
+      { numRuns: 100 },
     );
   });
 

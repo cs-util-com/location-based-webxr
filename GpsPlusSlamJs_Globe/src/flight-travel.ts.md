@@ -26,9 +26,18 @@ towards the Earth's centre first, then bending".
   - `landingAngleDeg` 45;
   - `turnPower` 3: the residual dies out as the cube of the log altitude
     left to its end;
-  - `endMarginEFolds` 0.5: a start must be this far above an end to use it;
+  - `marginPerTurn` 0.5, `endMarginEFolds` 0.01, `maxMarginEFolds` 2: a start
+    must lie above its turn's end by e-folds in proportion to the turn it
+    has left (its sideways distance over its altitude, x 0.5), between 0.01
+    and 2, else the next end down. A big turn from just above the bend
+    crammed into a sliver of descent turned into the dive at a corner (the
+    speed read 0.79 there); none at all stalled a start a hair above the
+    bend in a window of 1e-15; a fixed 0.5 snapped the view at the bend
+    (the R1 milestone review). Along an existing curve the turn left at a
+    replan is tiny, so a replan finds the same end;
   - `horizonMarginDeg` 5;
-  - `samples` 1,024 table intervals;
+  - `samples` 1,024 table intervals, half of them inside the residual's
+    window;
   - `radiusM` the mean radius.
 - `bendAltitudeM(landingM)`: max(`bendM`, 25 x the landing).
 - `travelLawDeg(altitudeM, landingM)`: the flight-path angle below the
@@ -38,8 +47,11 @@ towards the Earth's centre first, then bending".
 - `planTravel(h0, h1, arcRad, { landingM })` returns a `TravelCurve`:
   - `length`: path length in the CF1 measure (ds^2 = (d ln h)^2 +
     (ground / h)^2, ground on the mean radius);
-  - `at(s)`: `{ share, h }`, the share of `arcRad` travelled and the
-    altitude;
+  - `at(s)`: `{ share, angle, residualLeft, h }`: the share of `arcRad`
+    travelled, the SIGNED ground angle travelled along the course (the
+    camera turns by it: R1 milestone review finding 1), the share of the
+    residual still to fly (the caller fades a start's offset from the
+    course's plane with it), and the altitude;
   - `pitchAt(s)`: the view's pitch, degrees;
   - `diveArcRad`: the dive's own ground track from the start (or the bend)
     down.
@@ -56,12 +68,13 @@ towards the Earth's centre first, then bending".
 - **The curve**, in the altitude's logarithm: the ground left is the dive's
   track plus a residual (the rest of the arc) times q, which dies out as
   (log altitude left to its end)^3. The end is FIXED:
-  - the bend, for a start at least half an e-fold above it (the residual is
-    the turn, done above the bend);
+  - the bend, for a start far enough above it (by its margin: the residual
+    is the turn, done above the bend);
   - else the bend's and the landing's geometric middle;
   - else the landing.
   - Self-similar: a replan from any point of the curve, to the same target
-    and landing, flies on exactly. A turn eased over a window from the
+    and landing, flies on along the very same curve (tested from 1,000 km
+    down to 10 km, every band and its edges, within 0.2 % of the altitude). A turn eased over a window from the
     start reshaped the rest at every replan (measured while building R1).
 - **A climb** (a landing raised over the camera) eases its residual over
   its whole path with a smoothstep: front-loaded, its sideways motion came
@@ -69,13 +82,18 @@ towards the Earth's centre first, then bending".
 - **The view.**
   - Above the bend: straight down (the turn the owner asked for first).
   - Below it, descending: the camera's actual direction of travel, the
-    residual included, held between the horizon floor (dip + 5 degrees)
-    and straight down (a start nearer than the dive's own track backs off,
-    and the view does not turn round to look behind it).
+    residual included, but never shallower than the law, held between the
+    horizon floor (dip + 5 degrees) and straight down (a start nearer than
+    the dive's own track backs off, and the view does not turn round to
+    look behind it). In the dive itself travel and law agree; where the
+    camera still moves sideways (a turn below the bend, a residual low
+    down, a nearly level replan at the end) a view on the travel looked at
+    the horizon and snapped at the end (the R1 milestone review: up to 75
+    degrees in a frame at the bend, 38.6 at a late replan).
   - A climb and a level pan look by the law of their altitude (45 degrees
-    at a landing), so the flight ends without a snap: at the horizon floor,
-    a replan in a flight's last milliseconds snapped the view up by about
-    40 degrees.
+    at a landing), so the flight ends without a snap.
+- **The table** has half its knots inside the residual's window, so a short
+  window is resolved as finely as a whole curve.
 - **By path length.** The length is a Simpson table of ds/dsigma; sigma by
   length is a cubic Hermite through it with the exact slopes, capped at 3
   (Fritsch and Carlson) so it stays monotone where the speed changes many
@@ -89,12 +107,15 @@ Each one is tested (`flight-travel.test.ts`).
 - The curve ends exactly; it descends all the way and never turns back,
   except a start nearer than the dive's own track, which backs off first.
 - Below the bend the view is the direction of travel within half a degree
-  (cases from 65,000, 25,600, 10,100 and 30,000 km).
-- From a start above the bend, the turn is over by the bend: below it only
+  on the design flights (cases from 65,000, 25,600, 10,100 and 30,000 km),
+  and never shallower than the law anywhere.
+- From a start far enough above the bend (by its margin), the turn is over
+  by the bend: below it only
   the dive's own track is left, and the view is straight down above it.
 - A start below the bend (a replan) absorbs a residual of -3 to 40 km and
-  ends exactly, its view the travel (held at the horizon floor or straight
-  down where those bind).
+  ends exactly, its view the travel or the law, the steeper (held at the
+  horizon floor or straight down where those bind).
+- A pan at the landing's altitude looks as the landing does (45 degrees).
 - The target stays on screen through the bend, at most 17.8 degrees from the
   view's centre for landings 2-12 km. Swept the bend at 30, 100 and 300 km:
   17.8, 17.7 and 17.6 degrees worst (the 25-landing floor keeps high

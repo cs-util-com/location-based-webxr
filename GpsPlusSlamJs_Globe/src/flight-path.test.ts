@@ -21,7 +21,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type * as THREE from "three";
+import * as THREE from "three";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
 import { orbitPose } from "./globe-camera.js";
@@ -60,6 +60,8 @@ const KM = 1_000;
 const DEG = Math.PI / 180;
 const BERN = { lat: 46.948, lng: 7.4474 };
 const BERN_DIR = orbitPose(WGS84_ELLIPSOID, BERN).direction;
+const ROME = { lat: 41.9028, lng: 12.4964 };
+const ZURICH = { lat: 47.3769, lng: 8.5417 };
 /** The tests' bound on the remaining ground distance over the height above the landing. */
 const K_ARC = 2;
 
@@ -193,6 +195,87 @@ describe("the view, as flown (round-2 plan DEC-FR2-1)", () => {
       // 60 Hz frames: at most 3 degrees a frame, and no corner.
       expect(first).toBeLessThan(3);
       expect(second).toBeLessThan(0.5);
+    }
+  });
+});
+
+/**
+ * The flown camera's frames: altitude, position and the view's forward,
+ * every 60 Hz frame of `path`.
+ */
+function flownFrames(path: FlightPath) {
+  const out: { h: number; pos: THREE.Vector3; fwd: THREE.Vector3 }[] = [];
+  for (let t = 0; t <= path.durationMs; t += 1000 / 60) {
+    const c = flightCamera(path, t);
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(c.quaternion);
+    out.push({ h: c.altitudeM, pos: c.position.clone(), fwd });
+  }
+  return out;
+}
+
+/**
+ * Below the bend (above the landing's last 5 %), the worst angle between
+ * the camera's ground travel and where its view points over the ground.
+ */
+function worstHeadingVsTravelDeg(path: FlightPath, landingM: number): number {
+  const frames = flownFrames(path);
+  let worst = 0;
+  for (let i = 1; i < frames.length - 1; i++) {
+    const a = frames[i - 1];
+    const b = frames[i + 1];
+    const c = frames[i];
+    if (!a || !b || !c) continue;
+    if (c.h > bendAltitudeM(landingM) || c.h < landingM * 1.05) continue;
+    const up = c.pos.clone().normalize();
+    const travel = b.pos.clone().sub(a.pos).projectOnPlane(up);
+    const looks = c.fwd.clone().projectOnPlane(up);
+    if (travel.length() < 1e-6 || looks.length() < 1e-6) continue;
+    worst = Math.max(worst, travel.angleTo(looks) / DEG);
+  }
+  return worst;
+}
+
+describe("looks the way it travels (round-2 R1 milestone review)", () => {
+  // WHY (R1 review finding 1): the pin's ordinary press is over the very
+  // place the fix names; from there, and from up to 2 km off, the dive flew
+  // backwards (the camera travelled 180 degrees from where it looked: the
+  // arc to the camera's end was unsigned, so the back-off went past the
+  // target and the dive came back against the heading).
+  it("dives the way it looks from a start over or near the target", () => {
+    for (const dKm of [0, 0.5, 1, 1.5, 2, 3, -1, -3]) {
+      const from = { lat: BERN.lat + (dKm * KM) / R / DEG, lng: BERN.lng };
+      const path = fly(from, 25_600 * KM);
+      expect(
+        worstHeadingVsTravelDeg(path, 2 * KM),
+        `${dKm} km north`,
+      ).toBeLessThan(5);
+      const end = flightAt(path, path.durationMs);
+      expect(end.centre.distanceTo(BERN_DIR), `${dKm} km north`).toBeLessThan(
+        1e-9,
+      );
+    }
+  });
+
+  // WHY (R1 review finding 2): a start between the bend and 1.65 x it
+  // still turned below the bend while the view looked straight down above
+  // it: the pitch snapped by up to 75 degrees in one frame.
+  it("turns the view smoothly at the bend from a start just above it", () => {
+    for (const from of [ROME, ZURICH, awayFromBern(-60)]) {
+      for (const startKm of [101, 110, 120, 150, 165, 200]) {
+        const path = fly(from, startKm * KM);
+        const p = Array.from(
+          { length: 901 },
+          (_, i) => flightAt(path, (i * 15_000) / 900).pitchDeg,
+        );
+        let worst = 0;
+        for (let i = 1; i < p.length; i++) {
+          worst = Math.max(worst, Math.abs((p[i] ?? 0) - (p[i - 1] ?? 0)));
+        }
+        expect(
+          worst,
+          `${JSON.stringify(from)} from ${startKm} km`,
+        ).toBeLessThan(3);
+      }
     }
   });
 });
@@ -443,19 +526,20 @@ describe("planFlight and flightAt", () => {
     }
   });
 
-  // WHY (cold review finding 2): a start low and far away (a press after
-  // zooming in elsewhere) must climb before it crosses, not slide over the
-  // ground at continental speed.
-  // WHY (round-2 plan, R1): the van Wijk geodesic climbed first from a
-  // start low and far away; the travel curve pans at its own altitude
-  // instead (one path family; it still never stops, and lands exactly).
+  // WHY (cold review finding 2, changed by round-2 R1): CF1 required a start
+  // low and far away (a press after zooming in elsewhere) to climb before
+  // it crossed; the travel curve pans at its own altitude instead (one path
+  // family; it still never stops, and lands exactly). The worst case, the
+  // one CF1 tested its climb on: 60 degrees east at 2 km, a level pan of a
+  // sixth of the Earth (the documented limit: the R1 milestone review
+  // measured 152 screen heights a second; parked for the owner).
   it("pans at its own altitude from a start low and far away", () => {
-    const path = fly(awayFromBern(10), 30 * KM);
+    const path = fly(awayFromBern(60), 2 * KM);
     let top = 0;
     for (let t = 0; t <= path.durationMs; t += 50) {
       top = Math.max(top, flightAt(path, t).altitudeM);
     }
-    expect(top).toBeLessThanOrEqual(30 * KM * (1 + 1e-6));
+    expect(top).toBeLessThanOrEqual(2 * KM * (1 + 1e-6));
     const end = flightAt(path, path.durationMs);
     expect(end.altitudeM).toBe(2 * KM);
   });

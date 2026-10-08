@@ -325,6 +325,79 @@ describe("retargetFlight", () => {
     expect(bad).toEqual([]);
   });
 
+  // WHY (R1 milestone review, finding 2): the travel curve's turn is
+  // self-similar, so a replan that changes nothing flies on along the very
+  // same curve: at every altitude over the same ground. Its band margin
+  // broke that between the bend and 1.65 x it (0.8-2.5 % of the altitude
+  // apart), which the timing test above, at 5 %, let through.
+  it("flies on along the same curve when nothing changes, from any altitude", () => {
+    const first = flyFrom(NEW_YORK, BERN);
+    const reaching = (km: number) => {
+      let t = 0;
+      while (flightFrameAt(first, t).altitudeM > km * KM) t += 1;
+      return t;
+    };
+    const bad: string[] = [];
+    for (const km of [1_000, 170, 164, 150, 130, 101, 99, 50, 24, 22, 10]) {
+      const atMs = reaching(km);
+      const same = retargetFlight(
+        first,
+        atMs,
+        orbitPose(WGS84_ELLIPSOID, BERN),
+        { landingM: 2 * KM },
+      );
+      const old: { h: number; dir: THREE.Vector3 }[] = [];
+      for (let t = atMs; t <= first.endsAtMs; t += 2) {
+        const f = flightFrameAt(first, t);
+        old.push({ h: f.altitudeM, dir: f.camera.clone() });
+      }
+      let worst = 0;
+      let j = 0;
+      for (let t = atMs + 50; t < same.endsAtMs - 50; t += 10) {
+        const f = flightFrameAt(same, t);
+        while (j < old.length - 1 && (old[j + 1]?.h ?? 0) >= f.altitudeM) j++;
+        const o = old[j];
+        if (!o) continue;
+        worst = Math.max(worst, (o.dir.angleTo(f.camera) * R) / f.altitudeM);
+      }
+      if (worst > 2e-3) {
+        bad.push(
+          `from ${km} km: ${(worst * 100).toFixed(2)} % of the altitude`,
+        );
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  // WHY (R1 milestone review, finding 3): a replan in a flight's last
+  // moments starts within metres of the landing's altitude; its nearly
+  // level travel put the view at the horizon floor for most of the new
+  // flight and snapped it 38.6 degrees at the end.
+  it("never snaps the view after a replan in the last moments", () => {
+    const first = flyFrom(NEW_YORK, BERN);
+    for (const to of [ROME, ZURICH]) {
+      for (const left of [500, 100, 20, 5, 1]) {
+        const atMs = first.endsAtMs - left;
+        const late = retargetFlight(
+          first,
+          atMs,
+          orbitPose(WGS84_ELLIPSOID, to),
+          {
+            landingM: 2 * KM,
+          },
+        );
+        let worst = 0;
+        let last = flightFrameAt(late, atMs).pitchDeg;
+        for (let t = atMs; t <= late.endsAtMs; t += 1000 / 60) {
+          const p = flightFrameAt(late, t).pitchDeg;
+          worst = Math.max(worst, Math.abs(p - last));
+          last = p;
+        }
+        expect(worst, `${JSON.stringify(to)}, ${left} ms left`).toBeLessThan(3);
+      }
+    }
+  });
+
   // WHY (CF3 review finding 2): a fix late in the hold (its settle) must
   // fly on at a normal pace: braking on applies only to the SAME
   // destination; a new one crawled for up to 60 s.
@@ -567,9 +640,21 @@ describe("clearedLandingM", () => {
     const zurich = orbitPose(WGS84_ELLIPSOID, ZURICH).direction;
     const ridge = (d: THREE.Vector3) =>
       d.angleTo(zurich) * R < 5 * KM ? 9_800 : 1_800;
-    for (const [startM, groundAt] of [
-      [2 * KM, () => 1_800],
-      [10 * KM, ridge],
+    const need = 1_800 + FLIGHT_REPLAN.clearanceM;
+    // The level pan (a start at the landing's altitude) is a climb to the
+    // landing; the landing governs its second half (half a metre per metre
+    // and more), where halfway the altitude is the geometric mean of start
+    // and landing: it must reach need^2 / 2,000 = 2,205 m. The descent from
+    // 10 km clears the plateau at the plain need, the ridge under its start
+    // out of the landing's reach.
+    for (const [startM, groundAt, low, high] of [
+      [
+        2 * KM,
+        () => 1_800,
+        (need * need) / (2 * KM) - 10,
+        (need * need) / (2 * KM) + 10,
+      ],
+      [10 * KM, ridge, need - 1, need + 50],
     ] as const) {
       const landingM = clearedLandingM(
         WGS84_ELLIPSOID,
@@ -578,13 +663,61 @@ describe("clearedLandingM", () => {
         { landingM: 2 * KM, durationMs: 15_000 },
         groundAt,
       );
-      expect(landingM, `from ${startM} m`).toBeGreaterThanOrEqual(
-        1_800 + FLIGHT_REPLAN.clearanceM - 1,
-      );
-      expect(landingM, `from ${startM} m`).toBeLessThan(
-        1_800 + FLIGHT_REPLAN.clearanceM + 50,
-      );
+      expect(landingM, `from ${startM} m`).toBeGreaterThanOrEqual(low);
+      expect(landingM, `from ${startM} m`).toBeLessThan(high);
     }
+  });
+
+  // WHY (R1 milestone review, finding 5): ground just before the dive is
+  // what the landing must clear; a final-approach window (the dive's own
+  // track) ignored ridges 9-12 km out and left the camera inside them.
+  // A ridge 100 m under the planned path, at 5-40 km from the landing
+  // point, must be cleared by about the full clearance.
+  it("clears a ridge anywhere on the approach", () => {
+    const bad: string[] = [];
+    for (const startKm of [5, 10]) {
+      const plan = (landingM: number) =>
+        startFlight(
+          WGS84_ELLIPSOID,
+          orbitStart(ZURICH, startKm * KM),
+          orbitPose(WGS84_ELLIPSOID, BERN),
+          { landingM, durationMs: 15_000 },
+          0,
+        );
+      const planned = plan(2 * KM);
+      const end = planned.path.cameraEnd;
+      const altitudeAt = (dKm: number) => {
+        for (let t = 0; t <= planned.endsAtMs; t += 2) {
+          const f = flightFrameAt(planned, t);
+          if ((f.camera.angleTo(end) * R) / KM <= dKm) return f.altitudeM;
+        }
+        return Number.NaN;
+      };
+      for (const dKm of [40, 20, 12, 9, 7, 5]) {
+        const top = altitudeAt(dKm) - 100;
+        const ridge = (d: THREE.Vector3) =>
+          Math.abs((d.angleTo(end) * R) / KM - dKm) < 1 ? top : 500;
+        const landingM = clearedLandingM(
+          WGS84_ELLIPSOID,
+          orbitStart(ZURICH, startKm * KM),
+          orbitPose(WGS84_ELLIPSOID, BERN),
+          { landingM: 2 * KM, durationMs: 15_000 },
+          ridge,
+        );
+        const flown = plan(landingM);
+        let clear = Infinity;
+        for (let t = 0; t <= flown.endsAtMs; t += 5) {
+          const f = flightFrameAt(flown, t);
+          clear = Math.min(clear, f.altitudeM - ridge(f.camera));
+        }
+        if (clear < FLIGHT_REPLAN.clearanceM - 20) {
+          bad.push(
+            `from ${startKm} km, a ridge ${dKm} km out: ${clear.toFixed(0)} m clear`,
+          );
+        }
+      }
+    }
+    expect(bad).toEqual([]);
   });
 
   it("keeps the landing where the approach already clears", () => {

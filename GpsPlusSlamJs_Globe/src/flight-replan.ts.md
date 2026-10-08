@@ -26,7 +26,8 @@ transition" the owner reported.
 - `FLIGHT_REPLAN`: `joinMs` 1,500, `clearanceM` 300, `minDurationMs`
   2,000, `maxDurationMs` 60,000 (one replanned path's length, as DEC-CF-5's
   cap),
-  `clearanceRounds` 6, `clearanceSamples` 240.
+  `clearanceRounds` 6, `clearanceSamples` 960 (at 240 a ridge 2 km wide
+  was cleared by 275 m, not 300).
 - `Flight` is `{ ellipsoid, path, startedAtMs, endsAtMs, join }`.
   - A replanned flight answers from its replan on and keeps no history: the
     old flight is never evaluated again.
@@ -122,16 +123,20 @@ Implemented in `replanTiming` (CF2 review finding 1):
 divided by how much the camera there rises with the landing.
 
 - That rise is measured with a second plan 1 m higher.
-- Samples that the landing moves by less than 0.05 per metre are not
-  counted. Before this, a start already too low over a plateau was added
-  again every round (CF2 review finding 4).
-- Only the final approach counts: samples within the dive's own track
-  (plus one landing) of the landing point. On the round-2 travel curve a
-  landing scales the whole descent a little, so ground under the early
-  path read as a shortfall over a small sensitivity (a 9,800 m ridge under
-  a 10 km start raised a 2 km landing to 6 km).
-- The same rule keeps a level pan sane: a start at the landing's own
-  altitude over a 1.8 km plateau gets 2,109 m (3,752 m before it).
+- Samples that the landing moves by less than half a metre per metre are
+  not counted: they are out of its reach. CF2 set 0.05 (CF2 review finding
+  4: a start already too low over a plateau was added again every round);
+  on the round-2 travel curve a landing scales the whole descent a little,
+  and at 0.05 ground under the early path read as a shortfall over a small
+  sensitivity (a 9,800 m ridge under a 10 km start raised a 2 km landing to
+  6,020 m, a level pan over a 1.8 km plateau to 3,752 m). A window on the
+  final approach instead (the dive's own track) missed ridges just before
+  the dive and left the camera 4-19 m inside them (the R1 milestone review).
+- Measured: a ridge 100 m under the planned path, anywhere from 5 to 40 km
+  out of the landing point, from a 5 or 10 km start, is cleared by at least
+  280 m; the 10 km start over a ridge under itself gets 2,100 m; a level
+  pan over the plateau gets the 2,205 m that lifts its second half (the
+  part the landing governs) clear.
 
 ## Invariants
 

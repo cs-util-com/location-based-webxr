@@ -263,10 +263,18 @@ export interface FlightPath {
   readonly courseNormal: THREE.Vector3;
   /** The angle from the start's view centre to the target, radians. */
   readonly arcRad: number;
-  /** The camera's start and end directions, and the great circle between. */
+  /** The camera's start and end directions. */
   readonly cameraStart: THREE.Vector3;
   readonly cameraEnd: THREE.Vector3;
-  readonly cameraAxis: THREE.Vector3 | null;
+  /**
+   * The camera moves in the course's plane: from `planeStart` (the start in
+   * that plane) by a signed angle about `courseNormal`, `cameraArcRad` to
+   * its end (negative when the end lies behind the start along the course),
+   * the start's offset from the plane (`offPlaneRad`, only within one
+   * landing of the target) dying out with the turn.
+   */
+  readonly planeStart: THREE.Vector3;
+  readonly offPlaneRad: number;
   readonly cameraArcRad: number;
   /** The travel curve's length (the name is CF1's, when it was a geodesic). */
   readonly geodesicLength: number;
@@ -492,10 +500,21 @@ export function planFlight(
       normal,
       -lookBackRad(surfaceRadiusAlong(ellipsoid, to), landingM, endPitchDeg),
     );
-  const camCross = new THREE.Vector3().crossVectors(cameraStart, cameraEnd);
+  // The camera moves in the course's plane by a SIGNED angle (R1 milestone
+  // review: the unsigned arc to an end behind the start, the pin's ordinary
+  // press over its own fix, flew the whole dive backwards). The target and
+  // the end lie in the plane; a start within one landing of the target can
+  // lie off it (the plane runs along its own heading there).
+  const offPlaneRad = Math.asin(
+    Math.max(-1, Math.min(1, cameraStart.dot(normal))),
+  );
+  const planeStart = cameraStart
+    .clone()
+    .addScaledVector(normal, -cameraStart.dot(normal))
+    .normalize();
   const cameraArcRad = Math.atan2(
-    camCross.length(),
-    cameraStart.dot(cameraEnd),
+    new THREE.Vector3().crossVectors(planeStart, cameraEnd).dot(normal),
+    planeStart.dot(cameraEnd),
   );
   const path = planTravel(h0, landingM, cameraArcRad, {
     landingM: o.viewLandingM,
@@ -531,7 +550,8 @@ export function planFlight(
     arcRad,
     cameraStart,
     cameraEnd,
-    cameraAxis: camCross.length() > 1e-15 ? camCross.normalize() : null,
+    planeStart,
+    offPlaneRad,
     cameraArcRad,
     geodesicLength: path.length,
     travelledAt: clock.at,
@@ -603,19 +623,17 @@ export function flightAt(path: FlightPath, tMs: number): FlightFrame {
   if (Number.isNaN(tMs)) throw new RangeError("the time must be a number");
   const done = tMs >= path.durationMs;
   const s = path.travelledAt(Math.max(0, tMs));
-  const point = done
-    ? { share: 1, h: path.landingM }
-    : tMs <= 0
-      ? { share: 0, h: path.geodesicAt(0).h }
-      : path.geodesicAt(s);
-  // Not clamped: a start nearer than the dive's own track backs off first
-  // (a negative share); clamped, it stood still and only descended.
-  const share = point.share;
-  const camera = path.cameraAxis
-    ? path.cameraStart
-        .clone()
-        .applyAxisAngle(path.cameraAxis, path.cameraArcRad * share)
-    : path.cameraStart.clone();
+  const point = path.geodesicAt(tMs <= 0 ? 0 : s);
+  // Along the course by the curve's signed angle (not clamped: a start
+  // nearer than the dive's own track backs off first; clamped, it stood
+  // still and only descended), off the plane by what is left of the
+  // start's offset.
+  const off = path.offPlaneRad * point.residualLeft;
+  const camera = path.planeStart
+    .clone()
+    .applyAxisAngle(path.courseNormal, point.angle)
+    .multiplyScalar(Math.cos(off))
+    .addScaledVector(path.courseNormal, Math.sin(off));
   if (done) camera.copy(path.cameraEnd);
   const startWeight =
     1 -

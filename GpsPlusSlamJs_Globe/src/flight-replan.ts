@@ -45,9 +45,14 @@ import {
 
 /**
  * A sample the landing moves by less than this per metre is out of the
- * landing's reach (the start, a plateau under it).
+ * landing's reach (the start, a plateau under it). Half a metre per metre
+ * (R1 milestone review): on the travel curve a landing scales the whole
+ * descent a little, and at 0.05 ground under the early path read as a
+ * shortfall over a small sensitivity (a 9,800 m ridge under a 10 km start
+ * raised a 2 km landing to 6 km); a final-approach window instead missed
+ * ridges just before the dive.
  */
-const MIN_LANDING_SENSITIVITY = 0.05;
+const MIN_LANDING_SENSITIVITY = 0.5;
 
 export const FLIGHT_REPLAN = Object.freeze({
   /** How long a replan's velocity correction takes to die out, ms. */
@@ -60,8 +65,12 @@ export const FLIGHT_REPLAN = Object.freeze({
   maxDurationMs: 60_000,
   /** Rounds of `clearedLandingM`'s raise (each samples the whole flight). */
   clearanceRounds: 6,
-  /** Samples per round of `clearedLandingM`. */
-  clearanceSamples: 240,
+  /**
+   * Samples per round of `clearedLandingM`: at 240 (one every 62 ms of a
+   * 15 s flight) a ridge 2 km wide was cleared by 275 m, not 300 (the R1
+   * milestone review's ridges); 960 clears it.
+   */
+  clearanceSamples: 960,
 });
 
 /**
@@ -444,7 +453,8 @@ function replanRamp(
 
 /**
  * The least landing (at or above `options.landingM`) at which the camera's
- * whole flight from `start` stays `clearanceM` over `groundAt` (the
+ * flight from `start`, wherever the landing reaches it (it moves there by
+ * half a metre per metre or more), stays `clearanceM` over `groundAt` (the
  * ground's height under a direction, m; null where it is not known yet,
  * which is ignored). Raises the landing by the worst shortfall, replans,
  * and repeats, `clearanceRounds` times at most.
@@ -499,13 +509,6 @@ function landingRaiseM(
     const g = flightAt(higher, share * higher.durationMs);
     const sensitivity = g.altitudeM - f.altitudeM;
     if (!(sensitivity > MIN_LANDING_SENSITIVITY)) continue;
-    // Only the final approach: the dive's own track (plus one landing). On
-    // the travel curve a landing scales the whole descent a little, so the
-    // ground under the early path, which a landing should not answer, read
-    // as a shortfall over a small sensitivity (round-2 R1: a 9,800 m ridge
-    // under a 10 km start raised a 2 km landing to 6 km).
-    const left = f.camera.angleTo(path.cameraEnd);
-    if (left > path.diveArcRad + landingM / FLIGHT_PATH.radiusM) continue;
     const ground = groundAt(
       obliqueCamera(
         ellipsoid,

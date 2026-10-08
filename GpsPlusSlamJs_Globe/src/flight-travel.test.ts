@@ -203,7 +203,10 @@ describe("planTravel", () => {
         const floor =
           Math.acos(R / (R + h)) / DEG + FLIGHT_TRAVEL.horizonMarginDeg;
         const travel = travelAngleDeg(curve, arc, s, curve.length * 1e-6);
-        const expected = Math.min(90, Math.max(floor, travel));
+        // Never shallower than the law (the R1 milestone review: a view on
+        // a sideways travel looked at the horizon and snapped at the end).
+        const law = travelLawDeg(h, h1);
+        const expected = Math.min(90, Math.max(floor, travel, law));
         worst = Math.max(worst, Math.abs(curve.pitchAt(s) - expected));
       }
       expect(worst, `residual ${residualKm} km`).toBeLessThan(0.5);

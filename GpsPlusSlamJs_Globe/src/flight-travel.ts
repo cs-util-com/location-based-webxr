@@ -53,8 +53,21 @@ export const FLIGHT_TRAVEL = Object.freeze({
    * end)^this: front-loaded, and C2 into the dive at the end.
    */
   turnPower: 3,
-  /** A start this many e-folds above an end at least, or the next end down. */
-  endMarginEFolds: 0.5,
+  /**
+   * A start must lie above its turn's end by e-folds of descent in
+   * proportion to the turn it has left (its sideways distance over its
+   * altitude, x this), between `endMarginEFolds` and `maxMarginEFolds`;
+   * else the next end down. A big turn from a start just above the bend
+   * crammed into a sliver of descent and turned into the dive at a corner
+   * (the speed read 0.79 there); along an existing curve the turn left at a
+   * replan is tiny (it dies out as a cube), so a replan finds the same end
+   * and flies on exactly.
+   */
+  marginPerTurn: 0.5,
+  /** At least this (a start a hair above the bend stalled in a 1e-15 window). */
+  endMarginEFolds: 0.01,
+  /** At most this. */
+  maxMarginEFolds: 2,
   /** The least the view looks below the horizon, degrees. */
   horizonMarginDeg: 5,
   /** Intervals of the curve's table (each interpolated as a cubic). */
@@ -93,8 +106,6 @@ export function travelLawDeg(altitudeM: number, landingM: number): number {
   return land + (90 - land) * smoothstep(x);
 }
 
-/** d smoothstep / dx. */
-
 /** A cubic Hermite between (0, a, slope ma) and (1, b, slope mb), at u. */
 function hermite(a: number, b: number, ma: number, mb: number, u: number) {
   const u2 = u * u;
@@ -111,6 +122,10 @@ function hermite(a: number, b: number, ma: number, mb: number, u: number) {
 interface TravelPoint {
   /** The share of the arc travelled, 0 at the start, 1 at the end. */
   readonly share: number;
+  /** The ground angle travelled along the course, signed, rad. */
+  readonly angle: number;
+  /** The share of the residual (high up, the turn) still to fly, 1 to 0. */
+  readonly residualLeft: number;
   /** The camera's altitude, m. */
   readonly h: number;
 }
@@ -126,17 +141,52 @@ export interface TravelCurve {
 }
 
 /**
- * The cumulative integral of `f` over [0, 1] on `n` intervals (Simpson on
- * each): from 0 at sigma 0, or, `fromEnd`, from 0 at sigma 1 backwards.
+ * The table's knots in sigma: half of them inside the residual's window
+ * and half after it, so a window of a sliver (a start a hair above the
+ * bend) is resolved as finely as a whole curve.
+ */
+function knotsFor(n: number, window: number): Float64Array {
+  const knots = new Float64Array(n + 1);
+  const half = n / 2;
+  const split = window > 1e-12 && window < 1 - 1e-12;
+  for (let k = 0; k <= n; k++) {
+    knots[k] = !split
+      ? k / n
+      : k <= half
+        ? (window * k) / half
+        : window + ((1 - window) * (k - half)) / half;
+  }
+  return knots;
+}
+
+/** The interval of an increasing `table` holding `x`. */
+function intervalOf(table: Float64Array, x: number): number {
+  let lo = 0;
+  let hi = table.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if ((table[mid] ?? 0) <= x) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * The cumulative integral of `f` over the knots (Simpson on each interval):
+ * from 0 at the first knot, or, `fromEnd`, from 0 at the last backwards.
  */
 function integralTable(
-  n: number,
+  knots: Float64Array,
   f: (sigma: number) => number,
   fromEnd: boolean,
 ): Float64Array {
+  const n = knots.length - 1;
   const table = new Float64Array(n + 1);
-  const piece = (k: number) =>
-    (f(k / n) + 4 * f((k + 0.5) / n) + f((k + 1) / n)) / (6 * n);
+  const piece = (k: number) => {
+    const a = knots[k] ?? 0;
+    const b = knots[k + 1] ?? 0;
+    return ((f(a) + 4 * f((a + b) / 2) + f(b)) / 6) * (b - a);
+  };
   if (fromEnd) {
     for (let k = n - 1; k >= 0; k--) table[k] = (table[k + 1] ?? 0) + piece(k);
   } else {
@@ -151,31 +201,27 @@ function integralTable(
  * motion has no kink at the knots.
  */
 function inverseByLength(
+  knots: Float64Array,
   lengths: Float64Array,
-  n: number,
   speed: (sigma: number) => number,
 ): (pathS: number) => number {
-  const length = lengths[n] ?? 0;
+  const length = lengths[lengths.length - 1] ?? 0;
   return (pathS) => {
     if (pathS <= 0) return 0;
     if (pathS >= length) return 1;
-    let lo = 0;
-    let hi = n;
-    while (hi - lo > 1) {
-      const mid = (lo + hi) >> 1;
-      if ((lengths[mid] ?? 0) <= pathS) lo = mid;
-      else hi = mid;
-    }
+    const lo = intervalOf(lengths, pathS);
     const sa = lengths[lo] ?? 0;
-    const span = (lengths[hi] ?? 0) - sa;
-    if (!(span > 0)) return lo / n;
-    // In the interval's own units: d(sigma n) / d(u) = n span / speed,
-    // capped at 3 (Fritsch and Carlson) so the cubic stays monotone where
-    // the speed changes many times over within one interval (the bottom of
-    // a steep climb), at the price of a corner there.
-    const ma = Math.min(3, (n * span) / speed(lo / n));
-    const mb = Math.min(3, (n * span) / speed(hi / n));
-    return (lo + hermite(0, 1, ma, mb, (pathS - sa) / span)) / n;
+    const span = (lengths[lo + 1] ?? 0) - sa;
+    const a = knots[lo] ?? 0;
+    const width = (knots[lo + 1] ?? 0) - a;
+    if (!(span > 0)) return a;
+    // In the interval's own units: d(sigma / width) / d(u) = span / (width
+    // speed), capped at 3 (Fritsch and Carlson) so the cubic stays monotone
+    // where the speed changes many times over within one interval (the
+    // bottom of a steep climb), at the price of a corner there.
+    const ma = Math.min(3, span / (width * speed(a)));
+    const mb = Math.min(3, span / (width * speed(a + width)));
+    return a + width * hermite(0, 1, ma, mb, (pathS - sa) / span);
   };
 }
 
@@ -190,25 +236,25 @@ function clampPitch(deg: number, h: number): number {
 /**
  * A pan at the landing's altitude (a replan that is already there): the view
  * looks by the law of its landing (45 degrees at a landing), as the flight
- * ends; at the level travel's horizon floor, a replan in a flight's last
- * milliseconds snapped the view up by about 40 degrees.
+ * ends.
  */
 function levelPan(arcRad: number, h1: number, landingM: number): TravelCurve {
   const length = (Math.abs(arcRad) * FLIGHT_TRAVEL.radiusM) / h1;
   return {
     length,
     diveArcRad: 0,
-    at: (s) => ({
-      share: length > 0 ? Math.min(1, Math.max(0, s / length)) : 1,
-      h: h1,
-    }),
+    at: (s) => {
+      const share = length > 0 ? Math.min(1, Math.max(0, s / length)) : 1;
+      return { share, angle: share * arcRad, residualLeft: 1 - share, h: h1 };
+    },
     pitchAt: () => clampPitch(travelLawDeg(h1, landingM), h1),
   };
 }
 
 /**
- * The curve from `h0` down to `h1` over `arcRad` of ground (the camera's
- * own arc to its end, one landing behind the target), its law that of
+ * The curve from `h0` down to `h1` over `arcRad` of ground along the course
+ * (signed: the camera's own arc to its end, one landing behind the target;
+ * negative when that end lies behind the start), its law that of
  * `landingM` (the flight's real landing: a hold that stops short passes it).
  * A start at the landing's altitude is a pure pan. RangeError for altitudes
  * that are not positive or an arc that is not finite.
@@ -228,7 +274,6 @@ export function planTravel(
   const dw = Math.log(h1) - Math.log(h0);
   if (Math.abs(dw) < 1e-9) return levelPan(arcRad, h1, options.landingM);
   const R = FLIGHT_TRAVEL.radiusM;
-  const n: number = FLIGHT_TRAVEL.samples;
   const bend = bendAltitudeM(options.landingM);
   const hAt = (sigma: number) => h0 * Math.exp(dw * sigma);
   // The dive's track: d(ground angle) / d(ln h) = cot(angle) h / (R + h),
@@ -239,24 +284,48 @@ export function planTravel(
     return ((Math.cos(angle) / Math.sin(angle)) * h) / (R + h);
   };
   const diveSlope = (sigma: number) => diveSlopeW(hAt(sigma)) * dw;
-  // g(sigma), the dive's track left, and the residual's window.
-  const g = integralTable(n, (sigma) => -diveSlope(sigma), true);
-  const dive = g[0] ?? 0;
-  const residual = arcRad - dive;
-  // The residual's end, as a share of the curve: a fixed altitude, so the
-  // same for a replan in the same band (a climb absorbs it over the whole).
-  const margin = Math.exp(-FLIGHT_TRAVEL.endMarginEFolds);
+  // The residual's end, as a share of the curve: a FIXED altitude below the
+  // start (the bend, else the bend's and the landing's geometric middle, else
+  // the landing), so a replan in the same band ends it at the same place,
+  // and one in a lower band finds it done. A climb absorbs it over the whole.
+  // The dive's track from the start (on an even grid, for the margin), the
+  // residual, and the start's margin above its end by the turn it has left.
+  const dive =
+    integralTable(
+      knotsFor(FLIGHT_TRAVEL.samples, 1),
+      (sigma) => -diveSlope(sigma),
+      true,
+    )[0] ?? 0;
+  const marginEFolds = Math.min(
+    FLIGHT_TRAVEL.maxMarginEFolds,
+    Math.max(
+      FLIGHT_TRAVEL.endMarginEFolds,
+      (FLIGHT_TRAVEL.marginPerTurn * R * Math.abs(arcRad - dive)) / h0,
+    ),
+  );
+  const margin = Math.exp(-marginEFolds);
   const end =
     dw > 0
       ? h1
       : ([bend, Math.sqrt(bend * h1)].find((e) => e < h0 * margin) ?? h1);
   const window = Math.min(1, Math.log(end / h0) / dw);
+  const knots = knotsFor(FLIGHT_TRAVEL.samples, window);
+  // g(sigma), the dive's track left, on the curve's own knots, and the
+  // residual by it (so the curve starts exactly where the camera is).
+  const g = integralTable(knots, (sigma) => -diveSlope(sigma), true);
+  const residual = arcRad - (g[0] ?? 0);
   const gAt = (sigma: number) => {
-    const k = Math.min(n - 1, Math.floor(sigma * n));
-    const u = sigma * n - k;
-    const ga = g[k] ?? 0;
-    const gb = g[k + 1] ?? 0;
-    return hermite(ga, gb, diveSlope(k / n) / n, diveSlope((k + 1) / n) / n, u);
+    const k = intervalOf(knots, sigma);
+    const a = knots[k] ?? 0;
+    const width = (knots[k + 1] ?? 1) - a;
+    const u = width > 0 ? (sigma - a) / width : 0;
+    return hermite(
+      g[k] ?? 0,
+      g[k + 1] ?? 0,
+      diveSlope(a) * width,
+      diveSlope(a + width) * width,
+      u,
+    );
   };
   const p = FLIGHT_TRAVEL.turnPower;
   // q(sigma): the share of the residual still to fly, and its slope. A
@@ -281,31 +350,45 @@ export function planTravel(
   // d(path length) / d(sigma) in the CF1 measure.
   const speed = (sigma: number) =>
     Math.hypot(dw, (R * leftSlope(sigma)) / hAt(sigma));
-  const lengths = integralTable(n, speed, false);
-  const sigmaAt = inverseByLength(lengths, n, speed);
+  const lengths = integralTable(knots, speed, false);
+  const sigmaAt = inverseByLength(knots, lengths, speed);
+  const point = (sigma: number): TravelPoint => {
+    const angle = arcRad - left(sigma);
+    return {
+      share: arcRad !== 0 ? angle / arcRad : 1,
+      angle,
+      residualLeft: q(sigma),
+      h: hAt(sigma),
+    };
+  };
   return {
-    length: lengths[n] ?? 0,
-    diveArcRad: dive,
+    length: lengths[lengths.length - 1] ?? 0,
+    diveArcRad: g[0] ?? 0,
     at: (pathS) => {
       const sigma = sigmaAt(pathS);
-      if (sigma >= 1) return { share: 1, h: h1 };
-      if (sigma <= 0) return { share: 0, h: h0 };
-      const share = arcRad !== 0 ? 1 - left(sigma) / arcRad : 1;
-      return { share, h: hAt(sigma) };
+      if (sigma >= 1) {
+        return { share: 1, angle: arcRad, residualLeft: 0, h: h1 };
+      }
+      if (sigma <= 0) return { share: 0, angle: 0, residualLeft: 1, h: h0 };
+      return point(sigma);
     },
     pitchAt: (pathS) => {
       const sigma = sigmaAt(pathS);
       if (sigma >= 1) return clampPitch(travelLawDeg(h1, options.landingM), h1);
       const h = hAt(sigma);
       if (h >= bend) return 90;
+      const law = travelLawDeg(h, options.landingM);
       // A climb travels up; it looks by the law instead (45 at a landing
       // below the bend), so it ends where the landing looks, without a snap.
-      if (dw > 0) return clampPitch(travelLawDeg(h, options.landingM), h);
+      if (dw > 0) return clampPitch(law, h);
       // The camera's actual motion: down by -dh, ahead by (R + h) d theta.
-      return clampPitch(
-        Math.atan2(-h * dw, (R + h) * -leftSlope(sigma)) / DEG,
-        h,
-      );
+      // The view follows it, but never shallower than the law: where the
+      // camera still moves sideways (a turn below the bend, a residual low
+      // down, a nearly level replan at the end) a view on the travel looked
+      // at the horizon and snapped down at the end (the R1 milestone review:
+      // up to 75 degrees in a frame). In the dive itself the two agree.
+      const travel = Math.atan2(-h * dw, (R + h) * -leftSlope(sigma)) / DEG;
+      return clampPitch(Math.max(travel, law), h);
     },
   };
 }

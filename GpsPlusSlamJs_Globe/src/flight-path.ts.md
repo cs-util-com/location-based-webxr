@@ -83,7 +83,9 @@ settleLength?, viewLandingM?, rampMs?, rampFromShare?, brake? }`.
   - `geodesicLength` (the travel curve's length; the name is CF1's),
     `geodesicAt` and `pitchAt` (the curve by path length) and
     `diveArcRad` (the dive's own track: a nearer start backs off).
-  - `cameraStart`, `cameraEnd`, `courseNormal`.
+  - `cameraStart`, `cameraEnd`, `courseNormal`, and the camera's motion
+    in the course's plane: `planeStart`, `offPlaneRad` and the signed
+    `cameraArcRad`.
 
 ### `flightAt(path, tMs)`
 
@@ -144,6 +146,14 @@ its view's centre, flies it: the CF1 milestone review measured a
 centre-flown path sliding the camera backwards at up to 137 km/s. The
 curve's share is not clamped: a back-off is a negative share, and clamped
 it stood still and only descended (found in R1).
+
+The camera moves in the course's plane, from the start's point in it by
+the curve's SIGNED angle about the course's normal. An unsigned arc to an
+end behind the start (the pin's ordinary press over its own fix: the end
+lies one landing behind the target) flew the whole dive backwards (the R1
+milestone review, finding 1). A start within one landing of the target can
+lie off the plane, which runs along its own heading there; that offset
+fades out with the curve's residual, so both ends stay exact.
 
 ### The clock
 
@@ -206,8 +216,14 @@ Each one is tested, on the camera.
 - The view looks straight down above the bend and lands 45 degrees down;
   never less than 5 degrees below the horizon; no step or corner in its
   pitch at 60 Hz.
-- The view never turns more than 3 degrees in one 60 Hz frame. This holds
-  for approaches from all four sides and along meridians.
+- The view never turns more than 3 degrees in one 60 Hz frame on the tested
+  flights: approaches from all four sides and along meridians, starts just
+  above the bend (101-200 km from Rome, Zurich and 60 degrees west), and a
+  replan in the last half second (a start low and far away, the documented
+  limit, is not covered).
+- The camera travels the way it looks below the bend: from a start over the
+  target or 0.5-3 km off it (the view's heading and the ground travel
+  within 5 degrees), and never against it from any start (a property).
 - After the start's blend, the view looks ahead along the course.
 - The start's speed is kept, except at the documented cap.
 - **The "never stops in between" criterion** holds on the camera over the
