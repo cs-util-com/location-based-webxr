@@ -7,6 +7,7 @@ import type { QrDetectionEvent } from "gps-plus-slam-app-framework/ar/qr/qr-trac
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 
 import {
+  autoMeasureAllowed,
   archiveSizeNote,
   authorStatusLine,
   finishBlockedHint,
@@ -28,7 +29,6 @@ import {
   adoptedSizeNote,
   codeTourLine,
   correctionRefusedLine,
-  replaceCodeConfirmText,
   type AuthorPipelineDeps,
 } from "./qr-author-mode";
 
@@ -97,6 +97,37 @@ describe("buildAuthorControllerConfig", () => {
     expect(level).toEqual({ version: 1, qr: { physicalSizeM: 0.25 } });
   });
 
+  // Why this test matters (code book plan M4c-3): each code is solved at
+  // its OWN printed size - the size the tour stores for it, else the size
+  // field - so the level the controller fetches carries the size per text.
+  it("resolves each text at the size `sizeFor` gives it", async () => {
+    const config = buildAuthorControllerConfig(0.16, {
+      ...fakeDeps(),
+      sizeFor: (text) => Promise.resolve(text.endsWith("big") ? 0.3 : 0.16),
+    });
+    expect(await config.fetchLevel("https://x/?qr=big")).toEqual({
+      version: 1,
+      qr: { physicalSizeM: 0.3 },
+    });
+    expect(await config.fetchLevel("https://x/?qr=small")).toEqual({
+      version: 1,
+      qr: { physicalSizeM: 0.16 },
+    });
+  });
+
+  // Why: a size that cannot be resolved must not reject the fetch (the
+  // controller would flap); the pipeline's size stands.
+  it("falls back to the pipeline's size when `sizeFor` fails", async () => {
+    const config = buildAuthorControllerConfig(0.2, {
+      ...fakeDeps(),
+      sizeFor: () => Promise.reject(new Error("no crypto")),
+    });
+    expect(await config.fetchLevel("t")).toEqual({
+      version: 1,
+      qr: { physicalSizeM: 0.2 },
+    });
+  });
+
   it("runs minIntervalMs 0 — the frame source is the single cadence owner", () => {
     const config = buildAuthorControllerConfig(0.2, fakeDeps());
     expect(config.minIntervalMs).toBe(0);
@@ -124,10 +155,12 @@ describe("the print-size check's copy (QR size consensus plan S3a)", () => {
       notStableReason: null,
     } as unknown as QrFusedPose;
     const ready = authorStatusLine("A", stable, align);
-    expect(ready.text).toBe("Measured and stable — save the position.");
+    // UI round 1, U3: measured on its own, so the line says so - no
+    // button to tap.
+    expect(ready.text).toBe("Code measured.");
     const pending = authorStatusLine("A", stable, align, true);
     expect(pending.text).toBe(
-      "Measured and stable — save the position. Take a step sideways to check the print size.",
+      "Code measured. Take a step sideways to check the print size.",
     );
     // The mint is not held (plan §12 #3).
     expect(pending.canMint).toBe(true);
@@ -145,7 +178,7 @@ describe("the print-size check's copy (QR size consensus plan S3a)", () => {
 
   it("confirms an adopted size and says what to do next", () => {
     expect(adoptedSizeNote(0.155)).toBe(
-      "Now using 15.5 cm (0.155 m) - walk slowly around the code again, then save the position.",
+      "Now using 15.5 cm (0.155 m) - walk slowly around the code again to measure it at this size.",
     );
   });
 });
@@ -200,7 +233,7 @@ describe("authorStatusLine", () => {
     );
     const ready = authorStatusLine("text", fused(), GOOD_ALIGNMENT_INFO);
     expect(ready.canMint).toBe(true);
-    expect(ready.text).toMatch(/save the position/i);
+    expect(ready.text).toMatch(/Code measured/);
   });
 
   // Plan §60-§61 #11: the readout says what actually gates the fused pose,
@@ -268,20 +301,30 @@ describe("setupHint / finishReadiness", () => {
     // Why this matters: the measured position is only useful inside the
     // hosted zip. A creator who measured before opening the tour must be
     // told to open it, not left with a disabled button and no reason.
-    expect(
-      setupHint({ measured: false, tourOpen: true, hadLevel: false }),
-    ).toBe("");
+    expect(setupHint({ measured: false, tourOpen: true, inTour: "none" })).toBe(
+      "",
+    );
     // With no tour open the code-status line says what is happening to the
     // code's tour (scan-to-open plan §9 #9); "open it in step 1" pointed at
     // a form a creator holding the phone at the poster cannot reach.
+    expect(setupHint({ measured: true, tourOpen: false, inTour: "none" })).toBe(
+      "Position saved.",
+    );
     expect(
-      setupHint({ measured: true, tourOpen: false, hadLevel: false }),
-    ).toBe("Position saved.");
+      setupHint({ measured: true, tourOpen: true, inTour: "this-code" }),
+    ).toMatch(/replaces this code's saved position/);
+    // Why (code book plan review #13): a NEW code in a tour that carries
+    // other codes is ADDED by the Finish beside them; "it replaces the
+    // code this tour already carried" told the creator the opposite.
+    const added = setupHint({
+      measured: true,
+      tourOpen: true,
+      inTour: "other-codes",
+    });
+    expect(added).toMatch(/one more code/);
+    expect(added).not.toMatch(/replaces/);
     expect(
-      setupHint({ measured: true, tourOpen: true, hadLevel: true }),
-    ).toMatch(/replaces/);
-    expect(
-      setupHint({ measured: true, tourOpen: true, hadLevel: false }),
+      setupHint({ measured: true, tourOpen: true, inTour: "none" }),
     ).toMatch(/Finish/);
     // A stored pose in hand (the hosted zip's, a draft's, an earlier
     // visit's kept through a new measurement) is NOT replaced (D10b, M2c
@@ -290,7 +333,7 @@ describe("setupHint / finishReadiness", () => {
     const kept = setupHint({
       measured: true,
       tourOpen: true,
-      hadLevel: true,
+      inTour: "this-code",
       keptStored: true,
     });
     expect(kept).not.toMatch(/replaces/);
@@ -298,23 +341,23 @@ describe("setupHint / finishReadiness", () => {
     expect(kept).toMatch(/Finish/);
     const settled = "settled" as const;
     expect(
-      finishReadiness({ measured: false, tourOpen: true, manifest: settled }),
+      finishReadiness({ hasWork: false, tourOpen: true, manifest: settled }),
     ).toBe("not-measured");
     expect(
-      finishReadiness({ measured: true, tourOpen: false, manifest: settled }),
+      finishReadiness({ hasWork: true, tourOpen: false, manifest: settled }),
     ).toBe("no-tour");
     // The manifest must have settled (M3 review #5): finishing while it
     // loads, or when it is broken, would overwrite the creator's placement.
     expect(
-      finishReadiness({ measured: true, tourOpen: true, manifest: "pending" }),
+      finishReadiness({ hasWork: true, tourOpen: true, manifest: "pending" }),
     ).toBe("manifest-pending");
     expect(
-      finishReadiness({ measured: true, tourOpen: true, manifest: "broken" }),
+      finishReadiness({ hasWork: true, tourOpen: true, manifest: "broken" }),
     ).toBe("manifest-broken");
     expect(finishBlockedHint("manifest-broken")).toMatch(/tour\.json/);
     expect(finishBlockedHint("ready")).toBe("");
     expect(
-      finishReadiness({ measured: true, tourOpen: true, manifest: settled }),
+      finishReadiness({ hasWork: true, tourOpen: true, manifest: settled }),
     ).toBe("ready");
     expect(archiveSizeNote(250_000_000)).toMatch(/250 MB.*a while/);
     expect(archiveSizeNote(12_000_000)).toBe("The hosted zip is 12 MB.");
@@ -582,9 +625,6 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
       /does not point to a tour/,
     );
     expect(codeTourLine({ kind: "not-a-tour" })).toMatch(/step 2/);
-    expect(
-      codeTourLine({ kind: "measured-for-another", label: "a.zip" }),
-    ).toMatch(/You measured the code of a.zip/);
     // Plan §13: another tour's code joins the open tour - the line says so.
     expect(codeTourLine({ kind: "added-to-open-tour" })).toMatch(
       /added to the open tour/,
@@ -610,6 +650,18 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
     expect(final, "and what to do instead").toMatch(/restart AR/);
   });
 
+  it("names an offline phone as offline (K0)", () => {
+    expect(
+      codeTourLine({ kind: "failed", cause: "offline", retrying: true }),
+    ).toMatch(/offline/);
+  });
+
+  it("names a too-large tour as too large (K0)", () => {
+    expect(
+      codeTourLine({ kind: "failed", cause: "too-large", retrying: false }),
+    ).toMatch(/too large/);
+  });
+
   it("stays short enough for the phone panel", () => {
     // The longest line shares the panel with the live readout at 360 px;
     // describeOpenError's 200-character Drive text was the review's worst
@@ -619,6 +671,8 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
       "cors",
       "corrupt",
       "unusable-link",
+      "too-large",
+      "offline",
       "other",
     ] as const;
     for (const cause of causes) {
@@ -628,11 +682,6 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
         ).toBeLessThanOrEqual(110);
       }
     }
-    // A tour label is cut at 24 characters (tourLabel).
-    const label = "x".repeat(24) + "…";
-    expect(
-      codeTourLine({ kind: "measured-for-another", label }).length,
-    ).toBeLessThanOrEqual(110);
   });
 });
 
@@ -765,33 +814,36 @@ describe("correctionRefusedLine (M2c review #2)", () => {
   });
 });
 
-describe("replaceCodeConfirmText (M4 review #3)", () => {
-  // Why this matters: the explicit replace moves the code for every
-  // visitor, and visitors are lined up with the code - so notes placed
-  // against the OLD position keep their stored geo but appear shifted by
-  // about the replace's size. "Objects already placed keep their own
-  // positions" was true of the stored numbers and misleading about what a
-  // visitor sees; the creator has to know the size before confirming.
-  it("says how far the code moves and turns, and that earlier notes will appear shifted by about that much", () => {
-    const text = replaceCodeConfirmText({ horizontalM: 3.44, yawDeg: 4.2 });
-    expect(text).toMatch(/Everyone who opens the tour/);
-    expect(text).toMatch(/about 3\.4 m/);
-    expect(text).toMatch(/4°/);
-    expect(text).toMatch(/keep their saved positions/);
-    expect(text).toMatch(/appear shifted by about that much/);
-    expect(text).not.toMatch(/keep their own positions\.$/);
+describe("autoMeasureAllowed (code book plan §11 D5, extended by the owner)", () => {
+  // Why: the owner decided every code seen while a tour is open is
+  // measured - even a stray QR that names no tour is "another anchor".
+  // Only a code read with no tour open, or still being read, is not.
+  it.each([
+    ["this-tour", true],
+    ["other-tour", true],
+    ["unknown", true],
+    ["not-a-tour", true],
+    ["no-tour-open", false],
+    ["resolving", false],
+  ] as const)("%s: %s", (relation, allowed) => {
+    expect(autoMeasureAllowed(relation)).toBe(allowed);
   });
+});
 
-  it("rounds a large move to whole metres and leaves out a negligible turn", () => {
-    const text = replaceCodeConfirmText({ horizontalM: 23.6, yawDeg: 0.2 });
-    expect(text).toMatch(/about 24 m/);
-    expect(text).not.toMatch(/°/);
-  });
-
-  it("still says what happens to earlier notes when the size is unknown", () => {
-    const text = replaceCodeConfirmText(null);
-    expect(text).toMatch(/Everyone who opens the tour/);
-    expect(text).toMatch(/appear shifted/);
-    expect(text).not.toMatch(/ m /);
+describe("authorStatusLine's ready line says what became of the code (UI round 1, U3)", () => {
+  // Why: the code is measured on its own now, so the gate being open is
+  // not the same as "measured": a code of another tour is not measured at
+  // all, and the line must not claim it was.
+  const align = { hasMatrix: true, sampleCount: 5 };
+  const stable = {
+    status: "stable",
+    notStableReason: null,
+  } as unknown as QrFusedPose;
+  it.each([
+    ["measured", "Code measured."],
+    ["measuring", "Measuring the code…"],
+    ["seen", "Code seen."],
+  ] as const)("%s", (ready, text) => {
+    expect(authorStatusLine("A", stable, align, false, ready).text).toBe(text);
   });
 });

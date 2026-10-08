@@ -25,15 +25,22 @@ describe("viewerModeFromSearch", () => {
     },
   );
 
-  it("agrees with URLSearchParams.has('qr') on random queries (property)", () => {
-    fc.assert(
-      fc.property(fc.webQueryParameters(), (query) => {
-        const search = `?${query}`;
-        const expected = new URLSearchParams(search).has("qr")
-          ? "visitor"
-          : "creator";
-        expect(viewerModeFromSearch(search)).toBe(expected);
-      }),
-    );
-  });
+  // About 2.2 s alone (measured 2026-10-07): the 5 s default timed out
+  // under a loaded machine (tour-viewer unit flakes follow-up, 2026-10-06-2352), so the budget is explicit; the run
+  // count is not lowered.
+  it(
+    "agrees with URLSearchParams.has('qr') on random queries (property)",
+    { timeout: 30_000 },
+    () => {
+      fc.assert(
+        fc.property(fc.webQueryParameters(), (query) => {
+          const search = `?${query}`;
+          const expected = new URLSearchParams(search).has("qr")
+            ? "visitor"
+            : "creator";
+          expect(viewerModeFromSearch(search)).toBe(expected);
+        }),
+      );
+    },
+  );
 });

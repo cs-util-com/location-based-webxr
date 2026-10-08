@@ -95,7 +95,6 @@ const DOM_KEYS = [
   "sizeInput",
   "printPanel",
   "status",
-  "mintButton",
   "finishButton",
   "finishStatus",
   "downloadButton",
@@ -114,19 +113,8 @@ const DOM_KEYS = [
   "sizeOfferUse",
   "sizeOfferKeep",
   "objectList",
-  "replaceCodeButton",
-  "replaceCodeConfirm",
-  "replaceCodeConfirmText",
-  "replaceCodeYes",
-  "replaceCodeNo",
-  "movePrompt",
-  "movePromptText",
-  "movePromptUse",
-  "movePromptCopy",
-  "movePromptLater",
-  "moveUndo",
-  "moveUndoText",
-  "moveUndoButton",
+  "keepScanRow",
+  "keepScanInput",
 ] as const;
 
 function fakeDom(): Record<(typeof DOM_KEYS)[number], FakeEl> {
@@ -309,7 +297,6 @@ function wire(
   // Everything a placement needs beyond the store: a measured level, a
   // live session, a reticle with a surface, and an aligned AR state.
   if (options.placeable === true) {
-    ctx.mintedLevel = { id: "lvl", json: "{}" };
     ctx.reticle = fakeReticle() as never;
   }
   const arStore = (
@@ -349,6 +336,9 @@ function wire(
       return Promise.resolve(store);
     },
   });
+  if (options.placeable === true) {
+    setup.codes.setInHand({ id: "lvl", json: "{}" }, null);
+  }
   return { dom, ctx, setup, dispatched: arStore.dispatched ?? [] };
 }
 
@@ -1057,6 +1047,19 @@ describe("a placement reaches the draft", () => {
     ).toContain("not saving a backup copy");
   });
 
+  // Why this test matters (code book plan M5d-2): the code in hand belongs
+  // to the tour, and the close reaches the creator only through
+  // `resetFinishStep` - this is what keeps one tour's code out of the next
+  // tour's draft and zip (M5 review #9).
+  it("empties the code in hand when the tour closes", () => {
+    const { store } = memoryStore();
+    const { setup } = wire(store, { placeable: true });
+    expect(setup.codes.inHand()).not.toBeNull();
+    setup.resetFinishStep();
+    expect(setup.codes.inHand()).toBeNull();
+    expect(setup.codes.measurement()).toBeNull();
+  });
+
   it("cannot land in the namespace of a tour that has closed", async () => {
     // Why this test matters: closing a tour drops the store handle, and
     // that one line is the only thing standing between "the creator placed
@@ -1073,6 +1076,10 @@ describe("a placement reaches the draft", () => {
     // The tour closes. Everything about it is dropped, including the
     // handle its writes were going through.
     setup.resetFinishStep();
+    // The close empties the hand too (the code belongs to the tour); a
+    // code taken again keeps the placement gate open, which this test is
+    // not about.
+    setup.codes.setInHand({ id: "lvl", json: "{}" }, null);
 
     dom.pinLabel.value = "Gate";
     dom.pinSave.click();
@@ -1161,8 +1168,8 @@ describe("work made before the tour's draft opened reaches it", () => {
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
       [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
     });
-    const { ctx, dom, setup } = wire(store, { placeable: true });
-    ctx.mintedLevel = { id: "fresh", json: "{}" };
+    const { dom, setup } = wire(store, { placeable: true });
+    setup.codes.setInHand({ id: "fresh", json: "{}" }, null);
     setup.presentDraftForTour(TOUR);
     await settle();
     expect(dom.draftOffer.hidden, "the older draft is offered").toBe(false);
@@ -1558,5 +1565,40 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
       files.has(objectKey(id)),
       "the delete must land after the write it follows",
     ).toBe(false);
+  });
+});
+
+describe("a draft with several codes (code book plan M4c-1)", () => {
+  // Why this test matters: a draft kept ONE level, the code in hand, so a
+  // crash after measuring a second code lost the first one's measurement.
+  // A restored draft's codes all go back into the code book, and the next
+  // meta write keeps them all.
+  it("restores every code a draft kept, and the next meta write keeps them", async () => {
+    const a = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
+    const b = { id: "bbbbbbbbbbb2", json: '{"b":1}' };
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({
+        tourUrl: TOUR,
+        sizeM: 0.16,
+        level: b,
+        levels: [a, b],
+      }),
+    });
+    const { dom, setup } = wire(store);
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(dom.draftOffer.hidden).toBe(false);
+    dom.draftRestore.click();
+    await settle();
+    expect(setup.codes.inHand()).toEqual(b);
+    // The tour opened again: with a code in hand its meta is re-stated.
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    const meta = JSON.parse(String(files.get(META_KEY))) as {
+      level: unknown;
+      levels: unknown;
+    };
+    expect(meta.level).toEqual(b);
+    expect(meta.levels).toEqual([a, b]);
   });
 });

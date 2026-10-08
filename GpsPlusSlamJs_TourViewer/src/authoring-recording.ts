@@ -68,14 +68,25 @@ export const RECORDING_DEPTH: Partial<DepthSamplerConfig> = {
 };
 
 /**
- * What one second of recording writes: one depth sample and one GPS fix
- * (both 1 Hz), as files on disk. MEASURED, not computed: the test writes a
- * phone-like sample and fix through the real store and holds this number
- * within 25 % above what they took (the sidecar has the bytes). QR
- * detections are not in it - they are written only while a code is in
- * view (see the sidecar).
+ * The non-depth actions per second of the owner's field recording
+ * (2026-10-06, 211 s - GPS fixes, QR detections, authoring events), as
+ * written since scan pass S2 (compact JSON): 411 617 bytes, MEASURED by the
+ * opt-in field test (`tour-recording.field.test.ts`). A TYPICAL rate, not a
+ * bound (PR #569 review): the 2026-10-08 recording wrote 1 580 B/s, and a
+ * visit that lingers at codes (QR detections) or places many objects
+ * writes more - so the minutes the low-storage warning names are an
+ * estimate.
  */
-export const RECORDING_BYTES_PER_SECOND = 40_000;
+export const FIELD_OTHER_ACTIONS_BYTES_PER_SECOND = 1_950;
+
+/**
+ * What one second of recording writes, as files on disk: one depth sample
+ * (1 Hz, packed since scan pass S2 - MEASURED: the test writes a
+ * phone-like sample through the real store) plus the other actions at
+ * {@link FIELD_OTHER_ACTIONS_BYTES_PER_SECOND}. The test holds this number
+ * within 25 % above their sum (the sidecar has the bytes).
+ */
+export const RECORDING_BYTES_PER_SECOND = 4_500;
 
 /**
  * Below this much free storage, opting in warns: one hour of recording at

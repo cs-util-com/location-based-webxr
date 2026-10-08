@@ -54,6 +54,8 @@ import {
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
 import { createViewingLog } from "./viewing-log.js";
+import { wireVisitorStations } from "./visitor-stations.js";
+import { relocationRequested } from "./tour-relocation.js";
 import { wireVisitorScreen } from "./visitor-screen.js";
 import { driveProxyBaseUrl } from "./drive-proxy-url.js";
 import { stepStoreOrUndefined, wireWizard } from "./wizard.js";
@@ -166,7 +168,14 @@ const print = wirePrintPanel({
   // this one would strand them. Read at print time rather than captured:
   // the levels arrive asynchronously after an open, and a tour can be
   // swapped without the panel being rewired.
-  measuredCodeIds: () => [...(ctx.currentLevels?.keys() ?? [])],
+  // With the codes measured on this page that the tour does not host yet
+  // (code book plan M4d): printing over them strands them too.
+  measuredCodeIds: () => [
+    ...new Set([
+      ...(ctx.currentLevels?.keys() ?? []),
+      ...setup.measuredCodeIds(),
+    ]),
+  ],
 });
 
 const stepStore = stepStoreOrUndefined();
@@ -224,6 +233,15 @@ hooks.presentTourForPrint = (url, origin) => {
   );
 };
 
+// A tour opened from a file (tour kit plan K0) has no link: the print step
+// keeps asking for one, and only a creator's wizard moves on - the same
+// steps a link would reach, without remembering a link to prefill.
+hooks.presentLocalTour = (origin) => {
+  print.presentNoTour();
+  if (mode !== "creator") return;
+  wizard.openStep(origin === "measure-step" ? "measure" : "print");
+};
+
 const visitor = wireVisitorScreen({
   mode,
   seams,
@@ -270,7 +288,9 @@ const setup = wireCreatorSetup({
       scanOpen?.onDetection(text);
     },
     status: (text) => scanOpen?.status(text) ?? { kind: "quiet" },
-    tourOf: (text) => scanOpen?.tourOf(text) ?? null,
+    // Before scan-to-open exists nothing is known about a code, so nothing
+    // is measured on its own (UI round 1, U3).
+    relation: (text) => scanOpen?.relation(text) ?? "resolving",
   },
   arStore,
   arController,
@@ -285,8 +305,9 @@ const setup = wireCreatorSetup({
     sizeInput,
     printPanel,
     status: element("setup-status"),
-    mintButton: element("setup-mint"),
     finishButton: element("setup-finish"),
+    keepScanRow: element("keep-scan-row"),
+    keepScanInput: element<HTMLInputElement>("keep-scan"),
     finishStatus: element("finish-status"),
     downloadButton: element("finish-download"),
     replaceHelpShare: element("replace-help-share"),
@@ -308,20 +329,6 @@ const setup = wireCreatorSetup({
     sizeOfferKeep: element("size-offer-keep"),
     // Editing placed objects (authoring plan 2026-09-28-0953 M4).
     objectList: createObjectListView(element("object-list"), document),
-    replaceCodeButton: element("replace-code"),
-    replaceCodeConfirm: element("replace-code-confirm"),
-    replaceCodeConfirmText: element("replace-code-confirm-text"),
-    replaceCodeYes: element("replace-code-yes"),
-    replaceCodeNo: element("replace-code-no"),
-    // The moved-code prompt and the replace's undo (plan §3.6, M5b).
-    movePrompt: element("move-prompt"),
-    movePromptText: element("move-prompt-text"),
-    movePromptUse: element("move-prompt-use"),
-    movePromptCopy: element("move-prompt-copy"),
-    movePromptLater: element("move-prompt-later"),
-    moveUndo: element("move-undo"),
-    moveUndoText: element("move-undo-text"),
-    moveUndoButton: element("move-undo-button"),
   },
   // Crash-safe authoring (F13). OPFS, not a file handle: the File System
   // Access pickers do not exist on Chrome for Android, which is the only
@@ -345,6 +352,13 @@ const setup = wireCreatorSetup({
 hooks.renderAuthorReadout = setup.renderAuthorReadout;
 hooks.startAuthorPipeline = setup.startAuthorPipeline;
 hooks.resetFinishStep = setup.resetFinishStep;
+// The save cannot be forgotten (UI round 1, U2): another tour, or leaving
+// the page, asks first while a rebuilt tour file was not saved.
+hooks.confirmLeaveTour = () =>
+  !setup.leaveNeedsConfirm() || window.confirm(setup.leaveQuestion());
+window.addEventListener("beforeunload", (event) => {
+  if (setup.leaveNeedsConfirm()) event.preventDefault();
+});
 hooks.beginAuthorVisit = setup.beginAuthorVisit;
 hooks.endAuthorVisit = setup.endAuthorVisit;
 hooks.selectInView = setup.selectInView;
@@ -472,6 +486,51 @@ hooks.tryPlaceTour = viewer.tryPlaceTour;
 hooks.startScanGate = viewer.startScanGate;
 hooks.resetScanGate = viewer.resetScanGate;
 hooks.reconsiderScanGate = viewer.reconsiderScanGate;
+
+// The visitor's stations and their stories (tour kit plan K4).
+const stations = wireVisitorStations({
+  ctx,
+  mode,
+  arStore,
+  seams,
+  dom: {
+    guide: {
+      line: element("station-line"),
+      skip: element("station-skip"),
+    },
+    scene: {
+      panel: element("scene-panel"),
+      title: element("scene-title"),
+      speaker: element("scene-speaker"),
+      text: element("scene-text"),
+      status: element("scene-status"),
+      image: element<HTMLImageElement>("scene-image"),
+      choices: element("scene-choices"),
+      continueButton: element("scene-continue"),
+      playNext: element("scene-play-next"),
+    },
+    skipButton: element("station-skip"),
+    continueButton: element("scene-continue"),
+    playNextButton: element("scene-play-next"),
+    doc: document,
+  },
+  now: () => Date.now(),
+  schedule: (fn, ms) => seams.schedule(fn, ms),
+  // The test switch ?relocate=here (tour-relocation.ts, owner decision S-D9).
+  ...(relocationRequested(location.search)
+    ? {
+        relocate: {
+          onRelocated: () => {
+            element("relocate-note").hidden = false;
+          },
+        },
+      }
+    : {}),
+});
+hooks.tickStations = stations.tick;
+hooks.stationCodeLocked = stations.codeLocked;
+hooks.unlockStationAudio = stations.unlockAudio;
+hooks.stopStations = stations.stop;
 // Every device fix goes through the viewer placement: while a scanned code's
 // keep-alive holds, the fix and its ring reach the store as ONE batch, one
 // solve (authoring plan 2026-09-28-0953 D18); otherwise as before.
@@ -498,6 +557,7 @@ const arEntry = wireArEntry({
     errorBox,
     escapeButton,
     arDebug: element("ar-debug"),
+    arStatusLive: element("ar-status-live"),
   },
   hooks,
   ...(recordingPanel === null ? {} : { recording: recordingPanel }),
@@ -507,10 +567,17 @@ hooks.renderArEntry = arEntry.renderArEntry;
 
 const archive = wireArchiveOpen({
   ctx,
+  mode,
   dom: {
     form: element("open-form"),
     linkInput: element("link"),
     openButton: element("open"),
+    openFileButton: element("open-file"),
+    fileInput: element("file-input"),
+    fileAdvice: element("file-advice"),
+    openFileAdviceButton: element("open-file-advice"),
+    fileStatus: element("file-status"),
+    tourTrust: element("tour-trust"),
     statsPanel: element("stats"),
     statsHeadline: element("stats-headline"),
     statsDetail: element("stats-detail"),
@@ -529,5 +596,5 @@ scanOpen = archive.scanOpen;
 // unexpected boot failure must reach the error box, not vanish in an
 // unhandled rejection.
 archive.boot().catch((err: unknown) => {
-  errorBox.textContent = describeOpenError(err);
+  errorBox.textContent = describeOpenError(err, undefined, mode);
 });

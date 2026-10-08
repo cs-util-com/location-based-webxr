@@ -2,12 +2,14 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  downloadedZip,
   enterArAndMeasure,
+  finishAndDownload,
   installTourViewerArFakes,
+  levelTexts,
   openFixtureTour as openTour,
 } from "./ar-fakes.js";
-import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
+import { E2E_QR_ARCHIVE } from "./qr-fixture.mjs";
 
 /**
  * Editing placed objects, end to end (authoring plan 2026-09-28-0953 §3.4,
@@ -28,49 +30,6 @@ const TEST_KEY = "__tourViewerTest";
 test.beforeEach(async ({ page }) => {
   await installTourViewerArFakes(page);
 });
-
-/** Entry names, and the JSON entries' text, of the n-th downloaded zip. */
-async function downloadedZip(page, index) {
-  const data = await page.evaluate(async (i) => {
-    const d = /** @type {any} */ (window).__tourViewerTest.downloads[i];
-    return Array.from(new Uint8Array(await d.blob.arrayBuffer()));
-  }, index);
-  const reader = new ZipReader(
-    new BlobReader(new Blob([new Uint8Array(data)])),
-  );
-  const names = [];
-  const json = {};
-  for (const entry of await reader.getEntries()) {
-    if (entry.directory) continue;
-    names.push(entry.filename);
-    if (entry.filename.endsWith(".json")) {
-      json[entry.filename] = await entry.getData(new TextWriter());
-    }
-  }
-  await reader.close();
-  return { names, manifest: parseTourManifest(JSON.parse(json["tour.json"])) };
-}
-
-/**
- * Finish, then download: the zip lands in the fake's downloads as the
- * `index`-th. The Finish button is disabled while the zip is rebuilt, so
- * waiting for it to come back is waiting for THIS rebuild - a second Finish
- * finds the first one's download button already live.
- */
-async function finishAndDownload(page, index) {
-  const finish = page.getByTestId("setup-finish");
-  await finish.click();
-  await expect(finish).toBeEnabled({ timeout: 30000 });
-  await expect(page.getByTestId("finish-block")).toBeVisible();
-  await page.getByTestId("finish-download").click();
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => /** @type {any} */ (window).__tourViewerTest.downloads.length,
-      ),
-    )
-    .toBe(index + 1);
-}
 
 function row(page, title) {
   return page.getByTestId("object-row").filter({
@@ -109,6 +68,47 @@ test("the list edits a hosted pin on the page - no AR needed - and the Finish wr
   // Replaced in place: one record, the new text.
   expect(pins).toHaveLength(1);
   expect(pins[0]?.kind === "pin" && pins[0].label).toBe("The renamed pin");
+});
+
+test("a desk edit is finished without entering AR, and the hosted code's level is not rewritten (code book plan M4e, §9 D4)", async ({
+  page,
+}) => {
+  // A Finish and BOTH zips read back in node (the hosted one for the
+  // byte comparison): longer than the 30 s default allows on a loaded
+  // machine - its first runs reached "Saved as" and timed out reading.
+  test.setTimeout(90_000);
+  // Why this matters: the owner decided a tour can be edited at the desk
+  // and finished there - no walk to a printed code. Finish used to need a
+  // measured code in hand. The unit tests prove the readiness rule and the
+  // rebuild; only the composed page shows that the button is offered on a
+  // desktop with no session, and that the zip it writes keeps the hosted
+  // level exactly (nothing was measured, so nothing may move).
+  await openTour(page);
+  await row(page, "Fixture pin").getByTestId("object-edit").click();
+  await page.getByTestId("object-edit-input").fill("Renamed at the desk");
+  await page.getByTestId("object-edit-save").click();
+  await expect(page.getByTestId("object-list-note")).toHaveText(
+    /Saved "Renamed at the desk"/,
+  );
+  // The AR session was never started.
+  await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
+
+  const finish = page.getByTestId("setup-finish");
+  await expect(finish).toBeEnabled();
+  await finishAndDownload(page, 0);
+  // Nothing is left to write after it.
+  await expect(finish).toBeHidden();
+  const zip = await downloadedZip(page, 0);
+  const pins = zip.manifest.objects.filter((o) => o.id === FIXTURE_PIN);
+  expect(pins).toHaveLength(1);
+  expect(pins[0]?.kind === "pin" && pins[0].label).toBe("Renamed at the desk");
+  const hosted = await page.evaluate(async (url) => {
+    const response = await fetch(url);
+    return Array.from(new Uint8Array(await response.arrayBuffer()));
+  }, E2E_QR_ARCHIVE);
+  const hostedLevels = await levelTexts(new Uint8Array(hosted));
+  expect(Object.keys(hostedLevels)).not.toHaveLength(0);
+  expect(zip.levels).toEqual(hostedLevels);
 });
 
 test("a deleted photo leaves the zip with its jpg, and a deleted hosted pin leaves the manifest", async ({

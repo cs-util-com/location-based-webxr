@@ -61,7 +61,8 @@ const HOUR_MS = 60 * 60 * 1000;
  * saved ones are kept, and how long after its save a copy is safe from the
  * count (a field day's sessions all stay until the owner has looked at
  * them: "delivered" is optimistic). The sidecar's "Cleanup bound" weighs
- * them over a range against the measured ~125 MB per recorded hour.
+ * them over a range against the measured rate (about 14 MB per recorded
+ * hour since scan pass S2, 125 MB before).
  */
 export const SAVED_RECORDING_MAX_AGE_MS = 7 * 24 * HOUR_MS;
 export const SAVED_RECORDINGS_KEPT = 3;

@@ -13,9 +13,13 @@ map.
 
 ## Public API
 
+- `codeLabel(index, count)` - a code's name in labels: "The code" alone,
+  else "Code N" by `creator-codes.ts`'s `numbering`; the panel's refused
+  line uses it too (M5b).
 - `buildSummaryModel(input: SummaryInput): SummaryModel`
   - `SummaryInput`: `visits` (the visit log), `references` (the codes'
-    stored poses, the level in hand first, then the tour's other levels),
+    stored poses, in the numbering every label uses - `creator-codes.ts`
+    `numbering`, M5b),
     `objects` (the tour's objects as the zip now carries them). The visits'
     estimate combines only the visits from a code's latest move on
     (`codeVisitPoses`, the move boundary of authoring plan §3.6, M5b).
