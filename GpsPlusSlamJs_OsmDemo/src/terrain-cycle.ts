@@ -31,7 +31,7 @@
 
 import { type LatLng, type RacingProviderStats } from "gps-plus-slam-osm";
 
-import type { HeightfieldData } from "./heightfield.js";
+import type { HeightfieldData } from "gps-plus-slam-osm";
 import { latestOnly, type LatestOnly } from "./latest-only.js";
 import type { TerrainResult } from "./worker/protocol.js";
 

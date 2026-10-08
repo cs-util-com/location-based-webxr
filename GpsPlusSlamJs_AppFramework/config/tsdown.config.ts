@@ -118,6 +118,7 @@ const entryFiles = [
   // osm-bridge/ — wires the optional gps-plus-slam-osm peer to OPFS
   'src/osm-bridge/index.ts',
   'src/osm-bridge/opfs-osm-blob-store.ts',
+  'src/osm-bridge/open-osm-store.ts',
 
   'src/geo/index.ts',
   'src/geo/h3-proximity.ts',

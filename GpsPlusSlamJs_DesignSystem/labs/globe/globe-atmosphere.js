@@ -83,6 +83,26 @@ uniform vec3 uCamera;
 uniform vec3 uSun;
 uniform float uRadiance;
 uniform float uThickness;
+// The space pass's share of the SKY (F2b): 1 above the hand-over edge,
+// 1 - the ground sky's weight below it.
+uniform float uSkyShare;
+// Its share of the GROUND (volume-cloud plan §17): 1 by default, the veil
+// kept below the hand-over (fading it there broke the hand-over's
+// continuity); the lab's atmoGround=0 fades it as the sky's, a comparison.
+uniform float uGroundShare;
+// The drawn relief's depth (§17, globe-scene-depth.js), weighted by
+// uSceneDepthWeight: at 1 a ray ends at the relief and a relief pixel is
+// ground, never sky. Without it the rays end at the ellipsoid, and relief
+// standing above its limb was treated as sky (whose share is 0 below the
+// hand-over): the hard edge. The weight follows the hand-over's, so at its
+// 80 km edge (weight 0) the pass is exactly the one without the depth, and
+// the depth does not switch on as a jump.
+uniform sampler2D uSceneDepth;
+uniform mat4 uSceneInverseProjection;
+uniform float uSceneDepthWeight;
+// The vertex shader's view-to-model map: linear, so a view point's model
+// length is the march's t along the same (normalised) ray.
+uniform mat3 uViewToModel;
 varying vec3 vDirection;
 
 // Chapman's grazing-incidence function and the compensation (the frame
@@ -128,6 +148,19 @@ void main() {
   float tGround = discG > 0.0 ? -b - sqrt( discG ) : -1.0;
   bool hitsGround = tGround > 0.0;
   float tEnd = hitsGround ? tGround : tExit;
+  // How much of the pixel is ground: 1 on the ellipsoid, the depth's
+  // weight on relief above its limb, 0 for the sky.
+  float groundness = hitsGround ? 1.0 : 0.0;
+  if ( uSceneDepthWeight > 0.0 ) {
+    vec2 depthUv = gl_FragCoord.xy / vec2( textureSize( uSceneDepth, 0 ) );
+    float sceneDepth = texture2D( uSceneDepth, depthUv ).r;
+    if ( sceneDepth < 1.0 ) {
+      vec4 viewPoint = uSceneInverseProjection * vec4( depthUv * 2.0 - 1.0, sceneDepth * 2.0 - 1.0, 1.0 );
+      float tRelief = length( uViewToModel * ( viewPoint.xyz / viewPoint.w ) );
+      tEnd = mix( tEnd, min( tEnd, tRelief ), uSceneDepthWeight );
+      groundness = max( groundness, uSceneDepthWeight );
+    }
+  }
   if ( tEnd <= tEnter ) discard;
   float tMid = clamp( -b, tEnter, tEnd );
   // The grazing compensation (see above), at the ray's lowest point.
@@ -160,8 +193,9 @@ void main() {
   // The in-scattered light, and the share of the ground behind it that
   // comes through: one grey value, the mean over R, G, B (a per-channel
   // veil needs the ground's own shader). Space behind keeps its stars.
-  float through = hitsGround ? dot( throughput, vec3( 1.0 / 3.0 ) ) : 1.0;
-  gl_FragColor = vec4( radiance * uRadiance, 1.0 - through );
+  float through = mix( 1.0, dot( throughput, vec3( 1.0 / 3.0 ) ), groundness );
+  float share = mix( uSkyShare, uGroundShare, groundness );
+  gl_FragColor = vec4( radiance * share * uRadiance, ( 1.0 - through ) * share );
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -198,6 +232,11 @@ export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
     uSun: { value: new THREE.Vector3(1, 0, 0) },
     uRadiance: { value: 0 },
     uThickness: { value: look.thickness },
+    uSkyShare: { value: 1 },
+    uGroundShare: { value: 1 },
+    uSceneDepth: { value: null },
+    uSceneInverseProjection: { value: new THREE.Matrix4() },
+    uSceneDepthWeight: { value: 0 },
   };
   let built = false;
   const material = new THREE.ShaderMaterial({
@@ -251,9 +290,48 @@ export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
      * (updated world matrix), `worldFromEcef` the tiles group's world
      * matrix (the ECEF frame's placement), `sunEcef` a unit vector and
      * `sunIntensity` the Earth's sun light's, so the air and the ground are
-     * lit by the same sun.
+     * lit by the same sun. `skyShare` (0-1, default 1) scales the light of
+     * the rays that miss the ground: the ground sky takes over the sky's
+     * pixels below the hand-over edge (F2b). `groundShare` (0-1, default 1)
+     * scales the veil over the ground the same way (volume-cloud plan §17):
+     * the framework haze takes the ground below the edge. Nothing is drawn
+     * when both are 0.
      */
-    render(camera, { worldFromEcef, sunEcef, sunIntensity }) {
+    render(
+      camera,
+      {
+        worldFromEcef,
+        sunEcef,
+        sunIntensity,
+        skyShare = 1,
+        groundShare = 1,
+        sceneDepth = null,
+        sceneDepthWeight = 1,
+      },
+    ) {
+      if (!(skyShare >= 0 && skyShare <= 1)) {
+        throw new RangeError(`skyShare must be 0-1, got ${skyShare}`);
+      }
+      if (!(groundShare >= 0 && groundShare <= 1)) {
+        throw new RangeError(`groundShare must be 0-1, got ${groundShare}`);
+      }
+      if (!(sceneDepthWeight >= 0 && sceneDepthWeight <= 1)) {
+        throw new RangeError(
+          `sceneDepthWeight must be 0-1, got ${sceneDepthWeight}`,
+        );
+      }
+      uniforms.uSkyShare.value = skyShare;
+      uniforms.uGroundShare.value = groundShare;
+      // The drawn relief's depth, only when drawn this frame (§17).
+      const depthOn = sceneDepth?.fresh === true;
+      uniforms.uSceneDepthWeight.value = depthOn ? sceneDepthWeight : 0;
+      if (depthOn) {
+        uniforms.uSceneDepth.value = sceneDepth.texture;
+        uniforms.uSceneInverseProjection.value.copy(
+          sceneDepth.camera.projectionMatrixInverse,
+        );
+      }
+      if (skyShare === 0 && groundShare === 0) return;
       if (!device.supported) return;
       if (!built) {
         device.render("transmittance", uniforms);
