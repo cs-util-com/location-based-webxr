@@ -119,7 +119,7 @@ emptyMinAgeMs }`, by default `SAVED_RECORDING_MAX_AGE_MS` (7 days),
   only -> authoring), else the saving page's own (a recording with neither
   kind of log action is one where nothing was placed or locked). A truncated
   action file (what a killed write leaves) is skipped, as the Recorder's
-  loader skips it. Every action file is read and parsed once (about 19 MB
+  loader skips it. Every action file is read and parsed once (about 14 MB
   per recorded hour since scan pass S2, the same order as the zip reads) -
   ordinary code
   rather than a partial-read trick, for a save that happens rarely and
@@ -162,9 +162,9 @@ save (M1b review #1). A folder with no action file goes once it is older than
 `EMPTY_RECORDING_MIN_AGE_MS` = 1 h since its start. The parameters these rest
 on:
 
-- the measured rate, about 19 MB per recorded hour since scan pass S2 (a
+- the measured rate, about 14 MB per recorded hour since scan pass S2 (a
   packed depth sample is 1 829 bytes at 1 Hz, plus the other actions at the
-  field recording's rate, `authoring-recording.ts.md`); up to about 49 MB
+  field recording's measured rate, `authoring-recording.ts.md`); up to about 49 MB
   if the disk counts a 4 KiB block per file. Before S2 it was about 125 MB,
   which is what the count below was weighed against;
 - session lengths from 15 minutes to 2 hours, and a field day of 4 or more
@@ -178,14 +178,14 @@ on:
   the app the author picked (`share-or-download.ts`). The page cannot learn
   more, so the copy's age is the only safeguard.
 
-Storage the kept copies can hold (count x session length x 19 MB; x 49 MB
+Storage the kept copies can hold (count x session length x 13.6 MB; x 49 MB
 with a block per file):
 
-- 1 kept: 5 to 38 MB (12 to 98 MB);
-- 2 kept: 10 to 76 MB (25 to 196 MB);
-- 3 kept: 14 to 114 MB (37 to 294 MB) (chosen);
-- 5 kept: 24 to 190 MB (61 to 490 MB);
-- 10 kept: 48 to 380 MB (122 to 980 MB).
+- 1 kept: 3.4 to 27.2 MB (12 to 98 MB);
+- 2 kept: 6.8 to 54.4 MB (25 to 196 MB);
+- 3 kept: 10.2 to 81.6 MB (37 to 294 MB) (chosen);
+- 5 kept: 17 to 136 MB (61 to 490 MB);
+- 10 kept: 34 to 272 MB (122 to 980 MB).
 
 Since S2, storage no longer argues against a higher count (5 copies of 2
 hours fit in under 500 MB even at a block per file); the count stays 3,
@@ -196,7 +196,7 @@ Weighed:
 - **Count.** 1 deletes the morning session's copy when the afternoon's is
   saved, before either is analysed; 3 covers a field day of three sessions;
   before S2, 5 or more could hold over a gigabyte in the origin the Recorder
-  and the tile caches share (the M1a opt-in warning fires under 20.6 MiB free
+  and the tile caches share (the M1a opt-in warning fires under 15.4 MiB free
   since S2, 137 MiB before).
 - **Maximum age.** 1 day loses a Friday recording before Monday's analysis; 3
   days misses a long weekend; 7 days covers a week and its weekend; 14 or 30

@@ -69,11 +69,11 @@ export const RECORDING_DEPTH: Partial<DepthSamplerConfig> = {
 
 /**
  * The non-depth actions per second of the owner's field recording
- * (2026-10-06, 3.5 min: 0.72 of 7.46 MB in 210 s - GPS fixes, QR
- * detections, authoring events), written as pretty-printed JSON before
- * scan pass S2: an upper bound for the compact files written since.
+ * (2026-10-06, 211 s - GPS fixes, QR detections, authoring events), as
+ * written since scan pass S2 (compact JSON): 411 617 bytes, MEASURED by the
+ * opt-in field test (`tour-recording.field.test.ts`).
  */
-export const FIELD_OTHER_ACTIONS_BYTES_PER_SECOND = 3_430;
+export const FIELD_OTHER_ACTIONS_BYTES_PER_SECOND = 1_950;
 
 /**
  * What one second of recording writes, as files on disk: one depth sample
@@ -82,7 +82,7 @@ export const FIELD_OTHER_ACTIONS_BYTES_PER_SECOND = 3_430;
  * {@link FIELD_OTHER_ACTIONS_BYTES_PER_SECOND}. The test holds this number
  * within 25 % above their sum (the sidecar has the bytes).
  */
-export const RECORDING_BYTES_PER_SECOND = 6_000;
+export const RECORDING_BYTES_PER_SECOND = 4_500;
 
 /**
  * Below this much free storage, opting in warns: one hour of recording at

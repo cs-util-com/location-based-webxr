@@ -162,30 +162,31 @@ the real store into the OPFS mock and read back as bytes:
   (2026-09-28);
 - the other actions - GPS fixes, QR detections while a code is in view, the
   `tourAuthoring/*` log - at the owner's field recording's rate
-  (`FIELD_OTHER_ACTIONS_BYTES_PER_SECOND` = 3 430: 0.72 of 7.46 MB in 210 s,
-  2026-10-06). That recording was written as pretty JSON, so the rate is an
-  upper bound for the compact files written since. Before S2 these were
-  about 10 % of a second's bytes and were left out; now they are most of
-  it;
-- so one second of recording writes at most about 5.3 KB, about 19 MB an
-  hour. `RECORDING_BYTES_PER_SECOND` = 6 000 covers that, and the test
+  (`FIELD_OTHER_ACTIONS_BYTES_PER_SECOND` = 1 950: 411 617 bytes in 211 s
+  as written since S2, measured by the opt-in field test on the 2026-10-06
+  recording; 3 430 as the pretty JSON it was written in). Before S2 these
+  were about 10 % of a second's bytes and were left out; now they are about
+  half of it;
+- so one second of recording writes about 3.8 KB, about 13.6 MB an hour
+  (the whole field recording: 760 KB of actions in 211 s, was 7.46 MB).
+  `RECORDING_BYTES_PER_SECOND` = 4 500 covers that, and the test
   holds it within 25 % above the sum, so a bigger grid or a format change
   cannot drift past it unseen.
 - NOT counted: the file system's own per-file overhead (one file per
   action). Since S2 most files are well under a disk block, so on a phone's
-  disk a second can take more than its bytes: about 5.3 KB at no overhead
+  disk a second can take more than its bytes: about 3.8 KB at no overhead
   to about 13.5 KB at a 4 KiB block for every one of the field recording's
   3.3 files a second (the M5d + S2 milestone review's #3). Whether the
   browser's storage quota counts blocks or bytes is not measured; if it
-  counts blocks, "about N minutes" overstates by up to about 2.2x, and the
-  one-hour threshold covers about 27 minutes.
+  counts blocks, "about N minutes" overstates by up to about 3.6x, and the
+  one-hour threshold covers about 20 minutes.
 - **The storage is not what ends a long recording.** The archive's entry cap
   (20 000 files, `archive-limits.ts`) is reached after about 1.7 h at the
   field recording's 3.3 actions a second, long before the bytes matter
   (scan pass S2 plan §2, an owner question).
 
-`LOW_STORAGE_BYTES` = one hour at that rate (21.6 MB, 20.6 MiB). Weighed over
-a plausible range of 15 minutes to 2 hours of headroom (5.4 to 43 MB):
+`LOW_STORAGE_BYTES` = one hour at that rate (16.2 MB, 15.4 MiB). Weighed over
+a plausible range of 15 minutes to 2 hours of headroom (4 to 32 MB):
 
 - An authoring visit (measure a code, place a handful of notes, finish) is
   minutes to tens of minutes; an hour covers a long one with a margin.

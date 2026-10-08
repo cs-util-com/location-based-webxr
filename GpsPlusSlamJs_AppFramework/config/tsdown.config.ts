@@ -175,6 +175,10 @@ const entryFiles = [
 
   // storage/
   'src/storage/index.ts',
+  // The packed depth sample (scan pass S2): deep-imported by the Tour
+  // Viewer's opt-in field test, which reports a recording's bytes as written
+  // since S2; the `./storage/*` wildcard advertises the subpath.
+  'src/storage/depth-sample-codec.ts',
   'src/storage/file-system-utils.ts',
   'src/storage/null-storage-backend.ts',
   'src/storage/opfs-storage.ts',

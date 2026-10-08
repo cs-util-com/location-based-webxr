@@ -22,6 +22,7 @@ import {
   readZipEntries,
   type RecordedAction,
 } from "gps-plus-slam-app-framework/storage";
+import { packDepthAction } from "gps-plus-slam-app-framework/storage/depth-sample-codec";
 import { loadSessionMetadata } from "gps-plus-slam-app-framework/storage/zip-reader";
 
 const ZIP = process.env.TOUR_RECORDING;
@@ -90,6 +91,19 @@ describe.skipIf(ZIP === undefined)("a Tour Viewer field recording", () => {
         raw: sum.raw + size.raw,
       });
     }
+    // The same actions as the recording writes them since scan pass S2
+    // (compact JSON, depth packed): what a recording of this visit costs
+    // now (S2 plan, follow-up 2 - the budget's rate of the other actions).
+    const writtenByType = new Map<string, number>();
+    for (const e of loaded) {
+      const written = new TextEncoder().encode(
+        JSON.stringify(packDepthAction(e.action)),
+      ).length;
+      writtenByType.set(
+        e.action.type,
+        (writtenByType.get(e.action.type) ?? 0) + written,
+      );
+    }
     const lines: string[] = [];
     const say = (s: string) => lines.push(s);
 
@@ -107,6 +121,11 @@ describe.skipIf(ZIP === undefined)("a Tour Viewer field recording", () => {
       );
     }
     say(`zip: ${(bytes.length / 1e6).toFixed(2)} MB`);
+    const writtenDepth = writtenByType.get("recording/recordDepthSample") ?? 0;
+    const writtenAll = [...writtenByType.values()].reduce((s, n) => s + n, 0);
+    say(
+      `as written since S2: ${String(writtenAll)} bytes of actions, ${String(writtenDepth)} of them depth, ${String(writtenAll - writtenDepth)} the other actions`,
+    );
 
     // The Tour Viewer's own events, in order, with their index.
     say("timeline (tourAuthoring/tourViewing, AR session resets):");
