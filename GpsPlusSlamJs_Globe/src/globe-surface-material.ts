@@ -103,9 +103,10 @@ export interface GlobeSurfaceUniforms {
   /**
    * The globe's first look (round-2 plan DEC-FR2-6): the imagery pyramid's
    * level 0, the whole Earth in two tiles (west and east of Greenwich,
-   * north at the top), which a tile without its imagery yet shows once
-   * `uDayReady` is 1: until then the sphere under the sky was untextured,
-   * plain blue (measured 7 s in a smoke).
+   * north at the top), which a material without a map (the first look's
+   * sphere, `globe-surface.ts`) shows once `uDayReady` is 1. The tiles
+   * are drawn only once their imagery is in, so until then there was only
+   * the atmosphere's veil over black (measured 7 s of one blue in a smoke).
    */
   readonly uDayWest: { value: THREE.Texture };
   readonly uDayEast: { value: THREE.Texture };

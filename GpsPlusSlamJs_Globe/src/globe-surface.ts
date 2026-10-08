@@ -298,7 +298,9 @@ function globalMap(
  * `firstLookFloorM`, shown while its images are in (`imagesIn`) and it is
  * not done. Shown again whenever the globe could
  * not draw its view (zooming out of the band), it filled the very holes the
- * handover's positive control must see: it is for the start only.
+ * handover's positive control must see: it is for the start only. An
+ * altitude not known (not a positive number: a camera still at the Earth's
+ * centre reads 0) decides nothing.
  */
 export function firstLookStep(
   done: boolean,
@@ -306,7 +308,8 @@ export function firstLookStep(
   drawn: boolean,
   altitudeM: number,
 ): { readonly done: boolean; readonly shown: boolean } {
-  const next = done || drawn || altitudeM < GLOBE_SURFACE.firstLookFloorM;
+  const low = altitudeM > 0 && altitudeM < GLOBE_SURFACE.firstLookFloorM;
+  const next = done || drawn || low;
   return { done: next, shown: imagesIn && !next };
 }
 
@@ -365,10 +368,12 @@ export function createGlobeSurface(
   };
   // The first look (round-2 plan 2026-10-07-2350 DEC-FR2-6): the imagery
   // pyramid's level 0, the whole Earth in two tiles, loaded with the global
-  // maps, long before the tile renderer asks for its first tiles, so a tile
-  // without its imagery yet shows the Earth, not the plain sphere under the
-  // sky (measured: 7 s of one blue in a smoke). Not counted with the global
-  // maps: the loading label is about those; a failure keeps the plain look.
+  // maps, long before the tile renderer asks for its first tiles, and drawn
+  // on a sphere of its own (`firstLook`): the renderer draws a tile only
+  // once its imagery is in, so until then there was only the atmosphere's
+  // veil over black (measured: 7 s of one blue in a smoke). Not counted with
+  // the global maps: the loading label is about those; a failure keeps the
+  // plain look.
   const imagery = globeSource("blue-marble");
   let firstLookIn = 0;
   const firstLookHalf = (x: number) => {
@@ -429,6 +434,9 @@ export function createGlobeSurface(
       tiles.ellipsoid.radius.z,
     )
     .multiplyScalar(GLOBE_SURFACE.firstLookDepth);
+  // Hidden until an update decides: a page that never calls it (the terrain
+  // lab) drew it under its relief.
+  firstLook.visible = false;
   cloudFrame.add(firstLook);
   let firstLookDone = false;
   const cameraEcef = new THREE.Vector3();
@@ -569,6 +577,8 @@ export function createGlobeSurface(
       retirer.dispose();
       template.dispose();
       for (const map of Object.values(maps)) map.dispose();
+      surfaceUniforms.uDayWest.value.dispose();
+      surfaceUniforms.uDayEast.value.dispose();
       sun.dispose();
     },
   };

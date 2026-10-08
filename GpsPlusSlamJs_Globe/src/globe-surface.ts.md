@@ -52,6 +52,16 @@ dispose() }`.
       and the globe's top level is not always in view, so it drew a whole
       sphere under the relief every frame (a city dive recorded too few
       frames, the stencil fill's cost smoke ran out of time).
+      It is hidden until an `update` decides (a page that never calls it,
+      the terrain lab, drew it under its relief, where its crack check
+      counts the background as a crack), and an altitude not known (not a
+      positive number, as a camera still at the Earth's centre reads)
+      decides nothing. The tiles hide it where they are drawn, except in
+      small patches under coarse, partly loaded tiles, whose chords sag
+      deeper than its 6 km (a vertex every 4 degrees sags about 7.8 km at
+      the equator): those show the same level 0. It stays pickable while
+      hidden, 6 km under the tiles, so only where no tile is in front.
+      `dispose` frees its two images with the global maps.
     - The caller adds `group` to its scene, points the sun with `setSun`
       and calls `update` every frame before rendering.
     - `template`: the patched `MeshStandardMaterial` every tile's lit copy

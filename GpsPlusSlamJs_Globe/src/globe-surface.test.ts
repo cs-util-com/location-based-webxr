@@ -257,6 +257,10 @@ describe("createGlobeSurface", () => {
     const globe = createGlobeSurface(stubLoader());
     const look = globe.firstLook;
     expect(look.parent?.parent).toBe(globe.group);
+    // Hidden until an update decides (R4/R5 milestone review: a page that
+    // never calls update, the terrain lab, drew it under its relief, where
+    // its crack check counts the background as a crack).
+    expect(look.visible).toBe(false);
     // A camera high up (the first look ends for good below 2,000 km).
     const highCamera = new THREE.PerspectiveCamera();
     highCamera.position.set(30_000_000, 0, 0);
@@ -312,6 +316,23 @@ describe("createGlobeSurface", () => {
     // every frame: a city dive recorded 9 frames, not more than 10, and the
     // stencil fill's cost smoke ran out of time).
     expect(step(false, true, false, low)).toEqual({ done: true, shown: false });
+    // An altitude not known (a camera still at the Earth's centre on the
+    // first frame reads 0) decides nothing.
+    for (const h of [0, -1, Number.NaN]) {
+      expect(step(false, true, false, h), String(h)).toEqual({
+        done: false,
+        shown: true,
+      });
+    }
+  });
+
+  it("frees the first look's two images on dispose", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const west = vi.spyOn(globe.surfaceUniforms.uDayWest.value, "dispose");
+    const east = vi.spyOn(globe.surfaceUniforms.uDayEast.value, "dispose");
+    globe.dispose();
+    expect(west).toHaveBeenCalled();
+    expect(east).toHaveBeenCalled();
   });
 
   it("keeps the plain look if a half of the first look fails", () => {
