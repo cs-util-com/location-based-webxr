@@ -43,7 +43,7 @@ import {
 } from "./finish-guard.js";
 
 import { wireCreatorHandoff } from "./creator-handoff.js";
-import { wireCreatorCodes } from "./creator-codes.js";
+import { wireCreatorCodes, type CreatorCodes } from "./creator-codes.js";
 import { wireCreatorDraft } from "./creator-draft.js";
 import { wireCreatorPreviews } from "./creator-previews.js";
 import { wireCreatorAlignmentPicks } from "./creator-alignment-picks.js";
@@ -162,6 +162,9 @@ export interface CreatorSetupDom {
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
 export interface CreatorSetup {
+  /** The one owner of the codes (`creator-codes.ts`): the code in hand,
+   *  its measurement and the book, read and written only through it. */
+  readonly codes: CreatorCodes;
   renderAuthorReadout: () => void;
   /** Every code this page measured or took (code book plan M4d): the
    *  print step counts them with the hosted ones. */
@@ -651,6 +654,7 @@ export function wireCreatorSetup(deps: {
   });
 
   return {
+    codes,
     renderAuthorReadout,
     measuredCodeIds: () => codes.ids(),
     leaveNeedsConfirm: () => leaveNeedsConfirm(guardInput()),

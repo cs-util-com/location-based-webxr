@@ -279,9 +279,6 @@ async function wireFinishable(options: {
     ) as object),
     ...options.sessionExtras,
   }) as never;
-  if (options.noCodeInHand !== true) {
-    ctx.mintedLevel = { id: LEVEL_ID, json: '{"measured":true}' };
-  }
   ctx.tourManifestStatus = "settled";
   ctx.tourManifest = {
     ...createEmptyTourManifest(),
@@ -322,6 +319,9 @@ async function wireFinishable(options: {
     dom: dom as unknown as CreatorSetupDom,
     openDraftStore: () => Promise.resolve(undefined),
   });
+  if (options.noCodeInHand !== true) {
+    setup.codes.setInHand({ id: LEVEL_ID, json: '{"measured":true}' }, null);
+  }
   return { dom, ctx, setup, dispatched: arStore.dispatched, arStatus };
 }
 
@@ -810,7 +810,7 @@ describe("the troubleshooting recording's log of the finish", () => {
     // The page reads the book (the first code enters it), then a second
     // code is taken: the hand holds it.
     setup.renderAuthorReadout();
-    ctx.mintedLevel = { id: "secondcode01", json: '{"measured":2}' };
+    setup.codes.setInHand({ id: "secondcode01", json: '{"measured":2}' }, null);
 
     dom.finishButton.click();
     await settle(ctx);
@@ -876,24 +876,24 @@ describe("the finish settles the AR visit still running (authoring plan 2026-09-
     });
     // The code was measured in this visit, so a second settle would
     // re-mint it - which is exactly what must not happen after the zip.
-    ctx.codeMeasurement = {
+    setup.codes.setInHand(setup.codes.inHand(), {
       levelId: LEVEL_ID,
       text: "https://example.test/code",
       odomPose: { position: [0, 1.5, -1], rotation: [0, 0, 0, 1] },
       sizeM: 0.16,
       visit: 0,
-    };
+    });
 
     dom.finishButton.click();
     await settle(ctx);
-    const level = ctx.mintedLevel;
+    const level = setup.codes.inHand();
     setup.endAuthorVisit();
 
     const settles = dispatched.filter(
       (a) => (a as { type: string }).type === "tourAuthoring/settled",
     );
     expect(settles).toHaveLength(1);
-    expect(ctx.mintedLevel).toBe(level);
+    expect(setup.codes.inHand()).toEqual(level);
   });
 });
 

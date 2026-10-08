@@ -377,6 +377,7 @@ describe("the creator measures and mints with the fused pose", () => {
       dom,
       arStore,
       setup,
+      codes: setup.codes,
       detect: (i: number) => config.onDetection?.(fusedEvent(TEXT, i)),
       /** A detection of another code (code book plan M4c-2). */
       detectText: (text: string, i: number) =>
@@ -406,14 +407,14 @@ describe("the creator measures and mints with the fused pose", () => {
       expect(c.dom.sizeOfferUse.textContent).toBe("Use 15.5 cm");
       expect(c.dom.sizeOfferKeep.textContent).toBe("Keep 16.0 cm");
       // A position saved at the old size (plan §12 #2).
-      c.ctx.mintedLevel = { id: "x", json: "{}" };
+      c.codes.setInHand({ id: "x", json: "{}" }, null);
       const generation = c.ctx.mintGeneration;
       const controllers = captured.configs.length;
       c.dom.sizeOfferUse.click();
       expect(sizeCheck.answers).toEqual([[TEXT, "adopted"]]);
       expect(c.dom.sizeInput.value).toBe("0.155");
       expect(c.ctx.activeSizeM).toBe(0.155);
-      expect(c.ctx.mintedLevel).toBeNull();
+      expect(c.codes.inHand()).toBeNull();
       expect(c.ctx.mintGeneration).toBe(generation + 1);
       // A new controller, and the old size's detections are gone.
       expect(captured.configs.length).toBe(controllers + 1);
@@ -456,7 +457,7 @@ describe("the creator measures and mints with the fused pose", () => {
     c.arStore.dispatch(qrFrameChanged());
     c.setup.renderAuthorReadout();
     expect(c.dom.status.textContent).not.toMatch(/pose stable/i);
-    expect(c.ctx.mintedLevel).toBeNull();
+    expect(c.codes.inHand()).toBeNull();
   });
 
   it("reads the fused pose as stable where the single frames scatter", () => {
@@ -464,7 +465,7 @@ describe("the creator measures and mints with the fused pose", () => {
     for (let i = 0; i < 7; i++) c.detect(i);
     // Stable; the measurement then waits only for the GPS alignment.
     expect(c.dom.status.textContent).toMatch(/pose stable/i);
-    expect(c.ctx.mintedLevel).toBeNull();
+    expect(c.codes.inHand()).toBeNull();
   });
 
   // UI round 1, U3: no "Save the measured position" button - the code is
@@ -474,7 +475,7 @@ describe("the creator measures and mints with the fused pose", () => {
     const c = creator({ aligned: true });
     for (let i = 0; i < 7; i++) c.detect(i);
     await vi.waitFor(() => {
-      expect(c.ctx.mintedLevel).not.toBeNull();
+      expect(c.codes.inHand()).not.toBeNull();
     });
     expect(c.dom.status.textContent).toMatch(/Code measured/);
     const generation = c.ctx.mintGeneration;
@@ -489,14 +490,14 @@ describe("the creator measures and mints with the fused pose", () => {
   // STORED code stays a sighting (authoring-settle.test.ts).
   it("measures a new code while another code is in hand, once that one is saved in the tour", async () => {
     const c = creator({ aligned: true });
-    c.ctx.mintedLevel = { id: "an-earlier-code", json: "{}" };
+    c.codes.setInHand({ id: "an-earlier-code", json: "{}" }, null);
     // Hosted: the tour already carries it.
     c.ctx.currentLevels = new Map([["an-earlier-code", { qr: {} } as never]]);
     for (let i = 0; i < 7; i++) c.detect(i);
     await vi.waitFor(() => {
-      expect(c.ctx.mintedLevel?.id).not.toBe("an-earlier-code");
+      expect(c.codes.inHand()?.id).not.toBe("an-earlier-code");
     });
-    expect(c.ctx.mintedLevel?.id).toBe(await qrCodeId(TEXT));
+    expect(c.codes.inHand()?.id).toBe(await qrCodeId(TEXT));
   });
 
   // Code book plan M1 (a sampled mutation pass found it unpinned): Finish
@@ -510,7 +511,7 @@ describe("the creator measures and mints with the fused pose", () => {
       hostedFileName: () => null,
     } as never;
     c.ctx.tourManifestStatus = "settled";
-    c.ctx.mintedLevel = { id: "hosted", json: "{}" };
+    c.codes.setInHand({ id: "hosted", json: "{}" }, null);
     c.ctx.currentLevels = new Map([["hosted", { qr: {} } as never]]);
     let release: () => void = () => undefined;
     idHold.text = TEXT;
@@ -536,7 +537,7 @@ describe("the creator measures and mints with the fused pose", () => {
       expect(c.ctx.finishing).toBe(false);
       release();
       await vi.waitFor(() => {
-        expect(c.ctx.mintedLevel?.id).not.toBe("hosted");
+        expect(c.codes.inHand()?.id).not.toBe("hosted");
       });
       await vi.waitFor(() => {
         expect(c.dom.finishButton.disabled).toBe(false);
@@ -554,20 +555,20 @@ describe("the creator measures and mints with the fused pose", () => {
     const c = creator({ aligned: true });
     for (let i = 0; i < 7; i++) c.detect(i);
     await vi.waitFor(() => {
-      expect(c.ctx.mintedLevel).not.toBeNull();
+      expect(c.codes.inHand()).not.toBeNull();
     });
     sizeCheck.offer = { text: TEXT, sizeM: 0.1554 };
     c.detect(7);
     c.dom.sizeOfferUse.click();
     sizeCheck.offer = null;
-    expect(c.ctx.mintedLevel).toBeNull();
+    expect(c.codes.inHand()).toBeNull();
     for (let i = 8; i < 16; i++) {
       captured.configs.at(-1)?.onDetection?.(fusedEvent(TEXT, i));
     }
     await vi.waitFor(() => {
-      expect(c.ctx.mintedLevel).not.toBeNull();
+      expect(c.codes.inHand()).not.toBeNull();
     });
-    expect(c.ctx.codeMeasurement?.sizeM).toBe(0.155);
+    expect(c.codes.measurement()?.sizeM).toBe(0.155);
   });
 
   // Code book plan M4c-3: a size offer is adopted for ITS code - another
@@ -576,21 +577,21 @@ describe("the creator measures and mints with the fused pose", () => {
     const c = creator({ aligned: true });
     for (let i = 0; i < 7; i++) c.detect(i);
     await vi.waitFor(() => {
-      expect(c.ctx.mintedLevel).not.toBeNull();
+      expect(c.codes.inHand()).not.toBeNull();
     });
-    const first = c.ctx.mintedLevel!.id;
+    const first = c.codes.inHand()!.id;
     const second = "https://gps.csutil.com/tour/?qr=second";
     for (let i = 0; i < 7; i++) c.detectText(second, i);
     await vi.waitFor(() => {
-      expect(c.ctx.mintedLevel?.id).not.toBe(first);
+      expect(c.codes.inHand()?.id).not.toBe(first);
     });
-    const inHand = c.ctx.mintedLevel!;
+    const inHand = c.codes.inHand()!;
     sizeCheck.offer = { text: TEXT, sizeM: 0.2 };
     c.detect(7);
     c.dom.sizeOfferUse.click();
     sizeCheck.offer = null;
-    expect(c.ctx.mintedLevel).toEqual(inHand);
-    expect(c.ctx.codeMeasurement?.levelId).toBe(inHand.id);
+    expect(c.codes.inHand()).toEqual(inHand);
+    expect(c.codes.measurement()?.levelId).toBe(inHand.id);
   });
 
   // Why this test matters (code book plan M4 milestone review #3): adopting
@@ -603,13 +604,13 @@ describe("the creator measures and mints with the fused pose", () => {
     const fieldM = Number(c.dom.sizeInput.value);
     for (let i = 0; i < 7; i++) c.detect(i);
     await vi.waitFor(() => {
-      expect(c.ctx.mintedLevel).not.toBeNull();
+      expect(c.codes.inHand()).not.toBeNull();
     });
-    const first = c.ctx.mintedLevel!.id;
+    const first = c.codes.inHand()!.id;
     const second = "https://gps.csutil.com/tour/?qr=second";
     for (let i = 0; i < 7; i++) c.detectText(second, i);
     await vi.waitFor(() => {
-      expect(c.ctx.mintedLevel?.id).not.toBe(first);
+      expect(c.codes.inHand()?.id).not.toBe(first);
     });
     sizeCheck.offer = { text: second, sizeM: 0.3 };
     c.detectText(second, 7);
@@ -637,9 +638,9 @@ describe("the creator measures and mints with the fused pose", () => {
     expect(Number(c.dom.sizeInput.value)).not.toBe(0.3);
     for (let i = 0; i < 7; i++) c.detect(i);
     await vi.waitFor(() => {
-      expect(c.ctx.mintedLevel).not.toBeNull();
+      expect(c.codes.inHand()).not.toBeNull();
     });
-    expect(c.ctx.codeMeasurement?.sizeM).toBe(0.3);
+    expect(c.codes.measurement()?.sizeM).toBe(0.3);
   });
 
   // Code book plan M4c-2 (replacing U3 milestone review #7's "Finish
@@ -647,10 +648,10 @@ describe("the creator measures and mints with the fused pose", () => {
   // code is measured past an unsaved one and neither is dropped.
   it("measures a new code past one not saved yet", async () => {
     const c = creator({ aligned: true });
-    c.ctx.mintedLevel = { id: "measured-not-finished", json: "{}" };
+    c.codes.setInHand({ id: "measured-not-finished", json: "{}" }, null);
     for (let i = 0; i < 7; i++) c.detect(i);
     await vi.waitFor(() => {
-      expect(c.ctx.mintedLevel?.id).not.toBe("measured-not-finished");
+      expect(c.codes.inHand()?.id).not.toBe("measured-not-finished");
     });
     expect(c.dom.status.textContent).not.toMatch(/Finish first/);
   });
@@ -662,13 +663,13 @@ describe("the creator measures and mints with the fused pose", () => {
     const c = creator({ aligned: true });
     for (let i = 0; i < 7; i++) c.detect(i);
     await vi.waitFor(() => {
-      expect(c.ctx.mintedLevel).not.toBeNull();
+      expect(c.codes.inHand()).not.toBeNull();
     });
-    const first = c.ctx.mintedLevel!.id;
+    const first = c.codes.inHand()!.id;
     const second = "https://gps.csutil.com/tour/?qr=second";
     for (let i = 0; i < 7; i++) c.detectText(second, i);
     await vi.waitFor(() => {
-      expect(c.ctx.mintedLevel?.id).not.toBe(first);
+      expect(c.codes.inHand()?.id).not.toBe(first);
     });
     // Each measurement bumps the mint generation.
     const before = c.ctx.mintGeneration;
@@ -695,7 +696,7 @@ describe("the creator measures and mints with the fused pose", () => {
     ).toContain("not saving a backup copy");
     for (let i = 0; i < 7; i++) c.detect(i);
     await vi.waitFor(() => {
-      expect(c.ctx.mintedLevel).not.toBeNull();
+      expect(c.codes.inHand()).not.toBeNull();
     });
     expect(c.ctx.placementNote).toContain("not saving a backup copy");
     expect(c.dom.status.textContent).toContain("not saving a backup copy");
@@ -744,7 +745,7 @@ describe("the creator measures and mints with the fused pose", () => {
       const first = creator({ aligned: true, codeTour: s.codeTour });
       for (let i = 0; i < 7; i++) first.detect(i);
       await vi.waitFor(() => {
-        expect(first.ctx.mintedLevel).not.toBeNull();
+        expect(first.codes.inHand()).not.toBeNull();
       });
       expect(first.dom.status.textContent).toMatch(/added to the open tour/);
 
@@ -752,7 +753,7 @@ describe("the creator measures and mints with the fused pose", () => {
       withCodes.ctx.currentLevels = new Map([["other", { qr: {} } as never]]);
       for (let i = 0; i < 7; i++) withCodes.detect(i);
       await vi.waitFor(() => {
-        expect(withCodes.ctx.mintedLevel).not.toBeNull();
+        expect(withCodes.codes.inHand()).not.toBeNull();
       });
       expect(withCodes.dom.status.textContent).not.toMatch(/not measured/);
     });
@@ -764,7 +765,7 @@ describe("the creator measures and mints with the fused pose", () => {
       const c = creator({ aligned: true, codeTour: s.codeTour });
       for (let i = 0; i < 7; i++) c.detect(i);
       await settled();
-      expect(c.ctx.mintedLevel).toBeNull();
+      expect(c.codes.inHand()).toBeNull();
       expect(c.dom.status.textContent).toMatch(/Code seen\./);
       expect(c.dom.status.textContent).not.toMatch(/Code measured/);
     });
@@ -776,7 +777,7 @@ describe("the creator measures and mints with the fused pose", () => {
       const c = creator({ aligned: true, codeTour: s.codeTour });
       for (let i = 0; i < 7; i++) c.detect(i);
       await vi.waitFor(() => {
-        expect(c.ctx.mintedLevel).not.toBeNull();
+        expect(c.codes.inHand()).not.toBeNull();
       });
     });
 

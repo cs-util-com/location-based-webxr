@@ -50,36 +50,50 @@ const SIGHTING: CodeSighting = {
 };
 
 describe("creator-codes: the code in hand", () => {
-  // Why this test matters: `archive-open.ts` (the close) and `scan-open.ts`
-  // still read the session fields until M5, so the owner must keep them
-  // exactly in step with what it holds.
-  it("mirrors the code in hand, its measurement and the sighting into the session", () => {
+  // Why this test matters: every creator module reads the code in hand,
+  // its measurement and the visit's sighting through this module, so what
+  // it was given is what it must hand back - and a cleared hand drops the
+  // measurement with the code.
+  it("holds the code in hand, its measurement and the sighting", () => {
     const ctx = createTourViewerSession();
     const codes = wireCreatorCodes({ ctx });
     const level = { id: "a", json: levelJson(47.5) };
     codes.setInHand(level, MEASUREMENT);
     codes.setSighting(SIGHTING);
-    expect(ctx.mintedLevel).toBe(level);
-    expect(ctx.codeMeasurement).toBe(MEASUREMENT);
-    expect(ctx.visitCodeSighting).toBe(SIGHTING);
-    expect(codes.inHand()).toBe(level);
-    expect(codes.measurement()).toBe(MEASUREMENT);
-    expect(codes.sighting()).toBe(SIGHTING);
+    expect(codes.inHand()).toEqual(level);
+    expect(codes.measurement()).toEqual(MEASUREMENT);
+    expect(codes.sighting()).toEqual(SIGHTING);
     codes.clearInHand();
-    expect(ctx.mintedLevel).toBeNull();
-    expect(ctx.codeMeasurement).toBeNull();
+    expect(codes.inHand()).toBeNull();
+    expect(codes.measurement()).toBeNull();
   });
 
-  // Why this test matters: the archive's close clears the session fields
-  // directly; the owner must read that, not a stale copy of its own.
-  it("reads what the tour's close cleared", () => {
+  // Why this test matters (code book plan M5d, the review's #2): "the
+  // measurement" is the HAND's, not the book entry's. A code taken as a
+  // stored reference has none, even when the book still holds one from
+  // an earlier visit - two readers (the settle's size and its re-mint)
+  // do not filter by visit.
+  it("gives no measurement for a code taken as a reference, whatever the book holds", () => {
+    const ctx = createTourViewerSession();
+    const codes = wireCreatorCodes({ ctx });
+    const a = { id: "a", json: levelJson(47.5) };
+    codes.setInHand(a, MEASUREMENT);
+    codes.setInHand({ id: "b", json: levelJson(47.6) }, null);
+    codes.setInHand(a, null);
+    expect(codes.measurement()).toBeNull();
+    expect(codes.measuredIn("a", 0)).toBe(true);
+  });
+
+  // Why this test matters: a failed identity hands back an empty hand
+  // (`creator-measuring.ts`); the book keeps what it holds.
+  it("empties the hand on a null level and keeps the book", () => {
     const ctx = createTourViewerSession();
     const codes = wireCreatorCodes({ ctx });
     codes.setInHand({ id: "a", json: levelJson(47.5) }, MEASUREMENT);
-    ctx.mintedLevel = null;
-    ctx.codeMeasurement = null;
+    codes.setInHand(null, null);
     expect(codes.inHand()).toBeNull();
     expect(codes.measurement()).toBeNull();
+    expect(codes.ids()).toEqual(["a"]);
   });
 
   // Why this test matters: a restored draft hands its level back only when
@@ -89,11 +103,11 @@ describe("creator-codes: the code in hand", () => {
     const codes = wireCreatorCodes({ ctx });
     const drafted = { id: "d", json: levelJson(47.4) };
     expect(codes.restoreInHand(drafted)).toBe(true);
-    expect(codes.inHand()).toBe(drafted);
+    expect(codes.inHand()).toEqual(drafted);
     const live = { id: "a", json: levelJson(47.5) };
     codes.setInHand(live, MEASUREMENT);
     expect(codes.restoreInHand(drafted)).toBe(false);
-    expect(codes.inHand()).toBe(live);
+    expect(codes.inHand()).toEqual(live);
   });
 
   // Why this test matters: the settle re-mints the code in hand through
@@ -247,15 +261,21 @@ describe("creator-codes: the book of codes a Finish writes (M4c-1)", () => {
     expect(codes.toWrite()).toEqual([improved]);
   });
 
-  // Why this test matters: until M5 the session field is still written
-  // from outside this module (the composed tests, and the tour's close),
-  // so the book takes whatever is in hand when it is read.
-  it("takes a level written straight into the session field into the book", () => {
+  // Why this test matters (code book plan M5d, the review's #1): the
+  // code in hand's text wins for its own code. A draft restored after a
+  // Finish would otherwise replace the hand's code with the draft's older
+  // measurement, and the settle would correct through it.
+  it("keeps the code in hand's text over a draft's", () => {
     const ctx = createTourViewerSession();
+    ctx.currentLevelTexts = new Map([["h", levelJson(47.3)]]);
     const codes = wireCreatorCodes({ ctx });
-    const a = { id: "a", json: levelJson(47.5) };
-    ctx.mintedLevel = a;
-    expect(codes.toWrite()).toEqual([a]);
+    const hosted = { id: "h", json: levelJson(47.3) };
+    codes.setInHand(hosted, null);
+    codes.finished([]);
+    codes.restoreLevels([{ id: "h", json: levelJson(47.39) }]);
+    expect(codes.inHand()).toEqual(hosted);
+    expect(codes.savedText("h")).toBe(hosted.json);
+    expect(codes.toWrite()).toEqual([]);
   });
 
   // Why this test matters: the book belongs to the tour - a closed tour's
@@ -264,7 +284,7 @@ describe("creator-codes: the book of codes a Finish writes (M4c-1)", () => {
     const ctx = createTourViewerSession();
     const codes = wireCreatorCodes({ ctx });
     codes.setInHand({ id: "a", json: levelJson(47.5) }, MEASUREMENT);
-    ctx.mintedLevel = null;
+    codes.setInHand(null, null);
     codes.reset();
     expect(codes.toWrite()).toEqual([]);
   });
@@ -371,7 +391,7 @@ describe("creator-codes: every code this page holds (M4d)", () => {
     const ctx = createTourViewerSession();
     const codes = wireCreatorCodes({ ctx });
     codes.setInHand({ id: "a", json: levelJson(47.5) }, MEASUREMENT);
-    ctx.mintedLevel = { id: "b", json: levelJson(47.6) };
+    codes.setInHand({ id: "b", json: levelJson(47.6) }, null);
     expect(codes.ids()).toEqual(["a", "b"]);
   });
 });

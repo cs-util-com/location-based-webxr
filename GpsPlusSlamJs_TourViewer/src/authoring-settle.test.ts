@@ -484,7 +484,7 @@ function authoring(
     seeTheCode(origin, text, startMs);
     await vi.waitFor(() => {
       expect(measured()).toBeGreaterThan(before);
-      expect(ctx.mintedLevel).not.toBeNull();
+      expect(setup.codes.inHand()).not.toBeNull();
     });
     // The measurement's own end (its render; Finish waits for it).
     await flush();
@@ -571,6 +571,7 @@ function authoring(
     ctx,
     dom,
     setup,
+    codes: setup.codes,
     dispatched,
     device,
     encodes,
@@ -622,7 +623,7 @@ describe(
       // the camera rides the world group, so every alignment re-solve slid the
       // note against the real world - what the owner saw (plan §2.1, A1).
       const a = authoring();
-      a.ctx.mintedLevel = { id: "lvl", json: "{}" };
+      a.codes.setInHand({ id: "lvl", json: "{}" }, null);
       await a.placePin("Gate", [2, 0, -1]);
       const before = a.inWorldGroup("Gate");
       expect(before.distanceTo(new Vector3(2, 0, -1))).toBeLessThan(1e-9);
@@ -640,7 +641,7 @@ describe(
       // capture pose is raw WebXR, so it goes through `odomNueFromWebXr` -
       // never the trailing basis form.
       const a = authoring();
-      a.ctx.mintedLevel = { id: "lvl", json: "{}" };
+      a.codes.setInHand({ id: "lvl", json: "{}" }, null);
       await a.placePin("Gate", [2, 0, -1]);
       const cameraPose: Pose = {
         position: [0.5, 1.4, -0.2],
@@ -706,7 +707,7 @@ describe(
       a.endVisit();
 
       const pin = a.ctx.placedObjects[0]!.object;
-      const offset = worldOf(pin.geo).sub(codeWorldOf(a.ctx.mintedLevel!.json));
+      const offset = worldOf(pin.geo).sub(codeWorldOf(a.codes.inHand()!.json));
       const expected = new Vector3(2, 0, -1)
         .sub(codeLocal)
         .applyQuaternion(new Quaternion(...yawQ(4)));
@@ -718,7 +719,7 @@ describe(
       // the SETTLED geo - which exists nowhere but in this action.
       const a = authoring();
       await a.mint();
-      const tapLevel = a.ctx.mintedLevel;
+      const tapLevel = a.codes.inHand();
       await a.placePin("Gate", [2, 0, -1]);
       const end = yawAlignment(4, [1.5, 400.2, -1]);
       a.setAlignment(end);
@@ -744,7 +745,7 @@ describe(
           refusedCorrection: null,
         },
       ]);
-      expect(payload.level).toEqual(a.ctx.mintedLevel);
+      expect(payload.level).toEqual(a.codes.inHand());
       expect(payload.levelAlignment).toEqual(end);
       // The level in hand BEFORE the settle and the zero (review #7): what a
       // replay needs to recompute a code-corrected settle.
@@ -765,7 +766,7 @@ describe(
       await a.mint();
       await a.placePin("Gate", [2, 0, -1]);
       const tapGeo = a.ctx.placedObjects[0]!.object.geo;
-      const tapLevel = a.ctx.mintedLevel!.json;
+      const tapLevel = a.codes.inHand()!.json;
       a.setAlignment(yawAlignment(9, [2, 400, 2]));
 
       a.endVisit();
@@ -775,7 +776,7 @@ describe(
       expect(pin.geo, "the settle should have moved the pin").not.toEqual(
         tapGeo,
       );
-      expect(a.ctx.mintedLevel!.json).not.toBe(tapLevel);
+      expect(a.codes.inHand()!.json).not.toBe(tapLevel);
       const onDisk = JSON.parse(
         String(files.get(objectKey(pin.id))),
       ) as TourObject;
@@ -783,7 +784,7 @@ describe(
       const meta = JSON.parse(String(files.get(META_KEY))) as {
         level: { json: string };
       };
-      expect(meta.level.json).toBe(a.ctx.mintedLevel!.json);
+      expect(meta.level.json).toBe(a.codes.inHand()!.json);
     });
   },
 );
@@ -818,7 +819,7 @@ describe(
 
       const later = a.ctx.placedObjects[1]!.object;
       const offset = worldOf(later.geo).sub(
-        codeWorldOf(a.ctx.mintedLevel!.json),
+        codeWorldOf(a.codes.inHand()!.json),
       );
       // Relative to the code exactly as placed, turned by the FIRST visit's
       // alignment (the frame the code's geo was stored in) - not the 20 m
@@ -886,7 +887,7 @@ describe(
 
       const later = a.ctx.placedObjects[1]!.object;
       const offset = worldOf(later.geo).sub(
-        codeWorldOf(a.ctx.mintedLevel!.json),
+        codeWorldOf(a.codes.inHand()!.json),
       );
       expect(
         offset.distanceTo(new Vector3(3, 0, 1).sub(codeLocal)),
@@ -1415,7 +1416,7 @@ describe(
       first.setAlignment(yawAlignment(0, [0, 400, 0]));
       await first.mint();
       first.endVisit();
-      const stored = first.ctx.mintedLevel!;
+      const stored = first.codes.inHand()!;
 
       const a = authoring();
       await openFinishableTour(a, { levels: [stored] });
@@ -1432,7 +1433,7 @@ describe(
         "https://gps.csutil.com/tour/?qr=second",
         10_000,
       );
-      expect(a.ctx.mintedLevel?.id).not.toBe(stored.id);
+      expect(a.codes.inHand()?.id).not.toBe(stored.id);
       // Back at A: seen last, then a photo still encoding as the visit ends.
       // A fresh page derives A's level id first (an async hash), so the
       // first look only identifies it; the second is the sighting.
@@ -1597,7 +1598,7 @@ describe(
       const first = authoring();
       await first.mint();
       first.endVisit();
-      return first.ctx.mintedLevel!;
+      return first.codes.inHand()!;
     }
 
     it("keeps an earlier visit's measurement as the reference when the code is seen again", async () => {
@@ -1608,7 +1609,7 @@ describe(
       const a = authoring();
       await a.mint();
       a.endVisit();
-      const stored = a.ctx.mintedLevel!;
+      const stored = a.codes.inHand()!;
       const codeLocal = mintedOdom(a.dispatched);
       a.beginVisit();
       a.setAlignment(SECOND);
@@ -1616,7 +1617,7 @@ describe(
       await flush();
       a.setup.renderAuthorReadout();
 
-      expect(a.ctx.mintedLevel).toEqual(stored);
+      expect(a.codes.inHand()).toEqual(stored);
       expect(
         a.dispatched.filter((x) => x.type === "tourAuthoring/codeMeasured"),
       ).toHaveLength(1);
@@ -1699,7 +1700,7 @@ describe(
       a.setAlignment(SECOND);
       await a.mint();
 
-      expect(a.ctx.mintedLevel).toEqual(hosted);
+      expect(a.codes.inHand()).toEqual(hosted);
       expect(lastKept(a)).toBe("hosted-level");
       // The panel says the saved position stays - never that it is replaced.
       expect(a.dom.status.textContent).toMatch(/Saved position kept/);
@@ -1713,7 +1714,7 @@ describe(
       expect(settle.referenceLevel).toEqual(hosted);
       expect(settle.level).toBeNull();
       // What the zip carries for the code is the hosted file, byte for byte.
-      expect(a.ctx.mintedLevel!.json).toBe(hosted.json);
+      expect(a.codes.inHand()!.json).toBe(hosted.json);
     });
 
     // Why this test matters (M5a milestone review #1): "Use this size" for
@@ -1743,7 +1744,7 @@ describe(
         answer: () => undefined,
       };
       a.dom.sizeOfferUse.click();
-      expect(a.ctx.mintedLevel).toBeNull();
+      expect(a.codes.inHand()).toBeNull();
       a.endVisit();
       const settled = a.settledLogs().at(-1)!.payload;
       expect(settled.objects).toHaveLength(1);
@@ -1760,7 +1761,7 @@ describe(
       a.setAlignment(SECOND);
       await a.mint();
       expect(lastKept(a)).toBe("measurement");
-      expect(a.ctx.mintedLevel!.json).not.toBe('{"old":true}');
+      expect(a.codes.inHand()!.json).not.toBe('{"old":true}');
       a.endVisit();
       expect(a.settledLogs().at(-1)!.payload.basis).toBe("measured-here");
     });
@@ -1772,14 +1773,14 @@ describe(
       // - it re-mints from the measurement through its own pick (D33).
       const a = authoring();
       await a.mint();
-      const firstJson = a.ctx.mintedLevel!.json;
+      const firstJson = a.codes.inHand()!.json;
       a.setAlignment(yawAlignment(3, [1, 400, 1]));
       a.seeTheCode();
       await flush();
       expect(
         a.dispatched.filter((x) => x.type === "tourAuthoring/codeMeasured"),
       ).toHaveLength(1);
-      expect(a.ctx.mintedLevel!.json).toBe(firstJson);
+      expect(a.codes.inHand()!.json).toBe(firstJson);
     });
   },
 );
@@ -1853,7 +1854,7 @@ describe("the entry hint (§3.2a, D5)", { timeout: SLOW_MS }, () => {
   it("stays while only a DIFFERENT code is seen", async () => {
     const a = authoring();
     openTour(a);
-    a.ctx.mintedLevel = { id: "ffffffffffff", json: "{}" };
+    a.codes.setInHand({ id: "ffffffffffff", json: "{}" }, null);
     a.beginVisit();
     a.seeTheCode();
     await flush();
@@ -2061,7 +2062,7 @@ describe(
       const moved = a.ctx.placedObjects[0]!.object;
       expect(moved.id).toBe(gate.id);
       const offset = worldOf(moved.geo).sub(
-        codeWorldOf(a.ctx.mintedLevel!.json),
+        codeWorldOf(a.codes.inHand()!.json),
       );
       expect(
         offset.distanceTo(new Vector3(4, 0, 2).sub(codeLocal)),
@@ -2383,7 +2384,7 @@ describe(
       await a.placePin("near", [2, 0, -1]);
       await a.placePin("far", [60, 0, 0]);
       a.endVisit();
-      const stored = a.ctx.mintedLevel!;
+      const stored = a.codes.inHand()!;
       const pins = () =>
         new Map(
           a.ctx.placedObjects.map((p) => [
@@ -2545,14 +2546,14 @@ describe(
         walkM: 30,
       });
       a.endVisit();
-      expect(a.ctx.mintedLevel?.id).toBe(stored.id);
-      expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      expect(a.codes.inHand()?.id).toBe(stored.id);
+      expect(a.codes.inHand()?.json).not.toBe(stored.json);
       expect(codePosition(a)?.decision).toEqual({ kind: "replace" });
       expect(codePosition(a)?.applied).toBe(true);
       const after = pins();
       // The near pin keeps its place relative to the code...
       const oldCode = codeWorldOf(stored.json);
-      const newCode = codeWorldOf(a.ctx.mintedLevel!.json);
+      const newCode = codeWorldOf(a.codes.inHand()!.json);
       const near0 = worldOf(before.get("near")!).sub(oldCode);
       const near1 = worldOf(after.get("near")!).sub(newCode);
       expect(near1.length()).toBeCloseTo(near0.length(), 2);
@@ -2589,7 +2590,7 @@ describe(
         ],
       ]);
       a.endVisit();
-      expect(a.ctx.mintedLevel?.json).not.toBe(stored.json);
+      expect(a.codes.inHand()?.json).not.toBe(stored.json);
       expect(codePosition(a)?.applied).toBe(true);
       expect(pins().get("near")).toEqual(before.get("near"));
       expect(codePosition(a)?.movedWithCode).toHaveLength(0);
@@ -2628,7 +2629,7 @@ describe(
         accuracyM: 7,
       });
       a.endVisit();
-      expect(a.ctx.mintedLevel).toEqual(stored);
+      expect(a.codes.inHand()).toEqual(stored);
       expect(codePosition(a)?.decision).toMatchObject({
         kind: "keep",
         reason: "not-walked",
@@ -2643,7 +2644,7 @@ describe(
         walkM: 30,
       });
       a.endVisit();
-      const improved = a.ctx.mintedLevel!;
+      const improved = a.codes.inHand()!;
       expect(improved.json).not.toBe(stored.json);
       // A third visit: the improved position recorded its walk (D31) and
       // stays.
@@ -2653,7 +2654,7 @@ describe(
       a.seeTheCode();
       await flush();
       a.endVisit();
-      expect(a.ctx.mintedLevel).toEqual(improved);
+      expect(a.codes.inHand()).toEqual(improved);
       expect(codePosition(a)?.decision).toEqual({
         kind: "keep",
         reason: "stored-good",
@@ -2670,7 +2671,7 @@ describe(
       const first = authoring();
       await first.mint();
       first.endVisit();
-      const earlier = first.ctx.mintedLevel!;
+      const earlier = first.codes.inHand()!;
       const parsed = JSON.parse(earlier.json) as {
         qr: { physicalSizeM: number };
       };
@@ -2689,7 +2690,7 @@ describe(
 
       expect(codePosition(a)?.decision).toEqual({ kind: "replace" });
       const replaced = parseQrLevel(
-        JSON.parse(a.ctx.mintedLevel!.json) as unknown,
+        JSON.parse(a.codes.inHand()!.json) as unknown,
       );
       expect(replaced.qr.physicalSizeM).toBeCloseTo(0.3, 9);
     });
@@ -2789,7 +2790,7 @@ describe(
       // Visit 1 measures the code and places a pin.
       await a.mint();
       await a.placePin("Gate", [2, 0, -1]);
-      const first = a.ctx.mintedLevel;
+      const first = a.codes.inHand();
       a.endVisit();
       await flush();
 
@@ -2929,7 +2930,7 @@ describe(
       const alignment = yawAlignment(12, [6, 400, -3]);
       a.setAlignment(alignment);
       await a.mint();
-      const inHand = a.ctx.mintedLevel!;
+      const inHand = a.codes.inHand()!;
       const otherText = `${TEXT}&n=2`;
       const otherId = await qrCodeId(otherText);
       a.ctx.currentLevels = new Map([
@@ -2950,7 +2951,7 @@ describe(
       await qrCodeId(otherText);
       await new Promise((resolve) => setTimeout(resolve, 0));
       await flush();
-      expect(a.ctx.mintedLevel).toEqual(inHand);
+      expect(a.codes.inHand()).toEqual(inHand);
       a.endVisit();
       await flush();
 
@@ -2980,13 +2981,13 @@ describe(
       const a = authoring({ summary });
       await openFinishableTour(a);
       await a.mint();
-      const first = a.ctx.mintedLevel!;
+      const first = a.codes.inHand()!;
       await a.mint(
         new Matrix4().makeTranslation(20, 0, 0),
         "https://gps.csutil.com/tour/?qr=second",
         10_000,
       );
-      const second = a.ctx.mintedLevel!;
+      const second = a.codes.inHand()!;
       a.ctx.tourManifestStatus = "settled";
       a.dom.finishButton.click();
       await finished(a.ctx);
@@ -3006,7 +3007,7 @@ describe(
       a.setup.resetFinishStep();
       expect(summary.hidden()).toBeGreaterThan(0);
       await openFinishableTour(a);
-      a.ctx.mintedLevel = { id: "lvl", json: "{}" };
+      a.codes.setInHand({ id: "lvl", json: "{}" }, null);
       a.device.live = false;
       a.dom.finishButton.click();
       await finished(a.ctx);
@@ -3204,7 +3205,7 @@ describe(
     // showed both surviving.
     it("refuses a pin while the session is not running, and places it once it runs", async () => {
       const a = authoring();
-      a.ctx.mintedLevel = { id: "lvl", json: "{}" };
+      a.codes.setInHand({ id: "lvl", json: "{}" }, null);
       a.device.live = false;
       await a.placePin("Gate", [2, 0, -1]);
       expect(a.ctx.placedObjects).toEqual([]);
@@ -3215,7 +3216,7 @@ describe(
 
     it("refuses a pin before this session's fixes reach the alignment floor", async () => {
       const a = authoring();
-      a.ctx.mintedLevel = { id: "lvl", json: "{}" };
+      a.codes.setInHand({ id: "lvl", json: "{}" }, null);
       // One fix of the store's was there before this session started.
       a.ctx.gpsSamplesAtSessionStart = 1;
       await a.placePin("Gate", [2, 0, -1]);
@@ -3242,13 +3243,13 @@ describe(
     it("logs every level the settle re-minted", async () => {
       const a = authoring();
       await a.mint();
-      const first = a.ctx.mintedLevel!;
+      const first = a.codes.inHand()!;
       await a.mint(
         new Matrix4().makeTranslation(20, 0, 0),
         "https://gps.csutil.com/tour/?qr=second",
         10_000,
       );
-      const second = a.ctx.mintedLevel!;
+      const second = a.codes.inHand()!;
       a.endVisit();
       const settled = a.settledLogs().at(-1)!.payload;
       expect(settled.levels?.map((l) => l.id).sort()).toEqual(
@@ -3265,7 +3266,7 @@ describe(
       a.setup.presentDraftForTour("https://example.test/tour.zip");
       await flush();
       await a.mint();
-      const first = a.ctx.mintedLevel!;
+      const first = a.codes.inHand()!;
       // Code B: its own print, 20 m away.
       const twentyAway = new Matrix4().makeTranslation(20, 0, 0);
       await a.mint(
@@ -3273,7 +3274,7 @@ describe(
         "https://gps.csutil.com/tour/?qr=second",
         10_000,
       );
-      const second = a.ctx.mintedLevel!;
+      const second = a.codes.inHand()!;
       expect(second.id).not.toBe(first.id);
       a.endVisit();
       await flush();
@@ -3294,13 +3295,13 @@ describe(
       a.setup.presentDraftForTour("https://example.test/tour.zip");
       await flush();
       await a.mint();
-      const first = a.ctx.mintedLevel!;
+      const first = a.codes.inHand()!;
       await a.mint(
         new Matrix4().makeTranslation(20, 0, 0),
         "https://gps.csutil.com/tour/?qr=second",
         10_000,
       );
-      const second = a.ctx.mintedLevel!;
+      const second = a.codes.inHand()!;
       a.endVisit();
       await flush();
       const key = [...files.keys()].find((k) => k.startsWith(visitKey("")))!;
@@ -3326,7 +3327,7 @@ describe(
       a.setup.presentDraftForTour("https://example.test/tour.zip");
       await flush();
       await a.mint();
-      const first = a.ctx.mintedLevel!;
+      const first = a.codes.inHand()!;
       await a.mint(
         new Matrix4().makeTranslation(20, 0, 0),
         "https://gps.csutil.com/tour/?qr=second",
@@ -3336,15 +3337,14 @@ describe(
       // size adoption also drops the cleared code's measurement (so here
       // the second code is still measured and re-minted, which production
       // would not do). The assertion is about the FIRST code, either way.
-      a.ctx.mintedLevel = null;
-      a.ctx.codeMeasurement = null;
+      a.codes.setInHand(null, null);
       a.endVisit();
       await flush();
       const key = [...files.keys()].find((k) => k.startsWith(visitKey("")))!;
       const entry = parseVisitLogEntry(files.get(key) as string)!;
       const firstCode = entry.codes.find((c) => c.levelId === first.id);
       expect(firstCode?.savedGeo, "the first code was settled").toBeDefined();
-      expect(a.ctx.mintedLevel).toBeNull();
+      expect(a.codes.inHand()).toBeNull();
     });
 
     // Why this test matters: each code keeps its OWN measurement pick
@@ -3370,7 +3370,7 @@ describe(
       a.setAlignment(atA);
       a.setZero(ZERO);
       await a.mint();
-      const first = a.ctx.mintedLevel!;
+      const first = a.codes.inHand()!;
       // The alignment moves before code B is measured.
       a.setAlignment(yawAlignment(8, [3, 400, 0]));
       a.setZero(ZERO);
@@ -3402,7 +3402,7 @@ describe(
       const a = authoring();
       a.setAlignment(yawAlignment(0, [0, 400, 0]));
       await a.mint();
-      const stored = a.ctx.mintedLevel!;
+      const stored = a.codes.inHand()!;
       a.endVisit();
       // Code A is the tour's now, as a hosted level.
       a.ctx.currentLevels = new Map([
@@ -3428,7 +3428,7 @@ describe(
         "https://gps.csutil.com/tour/?qr=second",
         10_000,
       );
-      expect(a.ctx.mintedLevel?.id).not.toBe(stored.id);
+      expect(a.codes.inHand()?.id).not.toBe(stored.id);
       // Then code A is seen again, and a pin placed beside it.
       a.seeTheCode(undefined, TEXT, 20_000);
       await flush();
@@ -3505,7 +3505,7 @@ describe(
     }
 
     const spotsOf = (a: ReturnType<typeof authoring>) =>
-      readCodeSpots(a.ctx.mintedLevel!.json)!;
+      readCodeSpots(a.codes.inHand()!.json)!;
     const northOf = (geo: { lat: number }) =>
       ((geo.lat - ZERO.lat) * Math.PI * R) / 180;
 
@@ -3568,9 +3568,9 @@ describe(
       const { a } = await storedCode();
       await visitSeeing(a, 30);
       await visitSeeing(a, 0);
-      const before = a.ctx.mintedLevel!.json;
+      const before = a.codes.inHand()!.json;
       await visitSeeing(a, 30);
-      expect(a.ctx.mintedLevel!.json).toBe(before);
+      expect(a.codes.inHand()!.json).toBe(before);
     });
 
     it("decides nothing in a visit whose odometry frame changed", async () => {
@@ -3635,7 +3635,7 @@ describe(
         (a.settledLogs().at(-1)!.payload as { codeSpots?: unknown }).codeSpots,
       ).toEqual([
         {
-          levelId: a.ctx.mintedLevel!.id,
+          levelId: a.codes.inHand()!.id,
           decision: { kind: "none", reason: "at-current" },
         },
       ]);
@@ -3897,7 +3897,7 @@ describe(
         .map((k) => parseVisitLogEntry(files.get(k) as string)!)
         .sort((x, y) => x.atMs - y.atMs);
       expect(
-        entries.at(-1)!.codes.find((c) => c.levelId === a.ctx.mintedLevel!.id)
+        entries.at(-1)!.codes.find((c) => c.levelId === a.codes.inHand()!.id)
           ?.moved,
       ).toBe(true);
     });

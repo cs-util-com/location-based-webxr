@@ -297,7 +297,6 @@ function wire(
   // Everything a placement needs beyond the store: a measured level, a
   // live session, a reticle with a surface, and an aligned AR state.
   if (options.placeable === true) {
-    ctx.mintedLevel = { id: "lvl", json: "{}" };
     ctx.reticle = fakeReticle() as never;
   }
   const arStore = (
@@ -337,6 +336,9 @@ function wire(
       return Promise.resolve(store);
     },
   });
+  if (options.placeable === true) {
+    setup.codes.setInHand({ id: "lvl", json: "{}" }, null);
+  }
   return { dom, ctx, setup, dispatched: arStore.dispatched ?? [] };
 }
 
@@ -1061,6 +1063,10 @@ describe("a placement reaches the draft", () => {
     // The tour closes. Everything about it is dropped, including the
     // handle its writes were going through.
     setup.resetFinishStep();
+    // The close empties the hand too (the code belongs to the tour); a
+    // code taken again keeps the placement gate open, which this test is
+    // not about.
+    setup.codes.setInHand({ id: "lvl", json: "{}" }, null);
 
     dom.pinLabel.value = "Gate";
     dom.pinSave.click();
@@ -1149,8 +1155,8 @@ describe("work made before the tour's draft opened reaches it", () => {
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
       [objectKey("old-pin")]: JSON.stringify(pin("old-pin")),
     });
-    const { ctx, dom, setup } = wire(store, { placeable: true });
-    ctx.mintedLevel = { id: "fresh", json: "{}" };
+    const { dom, setup } = wire(store, { placeable: true });
+    setup.codes.setInHand({ id: "fresh", json: "{}" }, null);
     setup.presentDraftForTour(TOUR);
     await settle();
     expect(dom.draftOffer.hidden, "the older draft is offered").toBe(false);
@@ -1565,13 +1571,13 @@ describe("a draft with several codes (code book plan M4c-1)", () => {
         levels: [a, b],
       }),
     });
-    const { dom, ctx, setup } = wire(store);
+    const { dom, setup } = wire(store);
     setup.presentDraftForTour(TOUR);
     await settle();
     expect(dom.draftOffer.hidden).toBe(false);
     dom.draftRestore.click();
     await settle();
-    expect(ctx.mintedLevel).toEqual(b);
+    expect(setup.codes.inHand()).toEqual(b);
     // The tour opened again: with a code in hand its meta is re-stated.
     setup.presentDraftForTour(TOUR);
     await settle();

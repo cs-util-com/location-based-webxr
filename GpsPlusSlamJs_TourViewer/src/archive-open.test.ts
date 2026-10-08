@@ -52,11 +52,12 @@ function openTour(): NonNullable<
   return { close: () => Promise.resolve() } as never;
 }
 
-/** Work a creator can have in hand: a measured level, a placed pin, a
- *  note, and a print-size check whose reset is observable. */
+/** Work a creator can have in hand: a placed pin, a note, and a
+ *  print-size check whose reset is observable. The code in hand lives in
+ *  the creator's code module, which the close empties through
+ *  `resetFinishStep` (code book plan M5d). */
 function creatorWork(ctx: ReturnType<typeof createTourViewerSession>) {
   const reset = vi.fn();
-  ctx.mintedLevel = { id: "lvl", json: "{}" };
   ctx.placedObjects = [
     {
       object: {
@@ -75,7 +76,10 @@ function creatorWork(ctx: ReturnType<typeof createTourViewerSession>) {
 
 /** Wire the open path over `ctx` and submit another tour's link; the open
  *  fails after the teardown (the mocked `openTourSession`). */
-function openAnotherTour(ctx: ReturnType<typeof createTourViewerSession>) {
+function openAnotherTour(
+  ctx: ReturnType<typeof createTourViewerSession>,
+  hooks = createUnwiredHooks(),
+) {
   const dom = {
     form: el(),
     linkInput: el(),
@@ -100,7 +104,7 @@ function openAnotherTour(ctx: ReturnType<typeof createTourViewerSession>) {
     cacheStore: undefined,
     corsProxyBaseUrl: "https://proxy.test",
     mode: "creator",
-    hooks: createUnwiredHooks(),
+    hooks,
   });
   dom.linkInput.value = "https://example.com/other-tour.zip";
   dom.form.fire("submit");
@@ -182,9 +186,12 @@ describe("the teardown clears tour-scoped state only when a tour closes", () => 
   it("keeps work made with no tour open", async () => {
     const ctx = createTourViewerSession();
     const { reset } = creatorWork(ctx);
-    const dom = openAnotherTour(ctx);
+    const hooks = createUnwiredHooks();
+    const resetFinishStep = vi.spyOn(hooks, "resetFinishStep");
+    const dom = openAnotherTour(ctx, hooks);
     await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
-    expect(ctx.mintedLevel).toEqual({ id: "lvl", json: "{}" });
+    // The creator's step (the code in hand, the book) is not reset.
+    expect(resetFinishStep).not.toHaveBeenCalled();
     expect(ctx.placedObjects).toHaveLength(1);
     expect(ctx.placementNote).toBe("1 object placed");
     expect(reset).not.toHaveBeenCalled();
@@ -197,9 +204,13 @@ describe("the teardown clears tour-scoped state only when a tour closes", () => 
     ctx.session = openTour();
     const { reset } = creatorWork(ctx);
     const generation = ctx.mintGeneration;
-    const dom = openAnotherTour(ctx);
+    const hooks = createUnwiredHooks();
+    const resetFinishStep = vi.spyOn(hooks, "resetFinishStep");
+    const dom = openAnotherTour(ctx, hooks);
     await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
-    expect(ctx.mintedLevel).toBeNull();
+    // The creator's step is reset: the code in hand and the book go
+    // (`creator-setup.ts`, whose own test holds that).
+    expect(resetFinishStep).toHaveBeenCalledOnce();
     expect(ctx.mintGeneration).toBe(generation + 1);
     expect(ctx.placedObjects).toEqual([]);
     expect(ctx.placementNote).toBeNull();
