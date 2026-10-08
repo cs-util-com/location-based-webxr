@@ -24,61 +24,13 @@ import {
   type OsmBlobStore,
 } from "gps-plus-slam-osm";
 import {
-  OpfsOsmBlobStore,
-  openOsmStoreDirectory,
-  type OsmBlobStoreWarn,
+  openPersistentOsmStore,
+  type OpenOsmStoreOptions,
 } from "gps-plus-slam-app-framework/osm-bridge";
 
 /** How the demo identifies itself to the Overpass operators. */
 export const OSM_DEMO_USER_AGENT =
   "gps-plus-slam-osm-demo (github.com/cs-util-com)";
-
-/** How a store is opened. */
-export interface OpenOsmStoreOptions {
-  /**
-   * The storage manager. Default: `navigator.storage`; an explicit
-   * `undefined` means there is none.
-   */
-  readonly storage?: StorageManager | undefined;
-  /**
-   * Where the OPFS store reports a failed write or listing. OsmDemo's worker
-   * passes the framework logger (`worker/osm-store-warn.ts`), so the
-   * failures stay Sentry Issues; the globe lab cannot load the logger and
-   * leaves the store's `console.warn` default.
-   */
-  readonly warn?: OsmBlobStoreWarn;
-}
-
-/** The browser's storage manager, when there is one. */
-function storageOf(options: OpenOsmStoreOptions): StorageManager | undefined {
-  if ("storage" in options) return options.storage;
-  return typeof navigator === "undefined" ? undefined : navigator.storage;
-}
-
-/**
- * The OPFS-backed store, or `undefined` when there is none (no storage
- * manager, OPFS refused, a private mode that throws). Never throws.
- *
- * `undefined` rather than a memory fallback, because the two callers want
- * different things from its absence: the worker still needs SOME store
- * ({@link openOsmStore}), while a prefetch must know that nothing it fetches
- * would outlive the page.
- */
-export async function openPersistentOsmStore(
-  options: OpenOsmStoreOptions = {},
-): Promise<OsmBlobStore | undefined> {
-  try {
-    const storage = storageOf(options);
-    if (typeof storage?.getDirectory !== "function") return undefined;
-    const root = await storage.getDirectory();
-    return new OpfsOsmBlobStore({
-      directory: await openOsmStoreDirectory(root),
-      ...(options.warn === undefined ? {} : { warn: options.warn }),
-    });
-  } catch {
-    return undefined;
-  }
-}
 
 /**
  * The worker's store: OPFS where available, memory otherwise.

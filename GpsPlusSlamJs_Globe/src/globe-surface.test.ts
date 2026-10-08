@@ -254,6 +254,65 @@ describe("createGlobeSurface", () => {
     globe.dispose();
   });
 
+  // Why (round-6 plan 2026-10-04-1050 G6-2): the clouds move off the ground
+  // onto their own shell only as far as the page asks (the relief's share of
+  // the band, so the orbit keeps the approved painted look); every other
+  // page keeps them painted, as before. The shell sits in the tiles' ECEF
+  // frame wherever the tiles are placed, and its share takes exactly that
+  // much paint out of the ground's colour.
+  it("splits the clouds between the paint and the shell by a share, the shell in the tiles' frame", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const u = globe.surfaceUniforms;
+    expect(globe.cloudShell.mesh.visible).toBe(false);
+    expect(u.uCloudInSurface.value).toBe(1);
+    globe.setCloudShellShare(0.25);
+    expect(globe.cloudShell.mesh.visible).toBe(true);
+    expect(globe.cloudShell.share()).toBe(0.25);
+    expect(u.uCloudInSurface.value).toBe(0.75);
+    globe.setCloudShellShare(1);
+    expect(u.uCloudInSurface.value).toBe(0);
+    expect(() => globe.setCloudShellShare(1.5)).toThrow(RangeError);
+    globe.cloudShell.setHeightM(9_000);
+    globe.tiles.group.rotation.set(0.3, -1.1, 0.7);
+    globe.tiles.group.position.set(10, 20, 30);
+    globe.tiles.group.updateMatrix();
+    globe.setSun(new THREE.Vector3(1, 0, 0));
+    globe.group.updateMatrixWorld(true);
+    // A point on the shell's equator (local x) lands where the tiles put the
+    // ECEF point (a + h, 0, 0).
+    const shellPoint = new THREE.Vector3(1, 0, 0).applyMatrix4(
+      globe.cloudShell.mesh.matrixWorld,
+    );
+    const tilesPoint = new THREE.Vector3(6_378_137 + 9_000, 0, 0).applyMatrix4(
+      globe.tiles.group.matrixWorld,
+    );
+    expect(shellPoint.distanceTo(tilesPoint)).toBeLessThan(1e-3);
+    globe.setCloudShellShare(0);
+    expect(u.uCloudInSurface.value).toBe(1);
+    expect(globe.cloudShell.mesh.visible).toBe(false);
+    globe.dispose();
+  });
+
+  // Why (round-2 plan 2026-10-07-2350 DEC-FR2-5): the flat cloud layer
+  // fades with altitude; both its forms (the paint and the shell) and the
+  // water's cloud mask fade together, never the global cloud opacity (the
+  // volume reads that too).
+  it("fades both of the clouds' forms, and the glint's cloud mask, by a flat share", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const u = globe.surfaceUniforms;
+    expect(u.uCloudFlat.value).toBe(1);
+    globe.setCloudShellShare(0.25, 0.5);
+    expect(globe.cloudShell.share()).toBe(0.125);
+    expect(u.uCloudInSurface.value).toBe(0.375);
+    expect(u.uCloudFlat.value).toBe(0.5);
+    const opacity = u.uCloudOpacity.value;
+    globe.setCloudShellShare(0.25);
+    expect(u.uCloudFlat.value).toBe(1);
+    expect(u.uCloudOpacity.value).toBe(opacity);
+    expect(() => globe.setCloudShellShare(0.25, 1.5)).toThrow(RangeError);
+    globe.dispose();
+  });
+
   // Stream F review, finding 4: the stars' frame left out the tile group's
   // placement, which the sun's light includes, so once phase 5 re-centres
   // the tiles the stars would wheel against the sun. The celestial rotation

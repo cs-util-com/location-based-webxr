@@ -33,7 +33,6 @@
 import * as THREE from "three";
 import { markArShadowCaster } from "./ar-sun-shadow.js";
 import {
-  packInstances,
   POI_FALLBACK_MODEL,
   poiModelFor,
   resolvePoiPlacement,
@@ -41,8 +40,15 @@ import {
   type PoiHostLayer,
   type PoiModel,
   type PoiPlacement,
-  type TreeVariant,
 } from "gps-plus-slam-osm";
+// The buildings' and trees' three.js objects, and the geometry wrapper every
+// layer here shares, are the library's since 2026-10-06 (globe city plan
+// 2026-10-05-0040 §14 L5): the globe draws the same city.
+import {
+  buildingObjects,
+  geometryFrom,
+  treeObjects,
+} from "gps-plus-slam-osm/three";
 
 import { RENDER_ORDER, groundLift } from "./layer-order.js";
 import type { LayerSet } from "./layers.js";
@@ -304,70 +310,6 @@ function resourcesFor(
 }
 
 /**
- * UNIT tree geometries — one per variant, built once, shared by every instance.
- *
- * WHY INSTANCED AT ALL (W6). `trees.ts` says it in its own header: trees are
- * "numerous, identical up to a transform, and therefore exactly what
- * `InstancedMesh` exists for", which is why the package emits placements rather
- * than geometry and ships `packInstances` to pack them. **Nothing called it.**
- * This loop allocated a fresh `ConeGeometry` and a fresh
- * `MeshStandardMaterial` per tree, on every publish, three publishes per click —
- * so a forest was N draw calls and N allocations on the main thread, which is
- * half of what R4-9 reports as the hitch.
- *
- * WHY ONE PER VARIANT (R4-3, DEC-R4-10). `variantOf` reads `leaf_type`/`wood`
- * into `broadleaved | needleleaved | unknown`, `TransferableMesh` carries it
- * across the worker boundary, and the draw loop **discarded it** — so every
- * tree, whatever its tags said, came out as the same fir. The data for the fix
- * was already in hand; only the geometry was missing.
- *
- * WHY UNIT-SIZED WITH THE BASE AT y = 0. The instance matrix then composes
- * directly from what `packInstances` already emits — position (with the ENU
- * `+y` north to scene `-z` reflection already applied), a rotation about the
- * vertical, and a scale of (crown, height, crown). The old per-tree code had to
- * add half a height to stand a centred cone on the ground; a base-at-zero
- * geometry removes that arithmetic rather than relocating it.
- *
- * SEGMENT COUNTS ARE DELIBERATELY LOW. This is an AR overlay before it is a
- * desktop scene: 6 radial segments on the cone and a level-0 icosahedron (20
- * triangles) keep a thousand trees affordable, and the flat-shaded low-polygon
- * look is the house style rather than a compromise.
- */
-function unitTreeGeometries(): Record<TreeVariant, THREE.BufferGeometry> {
-  // Radius 0.5 and height 1, translated up by half, so the geometry occupies
-  // x,z in [-0.5, 0.5] and y in [0, 1] — a unit cube's worth, scaled per tree.
-  const needle = new THREE.ConeGeometry(0.5, 1, 6);
-  needle.translate(0, 0.5, 0);
-  // A rounded crown, not a cone: this is the whole visible point of reading
-  // `leaf_type`. Level 0 keeps it at 20 triangles.
-  const broad = new THREE.IcosahedronGeometry(0.5, 0);
-  broad.translate(0, 0.5, 0);
-  return {
-    needleleaved: needle,
-    broadleaved: broad,
-    // UNKNOWN KEEPS THE CONE, deliberately: it is what the demo drew before, so
-    // the picture changes exactly where the data says something and nowhere
-    // else. A third invented shape would make untagged trees look like a claim.
-    unknown: needle,
-  };
-}
-
-const TREE_GEOMETRY = unitTreeGeometries();
-
-/**
- * ONE material for every tree, shared like the geometries.
- *
- * Shared, so `clear()` must not dispose it — see the note in
- * `building-view.ts`. That sentence used to sit on a pin geometry/material
- * pair this file no longer has; the tree pair is what it is about now.
- */
-const TREE_MATERIAL = new THREE.MeshStandardMaterial({
-  color: 0x3f7d4a,
-  flatShading: true,
-  roughness: 0.8,
-});
-
-/**
  * Triangles across a layer's chunks (W20).
  *
  * The status line reports what was DRAWN, and after chunking that is a sum
@@ -378,56 +320,6 @@ const TREE_MATERIAL = new THREE.MeshStandardMaterial({
  */
 function totalTriangles(chunks: readonly { mesh: MeshData }[]): number {
   return chunks.reduce((sum, chunk) => sum + chunk.mesh.triangleCount, 0);
-}
-
-/** Wraps worker buffers in a geometry. The buffers are already validated. */
-function geometryFrom(
-  data: MeshData,
-  /**
-   * Per-vertex RGB, when the layer is coloured per feature (W22/W23).
-   *
-   * A chunk is ONE draw call and the point of chunking is that it stays one, so
-   * a chunk holding a hundred buildings of twelve classes cannot use a
-   * per-material colour without becoming a hundred draw calls. Per-vertex is
-   * what keeps both.
-   */
-  colors?: Float32Array,
-  /**
-   * The AR shell shader's two per-vertex inputs, when the layer feeds it.
-   *
-   * ATTACHED UNCONDITIONALLY ONCE PRESENT, not only while AR runs: the geometry
-   * is built by the worker pass and reused across an AR entry/exit, so attaching
-   * them lazily would mean rebuilding the city to switch material. Two floats
-   * per vertex is the price of making the swap free.
-   */
-  shell?: {
-    height01?: Float32Array | undefined;
-    featureRand?: Float32Array | undefined;
-  },
-): THREE.BufferGeometry {
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.BufferAttribute(data.positions, 3),
-  );
-  geometry.setAttribute("normal", new THREE.BufferAttribute(data.normals, 3));
-  if (colors !== undefined) {
-    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  }
-  if (shell?.height01 !== undefined) {
-    geometry.setAttribute(
-      "aHeight01",
-      new THREE.BufferAttribute(shell.height01, 1),
-    );
-  }
-  if (shell?.featureRand !== undefined) {
-    geometry.setAttribute(
-      "aFeatureRand",
-      new THREE.BufferAttribute(shell.featureRand, 1),
-    );
-  }
-  geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
-  return geometry;
 }
 
 /**
@@ -448,96 +340,11 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     // skips a child wholesale when `sharedResources` is set, so a hoisted
     // material is either disposed on the first refresh or drags the chunk's
     // owned geometry into a leak. `mesh-layers.test.ts` pins the pairing.
-    build: (mesh) =>
-      mesh.buildings.map((chunk) => {
-        const object = new THREE.Mesh(
-          geometryFrom(chunk.mesh, chunk.colors, {
-            height01: chunk.height01,
-            featureRand: chunk.featureRand,
-          }),
-          new THREE.MeshStandardMaterial({
-            // WHITE plus VERTEX COLOURS (W22). The class/material palette lives
-            // in the package and arrives per vertex, so a chunk holding a dozen
-            // building classes is still ONE draw call — which is the whole
-            // reason W20 had to come first. A non-white base would tint every
-            // colour in the palette by itself.
-            color: 0xffffff,
-            // The noon brightening's target (`applySurfaceGain`).
-            userData: { neutralSurface: true },
-            vertexColors: true,
-            // SINGLE-SIDED SINCE W24 (R4-17). It was `DoubleSide`, and the
-            // reason was honest: OSM volumes are not reliably closed, so a
-            // `building:part` with no floor shows as a hole under culling for
-            // reasons that have nothing to do with this package.
-            //
-            // But that comment also recorded why it was a bad guarantee —
-            // "IT DOES NOT VALIDATE WINDING, it hides it. Every wall quad in
-            // the package was wound inside-out when this view was written and
-            // it looked entirely fine here" — and the fix for THAT was
-            // `mesh-orientation.test.ts`, which now pins the winding directly.
-            // With the winding proved, double-siding buys only the open-volume
-            // case, at roughly double the fragment work on the largest mesh in
-            // the scene. A hole where a floor is genuinely missing is also the
-            // more honest failure: it shows the data gap instead of papering
-            // over it with a wrongly-lit interior.
-            side: THREE.FrontSide,
-            flatShading: true,
-            // REFLECTIVE, and this was an oversight rather than a decision
-            // (W13, R4-15, N3). DEC-R2-1 made the GROUND reflective so facet
-            // edges show as a highlight slides across them while the camera
-            // moves; the buildings kept `MeshStandardMaterial`'s default
-            // `roughness: 1.0`, which is fully diffuse and has no specular
-            // lobe at all. Nothing in the record says buildings should stay
-            // matte.
-            //
-            // 0.55, DOWN FROM 0.65 (DEC-S3). The round-5 owner asked for as
-            // much of the scene as possible to carry the shiny-tile look, and
-            // facades are the largest surface in it — at 0.65 they were the
-            // one thing in the frame with no highlight to catch as the sun
-            // swings with the camera.
-            //
-            // 0.55 AND NOT 0.45, WHICH IS WHERE THIS FIRST LANDED. A W13 guard
-            // asserts buildings stay above 0.5 so they do not read as glass,
-            // and 0.45 broke it. The guard is right and the fix was to move
-            // this value rather than loosen it: 0.45 is only 0.03 from the
-            // ground's 0.42, so it was very nearly the polished-stone look that
-            // decision exists to prevent. 0.55 still tightens the lobe usefully
-            // against the old 0.65.
-            //
-            // THE RISK THIS CARRIES, and it is the reason DEC-S3 made this a
-            // step of its own: DEC-R4-5 requires the affordance heat ramp to
-            // stay the loudest thing on screen, and R4-14 warned the scene was
-            // close to too colourful before the height ramp became the default
-            // surface. Shiny cells over shiny buildings over a ramped ground is
-            // three competing speculars. Reverting THIS line alone is the
-            // intended way back.
-            roughness: 0.55,
-            metalness: 0,
-          }),
-        );
-        // A BLOCKER FOR PICKING, NOT A SELECTABLE THING (DEC-R11-17).
-        // `building-view.ts` puts every object carrying this key into the
-        // raycast set, and `resolvePick` stops at the first one — so a click on
-        // a facade resolves to nothing rather than to the ground behind it.
-        //
-        // **PICKING BLOCKS ON THE DRAWN VOLUME; NAVIGATION BLOCKS ON THE SOLID
-        // ONE, AND THEY ARE NOT THE SAME SET.** `solidBuildingFootprints`
-        // excludes `building=roof` canopies (DEC-R11-14) and `min_height > 0`
-        // arches — an agent walks under both — while this flag is per CHUNK,
-        // and a chunk is a spatial batch of many buildings that cannot say
-        // which of them is passable. So a canopy is drawn, is navigable, and
-        // still swallows the click. Cologne's station forecourt roof is the
-        // case that matters: ~16 200 m², the largest single outline in the
-        // corpus, over ground the agent can genuinely reach.
-        //
-        // Left as-is rather than papered over: expressing it would mean either
-        // per-feature picking objects (giving up W20's chunking, which exists
-        // so a 2.8 km tile can be frustum-culled at all) or a second per-vertex
-        // channel. Raised in review on #274 and filed as a follow-up; what is
-        // fixed here is the comment that claimed the two sets agreed.
-        object.userData["solid"] = true;
-        return object;
-      }),
+    // The library's `buildingObjects` (gps-plus-slam-osm/three): one mesh per
+    // chunk, a material per chunk, white plus vertex colours, single-sided,
+    // flat, roughness 0.55, `userData.solid` for picking and the material's
+    // `neutralSurface` for the noon brightening. Its header carries why.
+    build: (mesh) => buildingObjects(mesh.buildings),
     counters: (mesh) => ({
       volumes: mesh.volumes,
       parts: mesh.parts,
@@ -581,50 +388,10 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
   },
   {
     layer: "trees",
-    build: (mesh) => {
-      const objects: THREE.Object3D[] = [];
-      // `packInstances` groups by variant and applies the ENU→scene reflection
-      // itself — it is the package function written for exactly this and never
-      // called until now. Reimplementing the grouping here would be a second
-      // place for the reflection to be wrong.
-      for (const [variant, packed] of packInstances(mesh.trees)) {
-        const count = packed.rotations.length;
-        if (count === 0) continue;
-        const instanced = new THREE.InstancedMesh(
-          TREE_GEOMETRY[variant],
-          TREE_MATERIAL,
-          count,
-        );
-        const matrix = new THREE.Matrix4();
-        const position = new THREE.Vector3();
-        const quaternion = new THREE.Quaternion();
-        const scale = new THREE.Vector3();
-        const up = new THREE.Vector3(0, 1, 0);
-        for (let i = 0; i < count; i++) {
-          position.set(
-            packed.positions[i * 3] ?? 0,
-            packed.positions[i * 3 + 1] ?? 0,
-            packed.positions[i * 3 + 2] ?? 0,
-          );
-          // `scales` is [heightM, crownDiameterM] per instance; the geometry is
-          // a unit whose crown spans x,z in [-0.5, 0.5], so the crown diameter
-          // is the horizontal scale directly.
-          const heightM = packed.scales[i * 2] ?? 1;
-          const crownM = packed.scales[i * 2 + 1] ?? 1;
-          scale.set(crownM, heightM, crownM);
-          quaternion.setFromAxisAngle(up, packed.rotations[i] ?? 0);
-          instanced.setMatrixAt(i, matrix.compose(position, quaternion, scale));
-        }
-        instanced.instanceMatrix.needsUpdate = true;
-        // BORROWED, like the POI pins: `clear()` must not dispose a geometry or
-        // material that every later render depends on. three.js does not throw
-        // for a disposed geometry — it silently draws nothing, and the counters
-        // keep reporting the trees.
-        instanced.userData = { sharedResources: true };
-        objects.push(instanced);
-      }
-      return objects;
-    },
+    // The library's `treeObjects`: one instanced mesh per variant on shared,
+    // lazily made resources, each flagged `sharedResources` so `clear()` never
+    // disposes them (three.js would silently draw nothing afterwards).
+    build: (mesh) => treeObjects(mesh.trees),
     counters: (mesh) => ({ trees: mesh.trees.length }),
   },
   {

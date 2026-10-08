@@ -45,9 +45,13 @@ target }`.
   the package's `packInstances` applies it and is unit-tested where it lives.
   Moving the conversion here would drag it into a module that must not import
   `three`.
-- **`CALL_KINDS` is `satisfies WorkerCallKind[]`.** Without that, adding a kind
-  to `WorkerCalls` and forgetting the guard produces a request the worker
-  silently ignores — i.e. a promise that never settles, not a type error.
+- **`CALL_KINDS` is built from a `Record<WorkerCallKind, true>`.** Without
+  that, adding a kind to `WorkerCalls` and forgetting the guard produces a
+  request the worker silently ignores — i.e. a promise that never settles, not
+  a type error. It was a `satisfies WorkerCallKind[]` list until 2026-10-06,
+  which checks only that each entry is a kind, not that every kind is there:
+  `terrainUpgrade` was missing, so every DEM upgrade was dropped and
+  `terrain-cycle.ts`'s upgrade waited forever.
 - **Replies are a discriminated result, never a thrown error.** An exception in a
   worker rejects nothing on the main thread. A failure not turned into a message
   is a hung demo, which is strictly worse than a reported one.
@@ -86,3 +90,6 @@ readonly regions: {
 throughout (`toEqual` ignores object **type**, so a class instance compares equal
 to the plain object it clones into, passing for exactly the value that fails).
 `rpc-client.test.ts` covers the guards' behaviour on foreign messages.
+`protocol.test.ts` checks that `isWorkerEnvelope` accepts every call kind (its
+list is a `Record` over the union too, so it cannot fall behind) and rejects
+unknown kinds, a missing id and a malformed abort.

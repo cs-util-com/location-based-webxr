@@ -18,7 +18,6 @@ import {
   OSM_DEMO_USER_AGENT,
   createOsmTileSource,
   openOsmStore,
-  openPersistentOsmStore,
 } from "./osm-tile-cache.js";
 
 /** A StorageManager whose OPFS root hands out empty directories. */
@@ -30,42 +29,6 @@ function fakeStorage(): StorageManager {
     getDirectory: () => Promise.resolve(directory),
   } as unknown as StorageManager;
 }
-
-describe("openPersistentOsmStore", () => {
-  it("opens the OPFS store in the 'osm' directory", async () => {
-    const storage = fakeStorage();
-    const store = await openPersistentOsmStore({ storage });
-    expect(store).toBeInstanceOf(OpfsOsmBlobStore);
-  });
-
-  it("answers undefined, not a memory store, when OPFS is refused", async () => {
-    const storage = {
-      getDirectory: () =>
-        Promise.reject(new DOMException("no", "SecurityError")),
-    } as unknown as StorageManager;
-    await expect(openPersistentOsmStore({ storage })).resolves.toBeUndefined();
-  });
-
-  it("answers undefined when there is no storage manager at all", async () => {
-    await expect(
-      openPersistentOsmStore({ storage: undefined }),
-    ).resolves.toBeUndefined();
-  });
-
-  it("hands the injected warn to the OPFS store", async () => {
-    // Why: OsmDemo's worker injects the framework logger here so a failed
-    // cache write stays a Sentry Issue; dropping it on the way would route
-    // the failure to the console default without anything noticing.
-    const warn = vi.fn();
-    const store = await openPersistentOsmStore({
-      storage: fakeStorage(),
-      warn,
-    });
-    // The fake directory cannot create files, so the write fails.
-    await store?.put("osm/v2/a", "1");
-    expect(warn).toHaveBeenCalledTimes(1);
-  });
-});
 
 describe("openOsmStore (the worker's store)", () => {
   it("falls back to memory rather than refusing to start", async () => {

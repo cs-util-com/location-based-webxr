@@ -37,7 +37,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { EnuPoint } from "./enu.js";
-import { enuFrameAt } from "./enu.js";
+import { ENU_METRES_PER_DEG_LAT, enuFrameAt } from "./enu.js";
 import { extrudeBuilding } from "./extrude.js";
 import type { ExtrudedBuilding } from "./extrude.js";
 import type { MeshData } from "./mesh-data.js";
@@ -465,7 +465,7 @@ describe("tree instance buffers use the same frame as the mesh buffers", () => {
    * and that split is what the two assertions below pin.
    */
   const ORIGIN = { lat: 50.9412, lng: 6.9583 };
-  const METRES_PER_DEG_LAT = 111_320;
+  const METRES_PER_DEG_LAT = ENU_METRES_PER_DEG_LAT;
 
   /** A `natural=tree` node `northM` metres north of the origin. */
   function treeNorthOf(northM: number): OsmFeature {
