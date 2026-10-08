@@ -9,7 +9,8 @@
  * visits in any order whose fit reads each print with an error below a
  * bound, the rule and its memory applied in sequence. For ANY such world:
  * - known spots stay at least the floor apart;
- * - two prints change the code at most twice (a move, then its undo);
+ * - k prints change the code at most 2 (k - 1) times (two prints: a move,
+ *   then its undo), while every read stays within half the floor;
  * - a code at one unmoved print read with errors under the floor never
  *   changes at all.
  */
@@ -41,23 +42,33 @@ function known(m: CodeSpotMemory<P>): { spot: SpotRef; at: P }[] {
   ];
 }
 
-/** One reliable visit seeing the print at `print`, read off by `error`:
- *  the fit and the minted candidate both read it there. */
-function visit(m: CodeSpotMemory<P>, print: P, error: P): CodeSpotMemory<P> {
-  const read: P = [print[0] + error[0], print[1] + error[1]];
+/** One reliable visit seeing the print at `print`: its fit reads the
+ *  print off by `fitError`, the pose a move would mint by `candError`
+ *  (measured apart: p90 3.9 m, p99 9.3 m); `dayLater`: at least a day
+ *  after the current spot was minted. */
+function visit(
+  m: CodeSpotMemory<P>,
+  print: P,
+  fitError: P,
+  candError: P = fitError,
+  dayLater = false,
+): CodeSpotMemory<P> {
+  const fit: P = [print[0] + fitError[0], print[1] + fitError[1]];
+  const cand: P = [print[0] + candError[0], print[1] + candError[1]];
   const spots = known(m);
   const decision = decideCodeSpot({
     sightings: [
       {
-        distancesM: spots.map(({ spot, at }) => ({ spot, m: dist(read, at) })),
+        distancesM: spots.map(({ spot, at }) => ({ spot, m: dist(fit, at) })),
       },
     ],
-    candidateDistancesM: spots.map(({ at }) => dist(read, at)),
+    candidateDistancesM: spots.map(({ at }) => dist(cand, at)),
     reliable: true,
     frameChanged: false,
+    previousExpires: dayLater && m.previous !== null,
     floorM: FLOOR,
   });
-  return applyCodeSpotDecision(m, decision, read);
+  return applyCodeSpotDecision(m, decision, cand);
 }
 
 const errorUnder = (maxM: number) =>
@@ -78,15 +89,18 @@ describe("code-spot rule properties", () => {
     fc.assert(
       fc.property(
         fc.array(place, { minLength: 1, maxLength: 4 }),
-        fc.array(fc.tuple(fc.nat(), errorUnder(30)), { maxLength: 30 }),
+        fc.array(
+          fc.tuple(fc.nat(), errorUnder(30), errorUnder(30), fc.boolean()),
+          { maxLength: 30 },
+        ),
         (prints, visits) => {
           let m: CodeSpotMemory<P> = {
             current: prints[0]!,
             previous: null,
             copies: [],
           };
-          for (const [i, e] of visits) {
-            m = visit(m, prints[i % prints.length]!, e);
+          for (const [i, fe, ce, later] of visits) {
+            m = visit(m, prints[i % prints.length]!, fe, ce, later);
             const spots = known(m).map((s) => s.at);
             for (let a = 0; a < spots.length; a += 1)
               for (let b = a + 1; b < spots.length; b += 1)
@@ -99,25 +113,45 @@ describe("code-spot rule properties", () => {
     );
   });
 
-  it("changes a code with two prints at most twice, visited in any order", () => {
+  // The bound matters: a copy is stored where the moving visit minted it
+  // and later read where another visit fits it, so the two reads may differ
+  // by twice the error. Under half the floor each, a print is always
+  // recognised; beyond it a print can read as new (v5 review #5).
+  it("changes a code with k prints at most 2 (k - 1) times, in any order, read within half the floor", () => {
     fc.assert(
       fc.property(
         place,
-        // Prints far enough apart that a read error under 5 m cannot put
-        // one print's sighting within the floor of the other.
-        fc.double({ min: 26, max: 200, noNaN: true }),
         fc.double({ min: 0, max: 2 * Math.PI, noNaN: true }),
-        fc.array(fc.tuple(fc.boolean(), errorUnder(5)), { maxLength: 40 }),
-        (p, d, a, visits) => {
-          const q: P = [p[0] + d * Math.cos(a), p[1] + d * Math.sin(a)];
-          let m: CodeSpotMemory<P> = { current: p, previous: null, copies: [] };
+        fc.integer({ min: 2, max: 4 }),
+        // Prints far enough apart that a read of one is never within the
+        // floor of the spot stored for another (floor + twice the error).
+        fc.double({ min: 2 * FLOOR, max: 120, noNaN: true }),
+        fc.array(
+          fc.tuple(
+            fc.nat(),
+            errorUnder(FLOOR / 2 - 0.01),
+            errorUnder(FLOOR / 2 - 0.01),
+            fc.boolean(),
+          ),
+          { maxLength: 40 },
+        ),
+        (origin, a, k, gap, visits) => {
+          const prints: P[] = Array.from({ length: k }, (_, i) => [
+            origin[0] + i * gap * Math.cos(a),
+            origin[1] + i * gap * Math.sin(a),
+          ]);
+          let m: CodeSpotMemory<P> = {
+            current: prints[0]!,
+            previous: null,
+            copies: [],
+          };
           let changes = 0;
-          for (const [atQ, e] of visits) {
-            const next = visit(m, atQ ? q : p, e);
+          for (const [i, fe, ce, later] of visits) {
+            const next = visit(m, prints[i % k]!, fe, ce, later);
             if (next.current !== m.current) changes += 1;
             m = next;
           }
-          expect(changes).toBeLessThanOrEqual(2);
+          expect(changes).toBeLessThanOrEqual(2 * (k - 1));
         },
       ),
     );

@@ -99,6 +99,19 @@ describe("decideCodeSpot - the four outcomes", () => {
     });
   });
 
+  // v5 review #2: `previous` used to live until the next move, so the risk
+  // of a false undo grew with every later visit. A visit at least a day
+  // after the move that sees the code at its new spot confirms the move.
+  it("confirms a move when a visit a day later sees the code at its new spot", () => {
+    expect(
+      judge([seen([current, 4], [previous, 30])], { previousExpires: true }),
+    ).toEqual({ kind: "confirm" });
+    // Seen elsewhere, the day does not matter.
+    expect(
+      judge([seen([current, 30], [previous, 2])], { previousExpires: true }),
+    ).toEqual({ kind: "undo" });
+  });
+
   // v3 review #1 counterexample C, v2 review #12: a visit that saw the code
   // at home too was looking at a second print, whatever it saw last.
   it("never changes a code that the visit ALSO saw at its current spot", () => {
@@ -159,6 +172,37 @@ describe("applyCodeSpotDecision - the memory on the level", () => {
       current: "N",
       previous: "T",
       copies: ["Q"],
+    });
+  });
+
+  // v5 review #1: a second move dropped the first spot, so with three prints
+  // every visit moved the code again (B, C, A, B, C, A ...).
+  it("a second move keeps the spot before as a copy", () => {
+    const moved: CodeSpotMemory<string> = {
+      current: "B",
+      previous: "A",
+      copies: ["Q"],
+    };
+    expect(applyCodeSpotDecision(moved, { kind: "move" }, "C")).toEqual({
+      current: "C",
+      previous: "B",
+      copies: ["Q", "A"],
+    });
+  });
+
+  // A confirmation that FORGOT the old spot let two prints visited a day
+  // apart flip the code forever (found by the property test): the old spot
+  // is kept as a copy instead, so a visit there changes nothing.
+  it("a confirmation keeps the old spot as a copy, never to undo to", () => {
+    const moved: CodeSpotMemory<string> = {
+      current: "N",
+      previous: "T",
+      copies: ["Q"],
+    };
+    expect(applyCodeSpotDecision(moved, { kind: "confirm" }, "X")).toEqual({
+      current: "N",
+      previous: null,
+      copies: ["Q", "T"],
     });
   });
 

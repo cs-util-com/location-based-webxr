@@ -13,7 +13,13 @@
  *   a second print (the owner's rule);
  * - seen at a copy: nothing, it is the second print;
  * - seen at no spot, and the pose a move would mint also clear of every
- *   spot: the code moves.
+ *   spot: the code moves;
+ * - seen at the current spot a day or more after an automatic move: the move
+ *   is confirmed.
+ *
+ * A spot the code leaves for good (the spot before a second move, the spot a
+ * confirmed move left) is kept as a copy: forgetting it let three prints, or
+ * two prints visited a day apart, move the code on every visit.
  *
  * Measured on the real-walk corpus (`code-displacement.recordings.test.ts`,
  * `D20_REAL=m6`): 0.4 % of unmoved code-visits trigger, at 1 of 42 points;
@@ -47,7 +53,10 @@ export type CodeSpotDecision =
     }
   | { readonly kind: "copy"; readonly index: number }
   | { readonly kind: "undo" }
-  | { readonly kind: "move" };
+  | { readonly kind: "move" }
+  /** Seen at the current spot a day or more after an automatic move: the
+   *  move stands, and the spot it left becomes a copy (M6 v5.1). */
+  | { readonly kind: "confirm" };
 
 /** The second prints a level remembers; the oldest is dropped first. */
 export const MAX_CODE_COPIES = 4;
@@ -103,6 +112,9 @@ function decisionAt(spot: SpotRef): CodeSpotDecision {
  * @param input.candidateDistancesM how far the pose a move would mint lies
  *   from each known spot (m)
  * @param input.reliable the visit's walk is reliable (U3's `isReliable`)
+ * @param input.previousExpires the code has a `previous` spot and this
+ *   visit is at least a day after the move: a sighting at the current spot
+ *   then confirms the move
  * @param input.frameChanged the odometry frame changed during the visit:
  *   fixes and sightings are then not in one frame
  */
@@ -111,6 +123,7 @@ export function decideCodeSpot(input: {
   candidateDistancesM: readonly number[];
   reliable: boolean;
   frameChanged: boolean;
+  previousExpires?: boolean;
   floorM?: number;
 }): CodeSpotDecision {
   const floorM = input.floorM ?? MOVED_CODE_FLOOR_M;
@@ -124,7 +137,9 @@ export function decideCodeSpot(input: {
   // A visit that saw the code at home too was looking at a second print,
   // whichever it saw last.
   if (judged.some((s) => s !== "new" && s.kind === "current")) {
-    return { kind: "none", reason: "at-current" };
+    return input.previousExpires === true
+      ? { kind: "confirm" }
+      : { kind: "none", reason: "at-current" };
   }
   const latest = judged.at(-1);
   if (latest === undefined) return { kind: "none", reason: "not-judged" };
@@ -160,8 +175,18 @@ export function applyCodeSpotDecision<S>(
   decision: CodeSpotDecision,
   moveTo: S,
 ): CodeSpotMemory<S> {
+  // A spot the code leaves for good is kept as a copy: forgetting it let
+  // three prints, or two visited a day apart, move the code on every visit.
+  const keep = (spot: S | null): readonly S[] =>
+    spot === null
+      ? memory.copies
+      : [...memory.copies, spot].slice(-MAX_CODE_COPIES);
   if (decision.kind === "move") {
-    return { current: moveTo, previous: memory.current, copies: memory.copies };
+    return {
+      current: moveTo,
+      previous: memory.current,
+      copies: keep(memory.previous),
+    };
   }
   if (decision.kind === "undo") {
     if (memory.previous === null) {
@@ -170,8 +195,11 @@ export function applyCodeSpotDecision<S>(
     return {
       current: memory.previous,
       previous: null,
-      copies: [...memory.copies, memory.current].slice(-MAX_CODE_COPIES),
+      copies: keep(memory.current),
     };
+  }
+  if (decision.kind === "confirm") {
+    return { ...memory, previous: null, copies: keep(memory.previous) };
   }
   return memory;
 }

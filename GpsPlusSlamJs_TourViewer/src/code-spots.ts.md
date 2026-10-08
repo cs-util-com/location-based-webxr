@@ -39,12 +39,16 @@ floorM? })` returns a `CodeSpotDecision`:
       would mint lies within the floor of a known spot;
   - `undo` - the latest judged sighting belongs to `previous`;
   - `copy` (with its index) - it belongs to a second print;
-  - `move` - it belongs to no spot, and the minted pose clears every spot.
+  - `move` - it belongs to no spot, and the minted pose clears every spot;
+  - `confirm` - seen at the current spot with `previousExpires` (the
+    caller's: a `previous` exists and the visit is at least a day after
+    the move).
 - `MAX_CODE_COPIES = 4`.
 - `applyCodeSpotDecision(memory, decision, moveTo)`, over a
   `CodeSpotMemory<S> { current, previous, copies }`:
-  - a move: `previous` becomes the old current, and `moveTo` becomes
-    current;
+  - a move: `previous` becomes the old current, `moveTo` becomes current,
+    and an older `previous` joins `copies`;
+  - a confirmation: `previous` joins `copies` and is cleared;
   - an undo: `previous` becomes current again (exactly), and the spot it
     had moved to joins `copies`, the oldest dropped beyond 4;
   - anything else returns the same object.
@@ -60,6 +64,23 @@ floorM? })` returns a `CodeSpotDecision`:
   - Pinned by a property test.
 - **A visit that also saw the code at its current spot changes nothing**,
   whatever it saw last (v3 review #1, counterexample C).
+- **A spot the code leaves for good is kept as a copy.** That covers the
+  spot before a second move and the spot a confirmed move left. Forgetting
+  it caused two failures:
+  - three prints moved the code on every visit (v5 review #1);
+  - two prints, each visited a day apart, flipped it forever. The property
+    test found this one in my own first amendment.
+- **`previous` is confirmed away** a day after a move (v5 review #2). This
+  bounds the risk of a false undo to the visits before the confirmation.
+  - The cost: a false move confirmed by a visit that repeated the bias
+    keeps the true spot as a copy. It is then locked until the owner
+    decides on a way out.
+- **k prints change the code at most 2 (k - 1) times** while every read
+  stays within half the floor. This is a sufficient bound, not a measured
+  breaking point:
+  - a stored copy and a later read of it may differ by twice the error;
+  - with errors of 15 m, 100 random runs found no cycle, but one can be
+    built.
 - `floorM` must be positive and finite, else `RangeError`.
 - An undo without `previous` throws `RangeError`: the settle only offers
   an undo when `previous` exists.
@@ -106,8 +127,9 @@ const memory = applyCodeSpotDecision(
   - the memory transitions and the copy limit.
 - `code-spots.property.test.ts` - a simulated world of prints and visits
   in any order:
-  - the spots stay apart;
-  - two prints change the code at most twice;
+  - the spots stay apart, with fit and candidate errors drawn apart and
+    random confirmations;
+  - k = 2-4 prints change the code at most 2 (k - 1) times;
   - an unmoved print read within the floor never changes it.
 - Five hand mutations were each caught: the guard, the floor boundary, the
   minted-pose check, the copy on undo, and the tie.
