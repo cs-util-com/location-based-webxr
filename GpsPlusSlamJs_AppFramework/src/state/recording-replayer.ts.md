@@ -14,6 +14,11 @@ Loads all actions from a recording zip, creates a store with `NullStorageBackend
 
 - `zipData` — `ZipSource` = `Uint8Array` OR any zip.js `Reader` (widened 2026-08-26 for the TourViewer geo join, the function's first production caller: a range-streaming consumer replays through `new ByteSourceReader(archive.source)` without holding the archive in memory).
 - `options.onChunk?(dispatched, total)` — progress hook, called AFTER each chunk's event-loop yield. The dispatch loop is CHUNKED (25 actions per yield): replaying a long recording costs whole seconds of alignment re-solves and callers replay inside live XR sessions.
+- `options.onAction?(action, state)` - called after EACH dispatched action
+  with the state it produced, for a caller that needs the state at a moment
+  of the recording, not only at its end (the Tour Viewer places a recorded
+  photo through the first settled alignment after it was taken, scan-pass
+  plan S-D11). It runs once per action, so it must stay cheap.
 - `options.shouldContinue?()` — asked BEFORE each chunk; returning `false`
   stops the replay and returns the state built so far, so an aborting caller
   pays at most the chunk already in flight. The returned state is PARTIAL by
@@ -63,7 +68,7 @@ const state = await replayRecording(zipData);
 
 ## Tests
 
-- `recording-replayer.test.ts` — 11 unit tests covering:
+- `recording-replayer.test.ts` — unit tests covering, among others:
   - State population (gpsData, recorder metadata)
   - GPS event count correctness
   - Alignment matrix computation
@@ -73,3 +78,4 @@ const state = await replayRecording(zipData);
   - `migrateActions` callback invocation
   - Migrated actions dispatch (filtering, transformation)
   - Default behavior without options (backward compatibility)
+  - `onAction` receives every action with the state it produced (scan-pass S1)

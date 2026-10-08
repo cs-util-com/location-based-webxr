@@ -49,6 +49,9 @@ export interface AuthoringDraft {
    *  measuring (possible: the mint gate blocks the FINISH, not placement
    *  in general). */
   level: { id: string; json: string } | null;
+  /** Every code the draft keeps (M4c-1), `level` among them; absent in a
+   *  draft built by hand, where `level` is the only one ({@link draftLevels}). */
+  levels?: readonly { id: string; json: string }[];
   /** The objects placed or changed on this device (an edit or a move of
    *  a hosted object keeps its id), not yet seen in the hosted zip. */
   objects: readonly TourObject[];
@@ -153,7 +156,7 @@ export function objectContentKey(object: TourObject): string {
 export function draftIsSpent(
   draft: AuthoringDraft,
   manifest: TourManifest | null,
-  hostedLevelJson: string | null = null,
+  hostedLevelJson: HostedLevelText = null,
   visitCount = 0,
 ): boolean {
   if (visitCount > 0) return false;
@@ -164,12 +167,32 @@ export function draftIsSpent(
   return !draftHasUnhostedLevel(draft, hostedLevelJson);
 }
 
-/** Whether a draft holds a measurement the hosted zip does not have. */
+/**
+ * What the hosted zip stores for a level: the text for the draft's ONE
+ * `level` (the form before M4c-1), or per level id (a draft with several
+ * codes); null where it stores nothing.
+ */
+export type HostedLevelText =
+  string | null | ((levelId: string) => string | null);
+
+/** Every code a draft keeps: `levels`, else its one `level` (M4c-1). */
+export function draftLevels(
+  draft: AuthoringDraft,
+): readonly { id: string; json: string }[] {
+  return draft.levels ?? (draft.level === null ? [] : [draft.level]);
+}
+
+/** Whether a draft holds a measurement the hosted zip does not have - any
+ *  of its codes (M4c-1). */
 export function draftHasUnhostedLevel(
   draft: AuthoringDraft,
-  hostedLevelJson: string | null,
+  hostedLevelJson: HostedLevelText,
 ): boolean {
-  return draft.level !== null && draft.level.json !== hostedLevelJson;
+  const hostedOf =
+    typeof hostedLevelJson === "function"
+      ? hostedLevelJson
+      : (id: string) => (id === draft.level?.id ? hostedLevelJson : null);
+  return draftLevels(draft).some((level) => level.json !== hostedOf(level.id));
 }
 
 /**

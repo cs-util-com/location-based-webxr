@@ -134,8 +134,8 @@ export function gateSegment(gate: ScanGate): string {
       break;
     case "scanning":
       return gate.escapeOffered
-        ? "Point the phone at the printed code you scanned - or continue with GPS only below (less accurate)."
-        : "Point the phone at the printed code you scanned.";
+        ? "Point the phone at the tour's code (on the poster) - or continue with GPS only below (less accurate)."
+        : "Point the phone at the tour's code (on the poster).";
     case "passed":
       switch (gate.via) {
         case "code":

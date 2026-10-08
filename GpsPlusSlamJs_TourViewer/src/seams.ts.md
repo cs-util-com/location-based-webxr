@@ -21,7 +21,21 @@ getIntrinsics; createQrDebugView; getScene; getArPose;
 queryGeolocationPermission;
 requestLocationOnce; shareOrDownloadZip; downloadZip; canShareZip; downloadPdf;
 startHitTestReticle; pickObjectInView; encodeFrameJpeg;
-createLabel; schedule }`
+createLabel; schedule; createWayfindingHud; loadGlbModel;
+createAudioElement }`
+  - `createWayfindingHud({ getTargets })` (tour kit plan K4) - the
+    framework's wayfinding HUD over the session camera (`getCamera()`),
+    null while there is none; the station targets carry their own arrival
+    band, and the HUD-level band is `station-bands.ts`'s floors (1.5 m /
+    3.0 m). The e2e fake records the targets getter instead.
+  - `loadGlbModel(blob)` (K4) - three's `GLTFLoader`, imported on first
+    use (a visitor without a model never downloads it), `parseAsync` with
+    no path, no DRACO, KTX2 or meshopt decoder: the tour session already
+    refused external URIs and decoder extensions (`checkGlbInert`, K0).
+    Not faked in the e2e: the fixture's minimal `.glb` goes through the
+    real loader.
+  - `createAudioElement()` (K4) - `new Audio()`: the page's ONE element
+    for the stories (`scene-audio.ts`). The e2e fake records what plays.
   - `startHitTestReticle(arWorldGroup, onSelect?)` - `onSelect` hears
     every XR `select` the DOM overlay did not cancel (a tap in AR,
     authoring plan 2026-09-28-0953 M4), through the framework driver's own

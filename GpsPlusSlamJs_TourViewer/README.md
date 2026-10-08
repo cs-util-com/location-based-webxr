@@ -10,9 +10,9 @@ downloading the whole file first.
 
 - **The plain page is the creator's guided setup.** Four steps, one open
   at a time: host a zip and paste its link, print the code, hang it, and
-  measure it in AR and place content - after Finish the same step offers
-  the rebuilt zip for download and the recipe for replacing the hosted
-  file. The link last opened and the step reached with it are
+  measure it in AR and place content - after Finish the same step saves
+  the rebuilt zip to the phone by itself (a button saves it again) and
+  shows the recipe for replacing the hosted file. The link last opened and the step reached with it are
   remembered on the device: after a reload (the AR session, the print
   dialog) the link is prefilled and Open returns to that step.
 - **A `?qr=` launch is the visitor's screen.** Scanning the printed code
@@ -41,7 +41,7 @@ author flag.
    map, and the panel shows the accuracy). Then, at the spots you choose,
    "Place a pin here" (a text label on the surface under the ring) and
    "Capture a photo" (the camera frame, placed where you stood). "Finish"
-   ends the session, and the same step then offers:
+   ends the session, and the same step then saves and shows:
    - **the rebuilt zip** - the page rebuilds the archive in the browser:
      the original entries byte for byte, plus `qr/<id>.json` (the measured
      code's pose) and `tour.json` (the placed objects, with GPS positions
@@ -65,6 +65,12 @@ the placement, the tour's
 capture spots), and a tour that carries a recording also places its
 photos at the spots they were taken. A tour whose zip carries no measured
 code is placed by GPS at once, and says so.
+
+A sample station tour ships with the app: `/tour/samples/marienplatz-tour.zip`
+(three stations at Marienplatz in Munich, a knight, a choice, an arch).
+Open it with `/tour/?qr=<that URL>&relocate=here` to try it anywhere: the
+test switch moves its stations to your first GPS fix, in memory only
+(`scripts/build-sample-tour.mjs`, `src/tour-relocation.ts`).
 
 ## What the transport does
 

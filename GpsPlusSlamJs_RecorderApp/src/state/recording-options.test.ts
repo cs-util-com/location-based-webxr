@@ -48,6 +48,7 @@ import {
   DEFAULT_OCCUPANCY_CELL_SIZE_M,
   DEFAULT_OCCUPANCY_MIN_OBSERVATIONS,
 } from 'gps-plus-slam-app-framework/ar/occupancy-grid';
+import { MAX_PACKED_GRID_SIZE } from 'gps-plus-slam-app-framework/storage/depth-sample-codec';
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -171,6 +172,17 @@ describe('recording-options', () => {
     it('clamps gridSize above maximum to maximum', () => {
       const result = validateDepthOptions({ gridSize: 100 });
       expect(result.gridSize).toBe(DEPTH_CONSTRAINTS.gridSize.max);
+    });
+
+    // Why this test matters (PR #569 review): the framework packs a depth
+    // grid only up to MAX_PACKED_GRID_SIZE (scan pass S2); a wider grid is
+    // written as JSON, about 18x the bytes, with nothing failing. The
+    // setting's maximum was raised once already (2026-07-01): raising it
+    // past the bound must fail here, not silently in the recordings.
+    it('never offers a grid wider than the framework packs', () => {
+      expect(DEPTH_CONSTRAINTS.gridSize.max).toBeLessThanOrEqual(
+        MAX_PACKED_GRID_SIZE
+      );
     });
 
     /**

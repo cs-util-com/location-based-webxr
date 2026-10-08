@@ -42,11 +42,13 @@
  * The measured sweep of the fix candidates is opt-in:
  * `QR_MINT_START_AT_CODE_SWEEP=1`.
  *
- * WHAT SHIPS (owner decision D28, revised 2026-10-02): (a3) at 80 m - the
- * first alignment at or after the code's last sighting whose session GPS
- * extent reaches 80 m, else the alignment at save. The sweeps carry it as
- * the `a3-80 shipped` column, and it matches the simulated `a3 ext>=80m`
- * column in every cell. Re-run 2026-10-02 on the shipped path:
+ * WHAT SHIPS (owner decision D28, revised 2026-10-02; floor lowered from
+ * 80 m to 40 m by D34, 2026-10-04): (a3) - the first alignment at or after
+ * the code's last sighting whose session GPS extent reaches the shared floor
+ * (`MATURE_GPS_EXTENT_M`), else the alignment at save. The sweeps carry it
+ * as the `a3-40 shipped` column. At 80 m it matched the simulated
+ * `a3 ext>=80m` column in every cell; at 40 m it is the `a3 ext>=40m`
+ * column below. Re-run 2026-10-02 on the shipped path at 80 m:
  * - start-at-code (`start`): identical to (a2) wherever the walks never
  *   reach 80 m (15-60 m walks): 8.2-10.0 / 13-17 degrees and 1.3 m at 15 m,
  *   2.1-4.9 / 4-10 degrees and 1.3 m from 30 m up; at 120 m within 0.2
@@ -161,6 +163,22 @@ import { qrWorldPoseFromOdom } from './qr-mint-level.js';
 import { averageRotation } from './qr-pose-aggregation.js';
 import { mintQrGeoPose } from './qr-geo-pose-minting.js';
 import { weightedMedian } from '../../utils/median.js';
+// The drift and GPS models are shared with the Tour Viewer's authoring
+// settle sweep (`visit-settle.left-behind.test.ts`), so both measure the
+// same drift.
+import {
+  gaussMarkovGpsErrors,
+  gaussian,
+  integrateOdometry,
+  mulberry32,
+  positionOnRoute,
+  rotY,
+  trackAt,
+  type IntegratedDrift,
+  type NE,
+  type OdomTrack,
+  type Waypoint,
+} from '../../test-utils/integrated-slam-drift.js';
 import {
   createQrSightingAccumulator,
   type QrSighting,
@@ -194,19 +212,11 @@ const DETECTION_INTERVAL_MS = 125;
 const ACCURACY_M = 5;
 const IDENTITY_Q: Quaternion = [0, 0, 0, 1];
 
-type NE = readonly [number, number];
-
 const rad = (d: number): number => (d * Math.PI) / 180;
 const deg = (r: number): number => (r * 180) / Math.PI;
 /** Signed angle difference in (-180, 180]. */
 const wrapDeg = (d: number): number => ((((d + 180) % 360) + 360) % 360) - 180;
 
-/** Rotation about Up (NUE y) by `a` radians. */
-function rotY(a: number, v: Vector3): Vector3 {
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  return [c * v[0] + s * v[2], v[1], -s * v[0] + c * v[2]];
-}
 const yawQuat = (a: number): Quaternion => [
   0,
   Math.sin(a / 2),
@@ -216,20 +226,6 @@ const yawQuat = (a: number): Quaternion => [
 /** Inverse of the library's `webxrToNUE` ([-z, y, x]). */
 const nueToWebxr = (v: Vector3): Vector3 => [v[2], v[1], -v[0]];
 
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-function gaussian(rng: () => number): number {
-  const u = Math.max(rng(), 1e-12);
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng());
-}
 const stream = (seed: number, purpose: number): (() => number) =>
   mulberry32(seed * 7919 + purpose * 104_729);
 
@@ -260,27 +256,6 @@ interface LeaveSpec {
   readonly path: 'straight' | 'meander';
 }
 
-/**
- * Odometry drift INTEGRATED along the walk, which is how SLAM drifts: the
- * heading error grows with distance walked, and every metre is reported
- * with that metre's heading error, plus a translation bias in one random
- * horizontal direction proportional to the distance (end-point error as a
- * share of distance travelled). A pose recorded early stays in the frame
- * as it was then, so an alignment fitted to the END of the walk sees it
- * displaced by everything accumulated after it.
- */
-interface IntegratedDrift {
-  readonly yawDegPer100m: number;
-  readonly transPct: number;
-}
-
-interface Waypoint {
-  readonly tS: number;
-  readonly at: NE;
-  /** Distance walked by `tS` (m). */
-  readonly walkedM: number;
-}
-
 interface FixSnapshot {
   readonly tS: number;
   readonly alignment: AlignmentMatrix | null;
@@ -305,12 +280,6 @@ interface Recording {
   readonly waypoints: readonly Waypoint[];
   /** The phone's integrated odometry position, when `spec.drift` is set. */
   readonly track: OdomTrack | null;
-}
-
-/** The phone's odometry NUE position sampled every `stepS` from t = 0. */
-interface OdomTrack {
-  readonly stepS: number;
-  readonly points: readonly Vector3[];
 }
 
 function timeline(spec: RecordingSpec): {
@@ -386,27 +355,7 @@ function appendLeave(
   return t;
 }
 
-function phoneAt(
-  waypoints: readonly Waypoint[],
-  tS: number
-): { at: NE; walkedM: number } {
-  for (let i = 1; i < waypoints.length; i += 1) {
-    const a = waypoints[i - 1]!;
-    const b = waypoints[i]!;
-    if (tS <= b.tS) {
-      const f = b.tS > a.tS ? Math.max(0, (tS - a.tS) / (b.tS - a.tS)) : 1;
-      return {
-        at: [
-          a.at[0] + f * (b.at[0] - a.at[0]),
-          a.at[1] + f * (b.at[1] - a.at[1]),
-        ],
-        walkedM: a.walkedM + f * (b.walkedM - a.walkedM),
-      };
-    }
-  }
-  const last = waypoints[waypoints.length - 1]!;
-  return { at: last.at, walkedM: last.walkedM };
-}
+const phoneAt = positionOnRoute;
 
 const DRIFT_DEG_PER_100M = 1;
 
@@ -441,74 +390,29 @@ function odomNueAt(rec: RecordingFrame, world: Vector3, tS: number): Vector3 {
   ]);
 }
 
-const TRACK_STEP_S = 0.05;
-
 /** Integrate the phone's odometry along the walk (see `IntegratedDrift`). */
 function integrateTrack(
   rec: Omit<RecordingFrame, 'track'>,
   drift: IntegratedDrift
 ): OdomTrack {
-  const biasDir = stream(rec.spec.seed, 5)() * 2 * Math.PI;
-  const bias: NE = [Math.cos(biasDir), Math.sin(biasDir)];
-  const eps = drift.transPct / 100;
   const startNe = phoneAt(rec.waypoints, 0).at;
-  let o = rotY(-frameYaw(rec, 0), [
-    startNe[0] - rec.t0[0],
-    PHONE_ALT - rec.t0[1],
-    startNe[1] - rec.t0[2],
-  ]);
-  const points: Vector3[] = [o];
-  let prev = startNe;
-  const steps = Math.ceil(rec.endS / TRACK_STEP_S) + 1;
-  for (let i = 1; i <= steps; i += 1) {
-    const tS = i * TRACK_STEP_S;
-    const cur = phoneAt(rec.waypoints, tS).at;
-    const dn = cur[0] - prev[0];
-    const de = cur[1] - prev[1];
-    const len = Math.hypot(dn, de);
-    const d = rotY(-frameYaw(rec, tS - TRACK_STEP_S / 2), [
-      dn + eps * len * bias[0],
-      0,
-      de + eps * len * bias[1],
-    ]);
-    o = [o[0] + d[0], o[1], o[2] + d[2]];
-    points.push(o);
-    prev = cur;
-  }
-  return { stepS: TRACK_STEP_S, points };
-}
-
-function trackAt(track: OdomTrack, tS: number): Vector3 {
-  const pos = Math.max(0, tS / track.stepS);
-  const i = Math.min(Math.floor(pos), track.points.length - 1);
-  const a = track.points[i]!;
-  const b = track.points[Math.min(i + 1, track.points.length - 1)]!;
-  const f = pos - i;
-  return [
-    a[0] + f * (b[0] - a[0]),
-    a[1] + f * (b[1] - a[1]),
-    a[2] + f * (b[2] - a[2]),
-  ];
+  return integrateOdometry({
+    waypoints: rec.waypoints,
+    endS: rec.endS,
+    start: rotY(-frameYaw(rec, 0), [
+      startNe[0] - rec.t0[0],
+      PHONE_ALT - rec.t0[1],
+      startNe[1] - rec.t0[2],
+    ]),
+    frameYawAt: (tS) => frameYaw(rec, tS),
+    biasDirRad: stream(rec.spec.seed, 5)() * 2 * Math.PI,
+    transPct: drift.transPct,
+  });
 }
 
 function gpsErrors(spec: RecordingSpec, count: number): NE[] {
   if (spec.exact === true) return Array.from({ length: count }, () => [0, 0]);
-  const rng = stream(spec.seed, 2);
-  const s = 0.25 * ACCURACY_M;
-  const w = 0.15 * ACCURACY_M;
-  const rho = Math.exp(-1 / 60);
-  const k = Math.sqrt(1 - rho * rho);
-  let gm: [number, number] = [s * gaussian(rng), s * gaussian(rng)];
-  const out: NE[] = [];
-  for (let i = 0; i < count; i += 1) {
-    if (i > 0)
-      gm = [
-        rho * gm[0] + k * s * gaussian(rng),
-        rho * gm[1] + k * s * gaussian(rng),
-      ];
-    out.push([gm[0] + w * gaussian(rng), gm[1] + w * gaussian(rng)]);
-  }
-  return out;
+  return gaussMarkovGpsErrors(stream(spec.seed, 2), count, ACCURACY_M);
 }
 
 /** Run one recording's GPS through the real store; snapshot after each fix. */
@@ -683,7 +587,7 @@ function recordedSightings(
 
 /**
  * The alignment the SHIPPED path mints this code through (D28 revised,
- * a3 at 80 m): the Recorder's feeder reports every detection and every
+ * a3, at 40 m since D34): the Recorder's feeder reports every detection and every
  * alignment change to `createQrMintAlignmentTracker`, in time order, and
  * the save asks it with the alignment at save as the live one. Each fix is
  * reported before a detection at the same instant, because a detection
@@ -997,7 +901,7 @@ describe('the Recorder mint when a recording starts at the code', () => {
   const SEEDS = Array.from({ length: 12 }, (_, i) => i + 1);
   /** The shipped mint (the alignment `shippedMintAlignment` picks passed as
    *  `currentAlignment`) on each seed's 30 m recording. Two 30 m walks never
-   *  reach the 80 m floor, so this is the save-time fallback. */
+   *  reach the floor, so this is the save-time fallback. */
   const shippedErrors = (looks: number): MintError[] =>
     SEEDS.map((seed) => {
       const rec = runRecording({ seed, walkM: 30 });
@@ -1037,7 +941,7 @@ describe('the Recorder mint for a code left behind (D28 revised)', () => {
   // code seen mid-recording and then walked 500 m away from, at 1 % and
   // 1 degree per 100 m of SLAM drift, inherits all of that drift (8.6 m
   // p50 on the `left` sweep). The shipped rule (the first alignment at or
-  // after the last sighting whose GPS extent reaches 80 m) stops at the
+  // after the last sighting whose GPS extent reaches the floor) stops at the
   // sighting, as the per-sighting rule did (1.1-1.7 m). The a2 arm on the
   // same recordings shows the test can tell the two apart.
   it('keeps a code left 500 m behind at 1 % / 1 degree near 1.4 m, not 8.6 m', () => {
@@ -1120,10 +1024,10 @@ function candidateErrors(
     ['a1 no current', mintError(sightings)],
     // (a2) = shipped for one day: the alignment at the end of the recording.
     ['a2 at save', mintError(sightings, { currentAlignment: current })],
-    // What ships since D28 was revised: (a3) at 80 m through the real
-    // tracker (`shippedMintAlignment`).
+    // What ships since D28 was revised: (a3) through the real tracker
+    // (`shippedMintAlignment`), at 40 m since D34.
     [
-      'a3-80 shipped',
+      'a3-40 shipped',
       mintError(sightings, {
         currentAlignment: shippedMintAlignment(rec, detectionTimesS),
       }),
@@ -1356,7 +1260,7 @@ function leftCandidates(
       }),
     ],
     [
-      'a3-80 shipped',
+      'a3-40 shipped',
       mintError(sightings, {
         currentAlignment: shippedMintAlignment(rec, detectionTimesS),
       }),
@@ -1567,7 +1471,7 @@ describe.skipIf(!SWEEPS.has('extent'))(
               DEFAULT_NOISE,
               7
             );
-            // The shipped path (a3 at 80 m); walks this short never mature,
+            // The shipped path (a3, 40 m since D34); walks this short never mature,
             // so it is the alignment at save.
             const used = shippedMintAlignment(rec, detectionTimesS);
             const err = mintError(sightings, { currentAlignment: used });
@@ -1669,7 +1573,7 @@ describe.skipIf(!SWEEPS.has('refusals'))(
         }
         emitTable(
           [
-            `a1 refusals of start-only codes: ${String(rows.length)} of ${String(total)}; a3-80 shipped: ${String(shippedRefused)}`,
+            `a1 refusals of start-only codes: ${String(rows.length)} of ${String(total)}; a3-40 shipped: ${String(shippedRefused)}`,
             ...rows,
           ],
           '.refusals.txt'
