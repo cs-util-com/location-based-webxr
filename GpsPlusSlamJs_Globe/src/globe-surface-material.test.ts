@@ -97,6 +97,9 @@ describe("patchGlobeSurfaceShader", () => {
       "uTwilight",
       "uSunWorld",
       "uCloudFlat",
+      "uDayWest",
+      "uDayEast",
+      "uDayReady",
     ]) {
       expect(shader.uniforms[name]).toBe(
         uniforms[name as keyof typeof uniforms],
@@ -109,6 +112,14 @@ describe("patchGlobeSurfaceShader", () => {
     );
     expect(at("#include <roughnessmap_fragment>")).toBeLessThan(
       at("uWaterRoughness, globeWater"),
+    );
+    // A tile without its imagery yet shows the first look (DEC-FR2-6), the
+    // pyramid's level 0 by longitude, once it is ready; its water too.
+    expect(fs).toContain("#ifndef USE_MAP");
+    expect(fs).toContain("uDayReady");
+    expect(at("#ifndef USE_MAP")).toBeGreaterThan(at("float globeU ="));
+    expect(at("#ifndef USE_MAP")).toBeLessThan(
+      at("globeCloud * uCloudOpacity"),
     );
     // The glint's cloud mask fades with the flat layer (DEC-FR2-5).
     expect(fs).toContain("globeWater * ( 1.0 - globeCloud * uCloudFlat )");
@@ -129,9 +140,10 @@ describe("patchGlobeSurfaceShader", () => {
     patchGlobeSurfaceShader(shader, createGlobeSurfaceUniforms(textures()));
     const fs = shader.fragmentShader;
     expect(fs).toContain("fract( globeU + 0.5 )");
-    // The night map, the clouds, and the clouds again for the shadow on the
-    // ground (round-6 plan G6-2), every one with the seam fix's gradients.
-    expect(count(fs, "textureGrad(")).toBe(3);
+    // The night map, the clouds, the clouds again for the shadow on the
+    // ground (round-6 plan G6-2), and the first look's two halves (round-2
+    // plan DEC-FR2-6), every one with the seam fix's gradients.
+    expect(count(fs, "textureGrad(")).toBe(5);
     expect(fs).not.toMatch(/texture\( u(Night|Clouds)/);
   });
 
@@ -509,6 +521,6 @@ describe("the clouds in the surface or on their own shell", () => {
   });
 
   it("keeps the program key in step with the shader", () => {
-    expect(GLOBE_SURFACE_CACHE_KEY).toBe("gps-plus-slam-globe-surface-v10");
+    expect(GLOBE_SURFACE_CACHE_KEY).toBe("gps-plus-slam-globe-surface-v11");
   });
 });

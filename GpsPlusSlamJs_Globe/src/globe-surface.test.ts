@@ -21,6 +21,7 @@ import {
   GLOBE_SURFACE,
   createGlobeImagery,
   createGlobeSurface,
+  firstLookStep,
   disposeLitMaterials,
   litCopy,
   tileMeshes,
@@ -171,6 +172,7 @@ describe("createGlobeSurface", () => {
       mapsLoaded: 0,
       mapErrors: 0,
       mapsTotal: 2,
+      firstLookReady: false,
     });
     // The credits line reads this: every source drawn is the registry's.
     expect(globe.activeSources()).toEqual(GLOBE_SOURCES.map((s) => s.id));
@@ -182,7 +184,9 @@ describe("createGlobeSurface", () => {
     const loader = stubLoader();
     const globe = createGlobeSurface(loader);
     const equirect = GLOBE_SOURCES.filter((s) => s.kind === "equirect");
-    expect(loader.loaded).toEqual(equirect);
+    expect(loader.loaded.filter((s) => s.kind === "equirect")).toEqual(
+      equirect,
+    );
     const u = globe.surfaceUniforms;
     const bySource = {
       "black-marble": u.uNight.value,
@@ -213,6 +217,113 @@ describe("createGlobeSurface", () => {
     expect(globe.template.customProgramCacheKey()).not.toBe(
       new THREE.MeshStandardMaterial().customProgramCacheKey(),
     );
+    globe.dispose();
+  });
+
+  // Why (round-2 plan 2026-10-07-2350 DEC-FR2-6; the owner: "the globe is
+  // plain blue for a second before its texture loads"): until a tile's
+  // imagery arrives the sphere under the sky was untextured (measured: 7 s
+  // of one blue in a smoke). The pyramid's level 0, the whole Earth in two
+  // tiles, loads with the global maps, long before the tile renderer asks.
+  it("loads the imagery's level 0 as the first look, ready once both halves are in", () => {
+    const loader = stubLoader();
+    const globe = createGlobeSurface(loader);
+    const u = globe.surfaceUniforms;
+    const paths = loader.loaded.map((s) => s.path);
+    expect(paths).toContain("/globe-assets/blue-marble-4326/0/0/0.webp");
+    expect(paths).toContain("/globe-assets/blue-marble-4326/0/1/0.webp");
+    expect(u.uDayWest.value.colorSpace).toBe(THREE.SRGBColorSpace);
+    expect(u.uDayEast.value.colorSpace).toBe(THREE.SRGBColorSpace);
+    expect(u.uDayReady.value).toBe(0);
+    const west = paths.indexOf("/globe-assets/blue-marble-4326/0/0/0.webp");
+    const east = paths.indexOf("/globe-assets/blue-marble-4326/0/1/0.webp");
+    loader.finish[west]!();
+    expect(u.uDayReady.value).toBe(0);
+    loader.finish[east]!();
+    expect(u.uDayReady.value).toBe(1);
+    expect(globe.state().firstLookReady).toBe(true);
+    // Not counted with the global maps: the loading label is about those.
+    expect(globe.state().mapsTotal).toBe(2);
+    globe.dispose();
+  });
+
+  // Why (DEC-FR2-6, measured in the browser): the tile renderer draws a
+  // tile only once its imagery is in, so before that there is no sphere at
+  // all, only the atmosphere's veil over black. The first look is a sphere
+  // of its own, a fraction under the ellipsoid in the tiles' frame, in the
+  // surface's own material without a map (so it shows the level 0, lit and
+  // clouded as the tiles are), drawn until the globe can draw its view.
+  it("draws the first look on a sphere of its own until the globe can draw its view", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const look = globe.firstLook;
+    expect(look.parent?.parent).toBe(globe.group);
+    // A camera high up (the first look ends for good below 2,000 km).
+    const highCamera = new THREE.PerspectiveCamera();
+    highCamera.position.set(30_000_000, 0, 0);
+    // Shown only once its images are in (before, a plain white ball).
+    globe.update(highCamera, {
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(2, 2),
+    } as unknown as THREE.WebGLRenderer);
+    expect(look.visible).toBe(false);
+    globe.surfaceUniforms.uDayReady.value = 1;
+    globe.update(highCamera, {
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(2, 2),
+    } as unknown as THREE.WebGLRenderer);
+    expect(look.visible).toBe(true);
+    const material = look.material as THREE.MeshStandardMaterial;
+    expect(material.map).toBeNull();
+    expect(material.customProgramCacheKey()).toBe(
+      globe.template.customProgramCacheKey(),
+    );
+    // A fraction under the ellipsoid: the tiles cover it wherever drawn.
+    const r = globe.tiles.ellipsoid.radius;
+    expect(look.scale.x).toBeLessThan(r.x);
+    expect(look.scale.x).toBeGreaterThan(r.x * 0.995);
+    expect(look.scale.z / look.scale.x).toBeCloseTo(r.z / r.x, 9);
+    globe.dispose();
+  });
+
+  // Why (the full browser run, 2026-10-08): the first look is for the start
+  // only. Shown again whenever the globe could not draw its view (zooming out
+  // of the band), it filled the very holes the handover's positive control
+  // must see. Once the globe has drawn its whole view, it is done for good.
+  it("shows the first look only before the globe has first drawn its whole view", () => {
+    const high = GLOBE_SURFACE.firstLookFloorM * 2;
+    const low = GLOBE_SURFACE.firstLookFloorM / 2;
+    const step = (
+      done: boolean,
+      imagesIn: boolean,
+      drawn: boolean,
+      h: number,
+    ) => firstLookStep(done, imagesIn, drawn, h);
+    expect(step(false, false, false, high)).toEqual({
+      done: false,
+      shown: false,
+    });
+    expect(step(false, true, false, high)).toEqual({
+      done: false,
+      shown: true,
+    });
+    expect(step(false, true, true, high)).toEqual({ done: true, shown: false });
+    // Done stays done, whatever the globe does later.
+    expect(step(true, true, false, high)).toEqual({ done: true, shown: false });
+    // And it ends for good once the camera goes low (the band and the relief
+    // take the pixels there; kept on, it drew a whole sphere under the relief
+    // every frame: a city dive recorded 9 frames, not more than 10, and the
+    // stencil fill's cost smoke ran out of time).
+    expect(step(false, true, false, low)).toEqual({ done: true, shown: false });
+  });
+
+  it("keeps the plain look if a half of the first look fails", () => {
+    const loader = stubLoader();
+    const globe = createGlobeSurface(loader);
+    const paths = loader.loaded.map((s) => s.path);
+    loader.finish[
+      paths.indexOf("/globe-assets/blue-marble-4326/0/0/0.webp")
+    ]!();
+    loader.fail[paths.indexOf("/globe-assets/blue-marble-4326/0/1/0.webp")]!();
+    expect(globe.surfaceUniforms.uDayReady.value).toBe(0);
+    expect(globe.state().mapErrors).toBe(0);
     globe.dispose();
   });
 

@@ -40,7 +40,7 @@ export const GLOBE_SURFACE_TUNING = {
 export const GLOBE_CLOUD_DRIFT_DEG_PER_S = 0.375;
 
 /** Every tile's program is the same one: three shares it by this key. */
-export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v10";
+export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v11";
 
 /** The one uniforms object every tile's shader reads. */
 export interface GlobeSurfaceUniforms {
@@ -101,6 +101,16 @@ export interface GlobeSurfaceUniforms {
    */
   readonly uCloudFlat: { value: number };
   /**
+   * The globe's first look (round-2 plan DEC-FR2-6): the imagery pyramid's
+   * level 0, the whole Earth in two tiles (west and east of Greenwich,
+   * north at the top), which a tile without its imagery yet shows once
+   * `uDayReady` is 1: until then the sphere under the sky was untextured,
+   * plain blue (measured 7 s in a smoke).
+   */
+  readonly uDayWest: { value: THREE.Texture };
+  readonly uDayEast: { value: THREE.Texture };
+  readonly uDayReady: { value: number };
+  /**
    * The soft cloud shadow on the ground (DEC-G6-4), 0 (none) to 1: the
    * share of the diffuse colour a full cloud on the shell toward the sun
    * takes away.
@@ -131,6 +141,8 @@ export interface GlobeSurfacePatchOptions {
 export function createGlobeSurfaceUniforms(textures: {
   night: THREE.Texture;
   clouds: THREE.Texture;
+  dayWest?: THREE.Texture;
+  dayEast?: THREE.Texture;
 }): GlobeSurfaceUniforms {
   return {
     uSunEcef: { value: new THREE.Vector3(1, 0, 0) },
@@ -150,6 +162,9 @@ export function createGlobeSurfaceUniforms(textures: {
     uSunRadiance: { value: new THREE.Vector3(0, 0, 0) },
     uCloudInSurface: { value: 1 },
     uCloudFlat: { value: 1 },
+    uDayWest: { value: textures.dayWest ?? new THREE.Texture() },
+    uDayEast: { value: textures.dayEast ?? new THREE.Texture() },
+    uDayReady: { value: 0 },
     uCloudShadow: { value: 0 },
     uCloudShellM: { value: 0 },
   };
@@ -254,6 +269,9 @@ uniform float uCarrierShare;
 uniform vec3 uSunRadiance;
 uniform float uCloudInSurface;
 uniform float uCloudFlat;
+uniform sampler2D uDayWest;
+uniform sampler2D uDayEast;
+uniform float uDayReady;
 uniform float uCloudShadow;
 uniform float uCloudShellM;
 const vec3 GLOBE_WARM_LIGHTS = vec3( 1.4, 0.95, 0.5 );
@@ -307,6 +325,16 @@ const FRAGMENT_SAMPLES = /* glsl */ `
 float globeWater = 1.0 - diffuseColor.a;
 diffuseColor.a = 1.0;
 ${GLOBE_CLOUD_GLSL}
+#ifndef USE_MAP
+// No imagery on this tile yet: the first look, by longitude, with the
+// longitude's own gradients so the halves meet without a seam (DEC-FR2-6).
+vec2 globeDayUv = vec2( fract( globeU * 2.0 ), globeV );
+vec4 globeDay = globeU < 0.5
+  ? textureGrad( uDayWest, globeDayUv, globeDx * 2.0, globeDy * 2.0 )
+  : textureGrad( uDayEast, globeDayUv, globeDx * 2.0, globeDy * 2.0 );
+diffuseColor.rgb = mix( diffuseColor.rgb, globeDay.rgb, uDayReady );
+globeWater = mix( globeWater, 1.0 - globeDay.a, uDayReady );
+#endif
 vec3 globeNight = textureGrad( uNight, globeUv, globeDx, globeDy ).rgb;
 diffuseColor.rgb = mix( diffuseColor.rgb, mix( vec3( 1.0 ), globeCloudShade, uCloudRelief ), globeCloud * uCloudOpacity * uCloudInSurface );
 float globeSunUp = dot( globeN, uSunEcef );

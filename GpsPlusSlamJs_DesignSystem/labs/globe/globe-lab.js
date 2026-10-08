@@ -3249,6 +3249,12 @@ async function start() {
       // (the line is throttled, so it may lag by up to 250 ms).
       readout: readoutText,
       cloudFlat: cloudFlatShare,
+      // The globe's first look (round-2 plan DEC-FR2-6): its images in, and
+      // its sphere drawn (until the globe can draw its whole view).
+      firstLook: {
+        ready: globe.state().firstLookReady,
+        shown: globe.firstLook.visible,
+      },
       readoutShown: readoutLine.textContent,
       altitudeM: globe.tiles.ellipsoid.getPositionElevation(
         globe.tiles.group.worldToLocal(camera.position.clone()),

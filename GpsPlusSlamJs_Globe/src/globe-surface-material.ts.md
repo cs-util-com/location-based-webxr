@@ -25,7 +25,8 @@ cloudOpacity: 0.8, skyShare: 0.2 }`, the defaults (lab parameters `#nightGain=`,
   - `GLOBE_SURFACE_CACHE_KEY` - the program key every tile shares (`-v2`
     since the drift uniform joined the program, `-v6` since the sky fill,
     `-v8` since the fill follows the band, `-v10` since the glint's cloud
-    mask fades with the flat layer). A page with a relief compiles
+    mask fades with the flat layer, `-v11` since a tile without its imagery
+    shows the first look). A page with a relief compiles
     the band (`band: true`) under its own key, the same with `-band`, and
     a globe that fills the relief's gaps through the stencil (`band: true,
 fill: true`, round-6 plan G6-1) under `-band-fill`.
@@ -44,6 +45,9 @@ fill: true`, round-6 plan G6-1) under `-band-fill`.
     ground keeps its colour, and the night lights' cloud dimming follows the
     same factor), `uCloudShadow` (the soft shadow on the ground, 0 off) and
     `uCloudShellM` (the shell's height, for the shadow's offset), and
+    `uDayWest`, `uDayEast` and `uDayReady` (round-2 plan DEC-FR2-6: a
+    tile without its imagery, the first look's sphere, shows the imagery's
+    level 0 by longitude, its water from the images' alpha, once ready), and
     `uCloudFlat` (round-2 plan DEC-FR2-5: the flat layer's share by
     altitude, 1 the look before; the glint's cloud mask is `globeCloud x
 uCloudFlat`, so faded clouds leave no cloud-shaped dull water).

@@ -631,7 +631,9 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   `/globe/globe-cloud-flat-fade.js`): full from `cloudFlatTopKm` (5,000)
   up, weakening to `cloudFlatWeak` (0.3) by 100 km, then handing over to
   the volume through its own fade (only weakening when the volume is off);
-  its shell shadow follows, and the state reports it as `cloudFlat`.
+  its shell shadow follows, and the state reports it as `cloudFlat`. The
+  state's `firstLook` (`{ ready, shown }`, round-2 plan DEC-FR2-6) reports
+  the globe's first look: its images in, and its sphere drawn.
   `cloudShadowFrom` (C3) picks the ground's cloud shadow:
   0 the shell's soft one (the default, as before), 1 the volume's (the
   shell's then off). Measured at the 12 km hold: the shell's darkens by a
