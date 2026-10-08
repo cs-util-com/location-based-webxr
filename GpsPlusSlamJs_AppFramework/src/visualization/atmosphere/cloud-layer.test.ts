@@ -20,6 +20,7 @@ import {
   cloudNoise,
   cloudNoiseAt,
   cloudNoiseSample,
+  cloudTextureSample,
   cloudThresholdForCover,
   combinedCloudNoise,
 } from './cloud-layer.js';
@@ -317,5 +318,52 @@ describe('cloudNoiseSample with the hex-tiled octave (hex-tiling plan H1)', () =
       }
     }
     expect(same).toBeLessThan(10);
+  });
+});
+
+describe('cloudTextureSample (one read of the texture, as the GPU takes it)', () => {
+  // WHY: the hex twin's GPU check (the look-dev page's hexProbe) compares
+  // the shader's read against this one; it must be the texture exactly at
+  // texel centres, wrapped, and the plain field's first octave.
+  const size = 16;
+  const data = new Uint8Array(size * size);
+  for (let i = 0; i < data.length; i++) data[i] = (i * 37) % 256;
+
+  it('returns the texel at its centre, wrapped in both axes', () => {
+    for (const [i, j] of [
+      [0, 0],
+      [5, 11],
+      [15, 15],
+    ] as const) {
+      const u = (i + 0.5) / size;
+      const v = (j + 0.5) / size;
+      const texel = (data[j * size + i] ?? 0) / 255;
+      expect(cloudTextureSample(data, size, u, v)).toBeCloseTo(texel, 12);
+      expect(cloudTextureSample(data, size, u + 2, v - 3)).toBeCloseTo(
+        texel,
+        9
+      );
+    }
+  });
+
+  it('is the plain field’s first octave', () => {
+    const real = cloudNoise(64, 2);
+    const c = CLOUD_LAYER;
+    for (const [u, v] of [
+      [0.13, 0.71],
+      [2.4, -1.3],
+    ] as const) {
+      const second = cloudTextureSample(
+        real,
+        64,
+        u * c.secondOctaveFrequency + c.secondOctaveOffset,
+        v * c.secondOctaveFrequency + c.secondOctaveOffset
+      );
+      expect(cloudNoiseSample(real, 64, u, v)).toBeCloseTo(
+        c.firstOctaveWeight * cloudTextureSample(real, 64, u, v) +
+          (1 - c.firstOctaveWeight) * second,
+        12
+      );
+    }
   });
 });
