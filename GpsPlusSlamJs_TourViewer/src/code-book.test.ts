@@ -15,6 +15,7 @@ import {
   afterFinish,
   codesNotHosted,
   codesToWrite,
+  liveText,
   openCodeBook,
   referenceCodes,
   withHosted,
@@ -180,6 +181,23 @@ describe("withDraft - a draft restored after the tour opened", () => {
     expect(book.get("a")?.saved).toBe("live");
     expect(book.get("c")?.saved).toBe("draft-c");
     expect(referenceCodes(book)).toEqual(["a", "c"]);
+  });
+});
+
+describe("liveText - what this page changed live", () => {
+  // Why (the M5d-2 review's #9a): a draft handed back into the empty hand
+  // must not undo live work; this is the one question both restores ask.
+  it("is the saved text of a code measured or improved live, else null", () => {
+    let book = withMeasurement(
+      openCodeBook({ hosted }),
+      { id: "a", json: "live" },
+      measurement("a"),
+    );
+    book = withSaved(book, { id: "c", json: "improved" });
+    expect(liveText(book, "a")).toBe("live");
+    expect(liveText(book, "c")).toBe("improved");
+    expect(liveText(book, "b"), "the hosted text, unchanged").toBeNull();
+    expect(liveText(book, "x"), "not in the book").toBeNull();
   });
 });
 

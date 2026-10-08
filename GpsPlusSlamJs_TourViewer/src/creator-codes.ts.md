@@ -18,7 +18,8 @@ no session field holds any of them); its inside is the code book
   - `inHand()`, `measurement()`, `sighting()`;
   - `setInHand(level, measurement)` (a measurement, or a kept stored
     reference with null), `restoreInHand(level)` (a restored draft: only into an empty
-    hand, true when taken), `clearInHand()` (a new print size);
+    hand, true when taken; a code changed live in this page is taken at its
+    live text, `liveText`), `clearInHand()` (a new print size);
   - `setSighting(sighting)`; `forgetSightings(levelId)` -
     a size adoption: that code's stored-code sighting goes, and the visit's
     sighting if it is that code's.

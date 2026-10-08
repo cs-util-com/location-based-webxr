@@ -93,6 +93,13 @@ function changedLive(code: TourCode): boolean {
   );
 }
 
+/** The code's saved text when this page changed it live (a measurement,
+ *  or a saved pose the zip does not hold); null otherwise. */
+export function liveText(book: CodeBook, levelId: string): string | null {
+  const code = book.get(levelId);
+  return code !== undefined && changedLive(code) ? code.saved : null;
+}
+
 /**
  * A restored draft's codes, taken as references and saved - except where
  * this page has already changed the code live: that work is newer than

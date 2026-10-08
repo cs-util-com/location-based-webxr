@@ -19,6 +19,7 @@ import {
   afterFinish,
   codesNotHosted,
   codesToWrite,
+  liveText,
   withDraft,
   withHosted,
   withMeasurement,
@@ -51,7 +52,8 @@ export interface CreatorCodes {
   /** Take `level` in hand with its measurement (null: a stored reference). */
   setInHand(level: LevelText | null, measurement: CodeMeasurement | null): void;
   /** A restored draft's level, taken only into an empty hand; true when it
-   *  was taken (a live measurement is newer than a draft). */
+   *  was taken (a live measurement is newer than a draft: a code changed
+   *  live in this page is taken at its live text). */
   restoreInHand(level: LevelText): boolean;
   /** Nothing in hand (a new print size, a failed identity's empty prior). */
   clearInHand(): void;
@@ -214,8 +216,10 @@ export function wireCreatorCodes(deps: {
     },
     restoreInHand: (level) => {
       if (hand !== null) return false;
-      hand = level;
-      setBook(withReference(withSaved(book, level), level.id));
+      // Live work on the code is newer than the draft and wins, as in
+      // `restoreLevels` (the M5d-2 review's #9a).
+      hand = { id: level.id, json: liveText(book, level.id) ?? level.json };
+      setBook(withReference(withSaved(book, hand), hand.id));
       return true;
     },
     clearInHand: () => {

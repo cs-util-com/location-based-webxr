@@ -110,6 +110,26 @@ describe("creator-codes: the code in hand", () => {
     expect(codes.inHand()).toEqual(live);
   });
 
+  // Why this test matters (DEC-A3, found by the M5d-2 review, #9a): a live
+  // measurement is newer than a draft. A code measured in this page and
+  // then put down (the hand moved on and was emptied by a new print size)
+  // keeps its live text when the draft restores the book's codes - and
+  // it must keep it when the draft also hands it back into the empty
+  // hand, or the next Finish writes the draft's older pose under this
+  // page's measurement.
+  it("restores a draft's code into the hand at its live text", () => {
+    const codes = wireCreatorCodes({ ctx: createTourViewerSession() });
+    const live = { id: "a", json: levelJson(47.5) };
+    codes.setInHand(live, MEASUREMENT);
+    codes.setInHand({ id: "b", json: levelJson(47.6) }, null);
+    codes.clearInHand();
+    const drafted = { id: "a", json: levelJson(47.4) };
+    codes.restoreLevels([drafted]);
+    expect(codes.restoreInHand(drafted)).toBe(true);
+    expect(codes.inHand()).toEqual(live);
+    expect(codes.savedText("a")).toBe(live.json);
+  });
+
   // Why this test matters: the settle re-mints the code in hand through
   // `saveLevel` (code book plan M5d: one write for every re-mint) and keeps
   // its measurement (the settle re-mints FROM it).
