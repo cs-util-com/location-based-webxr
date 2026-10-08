@@ -183,6 +183,18 @@ export function cloudVolumeNoiseOffset(
   return [wrap(east), wrap(south)];
 }
 
+/**
+ * The map's drift (radians, wrapped to [0, 2 pi) by the surface) read
+ * unwrapped: the angle equal to `next` modulo 2 pi nearest `previous` (the
+ * last unwrapped value). The noise offset follows the drift, and at its wrap
+ * every 16 minutes it jumped by R cos(lat) 2 pi / tile modulo the period
+ * (1.5-5.4 tiles; round-3 plan review, finding 7). NaN in, NaN out.
+ */
+export function unwrapDriftRad(previous: number, next: number): number {
+  const turn = 2 * Math.PI;
+  return next + turn * Math.round((previous - next) / turn);
+}
+
 const recentreFrom = new THREE.Matrix4();
 const recentreTo = new THREE.Vector3();
 

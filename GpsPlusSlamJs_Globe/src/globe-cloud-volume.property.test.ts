@@ -20,6 +20,7 @@ import {
   cloudVolumeDiscCentre,
   cloudVolumeNoiseOffset,
   cloudVolumeRecentreShift,
+  unwrapDriftRad,
 } from "./globe-cloud-volume.js";
 import { worldFromEcefAt } from "./globe-frame.js";
 
@@ -234,5 +235,74 @@ describe("a frame recentre in any direction (cloudVolumeRecentreShift)", () => {
     const before = read(from, point, 0, [0, 0]);
     const after = read(to, point, 0, [0, 0]);
     expect(wrapped(before[0], after[0])).toBeGreaterThan(0.05);
+  });
+});
+
+// WHY (round-3 plan review, finding 7): the map's drift wraps at 360
+// degrees every 16 minutes, and the noise offset follows the drift: at the
+// wrap it jumped by R cos(lat) 2 pi / tile modulo the period (1.5-5.4
+// tiles). Read unwrapped, the drift moves the offset smoothly through it.
+describe("the drift read unwrapped (unwrapDriftRad)", () => {
+  it("continues the drift through its wrap, by the shortest way", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -50, max: 50, noNaN: true }),
+        fc.double({ min: -0.5, max: 0.5, noNaN: true }),
+        (previous, step) => {
+          const wrapped =
+            (((previous + step) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+          expect(unwrapDriftRad(previous, wrapped)).toBeCloseTo(
+            previous + step,
+            9,
+          );
+        },
+      ),
+    );
+  });
+
+  it("keeps the noise offset continuous where the drift wraps", () => {
+    const at = (d: number) =>
+      cloudVolumeNoiseOffset(
+        { latRad: 46.95 * DEG, lonRad: 7.45 * DEG, lonOffsetRad: d },
+        TILE_M,
+        PERIOD,
+      )[0];
+    const before = 2 * Math.PI - 1e-4;
+    const wrappedAfter = 1e-4;
+    // Wrapped, the offset jumps; unwrapped, it moves by the step alone.
+    expect(wrapped(at(before), at(wrappedAfter))).toBeGreaterThan(0.5);
+    // Unwrapped, it moves by exactly the step's own drift: R cos(lat) dd.
+    const unwrapped = unwrapDriftRad(before, wrappedAfter);
+    const step = (R * Math.cos(46.95 * DEG) * (unwrapped - before)) / TILE_M;
+    expect(wrapped(at(before), at(unwrapped))).toBeCloseTo(Math.abs(step), 9);
+  });
+});
+
+// WHY (round-3 plan review, finding 9): the carried shift makes the noise
+// depend on the path the frame took. Documented, bounded: out to 100 km
+// along a line and back leaves a ground point's noise within 0.02 tile.
+describe("a frame that goes out and comes back (cloudVolumeRecentreShift)", () => {
+  it("returns a ground point's noise close to where it was", () => {
+    const ellipsoid = WGS84_ELLIPSOID;
+    const start = { lat: 46.95, lng: 7.45 };
+    const path: { lat: number; lng: number }[] = [start];
+    for (let i = 1; i <= 5; i++)
+      path.push({ lat: start.lat + 0.13 * i, lng: start.lng + 0.18 * i });
+    for (let i = 4; i >= 0; i--)
+      path.push({ lat: start.lat + 0.13 * i, lng: start.lng + 0.18 * i });
+    let shift: [number, number] = [0, 0];
+    for (let i = 1; i < path.length; i++) {
+      const [du, dv] = cloudVolumeRecentreShift(
+        ellipsoid,
+        path[i - 1]!,
+        path[i]!,
+        0,
+        TILE_M,
+        PERIOD,
+      );
+      shift = [shift[0] + du, shift[1] + dv];
+    }
+    expect(wrapped(shift[0], 0)).toBeLessThan(0.02);
+    expect(wrapped(shift[1], 0)).toBeLessThan(0.02);
   });
 });

@@ -42,6 +42,7 @@ import {
   cloudVolumeNoiseOffset,
   cloudVolumeRecentreShift,
   cloudVolumeShare,
+  unwrapDriftRad,
 } from "/globe/globe-cloud-volume.js";
 
 const COMPOSITE_VERTEX = /* glsl */ `
@@ -91,6 +92,11 @@ export function createGlobeCloudVolume(
    * frame moves (the owner's "clouds jump when I zoom out and back in").
    */
   let anchor = null;
+  /**
+   * The map's drift read unwrapped (the surface wraps it at 2 pi every 16
+   * minutes; the noise jumped there by tiles), float64 on the CPU.
+   */
+  let drift = null;
   const shareUniform = { value: 0 };
   const gainUniform = { value: 1 };
   const volumeTarget = new THREE.WebGLRenderTarget(1, 1, {
@@ -211,7 +217,10 @@ export function createGlobeCloudVolume(
         if (enabled) {
           const tileM = CLOUD_LAYER.tileKm * 1000;
           const period = CLOUD_NOISE_PERIOD_TILES;
-          const lonOffsetRad = surfaceUniforms.uCloudLonOffset.value;
+          const wrappedDrift = surfaceUniforms.uCloudLonOffset.value;
+          drift =
+            drift === null ? wrappedDrift : unwrapDriftRad(drift, wrappedDrift);
+          const lonOffsetRad = drift;
           if (anchor === null) {
             anchor = { lat: target.lat, lng: target.lng, shift: [0, 0] };
           } else if (anchor.lat !== target.lat || anchor.lng !== target.lng) {

@@ -47,6 +47,16 @@ own cloud map so the swap from the cloud shell never plops.
   offset plus the new origin's place in the old frame, minus the new
   offset; callers add it up across recentres. Property-tested over random
   places, drifts and moves up to 30 km (within 0.003 tile).
+- `unwrapDriftRad(previous, next)`: the map’s drift read unwrapped, the
+  angle equal to `next` modulo 2 pi nearest `previous`. The drift wraps
+  every 16 minutes and the noise offset jumped there by 1.5-5.4 tiles
+  (round-3 plan review, finding 7).
+- The carried shift makes the noise depend on the frame’s path: each
+  recentre is a translation only, so it leaves a small rotation (270-480 m
+  at 80-140 km from the origin for a 20 km step near Bern, up to about
+  1.5 km at latitude 70), and a closed path returns close to, not exactly
+  at, the start (out to 100 km and back: within 0.02 tile, tested). N1’s
+  anchoring per octave replaces it.
 - `CLOUD_VOLUME_COVERAGE_GLSL`: the chunk for the framework's
   `setCloudSlabCoverage`, defining `float atmCloudCoverageAt(vec2 xz)` as
   the map at `cloudVolumeMapUv`'s position times `uVolumeOpacity` and
