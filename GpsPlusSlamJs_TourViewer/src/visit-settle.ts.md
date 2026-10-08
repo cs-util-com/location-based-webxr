@@ -241,6 +241,10 @@ draft and logs `tourAuthoring/settled`.
   10 m, and the moved-code rule (`moved-code-rule.ts`) never settles a
   level marked uncertain. And the settle's time as `mintedAtIso`. A refused re-mint (fewer than `MIN_ALIGNMENT_SAMPLES` fixes)
   keeps the old level.
+  - **It keeps the code's automatic-move memory** (`qr.spots`, code book
+    plan M6 v5.1). The mint builds a fresh level, so `remintedLevel`
+    carries the memory over with `carryCodeSpots` (`level-spots.ts`). This
+    is the one seam every re-mint of a stored code goes through.
   - **Why the block describes the SETTLE, not the tap.** `mintQuality` is
     the record the field validation (QR-pose plan M5) attributes a code's
     position error with: "this geo came from an alignment of N fixes at a

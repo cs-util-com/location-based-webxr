@@ -22,6 +22,7 @@ import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
 import { mintPin, objectPoseNue } from "./content-placement.js";
+import { readCodeSpots } from "./level-spots.js";
 import { odomNueFromWebXr, throughAlignment } from "./visit-anchoring.js";
 import {
   CORRECTION_MAX_YAW_DEG,
@@ -273,6 +274,38 @@ describe("settling the visit that measured the code (B2)", () => {
       alignmentInfo: { ...settleInfo, sampleCount: 2 },
     });
     expect(refused?.level).toBeNull();
+  });
+
+  // Why this matters (code book plan M6 v5.1): a code's automatic-move
+  // memory lives on its level file, and a re-mint builds a FRESH level. A
+  // re-mint that dropped it would forget the spot a move left (so an undo
+  // could restore nothing) and the second prints (so one would move the
+  // code again). Every re-mint of a stored code goes through this path.
+  it("carries the code's remembered spots onto the re-minted level", () => {
+    const tapLevel = levelThrough(yawAlignment(0, [0, 400, 0]));
+    const remembered = readCodeSpots(tapLevel.json)!.current;
+    const withSpots = JSON.stringify({
+      ...(JSON.parse(tapLevel.json) as Record<string, unknown>),
+      qr: {
+        ...(JSON.parse(tapLevel.json) as { qr: object }).qr,
+        spots: { previous: remembered, copies: [remembered] },
+      },
+    });
+    const plan = planVisitSettle({
+      visit: 0,
+      placed: [],
+      alignment: yawAlignment(4, [1.5, 400.2, -1]),
+      zero: ZERO,
+      mintedLevel: { ...tapLevel, json: withSpots },
+      measurement: measuredInVisit(0),
+      sighting: null,
+      alignmentInfo: { hasMatrix: true, sampleCount: 9, gpsAccuracyM: 3 },
+      nowIso: "2026-09-30T10:05:00.000Z",
+    });
+    const after = readCodeSpots(plan!.level!.json)!;
+    expect(after.current).not.toEqual(remembered);
+    expect(after.previous).toEqual(remembered);
+    expect(after.copies).toEqual([remembered]);
   });
 
   it("leaves objects of other visits and restored ones exactly as they were", () => {

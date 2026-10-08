@@ -67,6 +67,7 @@ import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { LatLong } from "gps-plus-slam-app-framework/core";
 
 import { objectPoseNue } from "./content-placement.js";
+import { carryCodeSpots } from "./level-spots.js";
 import {
   correctedAlignment,
   correctionSize,
@@ -1076,5 +1077,12 @@ function remintedLevel(
     nowIso: input.nowIso,
     quality: qrMintHeadingMarker(quality.gpsExtentM),
   });
-  return result.ok ? { id: mintedLevel.id, json: result.json } : null;
+  // A fresh level: the code's automatic-move memory is carried over
+  // (code book plan M6 v5.1; the one seam every re-mint goes through).
+  return result.ok
+    ? {
+        id: mintedLevel.id,
+        json: carryCodeSpots(mintedLevel.json, result.json),
+      }
+    : null;
 }
