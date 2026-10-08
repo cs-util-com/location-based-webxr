@@ -1,7 +1,10 @@
 /**
  * Why these tests matter: the globe's arrival prefetch (round-5 plan
  * 2026-10-01-0945 §3.6) is worth exactly as much as its plan matches what
- * OsmDemo loads when the URL hand-over lands. A plan that is off by one
+ * OsmDemo loads when it opens at the place (the globe opened it by a URL
+ * hand-over until globe city plan 2026-10-05-0040 §12.5 C6 removed that;
+ * the globe's own city now reads the same Overpass tiles from the same
+ * store). A plan that is off by one
  * tile warms a cache nobody reads, and nothing reports it: the second visit
  * is just slow. So the plan is compared with OsmDemo's REAL machinery, not
  * with a second copy of its arithmetic:
@@ -11,7 +14,7 @@
  *   asked for the terrain window `main.ts` asks for at arrival, recording
  *   every URL it sends to the network;
  * - the position with OsmDemo's own `?lat=&lng=` reader, at the five
- *   decimals the globe's hand-over writes.
+ *   decimals OsmDemo's URL carries.
  */
 
 import fc from "fast-check";
@@ -27,10 +30,10 @@ import {
 import { arrivalPlanFor } from "./arrival-plan.js";
 import { DemoPipeline } from "./demo-pipeline.js";
 import { createDemProvider } from "./dem-provider.js";
-import { TERRAIN_EXTENT_M } from "./heightfield.js";
+import { TERRAIN_EXTENT_M } from "gps-plus-slam-osm";
 import { parseStartPosition } from "./start-position.js";
-import { createTerrainField } from "./terrain-field.js";
-import { terrainWindowFor } from "./terrain-window.js";
+import { createTerrainField } from "gps-plus-slam-osm";
+import { terrainWindowFor } from "gps-plus-slam-osm";
 
 const TABLE = parseRuleTable(
   ["id,Key,Value,walkable", "leisure_park,leisure,park,3"].join("\n"),
@@ -162,11 +165,15 @@ describe("arrivalPlanFor", () => {
     );
   });
 
-  it("plans for the position OsmDemo reads from the hand-over URL", () => {
-    // The globe's hand-over writes five decimals (`globe-handover.ts`), and
-    // OsmDemo computes its chunk from what it parses, not from the globe's
-    // unrounded target. A target a hair across a cell edge would otherwise
-    // plan the neighbouring tile.
+  // The globe's page hand-over is gone (globe city plan 2026-10-05-0040
+  // §12.5 C6), and with it "plans for the position in the globe's REAL
+  // hand-over URL", which loaded the deleted `globe-handover.ts`: there is
+  // no URL any more to agree with. What stays is OsmDemo's own URL.
+  it("plans for the position OsmDemo reads from its URL", () => {
+    // OsmDemo's URL carries five decimals (`url-state.ts`), and it
+    // computes its chunk from what it parses, not from an unrounded
+    // target. A target a hair across a cell edge would otherwise plan the
+    // neighbouring tile.
     const target = { lat: 50.941_349_7, lng: -0.000_000_2 };
     const plan = arrivalPlanFor(target);
     expect(plan.position).toEqual(
@@ -174,40 +181,6 @@ describe("arrivalPlanFor", () => {
         `?lat=${(target.lat + 0).toFixed(5)}&lng=${(target.lng + 0).toFixed(5)}`,
       ),
     );
-  });
-
-  it("plans for the position in the globe's REAL hand-over URL", async () => {
-    // The contract lives in two packages: the globe writes the URL
-    // (`handOverUrl`), OsmDemo parses it. Loaded by file URL rather than by
-    // a static import, because OsmDemo's TypeScript project does not include
-    // the globe package; vitest transforms it like any source file. A change
-    // of decimals or format on the globe's side fails here.
-    const { handOverUrl } = (await import(
-      new URL(
-        "../../GpsPlusSlamJs_Globe/src/globe-handover.ts",
-        import.meta.url,
-      ).href
-    )) as {
-      handOverUrl: (input: {
-        pageHref: string;
-        target: { lat: number; lng: number };
-      }) => string;
-    };
-    for (const target of [
-      { lat: 50.941_349_7, lng: -0.000_000_2 },
-      { lat: -33.868_804_9, lng: 151.209_295_1 },
-      { lat: 0.000_004_9, lng: -179.999_995 },
-    ]) {
-      const url = new URL(
-        handOverUrl({
-          pageHref: "https://example.test/lookdev/labs/globe/",
-          target,
-        }),
-      );
-      expect(arrivalPlanFor(target).position).toEqual(
-        parseStartPosition(url.search),
-      );
-    }
   });
 
   it("plans one to three Overpass tiles and a few DEM tiles per source", () => {
