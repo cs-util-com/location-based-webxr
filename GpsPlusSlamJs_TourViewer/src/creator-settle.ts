@@ -44,6 +44,7 @@ import { judgeCodeSpots, type SpotSighting } from "./code-spot-settle.js";
 import {
   applyCodeSpotDecision,
   MOVE_CONFIRM_AFTER_MS,
+  nearestSpot,
   type CodeSpotDecision,
   type CodeSpotMemory,
   type SpotRef,
@@ -375,16 +376,30 @@ export function wireCreatorSettle(deps: {
     const visit = ctx.arSessionGeneration;
     const level = deps.codes.inHand();
     const measurement = deps.codes.measurement();
-    const picks = deps.alignmentPicks.picks();
+    const alignment = selectAlignmentMatrix(state);
+    const zero = selectZeroReference(state);
+    // A sighting at a second print corrects nothing live either (M6 v5
+    // review #3): no fit yet, so judged by where the alignment sees it.
+    const all = deps.alignmentPicks.picks();
+    const second = secondPrintSightings(all, visit, alignment, zero);
+    const picks =
+      second.size === 0
+        ? all
+        : {
+            ...all,
+            sightings: all.sightings.filter((s) => !second.has(s.sighting)),
+          };
+    const handSighting = deps.codes.sighting();
     const codes = visitCodeList(visit, level, measurement, picks);
     const input: VisitSettleInput = {
       visit,
       placed: [],
-      alignment: selectAlignmentMatrix(state),
-      zero: selectZeroReference(state),
+      alignment,
+      zero,
       mintedLevel: level,
       measurement,
-      sighting: deps.codes.sighting(),
+      sighting:
+        handSighting !== null && second.has(handSighting) ? null : handSighting,
       gpsAccuracyM: deps.alignmentInfo().gpsAccuracyM,
       alignmentInfo: deps.alignmentInfo(),
       nowIso: new Date().toISOString(),
@@ -392,6 +407,59 @@ export function wireCreatorSettle(deps: {
       ...(codes === undefined ? {} : { codes }),
     };
     return liveCodeChoices(input);
+  }
+
+  /**
+   * The visit's sightings that lie at a known spot of their code OTHER than
+   * its current one - a second print, or the spot an automatic move left -
+   * by where `alignment` sees them, within the floor (code book plan M6
+   * v5.1). The live view has no fit; the settle's own judgement uses one.
+   */
+  function secondPrintSightings(
+    picks: VisitAlignmentPicks,
+    visit: number,
+    alignment: ReturnType<typeof selectAlignmentMatrix>,
+    zero: LatLong | null,
+  ): Set<CodeSighting> {
+    const out = new Set<CodeSighting>();
+    const end = readAlignment(alignment);
+    if (end === null || zero === null) return out;
+    const hand = deps.codes.inHand();
+    const jsonById = new Map(
+      [
+        ...(hand === null ? [] : [hand]),
+        ...deps.codes.visitCodes(visit).map((c) => c.level),
+      ].map((l) => [l.id, l.json]),
+    );
+    for (const s of picks.sightings) {
+      const json = jsonById.get(s.sighting.levelId);
+      if (json !== undefined && atSecondPrint(json, s, end, zero)) {
+        out.add(s.sighting);
+      }
+    }
+    return out;
+  }
+
+  /** \`s\` lies, as \`end\` sees it, at a known spot of its code (\`json\`)
+   *  other than the current one. */
+  function atSecondPrint(
+    json: string,
+    s: { atMs: number; sighting: CodeSighting },
+    end: readonly number[],
+    zero: LatLong,
+  ): boolean {
+    const memory = readCodeSpots(json);
+    if (memory === null) return false;
+    if (memory.previous === null && memory.copies.length === 0) return false;
+    const seen = spotSightingOf(s, end).seenNue;
+    if (seen === undefined) return false;
+    const belongs = nearestSpot({
+      distancesM: knownSpotsNue(memory, zero).map(({ spot, pose }) => ({
+        spot,
+        m: Math.hypot(pose.position[0] - seen[0], pose.position[2] - seen[1]),
+      })),
+    });
+    return atOther(belongs);
   }
 
   /** The code the live refusal was judged for (the code seen last). */
@@ -793,6 +861,21 @@ export function wireCreatorSettle(deps: {
     // object belongs to one code, judged against these (M5 design review
     // #7 - two improved codes moved one object twice).
     const poseBefore = deps.codes.references();
+    // The known spots other than the current one of every code this visit
+    // saw - its own second prints included (M5c review #4, M6 v3 review
+    // #12): an object nearer one of them belongs there, not to the code
+    // being improved. Before the re-mint, so a memory written now counts.
+    const elsewhere = [
+      ...(level === null ? [] : [level]),
+      ...deps.codes.visitCodes(visit).map((c) => c.level),
+    ].flatMap((l) => {
+      const memory = readCodeSpots(l.json);
+      if (memory === null) return [];
+      return [
+        ...(memory.previous === null ? [] : [memory.previous.geo]),
+        ...memory.copies.map((c) => c.geo),
+      ];
+    });
     // An automatic move's level remembers the spot it left (M6 v5.1); a
     // move re-applied after a failed Finish already does.
     const newlyMoved = new Set(
@@ -851,6 +934,7 @@ export function wireCreatorSettle(deps: {
         after.json,
         poseBefore,
         claimed,
+        elsewhere,
       );
       logged[i]?.movedWithCode.push(...moved);
     });
@@ -1074,15 +1158,21 @@ export function wireCreatorSettle(deps: {
     /** Objects another improved code already took along: skipped, and
      *  this code's are added (one code per object, M5 design review #7). */
     claimed: Set<string>,
+    /** Known spots other than the codes' current ones (M6 v5.1): second
+     *  prints and the spots automatic moves left. */
+    elsewhere: readonly QrGeoPose[] = [],
   ): { id: string; before: QrGeoPose; after: QrGeoPose }[] {
     const from = storedGeo(beforeJson);
     const to = storedGeo(afterJson);
     if (from === null || to === null) return [];
     // The tour's other codes, as they were before this settle: an object
     // nearer one of them stays with it (M4b, `takesAlong`).
-    const others = poseBefore.flatMap((r) =>
-      r.levelId === levelId || r.geo === null ? [] : [r.geo],
-    );
+    const others = [
+      ...poseBefore.flatMap((r) =>
+        r.levelId === levelId || r.geo === null ? [] : [r.geo],
+      ),
+      ...elsewhere,
+    ];
     const moved: { id: string; before: QrGeoPose; after: QrGeoPose }[] = [];
     for (const entry of authoringObjects(
       ctx.tourManifest?.objects ?? [],

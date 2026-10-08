@@ -306,3 +306,17 @@ settle"):
 - no correction through a second print 22 m away (inside the bound).
 
 Seven hand mutations of the wiring were each caught.
+
+**The live view** (`secondPrintSightings`, M6 v5 review #3): no fit exists
+yet while the visit runs. A sighting is placed at the nearest known spot
+within the floor by where the current alignment sees it. A sighting at a
+second print, or at the spot an automatic move left, is dropped from the
+live choices, so earlier objects are drawn plainly there instead of through
+the saved pose.
+
+**Take-along** judges each object also against the known spots of every
+code this visit saw (M5c review #4, M6 v3 review #12). These are their
+second prints and the spots automatic moves left, this code's own
+included. A pin next to a second print stays when the code's saved spot is
+improved. Codes the visit did not see contribute only their current pose:
+a known limitation.

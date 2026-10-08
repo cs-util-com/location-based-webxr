@@ -4116,5 +4116,64 @@ describe(
         "code-corrected",
       );
     });
+
+    // Why (M6 v5 review #3): the live view drew a visit's earlier objects
+    // through every sighted code; a sighting at a second print 22 m away is
+    // inside the correction's bound, so the creator saw every earlier note
+    // shifted 22 m while standing at the copy.
+    it("draws earlier objects plainly, not through the saved pose, while the code is seen at its second print", async () => {
+      const a = authoring();
+      await a.mint();
+      await a.placePin("home pin", [3, 0, 1]);
+      a.endVisit();
+      await visitSeeing(a, 22);
+      await visitSeeing(a, 0);
+      expect(spotsOf(a).copies).toHaveLength(1);
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [22, 400, 0]));
+      walkThrough(a, 22);
+      a.seeTheCode();
+      await flush();
+      const pin = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin" && p.object.label === "home pin",
+      )!.object;
+      // Plainly: through this visit's alignment (a 22 m north shift).
+      const plain = worldOf(pin.geo).sub(new Vector3(22, 400, 0));
+      expect(a.inWorldGroup("home pin").distanceTo(plain)).toBeLessThan(0.5);
+    });
+
+    // Why (M5c review #4, v3 review #12): an improved code takes the objects
+    // near it along - unless an object is nearer another code. A pin next to
+    // this code's own SECOND print belongs to that print, not to the spot
+    // being improved 22 m away, and used to ride along with it.
+    it("leaves a pin by the code's second print where it is when the code's position is improved", async () => {
+      const a = authoring();
+      await a.mint();
+      await a.placePin("by the copy", [22, 0, 0]);
+      a.endVisit();
+      await visitSeeing(a, 22);
+      await visitSeeing(a, 0);
+      expect(spotsOf(a).copies).toHaveLength(1);
+      const pinBefore = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin" && p.object.label === "by the copy",
+      )!.object.geo;
+      // Seen 5 m off its (weakly saved) spot after a reliable walk: improved.
+      await visitSeeing(a, 5);
+      expect(
+        (a.settledLogs().at(-1)!.payload as { codePositions?: unknown })
+          .codePositions,
+      ).toEqual([
+        expect.objectContaining({
+          decision: { kind: "replace" },
+          applied: true,
+        }),
+      ]);
+      const pinAfter = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin" && p.object.label === "by the copy",
+      )!.object.geo;
+      expect(worldOf(pinAfter).distanceTo(worldOf(pinBefore))).toBeLessThan(
+        1e-6,
+      );
+    });
   },
 );
