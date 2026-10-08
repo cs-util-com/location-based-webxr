@@ -203,7 +203,7 @@ const recentreTo = new THREE.Vector3();
  * `cloudVolumeNoiseOffset` once the world frame moves from `from` to `to`
  * (degrees), so a ground point keeps its noise. The offset alone is right
  * only along a parallel or a meridian: a recentre that changes the latitude
- * moved the noise by R dcos(lat) lon (a quarter tile near Bern; the owner,
+ * moved the noise by R dcos(lat) lon (0.078 tile, about 1.9 km, for a 25 km diagonal move near Bern; the owner,
  * 2026-10-08: "the clouds jump when I zoom out and back in"). The shift is
  * the old offset plus the new origin's place in the old frame, minus the new
  * offset: continuous at the new origin, and near it to the frames'

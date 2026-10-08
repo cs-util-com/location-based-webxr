@@ -424,10 +424,8 @@ const PARAMS = {
   // meteor, flat from the start"): `meteorDeg` the line's entry angle (45;
   // smaller is flatter in the middle; 90 is round 2's straight down, R1). A
   // link starts on the line; a press over its own place flies the flattest
-  // line its arc allows, unless `pressMeteor` 1 flies the full meteor,
-  // backing off first. `flight=2` only.
+  // line its arc allows. `flight=2` only.
   meteorDeg: { fallback: 45, min: 10, max: 90 },
-  pressMeteor: { fallback: 0, min: 0, max: 1 },
   // The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6): on unless 0.
   // While it runs it paces the dive (`/globe/flight-pace.js`, at most the
   // 30 s of DEC-GL5-6) unless `diveMs` is set in the hash, which keeps
@@ -1295,6 +1293,8 @@ function bindPin({
   ecefCamera,
   placeCameraEcef = () => {},
   setFrameTarget = () => {},
+  // The speed dust's reset: a placement is not a speed (round-3 plan D1).
+  resetSpeed = () => {},
 }) {
   let phase = "idle";
   let message = "";
@@ -1422,7 +1422,9 @@ function bindPin({
     const start = ecefCamera();
     if (fromAltitudeM > 0 && place && params.meteorDeg < 90) {
       // A link starts ON the meteor's line (F1): the line's sweep from this
-      // altitude (1 % more, so the asked beta fits by construction) away
+      // altitude (1 % more, plus the landing's look-back: the camera's arc
+      // ends one landing short of its place, so the asked beta fits by
+      // construction for any landing, the milestone review) away
       // from its place, on the side the camera already is (north when it
       // is right overhead), looking straight down with the place ahead,
       // which is the path's own view up here (the horizon floor), so the
@@ -1436,7 +1438,12 @@ function bindPin({
       side.normalize();
       const sweep =
         1.01 *
-        meteorDiveArcRad(fromAltitudeM, params.landKm * 1000, params.meteorDeg);
+          meteorDiveArcRad(
+            fromAltitudeM,
+            params.landKm * 1000,
+            params.meteorDeg,
+          ) +
+        (2 * params.landKm * 1000) / ellipsoid.radius.x;
       const direction = to
         .clone()
         .multiplyScalar(Math.cos(sweep))
@@ -1451,6 +1458,8 @@ function bindPin({
       start.position.copy(view.position);
       start.quaternion.copy(view.quaternion);
       placeCameraEcef(start.position, start.quaternion);
+      // A placement, not a speed: the dust starts from rest.
+      resetSpeed();
     } else if (fromAltitudeM > 0) {
       // Out along the camera's own direction, its rotation kept.
       const direction = start.position.clone().normalize();
@@ -1461,6 +1470,8 @@ function bindPin({
       );
       // Placed there at once, so no frame shows the intro's camera first.
       placeCameraEcef(start.position, start.quaternion);
+      // A placement, not a speed: the dust starts from rest.
+      resetSpeed();
     }
     const now = performance.now();
     flight.flyPin(
@@ -1478,7 +1489,6 @@ function bindPin({
           landingM: params.landKm * 1000,
           progress: 0,
           meteorDeg: params.meteorDeg,
-          pressMeteor: params.pressMeteor === 1,
         },
       ),
       place,
@@ -2467,6 +2477,7 @@ async function start() {
     ecefCamera,
     placeCameraEcef,
     setFrameTarget,
+    resetSpeed: () => speedDust.reset(),
     // The relief's detail colour over the target's region, built while
     // the dive runs.
     onLocated: (target, p) => {

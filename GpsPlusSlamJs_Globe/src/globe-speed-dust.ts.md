@@ -24,7 +24,9 @@ asked for a screen-space effect tied to the speed in metres per second.
 - `startVelocity()`, `stepVelocity(state, position, tMs, altitudeM)`: the
   camera's velocity (m/s, ECEF) from its positions, smoothed with
   alpha = 1 - exp(-dt / tau), so a steady motion reads the same at any
-  frame rate. A step longer than the altitude in one frame is a teleport:
+  frame rate. A step of `jumpShare` (1) of the altitude or more in one
+  frame is a gross teleport the lab did not announce (the lab resets the
+  speed itself where it places the camera: a view, a link's start):
   the velocity resets to 0 rather than spiking. Bad samples are ignored.
 - `speedShare(mps)`: 0 up to `loMps`, 1 from `hiMps`, log-linear between
   (0 for a non-number).

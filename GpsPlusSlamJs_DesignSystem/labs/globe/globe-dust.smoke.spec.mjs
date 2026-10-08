@@ -36,10 +36,13 @@ test("the speed dust draws nothing by default, nor for a held view", async ({
   expect(held.speedMps).toBe(0);
 });
 
-// WHY: the point of the dust. During the flight down from 65,000 km the
-// streaks show and pour outward from the focus of expansion (the head of
-// each streak further from it than its tail); low and slow, and after a
-// jump back out (the old dust's clump), nothing.
+// WHY: the point of the dust. During the meteor's flight the camera looks
+// along its travel, so the streaks must pour out of the screen's centre:
+// the focus of expansion (where the measured velocity points) near the
+// centre is the independent check (that each streak runs away from the
+// focus holds by construction for any velocity, the milestone review, so
+// it is only a drawing check). Low and slow, and after a jump back out,
+// nothing.
 test("during a flight the streaks pour outward from where the camera heads, and stop with it", async ({
   page,
 }) => {
@@ -50,7 +53,7 @@ test("during a flight the streaks pour outward from where the camera heads, and 
   await page.waitForFunction(
     () => {
       const s = window.__globeLab?.state?.();
-      return s && s.dust.shown && s.altitudeM < 30_000_000;
+      return s && s.dust.shown && s.altitudeM < 10_000_000;
     },
     null,
     { timeout: 240_000, polling: 250 },
@@ -92,10 +95,12 @@ test("during a flight the streaks pour outward from where the camera heads, and 
   await page.evaluate(() => window.__globeLab.timeFrames(3));
   const out = await page.evaluate(() => window.__globeLab.state().dust);
   console.log(
-    `speed dust at ${(high.altitudeM / 1000).toFixed(0)} km: ${(high.dust.speedMps / 1000).toFixed(0)} km/s, share ${high.dust.share.toFixed(2)}, opacity ${high.dust.opacity.toFixed(2)}, ${streaks.length} streaks sampled, ${outward} of ${judged} outward; low: ${low.shown}; placed out: ${out.shown}`,
+    `speed dust at ${(high.altitudeM / 1000).toFixed(0)} km: focus ${focus ? focus.map((x) => x.toFixed(3)).join(",") : "none"}, ${(high.dust.speedMps / 1000).toFixed(0)} km/s, share ${high.dust.share.toFixed(2)}, opacity ${high.dust.opacity.toFixed(2)}, ${streaks.length} streaks sampled, ${outward} of ${judged} outward; low: ${low.shown}; placed out: ${out.shown}`,
   );
   expect(high.dust.shown).toBe(true);
   expect(focus).not.toBeNull();
+  // Where the camera heads is where it looks (within a tenth of the screen).
+  expect(Math.hypot(focus[0] - 0.5, focus[1] - 0.5)).toBeLessThan(0.1);
   expect(judged).toBeGreaterThan(20);
   expect(outward / judged).toBeGreaterThanOrEqual(0.95);
   expect(low.shown).toBe(false);

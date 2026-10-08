@@ -475,3 +475,32 @@ describe("planTravel on the meteor's line (meteorDeg)", () => {
     }
   });
 });
+
+// WHY (the milestone review, finding 2): the fit ran a 2,048-step sweep 40
+// times on the frame the fix arrived (about 32 ms on a desktop, more on a
+// phone, against the 50 ms frame rule). The coarser sweep must stay within
+// 50 m of a fine reference over the starts and betas the flights use.
+describe("the meteor's sweep at its working resolution", () => {
+  const fine = (h0: number, landing: number, b: number) => {
+    const n = 16_384;
+    const a = Math.log(landing);
+    const step = (Math.log(h0) - a) / n;
+    let sum = 0;
+    for (let i = 0; i <= n; i++) {
+      const h = Math.exp(a + i * step);
+      const g = travelLawDeg(h, landing, b) * DEG;
+      const f = ((Math.cos(g) / Math.sin(g)) * h) / (R + h);
+      sum += f * (i === 0 || i === n ? 1 : i % 2 === 1 ? 4 : 2);
+    }
+    return (sum * step) / 3;
+  };
+  it("stays within 50 m of a fine reference", () => {
+    for (const h0 of [2_000, 10_000, 65_000].map((k) => k * KM)) {
+      for (const b of [20, 45, 70, 89]) {
+        const err =
+          Math.abs(meteorDiveArcRad(h0, 2 * KM, b) - fine(h0, 2 * KM, b)) * R;
+        expect(err, `${h0 / KM} km, ${b}`).toBeLessThan(50);
+      }
+    }
+  });
+});

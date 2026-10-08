@@ -447,7 +447,7 @@ test("the cloud volume compiles and draws its hex-tiled clouds with cloudHex=1",
 // origin, and the noise's anchoring was right only along a parallel or a
 // meridian. A ground point between the two places must read the same noise
 // coordinate after the frame moved 25 km diagonally (a jump was about a
-// quarter tile near Bern; the bound is a hundredth).
+// 0.078 tile near Bern with the drift stopped; the bound is a hundredth).
 test("a frame recentre keeps the clouds' noise on the ground (no jump)", async ({
   page,
 }) => {

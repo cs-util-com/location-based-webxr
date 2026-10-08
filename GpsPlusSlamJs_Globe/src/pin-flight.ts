@@ -117,13 +117,11 @@ export interface PinFlight {
    */
   readonly paceFloor: number;
   /**
-   * The meteor (round-3 plan 2026-10-08-2345 F1): the beta asked for, whether
-   * a press flies it in full even when it must back off first, and the beta
-   * the flight to the current target flies (90, R1, before a target and in
-   * the hold, which keeps its vertical law).
+   * The meteor (round-3 plan 2026-10-08-2345 F1): the beta asked for, and
+   * the beta the flight to the current target flies (90, R1, before a
+   * target and in the hold, which keeps its vertical law).
    */
   readonly meteorAskedDeg: number;
-  readonly pressMeteor: boolean;
   readonly meteorDeg: number;
 }
 
@@ -231,8 +229,10 @@ function towardTarget(pin: PinFlight, target: OrbitPose): PinFlight {
  * The first flight to a target and its beta: the asked meteor when its
  * arc has room for the line's sweep (a link started on the line), else the
  * flattest beta, no flatter than asked, that fits the arc (a press over its
- * own place: no back-off beyond R1's own dive), unless `pressMeteor` asks
- * for the full meteor, back-off and all. Chosen once; replans keep it.
+ * own place: no back-off beyond R1's own dive). Chosen once; replans keep
+ * it. (A "full meteor" over its own place was tried and removed: the curve
+ * absorbed the back-off above the bend and then dove 20-40 degrees steeper
+ * than the line, the milestone review.)
  */
 function meteorTo(
   pin: PinFlight,
@@ -240,7 +240,7 @@ function meteorTo(
 ): { flight: Flight; meteorDeg: number } {
   const asked = pin.meteorAskedDeg;
   const flight = flyTo(pin, target, pin.landingM, asked);
-  if (asked >= 90 || pin.pressMeteor) return { flight, meteorDeg: asked };
+  if (asked >= 90) return { flight, meteorDeg: asked };
   const h0 = flightFrameAt(flight, flight.startedAtMs).altitudeM;
   const fitted = fitMeteorDeg(
     h0,
@@ -308,8 +308,6 @@ export function pressPin(
     readonly progress: number;
     /** The meteor's beta (F1; 90, the default, is R1). */
     readonly meteorDeg?: number;
-    /** A press flies the full meteor even if it must back off first. */
-    readonly pressMeteor?: boolean;
   },
 ): PinFlight {
   requireTime(nowMs);
@@ -338,7 +336,6 @@ export function pressPin(
     dataStartMs: nowMs,
     paceFloor: 0,
     meteorAskedDeg,
-    pressMeteor: options.pressMeteor ?? false,
     meteorDeg: 90,
   };
   if (!options.target) return holdOver(base);

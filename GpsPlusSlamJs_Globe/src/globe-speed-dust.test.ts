@@ -73,13 +73,14 @@ describe("the velocity", () => {
     const jumped: [number, number, number] = [7_000 * KM + 20_000 * KM, 0, 0];
     state = stepVelocity(state, jumped, 32, 1_000 * KM);
     expect(Math.hypot(...state.velocity)).toBe(0);
-    // The flight's own start placement (43,600 to 65,000 km) is one too;
-    // its fastest real step (0.08 of the altitude) is not.
+    // The guard catches only gross jumps, a step of the altitude or more:
+    // the lab resets the speed itself where it places the camera (a view,
+    // a link's start), and a wheel zoom or a slow frame near the gate (half
+    // the altitude in a frame at 1.4 frames a second) is real motion (the
+    // milestone review, findings 4 and 5).
     let flight = startVelocity();
-    flight = stepVelocity(flight, [0, 0, 43_600 * KM], 0, 43_600 * KM);
-    flight = stepVelocity(flight, [0, 0, 65_000 * KM], 700, 65_000 * KM);
-    expect(Math.hypot(...flight.velocity)).toBe(0);
-    flight = stepVelocity(flight, [0, 0, 61_600 * KM], 1_400, 61_600 * KM);
+    flight = stepVelocity(flight, [0, 0, 7_000 * KM], 0, 600 * KM);
+    flight = stepVelocity(flight, [0, 0, 7_000 * KM - 300 * KM], 700, 600 * KM);
     expect(Math.hypot(...flight.velocity)).toBeGreaterThan(0);
   });
 

@@ -142,7 +142,8 @@ export function travelLawDeg(
 /**
  * The ground arc (radians) the law with `meteorDeg` sweeps from `h0` down
  * to the landing: the integral of cot(gamma) h / (R + h) over ln h (Simpson,
- * 2,048 steps). The meteor's line sweeps acos(p / r) - beta (about 41.4
+ * 256 steps: within 50 m of a fine reference, tested; 2,048 steps made the
+ * fit cost about 32 ms on the frame a fix arrived, the milestone review). The meteor's line sweeps acos(p / r) - beta (about 41.4
  * degrees from 65,000 km at beta 45); R1 (beta 90) about 16 km.
  */
 export function meteorDiveArcRad(
@@ -154,7 +155,7 @@ export function meteorDiveArcRad(
   requirePositive("landingM", landingM);
   if (!(h0 > landingM)) return 0;
   const R = FLIGHT_TRAVEL.radiusM;
-  const n = 2_048;
+  const n = 256;
   const a = Math.log(landingM);
   const step = (Math.log(h0) - a) / n;
   let sum = 0;
@@ -183,7 +184,8 @@ export function fitMeteorDeg(
   if (!(meteorDiveArcRad(h0, landingM, 90) < arcRad)) return 90;
   let flat = meteorDeg;
   let steep = 90;
-  for (let i = 0; i < 40; i++) {
+  // 20 halvings: about 4e-5 degree.
+  for (let i = 0; i < 20; i++) {
     const mid = (flat + steep) / 2;
     if (meteorDiveArcRad(h0, landingM, mid) <= arcRad) steep = mid;
     else flat = mid;

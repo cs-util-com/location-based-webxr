@@ -615,6 +615,41 @@ describe("retargetFlight", () => {
     }
   });
 
+  // WHY (the milestone review, finding 6): a replan keeps the flight's
+  // beta, in its timing as well as its path: a caller that omits it must get
+  // the same flight as one that passes it.
+  it("keeps the meteor's beta in a replan's timing too", () => {
+    const pose = orbitPose(WGS84_ELLIPSOID, { lat: 20, lng: 7.4 });
+    const cam = obliqueCamera(WGS84_ELLIPSOID, pose, 20_000 * KM, 90);
+    const first = startFlight(
+      WGS84_ELLIPSOID,
+      { pose, distanceM: cam.position.length(), quaternion: cam.quaternion },
+      orbitPose(WGS84_ELLIPSOID, BERN),
+      { landingM: 2 * KM, meteorDeg: 45 },
+      0,
+    );
+    const implicit = retargetFlight(
+      first,
+      3_000,
+      orbitPose(WGS84_ELLIPSOID, BERN),
+      {
+        landingM: 3 * KM,
+      },
+    );
+    const explicit = retargetFlight(
+      first,
+      3_000,
+      orbitPose(WGS84_ELLIPSOID, BERN),
+      {
+        landingM: 3 * KM,
+        meteorDeg: 45,
+      },
+    );
+    expect(implicit.path.meteorDeg).toBe(45);
+    expect(implicit.endsAtMs).toBe(explicit.endsAtMs);
+    expect(implicit.path.cruiseSpeed).toBe(explicit.path.cruiseSpeed);
+  });
+
   // WHY: a replan that missed its own end would land somewhere else.
   it("lands exactly at the new target and altitude", () => {
     const replanned = retargetFlight(

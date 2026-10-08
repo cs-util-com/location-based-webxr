@@ -172,13 +172,15 @@ Each one is tested, simulated at 60 Hz on the camera.
 
 ## The meteor (round-3 plan 2026-10-08-2345, F1)
 
-`pressPin` takes `meteorDeg` (default 90, R1) and `pressMeteor`. The hold keeps
-its vertical law. At the first plan to a target the flight takes the asked
-beta when its arc has room for the line's sweep (a link started on the
-line), else the flattest beta, no flatter than asked, that fits the arc (a
-press over its own place: the arc is about 0, so about R1, backing off no
-more than R1's own dive track of about 16 km), unless `pressMeteor` asks for
-the full meteor (from 10,100 km it backs off about 4.6 degrees, 510 km,
-first). The chosen beta is kept on the pin (`meteorDeg`) and by every replan.
-Tests: a link on the asked meteor, a landing raise keeping it, a press over
-its own place fitting a steeper line, and the full meteor backing off.
+`pressPin` takes `meteorDeg` (default 90, R1). The hold keeps its vertical
+law. At the first plan to a target the flight takes the asked beta when
+its arc has room for the line's sweep (a link started on the line), else
+the flattest beta, no flatter than asked, that fits the arc (a press over
+its own place: the arc is about 0, so about R1, backing off no more than
+R1's own dive track of about 16 km). The chosen beta is kept on the pin
+(`meteorDeg`) and by every replan. A "full meteor" over the press's own
+place was tried and removed: the curve absorbed its back-off above the
+bend, then dove 20-40 degrees steeper than the line (the milestone
+review). Tests: a link on the asked meteor, a landing raise keeping it, a
+press over its own place fitting a steeper line, and a meteor link's pace
+without stop and go.

@@ -44,11 +44,13 @@ export const GLOBE_SPEED_DUST = {
   rimFrom: 0.85,
   rimTo: 0.95,
   /**
-   * A camera step longer than this share of its altitude in one frame is a
-   * teleport: the flight's start placement (43,600 to 65,000 km, 0.49) is
-   * one; its fastest real step was 0.08 at 1.4 frames a second (headless).
+   * A camera step of this share of its altitude or more in one frame is a
+   * gross teleport the lab did not announce. The lab resets the speed
+   * itself where it places the camera (a view, a link's start); a wheel
+   * zoom or a slow frame near the gate (about half the altitude a frame at
+   * 1.4 frames a second, headless) is real motion (the milestone review).
    */
-  jumpShare: 0.25,
+  jumpShare: 1,
   /** One frame never moves the field more than this share of the box. */
   maxStepShare: 0.3,
 } as const;

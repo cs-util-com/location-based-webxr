@@ -874,8 +874,8 @@ describe("the pin's pace never slows while it approaches (round-2 plan DEC-FR2-9
 // (a target known at the press, started on the meteor's line) flies the
 // meteor the owner asked for; a press over its own place has no room for
 // the line's 3,000-odd km of sweep, so it fits the flattest line that its
-// arc allows and never backs off, unless `pressMeteor` asks for the full
-// meteor; a landing raise keeps the beta it chose.
+// arc allows and never backs off beyond R1's own dive; a landing raise
+// keeps the beta it chose.
 describe("the pin's meteor (meteorDeg, pressMeteor)", () => {
   const bernDir = bernPose.direction.clone().normalize();
   const angleFromBern = (s: { dir: { x: number; y: number; z: number } }) =>
@@ -907,13 +907,12 @@ describe("the pin's meteor (meteorDeg, pressMeteor)", () => {
     expect(raised.flight?.path.meteorDeg).toBe(45);
   });
 
-  const overOwnPlace = (pressMeteor: boolean) => {
+  const overOwnPlace = () => {
     const pin = pressPin(WGS84_ELLIPSOID, 0, cameraOver(BERN, 10_100 * KM), {
       target: null,
       landingM: 2 * KM,
       progress: 0,
       meteorDeg: 45,
-      pressMeteor,
     });
     return run(pin, 40_000, (t, p) =>
       t >= 2_000 && p.phase === "holding"
@@ -923,7 +922,7 @@ describe("the pin's meteor (meteorDeg, pressMeteor)", () => {
   };
 
   it("fits a steeper line over its own place, backing off no more than R1's own dive", () => {
-    const { pin, samples } = overOwnPlace(false);
+    const { pin, samples } = overOwnPlace();
     expect(pin.flight?.path.meteorDeg ?? 0).toBeGreaterThan(45);
     // Straight overhead, even R1 steps back its own dive track (about 16 km
     // at a 2 km landing) to dive in at 45; never the meteor's thousands of km.
@@ -938,12 +937,34 @@ describe("the pin's meteor (meteorDeg, pressMeteor)", () => {
     expect(backward * R).toBeLessThan(25 * KM);
   });
 
-  it("flies the full meteor over its own place with pressMeteor, backing off first", () => {
-    const { pin, samples } = overOwnPlace(true);
-    expect(pin.flight?.path.meteorDeg).toBe(45);
-    // Measured 4.6 degrees (about 510 km) from 10,100 km; R1 steps back
-    // 0.16 (17.5 km).
-    const widest = Math.max(...samples.map(angleFromBern));
-    expect((widest * 180) / Math.PI).toBeGreaterThan(1);
+  // WHY (the milestone review, finding 7): every pacing test ran on R1's
+  // path; a meteor link's path is thousands of km longer. It must still
+  // start at its pace and never stop and go high up.
+  it("paces a meteor link without stop and go", () => {
+    const sweepDeg =
+      (meteorDiveArcRad(65_000 * KM, 2 * KM, 45) * 180) / Math.PI;
+    const start = cameraOver(
+      { lat: BERN.lat - sweepDeg * 1.01, lng: BERN.lng },
+      65_000 * KM,
+    );
+    const pin = pressPin(WGS84_ELLIPSOID, 0, start, {
+      target: bernPose,
+      landingM: 2 * KM,
+      progress: 0,
+      meteorDeg: 45,
+    });
+    const { samples } = run(pin, 150_000, (t, p) =>
+      pinProgress(p, t, Math.min(1, t / 20_000)),
+    );
+    const high = speeds(samples).filter(
+      (s) => s.t >= 1_000 && s.h > 2.5 * PIN_FLIGHT.commitM,
+    );
+    expect(high.length).toBeGreaterThan(30);
+    expect(
+      noStopAndGo(
+        high.map((s) => s.v),
+        0.2,
+      ),
+    ).toBe(true);
   });
 });
