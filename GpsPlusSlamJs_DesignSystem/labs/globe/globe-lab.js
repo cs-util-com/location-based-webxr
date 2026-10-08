@@ -23,12 +23,6 @@ import {
 import { CLOUD_VOLUME } from "/globe/globe-cloud-volume.js";
 import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
 import { flatCloudShare } from "/globe/globe-cloud-flat-fade.js";
-import {
-  createDustField,
-  dustFade,
-  dustShare,
-  wrapDust,
-} from "/globe/globe-space-dust.js";
 import { creditsFor } from "/globe/globe-credits.js";
 import { GIBS_ACKNOWLEDGEMENT } from "/globe/globe-sources.js";
 import {
@@ -130,6 +124,7 @@ import { createGlobeHaze } from "./globe-haze.js";
 import { createGlobeCloudVolume } from "./globe-cloud-volume.js";
 import { createGlobeSceneDepth } from "./globe-scene-depth.js";
 import { createGlobeCity } from "./globe-city.js";
+import { createSpeedDustPass } from "./globe-speed-dust-pass.js";
 import { EARTH_ATMOSPHERE } from "/fw/visualization/atmosphere/atmosphere-model.js";
 import {
   GLOBE_SKY_HAND_OVER,
@@ -530,10 +525,15 @@ const PARAMS = {
   cloudFlat: { fallback: 1, min: 0, max: 1 },
   cloudFlatTopKm: { fallback: 5_000, min: 200, max: 50_000 },
   cloudFlatWeak: { fallback: 0.3, min: 0, max: 1 },
-  // Space dust for a sense of speed on the way in (round-2 plan
-  // 2026-10-07-2350 DEC-FR2-7, `/globe/globe-space-dust.js`): 1 on, an
-  // experiment for the owner to judge; 0 (the default) draws nothing.
+  // Speed dust: streaks pouring past the camera, faster with the speed
+  // (round-3 plan 2026-10-08-2345 D1, `/globe/globe-speed-dust.js`): 1 on,
+  // for the owner to judge; 0 (the default) draws nothing. `dustOver` its
+  // weight over the Earth (0 behind it only), `dustExposureMs` the streaks'
+  // exposure (at least a frame), `dustWidthPx` their width.
   dust: { fallback: 0, min: 0, max: 1 },
+  dustOver: { fallback: 0.25, min: 0, max: 1 },
+  dustExposureMs: { fallback: 33, min: 16, max: 100 },
+  dustWidthPx: { fallback: 1.5, min: 0.5, max: 4 },
   // The city's data warmed from load when the link names a place (`at=`;
   // the city plan 2026-10-05-0040, K0); 0 waits for the pin's press.
   cityWarm: { fallback: 1, min: 0, max: 1 },
@@ -1902,6 +1902,8 @@ async function start() {
     }
     flight.yieldToUser(performance.now());
     pin?.cameraTaken();
+    // A placed view is a teleport, not a speed.
+    speedDust.reset();
     heldView = hold;
     setFrameTarget({ lat, lng });
     const ellipsoid = globe.tiles.ellipsoid;
@@ -1956,74 +1958,8 @@ async function start() {
   let observerKm = Number.POSITIVE_INFINITY;
   /** The flat cloud layer's last share by altitude (DEC-FR2-5), for state(). */
   let cloudFlatShare = 1;
-  /**
-   * The space dust (DEC-FR2-7, `dust=1`): points still in the Earth-fixed
-   * frame, in a holder that copies the tiles' placement each frame (a
-   * `flight=2` flight recentres the world frame under the camera), wrapped
-   * around the camera at its altitude. Built on the first frame that asks.
-   */
-  let dust = null;
-  let dustOpacity = 0;
-  const dustCamera = new THREE.Vector3();
-  const updateDust = () => {
-    // The camera in the tiles' own frame, the one the holder copies.
-    const ecef = globe.tiles.group.worldToLocal(
-      dustCamera.copy(camera.position),
-    );
-    const altitudeM = globe.tiles.ellipsoid.getPositionElevation(ecef);
-    const on = params.dust === 1 && altitudeM > 0 && Number.isFinite(altitudeM);
-    dustOpacity = on ? dustShare(altitudeM) : 0;
-    if (!on && !dust) return;
-    if (!dust) {
-      const positions = createDustField(ecef.toArray(), altitudeM);
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute(
-        "position",
-        new THREE.BufferAttribute(positions, 3),
-      );
-      // Each point's colour: the dust's tint times its fade at the box's
-      // faces (additive, so darker is fainter: a wrap never pops in).
-      const colours = new Float32Array(positions.length);
-      geometry.setAttribute("color", new THREE.BufferAttribute(colours, 3));
-      const points = new THREE.Points(
-        geometry,
-        new THREE.PointsMaterial({
-          vertexColors: true,
-          size: 1.5,
-          sizeAttenuation: false,
-          transparent: true,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        }),
-      );
-      // The points move every frame: no bounding sphere, and no part in a
-      // pick or a clearance ray.
-      points.frustumCulled = false;
-      points.raycast = () => {};
-      const holder = new THREE.Group();
-      holder.matrixAutoUpdate = false;
-      holder.add(points);
-      globe.group.add(holder);
-      const fade = new Float32Array(positions.length / 3);
-      dust = { holder, points, positions, colours, fade };
-    }
-    dust.points.visible = dustOpacity > 0;
-    if (!dust.points.visible) return;
-    const at = ecef.toArray();
-    wrapDust(dust.positions, at, altitudeM);
-    dust.points.geometry.attributes.position.needsUpdate = true;
-    dustFade(dust.positions, at, altitudeM, dust.fade);
-    for (let i = 0; i < dust.fade.length; i++) {
-      const f = dust.fade[i];
-      dust.colours[3 * i] = 0.87 * f;
-      dust.colours[3 * i + 1] = 0.9 * f;
-      dust.colours[3 * i + 2] = f;
-    }
-    dust.points.geometry.attributes.color.needsUpdate = true;
-    dust.points.material.opacity = dustOpacity;
-    dust.holder.matrix.copy(globe.tiles.group.matrix);
-    dust.holder.matrixWorldNeedsUpdate = true;
-  };
+  /** The speed dust's pass (round-3 plan D1, `dust=1`). */
+  const speedDust = createSpeedDustPass();
   let shellThickness = null;
   scene.add(globe.group);
   // The relief (F1): the library's terrain tiles wearing the globe's look,
@@ -3018,9 +2954,24 @@ async function start() {
       // the ground's (nothing above the edge).
       groundSky.render(camera);
     }
-    // The dust where the camera now is, after the clearance's lift.
-    updateDust();
+    // The speed dust where the camera now is, after the clearance's lift:
+    // drawn before the Earth (which covers it) and, at `dustOver`, after.
+    const dustPose = ecefCamera();
+    speedDust.update({
+      nowMs: performance.now(),
+      position: dustPose.position,
+      quaternion: dustPose.quaternion,
+      altitudeM: globe.tiles.ellipsoid.getPositionElevation(dustPose.position),
+      fovDeg: camera.fov,
+      aspect: camera.aspect,
+      renderer,
+      on: params.dust === 1,
+      exposureMs: params.dustExposureMs,
+      widthPx: params.dustWidthPx,
+    });
+    speedDust.render(renderer, 1 - params.dustOver);
     renderer.render(scene, camera);
+    speedDust.render(renderer, params.dustOver);
     // The cloud volume over the Earth, ending at the relief (C2).
     // The relief's depth (§17): below the hand-over, for the space pass's
     // rays (they end at the drawn relief, not the ellipsoid) and the
@@ -3335,12 +3286,9 @@ async function start() {
       // (the line is throttled, so it may lag by up to 250 ms).
       readout: readoutText,
       cloudFlat: cloudFlatShare,
-      // The space dust (DEC-FR2-7): its points, opacity, and whether drawn.
-      dust: {
-        count: dust ? dust.positions.length / 3 : 0,
-        opacity: dustOpacity,
-        shown: dust?.points.visible ?? false,
-      },
+      // The speed dust (round-3 plan D1): its count, the camera's speed and
+      // its share, the opacity, the drift, and whether drawn.
+      dust: speedDust.state(),
       // The globe's first look (round-2 plan DEC-FR2-6): its images in, and
       // its sphere drawn (until the globe can draw its whole view).
       firstLook: {
@@ -3450,6 +3398,8 @@ async function start() {
       return [(p.x + 1) / 2, (1 - p.y) / 2];
     },
     regionStats,
+    /** The speed dust's first n visible streaks, projected (D1 smokes). */
+    dustSample: (n) => speedDust.sample(n),
     /**
      * The cloud noise coordinate (tiles) a ground point reads under the
      * current frame: its world x, z over the tile plus the ground sky's

@@ -634,15 +634,17 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   its shell shadow follows, and the state reports it as `cloudFlat`. The
   state's `firstLook` (`{ ready, shown }`, round-2 plan DEC-FR2-6) reports
   the globe's first look: its images in, and its sphere drawn.
-  `dust` (0, the default; 1 on) draws the space dust (round-2 plan
-  DEC-FR2-7, `/globe/globe-space-dust.js`), an experiment for a sense of
-  speed on the way in: still points in the Earth-fixed frame, in a holder
-  that copies the tiles' placement each frame (a `flight=2` flight
-  recentres the world frame), wrapped around the camera at its altitude
-  just before the scene is drawn, additive, opacity full from 2,000 km and
-  gone by 300 km, each point coloured by its fade at the box's faces
-  (`dustFade`), so a wrap never pops in. Built on the first frame that asks; never picked or ray
-  cast. The state's `dust` (`{ count, opacity, shown }`) reports it
+  `dust` (0, the default; 1 on) draws the speed dust (round-3 plan
+  2026-10-08-2345 D1, `/globe/globe-speed-dust.js`, drawn by
+  `globe-speed-dust-pass.js`): streaks pouring past the camera, faster and
+  longer with its speed (log scale, 1 km/s to 5,000 km/s), gone when it
+  stops and below 300 km, in ECEF axes so a frame recentre never spins
+  them. Drawn before the Earth (which covers them) at 1 - `dustOver` and
+  after it at `dustOver` (0.25); `dustExposureMs` (33) and `dustWidthPx`
+  (1.5) shape the streaks. A placed view (`applyView`) resets the speed.
+  The state's `dust` reports the count, `speedMps`, `share`, `opacity`,
+  `drift`, `direction` and `shown`; `dustSample(n)` the first n visible
+  streaks projected and the focus of expansion
   (`globe-dust.smoke.spec.mjs`).
   `cloudNoiseCoordAt(lat, lng)` (a test hook) returns the cloud noise
   coordinate a ground point reads under the current frame; a recentre must

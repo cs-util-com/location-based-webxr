@@ -1,99 +1,103 @@
 /**
- * The space dust (round-2 plan 2026-10-07-2350 DEC-FR2-7; the owner:
- * "particles, so you feel how fast the camera is coming in; let us try
- * whether it looks good"). An experiment behind `dust=1`, off by default:
- * points in space high up, gone before the sky, nothing at all when off.
+ * The speed dust (round-3 plan 2026-10-08-2345 D1; the owner, 2026-10-08:
+ * "dust that streaks past the camera very fast, tied to the speed in metres
+ * per second"). It replaced a world-fixed dust that clumped over the city
+ * when he zoomed back out. Off by default; during a flight the streaks pour
+ * outward from where the camera is heading; a stopped or placed camera
+ * draws nothing.
  */
 import { expect, test } from "@playwright/test";
 
 import { applyHash, bootGlobe } from "./globe-smoke-helpers.mjs";
 
-const BASE =
-  "spinMs=0&turnMs=0&time=2026-10-05T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&cloudVolume=0";
-// Level at 8,000 km: the Earth below, space above, where the dust shows.
-const HIGH = "view=46.9,7.4,8000,0,0";
-const LOW = "view=46.9,7.4,150,0,-30";
-// Straight down from 10,000 km, the flight's own view: the Earth fills
-// the middle, and the dust is drawn over its lit face.
-const DOWN = "view=46.9,7.4,10000,0,-90";
+const TIME = "time=2026-10-05T11:00:00Z";
 
-/** The frame's mean luminance (levels). */
-async function meanLevel(page) {
-  const stats = await page.evaluate(() =>
-    window.__globeLab.regionStats({ cx: 0.5, cy: 0.5, rPx: 0 }, 255),
-  );
-  const size = await page.evaluate(() => {
-    const c = document.querySelector("canvas");
-    return c.width * c.height;
-  });
-  return stats.outsideSum / size;
-}
-
-/** Pixels brighter than 60 levels over the whole frame. */
-async function brightPixels(page) {
-  const stats = await page.evaluate(() =>
-    window.__globeLab.regionStats({ cx: 0.5, cy: 0.5, rPx: 0 }, 60),
-  );
-  return stats.outsideBright;
-}
-
-/** The mean frame interval over 60 frames, ms (logged, not asserted). */
-async function frameMs(page) {
-  return page.evaluate(
-    () =>
-      new Promise((resolve) => {
-        const times = [];
-        const tick = (t) => {
-          times.push(t);
-          if (times.length < 61) requestAnimationFrame(tick);
-          else resolve((times[60] - times[0]) / 60);
-        };
-        requestAnimationFrame(tick);
-      }),
-  );
-}
-
-// WHY: the dust must draw points in space when on, be gone low down where
-// the sky begins, and draw nothing when off (the default), so the look
-// nobody asked to change stays exactly as it was.
-test("the space dust shows high up, is gone low down, and is off by default", async ({
+// WHY: the default look must not change; a held view has no speed.
+test("the speed dust draws nothing by default, nor for a held view", async ({
   page,
 }) => {
-  test.setTimeout(300_000);
-  const errors = await bootGlobe(page, `${BASE}&${HIGH}`, { phase: "user" });
+  test.setTimeout(240_000);
+  const errors = await bootGlobe(
+    page,
+    `spinMs=0&turnMs=0&${TIME}&stars=0&milkyWay=0&view=46.9,7.4,8000,0,0`,
+    { phase: "user" },
+  );
+  await page.evaluate(() => window.__globeLab.timeFrames(3));
   const off = await page.evaluate(() => window.__globeLab.state().dust);
-  const offBright = await brightPixels(page);
-  const offMs = await frameMs(page);
-
-  await applyHash(page, `${BASE}&dust=1&${HIGH}`);
-  await page.waitForFunction(() => window.__globeLab.state().dust.shown);
-  const high = await page.evaluate(() => window.__globeLab.state().dust);
-  const onBright = await brightPixels(page);
-  const onMs = await frameMs(page);
-
-  // Over the Earth (logged for the owner's judgement, not asserted).
-  await applyHash(page, `${BASE}&dust=1&${DOWN}`);
-  await page.waitForFunction(() => window.__globeLab.state().dust.shown);
-  const downOn = await meanLevel(page);
-  await applyHash(page, `${BASE}&dust=0&${DOWN}`);
-  await page.waitForFunction(() => !window.__globeLab.state().dust.shown);
-  const downOff = await meanLevel(page);
-
-  await applyHash(page, `${BASE}&dust=1&${LOW}`);
-  await page.waitForFunction(
-    () => window.__globeLab.state().dust.shown === false,
+  await applyHash(
+    page,
+    `spinMs=0&turnMs=0&${TIME}&stars=0&milkyWay=0&dust=1&view=46.9,7.4,8000,0,0`,
   );
-  const low = await page.evaluate(() => window.__globeLab.state().dust);
-
-  console.log(
-    `dust: off ${offBright} bright px (${offMs.toFixed(1)} ms/frame), on ${onBright} (${onMs.toFixed(1)} ms/frame), ${high.count} points; opacity ${high.opacity} high, ${low.opacity} at 150 km`,
-  );
-  console.log(
-    `dust over the Earth from 10,000 km: mean level ${downOff.toFixed(2)} off, ${downOn.toFixed(2)} on`,
-  );
+  await page.evaluate(() => window.__globeLab.timeFrames(3));
+  const held = await page.evaluate(() => window.__globeLab.state().dust);
   expect(errors).toEqual([]);
-  expect(off).toEqual({ count: 0, opacity: 0, shown: false });
-  expect(high.opacity).toBe(1);
-  expect(onBright - offBright).toBeGreaterThan(30);
-  expect(low.opacity).toBe(0);
+  expect(off.shown).toBe(false);
+  expect(held.shown).toBe(false);
+  expect(held.speedMps).toBe(0);
+});
+
+// WHY: the point of the dust. During the flight down from 65,000 km the
+// streaks show and pour outward from the focus of expansion (the head of
+// each streak further from it than its tail); low and slow, and after a
+// jump back out (the old dust's clump), nothing.
+test("during a flight the streaks pour outward from where the camera heads, and stop with it", async ({
+  page,
+}) => {
+  test.setTimeout(400_000);
+  await page.goto(
+    `/labs/globe/#${TIME}&at=46.948,7.4474&land=1&flight=2&relief=0&cityWarm=0&dust=1`,
+  );
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab?.state?.();
+      return s && s.dust.shown && s.altitudeM < 30_000_000;
+    },
+    null,
+    { timeout: 240_000, polling: 250 },
+  );
+  const high = await page.evaluate(() => {
+    const lab = window.__globeLab;
+    return {
+      dust: lab.state().dust,
+      altitudeM: lab.state().altitudeM,
+      sample: lab.dustSample(300),
+    };
+  });
+  const { streaks, focus } = high.sample;
+  let outward = 0;
+  let judged = 0;
+  for (const { head, tail } of streaks) {
+    if (!focus) break;
+    const fromFocus = [head[0] - focus[0], head[1] - focus[1]];
+    if (Math.hypot(fromFocus[0], fromFocus[1]) < 0.05) continue;
+    const along = [head[0] - tail[0], head[1] - tail[1]];
+    if (Math.hypot(along[0], along[1]) < 1e-4) continue;
+    judged += 1;
+    if (along[0] * fromFocus[0] + along[1] * fromFocus[1] > 0) outward += 1;
+  }
+  // Low and slow near the landing: nothing.
+  await page.waitForFunction(
+    () => window.__globeLab.state().altitudeM < 100_000,
+    null,
+    { timeout: 240_000, polling: 500 },
+  );
+  await page.evaluate(() => window.__globeLab.timeFrames(3));
+  const low = await page.evaluate(() => window.__globeLab.state().dust);
+  // The old dust's bug: back out to 30,000 km, a clump hung over the city.
+  // A placed view is a teleport: nothing.
+  await applyHash(
+    page,
+    `${TIME}&at=46.948,7.4474&relief=0&cityWarm=0&dust=1&view=46.9,7.4,30000,0,-90`,
+  );
+  await page.evaluate(() => window.__globeLab.timeFrames(3));
+  const out = await page.evaluate(() => window.__globeLab.state().dust);
+  console.log(
+    `speed dust at ${(high.altitudeM / 1000).toFixed(0)} km: ${(high.dust.speedMps / 1000).toFixed(0)} km/s, share ${high.dust.share.toFixed(2)}, opacity ${high.dust.opacity.toFixed(2)}, ${streaks.length} streaks sampled, ${outward} of ${judged} outward; low: ${low.shown}; placed out: ${out.shown}`,
+  );
+  expect(high.dust.shown).toBe(true);
+  expect(focus).not.toBeNull();
+  expect(judged).toBeGreaterThan(20);
+  expect(outward / judged).toBeGreaterThanOrEqual(0.95);
+  expect(low.shown).toBe(false);
+  expect(out.shown).toBe(false);
 });
