@@ -15,6 +15,10 @@ camera, so `installTourViewerArFakes(page)` installs
   GPS fixes into the app store, so the mint gate and placement unlock.
   Shared by `ar-mode.spec.js`, `object-editing.spec.js` and
   `ar-layout.spec.js` (it was copied into the first two).
+- `standAt(page, north, east, second)` - one device fix with the phone
+  `north`/`east` metres from the fakes' zero, its AR pose taken back through
+  the store's current alignment, so the camera stands exactly there. Shared
+  by `stations.spec.js` and `sample-tour.spec.js`.
 - `openFixtureTour(page)` - opens the fixture tour on the creator's page
   (`?nocache=1`, range streaming) and opens step 4; `enterArAndMeasure(page)`
   enters AR, arms the fixture code, seeds the alignment and measures it, so
@@ -55,8 +59,10 @@ camera, so `installTourViewerArFakes(page)` installs
   the app's teardown in the specs too (the finish step relies on it).
   `reticleVisible` / `reticlePosition` / `reticleDisposals` and
   `encodedFrames` script the creator's placement layer (the hit-test
-  reticle and the JPEG encoder fakes; `createLabel` returns a bare object
-  in place of the canvas sprite); a tap in AR (authoring plan
+  reticle and the JPEG encoder fakes; `createLabel` is deliberately NOT
+  faked - Chromium has a canvas, so pin labels are the real text sprites,
+  and a plain-object stand-in was refused by three's `Object3D.add` with
+  only a console error); a tap in AR (authoring plan
   2026-09-28-0953 M4): `startHitTestReticle` keeps the app's select
   listener as `xrSelect`, `tapXr(selector?)` taps like the runtime does
   (with a null target ray, a screen-centre tap) -
@@ -67,7 +73,12 @@ camera, so `installTourViewerArFakes(page)` installs
   scene has no geometry, the real raycast is `object-pick.test.ts`'s);
   `timers` + `fireTimers()` are the scan
   gate's escape clock (the `schedule` seam), so a spec fires the 45 s
-  without waiting. The troubleshooting recording's depth (authoring
+  without waiting. The stations (tour kit plan K4): `createWayfindingHud`
+  keeps the page's targets getter as `hud` (`{ getTargets, disposed }`)
+  and counts `hudStarts`; `createAudioElement` returns a fake element
+  that records every source it is asked to play in `audioPlays` and counts
+  `audioElements`; `loadGlbModel` is NOT faked (the real GLTF loader
+  parses the fixture's minimal `.glb`). The troubleshooting recording's depth (authoring
   recording plan 2026-09-28-0953, D4): `initARCalls` records `hasDepth`,
   `depthCaptureCalls` / `stopDepthCalls` count the depth seams, and
   `emitDepthSample()` feeds one sample through the initAR depth callback

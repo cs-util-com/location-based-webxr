@@ -20,6 +20,13 @@ asked. Pure - the OPFS mechanics are the framework's
   tombstones whose id the hosted manifest still carries.
 - `objectContentKey(object) -> string` - an object's JSON with every key
   sorted: one comparable string whatever order its fields were written in.
+- `draftLevels(draft)` - every code a draft keeps: its `levels` (M4c-1),
+  else its one `level`.
+- `HostedLevelText` - what the hosted zip stores for a level: the text for
+  the draft's one `level` (the form before M4c-1), or a function per level
+  id; null where it stores nothing.
+- `draftHasUnhostedLevel(draft, hosted)` - ANY of the draft's codes is not
+  in the hosted zip (M4c-1: a draft with two codes was judged by one).
 - `draftIsSpent(draft, manifest, hostedLevelJson, visitCount = 0) -> boolean`
   - never spent while it holds an AR visit's log (`visitCount > 0`).
 - `applyObjectChanges(existing, changes, deleted) -> TourObject[]` - what
