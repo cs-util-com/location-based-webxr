@@ -753,7 +753,9 @@ describe("the pin's pace never slows while it approaches (round-2 plan DEC-FR2-9
     const failures: string[] = [];
     for (const startKm of [65_000, 43_600, 10_100]) {
       for (const [name, profile] of Object.entries(profiles)) {
-        for (const dataS of [20, 45, 55, 60, 90]) {
+        // 2-60 s is DEC-CF-6's claim, re-measured on the final code
+        // (DEC-CF-8); 90 s is past the cap.
+        for (const dataS of [2, 5, 10, 20, 30, 45, 55, 60, 90]) {
           const pin = pressPin(
             WGS84_ELLIPSOID,
             0,
