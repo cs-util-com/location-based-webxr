@@ -105,9 +105,9 @@ export interface CreatorSettle {
    *  called on every render (M5b: it used to ride the move prompt, which
    *  M6 removes). */
   judgeOnNewFix(): void;
-  /** Move the earlier visits' frame for this visit's choice. */
+  /** Draw the earlier visits' objects through the codes this visit saw. */
   placeEarlierObjects(): void;
-  /** The result screen's line about the code's position. */
+  /** The result screen's line about the codes' positions (per code). */
   positionSentence(): string;
   /** A Finish wrote the tour: its line was said. */
   afterFinish(): void;
@@ -164,8 +164,8 @@ export function wireCreatorSettle(deps: {
    *  (§7j #12). An improved position of the same poster is no boundary:
    *  every visit saw that one poster. */
   const movedInVisit = new Map<string, number>();
-  /** What each settle since the last Finish decided for the code in hand:
-   *  the result screen's line (`codePositionSentence`). */
+  /** What each settle since the last Finish decided, per code (M5c): the
+   *  result screen's line (`positionSentence`). */
   let codePositionOutcomes: (CodePositionOutcome & { levelId: string })[] = [];
   /** By level: the visit whose settle CHANGED that code's saved position,
    *  and the plan it applied - re-applied when a failed Finish settles it
@@ -727,7 +727,9 @@ export function wireCreatorSettle(deps: {
   function positionSentence(): string {
     const numbering = deps.codes.numbering();
     const ids = [...new Set(codePositionOutcomes.map((o) => o.levelId))];
-    if (ids.length <= 1 || numbering.length <= 1) {
+    // One code in the tour: the sentence as before. Several: named, even
+    // when only one of them decided (M5c review #2).
+    if (numbering.length <= 1) {
       return codePositionSentence(codePositionOutcomes);
     }
     return ids

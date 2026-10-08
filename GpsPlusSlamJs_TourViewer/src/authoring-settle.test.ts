@@ -2450,10 +2450,13 @@ describe(
      * both stored codes through an alignment 20 degrees turned and 3 m
      * shifted, after a reliable 30 m walk.
      */
-    async function twoStoredCodesSeenAgain() {
+    async function twoStoredCodesSeenAgain(options: { onlyA?: boolean } = {}) {
       const a = authoring();
       await a.mint();
       await a.placePin("near A", [2, 0, -1]);
+      // Near the bisector of A and B (about 10 m from A, 11 m from B): A's
+      // correction can carry it past the bisector (M5c review #1).
+      await a.placePin("between", [-2, 0, 9.5]);
       const twentyAway = new Matrix4().makeTranslation(20, 0, 0);
       const SECOND_TEXT = "https://gps.csutil.com/tour/?qr=second";
       await a.mint(twentyAway, SECOND_TEXT, 10_000);
@@ -2472,7 +2475,9 @@ describe(
       a.setAlignment(yawAlignment(20, [3, 400, 0]));
       a.setWalk(walkOf(30, 30));
       a.seeTheCode(undefined, TEXT, 20_000);
-      a.seeTheCode(twentyAway, SECOND_TEXT, 30_000);
+      if (options.onlyA !== true) {
+        a.seeTheCode(twentyAway, SECOND_TEXT, 30_000);
+      }
       await flush();
       return { a, before, pins };
     }
@@ -2491,6 +2496,14 @@ describe(
         "replace",
       ]);
       expect(decisions.every((d) => d.applied)).toBe(true);
+      // Each re-minted through its OWN sighting and pick in one reliable
+      // alignment: still the 20 m apart they hang (M5c review #5 - a wrong
+      // sighting or pick would not keep this).
+      const levels = a.settledLogs().at(-1)!.payload.levels ?? [];
+      expect(levels).toHaveLength(2);
+      expect(
+        codeWorldOf(levels[0]!.json).distanceTo(codeWorldOf(levels[1]!.json)),
+      ).toBeCloseTo(20, 0);
     });
 
     // Why this test matters (M5 design review #7): with two improved codes
@@ -2503,11 +2516,26 @@ describe(
         d.movedWithCode.map((m) => m.id),
       );
       expect(new Set(moved).size).toBe(moved.length);
-      expect(moved).toHaveLength(2);
+      const between = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin" && p.object.label === "between",
+      )!.object.id;
+      expect(moved.filter((id) => id === between)).toHaveLength(1);
     });
 
     // Why this test matters (M5c; my wording choice): with several codes
     // the result screen says which code's position changed.
+    // Why this test matters (M5c review #2): the line named its code only
+    // when two codes decided - in a tour of several codes where one
+    // improved, the creator could not tell which.
+    it("names the code on the result screen whenever the tour has several, even if one decided", async () => {
+      const { a } = await twoStoredCodesSeenAgain({ onlyA: true });
+      await openFinishableTour(a);
+      a.ctx.tourManifestStatus = "settled";
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.dom.finishStatus.textContent).toMatch(/Code \d: /);
+    });
+
     it("names each code on the result screen when the tour has several", async () => {
       const { a } = await twoStoredCodesSeenAgain();
       await openFinishableTour(a);

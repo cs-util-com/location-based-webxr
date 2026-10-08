@@ -232,7 +232,9 @@ interface VisitSettledLog {
    *  (its size and the bounds; M2c review #2) - the visit then settled
    *  through its plain alignment. Null otherwise. */
   readonly refusedCorrection: CorrectionRefusal | null;
-  /** What this settle decided for the STORED code in hand (UI round 1, U3;
+  /** The FIRST code-position decision of this settle (UI round 1, U3;
+   *  since M5c the code in hand's when it had one, else another stored
+   *  code's - `codePositions` lists all;
    *  `code-position-settle.ts`): kept, replaced by a better walk, moved
    *  on the creator's answer, or a move waiting for more walking - with
    *  the qualities compared and the objects moved with an improved code.
