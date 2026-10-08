@@ -513,7 +513,7 @@ export function wireCreatorDraft(deps: {
     // candidate for deletion and nothing has to be put back.
     //
     // The meta is REWRITTEN rather than deleted, which also drops the
-    // rejected level: `recordMeta` writes `ctx.mintedLevel`, so a creator
+    // rejected level: `recordMeta` writes the code in hand, so a creator
     // who measured before tapping keeps THIS session's measurement. That
     // is deliberate - "Delete it" rejects the OLD draft, not work done
     // afterwards - and it converges, because a later discard runs with no
@@ -727,7 +727,7 @@ export function wireCreatorDraft(deps: {
         photos: stored.photos,
         // ALWAYS handed back when the draft has one, even if the hosted
         // zip already stores the same measurement: the finish refuses to
-        // run without `mintedLevel`, so withholding it would leave a
+        // run without a code in hand, so withholding it would leave a
         // creator with restorable objects and no way to publish them.
         // `hasLevel` only decides the WORDS and whether the draft counts
         // as spent.

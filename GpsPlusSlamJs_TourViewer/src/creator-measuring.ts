@@ -598,11 +598,9 @@ export function wireCreatorMeasuring(deps: {
    *   are corrected through (per code in M5). A code with no saved
    *   position yet is measured then, even past an unsaved code in hand: a
    *   Finish writes every code of the book since M4c-1;
-   * - no tour open: `seen` (scan-to-open opens the code's tour first);
-   * - a code the open tour may not take: `not-measured`. Since M4c-2
-   *   (`autoMeasureAllowed`, the owner's extended D5: every code seen while
-   *   a tour is open is measured) nothing reaches it; the state goes with
-   *   M5's slot remnants;
+   * - no tour open: `seen` (scan-to-open opens the code's tour first;
+   *   `autoMeasureAllowed`, the owner's extended D5: every code seen while
+   *   a tour is open is measured);
    * - otherwise `measuring`, measured now unless this visit already tried
    *   (once per visit and code, plan review #1).
    */

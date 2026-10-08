@@ -691,6 +691,9 @@ export function wireCreatorSetup(deps: {
       editing.reset();
     },
     resetFinishStep: () => {
+      // The code in hand and the book belonged to the closing tour (M5
+      // review #9). First, so nothing reset below reads them.
+      codes.reset();
       // The download button, its line and the replace steps
       // (`creator-handoff.ts`).
       handoff.reset();
@@ -712,7 +715,6 @@ export function wireCreatorSetup(deps: {
       visitLog.clear();
       // And the visit log's move boundaries and the code-spot decisions.
       settle.reset();
-      codes.reset();
       measuring.reset();
     },
     presentDraftForTour: (tourUrl) => {

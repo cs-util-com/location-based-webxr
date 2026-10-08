@@ -143,10 +143,9 @@ export function wireArchiveOpen(deps: {
     // end on purpose (finishing ends the session), but it must not survive
     // the TOUR: M5 persists it into a draft, so carrying it over would
     // write one poster's measurement into another tour's draft and then
-    // into its zip (M5 review #9). The generation bump makes any mint hash
-    // still in flight land on nothing.
-    ctx.mintedLevel = null;
-    ctx.codeMeasurement = null;
+    // into its zip (M5 review #9). `resetFinishStep` below empties it (the
+    // creator's code module, code book plan M5d-2); the generation bump
+    // makes any mint hash still in flight land on nothing.
     ctx.mintGeneration += 1;
     // A failed finish is the closing tour's too: it keeps Save off, and only
     // a finish - which needs a measured level - clears it (scan-to-open

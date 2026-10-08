@@ -61,7 +61,7 @@ M4 settles every code of the book, not only the one in hand.
   end), and a note within `CODE_EVENT_REACH_M` walked of a code event of
   the visit shares the code's alignment through the nearest event; the records
   replace the tap-time ones
-  in `ctx.placedObjects` and `ctx.mintedLevel`, each settled object's draft
+  in `ctx.placedObjects` and the code module's book, each settled object's draft
   record and the meta are REWRITTEN (the per-object file design already
   keys by id; no format change - so a page reload keeps the settled geo,
   while a killed tab keeps the tap-time geo, accepted in the plan), and
@@ -93,15 +93,16 @@ M4 settles every code of the book, not only the one in hand.
     late is (its capture a moment before the end) - and logged as `tourAuthoring/settled` with trigger
     `late-arrival`. Minting it through the store instead would use an
     alignment that belongs to no visit (the teardown resets it).
-  - The mint records `ctx.codeMeasurement` (its raw inputs and visit) with
-    the level, and clears it whenever the level is cleared (a new tap, an
-    adopted print size, a tour close in `archive-open.ts`).
+  - The mint records its measurement (its raw inputs and visit) with the
+    level in the code module (`codes.setInHand`), which clears it whenever
+    the level is cleared (a new tap, an adopted print size, a tour close
+    through `resetFinishStep`).
   - A photo's visit is taken at the tap, before its async encode (its
     odometry belongs to that visit); see "Late arrivals" above.
   - **Later visits, corrected through the code (D10b).** Every detection's
     fused evaluation goes through `noteSighting`: a STABLE pose of the code
     whose level is in hand (or of any code while none is measured) becomes
-    `ctx.visitCodeSighting`, the latest one of this visit. A text's level id
+    the visit's sighting (`codes.setSighting`), the latest one of this visit. A text's level id
     is a hash (`qrCodeId`, async), so it is derived once per text
     (`codeIds`) and the sighting waits for it. When the level's pose was
     stored in an EARLIER visit (or came from a draft) and this visit saw the

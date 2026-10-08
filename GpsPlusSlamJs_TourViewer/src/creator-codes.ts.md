@@ -7,8 +7,9 @@ The one owner of the codes while authoring (code book refactor plan
 M4a; the M2 milestone review's #1): the code in hand, its measurement, the
 visit's sighting of it, the visit's latest sighting of every stored code,
 and the levels a Finish of this page wrote. Every creator module reads and
-writes these through it, so that M4c can turn its inside into the code book
-(`code-book.ts`) holding several codes without touching seven modules.
+writes these through it, and they are private to it (code book plan M5d-2:
+no session field holds any of them); its inside is the code book
+(`code-book.ts`) holding several codes.
 
 ## Public API
 
@@ -60,23 +61,29 @@ writes these through it, so that M4c can turn its inside into the code book
 sighting)` keeps the latest per code; `storedSightings()` lists them (the
   visit log reads them).
 - `endVisit()` - the visit's sightings go (the stored codes' and the code
-  in hand's); `reset()` - a tour closed: the book and the levels its
-  Finishes wrote go.
+  in hand's); `reset()` - a tour closed: the book, the levels its
+  Finishes wrote and the code in hand with its measurement go (the
+  creator setup's `resetFinishStep` calls it first).
 
 ## Invariants & assumptions
 
-- **Until M5 the session fields are the storage**: `ctx.mintedLevel`,
-  `ctx.codeMeasurement` and `ctx.visitCodeSighting`. The tour's close
-  (`archive-open.ts`) clears them directly and `scan-open.ts` reads them,
-  so this module reads them back on every call rather than keeping a copy
-  that a close could leave stale. Within the creator modules nothing else
-  writes them.
-- **The book takes the code in hand whenever it is read**: until M5 the
-  session field `ctx.mintedLevel` is still written from outside (the
-  composed tests; the tour's close clears it), so a level found there that
-  the book does not hold yet is taken in as saved and as a reference. A
-  new print size (`clearInHand`) drops the code's measurement and puts its
-  saved text back to the zip's.
+- **Private storage** (M5d-2): the code in hand, its measurement and the
+  visit's sighting are closure variables; the composed tests reach them
+  through `CreatorSetup.codes`. The close reaches them through `reset()`.
+- **The code in hand's text wins for its own code**: every write of the
+  book goes through one `setBook`, which puts the hand's text back when a
+  change replaced it (a draft restored over a code with no live change -
+  the M5d-2 review's #1 - or a dropped measurement). The book therefore
+  always holds the code in hand, and reads never write.
+- **`measurement()` is the HAND's**, not the book entry's: a code taken as
+  a stored reference has none, even when the book keeps an earlier
+  visit's measurement of it (the M5d-2 review's #2; the settle's size and
+  its re-mint read it without a visit filter).
+- A new print size (`clearInHand`) drops the code's measurement and puts
+  its saved text back to the zip's.
+- `reset()` leaves the visit's sightings to `endVisit`: a tour cannot close
+  inside a visit (scan-to-open never switches tours, and the open controls
+  sit outside the AR overlay).
 - A stored code's sighting is tagged with its visit; the visit log reads
   only its own visit's, and `endVisit` empties the map anyway.
 - Pure state, no I/O: every method is synchronous and total.

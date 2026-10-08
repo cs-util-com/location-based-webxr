@@ -4,7 +4,7 @@
  * M1): ONE model of every code of the open tour that authoring reads AND
  * writes, keyed by level id like every other code map in the stack
  * (`qr-level-archive.ts`). It replaces the single "code in hand" slot
- * (`ctx.mintedLevel` and friends), which let a Finish write one code and
+ * (the former session fields), which let a Finish write one code and
  * routed every decision through one code. Pure and immutable: each change
  * returns a new book.
  *

@@ -57,7 +57,7 @@ offsetNorthM, offsetEastM, measurement, pick }`; `measurement` and
 const plan = planCodePosition({ ...settleInputs, sizeM, automaticMove });
 const input = {
   ...settleInput,
-  measurement: plan?.measurement ?? ctx.codeMeasurement,
+  measurement: plan?.measurement ?? codes.measurement(),
   picks:
     plan?.measurement == null ? picks : { ...picks, measurement: plan.pick },
 };

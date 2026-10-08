@@ -49,7 +49,6 @@ import type { ScanGate } from "./scan-gate.js";
 import type { PlacedImagePlanes } from "./image-planes.js";
 import type { TourViewerSeams } from "./seams.js";
 import type { NuePose } from "./visit-anchoring.js";
-import type { CodeMeasurement, CodeSighting } from "./visit-settle.js";
 import type { PlacementState } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
 
@@ -292,26 +291,11 @@ export interface TourViewerSession {
    *  tracking restart or loop closure) mixes two frames, so the settle
    *  makes no automatic code-spot decision in it (code book plan M6 v5.1). */
   frameEpochAtSessionStart: number;
-  /** The measured code, ready to be written as `qr/<id>.json`; null until
-   *  the mint's async identity hash landed. */
-  mintedLevel: { id: string; json: string } | null;
   /** Bumped per mint so a stale identity hash cannot install an older
-   *  level over a newer one. */
+   *  level over a newer one. (The code in hand itself, its measurement and
+   *  the visit's sighting of it live in the creator's code module,
+   *  `creator-codes.ts`, code book plan M5d-2.) */
   mintGeneration: number;
-  /**
-   * The raw inputs of the mint behind `mintedLevel` when it was made in
-   * this page (the fused pose, the size, the AR visit): what the settle
-   * re-mints the code from (authoring plan 2026-09-28-0953 §3.2, M2c).
-   * Null for a level restored from a draft, and cleared with the level.
-   */
-  codeMeasurement: CodeMeasurement | null;
-  /**
-   * The anchor code as the RUNNING AR visit last saw it, stable (the
-   * latest stable fused pose): what a later visit is corrected through
-   * (D10b) and what hides the entry hint (§3.2a). Cleared at each visit's
-   * end - odometry does not carry over.
-   */
-  visitCodeSighting: CodeSighting | null;
   /** The finish step is running (one at a time); the panel shows its
    *  progress with priority over the measuring readout. */
   finishing: boolean;
@@ -516,10 +500,7 @@ export function createTourViewerSession(): TourViewerSession {
     authorErrorText: null,
     gpsSamplesAtSessionStart: 0,
     frameEpochAtSessionStart: 0,
-    mintedLevel: null,
     mintGeneration: 0,
-    codeMeasurement: null,
-    visitCodeSighting: null,
     finishing: false,
     finishProgress: "",
     finishError: null,

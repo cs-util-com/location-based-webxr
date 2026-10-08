@@ -2406,7 +2406,7 @@ test("placing after Delete it is still saved: a discard ends the draft, not the 
   // writes the meta itself and put the gate file back. What reaches the
   // defect is minting BEFORE the discard: the offer is not modal, so a
   // creator can measure and place while it sits there, and after the tap
-  // `ctx.mintedLevel` is still set - which is the one state where placement
+  // the code in hand is still set - which is the one state where placement
   // is allowed with no meta on disk.
   await page.goto("/?nocache=1");
   await page.getByTestId("link-input").fill(RANGES_ARCHIVE);

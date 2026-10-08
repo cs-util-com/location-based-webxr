@@ -130,7 +130,7 @@ M4 replaces its one code in hand with the code book.
   (`dom.sizeOffer`, with "Use" / "Keep"), because `status` is rewritten on
   every dispatch. **Adopting** writes the measured size into the size field,
   invalidates a position saved this session (`mintGeneration` bump,
-  `mintedLevel` null, draft meta re-written), ends the QR pipeline, clears the
+  the code in hand emptied, draft meta re-written), ends the QR pipeline, clears the
   code's detections (`clearQrMarker` - solved at the old size) and starts the
   author pipeline again at the new size; a note says so until the code is
   stable again. While the check has no answer, the ready line asks for a

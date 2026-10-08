@@ -279,14 +279,17 @@ describe("creator-codes: the book of codes a Finish writes (M4c-1)", () => {
   });
 
   // Why this test matters: the book belongs to the tour - a closed tour's
-  // codes must not be written into the next tour's zip.
-  it("empties the book when the tour closes", () => {
+  // codes must not be written into the next tour's zip, and its code in
+  // hand must not be the next tour's either (M5 review #9; since M5d-2 the
+  // close reaches the hand only through here).
+  it("empties the book and the hand when the tour closes", () => {
     const ctx = createTourViewerSession();
     const codes = wireCreatorCodes({ ctx });
     codes.setInHand({ id: "a", json: levelJson(47.5) }, MEASUREMENT);
-    codes.setInHand(null, null);
     codes.reset();
     expect(codes.toWrite()).toEqual([]);
+    expect(codes.inHand()).toBeNull();
+    expect(codes.measurement()).toBeNull();
   });
 });
 

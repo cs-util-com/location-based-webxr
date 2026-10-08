@@ -73,8 +73,11 @@ were here. What stays is the Finish's side:
       `downloadButton` and `replaceHelp` sit at the end of step 4 but
       OUTSIDE `#ar-root` - the download is tapped after the session ends,
       so putting it over the camera would promise otherwise.
-  - `CreatorSetup` members: `renderAuthorReadout`, `startAuthorPipeline`,
-    `resetFinishStep` (a tour closed), `presentDraftForTour` (a tour
+  - `CreatorSetup` members: `codes` (the one owner of the codes,
+    `creator-codes.ts`; the composed tests read and write the code in hand
+    through it), `renderAuthorReadout`, `startAuthorPipeline`,
+    `resetFinishStep` (a tour closed: the code module's `reset` runs first,
+    so nothing reset after it reads the closing tour's codes), `presentDraftForTour` (a tour
     opened AND its manifest settled - "spent" is a question about that
     manifest, so it cannot be asked earlier), `beginAuthorVisit`,
     `endAuthorVisit`, and `selectInView` (M4: a tap in AR - an XR select
@@ -198,7 +201,7 @@ were here. What stays is the Finish's side:
   - The readout's "N objects placed" counts only objects the zip does not
     carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,
-  `authorErrorText`, `mintedLevel`, `mintGeneration`, `finishing`,
+  `authorErrorText`, `mintGeneration`, `finishing`,
   `rebuiltZip`, `placedObjects`, `placedPreviews`, `placementNote`; reads
   `gpsSamplesAtSessionStart`, `reticle`, `latestFrame` (written by
   `ar-entry.ts`), `session`, `currentLevels`, `tourManifest`.

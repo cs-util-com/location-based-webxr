@@ -57,8 +57,8 @@ import {
  *
  * The r680 window had a THIRD state, not just "kept" and "discarded", and
  * it is worth naming because the commit point is what removes it: the
- * rewritten meta dropped the rejected level (`recordMeta` writes
- * `ctx.mintedLevel`, which is null right after a fresh open), so a tab
+ * rewritten meta dropped the rejected level (`recordMeta` writes the
+ * code in hand, which is null right after a fresh open), so a tab
  * closing between that write and the deletes left a draft with its objects
  * and NO measurement - offered, restorable, and with Finish still refused
  * until the creator walked back to the poster. Now that same interruption
@@ -453,8 +453,8 @@ function isMeta(value: unknown): value is DraftMeta {
  *
  * `typeof x === "object"` accepted `{}`, `[]` and `{ id: 5 }`, which were
  * then used as `{ id: string; json: string }`. This field travels further
- * than any other: it reaches `hostedLevelJson(level.id)`, then
- * `ctx.mintedLevel`, then `qrLevelEntryName(minted.id)`, which throws on an
+ * than any other: it reaches `hostedLevelJson(level.id)`, then the
+ * code in hand, then `qrLevelEntryName(minted.id)`, which throws on an
  * id that is not a safe string. The creator would get an opaque finish
  * failure and no way forward but to re-measure or discard the draft - the
  * failure this feature exists to prevent. A record this cannot read must

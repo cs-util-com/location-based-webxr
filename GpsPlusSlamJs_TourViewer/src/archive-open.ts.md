@@ -96,10 +96,12 @@ DOM glue, its own module since the flows plan M6.
   `planesRunGeneration` bump, `placementAttempted`, `joinDeclined`,
   `placement`) and the QR controller's level cache, and a failed
   finish (`finishError`, which keeps Save off - scan-to-open plan §9 #8).
-  The measured level goes with the tour, and so does its
-  `codeMeasurement` (the settle's raw inputs, authoring plan 2026-09-28-0953
-  M2c) - a closing tour's measurement must never be re-minted into the next
-  tour's level.
+  The measured level goes with the tour, and so does its measurement (the
+  settle's raw inputs, authoring plan 2026-09-28-0953 M2c) - a closing
+  tour's measurement must never be re-minted into the next tour's level:
+  `hooks.resetFinishStep` empties both (the creator's code module, code
+  book plan M5d-2), and `mintGeneration` is bumped so a mint hash in
+  flight lands on nothing.
 - **Async-UI rule:** the open button shows "Opening…" BEFORE the first
   await (PR #357 review) and restores only for the generation that owns
   it; the teardown runs INSIDE the try (PR #365 review).

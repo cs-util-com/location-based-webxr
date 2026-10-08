@@ -1427,7 +1427,7 @@ function measureVisit(
 
   // A stored code (here: the true pose) seen at the visit's start, and on an
   // out-and-back leave seen again at the end (the settle corrects through
-  // the LATEST sighting, `ctx.visitCodeSighting`).
+  // the LATEST sighting, `codes.sighting()`).
   const stored = storedTrueLevel(visit);
   const latestLook = visit.looks.length - 1 === 3 ? 3 : 0;
   const latest = codeSeenAt(visit, latestLook);

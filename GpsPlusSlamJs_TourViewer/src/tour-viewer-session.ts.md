@@ -41,11 +41,9 @@ lives here.
     teardown by `archive-open.ts`;
   - the creator setup (`creator-setup.ts`): `lastDetectedText`,
     `activeSizeM`, `authorErrorText`, `gpsSamplesAtSessionStart`,
-    `mintedLevel`, `mintGeneration`,
-    `codeMeasurement` (the raw inputs of a mint made in this page, cleared
-    with the level) and `visitCodeSighting` (the anchor code's latest stable
-    pose in the running AR visit, cleared at the visit's end) - both for the
-    settle (authoring plan 2026-09-28-0953 §3.2, M2c),
+    `mintGeneration` (the code in hand, its measurement and the visit's
+    sighting of it are private to `creator-codes.ts` since code book plan
+    M5d-2),
     `finishing`, `rebuiltZip` (with the `manifest.json` list it carries,
     for the next Finish, K1 milestone review R7), `tourLabel` (set by
     archive-open); the open

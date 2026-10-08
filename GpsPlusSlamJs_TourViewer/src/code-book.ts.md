@@ -5,8 +5,8 @@
 One model of every code of the open tour that authoring reads AND writes
 (code book refactor plan
 `GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan.md`,
-M1). It replaces the single "code in hand" slot (`ctx.mintedLevel`,
-`ctx.codeMeasurement`, `ctx.visitCodeSighting`), which let a Finish write
+M1). It replaces the single "code in hand" slot (three session fields,
+removed in M5d-2), which let a Finish write
 one code and routed every authoring decision through one code. Keyed by
 level id, like every other code map in the stack (`qr-level-archive.ts`).
 Pure and immutable.

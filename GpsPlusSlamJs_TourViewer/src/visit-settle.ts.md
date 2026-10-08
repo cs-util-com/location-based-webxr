@@ -50,7 +50,7 @@ relative to the code through the nearest event by walked distance:
   placed, and only the stored geo is settled.
 
 Pure. `creator-setup.ts` reads the store (before the session teardown),
-applies the result to `ctx.placedObjects` and `ctx.mintedLevel`, rewrites the
+applies the result to `ctx.placedObjects` and the code module, rewrites the
 draft and logs `tourAuthoring/settled`.
 
 ## Public API
@@ -348,9 +348,9 @@ const plan = planVisitSettle({
   placed: ctx.placedObjects,
   alignment: selectAlignmentMatrix(state), // before the teardown
   zero: selectZeroReference(state),
-  mintedLevel: ctx.mintedLevel,
-  measurement: ctx.codeMeasurement,
-  sighting: ctx.visitCodeSighting,
+  mintedLevel: codes.inHand(),
+  measurement: codes.measurement(),
+  sighting: codes.sighting(),
   alignmentInfo,
   nowIso: new Date().toISOString(),
 });

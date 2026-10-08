@@ -1047,6 +1047,19 @@ describe("a placement reaches the draft", () => {
     ).toContain("not saving a backup copy");
   });
 
+  // Why this test matters (code book plan M5d-2): the code in hand belongs
+  // to the tour, and the close reaches the creator only through
+  // `resetFinishStep` - this is what keeps one tour's code out of the next
+  // tour's draft and zip (M5 review #9).
+  it("empties the code in hand when the tour closes", () => {
+    const { store } = memoryStore();
+    const { setup } = wire(store, { placeable: true });
+    expect(setup.codes.inHand()).not.toBeNull();
+    setup.resetFinishStep();
+    expect(setup.codes.inHand()).toBeNull();
+    expect(setup.codes.measurement()).toBeNull();
+  });
+
   it("cannot land in the namespace of a tour that has closed", async () => {
     // Why this test matters: closing a tour drops the store handle, and
     // that one line is the only thing standing between "the creator placed
