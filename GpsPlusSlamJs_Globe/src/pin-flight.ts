@@ -58,9 +58,8 @@ export const PIN_FLIGHT = Object.freeze({
   /**
    * The hold's pace, before a target (DEC-FR2-9): about the stretch a fix
    * then sets, so the pace does not brake at the fix (swept 0.1-0.2; 0.5
-   * braked by 3x). The replan's own path speed can still dip briefly at a
-   * far fix from a low hold (R2 milestone review; the round-2 R1 path
-   * replaces it). It makes the hold slow: about 80 s to 2,000 km.
+   * braked by 3x); the round-2 travel curve keeps the camera's speed at
+   * the fix too. It makes the hold slow: about 80 s to 2,000 km.
    */
   coldRate: 0.15,
   /** The rate's lag behind its target, ms (as `flight-pace`'s 800 ms). */

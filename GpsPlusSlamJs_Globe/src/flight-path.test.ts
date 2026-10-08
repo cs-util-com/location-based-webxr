@@ -29,12 +29,12 @@ import { diveAt, obliqueCamera } from "./globe-dive.js";
 import { FLIGHT_PACE_DEFAULTS, startPace, stepPace } from "./flight-pace.js";
 import {
   FLIGHT_PATH,
-  descentPitchDeg,
   flightAt,
   flightCamera,
   planFlight,
   type FlightPath,
 } from "./flight-path.js";
+import { bendAltitudeM, travelLawDeg } from "./flight-travel.js";
 import {
   criterionWindow,
   noLateSurge,
@@ -122,16 +122,6 @@ const cameraPoint = (path: FlightPath) => (t: number) => {
   return { altitudeM: c.altitudeM, direction: c.position.clone().normalize() };
 };
 
-describe("FLIGHT_PATH", () => {
-  // DEC-CF-2: a shallow entry, 20-25 degrees below the horizontal through
-  // the atmosphere, 45 at the landing.
-  it("enters at 20-25 degrees and lands at 45", () => {
-    expect(FLIGHT_PATH.entryPitchDeg).toBeGreaterThanOrEqual(20);
-    expect(FLIGHT_PATH.entryPitchDeg).toBeLessThanOrEqual(25);
-    expect(FLIGHT_PATH.landingPitchDeg).toBe(45);
-  });
-});
-
 describe("the criterion's checks", () => {
   // WHY (CF1 review finding 8): (b) had never been shown to fail on
   // anything; each check must catch its own shape.
@@ -155,72 +145,55 @@ describe("the criterion's checks", () => {
   });
 });
 
-describe("descentPitchDeg", () => {
+describe("the view, as flown (round-2 plan DEC-FR2-1)", () => {
   const landingM = 2 * KM;
+  const frames = (path: FlightPath) =>
+    Array.from({ length: 901 }, (_, i) => flightAt(path, (i * 15_000) / 900));
 
-  it("looks at the centre far out", () => {
-    for (const h of [5_000 * KM, 20_000 * KM, 60_000 * KM]) {
-      expect(descentPitchDeg(h, { landingM })).toBeCloseTo(90, 6);
-    }
-  });
-
-  // WHY: the owner's "dive into the atmosphere at an angle" (DEC-CF-2):
-  // between 100 km and 5 x the landing the view is shallow.
-  it("is shallow from 100 km down to 5 x the landing", () => {
-    for (let h = 100 * KM; h >= 5 * landingM; h /= 1.1) {
-      const p = descentPitchDeg(h, { landingM });
-      expect(p).toBeGreaterThanOrEqual(20);
-      expect(p).toBeLessThanOrEqual(25);
-    }
-  });
-
-  it("is 45 degrees at the landing, for landings up to 100 km", () => {
-    for (const l of [1 * KM, 2 * KM, 12 * KM, 40 * KM, 100 * KM]) {
-      expect(descentPitchDeg(l, { landingM: l })).toBeCloseTo(45, 6);
-    }
-  });
-
-  // WHY (cold review finding 6): the view's centre is the target, so the
-  // law never looks past the horizon (dip + 5 degrees, as `pitchAtDeg`).
-  it("never looks less than 5 degrees below the horizon", () => {
-    for (let h = 1 * KM; h <= 60_000 * KM; h *= 1.05) {
-      expect(descentPitchDeg(h, { landingM })).toBeGreaterThanOrEqual(
-        dipDeg(h) + 5 - 1e-9,
+  // WHY: the owner's "the camera must always look in the direction of
+  // flight; that direction should END at 45 degrees" (it tilted to 45 almost
+  // at once). Above the bend the camera looks straight down at the Earth.
+  it("looks straight down above the bend, and lands looking 45 degrees down", () => {
+    for (const from of Object.values(SIDES)) {
+      const path = fly(from, 25_600 * KM);
+      const high = frames(path).filter(
+        (f) => f.altitudeM > bendAltitudeM(landingM) && f.startWeight === 0,
       );
+      expect(high.length).toBeGreaterThan(100);
+      expect(Math.min(...high.map((f) => f.pitchDeg))).toBeCloseTo(90, 6);
+      expect(flightAt(path, path.durationMs).pitchDeg).toBeCloseTo(45, 6);
+    }
+  });
+
+  // WHY (cold review finding 6): the view never looks past the horizon.
+  it("never looks less than 5 degrees below the horizon", () => {
+    for (const from of Object.values(SIDES)) {
+      for (const f of frames(fly(from, 10_100 * KM))) {
+        expect(f.pitchDeg).toBeGreaterThanOrEqual(
+          dipDeg(f.altitudeM) + 5 - 1e-9,
+        );
+      }
     }
   });
 
   // WHY: a step in the pitch is a jump in the view, a kink a jump in its
-  // turn rate. First differences catch the one, second differences the
-  // other (CF1 review finding 9).
-  it("changes without a step or a kink in the altitude's logarithm", () => {
-    const step = 0.001;
-    const at = (lh: number) => descentPitchDeg(Math.exp(lh), { landingM });
-    let worstFirst = 0;
-    let worstSecond = 0;
-    for (let lh = Math.log(1 * KM); lh <= Math.log(60_000 * KM); lh += step) {
-      const a = at(lh - step);
-      const b = at(lh);
-      const c = at(lh + step);
-      worstFirst = Math.max(worstFirst, Math.abs(c - b));
-      worstSecond = Math.max(worstSecond, Math.abs(c - 2 * b + a));
+  // turn rate (CF1 review finding 9), now that the pitch follows the travel.
+  it("turns the view without a step or a kink", () => {
+    for (const from of Object.values(SIDES)) {
+      const p = frames(fly(from, 65_000 * KM)).map((f) => f.pitchDeg);
+      let first = 0;
+      let second = 0;
+      for (let i = 1; i < p.length - 1; i++) {
+        const a = p[i - 1] ?? 0;
+        const b = p[i] ?? 0;
+        const c = p[i + 1] ?? 0;
+        first = Math.max(first, Math.abs(c - b));
+        second = Math.max(second, Math.abs(c - 2 * b + a));
+      }
+      // 60 Hz frames: at most 3 degrees a frame, and no corner.
+      expect(first).toBeLessThan(3);
+      expect(second).toBeLessThan(0.5);
     }
-    // The steepest band moves about 0.026 degrees per step; a kink of even
-    // 10 degrees per unit of ln h reads 0.01 in the second difference, the
-    // smooth bands about 1e-4.
-    expect(worstFirst).toBeLessThan(0.05);
-    expect(worstSecond).toBeLessThan(0.002);
-  });
-
-  it("rejects a non-finite altitude, a bad landing or a bad pitch", () => {
-    expect(() => descentPitchDeg(NaN, { landingM })).toThrow(RangeError);
-    expect(() => descentPitchDeg(1, { landingM: 0 })).toThrow(RangeError);
-    expect(() => descentPitchDeg(1, { landingM, entryDeg: 0 })).toThrow(
-      RangeError,
-    );
-    expect(() => descentPitchDeg(1, { landingM, landingDeg: 91 })).toThrow(
-      RangeError,
-    );
   });
 });
 
@@ -312,7 +285,7 @@ describe("planFlight and flightAt", () => {
       orbitPose(WGS84_ELLIPSOID, BERN),
       { landingM: 100 * KM, viewLandingM },
     );
-    const law = descentPitchDeg(100 * KM, { landingM: viewLandingM });
+    const law = travelLawDeg(100 * KM, viewLandingM);
     const end = flightAt(path, path.durationMs);
     expect(end.pitchDeg).toBeCloseTo(law, 6);
     expect(end.altitudeM).toBe(100 * KM);
@@ -325,7 +298,7 @@ describe("planFlight and flightAt", () => {
       const f = flightAt(path, t);
       if (f.startWeight > 0) continue;
       expect(f.pitchDeg).toBeCloseTo(
-        descentPitchDeg(f.altitudeM, { landingM: viewLandingM }),
+        travelLawDeg(f.altitudeM, viewLandingM),
         6,
       );
     }
@@ -449,6 +422,8 @@ describe("planFlight and flightAt", () => {
       const blendEnd = FLIGHT_PATH.startBlendShare * path.durationMs;
       for (let t = blendEnd + 500; t < path.durationMs - 500; t += 500) {
         const f = flightAt(path, t);
+        // Straight down (above the bend) the view has no "ahead".
+        if (f.pitchDeg > 89) continue;
         const cam = flightCamera(path, t).position.clone().normalize();
         const toTarget = BERN_DIR.clone().sub(cam).projectOnPlane(cam);
         const ahead = f.centre.clone().sub(cam).projectOnPlane(cam);
@@ -471,14 +446,18 @@ describe("planFlight and flightAt", () => {
   // WHY (cold review finding 2): a start low and far away (a press after
   // zooming in elsewhere) must climb before it crosses, not slide over the
   // ground at continental speed.
-  it("climbs first from a start low and far away", () => {
-    const path = fly(awayFromBern(60), 2 * KM);
+  // WHY (round-2 plan, R1): the van Wijk geodesic climbed first from a
+  // start low and far away; the travel curve pans at its own altitude
+  // instead (one path family; it still never stops, and lands exactly).
+  it("pans at its own altitude from a start low and far away", () => {
+    const path = fly(awayFromBern(10), 30 * KM);
     let top = 0;
     for (let t = 0; t <= path.durationMs; t += 50) {
       top = Math.max(top, flightAt(path, t).altitudeM);
     }
-    // The geodesic's arch is about half the ground distance high.
-    expect(top).toBeGreaterThan(((path.arcRad * R) / K_ARC) * 0.9);
+    expect(top).toBeLessThanOrEqual(30 * KM * (1 + 1e-6));
+    const end = flightAt(path, path.durationMs);
+    expect(end.altitudeM).toBe(2 * KM);
   });
 
   // WHY (found by the property test, 2026-10-07): a start a hair off the
@@ -573,7 +552,6 @@ describe("planFlight and flightAt", () => {
     expect(plan(start, { landingM: 0 })).toThrow(RangeError);
     expect(plan(start, { durationMs: -1 })).toThrow(RangeError);
     expect(plan({ ...start, distanceM: NaN }, {})).toThrow(RangeError);
-    expect(plan(start, { entryPitchDeg: 0 })).toThrow(RangeError);
     expect(plan(start, { startSpeed: -1 })).toThrow(RangeError);
     expect(plan(start, { settleFactor: 1 })).toThrow(RangeError);
     const parallel = {

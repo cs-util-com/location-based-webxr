@@ -499,6 +499,13 @@ function landingRaiseM(
     const g = flightAt(higher, share * higher.durationMs);
     const sensitivity = g.altitudeM - f.altitudeM;
     if (!(sensitivity > MIN_LANDING_SENSITIVITY)) continue;
+    // Only the final approach: the dive's own track (plus one landing). On
+    // the travel curve a landing scales the whole descent a little, so the
+    // ground under the early path, which a landing should not answer, read
+    // as a shortfall over a small sensitivity (round-2 R1: a 9,800 m ridge
+    // under a 10 km start raised a 2 km landing to 6 km).
+    const left = f.camera.angleTo(path.cameraEnd);
+    if (left > path.diveArcRad + landingM / FLIGHT_PATH.radiusM) continue;
     const ground = groundAt(
       obliqueCamera(
         ellipsoid,

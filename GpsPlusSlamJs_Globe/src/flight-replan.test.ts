@@ -204,8 +204,21 @@ describe("retargetFlight", () => {
   // path's settle, at 10, 60 and 120 Hz, all three tolerances. A new place
   // low down is the documented limit (the next test).
   it("keeps the criterion across the replans the design makes", () => {
+    // A new place at three altitudes above the band (6,000, 4,000 and
+    // 2,500 km), found on the flight itself rather than at fixed times, so
+    // the scoping holds whatever the curve.
+    const base = flyFrom(NEW_YORK, BERN);
+    const reaching = (km: number) => {
+      let t = 0;
+      while (flightFrameAt(base, t).altitudeM > km * KM) t += 10;
+      return t;
+    };
     const places = [ZURICH, ROME].flatMap((to) =>
-      [1_000, 2_000, 3_000].map((atMs) => ({ to, atMs, landingM: 2 * KM })),
+      [6_000, 4_000, 2_500].map((km) => ({
+        to,
+        atMs: reaching(km),
+        landingM: 2 * KM,
+      })),
     );
     const landings = [2_000, 5_000, 8_000, 11_000].flatMap((atMs) =>
       [3 * KM, 1.5 * KM].map((landingM) => ({ to: BERN, atMs, landingM })),
@@ -231,7 +244,7 @@ describe("retargetFlight", () => {
   // its speed for about 0.2 s, as any velocity blend must; only a turn at
   // a constant speed avoids it, the filed follow-up should such replans
   // become part of the design. Both land exactly.
-  it("bends to a new place low down: moderate turns never stall, a reversal turns around, all land exactly", () => {
+  it("bends to a new place low down: moderate turns never stall, a reversal passes a near-stop, none climbs, all land exactly", () => {
     const cases = [
       { to: ZURICH, atMs: 8_000, reversal: false },
       { to: ROME, atMs: 5_000, reversal: false },
@@ -255,9 +268,10 @@ describe("retargetFlight", () => {
       for (let t = atMs; t < replanned.endsAtMs; t += 50) {
         top = Math.max(top, flightFrameAt(replanned, t).altitudeM);
       }
-      // A reversal climbs well above where it turned; a turn does not.
+      // No replan climbs: the travel curve pans at its altitude (round-2
+      // R1; van Wijk's geodesic climbed for a reversal).
       const turnedAt = flightFrameAt(first, atMs).altitudeM;
-      expect(top > 1.5 * turnedAt, tag).toBe(reversal);
+      expect(top, tag).toBeLessThanOrEqual(turnedAt * (1 + 1e-6));
       expect(noStall(w, 0.5), tag).toBe(!reversal);
       const end = flightFrameAt(replanned, replanned.endsAtMs);
       const place = orbitPose(WGS84_ELLIPSOID, to).direction;
@@ -542,19 +556,35 @@ describe("clearedLandingM", () => {
   // start already too low over a plateau) was added again every round: a
   // start at 2,000 m over a 1,800 m plateau got a 2,600 m landing where
   // 2,100 m clears it.
+  // CF2 review finding 4: a start already too low over its own ground was
+  // added again every round. Two starts: at the landing's own altitude over
+  // a 1,800 m plateau (a level pan on the travel curve), and a descent from
+  // 10 km whose first stretch sits too low over a ridge (9,800 m under the
+  // start only) that the landing cannot move. Round-2 R1: on the travel
+  // curve a landing scales the whole descent a little, and before the
+  // final-approach rule these read 3,752 m and 6,020 m.
   it("raises only for ground the landing can clear", () => {
-    const plateau = () => 1_800;
-    const landingM = clearedLandingM(
-      WGS84_ELLIPSOID,
-      orbitStart(ZURICH, 2 * KM),
-      orbitPose(WGS84_ELLIPSOID, BERN),
-      { landingM: 2 * KM, durationMs: 15_000 },
-      plateau,
-    );
-    expect(landingM).toBeGreaterThanOrEqual(
-      1_800 + FLIGHT_REPLAN.clearanceM - 1,
-    );
-    expect(landingM).toBeLessThan(1_800 + FLIGHT_REPLAN.clearanceM + 50);
+    const zurich = orbitPose(WGS84_ELLIPSOID, ZURICH).direction;
+    const ridge = (d: THREE.Vector3) =>
+      d.angleTo(zurich) * R < 5 * KM ? 9_800 : 1_800;
+    for (const [startM, groundAt] of [
+      [2 * KM, () => 1_800],
+      [10 * KM, ridge],
+    ] as const) {
+      const landingM = clearedLandingM(
+        WGS84_ELLIPSOID,
+        orbitStart(ZURICH, startM),
+        orbitPose(WGS84_ELLIPSOID, BERN),
+        { landingM: 2 * KM, durationMs: 15_000 },
+        groundAt,
+      );
+      expect(landingM, `from ${startM} m`).toBeGreaterThanOrEqual(
+        1_800 + FLIGHT_REPLAN.clearanceM - 1,
+      );
+      expect(landingM, `from ${startM} m`).toBeLessThan(
+        1_800 + FLIGHT_REPLAN.clearanceM + 50,
+      );
+    }
   });
 
   it("keeps the landing where the approach already clears", () => {

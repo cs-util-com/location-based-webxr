@@ -125,6 +125,13 @@ divided by how much the camera there rises with the landing.
 - Samples that the landing moves by less than 0.05 per metre are not
   counted. Before this, a start already too low over a plateau was added
   again every round (CF2 review finding 4).
+- Only the final approach counts: samples within the dive's own track
+  (plus one landing) of the landing point. On the round-2 travel curve a
+  landing scales the whole descent a little, so ground under the early
+  path read as a shortfall over a small sensitivity (a 9,800 m ridge under
+  a 10 km start raised a 2 km landing to 6 km).
+- The same rule keeps a level pan sane: a start at the landing's own
+  altitude over a 1.8 km plateau gets 2,109 m (3,752 m before it).
 
 ## Invariants
 
@@ -166,11 +173,15 @@ Each one is tested.
 A new place low down, or far away (a course reversal), can only come from a
 new link mid-flight. The design's own fix comes during the hold.
 
-- A moderate turn dips but never stalls. Measured on 2026-10-07: 0.79 for
-  Zurich from 79 km, 0.81 for Rome from 609 km.
-- A REVERSAL passes through a near-stop. Rome from 10 km dropped to 0.03 of
-  its speed for about 0.2 s, then climbed to 345 km. Any velocity
-  correction must pass through zero to reverse.
+- A moderate turn dips but never stalls (below half its median). Measured
+  on the round-2 travel curve (2026-10-08), the lowest speed over the median,
+  from a New York to Bern flight: Zurich 1.00 from 618 km, 0.86 from 87 km,
+  0.60 from 9.3 km; Rome 0.98 from 618 km, 0.56 from 87 km. (On CF1's van
+  Wijk path: 0.79 for Zurich from 79 km, 0.81 for Rome from 609 km.)
+- A REVERSAL passes through a near-stop: Rome from 9.3 km drops to 0.10 of
+  the median. It no longer climbs (the travel curve pans at its altitude;
+  van Wijk dropped to 0.03 and climbed to 345 km). Any velocity correction
+  must pass through zero to reverse.
 - All of them land exactly.
 - The filed follow-up is a turn at a constant speed, should such replans
   become part of the design.

@@ -119,9 +119,10 @@ The owner's decisions that this module puts into practice:
     few seconds later (24 s instead of 20 s at 10 s of data);
   - the hold's pace is about the stretch a fix then sets (0.15; swept
     0.1-0.2), so the pace does not brake at the fix (0.5 braked by about
-    3x). The camera can still dip briefly at a far fix from a low hold:
-    the replan's own path speed (from 10,100 km, Tokyo and Sydney 0.57-0.85
-    of the speed before; R2 milestone review), left to the round-2 R1 path.
+    3x). The camera's speed holds at a fix too, near or far, from 10,100,
+    5,000 or 3,000 km (at least 0.9 of the speed before; 0.95 worst
+    measured): on the round-2 travel curve the turn is part of the path.
+    On CF1's path it dipped to 0.18-0.85 (R2 milestone review).
     The hold is slow: about 80 s to 2,000 km; a failed hold finishes at full
     pace;
   - a press whose data is already in starts at full pace.

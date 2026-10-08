@@ -5,18 +5,16 @@
  * view centre, altitude, pitch and up (`flightAt`), or its position and
  * rotation (`flightCamera`), out.
  *
- * THE CAMERA flies van Wijk and Nuij's smooth zoom-and-pan ("Smooth and
- * efficient zooming and panning", InfoVis 2003; d3's `interpolateZoom`)
- * with rho = 1: in (ground distance u, altitude h) a geodesic of the
- * metric ds^2 = (du^2 + dh^2) / h^2, which is the measure the flight is
- * judged by (v = sqrt((d ln h/dt)^2 + (ground speed / h)^2)). Travelled at
- * a constant ds/dt the camera's speed is constant by that measure; a start
- * high above the target only descends, a start low and far away climbs
- * first (the geodesic's arch), and near the end the remaining ground
- * distance shrinks with the square of the altitude. The camera, not its
- * view's centre, flies it: the CF1 milestone review measured the camera of
- * a centre-flown path sliding backwards as the view tilted, and surging
- * near the ground.
+ * THE CAMERA flies `flight-travel`'s curve (round-2 plan 2026-10-07-2350,
+ * DEC-FR2-1 and DEC-FR2-2, after the owner's "the camera must always look
+ * in the direction of flight; it should END at 45 degrees" and "turn first,
+ * then a curve, straight towards the Earth's centre, then bending"): along
+ * the great circle to the target, turning high up while it looks down, then
+ * diving straight down and bending into 45 degrees at the landing. Its path
+ * length is the measure the flight is judged by (v = sqrt((d ln h/dt)^2 +
+ * (ground speed / h)^2)), so at a constant ds/dt the camera's speed is
+ * constant by it. It replaced van Wijk and Nuij's zoom-and-pan (CF1), whose
+ * descent ends nearly vertical and so could not end at 45 degrees.
  *
  * THE CLOCK is the one exception to the constant speed: a ramp from the
  * start's speed over `rampMs`, and one settle over the last ln(settleFactor)
@@ -25,12 +23,13 @@
  * from the start's speed to rest.
  *
  * THE VIEW looks from the camera at a centre ahead of it along its course,
- * `descentPitchDeg` below its horizontal (DEC-CF-2), so the view's centre
- * reaches the target exactly as the camera lands. The course runs along
- * the great circle to the target; a target nearer than one landing keeps
- * the start's heading (CF1 review finding 5). The start's own pitch,
- * heading (one roll, fixed when planned: finding 1) and tilt blend out over
- * the first fifth, so the press never snaps the view.
+ * at the curve's pitch: straight down above the bend, the camera's own
+ * direction of travel below it, so it ends looking at the target 45
+ * degrees down. The course runs along the great circle to the target; a
+ * target nearer than one landing keeps the start's heading (CF1 review
+ * finding 5). The start's own pitch, heading (one roll, fixed when planned:
+ * finding 1) and tilt blend out over the first fifth, so the press never
+ * snaps the view.
  *
  * @see flight-path.ts.md
  */
@@ -41,20 +40,11 @@ import type { Ellipsoid } from "3d-tiles-renderer";
 import type { OrbitPose } from "./globe-camera.js";
 import { smoothstep } from "./globe-ease.js";
 import { obliqueCamera, surfaceRadiusAlong } from "./globe-dive.js";
+import { planTravel, travelLawDeg, type TravelCurve } from "./flight-travel.js";
 
 export const FLIGHT_PATH = Object.freeze({
   /** The flight on its own clock (today's dive's 15 s). */
   durationMs: 15_000,
-  /** DEC-CF-2: the view's depression through the atmosphere, 20-25. */
-  entryPitchDeg: 22.5,
-  /** ...and at the landing. */
-  landingPitchDeg: 45,
-  /** Above this the view looks at the Earth's centre (as `pitchAtDeg`). */
-  orbitM: 5_000_000,
-  /** By this the view has eased to the entry pitch. */
-  entryM: 100_000,
-  /** From this many landings up the view steepens to the landing pitch. */
-  landingBand: 5,
   /** The speed's ramp from the start's, ms (at most a quarter of the flight). */
   rampMs: 800,
   /**
@@ -64,27 +54,11 @@ export const FLIGHT_PATH = Object.freeze({
   settleFactor: 3,
   /** The share of the flight over which the start's own view blends out. */
   startBlendShare: 0.2,
-  /** The least the view looks below the horizon, degrees (as `pitchAtDeg`). */
-  horizonMarginDeg: 5,
-  /** The width of the smooth maximum with the horizon floor, degrees. */
-  floorBlendDeg: 2,
   /** The mean radius the ground distance and the horizon are taken on. */
   radiusM: 6_371_000,
 });
 
 const DEG = Math.PI / 180;
-
-/** How far `altM` lies from `far` down to `near`, 0-1, in the logarithm. */
-const logShare = (altM: number, far: number, near: number): number =>
-  (Math.log(far) - Math.log(Math.max(altM, 1))) /
-  (Math.log(far) - Math.log(near));
-
-/** max(a, b), rounded over `w` so it has no kink; exact outside it. */
-function smoothMax(a: number, b: number, w: number): number {
-  const d = a - b;
-  if (Math.abs(d) >= w) return Math.max(a, b);
-  return (a + b) / 2 + (d * d) / (4 * w) + w / 4;
-}
 
 function requirePositive(name: string, value: number): void {
   if (!(value > 0 && Number.isFinite(value))) {
@@ -108,55 +82,6 @@ function requirePitch(name: string, value: number): void {
   if (!(value > 0 && value <= 90)) {
     throw new RangeError(`${name} must be in (0, 90] degrees, got ${value}`);
   }
-}
-
-/**
- * The view's depression below the local horizontal at `altM` (DEC-CF-2):
- * 90 degrees (the Earth's centre) above `orbitM`, easing to the entry
- * pitch by `entryM`, which holds down to `landingBand` x the landing, then
- * steepening to the landing pitch at the landing; each band a smoothstep
- * in the altitude's logarithm. Never less than `horizonMarginDeg` below
- * the horizon (a smooth maximum, so no kink). The landing pitch is exact
- * for landings up to `entryM`. RangeError for a non-finite altitude, a
- * landing that is not a positive number or a pitch outside (0, 90].
- */
-export function descentPitchDeg(
-  altM: number,
-  options: {
-    readonly landingM: number;
-    readonly entryDeg?: number;
-    readonly landingDeg?: number;
-  },
-): number {
-  const {
-    landingM,
-    entryDeg = FLIGHT_PATH.entryPitchDeg,
-    landingDeg = FLIGHT_PATH.landingPitchDeg,
-  } = options;
-  if (!Number.isFinite(altM)) {
-    throw new RangeError(`the altitude must be finite, got ${altM}`);
-  }
-  requirePositive("landingM", landingM);
-  requirePitch("entryDeg", entryDeg);
-  requirePitch("landingDeg", landingDeg);
-  const toEntry = smoothstep(
-    logShare(altM, FLIGHT_PATH.orbitM, FLIGHT_PATH.entryM),
-  );
-  const toLanding = smoothstep(
-    logShare(altM, FLIGHT_PATH.landingBand * landingM, landingM),
-  );
-  const law =
-    90 + (entryDeg - 90) * toEntry + (landingDeg - entryDeg) * toLanding;
-  const r = FLIGHT_PATH.radiusM;
-  const dip = Math.acos(r / (r + Math.max(0, altM))) / DEG;
-  return Math.min(
-    90,
-    smoothMax(
-      law,
-      dip + FLIGHT_PATH.horizonMarginDeg,
-      FLIGHT_PATH.floorBlendDeg,
-    ),
-  );
 }
 
 /**
@@ -212,51 +137,6 @@ export interface FlightStart {
   readonly quaternion?: THREE.Quaternion;
   /** Its view's depression, degrees (90, the default, looks straight down). */
   readonly pitchDeg?: number;
-}
-
-/**
- * A geodesic of ds^2 = (du^2 + dh^2) / h^2 from (0, h0) to (d, h1), by its
- * arc length s in [0, length]: u as a share of d.
- */
-interface Geodesic {
-  readonly length: number;
-  readonly at: (s: number) => { readonly share: number; readonly h: number };
-}
-
-/**
- * Below this share of the lower altitude the ground distance is flown as
- * a pure zoom: the share's factor h0 / d grows without bound, and a
- * millimetre per metre is not visible.
- */
-const PURE_ZOOM_SHARE = 1e-9;
-
-function geodesic(h0: number, h1: number, d: number): Geodesic {
-  if (!(d > PURE_ZOOM_SHARE * Math.min(h0, h1))) {
-    const length = Math.abs(Math.log(h1 / h0));
-    return {
-      length,
-      at: (s) => {
-        const x = length > 0 ? s / length : 1;
-        return { share: x, h: h0 * (h1 / h0) ** x };
-      },
-    };
-  }
-  // van Wijk and Nuij with rho = 1 (d3's interpolateZoom). Their
-  // r = ln(sqrt(b^2 + 1) - b) is written -asinh(b), and their
-  // cosh r0 tanh(s + r0) - sinh r0 as sinh(s) / cosh(s + r0): the same
-  // values without the cancellations (CF1 review finding 6).
-  const b0 = (h1 * h1 - h0 * h0 + d * d) / (2 * h0 * d);
-  const b1 = (h1 * h1 - h0 * h0 - d * d) / (2 * h1 * d);
-  const r0 = -Math.asinh(b0);
-  const r1 = -Math.asinh(b1);
-  const coshR0 = Math.cosh(r0);
-  return {
-    length: r1 - r0,
-    at: (s) => ({
-      share: ((h0 / d) * Math.sinh(s)) / Math.cosh(s + r0),
-      h: (h0 * coshR0) / Math.cosh(s + r0),
-    }),
-  };
 }
 
 /** The clock: the path length travelled by a time, and the cruise between. */
@@ -374,8 +254,6 @@ export interface FlightPath {
   readonly ellipsoid: Ellipsoid;
   readonly durationMs: number;
   readonly landingM: number;
-  readonly entryPitchDeg: number;
-  readonly landingPitchDeg: number;
   /** The landing the view's law refers to, and the view's pitch at the end. */
   readonly viewLandingM: number;
   readonly endPitchDeg: number;
@@ -385,11 +263,12 @@ export interface FlightPath {
   readonly courseNormal: THREE.Vector3;
   /** The angle from the start's view centre to the target, radians. */
   readonly arcRad: number;
-  /** The camera's start and end directions, and the geodesic between. */
+  /** The camera's start and end directions, and the great circle between. */
   readonly cameraStart: THREE.Vector3;
   readonly cameraEnd: THREE.Vector3;
   readonly cameraAxis: THREE.Vector3 | null;
   readonly cameraArcRad: number;
+  /** The travel curve's length (the name is CF1's, when it was a geodesic). */
   readonly geodesicLength: number;
   /** The path length travelled by a time after the press. */
   readonly travelledAt: (tMs: number) => number;
@@ -407,7 +286,12 @@ export interface FlightPath {
   readonly startPitchDeg: number;
   readonly startRollRad: number;
   readonly startOffset: THREE.Quaternion;
-  readonly geodesicAt: Geodesic["at"];
+  /** The curve's point at a path length (`flight-travel`). */
+  readonly geodesicAt: TravelCurve["at"];
+  /** The dive's own ground track from the bend down, rad (a nearer start backs off). */
+  readonly diveArcRad: number;
+  /** The view's pitch at a path length: the camera's travel below the bend. */
+  readonly pitchAt: TravelCurve["pitchAt"];
 }
 
 /** A unit vector in the plane perpendicular to `direction`, from `v`. */
@@ -452,8 +336,6 @@ function flightOptions(
   const o = {
     landingM: options.landingM,
     durationMs: or(options.durationMs, FLIGHT_PATH.durationMs),
-    entryPitchDeg: or(options.entryPitchDeg, FLIGHT_PATH.entryPitchDeg),
-    landingPitchDeg: or(options.landingPitchDeg, FLIGHT_PATH.landingPitchDeg),
     startPitchDeg: or(start.pitchDeg, 90),
     startSpeed: or(options.startSpeed, 0),
     settleFactor: or(options.settleFactor, FLIGHT_PATH.settleFactor),
@@ -466,8 +348,6 @@ function flightOptions(
   requirePositive("landingM", o.landingM);
   requirePositive("durationMs", o.durationMs);
   requirePositive("start.distanceM", start.distanceM);
-  requirePitch("entryPitchDeg", o.entryPitchDeg);
-  requirePitch("landingPitchDeg", o.landingPitchDeg);
   requirePositive("viewLandingM", o.viewLandingM);
   requirePitch("start.pitchDeg", o.startPitchDeg);
   requireAtLeast("startSpeed", o.startSpeed, 0);
@@ -532,7 +412,7 @@ function startRoll(
 
 /**
  * A flight from `start` to `landingM` above `target`'s surface point.
- * `startSpeed` is the path's speed at the press (geodesic length per ms; 0,
+ * `startSpeed` is the path's speed at the press (path length per ms; 0,
  * the default, starts from rest). RangeError for a landing or a duration
  * that is not a positive number, a pitch outside (0, 90], a negative start
  * speed, a settle factor not above 1, a start distance that is not a
@@ -545,8 +425,6 @@ export function planFlight(
   options: {
     readonly landingM: number;
     readonly durationMs?: number;
-    readonly entryPitchDeg?: number;
-    readonly landingPitchDeg?: number;
     readonly startSpeed?: number;
     readonly settleFactor?: number;
     /**
@@ -583,12 +461,9 @@ export function planFlight(
 ): FlightPath {
   const o = flightOptions(start, options);
   const { landingM } = o;
-  // The view at the end: the law of the landing the view refers to.
-  const endPitchDeg = descentPitchDeg(landingM, {
-    landingM: o.viewLandingM,
-    entryDeg: o.entryPitchDeg,
-    landingDeg: o.landingPitchDeg,
-  });
+  // The view at the end: the travel law of the landing the view refers to
+  // (45 degrees at a real landing; straight down at a hold above the bend).
+  const endPitchDeg = travelLawDeg(landingM, o.viewLandingM);
   const cameraStart = start.pose.direction.clone().normalize();
   const up0 = start.pose.up.clone().projectOnPlane(cameraStart);
   if (!(up0.length() > 1e-9)) {
@@ -622,7 +497,9 @@ export function planFlight(
     camCross.length(),
     cameraStart.dot(cameraEnd),
   );
-  const path = geodesic(h0, landingM, cameraArcRad * FLIGHT_PATH.radiusM);
+  const path = planTravel(h0, landingM, cameraArcRad, {
+    landingM: o.viewLandingM,
+  });
   const clock = flightClock(
     path.length,
     o.durationMs,
@@ -634,7 +511,7 @@ export function planFlight(
     o.settleLength,
   );
   const startRollRad = startRoll(normal, cameraStart, startUp);
-  const { durationMs, entryPitchDeg, startPitchDeg } = o;
+  const { durationMs, startPitchDeg } = o;
 
   // The start's tilt: its rotation relative to the view this path starts with.
   const reference = obliqueCamera(
@@ -649,8 +526,6 @@ export function planFlight(
     landingM,
     viewLandingM: o.viewLandingM,
     endPitchDeg,
-    entryPitchDeg,
-    landingPitchDeg: o.landingPitchDeg,
     target: to,
     courseNormal: normal,
     arcRad,
@@ -665,16 +540,14 @@ export function planFlight(
     rampFromShare: o.rampFromShare,
     cruise: clock.cruise,
     startPitchDeg,
-    startLawDeg: descentPitchDeg(h0, {
-      landingM: o.viewLandingM,
-      entryDeg: o.entryPitchDeg,
-      landingDeg: o.landingPitchDeg,
-    }),
+    startLawDeg: path.pitchAt(0),
     startRollRad,
     startOffset: start.quaternion
       ? reference.invert().multiply(start.quaternion)
       : new THREE.Quaternion(),
     geodesicAt: path.at,
+    pitchAt: path.pitchAt,
+    diveArcRad: path.diveArcRad,
   };
 }
 
@@ -735,7 +608,9 @@ export function flightAt(path: FlightPath, tMs: number): FlightFrame {
     : tMs <= 0
       ? { share: 0, h: path.geodesicAt(0).h }
       : path.geodesicAt(s);
-  const share = Math.min(Math.max(point.share, 0), 1);
+  // Not clamped: a start nearer than the dive's own track backs off first
+  // (a negative share); clamped, it stood still and only descended.
+  const share = point.share;
   const camera = path.cameraAxis
     ? path.cameraStart
         .clone()
@@ -757,11 +632,7 @@ export function flightAt(path: FlightPath, tMs: number): FlightFrame {
     camera,
     -path.startRollRad * startWeight,
   );
-  const law = descentPitchDeg(point.h, {
-    landingM: path.viewLandingM,
-    entryDeg: path.entryPitchDeg,
-    landingDeg: path.landingPitchDeg,
-  });
+  const law = path.pitchAt(s);
   const pitchDeg = done
     ? path.endPitchDeg
     : // The start's OFFSET from the law blends out, so the view turns with

@@ -5,7 +5,9 @@ the target, in one movement that never stops in between.
 
 - Source: the continuous-flight plan
   `GpsPlusSlamJs_Docs/docs/2026-10-07-0941-globe-continuous-flight-plan.md`,
-  milestone CF1.
+  milestone CF1; its curve since the round-2 plan
+  `2026-10-07-2350-globe-flight-round-2-owner-feedback-plan.md` (R1:
+  `flight-travel.ts`).
 - It replaces today's dive (`globe-dive.ts`) behind the lab's `flight=2`
   until the owner's phone run.
 
@@ -29,30 +31,13 @@ What today's dive does wrong:
 The constants, frozen:
 
 - `durationMs`: 15,000.
-- `entryPitchDeg`: 22.5 (DEC-CF-2 allows 20-25).
-- `landingPitchDeg`: 45.
-- `orbitM`: 5,000 km (the pitch is 90 above it).
-- `entryM`: 100 km.
-- `landingBand`: 5.
 - `rampMs`: 800.
 - `settleFactor`: 3.
 - `startBlendShare`: 0.2.
-- `horizonMarginDeg`: 5.
-- `floorBlendDeg`: 2.
 - `radiusM`: 6,371 km.
 
-### `descentPitchDeg(altM, { landingM, entryDeg?, landingDeg? })`
-
-The view's depression, in degrees:
-
-- 90 above `orbitM`.
-- The entry pitch from `entryM` down to `landingBand` x the landing.
-- The landing pitch at the landing. This is exact for landings up to
-  `entryM`.
-- Each band is a smoothstep in the logarithm of the altitude.
-- Floored at the horizon's dip + 5 degrees, through a smooth maximum.
-- RangeError for a non-finite altitude, a landing that is not positive, or
-  a pitch outside (0, 90].
+The pitch law and its constants (DEC-CF-2's shallow entry, retired by the
+owner's round-2 "look where it flies") live in `flight-travel.ts`.
 
 ### `planFlight(ellipsoid, start, target, options)`
 
@@ -63,14 +48,14 @@ Returns a `FlightPath`.
   - `pitchDeg` is the start's view depression. It defaults to 90 (straight
     down). CF2's replan passes the current one.
 - `target` is an orbit pose. Only its direction is used.
-- `options` is `{ landingM, durationMs?, entryPitchDeg?, landingPitchDeg?,
-startSpeed?, settleFactor?, settleLength?, viewLandingM?, rampMs?,
-rampFromShare?, brake? }`.
+- `options` is `{ landingM, durationMs?, startSpeed?, settleFactor?,
+settleLength?, viewLandingM?, rampMs?, rampFromShare?, brake? }`.
   - `startSpeed` is in geodesic length per ms.
   - `viewLandingM` is the landing the view's law refers to (default
     `landingM`). A path that stops short of the real landing (CF3's
     hold at 2,000 km) passes the real one, so it looks there as the whole
-    flight would; its end pitch is that law's, not 45.
+    flight would; its end pitch is that law's (straight down above the
+    bend), not 45.
   - `rampMs` (default `FLIGHT_PATH.rampMs`) and `rampFromShare` (0-1,
     default 0): a replan continuing an old ramp passes its remaining time
     and the share of the smoothstep it had reached, so the speed follows
@@ -95,7 +80,9 @@ rampFromShare?, brake? }`.
   - `travelledAt(t)`: the clock.
   - `cruiseSpeed` (0 for a short path), `rampFromShare` and `settleLength`.
   - `viewLandingM` and `endPitchDeg`.
-  - `geodesicLength`.
+  - `geodesicLength` (the travel curve's length; the name is CF1's),
+    `geodesicAt` and `pitchAt` (the curve by path length) and
+    `diveArcRad` (the dive's own track: a nearer start backs off).
   - `cameraStart`, `cameraEnd`, `courseNormal`.
 
 ### `flightAt(path, tMs)`
@@ -132,40 +119,31 @@ on the frame, with the start's tilt fading out.
 
 ## How it works
 
-### The camera flies the path; its view looks ahead
+### The camera flies the travel curve; its view looks where it goes
 
-The camera flies van Wijk and Nuij's smooth zoom-and-pan (InfoVis 2003; d3's
-`interpolateZoom`), with rho = 1.
+The camera flies `flight-travel`'s curve, along the great circle from its
+start to its own landing point (behind the target, so it ends looking at the
+target 45 degrees down):
 
-- In (ground distance u, altitude h) the path is a geodesic of
-  ds^2 = (du^2 + dh^2) / h^2.
-- That is the same measure the flight is judged by:
-  v = sqrt((d ln h/dt)^2 + (ground speed / h)^2).
-  - So when the path is travelled at a constant ds/dt, the camera's speed is
-    constant.
-- A high start only descends.
-- A low, far start climbs first. The arch rises to about half the ground
-  distance.
+- high up it turns first while looking straight down, the turn done by the
+  bend (100 km, or 25 landings);
+- below the bend it dives along the law's track, bending into 45 degrees at
+  the landing, its view the direction of travel;
+- a start nearer than the dive's own track backs off first; a start below
+  the bend and far away pans at its own altitude (it gave up van Wijk's
+  climb, one path family; the documented limit);
+- the path length is the measure the flight is judged by, v = sqrt((d ln
+  h/dt)^2 + (ground speed / h)^2), so at a constant ds/dt the camera's
+  speed is constant.
 
-It is the CAMERA that flies the geodesic, from its start to its own landing
-point. That point is behind the target, so the camera looks at the target
-at the landing pitch.
-
-- The CF1 milestone review measured a path flown by the view's centre
-  instead:
-  - its camera slid backwards at up to 137 km/s as the view tilted;
-  - it ran 2.7 times faster below 100 km than above.
-
-The geodesic's formulas:
-
-- b0 and b1 come from the two ends.
-- r = -asinh(b). This is van Wijk's ln(sqrt(b^2 + 1) - b) without the
-  cancellation.
-- share(s) = (h0 / d) sinh(s) / cosh(s + r0). This is
-  cosh r0 tanh(s + r0) - sinh r0 without the cancellation.
-- h(s) = h0 cosh r0 / cosh(s + r0), for s in [0, r1 - r0].
-- A ground distance under 1e-9 of the lower altitude is flown as a pure
-  zoom.
+It replaced van Wijk and Nuij's zoom-and-pan (CF1): its descent ends nearly
+vertical (its geodesics are circles meeting the ground at right angles), so
+it could not end at 45 degrees, and its view tilted to the shallow entry
+long before the camera did (the owner's round-2 point 1). The camera, not
+its view's centre, flies it: the CF1 milestone review measured a
+centre-flown path sliding the camera backwards at up to 137 km/s. The
+curve's share is not clamped: a back-off is a negative share, and clamped
+it stood still and only descended (found in R1).
 
 ### The clock
 
@@ -197,15 +175,15 @@ The geodesic's formulas:
   - It was recomputed every frame from a cross product of two near-opposite
     vectors. That product was rounding noise, its sign flipped, and the view
     turned by up to 179 degrees in one frame (finding 1).
-- The view's centre is ahead of the camera along the heading, at
-  `descentPitchDeg`.
+- The view's centre is ahead of the camera along the heading, at the
+  curve's pitch (`pitchAt`).
   - Its altitude is measured over the surface under the centre, as
     `obliqueCamera` places it. `centreAhead` finds it with a four-step fixed
     point.
 - The start's pitch, roll and tilt blend out over the first fifth of the
   flight.
-  - The pitch blends the start's OFFSET from the law (`startLawDeg`, the
-    law at the start's altitude), so a replan whose start already follows
+  - The pitch blends the start's OFFSET from the curve's (`startLawDeg`,
+    its pitch at the start), so a replan whose start already follows
     the law keeps turning with it. Blending the start's pitch itself held
     it fixed and froze the view's turn at every replan (CF3 review
     finding 5).
@@ -219,11 +197,15 @@ Each one is tested, on the camera.
   - At the end, it is at the landing above the target, at the landing
     pitch. The frame before the end is within a metre of it.
 - The camera never goes below the lower of its start and its landing.
-- The camera never moves away from its landing point.
-  - A start that is already nearer than that point, such as a climb over
-    the target, correctly moves away from the target itself.
-- On the way down, the camera's remaining ground distance is at most 2 x the
-  height above the landing, plus one landing altitude.
+- The camera never moves away from its landing point, but to make room for
+  the dive: a start nearer than the dive's own track backs off, never
+  further than that track.
+- From a start above the bend, below it the camera's remaining ground
+  distance is at most 2 x the height above the landing, plus one landing
+  altitude. A start below the bend never climbs.
+- The view looks straight down above the bend and lands 45 degrees down;
+  never less than 5 degrees below the horizon; no step or corner in its
+  pitch at 60 Hz.
 - The view never turns more than 3 degrees in one 60 Hz frame. This holds
   for approaches from all four sides and along meridians.
 - After the start's blend, the view looks ahead along the course.
@@ -265,8 +247,9 @@ const { position, quaternion, done } = flightCamera(path, now - pressedAt);
 - `flight-path.test.ts`: the examples and the criterion sweep.
 - `flight-path.property.test.ts`: properties over random flights of 0.5 to
   60 s.
-  - It checks the ends, the floor, the arc bound, and that the camera never
-    moves backwards.
+  - It checks the ends, the floor, the arc bound below the bend, no climb
+    from a low start, and that the camera moves backwards only to make
+    room for the dive.
   - It checks criteria (a) and (b) at 60 Hz.
 - `src/test-utils/flight-speed.ts`: the shared criterion.
   - It uses the chord form for small angles. `angleTo` goes through acos,
@@ -274,5 +257,6 @@ const { position, quaternion, done } = flightCamera(path, now - pressedAt);
 - Hand mutants, each killed by its own test:
   - the clock as a single smoothstep;
   - no course heading;
-  - a view that does not look ahead;
-  - no climb.
+  - a view that does not look ahead.
+  - (CF1's "no climb" mutant no longer applies: the travel curve does
+    not climb.)

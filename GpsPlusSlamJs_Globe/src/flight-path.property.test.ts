@@ -6,9 +6,12 @@
  * a second up, CF1 review finding 11), all on the camera:
  * - the ends are exact (no snap at the press, no landing elsewhere);
  * - the camera never goes below the lower of its start and its landing;
- * - on the way down the camera's remaining ground distance stays within
- *   K_ARC x the height above the landing, plus one landing altitude (no
- *   continental slide low over the ground, the cold review's finding 2);
+ * - on the way down from above the bend the camera's remaining ground
+ *   distance stays within K_ARC x the height above the landing, plus one
+ *   landing altitude (no continental slide low over the ground, the cold
+ *   review's finding 2). A start below the bend pans at its own altitude
+ *   (round-2 R1 gave up van Wijk's climb: one path family; the documented
+ *   limit), never climbing above its start;
  * - the camera never moves away from its own landing point (behind the
  *   target: a start already nearer than that, a climb over the target,
  *   rightly moves away from the target itself);
@@ -30,6 +33,7 @@ import {
   flightCamera,
   planFlight,
 } from "./flight-path.js";
+import { bendAltitudeM } from "./flight-travel.js";
 import {
   noStall,
   noStopAndGo,
@@ -124,26 +128,27 @@ describe("flight path properties", () => {
     );
   });
 
-  it("keeps the camera's remaining ground distance within K_ARC x the height above the landing on the way down", () => {
+  // From a start clearly above the bend the turn is over by the bend: below
+  // it only the dive's own track is left, within K_ARC x the height above
+  // the landing plus one landing (no slide low over the ground).
+  it("leaves only the dive's track below the bend, from a start above it", () => {
     fc.assert(
       fc.property(flight, (f) => {
+        fc.pre(f.startM > 2 * bendAltitudeM(f.landingM));
         const { path } = plan(f);
-        const step = f.durationMs / 400;
         const over: string[] = [];
-        let prev = flightAt(path, 0).altitudeM;
-        for (let t = step; t < f.durationMs; t += step) {
+        for (let i = 1; i < 400; i++) {
+          const t = (f.durationMs * i) / 400;
           const now = flightAt(path, t);
-          // Only below the arch (descending).
-          const descending = now.altitudeM < prev;
-          const left = now.camera.angleTo(path.cameraEnd) * R;
+          if (now.altitudeM > bendAltitudeM(f.landingM)) continue;
+          const left = between(now.camera, path.cameraEnd) * R;
           const bound =
             K_ARC * Math.max(0, now.altitudeM - f.landingM) + f.landingM;
-          if (descending && left > bound) {
+          if (left > bound) {
             over.push(
               `${t.toFixed(0)} ms: ${left.toFixed(0)} > ${bound.toFixed(0)} m`,
             );
           }
-          prev = now.altitudeM;
         }
         expect(over).toEqual([]);
       }),
@@ -151,20 +156,48 @@ describe("flight path properties", () => {
     );
   });
 
-  it("never moves the camera away from its landing point", () => {
+  it("never climbs above a start below the bend, and lands exactly", () => {
+    fc.assert(
+      fc.property(flight, (f) => {
+        fc.pre(f.startM <= bendAltitudeM(f.landingM) && f.startM >= f.landingM);
+        const { path } = plan(f);
+        let top = 0;
+        for (let i = 0; i <= 400; i++) {
+          top = Math.max(
+            top,
+            flightAt(path, (f.durationMs * i) / 400).altitudeM,
+          );
+        }
+        expect(top).toBeLessThanOrEqual(path.geodesicAt(0).h * (1 + 1e-9));
+        expect(flightAt(path, f.durationMs).altitudeM).toBe(f.landingM);
+      }),
+      { numRuns: 100 },
+    );
+  });
+
+  // A start at least the dive's own track from its landing point only ever
+  // approaches it; a nearer one backs off first (it must curve in at 45
+  // degrees), never further than that track.
+  it("never moves the camera away from its landing point, but to make room for the dive", () => {
     fc.assert(
       fc.property(flight, (f) => {
         const { path } = plan(f);
+        const roomy = path.cameraArcRad >= path.diveArcRad;
         let prev = Infinity;
         let worst = 0;
+        let farthest = 0;
         for (let t = 0; t <= f.durationMs; t += f.durationMs / 400) {
           const cam = flightCamera(path, t).position.clone().normalize();
           const d = between(cam, path.cameraEnd) * R;
           worst = Math.max(worst, d - prev);
+          farthest = Math.max(farthest, d);
           prev = d;
         }
         // A centimetre: rounding on the sphere, not a backwards slide.
-        expect(worst).toBeLessThan(0.01);
+        expect(roomy ? worst : 0).toBeLessThan(0.01);
+        expect(farthest).toBeLessThanOrEqual(
+          Math.max(path.cameraArcRad, path.diveArcRad) * R + 0.01,
+        );
       }),
       { numRuns: 200 },
     );

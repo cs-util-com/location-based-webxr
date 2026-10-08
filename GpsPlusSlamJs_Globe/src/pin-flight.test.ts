@@ -798,6 +798,43 @@ describe("the pin's pace never slows while it approaches (round-2 plan DEC-FR2-9
     expect(at25).toBeLessThan(PIN_FLIGHT.holdM * 1.01);
   });
 
+  // WHY (R2 milestone review, finding 2): at a far fix from a low hold the
+  // replan's own path speed dipped (from 10,100 km, Tokyo and Sydney to
+  // 0.57-0.85 of the speed before; from 3,000 km as low as 0.18). On the
+  // round-2 travel curve the turn is a self-similar part of the path, so
+  // the fix only bends it: the speed holds at a fix from any hold altitude.
+  it("keeps its speed at a fix during the hold, near or far, high or low", () => {
+    const failures: string[] = [];
+    for (const startKm of [10_100, 5_000, 3_000]) {
+      for (const place of [BERN, TOKYO, SYDNEY]) {
+        for (const fixAt of [1_500, 5_000]) {
+          const target = orbitPose(WGS84_ELLIPSOID, place);
+          const pin = pressPin(
+            WGS84_ELLIPSOID,
+            0,
+            cameraOver(NEW_YORK, startKm * KM),
+            { target: null, landingM: 2 * KM, progress: 0 },
+          );
+          const { samples } = run(pin, fixAt + 2_000, (t, p) =>
+            t >= fixAt && p.phase === "holding" ? pinFix(p, t, target) : p,
+          );
+          const vs = speeds(samples);
+          const before = vs.filter((x) => x.t < fixAt).at(-1)?.v ?? 0;
+          const after = vs
+            .filter((x) => x.t >= fixAt && x.t < fixAt + 1_500)
+            .map((x) => x.v);
+          const ratio = Math.min(...after) / before;
+          if (!(ratio >= 0.9)) {
+            failures.push(
+              `${startKm} km, ${JSON.stringify(place)}, fix ${fixAt}: ${ratio.toFixed(2)}`,
+            );
+          }
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
   // WHY (DEC-FR2-9): the pin's own press holds until the fix; the hold's
   // pace must not be faster than the stretch the fix then sets, or the fix
   // reads as a brake.
