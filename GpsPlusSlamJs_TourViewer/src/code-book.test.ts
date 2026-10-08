@@ -199,6 +199,25 @@ describe("liveText - what this page changed live", () => {
     expect(liveText(book, "b"), "the hosted text, unchanged").toBeNull();
     expect(liveText(book, "x"), "not in the book").toBeNull();
   });
+
+  // Why (the M5d + S2 milestone review's #1): before the first Finish the
+  // book has no hosted text; the open tour's texts stand in for it, so a
+  // code only kept at its hosted pose is not live work.
+  it("judges a code kept before any Finish against the open tour's texts", () => {
+    const kept = withReference(
+      withSaved(new Map(), { id: "a", json: "H" }),
+      "a",
+    );
+    expect(liveText(kept, "a"), "no baseline at all").toBe("H");
+    expect(liveText(kept, "a", new Map([["a", "H"]]))).toBeNull();
+    expect(liveText(kept, "a", new Map([["a", "other"]]))).toBe("H");
+    const restored = withDraft(
+      kept,
+      [{ id: "a", json: "D" }],
+      new Map([["a", "H"]]),
+    );
+    expect(restored.get("a")?.saved).toBe("D");
+  });
 });
 
 describe("withoutMeasurement - a code to be measured again (a new print size)", () => {

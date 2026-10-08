@@ -172,7 +172,13 @@ the real store into the OPFS mock and read back as bytes:
   holds it within 25 % above the sum, so a bigger grid or a format change
   cannot drift past it unseen.
 - NOT counted: the file system's own per-file overhead (one file per
-  action).
+  action). Since S2 most files are well under a disk block, so on a phone's
+  disk a second can take more than its bytes: about 5.3 KB at no overhead
+  to about 13.5 KB at a 4 KiB block for every one of the field recording's
+  3.3 files a second (the M5d + S2 milestone review's #3). Whether the
+  browser's storage quota counts blocks or bytes is not measured; if it
+  counts blocks, "about N minutes" overstates by up to about 2.2x, and the
+  one-hour threshold covers about 27 minutes.
 - **The storage is not what ends a long recording.** The archive's entry cap
   (20 000 files, `archive-limits.ts`) is reached after about 1.7 h at the
   field recording's 3.3 actions a second, long before the bytes matter

@@ -218,7 +218,8 @@ export function wireCreatorCodes(deps: {
       if (hand !== null) return false;
       // Live work on the code is newer than the draft and wins, as in
       // `restoreLevels` (the M5d-2 review's #9a).
-      hand = { id: level.id, json: liveText(book, level.id) ?? level.json };
+      const live = liveText(book, level.id, ctx.currentLevelTexts ?? undefined);
+      hand = { id: level.id, json: live ?? level.json };
       setBook(withReference(withSaved(book, hand), hand.id));
       return true;
     },
@@ -296,7 +297,7 @@ export function wireCreatorCodes(deps: {
     measuredIn: (levelId, visit) =>
       book.get(levelId)?.measurement?.visit === visit,
     restoreLevels: (levels) => {
-      setBook(withDraft(book, levels));
+      setBook(withDraft(book, levels, ctx.currentLevelTexts ?? undefined));
     },
     finished: (written) => {
       setBook(afterFinish(withHostedTexts(), written));

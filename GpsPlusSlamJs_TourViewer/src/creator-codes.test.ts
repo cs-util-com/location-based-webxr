@@ -117,6 +117,43 @@ describe("creator-codes: the code in hand", () => {
   // it must keep it when the draft also hands it back into the empty
   // hand, or the next Finish writes the draft's older pose under this
   // page's measurement.
+  // Why these tests matter (the M5d + S2 milestone review's #1): before
+  // the first Finish the book does not hold the hosted texts, so a stored
+  // code this page only KEPT at its hosted pose looked changed live, and a
+  // draft's newer measurement of it was dropped - from the hand and from
+  // the book alike. Liveness is judged against the open tour's texts.
+  it("restores a draft's newer text into the hand over a code only kept at its hosted pose", () => {
+    const ctx = createTourViewerSession();
+    const hosted = { id: "a", json: levelJson(47.5) };
+    ctx.currentLevelTexts = new Map([["a", hosted.json]]);
+    const codes = wireCreatorCodes({ ctx });
+    codes.setInHand(hosted, null);
+    codes.setInHand(
+      { id: "b", json: levelJson(47.6) },
+      { ...MEASUREMENT, levelId: "b" },
+    );
+    codes.clearInHand();
+    const drafted = { id: "a", json: levelJson(47.45) };
+    codes.restoreLevels([drafted]);
+    expect(codes.restoreInHand(drafted)).toBe(true);
+    expect(codes.inHand()).toEqual(drafted);
+    expect(codes.toWrite()).toEqual([drafted]);
+  });
+
+  it("restores a draft's newer text into the book for a kept code not in hand", () => {
+    const ctx = createTourViewerSession();
+    const hosted = { id: "a", json: levelJson(47.5) };
+    ctx.currentLevelTexts = new Map([["a", hosted.json]]);
+    const codes = wireCreatorCodes({ ctx });
+    codes.setInHand(hosted, null);
+    const other = { id: "c", json: levelJson(47.7) };
+    codes.setInHand(other, { ...MEASUREMENT, levelId: "c" });
+    const drafted = { id: "a", json: levelJson(47.45) };
+    codes.restoreLevels([drafted]);
+    expect(codes.savedText("a")).toBe(drafted.json);
+    expect(codes.inHand()).toEqual(other);
+  });
+
   it("restores a draft's code into the hand at its live text", () => {
     const codes = wireCreatorCodes({ ctx: createTourViewerSession() });
     const live = { id: "a", json: levelJson(47.5) };

@@ -3852,6 +3852,47 @@ describe(
       expect(spotsOf(a).previous).toBeNull();
     });
 
+    // Why (the sampled mutant "applied decision not kept for a re-settle",
+    // whose killing test went with the move question in M6c): a failed
+    // Finish unsettles its visit, which settles again at its end. Planned
+    // again from the level the first settle already re-minted, the move
+    // would read as a keep - the result and the log would contradict what
+    // was written.
+    it("re-applies a move after a failed Finish, as the same decision", async () => {
+      const { store } = memoryDraftStore();
+      const a = authoring({ store });
+      await openFinishableTour(a);
+      a.setup.presentDraftForTour("https://example.test/tour.zip");
+      await flush();
+      await a.mint();
+      a.endVisit();
+      const original = spotsOf(a).current;
+      a.beginVisit();
+      a.setAlignment(yawAlignment(0, [30, 400, 0]));
+      a.seeTheCode();
+      await flush();
+      walkThrough(a, 30);
+      (
+        a.ctx.session as unknown as { readWholeArchive: () => Promise<Blob> }
+      ).readWholeArchive = () => Promise.reject(new Error("offline"));
+      a.ctx.tourManifestStatus = "settled";
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.ctx.finishError).not.toBeNull();
+      const moved = spotsOf(a);
+      expect(moved.previous).toEqual(original);
+      a.endVisit();
+      await flush();
+      // The same pose, re-minted at the second settle's time.
+      expect(spotsOf(a).current.geo).toEqual(moved.current.geo);
+      expect(spotsOf(a).previous).toEqual(original);
+      expect(spotsOf(a).copies).toEqual(moved.copies);
+      expect(
+        (a.settledLogs().at(-1)!.payload as { codePositions?: unknown })
+          .codePositions,
+      ).toEqual([expect.objectContaining({ decision: { kind: "move" } })]);
+    });
+
     // Why (M6 milestone review #4): the confirmation's clock and write are
     // wiring, not rule - a sign flipped on the day, or a write dropped,
     // would pass the rule's own tests.

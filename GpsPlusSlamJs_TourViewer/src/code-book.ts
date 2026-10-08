@@ -84,20 +84,31 @@ function baseline(code: TourCode): string | null {
   return code.finished ?? code.hosted;
 }
 
+/** The open tour's level texts by id, as they arrived (the book holds
+ *  them only from the first Finish on: `withHosted`). */
+type HostedTexts = ReadonlyMap<string, string>;
+
 /** Work done live in this page: a measurement, or a saved pose that is
- *  not what the zip holds. */
-function changedLive(code: TourCode): boolean {
+ *  not what the zip holds. Before the first Finish the book has no hosted
+ *  text, so `hosted` stands in for it: a stored code this page only kept
+ *  at its hosted pose is not work done live (the M5d + S2 milestone
+ *  review's #1). */
+function changedLive(code: TourCode, hosted?: HostedTexts): boolean {
+  const zip = baseline(code) ?? hosted?.get(code.levelId) ?? null;
   return (
-    code.measurement !== null ||
-    (code.saved !== null && code.saved !== baseline(code))
+    code.measurement !== null || (code.saved !== null && code.saved !== zip)
   );
 }
 
 /** The code's saved text when this page changed it live (a measurement,
  *  or a saved pose the zip does not hold); null otherwise. */
-export function liveText(book: CodeBook, levelId: string): string | null {
+export function liveText(
+  book: CodeBook,
+  levelId: string,
+  hosted?: HostedTexts,
+): string | null {
   const code = book.get(levelId);
-  return code !== undefined && changedLive(code) ? code.saved : null;
+  return code !== undefined && changedLive(code, hosted) ? code.saved : null;
 }
 
 /**
@@ -109,13 +120,14 @@ export function liveText(book: CodeBook, levelId: string): string | null {
 export function withDraft(
   book: CodeBook,
   draft: readonly LevelText[],
+  hosted?: HostedTexts,
 ): CodeBook {
   let next = book;
   for (const { id, json } of draft) {
     const code = next.get(id) ?? blank(id);
     next = put(next, {
       ...code,
-      saved: changedLive(code) ? code.saved : json,
+      saved: changedLive(code, hosted) ? code.saved : json,
       reference: true,
     });
   }

@@ -263,10 +263,10 @@
       "why": "testable, not yet tested (M2 review #3): a harness whose store never notifies (creator-finish, creator-setup and ar-entry tests) would show a placement noted without its walked distance, which changes the walked-distance tie-break. In production it holds while store notifications are synchronous. The test is filed for M4, whose per-code run-merge compares walked distances."
     },
     {
-      "name": "sighting not kept on the session",
+      "name": "sighting not kept",
       "region": "picks",
       "file": "src/creator-codes.ts",
-      "from": "    ctx.visitCodeSighting = sighting;\n",
+      "from": "    visitSighting = sighting;\n",
       "to": ""
     },
     {

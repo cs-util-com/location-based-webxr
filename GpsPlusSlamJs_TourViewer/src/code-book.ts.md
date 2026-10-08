@@ -32,9 +32,14 @@ hosted, measurement, reference, finished }`:
   references - except a code this page already changed live (a
   measurement, or a saved pose differing from the zip's): that is newer
   and wins. Restoring is a tap on an offer that comes after the open.
-- `liveText(book, levelId)` - the code's saved text when this page changed
-  it live (that same test), else null: what a draft's code handed back into
-  the empty hand is taken at (`creator-codes.ts` `restoreInHand`).
+- `liveText(book, levelId, hosted?)` - the code's saved text when this page
+  changed it live (that same test), else null: what a draft's code handed
+  back into the empty hand is taken at (`creator-codes.ts` `restoreInHand`).
+- `hosted` (`withDraft`'s and `liveText`'s optional last argument): the open
+  tour's level texts. The book holds hosted texts only from the first Finish
+  on, so before it a code this page only KEPT at its hosted pose would look
+  changed live and win over a draft's newer measurement; the open tour's
+  texts stand in as the zip's (M5d + S2 milestone review #1).
 - `withHosted(book, hosted)` - hosted texts that arrive after a restore.
 - `withMeasurement(book, level, measurement)` - a code measured here.
 - `withoutMeasurement(book, levelId)` - a code to be measured again (a new
