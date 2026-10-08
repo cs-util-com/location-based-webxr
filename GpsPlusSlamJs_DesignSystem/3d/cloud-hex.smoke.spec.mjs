@@ -71,16 +71,17 @@ async function measure(page, mode, hex) {
         }
         return total / ((a.data.length / 4) * 3);
       };
+      // Both directions: a seam running along one screen axis is
+      // invisible to steps along that axis (H1/H2 milestone review, 4).
       const steps = (f) => {
         const out = [];
-        for (let y = 0; y < f.height; y += 2) {
-          for (let x = 1; x < f.width; x++) {
+        const l = (k) =>
+          0.2126 * f.data[k] + 0.7152 * f.data[k + 1] + 0.0722 * f.data[k + 2];
+        for (let y = 1; y < f.height; y += 2) {
+          for (let x = 1; x < f.width; x += 2) {
             const i = 4 * (y * f.width + x);
-            const l = (k) =>
-              0.2126 * f.data[k] +
-              0.7152 * f.data[k + 1] +
-              0.0722 * f.data[k + 2];
             out.push(Math.abs(l(i) - l(i - 4)));
+            out.push(Math.abs(l(i) - l(i - 4 * f.width)));
           }
         }
         out.sort((p, q) => p - q);
@@ -94,17 +95,28 @@ async function measure(page, mode, hex) {
             diff(f0, frameAt(u + period, v)),
             diff(f0, frameAt(u, v + period)),
           ],
-          half: [diff(f0, frameAt(u + 0.5, v)), diff(f0, frameAt(u, v + 0.5))],
+          // Other clouds, the yardstick: 0.37 of a tile on (not a half: the
+          // texture is nearly self-similar there along u, follow-up
+          // 2026-10-08-1841).
+          other: [
+            diff(f0, frameAt(u + 0.37, v)),
+            diff(f0, frameAt(u, v + 0.37)),
+          ],
         };
       });
       const all = (key) => per.flatMap((p) => p[key]);
+      const axis = (key, a) => per.map((p) => p[key][a]);
       const mean = (xs) => xs.reduce((t, x) => t + x, 0) / xs.length;
       const [u, v] = bases[0];
       return {
         oneMax: Math.max(...all("one")),
-        oneMean: mean(all("one")),
+        // Per axis (review finding 5): a field still repeating along one
+        // axis would pass an average over both.
+        oneX: mean(axis("one", 0)),
+        oneY: mean(axis("one", 1)),
         periodMax: Math.max(...all("period")),
-        halfMean: mean(all("half")),
+        otherX: mean(axis("other", 0)),
+        otherY: mean(axis("other", 1)),
         p999: steps(frameAt(u, v)),
       };
     },
@@ -120,8 +132,8 @@ for (const mode of MODES) {
     const off = await measure(page, mode, false);
     const on = await measure(page, mode, true);
     console.log(
-      `${mode}: off one tile max ${off.oneMax.toFixed(2)}, other clouds mean ${off.halfMean.toFixed(2)}, p99.9 step ${off.p999.toFixed(1)}; ` +
-        `on one tile mean ${on.oneMean.toFixed(2)}, period max ${on.periodMax.toFixed(2)}, p99.9 step ${on.p999.toFixed(1)}`,
+      `${mode}: off one tile max ${off.oneMax.toFixed(2)}, other clouds x ${off.otherX.toFixed(2)} y ${off.otherY.toFixed(2)}, p99.9 step ${off.p999.toFixed(1)}; ` +
+        `on one tile x ${on.oneX.toFixed(2)} y ${on.oneY.toFixed(2)}, period max ${on.periodMax.toFixed(2)}, p99.9 step ${on.p999.toFixed(1)}`,
     );
     // Today's repeat, made exact: one tile on, the same sky, everywhere.
     expect(off.oneMax).toBeLessThan(1);
@@ -129,8 +141,9 @@ for (const mode of MODES) {
     // there.
     expect(on.periodMax).toBeLessThan(1);
     // And at one tile the hex sky changes as much as other clouds do (at
-    // least half as much, averaged over the bases and both axes).
-    expect(on.oneMean).toBeGreaterThan(0.5 * off.halfMean);
+    // least half as much, averaged over the bases), along each axis.
+    expect(on.oneX).toBeGreaterThan(0.5 * off.otherX);
+    expect(on.oneY).toBeGreaterThan(0.5 * off.otherY);
     // No seam: the sharpest neighbour steps stay near today's.
     expect(on.p999).toBeLessThan(off.p999 * 1.5 + 2);
   });
@@ -162,8 +175,10 @@ test("the shader hex-tiles the texture exactly as the CPU twin does", async ({
   test.setTimeout(120_000);
   await boot(page, "preset=hazy&tone=neutral&cloudMode=dome");
   const uvs = [];
+  // Over two periods, negative too: south and west of the anchor the
+  // reduction runs on negative rows and columns (review finding 3).
   for (let i = 0; i < 400; i++) {
-    uvs.push([(i * 0.0653) % 26, (i * 0.1171) % 26]);
+    uvs.push([((i * 0.0653) % 26) - 13, ((i * 0.1171) % 26) - 13]);
   }
   const shiftedX = uvs.map(([u, v]) => [u + 1, v]);
   const shiftedY = uvs.map(([u, v]) => [u, v + 1]);
@@ -188,4 +203,20 @@ test("the shader hex-tiles the texture exactly as the CPU twin does", async ({
     `hex twin: worst |gpu - cpu| ${worst.toFixed(4)}; one-tile correlation gpu x ${gpuX.toFixed(3)} y ${gpuY.toFixed(3)}, cpu x ${cpuX.toFixed(3)}`,
   );
   expect(worst).toBeLessThan(0.01);
+  // The page's own CPU twin at the sun (`sunCloud`, sun-clouds.js) follows
+  // the switch too (H1/H2 milestone review, finding 8): the same pinned
+  // stretch reads other noise with hex on.
+  const noise = await page.evaluate(() => {
+    const d = window.__lookdev;
+    const read = () => {
+      d.setCloudOffset(0.3, 0.6);
+      return d.sunCloud().noise;
+    };
+    const off = read();
+    d.setCloudHex(true);
+    const on = read();
+    d.setCloudHex(false);
+    return { off, on };
+  });
+  expect(noise.on).not.toBeCloseTo(noise.off, 6);
 });

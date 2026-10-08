@@ -398,9 +398,11 @@ test("the volume's shadow on the relief against the shell's soft shadow", async 
 // WHY (hex-tiling plan 2026-10-07-0919, H2): the owner saw the volume's
 // shapes repeat every 24 km from about 23 km up. With `cloudHex=1` the same
 // overcast deck is drawn from the hex-tiled field: it must compile in the
-// globe's ground sky and slab, draw, and keep its cover (the hex field's own
-// thresholds), with no console error.
-test("the cloud volume draws its hex-tiled clouds with cloudHex=1, keeping its cover", async ({
+// globe's ground sky and slab and draw, with no console error. A compile
+// and draw check only: at an overcast cover any threshold table covers the
+// lower half (H1/H2 milestone review, finding 9); the tables are held by
+// the framework's unit tests.
+test("the cloud volume compiles and draws its hex-tiled clouds with cloudHex=1", async ({
   page,
   context,
 }) => {

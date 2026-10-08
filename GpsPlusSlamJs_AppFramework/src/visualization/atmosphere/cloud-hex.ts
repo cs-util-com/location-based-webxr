@@ -182,14 +182,19 @@ export function hexTiledSample(
 }
 
 /**
- * The cover thresholds of a hex-tiled field, for covers k / 32 (k = 0..32;
- * +Infinity at 0, as `cloudThresholdForCover`): the (1 - cover) quantiles
- * of `field` (the whole two-octave noise, `cloudNoiseSample` with `hex`)
- * sampled on a `grid` x `grid` lattice over one period.
+ * The cover thresholds of a hex-tiled field, for `covers` (default k / 32,
+ * k = 0..32; +Infinity at cover 0, as `cloudThresholdForCover`): the
+ * (1 - cover) quantiles of `field` (the whole two-octave noise,
+ * `cloudNoiseSample` with `hex`) sampled on a `grid` x `grid` lattice
+ * over one period.
  */
 export function hexCoverThresholds(
   field: (u: number, v: number) => number,
-  options: { readonly cellsPerTile?: number; readonly grid?: number } = {}
+  options: {
+    readonly cellsPerTile?: number;
+    readonly grid?: number;
+    readonly covers?: readonly number[];
+  } = {}
 ): number[] {
   const cellsPerTile = options.cellsPerTile ?? CLOUD_HEX.cellsPerTile;
   const grid = options.grid ?? 384;
@@ -205,11 +210,12 @@ export function hexCoverThresholds(
   }
   values.sort();
   const n = values.length;
-  const out = [Number.POSITIVE_INFINITY];
-  for (let k = 1; k <= 32; k++) {
-    out.push(values[Math.min(n - 1, Math.floor((1 - k / 32) * n))] ?? 0);
-  }
-  return out;
+  const covers = options.covers ?? Array.from({ length: 33 }, (_, k) => k / 32);
+  return covers.map((cover) =>
+    cover === 0
+      ? Number.POSITIVE_INFINITY
+      : (values[Math.min(n - 1, Math.floor((1 - cover) * n))] ?? 0)
+  );
 }
 
 /**
@@ -254,23 +260,44 @@ export const HEX_COVER_THRESHOLDS: readonly number[] = [
 ];
 
 /**
+ * The low tail of `HEX_COVER_THRESHOLDS`: covers k / 512, k = 1..16 (the
+ * last is the table's 1 / 32), precomputed the same way. Without it every
+ * cover below 1 / 32 drew 3.1 % cloud (H1/H2 milestone review, finding 1).
+ */
+export const HEX_COVER_LOW_TAIL: readonly number[] = [
+  0.84599852, 0.81442589, 0.79500617, 0.78004449, 0.76973467, 0.75980875,
+  0.75216521, 0.74518773, 0.73857591, 0.73348456, 0.72811758, 0.72266471,
+  0.71743595, 0.71265426, 0.70871594, 0.70488909,
+];
+
+/** The table's finite entries: covers 1/32, 2/32 .. 1. */
+const HEX_COVER_FINITE = HEX_COVER_THRESHOLDS.slice(1);
+
+/**
+ * `table` read linearly at index `x`, held at its first and last entry
+ * outside them.
+ */
+function heldLerp(table: readonly number[], x: number): number {
+  const i = Math.min(Math.max(Math.floor(x), 0), table.length - 2);
+  const f = Math.min(Math.max(x - i, 0), 1);
+  const a = table[i] ?? 0;
+  return a + ((table[i + 1] ?? a) - a) * f;
+}
+
+/**
  * The hex field's threshold for `cover` (0-1), linear between the table's
- * covers; +Infinity at 0 (a clear sky). RangeError for a cover outside
- * [0, 1].
+ * covers, and below 1 / 32 between the low tail's (a cover under 1 / 512
+ * takes the tail's first); +Infinity at 0 (a clear sky). RangeError for a
+ * cover outside [0, 1].
  */
 export function hexCloudThreshold(cover: number): number {
   if (!(Number.isFinite(cover) && cover >= 0 && cover <= 1)) {
     throw new RangeError(`cloud cover must be in [0, 1], got ${cover}`);
   }
   if (cover === 0) return Number.POSITIVE_INFINITY;
-  const x = cover * 32;
-  const k = Math.min(31, Math.floor(x));
-  const a = HEX_COVER_THRESHOLDS[k] ?? 0;
-  const b = HEX_COVER_THRESHOLDS[k + 1] ?? 0;
-  // Below the first entry the table's +Infinity cannot be interpolated:
-  // the first finite threshold holds there.
-  if (k === 0) return b;
-  return a + (b - a) * (x - k);
+  return cover < 1 / 32
+    ? heldLerp(HEX_COVER_LOW_TAIL, cover * 512 - 1)
+    : heldLerp(HEX_COVER_FINITE, cover * 32 - 1);
 }
 
 /**
@@ -291,8 +318,11 @@ const HEX_ROWS =
  * - `atmCloudHexGrad(tex, uv, dx, dy, mean)`: three reads with the
  *   gradients of the CONTINUOUS uv. The cells' offsets jump at their edges,
  *   so implicit derivatives there picked the coarsest level and drew the
- *   lattice as a line (cold review finding 1); a caller inside a
- *   non-uniform branch takes `dFdx(uv)`, `dFdy(uv)` before it.
+ *   lattice as a line (cold review finding 1). The consumers take the
+ *   gradients where they read, as their implicit reads did: the shadow
+ *   inside its coverage branch, the sheet after its discard; where those
+ *   are non-uniform the cloud's density is about 0, so no visible effect
+ *   (the H1/H2 milestone review, finding 6).
  * - `atmCloudHexLod(tex, uv, lod, mean)`: three reads at an explicit level,
  *   for a march (implicit derivatives are undefined in its loop).
  */
@@ -316,12 +346,15 @@ float atmCloudHexHash(int i, int j, uint salt) {
 
 // Twin of hexCellOffset: reduced along the period's skewed second vector,
 // then modulo the period's columns (floor division: GLSL's % on a negative
-// int is undefined).
+// int is undefined). The +0.5 keeps the floor exact for whole numbers under
+// the GPU's division error (up to 2.5 ulp, often a reciprocal multiply): at
+// a multiple of the period a 1 ulp low quotient floored one row or column
+// down, and a cell popped at the drift's wrap.
 vec2 atmCloudHexOffset(int i, int j) {
-  int k = int(floor(float(j) / float(ATM_HEX_ROWS)));
+  int k = int(floor((float(j) + 0.5) / float(ATM_HEX_ROWS)));
   int jr = j - ATM_HEX_ROWS * k;
   int ii = i + (ATM_HEX_ROWS / 2) * k;
-  int ir = ii - ATM_HEX_COLUMNS * int(floor(float(ii) / float(ATM_HEX_COLUMNS)));
+  int ir = ii - ATM_HEX_COLUMNS * int(floor((float(ii) + 0.5) / float(ATM_HEX_COLUMNS)));
   return vec2(atmCloudHexHash(ir, jr, ATM_HEX_SEED), atmCloudHexHash(ir, jr, ATM_HEX_SEED + 1u));
 }
 

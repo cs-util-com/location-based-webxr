@@ -29,9 +29,13 @@ Real-Time Hex-Tiling" (JCGT 11(2)); blend: Heitz and Neyret 2018
   sqrt(sum(w^2)). `mean` is the texture's mean. RangeError for coordinates
   that are not finite.
 
-- `hexCoverThresholds(sample, mean, options?)`: the hex field's cover
-  thresholds for covers k / 32 (+Infinity at 0), the quantiles of the
-  two-octave field (octave 1 hex-tiled) over one period.
+- `hexCoverThresholds(field, options?)`: the cover thresholds of `field`
+  (the whole two-octave noise with octave 1 hex-tiled, `cloudNoiseSample`
+  with `hex`) for `options.covers` (default k / 32; +Infinity at 0), its
+  quantiles over one period.
+- `HEX_COVER_LOW_TAIL`: the covers k / 512 up to 1 / 32, precomputed and
+  held by a test; without it every cover under 1 / 32 drew 3.1 % cloud
+  (H1/H2 milestone review, finding 1).
 - `HEX_COVER_THRESHOLDS`: that table for the default texture, precomputed
   (1.8 s on a desktop under load; a live switch must not pay it on a
   phone) and held to the computation by a test.
@@ -66,9 +70,25 @@ Real-Time Hex-Tiling" (JCGT 11(2)); blend: Heitz and Neyret 2018
 
 ## Measured (2026-10-08, real noise, 90,000 points over 13 x 13 tiles)
 
-- Correlation one tile on: 1.000 today; 0.10 / 0.05 / 0.02 for whole-tile
-  cells at sharpness 2 / 4 / 8; about 0.0 for cells of half and a third of
-  a tile.
+- Correlation one tile on, of the FIRST octave: 1.000 today; 0.10 / 0.05
+  / 0.02 for whole-tile cells at sharpness 2 / 4 / 8; about 0.0 for cells
+  of half and a third of a tile. The drawn two-octave field keeps 0.15-0.16
+  over 13 tiles (its detail octave is not hex-tiled, cold review item 8),
+  and -0.23 to 0.45 in the 1-4-tile windows one view sees (the milestone
+  review's sweep).
+
+## Limits
+
+- The tables and the shader's mean are the DEFAULT texture's (256, seed
+  1). A non-default texture would split the CPU twin (its own mean) from
+  the GPU (the constant): `SkyAtmosphere` is the only caller of
+  `createCloudTexture` and uses the default (H1/H2 milestone review,
+  finding 11).
+- The hex field's range is wider than the plain one's (-0.11..0.97 against
+  0..0.92): the cover is right by quantile, but the peaks are a little
+  thicker (finding 12; for the owner's eye in H3).
+- The coverage map's GLSL interpolates its table between clear (2) and the
+  1 / 32 entry below that cover, plain or hex alike (unchanged by hex).
 
 ## Tests
 

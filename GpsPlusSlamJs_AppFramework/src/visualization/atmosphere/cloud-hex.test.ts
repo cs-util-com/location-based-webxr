@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CLOUD_HEX,
   CLOUD_HEX_GLSL,
+  HEX_COVER_LOW_TAIL,
   HEX_COVER_THRESHOLDS,
   hexCellOffset,
   hexCloudThreshold,
@@ -281,6 +282,38 @@ describe('the cover of the hex field', () => {
   });
 });
 
+describe('the hex field’s small covers', () => {
+  // WHY (H1/H2 milestone review, finding 1): the table steps by 1/32, and
+  // below its first finite entry every cover drew 3.1 % cloud (a 1 % sky
+  // drew three times that). A tail at 1/512 steps holds small covers,
+  // precomputed like the table and held to the computation.
+  const field = (u: number, v: number) =>
+    cloudNoiseSample(data, SIZE, u, v, { hex: true });
+
+  it('holds its low tail to the computation', () => {
+    const covers = Array.from({ length: 16 }, (_, k) => (k + 1) / 512);
+    const computed = hexCoverThresholds(field, { covers });
+    expect(HEX_COVER_LOW_TAIL).toHaveLength(16);
+    for (let k = 0; k < 16; k++) {
+      expect(HEX_COVER_LOW_TAIL[k], String(k)).toBeCloseTo(computed[k] ?? 0, 6);
+    }
+    expect(HEX_COVER_LOW_TAIL[15]).toBeCloseTo(HEX_COVER_THRESHOLDS[1] ?? 0, 6);
+  });
+
+  it('draws small covers as asked, on points the tail was not computed from', () => {
+    const values = grid(220, 13).map(([u, v]) => field(u + 0.123, v + 0.457));
+    const worst: string[] = [];
+    for (const cover of [0.002, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03]) {
+      const t = hexCloudThreshold(cover);
+      const share = values.filter((x) => x > t).length / values.length;
+      if (Math.abs(share - cover) > 0.002) {
+        worst.push(`${cover}: ${share.toFixed(4)}`);
+      }
+    }
+    expect(worst).toEqual([]);
+  });
+});
+
 describe('CLOUD_HEX_GLSL', () => {
   // The shader twin cannot run here (no WebGL): its readback against
   // hexTiledSample is the browser check (plan H2). What a string can hold:
@@ -298,5 +331,12 @@ describe('CLOUD_HEX_GLSL', () => {
     expect(CLOUD_HEX_GLSL.match(/textureLod\(/g)?.length).toBe(3);
     expect(CLOUD_HEX_GLSL).not.toMatch(/texture2D\(|texture\(/);
     expect(CLOUD_HEX_GLSL).not.toMatch(/fract\(\s*sin/);
+    // Floor division robust to the GPU's division error (H1/H2 milestone
+    // review, finding 3: a reciprocal 1 ulp off floors every multiple of
+    // the period wrongly, and a cell pops at the wrap).
+    expect(CLOUD_HEX_GLSL).toContain('(float(j) + 0.5) / float(ATM_HEX_ROWS)');
+    expect(CLOUD_HEX_GLSL).toContain(
+      '(float(ii) + 0.5) / float(ATM_HEX_COLUMNS)'
+    );
   });
 });

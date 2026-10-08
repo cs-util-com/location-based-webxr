@@ -104,8 +104,10 @@ float atmShadowCloudNoise(vec2 uv) {
 }
 
 // three's getDirectionalLightInfo, then the cloud column toward the light.
-// Every branch is uniform per light (uniforms and the light's own values),
-// so the implicit-level reads are defined.
+// Without a map and a disc every branch is uniform per light (uniforms and
+// the light's own values), so the implicit-level reads are defined; with
+// them the threshold varies per fragment, and the reads inside its branch
+// sit where the density is about 0 (the threshold near clear).
 void atmShadowCloudLightInfo(const in DirectionalLight directionalLight, out IncidentLight light) {
   getDirectionalLightInfo(directionalLight, light);
 #if defined(ATM_CLOUD_COVERAGE) || defined(ATM_CLOUD_DISC)

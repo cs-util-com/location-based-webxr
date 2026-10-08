@@ -152,5 +152,10 @@ describe('the hex-tiled field’s table (hex-tiling plan H1)', () => {
     expect(cloudCoverageUniforms().atmCoverThresholdsHex.value).toHaveLength(
       33
     );
+    // One table read per lookup (H1/H2 milestone review, finding 2): the
+    // switch picks before the lookup, so hex off costs no second table.
+    expect(CLOUD_COVERAGE_GLSL).toMatch(
+      /return hex > 0\.5\s*\?\s*mix\(atmCoverThresholdsHex/
+    );
   });
 });

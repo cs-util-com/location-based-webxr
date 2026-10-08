@@ -125,9 +125,10 @@ ${COVERAGE_CHUNK}
 float atmCoverThreshold(float cover, float hex) {
   float c = clamp(cover, 0.0, 1.0) * 32.0;
   int k = int(min(floor(c), 31.0));
-  float plain = mix(atmCoverThresholds[k], atmCoverThresholds[k + 1], c - float(k));
-  float tiled = mix(atmCoverThresholdsHex[k], atmCoverThresholdsHex[k + 1], c - float(k));
-  return hex > 0.5 ? tiled : plain;
+  // The switch picks before the lookup: one table read, hex on or off.
+  return hex > 0.5
+    ? mix(atmCoverThresholdsHex[k], atmCoverThresholdsHex[k + 1], c - float(k))
+    : mix(atmCoverThresholds[k], atmCoverThresholds[k + 1], c - float(k));
 }
 #endif
 #ifdef ATM_CLOUD_DISC
