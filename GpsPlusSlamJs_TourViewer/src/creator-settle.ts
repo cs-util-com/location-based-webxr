@@ -642,16 +642,22 @@ export function wireCreatorSettle(deps: {
       };
     };
     /** The keep-or-replace plan as the code's known spots allow it (M6
-     *  milestone review #2, #3): an improvement that would land within the
-     *  floor of another known spot is kept instead, so two spots never sit
-     *  closer than the floor; a far code the visit could not judge says
-     *  so. */
+     *  milestone review #2, #3): an improvement or a move that would land
+     *  within the floor of another known spot is kept instead, so two
+     *  spots never sit closer than the floor; a far code the visit could
+     *  not judge says so. A move needs the check too (PR #566 review): its
+     *  floor clearance was judged on the visit's unfiltered sightings, but
+     *  it is minted from the filtered ones, which can be another sighting
+     *  and so another pose. */
     const withinSpots = (
       code: { id: string; json: string },
       plan: CodePositionPlan | null,
     ): CodePositionPlan | null => {
       if (plan === null || zero === null) return plan;
-      if (plan.decision.kind === "replace" && nearAnotherSpot(code, plan)) {
+      if (
+        (plan.decision.kind === "replace" || plan.decision.kind === "move") &&
+        nearAnotherSpot(code, plan)
+      ) {
         return {
           ...plan,
           decision: { kind: "keep", reason: "far" },
@@ -680,8 +686,8 @@ export function wireCreatorSettle(deps: {
       code: { id: string; json: string },
       d: { plan: CodePositionPlan | null; reapplied: boolean },
     ) => (d.reapplied ? d : { ...d, plan: withinSpots(code, d.plan) });
-    /** The pose a replace would mint lies within the floor of a known spot
-     *  of the code other than its current one. */
+    /** The pose a replace or a move would mint lies within the floor of a
+     *  known spot of the code other than its current one. */
     const nearAnotherSpot = (
       code: { id: string; json: string },
       plan: CodePositionPlan,
@@ -1100,6 +1106,11 @@ export function wireCreatorSettle(deps: {
       sizeM: sizeOfSighting(seen.at(-1)?.sighting ?? null),
     });
     const home = known[0]!.pose.position;
+    // The clock runs from the current spot's mint. A re-mint at that spot
+    // (an improvement) restamps it and so defers the confirmation by up to
+    // a day each time (PR #566 review); bounded, as a reliably stored code
+    // is kept, not improved. Whether the day should run from the move
+    // itself is an owner question (code book M6 follow-ups, #3).
     const mintedAt = Date.parse(memory.current.mintQuality?.mintedAtIso ?? "");
     const { decision, classes } = judgeCodeSpots({
       spots: known,

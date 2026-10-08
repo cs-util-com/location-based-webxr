@@ -113,8 +113,14 @@ export function judgeCodeSpots(input: {
     ...(input.floorM === undefined ? {} : { floorM: input.floorM }),
   });
   const classes = input.sightings.map((s, i) => {
-    // After a frame change the fit mixes two frames: it classifies nothing
-    // either (M6 milestone review #5).
+    // After a frame change the fit mixes two frames, so it classifies
+    // nothing (M6 milestone review #5); the sighting is placed by the
+    // visit's end alignment instead (`spotByAlignment`). That view mixes
+    // the frames too when the frame changed between the sighting and the
+    // end - accepted (PR #566 review): it can only call a sighting a second
+    // print, with half the floor as margin, which excludes it from this
+    // visit's corrections; nothing is judged after a frame change, so it
+    // never moves a code.
     const byFit = input.frameChanged
       ? null
       : nearestSpot(fits[i]!, input.floorM);
