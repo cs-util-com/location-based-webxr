@@ -18,6 +18,9 @@ pure parts; the GLSL (`atmClouds` in `atmosphere-glsl.ts`) mirrors
   literal.
 - `cloudNoiseAt(x, y, size, seed)` → [0, 1], periodic in `size`.
 - `cloudNoise(size, seed)` → 8-bit texture data (cached per size/seed).
+- `cloudTextureSample(data, size, u, v)` → one read of the texture, bilinear
+  between texel centres, wrapped, as the GPU takes it at its finest level
+  (exported for the hex twin's GPU check, the look-dev page's `hexProbe`).
 - `cloudNoiseSample(data, size, u, v, { hex }?)` → the two-octave noise at texture
   coordinates (u, v), as the shader reads it at its finest level
   (`atmCloudNoise` without mips): each octave bilinear between texel

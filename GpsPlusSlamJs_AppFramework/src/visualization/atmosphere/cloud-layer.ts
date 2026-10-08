@@ -173,8 +173,18 @@ export function combinedCloudNoise(
   return field;
 }
 
-/** The 8-bit texture `data` (size²) bilinearly at (u, v) tiles, wrapped, in [0, 1]. */
-function bilinear(data: Uint8Array, size: number, u: number, v: number) {
+/**
+ * The 8-bit texture `data` (size²) bilinearly at (u, v) tiles, wrapped, in
+ * [0, 1]: one read of the texture as the GPU takes it at its finest level
+ * (texel centres). Exported for the hex twin's GPU check (the look-dev
+ * page's `hexProbe`).
+ */
+export function cloudTextureSample(
+  data: Uint8Array,
+  size: number,
+  u: number,
+  v: number
+) {
   const x = u * size - 0.5;
   const y = v * size - 0.5;
   const x0 = Math.floor(x);
@@ -226,16 +236,16 @@ export function cloudNoiseSample(
   const first =
     options.hex === true
       ? hexTiledSample(
-          (a, b) => bilinear(data, size, a, b),
+          (a, b) => cloudTextureSample(data, size, a, b),
           u,
           v,
           textureMean(data)
         )
-      : bilinear(data, size, u, v);
+      : cloudTextureSample(data, size, u, v);
   return (
     c.firstOctaveWeight * first +
     (1 - c.firstOctaveWeight) *
-      bilinear(
+      cloudTextureSample(
         data,
         size,
         u * c.secondOctaveFrequency + c.secondOctaveOffset,

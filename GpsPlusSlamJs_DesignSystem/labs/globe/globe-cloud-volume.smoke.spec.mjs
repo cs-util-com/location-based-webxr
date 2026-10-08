@@ -394,3 +394,47 @@ test("the volume's shadow on the relief against the shell's soft shadow", async 
   expect(mean(dVolume)).toBeGreaterThanOrEqual(-0.5);
   expect(Math.max(...dVolume)).toBeGreaterThan(1);
 });
+
+// WHY (hex-tiling plan 2026-10-07-0919, H2): the owner saw the volume's
+// shapes repeat every 24 km from about 23 km up. With `cloudHex=1` the same
+// overcast deck is drawn from the hex-tiled field: it must compile in the
+// globe's ground sky and slab, draw, and keep its cover (the hex field's own
+// thresholds), with no console error.
+test("the cloud volume draws its hex-tiled clouds with cloudHex=1, keeping its cover", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(600_000);
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation(OVERCAST);
+  const errors = await bootGlobe(
+    page,
+    `${BASE.replace(`landKm=${HOLD_KM}`, `landKm=${NEAR_DECK_KM}`)}&cloudVolumeCover=2&cloudHex=1`,
+  );
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return (
+        s.phase === "landed" && s.pin.phase === "idle" && s.relief?.settled
+      );
+    },
+    null,
+    { timeout: 300_000 },
+  );
+  await page.evaluate(() => window.__globeLab.timeFrames(3));
+  const { coverage, volume } = await page.evaluate(() => {
+    const lab = window.__globeLab;
+    return {
+      coverage: lab.cloudVolumeCoverage(),
+      volume: lab.state().cloudVolume,
+    };
+  });
+  console.log(
+    `hex volume at ${NEAR_DECK_KM} km: hex ${volume.hex}, drawn ${volume.drawn}, covers ${(coverage.lowerShare * 100).toFixed(1)} % of the lower half (bound ${(LOWER_SHARE * 100).toFixed(0)} %)`,
+  );
+  expect(errors).toEqual([]);
+  expect(volume.hex).toBe(true);
+  expect(volume.drawn).toBeGreaterThan(0);
+  expect(coverage.lowerShare).toBeGreaterThanOrEqual(LOWER_SHARE);
+});

@@ -644,6 +644,10 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   (`dustFade`), so a wrap never pops in. Built on the first frame that asks; never picked or ray
   cast. The state's `dust` (`{ count, opacity, shown }`) reports it
   (`globe-dust.smoke.spec.mjs`).
+  `cloudHex` (0, the default until the owner's phone run; hex-tiling plan
+  2026-10-07-0919, H2) hex-tiles the volume's big-shape octave so its
+  clouds no longer repeat every 24 km (`globe-cloud-volume.js` `setHex`;
+  the state's `cloudVolume.hex`).
   `cloudShadowFrom` (C3) picks the ground's cloud shadow:
   0 the shell's soft one (the default, as before), 1 the volume's (the
   shell's then off). Measured at the 12 km hold: the shell's darkens by a

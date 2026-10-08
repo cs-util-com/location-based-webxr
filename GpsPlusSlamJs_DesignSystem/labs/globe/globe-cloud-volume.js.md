@@ -41,6 +41,10 @@ sceneDepth })`
     depth too): after the Earth, nothing at share 0: the
     relief's depth (drawn here unless the lab already drew it this frame
     for the space pass), the slab from the lifted camera, the composite.
+  - `setHex(on)` (hex-tiling plan 2026-10-07-0919, H2, the lab's
+    `cloudHex=1`): the ground sky's big-shape octave hex-tiled, no repeat at
+    24 km (`atmosphere.configure({ cloudHex })`, the shadow re-synced);
+    idempotent; the state reports it as `hex`.
   - `patchShadow(tiles)` and `setShadow(on)` (C3): the volume's shadow on
     the relief, the framework's `CloudShadow` with the same coverage chunk
     and uniforms, the disc and the lift (`configureMap`), so it falls from

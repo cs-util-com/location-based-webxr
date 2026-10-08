@@ -125,6 +125,7 @@ export function createGlobeCloudVolume(
   shadow.sync(atmosphere);
   shadow.setEnabled(false);
   let shadowOn = false;
+  let hexOn = false;
   let enabled = false;
   let share = 0;
   let radiusM = 0;
@@ -303,6 +304,17 @@ export function createGlobeCloudVolume(
       shadowOn = Boolean(on);
     },
     /**
+     * The clouds' big-shape octave hex-tiled (hex-tiling plan 2026-10-07-0919,
+     * H2, `cloudHex=1`): no repeat at 24 km. The ground sky's uniform and
+     * its threshold, and the shadow's copies; idempotent.
+     */
+    setHex(on) {
+      if (Boolean(on) === hexOn) return;
+      hexOn = Boolean(on);
+      atmosphere.configure({ cloudHex: hexOn });
+      shadow.sync(atmosphere);
+    },
+    /**
      * The last volume frame read back (debug, slow): the share of its pixels
      * the clouds cover (alpha over 0.05), over the whole frame and over its
      * lower half (the view down, where the deck is nearest), and the largest
@@ -342,6 +354,7 @@ export function createGlobeCloudVolume(
         liftM,
         drawn,
         shadow: shadowOn && enabled && radiusM > 0,
+        hex: hexOn,
       };
     },
     dispose() {

@@ -518,6 +518,10 @@ const PARAMS = {
   // Whose shadow the ground gets (C3): 0 the shell's soft one (as before), 1
   // the volume's, from the same map through the volume's own clouds.
   cloudShadowFrom: { fallback: 0, min: 0, max: 1 },
+  // The volume's big-shape octave hex-tiled, no repeat at 24 km (hex-tiling
+  // plan 2026-10-07-0919, H2): 0 off (the default until the owner's phone
+  // run), 1 on.
+  cloudHex: { fallback: 0, min: 0, max: 1 },
   // The flat cloud layer's fade with altitude (round-2 plan 2026-10-07-2350
   // DEC-FR2-5, `/globe/globe-cloud-flat-fade.js`): 1 on, 0 the look before;
   // full from `cloudFlatTopKm` up, weakening to `cloudFlatWeak` by 100 km,
@@ -2946,6 +2950,7 @@ async function start() {
     if (cloudVolume) {
       cloudVolume.setEnabled(params.cloudVolume > 0);
       cloudVolume.setShadow(params.cloudShadowFrom === 1);
+      cloudVolume.setHex(params.cloudHex === 1);
       const volume = cloudVolume.update({
         altitudeKm: Math.max(0, observerKm),
         target: worldFrame.target,
