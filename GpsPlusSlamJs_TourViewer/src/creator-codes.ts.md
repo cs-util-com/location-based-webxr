@@ -73,9 +73,13 @@ sighting)` keeps the latest per code; `storedSightings()` lists them (the
   through `CreatorSetup.codes`. The close reaches them through `reset()`.
 - **The code in hand's text wins for its own code**: every write of the
   book goes through one `setBook`, which puts the hand's text back when a
-  change replaced it (a draft restored over a code with no live change -
-  the M5d-2 review's #1 - or a dropped measurement). The book therefore
-  always holds the code in hand, and reads never write.
+  change replaced it (a dropped measurement). The book therefore always
+  holds the code in hand, and reads never write.
+- **A draft's newer text takes a hand that only KEPT its code** (PR #568
+  review): `restoreLevels` moves the hand to the draft's text when the
+  page changed that code in no live way (`liveText` null), before
+  `setBook`; a hand with live work keeps it. (M5d-2 had kept the older
+  rule, under which the hand's kept text always won.)
 - **`measurement()` is the HAND's**, not the book entry's: a code taken as
   a stored reference has none, even when the book keeps an earlier
   visit's measurement of it (the M5d-2 review's #2; the settle's size and

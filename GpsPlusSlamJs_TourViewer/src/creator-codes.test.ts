@@ -318,21 +318,45 @@ describe("creator-codes: the book of codes a Finish writes (M4c-1)", () => {
     expect(codes.toWrite()).toEqual([improved]);
   });
 
-  // Why this test matters (code book plan M5d, the review's #1): the
-  // code in hand's text wins for its own code. A draft restored after a
-  // Finish would otherwise replace the hand's code with the draft's older
-  // measurement, and the settle would correct through it.
-  it("keeps the code in hand's text over a draft's", () => {
+  // Why these tests matter (PR #568 review): a draft offered when the
+  // tour opens holds work that was never published - newer than the hosted
+  // text. A code the hand only KEPT at its hosted pose is no live work, so
+  // the draft's text takes the hand as well as the book (the hand's text
+  // used to be put straight back, before and after a Finish alike); a code
+  // the hand changed live keeps its live text.
+  it("restores a draft's newer text into the hand that holds the kept code", () => {
     const ctx = createTourViewerSession();
     ctx.currentLevelTexts = new Map([["h", levelJson(47.3)]]);
     const codes = wireCreatorCodes({ ctx });
-    const hosted = { id: "h", json: levelJson(47.3) };
-    codes.setInHand(hosted, null);
+    codes.setInHand({ id: "h", json: levelJson(47.3) }, null);
+    const drafted = { id: "h", json: levelJson(47.39) };
+    codes.restoreLevels([drafted]);
+    expect(codes.restoreInHand(drafted)).toBe(false);
+    expect(codes.inHand()).toEqual(drafted);
+    expect(codes.toWrite()).toEqual([drafted]);
+  });
+
+  it("restores it after a Finish too", () => {
+    const ctx = createTourViewerSession();
+    ctx.currentLevelTexts = new Map([["h", levelJson(47.3)]]);
+    const codes = wireCreatorCodes({ ctx });
+    codes.setInHand({ id: "h", json: levelJson(47.3) }, null);
     codes.finished([]);
+    const drafted = { id: "h", json: levelJson(47.39) };
+    codes.restoreLevels([drafted]);
+    expect(codes.inHand()).toEqual(drafted);
+    expect(codes.toWrite()).toEqual([drafted]);
+  });
+
+  it("keeps the hand's live text over a draft's", () => {
+    const ctx = createTourViewerSession();
+    ctx.currentLevelTexts = new Map([["h", levelJson(47.3)]]);
+    const codes = wireCreatorCodes({ ctx });
+    const live = { id: "h", json: levelJson(47.31) };
+    codes.setInHand(live, { ...MEASUREMENT, levelId: "h" });
     codes.restoreLevels([{ id: "h", json: levelJson(47.39) }]);
-    expect(codes.inHand()).toEqual(hosted);
-    expect(codes.savedText("h")).toBe(hosted.json);
-    expect(codes.toWrite()).toEqual([]);
+    expect(codes.inHand()).toEqual(live);
+    expect(codes.toWrite()).toEqual([live]);
   });
 
   // Why this test matters: the book belongs to the tour - a closed tour's

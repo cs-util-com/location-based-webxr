@@ -297,7 +297,21 @@ export function wireCreatorCodes(deps: {
     measuredIn: (levelId, visit) =>
       book.get(levelId)?.measurement?.visit === visit,
     restoreLevels: (levels) => {
-      setBook(withDraft(book, levels, ctx.currentLevelTexts ?? undefined));
+      const hosted = ctx.currentLevelTexts ?? undefined;
+      // A code in hand this page only KEPT is no live work: the draft's
+      // newer text takes the hand too, or `setBook` would put the kept
+      // text straight back (PR #568 review).
+      const drafted =
+        hand === null
+          ? undefined
+          : levels.filter((l) => l.id === hand?.id).at(-1);
+      if (
+        drafted !== undefined &&
+        liveText(book, drafted.id, hosted) === null
+      ) {
+        hand = { id: drafted.id, json: drafted.json };
+      }
+      setBook(withDraft(book, levels, hosted));
     },
     finished: (written) => {
       setBook(afterFinish(withHostedTexts(), written));
