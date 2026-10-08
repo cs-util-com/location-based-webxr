@@ -634,6 +634,15 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   its shell shadow follows, and the state reports it as `cloudFlat`. The
   state's `firstLook` (`{ ready, shown }`, round-2 plan DEC-FR2-6) reports
   the globe's first look: its images in, and its sphere drawn.
+  `dust` (0, the default; 1 on) draws the space dust (round-2 plan
+  DEC-FR2-7, `/globe/globe-space-dust.js`), an experiment for a sense of
+  speed on the way in: still points in the Earth-fixed frame, in a holder
+  that copies the tiles' placement each frame (a `flight=2` flight
+  recentres the world frame), wrapped around the camera at its altitude
+  just before the scene is drawn, additive, opacity full from 2,000 km and
+  gone by 300 km. Built on the first frame that asks; never picked or ray
+  cast. The state's `dust` (`{ count, opacity, shown }`) reports it
+  (`globe-dust.smoke.spec.mjs`).
   `cloudShadowFrom` (C3) picks the ground's cloud shadow:
   0 the shell's soft one (the default, as before), 1 the volume's (the
   shell's then off). Measured at the 12 km hold: the shell's darkens by a
