@@ -330,15 +330,6 @@ const setup = wireCreatorSetup({
     sizeOfferKeep: element("size-offer-keep"),
     // Editing placed objects (authoring plan 2026-09-28-0953 M4).
     objectList: createObjectListView(element("object-list"), document),
-    // The moved-code prompt and its undo (plan §3.6, M5b; UI round 1, U3).
-    movePrompt: element("move-prompt"),
-    movePromptText: element("move-prompt-text"),
-    movePromptUse: element("move-prompt-use"),
-    movePromptCopy: element("move-prompt-copy"),
-    movePromptLater: element("move-prompt-later"),
-    moveUndo: element("move-undo"),
-    moveUndoText: element("move-undo-text"),
-    moveUndoButton: element("move-undo-button"),
   },
   // Crash-safe authoring (F13). OPFS, not a file handle: the File System
   // Access pickers do not exist on Chrome for Android, which is the only

@@ -51,9 +51,10 @@ screen. Everything marked `.creator-only` is hidden for a visitor
   summary "Other settings" - something you normally do not open, F9).
 - Shared: `#error`, `#ar-root` (the DOM-overlay root: hint, status line,
   button, the setup panel `#setup-panel` with `setup-status` and, inside
-  `#setup-controls`, the move question `move-prompt` (the code is measured
-  on its own: the measure button, the explicit replace and its confirm are
-  gone, UI round 1, U3), the placement controls `setup-pin` / `pin-label` / `pin-save` /
+  `#setup-controls` (the code is measured on its own and its position
+  decided by the settle: the measure button, the explicit replace and its
+  confirm are gone, UI round 1, U3, and the move question since code book
+  plan M6), the placement controls `setup-pin` / `pin-label` / `pin-save` /
   `pin-cancel` / `setup-photo`; then `setup-finish`, and LAST, outside
   the controls because it works on the page too, the object list
   `#object-list` (drawn by `object-list.ts`, M4; last so that in AR it

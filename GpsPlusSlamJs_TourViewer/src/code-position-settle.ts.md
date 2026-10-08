@@ -17,16 +17,15 @@ measurement of the code, so the existing re-mint path (`planVisitSettle`,
   - input: `visit`, `mintedLevel` (the saved position), `measurement`,
     `sighting`, `picks`, `alignment` (the end one), `zero`, `endQuality`
     (the end alignment's walk and accuracy), `sizeM` (the print size the
-    visit's poses were solved at), `answerAt(spot)` (the remembered answer
-    for the code seen at this spot: `"moved"`, `"second-copy"` or null;
-    `creator-setup.ts` passes `code-move-prompt.ts` `answerAtSpot`).
+    visit's poses were solved at), `automaticMove?` (the automatic
+    code-spot rule moved the code, `code-spots.ts`; the settle re-mints it
+    through this plan).
   - null: no stored code in hand, a code measured in THIS visit (its own
     settle re-mints it), no sighting of it, no readable alignment or zero,
-    a print answered "second copy", or an offset that cannot be computed.
+    or an offset that cannot be computed.
   - otherwise `{ levelId, decision, offsetM, candidate, stored,
-answeredMoved, measurement, pick }`; `measurement` and `pick` only for
-    `replace` and `move`; `answeredMoved` tells the caller to forget the
-    "Yes, it moved" now (applied or not).
+offsetNorthM, offsetEastM, measurement, pick }`; `measurement` and
+    `pick` only for `replace` and `move`.
 
 ## Invariants & assumptions
 
@@ -50,12 +49,12 @@ answeredMoved, measurement, pick }`; `measurement` and `pick` only for
 - The re-mint takes the visit's print size (`ctx.activeSizeM`): the size
   the sighting's pose was solved at, as a tap's mint did.
 - Pure; the caller applies the plan, moves earlier objects with an improved
-  code (`move-with-code.ts`), forgets the "moved" answers and logs it.
+  code (`move-with-code.ts`) and logs it.
 
 ## Examples
 
 ```ts
-const plan = planCodePosition({ ...settleInputs, sizeM, answerAt });
+const plan = planCodePosition({ ...settleInputs, sizeM, automaticMove });
 const input = {
   ...settleInput,
   measurement: plan?.measurement ?? ctx.codeMeasurement,
@@ -68,14 +67,15 @@ const input = {
 
 `code-position-settle.test.ts`: a replace through the sighting's own pick,
 the offset through the pick and not the drifted end alignment, R1 kept, a
-well-walked saved position kept, a far code left to the question, "moved"
-applied and held, the answer asked at the right spot, the null cases, the
+well-walked saved position kept, a far code left to the code-spot rule,
+an automatic move applied (and kept from an unreliable walk), the offset
+north and east, the null cases, the
 end-alignment fallback without a quality block and for a frozen pick that
 is not reliable, the reachability sweep over accuracy 3-20 m (a walk just
 past the need replaces, just short keeps), the plausibility bound below
-15 m, and `answeredMoved`. The composed behaviour is in
-`authoring-settle.test.ts` "the code's saved position, decided at the
-settle" and "the moved-code prompt".
+15 m. The composed behaviour is in `authoring-settle.test.ts` "the
+code's saved position, decided at the settle" and "the automatic code
+spots at the settle".
 
 ## The candidate's offset (code book plan M6)
 

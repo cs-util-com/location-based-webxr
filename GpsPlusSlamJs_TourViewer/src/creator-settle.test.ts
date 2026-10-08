@@ -137,13 +137,10 @@ describe("the settle hands the planner every code of the visit (M4c-2)", () => {
         }),
       },
       draft: {
-        moveAnswers: () => [],
-        setMoveAnswers: () => undefined,
         saveMeta: () => Promise.resolve(true),
         recordPlacement: () => undefined,
         recordVisit: () => undefined,
       },
-      movePrompt: { settling: () => undefined },
       codes,
       visitLog: { entries: () => [] },
       pageId: "page",

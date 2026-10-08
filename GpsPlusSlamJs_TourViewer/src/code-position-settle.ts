@@ -26,6 +26,7 @@ import {
   isReliable,
   qualityOfLevel,
   type CodePositionDecision,
+  REPLACE_CAP_M,
   type PositionQuality,
 } from "./code-position-rule.js";
 import {
@@ -38,7 +39,6 @@ import {
   type TimedAlignment,
   type VisitAlignmentPicks,
 } from "./visit-settle.js";
-import { MOVE_PROMPT_FLOOR_M } from "./code-move-prompt.js";
 
 export interface CodePositionSettleInput {
   /** The visit being settled (`arSessionGeneration`). */
@@ -57,12 +57,9 @@ export interface CodePositionSettleInput {
   /** The printed size the visit's poses were solved at (m): what a
    *  re-mint from the sighting is minted with, as a tap's mint was. */
   readonly sizeM: number;
-  /** The creator's remembered answer for the code seen at this spot
-   *  (north and east of its saved position, m); null for none. */
-  readonly answerAt: (spot: {
-    northM: number;
-    eastM: number;
-  }) => "moved" | "second-copy" | null;
+  /** The automatic code-spot rule moved the code (`code-spots.ts`, code
+   *  book plan M6): re-minted here, through this plan's candidate. */
+  readonly automaticMove?: boolean;
 }
 
 export interface CodePositionPlan {
@@ -76,11 +73,6 @@ export interface CodePositionPlan {
   readonly offsetEastM: number;
   readonly candidate: PositionQuality;
   readonly stored: PositionQuality;
-  /** The creator had answered "Yes, it moved" for this spot: the caller
-   *  forgets that answer at the settle, applied or not (U3 milestone
-   *  review #5 - a waiting "Yes" is asked again, never applied later
-   *  without Undo). */
-  readonly answeredMoved: boolean;
   /** What the settle re-mints the code from - only for `replace` and
    *  `move`; null otherwise. */
   readonly measurement: CodeMeasurement | null;
@@ -135,11 +127,6 @@ export function planCodePosition(
     sighting,
   });
   if (offset === null) return null;
-  const answer = input.answerAt({
-    northM: offset.northM,
-    eastM: offset.eastM,
-  });
-  if (answer === "second-copy") return null;
   const stored = qualityOfLevel(level.json);
   // A silent replace only within what two visits' GPS plausibly disagree
   // by (the code correction's own bound, D10b) and below the move
@@ -147,14 +134,14 @@ export function planCodePosition(
   const far =
     offset.horizontalM >=
       Math.min(
-        MOVE_PROMPT_FLOOR_M,
+        REPLACE_CAP_M,
         correctionBoundM(candidate.accuracyM, stored.accuracyM),
       ) || offset.yawDeg > CORRECTION_MAX_YAW_DEG;
   const decision = decideCodePosition({
     stored,
     candidate,
     offsetM: offset.horizontalM,
-    moved: answer === "moved",
+    automaticMove: input.automaticMove === true,
     far,
   });
   const changes = decision.kind === "replace" || decision.kind === "move";
@@ -166,7 +153,6 @@ export function planCodePosition(
     offsetEastM: offset.eastM,
     candidate,
     stored,
-    answeredMoved: answer === "moved",
   };
   if (!changes) return { ...base, measurement: null, pick: null };
   return {

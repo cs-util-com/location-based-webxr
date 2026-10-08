@@ -23,10 +23,6 @@ import {
   restoreOfferText,
 } from "./authoring-draft.js";
 import {
-  rememberMoveAnswer,
-  type RememberedMoveAnswer,
-} from "./code-move-prompt.js";
-import {
   readDraft,
   removeDraftObject,
   writeDraftDeletion,
@@ -77,9 +73,6 @@ export interface CreatorDraft {
   warnNoBackup(): void;
   /** False once the creator was told no backup is kept. */
   persists(): boolean;
-  /** The move prompt's answers, per level and spot. */
-  moveAnswers(): readonly RememberedMoveAnswer[];
-  setMoveAnswers(answers: RememberedMoveAnswer[]): void;
 }
 
 /**
@@ -181,10 +174,6 @@ export function wireCreatorDraft(deps: {
    * flight.
    */
   const draftWrites = createKeyedChain();
-
-  /** Every answer, per level and spot - read from the draft's meta at tour
-   *  open, re-stated by every meta write. */
-  let moveAnswers: RememberedMoveAnswer[] = [];
 
   function metaChainKey(tourUrl: string): string {
     return JSON.stringify(["meta", draftKeyForTour(tourUrl)]);
@@ -414,8 +403,6 @@ export function wireCreatorDraft(deps: {
       // read. (NOT on each placement - `recordPlacement` writes the object
       // file only and never reaches here; PR #456 review.)
       rejected: draftRejected,
-      // The move prompt's answers (M5b), re-stated like the rejections.
-      moveAnswers,
     };
     // Values captured NOW, write ordered by call within this tour. The
     // chain keeps one refused write from breaking the queue behind it.
@@ -621,12 +608,6 @@ export function wireCreatorDraft(deps: {
       // Per-tour state: never carry the previous tour's rejections into
       // this one's meta.
       draftRejected = stored?.rejectedIds ?? [];
-      // The move prompt's answers (M5b): read whether or not the draft
-      // is restored - they describe the codes, not the draft's work - and
-      // merged with any given before the draft opened.
-      moveAnswers = [...(stored?.moveAnswers ?? []), ...moveAnswers].reduce<
-        RememberedMoveAnswer[]
-      >((list, answer) => rememberMoveAnswer(list, answer), []);
       // Deletes that did not finish last time. `rejectedIds` is exactly
       // the ids the meta rejects whose files are still on disk, so this
       // is the only thing that reclaims them - and it is safe to repeat,
@@ -792,7 +773,6 @@ export function wireCreatorDraft(deps: {
       draftStore = undefined;
       draftTourUrl = null;
       draftRejected = [];
-      moveAnswers = [];
     },
     saveMeta: () =>
       draftTourUrl === null ? Promise.resolve(true) : recordMeta(draftTourUrl),
@@ -811,9 +791,5 @@ export function wireCreatorDraft(deps: {
     },
     warnNoBackup: noteNoPersistence,
     persists: () => !warnedAboutPersistence,
-    moveAnswers: () => moveAnswers,
-    setMoveAnswers: (answers) => {
-      moveAnswers = answers;
-    },
   };
 }

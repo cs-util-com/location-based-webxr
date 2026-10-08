@@ -71,7 +71,6 @@ describe("decideCodePosition", () => {
         stored: unknown,
         candidate: weak,
         offsetM: 0.9,
-        moved: false,
       }),
     ).toEqual({
       kind: "keep",
@@ -87,7 +86,6 @@ describe("decideCodePosition", () => {
         stored: good,
         candidate: good,
         offsetM: 1,
-        moved: false,
       }),
     ).toEqual({ kind: "keep", reason: "stored-good" });
   });
@@ -99,73 +97,60 @@ describe("decideCodePosition", () => {
           stored,
           candidate: good,
           offsetM: 2,
-          moved: false,
         }),
       ).toEqual({ kind: "replace" });
     }
   });
 
-  it("leaves a code far from its saved spot to the 'did the poster move?' question", () => {
+  // Far from the saved spot is the automatic code-spot rule's (M6), never
+  // a silent replace (D20/D26: the poster may have moved, or be a second
+  // print).
+  it("never silently replaces a code seen far from its saved spot", () => {
     expect(
       decideCodePosition({
         stored: weak,
         candidate: good,
         offsetM: 20,
-        moved: false,
       }),
     ).toEqual({ kind: "keep", reason: "far" });
   });
 
-  // Why (U3 milestone review #3): the prompt fires just past 15 m and an
-  // answer covers 20 m around it, so a "Yes" given to a GPS-bias prompt
-  // could move a well-walked code that the walked alignment puts back at
-  // its saved spot - and leave every pin behind.
-  it("ignores 'Yes, it moved' when this visit sees the code near its saved spot", () => {
-    expect(
-      decideCodePosition({
-        stored: good,
-        candidate: good,
-        offsetM: 2,
-        moved: true,
-      }),
-    ).toEqual({ kind: "keep", reason: "stored-good" });
-  });
-
-  it("leaves a code beyond the plausibility bound (far) to the question even below 15 m", () => {
+  it("never silently replaces a code beyond the plausibility bound (far), even below 15 m", () => {
     expect(
       decideCodePosition({
         stored: weak,
         candidate: good,
         offsetM: 14,
-        moved: false,
         far: true,
       }),
     ).toEqual({ kind: "keep", reason: "far" });
   });
 
-  it("applies a confirmed move once this visit walked enough, whatever the stored quality", () => {
+  // The automatic code-spot rule (M6, `code-spots.ts`) decided the move;
+  // this rule only applies it, whatever the stored quality.
+  it("applies an automatic move after a reliable walk, whatever the stored quality", () => {
     expect(
       decideCodePosition({
         stored: good,
         candidate: good,
         offsetM: 30,
-        moved: true,
+        automaticMove: true,
       }),
     ).toEqual({ kind: "move" });
   });
 
-  it("holds a confirmed move until this visit walked enough, and says how far", () => {
-    const decision = decideCodePosition({
-      stored: good,
-      candidate: { extentM: 4, accuracyM: 5 },
-      offsetM: 30,
-      moved: true,
-    });
-    expect(decision.kind).toBe("move-waits");
-    expect(decision.kind === "move-waits" ? decision.walkMoreM : 0).toBeCloseTo(
-      walkNeededM(5) - 4,
-      5,
-    );
+  // Defensive: the spot rule only moves after a reliable walk, but this
+  // rule's own promise (nothing changes from an unreliable measurement)
+  // must hold whatever its caller asks.
+  it("never applies an automatic move from an unreliable walk", () => {
+    expect(
+      decideCodePosition({
+        stored: good,
+        candidate: { extentM: 4, accuracyM: 5 },
+        offsetM: 30,
+        automaticMove: true,
+      }),
+    ).toEqual({ kind: "keep", reason: "far" });
   });
 
   it("never replaces from a measurement that is not reliable (property)", () => {
@@ -183,8 +168,13 @@ describe("decideCodePosition", () => {
         q,
         fc.double({ min: 0, max: 100, noNaN: true }),
         fc.boolean(),
-        (stored, candidate, offsetM, moved) => {
-          const d = decideCodePosition({ stored, candidate, offsetM, moved });
+        (stored, candidate, offsetM, automaticMove) => {
+          const d = decideCodePosition({
+            stored,
+            candidate,
+            offsetM,
+            automaticMove,
+          });
           const changes = d.kind === "replace" || d.kind === "move";
           expect(!changes || isReliable(candidate)).toBe(true);
         },
@@ -266,10 +256,9 @@ describe("codePositionSentence - the result screen's line (U3)", () => {
     );
   });
 
-  // Why (U3 milestone review #1, #5): the line says how much walking was
-  // MISSING, not the total, and a move that waited is asked again rather
-  // than applied in some later visit.
-  it("says how much more walking a kept position or a waiting move needed", () => {
+  // Why (U3 milestone review #1): the line says how much walking was
+  // MISSING, not the total.
+  it("says how much more walking a kept position needed", () => {
     expect(
       codePositionSentence([
         outcome({ kind: "keep", reason: "not-walked", walkMoreM: 20.4 }, false),
@@ -277,16 +266,9 @@ describe("codePositionSentence - the result screen's line (U3)", () => {
     ).toBe(
       "The code's saved position was kept: this visit's walk was about 20 m too short for the GPS accuracy to improve it.",
     );
-    expect(
-      codePositionSentence([
-        outcome({ kind: "move-waits", walkMoreM: 12.4 }, false),
-      ]),
-    ).toBe(
-      `The poster's move was not saved: this visit's walk was about 12 m too short for the GPS accuracy. Next time, walk farther in AR and answer "Yes, it moved" again.`,
-    );
   });
 
-  it("says nothing when the position was good already, far (the question's), not applied, or not decided", () => {
+  it("says nothing when the position was good already, far (the code-spot rule's), not applied, or not decided", () => {
     expect(
       codePositionSentence([outcome({ kind: "keep", reason: "stored-good" })]),
     ).toBe("");

@@ -42,7 +42,6 @@ import type { CreatorCodes } from "./creator-codes.js";
 import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorHandoff } from "./creator-handoff.js";
 import type { CreatorMeasuring } from "./creator-measuring.js";
-import type { CreatorMovePrompt } from "./creator-move-prompt.js";
 import type { CreatorPreviews } from "./creator-previews.js";
 import type { CreatorSettle } from "./creator-settle.js";
 import { finishEntries, type FinishEntry } from "./finish-entries.js";
@@ -111,7 +110,6 @@ export function wireCreatorFinish(deps: {
   >;
   handoff: Pick<CreatorHandoff, "drive" | "route" | "idleLabel">;
   previews: Pick<CreatorPreviews, "keepFinishedPhoto" | "sync">;
-  movePrompt: Pick<CreatorMovePrompt, "clearUndo">;
   draft: Pick<CreatorDraft, "saveMeta">;
   sessionLive: () => boolean;
   render: () => void;
@@ -440,7 +438,6 @@ export function wireCreatorFinish(deps: {
         deps.previews.sync();
         wroteZip = true;
         deps.codes.finished(levels);
-        deps.movePrompt.clearUndo();
         // The result screen said them; the next Finish reports its own.
         deps.settle.afterFinish();
         arStore.dispatch(

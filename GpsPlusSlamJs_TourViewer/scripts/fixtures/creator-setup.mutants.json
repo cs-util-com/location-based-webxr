@@ -28,18 +28,11 @@
       "to": ""
     },
     {
-      "name": "answer not remembered",
-      "region": "move prompt",
-      "file": "src/creator-move-prompt.ts",
-      "from": "      rememberAnswer(prompt, answer);\n      logMoveAnswer(prompt, answer);",
-      "to": "      logMoveAnswer(prompt, answer);"
-    },
-    {
       "name": "corrected frame not inverted",
       "region": "previews",
       "file": "src/creator-previews.ts",
-      "from": "frame.matrix.fromArray(choice.alignment).invert();",
-      "to": "frame.matrix.fromArray(choice.alignment);"
+      "from": "anchor.frame.group.matrix.fromArray(f.alignment).invert();",
+      "to": "anchor.frame.group.matrix.fromArray(f.alignment);"
     },
     {
       "name": "once-per-visit ignored",
@@ -94,8 +87,8 @@
       "name": "U3 decision not logged when nothing settled",
       "region": "settle",
       "file": "src/creator-settle.ts",
-      "from": "        logSettle(visit, trigger, record, [], null, null, decided);",
-      "to": ""
+      "from": "      if (logged.length > 0 || spots.logged.length > 0) {",
+      "to": "      if (false) {"
     },
     {
       "name": "claimed id stays rejected",
@@ -133,34 +126,6 @@
       "to": ""
     },
     {
-      "name": "stored answers not merged at open",
-      "region": "draft",
-      "file": "src/creator-draft.ts",
-      "from": "      moveAnswers = [...(stored?.moveAnswers ?? []), ...moveAnswers].reduce<",
-      "to": "      moveAnswers = [...moveAnswers].reduce<"
-    },
-    {
-      "name": "Undo not offered after Yes",
-      "region": "move prompt",
-      "file": "src/creator-move-prompt.ts",
-      "from": "        undoable = { prompt, visit: ctx.arSessionGeneration };",
-      "to": ""
-    },
-    {
-      "name": "Undo kept after the settle",
-      "region": "move prompt",
-      "file": "src/creator-move-prompt.ts",
-      "from": "    if (undoable?.visit === visit) undoable = null;",
-      "to": ""
-    },
-    {
-      "name": "an ask logged on every render",
-      "region": "move prompt",
-      "file": "src/creator-move-prompt.ts",
-      "from": "      movePromptLogged = moveOnset;",
-      "to": ""
-    },
-    {
       "name": "refusal re-judged on every render",
       "region": "refusal",
       "file": "src/creator-settle.ts",
@@ -173,14 +138,14 @@
       "name": "result screen outcome not recorded",
       "region": "settle",
       "file": "src/creator-settle.ts",
-      "from": "      codePositionOutcomes.push({ decision: position.decision, applied });",
-      "to": ""
+      "from": "      if (!d.reapplied) {\n        codePositionOutcomes.push({",
+      "to": "      if (false) {\n        codePositionOutcomes.push({"
     },
     {
       "name": "applied decision not kept for a re-settle",
       "region": "settle",
       "file": "src/creator-settle.ts",
-      "from": "    if (applied) appliedCode = { visit, plan: position };",
+      "from": "      if (d.applied) appliedCodes.set(d.code.id, { visit, plan: d.plan });",
       "to": ""
     },
     {
@@ -194,14 +159,14 @@
       "name": "move boundary not set",
       "region": "settle",
       "file": "src/creator-settle.ts",
-      "from": "      movedInVisit.set(position.levelId, visit);",
+      "from": "        movedInVisit.set(d.plan.levelId, visit);",
       "to": ""
     },
     {
       "name": "frame left at the scene root",
       "region": "previews",
       "file": "src/creator-previews.ts",
-      "from": "        group?.add(node);",
+      "from": "          group.add(node);",
       "to": ""
     },
     {
@@ -236,7 +201,7 @@
       "name": "refusal line never set",
       "region": "refusal",
       "file": "src/creator-settle.ts",
-      "from": "    liveRefusal = refusalOf(choice);",
+      "from": "    liveRefusal = last?.refused ?? null;",
       "to": "    liveRefusal = null;"
     },
     {
@@ -378,14 +343,14 @@
       "name": "the settle ignores the visit's codes",
       "region": "measure several",
       "file": "src/creator-settle.ts",
-      "from": "planVisitSettle(codes === undefined ? input : { ...input, codes })",
-      "to": "planVisitSettle(input)"
+      "from": "    const settleInput = codes === undefined ? input : { ...input, codes };",
+      "to": "    const settleInput = input;"
     },
     {
       "name": "other codes' re-mints dropped",
       "region": "measure several",
       "file": "src/creator-settle.ts",
-      "from": "      if (other.id !== plan.level?.id) deps.codes.saveLevel(other);",
+      "from": "      if (other.id !== inHandLevel?.id) deps.codes.saveLevel(other);",
       "to": "      void other;"
     },
     {
@@ -413,8 +378,8 @@
       "name": "a code's stored size ignored",
       "region": "size per code",
       "file": "src/creator-measuring.ts",
-      "from": "typeof stored === \"number\" && Number.isFinite(stored) && stored > 0",
-      "to": "false"
+      "from": "adoptedSizes.get(text) ?? storedSize(id) ?? fieldSizeM;",
+      "to": "adoptedSizes.get(text) ?? fieldSizeM;"
     },
     {
       "name": "the fused source at one size",

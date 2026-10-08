@@ -107,7 +107,6 @@ function input(
     zero: ZERO,
     endQuality: { extentM: 0, accuracyM: 4 },
     sizeM: 0.21,
-    answerAt: () => null,
     ...overrides,
   };
 }
@@ -165,7 +164,7 @@ describe("planCodePosition", () => {
     expect(plan?.decision).toEqual({ kind: "keep", reason: "stored-good" });
   });
 
-  it("leaves a code seen far from its saved spot to the move question", () => {
+  it("leaves a code seen far from its saved spot to the automatic code-spot rule", () => {
     const plan = planCodePosition(
       input({ alignment: yawAlignment(0, [40, 400, 0]) }),
     );
@@ -173,39 +172,31 @@ describe("planCodePosition", () => {
     expect(plan?.decision).toEqual({ kind: "keep", reason: "far" });
   });
 
-  it("applies 'Yes, it moved' once the walk is reliable, and holds it before", () => {
+  it("applies an automatic move once the walk is reliable, and keeps the code before", () => {
     const far = yawAlignment(0, [40, 400, 0]);
     const moved = planCodePosition(
-      input({ alignment: far, answerAt: () => "moved" }),
+      input({ alignment: far, automaticMove: true }),
     );
     expect(moved?.decision).toEqual({ kind: "move" });
     expect(moved?.measurement?.odomPose).toEqual(CODE);
-    const waits = planCodePosition(
-      input({ alignment: far, extentM: 5, answerAt: () => "moved" }),
+    const kept = planCodePosition(
+      input({ alignment: far, extentM: 5, automaticMove: true }),
     );
-    expect(waits?.decision.kind).toBe("move-waits");
-    expect(waits?.measurement).toBeNull();
+    expect(kept?.decision.kind).toBe("keep");
+    expect(kept?.measurement).toBeNull();
   });
 
-  it("asks for the remembered answer at the spot this visit sees the code", () => {
-    const spots: { northM: number; eastM: number }[] = [];
-    planCodePosition(
-      input({
-        alignment: yawAlignment(0, [40, 400, 0]),
-        answerAt: (spot) => {
-          spots.push(spot);
-          return null;
-        },
-      }),
+  // The automatic code-spot rule mints the move where this plan's
+  // candidate lies, so the offset must come out north and east as well.
+  it("reports the candidate's offset north and east of the saved spot", () => {
+    const plan = planCodePosition(
+      input({ alignment: yawAlignment(0, [40, 400, 0]) }),
     );
-    expect(spots).toHaveLength(1);
-    expect(spots[0]!.northM).toBeCloseTo(40, 0);
+    expect(plan?.offsetNorthM).toBeCloseTo(40, 0);
+    expect(plan?.offsetEastM).toBeCloseTo(0, 0);
   });
 
-  it("decides nothing for a print answered 'second copy', a code measured in this visit, or a visit that never saw it", () => {
-    expect(planCodePosition(input({ answerAt: () => "second-copy" }))).toBe(
-      null,
-    );
+  it("decides nothing for a code measured in this visit, or a visit that never saw it", () => {
     expect(
       planCodePosition(
         input({
@@ -293,7 +284,7 @@ describe("planCodePosition", () => {
     }
   });
 
-  it("leaves a code beyond the code correction's plausibility bound to the question, even below 15 m", () => {
+  it("never silently replaces a code beyond the code correction's plausibility bound, even below 15 m", () => {
     // Why (U3 milestone review #11): with 2 m accuracies the bound is
     // about 13.5 m; an offset between it and 15 m is a second print or a
     // moved poster to the settle, never a silent improvement.
@@ -321,14 +312,5 @@ describe("planCodePosition", () => {
     });
     expect(plan?.offsetM).toBeCloseTo(14, 0);
     expect(plan?.decision).toEqual({ kind: "keep", reason: "far" });
-  });
-
-  it("reports a 'moved' answer so the caller can forget it, applied or not", () => {
-    const far = yawAlignment(0, [40, 400, 0]);
-    expect(
-      planCodePosition(input({ alignment: far, answerAt: () => "moved" }))
-        ?.answeredMoved,
-    ).toBe(true);
-    expect(planCodePosition(input())?.answeredMoved).toBe(false);
   });
 });

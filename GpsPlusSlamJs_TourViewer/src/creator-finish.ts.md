@@ -12,7 +12,7 @@ M4 makes it write every code of the book, not only the one in hand.
 
 ## Public API
 
-- `wireCreatorFinish({ ctx, arStore, arController, wizard, codes, dom, measuring, settle, handoff, previews, movePrompt, draft, sessionLive, render }): CreatorFinish`
+- `wireCreatorFinish({ ctx, arStore, arController, wizard, codes, dom, measuring, settle, handoff, previews, draft, sessionLive, render }): CreatorFinish`
   - `dom` (`CreatorFinishDom`): `finishButton` (whose click this module
     handles), `keepScanRow`, `keepScanInput`, `finishStatus`,
     `downloadButton`, `finishBlock`.

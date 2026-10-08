@@ -116,7 +116,11 @@ function levelThrough(
 }
 
 type Kind = "measured" | "measured-earlier" | "stored" | "stored-far" | "none";
-type Answer = "moved" | "second-copy" | null;
+/** "moved": the automatic code-spot rule moved the code (code book plan
+ *  M6). Until M6 the scenarios also carried the move prompt's answers; the
+ *  third slot, once "second-copy", is now no answer, so the seeds keep
+ *  their layout. */
+type Answer = "moved" | null;
 
 interface Scenario {
   kind: Kind;
@@ -132,9 +136,7 @@ function scenario(seed: number): Scenario {
   const kind = (
     ["measured", "measured-earlier", "stored", "stored-far", "none"] as const
   )[seed % 5]!;
-  const answer = ([null, "moved", "second-copy"] as const)[
-    Math.floor(seed / 5) % 3
-  ]!;
+  const answer = ([null, "moved", null] as const)[Math.floor(seed / 5) % 3]!;
   const visit = 2;
   const accuracyM = span(2, 10);
   const end = alignment(span(-30, 30), [span(-10, 10), 400, span(-10, 10)]);
@@ -337,7 +339,7 @@ function outputs(seed: number): Output {
       accuracyM: input.gpsAccuracyM ?? null,
     },
     sizeM: 0.16,
-    answerAt: () => answer,
+    automaticMove: answer === "moved",
   });
   // The settle as production composes it (`creator-setup.ts` settleVisit):
   // a changed code position is handed to the settle as a measurement.
@@ -470,7 +472,6 @@ describe("the one-code settle oracle (frozen before M4)", () => {
     for (const d of [
       "replace:",
       "move:",
-      "move-waits:",
       "keep:far",
       "keep:not-walked",
       "keep:stored-good",
@@ -479,15 +480,6 @@ describe("the one-code settle oracle (frozen before M4)", () => {
     }
     const stored = (o: Output) =>
       o.kind === "stored" || o.kind === "stored-far";
-    // A "second copy" decides nothing.
-    expect(
-      now.some(
-        (o) =>
-          stored(o) &&
-          o.answer === "second-copy" &&
-          o.planCodePosition === null,
-      ),
-    ).toBe(true);
     // The composed settle re-mints a stored code; objects move with it.
     expect(
       now.some(

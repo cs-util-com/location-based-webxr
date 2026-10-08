@@ -4,8 +4,8 @@
  * - a new one replaces the saved one only when this visit walked enough
  * for its direction to be reliable (the summary's walk model, at least
  * 10 m) and the saved one was not itself measured that well; a code far
- * from its saved spot is left to "did the poster move here?", and a
- * confirmed move waits for the same walk. Pure.
+ * from its saved spot is left to the automatic code-spot rule
+ * (`code-spots.ts`, code book plan M6), whose move this applies. Pure.
  *
  * @see code-position-rule.ts.md
  */
@@ -13,7 +13,11 @@
 import { parseQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
 import { walkNeededM } from "./code-verdict.js";
-import { MOVE_PROMPT_FLOOR_M } from "./code-move-prompt.js";
+/** The farthest a silent replace may shift a saved position (m): beyond
+ *  it, or beyond the correction's plausibility bound, the code is "far" -
+ *  the automatic code-spot rule's, never a quiet improvement (U3 milestone
+ *  review #11; it was the move question's 15 m before M6). */
+export const REPLACE_CAP_M = 15;
 
 /** What a position's alignment rested on: the GPS spread walked and the
  *  fixes' accuracy (m); null when unknown. */
@@ -39,7 +43,6 @@ export type CodePositionDecision =
   | { kind: "keep"; reason: "not-walked"; walkMoreM: number }
   | { kind: "replace" }
   | { kind: "move" }
-  | { kind: "move-waits"; walkMoreM: number }
   /** The code was seen back at the spot an automatic move left: that spot
    *  was restored (code book plan M6 v5.1, `code-spots.ts`). Never
    *  decided here; the settle logs it with the rest. */
@@ -57,31 +60,27 @@ function walkMoreM(q: PositionQuality): number {
  * @param candidate this visit's measurement (its alignment's extent and
  *   accuracy)
  * @param offsetM how far this visit sees the code from its saved spot
- * @param moved the creator answered "Yes, the poster moved here"
+ * @param automaticMove the automatic code-spot rule moved the code
+ *   (`code-spots.ts`): applied after a reliable walk
  * @param far this visit sees the code too far off for a silent replace:
- *   beyond the move question's 15 m, or beyond the code correction's
- *   plausibility bound (`correctionBoundM`, `CORRECTION_MAX_YAW_DEG`) -
- *   a second print or a moved poster. Defaults to `offsetM >= 15`.
+ *   beyond `REPLACE_CAP_M`, or beyond the code correction's plausibility
+ *   bound (`correctionBoundM`, `CORRECTION_MAX_YAW_DEG`) - a second
+ *   print or a moved poster. Defaults to `offsetM >= REPLACE_CAP_M`.
  */
 export function decideCodePosition(input: {
   stored: PositionQuality;
   candidate: PositionQuality;
   offsetM: number;
-  moved: boolean;
+  automaticMove?: boolean;
   far?: boolean;
 }): CodePositionDecision {
   const reliable = isReliable(input.candidate);
-  // A "Yes, it moved" counts only while the code is still seen where the
-  // question was asked about (15 m and more): a walked alignment that puts
-  // it back near its saved spot shows the question came from GPS bias
-  // (U3 milestone review #3).
-  if (input.moved && input.offsetM >= MOVE_PROMPT_FLOOR_M) {
-    if (reliable) return { kind: "move" };
-    return { kind: "move-waits", walkMoreM: walkMoreM(input.candidate) };
-  }
-  // Far from the saved spot is the move question's domain, never a silent
+  // The code-spot rule only moves after a reliable walk; checked here too,
+  // so nothing ever changes from an unreliable measurement.
+  if (input.automaticMove === true && reliable) return { kind: "move" };
+  // Far from the saved spot is the code-spot rule's, never a silent
   // replace (D20/D26: the poster may have moved, or be a second print).
-  if (input.far ?? input.offsetM >= MOVE_PROMPT_FLOOR_M) {
+  if (input.far ?? input.offsetM >= REPLACE_CAP_M) {
     return { kind: "keep", reason: "far" };
   }
   if (!reliable) {
@@ -150,12 +149,8 @@ export function codePositionSentence(
   if (latest === undefined) return "";
   const { decision } = latest;
   // How much farther: this visit's GPS spread against what its accuracy
-  // needs. A "Yes, it moved" is forgotten at the settle that could not
-  // apply it, so it is asked again (U3 milestone review #5).
+  // needs.
   const more = (m: number) => String(Math.max(1, Math.round(m)));
-  if (decision.kind === "move-waits") {
-    return `The poster's move was not saved: this visit's walk was about ${more(decision.walkMoreM)} m too short for the GPS accuracy. Next time, walk farther in AR and answer "Yes, it moved" again.`;
-  }
   if (decision.kind === "keep" && decision.reason === "not-walked") {
     return `The code's saved position was kept: this visit's walk was about ${more(decision.walkMoreM)} m too short for the GPS accuracy to improve it.`;
   }

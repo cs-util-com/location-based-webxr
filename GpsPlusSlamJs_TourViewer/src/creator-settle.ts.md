@@ -13,7 +13,7 @@ M4 settles every code of the book, not only the one in hand.
 
 ## Public API
 
-- `wireCreatorSettle({ ctx, arStore, seams, previews, alignmentPicks, draft, movePrompt, codes, visitLog, pageId, summary?, alignmentInfo, sizeOf }): CreatorSettle` - `sizeOf(text)`: the size a
+- `wireCreatorSettle({ ctx, arStore, seams, previews, alignmentPicks, draft, codes, visitLog, pageId, summary?, alignmentInfo, sizeOf }): CreatorSettle` - `sizeOf(text)`: the size a
   code is solved at (`creator-measuring.ts`); a replaced or moved stored
   code is re-minted at its sighting's size, not the field's (M4 milestone
   review #2)
@@ -176,10 +176,11 @@ M4 settles every code of the book, not only the one in hand.
     - It replaces a weaker or unknown saved position after a walk the
       summary's model calls enough at this accuracy (at least 10 m), and
       keeps a well-walked one.
-    - It leaves a code seen beyond the code correction's plausibility bound
-      or 15 m (or turned beyond its yaw bound) to the move question.
-    - It applies a remembered "Yes, it moved" only while this visit still
-      sees the code 15 m or more away, under the same walk rule.
+    - It never silently replaces a code seen beyond the code correction's
+      plausibility bound or `REPLACE_CAP_M` (15 m), or turned beyond its
+      yaw bound: that is the automatic code-spot rule's (below).
+    - It applies the automatic code-spot rule's move (`automaticMove`)
+      after a reliable walk.
     - A change hands `planVisitSettle` a measurement of the code (the
       sighting's pose, the print size the visit solved at, the chosen
       pick), so it is re-minted as if measured here and this visit's
@@ -194,13 +195,10 @@ M4 settles every code of the book, not only the one in hand.
     - A settle redone after a failed Finish re-applies the decision it
       already made (`appliedCode`): the objects are not moved twice and the
       visit log keeps the saved pose.
-    - Every "Yes, it moved" of the code is forgotten at the settle, applied
-      or not: a waiting one is asked again next time, never applied in a
-      later visit out of Undo's reach.
     - **Per code (M5c).** Each decision folds into its own code's entry
       of the code list (`visitCodeList`'s `otherRemints`), is re-applied
       by a settle redone after a failed Finish (`appliedCodes`, by
-      level), and clears its own code's "moved" answers. An improved
+      level). An improved
       code takes along the objects that belong to it: every code's pose
       is snapshotted BEFORE the settle re-mints any (`poseBefore`), and an
       object goes with one code at most (`claimed`) - two improved codes

@@ -85,7 +85,9 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
     "Replace the code's saved position" replaced; absent for every other
     measurement, and in recordings since UI round 1 U3 (no explicit
     replace any more).
-- The moved-code prompt (authoring plan §3.6, D20, M5b; §7j #15):
+- The moved-code prompt's actions (authoring plan §3.6, D20, M5b; §7j
+  #15) exist in recordings from before code book plan M6 only (the prompt
+  was removed; `visitSettled`'s `codeSpots` logs the automatic rule):
   - `codeMovePrompted(payload)` - `tourAuthoring/codeMovePrompted`, once
     per refusal run: `levelId`, `arVisitIndex`, `atMs`, the refusal
     (`horizontalM`, `northM`/`eastM` - where the visit sees the code minus
@@ -102,7 +104,8 @@ reads them (the framework's `diagnostics/note` precedent). Plan:
   first of them.
 - `visitSettled` gains `codePosition` (UI round 1, U3;
   `code-position-settle.ts`): for a stored code the visit saw, the
-  `decision` (keep with its reason, replace, move, move-waits), the
+  `decision` (keep with its reason, replace, move; `move-waits` in
+  recordings from before M6 only; `undo` since M6), the
   `offsetM`, the `candidate` and `stored` qualities, whether it was
   `applied`, and `movedWithCode` - each earlier object an improved code
   took with it, `before` and `after`.

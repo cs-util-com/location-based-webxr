@@ -547,7 +547,6 @@
     "extentM": null,
     "accuracyM": 7.8740076
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -861,7 +860,6 @@
     "extentM": null,
     "accuracyM": 7.761814299999999
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -1208,7 +1206,6 @@
     "extentM": null,
     "accuracyM": 9.3890896
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -2358,7 +2355,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "replace"
+    "kind": "move"
    },
    "offsetM": 1e-7,
    "offsetNorthM": -1e-7,
@@ -2371,7 +2368,6 @@
     "extentM": null,
     "accuracyM": 2.093638
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -2563,30 +2559,7 @@
    ],
    "refused": null
   },
-  "movedWithCode": [
-   {
-    "lat": 47.5001594,
-    "lon": 8.6998003,
-    "alt": 400.5281798,
-    "rotation": [
-     0,
-     0.9967773,
-     0,
-     -0.0802181
-    ]
-   },
-   {
-    "lat": 47.500013599999996,
-    "lon": 8.7000311,
-    "alt": 399.5864947,
-    "rotation": [
-     0,
-     0,
-     0,
-     1
-    ]
-   }
-  ]
+  "movedWithCode": null
  },
  {
   "seed": 7,
@@ -2771,7 +2744,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "replace"
+    "kind": "move"
    },
    "offsetM": 9.4098504,
    "offsetNorthM": -9.1007224,
@@ -2784,7 +2757,6 @@
     "extentM": null,
     "accuracyM": 3.2503614
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -3004,41 +2976,7 @@
    ],
    "refused": null
   },
-  "movedWithCode": [
-   {
-    "lat": 47.499634099999994,
-    "lon": 8.699902699999999,
-    "alt": 400.13890929999997,
-    "rotation": [
-     0,
-     -0.0049806,
-     0,
-     0.9999876
-    ]
-   },
-   {
-    "lat": 47.4997118,
-    "lon": 8.7002689,
-    "alt": 400.90946529999997,
-    "rotation": [
-     0,
-     -0.0049806,
-     0,
-     0.9999876
-    ]
-   },
-   {
-    "lat": 47.500102,
-    "lon": 8.6997147,
-    "alt": 399.2556145,
-    "rotation": [
-     0,
-     -0.5946941,
-     0,
-     0.8039521
-    ]
-   }
-  ]
+  "movedWithCode": null
  },
  {
   "seed": 8,
@@ -3261,7 +3199,6 @@
     "extentM": 80,
     "accuracyM": 3.5898312999999997
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -3860,7 +3797,7 @@
  {
   "seed": 10,
   "kind": "measured",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "measured-here",
    "alignment": [
@@ -4253,7 +4190,7 @@
  {
   "seed": 11,
   "kind": "measured-earlier",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -4389,7 +4326,26 @@
    "northM": 1e-7,
    "eastM": -3e-7
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "far"
+   },
+   "offsetM": 17.1577855,
+   "offsetNorthM": 3.3719816999999996,
+   "offsetEastM": -16.8231788,
+   "candidate": {
+    "extentM": 45.9206024,
+    "accuracyM": 2.1281187
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 4.3052073
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "code-corrected",
    "alignment": [
@@ -4462,7 +4418,7 @@
  {
   "seed": 12,
   "kind": "stored",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -4643,7 +4599,27 @@
    "northM": -8.9156774,
    "eastM": -11.605613199999999
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "not-walked",
+    "walkMoreM": 1.0230667
+   },
+   "offsetM": 14.6348749,
+   "offsetNorthM": -8.9156774,
+   "offsetEastM": -11.605613199999999,
+   "candidate": {
+    "extentM": 30.149643599999997,
+    "accuracyM": 6.530581199999999
+   },
+   "stored": {
+    "extentM": 80,
+    "accuracyM": 6.530581199999999
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "code-corrected",
    "alignment": [
@@ -4759,7 +4735,7 @@
  {
   "seed": 13,
   "kind": "stored-far",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "visit-alignment",
    "alignment": [
@@ -4915,7 +4891,26 @@
    "northM": -57.9157241,
    "eastM": -27.250949799999997
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "far"
+   },
+   "offsetM": 64.0066041,
+   "offsetNorthM": -57.9157241,
+   "offsetEastM": -27.250949799999997,
+   "candidate": {
+    "extentM": 53.0561109,
+    "accuracyM": 5.5836651
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 5.5836651
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "visit-alignment",
    "alignment": [
@@ -4998,7 +4993,7 @@
  {
   "seed": 14,
   "kind": "none",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "visit-alignment",
    "alignment": [
@@ -5831,7 +5826,6 @@
     "extentM": null,
     "accuracyM": 7.4172024
    },
-   "answeredMoved": false,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -6300,7 +6294,6 @@
     "extentM": null,
     "accuracyM": 5.1852959
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -6596,7 +6589,6 @@
     "extentM": null,
     "accuracyM": 2.4683538
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -7383,7 +7375,6 @@
     "extentM": null,
     "accuracyM": 6.974946699999999
    },
-   "answeredMoved": true,
    "measurement": null,
    "pick": null
   },
@@ -7641,7 +7632,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "replace"
+    "kind": "move"
    },
    "offsetM": 2.101368,
    "offsetNorthM": 0.1571947,
@@ -7654,7 +7645,6 @@
     "extentM": null,
     "accuracyM": 2.7417813
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -7834,41 +7824,7 @@
    ],
    "refused": null
   },
-  "movedWithCode": [
-   {
-    "lat": 47.4997179,
-    "lon": 8.6999345,
-    "alt": 399.172493,
-    "rotation": [
-     0,
-     -0.3004558,
-     0,
-     0.9537956999999999
-    ]
-   },
-   {
-    "lat": 47.4999992,
-    "lon": 8.700279199999999,
-    "alt": 399.9444797,
-    "rotation": [
-     0,
-     -0.3004558,
-     0,
-     0.9537956999999999
-    ]
-   },
-   {
-    "lat": 47.5001931,
-    "lon": 8.6996681,
-    "alt": 399.90474869999997,
-    "rotation": [
-     0,
-     -0.52596,
-     0,
-     0.8505092999999999
-    ]
-   }
-  ]
+  "movedWithCode": null
  },
  {
   "seed": 23,
@@ -8091,7 +8047,6 @@
     "extentM": null,
     "accuracyM": 4.6561613
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -8389,7 +8344,7 @@
  {
   "seed": 25,
   "kind": "measured",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "measured-here",
    "alignment": [
@@ -8858,7 +8813,7 @@
  {
   "seed": 26,
   "kind": "measured-earlier",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -9037,9 +8992,89 @@
    "northM": 0,
    "eastM": -1e-7
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "replace"
+   },
+   "offsetM": 14.026316,
+   "offsetNorthM": 14.0207375,
+   "offsetEastM": 0.3955508,
+   "candidate": {
+    "extentM": 51.8718504,
+    "accuracyM": 5.725685899999999
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 5.2261312
+   },
+   "measurement": {
+    "levelId": "a1b2c3d4e5f6",
+    "text": "https://gps.csutil.com/tour/?qr=golden",
+    "odomPose": {
+     "position": [
+      1.324649,
+      1.5,
+      -3.2786999
+     ],
+     "rotation": [
+      0,
+      -0.08002469999999999,
+      0,
+      0.9967929
+     ]
+    },
+    "sizeM": 0.16,
+    "visit": 2
+   },
+   "pick": {
+    "atMs": 10243,
+    "walkedM": 34.3076153,
+    "alignment": [
+     0.9394634,
+     0,
+     -0.3426492,
+     0,
+     0,
+     1,
+     0,
+     0,
+     0.3426492,
+     0,
+     0.9394634,
+     0,
+     3.1633324,
+     400,
+     -3.6176049999999997,
+     1
+    ],
+    "alignmentInfo": {
+     "hasMatrix": true,
+     "sampleCount": 8,
+     "gpsAccuracyM": 5.725685899999999
+    },
+    "gpsExtentM": 51.8718504,
+    "sighting": {
+     "text": "https://gps.csutil.com/tour/?qr=golden",
+     "levelId": "a1b2c3d4e5f6",
+     "odomPose": {
+      "position": [
+       1.324649,
+       1.5,
+       -3.2786999
+      ],
+      "rotation": [
+       0,
+       -0.08002469999999999,
+       0,
+       0.9967929
+      ]
+     }
+    }
+   }
+  },
   "composed": {
-   "basis": "code-corrected",
+   "basis": "measured-here",
    "alignment": [
     0.8794854,
     0,
@@ -9065,8 +9100,8 @@
       "id": "obj-26-0",
       "kind": "pin",
       "geo": {
-       "lat": 47.499960699999995,
-       "lon": 8.699808899999999,
+       "lat": 47.5000074,
+       "lon": 8.6998316,
        "alt": 399.9164214,
        "rotation": [
         0,
@@ -9079,23 +9114,23 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 0"
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.8794854,
+      0.9394634,
       0,
-      0.47592599999999996,
+      -0.3426492,
       0,
       0,
       1,
       0,
       0,
-      -0.47592599999999996,
+      0.3426492,
       0,
-      0.8794854,
+      0.9394634,
       0,
-      -9.5764303,
+      3.1633324,
       400,
-      -6.6175682,
+      -3.6176049999999997,
       1
      ],
      "refused": null
@@ -9106,54 +9141,123 @@
       "id": "obj-26-1",
       "kind": "photo",
       "geo": {
-       "lat": 47.4997499,
-       "lon": 8.6998657,
+       "lat": 47.4998964,
+       "lon": 8.700102099999999,
        "alt": 399.01023419999996,
        "rotation": [
         0,
-        -0.4661515,
+        -0.06202,
         0,
-        0.8847048999999999
+        0.9980749
        ],
-       "headingDeg": 55.5695476
+       "headingDeg": 7.1115325
       },
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "image": "content/obj-26-1.jpg",
       "imageWidth": 4,
       "imageHeight": 3
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.8794854,
+      0.9394634,
       0,
-      0.47592599999999996,
+      -0.3426492,
       0,
       0,
       1,
       0,
       0,
-      -0.47592599999999996,
+      0.3426492,
       0,
-      0.8794854,
+      0.9394634,
       0,
-      -9.5764303,
+      3.1633324,
       400,
-      -6.6175682,
+      -3.6176049999999997,
       1
      ],
      "refused": null
     }
    ],
-   "level": null,
-   "levelAlignment": null,
+   "level": {
+    "id": "a1b2c3d4e5f6",
+    "json": {
+     "json": {
+      "version": 1,
+      "qr": {
+       "physicalSizeM": 0.16,
+       "geo": {
+        "lat": 47.500060399999995,
+        "lon": 8.6999535,
+        "alt": 401.5,
+        "headingDeg": 79.1416079,
+        "rotation": [
+         0,
+         -0.6370313,
+         0,
+         0.7708379999999999
+        ]
+       },
+       "mintQuality": {
+        "gpsAccuracyM": 5.725685899999999,
+        "alignmentSampleCount": 8,
+        "mintedAtIso": "2026-10-06T12:00:00.000Z",
+        "alignmentGpsExtentM": 51.8718504,
+        "headingUncertain": false
+       }
+      }
+     }
+    }
+   },
+   "levelAlignment": [
+    0.9394634,
+    0,
+    -0.3426492,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0.3426492,
+    0,
+    0.9394634,
+    0,
+    3.1633324,
+    400,
+    -3.6176049999999997,
+    1
+   ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.5000074,
+    "lon": 8.6998316,
+    "alt": 399.9164214,
+    "rotation": [
+     0,
+     0.4103848,
+     0,
+     0.9119124999999999
+    ]
+   },
+   {
+    "lat": 47.499926699999996,
+    "lon": 8.699757,
+    "alt": 399.0102341,
+    "rotation": [
+     0,
+     0.7496003,
+     0,
+     -0.6618908
+    ]
+   }
+  ]
  },
  {
   "seed": 27,
   "kind": "stored",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -9377,25 +9481,105 @@
    "northM": 0.6691568,
    "eastM": 4.347370499999999
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "replace"
+   },
+   "offsetM": 5.5383037,
+   "offsetNorthM": 5.516909,
+   "offsetEastM": -0.4863363,
+   "candidate": {
+    "extentM": 44.299219,
+    "accuracyM": 2.4838099
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 5.4280098
+   },
+   "measurement": {
+    "levelId": "a1b2c3d4e5f6",
+    "text": "https://gps.csutil.com/tour/?qr=golden",
+    "odomPose": {
+     "position": [
+      -0.8993005,
+      1.5,
+      -3.1481809999999997
+     ],
+     "rotation": [
+      0,
+      -0.0243567,
+      0,
+      0.9997033
+     ]
+    },
+    "sizeM": 0.16,
+    "visit": 2
+   },
+   "pick": {
+    "atMs": 14832,
+    "walkedM": 98.9992101,
+    "alignment": [
+     0.938743,
+     0,
+     0.3446181,
+     0,
+     0,
+     1,
+     0,
+     0,
+     -0.3446181,
+     0,
+     0.938743,
+     0,
+     9.2134267,
+     400,
+     -1.6845390999999998,
+     1
+    ],
+    "alignmentInfo": {
+     "hasMatrix": true,
+     "sampleCount": 8,
+     "gpsAccuracyM": 2.4838099
+    },
+    "gpsExtentM": 44.299219,
+    "sighting": {
+     "text": "https://gps.csutil.com/tour/?qr=golden",
+     "levelId": "a1b2c3d4e5f6",
+     "odomPose": {
+      "position": [
+       -0.8993005,
+       1.5,
+       -3.1481809999999997
+      ],
+      "rotation": [
+       0,
+       -0.0243567,
+       0,
+       0.9997033
+      ]
+     }
+    }
+   }
+  },
   "composed": {
-   "basis": "code-corrected",
+   "basis": "measured-here",
    "alignment": [
-    0.9893763999999999,
+    0.9767359999999999,
     0,
-    0.1453769,
+    -0.21444539999999998,
     0,
     0,
     1,
     0,
     0,
-    -0.1453769,
+    0.21444539999999998,
     0,
-    0.9893763999999999,
+    0.9767359999999999,
     0,
-    3.7162924,
+    4.7488318,
     400,
-    -0.5254205,
+    4.9433682,
     1
    ],
    "objects": [
@@ -9421,7 +9605,7 @@
       "imageWidth": 4,
       "imageHeight": 3
      },
-     "basis": "visit-alignment",
+     "basis": "measured-here",
      "alignment": [
       0.9737992999999999,
       0,
@@ -9462,7 +9646,7 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 1"
      },
-     "basis": "visit-alignment",
+     "basis": "measured-here",
      "alignment": [
       0.8933565,
       0,
@@ -9489,54 +9673,145 @@
       "id": "obj-27-3",
       "kind": "photo",
       "geo": {
-       "lat": 47.4999511,
-       "lon": 8.6999104,
+       "lat": 47.5000138,
+       "lon": 8.6998719,
        "alt": 399.5539748,
        "rotation": [
         0,
-        0.4253072,
+        0.33002699999999996,
         0,
-        0.9050490999999999
+        0.9439715
        ],
-       "headingDeg": 309.6597819
+       "headingDeg": 321.4591674
       },
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "image": "content/obj-27-3.jpg",
       "imageWidth": 4,
       "imageHeight": 3
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9893763999999999,
+      0.938743,
       0,
-      0.1453769,
+      0.3446181,
       0,
       0,
       1,
       0,
       0,
-      -0.1453769,
+      -0.3446181,
       0,
-      0.9893763999999999,
+      0.938743,
       0,
-      3.7162924,
+      9.213426799999999,
       400,
-      -0.5254205,
+      -1.6845392,
       1
      ],
      "refused": null
     }
    ],
-   "level": null,
-   "levelAlignment": null,
+   "level": {
+    "id": "a1b2c3d4e5f6",
+    "json": {
+     "json": {
+      "version": 1,
+      "qr": {
+       "physicalSizeM": 0.16,
+       "geo": {
+        "lat": 47.5001125,
+        "lon": 8.699980799999999,
+        "alt": 401.5,
+        "headingDeg": 112.9498325,
+        "rotation": [
+         0,
+         -0.8336441,
+         0,
+         0.552302
+        ]
+       },
+       "mintQuality": {
+        "gpsAccuracyM": 2.4838099,
+        "alignmentSampleCount": 8,
+        "mintedAtIso": "2026-10-06T12:00:00.000Z",
+        "alignmentGpsExtentM": 44.299219,
+        "headingUncertain": false
+       }
+      }
+     }
+    }
+   },
+   "levelAlignment": [
+    0.938743,
+    0,
+    0.3446181,
+    0,
+    0,
+    1,
+    0,
+    0,
+    -0.3446181,
+    0,
+    0.938743,
+    0,
+    9.2134267,
+    400,
+    -1.6845390999999998,
+    1
+   ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.5003204,
+    "lon": 8.7003183,
+    "alt": 400.7762303,
+    "rotation": [
+     0,
+     -0.8693464999999999,
+     0,
+     0.494203
+    ]
+   },
+   {
+    "lat": 47.5003052,
+    "lon": 8.6996855,
+    "alt": 400.7529197,
+    "rotation": [
+     0,
+     -0.1027872,
+     0,
+     0.9947033999999999
+    ]
+   },
+   {
+    "lat": 47.4999288,
+    "lon": 8.699794899999999,
+    "alt": 400.93186829999996,
+    "rotation": [
+     0,
+     -0.1027872,
+     0,
+     0.9947033999999999
+    ]
+   },
+   {
+    "lat": 47.5001246,
+    "lon": 8.6999186,
+    "alt": 399.55397469999997,
+    "rotation": [
+     0,
+     -0.2648583,
+     0,
+     0.9642873
+    ]
+   }
+  ]
  },
  {
   "seed": 28,
   "kind": "stored-far",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "visit-alignment",
    "alignment": [
@@ -9740,7 +10015,26 @@
    "northM": -41.205639999999995,
    "eastM": 23.1777293
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "far"
+   },
+   "offsetM": 47.2769701,
+   "offsetNorthM": -41.205639999999995,
+   "offsetEastM": 23.1777293,
+   "candidate": {
+    "extentM": 48.5637414,
+    "accuracyM": 3.6848962
+   },
+   "stored": {
+    "extentM": 80,
+    "accuracyM": 3.6848962
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "visit-alignment",
    "alignment": [
@@ -9871,7 +10165,7 @@
  {
   "seed": 29,
   "kind": "none",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "visit-alignment",
    "alignment": [
@@ -11019,7 +11313,6 @@
     "extentM": null,
     "accuracyM": 5.101134399999999
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -11347,7 +11640,6 @@
     "extentM": 80,
     "accuracyM": 6.4061525999999995
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -11737,7 +12029,6 @@
     "extentM": null,
     "accuracyM": 6.8547481999999995
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -13000,7 +13291,6 @@
     "extentM": null,
     "accuracyM": 6.1304877
    },
-   "answeredMoved": true,
    "measurement": null,
    "pick": null
   },
@@ -13340,7 +13630,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "replace"
+    "kind": "move"
    },
    "offsetM": 13.275072,
    "offsetNorthM": -11.9061649,
@@ -13353,7 +13643,6 @@
     "extentM": null,
     "accuracyM": 7.7648898
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -13529,41 +13818,7 @@
    ],
    "refused": null
   },
-  "movedWithCode": [
-   {
-    "lat": 47.499702899999996,
-    "lon": 8.7004465,
-    "alt": 400.3644514,
-    "rotation": [
-     0,
-     0.2381873,
-     0,
-     0.9712192
-    ]
-   },
-   {
-    "lat": 47.499686,
-    "lon": 8.700051199999999,
-    "alt": 400.7820091,
-    "rotation": [
-     0,
-     0.2381873,
-     0,
-     0.9712192
-    ]
-   },
-   {
-    "lat": 47.4998862,
-    "lon": 8.700395499999999,
-    "alt": 400.9208701,
-    "rotation": [
-     0,
-     0.3071821,
-     0,
-     0.9516507
-    ]
-   }
-  ]
+  "movedWithCode": null
  },
  {
   "seed": 38,
@@ -13832,7 +14087,6 @@
     "extentM": null,
     "accuracyM": 2.5990564
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -14172,7 +14426,7 @@
  {
   "seed": 40,
   "kind": "measured",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "measured-here",
    "alignment": [
@@ -14641,7 +14895,7 @@
  {
   "seed": 41,
   "kind": "measured-earlier",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -14777,7 +15031,27 @@
    "northM": 4e-7,
    "eastM": -1e-7
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "not-walked",
+    "walkMoreM": 30.330998899999997
+   },
+   "offsetM": 4e-7,
+   "offsetNorthM": 4e-7,
+   "offsetEastM": -1e-7,
+   "candidate": {
+    "extentM": 2.1698887,
+    "accuracyM": 6.8088299999999995
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 6.8088299999999995
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "code-corrected",
    "alignment": [
@@ -14850,7 +15124,7 @@
  {
   "seed": 42,
   "kind": "stored",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -15031,25 +15305,105 @@
    "northM": -2.3370846,
    "eastM": -6.168465899999999
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "replace"
+   },
+   "offsetM": 10.5079683,
+   "offsetNorthM": -3.7796748,
+   "offsetEastM": 9.804665,
+   "candidate": {
+    "extentM": 63.431303899999996,
+    "accuracyM": 8.0841599
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 9.9984887
+   },
+   "measurement": {
+    "levelId": "a1b2c3d4e5f6",
+    "text": "https://gps.csutil.com/tour/?qr=golden",
+    "odomPose": {
+     "position": [
+      -1.7465925999999998,
+      1.5,
+      -1.7667495999999998
+     ],
+     "rotation": [
+      0,
+      -0.1586503,
+      0,
+      0.9873348
+     ]
+    },
+    "sizeM": 0.16,
+    "visit": 2
+   },
+   "pick": {
+    "atMs": 7547,
+    "walkedM": 64.513064,
+    "alignment": [
+     0.9324988,
+     0,
+     -0.36117319999999997,
+     0,
+     0,
+     1,
+     0,
+     0,
+     0.36117319999999997,
+     0,
+     0.9324988,
+     0,
+     0.2528349,
+     400,
+     8.133160499999999,
+     1
+    ],
+    "alignmentInfo": {
+     "hasMatrix": true,
+     "sampleCount": 8,
+     "gpsAccuracyM": 8.0841599
+    },
+    "gpsExtentM": 63.431303899999996,
+    "sighting": {
+     "text": "https://gps.csutil.com/tour/?qr=golden",
+     "levelId": "a1b2c3d4e5f6",
+     "odomPose": {
+      "position": [
+       -1.7465925999999998,
+       1.5,
+       -1.7667495999999998
+      ],
+      "rotation": [
+       0,
+       -0.1586503,
+       0,
+       0.9873348
+      ]
+     }
+    }
+   }
+  },
   "composed": {
-   "basis": "code-corrected",
+   "basis": "measured-here",
    "alignment": [
-    0.9883364,
+    0.9727117,
     0,
-    0.1522864,
+    0.23201719999999998,
     0,
     0,
     1,
     0,
     0,
-    -0.1522864,
+    -0.23201719999999998,
     0,
-    0.9883364,
+    0.9727117,
     0,
-    3.0370539,
+    0.588317,
     400,
-    -2.4811332999999998,
+    -8.8177535,
     1
    ],
    "objects": [
@@ -15075,7 +15429,7 @@
       "imageWidth": 4,
       "imageHeight": 3
      },
-     "basis": "visit-alignment",
+     "basis": "measured-here",
      "alignment": [
       0.9627758999999999,
       0,
@@ -15102,8 +15456,8 @@
       "id": "obj-42-1",
       "kind": "pin",
       "geo": {
-       "lat": 47.4998899,
-       "lon": 8.7000914,
+       "lat": 47.4999252,
+       "lon": 8.7003171,
        "alt": 399.72508969999996,
        "rotation": [
         0,
@@ -15116,38 +15470,107 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 1"
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9883364,
+      0.9324988,
       0,
-      0.1522864,
+      -0.36117319999999997,
       0,
       0,
       1,
       0,
       0,
-      -0.1522864,
+      0.36117319999999997,
       0,
-      0.9883364,
+      0.9324988,
       0,
-      3.0370539,
+      0.2528349,
       400,
-      -2.4811332999999998,
+      8.133160499999999,
       1
      ],
      "refused": null
     }
    ],
-   "level": null,
-   "levelAlignment": null,
+   "level": {
+    "id": "a1b2c3d4e5f6",
+    "json": {
+     "json": {
+      "version": 1,
+      "qr": {
+       "physicalSizeM": 0.16,
+       "geo": {
+        "lat": 47.5000114,
+        "lon": 8.700078,
+        "alt": 401.5,
+        "headingDeg": 87.0848606,
+        "rotation": [
+         0,
+         -0.6888915999999999,
+         0,
+         0.7248644
+        ]
+       },
+       "mintQuality": {
+        "gpsAccuracyM": 8.0841599,
+        "alignmentSampleCount": 8,
+        "mintedAtIso": "2026-10-06T12:00:00.000Z",
+        "alignmentGpsExtentM": 63.431303899999996,
+        "headingUncertain": false
+       }
+      }
+     }
+    }
+   },
+   "levelAlignment": [
+    0.9324988,
+    0,
+    -0.36117319999999997,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0.36117319999999997,
+    0,
+    0.9324988,
+    0,
+    0.2528349,
+    400,
+    8.133160499999999,
+    1
+   ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.5002387,
+    "lon": 8.700220999999999,
+    "alt": 400.8699592,
+    "rotation": [
+     0,
+     -0.6518986,
+     0,
+     0.7583061
+    ]
+   },
+   {
+    "lat": 47.4998663,
+    "lon": 8.7002505,
+    "alt": 399.7250898,
+    "rotation": [
+     0,
+     0.2582434,
+     0,
+     0.9660799
+    ]
+   }
+  ]
  },
  {
   "seed": 43,
   "kind": "stored-far",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "visit-alignment",
    "alignment": [
@@ -15303,7 +15726,26 @@
    "northM": -56.7001467,
    "eastM": -9.0951949
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "far"
+   },
+   "offsetM": 58.6690628,
+   "offsetNorthM": -57.9705799,
+   "offsetEastM": -9.0261178,
+   "candidate": {
+    "extentM": 45.609477899999995,
+    "accuracyM": 5.0841255
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 8.6894419
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "visit-alignment",
    "alignment": [
@@ -15386,7 +15828,7 @@
  {
   "seed": 44,
   "kind": "none",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "visit-alignment",
    "alignment": [
@@ -16217,7 +16659,6 @@
     "extentM": null,
     "accuracyM": 7.035974899999999
    },
-   "answeredMoved": false,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -16608,7 +17049,6 @@
     "extentM": null,
     "accuracyM": 8.7617117
    },
-   "answeredMoved": false,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -17075,7 +17515,6 @@
     "extentM": 80,
     "accuracyM": 4.9916909
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -17888,7 +18327,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "replace"
+    "kind": "move"
    },
    "offsetM": 1e-7,
    "offsetNorthM": 0,
@@ -17901,7 +18340,6 @@
     "extentM": null,
     "accuracyM": 3.7135556999999997
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -18124,52 +18562,7 @@
    ],
    "refused": null
   },
-  "movedWithCode": [
-   {
-    "lat": 47.5000267,
-    "lon": 8.700229199999999,
-    "alt": 400.5629945,
-    "rotation": [
-     0,
-     0.9694815,
-     0,
-     0.24516449999999998
-    ]
-   },
-   {
-    "lat": 47.5000937,
-    "lon": 8.7002492,
-    "alt": 399.03736899999996,
-    "rotation": [
-     0,
-     0,
-     0,
-     1
-    ]
-   },
-   {
-    "lat": 47.4997087,
-    "lon": 8.7002797,
-    "alt": 399.841329,
-    "rotation": [
-     0,
-     0,
-     0,
-     1
-    ]
-   },
-   {
-    "lat": 47.5001756,
-    "lon": 8.700388799999999,
-    "alt": 399.3652585,
-    "rotation": [
-     0,
-     -0.38636499999999996,
-     0,
-     0.922346
-    ]
-   }
-  ]
+  "movedWithCode": null
  },
  {
   "seed": 52,
@@ -18392,7 +18785,6 @@
     "extentM": 80,
     "accuracyM": 2.5145074999999997
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -18749,7 +19141,6 @@
     "extentM": null,
     "accuracyM": 4.0697665999999995
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -19177,7 +19568,7 @@
  {
   "seed": 55,
   "kind": "measured",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "measured-here",
    "alignment": [
@@ -19560,7 +19951,7 @@
  {
   "seed": 56,
   "kind": "measured-earlier",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -19780,7 +20171,27 @@
    "northM": 1e-7,
    "eastM": -1e-7
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "not-walked",
+    "walkMoreM": 17.9265407
+   },
+   "offsetM": 1e-7,
+   "offsetNorthM": 1e-7,
+   "offsetEastM": -1e-7,
+   "candidate": {
+    "extentM": 19.7697368,
+    "accuracyM": 7.8972473
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 7.8972473
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "code-corrected",
    "alignment": [
@@ -19937,7 +20348,7 @@
  {
   "seed": 57,
   "kind": "stored",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -20161,25 +20572,61 @@
    "northM": 1.8796469999999998,
    "eastM": -9.3635761
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "replace"
+   },
+   "offsetM": 9.5503733,
+   "offsetNorthM": 1.8796469999999998,
+   "offsetEastM": -9.3635761,
+   "candidate": {
+    "extentM": 30.1659036,
+    "accuracyM": 5.9996339
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 5.9996339
+   },
+   "measurement": {
+    "levelId": "a1b2c3d4e5f6",
+    "text": "https://gps.csutil.com/tour/?qr=golden",
+    "odomPose": {
+     "position": [
+      1.4448249,
+      1.5,
+      -2.5137821
+     ],
+     "rotation": [
+      0,
+      -0.012085199999999999,
+      0,
+      0.999927
+     ]
+    },
+    "sizeM": 0.16,
+    "visit": 2
+   },
+   "pick": null
+  },
   "composed": {
-   "basis": "code-corrected",
+   "basis": "measured-here",
    "alignment": [
-    0.9901236999999999,
+    0.987807,
     0,
-    -0.1401965,
+    -0.1556836,
     0,
     0,
     1,
     0,
     0,
-    0.1401965,
+    0.1556836,
     0,
-    0.9901236999999999,
+    0.987807,
     0,
-    2.3546684,
+    4.2177631,
     400,
-    -0.5620329,
+    -9.883330899999999,
     1
    ],
    "objects": [
@@ -20189,39 +20636,39 @@
       "id": "obj-57-0",
       "kind": "photo",
       "geo": {
-       "lat": 47.5000862,
-       "lon": 8.6996934,
+       "lat": 47.5000998,
+       "lon": 8.699568,
        "alt": 399.34843309999997,
        "rotation": [
         0,
-        -0.17693979999999998,
+        -0.1692282,
         0,
-        0.9842217
+        0.9855769
        ],
-       "headingDeg": 20.3831229
+       "headingDeg": 19.4858998
       },
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "image": "content/obj-57-0.jpg",
       "imageWidth": 4,
       "imageHeight": 3
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9901236999999999,
+      0.987807,
       0,
-      -0.1401965,
+      -0.1556836,
       0,
       0,
       1,
       0,
       0,
-      0.1401965,
+      0.1556836,
       0,
-      0.9901236999999999,
+      0.987807,
       0,
-      2.3546684,
+      4.2177631,
       400,
-      -0.5620329,
+      -9.883330899999999,
       1
      ],
      "refused": null
@@ -20232,8 +20679,8 @@
       "id": "obj-57-1",
       "kind": "pin",
       "geo": {
-       "lat": 47.499956499999996,
-       "lon": 8.7002693,
+       "lat": 47.4999763,
+       "lon": 8.700146799999999,
        "alt": 399.1289844,
        "rotation": [
         0,
@@ -20246,23 +20693,23 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 1"
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9901236999999999,
+      0.987807,
       0,
-      -0.1401965,
+      -0.1556836,
       0,
       0,
       1,
       0,
       0,
-      0.1401965,
+      0.1556836,
       0,
-      0.9901236999999999,
+      0.987807,
       0,
-      2.3546684,
+      4.2177631,
       400,
-      -0.5620329,
+      -9.883330899999999,
       1
      ],
      "refused": null
@@ -20273,54 +20720,145 @@
       "id": "obj-57-3",
       "kind": "photo",
       "geo": {
-       "lat": 47.500074299999994,
-       "lon": 8.7003247,
+       "lat": 47.5000946,
+       "lon": 8.7001995,
        "alt": 399.988977,
        "rotation": [
         0,
-        -0.3489557,
+        -0.3416075,
         0,
-        0.9371392
+        0.9398426999999999
        ],
-       "headingDeg": 40.846904099999996
+       "headingDeg": 39.949681
       },
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "image": "content/obj-57-3.jpg",
       "imageWidth": 4,
       "imageHeight": 3
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9901236999999999,
+      0.987807,
       0,
-      -0.1401965,
+      -0.1556836,
       0,
       0,
       1,
       0,
       0,
-      0.1401965,
+      0.1556836,
       0,
-      0.9901236999999999,
+      0.987807,
       0,
-      2.3546684,
+      4.2177631,
       400,
-      -0.5620329,
+      -9.883330899999999,
       1
      ],
      "refused": null
     }
    ],
-   "level": null,
-   "levelAlignment": null,
+   "level": {
+    "id": "a1b2c3d4e5f6",
+    "json": {
+     "json": {
+      "version": 1,
+      "qr": {
+       "physicalSizeM": 0.16,
+       "geo": {
+        "lat": 47.5000624,
+        "lon": 8.6998824,
+        "alt": 401.5,
+        "headingDeg": 82.4284517,
+        "rotation": [
+         0,
+         -0.6588763,
+         0,
+         0.7522513
+        ]
+       },
+       "mintQuality": {
+        "gpsAccuracyM": 5.9996339,
+        "alignmentSampleCount": 8,
+        "mintedAtIso": "2026-10-06T12:00:00.000Z",
+        "alignmentGpsExtentM": 30.1659036,
+        "headingUncertain": false
+       }
+      }
+     }
+    }
+   },
+   "levelAlignment": [
+    0.987807,
+    0,
+    -0.1556836,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0.1556836,
+    0,
+    0.987807,
+    0,
+    4.2177631,
+    400,
+    -9.883330899999999,
+    1
+   ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.5002582,
+    "lon": 8.6998307,
+    "alt": 399.348433,
+    "rotation": [
+     0,
+     -0.8120259,
+     0,
+     0.5836215
+    ]
+   },
+   {
+    "lat": 47.499994699999995,
+    "lon": 8.7000239,
+    "alt": 399.1289845,
+    "rotation": [
+     0,
+     0.0078297,
+     0,
+     0.9999693
+    ]
+   },
+   {
+    "lat": 47.4999179,
+    "lon": 8.7001435,
+    "alt": 400.0068291,
+    "rotation": [
+     0,
+     0.0078297,
+     0,
+     0.9999693
+    ]
+   },
+   {
+    "lat": 47.4998301,
+    "lon": 8.699832899999999,
+    "alt": 399.988977,
+    "rotation": [
+     0,
+     0.9027822999999999,
+     0,
+     -0.4300979
+    ]
+   }
+  ]
  },
  {
   "seed": 58,
   "kind": "stored-far",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "visit-alignment",
    "alignment": [
@@ -20476,7 +21014,26 @@
    "northM": -64.1363552,
    "eastM": 20.8710724
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "far"
+   },
+   "offsetM": 61.6184448,
+   "offsetNorthM": -55.227596299999995,
+   "offsetEastM": 27.3266416,
+   "candidate": {
+    "extentM": 74.56085829999999,
+    "accuracyM": 6.0245041
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 5.1627319
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "visit-alignment",
    "alignment": [
@@ -20559,7 +21116,7 @@
  {
   "seed": 59,
   "kind": "none",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "visit-alignment",
    "alignment": [
@@ -21256,7 +21813,6 @@
     "extentM": null,
     "accuracyM": 7.977930799999999
    },
-   "answeredMoved": false,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -21666,7 +22222,6 @@
     "extentM": null,
     "accuracyM": 3.9194403999999996
    },
-   "answeredMoved": false,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -22045,7 +22600,6 @@
     "extentM": null,
     "accuracyM": 8.7673354
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -22876,7 +23430,6 @@
     "extentM": null,
     "accuracyM": 9.8561557
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -23284,7 +23837,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "replace"
+    "kind": "move"
    },
    "offsetM": 11.890422,
    "offsetNorthM": -11.8901947,
@@ -23297,7 +23850,6 @@
     "extentM": null,
     "accuracyM": 4.9096491
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -23517,41 +24069,7 @@
    ],
    "refused": null
   },
-  "movedWithCode": [
-   {
-    "lat": 47.499580099999996,
-    "lon": 8.700160499999999,
-    "alt": 400.0320925,
-    "rotation": [
-     0,
-     0.07965509999999999,
-     0,
-     0.9968225
-    ]
-   },
-   {
-    "lat": 47.499967899999994,
-    "lon": 8.7000694,
-    "alt": 399.33572649999996,
-    "rotation": [
-     0,
-     0.07965509999999999,
-     0,
-     0.9968225
-    ]
-   },
-   {
-    "lat": 47.499674,
-    "lon": 8.6997406,
-    "alt": 399.5180024,
-    "rotation": [
-     0,
-     -0.486209,
-     0,
-     0.8738425
-    ]
-   }
-  ]
+  "movedWithCode": null
  },
  {
   "seed": 68,
@@ -23815,7 +24333,6 @@
     "extentM": 80,
     "accuracyM": 8.3712963
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -24455,7 +24972,7 @@
  {
   "seed": 70,
   "kind": "measured",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "measured-here",
    "alignment": [
@@ -24838,7 +25355,7 @@
  {
   "seed": 71,
   "kind": "measured-earlier",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -25058,9 +25575,48 @@
    "northM": 0,
    "eastM": -3e-7
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "replace"
+   },
+   "offsetM": 3e-7,
+   "offsetNorthM": 0,
+   "offsetEastM": -3e-7,
+   "candidate": {
+    "extentM": 67.6140202,
+    "accuracyM": 3.6688476
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 3.6688476
+   },
+   "measurement": {
+    "levelId": "a1b2c3d4e5f6",
+    "text": "https://gps.csutil.com/tour/?qr=golden",
+    "odomPose": {
+     "position": [
+      -1.7188979999999998,
+      1.5,
+      -3.0046953
+     ],
+     "rotation": [
+      0,
+      0.1148145,
+      0,
+      0.9933869999999999
+     ]
+    },
+    "sizeM": 0.16,
+    "visit": 2
+   },
+   "pick": {
+    "atMs": 17282,
+    "alignment": null
+   }
+  },
   "composed": {
-   "basis": "code-corrected",
+   "basis": "measured-here",
    "alignment": [
     0.9351016999999999,
     0,
@@ -25076,7 +25632,7 @@
     0,
     -4.584609299999999,
     400,
-    -7.5757616,
+    -7.5757619,
     1
    ],
    "objects": [
@@ -25086,8 +25642,8 @@
       "id": "obj-71-0",
       "kind": "pin",
       "geo": {
-       "lat": 47.499782599999996,
-       "lon": 8.6999447,
+       "lat": 47.4997718,
+       "lon": 8.7000862,
        "alt": 399.1576644,
        "rotation": [
         0,
@@ -25100,23 +25656,23 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 0"
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9351016999999999,
+      0.9904463,
       0,
-      0.35437959999999996,
+      -0.1378989,
       0,
       0,
       1,
       0,
       0,
-      -0.35437959999999996,
+      0.1378989,
       0,
-      0.9351016999999999,
+      0.9904463,
       0,
-      -4.584609299999999,
+      -9.8222452,
       400,
-      -7.5757616,
+      -5.8929496,
       1
      ],
      "refused": null
@@ -25127,39 +25683,39 @@
       "id": "obj-71-1",
       "kind": "photo",
       "geo": {
-       "lat": 47.4997724,
-       "lon": 8.6997816,
+       "lat": 47.499738699999995,
+       "lon": 8.6999544,
        "alt": 399.9613286,
        "rotation": [
         0,
-        0.1757687,
+        0.2714466,
         0,
-        0.9844314999999999
+        0.9624535
        ],
-       "headingDeg": 339.7532159
+       "headingDeg": 328.499262
       },
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "image": "content/obj-71-1.jpg",
       "imageWidth": 4,
       "imageHeight": 3
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9351016999999999,
+      0.9862814,
       0,
-      0.35437959999999996,
+      0.1650729,
       0,
       0,
       1,
       0,
       0,
-      -0.35437959999999996,
+      -0.1650729,
       0,
-      0.9351016999999999,
+      0.9862814,
       0,
-      -4.584609299999999,
+      -7.0037104,
       400,
-      -7.5757616,
+      1.2237286,
       1
      ],
      "refused": null
@@ -25170,8 +25726,8 @@
       "id": "obj-71-2",
       "kind": "pin",
       "geo": {
-       "lat": 47.500092099999996,
-       "lon": 8.699696,
+       "lat": 47.5001995,
+       "lon": 8.6998984,
        "alt": 399.8570087,
        "rotation": [
         0,
@@ -25184,38 +25740,118 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 2"
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9351016999999999,
+      0.8662529999999999,
       0,
-      0.35437959999999996,
+      0.4996056,
       0,
       0,
       1,
       0,
       0,
-      -0.35437959999999996,
+      -0.4996056,
       0,
-      0.9351016999999999,
+      0.8662529999999999,
       0,
-      -4.584609299999999,
+      5.067579299999999,
       400,
-      -7.5757616,
+      5.077744099999999,
       1
      ],
      "refused": null
     }
    ],
-   "level": null,
-   "levelAlignment": null,
+   "level": {
+    "id": "a1b2c3d4e5f6",
+    "json": {
+     "json": {
+      "version": 1,
+      "qr": {
+       "physicalSizeM": 0.16,
+       "geo": {
+        "lat": 47.4999895,
+        "lon": 8.6998921,
+        "alt": 401.5,
+        "headingDeg": 97.56957369999999,
+        "rotation": [
+         0,
+         -0.75224,
+         0,
+         0.6588892
+        ]
+       },
+       "mintQuality": {
+        "gpsAccuracyM": 3.6688476,
+        "alignmentSampleCount": 8,
+        "mintedAtIso": "2026-10-06T12:00:00.000Z",
+        "alignmentGpsExtentM": 67.6140202,
+        "headingUncertain": false
+       }
+      }
+     }
+    }
+   },
+   "levelAlignment": [
+    0.9351016999999999,
+    0,
+    0.35437959999999996,
+    0,
+    0,
+    1,
+    0,
+    0,
+    -0.35437959999999996,
+    0,
+    0.9351016999999999,
+    0,
+    -4.584609299999999,
+    400,
+    -7.5757619,
+    1
+   ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.499782599999996,
+    "lon": 8.6999447,
+    "alt": 399.1576645,
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ]
+   },
+   {
+    "lat": 47.500038499999995,
+    "lon": 8.699624499999999,
+    "alt": 399.9613286,
+    "rotation": [
+     0,
+     -0.571811,
+     0,
+     0.8203853999999999
+    ]
+   },
+   {
+    "lat": 47.500092099999996,
+    "lon": 8.699696,
+    "alt": 399.8570087,
+    "rotation": [
+     0,
+     0,
+     0,
+     1
+    ]
+   }
+  ]
  },
  {
   "seed": 72,
   "kind": "stored",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -25355,7 +25991,26 @@
    "northM": 6.7037122,
    "eastM": -6.7707123
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "stored-good"
+   },
+   "offsetM": 13.956449099999999,
+   "offsetNorthM": -11.6495403,
+   "offsetEastM": 7.6857454,
+   "candidate": {
+    "extentM": 61.190874799999996,
+    "accuracyM": 6.1712845
+   },
+   "stored": {
+    "extentM": 80,
+    "accuracyM": 7.9798206
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "code-corrected",
    "alignment": [
@@ -25430,7 +26085,7 @@
  {
   "seed": 73,
   "kind": "stored-far",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "visit-alignment",
    "alignment": [
@@ -25634,7 +26289,26 @@
    "northM": -37.6657047,
    "eastM": 5.185859799999999
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "far"
+   },
+   "offsetM": 38.0210264,
+   "offsetNorthM": -37.6657047,
+   "offsetEastM": 5.185859799999999,
+   "candidate": {
+    "extentM": 66.9354364,
+    "accuracyM": 3.1740372999999997
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 3.1740372999999997
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "visit-alignment",
    "alignment": [
@@ -25765,7 +26439,7 @@
  {
   "seed": 74,
   "kind": "none",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "visit-alignment",
    "alignment": [
@@ -26680,7 +27354,6 @@
     "extentM": null,
     "accuracyM": 5.4048108
    },
-   "answeredMoved": false,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -27190,7 +27863,6 @@
     "extentM": null,
     "accuracyM": 6.2886533
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -27486,7 +28158,6 @@
     "extentM": null,
     "accuracyM": 2.2544147
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -28435,7 +29106,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "replace"
+    "kind": "move"
    },
    "offsetM": 0,
    "offsetNorthM": 0,
@@ -28448,7 +29119,6 @@
     "extentM": null,
     "accuracyM": 8.0601668
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -28626,30 +29296,7 @@
    ],
    "refused": null
   },
-  "movedWithCode": [
-   {
-    "lat": 47.4999325,
-    "lon": 8.7004416,
-    "alt": 400.0659148,
-    "rotation": [
-     0,
-     0.8794497,
-     0,
-     -0.47599189999999997
-    ]
-   },
-   {
-    "lat": 47.5001445,
-    "lon": 8.7002542,
-    "alt": 399.75873229999996,
-    "rotation": [
-     0,
-     0,
-     0,
-     1
-    ]
-   }
-  ]
+  "movedWithCode": null
  },
  {
   "seed": 82,
@@ -28834,7 +29481,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "replace"
+    "kind": "move"
    },
    "offsetM": 13.2506218,
    "offsetNorthM": 12.6405525,
@@ -28847,7 +29494,6 @@
     "extentM": null,
     "accuracyM": 7.649406399999999
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -29067,41 +29713,7 @@
    ],
    "refused": null
   },
-  "movedWithCode": [
-   {
-    "lat": 47.5003098,
-    "lon": 8.7000226,
-    "alt": 400.0565099,
-    "rotation": [
-     0,
-     -0.0177668,
-     0,
-     0.9998421999999999
-    ]
-   },
-   {
-    "lat": 47.4998753,
-    "lon": 8.7000298,
-    "alt": 400.5796947,
-    "rotation": [
-     0,
-     -0.0177668,
-     0,
-     0.9998421999999999
-    ]
-   },
-   {
-    "lat": 47.500144399999996,
-    "lon": 8.7000452,
-    "alt": 399.8938012,
-    "rotation": [
-     0,
-     0.9855267,
-     0,
-     -0.1695205
-    ]
-   }
-  ]
+  "movedWithCode": null
  },
  {
   "seed": 83,
@@ -29324,7 +29936,6 @@
     "extentM": null,
     "accuracyM": 5.6663233
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -29882,7 +30493,7 @@
  {
   "seed": 85,
   "kind": "measured",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "measured-here",
    "alignment": [
@@ -30351,7 +30962,7 @@
  {
   "seed": 86,
   "kind": "measured-earlier",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -30530,9 +31141,89 @@
    "northM": 0,
    "eastM": 0
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "replace"
+   },
+   "offsetM": 13.1737565,
+   "offsetNorthM": -2.4091488,
+   "offsetEastM": -12.9515969,
+   "candidate": {
+    "extentM": 78.0691299,
+    "accuracyM": 2.5890979
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 2.3700616
+   },
+   "measurement": {
+    "levelId": "a1b2c3d4e5f6",
+    "text": "https://gps.csutil.com/tour/?qr=golden",
+    "odomPose": {
+     "position": [
+      -1.8411509,
+      1.5,
+      -2.2356423
+     ],
+     "rotation": [
+      0,
+      -0.030156799999999997,
+      0,
+      0.9995451999999999
+     ]
+    },
+    "sizeM": 0.16,
+    "visit": 2
+   },
+   "pick": {
+    "atMs": 11857,
+    "walkedM": 22.034331299999998,
+    "alignment": [
+     0.9907322,
+     0,
+     -0.1358295,
+     0,
+     0,
+     1,
+     0,
+     0,
+     0.1358295,
+     0,
+     0.9907322,
+     0,
+     -3.7384649999999997,
+     400,
+     -9.106762699999999,
+     1
+    ],
+    "alignmentInfo": {
+     "hasMatrix": true,
+     "sampleCount": 8,
+     "gpsAccuracyM": 2.5890979
+    },
+    "gpsExtentM": 78.0691299,
+    "sighting": {
+     "text": "https://gps.csutil.com/tour/?qr=golden",
+     "levelId": "a1b2c3d4e5f6",
+     "odomPose": {
+      "position": [
+       -1.8411509,
+       1.5,
+       -2.2356423
+      ],
+      "rotation": [
+       0,
+       -0.030156799999999997,
+       0,
+       0.9995451999999999
+      ]
+     }
+    }
+   }
+  },
   "composed": {
-   "basis": "code-corrected",
+   "basis": "measured-here",
    "alignment": [
     0.9945997,
     0,
@@ -30558,8 +31249,8 @@
       "id": "obj-86-0",
       "kind": "pin",
       "geo": {
-       "lat": 47.499920599999996,
-       "lon": 8.7003609,
+       "lat": 47.499955799999995,
+       "lon": 8.7002088,
        "alt": 400.36085299999996,
        "rotation": [
         0,
@@ -30572,23 +31263,23 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 0"
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9945997,
+      0.9907322,
       0,
-      0.1037859,
+      -0.1358295,
       0,
       0,
       1,
       0,
       0,
-      -0.1037859,
+      0.1358295,
       0,
-      0.9945997,
+      0.9907322,
       0,
-      -1.7791305,
+      -3.7384649999999997,
       400,
-      3.3162604,
+      -9.106762699999999,
       1
      ],
      "refused": null
@@ -30599,54 +31290,123 @@
       "id": "obj-86-1",
       "kind": "photo",
       "geo": {
-       "lat": 47.4997657,
-       "lon": 8.7001177,
+       "lat": 47.499766199999996,
+       "lon": 8.700027,
        "alt": 400.1228298,
        "rotation": [
         0,
-        -0.4596906,
+        -0.349966,
         0,
-        0.8880792
+        0.9367624
        ],
-       "headingDeg": 54.7342824
+       "headingDeg": 40.9704719
       },
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "image": "content/obj-86-1.jpg",
       "imageWidth": 4,
       "imageHeight": 3
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9945997,
+      0.9907322,
       0,
-      0.1037859,
+      -0.1358295,
       0,
       0,
       1,
       0,
       0,
-      -0.1037859,
+      0.1358295,
       0,
-      0.9945997,
+      0.9907322,
       0,
-      -1.7791305,
+      -3.7384649999999997,
       400,
-      3.3162604,
+      -9.106762699999999,
       1
      ],
      "refused": null
     }
    ],
-   "level": null,
-   "levelAlignment": null,
+   "level": {
+    "id": "a1b2c3d4e5f6",
+    "json": {
+     "json": {
+      "version": 1,
+      "qr": {
+       "physicalSizeM": 0.16,
+       "geo": {
+        "lat": 47.499984,
+        "lon": 8.6998506,
+        "alt": 401.5,
+        "headingDeg": 85.649655,
+        "rotation": [
+         0,
+         -0.6797592,
+         0,
+         0.7334354
+        ]
+       },
+       "mintQuality": {
+        "gpsAccuracyM": 2.5890979,
+        "alignmentSampleCount": 8,
+        "mintedAtIso": "2026-10-06T12:00:00.000Z",
+        "alignmentGpsExtentM": 78.0691299,
+        "headingUncertain": false
+       }
+      }
+     }
+    }
+   },
+   "levelAlignment": [
+    0.9907322,
+    0,
+    -0.1358295,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0.1358295,
+    0,
+    0.9907322,
+    0,
+    -3.7384649999999997,
+    400,
+    -9.106762699999999,
+    1
+   ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.499955799999995,
+    "lon": 8.7002088,
+    "alt": 400.3608531,
+    "rotation": [
+     0,
+     0.1198233,
+     0,
+     0.9927952
+    ]
+   },
+   {
+    "lat": 47.499865899999996,
+    "lon": 8.6995838,
+    "alt": 400.1228298,
+    "rotation": [
+     0,
+     0.9098544,
+     0,
+     -0.41492769999999995
+    ]
+   }
+  ]
  },
  {
   "seed": 87,
   "kind": "stored",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -30786,7 +31546,26 @@
    "northM": 4.4962124999999995,
    "eastM": 28.5525208
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "far"
+   },
+   "offsetM": 32.6701949,
+   "offsetNorthM": -4.5070464999999995,
+   "offsetEastM": 32.3578146,
+   "candidate": {
+    "extentM": 63.8588629,
+    "accuracyM": 3.7967247
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 8.7034668
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "code-corrected",
    "alignment": [
@@ -30861,7 +31640,7 @@
  {
   "seed": 88,
   "kind": "stored-far",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "visit-alignment",
    "alignment": [
@@ -31060,7 +31839,26 @@
    "northM": -48.4122626,
    "eastM": 24.344757299999998
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "far"
+   },
+   "offsetM": 62.1678803,
+   "offsetNorthM": -61.5105636,
+   "offsetEastM": 9.0164239,
+   "candidate": {
+    "extentM": 36.4286149,
+    "accuracyM": 3.3242618
+   },
+   "stored": {
+    "extentM": 80,
+    "accuracyM": 9.3981722
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "visit-alignment",
    "alignment": [
@@ -31186,7 +31984,7 @@
  {
   "seed": 89,
   "kind": "none",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "visit-alignment",
    "alignment": [
@@ -32020,7 +32818,6 @@
     "extentM": null,
     "accuracyM": 5.4354714
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -32333,7 +33130,6 @@
     "extentM": 80,
     "accuracyM": 4.0114095
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -32586,7 +33382,6 @@
     "extentM": null,
     "accuracyM": 3.7610151999999997
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -33572,7 +34367,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "replace"
+    "kind": "move"
    },
    "offsetM": 2.7479434,
    "offsetNorthM": -2.6468639,
@@ -33585,7 +34380,6 @@
     "extentM": null,
     "accuracyM": 6.5246701
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -33848,52 +34642,7 @@
    ],
    "refused": null
   },
-  "movedWithCode": [
-   {
-    "lat": 47.5002712,
-    "lon": 8.7002503,
-    "alt": 400.84483639999996,
-    "rotation": [
-     0,
-     -0.2202972,
-     0,
-     0.9754328
-    ]
-   },
-   {
-    "lat": 47.5000265,
-    "lon": 8.700043299999999,
-    "alt": 400.46296559999996,
-    "rotation": [
-     0,
-     0.029685399999999997,
-     0,
-     0.9995592999999999
-    ]
-   },
-   {
-    "lat": 47.500125399999995,
-    "lon": 8.699929299999999,
-    "alt": 400.4508437,
-    "rotation": [
-     0,
-     0.029685399999999997,
-     0,
-     0.9995592999999999
-    ]
-   },
-   {
-    "lat": 47.5001592,
-    "lon": 8.6998675,
-    "alt": 400.3572427,
-    "rotation": [
-     0,
-     -0.8318669,
-     0,
-     0.5549752
-    ]
-   }
-  ]
+  "movedWithCode": null
  },
  {
   "seed": 97,
@@ -34078,7 +34827,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "replace"
+    "kind": "move"
    },
    "offsetM": 2.6802221,
    "offsetNorthM": -2.073585,
@@ -34091,7 +34840,6 @@
     "extentM": null,
     "accuracyM": 6.0033778
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -34267,41 +35015,7 @@
    ],
    "refused": null
   },
-  "movedWithCode": [
-   {
-    "lat": 47.499701099999996,
-    "lon": 8.699671,
-    "alt": 399.4212508,
-    "rotation": [
-     0,
-     -0.2731361,
-     0,
-     0.9619753999999999
-    ]
-   },
-   {
-    "lat": 47.4999081,
-    "lon": 8.6998675,
-    "alt": 400.7952474,
-    "rotation": [
-     0,
-     -0.2731361,
-     0,
-     0.9619753999999999
-    ]
-   },
-   {
-    "lat": 47.499812399999996,
-    "lon": 8.699969,
-    "alt": 399.3469942,
-    "rotation": [
-     0,
-     0.9964510999999999,
-     0,
-     -0.0841738
-    ]
-   }
-  ]
+  "movedWithCode": null
  },
  {
   "seed": 98,
@@ -34478,7 +35192,6 @@
     "extentM": null,
     "accuracyM": 4.0837265
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -34910,7 +35623,7 @@
  {
   "seed": 100,
   "kind": "measured",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "measured-here",
    "alignment": [
@@ -35293,7 +36006,7 @@
  {
   "seed": 101,
   "kind": "measured-earlier",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -35513,7 +36226,26 @@
    "northM": 1.4289022999999998,
    "eastM": 28.2645083
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "far"
+   },
+   "offsetM": 28.300604099999997,
+   "offsetNorthM": 1.4289022999999998,
+   "offsetEastM": 28.2645083,
+   "candidate": {
+    "extentM": 77.0581231,
+    "accuracyM": 7.504910199999999
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 7.504910199999999
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "code-corrected",
    "alignment": [
@@ -35670,7 +36402,7 @@
  {
   "seed": 102,
   "kind": "stored",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -35810,25 +36542,105 @@
    "northM": -10.0122473,
    "eastM": 8.4791826
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "replace"
+   },
+   "offsetM": 6.000560999999999,
+   "offsetNorthM": 3.1352012,
+   "offsetEastM": 5.1163703,
+   "candidate": {
+    "extentM": 21.420543,
+    "accuracyM": 2.6353619999999998
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 4.291245
+   },
+   "measurement": {
+    "levelId": "a1b2c3d4e5f6",
+    "text": "https://gps.csutil.com/tour/?qr=golden",
+    "odomPose": {
+     "position": [
+      -0.7030626,
+      1.5,
+      -3.3703212
+     ],
+     "rotation": [
+      0,
+      -0.0083397,
+      0,
+      0.9999652
+     ]
+    },
+    "sizeM": 0.16,
+    "visit": 2
+   },
+   "pick": {
+    "atMs": 7588,
+    "walkedM": 33.2005744,
+    "alignment": [
+     0.9343880999999999,
+     0,
+     0.3562569,
+     0,
+     0,
+     1,
+     0,
+     0,
+     -0.3562569,
+     0,
+     0.9343880999999999,
+     0,
+     5.1080648,
+     400,
+     1.6187709,
+     1
+    ],
+    "alignmentInfo": {
+     "hasMatrix": true,
+     "sampleCount": 8,
+     "gpsAccuracyM": 2.6353619999999998
+    },
+    "gpsExtentM": 21.420543,
+    "sighting": {
+     "text": "https://gps.csutil.com/tour/?qr=golden",
+     "levelId": "a1b2c3d4e5f6",
+     "odomPose": {
+      "position": [
+       -0.7030626,
+       1.5,
+       -3.3703212
+      ],
+      "rotation": [
+       0,
+       -0.0083397,
+       0,
+       0.9999652
+      ]
+     }
+    }
+   }
+  },
   "composed": {
-   "basis": "code-corrected",
+   "basis": "measured-here",
    "alignment": [
-    0.9863926999999999,
+    0.8926113999999999,
     0,
-    0.16440639999999998,
+    -0.4508269,
     0,
     0,
     1,
     0,
     0,
-    -0.16440639999999998,
+    0.4508269,
     0,
-    0.9863926999999999,
+    0.8926113999999999,
     0,
-    1.9324742,
+    -7.3311525,
     400,
-    -2.8144392,
+    7.6723431,
     1
    ],
    "objects": [
@@ -35838,54 +36650,112 @@
       "id": "obj-102-0",
       "kind": "photo",
       "geo": {
-       "lat": 47.499793999999994,
-       "lon": 8.6999249,
+       "lat": 47.4998321,
+       "lon": 8.699919399999999,
        "alt": 399.44837889999997,
        "rotation": [
         0,
-        -0.28325239999999996,
+        -0.37716659999999996,
         0,
-        0.9590453999999999
+        0.9261454
        ],
-       "headingDeg": 32.908830099999996
+       "headingDeg": 44.316572699999995
       },
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "image": "content/obj-102-0.jpg",
       "imageWidth": 4,
       "imageHeight": 3
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9863926999999999,
+      0.9343880999999999,
       0,
-      0.16440639999999998,
+      0.3562569,
       0,
       0,
       1,
       0,
       0,
-      -0.16440639999999998,
+      -0.3562569,
       0,
-      0.9863926999999999,
+      0.9343880999999999,
       0,
-      1.9324742,
+      5.1080651,
       400,
-      -2.8144392,
+      1.618771,
       1
      ],
      "refused": null
     }
    ],
-   "level": null,
-   "levelAlignment": null,
+   "level": {
+    "id": "a1b2c3d4e5f6",
+    "json": {
+     "json": {
+      "version": 1,
+      "qr": {
+       "physicalSizeM": 0.16,
+       "geo": {
+        "lat": 47.5000767,
+        "lon": 8.7000288,
+        "alt": 401.5,
+        "headingDeg": 111.8261709,
+        "rotation": [
+         0,
+         -0.8281883999999999,
+         0,
+         0.5604499
+        ]
+       },
+       "mintQuality": {
+        "gpsAccuracyM": 2.6353619999999998,
+        "alignmentSampleCount": 8,
+        "mintedAtIso": "2026-10-06T12:00:00.000Z",
+        "alignmentGpsExtentM": 21.420543,
+        "headingUncertain": false
+       }
+      }
+     }
+    }
+   },
+   "levelAlignment": [
+    0.9343880999999999,
+    0,
+    0.3562569,
+    0,
+    0,
+    1,
+    0,
+    0,
+    -0.3562569,
+    0,
+    0.9343880999999999,
+    0,
+    5.1080648,
+    400,
+    1.6187709,
+    1
+   ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.4998748,
+    "lon": 8.699819,
+    "alt": 399.448379,
+    "rotation": [
+     0,
+     -0.7550361999999999,
+     0,
+     0.6556831
+    ]
+   }
+  ]
  },
  {
   "seed": 103,
   "kind": "stored-far",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -36105,7 +36975,26 @@
    "northM": -31.7264952,
    "eastM": 19.5821826
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "far"
+   },
+   "offsetM": 45.7443081,
+   "offsetNorthM": -40.796967099999996,
+   "offsetEastM": 20.6917664,
+   "candidate": {
+    "extentM": 33.031107999999996,
+    "accuracyM": 2.5855140999999997
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 9.9466944
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "code-corrected",
    "alignment": [
@@ -36262,7 +37151,7 @@
  {
   "seed": 104,
   "kind": "none",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "visit-alignment",
    "alignment": [
@@ -37257,7 +38146,6 @@
     "extentM": null,
     "accuracyM": 9.6058927
    },
-   "answeredMoved": false,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -37608,7 +38496,6 @@
     "extentM": null,
     "accuracyM": 5.4001084
    },
-   "answeredMoved": false,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -38045,7 +38932,6 @@
     "extentM": 80,
     "accuracyM": 9.4444532
    },
-   "answeredMoved": false,
    "measurement": null,
    "pick": null
   },
@@ -38649,7 +39535,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "replace"
+    "kind": "move"
    },
    "offsetM": 11.354016399999999,
    "offsetNorthM": 2.1444288,
@@ -38662,7 +39548,6 @@
     "extentM": null,
     "accuracyM": 6.9197036999999995
    },
-   "answeredMoved": true,
    "measurement": {
     "levelId": "a1b2c3d4e5f6",
     "text": "https://gps.csutil.com/tour/?qr=golden",
@@ -38843,19 +39728,7 @@
    ],
    "refused": null
   },
-  "movedWithCode": [
-   {
-    "lat": 47.5001949,
-    "lon": 8.700037199999999,
-    "alt": 399.997389,
-    "rotation": [
-     0,
-     0.9927927,
-     0,
-     -0.11984439999999999
-    ]
-   }
-  ]
+  "movedWithCode": null
  },
  {
   "seed": 112,
@@ -39081,8 +39954,7 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "keep",
-    "reason": "stored-good"
+    "kind": "move"
    },
    "offsetM": 9.8741326,
    "offsetNorthM": 3.6099522,
@@ -39095,28 +39967,89 @@
     "extentM": 80,
     "accuracyM": 7.7357564
    },
-   "answeredMoved": true,
-   "measurement": null,
-   "pick": null
+   "measurement": {
+    "levelId": "a1b2c3d4e5f6",
+    "text": "https://gps.csutil.com/tour/?qr=golden",
+    "odomPose": {
+     "position": [
+      -0.2244358,
+      1.5,
+      -3.6038666
+     ],
+     "rotation": [
+      0,
+      -0.0016830999999999999,
+      0,
+      0.9999986
+     ]
+    },
+    "sizeM": 0.16,
+    "visit": 2
+   },
+   "pick": {
+    "atMs": 18927,
+    "walkedM": 47.1587995,
+    "alignment": [
+     0.9811458,
+     0,
+     0.1932689,
+     0,
+     0,
+     1,
+     0,
+     0,
+     -0.1932689,
+     0,
+     0.9811458,
+     0,
+     6.0410249,
+     400,
+     -8.1024263,
+     1
+    ],
+    "alignmentInfo": {
+     "hasMatrix": true,
+     "sampleCount": 8,
+     "gpsAccuracyM": 9.4439288
+    },
+    "gpsExtentM": 58.5732321,
+    "sighting": {
+     "text": "https://gps.csutil.com/tour/?qr=golden",
+     "levelId": "a1b2c3d4e5f6",
+     "odomPose": {
+      "position": [
+       -0.2244358,
+       1.5,
+       -3.6038666
+      ],
+      "rotation": [
+       0,
+       -0.0016830999999999999,
+       0,
+       0.9999986
+      ]
+     }
+    }
+   }
   },
   "composed": {
-   "basis": "code-corrected",
+   "basis": "measured-here",
    "alignment": [
-    0.9964523,
+    0.9757853,
     0,
-    -0.0841596,
+    -0.2187304,
     0,
     0,
     1,
     0,
     0,
-    0.0841596,
+    0.2187304,
     0,
-    0.9964523,
+    0.9757853,
     0,
-    2.4381752,
+    -0.5911147999999999,
     400,
-    2.0914031,
+    -3.15334,
     1
    ],
    "objects": [
@@ -39126,8 +40059,8 @@
       "id": "obj-112-0",
       "kind": "pin",
       "geo": {
-       "lat": 47.500028699999994,
-       "lon": 8.6998464,
+       "lat": 47.5000948,
+       "lon": 8.6997206,
        "alt": 400.4075504,
        "rotation": [
         0,
@@ -39140,23 +40073,23 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 0"
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9964523,
+      0.9811458,
       0,
-      -0.0841596,
+      0.1932689,
       0,
       0,
       1,
       0,
       0,
-      0.0841596,
+      -0.1932689,
       0,
-      0.9964523,
+      0.9811458,
       0,
-      2.4381752,
+      6.0410249,
       400,
-      2.0914031,
+      -8.1024263,
       1
      ],
      "refused": null
@@ -39167,8 +40100,8 @@
       "id": "obj-112-1",
       "kind": "pin",
       "geo": {
-       "lat": 47.5000399,
-       "lon": 8.6999358,
+       "lat": 47.5000888,
+       "lon": 8.6998111,
        "alt": 399.5364755,
        "rotation": [
         0,
@@ -39181,23 +40114,23 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 1"
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9964523,
+      0.9811458,
       0,
-      -0.0841596,
+      0.1932689,
       0,
       0,
       1,
       0,
       0,
-      0.0841596,
+      -0.1932689,
       0,
-      0.9964523,
+      0.9811458,
       0,
-      2.4381752,
+      6.0410249,
       400,
-      2.0914031,
+      -8.1024263,
       1
      ],
      "refused": null
@@ -39208,8 +40141,8 @@
       "id": "obj-112-3",
       "kind": "pin",
       "geo": {
-       "lat": 47.500274999999995,
-       "lon": 8.7002358,
+       "lat": 47.5002589,
+       "lon": 8.700194999999999,
        "alt": 400.51070419999996,
        "rotation": [
         0,
@@ -39222,30 +40155,76 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 3"
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9964523,
+      0.9811458,
       0,
-      -0.0841596,
+      0.1932689,
       0,
       0,
       1,
       0,
       0,
-      0.0841596,
+      -0.1932689,
       0,
-      0.9964523,
+      0.9811458,
       0,
-      2.4381752,
+      6.0410249,
       400,
-      2.0914031,
+      -8.1024263,
       1
      ],
      "refused": null
     }
    ],
-   "level": null,
-   "levelAlignment": null,
+   "level": {
+    "id": "a1b2c3d4e5f6",
+    "json": {
+     "json": {
+      "version": 1,
+      "qr": {
+       "physicalSizeM": 0.16,
+       "geo": {
+        "lat": 47.5000867,
+        "lon": 8.6998986,
+        "alt": 401.5,
+        "headingDeg": 101.33647769999999,
+        "rotation": [
+         0,
+         -0.773489,
+         0,
+         0.6338096999999999
+        ]
+       },
+       "mintQuality": {
+        "gpsAccuracyM": 9.4439288,
+        "alignmentSampleCount": 8,
+        "mintedAtIso": "2026-10-06T12:00:00.000Z",
+        "alignmentGpsExtentM": 58.5732321,
+        "headingUncertain": false
+       }
+      }
+     }
+    }
+   },
+   "levelAlignment": [
+    0.9811458,
+    0,
+    0.1932689,
+    0,
+    0,
+    1,
+    0,
+    0,
+    -0.1932689,
+    0,
+    0.9811458,
+    0,
+    6.0410249,
+    400,
+    -8.1024263,
+    1
+   ],
    "refused": null
   },
   "movedWithCode": null
@@ -39412,8 +40391,8 @@
   "planCodePosition": {
    "levelId": "a1b2c3d4e5f6",
    "decision": {
-    "kind": "move-waits",
-    "walkMoreM": 8.6332594
+    "kind": "keep",
+    "reason": "far"
    },
    "offsetM": 52.086768299999996,
    "offsetNorthM": -42.7114804,
@@ -39426,7 +40405,6 @@
     "extentM": null,
     "accuracyM": 5.5450063
    },
-   "answeredMoved": true,
    "measurement": null,
    "pick": null
   },
@@ -39800,7 +40778,7 @@
  {
   "seed": 115,
   "kind": "measured",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "measured-here",
    "alignment": [
@@ -40279,7 +41257,7 @@
  {
   "seed": 116,
   "kind": "measured-earlier",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -40499,7 +41477,26 @@
    "northM": -1e-7,
    "eastM": 0
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "far"
+   },
+   "offsetM": 17.8467931,
+   "offsetNorthM": -17.4365619,
+   "offsetEastM": 3.8045149,
+   "candidate": {
+    "extentM": 58.3063971,
+    "accuracyM": 9.032756599999999
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 4.2285574
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "code-corrected",
    "alignment": [
@@ -40656,7 +41653,7 @@
  {
   "seed": 117,
   "kind": "stored",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -40837,25 +41834,61 @@
    "northM": -8.297522899999999,
    "eastM": 11.4021179
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "replace"
+   },
+   "offsetM": 14.101672899999999,
+   "offsetNorthM": -8.297522899999999,
+   "offsetEastM": 11.4021179,
+   "candidate": {
+    "extentM": 17.7935752,
+    "accuracyM": 2.4938602
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 2.4938602
+   },
+   "measurement": {
+    "levelId": "a1b2c3d4e5f6",
+    "text": "https://gps.csutil.com/tour/?qr=golden",
+    "odomPose": {
+     "position": [
+      -1.3782227999999999,
+      1.5,
+      -3.5647594
+     ],
+     "rotation": [
+      0,
+      0.0756399,
+      0,
+      0.9971352
+     ]
+    },
+    "sizeM": 0.16,
+    "visit": 2
+   },
+   "pick": null
+  },
   "composed": {
-   "basis": "code-corrected",
+   "basis": "measured-here",
    "alignment": [
-    0.9953632,
+    0.9865136,
     0,
-    0.09618739999999999,
+    0.1636793,
     0,
     0,
     1,
     0,
     0,
-    -0.09618739999999999,
+    -0.1636793,
     0,
-    0.9953632,
+    0.9865136,
     0,
-    -1.6308721,
+    -9.989867,
     400,
-    -3.5121564999999997,
+    7.6371724,
     1
    ],
    "objects": [
@@ -40865,39 +41898,39 @@
       "id": "obj-117-0",
       "kind": "photo",
       "geo": {
-       "lat": 47.499770299999994,
-       "lon": 8.6997258,
+       "lat": 47.499705999999996,
+       "lon": 8.699853,
        "alt": 400.4414374,
        "rotation": [
         0,
-        -0.6234891,
+        -0.6497373,
         0,
-        0.7818320999999999
+        0.7601587999999999
        ],
-       "headingDeg": 77.1427509
+       "headingDeg": 81.0436035
       },
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "image": "content/obj-117-0.jpg",
       "imageWidth": 4,
       "imageHeight": 3
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9953632,
+      0.9865136,
       0,
-      0.09618739999999999,
+      0.1636793,
       0,
       0,
       1,
       0,
       0,
-      -0.09618739999999999,
+      -0.1636793,
       0,
-      0.9953632,
+      0.9865136,
       0,
-      -1.6308721,
+      -9.989867,
       400,
-      -3.5121564999999997,
+      7.6371724,
       1
      ],
      "refused": null
@@ -40908,8 +41941,8 @@
       "id": "obj-117-1",
       "kind": "pin",
       "geo": {
-       "lat": 47.500212,
-       "lon": 8.7002455,
+       "lat": 47.5001226,
+       "lon": 8.7004158,
        "alt": 400.0989978,
        "rotation": [
         0,
@@ -40922,38 +41955,107 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 1"
      },
-     "basis": "code-corrected",
+     "basis": "measured-here",
      "alignment": [
-      0.9953632,
+      0.9865136,
       0,
-      0.09618739999999999,
+      0.1636793,
       0,
       0,
       1,
       0,
       0,
-      -0.09618739999999999,
+      -0.1636793,
       0,
-      0.9953632,
+      0.9865136,
       0,
-      -1.6308721,
+      -9.989867,
       400,
-      -3.5121564999999997,
+      7.6371724,
       1
      ],
      "refused": null
     }
    ],
-   "level": null,
-   "levelAlignment": null,
+   "level": {
+    "id": "a1b2c3d4e5f6",
+    "json": {
+     "json": {
+      "version": 1,
+      "qr": {
+       "physicalSizeM": 0.16,
+       "geo": {
+        "lat": 47.499943699999996,
+        "lon": 8.7000912,
+        "alt": 401.5,
+        "headingDeg": 90.7445383,
+        "rotation": [
+         0,
+         -0.7116861,
+         0,
+         0.7024975999999999
+        ]
+       },
+       "mintQuality": {
+        "gpsAccuracyM": 2.4938602,
+        "alignmentSampleCount": 8,
+        "mintedAtIso": "2026-10-06T12:00:00.000Z",
+        "alignmentGpsExtentM": 17.7935752,
+        "headingUncertain": false
+       }
+      }
+     }
+    }
+   },
+   "levelAlignment": [
+    0.9865136,
+    0,
+    0.1636793,
+    0,
+    0,
+    1,
+    0,
+    0,
+    -0.1636793,
+    0,
+    0.9865136,
+    0,
+    -9.989867,
+    400,
+    7.6371724,
+    1
+   ],
    "refused": null
   },
-  "movedWithCode": null
+  "movedWithCode": [
+   {
+    "lat": 47.500009899999995,
+    "lon": 8.6999586,
+    "alt": 400.4414374,
+    "rotation": [
+     0,
+     0.999027,
+     0,
+     -0.0441036
+    ]
+   },
+   {
+    "lat": 47.5000256,
+    "lon": 8.7005768,
+    "alt": 400.0989978,
+    "rotation": [
+     0,
+     -0.0340348,
+     0,
+     0.9994206
+    ]
+   }
+  ]
  },
  {
   "seed": 118,
   "kind": "stored-far",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "code-corrected",
    "alignment": [
@@ -41089,7 +42191,26 @@
    "northM": -49.756831,
    "eastM": 18.140160299999998
   },
-  "planCodePosition": null,
+  "planCodePosition": {
+   "levelId": "a1b2c3d4e5f6",
+   "decision": {
+    "kind": "keep",
+    "reason": "far"
+   },
+   "offsetM": 52.9604347,
+   "offsetNorthM": -49.756831,
+   "offsetEastM": 18.140160299999998,
+   "candidate": {
+    "extentM": 26.9924355,
+    "accuracyM": 8.756492399999999
+   },
+   "stored": {
+    "extentM": null,
+    "accuracyM": 8.756492399999999
+   },
+   "measurement": null,
+   "pick": null
+  },
   "composed": {
    "basis": "code-corrected",
    "alignment": [
@@ -41162,7 +42283,7 @@
  {
   "seed": 119,
   "kind": "none",
-  "answer": "second-copy",
+  "answer": null,
   "settleAlignment": {
    "basis": "visit-alignment",
    "alignment": [

@@ -271,49 +271,6 @@ interface VisitSettledLog {
   >[];
 }
 
-/**
- * The move prompt (authoring plan 2026-09-28-0953 §3.6, M5b; §7j #15):
- * asked, because the code in hand was seen beyond the prompt's trigger
- * (D26: 15 m, its own, independent of the settle's refusal) long enough.
- * The offset and how long it lasted, as the tracker saw them.
- */
-interface CodeMovePromptedLog {
-  readonly levelId: string;
-  readonly arVisitIndex: number;
-  readonly atMs: number;
-  /** Where this visit sees the code minus its saved position (m). */
-  readonly horizontalM: number;
-  readonly northM: number;
-  readonly eastM: number;
-  readonly yawDeg: number;
-  /** The bound the offset crossed (m): the prompt's own trigger since D26
-   *  (`MOVE_PROMPT_FLOOR_M`); before D26 the settle's refusal bound. */
-  readonly maxHorizontalM: number;
-  /** New fixes, and seconds of fix time (null: unreadable), it lasted. */
-  readonly fixes: number;
-  readonly seconds: number | null;
-}
-
-/** The author's answer to the move prompt. "moved" (UI round 1, U3)
- *  changes nothing at the answer - the settle saves the new spot once the
- *  visit walked enough (`tourAuthoring/settled` `codePosition`); an Undo
- *  of it is logged as a "not-now". "use-new-spot" (an immediate replace,
- *  with `replaced` and `error`) is in recordings from before U3 only. */
-interface CodeMoveAnsweredLog {
-  readonly levelId: string;
-  readonly arVisitIndex: number;
-  readonly atMs: number;
-  readonly answer: "use-new-spot" | "moved" | "second-copy" | "not-now";
-  readonly horizontalM: number;
-  readonly northM: number;
-  readonly eastM: number;
-  /** The saved position was replaced at the answer: only an old
-   *  "use-new-spot" could; false since U3. */
-  readonly replaced: boolean;
-  /** Why an old "use-new-spot" did not replace; null otherwise. */
-  readonly error: string | null;
-}
-
 interface FinishedLog {
   /** The code in hand; null for a desk edit with none (M4d). */
   readonly levelId: string | null;
@@ -333,12 +290,6 @@ export const codeMeasured = logAction<CodeMeasuredLog>()(
 );
 export const visitSettled = logAction<VisitSettledLog>()(
   "tourAuthoring/settled",
-);
-export const codeMovePrompted = logAction<CodeMovePromptedLog>()(
-  "tourAuthoring/codeMovePrompted",
-);
-export const codeMoveAnswered = logAction<CodeMoveAnsweredLog>()(
-  "tourAuthoring/codeMoveAnswered",
 );
 export const authoringFinished = logAction<FinishedLog>()(
   "tourAuthoring/finished",

@@ -1,4 +1,6 @@
 // @ts-check
+import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
+import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { expect } from "@playwright/test";
 
 import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
@@ -618,4 +620,70 @@ export async function standAt(page, north, east, second) {
       timestamp: 1_790_000_000_000 + second * 1000,
     },
   );
+}
+
+/** Every file entry's name, and each JSON entry's text, of a zip's bytes. */
+export async function readZip(bytes) {
+  const reader = new ZipReader(new BlobReader(new Blob([bytes])));
+  const names = [];
+  const json = {};
+  for (const entry of await reader.getEntries()) {
+    if (entry.directory) continue;
+    names.push(entry.filename);
+    if (entry.filename.endsWith(".json")) {
+      json[entry.filename] = await entry.getData(new TextWriter());
+    }
+  }
+  await reader.close();
+  return { names, json };
+}
+
+/** The level files (`qr/*.json`) of a zip, by entry name, as text. */
+export async function levelTexts(bytes) {
+  const { json } = await readZip(bytes);
+  return Object.fromEntries(
+    Object.entries(json).filter(([name]) => name.startsWith("qr/")),
+  );
+}
+
+/** Entry names, the manifest and the level files of the n-th downloaded zip. */
+export async function downloadedZip(page, index) {
+  const data = await page.evaluate(async (i) => {
+    const d = /** @type {any} */ (window).__tourViewerTest.downloads[i];
+    return Array.from(new Uint8Array(await d.blob.arrayBuffer()));
+  }, index);
+  const bytes = new Uint8Array(data);
+  const { names, json } = await readZip(bytes);
+  return {
+    names,
+    manifest: parseTourManifest(JSON.parse(json["tour.json"])),
+    levels: await levelTexts(bytes),
+  };
+}
+
+/**
+ * Finish, then download: the zip lands in the fake's downloads as the
+ * `index`-th. The Finish button is disabled while the zip is rebuilt, so
+ * waiting for it to leave that state is waiting for THIS rebuild - a second
+ * Finish finds the first one's download button already live. It leaves it
+ * enabled when work remains, or hidden when nothing is left to write
+ * (code book plan M4d: an unchanged stored code is not work).
+ */
+export async function finishAndDownload(page, index) {
+  const finish = page.getByTestId("setup-finish");
+  await finish.click();
+  await expect
+    .poll(async () => (await finish.isHidden()) || (await finish.isEnabled()), {
+      timeout: 30000,
+    })
+    .toBe(true);
+  await expect(page.getByTestId("finish-block")).toBeVisible();
+  await page.getByTestId("finish-download").click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => /** @type {any} */ (window).__tourViewerTest.downloads.length,
+      ),
+    )
+    .toBe(index + 1);
 }

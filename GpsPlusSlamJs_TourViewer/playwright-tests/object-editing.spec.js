@@ -2,13 +2,14 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  downloadedZip,
   enterArAndMeasure,
+  finishAndDownload,
   installTourViewerArFakes,
+  levelTexts,
   openFixtureTour as openTour,
 } from "./ar-fakes.js";
-import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { E2E_QR_ARCHIVE } from "./qr-fixture.mjs";
-import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
 
 /**
  * Editing placed objects, end to end (authoring plan 2026-09-28-0953 §3.4,
@@ -29,72 +30,6 @@ const TEST_KEY = "__tourViewerTest";
 test.beforeEach(async ({ page }) => {
   await installTourViewerArFakes(page);
 });
-
-/** Every file entry's name, and each JSON entry's text, of a zip's bytes. */
-async function readZip(bytes) {
-  const reader = new ZipReader(new BlobReader(new Blob([bytes])));
-  const names = [];
-  const json = {};
-  for (const entry of await reader.getEntries()) {
-    if (entry.directory) continue;
-    names.push(entry.filename);
-    if (entry.filename.endsWith(".json")) {
-      json[entry.filename] = await entry.getData(new TextWriter());
-    }
-  }
-  await reader.close();
-  return { names, json };
-}
-
-/** The level files (`qr/*.json`) of a zip, by entry name, as text. */
-async function levelTexts(bytes) {
-  const { json } = await readZip(bytes);
-  return Object.fromEntries(
-    Object.entries(json).filter(([name]) => name.startsWith("qr/")),
-  );
-}
-
-/** Entry names, the manifest and the level files of the n-th downloaded zip. */
-async function downloadedZip(page, index) {
-  const data = await page.evaluate(async (i) => {
-    const d = /** @type {any} */ (window).__tourViewerTest.downloads[i];
-    return Array.from(new Uint8Array(await d.blob.arrayBuffer()));
-  }, index);
-  const bytes = new Uint8Array(data);
-  const { names, json } = await readZip(bytes);
-  return {
-    names,
-    manifest: parseTourManifest(JSON.parse(json["tour.json"])),
-    levels: await levelTexts(bytes),
-  };
-}
-
-/**
- * Finish, then download: the zip lands in the fake's downloads as the
- * `index`-th. The Finish button is disabled while the zip is rebuilt, so
- * waiting for it to leave that state is waiting for THIS rebuild - a second
- * Finish finds the first one's download button already live. It leaves it
- * enabled when work remains, or hidden when nothing is left to write
- * (code book plan M4d: an unchanged stored code is not work).
- */
-async function finishAndDownload(page, index) {
-  const finish = page.getByTestId("setup-finish");
-  await finish.click();
-  await expect
-    .poll(async () => (await finish.isHidden()) || (await finish.isEnabled()), {
-      timeout: 30000,
-    })
-    .toBe(true);
-  await expect(page.getByTestId("finish-block")).toBeVisible();
-  await page.getByTestId("finish-download").click();
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => /** @type {any} */ (window).__tourViewerTest.downloads.length,
-      ),
-    )
-    .toBe(index + 1);
-}
 
 function row(page, title) {
   return page.getByTestId("object-row").filter({

@@ -23,11 +23,6 @@ import {
   selectZeroReference,
 } from "gps-plus-slam-app-framework/state";
 import {
-  answerAtSpot,
-  isSecondCopySpot,
-  savedPoseKey,
-} from "./code-move-prompt.js";
-import {
   codePositionSentence,
   type CodePositionOutcome,
 } from "./code-position-rule.js";
@@ -63,7 +58,6 @@ import {
 import type { CreatorAlignmentPicks } from "./creator-alignment-picks.js";
 import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorCodes } from "./creator-codes.js";
-import type { CreatorMovePrompt } from "./creator-move-prompt.js";
 import type { CreatorPreviews } from "./creator-previews.js";
 import { moveWithCode, takesAlong } from "./move-with-code.js";
 import { authoringObjects, upsertPlaced } from "./object-editing.js";
@@ -84,7 +78,6 @@ import {
   type CodeMeasurement,
   type LiveCodeChoices,
   type VisitSettleInput,
-  sightedCodeOffset,
   storedGeo,
   type CodeSighting,
   type CorrectionRefusal,
@@ -232,15 +225,7 @@ export function wireCreatorSettle(deps: {
   seams: Pick<TourViewerSeams, "getScene">;
   previews: Pick<CreatorPreviews, "inVisit" | "placeEarlier" | "sync">;
   alignmentPicks: Pick<CreatorAlignmentPicks, "sync" | "picks" | "gpsExtent">;
-  draft: Pick<
-    CreatorDraft,
-    | "moveAnswers"
-    | "setMoveAnswers"
-    | "saveMeta"
-    | "recordPlacement"
-    | "recordVisit"
-  >;
-  movePrompt: Pick<CreatorMovePrompt, "settling">;
+  draft: Pick<CreatorDraft, "saveMeta" | "recordPlacement" | "recordVisit">;
   /** The codes: in hand, its measurement and sightings, every stored
    *  pose, the visit's stored-code sightings. */
   codes: Pick<
@@ -266,10 +251,10 @@ export function wireCreatorSettle(deps: {
   sizeOf: (text: string) => number;
 }): CreatorSettle {
   const { ctx, arStore, seams } = deps;
-  /** Codes moved to the poster's new spot (a "Yes, it moved" the settle
-   *  applied), by the visit that moved them: the visit log's move boundary
-   *  (§7j #12). An improved position of the same poster is no boundary:
-   *  every visit saw that one poster. */
+  /** Codes moved to a new spot, or back by an undo (the automatic
+   *  code-spot rule, M6), by the visit that did it: the visit log's move
+   *  boundary (§7j #12). An improved position of the same poster is no
+   *  boundary: every visit saw that one poster. */
   const movedInVisit = new Map<string, number>();
   /** What each settle since the last Finish decided, per code (M5c): the
    *  result screen's line (`positionSentence`). */
@@ -554,10 +539,6 @@ export function wireCreatorSettle(deps: {
   function settleVisit(trigger: "visit-end" | "finish"): void {
     const visit = ctx.arSessionGeneration;
     if (visitSettles.has(visit)) return;
-    // The settle applies a "Yes, it moved" or not: after it there is
-    // nothing to take back, even if a failed Finish settles again (U3
-    // milestone review #4).
-    deps.movePrompt.settling(visit);
     // The picks see the alignment as it stands at the end (the fallback).
     deps.alignmentPicks.sync();
     const state = arStore.getState();
@@ -642,17 +623,8 @@ export function wireCreatorSettle(deps: {
           // the size the tour stores for it, not the field's (M4 milestone
           // review #2).
           sizeM: measurement?.sizeM ?? sizeOfSighting(seen),
-          // An automatic move is applied as the creator's "Yes, it moved"
-          // was: the move path, past its 15 m guard (the spot rule needs the
-          // floor, 20 m, from every known spot).
-          answerAt: (offset) =>
-            spots.moves.has(code.id)
-              ? "moved"
-              : answerAtSpot(deps.draft.moveAnswers(), {
-                  levelId: code.id,
-                  savedKey: savedPoseKey(code.json),
-                  offset,
-                }),
+          // The automatic code-spot rule's move (M6), re-minted here.
+          automaticMove: spots.moves.has(code.id),
         }),
         reapplied: false,
       };
@@ -781,25 +753,6 @@ export function wireCreatorSettle(deps: {
           levelId: d.code.id,
         });
       }
-    }
-    // A "Yes, it moved" holds for its visit only: applied now, or asked
-    // again next time - never applied later, out of Undo's reach (U3
-    // milestone review #5). For every code this settle decided.
-    const decidedIds = new Set([
-      ...(level === null ? [] : [level.id]),
-      ...decisions.map((d) => d.code.id),
-    ]);
-    if (
-      deps.draft
-        .moveAnswers()
-        .some((a) => a.answer === "moved" && decidedIds.has(a.levelId))
-    ) {
-      deps.draft.setMoveAnswers(
-        deps.draft
-          .moveAnswers()
-          .filter((a) => !(a.answer === "moved" && decidedIds.has(a.levelId))),
-      );
-      void deps.draft.saveMeta();
     }
     logVisit(
       visit,
@@ -1069,7 +1022,6 @@ export function wireCreatorSettle(deps: {
       zero: v.zero,
       endQuality: v.endQuality,
       sizeM: sizeOfSighting(seen.at(-1)?.sighting ?? null),
-      answerAt: () => null,
     });
     const home = known[0]!.pose.position;
     const mintedAt = Date.parse(memory.current.mintQuality?.mintedAtIso ?? "");
@@ -1261,26 +1213,17 @@ export function wireCreatorSettle(deps: {
     }
     // The tour's other stored codes this visit saw (M3a/M3b review #6),
     // then the code in hand last: the log keeps each code's LAST look.
-    // Never a print answered "It's a second copy" (M5b review #11).
+    // Never a sighting at a second print (M5b review #11; M6: the settle's
+    // own judgement, `excluded`).
     for (const seen of deps.codes.storedSightings()) {
-      if (
-        seen.visit !== visit ||
-        excluded.has(seen.sighting) ||
-        isSecondCopy(state, seen.sighting)
-      ) {
-        continue;
-      }
+      if (seen.visit !== visit || excluded.has(seen.sighting)) continue;
       codes.push({
         levelId: seen.sighting.levelId,
         odomPose: seen.sighting.odomPose,
       });
     }
     const sighting = deps.codes.sighting();
-    if (
-      sighting !== null &&
-      !excluded.has(sighting) &&
-      !isSecondCopy(state, sighting)
-    ) {
+    if (sighting !== null && !excluded.has(sighting)) {
       codes.push({ levelId: sighting.levelId, odomPose: sighting.odomPose });
     }
     const entry = buildVisitLogEntry({
@@ -1305,37 +1248,6 @@ export function wireCreatorSettle(deps: {
     // A visit with no fix and no code has nothing to show or to combine.
     if (entry.gps.length === 0 && entry.codes.length === 0) return;
     deps.draft.recordVisit(entry);
-  }
-
-  /**
-   * Whether `sighting` - of the code in hand - lies, through this visit's
-   * plain alignment (the move prompt's view of it), at a spot answered
-   * "It's a second copy" for that level and its saved pose (M5b review
-   * #11). Only the level in hand: the prompt asks about no other code, so
-   * no other code has such an answer.
-   */
-  function isSecondCopy(
-    state: ReturnType<typeof arStore.getState>,
-    sighting: CodeSighting,
-  ): boolean {
-    const level = deps.codes.inHand();
-    if (level === null || sighting.levelId !== level.id) return false;
-    const offset = sightedCodeOffset({
-      visit: ctx.arSessionGeneration,
-      alignment: selectAlignmentMatrix(state),
-      zero: selectZeroReference(state),
-      mintedLevel: level,
-      measurement: deps.codes.measurement(),
-      sighting,
-    });
-    return (
-      offset !== null &&
-      isSecondCopySpot(deps.draft.moveAnswers(), {
-        levelId: level.id,
-        savedKey: savedPoseKey(level.json),
-        offset,
-      })
-    );
   }
 
   /**

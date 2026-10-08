@@ -118,8 +118,7 @@ draft and logs `tourAuthoring/settled`.
   a zero, a sighting of the level in hand or a stored pose. Shares its
   computation with the settle's correction (`sightedStoredCode`), so the
   two can never disagree about the number. Also `northM`/`eastM`: where
-  this visit sees the code minus its stored position - the spot the move
-  prompt (`code-move-prompt.ts`, M5b) remembers an answer for.
+  this visit sees the code minus its stored position.
 - `storedGeo(json)` - a level's stored geo, or null (the object list's
   distance to the code); `storedSizeM(json)` - a level's printed size, or
   null when it is not a positive number (the size a code is solved at,

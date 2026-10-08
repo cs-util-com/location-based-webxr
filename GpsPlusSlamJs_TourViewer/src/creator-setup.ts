@@ -47,7 +47,6 @@ import { wireCreatorCodes } from "./creator-codes.js";
 import { wireCreatorDraft } from "./creator-draft.js";
 import { wireCreatorPreviews } from "./creator-previews.js";
 import { wireCreatorAlignmentPicks } from "./creator-alignment-picks.js";
-import { wireCreatorMovePrompt } from "./creator-move-prompt.js";
 import { wireCreatorPlacement } from "./creator-placement.js";
 import { wireCreatorMeasuring } from "./creator-measuring.js";
 import { wireCreatorSettle } from "./creator-settle.js";
@@ -159,22 +158,6 @@ export interface CreatorSetupDom {
   /** The placed objects' list with Edit text, Move and Delete (authoring
    *  plan 2026-09-28-0953 §3.4, M4): `object-list.ts`'s view. */
   objectList: ObjectListView;
-  /** The moved-code prompt (authoring plan 2026-09-28-0953 §3.6, D20,
-   *  M5b; UI round 1, U3: "Did the poster move here?"): asked in AR once
-   *  the code in hand has been seen far from its saved spot for long
-   *  enough, with its three answers (`code-move-prompt.ts` decides when).
-   *  The one question about the code's position left (the measure and
-   *  replace buttons are gone, U3). */
-  movePrompt: HTMLElement;
-  movePromptText: HTMLElement;
-  movePromptUse: HTMLButtonElement;
-  movePromptCopy: HTMLButtonElement;
-  movePromptLater: HTMLButtonElement;
-  /** Undo of a "Yes, it moved" while its visit runs (before the settle
-   *  applies it). */
-  moveUndo: HTMLElement;
-  moveUndoText: HTMLElement;
-  moveUndoButton: HTMLButtonElement;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -429,23 +412,6 @@ export function wireCreatorSetup(deps: {
     renderAuthorReadout();
   });
 
-  /** The moved-code prompt and its undo (`creator-move-prompt.ts`; UI
-   *  round 1, U3: "Did the poster move here?"). */
-  const movePrompt = wireCreatorMovePrompt({
-    ctx,
-    arStore,
-    dom,
-    draft,
-    codes,
-    sessionLive,
-    levelInHandIsStored: () => levelInHandIsStored(),
-    settled: (visit) => settle.record(visit) !== undefined,
-    alignmentInfo: () => authorAlignmentInfo(),
-    render: () => {
-      renderAuthorReadout();
-    },
-  });
-
   function renderAuthorReadout(): void {
     measuring.renderSizeOffer();
     if (!creator) return;
@@ -457,7 +423,6 @@ export function wireCreatorSetup(deps: {
     // A new fix re-judges the refusal line (§7m #8; the line only, never the
     // earlier objects' frame).
     settle.judgeOnNewFix();
-    movePrompt.render();
     editing.render();
     // F11: the AR controls belong to the AR session. On the setup page they
     // were a row of greyed-out buttons under "AR not supported", which is
@@ -639,7 +604,6 @@ export function wireCreatorSetup(deps: {
     codes,
     alignmentPicks,
     draft,
-    movePrompt,
     visitLog,
     pageId,
     ...(deps.summary === undefined ? {} : { summary: deps.summary }),
@@ -689,7 +653,6 @@ export function wireCreatorSetup(deps: {
     settle,
     handoff,
     previews,
-    movePrompt,
     draft,
     sessionLive,
     render: () => {
@@ -727,7 +690,6 @@ export function wireCreatorSetup(deps: {
       alignmentPicks.reset();
       codes.endVisit();
       settle.endVisit();
-      movePrompt.endVisit();
       statusExpanded = false;
       // What the previews were made from, and the earlier visits' frame.
       previews.endVisit();
@@ -745,8 +707,8 @@ export function wireCreatorSetup(deps: {
       // offering it goes away with it (M3 review #6) - otherwise a newly
       // opened tour shows a dead download button from the previous one.
       dom.finishBlock.hidden = true;
-      // The offer, the draft namespace, its rejections and the move
-      // prompt's answers belonged to the tour that just closed.
+      // The offer, the draft namespace and its rejections belonged to the
+      // tour that just closed.
       draft.reset();
       // The closing tour's previews, photo bytes and list (M4).
       previews.reset();
@@ -754,9 +716,8 @@ export function wireCreatorSetup(deps: {
       // The summary and the visits belonged to the closing tour (M3b).
       deps.summary?.hide();
       visitLog.clear();
-      // And the move prompt's boundaries and undo (M5b).
+      // And the visit log's move boundaries and the code-spot decisions.
       settle.reset();
-      movePrompt.reset();
       codes.reset();
       measuring.reset();
     },

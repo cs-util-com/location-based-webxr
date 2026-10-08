@@ -8,10 +8,10 @@ are the framework's.
 
 ## Public API
 
-- `writeDraftMeta(store, { tourUrl, sizeM, level, levels?, rejected?, moveAnswers? })` - the
-  tour, the printed size, the measured level, the ids the creator has
-  thrown away, and the move prompt's remembered answers ("It's a second
-  copy" / "Not now" per level and spot, authoring plan §3.6, M5b). **This write is the commit point for a rejection** - see the
+- `writeDraftMeta(store, { tourUrl, sizeM, level, levels?, rejected? })` - the
+  tour, the printed size, the measured level and the ids the creator has
+  thrown away. (Metas written before code book plan M6 also carry the move
+  prompt's answers; they are read as if absent.) **This write is the commit point for a rejection** - see the
   invariant below. `rejected` is optional and absent from every meta file
   written before 2026-09-10. `levels` (code book plan M4c-1) is every code
   the hosted zip does not hold yet, `level` (the code in hand) among them;
@@ -78,7 +78,7 @@ are the framework's.
   - **the sweep** - those are deletes that did not finish, and with
     `clear` uncalled nothing else would ever reclaim them.
 - `readDraft(store) -> Promise<StoredDraft | undefined>` -
-  `{ draft, photos, rejectedIds, visits, moveAnswers, storedIds }`, or
+  `{ draft, photos, rejectedIds, visits, storedIds }`, or
   `undefined` when there
   is no meta file. Objects the meta rejects are absent from `draft.objects`
   and `photos` whether or not their files are still on disk.
@@ -187,9 +187,8 @@ after a rejection to be ignored pinned the defect it caused.
 And the visits (M3b): they come back on a new read (a reload), a corrupt
 visit file costs itself and stays a stored id, a rejected visit is hidden
 and `removeDraftObject` takes its file, and an object id never reads as a
-visit. And the move prompt's answers (M5b): they round-trip through the
-meta, and a missing or unreadable list reads as no answers without costing
-the draft.
+visit. And a meta from before M6 that still carries the move prompt's
+answers restores, the answers unread.
 
 `removeDraftObject` and `storedIds` are exercised from
 `creator-setup.test.ts`, not from here - the contract they carry is

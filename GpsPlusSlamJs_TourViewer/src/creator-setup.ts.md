@@ -32,7 +32,6 @@ is an instruction for a situation a desktop creator is not in.
 root.** Each concern is its own `creator-*.ts` module with its own sidecar:
 `creator-draft.ts` (the on-device draft), `creator-previews.ts` (the AR
 previews), `creator-alignment-picks.ts` (the per-moment alignments),
-`creator-move-prompt.ts` ("Did the poster move here?"),
 `creator-placement.ts` (pins and photos), `creator-codes.ts` (the one
 owner of the codes, M4a), `creator-measuring.ts` (the QR
 pipeline, the size offer, automatic measuring), `creator-settle.ts` (the
@@ -62,11 +61,10 @@ were here. What stays is the Finish's side:
   - `openDraftStore(key)` resolves this tour's draft namespace, or
     `undefined` where there is no persistence. Injected so the unit tests
     and the e2e can supply one without OPFS.
-  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; movePrompt; movePromptText; movePromptUse; movePromptCopy; movePromptLater; moveUndo; moveUndoText; moveUndoButton }`
+  - `CreatorSetupDom { panel; controls; finishBlock; replaceHelp; replaceHelpShare; replaceHelpGeneric; replaceHelpDrive; sizeInput; printPanel; status; finishButton; keepScanRow; keepScanInput; finishStatus; downloadButton; pinButton; pinLabel; pinSave; pinCancel; photoButton; draftOffer; draftOfferText; draftRestore; draftDismiss; draftDiscard; sizeOffer; sizeOfferText; sizeOfferUse; sizeOfferKeep; objectList; }`
     - `objectList` (authoring plan 2026-09-28-0953 §3.4, M4) - the
       `object-list.ts` view (`bind`, `render`); `main.ts` builds it over
       `#object-list` inside the panel.
-    - `movePrompt*` (M5b; UI round 1, U3) - "Did the poster move here?" and its three answers, inside `#setup-controls` - the one question about the code's position left (the explicit replace and its confirm are gone); `moveUndo*` - the Undo of a "Yes, it moved" while its visit runs.
   - `arSessionLive(status)` - whether the controller's status means a
     session is up (`starting` / `running` / `stopping`). Exported because
     `main.ts` hands the same predicate to the wizard, which must not
@@ -193,17 +191,10 @@ were here. What stays is the Finish's side:
     since M4 review #4 hands the tap's target ray as a second argument
     (backward compatible: MinimalExample's one-parameter handler is as it
     was), so the pick goes through the tapped point.
-  - **The moved-code prompt** and its undo: `creator-move-prompt.ts` (its
-    sidecar holds the rules that were here). What the settle and the visit
-    log do with its answers stays here:
-    - A sighting of the code in hand at a spot answered "It's a second
-      copy" (`isSecondCopySpot`, through the visit's plain alignment, as
-      the prompt saw it) is kept out of the visit log (`logVisit`): it is
-      another print, so it must not count as a visit of the stored code
-      in `codeVisitPoses` (M5b review #11). "Not now" leaves it a visit.
-    - **The move boundary**: a move the settle APPLIED records its visit as
-      the code's move boundary (`movedInVisit`, set before the visit is
-      logged); an improved position of the same poster is no boundary.
+  - **No move question** since code book plan M6: the settle decides by
+    itself whether a poster moved (`creator-settle.ts`, "The automatic
+    code spots"); a sighting at a second print is kept out of the visit
+    log, and a move or its undo is the code's move boundary.
   - The readout's "N objects placed" counts only objects the zip does not
     carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,
@@ -267,10 +258,9 @@ arrives), `creator-finish.test.ts` (the settle at
 Finish, once). Editing (M4): `authoring-settle.test.ts` (hosted objects
 rendered and listed, edit, delete, move through the code correction, the
 async states, tap-select, the overlay guard). The code's position at the settle (U3): `authoring-settle.test.ts` "the code's saved position, decided at the settle" (a replace after a reliable walk taking the pin next to the code along and leaving the one 60 m away, a hosted pin moved as an edit by id, R1's standing re-measure kept, a well-walked position kept, the result screen's line) plus the pure `code-position-rule`, `code-position-settle` and `move-with-code` tests. The
-moved-code prompt (M5b): `authoring-settle.test.ts` "the moved-code
-prompt" (asked only after the rule's fixes and seconds, logged once; not
-with the gate closed; "Yes, it moved" changing nothing at once, logged and remembered, applied by the settle after enough walking with no pin moved and the move boundary marked, held without the walk and said on the result screen; Undo while the visit runs, re-answering "Not now", gone once the visit settled; the answers remembered in the draft across a reload, and a refused write surfaced as the backup notice; a sighting answered "It's a second copy" kept out of the visit log while a "Not now" one stays in it), plus the pure `code-move-prompt*`
-tests and the e2e `move-prompt.spec.js` (one per answer).
+automatic code spots (M6): `authoring-settle.test.ts` "the automatic
+code spots at the settle", the pure `code-spots`, `code-spot-settle` and
+`level-spots` tests, and the e2e `code-auto-move.spec.js`.
 `creator-finish.test.ts` (an edit replaces in place; a deletion filters
 the object and takes a deleted photo's jpg out of the archive),
 `creator-setup.test.ts` (a draft's edit and deletion offered and

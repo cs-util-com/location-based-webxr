@@ -3,8 +3,9 @@
 ## Purpose
 
 The creator's on-device draft (second testing session, F13): the crash-safe
-copy of a tour's authoring work, its offer when the tour is opened again,
-and the move prompt's remembered answers that every meta write re-states.
+copy of a tour's authoring work and its offer when the tour is opened
+again. (Until code book plan M6 it also kept the move prompt's answers; a
+meta that still carries them restores, the answers unread.)
 Split out of `creator-setup.ts` unchanged in the code book refactor plan's
 M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan.md`).
 
@@ -22,12 +23,11 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
   - `present(tourUrl)` - a tour opened and its manifest settled: open the
     namespace, then sweep a spent draft, offer what is not hosted yet, or
     start one. Every continuation re-checks `ctx.openGeneration`.
-  - `reset()` - a tour closed: the offer, the namespace, the rejections
-    and the move answers go.
+  - `reset()` - a tour closed: the offer, the namespace and the
+    rejections go.
   - `saveMeta()` - rewrite the open tour's meta (tour, printed size from
     the FIELD, the code in hand from `creator-codes.ts` and every code the
-    hosted zip does not hold yet as `levels` (M4c-1), the rejections, the
-    move answers),
+    hosted zip does not hold yet as `levels` (M4c-1), the rejections),
     queued per namespace. Resolves true with no tour open (nothing to
     write, nothing failed), false where the tour has no store; a refused
     write may reject, as before the split.
@@ -39,9 +39,6 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     it.
   - `warnNoBackup()` / `persists()` - the once-only "not saving a backup
     copy" note, and whether it was said.
-  - `moveAnswers()` / `setMoveAnswers(list)` - the move prompt's answers
-    per level and spot (M5b), read from the meta at open and merged with any
-    given before it.
 - `hostedLevelJson(session, levelId)` - what the HOSTED zip stores for a
   level (the content, not the id's presence), or null when unreadable.
   Exported because the measuring path asks it too.

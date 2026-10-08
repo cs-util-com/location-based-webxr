@@ -17,18 +17,17 @@ buttons and the replace's confirm (the code is measured on its own:
   alignment rested on and its fixes' accuracy (m); `null` is unknown.
 - `isReliable(q)` - `extentM >= max(10, walkNeededM(accuracyM))`; unknown is
   never reliable.
-- `decideCodePosition({ stored, candidate, offsetM, moved, far? })` ->
-  `CodePositionDecision`, in this order:
-  - `moved` (the creator answered "Yes, it moved") AND the code still seen
-    15 m or more away: `move` when the candidate is reliable, else
-    `move-waits` with `walkMoreM` (how much more walking it needs; 5 m
-    accuracy assumed when unknown, for this figure only). A "Yes" while this visit sees the code
-    near its saved spot is ignored (U3 milestone review #3: the prompt
-    fires just past 15 m and an answer covers 20 m around it, so a "Yes"
-    to a GPS-bias prompt could otherwise move a well-walked code);
-  - `far` (default `offsetM >= 15`; `code-position-settle.ts` passes the
-    code correction's plausibility bound and yaw bound too): `keep` /
-    `far` - the move question's domain, never a silent replace;
+- `decideCodePosition({ stored, candidate, offsetM, automaticMove?, far? })`
+  -> `CodePositionDecision`, in this order:
+  - `automaticMove` (the automatic code-spot rule moved the code,
+    `code-spots.ts`, code book plan M6) and the candidate is reliable:
+    `move`. The spot rule only moves after a reliable walk; the check
+    here keeps this rule's promise that nothing unreliable ever changes
+    a position, whatever its caller asks;
+  - `far` (default `offsetM >= REPLACE_CAP_M`, 15 m;
+    `code-position-settle.ts` passes the code correction's plausibility
+    bound and yaw bound too): `keep` / `far` - the code-spot rule's
+    domain, never a silent replace;
   - candidate not reliable: `keep` / `not-walked` with `walkMoreM`;
   - stored position reliable itself: `keep` / `stored-good` (no churn per
     visit);
@@ -38,8 +37,10 @@ buttons and the replace's confirm (the code is measured on its own:
   (no button announces the decision any more): an applied improvement or
   move outranks a later "kept"; otherwise the latest speaks - how many
   metres this visit's walk was short of what its accuracy needs, for
-  `not-walked` and `move-waits` (a waiting move is forgotten at the settle
-  and asked again next time); `stored-good` and `far` say nothing.
+  `not-walked`; `stored-good` and `far` say nothing.
+- `REPLACE_CAP_M` (15 m) - the farthest a silent replace may shift a saved
+  position (U3 milestone review #11). Until M6 it was the move question's
+  `MOVE_PROMPT_FLOOR_M`.
 - `qualityOfLevel(json)` - a saved level's `qr.mintQuality`
   (`alignmentGpsExtentM`, `gpsAccuracyM`, D31); unknown for an older level
   or an unreadable file.
@@ -80,7 +81,8 @@ decideCodePosition({
 
 `code-position-rule.test.ts`: the reliability table, the R1 numbers over
 accuracy, a property tying `isReliable` to the walk model, each decision
-branch (a "Yes" near the saved spot ignored, `far` below 15 m), a property
+branch (an automatic move applied, and never from an unreliable walk;
+`far` below 15 m), a property
 that nothing unreliable ever replaces or moves, the result line, and
 `qualityOfLevel` on new, old and broken files.
 

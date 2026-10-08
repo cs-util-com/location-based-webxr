@@ -110,3 +110,20 @@ camera, so `installTourViewerArFakes(page)` installs
 Consumed by `ar-mode.spec.js`, `ar-layout.spec.js` and
 `object-editing.spec.js`. Not a test file itself; the prod-inert
 guarantee it relies on is unit-tested in `src/seams.test.ts`.
+
+## The downloaded zip (shared since code book plan M6)
+
+- `readZip(bytes)` returns `{ names, json }`: every entry name, and each
+  JSON entry's text.
+- `levelTexts(bytes)` returns the level files (`qr/*.json`) by entry name,
+  as text.
+- `downloadedZip(page, index)` returns the entry names, the manifest and
+  the level files of the n-th download in the fakes' `downloads`.
+- `finishAndDownload(page, index)` taps Finish, waits for THIS rebuild,
+  then downloads. The result line stands only between the Finish and the
+  save, so a spec that reads it taps the two itself
+  (`code-auto-move.spec.js`).
+
+These moved here from `object-editing.spec.js` so that
+`code-auto-move.spec.js` shares them instead of copying them.
+`ar-mode.spec.js` still has its own `readDownloadedZip` (a follow-up).

@@ -273,7 +273,8 @@ describe("a meta written before the code book (one level) stays readable (code b
   const BEFORE_M4 =
     '{"tourUrl":"https://h/t.zip","sizeM":0.2,"level":{"id":"a1b2c3d4e5f6","json":"{\\"version\\":1}"},"rejected":["gone"],"moveAnswers":[{"levelId":"a1b2c3d4e5f6","northM":40,"eastM":0,"answer":"not-now","savedKey":"k1"}]}';
 
-  it("reads its level, size, rejections and answers", async () => {
+  // Its move answers belong to the prompt M6 removed: they are ignored.
+  it("reads its level, size and rejections, ignoring the removed prompt's answers", async () => {
     const store = memoryStore();
     await store.put("meta", BEFORE_M4);
     const read = await readDraft(store);
@@ -286,15 +287,6 @@ describe("a meta written before the code book (one level) stays readable (code b
     // that list's only entry.
     expect(read?.draft.levels).toEqual([
       { id: "a1b2c3d4e5f6", json: '{"version":1}' },
-    ]);
-    expect(read?.moveAnswers).toEqual([
-      {
-        levelId: "a1b2c3d4e5f6",
-        northM: 40,
-        eastM: 0,
-        answer: "not-now",
-        savedKey: "k1",
-      },
     ]);
   });
 });
@@ -439,39 +431,30 @@ describe("a rejection recorded in the meta is the commit point", () => {
   });
 });
 
-describe("the move prompt's remembered answers (authoring plan 2026-09-28-0953 §3.6, M5b)", () => {
-  // Why these tests matter (§7j #14): "It's a second copy" and "Not now"
-  // must survive a reload, or the prompt asks again for the same spot every
-  // time the page opens. They live in the meta, which every write re-states,
-  // and they are external data on the way back in.
-  const answer = {
-    levelId: "lvl",
-    northM: 40,
-    eastM: -3,
-    answer: "second-copy",
-    savedKey: "0badf00d",
-  } as const;
-
-  it("round-trips the answers through the meta", async () => {
+describe("a meta from before the automatic code spots (code book plan M6)", () => {
+  // Why: until M6 the meta carried the move prompt's answers. A creator's
+  // draft from then must still restore; the answers are simply not read.
+  it("reads a meta that still carries the move prompt's answers", async () => {
     const store = memoryStore();
-    await writeDraftMeta(store, { ...META, moveAnswers: [answer] });
-    expect((await readDraft(store))?.moveAnswers).toEqual([answer]);
-  });
-
-  it("reads a meta without answers, or with unreadable ones, as no answers - never as a failed draft", async () => {
-    const store = memoryStore();
-    await writeDraftMeta(store, META);
-    await writeDraftObject(store, pin("a"));
-    expect((await readDraft(store))?.moveAnswers).toEqual([]);
     await store.put(
       "meta",
-      JSON.stringify({ ...META, moveAnswers: [answer, { levelId: 3 }, "x"] }),
+      JSON.stringify({
+        ...META,
+        moveAnswers: [
+          {
+            levelId: "lvl",
+            northM: 40,
+            eastM: -3,
+            answer: "second-copy",
+            savedKey: "0badf00d",
+          },
+        ],
+      }),
     );
+    await writeDraftObject(store, pin("a"));
     const read = await readDraft(store);
-    expect(read?.moveAnswers).toEqual([answer]);
     expect(read?.draft.objects.map((o) => o.id)).toEqual(["a"]);
-    await store.put("meta", JSON.stringify({ ...META, moveAnswers: 9 }));
-    expect((await readDraft(store))?.moveAnswers).toEqual([]);
+    expect(read).not.toHaveProperty("moveAnswers");
   });
 });
 
