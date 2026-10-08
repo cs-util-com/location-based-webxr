@@ -26,7 +26,10 @@ sceneDepth })`
     volume), and, while enabled, the ground sky's noise offset
     (`cloudVolumeNoiseOffset` at the map's drift, wrapped at
     `CLOUD_NOISE_PERIOD_TILES`, where the hex-tiled field repeats), which
-    anchors the noise to the ground: with the frame centred on the target, a fixed offset put
+    anchors the noise to the ground, plus the shift carried across every
+    frame recentre since (`cloudVolumeRecentreShift`, so a ground point
+    keeps its noise when the frame moves; the owner's clouds jumped when he
+    zoomed out and back in, 2026-10-08): with the frame centred on the target, a fixed offset put
     the same clear patch under every place (2026-10-06). The slab's reach
     (`setCloudReach`) follows the disc, at least the default 21 km, so the
     volume reaches toward the horizon (volume-cloud plan §13, R2: the

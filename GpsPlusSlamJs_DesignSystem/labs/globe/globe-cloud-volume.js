@@ -27,6 +27,7 @@
  * @see globe-cloud-volume.js.md
  */
 import * as THREE from "three";
+import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
 import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
 import { CLOUD_NOISE_PERIOD_TILES } from "/fw/visualization/atmosphere/cloud-hex.js";
@@ -39,6 +40,7 @@ import {
   CLOUD_VOLUME_COVERAGE_GLSL,
   cloudVolumeDiscCentre,
   cloudVolumeNoiseOffset,
+  cloudVolumeRecentreShift,
   cloudVolumeShare,
 } from "/globe/globe-cloud-volume.js";
 
@@ -74,11 +76,21 @@ const MIN_REACH_END_M = CLOUD_SLAB_REACH.farEndM;
  * The volume for `renderer`, drawing the ground sky's `atmosphere` slab
  * found in `skyScene`, its coverage from the globe's `surfaceUniforms`.
  */
+/** A noise coordinate wrapped to the noise's period, [0, period) tiles. */
+const wrapNoise = (t) =>
+  t - CLOUD_NOISE_PERIOD_TILES * Math.floor(t / CLOUD_NOISE_PERIOD_TILES);
+
 export function createGlobeCloudVolume(
   renderer,
   { atmosphere, skyScene, surfaceUniforms, sceneDepth },
 ) {
   const origin = { value: new THREE.Vector2() };
+  /**
+   * The frame target the noise was last anchored at, and the shift carried
+   * across every recentre since, so a ground point keeps its noise when the
+   * frame moves (the owner's "clouds jump when I zoom out and back in").
+   */
+  let anchor = null;
   const shareUniform = { value: 0 };
   const gainUniform = { value: 1 };
   const volumeTarget = new THREE.WebGLRenderTarget(1, 1, {
@@ -197,16 +209,42 @@ export function createGlobeCloudVolume(
         // The noise belongs to the ground and drifts with the map: without
         // it every place put the same (clear) patch under its target.
         if (enabled) {
+          const tileM = CLOUD_LAYER.tileKm * 1000;
+          const period = CLOUD_NOISE_PERIOD_TILES;
+          const lonOffsetRad = surfaceUniforms.uCloudLonOffset.value;
+          if (anchor === null) {
+            anchor = { lat: target.lat, lng: target.lng, shift: [0, 0] };
+          } else if (anchor.lat !== target.lat || anchor.lng !== target.lng) {
+            const [du, dv] = cloudVolumeRecentreShift(
+              WGS84_ELLIPSOID,
+              anchor,
+              target,
+              lonOffsetRad,
+              tileM,
+              period,
+            );
+            anchor = {
+              lat: target.lat,
+              lng: target.lng,
+              shift: [
+                wrapNoise(anchor.shift[0] + du),
+                wrapNoise(anchor.shift[1] + dv),
+              ],
+            };
+          }
           const [u, v] = cloudVolumeNoiseOffset(
             {
               latRad: origin.value.x,
               lonRad: origin.value.y,
-              lonOffsetRad: surfaceUniforms.uCloudLonOffset.value,
+              lonOffsetRad,
             },
-            CLOUD_LAYER.tileKm * 1000,
-            CLOUD_NOISE_PERIOD_TILES,
+            tileM,
+            period,
           );
-          atmosphere.cloudUniforms.atmCloudOffset.value.set(u, v);
+          atmosphere.cloudUniforms.atmCloudOffset.value.set(
+            wrapNoise(u + anchor.shift[0]),
+            wrapNoise(v + anchor.shift[1]),
+          );
         }
       }
       // The disc's centre (volume-cloud plan §15): where the view meets the

@@ -24,7 +24,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { bootGlobe, meanOf } from "./globe-smoke-helpers.mjs";
+import { applyHash, bootGlobe, meanOf } from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 // A partly cloudy part of the map (56.5 N 9 E, Jutland: the map's mean
@@ -439,4 +439,47 @@ test("the cloud volume compiles and draws its hex-tiled clouds with cloudHex=1",
   expect(volume.hex).toBe(true);
   expect(volume.drawn).toBeGreaterThan(0);
   expect(coverage.lowerShare).toBeGreaterThanOrEqual(LOWER_SHARE);
+});
+
+// WHY (the owner, 2026-10-08, r805: "zooming out and back in, the clouds
+// sometimes jump, as if a random seed were not persisted"): the frame
+// recentres under the camera once its ground point drifts 20 km from the
+// origin, and the noise's anchoring was right only along a parallel or a
+// meridian. A ground point between the two places must read the same noise
+// coordinate after the frame moved 25 km diagonally (a jump was about a
+// quarter tile near Bern; the bound is a hundredth).
+test("a frame recentre keeps the clouds' noise on the ground (no jump)", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const base =
+    "spinMs=0&turnMs=0&time=2026-10-05T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&detail=0";
+  const errors = await bootGlobe(page, `${base}&view=46.95,7.45,10,0,-30`, {
+    phase: "user",
+  });
+  const point = { lat: 47.03, lng: 7.56 };
+  await page.evaluate(() => window.__globeLab.timeFrames(3));
+  const before = await page.evaluate(
+    ({ lat, lng }) => window.__globeLab.cloudNoiseCoordAt(lat, lng),
+    point,
+  );
+  await applyHash(page, `${base}&view=47.12,7.68,10,0,-30`);
+  await page.evaluate(() => window.__globeLab.timeFrames(3));
+  const after = await page.evaluate(
+    ({ lat, lng }) => window.__globeLab.cloudNoiseCoordAt(lat, lng),
+    point,
+  );
+  const period = 13;
+  const wrapped = (a, b) => {
+    const d = (((a - b) % period) + period) % period;
+    return Math.min(d, period - d);
+  };
+  const du = wrapped(before[0], after[0]);
+  const dv = wrapped(before[1], after[1]);
+  console.log(
+    `recentre: the ground point's noise moved ${du.toFixed(4)} / ${dv.toFixed(4)} tiles`,
+  );
+  expect(errors).toEqual([]);
+  expect(du).toBeLessThan(0.01);
+  expect(dv).toBeLessThan(0.01);
 });

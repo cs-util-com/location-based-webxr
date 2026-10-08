@@ -644,6 +644,9 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   (`dustFade`), so a wrap never pops in. Built on the first frame that asks; never picked or ray
   cast. The state's `dust` (`{ count, opacity, shown }`) reports it
   (`globe-dust.smoke.spec.mjs`).
+  `cloudNoiseCoordAt(lat, lng)` (a test hook) returns the cloud noise
+  coordinate a ground point reads under the current frame; a recentre must
+  leave it unchanged (`globe-cloud-volume.smoke.spec.mjs`).
   `cloudHex` (0, the default until the owner's phone run; hex-tiling plan
   2026-10-07-0919, H2) hex-tiles the volume's big-shape octave so its
   clouds no longer repeat every 24 km (`globe-cloud-volume.js` `setHex`;

@@ -37,6 +37,16 @@ own cloud map so the swap from the cloud shell never plops.
   the hex field jumped (hex-tiling plan H1, cold review finding 6).
   RangeError for a non-finite origin, a tile that is not positive or a
   period that is not a positive whole number.
+- `cloudVolumeRecentreShift(ellipsoid, from, to, lonOffsetRad, tileM, periodTiles)`:
+  the noise shift (tiles) to add once the world frame moves from `from` to
+  `to` (degrees), so a ground point keeps its noise. The offset alone is
+  right only along a parallel or a meridian; a recentre that changes the
+  latitude moved the noise (the owner, 2026-10-08: "the clouds jump when
+  I zoom out and back in"; measured in the lab: 0.078 tile, about 1.9 km,
+  for a 25 km diagonal move near Bern, 0.0012 with the shift). The old
+  offset plus the new origin's place in the old frame, minus the new
+  offset; callers add it up across recentres. Property-tested over random
+  places, drifts and moves up to 30 km (within 0.003 tile).
 - `CLOUD_VOLUME_COVERAGE_GLSL`: the chunk for the framework's
   `setCloudSlabCoverage`, defining `float atmCloudCoverageAt(vec2 xz)` as
   the map at `cloudVolumeMapUv`'s position times `uVolumeOpacity` and

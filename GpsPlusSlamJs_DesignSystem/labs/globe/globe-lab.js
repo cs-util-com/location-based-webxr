@@ -21,6 +21,7 @@ import {
   createGlobeSurface,
 } from "/globe/globe-surface.js";
 import { CLOUD_VOLUME } from "/globe/globe-cloud-volume.js";
+import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
 import { flatCloudShare } from "/globe/globe-cloud-flat-fade.js";
 import {
   createDustField,
@@ -3449,6 +3450,25 @@ async function start() {
       return [(p.x + 1) / 2, (1 - p.y) / 2];
     },
     regionStats,
+    /**
+     * The cloud noise coordinate (tiles) a ground point reads under the
+     * current frame: its world x, z over the tile plus the ground sky's
+     * offset. A frame recentre must leave it unchanged (the owner's
+     * "clouds jump when I zoom out and back in", 2026-10-08).
+     */
+    cloudNoiseCoordAt(lat, lng) {
+      const tileM = CLOUD_LAYER.tileKm * 1000;
+      const p = globe.tiles.group.localToWorld(
+        globe.tiles.ellipsoid.getCartographicToPosition(
+          lat * DEG,
+          lng * DEG,
+          0,
+          new THREE.Vector3(),
+        ),
+      );
+      const o = groundSky.atmosphere.cloudUniforms.atmCloudOffset.value;
+      return [p.x / tileM + o.x, p.z / tileM + o.y];
+    },
     /**
      * A test hook (review 2026-10-01, M1): takes the camera from the flight
      * and the controls, as a press would, and pitches it up by `deg` about

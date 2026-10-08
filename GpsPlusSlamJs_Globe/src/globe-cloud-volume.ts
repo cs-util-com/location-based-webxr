@@ -18,7 +18,12 @@
  *
  * @see globe-cloud-volume.ts.md
  */
+import * as THREE from "three";
+import type { Ellipsoid } from "3d-tiles-renderer";
+
 import { smoothstep } from "./globe-ease.js";
+import { worldFromEcefAt } from "./globe-frame.js";
+import type { LatLng } from "./globe-target.js";
 
 const EARTH_RADIUS_M = 6_371_000;
 
@@ -176,6 +181,45 @@ export function cloudVolumeNoiseOffset(
     return f < periodTiles ? f : 0;
   };
   return [wrap(east), wrap(south)];
+}
+
+const recentreFrom = new THREE.Matrix4();
+const recentreTo = new THREE.Vector3();
+
+/**
+ * The noise-coordinate shift (tiles, [u, v]) to add to
+ * `cloudVolumeNoiseOffset` once the world frame moves from `from` to `to`
+ * (degrees), so a ground point keeps its noise. The offset alone is right
+ * only along a parallel or a meridian: a recentre that changes the latitude
+ * moved the noise by R dcos(lat) lon (a quarter tile near Bern; the owner,
+ * 2026-10-08: "the clouds jump when I zoom out and back in"). The shift is
+ * the old offset plus the new origin's place in the old frame, minus the new
+ * offset: continuous at the new origin, and near it to the frames'
+ * curvature (metres over the volume's disc). Callers add it up across
+ * recentres. Not wrapped. RangeError as `cloudVolumeNoiseOffset`.
+ */
+export function cloudVolumeRecentreShift(
+  ellipsoid: Ellipsoid,
+  from: LatLng,
+  to: LatLng,
+  lonOffsetRad: number,
+  tileM: number,
+  periodTiles: number,
+): [number, number] {
+  const DEG = Math.PI / 180;
+  const offset = (t: LatLng) =>
+    cloudVolumeNoiseOffset(
+      { latRad: t.lat * DEG, lonRad: t.lng * DEG, lonOffsetRad },
+      tileM,
+      periodTiles,
+    );
+  const [u0, v0] = offset(from);
+  const [u1, v1] = offset(to);
+  worldFromEcefAt(ellipsoid, from, recentreFrom);
+  ellipsoid
+    .getCartographicToPosition(to.lat * DEG, to.lng * DEG, 0, recentreTo)
+    .applyMatrix4(recentreFrom);
+  return [u0 + recentreTo.x / tileM - u1, v0 + recentreTo.z / tileM - v1];
 }
 
 /**
