@@ -22,7 +22,6 @@ import {
   type CodeTour,
   type TourRelation,
 } from "./code-tour.js";
-import { tourLabel } from "./tour-session.js";
 import type { TourViewerSession } from "./tour-viewer-session.js";
 
 /** What `archive-open`'s open returned. */
@@ -49,11 +48,6 @@ export type CodeTourStatus =
       /** True while a later detection will try again. */
       retrying: boolean;
     }
-  /** No tour is open, and the level in hand was measured from `label`'s
-   *  code: this code's tour does not open (it would take that level), but
-   *  Save stays on - a new measurement replaces the level (§9 #4,
-   *  milestone review #6). */
-  | { kind: "measured-for-another"; label: string }
   /** A code of another tour while one is open: one more reference code for
    *  the open tour (§13). */
   | { kind: "added-to-open-tour" }
@@ -78,8 +72,6 @@ export interface ScanOpen {
   onDetection(text: string): void;
   /** What the panel says about `text` (null: no code in view). */
   status(text: string | null): CodeTourStatus;
-  /** The normalised link of the tour `text` names, once read; else null. */
-  tourOf(text: string): string | null;
   /** How `text` relates to the open tour, once read; "resolving" before
    *  (UI round 1, U3: what the creator's panel may measure on its own). */
   relation(text: string): TourRelation | "resolving";
@@ -129,20 +121,6 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
       : null;
   }
 
-  /** With no tour open, a level measured from ANOTHER tour's code must
-   *  wait for that tour (plan §9 #4). A code naming no tour binds nothing. */
-  function measuredForAnother(code: CodeTour & { kind: "tour" }): boolean {
-    const level = ctx.mintedLevel;
-    const bound = ctx.mintedLevelTour;
-    return (
-      level !== null &&
-      bound !== null &&
-      bound.levelId === level.id &&
-      bound.tourUrl !== null &&
-      bound.tourUrl !== code.normalizedUrl
-    );
-  }
-
   function tryOpen(code: CodeTour & { kind: "tour" }, text: string): void {
     const previous = attemptFor(code.normalizedUrl);
     if (
@@ -189,7 +167,7 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
       ctx.session?.archive.url ?? null,
       ctx.currentLevels,
     );
-    if (relation === "no-tour-open" && !measuredForAnother(known)) {
+    if (relation === "no-tour-open") {
       tryOpen(known, text);
     }
   }
@@ -236,12 +214,6 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
       if (relation === "this-tour") return { kind: "quiet" };
       if (relation === "unknown") return { kind: "unknown" };
       if (relation === "other-tour") return { kind: "added-to-open-tour" };
-      if (measuredForAnother(known)) {
-        return {
-          kind: "measured-for-another",
-          label: tourLabel(ctx.mintedLevelTour?.tourUrl ?? ""),
-        };
-      }
       const failed = attemptFor(known.normalizedUrl);
       if (failed !== null) {
         return {
@@ -251,15 +223,6 @@ export function createScanOpen(deps: ScanOpenDeps): ScanOpen {
         };
       }
       return { kind: "opening" };
-    },
-
-    tourOf(text) {
-      const known = codes.get(text);
-      return known !== undefined &&
-        known !== "resolving" &&
-        known.kind === "tour"
-        ? known.normalizedUrl
-        : null;
     },
 
     relation(text) {

@@ -166,38 +166,6 @@ describe("a creator with no tour open", () => {
     expect(s.opened).toEqual([]);
     expect(s.scan.status("https://menu.test/today").kind).toBe("not-a-tour");
   });
-
-  it("does not open another tour than the one the level was measured from", async () => {
-    // Plan §9 #4: X's open failed, the creator measured X anyway, then
-    // walked past Y's poster - Y must not take X's level.
-    const s = setup();
-    s.ctx.mintedLevel = { id: "lvl-x", json: "{}" };
-    s.ctx.mintedLevelTour = { levelId: "lvl-x", tourUrl: A };
-    await s.see(codeOf(B));
-    expect(s.opened).toEqual([]);
-    expect(s.scan.status(codeOf(B))).toMatchObject({
-      kind: "measured-for-another",
-    });
-    await s.see(codeOf(A));
-    expect(s.opened).toEqual([A]);
-  });
-
-  it("ignores a tour binding left from an earlier level", async () => {
-    // The binding counts only for the level it was made for.
-    const s = setup();
-    s.ctx.mintedLevel = { id: "lvl-new", json: "{}" };
-    s.ctx.mintedLevelTour = { levelId: "lvl-old", tourUrl: A };
-    await s.see(codeOf(B));
-    expect(s.opened).toEqual([B]);
-  });
-
-  it("lets any tour take a level whose code named none", async () => {
-    const s = setup();
-    s.ctx.mintedLevel = { id: "lvl", json: "{}" };
-    s.ctx.mintedLevelTour = { levelId: "lvl", tourUrl: null };
-    await s.see(codeOf(B));
-    expect(s.opened).toEqual([B]);
-  });
 });
 
 describe("a failed open", () => {
@@ -340,17 +308,6 @@ describe("a code that cannot be compared with the open tour", () => {
     await s.see(codeOf("https://bit.ly/x"));
     expect(s.opened).toEqual([]);
     expect(s.scan.status(codeOf("https://bit.ly/x")).kind).toBe("unknown");
-  });
-});
-
-describe("tourOf", () => {
-  it("names the tour of a code once it has been read", async () => {
-    const s = setup();
-    expect(s.scan.tourOf(codeOf(A))).toBeNull();
-    await s.see(codeOf(A));
-    expect(s.scan.tourOf(codeOf(A))).toBe(A);
-    await s.see("https://menu.test/today");
-    expect(s.scan.tourOf("https://menu.test/today")).toBeNull();
   });
 });
 

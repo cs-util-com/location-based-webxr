@@ -66,10 +66,8 @@ describe("creator-codes: the code in hand", () => {
     expect(codes.measurement()).toBe(MEASUREMENT);
     expect(codes.sighting()).toBe(SIGHTING);
     codes.clearInHand();
-    codes.clearSighting();
     expect(ctx.mintedLevel).toBeNull();
     expect(ctx.codeMeasurement).toBeNull();
-    expect(ctx.visitCodeSighting).toBeNull();
   });
 
   // Why this test matters: the archive's close clears the session fields
@@ -98,14 +96,15 @@ describe("creator-codes: the code in hand", () => {
     expect(codes.inHand()).toBe(live);
   });
 
-  // Why this test matters: the settle re-mints the code in hand and keeps
+  // Why this test matters: the settle re-mints the code in hand through
+  // `saveLevel` (code book plan M5d: one write for every re-mint) and keeps
   // its measurement (the settle re-mints FROM it).
-  it("re-mints the level in hand and keeps its measurement", () => {
+  it("re-mints the level in hand through saveLevel and keeps its measurement", () => {
     const ctx = createTourViewerSession();
     const codes = wireCreatorCodes({ ctx });
     codes.setInHand({ id: "a", json: levelJson(47.5) }, MEASUREMENT);
     const reminted = { id: "a", json: levelJson(47.6) };
-    codes.remint(reminted);
+    codes.saveLevel(reminted);
     expect(codes.inHand()).toBe(reminted);
     expect(codes.measurement()).toBe(MEASUREMENT);
   });
@@ -192,21 +191,6 @@ describe("creator-codes: stored codes and what Finish wrote", () => {
     expect(codes.storedPoses().map((g) => g.lat)).toEqual([47.6, 47.5, 47.3]);
   });
 
-  // Why this test matters: a new code may take the hand only once the code
-  // in hand is saved in the tour - hosted, or written by a Finish of this
-  // page (U3 milestone review #7) - and the Finish's set goes with its tour.
-  it("counts a code as saved when the tour hosts it or a Finish wrote it, until the tour closes", () => {
-    const ctx = createTourViewerSession();
-    ctx.currentLevels = new Map([["h", hostedLevel(47.3)]]);
-    const codes = wireCreatorCodes({ ctx });
-    expect(codes.isSaved("h")).toBe(true);
-    expect(codes.isSaved("a")).toBe(false);
-    codes.finished([{ id: "a", json: levelJson(47.5) }]);
-    expect(codes.isSaved("a")).toBe(true);
-    codes.reset();
-    expect(codes.isSaved("a")).toBe(false);
-  });
-
   // Why this test matters: the visit log reads every stored code's latest
   // sighting of the visit; a visit's sightings must not leak into the next.
   it("keeps the latest sighting per stored code, tagged with its visit, until the visit ends", () => {
@@ -238,7 +222,6 @@ describe("creator-codes: the book of codes a Finish writes (M4c-1)", () => {
     expect(codes.toWrite()).toEqual([a]);
     codes.finished([a]);
     expect(codes.toWrite()).toEqual([]);
-    expect(codes.isSaved("a")).toBe(true);
     const b = { id: "b", json: levelJson(47.6) };
     codes.setInHand(b, { ...MEASUREMENT, levelId: "b" });
     // Both are in the book; only B changed since the Finish.
@@ -260,7 +243,7 @@ describe("creator-codes: the book of codes a Finish writes (M4c-1)", () => {
     codes.setInHand({ id: "h", json: hosted }, null);
     expect(codes.toWrite()).toEqual([]);
     const improved = { id: "h", json: levelJson(47.31) };
-    codes.remint(improved);
+    codes.saveLevel(improved);
     expect(codes.toWrite()).toEqual([improved]);
   });
 

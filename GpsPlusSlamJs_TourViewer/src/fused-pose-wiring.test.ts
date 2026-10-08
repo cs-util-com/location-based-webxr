@@ -341,10 +341,7 @@ describe("the creator measures and mints with the fused pose", () => {
   function creator(
     options: {
       aligned?: boolean;
-      codeTour?: Pick<
-        ScanOpen,
-        "onDetection" | "status" | "tourOf" | "relation"
-      >;
+      codeTour?: Pick<ScanOpen, "onDetection" | "status" | "relation">;
     } = {},
   ) {
     captured.configs.length = 0;
@@ -722,7 +719,6 @@ describe("the creator measures and mints with the fused pose", () => {
             seen.push(text);
           },
           status: () => status,
-          tourOf: () => "https://h.test/a.zip",
           relation: () => relation,
         },
       };
@@ -792,19 +788,6 @@ describe("the creator measures and mints with the fused pose", () => {
       c.ctx.tourLabel = "a.zip";
       c.detect(0);
       expect(c.dom.status.textContent).toMatch(/Tour: a.zip/);
-    });
-
-    it("records the tour the measured code named", async () => {
-      const c = creator({
-        aligned: true,
-        codeTour: stub({ kind: "quiet" }).codeTour,
-      });
-      for (let i = 0; i < 7; i++) c.detect(i);
-      await vi.waitFor(() => expect(c.ctx.mintedLevel).not.toBeNull());
-      expect(c.ctx.mintedLevelTour).toEqual({
-        levelId: c.ctx.mintedLevel?.id,
-        tourUrl: "https://h.test/a.zip",
-      });
     });
   });
 });

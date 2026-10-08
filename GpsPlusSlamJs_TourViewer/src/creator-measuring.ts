@@ -101,7 +101,7 @@ export function wireCreatorMeasuring(deps: {
   dom: CreatorMeasuringDom;
   wizard: Pick<Wizard, "revealStep">;
   /** Step 4's scan-to-open (`scan-open.ts`). */
-  codeTour: Pick<ScanOpen, "onDetection" | "tourOf" | "relation">;
+  codeTour: Pick<ScanOpen, "onDetection" | "relation">;
   alignmentPicks: Pick<
     CreatorAlignmentPicks,
     "setSighting" | "sync" | "noteMeasurement" | "noteSighting" | "forgetCode"
@@ -569,10 +569,6 @@ export function wireCreatorMeasuring(deps: {
         }
         deps.placeEarlierObjects();
       }
-      ctx.mintedLevelTour = {
-        levelId: id,
-        tourUrl: deps.codeTour.tourOf(mintedText),
-      };
       arStore.dispatch(
         codeMeasured({
           levelId: id,
@@ -631,10 +627,8 @@ export function wireCreatorMeasuring(deps: {
     // dropped (the U3 milestone review's #7 "Finish first" is gone).
     const relation = deps.codeTour.relation(text);
     if (relation === "resolving") return { ready: "measuring", measure: false };
-    if (relation === "no-tour-open") return { ready: "seen", measure: false };
-    if (!autoMeasureAllowed(relation)) {
-      return { ready: "not-measured", measure: false };
-    }
+    // No tour open: a sighting only (the measuring policy, D5).
+    if (!autoMeasureAllowed(relation)) return { ready: "seen", measure: false };
     const tried = autoMeasured.has(visitKeyOf(text));
     return { ready: tried ? "seen" : "measuring", measure: !tried };
   }

@@ -251,7 +251,6 @@ export function wireCreatorSettle(deps: {
     | "inHand"
     | "measurement"
     | "sighting"
-    | "remint"
     | "saveLevel"
     | "visitCodes"
     | "references"
@@ -937,7 +936,7 @@ export function wireCreatorSettle(deps: {
       plan.level !== null && plan.level.id === level?.id
         ? levelOf(plan.level)
         : null;
-    if (inHandLevel !== null) deps.codes.remint(inHandLevel);
+    if (inHandLevel !== null) deps.codes.saveLevel(inHandLevel);
     // The visit's other measured codes, re-minted too (M4c-2).
     for (const other of levels) {
       if (other.id !== inHandLevel?.id) deps.codes.saveLevel(other);

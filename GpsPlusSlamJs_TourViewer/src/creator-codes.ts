@@ -6,12 +6,12 @@
  * and writes them through this module.
  *
  * Its API is per code wherever the callers allow (`hasStoredPose`,
- * `isSaved`, `references`); "in hand" is the one-code view today's callers
+ * `references`); "in hand" is the one-code view today's callers
  * need, and M4c turns the inside into the code book (`code-book.ts`)
  * holding several. Until M5 the session fields `ctx.mintedLevel`,
  * `ctx.codeMeasurement` and `ctx.visitCodeSighting` are the storage: the
- * tour's close (`archive-open.ts`) clears them and `scan-open.ts` reads
- * them, so this module reads them back rather than keeping a copy.
+ * tour's close (`archive-open.ts`) clears them, so this module reads
+ * them back rather than keeping a copy.
  *
  * @see creator-codes.ts.md
  */
@@ -52,15 +52,12 @@ export interface CreatorCodes {
   sighting(): CodeSighting | null;
   /** Take `level` in hand with its measurement (null: a stored reference). */
   setInHand(level: LevelText | null, measurement: CodeMeasurement | null): void;
-  /** The settle re-minted the code in hand: its measurement stays. */
-  remint(level: LevelText): void;
   /** A restored draft's level, taken only into an empty hand; true when it
    *  was taken (a live measurement is newer than a draft). */
   restoreInHand(level: LevelText): boolean;
   /** Nothing in hand (a new print size, a failed identity's empty prior). */
   clearInHand(): void;
   setSighting(sighting: CodeSighting): void;
-  clearSighting(): void;
   /** A code's sightings of this visit are void (its printed size changed):
    *  its stored-code sighting goes, and the visit's sighting if it is that
    *  code's. */
@@ -85,8 +82,6 @@ export interface CreatorCodes {
     sighting: CodeSighting,
   ): void;
   storedSightings(): IterableIterator<StoredSighting>;
-  /** `levelId` is saved in the tour: hosted, or written by a Finish. */
-  isSaved(levelId: string): boolean;
   /** The visit's codes for the settle (M4c-2): every code measured in
    *  `visit` (book order), then every stored code sighted stable in it,
    *  with its stored text. */
@@ -122,8 +117,8 @@ export interface CreatorCodes {
    *  text differs from what the zip it rebuilds from holds (the last
    *  Finish's text, else the hosted one), in the order they were taken. */
   toWrite(): LevelText[];
-  /** A Finish wrote `written`: each is saved (`isSaved`) and its text is
-   *  what the next Finish builds on. */
+  /** A Finish wrote `written`: each text is what the next Finish builds
+   *  on. */
   finished(written: readonly LevelText[]): void;
   /** A visit ended: its sightings go. */
   endVisit(): void;
@@ -147,7 +142,6 @@ export function wireCreatorCodes(deps: {
   const storedCodeSightings = new Map<string, StoredSighting>();
   /** The levels a Finish in this page wrote into the tour: saved, so a
    *  new code may take the hand from them (`codeOutcome`). */
-  const finishedLevelIds = new Set<string>();
   /**
    * Every code this page took, with its saved text, measurement and what
    * the last Finish wrote (`code-book.ts`). Until M5 the session field
@@ -203,10 +197,6 @@ export function wireCreatorCodes(deps: {
           ? withReference(withSaved(book, level), level.id)
           : withMeasurement(book, level, measurement);
     },
-    remint: (level) => {
-      ctx.mintedLevel = level;
-      book = withSaved(book, level);
-    },
     restoreInHand: (level) => {
       if (ctx.mintedLevel !== null) return false;
       ctx.mintedLevel = level;
@@ -230,9 +220,6 @@ export function wireCreatorCodes(deps: {
         ctx.visitCodeSighting = null;
       }
     },
-    clearSighting: () => {
-      ctx.visitCodeSighting = null;
-    },
     hasStoredPose: (levelId) => {
       if (ctx.mintedLevel?.id === levelId) return true;
       const saved = book.get(levelId)?.saved ?? null;
@@ -250,9 +237,6 @@ export function wireCreatorCodes(deps: {
       storedCodeSightings.set(levelId, { visit, sighting });
     },
     storedSightings: () => storedCodeSightings.values(),
-    isSaved: (levelId) =>
-      (ctx.currentLevels?.has(levelId) ?? false) ||
-      finishedLevelIds.has(levelId),
     toWrite: () => codesToWrite(withHostedTexts()),
     notHosted: () => codesNotHosted(withHostedTexts()),
     visitCodes: (visit) => {
@@ -314,14 +298,12 @@ export function wireCreatorCodes(deps: {
     },
     finished: (written) => {
       book = afterFinish(withHostedTexts(), written);
-      for (const { id } of written) finishedLevelIds.add(id);
     },
     endVisit: () => {
       storedCodeSightings.clear();
       ctx.visitCodeSighting = null;
     },
     reset: () => {
-      finishedLevelIds.clear();
       book = new Map();
     },
   };

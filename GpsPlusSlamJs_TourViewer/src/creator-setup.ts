@@ -202,24 +202,21 @@ export function wireCreatorSetup(deps: {
   openDraftStore?: (key: string) => Promise<DraftFileStore | undefined>;
   /** Step 4's scan-to-open (`scan-open.ts`, owned by `archive-open`):
    *  fed every detection, asked what to say about the code in view. */
-  codeTour?: Pick<ScanOpen, "onDetection" | "status" | "tourOf" | "relation">;
+  codeTour?: Pick<ScanOpen, "onDetection" | "status" | "relation">;
   /** The summary after Finish (authoring plan 2026-09-28-0953 M3b,
    *  `summary-panel.ts`); none in the node tests that do not need it. */
   summary?: Pick<SummaryPanel, "show" | "hide">;
 }): CreatorSetup {
   const { ctx, mode, arStore, arController, seams, wizard, dom } = deps;
-  const codeTour: Pick<
-    ScanOpen,
-    "onDetection" | "status" | "tourOf" | "relation"
-  > = deps.codeTour ?? {
-    onDetection: () => undefined,
-    status: () => ({ kind: "quiet" }),
-    tourOf: () => null,
-    // The node tests' stand-in: every code is the open tour's, so it is
-    // measured as soon as the gate opens (`main.ts` always passes the
-    // real scan-to-open).
-    relation: () => "this-tour",
-  };
+  const codeTour: Pick<ScanOpen, "onDetection" | "status" | "relation"> =
+    deps.codeTour ?? {
+      onDetection: () => undefined,
+      status: () => ({ kind: "quiet" }),
+      // The node tests' stand-in: every code is the open tour's, so it is
+      // measured as soon as the gate opens (`main.ts` always passes the
+      // real scan-to-open).
+      relation: () => "this-tour",
+    };
   const creator = mode === "creator";
   const openDraftStore =
     deps.openDraftStore ?? (() => Promise.resolve(undefined));
@@ -526,14 +523,7 @@ export function wireCreatorSetup(deps: {
     // What is happening to the tour the code names (plan §9 #9), and which
     // tour is open (§9 #10) - derived each render, never a one-off note.
     const codeStatus = codeTour.status(ctx.lastDetectedText);
-    // A code that is not measured is not "added to the open tour" either
-    // (U3 milestone review #6): the ready line says why.
-    const codeLine =
-      view?.ready === "not-measured" &&
-      (codeStatus.kind === "added-to-open-tour" ||
-        codeStatus.kind === "unknown")
-        ? ""
-        : codeTourLine(codeStatus);
+    const codeLine = codeTourLine(codeStatus);
     const tour = ctx.tourLabel === null ? "" : ` · Tour: ${ctx.tourLabel}`;
     dom.status.textContent =
       lead +

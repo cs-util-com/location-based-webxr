@@ -16,10 +16,9 @@ writes these through it, so that M4c can turn its inside into the code book
 - The code in hand (the one-code view today's callers need):
   - `inHand()`, `measurement()`, `sighting()`;
   - `setInHand(level, measurement)` (a measurement, or a kept stored
-    reference with null), `remint(level)` (the settle; the measurement
-    stays), `restoreInHand(level)` (a restored draft: only into an empty
+    reference with null), `restoreInHand(level)` (a restored draft: only into an empty
     hand, true when taken), `clearInHand()` (a new print size);
-  - `setSighting(sighting)`, `clearSighting()`; `forgetSightings(levelId)` -
+  - `setSighting(sighting)`; `forgetSightings(levelId)` -
     a size adoption: that code's stored-code sighting goes, and the visit's
     sighting if it is that code's.
 - Per code:
@@ -34,9 +33,9 @@ writes these through it, so that M4c can turn its inside into the code book
     pose the next Finish writes, which replaces a hosted one; M4e - the
     summary and the object list missed a code measured before the one in
     hand), then the tour's others (geo null for a level without one);
-    `storedPoses()` - the ones that read, same order;
-  - `isSaved(levelId)` - hosted by the open tour, or written by a Finish of
-    this page (`finished`); what lets a new code take the hand.
+    `storedPoses()` - the ones that read, same order.
+  - Every re-mint is `saveLevel(level)` (the settle's code in hand
+    included; code book plan M5d removed `remint`, which did the same).
 - The book of codes a Finish writes (M4c-1, `code-book.ts`):
   - `toWrite()` - every code this page took whose saved text differs from
     what the zip the Finish rebuilds from holds (the last Finish's text,
@@ -87,9 +86,7 @@ sighting)` keeps the latest per code; `storedSightings()` lists them (the
 ```ts
 const codes = wireCreatorCodes({ ctx });
 codes.setInHand(level, measurement);
-if (!codes.isSaved(level.id)) {
-  // a new code must wait for a Finish (today's one-code rule)
-}
+codes.saveLevel(remintedLevel); // the settle's re-mint, measurement kept
 ```
 
 ## Tests

@@ -295,12 +295,6 @@ export interface TourViewerSession {
   /** The measured code, ready to be written as `qr/<id>.json`; null until
    *  the mint's async identity hash landed. */
   mintedLevel: { id: string; json: string } | null;
-  /** The tour the measured code named (its normalised link; null when it
-   *  named none), for the level with id `levelId`. Valid only while that is
-   *  `mintedLevel`'s id - so it needs no clearing of its own. A level
-   *  measured with no tour open waits for THAT tour (scan-to-open plan §9
-   *  #4). */
-  mintedLevelTour: { levelId: string; tourUrl: string | null } | null;
   /** Bumped per mint so a stale identity hash cannot install an older
    *  level over a newer one. */
   mintGeneration: number;
@@ -523,7 +517,6 @@ export function createTourViewerSession(): TourViewerSession {
     gpsSamplesAtSessionStart: 0,
     frameEpochAtSessionStart: 0,
     mintedLevel: null,
-    mintedLevelTour: null,
     mintGeneration: 0,
     codeMeasurement: null,
     visitCodeSighting: null,

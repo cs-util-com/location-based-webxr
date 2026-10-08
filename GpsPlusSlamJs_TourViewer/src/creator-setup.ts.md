@@ -93,11 +93,11 @@ were here. What stays is the Finish's side:
 - Every `CreatorSetup` member is a property (handed to the hooks object
   unbound).
 - `deps.codeTour` (optional; `ScanOpen`'s `onDetection`, `status`,
-  `tourOf`) - step 4's scan-to-open (`scan-open.ts`, owned by
+  `relation`) - step 4's scan-to-open (`scan-open.ts`, owned by
   `archive-open`). Every author detection is fed to it; the live readout
   appends `codeTourLine(status)` and "Tour: <label>" for the open tour; no
-  status locks Save (a code of another tour joins the open tour, plan §13);
-  the mint records the tour its code named in `ctx.mintedLevelTour`. A draft
+  status locks Save (a code of another tour joins the open tour, plan §13).
+  A draft
   offered while a session runs also puts a note inside the overlay, where
   the offer itself cannot be seen. Without it, a no-op that
   is always quiet.

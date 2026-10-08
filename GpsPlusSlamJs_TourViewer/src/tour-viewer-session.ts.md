@@ -41,8 +41,7 @@ lives here.
     teardown by `archive-open.ts`;
   - the creator setup (`creator-setup.ts`): `lastDetectedText`,
     `activeSizeM`, `authorErrorText`, `gpsSamplesAtSessionStart`,
-    `mintedLevel`, `mintedLevelTour` (the tour the measured code named,
-    valid while its `levelId` is the level's id), `mintGeneration`,
+    `mintedLevel`, `mintGeneration`,
     `codeMeasurement` (the raw inputs of a mint made in this page, cleared
     with the level) and `visitCodeSighting` (the anchor code's latest stable
     pose in the running AR visit, cleared at the visit's end) - both for the

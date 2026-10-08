@@ -17,7 +17,7 @@ M4 replaces its one code in hand with the code book.
     while a measurement runs), `sizeOffer`, `sizeOfferText`,
     `sizeOfferUse`, `sizeOfferKeep` (whose clicks this module handles).
   - `seams`: `createQrFrontEnd`, `solveQrPose`, `getIntrinsics`.
-  - `codeTour`: scan-to-open's `onDetection`, `tourOf`, `relation`.
+  - `codeTour`: scan-to-open's `onDetection`, `relation`.
 - `CreatorMeasuring`:
   - `start()` - validate the printed size (revealing step 2 when it is
     unusable) and start the QR pipeline with a fused-pose source for this
@@ -69,14 +69,12 @@ M4 replaces its one code in hand with the code book.
     yet): `seen` - a sighting for the visit log; taking it in hand would
     change what this visit's objects are corrected through;
   - a new code is measured even past an unsaved code in hand (M4c-2):
-    since M4c-1 a Finish writes every code of the book, so the U3
-    milestone review's `finish-first` is gone (the state itself goes with
-    M5's slot remnants);
-  - with no tour open: `seen`;
-  - every code seen while a tour is open is measured (the owner's
-    extended D5: another tour's, an unknown link, a QR naming no tour -
-    "another anchor"), so `not-measured` is no longer reached
-    (`autoMeasureAllowed`; the state goes with M5's slot remnants);
+    since M4c-1 a Finish writes every code of the book (the U3 milestone
+    review's "Finish first" state is gone);
+  - with no tour open: `seen` - the measuring policy
+    (`autoMeasureAllowed`, the owner's extended D5) measures every code
+    seen while a tour is open: another tour's, an unknown link, a QR naming
+    no tour ("another anchor");
   - otherwise it is measured, once per visit and code (`autoMeasured`,
     cleared at the visit's end and when a measured print size is
     adopted), never during a Finish.

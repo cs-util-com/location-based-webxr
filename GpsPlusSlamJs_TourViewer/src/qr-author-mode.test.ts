@@ -625,9 +625,6 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
       /does not point to a tour/,
     );
     expect(codeTourLine({ kind: "not-a-tour" })).toMatch(/step 2/);
-    expect(
-      codeTourLine({ kind: "measured-for-another", label: "a.zip" }),
-    ).toMatch(/You measured the code of a.zip/);
     // Plan §13: another tour's code joins the open tour - the line says so.
     expect(codeTourLine({ kind: "added-to-open-tour" })).toMatch(
       /added to the open tour/,
@@ -685,11 +682,6 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
         ).toBeLessThanOrEqual(110);
       }
     }
-    // A tour label is cut at 24 characters (tourLabel).
-    const label = "x".repeat(24) + "…";
-    expect(
-      codeTourLine({ kind: "measured-for-another", label }).length,
-    ).toBeLessThanOrEqual(110);
   });
 });
 
@@ -851,10 +843,6 @@ describe("authorStatusLine's ready line says what became of the code (UI round 1
     ["measured", "Code measured."],
     ["measuring", "Measuring the code…"],
     ["seen", "Code seen."],
-    [
-      "not-measured",
-      "Code seen - not measured: it is not a code of the open tour.",
-    ],
   ] as const)("%s", (ready, text) => {
     expect(authorStatusLine("A", stable, align, false, ready).text).toBe(text);
   });

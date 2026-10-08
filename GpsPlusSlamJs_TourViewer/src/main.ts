@@ -288,7 +288,6 @@ const setup = wireCreatorSetup({
       scanOpen?.onDetection(text);
     },
     status: (text) => scanOpen?.status(text) ?? { kind: "quiet" },
-    tourOf: (text) => scanOpen?.tourOf(text) ?? null,
     // Before scan-to-open exists nothing is known about a code, so nothing
     // is measured on its own (UI round 1, U3).
     relation: (text) => scanOpen?.relation(text) ?? "resolving",

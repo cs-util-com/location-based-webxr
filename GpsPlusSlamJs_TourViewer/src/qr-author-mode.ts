@@ -134,22 +134,15 @@ export function buildAuthorControllerConfig(
  * What became of the code in view once the gate is open (UI round 1, U3):
  * `measured` - it is the code in hand; `measuring` - its measurement is
  * in flight, or about to start; `seen` - a sighting only (another stored
- * code of the tour, or no tour open yet); `not-measured` - it is not a code
- * the open tour may take (`autoMeasureAllowed`); `finish-first` - a new
- * code while the code in hand is not saved in the tour yet (each Finish
- * writes one code).
+ * code of the tour, or a code the open tour may not take - none open yet,
+ * `autoMeasureAllowed`).
  */
-export type CodeReadyState =
-  "measured" | "measuring" | "seen" | "not-measured" | "finish-first";
+export type CodeReadyState = "measured" | "measuring" | "seen";
 
 const READY_TEXT: Readonly<Record<CodeReadyState, string>> = {
   measured: "Code measured.",
   measuring: "Measuring the code…",
   seen: "Code seen.",
-  "not-measured":
-    "Code seen - not measured: it is not a code of the open tour.",
-  "finish-first":
-    "Code seen - not measured yet: Finish first, to save the code you measured before.",
 };
 
 /** What the author panel shows, and whether the gate is open (the code
@@ -285,8 +278,6 @@ export function codeTourLine(status: CodeTourStatus): string {
       return "Opening the tour this code points to…";
     case "not-a-tour":
       return "This code does not point to a tour - print one in step 2.";
-    case "measured-for-another":
-      return `You measured the code of ${status.label} - scan it again to open that tour.`;
     case "added-to-open-tour":
       return "This code is from another tour - it is added to the open tour as one more code.";
     case "unknown":
@@ -339,7 +330,8 @@ export function correctionRefusedLine(refusal: {
  * D5, extended by the owner: "a stray QR code ... provides another anchor
  * that can stabilize the virtual objects"). Not a code read with no tour
  * open, nor one still being read. The risk named with the decision: a code
- * on something that moves; the per-code move question (M5) is its guard.
+ * on something that moves; the automatic code-spot rule (code book plan
+ * M6, `code-spots.ts`) is its guard.
  * (Before M4c-2 only the tour's own code, or the first code of a tour with
  * none: UI round 1, U3, second plan review #1.)
  */
