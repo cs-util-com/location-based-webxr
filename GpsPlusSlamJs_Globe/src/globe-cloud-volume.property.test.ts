@@ -17,7 +17,11 @@ import * as THREE from "three";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
 import {
+  type CloudNoiseAnchorKm,
+  cloudVolumeAnchorDrift,
+  cloudVolumeAnchorRecentre,
   cloudVolumeDiscCentre,
+  cloudVolumeNoiseAnchor,
   cloudVolumeNoiseOffset,
   cloudVolumeRecentreShift,
   unwrapDriftRad,
@@ -304,5 +308,159 @@ describe("a frame that goes out and comes back (cloudVolumeRecentreShift)", () =
     }
     expect(wrapped(shift[0], 0)).toBeLessThan(0.02);
     expect(wrapped(shift[1], 0)).toBeLessThan(0.02);
+  });
+});
+
+// WHY (round-3 plan 2026-10-08-2345, N1; the second cold review, item 4):
+// the live noise is anchored by ONE carried noise-plane position of the
+// frame's origin (km, float64, unwrapped) and the frame's rotation, moved
+// by every recentre and by the drift. The C1 carry above left a rotation
+// per recentre (270-480 m at 80-140 km near Bern) and a path dependence
+// (within 0.02 tile, about 480 m, out to 100 km and back). Carrying the
+// rotation too, a ground point keeps its plane position across a recentre
+// in any direction, and a path out and back, with the drift running
+// through its wrap, returns the anchor to where it started.
+describe("the live noise's anchor (cloudVolumeAnchorRecentre, cloudVolumeAnchorDrift)", () => {
+  const ellipsoid = WGS84_ELLIPSOID;
+  /** A ground point's horizontal place (km) in the frame at `target`. */
+  const localKm = (
+    target: { lat: number; lng: number },
+    p: { lat: number; lng: number },
+  ): [number, number] => {
+    const m = worldFromEcefAt(ellipsoid, target, new THREE.Matrix4());
+    const v = ellipsoid
+      .getCartographicToPosition(
+        p.lat * DEG,
+        p.lng * DEG,
+        0,
+        new THREE.Vector3(),
+      )
+      .applyMatrix4(m);
+    return [v.x / 1000, v.z / 1000];
+  };
+  /** Where a local point (km) lies on the plane for an anchor. */
+  const onPlane = (
+    anchor: CloudNoiseAnchorKm,
+    [x, z]: [number, number],
+  ): [number, number] => {
+    const c = Math.cos(anchor.rotationRad);
+    const s = Math.sin(anchor.rotationRad);
+    return [
+      anchor.originKm[0] + c * x - s * z,
+      anchor.originKm[1] + s * x + c * z,
+    ];
+  };
+  const latDeg = fc.double({ min: -70, max: 70, noNaN: true });
+  const lngDeg = fc.double({ min: -179, max: 179, noNaN: true });
+  /** Up to about 30 km, in degrees. */
+  const step = fc.double({ min: -0.27, max: 0.27, noNaN: true });
+
+  it("keeps a ground point on its plane position across a recentre in any direction", () => {
+    fc.assert(
+      fc.property(
+        latDeg,
+        lngDeg,
+        step,
+        step,
+        step,
+        step,
+        drift,
+        // A rotation already carried (any earlier path).
+        fc.double({ min: -Math.PI, max: Math.PI, noNaN: true }),
+        (lat, lng, a, b, c, d, dr, rot) => {
+          const from = { lat, lng };
+          const to = { lat: lat + a, lng: lng + b };
+          const point = { lat: to.lat + c / 2, lng: to.lng + d / 2 };
+          const before = {
+            ...cloudVolumeNoiseAnchor({
+              latRad: lat * DEG,
+              lonRad: lng * DEG,
+              lonOffsetRad: dr,
+            }),
+            rotationRad: rot,
+          };
+          const after = cloudVolumeAnchorRecentre(ellipsoid, before, from, to);
+          const p0 = onPlane(before, localKm(from, point));
+          const p1 = onPlane(after, localKm(to, point));
+          // 5 m: the frames' curvature over a 30 km step and a point 15 km
+          // past it (the C1 carry left 270-480 m at 80-140 km).
+          expect(Math.hypot(p0[0] - p1[0], p0[1] - p1[1])).toBeLessThan(0.005);
+        },
+      ),
+    );
+  });
+
+  it("returns to its start after a path out and back, the drift wrapping on the way", () => {
+    const hop = fc.record({
+      dLat: step,
+      dLng: step,
+      dDrift: fc.double({ min: -0.01, max: 0.01, noNaN: true }),
+    });
+    fc.assert(
+      fc.property(
+        latDeg,
+        lngDeg,
+        fc.array(hop, { minLength: 1, maxLength: 8 }),
+        (lat, lng, hops) => {
+          const TURN = 2 * Math.PI;
+          // The raw drift starts just below its wrap, so the path crosses it.
+          let raw = TURN - 0.005;
+          let unwrapped = raw;
+          const start = cloudVolumeNoiseAnchor({
+            latRad: lat * DEG,
+            lonRad: lng * DEG,
+            lonOffsetRad: unwrapped,
+          });
+          let anchor = start;
+          let at = { lat, lng };
+          const path = [at];
+          const driftBy = (delta: number) => {
+            raw = (((raw + delta) % TURN) + TURN) % TURN;
+            const next = unwrapDriftRad(unwrapped, raw);
+            anchor = cloudVolumeAnchorDrift(
+              anchor,
+              at.lat * DEG,
+              next - unwrapped,
+            );
+            unwrapped = next;
+          };
+          for (const h of hops) {
+            const to = { lat: at.lat + h.dLat, lng: at.lng + h.dLng };
+            anchor = cloudVolumeAnchorRecentre(ellipsoid, anchor, at, to);
+            at = to;
+            path.push(at);
+            driftBy(h.dDrift);
+          }
+          for (let i = hops.length - 1; i >= 0; i--) {
+            driftBy(-hops[i]!.dDrift);
+            const to = path[i]!;
+            anchor = cloudVolumeAnchorRecentre(ellipsoid, anchor, at, to);
+            at = to;
+          }
+          const [x0, z0] = start.originKm;
+          const [x1, z1] = anchor.originKm;
+          // 1 cm over up to 8 hops of 30 km each way (the C1 carry: 480 m
+          // over 100 km and back), and the rotation back to 1e-9 rad. Each
+          // frame's east seen in the other alone left about 1e-5 rad a hop
+          // (the frames' tilts' product): the turn is their half difference.
+          expect(Math.hypot(x1 - x0, z1 - z0)).toBeLessThan(1e-5);
+          expect(Math.abs(anchor.rotationRad - start.rotationRad)).toBeLessThan(
+            1e-9,
+          );
+        },
+      ),
+      { numRuns: 1000 },
+    );
+  });
+
+  // The drift's sign is the noise offset's (cloudVolumeNoiseOffset): the
+  // clouds move east with the map, so the origin moves west on the plane.
+  it("moves the origin as the noise offset moves with the drift", () => {
+    const origin = { latRad: 46.95 * DEG, lonRad: 7.45 * DEG };
+    const a = cloudVolumeNoiseAnchor({ ...origin, lonOffsetRad: 0.1 });
+    const b = cloudVolumeAnchorDrift(a, origin.latRad, 0.05);
+    const direct = cloudVolumeNoiseAnchor({ ...origin, lonOffsetRad: 0.15 });
+    expect(b.originKm[0]).toBeCloseTo(direct.originKm[0], 9);
+    expect(b.originKm[1]).toBeCloseTo(direct.originKm[1], 9);
   });
 });

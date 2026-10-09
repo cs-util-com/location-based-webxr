@@ -236,6 +236,130 @@ export function cloudVolumeRecentreShift(
 }
 
 /**
+ * Where the frame's origin lies on the clouds' noise plane (km, float64,
+ * unwrapped) and the frame's rotation on it (radians): the live noise's
+ * anchor (round-3 plan N1; the framework's `CloudNoiseAnchor`, which this
+ * package does not import).
+ */
+export interface CloudNoiseAnchorKm {
+  readonly originKm: readonly [number, number];
+  readonly rotationRad: number;
+}
+
+/** (x, z) turned by `rad` on the plane (x east, z south). */
+function turned(rad: number, x: number, z: number): [number, number] {
+  const c = Math.cos(rad);
+  const s = Math.sin(rad);
+  return [c * x - s * z, s * x + c * z];
+}
+
+/**
+ * The live noise's first anchor for a frame at `origin`: the origin's
+ * distance east (at the map's drift) and south of latitude 0, longitude 0,
+ * in km, unrotated; `cloudVolumeNoiseOffset` without the tile and the wrap,
+ * so different places read different noise. RangeError for a non-finite
+ * origin.
+ */
+export function cloudVolumeNoiseAnchor(origin: {
+  latRad: number;
+  lonRad: number;
+  lonOffsetRad: number;
+}): CloudNoiseAnchorKm {
+  const values = [origin.latRad, origin.lonRad, origin.lonOffsetRad];
+  if (!values.every(Number.isFinite)) {
+    throw new RangeError(`the origin must be finite, got ${values.join(", ")}`);
+  }
+  return {
+    originKm: [
+      (EARTH_RADIUS_M *
+        Math.cos(origin.latRad) *
+        (origin.lonRad - origin.lonOffsetRad)) /
+        1000,
+      (-EARTH_RADIUS_M * origin.latRad) / 1000,
+    ],
+    rotationRad: 0,
+  };
+}
+
+const anchorFrom = new THREE.Matrix4();
+const anchorBack = new THREE.Matrix4();
+const anchorTo = new THREE.Vector3();
+const anchorEast = new THREE.Vector3();
+
+/**
+ * The yaw of frame `b`'s east axis seen in frame `a` (`frameA` its
+ * ECEF-to-world matrix): the angle of that axis, projected on a's
+ * horizontal plane, from a's east toward a's south.
+ */
+function eastYaw(frameA: THREE.Matrix4, b: LatLng): number {
+  const lng = (b.lng * Math.PI) / 180;
+  anchorEast.set(-Math.sin(lng), Math.cos(lng), 0).transformDirection(frameA);
+  return Math.atan2(anchorEast.z, anchorEast.x);
+}
+
+/**
+ * The anchor once the frame moves from `from` to `to` (degrees): the new
+ * origin's place in the old frame, turned onto the plane, added to the
+ * origin; the turn between the two frames added to the rotation. The turn
+ * is half the difference of each frame's east axis seen in the other:
+ * either alone differs from the other's negative by the frames' tilts'
+ * product (about 1e-5 rad for 30 km), so a path out and back did not
+ * return; the half difference is exactly antisymmetric. A ground point
+ * near the new origin keeps its plane position to the frames' curvature
+ * (metres over the volume's disc), and a path out and back returns the
+ * anchor (cold review item 4: the C1 carry left a rotation per recentre
+ * and 0.02 tile over 100 km and back).
+ */
+export function cloudVolumeAnchorRecentre(
+  ellipsoid: Ellipsoid,
+  anchor: CloudNoiseAnchorKm,
+  from: LatLng,
+  to: LatLng,
+): CloudNoiseAnchorKm {
+  const DEG = Math.PI / 180;
+  worldFromEcefAt(ellipsoid, from, anchorFrom);
+  worldFromEcefAt(ellipsoid, to, anchorBack);
+  ellipsoid
+    .getCartographicToPosition(to.lat * DEG, to.lng * DEG, 0, anchorTo)
+    .applyMatrix4(anchorFrom);
+  const turn = (eastYaw(anchorFrom, to) - eastYaw(anchorBack, from)) / 2;
+  const [dx, dz] = turned(
+    anchor.rotationRad,
+    anchorTo.x / 1000,
+    anchorTo.z / 1000,
+  );
+  return {
+    originKm: [anchor.originKm[0] + dx, anchor.originKm[1] + dz],
+    rotationRad: anchor.rotationRad + turn,
+  };
+}
+
+/**
+ * The anchor after the map's drift moved by `deltaDriftRad` (read
+ * unwrapped, `unwrapDriftRad`) over a frame at latitude `latRad`: the
+ * clouds move east by R cos(lat) times it, so the origin moves west on the
+ * plane along the frame's east axis turned by the rotation (the sign of
+ * `cloudVolumeNoiseOffset`'s drift). RangeError for a non-finite input.
+ */
+export function cloudVolumeAnchorDrift(
+  anchor: CloudNoiseAnchorKm,
+  latRad: number,
+  deltaDriftRad: number,
+): CloudNoiseAnchorKm {
+  if (!(Number.isFinite(latRad) && Number.isFinite(deltaDriftRad))) {
+    throw new RangeError(
+      `the latitude and the drift must be finite, got ${latRad}, ${deltaDriftRad}`,
+    );
+  }
+  const eastKm = (EARTH_RADIUS_M * Math.cos(latRad) * deltaDriftRad) / 1000;
+  const [dx, dz] = turned(anchor.rotationRad, eastKm, 0);
+  return {
+    originKm: [anchor.originKm[0] - dx, anchor.originKm[1] - dz],
+    rotationRad: anchor.rotationRad,
+  };
+}
+
+/**
  * The slab's coverage chunk: the cloud map read where the column stands
  * (`cloudVolumeMapUv`'s formula), times the clouds' opacity and the
  * volume's altitude share, read through the B-spline at level 0 as every

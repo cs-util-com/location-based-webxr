@@ -57,6 +57,33 @@ own cloud map so the swap from the cloud shell never plops.
   1.5 km at latitude 70), and a closed path returns close to, not exactly
   at, the start (out to 100 km and back: within 0.02 tile, tested). N1’s
   anchoring per octave replaces it.
+- The live noise's anchor (round-3 plan N1, cold review item 4), for the
+  framework's `SkyAtmosphere.setCloudNoiseAnchor` with
+  `cloudNoise: 'live'`: `CloudNoiseAnchorKm` (`{ originKm, rotationRad }`,
+  where the frame's origin lies on the noise plane, km, float64,
+  unwrapped, and the frame's rotation on it).
+  - `cloudVolumeNoiseAnchor({ latRad, lonRad, lonOffsetRad })`: the first
+    anchor, the origin's distance east (at the drift) and south of 0, 0 in
+    km, unrotated (`cloudVolumeNoiseOffset` without the tile and the
+    wrap). RangeError for a non-finite origin.
+  - `cloudVolumeAnchorRecentre(ellipsoid, anchor, from, to)`: the new
+    origin's place in the old frame, turned by the rotation, added to the
+    origin; the frames' turn added to the rotation, as half the difference
+    of each frame's east axis seen in the other (either alone left about
+    1e-5 rad a 30 km hop out and back: the tilts' product). Property-tested:
+    a ground point keeps its plane position across a recentre in any
+    direction, with any rotation already carried (within 5 m for 30 km
+    steps); a path of up to 8 hops out and back, the drift running through
+    its wrap, returns the origin within 1 cm and the rotation within 1e-9
+    rad (the C1 carry: 0.02 tile, about 480 m). A mutant ignoring the
+    carried rotation fails both.
+  - `cloudVolumeAnchorDrift(anchor, latRad, deltaDriftRad)`: the drift
+    moves the clouds east by R cos(lat) times it, so the origin moves west
+    along the frame's east axis turned by the rotation (the noise offset's
+    sign, tested against `cloudVolumeNoiseAnchor`). RangeError for a
+    non-finite input.
+  - What remains path dependent is only the curvature's: a loop that
+    encloses area turns the plane by about its area over R^2.
 - `CLOUD_VOLUME_COVERAGE_GLSL`: the chunk for the framework's
   `setCloudSlabCoverage`, defining `float atmCloudCoverageAt(vec2 xz)` as
   the map at `cloudVolumeMapUv`'s position, read through the B-spline at
