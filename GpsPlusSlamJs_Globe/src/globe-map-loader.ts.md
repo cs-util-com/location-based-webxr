@@ -17,13 +17,14 @@ M1) does not stall a frame as the flight starts.
   Safari before 17 and in Firefox before 98 (three's own rule for its
   glTF loader: those did not honour the decoder's options), true otherwise,
   also when no user agent is known.
-- `bitmapMapLoader`: `THREE.ImageBitmapLoader` with
+- The off-thread loader (module-private, chosen by `globeMapLoader()`): `THREE.ImageBitmapLoader` with
   `imageOrientation: "flipY"` (WebGL does not flip an `ImageBitmap`, and the texture's `flipY`
   is false), `premultiplyAlpha: "none"` (the tiles' alpha is the water
   mask) and `colorSpaceConversion: "none"` (the clouds are numbers; the
   night map's sRGB is decoded by its texture's colour space). The bitmap is
   closed when its texture is disposed.
-- `elementMapLoader`: `THREE.TextureLoader`, an image element.
+- `elementMapLoader`: `THREE.TextureLoader`, an image element (re-exported
+  by `globe-surface.ts` for the lab's `mapBitmap=0`).
 - `globeMapLoader()`: the loader for this browser.
 
 ## Memory (a trade, parked for the owner)

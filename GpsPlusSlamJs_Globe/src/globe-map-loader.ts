@@ -56,7 +56,7 @@ export const elementMapLoader: GlobeSurfaceLoader = {
  * clouds are numbers; the night map's sRGB is decoded by its texture's
  * colour space). The bitmap is closed when its texture is disposed.
  */
-export const bitmapMapLoader: GlobeSurfaceLoader = {
+const bitmapMapLoader: GlobeSurfaceLoader = {
   loadTexture: (source, onLoad, onError) => {
     const texture = new THREE.Texture();
     texture.flipY = false;

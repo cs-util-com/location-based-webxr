@@ -614,7 +614,8 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     Earth (the cause, shared vertices or three's triangle test, is not
     established). A hit beyond the Earth's centre reads as null.
 - The global maps are decoded off the main thread where the browser can
-  (`/globe/globe-map-loader.js`, round-3 plan 2026-10-08-2345 M1);
+  (`/globe/globe-map-loader.js`, round-3 plan 2026-10-08-2345 M1; the
+  element loader comes through `/globe/globe-surface.js`);
   `mapBitmap=0`, read at load, takes the plain image element, so a smoke
   can compare the two paths pixel for pixel. `cloudCubic` (1) reads the
   cloud map through the B-spline in every reader (`/globe/globe-cloud-filter.js`);

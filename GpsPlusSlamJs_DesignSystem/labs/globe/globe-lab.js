@@ -19,8 +19,8 @@ import {
   GLOBE_SURFACE,
   createGlobeImagery,
   createGlobeSurface,
+  elementMapLoader,
 } from "/globe/globe-surface.js";
-import { elementMapLoader } from "/globe/globe-map-loader.js";
 import { CLOUD_VOLUME } from "/globe/globe-cloud-volume.js";
 import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
 import { flatCloudShare } from "/globe/globe-cloud-flat-fade.js";

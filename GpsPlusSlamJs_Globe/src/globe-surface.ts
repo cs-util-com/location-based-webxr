@@ -257,6 +257,8 @@ export function disposeLitMaterials(
 }
 
 export type { GlobeSurfaceLoader } from "./globe-map-loader.js";
+/** The plain image-element loader, for a page that compares the two paths. */
+export { elementMapLoader } from "./globe-map-loader.js";
 
 /**
  * One global map, configured from its registry entry: colour decoded from
