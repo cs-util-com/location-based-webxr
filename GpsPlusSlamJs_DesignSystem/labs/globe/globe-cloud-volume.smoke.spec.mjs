@@ -40,6 +40,13 @@ const HOLD_KM = 12;
 // near plane, so that test could not fail (r790 milestone review F1).
 const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&landKm=${HOLD_KM}&reliefNear=3`;
 /** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
+// The wait for the landing and the relief to settle. Headless Chromium draws
+// these pages at about 1.5 s a frame with the volume (0.75 s without), and
+// the relief settles in a fixed number of frames: about 300 s, measured
+// 2026-10-09 (the same with the dust and the hex tiling off). It was 300 s
+// and the slower tests passed with about 10 s to spare, so a few frames
+// decided them. What these tests check comes after the settle.
+const SETTLE_MS = 480_000;
 const SWEEP = [0.5, 1, 2];
 const STEP = 1;
 
@@ -83,7 +90,7 @@ test("the cloud volume fades in on the descent without a jump, ending at the rel
       );
     },
     null,
-    { timeout: 300_000 },
+    { timeout: SETTLE_MS },
   );
   const times = await page.evaluate(() => {
     const at = (km) => {
@@ -187,7 +194,7 @@ test("the cloud volume is seen looking down from just above the deck, over an ov
   page,
   context,
 }) => {
-  test.setTimeout(600_000);
+  test.setTimeout(780_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(OVERCAST);
   const errors = await bootGlobe(
@@ -203,7 +210,7 @@ test("the cloud volume is seen looking down from just above the deck, over an ov
       );
     },
     null,
-    { timeout: 300_000 },
+    { timeout: SETTLE_MS },
   );
   await page.evaluate(() => window.__globeLab.timeFrames(3));
   const { coverage, volume, near } = await page.evaluate(() => {
@@ -236,7 +243,7 @@ test("the cloud volume reaches toward the horizon, not only around the camera", 
   page,
   context,
 }) => {
-  test.setTimeout(600_000);
+  test.setTimeout(780_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(OVERCAST);
   const errors = await bootGlobe(page, `${BASE}&cloudVolumeCover=1`);
@@ -249,7 +256,7 @@ test("the cloud volume reaches toward the horizon, not only around the camera", 
       );
     },
     null,
-    { timeout: 300_000 },
+    { timeout: SETTLE_MS },
   );
   await page.evaluate(() => window.__globeLab.pitchView(35));
   await page.evaluate(() => window.__globeLab.timeFrames(4));
@@ -290,7 +297,7 @@ test("the world frame follows a camera flown far from the target, so the cloud d
   page,
   context,
 }) => {
-  test.setTimeout(600_000);
+  test.setTimeout(780_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation({ latitude: 46.948, longitude: 7.4474 });
   const errors = await bootGlobe(page, `${BASE}&cloudVolumeCover=1`);
@@ -303,7 +310,7 @@ test("the world frame follows a camera flown far from the target, so the cloud d
       );
     },
     null,
-    { timeout: 300_000 },
+    { timeout: SETTLE_MS },
   );
   await page.evaluate((p) => window.__globeLab.placeView(p), OWNER_POSE);
   await page.evaluate(() => window.__globeLab.timeFrames(4));
@@ -349,7 +356,7 @@ test("the volume's shadow on the relief against the shell's soft shadow", async 
       );
     },
     null,
-    { timeout: 300_000 },
+    { timeout: SETTLE_MS },
   );
   const g = [];
   for (let i = 0; i < 16; i++) {
@@ -406,7 +413,7 @@ test("the cloud volume compiles and draws its hex-tiled clouds with cloudHex=1",
   page,
   context,
 }) => {
-  test.setTimeout(600_000);
+  test.setTimeout(780_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(OVERCAST);
   const errors = await bootGlobe(
@@ -422,7 +429,7 @@ test("the cloud volume compiles and draws its hex-tiled clouds with cloudHex=1",
       );
     },
     null,
-    { timeout: 300_000 },
+    { timeout: SETTLE_MS },
   );
   await page.evaluate(() => window.__globeLab.timeFrames(3));
   const { coverage, volume } = await page.evaluate(() => {
