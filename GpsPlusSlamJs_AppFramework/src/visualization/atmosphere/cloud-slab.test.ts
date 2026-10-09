@@ -792,7 +792,11 @@ describe('CLOUD_SLAB_FRAGMENT_GLSL', () => {
       CLOUD_SLAB_FRAGMENT_GLSL.indexOf('float atmSlabNoiseAt('),
       CLOUD_SLAB_FRAGMENT_GLSL.indexOf('highp float atmSlabInStepLight(')
     );
-    expect(helper).toContain('atmCloudNoiseLod(');
+    // Through the footprint (round-3 plan N1): the tile takes it as a level
+    // as before, the live noise fades its octaves by it.
+    expect(helper).toContain(
+      'atmCloudNoiseFootprint((cameraPosition.xz + dir.xz * t) * 0.001 / ATM_CLOUD_TILE + atmCloudOffset, footprint * 0.001)'
+    );
     for (const banned of [
       'texture2D(',
       'texture(',
@@ -1709,6 +1713,13 @@ describe('the coverage map and the disc (globe volume-cloud plan 2026-10-05-0016
     expect(m.uniforms['uMap']!.value).toBe(map);
     expect(m.uniforms['atmCoverThresholds']!.value).toEqual(
       cloudCoverThresholds()
+    );
+    // The live field's table too (round-3 plan N1): the noise switch picks.
+    expect(m.uniforms['atmCoverThresholdsLive']!.value).toEqual(
+      cloudCoverThresholds('live')
+    );
+    expect(m.fragmentShader).toContain(
+      'atmCloudThresholdAt(cameraPosition.xz + dir.xz * tb, atmCloudThreshold, atmCloudCover, atmCloudNoiseMode())'
     );
     setCloudSlabRadius(slab, 20_000);
     expect(m.defines['ATM_CLOUD_DISC']).toBe(1);

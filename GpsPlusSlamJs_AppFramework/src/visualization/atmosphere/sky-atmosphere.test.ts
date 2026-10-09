@@ -21,11 +21,18 @@ import { cloudColumnTransmittanceToward } from './cloud-column.js';
 import { CLOUD_SHEET } from './cloud-sheet.js';
 import { CLOUD_SLAB_REACH } from './cloud-slab.js';
 import {
+  CLOUD_LAYER,
   CLOUD_TEXTURE_SIZE,
   cloudNoise,
   cloudNoiseSample,
   cloudThreshold,
 } from './cloud-layer.js';
+import {
+  type CloudNoiseMode,
+  cloudLiveBasis,
+  cloudLiveSample,
+  liveCloudThreshold,
+} from './cloud-live-noise.js';
 import { CLOUD_NOISE_PERIOD_TILES, hexCloudThreshold } from './cloud-hex.js';
 import { SKY_VIEW_LUT_SIZE } from './atmosphere-lut-mapping.js';
 import {
@@ -1629,5 +1636,132 @@ describe('SkyAtmosphere hex-tiled clouds (hex-tiling plan H1)', () => {
       if (Math.abs(expected - plain) > 1e-6) differ += 1;
     }
     expect(differ).toBeGreaterThan(0);
+  });
+});
+
+describe('SkyAtmosphere live noise (round-3 plan N1)', () => {
+  // WHY: the switch `cloudNoise` (tile | hex | live) must change every
+  // reader together, live (a uniform, no new program: a recompile is a
+  // >50 ms hitch on a phone), with the live field's own threshold; the old
+  // `cloudHex` keeps meaning hex on / tile, so the framework's other users
+  // are unchanged.
+  it('switches the noise live, each mode with its own threshold', () => {
+    const { atmosphere, device } = setup();
+    atmosphere.setSun(UP);
+    atmosphere.configure({ cloudCover: 0.6 });
+    const u = atmosphere.cloudUniforms;
+    const sky = atmosphere.sky.material as THREE.ShaderMaterial;
+    const bake = (device.bakedScene!.children[0] as THREE.Mesh)
+      .material as THREE.ShaderMaterial;
+    const program = sky.fragmentShader;
+    expect(atmosphere.cloudNoise).toBe('tile');
+    expect(u.atmCloudLive.value).toBe(0);
+    expect(u.atmCloudLattice.value).toBeNull();
+    atmosphere.configure({ cloudNoise: 'live' });
+    expect(atmosphere.cloudNoise).toBe('live');
+    expect(u.atmCloudLive.value).toBe(1);
+    expect(u.atmCloudHex.value).toBe(0);
+    expect(u.atmCloudLattice.value).not.toBeNull();
+    expect(u.atmCloudThreshold.value).toBe(
+      Math.min(liveCloudThreshold(0.6), 2)
+    );
+    expect(sky.uniforms.atmCloudLive).toBe(u.atmCloudLive);
+    expect(bake.uniforms.atmCloudLiveBasis).toBe(u.atmCloudLiveBasis);
+    expect(sky.fragmentShader).toBe(program);
+    atmosphere.configure({ cloudNoise: 'hex' });
+    expect(u.atmCloudLive.value).toBe(0);
+    expect(u.atmCloudHex.value).toBe(1);
+    expect(u.atmCloudThreshold.value).toBe(Math.min(hexCloudThreshold(0.6), 2));
+    atmosphere.configure({ cloudHex: false });
+    expect(atmosphere.cloudNoise).toBe('tile');
+    atmosphere.configure({ cloudHex: true });
+    expect(atmosphere.cloudNoise).toBe('hex');
+    expect(() =>
+      atmosphere.configure({ cloudNoise: 'fbm' as CloudNoiseMode })
+    ).toThrow(RangeError);
+    expect(atmosphere.cloudNoise).toBe('hex');
+  });
+
+  // The anchor (cold review item 4): the caller's float64 noise-plane
+  // origin and rotation become the per-octave basis the shaders read, and
+  // the drift moves the origin the way it moves the tile's offset.
+  it('writes the anchor into the basis, and drifts it with advanceClouds', () => {
+    const { atmosphere } = setup();
+    const anchor = { originKm: [3_210.25, -654.5] as const, rotationRad: 0.3 };
+    atmosphere.setCloudNoiseAnchor(anchor);
+    expect(atmosphere.cloudNoiseAnchor).toEqual({
+      originKm: [3_210.25, -654.5],
+      rotationRad: 0.3,
+    });
+    const basis = cloudLiveBasis(anchor);
+    const written = atmosphere.cloudUniforms.atmCloudLiveBasis.value;
+    expect(written).toHaveLength(basis.length / 4);
+    written.forEach((v, k) => {
+      expect(v.x).toBeCloseTo(basis[4 * k]!, 12);
+      expect(v.w).toBeCloseTo(basis[4 * k + 3]!, 9);
+    });
+    atmosphere.advanceClouds(1000, 0.01);
+    const moved = atmosphere.cloudNoiseAnchor;
+    // 10 km of wind along the frame's x, 0.35 of it along z, both turned by
+    // the frame's rotation onto the plane.
+    const c = Math.cos(0.3);
+    const s = Math.sin(0.3);
+    expect(moved.originKm[0]).toBeCloseTo(3_210.25 + c * 10 - s * 3.5, 9);
+    expect(moved.originKm[1]).toBeCloseTo(-654.5 + s * 10 + c * 3.5, 9);
+    expect(() =>
+      atmosphere.setCloudNoiseAnchor({
+        originKm: [Number.NaN, 0],
+        rotationRad: 0,
+      })
+    ).toThrow(RangeError);
+  });
+
+  // The CPU twin (the sun dimmed by the clouds, the ground's shadow on the
+  // CPU) reads the live field the shader draws, at the local point the
+  // shader takes back from the noise coordinate.
+  it('reads its CPU twin live with the switch on', () => {
+    const { atmosphere } = setup();
+    const sun = { x: 0.3, y: 0.8, z: -0.52 };
+    atmosphere.configure({
+      sunDirection: sun,
+      cloudCover: 0.6,
+      cloudNoise: 'live',
+    });
+    atmosphere.setCloudNoiseAnchor({ originKm: [777, 888], rotationRad: 1 });
+    atmosphere.advanceClouds(500);
+    const l = Math.hypot(sun.x, sun.y, sun.z);
+    const dir: [number, number, number] = [sun.x / l, sun.y / l, sun.z / l];
+    const u = atmosphere.cloudUniforms;
+    const basis = cloudLiveBasis(atmosphere.cloudNoiseAnchor);
+    const offset = u.atmCloudOffset.value;
+    for (const p of [
+      [0, 0, 0],
+      [4000, 0, -2500],
+      [-20_000, 0, -9_000],
+    ] as [number, number, number][]) {
+      const expected = cloudColumnTransmittanceToward(
+        p,
+        dir,
+        u.atmCloudThreshold.value,
+        (a, b) =>
+          cloudLiveSample(
+            basis,
+            (a - offset.x) * CLOUD_LAYER.tileKm,
+            (b - offset.y) * CLOUD_LAYER.tileKm
+          ),
+        [offset.x, offset.y]
+      );
+      expect(atmosphere.cloudShadowToward(p)).toBeCloseTo(expected, 9);
+    }
+  });
+
+  it('frees the lattice with the atmosphere', () => {
+    const { atmosphere } = setup();
+    atmosphere.configure({ cloudNoise: 'live' });
+    const lattice = atmosphere.cloudUniforms.atmCloudLattice.value!;
+    let disposed = 0;
+    lattice.addEventListener('dispose', () => (disposed += 1));
+    atmosphere.dispose();
+    expect(disposed).toBe(1);
   });
 });

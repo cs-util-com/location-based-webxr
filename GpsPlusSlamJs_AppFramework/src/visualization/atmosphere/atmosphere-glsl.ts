@@ -41,7 +41,8 @@ import {
 } from './atmosphere-lut-mapping.js';
 import { EARTH_ATMOSPHERE } from './atmosphere-model.js';
 import { glslFloat } from '../../utils/glsl-float.js';
-import { CLOUD_LAYER } from './cloud-layer.js';
+import { CLOUD_LAYER, CLOUD_TEXTURE_SIZE } from './cloud-layer.js';
+import { CLOUD_LIVE_NOISE_GLSL } from './cloud-live-noise.js';
 import { CLOUD_HEX, CLOUD_HEX_GLSL } from './cloud-hex.js';
 import { CLOUD_COLUMN_GLSL } from './cloud-column.js';
 import { CLOUD_SUN_GLSL } from './cloud-sun.js';
@@ -426,9 +427,16 @@ uniform float atmCloudThreshold;
 uniform vec2 atmCloudOffset;
 // 1: the big-shape octave hex-tiled (hex-tiling plan H1), 0: as before.
 uniform float atmCloudHex;
+// 1: the live per-octave noise (round-3 plan N1, cloud-live-noise.ts), its
+// lattice and its per-octave basis (the anchoring, written from float64 on
+// the CPU); it wins over atmCloudHex.
+uniform float atmCloudLive;
+uniform sampler2D atmCloudLattice;
 const float ATM_CLOUD_MEAN = ${glslFloat(CLOUD_HEX.textureMean)};
 const float ATM_CLOUD_ALTITUDE = ${glslFloat(CLOUD_LAYER.altitudeKm)};
 const float ATM_CLOUD_TILE = ${glslFloat(CLOUD_LAYER.tileKm)};
+// The baked texture's texel (km): a level of detail's footprint unit.
+const float ATM_CLOUD_TEXEL_KM = ${glslFloat(CLOUD_LAYER.tileKm / CLOUD_TEXTURE_SIZE)};
 const float ATM_CLOUD_OCTAVE2_FREQ = ${glslFloat(CLOUD_LAYER.secondOctaveFrequency)};
 const float ATM_CLOUD_OCTAVE2_OFFSET = ${glslFloat(CLOUD_LAYER.secondOctaveOffset)};
 const float ATM_CLOUD_OCTAVE1_WEIGHT = ${glslFloat(CLOUD_LAYER.firstOctaveWeight)};
@@ -443,6 +451,13 @@ uniform vec2 atmCloudForward;
 ${CLOUD_COLUMN_GLSL}
 ${CLOUD_SUN_GLSL}
 ${CLOUD_HEX_GLSL}
+${CLOUD_LIVE_NOISE_GLSL}
+uniform vec4 atmCloudLiveBasis[ATM_LIVE_OCTAVES];
+
+// The noise switch as the coverage tables read it: 0 the tile, 1 hex, 2 live.
+float atmCloudNoiseMode() {
+  return atmCloudLive > 0.5 ? 2.0 : atmCloudHex;
+}
 
 // Twin of cloud-layer.ts cloudDensity: a soft step, 0.5 AT the threshold
 // (the cover's quantile of the combined noise, computed on the CPU).
@@ -459,6 +474,7 @@ float atmCloudHorizonFade(float dirY) {
 // atmCloudHex the first octave hex-tiled, read with the CONTINUOUS uv's
 // gradients (the cells' offsets jump at their edges).
 float atmCloudNoise(vec2 uv) {
+  if (atmCloudLive > 0.5) return atmCloudLiveGrad(atmCloudLattice, atmCloudLiveBasis, uv, atmCloudOffset);
   float first = atmCloudHex > 0.5
     ? atmCloudHexGrad(atmCloudTexture, uv, dFdx(uv), dFdy(uv), ATM_CLOUD_MEAN)
     : texture2D(atmCloudTexture, uv).r;
@@ -471,6 +487,7 @@ float atmCloudNoise(vec2 uv) {
 // implicit derivatives are undefined. The second octave's coordinates are
 // OCTAVE2_FREQ times denser, so its level is log2 of that coarser.
 float atmCloudNoiseLod(vec2 uv, float lod) {
+  if (atmCloudLive > 0.5) return atmCloudLiveAt(atmCloudLattice, atmCloudLiveBasis, uv, atmCloudOffset, lod > 0.0 ? exp2(lod) * ATM_CLOUD_TEXEL_KM : 0.0);
   float first = atmCloudHex > 0.5
     ? atmCloudHexLod(atmCloudTexture, uv, lod, ATM_CLOUD_MEAN)
     : textureLod(atmCloudTexture, uv, lod).r;
@@ -478,6 +495,14 @@ float atmCloudNoiseLod(vec2 uv, float lod) {
     + textureLod(atmCloudTexture, uv * ATM_CLOUD_OCTAVE2_FREQ + ATM_CLOUD_OCTAVE2_OFFSET,
         lod + log2(ATM_CLOUD_OCTAVE2_FREQ)).r
       * (1.0 - ATM_CLOUD_OCTAVE1_WEIGHT);
+}
+
+// The noise for a ground footprint (km: a pixel's or a march step's): the
+// live noise fades its octaves by it; the tile takes it as a level of
+// detail of its texels, never below its finest (twin of cloudSlabLod).
+float atmCloudNoiseFootprint(vec2 uv, float footprintKm) {
+  if (atmCloudLive > 0.5) return atmCloudLiveAt(atmCloudLattice, atmCloudLiveBasis, uv, atmCloudOffset, footprintKm);
+  return atmCloudNoiseLod(uv, footprintKm > 0.0 ? max(0.0, log2(footprintKm / ATM_CLOUD_TEXEL_KM)) : 0.0);
 }
 
 // A cloud's lit radiance seen along dir from radius r (LUT units): the sun's

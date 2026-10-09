@@ -40,6 +40,7 @@ import * as THREE from 'three';
 
 import { CLOUD_LAYER } from './cloud-layer.js';
 import { CLOUD_HEX, CLOUD_HEX_GLSL } from './cloud-hex.js';
+import { CLOUD_LIVE_NOISE, CLOUD_LIVE_NOISE_GLSL } from './cloud-live-noise.js';
 import {
   writeCloudDiscCentre,
   type CloudDiscCentre,
@@ -80,6 +81,10 @@ uniform float atmShadowCloudThreshold;
 uniform vec2 atmShadowCloudOffset;
 // The sky's hex switch (hex-tiling plan H1), copied at sync.
 uniform float atmShadowCloudHex;
+// The sky's live switch and lattice (round-3 plan N1), copied at sync; its
+// basis the sky's own object, so the shadows follow its anchor.
+uniform float atmShadowCloudLive;
+uniform sampler2D atmShadowCloudLattice;
 // The layer lifted by this (m: the volume's height, C3), and the global
 // cover times the map's (C3; 1 without a map).
 uniform float atmShadowLiftM;
@@ -87,14 +92,18 @@ uniform float atmShadowCover;
 ${CLOUD_COLUMN_GLSL}
 ${CLOUD_COVERAGE_GLSL}
 ${CLOUD_HEX_GLSL}
+${CLOUD_LIVE_NOISE_GLSL}
+uniform vec4 atmShadowCloudLiveBasis[ATM_LIVE_OCTAVES];
 const float ATM_SHADOW_OCTAVE2_FREQ = ${glslFloat(CLOUD_LAYER.secondOctaveFrequency)};
 const float ATM_SHADOW_OCTAVE2_OFFSET = ${glslFloat(CLOUD_LAYER.secondOctaveOffset)};
 const float ATM_SHADOW_OCTAVE1_WEIGHT = ${glslFloat(CLOUD_LAYER.firstOctaveWeight)};
 const float ATM_SHADOW_CLOUD_MEAN = ${glslFloat(CLOUD_HEX.textureMean)};
 
-// The sky's two-octave noise (atmCloudNoise), from this patch's own
-// uniforms, its first octave hex-tiled with the sky's switch.
+// The sky's noise (atmCloudNoise), from this patch's own uniforms: live
+// with the sky's live switch, else the two octaves, the first hex-tiled
+// with its hex switch.
 float atmShadowCloudNoise(vec2 uv) {
+  if (atmShadowCloudLive > 0.5) return atmCloudLiveGrad(atmShadowCloudLattice, atmShadowCloudLiveBasis, uv, atmShadowCloudOffset);
   float first = atmShadowCloudHex > 0.5
     ? atmCloudHexGrad(atmShadowCloudTexture, uv, dFdx(uv), dFdy(uv), ATM_SHADOW_CLOUD_MEAN)
     : texture2D(atmShadowCloudTexture, uv).r;
@@ -125,7 +134,7 @@ void atmShadowCloudLightInfo(const in DirectionalLight directionalLight, out Inc
       // The threshold where the light's line crosses the layer's middle:
       // the map's and the disc's (cloud-coverage.ts), else the sky's.
       vec2 crossing = lifted.xz + toLight.xz * atmColumnDistance(lifted.y, toLight.y);
-      float threshold = atmCloudThresholdAt(crossing, atmShadowCloudThreshold, atmShadowCover, atmShadowCloudHex);
+      float threshold = atmCloudThresholdAt(crossing, atmShadowCloudThreshold, atmShadowCover, atmShadowCloudLive > 0.5 ? 2.0 : atmShadowCloudHex);
       if (threshold < 2.0) {
         float noise = atmShadowCloudNoise(atmColumnUv(lifted, toLight, atmShadowCloudOffset));
         light.color *= exp(-atmColumnOpticalDepth(noise, threshold, lifted.y, toLight.y));
@@ -145,6 +154,9 @@ export interface CloudShadowUniforms {
   atmShadowCloudThreshold: THREE.IUniform<number>;
   atmShadowCloudOffset: THREE.IUniform<THREE.Vector2>;
   atmShadowCloudHex: THREE.IUniform<number>;
+  atmShadowCloudLive: THREE.IUniform<number>;
+  atmShadowCloudLattice: THREE.IUniform<THREE.Texture | null>;
+  atmShadowCloudLiveBasis: THREE.IUniform<THREE.Vector4[]>;
 }
 
 /** What the patch reads from an atmosphere (`SkyAtmosphere` satisfies it). */
@@ -155,6 +167,10 @@ export interface CloudShadowSource {
     readonly atmCloudOffset: THREE.IUniform<THREE.Vector2>;
     /** The hex switch (hex-tiling plan H1); absent: off. */
     readonly atmCloudHex?: THREE.IUniform<number>;
+    /** The live switch, lattice and basis (round-3 plan N1); absent: off. */
+    readonly atmCloudLive?: THREE.IUniform<number>;
+    readonly atmCloudLattice?: THREE.IUniform<THREE.Texture | null>;
+    readonly atmCloudLiveBasis?: THREE.IUniform<THREE.Vector4[]>;
   };
 }
 
@@ -181,6 +197,14 @@ export class CloudShadow {
     atmShadowCloudThreshold: { value: 2 },
     atmShadowCloudOffset: { value: new THREE.Vector2() },
     atmShadowCloudHex: { value: 0 },
+    atmShadowCloudLive: { value: 0 },
+    atmShadowCloudLattice: { value: null },
+    atmShadowCloudLiveBasis: {
+      value: Array.from(
+        { length: CLOUD_LIVE_NOISE.octaves },
+        () => new THREE.Vector4()
+      ),
+    },
     atmShadowLiftM: { value: 0 },
     atmShadowCover: { value: 1 },
     ...cloudCoverageUniforms(),
@@ -191,10 +215,10 @@ export class CloudShadow {
   private patched = 0;
 
   /**
-   * Take the atmosphere's clouds: its noise texture and drift offset (the
-   * objects themselves, so the shadows drift with the sky), and its cover's
-   * threshold and hex switch (copies: call again after a cover change or a
-   * switch).
+   * Take the atmosphere's clouds: its noise texture, drift offset and live
+   * basis (the objects themselves, so the shadows drift with the sky), and
+   * its cover's threshold, hex and live switches and lattice (copies: call
+   * again after a cover change or a switch).
    */
   sync(source: CloudShadowSource): void {
     const clouds = source.cloudUniforms;
@@ -203,6 +227,13 @@ export class CloudShadow {
     this.uniforms.atmShadowCloudThreshold.value =
       clouds.atmCloudThreshold.value;
     this.uniforms.atmShadowCloudHex.value = clouds.atmCloudHex?.value ?? 0;
+    this.uniforms.atmShadowCloudLive.value = clouds.atmCloudLive?.value ?? 0;
+    this.uniforms.atmShadowCloudLattice.value =
+      clouds.atmCloudLattice?.value ?? null;
+    if (clouds.atmCloudLiveBasis !== undefined) {
+      this.uniforms.atmShadowCloudLiveBasis.value =
+        clouds.atmCloudLiveBasis.value;
+    }
   }
 
   /** The shadows on or off (a uniform: no recompile). */
@@ -237,6 +268,9 @@ export class CloudShadow {
       this.uniforms['atmCoverThresholds']!.value = [...cloudCoverThresholds()];
       this.uniforms['atmCoverThresholdsHex']!.value = [
         ...cloudCoverThresholds(true),
+      ];
+      this.uniforms['atmCoverThresholdsLive']!.value = [
+        ...cloudCoverThresholds('live'),
       ];
     }
     this.coverage = coverage;

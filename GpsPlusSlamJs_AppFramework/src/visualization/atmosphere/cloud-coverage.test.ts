@@ -22,6 +22,7 @@ import {
   withCloudCoverage,
 } from './cloud-coverage.js';
 import { HEX_COVER_THRESHOLDS } from './cloud-hex.js';
+import { CLOUD_LIVE_COVER_THRESHOLDS } from './cloud-live-noise.js';
 
 describe('the cover table', () => {
   it('tabulates the threshold for 33 covers from the noise quantiles', () => {
@@ -81,9 +82,10 @@ describe('CLOUD_COVERAGE_GLSL', () => {
     expect(g).toContain('uniform float atmCoverThresholds[33];');
     expect(g).toContain('#ifdef ATM_CLOUD_DISC');
     expect(g).toContain('uniform float atmCoverDiscM;');
-    // (The fourth argument, the hex switch, came with hex-tiling plan H1.)
+    // (The fourth argument, the noise switch: the hex one came with
+    // hex-tiling plan H1, the live one with round-3 plan N1.)
     expect(g).toContain(
-      'float atmCloudThresholdAt(vec2 xz, float threshold, float cover, float hex)'
+      'float atmCloudThresholdAt(vec2 xz, float threshold, float cover, float noise)'
     );
     expect(g).toContain('atmCloudCoverageAt(xz) * cover');
   });
@@ -147,7 +149,7 @@ describe('the hex-tiled field’s table (hex-tiling plan H1)', () => {
       'uniform float atmCoverThresholdsHex[33];'
     );
     expect(CLOUD_COVERAGE_GLSL).toContain(
-      'float atmCloudThresholdAt(vec2 xz, float threshold, float cover, float hex)'
+      'float atmCloudThresholdAt(vec2 xz, float threshold, float cover, float noise)'
     );
     expect(cloudCoverageUniforms().atmCoverThresholdsHex.value).toHaveLength(
       33
@@ -155,7 +157,32 @@ describe('the hex-tiled field’s table (hex-tiling plan H1)', () => {
     // One table read per lookup (H1/H2 milestone review, finding 2): the
     // switch picks before the lookup, so hex off costs no second table.
     expect(CLOUD_COVERAGE_GLSL).toMatch(
-      /return hex > 0\.5\s*\?\s*mix\(atmCoverThresholdsHex/
+      /noise > 0\.5\s*\?\s*mix\(atmCoverThresholdsHex/
+    );
+  });
+});
+
+describe('the live field’s table (round-3 plan N1)', () => {
+  // WHY: the live noise has its own distribution, so its own thresholds
+  // (cloud-live-noise.ts); the switch is a uniform, so all three tables
+  // are carried and the mode picks one, still one table read a lookup.
+  it('carries the live table and picks it by the mode', () => {
+    const live = cloudCoverThresholds('live');
+    expect(live).toHaveLength(33);
+    for (let k = 0; k <= 32; k++) {
+      expect(live[k]).toBe(Math.min(CLOUD_LIVE_COVER_THRESHOLDS[k] ?? 0, 2));
+    }
+    expect(cloudCoverThresholds('hex')).toBe(cloudCoverThresholds(true));
+    expect(cloudCoverThresholds('tile')).toBe(cloudCoverThresholds());
+    expect(cloudThresholdForCover(0.5, 'live')).toBe(live[16]);
+    expect(CLOUD_COVERAGE_GLSL).toContain(
+      'uniform float atmCoverThresholdsLive[33];'
+    );
+    expect(CLOUD_COVERAGE_GLSL).toMatch(
+      /noise > 1\.5\s*\?\s*mix\(atmCoverThresholdsLive/
+    );
+    expect(cloudCoverageUniforms().atmCoverThresholdsLive.value).toEqual(
+      new Array(33).fill(2)
     );
   });
 });

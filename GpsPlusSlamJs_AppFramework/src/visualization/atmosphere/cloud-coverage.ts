@@ -24,6 +24,10 @@ import * as THREE from 'three';
 import { smoothstep } from '../../utils/smoothstep.js';
 import { HEX_COVER_THRESHOLDS } from './cloud-hex.js';
 import { cloudThreshold } from './cloud-layer.js';
+import {
+  CLOUD_LIVE_COVER_THRESHOLDS,
+  type CloudNoiseMode,
+} from './cloud-live-noise.js';
 
 /** The covers the threshold table holds: k / COVER_STEPS, k = 0 … COVER_STEPS. */
 const COVER_STEPS = 32;
@@ -31,6 +35,17 @@ const COVER_STEPS = 32;
 const CLEAR_THRESHOLD = 2;
 let coverThresholds: readonly number[] | undefined;
 let hexThresholds: readonly number[] | undefined;
+let liveThresholds: readonly number[] | undefined;
+
+/** A noise switch: the mode, or the hex switch's boolean (true: hex). */
+export type CloudNoiseSwitch = boolean | CloudNoiseMode;
+
+/** The mode a switch names: true is hex, false is the tile. */
+function modeOf(noise: CloudNoiseSwitch): CloudNoiseMode {
+  if (noise === true) return 'hex';
+  if (noise === false) return 'tile';
+  return noise;
+}
 
 /** A caller's coverage map: GLSL defining `atmCloudCoverageAt`, and its uniforms. */
 export interface CloudCoverage {
@@ -45,13 +60,24 @@ export interface CloudCoverage {
 /**
  * The noise threshold for each cover k / 32, k = 0 … 32: `cloudThreshold`,
  * clear (2) at cover 0 and never above it. Computed once. The shader's
- * `atmCoverThresholds`. With `hex`, the hex-tiled field's
+ * `atmCoverThresholds`. With `hex` (or true), the hex-tiled field's
  * (`HEX_COVER_THRESHOLDS`, `cloud-hex.ts`), the shader's
- * `atmCoverThresholdsHex`: both are carried, the switch picks, so a live
- * switch rewrites no copy.
+ * `atmCoverThresholdsHex`; with `live`, the live field's
+ * (`CLOUD_LIVE_COVER_THRESHOLDS`, `cloud-live-noise.ts`, round-3 plan N1),
+ * the shader's `atmCoverThresholdsLive`: all three are carried, the
+ * switch picks, so a live switch rewrites no copy.
  */
-export function cloudCoverThresholds(hex = false): readonly number[] {
-  if (hex) {
+export function cloudCoverThresholds(
+  noise: CloudNoiseSwitch = false
+): readonly number[] {
+  const mode = modeOf(noise);
+  if (mode === 'live') {
+    liveThresholds ??= CLOUD_LIVE_COVER_THRESHOLDS.map((t) =>
+      Math.min(t, CLEAR_THRESHOLD)
+    );
+    return liveThresholds;
+  }
+  if (mode === 'hex') {
     hexThresholds ??= HEX_COVER_THRESHOLDS.map((t) =>
       Math.min(t, CLEAR_THRESHOLD)
     );
@@ -69,11 +95,14 @@ export function cloudCoverThresholds(hex = false): readonly number[] {
  *
  * @throws RangeError for a cover that is NaN.
  */
-export function cloudThresholdForCover(cover: number, hex = false): number {
+export function cloudThresholdForCover(
+  cover: number,
+  noise: CloudNoiseSwitch = false
+): number {
   if (Number.isNaN(cover)) {
     throw new RangeError('the cover must be a number, got NaN');
   }
-  const table = cloudCoverThresholds(hex);
+  const table = cloudCoverThresholds(noise);
   const c = Math.min(Math.max(cover, 0), 1) * COVER_STEPS;
   const k = Math.min(Math.floor(c), COVER_STEPS - 1);
   const f = c - k;
@@ -110,7 +139,7 @@ const COVERAGE_CHUNK = '// atm-cloud-coverage-chunk';
 
 /**
  * The chunk both shaders include: `atmCloudThresholdAt(xz, threshold,
- * cover)`, the threshold at world x/z, from the caller's map times `cover`
+ * cover, noise)` (noise: 0 the tile, 1 hex, 2 live, picking the table), the threshold at world x/z, from the caller's map times `cover`
  * (`ATM_CLOUD_COVERAGE`, the caller's chunk inserted by
  * `withCloudCoverage`) or `threshold`, faded to clear around the camera
  * (`ATM_CLOUD_DISC`). Without either define it returns `threshold`.
@@ -118,16 +147,19 @@ const COVERAGE_CHUNK = '// atm-cloud-coverage-chunk';
 export const CLOUD_COVERAGE_GLSL = /* glsl */ `
 #ifdef ATM_CLOUD_COVERAGE
 uniform float atmCoverThresholds[33];
-// The hex-tiled field's table (hex-tiling plan H1), picked by the switch.
+// The hex-tiled field's table (hex-tiling plan H1) and the live field's
+// (round-3 plan N1), picked by the noise switch.
 uniform float atmCoverThresholdsHex[33];
+uniform float atmCoverThresholdsLive[33];
 ${COVERAGE_CHUNK}
 // Twin of cloudThresholdForCover.
-float atmCoverThreshold(float cover, float hex) {
+// noise: 0 the tile, 1 hex, 2 live.
+float atmCoverThreshold(float cover, float noise) {
   float c = clamp(cover, 0.0, 1.0) * 32.0;
   int k = int(min(floor(c), 31.0));
-  // The switch picks before the lookup: one table read, hex on or off.
-  return hex > 0.5
-    ? mix(atmCoverThresholdsHex[k], atmCoverThresholdsHex[k + 1], c - float(k))
+  // The switch picks before the lookup: one table read in every mode.
+  return noise > 1.5 ? mix(atmCoverThresholdsLive[k], atmCoverThresholdsLive[k + 1], c - float(k))
+    : noise > 0.5 ? mix(atmCoverThresholdsHex[k], atmCoverThresholdsHex[k + 1], c - float(k))
     : mix(atmCoverThresholds[k], atmCoverThresholds[k + 1], c - float(k));
 }
 #endif
@@ -136,9 +168,9 @@ uniform float atmCoverDiscM;
 // The disc's centre: world x, z, and 1 to follow the camera instead.
 uniform vec3 atmCoverDiscCentre;
 #endif
-float atmCloudThresholdAt(vec2 xz, float threshold, float cover, float hex) {
+float atmCloudThresholdAt(vec2 xz, float threshold, float cover, float noise) {
 #ifdef ATM_CLOUD_COVERAGE
-  threshold = atmCoverThreshold(atmCloudCoverageAt(xz) * cover, hex);
+  threshold = atmCoverThreshold(atmCloudCoverageAt(xz) * cover, noise);
 #endif
 #ifdef ATM_CLOUD_DISC
   vec2 atmDiscCentre = mix(atmCoverDiscCentre.xy, cameraPosition.xz, atmCoverDiscCentre.z);
@@ -156,6 +188,7 @@ float atmCloudThresholdAt(vec2 xz, float threshold, float cover, float hex) {
 export function cloudCoverageUniforms(): {
   atmCoverThresholds: THREE.IUniform<number[]>;
   atmCoverThresholdsHex: THREE.IUniform<number[]>;
+  atmCoverThresholdsLive: THREE.IUniform<number[]>;
   atmCoverDiscM: THREE.IUniform<number>;
   atmCoverDiscCentre: THREE.IUniform<THREE.Vector3>;
 } {
@@ -164,6 +197,9 @@ export function cloudCoverageUniforms(): {
       value: new Array<number>(COVER_STEPS + 1).fill(CLEAR_THRESHOLD),
     },
     atmCoverThresholdsHex: {
+      value: new Array<number>(COVER_STEPS + 1).fill(CLEAR_THRESHOLD),
+    },
+    atmCoverThresholdsLive: {
       value: new Array<number>(COVER_STEPS + 1).fill(CLEAR_THRESHOLD),
     },
     atmCoverDiscM: { value: 1 },

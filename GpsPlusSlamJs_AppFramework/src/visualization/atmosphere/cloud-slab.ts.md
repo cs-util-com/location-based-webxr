@@ -197,6 +197,13 @@ it only in `cloudMode: 'slab'`.
   3-5° up, where the far fade has hidden the clouds, and the horizon
   shimmer read the same to two decimals, so it was not adopted. The slab
   has no domain warp to hoist out of the march.
+- **The noise is read through its footprint** (round-3 plan N1):
+  `atmCloudNoiseFootprint` gets the larger of the pixel's and the step's
+  footprint; the tile and hex take it as the level of detail above, the
+  live noise fades each octave to its mean by it (`cloud-live-noise.ts`).
+  The coverage threshold's table follows the noise switch
+  (`atmCloudNoiseMode()`), and `setCloudSlabCoverage` writes all three
+  tables.
 - **The weights go on the contribution, not on the extinction**, so the far
   fade reaches 0 for any thickness.
 - **The forward glow is added once, after the loop** (`atmCloudForward.x + .y > 0`):

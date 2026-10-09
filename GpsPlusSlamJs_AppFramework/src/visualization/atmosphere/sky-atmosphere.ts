@@ -53,6 +53,16 @@ import {
   createCloudTexture,
 } from './cloud-layer.js';
 import { CLOUD_NOISE_PERIOD_TILES, hexCloudThreshold } from './cloud-hex.js';
+import {
+  CLOUD_LIVE_NOISE,
+  CLOUD_NOISE_MODES,
+  type CloudNoiseAnchor,
+  type CloudNoiseMode,
+  cloudLiveBasis,
+  cloudLiveSample,
+  createCloudLiveLatticeTexture,
+  liveCloudThreshold,
+} from './cloud-live-noise.js';
 import { cloudColumnTransmittanceToward } from './cloud-column.js';
 import {
   CLOUD_MODES,
@@ -210,6 +220,21 @@ export type RebuildStage = 'luts' | 'waiting' | 'read' | 'bake' | 'idle';
  */
 export const ENVIRONMENT_BAKE_GAIN = 1024;
 
+/** The live noise's per-octave basis for `anchor`, as the shader's vec4s. */
+function liveBasisVectors(anchor: CloudNoiseAnchor): THREE.Vector4[] {
+  const basis = cloudLiveBasis(anchor);
+  return Array.from(
+    { length: CLOUD_LIVE_NOISE.octaves },
+    (_, k) =>
+      new THREE.Vector4(
+        basis[4 * k],
+        basis[4 * k + 1],
+        basis[4 * k + 2],
+        basis[4 * k + 3]
+      )
+  );
+}
+
 /**
  * When the sky readback fails, the sky illuminance comes from the CPU
  * estimate (`skyIlluminanceCpu`, the fallback sky's), evaluated for a sun no
@@ -307,6 +332,8 @@ export class SkyAtmosphere {
   private sun: THREE.Vector3 | undefined;
   private environment: { texture: THREE.Texture; dispose(): void } | undefined;
   private horizon: Rgb = [0, 0, 0];
+  /** The live noise's anchor (`setCloudNoiseAnchor`), float64. */
+  private noiseAnchor: CloudNoiseAnchor = { originKm: [0, 0], rotationRad: 0 };
   /** The noise threshold for the cover; 2 (above any noise) = clear. */
   private readonly threshold = { value: 2 };
   /** The cloud layer's uniforms, shared by the sky, the bake and the meshes. */
@@ -317,6 +344,16 @@ export class SkyAtmosphere {
     atmCloudOffset: { value: new THREE.Vector2() },
     /** 1: the big-shape octave hex-tiled (`configure({ cloudHex })`). */
     atmCloudHex: { value: 0 },
+    /**
+     * 1: the live per-octave noise (`configure({ cloudNoise: 'live' })`,
+     * round-3 plan N1), its lattice (made at the first switch to live) and
+     * its per-octave basis (`setCloudNoiseAnchor`).
+     */
+    atmCloudLive: { value: 0 },
+    atmCloudLattice: { value: null as THREE.Texture | null },
+    atmCloudLiveBasis: {
+      value: liveBasisVectors({ originKm: [0, 0], rotationRad: 0 }),
+    },
     /** The disc's view of the clouds: the real threshold in every mode. */
     atmCloudSunThreshold: this.threshold,
     atmCloudFarFadeM: {
@@ -525,6 +562,9 @@ export class SkyAtmosphere {
     readonly atmCloudThreshold: THREE.IUniform<number>;
     readonly atmCloudOffset: THREE.IUniform<THREE.Vector2>;
     readonly atmCloudHex: THREE.IUniform<number>;
+    readonly atmCloudLive: THREE.IUniform<number>;
+    readonly atmCloudLattice: THREE.IUniform<THREE.Texture | null>;
+    readonly atmCloudLiveBasis: THREE.IUniform<THREE.Vector4[]>;
     readonly atmCloudAnchored: THREE.IUniform<number>;
     readonly atmCloudFarFadeM: THREE.IUniform<THREE.Vector2>;
   } {
@@ -566,21 +606,13 @@ export class SkyAtmosphere {
     const sun = this.sun;
     const threshold = this.clouds.atmCloudThreshold.value;
     if (sun === undefined || threshold >= 2) return 1;
-    // The live texture's own data, not a second copy of the noise.
-    const image = this.clouds.atmCloudTexture.value.image as {
-      data: Uint8Array;
-      width: number;
-    };
     const offset = this.clouds.atmCloudOffset.value;
     const fade = this.clouds.atmCloudFarFadeM.value;
     return cloudColumnTransmittanceToward(
       point,
       [sun.x, sun.y, sun.z],
       threshold,
-      (u, v) =>
-        cloudNoiseSample(image.data, image.width, u, v, {
-          hex: this.clouds.atmCloudHex.value === 1,
-        }),
+      this.cloudSampler(),
       [offset.x, offset.y],
       {
         camera: viewer,
@@ -607,21 +639,72 @@ export class SkyAtmosphere {
     const sun = this.sun;
     const threshold = this.clouds.atmCloudThreshold.value;
     if (sun === undefined || threshold >= 2) return 1;
-    const image = this.clouds.atmCloudTexture.value.image as {
-      data: Uint8Array;
-      width: number;
-    };
     const offset = this.clouds.atmCloudOffset.value;
     return cloudColumnTransmittanceToward(
       point,
       [sun.x, sun.y, sun.z],
       threshold,
-      (u, v) =>
-        cloudNoiseSample(image.data, image.width, u, v, {
-          hex: this.clouds.atmCloudHex.value === 1,
-        }),
+      this.cloudSampler(),
       [offset.x, offset.y]
     );
+  }
+
+  /**
+   * The CPU twin of the noise the shaders read at a noise coordinate (tiles,
+   * the offset included): live, the live field at the local point the
+   * shader takes back from it, (uv - offset) x the tile; else the live
+   * texture's own data (not a second copy of the noise), hex-tiled with the
+   * hex switch.
+   */
+  private cloudSampler(): (u: number, v: number) => number {
+    const offset = this.clouds.atmCloudOffset.value;
+    if (this.clouds.atmCloudLive.value === 1) {
+      const basis = cloudLiveBasis(this.noiseAnchor);
+      const tile = CLOUD_LAYER.tileKm;
+      return (u, v) =>
+        cloudLiveSample(basis, (u - offset.x) * tile, (v - offset.y) * tile);
+    }
+    const image = this.clouds.atmCloudTexture.value.image as {
+      data: Uint8Array;
+      width: number;
+    };
+    const hex = this.clouds.atmCloudHex.value === 1;
+    return (u, v) => cloudNoiseSample(image.data, image.width, u, v, { hex });
+  }
+
+  /** Which noise the clouds read (`configure({ cloudNoise })`). */
+  get cloudNoise(): CloudNoiseMode {
+    if (this.clouds.atmCloudLive.value === 1) return 'live';
+    return this.clouds.atmCloudHex.value === 1 ? 'hex' : 'tile';
+  }
+
+  /**
+   * Where the clouds' noise plane lies under the scene (round-3 plan N1,
+   * cold review item 4): the scene origin's plane position (km, float64,
+   * unwrapped) and the scene's rotation on it. The live noise reads a scene
+   * point p (km; x and z) at originKm + R(rotation) p, so a caller that
+   * moves its frame carries the anchor and the clouds stay on the ground.
+   * Written into the per-octave basis at once (a uniform: no new program);
+   * `advanceClouds` drifts it. The tile and hex modes ignore it.
+   *
+   * @throws RangeError for a non-finite anchor.
+   */
+  setCloudNoiseAnchor(anchor: CloudNoiseAnchor): void {
+    const vectors = liveBasisVectors(anchor); // validates
+    this.noiseAnchor = {
+      originKm: [anchor.originKm[0], anchor.originKm[1]],
+      rotationRad: anchor.rotationRad,
+    };
+    // In place: the shadows and every material hold these very objects.
+    this.clouds.atmCloudLiveBasis.value.forEach((v, k) => v.copy(vectors[k]!));
+  }
+
+  /** The anchor in effect (`setCloudNoiseAnchor`, drifted), a copy. */
+  get cloudNoiseAnchor(): CloudNoiseAnchor {
+    return {
+      originKm: [this.noiseAnchor.originKm[0], this.noiseAnchor.originKm[1]],
+      rotationRad: this.noiseAnchor.rotationRad,
+    };
   }
 
   /** The shared uniforms (for the haze patch). */
@@ -760,6 +843,14 @@ export class SkyAtmosphere {
      * threshold; the bake follows, as for a cover change.
      */
     cloudHex?: boolean;
+    /**
+     * Which noise the clouds read (round-3 plan N1): the baked tile (the
+     * default), its hex-tiled form, or the live per-octave noise, which
+     * never repeats in view (`cloud-live-noise.ts`). A uniform (no new
+     * program), each with its own cover threshold; the bake follows. Wins
+     * over `cloudHex`, which means 'hex' (true) or 'tile' (false).
+     */
+    cloudNoise?: CloudNoiseMode;
   }): void {
     // Validate everything before changing anything.
     const sunFx = this.changedSunThroughClouds(change.sunThroughClouds);
@@ -768,9 +859,9 @@ export class SkyAtmosphere {
     const mie = this.changedMie(change.visibilityKm);
     const sun = this.movedSun(change.sunDirection);
     const cover = this.changedCover(change.cloudCover);
-    const hex = this.changedHex(change.cloudHex);
+    const noise = this.changedNoise(change.cloudNoise, change.cloudHex);
     const firstSun = this.sun === undefined && sun !== undefined;
-    const cloudsRebake = this.applyCloudLook(cover, sunFx, hex);
+    const cloudsRebake = this.applyCloudLook(cover, sunFx, noise);
     this.applySlabSteps(steps);
     this.applyMode(mode);
     if (mie !== undefined) {
@@ -796,33 +887,54 @@ export class SkyAtmosphere {
   }
 
   /**
-   * Applies a validated cover, sun-through-clouds and hex change
+   * Applies a validated cover, sun-through-clouds and noise change
    * (undefined: none); returns whether the bake must follow (a new cover or
    * a new switch).
    */
   private applyCloudLook(
     cover: number | undefined,
     sunFx: SunThroughClouds | undefined,
-    hex: boolean | undefined
+    noise: CloudNoiseMode | undefined
   ): boolean {
-    if (hex !== undefined) this.clouds.atmCloudHex.value = hex ? 1 : 0;
-    if (cover !== undefined || hex !== undefined) {
+    if (noise !== undefined) this.applyNoise(noise);
+    if (cover !== undefined || noise !== undefined) {
       this.applyCover(cover ?? this.clouds.atmCloudCover.value);
     }
     if (sunFx !== undefined) {
       this.clouds.atmCloudDiscExponent.value = sunFx.discExponent;
       this.clouds.atmCloudForward.value.set(sunFx.aureole, sunFx.silverLining);
     }
-    return cover !== undefined || hex !== undefined;
+    return cover !== undefined || noise !== undefined;
   }
 
-  /** The new hex switch, or undefined if unchanged. Validates. */
-  private changedHex(hex: boolean | undefined): boolean | undefined {
-    if (hex === undefined) return undefined;
-    if (typeof hex !== 'boolean') {
+  /** The switches for `noise`; the lattice made at the first switch to live. */
+  private applyNoise(noise: CloudNoiseMode): void {
+    this.clouds.atmCloudHex.value = noise === 'hex' ? 1 : 0;
+    this.clouds.atmCloudLive.value = noise === 'live' ? 1 : 0;
+    if (noise === 'live' && this.clouds.atmCloudLattice.value === null) {
+      this.clouds.atmCloudLattice.value = createCloudLiveLatticeTexture();
+    }
+  }
+
+  /**
+   * The new noise mode, or undefined if unchanged: `cloudNoise`, else the
+   * older `cloudHex` (true the hex field, false the tile). Validates both.
+   */
+  private changedNoise(
+    noise: CloudNoiseMode | undefined,
+    hex: boolean | undefined
+  ): CloudNoiseMode | undefined {
+    if (hex !== undefined && typeof hex !== 'boolean') {
       throw new RangeError(`cloudHex must be a boolean, got ${String(hex)}`);
     }
-    return (this.clouds.atmCloudHex.value === 1) === hex ? undefined : hex;
+    if (noise !== undefined && !CLOUD_NOISE_MODES.includes(noise)) {
+      throw new RangeError(
+        `cloudNoise must be one of ${CLOUD_NOISE_MODES.join(', ')}, got ${String(noise)}`
+      );
+    }
+    const fromHex = hex === true ? 'hex' : 'tile';
+    const next = noise ?? (hex === undefined ? undefined : fromHex);
+    return next === this.cloudNoise ? undefined : next;
   }
 
   /**
@@ -857,11 +969,14 @@ export class SkyAtmosphere {
   private applyCover(cover: number): void {
     this.clouds.atmCloudCover.value = cover;
     // Cover 0 gives an infinite threshold; 2 is above any noise value and
-    // keeps the uniform finite. The hex field has its own thresholds.
-    const threshold =
-      this.clouds.atmCloudHex.value === 1
-        ? hexCloudThreshold(cover)
-        : cloudThreshold(cover);
+    // keeps the uniform finite. The hex and live fields have their own.
+    const noise = this.cloudNoise;
+    const thresholdOf = {
+      tile: cloudThreshold,
+      hex: hexCloudThreshold,
+      live: liveCloudThreshold,
+    }[noise];
+    const threshold = thresholdOf(cover);
     this.clouds.atmCloudThreshold.value = Math.min(threshold, 2);
     this.syncVisibleClouds();
   }
@@ -1105,6 +1220,18 @@ export class SkyAtmosphere {
     // only there, and a wrap anywhere else is a jump.
     const period = CLOUD_NOISE_PERIOD_TILES;
     offset.set((offset.x + step) % period, (offset.y + 0.35 * step) % period);
+    // The live noise's anchor moves the same way, on its plane, in km.
+    const { originKm, rotationRad } = this.noiseAnchor;
+    const along = windKmPerSecond * seconds;
+    const c = Math.cos(rotationRad);
+    const s = Math.sin(rotationRad);
+    this.setCloudNoiseAnchor({
+      originKm: [
+        originKm[0] + c * along - s * 0.35 * along,
+        originKm[1] + s * along + c * 0.35 * along,
+      ],
+      rotationRad,
+    });
   }
 
   /** Colour and intensity for the caller's sun light, on the same scale as the sky. */
@@ -1219,6 +1346,7 @@ export class SkyAtmosphere {
     }
     this.scene.environmentIntensity = this.previousEnvironmentIntensity;
     this.clouds.atmCloudTexture.value.dispose();
+    this.clouds.atmCloudLattice.value?.dispose();
     this.device.dispose();
   }
 }

@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 import { AtmosphereHaze } from './atmosphere-haze.js';
 import type { AtmosphereUniforms } from './atmosphere-luts.js';
 import { CloudShadow, CloudShadowAnchorError } from './cloud-shadow.js';
+import { cloudCoverThresholds } from './cloud-coverage.js';
 
 function compileWith(
   material: THREE.Material,
@@ -369,9 +370,68 @@ describe('CloudShadow with the hex-tiled clouds (hex-tiling plan H1)', () => {
     const fs = compileWith(m, 'standard').fragmentShader;
     expect(fs).toContain('uniform float atmShadowCloudHex;');
     expect(fs).toContain(
-      'atmCloudThresholdAt(crossing, atmShadowCloudThreshold, atmShadowCover, atmShadowCloudHex)'
+      'atmCloudThresholdAt(crossing, atmShadowCloudThreshold, atmShadowCover, atmShadowCloudLive > 0.5 ? 2.0 : atmShadowCloudHex)'
     );
     expect(fs).toContain('atmCloudHexGrad(atmShadowCloudTexture');
     expect(shadow.uniforms['atmCoverThresholdsHex']!.value).toHaveLength(33);
+  });
+});
+
+describe('CloudShadow with the live noise (round-3 plan N1)', () => {
+  // WHY: the shadow is the shadow of the clouds the sky draws, so with the
+  // live noise on it reads the same live field: the switch and the lattice
+  // are copied at sync (as the hex switch), and the per-octave basis is the
+  // SAME object, so the shadows follow the anchor and its drift with no
+  // per-frame call (as the offset does). A source without them is the tile.
+  it('follows the sky’s live switch, lattice and basis at sync', () => {
+    const shadow = new CloudShadow();
+    const lattice = new THREE.Texture();
+    const basis = Array.from({ length: 7 }, () => new THREE.Vector4());
+    const source = {
+      cloudUniforms: {
+        atmCloudTexture: { value: new THREE.Texture() },
+        atmCloudOffset: { value: new THREE.Vector2() },
+        atmCloudThreshold: { value: 0.4 },
+        atmCloudHex: { value: 0 },
+        atmCloudLive: { value: 1 },
+        atmCloudLattice: { value: lattice as THREE.Texture | null },
+        atmCloudLiveBasis: { value: basis },
+      },
+    };
+    shadow.sync(source);
+    expect(shadow.uniforms.atmShadowCloudLive.value).toBe(1);
+    expect(shadow.uniforms.atmShadowCloudLattice.value).toBe(lattice);
+    expect(shadow.uniforms.atmShadowCloudLiveBasis.value).toBe(basis);
+    shadow.sync({
+      cloudUniforms: {
+        atmCloudTexture: { value: new THREE.Texture() },
+        atmCloudOffset: { value: new THREE.Vector2() },
+        atmCloudThreshold: { value: 0.4 },
+      },
+    });
+    expect(shadow.uniforms.atmShadowCloudLive.value).toBe(0);
+    const m = new THREE.MeshStandardMaterial();
+    shadow.apply(m);
+    const fs = compileWith(m, 'standard').fragmentShader;
+    expect(fs).toContain('uniform float atmShadowCloudLive;');
+    expect(fs).toContain(
+      'uniform vec4 atmShadowCloudLiveBasis[ATM_LIVE_OCTAVES];'
+    );
+    expect(fs).toContain(
+      'if (atmShadowCloudLive > 0.5) return atmCloudLiveGrad(atmShadowCloudLattice, atmShadowCloudLiveBasis, uv, atmShadowCloudOffset);'
+    );
+  });
+
+  it('carries the live table with a map', () => {
+    const shadow = new CloudShadow();
+    shadow.configureMap({
+      coverage: {
+        glsl: 'uniform float uFlat; float atmCloudCoverageAt(vec2 xz) { return uFlat; }',
+        uniforms: { uFlat: { value: 0.5 } },
+      },
+    });
+    expect(shadow.uniforms['atmCoverThresholdsLive']!.value).toEqual([
+      ...cloudCoverThresholds('live'),
+    ]);
   });
 });

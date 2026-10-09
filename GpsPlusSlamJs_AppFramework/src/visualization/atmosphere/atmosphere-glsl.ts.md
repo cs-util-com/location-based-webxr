@@ -29,7 +29,18 @@ fragment shaders, and the visible sky's vertex/fragment pair.
   through `atmCloudHexGrad` with the continuous uv's `dFdx`/`dFdy` (the
   cells' offsets jump at their edges, so implicit derivatives drew the
   lattice), `atmCloudNoiseLod` through `atmCloudHexLod`; the mean is
-  `ATM_CLOUD_MEAN` (`CLOUD_HEX.textureMean`, the default texture's). `atmCloudNoiseLod` is the
+  `ATM_CLOUD_MEAN` (`CLOUD_HEX.textureMean`, the default texture's).
+  With the uniform `atmCloudLive` at 1 (round-3 plan N1; it wins over
+  `atmCloudHex`) every read returns early with the live per-octave noise
+  (`CLOUD_LIVE_NOISE_GLSL`, included here, `cloud-live-noise.ts`): from
+  the lattice `atmCloudLattice` and the per-octave basis
+  `atmCloudLiveBasis[7]` (the anchoring), at the local point
+  (uv - `atmCloudOffset`) x the tile. Its footprint: from the uv's screen
+  derivatives in `atmCloudNoise`; exp2(lod) texels in `atmCloudNoiseLod`
+  (0 at lod 0); given in `atmCloudNoiseFootprint(uv, footprintKm)`, the
+  slab's read, which off live takes the level the slab took before,
+  max(0, log2(footprint / texel)). `atmCloudNoiseMode()` is the switch as
+  the coverage tables read it (0 tile, 1 hex, 2 live). `atmCloudNoiseLod` is the
   same two-octave sum through `textureLod` (the second octave one
   log2(frequency) coarser), for the slab's march, where implicit
   derivatives are undefined inside the loop. It expects

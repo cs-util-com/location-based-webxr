@@ -106,7 +106,7 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   fade and the aerial melt, as the cloud shadows are); 1 before the first
   sun and in a clear sky; `RangeError` for a non-finite point or viewer. The look-dev page's "sun light dims" switch uses it.
 - `cloudUniforms` (getter): the noise texture, the real threshold, the
-  drift offset, the visible sky's anchor (0 dome, 1 sheet and slab) and
+  drift offset, the hex and live switches, the live lattice and basis, the visible sky's anchor (0 dome, 1 sheet and slab) and
   the far fade, as the uniform objects themselves, for the cloud shadow
   patch ([`cloud-shadow.ts.md`](cloud-shadow.ts.md)).
 - `advanceClouds(seconds, windKmPerSecond = 0.012)` — drift; no GPU work;
@@ -119,7 +119,24 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   (`hexCloudThreshold`), the bake following as for a cover change, and the
   CPU twins (`cloudTransmittanceToward`, `cloudShadowToward`) reading the
   hex field. A `CloudShadow` follows at its next `sync`. RangeError for a
-  value that is not a boolean.
+  value that is not a boolean. Since round-3 plan N1 the same as
+  `cloudNoise` 'hex' (true) or 'tile' (false).
+- `configure({ cloudNoise })` and the `cloudNoise` getter (round-3 plan
+  N1): 'tile' (the default), 'hex' or 'live', the per-octave live noise
+  that never repeats in view (`cloud-live-noise.ts.md`). Uniforms only
+  (`atmCloudHex`, `atmCloudLive`; no new program), each mode's own
+  cover threshold, the bake following, the CPU twins reading the same
+  field. The lattice texture (1 MB) is made at the first switch to live
+  and freed by `dispose`. `cloudNoise` wins over `cloudHex`. RangeError
+  for an unknown mode.
+- `setCloudNoiseAnchor({ originKm, rotationRad })` and the
+  `cloudNoiseAnchor` getter (a copy): where the scene's origin lies on
+  the live noise's plane (km, float64, unwrapped) and the scene's rotation
+  on it; written into `atmCloudLiveBasis` in place (every material and
+  shadow holds those objects). `advanceClouds` moves the anchor as it
+  moves the offset (the wind along x, 0.35 of it along z, turned by the
+  rotation). RangeError for a non-finite anchor. The tile and hex modes
+  ignore it.
 - `applySunLight(light)` — colour (chroma) and intensity
   (`sunIntensity × exposure × model intensity`).
 - `horizonColour()` — the sky at the drawn horizon (dir.y =
