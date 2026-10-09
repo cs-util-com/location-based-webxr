@@ -14,6 +14,7 @@ import { parseQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
 import { MOVED_CODE_FLOOR_M } from "./code-displacement.js";
 import { walkNeededM } from "./code-verdict.js";
+import { LARGE_TURN_DEG } from "./visit-settle.js";
 /** The farthest a silent replace may shift a saved position (m): beyond
  *  it, or beyond the correction's plausibility bound, the code is "far" -
  *  the automatic code-spot rule's, never a quiet improvement (U3 milestone
@@ -47,7 +48,9 @@ export type CodePositionDecision =
    *  sets it from the code-spot rule's "not judged". */
   | { kind: "keep"; reason: "far-unjudged"; offsetM: number }
   | { kind: "keep"; reason: "not-walked"; walkMoreM: number }
-  | { kind: "replace" }
+  /** `turnedDeg`: replaced because this visit's GPS turned the code
+   *  further than it can be off (field test 3, D-F6a), not for its walk. */
+  | { kind: "replace"; turnedDeg?: number }
   | { kind: "move" }
   /** The code was seen back at the spot an automatic move left: that spot
    *  was restored (code book plan M6 v5.1, `code-spots.ts`). Never
@@ -72,6 +75,10 @@ function walkMoreM(q: PositionQuality): number {
  *   beyond `REPLACE_CAP_M`, or beyond the code correction's plausibility
  *   bound (`correctionBoundM`, `CORRECTION_MAX_YAW_DEG`) - a second
  *   print or a moved poster. Defaults to `offsetM >= REPLACE_CAP_M`.
+ * @param turnedDeg this visit sees the code at its spot but turned further
+ *   than its own GPS heading can be off (`turnLimitDeg`; field test 3,
+ *   D-F6a): the stored heading is the wrong one, and the code is replaced
+ *   whatever the walk or the stored quality.
  */
 export function decideCodePosition(input: {
   stored: PositionQuality;
@@ -79,6 +86,7 @@ export function decideCodePosition(input: {
   offsetM: number;
   automaticMove?: boolean;
   far?: boolean;
+  turnedDeg?: number;
 }): CodePositionDecision {
   const reliable = isReliable(input.candidate);
   // The code-spot rule only moves after a reliable walk, beyond the floor;
@@ -96,6 +104,9 @@ export function decideCodePosition(input: {
   // replace (D20/D26: the poster may have moved, or be a second print).
   if (input.far ?? input.offsetM >= REPLACE_CAP_M) {
     return { kind: "keep", reason: "far" };
+  }
+  if (input.turnedDeg !== undefined) {
+    return { kind: "replace", turnedDeg: input.turnedDeg };
   }
   if (!reliable) {
     return {
@@ -134,16 +145,6 @@ export interface CodePositionOutcome {
    *  through this code; absent otherwise. */
   readonly turnDeg?: number | undefined;
 }
-
-/**
- * From this turn (deg) between a visit's own alignment and the one a stored
- * code corrected it to, the result screen says the two disagree (the
- * 2026-10-08 field test, F3; owner decision D-F3). A short walk's own GPS
- * direction is off by tens of degrees, so a lower threshold would mostly
- * report GPS noise. Not swept: the corpus replay that would set it is gone
- * (filed in the field test's findings).
- */
-export const LARGE_TURN_DEG = 60;
 
 /**
  * How far alignment `a` is turned against `b` about the vertical, in
@@ -191,7 +192,14 @@ function positionLine(outcomes: readonly CodePositionOutcome[]): string {
         o.decision.kind === "move" ||
         o.decision.kind === "undo"),
   );
-  if (changed.some((o) => o.decision.kind === "replace")) {
+  const replaced = changed.filter((o) => o.decision.kind === "replace");
+  const turned = replaced.find(
+    (o) => o.decision.kind === "replace" && o.decision.turnedDeg !== undefined,
+  );
+  if (turned?.decision.kind === "replace") {
+    return `The code's saved direction was corrected: this visit's GPS disagreed with it by about ${String(Math.round(turned.decision.turnedDeg ?? 0))} degrees, far more than this walk's GPS can be off. Pins and photos within 40 m moved with it.`;
+  }
+  if (replaced.length > 0) {
     return "The code's saved position was improved by this walk; pins and photos within 40 m moved with it.";
   }
   // Of a move and its undo, the later one is where the code now is.

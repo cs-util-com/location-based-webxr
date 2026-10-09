@@ -2605,15 +2605,57 @@ describe(
     // code's direction disagreed with the visit's GPS by 104 degrees; the
     // visit was turned that much to fit it, and the result screen said only
     // that the walk was too short. It now says that the two disagree.
+    // 70 degrees: above the warning's 60, below what a 10 m walk at 5 m
+    // can be off by (about 80, field test 3's limit), so the code still
+    // corrects the visit.
     it("says on the result screen when the visit was turned a lot to fit the code", async () => {
-      const { a } = await secondVisit({ yawDeg: 100, northM: 3, walkM: 10 });
+      const { a } = await secondVisit({ yawDeg: 70, northM: 3, walkM: 10 });
       await openFinishableTour(a);
       a.ctx.tourManifestStatus = "settled";
       a.dom.finishButton.click();
       await finished(a.ctx);
       expect(a.dom.finishStatus.textContent).toMatch(
-        /disagree by about 100 degrees/,
+        /disagree by about 70 degrees/,
       );
+    });
+
+    // Why this test matters (field test 3, F6; owner decisions D-F6a and
+    // D-F6b): the stored code's heading was about 100 degrees off, the
+    // walk short of the position rule, and the Finish turned the whole
+    // visit to fit the code - a pin placed 13 m away moved 24 m. Beyond
+    // what the visit's GPS heading can be off by, the code is replaced and
+    // the visit's own pins stay where they were placed.
+    it("replaces a code whose stored heading the visit's GPS cannot explain, and leaves the visit's pins where they were placed", async () => {
+      const { a, stored } = await secondVisit({
+        yawDeg: 100,
+        northM: 3,
+        walkM: 10,
+      });
+      await a.placePin("bank", [10, 0, -8]);
+      const placed = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin" && p.object.label === "bank",
+      )!.object.geo;
+      a.endVisit();
+      const decision = codePosition(a)?.decision as {
+        kind: string;
+        turnedDeg?: number;
+      };
+      expect(decision.kind).toBe("replace");
+      expect(decision.turnedDeg).toBeCloseTo(100, 0);
+      expect(codePosition(a)?.applied).toBe(true);
+      expect(a.codes.inHand()?.json).not.toBe(stored.json);
+      const bank = a.ctx.placedObjects.find(
+        (p) => p.object.kind === "pin" && p.object.label === "bank",
+      )!.object.geo;
+      expect(worldOf(bank).distanceTo(worldOf(placed))).toBeLessThan(0.1);
+      await openFinishableTour(a);
+      a.ctx.tourManifestStatus = "settled";
+      a.dom.finishButton.click();
+      await finished(a.ctx);
+      expect(a.dom.finishStatus.textContent).toMatch(
+        /saved direction was corrected: this visit's GPS disagreed with it by about 100 degrees/,
+      );
+      expect(a.dom.finishStatus.textContent).not.toMatch(/disagree by about/);
     });
 
     it("says nothing of a turn when the visit fits the code within the threshold", async () => {

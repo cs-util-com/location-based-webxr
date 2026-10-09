@@ -46,6 +46,15 @@ offsetNorthM, offsetEastM, measurement, pick }`; `measurement` and
   accuracies, about 13.5 m at 2 m), or a turn beyond
   `CORRECTION_MAX_YAW_DEG`: the settle treats such a sighting as a second
   print or a moved poster (U3 milestone review #11).
+- **Turned** (field test 3, owner decision D-F6a): within the horizontal
+  bound, a yaw beyond the candidate's turn limit (`turnLimitDeg` of the
+  candidate's spread and accuracy: at least 60 degrees and 3 sigma of the
+  heading model) means the stored heading is wrong: `turnedDeg` goes to
+  the rule, which replaces the code through the usual re-mint whatever
+  the walk. Such a turn is then not "far" even past
+  `CORRECTION_MAX_YAW_DEG` (a heading stored backwards, or a poster
+  re-hung on its spot facing elsewhere). The recording of 2026-10-09: 108
+  degrees against a limit of 60 (20.1 m at 5.6 m).
 - The re-mint takes the visit's print size (`ctx.activeSizeM`): the size
   the sighting's pose was solved at, as a tap's mint did.
 - Pure; the caller applies the plan, moves earlier objects with an improved

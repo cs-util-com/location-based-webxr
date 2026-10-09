@@ -29,6 +29,11 @@ that is an owner decision.
     `predictedHorizontalM` (over those), `predictedHeadingDeg`,
     `maxOffsetM`, `maxHeadingOffsetDeg` (over every usable visit).
   - Returns null when no visit is usable or the result cannot be minted.
+- `visitHeadingSigmaDeg(accuracyM, baselineM)` - the heading model's sigma
+  for one visit in degrees, `hypot(CODE_YAW_NOISE_DEG, atan(a / L))` with
+  the accuracy and the walk credited as the combiner credits them. The
+  combiner's own weights use it, and so does the settle's turn limit
+  (`visit-settle.ts` `turnLimitDeg`, field test 3).
 - Constants: `CODE_YAW_NOISE_DEG` (2), `MIN_VISIT_ACCURACY_M` (1),
   `MIN_BASELINE_M` (1).
 

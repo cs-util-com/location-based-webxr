@@ -960,7 +960,7 @@
     "horizontalM": 50.5867285,
     "yawDeg": 80.2842361,
     "maxHorizontalM": 44.8345335,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planVisitSettle": {
@@ -1029,7 +1029,7 @@
       "horizontalM": 50.5867285,
       "yawDeg": 80.2842361,
       "maxHorizontalM": 44.8345335,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     },
     {
@@ -1075,7 +1075,7 @@
       "horizontalM": 50.5867285,
       "yawDeg": 80.2842361,
       "maxHorizontalM": 44.8345335,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     },
     {
@@ -1123,7 +1123,7 @@
       "horizontalM": 50.5867285,
       "yawDeg": 80.2842361,
       "maxHorizontalM": 44.8345335,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -1133,7 +1133,7 @@
     "horizontalM": 50.5867285,
     "yawDeg": 80.2842361,
     "maxHorizontalM": 44.8345335,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planMove": {
@@ -1180,7 +1180,7 @@
     "horizontalM": 50.5867285,
     "yawDeg": 80.2842361,
     "maxHorizontalM": 44.8345335,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "sightedCodeOffset": {
@@ -1275,7 +1275,7 @@
       "horizontalM": 50.5867285,
       "yawDeg": 80.2842361,
       "maxHorizontalM": 44.8345335,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     },
     {
@@ -1321,7 +1321,7 @@
       "horizontalM": 50.5867285,
       "yawDeg": 80.2842361,
       "maxHorizontalM": 44.8345335,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     },
     {
@@ -1369,7 +1369,7 @@
       "horizontalM": 50.5867285,
       "yawDeg": 80.2842361,
       "maxHorizontalM": 44.8345335,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -1379,7 +1379,7 @@
     "horizontalM": 50.5867285,
     "yawDeg": 80.2842361,
     "maxHorizontalM": 44.8345335,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "movedWithCode": null
@@ -2171,7 +2171,7 @@
     "horizontalM": 15.299188,
     "yawDeg": 37.5803526,
     "maxHorizontalM": 13.8825539,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planVisitSettle": {
@@ -2240,7 +2240,7 @@
       "horizontalM": 15.8665022,
       "yawDeg": 51.5547962,
       "maxHorizontalM": 13.8825539,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     },
     {
@@ -2286,7 +2286,7 @@
       "horizontalM": 15.8665022,
       "yawDeg": 51.5547962,
       "maxHorizontalM": 13.8825539,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -2296,7 +2296,7 @@
     "horizontalM": 15.299188,
     "yawDeg": 37.5803526,
     "maxHorizontalM": 13.8825539,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planMove": {
@@ -2343,7 +2343,7 @@
     "horizontalM": 15.299188,
     "yawDeg": 37.5803526,
     "maxHorizontalM": 13.8825539,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "sightedCodeOffset": {
@@ -3063,7 +3063,7 @@
     "horizontalM": 40.5500496,
     "yawDeg": 33.746233,
     "maxHorizontalM": 20.2303645,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planVisitSettle": {
@@ -3130,7 +3130,7 @@
       "horizontalM": 33.5605818,
       "yawDeg": 44.036451899999996,
       "maxHorizontalM": 20.2303645,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     },
     {
@@ -3176,7 +3176,7 @@
       "horizontalM": 33.5605818,
       "yawDeg": 44.036451899999996,
       "maxHorizontalM": 20.2303645,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -3186,7 +3186,7 @@
     "horizontalM": 40.5500496,
     "yawDeg": 33.746233,
     "maxHorizontalM": 20.2303645,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planMove": {
@@ -3231,7 +3231,7 @@
     "horizontalM": 40.5500496,
     "yawDeg": 33.746233,
     "maxHorizontalM": 20.2303645,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "sightedCodeOffset": {
@@ -6494,7 +6494,7 @@
     "horizontalM": 54.303419999999996,
     "yawDeg": 15.2756343,
     "maxHorizontalM": 15.4723381,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planVisitSettle": {
@@ -6563,7 +6563,7 @@
       "horizontalM": 54.303419999999996,
       "yawDeg": 15.2756343,
       "maxHorizontalM": 15.4723381,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -6573,7 +6573,7 @@
     "horizontalM": 54.303419999999996,
     "yawDeg": 15.2756343,
     "maxHorizontalM": 15.4723381,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planMove": {
@@ -6620,7 +6620,7 @@
     "horizontalM": 54.303419999999996,
     "yawDeg": 15.2756343,
     "maxHorizontalM": 15.4723381,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "sightedCodeOffset": {
@@ -6715,7 +6715,7 @@
       "horizontalM": 54.303419999999996,
       "yawDeg": 15.2756343,
       "maxHorizontalM": 15.4723381,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -6725,7 +6725,7 @@
     "horizontalM": 54.303419999999996,
     "yawDeg": 15.2756343,
     "maxHorizontalM": 15.4723381,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "movedWithCode": null
@@ -7945,7 +7945,7 @@
     "horizontalM": 63.455610899999996,
     "yawDeg": 2.9947367999999996,
     "maxHorizontalM": 24.754419199999997,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planVisitSettle": {
@@ -8012,7 +8012,7 @@
       "horizontalM": 61.477978799999995,
       "yawDeg": 0.258333,
       "maxHorizontalM": 24.754419199999997,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     },
     {
@@ -8058,7 +8058,7 @@
       "horizontalM": 61.477978799999995,
       "yawDeg": 0.258333,
       "maxHorizontalM": 24.754419199999997,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -8068,7 +8068,7 @@
     "horizontalM": 63.455610899999996,
     "yawDeg": 2.9947367999999996,
     "maxHorizontalM": 24.754419199999997,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planMove": {
@@ -8113,7 +8113,7 @@
     "horizontalM": 63.455610899999996,
     "yawDeg": 2.9947367999999996,
     "maxHorizontalM": 24.754419199999997,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "sightedCodeOffset": {
@@ -9927,7 +9927,7 @@
     "horizontalM": 42.436710399999996,
     "yawDeg": 13.601847099999999,
     "maxHorizontalM": 20.6336905,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planVisitSettle": {
@@ -9994,7 +9994,7 @@
       "horizontalM": 42.436710399999996,
       "yawDeg": 13.601847099999999,
       "maxHorizontalM": 20.6336905,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     },
     {
@@ -10042,7 +10042,7 @@
       "horizontalM": 42.436710399999996,
       "yawDeg": 13.601847099999999,
       "maxHorizontalM": 20.6336905,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -10052,7 +10052,7 @@
     "horizontalM": 42.436710399999996,
     "yawDeg": 13.601847099999999,
     "maxHorizontalM": 20.6336905,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planMove": {
@@ -10097,7 +10097,7 @@
     "horizontalM": 42.436710399999996,
     "yawDeg": 13.601847099999999,
     "maxHorizontalM": 20.6336905,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "sightedCodeOffset": {
@@ -10190,7 +10190,7 @@
       "horizontalM": 42.436710399999996,
       "yawDeg": 13.601847099999999,
       "maxHorizontalM": 20.6336905,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     },
     {
@@ -10238,7 +10238,7 @@
       "horizontalM": 42.436710399999996,
       "yawDeg": 13.601847099999999,
       "maxHorizontalM": 20.6336905,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -10248,7 +10248,7 @@
     "horizontalM": 42.436710399999996,
     "yawDeg": 13.601847099999999,
     "maxHorizontalM": 20.6336905,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "movedWithCode": null
@@ -13973,7 +13973,7 @@
     "horizontalM": 56.542513899999996,
     "yawDeg": 130.95932059999998,
     "maxHorizontalM": 16.026862599999998,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planVisitSettle": {
@@ -14142,7 +14142,7 @@
     "horizontalM": 56.542513899999996,
     "yawDeg": 130.95932059999998,
     "maxHorizontalM": 16.026862599999998,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planMove": {
@@ -14187,7 +14187,7 @@
     "horizontalM": 56.542513899999996,
     "yawDeg": 130.95932059999998,
     "maxHorizontalM": 16.026862599999998,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "sightedCodeOffset": {
@@ -15720,7 +15720,7 @@
     "horizontalM": 58.6690628,
     "yawDeg": 1.4178921999999998,
     "maxHorizontalM": 41.866179599999995,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planVisitSettle": {
@@ -15787,7 +15787,7 @@
       "horizontalM": 58.6690628,
       "yawDeg": 1.4178921999999998,
       "maxHorizontalM": 41.866179599999995,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -15797,7 +15797,7 @@
     "horizontalM": 58.6690628,
     "yawDeg": 1.4178921999999998,
     "maxHorizontalM": 41.866179599999995,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planMove": {
@@ -15842,7 +15842,7 @@
     "horizontalM": 58.6690628,
     "yawDeg": 1.4178921999999998,
     "maxHorizontalM": 41.866179599999995,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "sightedCodeOffset": {
@@ -15935,7 +15935,7 @@
       "horizontalM": 58.6690628,
       "yawDeg": 1.4178921999999998,
       "maxHorizontalM": 41.866179599999995,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -15945,7 +15945,7 @@
     "horizontalM": 58.6690628,
     "yawDeg": 1.4178921999999998,
     "maxHorizontalM": 41.866179599999995,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "movedWithCode": null
@@ -17447,7 +17447,7 @@
     "horizontalM": 48.0143456,
     "yawDeg": 21.7798481,
     "maxHorizontalM": 26.177950799999998,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planVisitSettle": {
@@ -17557,7 +17557,7 @@
       "horizontalM": 48.0143456,
       "yawDeg": 21.7798481,
       "maxHorizontalM": 26.177950799999998,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -17567,7 +17567,7 @@
     "horizontalM": 48.0143456,
     "yawDeg": 21.7798481,
     "maxHorizontalM": 26.177950799999998,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planMove": {
@@ -17614,7 +17614,7 @@
     "horizontalM": 48.0143456,
     "yawDeg": 21.7798481,
     "maxHorizontalM": 26.177950799999998,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "sightedCodeOffset": {
@@ -17750,7 +17750,7 @@
       "horizontalM": 48.0143456,
       "yawDeg": 21.7798481,
       "maxHorizontalM": 26.177950799999998,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -17760,7 +17760,7 @@
     "horizontalM": 48.0143456,
     "yawDeg": 21.7798481,
     "maxHorizontalM": 26.177950799999998,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "movedWithCode": null
@@ -21053,7 +21053,7 @@
     "horizontalM": 61.6184448,
     "yawDeg": 9.536212899999999,
     "maxHorizontalM": 26.9036163,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planVisitSettle": {
@@ -21120,7 +21120,7 @@
       "horizontalM": 61.6184448,
       "yawDeg": 9.536212899999999,
       "maxHorizontalM": 26.9036163,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -21130,7 +21130,7 @@
     "horizontalM": 61.6184448,
     "yawDeg": 9.536212899999999,
     "maxHorizontalM": 26.9036163,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planMove": {
@@ -21175,7 +21175,7 @@
     "horizontalM": 61.6184448,
     "yawDeg": 9.536212899999999,
     "maxHorizontalM": 26.9036163,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "sightedCodeOffset": {
@@ -21268,7 +21268,7 @@
       "horizontalM": 61.6184448,
       "yawDeg": 9.536212899999999,
       "maxHorizontalM": 26.9036163,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -21278,7 +21278,7 @@
     "horizontalM": 61.6184448,
     "yawDeg": 9.536212899999999,
     "maxHorizontalM": 26.9036163,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "movedWithCode": null
@@ -22572,7 +22572,7 @@
     "horizontalM": 54.479957999999996,
     "yawDeg": 9.1444022,
     "maxHorizontalM": 42.196654099999996,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planVisitSettle": {
@@ -22641,7 +22641,7 @@
       "horizontalM": 60.7995951,
       "yawDeg": 2.3225856,
       "maxHorizontalM": 42.196654099999996,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     },
     {
@@ -22687,7 +22687,7 @@
       "horizontalM": 60.7995951,
       "yawDeg": 2.3225856,
       "maxHorizontalM": 42.196654099999996,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -22697,7 +22697,7 @@
     "horizontalM": 54.479957999999996,
     "yawDeg": 9.1444022,
     "maxHorizontalM": 42.196654099999996,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planMove": {
@@ -22744,7 +22744,7 @@
     "horizontalM": 54.479957999999996,
     "yawDeg": 9.1444022,
     "maxHorizontalM": 42.196654099999996,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "sightedCodeOffset": {
@@ -22839,7 +22839,7 @@
       "horizontalM": 60.7995951,
       "yawDeg": 2.3225856,
       "maxHorizontalM": 42.196654099999996,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     },
     {
@@ -22885,7 +22885,7 @@
       "horizontalM": 60.7995951,
       "yawDeg": 2.3225856,
       "maxHorizontalM": 42.196654099999996,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -22895,7 +22895,7 @@
     "horizontalM": 54.479957999999996,
     "yawDeg": 9.1444022,
     "maxHorizontalM": 42.196654099999996,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "movedWithCode": null
@@ -23412,42 +23412,47 @@
       "id": "obj-66-0",
       "kind": "photo",
       "geo": {
-       "lat": 47.5004097,
-       "lon": 8.6998686,
+       "lat": 47.499890699999995,
+       "lon": 8.6997396,
        "alt": 400.6432464,
        "rotation": [
         0,
-        0.9563788,
+        -0.424558,
         0,
-        -0.2921293
+        0.9054007
        ],
-       "headingDeg": 146.0290464
+       "headingDeg": 50.2453785
       },
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "image": "content/obj-66-0.jpg",
       "imageWidth": 4,
       "imageHeight": 3
      },
-     "basis": "code-corrected",
+     "basis": "visit-alignment",
      "alignment": [
-      -0.062370499999999995,
+      0.9992576999999999,
       0,
-      0.9980530999999999,
+      -0.038523499999999995,
       0,
       0,
       1,
       0,
       0,
-      -0.9980530999999999,
+      0.038523499999999995,
       0,
-      -0.062370499999999995,
+      0.9992576999999999,
       0,
-      33.2364155,
+      -2.6440897999999997,
       400,
-      -1.5866422999999998,
+      -8.269059,
       1
      ],
-     "refused": null
+     "refused": {
+      "horizontalM": 19.2136483,
+      "yawDeg": 117.4854278,
+      "maxHorizontalM": 46.8161273,
+      "maxYawDeg": 60
+     }
     },
     {
      "index": 1,
@@ -23455,8 +23460,8 @@
       "id": "obj-66-1",
       "kind": "pin",
       "geo": {
-       "lat": 47.500538,
-       "lon": 8.699899,
+       "lat": 47.4999937,
+       "lon": 8.6997111,
        "alt": 400.36335429999997,
        "rotation": [
         0,
@@ -23469,26 +23474,31 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 1"
      },
-     "basis": "code-corrected",
+     "basis": "visit-alignment",
      "alignment": [
-      -0.062370499999999995,
+      0.9724587,
       0,
-      0.9980530999999999,
+      0.23307529999999999,
       0,
       0,
       1,
       0,
       0,
-      -0.9980530999999999,
+      -0.23307529999999999,
       0,
-      -0.062370499999999995,
+      0.9724587,
       0,
-      33.2364155,
+      0.6755528,
       400,
-      -1.5866422999999998,
+      5.362422899999999,
       1
      ],
-     "refused": null
+     "refused": {
+      "horizontalM": 19.2136483,
+      "yawDeg": 117.4854278,
+      "maxHorizontalM": 46.8161273,
+      "maxYawDeg": 60
+     }
     },
     {
      "index": 2,
@@ -23496,8 +23506,8 @@
       "id": "obj-66-2",
       "kind": "pin",
       "geo": {
-       "lat": 47.5002512,
-       "lon": 8.6998191,
+       "lat": 47.500016599999995,
+       "lon": 8.700222799999999,
        "alt": 400.06258049999997,
        "rotation": [
         0,
@@ -23510,26 +23520,31 @@
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "label": "pin 2"
      },
-     "basis": "code-corrected",
+     "basis": "visit-alignment",
      "alignment": [
-      -0.062370499999999995,
+      0.9132195999999999,
       0,
-      0.9980530999999999,
+      -0.4074677,
       0,
       0,
       1,
       0,
       0,
-      -0.9980530999999999,
+      0.4074677,
       0,
-      -0.062370499999999995,
+      0.9132195999999999,
       0,
-      33.2364155,
+      9.9992047,
       400,
-      -1.5866422999999998,
+      6.428810899999999,
       1
      ],
-     "refused": null
+     "refused": {
+      "horizontalM": 19.2136483,
+      "yawDeg": 117.4854278,
+      "maxHorizontalM": 46.8161273,
+      "maxYawDeg": 60
+     }
     }
    ],
    "level": null,
@@ -24303,7 +24318,7 @@
     "horizontalM": 66.909582,
     "yawDeg": 47.1688547,
     "maxHorizontalM": 40.5164022,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planVisitSettle": {
@@ -24411,7 +24426,7 @@
       "horizontalM": 59.7594615,
       "yawDeg": 10.4754972,
       "maxHorizontalM": 40.5164022,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     },
     {
@@ -24457,7 +24472,7 @@
       "horizontalM": 59.7594615,
       "yawDeg": 10.4754972,
       "maxHorizontalM": 40.5164022,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -24467,7 +24482,7 @@
     "horizontalM": 66.909582,
     "yawDeg": 47.1688547,
     "maxHorizontalM": 40.5164022,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planMove": {
@@ -24512,7 +24527,7 @@
     "horizontalM": 66.909582,
     "yawDeg": 47.1688547,
     "maxHorizontalM": 40.5164022,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "sightedCodeOffset": {
@@ -28210,7 +28225,7 @@
     "horizontalM": 35.2823953,
     "yawDeg": 2.2717666,
     "maxHorizontalM": 14.5646717,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planVisitSettle": {
@@ -28279,7 +28294,7 @@
       "horizontalM": 51.032951,
       "yawDeg": 25.4897864,
       "maxHorizontalM": 14.5646717,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -28289,7 +28304,7 @@
     "horizontalM": 35.2823953,
     "yawDeg": 2.2717666,
     "maxHorizontalM": 14.5646717,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planMove": {
@@ -28336,7 +28351,7 @@
     "horizontalM": 35.2823953,
     "yawDeg": 2.2717666,
     "maxHorizontalM": 14.5646717,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "sightedCodeOffset": {
@@ -28431,7 +28446,7 @@
       "horizontalM": 51.032951,
       "yawDeg": 25.4897864,
       "maxHorizontalM": 14.5646717,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -28441,7 +28456,7 @@
     "horizontalM": 35.2823953,
     "yawDeg": 2.2717666,
     "maxHorizontalM": 14.5646717,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "movedWithCode": null
@@ -30004,7 +30019,7 @@
     "horizontalM": 61.724262599999996,
     "yawDeg": 1.9623121,
     "maxHorizontalM": 29.040174,
-    "maxYawDeg": 120
+    "maxYawDeg": 117.57169409999999
    }
   },
   "planVisitSettle": {
@@ -30071,7 +30086,7 @@
       "horizontalM": 39.315901,
       "yawDeg": 31.413847099999998,
       "maxHorizontalM": 29.040174,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     },
     {
@@ -30117,7 +30132,7 @@
       "horizontalM": 39.315901,
       "yawDeg": 31.413847099999998,
       "maxHorizontalM": 29.040174,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -30127,7 +30142,7 @@
     "horizontalM": 61.724262599999996,
     "yawDeg": 1.9623121,
     "maxHorizontalM": 29.040174,
-    "maxYawDeg": 120
+    "maxYawDeg": 117.57169409999999
    }
   },
   "planMove": {
@@ -30172,7 +30187,7 @@
     "horizontalM": 61.724262599999996,
     "yawDeg": 1.9623121,
     "maxHorizontalM": 29.040174,
-    "maxYawDeg": 120
+    "maxYawDeg": 117.57169409999999
    }
   },
   "sightedCodeOffset": {
@@ -31669,45 +31684,50 @@
   "kind": "stored",
   "answer": null,
   "settleAlignment": {
-   "basis": "code-corrected",
+   "basis": "visit-alignment",
    "alignment": [
-    -0.0344133,
+    0.9810947999999999,
     0,
-    0.9994077,
+    -0.1935279,
     0,
     0,
     1,
     0,
     0,
-    -0.9994077,
+    0.1935279,
     0,
-    -0.0344133,
+    0.9810947999999999,
     0,
-    31.269053099999997,
+    -2.0538176,
     400,
-    -3.0381017,
+    -2.564952,
     1
    ],
-   "refused": null
+   "refused": {
+    "horizontalM": 32.6701949,
+    "yawDeg": 61.9987661,
+    "maxHorizontalM": 41.9256824,
+    "maxYawDeg": 60
+   }
   },
   "planVisitSettle": {
-   "basis": "code-corrected",
+   "basis": "visit-alignment",
    "alignment": [
-    -0.0344133,
+    0.9810947999999999,
     0,
-    0.9994077,
+    -0.1935279,
     0,
     0,
     1,
     0,
     0,
-    -0.9994077,
+    0.1935279,
     0,
-    -0.0344133,
+    0.9810947999999999,
     0,
-    31.269053099999997,
+    -2.0538176,
     400,
-    -3.0381017,
+    -2.564952,
     1
    ],
    "objects": [
@@ -31717,89 +31737,104 @@
       "id": "obj-87-0",
       "kind": "photo",
       "geo": {
-       "lat": 47.5003056,
-       "lon": 8.7003179,
+       "lat": 47.5001542,
+       "lon": 8.69988,
        "alt": 399.7971813,
        "rotation": [
         0,
-        -0.3980123,
+        0.3865532,
         0,
-        0.9173800999999999
+        0.9222671
        ],
-       "headingDeg": 46.9079524
+       "headingDeg": 314.51960299999996
       },
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "image": "content/obj-87-0.jpg",
       "imageWidth": 4,
       "imageHeight": 3
      },
-     "basis": "code-corrected",
+     "basis": "visit-alignment",
      "alignment": [
-      -0.0344133,
+      0.9999735999999999,
       0,
-      0.9994077,
+      -0.0072644,
       0,
       0,
       1,
       0,
       0,
-      -0.9994077,
+      0.0072644,
       0,
-      -0.0344133,
+      0.9999735999999999,
       0,
-      31.269053099999997,
+      -9.698226499999999,
       400,
-      -3.0381017,
+      -5.2681569,
       1
      ],
-     "refused": null
+     "refused": {
+      "horizontalM": 32.6701949,
+      "yawDeg": 61.9987661,
+      "maxHorizontalM": 41.9256824,
+      "maxYawDeg": 60
+     }
     }
    ],
    "level": null,
    "levelAlignment": null,
-   "refused": null
+   "refused": {
+    "horizontalM": 32.6701949,
+    "yawDeg": 61.9987661,
+    "maxHorizontalM": 41.9256824,
+    "maxYawDeg": 60
+   }
   },
   "planMove": {
    "object": {
     "id": "obj-87-0",
     "kind": "photo",
     "geo": {
-     "lat": 47.5001331,
-     "lon": 8.6999058,
+     "lat": 47.4999798,
+     "lon": 8.700191799999999,
      "alt": 400,
      "rotation": [
       0,
-      -0.7191708,
+      0.09722449999999999,
       0,
-      0.6948333
+      0.9952624999999999
      ],
-     "headingDeg": 91.9721263
+     "headingDeg": 348.8412606
     },
     "createdAtIso": "2026-10-06T12:00:00.000Z",
     "image": "content/obj-87-0.jpg",
     "imageWidth": 4,
     "imageHeight": 3
    },
-   "basis": "code-corrected",
+   "basis": "visit-alignment",
    "alignment": [
-    -0.0344133,
+    0.9810947999999999,
     0,
-    0.9994077,
+    -0.1935279,
     0,
     0,
     1,
     0,
     0,
-    -0.9994077,
+    0.1935279,
     0,
-    -0.0344133,
+    0.9810947999999999,
     0,
-    31.269053099999997,
+    -2.0538176,
     400,
-    -3.0381017,
+    -2.564952,
     1
    ],
-   "refused": null
+   "refused": {
+    "horizontalM": 32.6701949,
+    "yawDeg": 61.9987661,
+    "maxHorizontalM": 41.9256824,
+    "maxYawDeg": 60
+   }
   },
   "sightedCodeOffset": {
    "horizontalM": 28.904366,
@@ -31828,23 +31863,23 @@
    "pick": null
   },
   "composed": {
-   "basis": "code-corrected",
+   "basis": "visit-alignment",
    "alignment": [
-    -0.0344133,
+    0.9810947999999999,
     0,
-    0.9994077,
+    -0.1935279,
     0,
     0,
     1,
     0,
     0,
-    -0.9994077,
+    0.1935279,
     0,
-    -0.0344133,
+    0.9810947999999999,
     0,
-    31.269053099999997,
+    -2.0538176,
     400,
-    -3.0381017,
+    -2.564952,
     1
    ],
    "objects": [
@@ -31854,47 +31889,57 @@
       "id": "obj-87-0",
       "kind": "photo",
       "geo": {
-       "lat": 47.5003056,
-       "lon": 8.7003179,
+       "lat": 47.5001542,
+       "lon": 8.69988,
        "alt": 399.7971813,
        "rotation": [
         0,
-        -0.3980123,
+        0.3865532,
         0,
-        0.9173800999999999
+        0.9222671
        ],
-       "headingDeg": 46.9079524
+       "headingDeg": 314.51960299999996
       },
       "createdAtIso": "2026-10-06T12:00:00.000Z",
       "image": "content/obj-87-0.jpg",
       "imageWidth": 4,
       "imageHeight": 3
      },
-     "basis": "code-corrected",
+     "basis": "visit-alignment",
      "alignment": [
-      -0.0344133,
+      0.9999735999999999,
       0,
-      0.9994077,
+      -0.0072644,
       0,
       0,
       1,
       0,
       0,
-      -0.9994077,
+      0.0072644,
       0,
-      -0.0344133,
+      0.9999735999999999,
       0,
-      31.269053099999997,
+      -9.698226499999999,
       400,
-      -3.0381017,
+      -5.2681569,
       1
      ],
-     "refused": null
+     "refused": {
+      "horizontalM": 32.6701949,
+      "yawDeg": 61.9987661,
+      "maxHorizontalM": 41.9256824,
+      "maxYawDeg": 60
+     }
     }
    ],
    "level": null,
    "levelAlignment": null,
-   "refused": null
+   "refused": {
+    "horizontalM": 32.6701949,
+    "yawDeg": 61.9987661,
+    "maxHorizontalM": 41.9256824,
+    "maxYawDeg": 60
+   }
   },
   "movedWithCode": null
  },
@@ -31926,7 +31971,7 @@
     "horizontalM": 62.1678803,
     "yawDeg": 18.1428358,
     "maxHorizontalM": 44.8730676,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planVisitSettle": {
@@ -32036,7 +32081,7 @@
       "horizontalM": 62.1678803,
       "yawDeg": 18.1428358,
       "maxHorizontalM": 44.8730676,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -32046,7 +32091,7 @@
     "horizontalM": 62.1678803,
     "yawDeg": 18.1428358,
     "maxHorizontalM": 44.8730676,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planMove": {
@@ -32091,7 +32136,7 @@
     "horizontalM": 62.1678803,
     "yawDeg": 18.1428358,
     "maxHorizontalM": 44.8730676,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "sightedCodeOffset": {
@@ -32227,7 +32272,7 @@
       "horizontalM": 62.1678803,
       "yawDeg": 18.1428358,
       "maxHorizontalM": 44.8730676,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -32237,7 +32282,7 @@
     "horizontalM": 62.1678803,
     "yawDeg": 18.1428358,
     "maxHorizontalM": 44.8730676,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "movedWithCode": null
@@ -35385,7 +35430,7 @@
     "horizontalM": 38.5580189,
     "yawDeg": 25.2154673,
     "maxHorizontalM": 22.325784199999998,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planVisitSettle": {
@@ -35452,7 +35497,7 @@
       "horizontalM": 38.5580189,
       "yawDeg": 25.2154673,
       "maxHorizontalM": 22.325784199999998,
-      "maxYawDeg": 120
+      "maxYawDeg": 60
      }
     }
    ],
@@ -35462,7 +35507,7 @@
     "horizontalM": 38.5580189,
     "yawDeg": 25.2154673,
     "maxHorizontalM": 22.325784199999998,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "planMove": {
@@ -35507,7 +35552,7 @@
     "horizontalM": 38.5580189,
     "yawDeg": 25.2154673,
     "maxHorizontalM": 22.325784199999998,
-    "maxYawDeg": 120
+    "maxYawDeg": 60
    }
   },
   "sightedCodeOffset": {

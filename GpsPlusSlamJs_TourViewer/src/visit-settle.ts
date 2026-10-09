@@ -66,6 +66,7 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { LatLong } from "gps-plus-slam-app-framework/core";
 
+import { visitHeadingSigmaDeg } from "./code-visit-combine.js";
 import { objectPoseNue } from "./content-placement.js";
 import { carryCodeSpots } from "./level-spots.js";
 import {
@@ -178,6 +179,53 @@ const CORRECTION_ACCURACY_FACTOR = 3;
 const CORRECTION_DEFAULT_ACCURACY_M = 5;
 /** The largest yaw a correction may turn a visit by, degrees. */
 export const CORRECTION_MAX_YAW_DEG = 120;
+
+/**
+ * From this turn (deg) between a visit's own alignment and the one a stored
+ * code corrected it to, the result screen says the two disagree (the
+ * 2026-10-08 field test, F3; owner decision D-F3), and it is the floor of
+ * {@link turnLimitDeg}. A short walk's own GPS direction is off by tens of
+ * degrees, so a lower threshold would mostly report GPS noise. Not swept:
+ * the corpus replay that would set it is gone (filed in field test 2's
+ * findings).
+ */
+export const LARGE_TURN_DEG = 60;
+
+/** How many sigmas of a visit's own heading error a turn must exceed to
+ *  count against the code (field test 3, D-F6a/D-F6b). */
+export const TURN_OUTLIER_FACTOR = 3;
+
+/**
+ * The largest turn a visit's own GPS heading plausibly explains (deg):
+ * {@link TURN_OUTLIER_FACTOR} times the heading model's sigma for the
+ * alignment's GPS spread and accuracy (`visitHeadingSigmaDeg`), never below
+ * {@link LARGE_TURN_DEG}. A stored code turning the visit further is the
+ * wrong one: the settle replaces it (D-F6a, `code-position-settle.ts`) and
+ * the visit's objects do not follow it (D-F6b). Null when the spread or the
+ * accuracy is unknown: no evidence against the code then.
+ *
+ * Field test 3: 20.1 m at 5.6 m gives sigma 15.6, so the limit is the 60
+ * floor and the recorded 108-degree turn is beyond it at any factor up to
+ * 6.9; a 5 m walk at 5.6 m gives about 145.
+ */
+export function turnLimitDeg(quality: {
+  readonly extentM: number | null;
+  readonly accuracyM: number | null;
+}): number | null {
+  const { extentM, accuracyM } = quality;
+  if (
+    extentM === null ||
+    accuracyM === null ||
+    !Number.isFinite(extentM) ||
+    !Number.isFinite(accuracyM)
+  ) {
+    return null;
+  }
+  return Math.max(
+    LARGE_TURN_DEG,
+    TURN_OUTLIER_FACTOR * visitHeadingSigmaDeg(accuracyM, extentM),
+  );
+}
 
 /** Why a code correction was refused: its size and the bounds it broke. */
 export interface CorrectionRefusal {
@@ -433,7 +481,12 @@ function nearestSighting(
   input: SettleAlignmentInput,
   end: number[],
   at: Moment,
-): { sighting: CodeSighting; alignment: number[] } | null {
+): {
+  sighting: CodeSighting;
+  alignment: number[];
+  /** That alignment's turn limit (`turnLimitDeg`), null when unknown. */
+  turnLimit: number | null;
+} | null {
   const levelId = input.mintedLevel?.id;
   const kept = (input.picks?.sightings ?? []).filter(
     (s) => s.sighting.levelId === levelId && Number.isFinite(s.atMs),
@@ -441,7 +494,7 @@ function nearestSighting(
   if (kept.length === 0) {
     return input.sighting === null
       ? null
-      : { sighting: input.sighting, alignment: end };
+      : { sighting: input.sighting, alignment: end, turnLimit: null };
   }
   let best = kept[kept.length - 1]!;
   const walkedAt = walkedOf(at, kept);
@@ -452,9 +505,18 @@ function nearestSighting(
   } else if (at !== null && finite(at.atMs)) {
     best = nearestBy(kept, (s) => s.atMs, at.atMs).best;
   }
+  const picked = readAlignment(best.alignment);
   return {
     sighting: best.sighting,
-    alignment: readAlignment(best.alignment) ?? end,
+    alignment: picked ?? end,
+    // The pick's own quality; the end alignment's is not known here.
+    turnLimit:
+      picked === null
+        ? null
+        : turnLimitDeg({
+            extentM: best.gpsExtentM ?? null,
+            accuracyM: best.alignmentInfo?.gpsAccuracyM ?? null,
+          }),
   };
 }
 
@@ -462,7 +524,9 @@ function nearestSighting(
  * The choice for an object of the visit at moment `at` (null: at the end)
  * whose own alignment is `own`: measured here, through `own`; else
  * corrected through the nearest sighting of the stored code when the bound
- * admits it, judged through that sighting's alignment; else `own`.
+ * admits it, judged through that sighting's alignment; else `own`. The
+ * bound includes that alignment's turn limit (field test 3, D-F6b): a code
+ * that turns the visit beyond what its GPS can explain is not followed.
  */
 function choiceFor(
   input: SettleAlignmentInput,
@@ -482,6 +546,7 @@ function choiceFor(
           { ...input, sighting: near.sighting },
           near.alignment,
           zero,
+          near.turnLimit,
         );
   if (correction === null) {
     return { basis: "visit-alignment", alignment: own, refused: null };
@@ -642,23 +707,24 @@ export function sightedCodeOffset(input: SettleAlignmentInput): {
 
 /** The visit's alignment corrected through its sighting of the stored
  *  code, the refusal when the correction breaks the bound, or null when
- *  there is no correction to make. */
+ *  there is no correction to make. `turnLimit` (`turnLimitDeg` of
+ *  `alignment`) tightens the yaw bound; null keeps the fixed one. */
 function codeCorrectionOf(
   input: SettleAlignmentInput,
   alignment: readonly number[],
   zero: LatLong,
+  turnLimit: number | null = null,
 ): { alignment: number[] } | { refused: CorrectionRefusal } | null {
   const sighted = sightedStoredCode(input, alignment, zero);
   if (sighted === null) return null;
   const { stored, codeLocal, size } = sighted;
   const maxHorizontalM = correctionBoundM(input.gpsAccuracyM, stored.accuracyM);
-  if (
-    size.horizontalM > maxHorizontalM ||
-    size.yawDeg > CORRECTION_MAX_YAW_DEG
-  ) {
-    return {
-      refused: { ...size, maxHorizontalM, maxYawDeg: CORRECTION_MAX_YAW_DEG },
-    };
+  const maxYawDeg = Math.min(
+    CORRECTION_MAX_YAW_DEG,
+    turnLimit ?? Number.POSITIVE_INFINITY,
+  );
+  if (size.horizontalM > maxHorizontalM || size.yawDeg > maxYawDeg) {
+    return { refused: { ...size, maxHorizontalM, maxYawDeg } };
   }
   const corrected = correctedAlignment(alignment, codeLocal, stored.pose);
   return corrected === null ? null : { alignment: corrected };

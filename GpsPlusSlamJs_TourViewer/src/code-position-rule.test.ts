@@ -15,11 +15,11 @@ import {
   alignmentTurnDeg,
   codePositionSentence,
   decideCodePosition,
-  LARGE_TURN_DEG,
   isReliable,
   qualityOfLevel,
   type PositionQuality,
 } from "./code-position-rule";
+import { LARGE_TURN_DEG } from "./visit-settle";
 
 const good: PositionQuality = { extentM: 40, accuracyM: 5 }; // needs ~24 m
 const weak: PositionQuality = { extentM: 4, accuracyM: 7 }; // R1: standing
@@ -102,6 +102,45 @@ describe("decideCodePosition", () => {
         }),
       ).toEqual({ kind: "replace" });
     }
+  });
+
+  // Why these tests matter (field test 3, F6; owner decision D-F6a): a
+  // stored heading about 100 degrees off was kept because the visit's walk
+  // was short of the POSITION walk, and every object of the visit turned
+  // with it. A turn far beyond the visit's own heading error replaces the
+  // code whatever the walk, and whatever the stored quality claims.
+  it("replaces the code when the visit turns it implausibly far, after any walk", () => {
+    for (const stored of [weak, unknown, good]) {
+      expect(
+        decideCodePosition({
+          stored,
+          candidate: weak,
+          offsetM: 1.3,
+          turnedDeg: 108,
+        }),
+      ).toEqual({ kind: "replace", turnedDeg: 108 });
+    }
+  });
+
+  it("leaves a turned code seen far off to the code-spot rule, and its automatic move first", () => {
+    expect(
+      decideCodePosition({
+        stored: unknown,
+        candidate: weak,
+        offsetM: 40,
+        far: true,
+        turnedDeg: 108,
+      }),
+    ).toEqual({ kind: "keep", reason: "far" });
+    expect(
+      decideCodePosition({
+        stored: unknown,
+        candidate: good,
+        offsetM: 40,
+        automaticMove: true,
+        turnedDeg: 108,
+      }),
+    ).toEqual({ kind: "move" });
   });
 
   // Far from the saved spot is the automatic code-spot rule's (M6), never
@@ -232,6 +271,17 @@ describe("codePositionSentence - the result screen's line (U3)", () => {
   // Why: the plan asks the result screen to say which happened and why,
   // since no button announces it any more; an applied change outranks a
   // later visit's "kept", or the improvement would go unmentioned.
+  // Why (field test 3, D-F6a): the owner saw the code kept and the pins
+  // turned; a direction corrected without a long walk must say why, or it
+  // reads as the rule changing its mind.
+  it("names a corrected direction, the disagreement and that nearby pins and photos moved with it", () => {
+    expect(
+      codePositionSentence([outcome({ kind: "replace", turnedDeg: 108.3 })]),
+    ).toBe(
+      "The code's saved direction was corrected: this visit's GPS disagreed with it by about 108 degrees, far more than this walk's GPS can be off. Pins and photos within 40 m moved with it.",
+    );
+  });
+
   it("names an improvement, and that nearby pins and photos moved with it", () => {
     expect(
       codePositionSentence([

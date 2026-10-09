@@ -32,7 +32,10 @@ import {
   planVisitSettle,
   settleAlignment,
   CODE_EVENT_REACH_M,
+  LARGE_TURN_DEG,
   sightedCodeOffset,
+  TURN_OUTLIER_FACTOR,
+  turnLimitDeg,
   type CodeMeasurement,
   type CodeSighting,
 } from "./visit-settle.js";
@@ -751,6 +754,73 @@ describe("the code correction's plausibility bound (M2c review #2)", () => {
     expect(sightedCodeOffset({ ...input(offBy(3, 0)), zero: null })).toBe(null);
   });
 
+  // Why these tests matter (field test 3, F6; owner decision D-F6b): a
+  // code stored with a wrong heading turned the whole visit 108 degrees
+  // to fit it, and a pin placed 13 m away moved 24 m. The visit's own GPS
+  // heading after a 20 m walk at 5.6 m accuracy is off by about 16
+  // degrees (one sigma of the heading model); a turn far beyond that says
+  // the code is the wrong one, so the objects keep the visit's alignment.
+  // The limit is the sighting's OWN pick quality: after a 5 m walk the
+  // visit's heading is guesswork and the code still corrects it.
+  describe("a turn beyond what the sighting's own GPS heading can be off by (field test 3, D-F6b)", () => {
+    const withPick = (
+      alignment: number[],
+      quality: { extentM?: number; accuracyM: number },
+    ) =>
+      settleAlignment({
+        visit: 1,
+        alignment,
+        zero: ZERO,
+        mintedLevel: stored,
+        measurement: measuredInVisit(0),
+        sighting,
+        picks: {
+          objects: new Map(),
+          measurement: null,
+          sightings: [
+            {
+              atMs: 1_000,
+              alignment,
+              alignmentInfo: { ...INFO, gpsAccuracyM: quality.accuracyM },
+              ...(quality.extentM === undefined
+                ? {}
+                : { gpsExtentM: quality.extentM }),
+              sighting,
+            },
+          ],
+        },
+      });
+    // The recording's own candidate: 20.1 m of GPS spread at 5.6 m.
+    const RECORDED = { extentM: 20.14, accuracyM: 5.565 };
+
+    it("refuses the recording's 108-degree turn at its own walk", () => {
+      const refused = withPick(offBy(0, 108), RECORDED);
+      expect(refused?.basis).toBe("visit-alignment");
+      expect(refused?.refused?.maxYawDeg).toBe(LARGE_TURN_DEG);
+      expect(refused?.refused?.yawDeg).toBeCloseTo(108, 4);
+      expect(refused?.alignment).toEqual(offBy(0, 108));
+    });
+
+    it("still corrects a turn below the floor at the same walk", () => {
+      expect(withPick(offBy(0, LARGE_TURN_DEG - 5), RECORDED)?.basis).toBe(
+        "code-corrected",
+      );
+    });
+
+    it("lets the code correct 108 degrees after a walk too short to know the heading", () => {
+      // 5 m at 5.6 m accuracy: sigma about 48 degrees, limit about 145.
+      expect(
+        withPick(offBy(0, 108), { extentM: 5, accuracyM: 5.6 })?.basis,
+      ).toBe("code-corrected");
+    });
+
+    it("keeps only the fixed yaw bound for a sighting of unknown quality", () => {
+      expect(withPick(offBy(0, 108), { accuracyM: 5.6 })?.basis).toBe(
+        "code-corrected",
+      );
+    });
+  });
+
   it("carries the refusal into the settle plan", () => {
     const far = offBy(60, 0);
     const plan = planVisitSettle({
@@ -1418,5 +1488,49 @@ describe("a note near a code event of the visit that measured the code shares th
       },
     })!;
     expect(plan.objects[0]!.alignment).toEqual(aLate);
+  });
+});
+
+describe("turnLimitDeg (field test 3, D-F6a and D-F6b)", () => {
+  // Why these tests matter: the limit decides both whether a stored code's
+  // heading is replaced by a short visit (D-F6a) and whether the visit's
+  // objects follow the code (D-F6b). It is the heading model's own error
+  // for the walk (`hypot(2, atan(accuracy / spread))`, the summary's
+  // model) times three, never below the large-turn warning's 60 degrees.
+  it("is the 60-degree floor at the recording's walk (sigma about 15.6 degrees)", () => {
+    expect(turnLimitDeg({ extentM: 20.14, accuracyM: 5.565 })).toBe(
+      LARGE_TURN_DEG,
+    );
+  });
+
+  it("is three sigma of the heading model above the floor", () => {
+    const sigma = Math.hypot(2, (Math.atan(5.6 / 5) * 180) / Math.PI);
+    expect(turnLimitDeg({ extentM: 5, accuracyM: 5.6 })).toBeCloseTo(
+      TURN_OUTLIER_FACTOR * sigma,
+      9,
+    );
+  });
+
+  it("is unknown without a walk or an accuracy", () => {
+    expect(turnLimitDeg({ extentM: null, accuracyM: 5 })).toBeNull();
+    expect(turnLimitDeg({ extentM: 20, accuracyM: null })).toBeNull();
+    expect(turnLimitDeg({ extentM: Number.NaN, accuracyM: 5 })).toBeNull();
+  });
+
+  it("never falls below the floor, falls with a longer walk and rises with worse GPS", () => {
+    // Why: a longer walk must never make the code harder to correct, and
+    // worse GPS must never make it easier; swept over what phones report.
+    for (const accuracyM of [2, 4, 6, 10, 15]) {
+      let previous = Number.POSITIVE_INFINITY;
+      for (const extentM of [1, 3, 5, 10, 20, 40, 80]) {
+        const limit = turnLimitDeg({ extentM, accuracyM })!;
+        expect(limit).toBeGreaterThanOrEqual(LARGE_TURN_DEG);
+        expect(limit).toBeLessThanOrEqual(previous);
+        expect(
+          turnLimitDeg({ extentM, accuracyM: accuracyM + 1 })!,
+        ).toBeGreaterThanOrEqual(limit);
+        previous = limit;
+      }
+    }
   });
 });

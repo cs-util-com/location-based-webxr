@@ -17,7 +17,7 @@ buttons and the replace's confirm (the code is measured on its own:
   alignment rested on and its fixes' accuracy (m); `null` is unknown.
 - `isReliable(q)` - `extentM >= max(10, walkNeededM(accuracyM))`; unknown is
   never reliable.
-- `decideCodePosition({ stored, candidate, offsetM, automaticMove?, far? })`
+- `decideCodePosition({ stored, candidate, offsetM, automaticMove?, far?, turnedDeg? })`
   -> `CodePositionDecision`, in this order:
   - `automaticMove` (the automatic code-spot rule moved the code,
     `code-spots.ts`, code book plan M6) and the candidate is reliable:
@@ -28,6 +28,10 @@ buttons and the replace's confirm (the code is measured on its own:
     `code-position-settle.ts` passes the code correction's plausibility
     bound and yaw bound too): `keep` / `far` - the code-spot rule's
     domain, never a silent replace;
+  - `turnedDeg` (the visit sees the code at its spot turned beyond what
+    its own GPS heading can be off by, `turnLimitDeg`; field test 3,
+    owner decision D-F6a): `replace` with `turnedDeg` - the stored
+    heading is the wrong one, whatever the walk or the stored quality;
   - candidate not reliable: `keep` / `not-walked` with `walkMoreM`;
   - stored position reliable itself: `keep` / `stored-good` (no churn per
     visit);
@@ -35,16 +39,21 @@ buttons and the replace's confirm (the code is measured on its own:
 - `CodePositionOutcome { decision, applied, turnDeg? }` and
   `codePositionSentence(outcomes)` - the result screen's line after Finish
   (no button announces the decision any more): an applied improvement or
-  move outranks a later "kept"; otherwise the latest speaks - how many
+  move outranks a later "kept" (a replace for a turn says that the
+  saved DIRECTION was corrected, by how many degrees the visit's GPS
+  disagreed, and that nearby pins and photos moved with it); otherwise the
+  latest speaks - how many
   metres this visit's walk was short of what its accuracy needs, for
   `not-walked`; `stored-good` and `far` say nothing. When the latest
   outcome's `turnDeg` is at least `LARGE_TURN_DEG`, a sentence follows
   that this visit's GPS and the code's saved direction disagree by that
   many degrees, and how to correct the code if it is the wrong one - it
   blames neither (the 2026-10-08 field test, F3; owner decision D-F3).
-- `LARGE_TURN_DEG` (60) - from this turn on the line warns: a short
-  walk's own GPS direction is off by tens of degrees. Not swept (the
-  corpus replay that would set it is gone; filed).
+- `LARGE_TURN_DEG` (60, defined in `visit-settle.ts` since field test 3)
+  - from this turn on the line warns: a short walk's own GPS direction is
+    off by tens of degrees. Not swept (the corpus replay that would set it
+    is gone; filed). Below the visit's turn limit the code still corrects
+    the visit and the warning shows; beyond it the code is replaced.
 - `alignmentTurnDeg(a, b)` - how far one column-major alignment is turned
   against another about the vertical, 0..180 degrees, either way round;
   translations ignored.

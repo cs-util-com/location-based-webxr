@@ -140,12 +140,24 @@ function usable(visit: CodeVisitPose, zero: LatLong): UsableVisit {
   };
 }
 
+/**
+ * The heading model's sigma for one visit (degrees): `hypot(code yaw
+ * noise, atan(accuracy / walk))`, with the accuracy and the walk credited
+ * as the combiner credits them. Also the settle's measure of how far a
+ * visit's own GPS heading can be off (`turnLimitDeg`, field test 3).
+ */
+export function visitHeadingSigmaDeg(
+  accuracyM: number,
+  baselineM: number,
+): number {
+  const a = Math.max(accuracyM, MIN_VISIT_ACCURACY_M);
+  const l = Math.max(baselineM, MIN_BASELINE_M);
+  return Math.hypot(CODE_YAW_NOISE_DEG, Math.atan(a / l) / RAD);
+}
+
 /** The heading model's sigma for one visit (radians). */
 function headingSigmaRad(v: UsableVisit): number {
-  return Math.hypot(
-    CODE_YAW_NOISE_DEG * RAD,
-    Math.atan(v.accuracyM / v.baselineM),
-  );
+  return visitHeadingSigmaDeg(v.accuracyM, v.baselineM) * RAD;
 }
 
 /** The yaw (radians, about Up) of `rotation · reference⁻¹`, or null for

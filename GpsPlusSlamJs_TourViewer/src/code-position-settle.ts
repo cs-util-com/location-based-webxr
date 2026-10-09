@@ -37,6 +37,7 @@ import {
   type CodeMeasurement,
   type CodeSighting,
   type TimedAlignment,
+  turnLimitDeg,
   type VisitAlignmentPicks,
 } from "./visit-settle.js";
 
@@ -131,18 +132,26 @@ export function planCodePosition(
   // A silent replace only within what two visits' GPS plausibly disagree
   // by (the code correction's own bound, D10b) and below the move
   // question's 15 m (U3 milestone review #11).
-  const far =
+  const farOff =
     offset.horizontalM >=
-      Math.min(
-        REPLACE_CAP_M,
-        correctionBoundM(candidate.accuracyM, stored.accuracyM),
-      ) || offset.yawDeg > CORRECTION_MAX_YAW_DEG;
+    Math.min(
+      REPLACE_CAP_M,
+      correctionBoundM(candidate.accuracyM, stored.accuracyM),
+    );
+  // At its spot but turned beyond what this visit's GPS heading can be
+  // off by: the stored heading is the wrong one (field test 3, D-F6a) -
+  // also past the correction's yaw bound, which otherwise reads a turn
+  // that large as a second print.
+  const limit = turnLimitDeg(candidate);
+  const turned = !farOff && limit !== null && offset.yawDeg > limit;
+  const far = farOff || (!turned && offset.yawDeg > CORRECTION_MAX_YAW_DEG);
   const decision = decideCodePosition({
     stored,
     candidate,
     offsetM: offset.horizontalM,
     automaticMove: input.automaticMove === true,
     far,
+    ...(turned ? { turnedDeg: offset.yawDeg } : {}),
   });
   const changes = decision.kind === "replace" || decision.kind === "move";
   const base = {

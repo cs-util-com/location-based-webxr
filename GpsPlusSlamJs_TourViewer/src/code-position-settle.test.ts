@@ -20,7 +20,12 @@ import {
   planCodePosition,
   type CodePositionSettleInput,
 } from "./code-position-settle.js";
-import type { CodeSighting, VisitAlignmentPicks } from "./visit-settle.js";
+import { odomNueFromWebXr } from "./visit-anchoring.js";
+import {
+  CORRECTION_MAX_YAW_DEG,
+  type CodeSighting,
+  type VisitAlignmentPicks,
+} from "./visit-settle.js";
 
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
@@ -110,6 +115,76 @@ function input(
     ...overrides,
   };
 }
+
+/** An alignment that sees the code at its stored spot, turned `deg`
+ *  about it: what a stored heading `deg` off looks like to a visit. */
+function turnedAtCode(deg: number, northM = 0): number[] {
+  const c = new Vector3(...odomNueFromWebXr(CODE).position);
+  const at = c
+    .clone()
+    .applyMatrix4(new Matrix4().fromArray(yawAlignment(deg, [0, 0, 0])));
+  const want = c
+    .clone()
+    .applyMatrix4(new Matrix4().fromArray(yawAlignment(0, [0, 400, 0])));
+  return yawAlignment(deg, [
+    want.x - at.x + northM,
+    want.y - at.y,
+    want.z - at.z,
+  ]);
+}
+
+describe("planCodePosition: a stored heading the visit's GPS cannot explain (field test 3, D-F6a)", () => {
+  // Why these tests matter: the recording's code was stored about 100
+  // degrees off; its visit walked 20.1 m of GPS spread at 5.6 m (short of
+  // the 26.5 m the POSITION rule needs), so the code was kept and every
+  // object turned 108 degrees with it. Beyond three sigma of the visit's
+  // own heading error and 60 degrees, the code is replaced through the
+  // usual re-mint, short walk or not.
+  const RECORDED = { extentM: 20.14, accuracyM: 5.565 };
+  const turned = (deg: number, endQuality = RECORDED, northM = 0) => {
+    const alignment = turnedAtCode(deg, northM);
+    // The pick's 15 m is short of reliable: the end alignment judges.
+    return planCodePosition({
+      ...input({ alignment, extentM: 15 }),
+      endQuality,
+    });
+  };
+
+  it("replaces the code at the recording's own numbers", () => {
+    const plan = turned(108);
+    expect(plan?.decision.kind).toBe("replace");
+    expect(
+      plan?.decision.kind === "replace" ? plan.decision.turnedDeg : null,
+    ).toBeCloseTo(108, 4);
+    expect(plan?.candidate).toEqual(RECORDED);
+    expect(plan?.measurement?.levelId).toBe(LEVEL_ID);
+    expect(plan?.offsetM).toBeLessThan(0.01);
+  });
+
+  it("keeps it for a turn the visit's GPS could explain", () => {
+    expect(turned(50)?.decision).toMatchObject({
+      kind: "keep",
+      reason: "not-walked",
+    });
+  });
+
+  it("keeps it when the walk was too short to know the heading", () => {
+    expect(turned(108, { extentM: 5, accuracyM: 5.6 })?.decision).toMatchObject(
+      { kind: "keep", reason: "not-walked" },
+    );
+  });
+
+  it("replaces a code turned beyond the correction's yaw bound at its spot (a re-hung poster, or a heading stored backwards)", () => {
+    expect(turned(CORRECTION_MAX_YAW_DEG + 30)?.decision.kind).toBe("replace");
+  });
+
+  it("leaves a turned code seen far from its spot to the code-spot rule", () => {
+    expect(turned(108, RECORDED, 40)?.decision).toEqual({
+      kind: "keep",
+      reason: "far",
+    });
+  });
+});
 
 describe("planCodePosition", () => {
   it("replaces a stored position of unknown quality after a reliable walk, through the sighting's own pick", () => {

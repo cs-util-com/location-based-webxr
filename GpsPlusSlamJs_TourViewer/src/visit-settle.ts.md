@@ -281,6 +281,24 @@ mint accuracy)` (unknown or unusable accuracies count as 5 m), or whose
   yaw exceeds 120 degrees, is refused: `settleAlignment` returns the plain
   visit alignment with `refused` set, the plan carries it, the setup
   shows one line and logs it in `tourAuthoring/settled`.
+  - **A tighter yaw bound from the sighting's own GPS** (field test 3,
+    owner decision D-F6b; `LARGE_TURN_DEG` = 60, `TURN_OUTLIER_FACTOR` =
+    3, `turnLimitDeg(quality)`). A stored code whose heading was saved
+    wrong turned a whole visit 108 degrees, and a pin 13 m away moved
+    24 m. The yaw bound of a correction through a sighting is the smaller
+    of 120 and that sighting's pick's turn limit: `max(60, 3 x
+visitHeadingSigmaDeg(accuracy, GPS spread))`, from the pick's
+    `alignmentInfo.gpsAccuracyM` and `gpsExtentM`. A turn beyond it is
+    more than the visit's own GPS heading can be off by, so the code is
+    the wrong one and the objects keep the visit's alignment (`refused`,
+    `maxYawDeg` the limit). Unknown quality, or a correction judged
+    through the end alignment, keeps the fixed 120. The same limit
+    replaces the code itself at the settle (D-F6a,
+    `code-position-settle.ts`). The golden oracle's seeds 66 and 87 changed
+    with it on purpose: their objects had followed a 117- and a 62-degree
+    turn against picks good to about 8.5 and 4 degrees.
+  - `LARGE_TURN_DEG` is also the result screen's large-turn warning
+    (`code-position-rule.ts`, F3), one constant for both.
   - `correctionBoundM(visit, stored, options?)` takes an optional
     `{ accuracyFactor, defaultAccuracyM }` replacing the factor 3 and the
     default 5 m (absent or unusable: the shipped values). They exist for
