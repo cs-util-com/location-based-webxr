@@ -27,6 +27,7 @@ levels?, projection?, colorSpace, credit: { short, full, href } }`: the
 - Tests: `globe-sources.test.ts` (unique ids, full credits, the committed
   pyramid complete with every tile a 256x256 WebP, more than half of them
   per level with water in their alpha and an open-Pacific tile among them,
-  the water mask pointing at the same files, every global map a 2048x1024
-  WebP under the 2 MiB file ceiling, and the whole `assets/` folder within
+  the water mask pointing at the same files, every global map a WebP of
+  its size (the night 2048x1024, the clouds 4096x2048 since round-3 plan
+  2026-10-08-2345 M1) under the 2 MiB file ceiling, and the whole `assets/` folder within
   its budget, decimal, as the owner stated it).

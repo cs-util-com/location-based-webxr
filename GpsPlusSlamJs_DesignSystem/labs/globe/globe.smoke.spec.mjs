@@ -539,7 +539,7 @@ test("no seam at the 180° line", async ({ page }) => {
 test("a global map that fails to load is reported, and the globe still draws", async ({
   page,
 }) => {
-  await page.route("**/globe-assets/equirect/clouds-2048.webp", (route) =>
+  await page.route("**/globe-assets/equirect/clouds-4096.webp", (route) =>
     route.fulfill({ status: 404, body: "" }),
   );
   const pageErrors = [];
@@ -748,7 +748,7 @@ test.describe("on a DPR-2 screen", () => {
 test.describe("on a phone-width screen", () => {
   test.use({ viewport: { width: 412, height: 915 } });
   test("the status lines sit below the folded plate", async ({ page }) => {
-    await page.route("**/globe-assets/equirect/clouds-2048.webp", (route) =>
+    await page.route("**/globe-assets/equirect/clouds-4096.webp", (route) =>
       route.fulfill({ status: 404, body: "" }),
     );
     await page.goto(FIXED_VIEW);

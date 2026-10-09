@@ -112,14 +112,19 @@ const jobs = [
     },
   },
   {
-    file: "equirect/clouds-2048.webp",
+    // The clouds at twice the old resolution (round-3 plan 2026-10-08-2345
+    // M1; the owner: "pixelated already at 3,000 km"): NASA's 8192 x 4096
+    // release resampled (Lanczos) to 4096 x 2048, inside the 10 MB budget;
+    // the 8192 map in pieces needs the budget raised (the owner's call).
+    file: "equirect/clouds-4096.webp",
     source: "clouds",
-    size: { width: 2048, height: 1024 },
+    size: { width: 4096, height: 2048 },
+    resize: true,
     imagery: {
-      cache: "equirect/cloud_combined_2048.tif",
-      url: "https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57747/cloud_combined_2048.tif",
+      cache: "equirect/cloud_combined_8192.tif",
+      url: "https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57747/cloud_combined_8192.tif",
       // No header reader for TIFF here: checked by decoding (sharp).
-      expect: { type: "tiff", width: 2048, height: 1024 },
+      expect: { type: "tiff", width: 8192, height: 4096 },
     },
   },
 ];
@@ -210,7 +215,11 @@ async function encode(job, imagery, rgb, land) {
       }).joinChannel(land, {
         raw: { width: TILE, height: TILE, channels: 1 },
       })
-    : sharp(imagery).removeAlpha();
+    : job.resize
+      ? sharp(imagery)
+          .removeAlpha()
+          .resize(job.size.width, job.size.height, { kernel: "lanczos3" })
+      : sharp(imagery).removeAlpha();
   const bytes = await image
     .webp({ quality: WEBP_QUALITY, alphaQuality: 100, effort: 6, exact: true })
     .toBuffer();
@@ -301,8 +310,11 @@ ${WEBP_QUALITY}, encoded once from a lossless source (round-4 plan
 - \`equirect/night-2016-2048.webp\`: NASA Black Marble (VIIRS), 2016, via
   NASA GIBS (WMS \`VIIRS_Black_Marble\` as PNG, TIME 2016-01-01, 2048x1024,
   ${kib(bytesOf("equirect/night"))}).
-- \`equirect/clouds-2048.webp\`: NASA Visible Earth, Blue Marble clouds
-  (R. Stöckli), \`cloud_combined_2048.tif\` (2048x1024, ${kib(bytesOf("equirect/clouds"))}).
+- \`equirect/clouds-4096.webp\`: NASA Visible Earth, Blue Marble clouds
+  (R. Stöckli), \`cloud_combined_8192.tif\` (8192x4096) resampled (Lanczos)
+  to 4096x2048, ${kib(bytesOf("equirect/clouds"))}. Its Visible Earth record (image 57747)
+  now redirects to a generic page; the file still downloads from NASA's
+  image server, and the credit links the Blue Marble collection's page.
 
 We acknowledge the use of imagery provided by services from NASA's Global
 Imagery Browse Services (GIBS), part of NASA's Earth Science Data and

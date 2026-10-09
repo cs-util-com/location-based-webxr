@@ -55,7 +55,7 @@ export const GLOBE_SOURCES: readonly GlobeSource[] = [
     credit: {
       short: "NASA Blue Marble",
       full: "NASA Earth Observatory, Blue Marble: Next Generation, via NASA GIBS",
-      href: "https://earthobservatory.nasa.gov/features/BlueMarble",
+      href: "https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/",
     },
   },
   {
@@ -66,7 +66,7 @@ export const GLOBE_SOURCES: readonly GlobeSource[] = [
     credit: {
       short: "NASA Black Marble",
       full: "NASA Black Marble 2016 (VIIRS night lights), via NASA GIBS",
-      href: "https://earthobservatory.nasa.gov/features/NightLights",
+      href: "https://science.nasa.gov/earth/earth-observatory/earth-at-night/",
     },
   },
   {
@@ -85,13 +85,13 @@ export const GLOBE_SOURCES: readonly GlobeSource[] = [
   {
     id: "clouds",
     kind: "equirect",
-    path: "/globe-assets/equirect/clouds-2048.webp",
+    path: "/globe-assets/equirect/clouds-4096.webp",
     // A grey photo, read as cloud COVERAGE: a number, not a colour.
     colorSpace: "linear",
     credit: {
       short: "NASA Visible Earth",
       full: "NASA Visible Earth, Blue Marble clouds (R. Stöckli)",
-      href: "https://visibleearth.nasa.gov/images/57747",
+      href: "https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/",
     },
   },
 ];
