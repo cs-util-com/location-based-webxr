@@ -85,5 +85,5 @@ non-finite clock is refused.
 
 - `mesh-layers.ts` — attaches `aHeight01` / `aFeatureRand`, buildings only.
 - `gps-plus-slam-osm`'s `chunk-meshes.ts` — produces them.
-- `worker/shell-rand.ts` — the stable per-building phase.
+- `shell-rand.ts` (in the Osm library's `mesh/` since 2026-10-06) — the stable per-building phase.
 - `GpsPlusSlamJs_Docs/docs/2026-08-16-1937-ar-xray-building-material-plan.md`

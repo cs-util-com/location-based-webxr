@@ -21,6 +21,7 @@ import {
   GLOBE_SURFACE,
   createGlobeImagery,
   createGlobeSurface,
+  firstLookStep,
   disposeLitMaterials,
   litCopy,
   tileMeshes,
@@ -171,6 +172,7 @@ describe("createGlobeSurface", () => {
       mapsLoaded: 0,
       mapErrors: 0,
       mapsTotal: 2,
+      firstLookReady: false,
     });
     // The credits line reads this: every source drawn is the registry's.
     expect(globe.activeSources()).toEqual(GLOBE_SOURCES.map((s) => s.id));
@@ -182,7 +184,9 @@ describe("createGlobeSurface", () => {
     const loader = stubLoader();
     const globe = createGlobeSurface(loader);
     const equirect = GLOBE_SOURCES.filter((s) => s.kind === "equirect");
-    expect(loader.loaded).toEqual(equirect);
+    expect(loader.loaded.filter((s) => s.kind === "equirect")).toEqual(
+      equirect,
+    );
     const u = globe.surfaceUniforms;
     const bySource = {
       "black-marble": u.uNight.value,
@@ -213,6 +217,134 @@ describe("createGlobeSurface", () => {
     expect(globe.template.customProgramCacheKey()).not.toBe(
       new THREE.MeshStandardMaterial().customProgramCacheKey(),
     );
+    globe.dispose();
+  });
+
+  // Why (round-2 plan 2026-10-07-2350 DEC-FR2-6; the owner: "the globe is
+  // plain blue for a second before its texture loads"): until a tile's
+  // imagery arrives the sphere under the sky was untextured (measured: 7 s
+  // of one blue in a smoke). The pyramid's level 0, the whole Earth in two
+  // tiles, loads with the global maps, long before the tile renderer asks.
+  it("loads the imagery's level 0 as the first look, ready once both halves are in", () => {
+    const loader = stubLoader();
+    const globe = createGlobeSurface(loader);
+    const u = globe.surfaceUniforms;
+    const paths = loader.loaded.map((s) => s.path);
+    expect(paths).toContain("/globe-assets/blue-marble-4326/0/0/0.webp");
+    expect(paths).toContain("/globe-assets/blue-marble-4326/0/1/0.webp");
+    expect(u.uDayWest.value.colorSpace).toBe(THREE.SRGBColorSpace);
+    expect(u.uDayEast.value.colorSpace).toBe(THREE.SRGBColorSpace);
+    expect(u.uDayReady.value).toBe(0);
+    const west = paths.indexOf("/globe-assets/blue-marble-4326/0/0/0.webp");
+    const east = paths.indexOf("/globe-assets/blue-marble-4326/0/1/0.webp");
+    loader.finish[west]!();
+    expect(u.uDayReady.value).toBe(0);
+    loader.finish[east]!();
+    expect(u.uDayReady.value).toBe(1);
+    expect(globe.state().firstLookReady).toBe(true);
+    // Not counted with the global maps: the loading label is about those.
+    expect(globe.state().mapsTotal).toBe(2);
+    globe.dispose();
+  });
+
+  // Why (DEC-FR2-6, measured in the browser): the tile renderer draws a
+  // tile only once its imagery is in, so before that there is no sphere at
+  // all, only the atmosphere's veil over black. The first look is a sphere
+  // of its own, a fraction under the ellipsoid in the tiles' frame, in the
+  // surface's own material without a map (so it shows the level 0, lit and
+  // clouded as the tiles are), drawn until the globe can draw its view.
+  it("draws the first look on a sphere of its own until the globe can draw its view", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const look = globe.firstLook;
+    expect(look.parent?.parent).toBe(globe.group);
+    // Hidden until an update decides (R4/R5 milestone review: a page that
+    // never calls update, the terrain lab, drew it under its relief, where
+    // its crack check counts the background as a crack).
+    expect(look.visible).toBe(false);
+    // A camera high up (the first look ends for good below 2,000 km).
+    const highCamera = new THREE.PerspectiveCamera();
+    highCamera.position.set(30_000_000, 0, 0);
+    // Shown only once its images are in (before, a plain white ball).
+    globe.update(highCamera, {
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(2, 2),
+    } as unknown as THREE.WebGLRenderer);
+    expect(look.visible).toBe(false);
+    globe.surfaceUniforms.uDayReady.value = 1;
+    globe.update(highCamera, {
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(2, 2),
+    } as unknown as THREE.WebGLRenderer);
+    expect(look.visible).toBe(true);
+    const material = look.material as THREE.MeshStandardMaterial;
+    expect(material.map).toBeNull();
+    expect(material.customProgramCacheKey()).toBe(
+      globe.template.customProgramCacheKey(),
+    );
+    // A fraction under the ellipsoid: the tiles cover it wherever drawn.
+    const r = globe.tiles.ellipsoid.radius;
+    expect(look.scale.x).toBeLessThan(r.x);
+    expect(look.scale.x).toBeGreaterThan(r.x * 0.995);
+    expect(look.scale.z / look.scale.x).toBeCloseTo(r.z / r.x, 9);
+    globe.dispose();
+  });
+
+  // Why (the full browser run, 2026-10-08): the first look is for the start
+  // only. Shown again whenever the globe could not draw its view (zooming out
+  // of the band), it filled the very holes the handover's positive control
+  // must see. Once the globe has drawn its whole view, it is done for good.
+  it("shows the first look only before the globe has first drawn its whole view", () => {
+    const high = GLOBE_SURFACE.firstLookFloorM * 2;
+    const low = GLOBE_SURFACE.firstLookFloorM / 2;
+    const step = (
+      done: boolean,
+      imagesIn: boolean,
+      drawn: boolean,
+      h: number,
+    ) => firstLookStep(done, imagesIn, drawn, h);
+    expect(step(false, false, false, high)).toEqual({
+      done: false,
+      shown: false,
+    });
+    expect(step(false, true, false, high)).toEqual({
+      done: false,
+      shown: true,
+    });
+    expect(step(false, true, true, high)).toEqual({ done: true, shown: false });
+    // Done stays done, whatever the globe does later.
+    expect(step(true, true, false, high)).toEqual({ done: true, shown: false });
+    // And it ends for good once the camera goes low (the band and the relief
+    // take the pixels there; kept on, it drew a whole sphere under the relief
+    // every frame: a city dive recorded 9 frames, not more than 10, and the
+    // stencil fill's cost smoke ran out of time).
+    expect(step(false, true, false, low)).toEqual({ done: true, shown: false });
+    // An altitude not known (a camera still at the Earth's centre on the
+    // first frame reads 0) decides nothing.
+    for (const h of [0, -1, Number.NaN]) {
+      expect(step(false, true, false, h), String(h)).toEqual({
+        done: false,
+        shown: true,
+      });
+    }
+  });
+
+  it("frees the first look's two images on dispose", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const west = vi.spyOn(globe.surfaceUniforms.uDayWest.value, "dispose");
+    const east = vi.spyOn(globe.surfaceUniforms.uDayEast.value, "dispose");
+    globe.dispose();
+    expect(west).toHaveBeenCalled();
+    expect(east).toHaveBeenCalled();
+  });
+
+  it("keeps the plain look if a half of the first look fails", () => {
+    const loader = stubLoader();
+    const globe = createGlobeSurface(loader);
+    const paths = loader.loaded.map((s) => s.path);
+    loader.finish[
+      paths.indexOf("/globe-assets/blue-marble-4326/0/0/0.webp")
+    ]!();
+    loader.fail[paths.indexOf("/globe-assets/blue-marble-4326/0/1/0.webp")]!();
+    expect(globe.surfaceUniforms.uDayReady.value).toBe(0);
+    expect(globe.state().mapErrors).toBe(0);
     globe.dispose();
   });
 
@@ -251,6 +383,65 @@ describe("createGlobeSurface", () => {
     expect(globe.surfaceUniforms.uSunEcef.value.distanceTo(ecef)).toBeLessThan(
       1e-12,
     );
+    globe.dispose();
+  });
+
+  // Why (round-6 plan 2026-10-04-1050 G6-2): the clouds move off the ground
+  // onto their own shell only as far as the page asks (the relief's share of
+  // the band, so the orbit keeps the approved painted look); every other
+  // page keeps them painted, as before. The shell sits in the tiles' ECEF
+  // frame wherever the tiles are placed, and its share takes exactly that
+  // much paint out of the ground's colour.
+  it("splits the clouds between the paint and the shell by a share, the shell in the tiles' frame", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const u = globe.surfaceUniforms;
+    expect(globe.cloudShell.mesh.visible).toBe(false);
+    expect(u.uCloudInSurface.value).toBe(1);
+    globe.setCloudShellShare(0.25);
+    expect(globe.cloudShell.mesh.visible).toBe(true);
+    expect(globe.cloudShell.share()).toBe(0.25);
+    expect(u.uCloudInSurface.value).toBe(0.75);
+    globe.setCloudShellShare(1);
+    expect(u.uCloudInSurface.value).toBe(0);
+    expect(() => globe.setCloudShellShare(1.5)).toThrow(RangeError);
+    globe.cloudShell.setHeightM(9_000);
+    globe.tiles.group.rotation.set(0.3, -1.1, 0.7);
+    globe.tiles.group.position.set(10, 20, 30);
+    globe.tiles.group.updateMatrix();
+    globe.setSun(new THREE.Vector3(1, 0, 0));
+    globe.group.updateMatrixWorld(true);
+    // A point on the shell's equator (local x) lands where the tiles put the
+    // ECEF point (a + h, 0, 0).
+    const shellPoint = new THREE.Vector3(1, 0, 0).applyMatrix4(
+      globe.cloudShell.mesh.matrixWorld,
+    );
+    const tilesPoint = new THREE.Vector3(6_378_137 + 9_000, 0, 0).applyMatrix4(
+      globe.tiles.group.matrixWorld,
+    );
+    expect(shellPoint.distanceTo(tilesPoint)).toBeLessThan(1e-3);
+    globe.setCloudShellShare(0);
+    expect(u.uCloudInSurface.value).toBe(1);
+    expect(globe.cloudShell.mesh.visible).toBe(false);
+    globe.dispose();
+  });
+
+  // Why (round-2 plan 2026-10-07-2350 DEC-FR2-5): the flat cloud layer
+  // fades with altitude; both its forms (the paint and the shell) and the
+  // water's cloud mask fade together, never the global cloud opacity (the
+  // volume reads that too).
+  it("fades both of the clouds' forms, and the glint's cloud mask, by a flat share", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const u = globe.surfaceUniforms;
+    expect(u.uCloudFlat.value).toBe(1);
+    globe.setCloudShellShare(0.25, 0.5);
+    expect(globe.cloudShell.share()).toBe(0.125);
+    expect(u.uCloudInSurface.value).toBe(0.375);
+    expect(u.uCloudFlat.value).toBe(0.5);
+    const opacity = u.uCloudOpacity.value;
+    globe.setCloudShellShare(0.25);
+    expect(u.uCloudFlat.value).toBe(1);
+    expect(u.uCloudOpacity.value).toBe(opacity);
+    expect(() => globe.setCloudShellShare(0.25, 1.5)).toThrow(RangeError);
     globe.dispose();
   });
 

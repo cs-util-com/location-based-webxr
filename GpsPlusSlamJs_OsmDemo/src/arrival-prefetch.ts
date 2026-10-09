@@ -51,10 +51,8 @@ import {
 import { arrivalPlanFor, type ArrivalPlan } from "./arrival-plan.js";
 import { arrivalProgress, type ArrivalCounts } from "./arrival-progress.js";
 import { PRIMARY_DEM_TIMEOUT_MS } from "./dem-provider.js";
-import {
-  createOsmTileSource,
-  openPersistentOsmStore,
-} from "./osm-tile-cache.js";
+import { createOsmTileSource } from "./osm-tile-cache.js";
+import { openPersistentOsmStore } from "gps-plus-slam-app-framework/osm-bridge";
 
 /** The write probe's key: namespaced apart from `osm/`, `rules/` and URLs. */
 const PROBE_KEY = "arrival-prefetch/probe";
