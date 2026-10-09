@@ -379,3 +379,44 @@ test("a context loss shows the preview, and the restore rebuilds the full map", 
   expect(diff).toBeLessThan(2);
   expect(errors).toEqual([]);
 });
+
+// WHY (the async-feedback rule; DEC-R3-15): a piece that cannot load must
+// leave the preview drawn (never a hole or a cloudless quarter), end the
+// loading label, and say so in the error box, without counting the clouds
+// as a map that failed (they are drawn).
+test("a piece that fails keeps the preview, and says so", async ({ page }) => {
+  test.setTimeout(400_000);
+  await page.route("**/globe-assets/equirect/clouds-8192-1-0.webp", (route) =>
+    route.fulfill({ status: 404, body: "" }),
+  );
+  const errors = await bootGlobe(page, ATLANTIC, { phase: "user" });
+  await waitFull(page, "failed");
+  const state = await page.evaluate(() => window.__globeLab.state());
+  expect(state.cloudMap).toMatchObject({
+    stage: "preview",
+    width: 1024,
+    full: "failed",
+    piecesFailed: 1,
+  });
+  expect([state.mapsLoaded, state.mapErrors]).toEqual([state.mapsTotal, 0]);
+  await expect(page.locator("#globe-error")).toContainText(
+    "The sharp cloud map could not load: the coarser one shows.",
+  );
+  await expect(page.locator("#globe-loading")).toBeHidden();
+  const lum = (
+    await page.evaluate(() =>
+      window.__globeLab.readPixels([
+        [0.3, 0.3],
+        [0.5, 0.5],
+        [0.7, 0.7],
+      ]),
+    )
+  ).map(luminance);
+  console.log(
+    `failed piece: ${JSON.stringify(state.cloudMap)}; luminance ${lum.map((l) => l.toFixed(0)).join(", ")}`,
+  );
+  expect(Math.max(...lum)).toBeGreaterThan(20);
+  expect(errors.filter((t) => !/404|Failed to load resource/.test(t))).toEqual(
+    [],
+  );
+});
