@@ -6,7 +6,8 @@ plan `GpsPlusSlamJs_Docs/docs/2026-10-08-2345-globe-round-3-owner-feedback-plan.
 
 ## API
 
-`createSpeedDustPass(maxCount = 4000)` holds a field of `maxCount` seeds
+`createSpeedDustPass(maxCount = SPEED_DUST_MAX_COUNT)` (4,000, the panel's
+`dustCount` maximum, exported) holds a field of `maxCount` seeds
 and draws a prefix of it (a prefix of a uniform field is uniform), so the
 count is a live knob (D1b). `SPEED_DUST_COLORS`: the tints (bluish white,
 white, warm). It returns:
@@ -23,7 +24,10 @@ renderer, on, exposureMs, widthPx, look })`: each frame, with the
   The lab draws them before the Earth at 1 - `dustOver` and after it at
   `dustOver`.
 - `reset()`: forgets the velocity (a placed view is a teleport).
-- `state()`: `{ count, speedMps, share, opacity, drift, direction, shown }`.
+- `state()`: `{ count, gain, color, loMps, hiMps, driftMin, driftMax,
+speedMps, share, opacity, drift, direction, shown }` (the knobs as applied,
+  so a smoke can see every one). A range that is not a positive rising
+  pair falls back to the default instead of throwing every frame.
 - `sample(n)`: the first n visible streaks projected (heads and tails as
   normalised screen points, 0 at the top-left) and the focus of expansion
   (where the motion points on screen, or null when it is behind).

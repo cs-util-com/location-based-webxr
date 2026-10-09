@@ -147,8 +147,12 @@ lands at: by default beta itself, so the law is the line all the way down
 (no bend: DEC-R3-9), and 45 for R1 (beta 90, the default, R1 exactly). A
 different landing angle (a press that fitted a steeper line than asked,
 landing at the asked angle: DEC-R3-12; R1 in a meteor press) keeps the line
-above the bend and eases from the line's own angle at the bend to it below
-(continuous). `planTravel` takes `meteorDeg` and `meteorLandDeg`: a meteor
+above the bend and below it adds the landing angle's difference from beta,
+fading in toward the landing: continuous at the bend and continuous in
+beta (the F1b milestone review: the line and its eased form used to
+differ by a jump at exactly the asked beta, so the fit's beta + 1e-4 flew
+a bend; a property test now holds the law and the sweep continuous
+there). `planTravel` takes `meteorDeg` and `meteorLandDeg`: a meteor
 looks along its travel at every altitude with no horizon floor (DEC-R3-10;
 R1 looks straight down above the bend and keeps the floor).
 

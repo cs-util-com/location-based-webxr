@@ -20,18 +20,53 @@ const beta = fc.double({ min: 15, max: 89.5, noNaN: true });
 const landing = fc.double({ min: 0.5 * KM, max: 20 * KM, noNaN: true });
 
 describe("the meteor law's properties", () => {
-  it("is continuous at the bend and beta at the landing", () => {
+  // A steeper line easing to a lower landing angle (DEC-R3-12) has a bend;
+  // it must be continuous there, and land at the landing angle.
+  it("eases continuously at the bend, landing at the landing angle", () => {
     fc.assert(
-      fc.property(beta, landing, (b, l) => {
-        const bend = bendAltitudeM(l);
-        expect(
-          Math.abs(
-            travelLawDeg(bend * 1.00001, l, b) -
-              travelLawDeg(bend * 0.99999, l, b),
-          ),
-        ).toBeLessThan(0.01);
-        expect(travelLawDeg(l, l, b)).toBeCloseTo(b, 9);
-      }),
+      fc.property(
+        beta,
+        fc.double({ min: 0.5, max: 40, noNaN: true }),
+        landing,
+        (land, extra, l) => {
+          const b = Math.min(90, land + extra);
+          const bend = bendAltitudeM(l);
+          expect(
+            Math.abs(
+              travelLawDeg(bend * 1.00001, l, b, land) -
+                travelLawDeg(bend * 0.99999, l, b, land),
+            ),
+          ).toBeLessThan(0.01);
+          expect(travelLawDeg(l, l, b, land)).toBeCloseTo(land, 9);
+        },
+      ),
+    );
+  });
+
+  // The F1b milestone review: the law jumped at exactly the asked beta (the
+  // pure line there, the line plus an ease just above it), so the fit's
+  // beta + 1e-4 flew a bend where a straight line was asked. It must be
+  // continuous in beta at every altitude, the sweep with it.
+  it("is continuous in beta at the landing angle, its sweep too", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 10, max: 80, noNaN: true }),
+        landing,
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        (land, l, u) => {
+          const h = l * Math.exp(u * Math.log(65_000_000 / l));
+          expect(
+            Math.abs(
+              travelLawDeg(h, l, land + 1e-6, land) -
+                travelLawDeg(h, l, land, land),
+            ),
+          ).toBeLessThan(1e-3);
+          const at = meteorDiveArcRad(2_000 * KM, l, land, land);
+          const above = meteorDiveArcRad(2_000 * KM, l, land + 1e-6, land);
+          expect(Math.abs(at - above) * 6_371_000).toBeLessThan(10);
+        },
+      ),
+      { numRuns: 60 },
     );
   });
 

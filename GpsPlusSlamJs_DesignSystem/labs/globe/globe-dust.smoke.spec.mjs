@@ -116,10 +116,23 @@ test("the streaks' knobs reach the pass, live", async ({ page }) => {
   const errors = await bootGlobe(page, base, { phase: "user" });
   await page.evaluate(() => window.__globeLab.timeFrames(2));
   const before = await page.evaluate(() => window.__globeLab.state().dust);
-  await applyHash(page, `${base}&dust=1&dustCount=700&dustColor=2&dustGain=2`);
+  await applyHash(
+    page,
+    `${base}&dust=1&dustCount=700&dustColor=2&dustGain=2&dustLoKmS=3&dustHiKmS=900&dustDriftMin=0.5&dustDriftMax=12`,
+  );
   await page.evaluate(() => window.__globeLab.timeFrames(2));
   const after = await page.evaluate(() => window.__globeLab.state().dust);
   expect(errors).toEqual([]);
   expect(before.count).toBe(1500);
-  expect(after.count).toBe(700);
+  // Every knob the panel names reaches the pass (the milestone review: the
+  // first version asserted the count only).
+  expect(after).toMatchObject({
+    count: 700,
+    gain: 2,
+    color: 2,
+    loMps: 3_000,
+    hiMps: 900_000,
+    driftMin: 0.5,
+    driftMax: 12,
+  });
 });

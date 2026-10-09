@@ -23,10 +23,11 @@
  * from the start's speed to rest.
  *
  * THE VIEW looks from the camera at a centre ahead of it along its course,
- * at the curve's pitch: straight down above the bend, the camera's own
- * direction of travel below it (never shallower than the dive's own angle),
- * so it ends looking at the target 45
- * degrees down. The course runs along the great circle to the target; a
+ * at the curve's pitch: for R1 straight down above the bend and the
+ * camera's own direction of travel below it (never shallower than the
+ * dive's own angle); for a meteor its line, looked along at every altitude
+ * (F1b). It ends looking at the target at the law's landing angle (45 for
+ * R1, the asked angle for a meteor: DEC-R3-9, DEC-R3-12). The course runs along the great circle to the target; a
  * target nearer than one landing keeps the start's heading (CF1 review
  * finding 5). The start's own pitch, heading (one roll, fixed when planned:
  * finding 1) and tilt blend out over the first fifth, so the press never
@@ -501,9 +502,9 @@ export function planFlight(
      */
     readonly settleLength?: number;
     /**
-     * The meteor's entry angle beta (round-3 plan 2026-10-08-2345 F1): the
-     * travel law is the straight line meeting the landing at beta, eased
-     * to 45 below the bend. 90 (the default) is R1.
+     * The meteor's entry angle beta (round-3 plan 2026-10-08-2345 F1, F1b):
+     * the travel law is the straight line meeting the landing at beta,
+     * landing at `meteorLandDeg` (beta by default). 90 (the default) is R1.
      */
     readonly meteorDeg?: number;
     /**

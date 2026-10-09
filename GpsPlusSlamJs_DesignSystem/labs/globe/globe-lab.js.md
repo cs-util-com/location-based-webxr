@@ -652,8 +652,9 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   after it at `dustOver` (0.25); `dustExposureMs` (33) and `dustWidthPx`
   (1.5) shape the streaks. The panel's "Speed streaks" section tunes them
   live (D1b, DEC-R3-11): `dust` on or off, `dustCount` (1,500), `dustGain`
-  (1), `dustColor` (0 bluish white, 1 white, 2 warm), `dustLoKmS` (1) and
-  `dustHiKmS` (5,000), the speed range in km/s, and `dustDriftMin` (0.2)
+  (1), `dustColor` (0 bluish white, 1 white, 2 warm), `dustLoKmS` (1; 0.1-10) and
+  `dustHiKmS` (5,000; 500-20,000), the speed range in km/s on linear
+  sliders over ranges that never cross, and `dustDriftMin` (0.2)
   and `dustDriftMax` (6), how fast they pour at its ends; a tuned look
   comes back as a link in the debug export (it copies the hash). A placed view (`applyView`) resets the speed.
   The state's `dust` reports the count, `speedMps`, `share`, `opacity`,

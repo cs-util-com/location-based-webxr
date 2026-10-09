@@ -126,7 +126,10 @@ import { createGlobeHaze } from "./globe-haze.js";
 import { createGlobeCloudVolume } from "./globe-cloud-volume.js";
 import { createGlobeSceneDepth } from "./globe-scene-depth.js";
 import { createGlobeCity } from "./globe-city.js";
-import { createSpeedDustPass } from "./globe-speed-dust-pass.js";
+import {
+  SPEED_DUST_MAX_COUNT,
+  createSpeedDustPass,
+} from "./globe-speed-dust-pass.js";
 import { EARTH_ATMOSPHERE } from "/fw/visualization/atmosphere/atmosphere-model.js";
 import {
   GLOBE_SKY_HAND_OVER,
@@ -564,10 +567,10 @@ const PARAMS = {
   // end; measured on a flight: about 1.5 km/s at the landing, 4,800 km/s
   // at 44,000 km) and how fast they pour (box units a second, at the low
   // and the high end of the range).
-  dustCount: { fallback: 1500, min: 100, max: 4000 },
+  dustCount: { fallback: 1500, min: 100, max: SPEED_DUST_MAX_COUNT },
   dustGain: { fallback: 1, min: 0, max: 4 },
   dustColor: { fallback: 0, min: 0, max: 2 },
-  dustLoKmS: { fallback: 1, min: 0.1, max: 100 },
+  dustLoKmS: { fallback: 1, min: 0.1, max: 10 },
   dustHiKmS: { fallback: 5000, min: 500, max: 20000 },
   dustDriftMin: { fallback: 0.2, min: 0.05, max: 2 },
   dustDriftMax: { fallback: 6, min: 2.5, max: 30 },

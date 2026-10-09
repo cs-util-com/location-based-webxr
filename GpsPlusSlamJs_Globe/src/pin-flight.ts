@@ -309,7 +309,9 @@ function lookedAt(ellipsoid: Ellipsoid, start: FlightStart): THREE.Vector3 {
  * Where a link starts (F1, F1b): ON its meteor's straight line,
  * `fromAltitudeM` up, on the side of `target` that `from` (the camera's
  * direction from the centre) is on (north when it is right overhead), and
- * looking along the line: the path's own view there, so the flight never
+ * looking along the line (for beta under 90; at 90, R1, the look-back
+ * here is beta's while R1 lands at 45, a harmless back-off: the lab never
+ * calls it at 90): the path's own view there, so the flight never
  * turns the camera to its line (round-3 plan 2026-10-08-2345 F1b, the
  * owner: "never bending abruptly"). Placed by its arc: the line's sweep
  * from that altitude (0.01 % more, so the asked beta fits) plus the
@@ -333,7 +335,12 @@ export function meteorLinkStart(
   const to = target.direction.clone().normalize();
   const here = from.clone().normalize();
   const side = here.clone().addScaledVector(to, -here.dot(to));
-  if (side.lengthSq() < 1e-12) side.set(0, 0, 1).addScaledVector(to, -to.z);
+  if (side.lengthSq() < 1e-12) {
+    // Right overhead: north, or (at a pole, where north is undefined) x.
+    if (Math.abs(to.z) > 1 - 1e-9) side.set(1, 0, 0);
+    else side.set(0, 0, 1);
+    side.addScaledVector(to, -side.dot(to));
+  }
   side.normalize();
   // The landing's look-back: its camera at `landingM` looking `meteorDeg`
   // down at the target stands this far back (the triangle centre, camera,
@@ -348,9 +355,12 @@ export function meteorLinkStart(
     .clone()
     .multiplyScalar(Math.cos(arc))
     .addScaledVector(side, Math.sin(arc));
-  const position = nadir
-    .clone()
-    .multiplyScalar(surfaceRadiusAlong(ellipsoid, nadir) + fromAltitudeM);
+  // The path measures the start's altitude over the target's ground (the
+  // point it looks at), so the camera stands `fromAltitudeM` over THAT
+  // radius: over its own nadir's, 20 km off between the equator side and a
+  // high-latitude target, a lower start turned 0.4-3.9 degrees (the F1b
+  // milestone review).
+  const position = nadir.clone().multiplyScalar(rs + fromAltitudeM);
   // Along the line: its angle below the horizontal there, toward the target.
   const ahead = to.clone().addScaledVector(nadir, -to.dot(nadir)).normalize();
   const pitchDeg = travelLawDeg(fromAltitudeM, landingM, meteorDeg);

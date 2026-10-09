@@ -69,14 +69,20 @@ function aimOff(s, target) {
   );
 }
 
-/** Bern on a sphere of the mean radius (an angle measure, logged only). */
+/**
+ * Bern's point on the WGS84 ellipsoid, ECEF (the target the link flies to;
+ * a sphere put it about 21 km off, the milestone review).
+ */
 const BERN_ECEF = (() => {
+  const a = 6_378_137;
+  const e2 = 6.69437999014e-3;
   const lat = 46.948 / DEG;
   const lng = 7.4474 / DEG;
+  const n = a / Math.sqrt(1 - e2 * Math.sin(lat) ** 2);
   return [
-    R * Math.cos(lat) * Math.cos(lng),
-    R * Math.cos(lat) * Math.sin(lng),
-    R * Math.sin(lat),
+    n * Math.cos(lat) * Math.cos(lng),
+    n * Math.cos(lat) * Math.sin(lng),
+    n * (1 - e2) * Math.sin(lat),
   ];
 })();
 
@@ -103,14 +109,18 @@ const BASE = `time=2026-10-05T11:00:00Z&${BERN}&land=1&relief=0&cityWarm=0`;
 // and the view's direction in space turns by under a degree over the whole
 // flight. The positive control: the old dive (`flight=1`) bends from
 // straight down to 45, which this measure must see.
-for (const beta of [30, 45]) {
-  test(`a link flies the meteor at ${beta} degrees: one direction, landing at ${beta}`, async ({
+for (const [beta, startKm] of [
+  [30, 65_000],
+  [45, 65_000],
+  [30, 20_000],
+]) {
+  test(`a link flies the meteor at ${beta} degrees from ${startKm} km: one direction, landing at ${beta}`, async ({
     page,
   }) => {
     test.setTimeout(480_000);
     const samples = await recordLink(
       page,
-      `${BASE}&flight=2&meteorDeg=${beta}`,
+      `${BASE}&flight=2&meteorDeg=${beta}&flightStartKm=${startKm}`,
     );
     const landing = 2_000;
     const near = (hKm) =>
@@ -120,27 +130,32 @@ for (const beta of [30, 45]) {
           ? s
           : best,
       );
-    const rows = [10_000, 4_000, 1_000, 300].map((hKm) => {
-      const s = near(hKm);
-      return {
-        hKm,
-        at: s.h / 1000,
-        d: s.d,
-        expected: line(s.h, landing, beta),
-      };
-    });
+    const rows = [10_000, 4_000, 1_000, 300]
+      .filter((hKm) => hKm < startKm * 0.8)
+      .map((hKm) => {
+        const s = near(hKm);
+        return {
+          hKm,
+          at: s.h / 1000,
+          d: s.d,
+          expected: line(s.h, landing, beta),
+        };
+      });
     const last = samples[samples.length - 1];
     const t = turn(samples);
     const aims = [10_000, 1_000].map((hKm) => aimOff(near(hKm), BERN_ECEF));
     console.log(
-      `meteor ${beta}: ${rows.map((r) => `${r.at.toFixed(0)} km ${r.d.toFixed(1)} deg (line ${r.expected.toFixed(1)})`).join(", ")}; last ${(last.h / 1000).toFixed(1)} km ${last.d.toFixed(1)} deg; the view turned at most ${t.worst.toFixed(2)} deg from its first, at most ${t.rate.toFixed(2)} deg/s, over ${t.frames} frames; aimed ${aims.map((a) => a.toFixed(2)).join(" / ")} deg off Bern at 10,000 / 1,000 km; ${last.n} frame recentres`,
+      `meteor ${beta} from ${startKm} km: ${rows.map((r) => `${r.at.toFixed(0)} km ${r.d.toFixed(1)} deg (line ${r.expected.toFixed(1)})`).join(", ")}; last ${(last.h / 1000).toFixed(1)} km ${last.d.toFixed(1)} deg; the view turned at most ${t.worst.toFixed(2)} deg from its first, at most ${t.rate.toFixed(2)} deg/s, over ${t.frames} frames; aimed ${aims.map((a) => a.toFixed(2)).join(" / ")} deg off Bern at 10,000 / 1,000 km; ${last.n} frame recentres`,
     );
     for (const r of rows) {
       expect(Math.abs(r.d - r.expected), `${r.hKm} km`).toBeLessThan(2);
     }
     expect(Math.abs(last.d - beta)).toBeLessThan(2);
     expect(t.frames).toBeGreaterThan(10);
-    expect(t.worst).toBeLessThan(1);
+    // 0.01 measured; a tenth of the review's failure shapes (0.4-0.7).
+    expect(t.worst).toBeLessThan(0.2);
+    // The view's centre ray ends on Bern (WGS84): looking along the line.
+    for (const aim of aims) expect(aim).toBeLessThan(0.3);
   });
 }
 

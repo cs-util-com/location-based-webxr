@@ -73,6 +73,20 @@ void main() {
 }
 `;
 
+/** The most streaks the pass holds (the panel's `dustCount` maximum). */
+export const SPEED_DUST_MAX_COUNT = 4000;
+
+/**
+ * A knob's range, or the default when it is not a positive, rising pair
+ * (a pasted link with crossed ranges falls back instead of throwing on
+ * every frame: the F1b/D1b milestone review).
+ */
+function rangeOr(lo, hi, fallbackLo, fallbackHi) {
+  return lo > 0 && hi > lo && Number.isFinite(hi)
+    ? [lo, hi]
+    : [fallbackLo, fallbackHi];
+}
+
 /** The streaks' tints (`dustColor`, D1b): bluish white, white, warm. */
 export const SPEED_DUST_COLORS = Object.freeze([
   [0.85, 0.9, 1.0],
@@ -88,7 +102,7 @@ export const SPEED_DUST_COLORS = Object.freeze([
  * `maxCount` seeds; `update`'s `count` draws a prefix of them (a prefix of
  * a uniform field is uniform), so the count is a live knob (D1b).
  */
-export function createSpeedDustPass(maxCount = 4000) {
+export function createSpeedDustPass(maxCount = SPEED_DUST_MAX_COUNT) {
   const all = createSpeedField(maxCount);
   let count = GLOBE_SPEED_DUST.count;
   let seeds = all.subarray(0, count * 3);
@@ -180,18 +194,24 @@ export function createSpeedDustPass(maxCount = 4000) {
         seeds = all.subarray(0, count * 3);
         geometry.instanceCount = count;
       }
-      const speedRange = {
-        loMps: look.loMps ?? GLOBE_SPEED_DUST.loMps,
-        hiMps: look.hiMps ?? GLOBE_SPEED_DUST.hiMps,
-      };
-      const driftRange = {
-        driftMin: look.driftMin ?? GLOBE_SPEED_DUST.driftMin,
-        driftMax: look.driftMax ?? GLOBE_SPEED_DUST.driftMax,
-      };
-      material.uniforms.uGain.value = look.gain ?? 1;
-      material.uniforms.uColor.value.set(
-        ...(SPEED_DUST_COLORS[look.color ?? 0] ?? SPEED_DUST_COLORS[0]),
+      const [loMps, hiMps] = rangeOr(
+        look.loMps ?? GLOBE_SPEED_DUST.loMps,
+        look.hiMps ?? GLOBE_SPEED_DUST.hiMps,
+        GLOBE_SPEED_DUST.loMps,
+        GLOBE_SPEED_DUST.hiMps,
       );
+      const [driftMin, driftMax] = rangeOr(
+        look.driftMin ?? GLOBE_SPEED_DUST.driftMin,
+        look.driftMax ?? GLOBE_SPEED_DUST.driftMax,
+        GLOBE_SPEED_DUST.driftMin,
+        GLOBE_SPEED_DUST.driftMax,
+      );
+      const speedRange = { loMps, hiMps };
+      const driftRange = { driftMin, driftMax };
+      const gain = look.gain >= 0 ? look.gain : 1;
+      const color = SPEED_DUST_COLORS[look.color] ? look.color : 0;
+      material.uniforms.uGain.value = gain;
+      material.uniforms.uColor.value.set(...SPEED_DUST_COLORS[color]);
       velocity = stepVelocity(
         velocity,
         [position.x, position.y, position.z],
@@ -212,6 +232,12 @@ export function createSpeedDustPass(maxCount = 4000) {
       offset = advanceField(offset, dir, rate, dtS);
       report = {
         count,
+        gain,
+        color,
+        loMps,
+        hiMps,
+        driftMin,
+        driftMax,
         speedMps,
         share,
         opacity,

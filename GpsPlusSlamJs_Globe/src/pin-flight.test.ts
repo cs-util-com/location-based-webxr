@@ -1028,6 +1028,84 @@ describe("a meteor link looks along one straight line (F1b)", () => {
   }
 });
 
+// WHY (the F1b milestone review, finding 1): the start stood over its own
+// ground at the start altitude, but the path measures that altitude over
+// the target's ground, 20 km apart on WGS84 between the equator side and
+// a high-latitude target; a lower start could not absorb it and turned the
+// view 0.4-3.9 degrees. Swept over the start altitude, the target's
+// latitude, both sides, two entry angles and a high landing.
+describe("a meteor link looks along its line from any start altitude and latitude", () => {
+  const forward = (q: THREE.Quaternion) =>
+    new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+  for (const fromKm of [2_000, 10_000, 20_000, 65_000]) {
+    for (const lat of [47, 70]) {
+      for (const dLat of [-25, 15]) {
+        for (const [beta, landingKm] of [
+          [30, 2],
+          [10, 12],
+        ] as const) {
+          it(`from ${fromKm} km to ${lat} N, ${dLat > 0 ? "poleward" : "equatorward"}, beta ${beta}, landing ${landingKm} km`, () => {
+            const target = orbitPose(WGS84_ELLIPSOID, { lat, lng: 10 });
+            const from = orbitPose(WGS84_ELLIPSOID, {
+              lat: lat + dLat,
+              lng: 10,
+            }).direction;
+            const start = meteorLinkStart(
+              WGS84_ELLIPSOID,
+              target,
+              from,
+              fromKm * KM,
+              landingKm * KM,
+              beta,
+            );
+            const pin = pressPin(WGS84_ELLIPSOID, 0, start, {
+              target,
+              landingM: landingKm * KM,
+              progress: 1,
+              meteorDeg: beta,
+            });
+            const path = pin.flight?.path;
+            expect(path?.meteorDeg).toBeCloseTo(beta, 3);
+            if (!path) return;
+            const first = forward(start.quaternion);
+            let worst = 0;
+            for (let i = 0; i <= 400; i++) {
+              const cam = flightCamera(path, (path.durationMs * i) / 400);
+              worst = Math.max(worst, forward(cam.quaternion).angleTo(first));
+            }
+            expect((worst * 180) / Math.PI).toBeLessThan(0.1);
+          });
+        }
+      }
+    }
+  }
+});
+
+// WHY (the F1b milestone review, finding 7): right over a pole, "north" is
+// undefined; the start's side fell to a zero vector and put the camera
+// 40,312 km from the centre. It stands at its altitude over the pole's
+// ground, on its line, from either pole.
+describe("a meteor link from right over a pole", () => {
+  for (const lat of [90, -90]) {
+    it(`stands at its altitude over the ground at ${lat}`, () => {
+      const target = orbitPose(WGS84_ELLIPSOID, { lat, lng: 0 });
+      const start = meteorLinkStart(
+        WGS84_ELLIPSOID,
+        target,
+        target.direction,
+        20_000 * KM,
+        2 * KM,
+        30,
+      );
+      const rs = WGS84_ELLIPSOID.radius.z;
+      expect(Math.abs(start.distanceM - (rs + 20_000 * KM))).toBeLessThan(
+        1 * KM,
+      );
+      expect(start.position.length()).toBeCloseTo(start.distanceM, 3);
+    });
+  }
+});
+
 // WHY (DEC-R3-12, the owner 2026-10-09): a press fits the flattest line its
 // fix allows, steeper than asked when the fix is close (R1 over its own
 // place), and eases to the asked angle near the ground, so every landing
@@ -1053,8 +1131,19 @@ describe("a press lands at the asked angle, whatever line it fits (DEC-R3-12)", 
         if (!path) return;
         expect(path.meteorDeg).toBeGreaterThanOrEqual(asked);
         expect(path.endPitchDeg).toBeCloseTo(asked, 6);
-        const end = flightAt(path, path.durationMs);
-        expect(end.pitchDeg).toBeCloseTo(asked, 3);
+        // On the approach, not only at the end (which returns endPitchDeg
+        // by construction, the milestone review): a frame before the end
+        // the view is at the asked angle, and over the last tenth of the
+        // flight it never turns more than half a degree in a 60 Hz frame.
+        const before = flightAt(path, path.durationMs - DT);
+        expect(Math.abs(before.pitchDeg - asked)).toBeLessThan(0.5);
+        let worst = 0;
+        for (let t = path.durationMs * 0.9; t < path.durationMs; t += DT) {
+          const a = flightAt(path, t).pitchDeg;
+          const b = flightAt(path, Math.min(t + DT, path.durationMs)).pitchDeg;
+          worst = Math.max(worst, Math.abs(b - a));
+        }
+        expect(worst).toBeLessThan(0.5);
       });
     }
   }

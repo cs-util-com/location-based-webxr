@@ -27,12 +27,13 @@
  * over a window from the start reshaped the rest at every replan. A start
  * nearer the target than the dive's own track backs off by the same term.
  *
- * THE VIEW. Above the bend the camera looks straight down at the Earth (the
- * turn the owner asked for first; looking along it would show the horizon).
- * Below it, the view's pitch is the camera's ACTUAL direction of travel,
- * residual included, but never shallower than the law (the dive's own
- * angle: in the dive the two agree), never nearer the horizon than
- * `horizonMarginDeg`.
+ * THE VIEW. R1: above the bend the camera looks straight down at the Earth
+ * (the turn the owner asked for first); below it the view's pitch is the
+ * camera's ACTUAL direction of travel, residual included, but never
+ * shallower than the law (the dive's own angle: in the dive the two agree),
+ * never nearer the horizon than `horizonMarginDeg`. A meteor (beta under
+ * 90, F1b): the same rule at every altitude, with no horizon floor, so it
+ * looks along its line (DEC-R3-10).
  *
  * THE MEASURE. Path length is the CF1 criterion's, ds^2 = (d ln h)^2 +
  * (ground / h)^2 with the ground on the mean radius, so `flight-path`'s clock
@@ -125,9 +126,10 @@ function requireAngle(name: string, deg: number): void {
  * (the line all the way down, no bend: DEC-R3-9) and `landingAngleDeg`
  * for R1 (beta 90, the default: 90 from the bend up). A landing angle other
  * than beta (a press that fitted a steeper line than asked, and lands at
- * the asked angle: DEC-R3-12) keeps the line above the bend and eases from
- * the line's own angle at the bend to it below (a smoothstep in the
- * altitude's logarithm; continuous at the bend).
+ * the asked angle: DEC-R3-12) keeps the line above the bend and below it
+ * adds the landing angle's difference from beta, fading in toward the
+ * landing (a smoothstep in the altitude's logarithm): continuous at the
+ * bend and in beta.
  * RangeError for an altitude or landing that is not a positive number, or a
  * beta or landing angle outside (0, 90].
  */
@@ -144,13 +146,17 @@ export function travelLawDeg(
     meteorDeg >= 90
       ? 90
       : lineAngleDeg(Math.max(h, landingM), landingM, meteorDeg);
-  // A line that lands at its own angle is the line all the way down.
-  if (meteorDeg < 90 && landDeg === meteorDeg) return line(altitudeM);
   const bend = bendAltitudeM(landingM);
   if (altitudeM >= bend) return line(altitudeM);
   if (altitudeM <= landingM) return landDeg;
+  // Below the bend: the line plus its difference from the landing angle,
+  // fading out toward the bend. Continuous at the bend, the landing angle
+  // at the landing, and continuous in beta: at beta equal to the landing
+  // angle it is the line itself (the F1b milestone review: the line and
+  // the eased line used to differ there by a jump, which flew a bend where
+  // a straight line was asked). R1 (the line 90) is its old ease to 45.
   const x = Math.log(altitudeM / landingM) / Math.log(bend / landingM);
-  return landDeg + (line(bend) - landDeg) * smoothstep(x);
+  return line(altitudeM) + (landDeg - meteorDeg) * (1 - smoothstep(x));
 }
 
 /**
@@ -349,7 +355,7 @@ function clampPitch(deg: number, h: number, meteorDeg = 90): number {
 
 /**
  * A pan at the landing's altitude (a replan that is already there): the view
- * looks by the law of its landing (45 degrees at a landing), as the flight
+ * looks by the law of its landing (its landing angle there), as the flight
  * ends.
  */
 function levelPan(
@@ -514,8 +520,9 @@ export function planTravel(
       // looks along its travel at every altitude (F1).
       if (h >= bend && meteorDeg >= 90) return 90;
       const law = travelLawDeg(h, options.landingM, meteorDeg, landDeg);
-      // A climb travels up; it looks by the law instead (45 at a landing
-      // below the bend), so it ends where the landing looks, without a snap.
+      // A climb travels up; it looks by the law instead (its landing angle
+      // at a landing below the bend), so it ends where the landing looks,
+      // without a snap.
       if (dw > 0) return clampPitch(law, h, meteorDeg);
       // The camera's actual motion: down by -dh, ahead by (R + h) d theta.
       // The view follows it, but never shallower than the law: where the
