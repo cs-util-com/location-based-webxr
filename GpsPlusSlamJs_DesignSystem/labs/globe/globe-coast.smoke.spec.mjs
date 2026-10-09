@@ -94,7 +94,9 @@ async function holdOverCoast(page, context, altKm, straightDown = true) {
       return performance.now() - w.__coastSince >= 1000;
     },
     null,
-    { timeout: 90_000, polling: 100 },
+    // Frame-bound (the helpers' RELIEF_SETTLE_MS says why): the 50 km view
+    // timed out at 90 s on r802-era runs and with the B-spline.
+    { timeout: 240_000, polling: 100 },
   );
   return { errors, hash };
 }
@@ -168,9 +170,9 @@ for (const altKm of [150, 50]) {
     page,
     context,
   }) => {
-    // Well under a 5 min runaway bound: a view settles in 30-50 s under
-    // SwiftShader; the waits above cap it.
-    test.setTimeout(120_000);
+    // A view settles in 30-50 s under SwiftShader, more at 50 km and on a
+    // slower day (the settle wait above caps it).
+    test.setTimeout(360_000);
     const { errors, hash } = await holdOverCoast(page, context, altKm);
     const state = await page.evaluate(() => window.__globeLab.state());
     const { height } = await page.evaluate(() => ({

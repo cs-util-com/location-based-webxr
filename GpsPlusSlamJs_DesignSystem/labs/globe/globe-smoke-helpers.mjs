@@ -160,6 +160,19 @@ export function withPreRound4Look(hash) {
   return [hash, ...missing].filter(Boolean).join("&");
 }
 
+/**
+ * The wait for the relief (and a held view's tiles) to settle after a
+ * landing. Headless Chromium renders these pages on the CPU, and the relief
+ * settles in a fixed number of FRAMES (about 176 at a 5 km hold), so the
+ * time is frames x frame time, which is what moves: measured 2026-10-09,
+ * 2.2 s a frame with the clouds read bilinearly and 2.5-2.7 s through the
+ * B-spline (round-3 plan M1), so 222-227 s and 264-267 s after the press,
+ * where the waits had 90-180 s and r802's runs passed some of them with
+ * seconds to spare. What the tests check comes after the settle; a frozen
+ * page still fails, at this budget.
+ */
+export const RELIEF_SETTLE_MS = 480_000;
+
 /** Rec. 709 luminance of an 8-bit RGBA pixel. */
 export const luminance = (px) =>
   0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2];

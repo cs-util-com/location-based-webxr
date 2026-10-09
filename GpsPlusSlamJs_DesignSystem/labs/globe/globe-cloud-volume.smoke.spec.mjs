@@ -24,7 +24,12 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { applyHash, bootGlobe, meanOf } from "./globe-smoke-helpers.mjs";
+import {
+  RELIEF_SETTLE_MS,
+  applyHash,
+  bootGlobe,
+  meanOf,
+} from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 // A partly cloudy part of the map (56.5 N 9 E, Jutland: the map's mean
@@ -40,13 +45,11 @@ const HOLD_KM = 12;
 // near plane, so that test could not fail (r790 milestone review F1).
 const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&landKm=${HOLD_KM}&reliefNear=3`;
 /** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
-// The wait for the landing and the relief to settle. Headless Chromium draws
-// these pages at about 1.5 s a frame with the volume (0.75 s without), and
-// the relief settles in a fixed number of frames: about 300 s, measured
-// 2026-10-09 (the same with the dust and the hex tiling off). It was 300 s
-// and the slower tests passed with about 10 s to spare, so a few frames
-// decided them. What these tests check comes after the settle.
-const SETTLE_MS = 480_000;
+// The wait for the landing and the relief to settle (frame-bound; the
+// helpers' RELIEF_SETTLE_MS says why). Here measured 2026-10-09 at about
+// 1.5 s a frame with the volume (0.75 s without), about 300 s, the same
+// with the dust and the hex tiling off.
+const SETTLE_MS = RELIEF_SETTLE_MS;
 const SWEEP = [0.5, 1, 2];
 const STEP = 1;
 
@@ -76,8 +79,10 @@ test("the cloud volume fades in on the descent without a jump, ending at the rel
   page,
   context,
 }) => {
-  // Three rows of 21 held frames (about 5 min each) plus the landing.
-  test.setTimeout(1_500_000);
+  // Three rows of 21 held frames (about 5 min each) plus the landing:
+  // 22.4 min on r807, over 25 with the B-spline's frame cost (round-3 plan
+  // M1), so 40.
+  test.setTimeout(2_400_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(TARGET);
   const errors = await bootGlobe(page, BASE);

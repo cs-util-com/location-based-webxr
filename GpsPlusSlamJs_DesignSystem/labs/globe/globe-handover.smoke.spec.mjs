@@ -14,7 +14,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { bootGlobe } from "./globe-smoke-helpers.mjs";
+import { RELIEF_SETTLE_MS, bootGlobe } from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const TARGET = { latitude: 46.5, longitude: 9.0 };
@@ -90,9 +90,10 @@ async function diveAndCount(page, context, gate) {
   let landedAt = null;
   // Each read renders one frame; until the relief has every pixel (or 20 s
   // after landing), at most 120 s.
-  // The relief takes over only once its view is refined, which takes up to
-  // about 90 s at the hold under SwiftShader: 120 s after landing at most.
-  while (Date.now() - started < 240_000) {
+  // The relief takes over only once its view is refined, which took about
+  // 90-100 s at the hold under SwiftShader on r802 and is frame-bound
+  // (RELIEF_SETTLE_MS says why): that budget after landing at most.
+  while (Date.now() - started < 120_000 + RELIEF_SETTLE_MS) {
     const f = await page.evaluate(readFrame, {
       grid: lowerGrid(),
       holeMin: HOLE_MIN,
@@ -101,7 +102,7 @@ async function diveAndCount(page, context, gate) {
     f.sinceLandMs = landedAt === null ? null : Date.now() - landedAt;
     frames.push(f);
     if (landedAt !== null && (f.share ?? 0) >= 1) break;
-    if (landedAt !== null && Date.now() - landedAt > 120_000) break;
+    if (landedAt !== null && Date.now() - landedAt > RELIEF_SETTLE_MS) break;
   }
   return { frames, errors };
 }
@@ -170,7 +171,7 @@ for (const gate of [1, 0]) {
       : "shows holes without them (the positive control)";
 
   test(`the dive through the band ${label}`, async ({ page, context }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(900_000);
     const { frames, errors } = await diveAndCount(page, context, gate);
     const { inBand, holeFrames, detail } = summarise(frames);
     const reliefFrames = frames.filter((f) => (f.share ?? 0) > 0).length;
@@ -217,7 +218,8 @@ for (const gate of [1, 0]) {
 test("the stencil fill's cost at the hold, on against off (logged)", async ({
   context,
 }) => {
-  test.setTimeout(600_000);
+  // Six landed pages, each waiting for the relief (frame-bound).
+  test.setTimeout(3_600_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(TARGET);
   const perFrame = {};
@@ -233,7 +235,7 @@ test("the stencil fill's cost at the hold, on against off (logged)", async ({
           return s.phase === "landed" && (s.relief?.share ?? 0) >= 1;
         },
         null,
-        { timeout: 180_000 },
+        { timeout: RELIEF_SETTLE_MS },
       );
       const ms = await page.evaluate(() => window.__globeLab.timeFrames(20));
       (perFrame[fill] ??= []).push(ms / 20);

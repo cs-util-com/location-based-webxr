@@ -19,7 +19,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { bootGlobe } from "./globe-smoke-helpers.mjs";
+import { RELIEF_SETTLE_MS, bootGlobe } from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const TARGET = { latitude: 46.5, longitude: 9.0 };
@@ -738,7 +738,7 @@ test("the default relief is drawn at true heights near the ground", async ({
   page,
   context,
 }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(600_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation({ latitude: 46.545, longitude: 9.125 });
   const errors = await bootGlobe(
@@ -757,7 +757,7 @@ test("the default relief is drawn at true heights near the ground", async ({
       );
     },
     null,
-    { timeout: 180_000 },
+    { timeout: RELIEF_SETTLE_MS },
   );
   const st = await page.evaluate(() => window.__globeLab.state());
   console.log(
