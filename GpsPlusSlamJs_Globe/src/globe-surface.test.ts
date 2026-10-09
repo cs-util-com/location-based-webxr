@@ -245,6 +245,9 @@ describe("createGlobeSurface", () => {
     expect(u.uDayReady.value).toBe(0);
     loader.finish[east]!();
     expect(u.uDayReady.value).toBe(1);
+    // Ready to show once the cloud map is in too (round-3 plan M1).
+    expect(globe.state().firstLookReady).toBe(false);
+    loader.finish[loader.loaded.findIndex((s) => s.id === "clouds")]!();
     expect(globe.state().firstLookReady).toBe(true);
     // Not counted with the global maps: the loading label is about those.
     expect(globe.state().mapsTotal).toBe(2);
@@ -258,7 +261,9 @@ describe("createGlobeSurface", () => {
   // surface's own material without a map (so it shows the level 0, lit and
   // clouded as the tiles are), drawn until the globe can draw its view.
   it("draws the first look on a sphere of its own until the globe can draw its view", () => {
-    const globe = createGlobeSurface(stubLoader());
+    const loader = stubLoader();
+    const globe = createGlobeSurface(loader);
+    loader.finish[loader.loaded.findIndex((s) => s.id === "clouds")]!();
     const look = globe.firstLook;
     expect(look.parent?.parent).toBe(globe.group);
     // Hidden until an update decides (R4/R5 milestone review: a page that
@@ -289,6 +294,37 @@ describe("createGlobeSurface", () => {
     expect(look.scale.x).toBeGreaterThan(r.x * 0.995);
     expect(look.scale.z / look.scale.x).toBeCloseTo(r.z / r.x, 9);
     globe.dispose();
+  });
+
+  // Why (round-3 plan M1, the full browser run 2026-10-09): the first look
+  // shows the Earth as the tiles will, clouds included. The 2,048 map used
+  // to arrive with the two halves; the 4,096 map (1.25 MB, decoded off the
+  // thread) arrived after them, so the first look at Bern was cloudless and
+  // the clouds popped in (centre 49,84,106 against 180,211,250 once the
+  // tiles drew). It now waits for the cloud map too; a cloud map that fails
+  // does not hold it back (a failure keeps the plain look).
+  it("shows the first look only once the cloud map is in too, or has failed", () => {
+    const highCamera = new THREE.PerspectiveCamera();
+    highCamera.position.set(30_000_000, 0, 0);
+    const renderer = {
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(2, 2),
+    } as unknown as THREE.WebGLRenderer;
+    for (const ending of ["finish", "fail"] as const) {
+      const loader = stubLoader();
+      const globe = createGlobeSurface(loader);
+      const at = (path: string) =>
+        loader.loaded.findIndex((s) => s.path === path);
+      loader.finish[at("/globe-assets/blue-marble-4326/0/0/0.webp")]!();
+      loader.finish[at("/globe-assets/blue-marble-4326/0/1/0.webp")]!();
+      globe.update(highCamera, renderer);
+      expect(globe.firstLook.visible, ending).toBe(false);
+      expect(globe.state().firstLookReady, ending).toBe(false);
+      loader[ending][loader.loaded.findIndex((s) => s.id === "clouds")]!();
+      globe.update(highCamera, renderer);
+      expect(globe.firstLook.visible, ending).toBe(true);
+      expect(globe.state().firstLookReady, ending).toBe(true);
+      globe.dispose();
+    }
   });
 
   // Why (the full browser run, 2026-10-08): the first look is for the start

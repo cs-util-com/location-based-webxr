@@ -39,7 +39,11 @@ dispose() }`.
       loads with the global maps, long before the tile renderer asks (1.4 s
       against 7.5 s there), into `uDayWest`/`uDayEast`; `uDayReady` turns 1
       once both are in (a failure keeps the plain look; not counted with the
-      global maps, `state().firstLookReady` reports it). The sphere sits
+      global maps). The first look waits for the cloud map too (in or
+      failed), so it shows the Earth clouded as the tiles will: the 4,096
+      map arrives after the halves, and the first look at Bern was
+      cloudless until it did (round-3 plan M1); `state().firstLookReady`
+      reports both. The sphere sits
       0.999 x the ellipsoid's radii (about 6 km under it) in the tiles'
       frame, in a lit copy of the template without a map, so it shows the
       level 0 lit and clouded as the tiles are; it is drawn once the images

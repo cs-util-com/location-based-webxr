@@ -347,10 +347,28 @@ export function createGlobeSurface(
   const mapError = () => {
     mapErrors += 1;
   };
+  // The first look waits for the cloud map as well as its two halves, so
+  // it shows the Earth as the tiles will, clouds included (round-3 plan M1:
+  // the 4,096 map arrives after the halves); a failed map holds nothing.
+  let cloudsSettled = false;
+  const cloudsIn = () => {
+    cloudsSettled = true;
+  };
   // The water mask is not among them: it is the imagery tiles' alpha.
   const maps = {
     night: globalMap(globeSource("black-marble"), loader, mapLoaded, mapError),
-    clouds: globalMap(globeSource("clouds"), loader, mapLoaded, mapError),
+    clouds: globalMap(
+      globeSource("clouds"),
+      loader,
+      () => {
+        mapLoaded();
+        cloudsIn();
+      },
+      () => {
+        mapError();
+        cloudsIn();
+      },
+    ),
   };
   // The first look (round-2 plan 2026-10-07-2350 DEC-FR2-6): the imagery
   // pyramid's level 0, the whole Earth in two tiles, loaded with the global
@@ -362,6 +380,8 @@ export function createGlobeSurface(
   // plain look.
   const imagery = globeSource("blue-marble");
   let firstLookIn = 0;
+  const firstLookImagesIn = () =>
+    surfaceUniforms.uDayReady.value === 1 && cloudsSettled;
   const firstLookHalf = (x: number) => {
     const texture = loader.loadTexture(
       {
@@ -505,7 +525,7 @@ export function createGlobeSurface(
       // until the globe has first drawn its whole view.
       const look = firstLookStep(
         firstLookDone,
-        surfaceUniforms.uDayReady.value === 1,
+        firstLookImagesIn(),
         topLevelReady(runtime),
         tiles.ellipsoid.getPositionElevation(
           tiles.group.worldToLocal(cameraEcef.copy(camera.position)),
@@ -528,7 +548,7 @@ export function createGlobeSurface(
         mapsLoaded,
         mapErrors,
         mapsTotal: Object.keys(maps).length,
-        firstLookReady: surfaceUniforms.uDayReady.value === 1,
+        firstLookReady: firstLookImagesIn(),
       };
     },
     // Every registry source is drawn: the tiles (with the water mask in
