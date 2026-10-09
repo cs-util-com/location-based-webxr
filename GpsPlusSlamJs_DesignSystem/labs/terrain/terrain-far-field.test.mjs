@@ -33,12 +33,17 @@ import {
 const close = (a, b, eps, what) =>
   assert.ok(Math.abs(a - b) <= eps, `${what}: ${a} vs ${b}`);
 
-/** The lab's frame: equirectangular about an origin (the Osm `enuFrameAt`). */
+/**
+ * The lab's frame: equirectangular about an origin, with the Osm
+ * `enuFrameAt`'s ruler (the AR core's numbers since 2026-10-06).
+ */
+const M_LAT = 39_940_652.7422 / 360;
+const M_LNG_EQUATOR = 40_075_016.6856 / 360;
 const frameAt = (origin) => {
-  const mLng = 111_320 * Math.cos((origin.lat * Math.PI) / 180);
+  const mLng = M_LNG_EQUATOR * Math.cos((origin.lat * Math.PI) / 180);
   return {
     toLatLng: (p) => ({
-      lat: origin.lat + p.y / 111_320,
+      lat: origin.lat + p.y / M_LAT,
       lng: origin.lng + p.x / mLng,
     }),
   };
@@ -102,8 +107,8 @@ describe("regionBox", () => {
   it("bounds the square's corners and widens by the pixel", () => {
     const f = frameAt({ lat: 37.9, lng: -79.2 });
     const box = regionBox(f.toLatLng, 128_000, 0.1);
-    close(box.north, 37.9 + 128_000 / 111_320 + 0.1, 1e-9, "north");
-    close(box.south, 37.9 - 128_000 / 111_320 - 0.1, 1e-9, "south");
+    close(box.north, 37.9 + 128_000 / M_LAT + 0.1, 1e-9, "north");
+    close(box.south, 37.9 - 128_000 / M_LAT - 0.1, 1e-9, "south");
     assert.ok(box.west < -79.2 - 1.4 && box.east > -79.2 + 1.4);
   });
 });

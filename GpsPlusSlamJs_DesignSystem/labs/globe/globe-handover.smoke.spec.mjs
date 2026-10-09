@@ -14,12 +14,12 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { bootGlobe } from "./globe-smoke-helpers.mjs";
+import { RELIEF_SETTLE_MS, bootGlobe } from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const TARGET = { latitude: 46.5, longitude: 9.0 };
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&sky=0&relief=1&reliefHeights=synthetic&diveMs=6000&handOver=0&detail=0&holeColor=1";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&sky=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&holeColor=1";
 
 /**
  * A pixel no carrier drew shows the clear colour, magenta with
@@ -36,6 +36,15 @@ const HOLE_MIN = 240;
  * starts at 2,000 km.
  */
 const FILLS_FRAME_KM = 2_100;
+
+/**
+ * The zoom out and the return land at 150 km, the hold these checks were
+ * written at, not at the dive's default 2 km (r790 city plan K4). Both
+ * cross the band at 2,000 km within a wheel budget, and a wheel step scales
+ * the altitude by a fixed factor, so from 2 km the budget ended at 15 km
+ * (measured): the band was never reached. The dive itself keeps the default.
+ */
+const HOLD_150 = "&landKm=150";
 
 /** Points over the lower half of the frame, where the ground is in the dive. */
 function lowerGrid() {
@@ -81,9 +90,10 @@ async function diveAndCount(page, context, gate) {
   let landedAt = null;
   // Each read renders one frame; until the relief has every pixel (or 20 s
   // after landing), at most 120 s.
-  // The relief takes over only once its view is refined, which takes up to
-  // about 90 s at the hold under SwiftShader: 120 s after landing at most.
-  while (Date.now() - started < 240_000) {
+  // The relief takes over only once its view is refined, which took about
+  // 90-100 s at the hold under SwiftShader on r802 and is frame-bound
+  // (RELIEF_SETTLE_MS says why): that budget after landing at most.
+  while (Date.now() - started < 120_000 + RELIEF_SETTLE_MS) {
     const f = await page.evaluate(readFrame, {
       grid: lowerGrid(),
       holeMin: HOLE_MIN,
@@ -92,7 +102,7 @@ async function diveAndCount(page, context, gate) {
     f.sinceLandMs = landedAt === null ? null : Date.now() - landedAt;
     frames.push(f);
     if (landedAt !== null && (f.share ?? 0) >= 1) break;
-    if (landedAt !== null && Date.now() - landedAt > 120_000) break;
+    if (landedAt !== null && Date.now() - landedAt > RELIEF_SETTLE_MS) break;
   }
   return { frames, errors };
 }
@@ -109,7 +119,7 @@ async function zoomOutAndCount(page, context, gate) {
     page,
     // The old rule also released every tile at once, the coarsest
     // included (`bandDrainTiles=0`); the new drain keeps them.
-    `${BASE}&bandGate=${gate}&bandFill=${gate}&bandReleaseMs=1000${gate === 1 ? "" : "&bandDrainTiles=0"}`,
+    `${BASE}${HOLD_150}&bandGate=${gate}&bandFill=${gate}&bandReleaseMs=1000${gate === 1 ? "" : "&bandDrainTiles=0"}`,
   );
   await page.locator("#globe-pin").click();
   // Landed, the relief has every pixel, and the globe's cache is drained.
@@ -161,7 +171,7 @@ for (const gate of [1, 0]) {
       : "shows holes without them (the positive control)";
 
   test(`the dive through the band ${label}`, async ({ page, context }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(900_000);
     const { frames, errors } = await diveAndCount(page, context, gate);
     const { inBand, holeFrames, detail } = summarise(frames);
     const reliefFrames = frames.filter((f) => (f.share ?? 0) > 0).length;
@@ -208,7 +218,8 @@ for (const gate of [1, 0]) {
 test("the stencil fill's cost at the hold, on against off (logged)", async ({
   context,
 }) => {
-  test.setTimeout(600_000);
+  // Six landed pages, each waiting for the relief (frame-bound).
+  test.setTimeout(3_600_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(TARGET);
   const perFrame = {};
@@ -224,7 +235,7 @@ test("the stencil fill's cost at the hold, on against off (logged)", async ({
           return s.phase === "landed" && (s.relief?.share ?? 0) >= 1;
         },
         null,
-        { timeout: 180_000 },
+        { timeout: RELIEF_SETTLE_MS },
       );
       const ms = await page.evaluate(() => window.__globeLab.timeFrames(20));
       (perFrame[fill] ??= []).push(ms / 20);
@@ -239,4 +250,104 @@ test("the stencil fill's cost at the hold, on against off (logged)", async ({
     `stencil fill cost at the hold: on ${on.toFixed(0)} ms, off ${off.toFixed(0)} ms a frame (median of 3, SwiftShader), x${(on / off).toFixed(3)}; rounds on ${perFrame[1].map((v) => v.toFixed(0)).join("/")}, off ${perFrame[0].map((v) => v.toFixed(0)).join("/")}`,
   );
   expect(Number.isFinite(on / off)).toBe(true);
+});
+
+/**
+ * Lands, zooms out until the relief has been drained, zooms back in to
+ * where it landed, and returns the height tiles requested on the way back
+ * (owner decision 2026-10-04, DEC-N1).
+ */
+async function returnIntoBand(page, context, keepMiB) {
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation(TARGET);
+  const errors = await bootGlobe(
+    page,
+    `${BASE}${HOLD_150}&bandReleaseMs=1000&keepHeightsMiB=${keepMiB}`,
+  );
+  await page.locator("#globe-pin").click();
+  const state = () => page.evaluate(() => window.__globeLab.state());
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return (
+        s.phase === "landed" && (s.relief?.share ?? 0) >= 1 && s.relief?.settled
+      );
+    },
+    null,
+    { timeout: 240_000 },
+  );
+  const landed = await state();
+  const altKm = () =>
+    page.evaluate(
+      () => JSON.parse(window.__globeLab.debug.exportText()).live.altitudeKm,
+    );
+  const landedKm = await altKm();
+  const box = await page.locator("#globe-canvas").boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  let steps = 0;
+  while ((await altKm()) < 2_600 && steps < 60) {
+    await page.mouse.wheel(0, 300);
+    await page.evaluate(() => window.__globeLab.timeFrames(2));
+    steps++;
+  }
+  // Out of the band: the relief is drained (all but its coarsest tiles).
+  await page.waitForFunction(
+    () =>
+      window.__globeLab.state().relief?.lastRelease?.relief?.drainedAt != null,
+    null,
+    { timeout: 120_000 },
+  );
+  const out = await state();
+  for (let i = 0; i < steps; i++) {
+    await page.mouse.wheel(0, -300);
+    await page.evaluate(() => window.__globeLab.timeFrames(2));
+  }
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return (s.relief?.share ?? 0) >= 1 && s.relief?.settled;
+    },
+    null,
+    { timeout: 240_000 },
+  );
+  const back = await state();
+  return {
+    errors,
+    landedKm,
+    backKm: await altKm(),
+    first: landed.relief.heightRequests,
+    returned: back.relief.heightRequests - out.relief.heightRequests,
+    kept: out.relief.keptHeights,
+  };
+}
+
+// Why (owner report 2026-10-04: "it seems not to reload the elevation from
+// cache"): leaving the band drains the relief, and the library freed its
+// decoded heights with the last tile, so a return fetched every height tile
+// again. With the keeper (16 MiB, the default) a return must fetch far
+// fewer; with it off (0) it refetches, the positive control.
+test("a return into the band reuses the kept heights, without the keeper it fetches them again", async ({
+  context,
+}) => {
+  test.setTimeout(900_000);
+  const rows = {};
+  for (const keepMiB of [16, 0]) {
+    const page = await context.newPage();
+    rows[keepMiB] = await returnIntoBand(page, context, keepMiB);
+    await page.close();
+  }
+  console.log(
+    `return into the band: ${[16, 0]
+      .map((k) => {
+        const r = rows[k];
+        return `keep ${k} MiB: landed ${Math.round(r.landedKm)} km, back at ${Math.round(r.backKm)} km, first descent ${r.first} height tiles, the return ${r.returned}, kept ${r.kept.kept} (${(r.kept.keptBytes / 2 ** 20).toFixed(1)} MiB, ${r.kept.evicted} given back)`;
+      })
+      .join("; ")}`,
+  );
+  for (const k of [16, 0]) expect(rows[k].errors, `keep ${k}`).toEqual([]);
+  expect(rows[16].kept.kept).toBeGreaterThan(0);
+  expect(rows[0].kept.kept).toBe(0);
+  // The control refetches; the keeper fetches at most a quarter of that.
+  expect(rows[0].returned).toBeGreaterThan(0);
+  expect(rows[16].returned).toBeLessThanOrEqual(rows[0].returned / 4);
 });

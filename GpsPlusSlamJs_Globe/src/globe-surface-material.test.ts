@@ -17,8 +17,10 @@ import fc from "fast-check";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
+import { GLOBE_CLOUD_FILTER_GLSL } from "./globe-cloud-filter.js";
 import {
   GLOBE_CLOUD_DRIFT_DEG_PER_S,
+  GLOBE_CLOUD_GLSL,
   GLOBE_SURFACE_CACHE_KEY,
   GLOBE_SURFACE_TUNING,
   applyGlobeSurface,
@@ -56,6 +58,8 @@ describe("createGlobeSurfaceUniforms", () => {
     expect(u.uClouds.value).toBe(t.clouds);
     // The water is the tiles' alpha now, not a map (DEC-GL4-6).
     expect("uWater" in u).toBe(false);
+    // The clouds through the B-spline by default (round-3 plan M1).
+    expect(u.uCloudCubic.value).toBe(1);
     expect(u.uSunEcef.value.length()).toBeCloseTo(1, 12);
     expect(u.uNightGain.value).toBe(GLOBE_SURFACE_TUNING.nightGain);
     // The owner's night lights (round-4 plan DEC-GL4-1).
@@ -91,10 +95,15 @@ describe("patchGlobeSurfaceShader", () => {
       "uWaterRoughness",
       "uCloudOpacity",
       "uCloudLonOffset",
+      "uCloudCubic",
       "uGrade",
       "uCloudRelief",
       "uTwilight",
       "uSunWorld",
+      "uCloudFlat",
+      "uDayWest",
+      "uDayEast",
+      "uDayReady",
     ]) {
       expect(shader.uniforms[name]).toBe(
         uniforms[name as keyof typeof uniforms],
@@ -108,6 +117,16 @@ describe("patchGlobeSurfaceShader", () => {
     expect(at("#include <roughnessmap_fragment>")).toBeLessThan(
       at("uWaterRoughness, globeWater"),
     );
+    // A tile without its imagery yet shows the first look (DEC-FR2-6), the
+    // pyramid's level 0 by longitude, once it is ready; its water too.
+    expect(fs).toContain("#ifndef USE_MAP");
+    expect(fs).toContain("uDayReady");
+    expect(at("#ifndef USE_MAP")).toBeGreaterThan(at("float globeU ="));
+    expect(at("#ifndef USE_MAP")).toBeLessThan(
+      at("globeCloud * uCloudOpacity"),
+    );
+    // The glint's cloud mask fades with the flat layer (DEC-FR2-5).
+    expect(fs).toContain("globeWater * ( 1.0 - globeCloud * uCloudFlat )");
     expect(at("#include <emissivemap_fragment>")).toBeLessThan(
       at("totalEmissiveRadiance += globeNight"),
     );
@@ -125,7 +144,14 @@ describe("patchGlobeSurfaceShader", () => {
     patchGlobeSurfaceShader(shader, createGlobeSurfaceUniforms(textures()));
     const fs = shader.fragmentShader;
     expect(fs).toContain("fract( globeU + 0.5 )");
-    expect(count(fs, "textureGrad(")).toBe(2);
+    // The night map and the first look's two halves (round-2 plan
+    // DEC-FR2-6) directly, the clouds and the clouds again for the shadow
+    // on the ground (round-6 plan G6-2) through the B-spline's taps (round-3
+    // plan M1), every one with the seam fix's gradients.
+    expect(count(fs, "textureGrad(")).toBe(
+      3 + count(GLOBE_CLOUD_FILTER_GLSL, "textureGrad("),
+    );
+    expect(count(fs, ", globeDx, globeDy )")).toBe(3);
     expect(fs).not.toMatch(/texture\( u(Night|Clouds)/);
   });
 
@@ -137,10 +163,18 @@ describe("patchGlobeSurfaceShader", () => {
     // The cloud sample is shifted west by the offset (radians to turns),
     // with the SAME gradients as the other maps: the shift is continuous,
     // so the repeat-wrapped cloud map has no seam of its own.
+    // Read through the B-spline (round-3 plan 2026-10-08-2345 M1: a
+    // bilinear read drew the texel grid at 3,000 km).
     expect(fs).toContain(
-      "textureGrad( uClouds, globeUv - vec2( uCloudLonOffset * 0.15915494309189535, 0.0 ), globeDx, globeDy )",
+      "globeCloudCubic( uClouds, globeUv - vec2( uCloudLonOffset * 0.15915494309189535, 0.0 ), globeDx, globeDy )",
     );
-    expect(count(fs, "uCloudLonOffset")).toBe(2);
+    // The declaration, the clouds' sample, and the shadow's sample of the
+    // same drifting clouds (round-6 plan G6-2).
+    expect(count(fs, "uCloudLonOffset")).toBe(3);
+    // Both reads through the B-spline, none around it.
+    expect(count(fs, "globeCloudCubic( uClouds,")).toBe(2);
+    expect(count(fs, "textureGrad( uClouds,")).toBe(0);
+    expect(count(fs, "float globeCloudCubic(")).toBe(1);
     expect(fs).toContain("textureGrad( uNight, globeUv, globeDx, globeDy )");
   });
 
@@ -449,5 +483,59 @@ describe("globeFadeKeeps, the shader's dither split", () => {
       expect(globeFadeKeeps(d, 0, 0)).toBe(true);
       expect(globeFadeKeeps(d, 1, 1)).toBe(true);
     }
+  });
+});
+
+// Why (round-6 plan 2026-10-04-1050 G6-2, DEC-G6-3/4): the owner saw the
+// relief turn into a black-and-white relief under a passing cloud, and the
+// clouds glued to the ground at a flat view: the clouds were painted into
+// the ground's diffuse colour. A page that draws the clouds as their own
+// shell above the ground turns the painting off (uCloudInSurface 0); the
+// ground then keeps its colour and takes a soft shadow, the cloud read
+// where the sun's ray through the ground point crosses the shell
+// (uCloudShadow, uCloudShellM). Every other page keeps the clouds in the
+// surface, as before (uCloudInSurface 1, no shadow).
+describe("the clouds in the surface or on their own shell", () => {
+  it("defaults to the clouds in the surface and no shadow", () => {
+    const u = createGlobeSurfaceUniforms(textures());
+    expect(u.uCloudInSurface.value).toBe(1);
+    expect(u.uCloudShadow.value).toBe(0);
+    expect(u.uCloudShellM.value).toBe(0);
+  });
+
+  it("paints the clouds and dims the night lights only by the in-surface share", () => {
+    const shader = standardShader();
+    patchGlobeSurfaceShader(shader, createGlobeSurfaceUniforms(textures()));
+    const fs = shader.fragmentShader;
+    expect(fs).toContain("globeCloud * uCloudOpacity * uCloudInSurface");
+    expect(fs).toContain("( 1.0 - 0.8 * globeCloud * uCloudInSurface )");
+    // The cloud sample and its shade are the shared block, once.
+    expect(count(fs, GLOBE_CLOUD_GLSL)).toBe(1);
+  });
+
+  it("shades the ground by the cloud on the shell toward the sun, after the paint, by day only", () => {
+    const shader = standardShader();
+    const uniforms = createGlobeSurfaceUniforms(textures());
+    patchGlobeSurfaceShader(shader, uniforms);
+    const fs = shader.fragmentShader;
+    for (const name of ["uCloudShadow", "uCloudShellM", "uCloudInSurface"]) {
+      expect(shader.uniforms[name]).toBe(
+        uniforms[name as keyof typeof uniforms],
+      );
+    }
+    const at = (x: string) => fs.indexOf(x);
+    expect(at("globeShellShadow")).toBeGreaterThan(
+      at("globeCloud * uCloudOpacity * uCloudInSurface"),
+    );
+    expect(fs).toContain(
+      "diffuseColor.rgb *= 1.0 - uCloudShadow * globeShellShadow;",
+    );
+    // By day only: the ray toward the sun leaves the ground upward.
+    expect(fs).toContain("globeSunUp > 0.0");
+  });
+
+  it("keeps the program key in step with the shader", () => {
+    // v12: the clouds through the B-spline (round-3 plan M1).
+    expect(GLOBE_SURFACE_CACHE_KEY).toBe("gps-plus-slam-globe-surface-v12");
   });
 });

@@ -19,6 +19,7 @@ import {
   spinDirection,
   type Vec3,
 } from "./globe-intro.js";
+import { unitShare } from "./test-utils/arbitraries.js";
 
 const DEG = Math.PI / 180;
 const dot = (a: Vec3, b: Vec3): number =>
@@ -75,7 +76,7 @@ describe("introCameraPose, at any moment of any variant", () => {
         direction,
         direction,
         fc.constantFrom(...INTRO_VARIANTS),
-        fc.double({ min: 0, max: 1, noNaN: true }),
+        unitShare(fc),
         fc.double({ min: 7000, max: 60_000, noNaN: true }),
         fc.double({ min: 7000, max: 60_000, noNaN: true }),
         (start, target, variant, t, a, b) => {

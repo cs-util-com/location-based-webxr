@@ -18,7 +18,9 @@
      The F0 doc first read this as a colour-space step; the range
      conversion is the cause (a 20-degree shift, Sahara for Alps).
 - Public API:
-  - `GLOBE_TERRAIN`: `programKey` (shared by every terrain tile's lit
+  - `GLOBE_TERRAIN`: `maxZoom` 12 (the finest Terrarium zoom the relief
+    loads, its default; the globe's city samples its heights at it from the
+    same source, globe city plan 2026-10-05-0040 §12.4 R13), `programKey` (shared by every terrain tile's lit
     material), `halfFloatStepM(h)` (the step R16F stores at `h` metres:
     0.5 m at 1,000 m, 2 m at 4,000 m, 8 m at 8,848 m), `errorTarget`
     (2, set on the tiles after the plugin registers, since the library's
@@ -73,8 +75,14 @@
     `detail` (`globe-detail.ts`'s uniforms, one object for every tile) the
     detail factor multiplies the imagery right after `map_fragment`; a
     missing or doubled anchor then throws, naming it.
-  - `createGlobeTerrain({ url, imagery, template, heightScale, maxZoom?, lazyHeightScale? })`
-    -> `{ tiles, plugin, detail, setDetail(grid, centre), litTiles(), heightScaleStats(), dispose() }`
+  - `createGlobeTerrain({ url, imagery, template, heightScale, maxZoom?, lazyHeightScale?, keepHeightsBytes? })`
+    -> `{ tiles, plugin, detail, setDetail(grid, centre), litTiles(), heightScaleStats(), heightKeeperStats(), dispose() }`
+    (the decoded heights its tiles release are kept within
+    `keepHeightsBytes`, `GLOBE_TERRAIN.keepHeightsBytes` 16 MiB by default
+    and 0 for none, so a return into the band finds them;
+    `globe-height-keeper.ts`, owner decision 2026-10-04 DEC-N1;
+    `heightKeeperStats()` gives its counters, and `dispose` gives the grids
+    back)
     (a change of `plugin.heightScale` refreshes only the bounding volumes
     that are read, `globe-lazy-height-scale.ts`, and `heightScaleStats()`
     gives its counters; the library walked its whole never-pruned tree on
@@ -84,8 +92,8 @@
     `plugin.sampleCartographicElevation(lat, lon)` the library's drawn
     height at a place from the finest loaded tile, null where none is, which
     the globe lab's per-frame clearance reads): the library's
-    `TerrariumMeshPlugin` on `url` (Terrarium encoded; `maxZoom` 12 by
-    default), the imagery through `geographicOverlay`, and on every
+    `TerrariumMeshPlugin` on `url` (Terrarium encoded; `maxZoom`
+    `GLOBE_TERRAIN.maxZoom` by default), the imagery through `geographicOverlay`, and on every
     `load-model` the half-float heights and the lit copy; on
     `dispose-model` the copy is retired (`globe-warm-material.ts`: the
     last one stays alive, so the relief's program outlives a release). The caller adds `tiles.group` to

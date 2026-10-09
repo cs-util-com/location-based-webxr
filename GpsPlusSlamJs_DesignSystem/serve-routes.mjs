@@ -37,8 +37,73 @@ const TYPES = {
  *   fetched, which no import crawl can see) when any page references it.
  *   `notice`: a file (e.g. LICENSE) the deploy ships beside anything it
  *   emits from this route.
- * @typedef {{ kind: "file", file: string, typescript: boolean } | { kind: "forbidden" }} Resolution
+ * @typedef {{ kind: "file", file: string, typescript: boolean, worker?: true } | { kind: "forbidden" }} Resolution
+ *   `worker`: the request came through the worker view (`/w/`), so a module
+ *   is served through `workerModule`.
  */
+
+/**
+ * THE WORKER VIEW (globe city plan 2026-10-05-0040 §12.4 R1). Import maps do
+ * not apply inside a worker, so a worker whose modules import packages by
+ * their bare names cannot load through the plain routes. `/w/<path>` serves
+ * the file `<path>` would, with its specifiers made URLs inside the view
+ * (`workerModule`), so the whole graph a worker reaches stays in the view.
+ */
+export const WORKER_VIEW = "/w/";
+
+/**
+ * What a bare name means inside the worker view: the globe page's import map
+ * for the same names (a test holds the two equal). Only names a worker graph
+ * needs; a name missing here fails loudly in `workerModule`.
+ */
+export const WORKER_IMPORTS = Object.freeze({
+  "h3-js": "/vendor/h3-js/dist/browser/h3-js.es.js",
+  "gps-plus-slam-osm": "/osm-lib/index.js",
+  "gps-plus-slam-app-framework/osm-bridge": "/fw/osm-bridge/index.js",
+});
+
+/** `import … from "x"`, `import "x"`, `export … from "x"`, `import("x")`. */
+const MODULE_SPECIFIER =
+  /((?:^|[;\s])(?:import|export)\s*(?:[\w*${}\s,]*?\bfrom\s*)?|\bimport\s*\(\s*)(["'])([^"']+)\2/g;
+
+/**
+ * A module's source as the worker view serves it: every import specifier a
+ * URL inside the view. A bare name goes through `imports` (an exact name, or
+ * the longest `prefix/` entry), a route path (`/x/…`) moves under `/w/`,
+ * and a relative one is left as it is (it resolves under the view by
+ * itself). Other strings are untouched.
+ *
+ * @param {string} code  the module's JavaScript (TypeScript already stripped)
+ * @param {string} fromUrl  the module's URL in the view, for the error
+ * @param {Readonly<Record<string, string>>} [imports]
+ * @returns {string}
+ * @throws {Error} for a bare name `imports` does not map, naming it
+ */
+export function workerModule(code, fromUrl, imports = WORKER_IMPORTS) {
+  const inView = (url) =>
+    url.startsWith(WORKER_VIEW) ? url : WORKER_VIEW + url.slice(1);
+  return code.replace(MODULE_SPECIFIER, (match, head, quote, specifier) => {
+    if (specifier.startsWith("./") || specifier.startsWith("../")) {
+      return match;
+    }
+    if (specifier.startsWith("/")) {
+      return `${head}${quote}${inView(specifier)}${quote}`;
+    }
+    let url = imports[specifier];
+    if (url === undefined) {
+      const prefix = Object.keys(imports)
+        .filter((key) => key.endsWith("/") && specifier.startsWith(key))
+        .sort((a, b) => b.length - a.length)[0];
+      if (prefix) url = imports[prefix] + specifier.slice(prefix.length);
+    }
+    if (url === undefined) {
+      throw new Error(
+        `the worker view cannot resolve "${specifier}" imported by ${fromUrl}: add it to WORKER_IMPORTS`,
+      );
+    }
+    return `${head}${quote}${inView(url)}${quote}`;
+  });
+}
 
 /**
  * The 3D page's routes, relative to the workspace root. ONE table, used by
@@ -135,6 +200,13 @@ export function resolveRequest(pathname, { packageRoot, routes }) {
   if (decoded.includes("\0")) return { kind: "forbidden" };
   const segments = decoded.split(/[/\\]/);
   if (segments.includes("..")) return { kind: "forbidden" };
+  if (decoded.startsWith(WORKER_VIEW)) {
+    const inner = resolveRequest(decoded.slice(WORKER_VIEW.length - 1), {
+      packageRoot,
+      routes,
+    });
+    return inner.kind === "file" ? { ...inner, worker: true } : inner;
+  }
 
   const withIndex = decoded.endsWith("/") ? `${decoded}index.html` : decoded;
   const route = routes.find((r) => withIndex.startsWith(r.prefix));

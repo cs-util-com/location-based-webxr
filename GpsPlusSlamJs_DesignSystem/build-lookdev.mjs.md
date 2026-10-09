@@ -32,6 +32,15 @@ followDynamic? })` → the written paths relative to `outDir`. `base`
     rule for a string). A worker's graph is crawled with NO import map,
     because import maps do not apply inside a worker: a bare specifier
     there fails the build with that reason instead of 404ing on a phone.
+    A worker in the WORKER VIEW (`/w/…`, `serve-routes.mjs`; globe city
+    plan 2026-10-05-0040 §12.4 R1) is loaded through `workerModule` as the
+    dev server serves it, so its bare names resolve through
+    `workerImports` (default `WORKER_IMPORTS`) and its whole graph is
+    emitted under `w/`, rebased like any route (`w` is one of the
+    rebaser's prefixes); a route's notice ships beside what it covers,
+    under `w/` for files emitted through the view (h3-js's LICENSE at
+    `w/vendor/h3-js/LICENSE` for the globe city's worker), so a worker's
+    graph never adds a plain-path file to a page's boot graph.
     Any other `new URL("x", import.meta.url)` is crawled when it names a
     `.js`/`.mjs` module and copied byte for byte otherwise;
   - follows literal dynamic `import("x")`s in our own sources, outside
@@ -76,7 +85,9 @@ followDynamic? })` → the written paths relative to `outDir`. `base`
   unreferenced one not at all, a `notice` shipped beside its chunks; a
   module Worker by `new URL` and by string crawled with its imports and
   rebased, a non-module `new URL` asset copied byte for byte, a bare
-  specifier inside a worker refused), and (stage `test:unit`) builds the real page
+  specifier inside a worker refused; a worker in the worker view emitted
+  under `w/` with its bare imports rewritten into the view and rebased, and
+  the page's worker URL rebased), and (stage `test:unit`) builds the real page
   into a temp dir: page and styles present, three's graph and addons
   crawled, framework TypeScript emitted stripped, every prefix rebased,
   nothing outside the output, the index. With a temp fixture package:

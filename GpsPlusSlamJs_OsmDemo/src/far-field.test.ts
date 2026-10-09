@@ -21,7 +21,7 @@ import {
   MAX_GROUND_SEGMENTS,
   TERRAIN_SPACING_M,
 } from "./building-view.js";
-import { TERRAIN_EXTENT_M } from "./heightfield.js";
+import { TERRAIN_EXTENT_M } from "gps-plus-slam-osm";
 import {
   DEFAULT_RENDER_MULTIPLIER,
   renderDistanceFor,
