@@ -36,7 +36,37 @@ export interface GlobeSource {
    * memory (round-3 plan 2026-10-08-2345 M1).
    */
   readonly grey?: true;
+  /**
+   * A global map's full size, cut into pieces (each under the repo's 2 MiB
+   * file ceiling) that the globe joins on the GPU; `path` is then the
+   * map's small preview, shown until the pieces are in (round-3 plan
+   * 2026-10-08-2345 DEC-R3-15).
+   */
+  readonly pieces?: GlobeMapPieces;
   readonly credit: GlobeCredit;
+}
+
+/** A global map cut into a grid of equal pieces. */
+export interface GlobeMapPieces {
+  /** A `{col}` and `{row}` template; row 0 is the north. */
+  readonly path: string;
+  readonly columns: number;
+  readonly rows: number;
+  /** The whole map's size, pixels. */
+  readonly width: number;
+  readonly height: number;
+}
+
+/** One piece of a cut map, placed in the whole map's pixels. */
+export interface GlobeMapPiece {
+  readonly path: string;
+  readonly column: number;
+  readonly row: number;
+  /** The piece's left edge and its top edge (from the north), pixels. */
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
 }
 
 /** GIBS asks for this acknowledgement; the globe shows it in full. */
@@ -90,7 +120,17 @@ export const GLOBE_SOURCES: readonly GlobeSource[] = [
   {
     id: "clouds",
     kind: "equirect",
-    path: "/globe-assets/equirect/clouds-4096.webp",
+    // The preview, 1,024 x 512, loaded with the first look; then NASA's
+    // full 8,192 x 4,096 map in four pieces replaces it (round-3 plan
+    // 2026-10-08-2345 §18, DEC-R3-13..15).
+    path: "/globe-assets/equirect/clouds-1024.webp",
+    pieces: {
+      path: "/globe-assets/equirect/clouds-8192-{col}-{row}.webp",
+      columns: 2,
+      rows: 2,
+      width: 8192,
+      height: 4096,
+    },
     // A grey photo, read as cloud COVERAGE: a number, not a colour.
     colorSpace: "linear",
     grey: true,
@@ -104,6 +144,46 @@ export const GLOBE_SOURCES: readonly GlobeSource[] = [
     },
   },
 ];
+
+/**
+ * A cut map's pieces, row by row from the north, each placed in the whole
+ * map; none for a source that is not cut.
+ *
+ * @throws RangeError when the grid does not divide the map evenly.
+ */
+export function globeMapPieces(source: GlobeSource): GlobeMapPiece[] {
+  const cut = source.pieces;
+  if (!cut) return [];
+  const width = cut.width / cut.columns;
+  const height = cut.height / cut.rows;
+  if (!(
+    Number.isInteger(width) &&
+    width > 0 &&
+    Number.isInteger(height) &&
+    height > 0
+  )) {
+    throw new RangeError(
+      `${source.id}: ${cut.columns} x ${cut.rows} pieces do not divide ${cut.width} x ${cut.height}`,
+    );
+  }
+  const pieces: GlobeMapPiece[] = [];
+  for (let row = 0; row < cut.rows; row++) {
+    for (let column = 0; column < cut.columns; column++) {
+      pieces.push({
+        path: cut.path
+          .replace("{col}", String(column))
+          .replace("{row}", String(row)),
+        column,
+        row,
+        left: column * width,
+        top: row * height,
+        width,
+        height,
+      });
+    }
+  }
+  return pieces;
+}
 
 /** A source by id. @throws RangeError for an id the registry does not have. */
 export function globeSource(id: GlobeSourceId): GlobeSource {

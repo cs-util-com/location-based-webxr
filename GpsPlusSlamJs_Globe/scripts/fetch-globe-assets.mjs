@@ -30,6 +30,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
+import {
+  blendWrapSeam,
+  columnJump,
+  typicalColumnJump,
+} from "../src/cloud-seam.ts";
+import { globeMapPieces, globeSource } from "../src/globe-sources.ts";
 import { imageInfo } from "../src/image-header.ts";
 import { provenanceFetchedOn } from "../src/provenance-date.ts";
 import { pyramidTiles, tileBBox4326, wmsBBox } from "../src/tile-pyramid.ts";
@@ -51,6 +57,16 @@ const TILE = 256;
  * (the water mask) is always lossless.
  */
 const WEBP_QUALITY = 75;
+/**
+ * How far in from each edge the cloud map's date-line seam is eased (round-3
+ * plan 2026-10-08-2345 §16), columns of the 8,192 map (about 78 km at the
+ * equator). Swept 8, 16 and 32: each closes the wrap (the encoded pieces'
+ * wrap about 4.2 mean, 27-30 largest, against 6.4 and 100 typical) and
+ * none adds a jump past the source's own inside its band.
+ */
+const SEAM_COLUMNS = 16;
+/** The clouds' preview, shown until the full map is in (DEC-R3-15). */
+const CLOUD_PREVIEW = { width: 1024, height: 512 };
 const GIBS_WMS = "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi";
 
 const wms = ({ layer, bbox, width, height, format, time }) =>
@@ -111,23 +127,33 @@ const jobs = [
       expect: { type: "png", width: 2048, height: 1024 },
     },
   },
-  {
-    // The clouds at twice the old resolution (round-3 plan 2026-10-08-2345
-    // M1; the owner: "pixelated already at 3,000 km"): NASA's 8192 x 4096
-    // release resampled (Lanczos) to 4096 x 2048, inside the 10 MB budget;
-    // the 8192 map in pieces needs the budget raised (the owner's call).
-    file: "equirect/clouds-4096.webp",
-    source: "clouds",
-    size: { width: 4096, height: 2048 },
-    resize: true,
-    imagery: {
-      cache: "equirect/cloud_combined_8192.tif",
-      url: "https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57747/cloud_combined_8192.tif",
-      // No header reader for TIFF here: checked by decoding (sharp).
-      expect: { type: "tiff", width: 8192, height: 4096 },
+];
+
+/**
+ * The clouds (round-3 plan 2026-10-08-2345 §18, DEC-R3-13..15; the owner:
+ * "pixelated already at 3,000 km"): NASA's 8192 x 4096 release at full
+ * resolution, its date-line seam eased (`SEAM_COLUMNS`), cut into the
+ * registry's four 4096 x 2048 pieces (each under the repo's 2 MiB file
+ * ceiling), and a 1024 x 512 preview resampled (Lanczos) from the same
+ * eased map. One download makes five files, so it is not a `jobs` entry.
+ */
+const CLOUDS = globeSource("clouds");
+const cloudJob = {
+  files: [
+    CLOUDS.path,
+    ...globeMapPieces(CLOUDS).map((piece) => piece.path),
+  ].map((path) => path.replace(/^\/globe-assets\//, "")),
+  imagery: {
+    cache: "equirect/cloud_combined_8192.tif",
+    url: "https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57747/cloud_combined_8192.tif",
+    // No header reader for TIFF here: checked by decoding (sharp).
+    expect: {
+      type: "tiff",
+      width: CLOUDS.pieces.width,
+      height: CLOUDS.pieces.height,
     },
   },
-];
+};
 
 /** The type and size of downloaded bytes: the header, or sharp for TIFF. */
 async function infoOf(bytes, expected) {
@@ -215,27 +241,91 @@ async function encode(job, imagery, rgb, land) {
       }).joinChannel(land, {
         raw: { width: TILE, height: TILE, channels: 1 },
       })
-    : job.resize
-      ? sharp(imagery)
-          .removeAlpha()
-          .resize(job.size.width, job.size.height, { kernel: "lanczos3" })
-      : sharp(imagery).removeAlpha();
+    : sharp(imagery).removeAlpha();
+  const { bytes, info } = await webpChecked(image, job.file, job.size);
+  const hasWater = land ? land.includes(0) : false;
+  if (info.alpha !== hasWater) {
+    throw new Error(`${job.file}: alpha ${info.alpha}, water ${hasWater}`);
+  }
+  return bytes;
+}
+
+/**
+ * A sharp pipeline's WebP, checked by its header for the expected size: the
+ * bytes and the header read.
+ */
+async function webpChecked(image, file, size) {
   const bytes = await image
     .webp({ quality: WEBP_QUALITY, alphaQuality: 100, effort: 6, exact: true })
     .toBuffer();
   const info = imageInfo(bytes);
   if (
     info?.type !== "webp" ||
-    info.width !== job.size.width ||
-    info.height !== job.size.height
+    info.width !== size.width ||
+    info.height !== size.height
   ) {
-    throw new Error(`${job.file}: wrote ${JSON.stringify(info)}`);
+    throw new Error(`${file}: wrote ${JSON.stringify(info)}`);
   }
-  const hasWater = land ? land.includes(0) : false;
-  if (info.alpha !== hasWater) {
-    throw new Error(`${job.file}: alpha ${info.alpha}, water ${hasWater}`);
+  return { bytes, info };
+}
+
+/**
+ * The clouds' five files from the one TIFF: the grey channel, its seam
+ * eased, cut and resampled. sharp writes a one-channel raw input back out
+ * as three channels, so every read takes channel 0 explicitly. Logs the
+ * wrap before and after against a typical pair of columns.
+ */
+async function writeClouds() {
+  const paths = cloudJob.files.map((file) => join(ASSETS, ...file.split("/")));
+  if (!FORCE && paths.every((path) => existsSync(path))) {
+    kept += paths.length;
+    return;
   }
-  return bytes;
+  const { width, height } = CLOUDS.pieces;
+  const tiff = await cachedPart(cloudJob.imagery);
+  const { data, info } = await sharp(tiff.bytes)
+    .extractChannel(0)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  if (info.width !== width || info.height !== height || info.channels !== 1) {
+    throw new Error(`clouds: decoded ${JSON.stringify(info)}`);
+  }
+  const grey = blendWrapSeam(data, width, height, SEAM_COLUMNS);
+  const typical = typicalColumnJump(data, width, height, 64);
+  const wrap = (map) => {
+    const { mean, max } = columnJump(map, width, height, width - 1);
+    return `${mean.toFixed(1)} mean, ${max} largest`;
+  };
+  console.log(
+    `clouds: the date line ${wrap(data)} before, ${wrap(grey)} after; a typical pair ${typical.mean.toFixed(1)}, ${typical.max}`,
+  );
+  const raw = () => sharp(grey, { raw: { width, height, channels: 1 } });
+  const out = [
+    {
+      file: cloudJob.files[0],
+      size: CLOUD_PREVIEW,
+      image: raw().resize(CLOUD_PREVIEW.width, CLOUD_PREVIEW.height, {
+        kernel: "lanczos3",
+      }),
+    },
+    ...globeMapPieces(CLOUDS).map((piece, i) => ({
+      file: cloudJob.files[i + 1],
+      size: { width: piece.width, height: piece.height },
+      image: raw().extract({
+        left: piece.left,
+        top: piece.top,
+        width: piece.width,
+        height: piece.height,
+      }),
+    })),
+  ];
+  for (const { file, size, image } of out) {
+    const { bytes } = await webpChecked(image, file, size);
+    const path = join(ASSETS, ...file.split("/"));
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, bytes);
+    fetched += 1;
+  }
 }
 
 const layerTimes = {};
@@ -268,12 +358,13 @@ async function worker() {
   }
 }
 await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+await writeClouds();
 
 const bytesOf = (prefix) =>
-  jobs
-    .filter((j) => j.file.startsWith(prefix))
+  [...jobs.map((j) => j.file), ...cloudJob.files]
+    .filter((file) => file.startsWith(prefix))
     .reduce(
-      (sum, j) => sum + statSync(join(ASSETS, ...j.file.split("/"))).size,
+      (sum, file) => sum + statSync(join(ASSETS, ...file.split("/"))).size,
       0,
     );
 const tileCount = jobs.filter((j) => j.source === "blue-marble").length;
@@ -310,9 +401,13 @@ ${WEBP_QUALITY}, encoded once from a lossless source (round-4 plan
 - \`equirect/night-2016-2048.webp\`: NASA Black Marble (VIIRS), 2016, via
   NASA GIBS (WMS \`VIIRS_Black_Marble\` as PNG, TIME 2016-01-01, 2048x1024,
   ${kib(bytesOf("equirect/night"))}).
-- \`equirect/clouds-4096.webp\`: NASA Visible Earth, Blue Marble clouds
-  (R. Stöckli), \`cloud_combined_8192.tif\` (8192x4096) resampled (Lanczos)
-  to 4096x2048, ${kib(bytesOf("equirect/clouds"))}. Its Visible Earth record (image 57747)
+- \`equirect/clouds-8192-{col}-{row}.webp\` and \`equirect/clouds-1024.webp\`:
+  NASA Visible Earth, Blue Marble clouds (R. Stöckli),
+  \`cloud_combined_8192.tif\` (8192x4096) at full resolution, its date-line
+  seam eased over ${SEAM_COLUMNS} columns from each edge (the source's edges do
+  not match), cut into four 4096x2048 pieces (column 0 the west, row 0 the
+  north), ${kib(bytesOf("equirect/clouds-8192"))}, and resampled (Lanczos) to a
+  1024x512 preview, ${kib(bytesOf("equirect/clouds-1024"))}. Its Visible Earth record (image 57747)
   now redirects to a generic page; the file still downloads from NASA's
   image server. The clouds are the 2002 Blue Marble's, which has no live
   page of its own: the credit links NASA's Blue Marble: Next Generation
@@ -324,5 +419,5 @@ Information System (ESDIS).
 `,
 );
 console.log(
-  `globe assets: ${fetched} written, ${kept} kept, ${jobs.length} total`,
+  `globe assets: ${fetched} written, ${kept} kept, ${jobs.length + cloudJob.files.length} total`,
 );
