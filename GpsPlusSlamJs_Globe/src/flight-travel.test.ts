@@ -372,6 +372,39 @@ describe("the meteor law (travelLawDeg with meteorDeg)", () => {
       }
     }
   });
+
+  // DEC-R3-12 (the owner, 2026-10-09): a press fits a steeper line than
+  // asked when its fix is close; it eases to the asked angle near the
+  // ground, so every landing looks the same. The landing angle is the
+  // law's fourth argument: its line above the bend, an ease from the line's
+  // own angle at the bend to the landing angle below it (continuous), R1
+  // (beta 90) included; without it a line lands at beta and R1 at 45.
+  it("eases a steeper line, and R1, to the asked landing angle below the bend", () => {
+    for (const landDeg of [20, 30, 45]) {
+      for (const beta of [landDeg + 10, 60, 75, 90]) {
+        for (const landing of [1, 2, 5].map((k) => k * KM)) {
+          const bend = bendAltitudeM(landing);
+          const above = beta >= 90 ? 90 : line(bend * 3, landing, beta);
+          expect(
+            travelLawDeg(bend * 3, landing, beta, landDeg),
+            `${beta} -> ${landDeg} above the bend`,
+          ).toBeCloseTo(above, 9);
+          expect(
+            Math.abs(
+              travelLawDeg(bend * 1.0001, landing, beta, landDeg) -
+                travelLawDeg(bend * 0.9999, landing, beta, landDeg),
+            ),
+            `${beta} -> ${landDeg} at the bend`,
+          ).toBeLessThan(0.01);
+          expect(travelLawDeg(landing, landing, beta, landDeg)).toBe(landDeg);
+        }
+      }
+    }
+    expect(travelLawDeg(2 * KM, 2 * KM, 90)).toBe(45);
+    expect(travelLawDeg(2 * KM, 2 * KM, 30)).toBeCloseTo(30, 9);
+    expect(() => travelLawDeg(10 * KM, 2 * KM, 60, 0)).toThrow(RangeError);
+    expect(() => travelLawDeg(10 * KM, 2 * KM, 60, 91)).toThrow(RangeError);
+  });
 });
 
 describe("the meteor's dive track and its fit (meteorDiveArcRad, fitMeteorDeg)", () => {
@@ -401,12 +434,15 @@ describe("the meteor's dive track and its fit (meteorDiveArcRad, fitMeteorDeg)",
     const h0 = 10_000 * KM;
     const full = meteorDiveArcRad(h0, 2 * KM, 45);
     expect(fitMeteorDeg(h0, 2 * KM, full * 1.2, 45)).toBe(45);
+    // Every candidate lands at the asked 45 (DEC-R3-12).
     const half = fitMeteorDeg(h0, 2 * KM, full / 2, 45);
     expect(half).toBeGreaterThan(45);
-    expect(meteorDiveArcRad(h0, 2 * KM, half)).toBeLessThanOrEqual(
+    expect(meteorDiveArcRad(h0, 2 * KM, half, 45)).toBeLessThanOrEqual(
       full / 2 + 1e-6,
     );
-    expect(meteorDiveArcRad(h0, 2 * KM, half)).toBeGreaterThan(full / 2 - 1e-3);
+    expect(meteorDiveArcRad(h0, 2 * KM, half, 45)).toBeGreaterThan(
+      full / 2 - 1e-3,
+    );
     expect(fitMeteorDeg(h0, 2 * KM, 0, 45)).toBe(90);
     expect(fitMeteorDeg(h0, 2 * KM, -0.1, 45)).toBe(90);
   });

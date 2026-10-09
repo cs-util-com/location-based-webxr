@@ -136,25 +136,33 @@ Each one is tested (`flight-travel.test.ts`).
   `flight-path.property.test.ts`, `flight-replan.test.ts` and
   `pin-flight.test.ts`.
 
-## The meteor (round-3 plan 2026-10-08-2345, F1)
+## The meteor (round-3 plan 2026-10-08-2345, F1 and F1b)
 
-The owner on r805: "very steep, then 45 rather late; like a meteor, flat
-from the start". `travelLawDeg(h, landing, meteorDeg)` with beta below 90 is
-a straight line through space meeting the landing at beta, cos(gamma) =
-(R + landing) cos(beta) / (R + h), above the bend, and below it an ease
-from the line's own angle at the bend to 45 at the landing (continuous for
-every beta; beta 90, the default, is R1 exactly). `planTravel` takes
-`meteorDeg`: a meteor looks along its travel at every altitude (R1 looks
-straight down above the bend), still held by the horizon floor (dip + 5
-degrees), which binds above about 15,800 km at beta 45.
+The owner on r805: "very steep, then 45 rather late; like a meteor"; on
+r807: "a continuous direction, never bending abruptly", with his decisions
+DEC-R3-8..12. `travelLawDeg(h, landing, meteorDeg, landDeg?)` with beta
+below 90 is a straight line through space meeting the landing at beta,
+cos(gamma) = (R + landing) cos(beta) / (R + h). `landDeg` is the angle it
+lands at: by default beta itself, so the law is the line all the way down
+(no bend: DEC-R3-9), and 45 for R1 (beta 90, the default, R1 exactly). A
+different landing angle (a press that fitted a steeper line than asked,
+landing at the asked angle: DEC-R3-12; R1 in a meteor press) keeps the line
+above the bend and eases from the line's own angle at the bend to it below
+(continuous). `planTravel` takes `meteorDeg` and `meteorLandDeg`: a meteor
+looks along its travel at every altitude with no horizon floor (DEC-R3-10;
+R1 looks straight down above the bend and keeps the floor).
 
-- `meteorDiveArcRad(h0, landing, beta)`: the ground arc the law sweeps from
-  h0 to the landing (Simpson in ln h): about 41.4 degrees from 65,000 km at
-  beta 45, about 16 km for R1.
-- `fitMeteorDeg(h0, landing, arc, beta)`: the flattest beta, no flatter than
-  asked, whose sweep fits the arc (bisection; the sweep falls strictly with
-  beta): a press over its own place gets about 90.
+- `meteorDiveArcRad(h0, landing, beta, landDeg?)`: the ground arc the law
+  sweeps from h0 to the landing (Simpson in ln h): about 41.4 degrees from
+  65,000 km at beta 45, about 16 km for R1.
+- `fitMeteorDeg(h0, landing, arc, beta)`: the flattest beta, no flatter
+  than asked, whose sweep fits the arc, every candidate landing at the
+  asked angle, so the family is whole up to R1 and the sweep falls
+  strictly with beta (bisection): a press over its own place gets 90 (R1,
+  easing to the asked angle).
 
-Tests: the law (R1 at 90, the line above the bend, continuous at the bend,
-45 at the landing), the sweep and the fit, and a curve on the line looking
-along it below the floor's reach and at the floor above it.
+Tests: the law (R1 at 90, the line at every altitude ending at beta, a
+fitted line and R1 easing continuously to an asked landing angle, the
+angles' range), the sweep and the fit (properties: the sweep falls with
+beta among the lines, and up to R1 at a fixed landing angle), and a curve
+on the line looking along it at every altitude, landing at beta.

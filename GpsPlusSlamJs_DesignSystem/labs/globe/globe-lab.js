@@ -437,12 +437,12 @@ const PARAMS = {
   flightStartKm: { fallback: 65_000, min: 0, max: 100_000 },
   // The meteor (round-3 plan 2026-10-08-2345 F1, F1b; the owner: "like a
   // meteor", "a continuous direction, never bending abruptly"):
-  // `meteorDeg` the straight line's entry angle, 20 (DEC-R3-8; smaller is
+  // `meteorDeg` the straight line's entry angle, 30 (DEC-R3-8; smaller is
   // flatter; 90 is round 2's straight down, R1). It flies the line looking
   // along it and lands at that angle (DEC-R3-9, -10). A link starts on the
   // line; a press over its own place flies the flattest line its arc
   // allows. `flight=2` only.
-  meteorDeg: { fallback: 20, min: 10, max: 90 },
+  meteorDeg: { fallback: 30, min: 10, max: 90 },
   // The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6): on unless 0.
   // While it runs it paces the dive (`/globe/flight-pace.js`, at most the
   // 30 s of DEC-GL5-6) unless `diveMs` is set in the hash, which keeps

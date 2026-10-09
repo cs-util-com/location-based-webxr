@@ -22,7 +22,7 @@ import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
 import { orbitPose } from "./globe-camera.js";
 import { obliqueCamera } from "./globe-dive.js";
-import { FLIGHT_PATH, flightCamera } from "./flight-path.js";
+import { FLIGHT_PATH, flightAt, flightCamera } from "./flight-path.js";
 import { meteorDiveArcRad } from "./flight-travel.js";
 import {
   PIN_FLIGHT,
@@ -977,44 +977,84 @@ describe("the pin's meteor (meteorDeg, pressMeteor)", () => {
 // looking along it, and flies it down to the landing at its entry angle.
 // Looking along a straight line, the view's direction in space never
 // changes: every sample of the flight's camera must look the same way as
-// the first, within half a degree (the 1 % start margin is a small sideways
-// residual), for several entry angles and landings (the owner's rule: a
-// one-value verdict is provisional).
+// the first, within a tenth of a degree, for several entry angles and
+// landings, from both sides of the target (toward the equator and toward
+// the pole: on WGS84 the ground's radius differs, and the plan review found
+// a start placed by the start's own radius 0.2-0.5 degrees off its line,
+// hidden on one side by the old 0.5-degree bound and steepening beta on the
+// other).
 describe("a meteor link looks along one straight line (F1b)", () => {
   const forward = (q: THREE.Quaternion) =>
     new THREE.Vector3(0, 0, -1).applyQuaternion(q);
-  for (const beta of [15, 20, 30, 45]) {
-    for (const landingKm of [1, 2, 5]) {
-      it(`keeps its view's direction at beta ${beta}, landing ${landingKm} km`, () => {
-        const from = orbitPose(WGS84_ELLIPSOID, {
-          lat: BERN.lat - 30,
-          lng: BERN.lng,
-        }).direction;
-        const start = meteorLinkStart(
-          WGS84_ELLIPSOID,
-          bernPose,
-          from,
-          65_000 * KM,
-          landingKm * KM,
-          beta,
-        );
-        const pin = pressPin(WGS84_ELLIPSOID, 0, start, {
-          target: bernPose,
-          landingM: landingKm * KM,
-          progress: 1,
-          meteorDeg: beta,
+  for (const [side, dLat] of [
+    ["south", -30],
+    ["north", 30],
+  ] as const) {
+    for (const beta of [15, 20, 30, 45]) {
+      for (const landingKm of [1, 2, 5]) {
+        it(`keeps its view's direction at beta ${beta}, landing ${landingKm} km, from the ${side}`, () => {
+          const from = orbitPose(WGS84_ELLIPSOID, {
+            lat: BERN.lat + dLat,
+            lng: BERN.lng,
+          }).direction;
+          const start = meteorLinkStart(
+            WGS84_ELLIPSOID,
+            bernPose,
+            from,
+            65_000 * KM,
+            landingKm * KM,
+            beta,
+          );
+          const pin = pressPin(WGS84_ELLIPSOID, 0, start, {
+            target: bernPose,
+            landingM: landingKm * KM,
+            progress: 1,
+            meteorDeg: beta,
+          });
+          const path = pin.flight?.path;
+          expect(path?.meteorDeg).toBe(beta);
+          if (!path) return;
+          const first = forward(start.quaternion);
+          let worst = 0;
+          const n = 400;
+          for (let i = 0; i <= n; i++) {
+            const cam = flightCamera(path, (path.durationMs * i) / n);
+            worst = Math.max(worst, forward(cam.quaternion).angleTo(first));
+          }
+          expect((worst * 180) / Math.PI).toBeLessThan(0.1);
         });
+      }
+    }
+  }
+});
+
+// WHY (DEC-R3-12, the owner 2026-10-09): a press fits the flattest line its
+// fix allows, steeper than asked when the fix is close (R1 over its own
+// place), and eases to the asked angle near the ground, so every landing
+// looks the same as a link's. Swept over the fix's distance (its own place,
+// 300 km, 1,500 km) and two asked angles.
+describe("a press lands at the asked angle, whatever line it fits (DEC-R3-12)", () => {
+  for (const asked of [30, 45]) {
+    for (const awayDeg of [0, 2.7, 13.5]) {
+      it(`asked ${asked}, the fix ${awayDeg} degrees from where it looked`, () => {
+        const fix = orbitPose(WGS84_ELLIPSOID, {
+          lat: BERN.lat - awayDeg,
+          lng: BERN.lng,
+        });
+        let pin = pressPin(WGS84_ELLIPSOID, 0, cameraOver(BERN, 10_100 * KM), {
+          target: null,
+          landingM: 2 * KM,
+          progress: 1,
+          meteorDeg: asked,
+        });
+        pin = pinFix(pin, 2_000, fix);
         const path = pin.flight?.path;
-        expect(path?.meteorDeg).toBe(beta);
+        expect(path).toBeDefined();
         if (!path) return;
-        const first = forward(start.quaternion);
-        let worst = 0;
-        const n = 400;
-        for (let i = 0; i <= n; i++) {
-          const cam = flightCamera(path, (path.durationMs * i) / n);
-          worst = Math.max(worst, forward(cam.quaternion).angleTo(first));
-        }
-        expect((worst * 180) / Math.PI).toBeLessThan(0.5);
+        expect(path.meteorDeg).toBeGreaterThanOrEqual(asked);
+        expect(path.endPitchDeg).toBeCloseTo(asked, 6);
+        const end = flightAt(path, path.durationMs);
+        expect(end.pitchDeg).toBeCloseTo(asked, 3);
       });
     }
   }

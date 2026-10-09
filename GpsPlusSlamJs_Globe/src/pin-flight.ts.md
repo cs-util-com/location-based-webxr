@@ -170,17 +170,30 @@ Each one is tested, simulated at 60 Hz on the camera.
 
 `pin-flight.test.ts`, `pin-flight.property.test.ts`.
 
-## The meteor (round-3 plan 2026-10-08-2345, F1)
+## The meteor (round-3 plan 2026-10-08-2345, F1 and F1b)
 
 `pressPin` takes `meteorDeg` (default 90, R1). The hold keeps its vertical
 law. At the first plan to a target the flight takes the asked beta when
 its arc has room for the line's sweep (a link started on the line), else
 the flattest beta, no flatter than asked, that fits the arc (a press over
-its own place: the arc is about 0, so about R1, backing off no more than
-R1's own dive track of about 16 km). The chosen beta is kept on the pin
-(`meteorDeg`) and by every replan. A "full meteor" over the press's own
-place was tried and removed: the curve absorbed its back-off above the
-bend, then dove 20-40 degrees steeper than the line (the milestone
-review). Tests: a link on the asked meteor, a landing raise keeping it, a
-press over its own place fitting a steeper line, and a meteor link's pace
-without stop and go.
+its own place: the arc is about 0, so R1, backing off no more than R1's
+own dive track). Every flight of a meteor press lands at the asked angle
+(`meteorLandDeg`, DEC-R3-12): a fitted steeper line and R1 ease to it below
+the bend. The chosen beta is kept on the pin (`meteorDeg`) and by every
+replan. A "full meteor" over the press's own place was tried and removed
+(the milestone review).
+
+`meteorLinkStart(ellipsoid, target, from, fromAltitudeM, landingM,
+meteorDeg)`: where a link starts, ON its line and looking along it (the
+path's own view: the flight never turns the camera to its line). Placed by
+its arc from the target: the line's sweep (0.01 % more) plus the landing's
+look-back at beta, at the target's radius (the plan review: the start's
+own radius left it 0.2-0.5 degrees off on WGS84). Returns a `FlightStart`
+with its `position` (the lab places its camera there).
+
+Tests: a link on the asked meteor, a landing raise keeping it, a press
+over its own place fitting a steeper line, a meteor link's pace without
+stop and go, a link's view direction in space within 0.1 degree of its
+first for the whole flight (beta 15-45, landings 1-5 km, from the south and
+from the north), and a press landing at the asked angle whatever line it
+fits (its own place, 300 km, 1,500 km; asked 30 and 45).

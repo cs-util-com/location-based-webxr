@@ -57,6 +57,28 @@ describe("the meteor law's properties", () => {
     );
   });
 
+  // DEC-R3-12: every candidate of a fit lands at the asked angle, so with
+  // that landing angle fixed the family is whole again: the sweep falls
+  // strictly with beta up to and including 90 (R1, easing to the asked
+  // angle), which the fit's bisection needs.
+  it("sweeps less as beta rises up to R1, at a fixed landing angle", () => {
+    fc.assert(
+      fc.property(
+        beta,
+        fc.double({ min: 0.2, max: 10, noNaN: true }),
+        fc.double({ min: 500 * KM, max: 65_000 * KM, noNaN: true }),
+        (b, d, h0) => {
+          const steeper = Math.min(90, b + d);
+          fc.pre(steeper > b);
+          expect(meteorDiveArcRad(h0, 2 * KM, steeper, b)).toBeLessThan(
+            meteorDiveArcRad(h0, 2 * KM, b, b),
+          );
+        },
+      ),
+      { numRuns: 60 },
+    );
+  });
+
   it("fits a beta no flatter than asked whose sweep fits the arc", () => {
     fc.assert(
       fc.property(
@@ -68,9 +90,9 @@ describe("the meteor law's properties", () => {
           const fitted = fitMeteorDeg(h0, 2 * KM, arc, b);
           expect(fitted).toBeGreaterThanOrEqual(b);
           expect(fitted).toBeLessThanOrEqual(90);
-          // Fitted below 90, its sweep fits the arc (at 90, R1, it may not:
-          // R1 backs off its own dive, about 16 km).
-          const sweep = meteorDiveArcRad(h0, 2 * KM, fitted);
+          // Fitted below 90, its sweep (landing at the asked angle) fits the
+          // arc (at 90, R1, it may not: R1 backs off its own dive).
+          const sweep = meteorDiveArcRad(h0, 2 * KM, fitted, b);
           expect(fitted >= 90 || sweep <= arc * (1 + 1e-6)).toBe(true);
         },
       ),

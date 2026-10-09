@@ -260,6 +260,11 @@ export interface FlightPath {
   readonly endPitchDeg: number;
   /** The meteor's beta the path flies (90: R1). */
   readonly meteorDeg: number;
+  /**
+   * The angle it lands at, when not its law's default (a press that fitted
+   * a steeper line than asked lands at the asked angle: DEC-R3-12).
+   */
+  readonly meteorLandDeg: number | undefined;
   /** The target's direction, a unit vector. */
   readonly target: THREE.Vector3;
   /** The course's great circle, by its normal: the view looks ahead about it. */
@@ -370,9 +375,18 @@ function flightOptions(
     settleLength: or(options.settleLength, null),
     viewLandingM: or(options.viewLandingM, options.landingM),
     meteorDeg: or(options.meteorDeg, 90),
+    meteorLandDeg: options.meteorLandDeg,
   };
   if (!(o.meteorDeg > 0 && o.meteorDeg <= 90)) {
     throw new RangeError(`meteorDeg must be in (0, 90], got ${o.meteorDeg}`);
+  }
+  if (
+    o.meteorLandDeg !== undefined &&
+    !(o.meteorLandDeg > 0 && o.meteorLandDeg <= 90)
+  ) {
+    throw new RangeError(
+      `meteorLandDeg must be in (0, 90], got ${o.meteorLandDeg}`,
+    );
   }
   requirePositive("landingM", o.landingM);
   requirePositive("durationMs", o.durationMs);
@@ -492,13 +506,24 @@ export function planFlight(
      * to 45 below the bend. 90 (the default) is R1.
      */
     readonly meteorDeg?: number;
+    /**
+     * The angle it lands at (DEC-R3-12): absent, the law's default (beta
+     * for a line, 45 for R1); a press that fitted a steeper line than
+     * asked passes the asked angle, and eases to it below the bend.
+     */
+    readonly meteorLandDeg?: number;
   },
 ): FlightPath {
   const o = flightOptions(start, options);
   const { landingM } = o;
   // The view at the end: the travel law of the landing the view refers to
   // (45 degrees at a real landing; straight down at a hold above the bend).
-  const endPitchDeg = travelLawDeg(landingM, o.viewLandingM, o.meteorDeg);
+  const endPitchDeg = travelLawDeg(
+    landingM,
+    o.viewLandingM,
+    o.meteorDeg,
+    o.meteorLandDeg,
+  );
   const cameraStart = start.pose.direction.clone().normalize();
   const up0 = start.pose.up.clone().projectOnPlane(cameraStart);
   if (!(up0.length() > 1e-9)) {
@@ -546,6 +571,7 @@ export function planFlight(
   const path = planTravel(h0, landingM, cameraArcRad, {
     landingM: o.viewLandingM,
     meteorDeg: o.meteorDeg,
+    meteorLandDeg: o.meteorLandDeg,
   });
   const clock = flightClock(
     path.length,
@@ -573,6 +599,7 @@ export function planFlight(
     landingM,
     viewLandingM: o.viewLandingM,
     meteorDeg: o.meteorDeg,
+    meteorLandDeg: o.meteorLandDeg,
     endPitchDeg,
     target: to,
     courseNormal: normal,
