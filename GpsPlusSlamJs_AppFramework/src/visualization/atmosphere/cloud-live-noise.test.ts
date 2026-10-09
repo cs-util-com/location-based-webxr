@@ -215,8 +215,10 @@ describe('cloudLiveSample', () => {
   // The anti-aliasing (plan §10 item 5): an octave whose cells shrink below
   // a pixel's footprint fades to its mean, so a far or coarsely marched
   // sample never aliases; a footprint larger than every cell is the mean.
+  // Without the spread kept, the sum's spread falls with the footprint.
   it('fades each octave to its mean as the footprint outgrows its cells', () => {
-    const variance = (footprintKm: number) => {
+    const plain = { restoreSpread: false };
+    const variance = (footprintKm: number, options = plain) => {
       // The same points at every footprint: a paired comparison.
       const next = random(6);
       let s = 0;
@@ -227,7 +229,8 @@ describe('cloudLiveSample', () => {
           basis,
           next() * 3000,
           next() * 3000,
-          footprintKm
+          footprintKm,
+          options
         );
         s += v;
         s2 += v * v;
@@ -242,6 +245,44 @@ describe('cloudLiveSample', () => {
     expect(cloudLiveSample(basis, 17.3, -4.2, 100)).toBe(
       CLOUD_LIVE_NOISE.fieldMean
     );
+  });
+
+  // WHY (the N1 milestone review, round-3 plan §19 item 1): with the fade
+  // alone the field went to its mean at one base cell, so the cover drawn
+  // with the footprint-0 threshold flipped to clear (asked 0.3: 0.00 at a
+  // 6 km footprint) or overcast (0.7: 1.00); the tile's mipmaps do the same
+  // from about 4 km (0.19 / 0.84), measured in cloud-live-noise.sweep.test.ts
+  // (SWEEP_AA). The fade keeps the field's spread (its deviation scaled by
+  // the spread at footprint 0 over the spread left, at most x4) and ends
+  // at 4 cells, so the cover drawn holds to a 16 km footprint.
+  it('keeps the drawn cover as the footprint grows, to 16 km', () => {
+    const next = random(17);
+    const points = Array.from({ length: 4000 }, () => [
+      next() * 3000,
+      next() * 3000,
+    ]);
+    for (const footprintKm of [0, 1, 3, 6, 9, 12, 16]) {
+      for (const cover of [0.3, 0.5, 0.7]) {
+        const t = liveCloudThreshold(cover);
+        let above = 0;
+        for (const [x, y] of points) {
+          if (cloudLiveSample(basis, x!, y!, footprintKm) > t) above++;
+        }
+        expect(Math.abs(above / points.length - cover)).toBeLessThan(0.025);
+      }
+    }
+  });
+
+  it('keeps the spread, but goes to the mean once even the base octave has faded', () => {
+    const base = cloudLiveOctaves()[0]!.cellKm;
+    const end = base * CLOUD_LIVE_NOISE.aaEndRatio;
+    expect(cloudLiveSample(basis, 3.3, 7.7, end)).toBe(
+      CLOUD_LIVE_NOISE.fieldMean
+    );
+    // Continuous into the mean: just short of the end the deviation is
+    // small (the gain cap), never a jump from full contrast.
+    const before = cloudLiveSample(basis, 3.3, 7.7, end * 0.999);
+    expect(Math.abs(before - CLOUD_LIVE_NOISE.fieldMean)).toBeLessThan(0.01);
   });
 
   it('keeps every octave at a footprint of half its cell or less', () => {
@@ -444,6 +485,15 @@ describe('CLOUD_LIVE_NOISE_GLSL', () => {
     expect(glsl).toContain('f * f * (3.0 - 2.0 * f)');
     expect(glsl).toContain('(i + f + 0.5) / ATM_LIVE_SIZE');
     expect(glsl).toMatch(/if \(w <= 0\.0\) break;/);
+    // The spread kept as octaves fade, capped (§19 item 1), as the twin.
+    expect(glsl).toContain(
+      'if (spread > 0.0) sum *= min(sqrt(ATM_LIVE_SPREAD0 / spread), ATM_LIVE_MAX_GAIN);'
+    );
+    const spread0 = cloudLiveOctaves().reduce(
+      (t, o) => t + o.amplitude * o.amplitude,
+      0
+    );
+    expect(glsl).toContain(spread0.toPrecision(9));
     // No backtick inside the template (it would end the string).
     expect(glsl).not.toContain('`');
   });

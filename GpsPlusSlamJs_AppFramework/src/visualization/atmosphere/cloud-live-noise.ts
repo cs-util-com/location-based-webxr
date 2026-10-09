@@ -48,8 +48,14 @@ export const CLOUD_NOISE_MODES: readonly CloudNoiseMode[] = [
 export const CLOUD_LIVE_NOISE = {
   /** Octaves (the tile's five plus two that replace its detail read). */
   octaves: 7,
-  /** Each octave's amplitude over the one before. */
+  /** Each octave's amplitude over the one before (octave 1 over octave 0). */
   gain: 0.5,
+  /**
+   * The amplitude ratio from octave 2 on (the fine detail's knob, the N1
+   * milestone review item 2); `gain` by default, today's look. The spread
+   * is kept: the amplitudes are scaled so their root sum of squares stays.
+   */
+  fineGain: 0.5,
   /** The base octave's cells, km: the tile's 4 cells a 24 km tile. */
   baseCellKm: CLOUD_LAYER.tileKm / 4,
   /** The ratio of each octave's cell to the next one's (slightly irrational). */
@@ -64,10 +70,28 @@ export const CLOUD_LIVE_NOISE = {
   latticeMean: 0.4999904295977424,
   /**
    * The anti-aliasing fade: an octave is whole while the footprint is at most
-   * `aaStartRatio` of its cell and gone (its mean) from `aaEndRatio`.
+   * `aaStartRatio` of its cell and gone (its mean) from `aaEndRatio`
+   * cells. 4, not 1 (the N1 milestone review, round-3 plan §19 item 1):
+   * swept 1 / 2 / 3 / 4 with the spread kept, the cover drawn holds to a
+   * footprint of `aaEndRatio` base cells (6 / 12 / 18 / 24 km, at most
+   * 0.02 off to 16 km at 4) and 4 has the least difference from the
+   * box-filtered density at every footprint to 8 km
+   * (`cloud-live-noise.sweep.test.ts`, SWEEP_AA).
    */
   aaStartRatio: 0.5,
-  aaEndRatio: 1,
+  aaEndRatio: 4,
+  /**
+   * Whether the field keeps its spread as octaves fade (the faded sum's
+   * deviation scaled back by the spread at footprint 0 over the spread
+   * left), so the cover drawn with the footprint-0 threshold does not drift
+   * with the footprint: with the fade alone, a 6 km footprint drew asked
+   * covers 0.3 / 0.7 as 0.00 / 1.00. Never by more than `maxSpreadGain`
+   * (4; swept 2 / 4 / 8: 2 lets the cover go from 16 km, 8 changes nothing
+   * further), so the field still goes to its mean continuously once even
+   * the base octave fades.
+   */
+  restoreSpread: true,
+  maxSpreadGain: 4,
   /** The field's mean and its contrast on the octaves' normalised sum. */
   fieldMean: 0.38008,
   contrast: 1.431,
@@ -84,6 +108,13 @@ export interface CloudLiveOptions {
   readonly latticeSeed?: number;
   readonly contrast?: number;
   readonly fieldMean?: number;
+  readonly fineGain?: number;
+  readonly aaStartRatio?: number;
+  readonly aaEndRatio?: number;
+  readonly restoreSpread?: boolean;
+  readonly maxSpreadGain?: number;
+  /** Octaves read at most (a march's cost knob); the rest count as faded. */
+  readonly octaveLimit?: number;
 }
 
 /** Where a frame's origin lies on the noise plane, carried by the caller. */
@@ -152,7 +183,6 @@ export function cloudLiveLattice(
   return data;
 }
 
-/** The options resolved and validated. */
 /** The defaults every option falls back to. */
 const DEFAULT_OPTIONS: Required<CloudLiveOptions> = {
   octaves: CLOUD_LIVE_NOISE.octaves,
@@ -164,9 +194,22 @@ const DEFAULT_OPTIONS: Required<CloudLiveOptions> = {
   latticeSeed: CLOUD_LIVE_NOISE.latticeSeed,
   contrast: CLOUD_LIVE_NOISE.contrast,
   fieldMean: CLOUD_LIVE_NOISE.fieldMean,
+  fineGain: CLOUD_LIVE_NOISE.fineGain,
+  aaStartRatio: CLOUD_LIVE_NOISE.aaStartRatio,
+  aaEndRatio: CLOUD_LIVE_NOISE.aaEndRatio,
+  restoreSpread: CLOUD_LIVE_NOISE.restoreSpread,
+  maxSpreadGain: CLOUD_LIVE_NOISE.maxSpreadGain,
+  octaveLimit: MAX_OCTAVES,
 };
 
-function requireOctaves({ octaves, gain }: Required<CloudLiveOptions>): void {
+function requireOctaves({
+  octaves,
+  gain,
+  fineGain,
+}: Required<CloudLiveOptions>): void {
+  if (!(fineGain > 0 && fineGain < 1)) {
+    throw new RangeError(`the fine gain must be in (0, 1), got ${fineGain}`);
+  }
   if (!(Number.isInteger(octaves) && octaves >= 1 && octaves <= MAX_OCTAVES)) {
     throw new RangeError(
       `the octaves must be a whole number from 1 to ${MAX_OCTAVES}, got ${octaves}`
@@ -193,6 +236,33 @@ function requireCells({
   }
 }
 
+function requireFade({
+  aaStartRatio,
+  aaEndRatio,
+  maxSpreadGain,
+  octaveLimit,
+}: Required<CloudLiveOptions>): void {
+  if (!(
+    aaStartRatio >= 0 &&
+    aaEndRatio > aaStartRatio &&
+    Number.isFinite(aaEndRatio)
+  )) {
+    throw new RangeError(
+      `the fade must run from a ratio >= 0 to a larger finite one, got ${aaStartRatio}, ${aaEndRatio}`
+    );
+  }
+  if (!(maxSpreadGain >= 1)) {
+    throw new RangeError(
+      `the spread gain cap must be >= 1, got ${maxSpreadGain}`
+    );
+  }
+  if (!(Number.isInteger(octaveLimit) && octaveLimit >= 1)) {
+    throw new RangeError(
+      `the octave limit must be a whole number >= 1, got ${octaveLimit}`
+    );
+  }
+}
+
 /** The options over the defaults, validated. */
 function resolve(options: CloudLiveOptions): Required<CloudLiveOptions> {
   const resolved: Record<string, unknown> = { ...DEFAULT_OPTIONS };
@@ -202,6 +272,7 @@ function resolve(options: CloudLiveOptions): Required<CloudLiveOptions> {
   const o = resolved as unknown as Required<CloudLiveOptions>;
   requireOctaves(o);
   requireCells(o);
+  requireFade(o);
   requireLatticeSize(o.latticeSize);
   return o;
 }
@@ -216,15 +287,23 @@ export function cloudLiveOctaves(
   options: CloudLiveOptions = {}
 ): CloudLiveOctave[] {
   const o = resolve(options);
-  let total = 0;
-  for (let k = 0; k < o.octaves; k++) total += o.gain ** k;
+  // The pure gain schedule sums to `total`; the knob's schedule keeps its
+  // root sum of squares, so the spread is the same at every fine gain.
+  const plain = Array.from({ length: o.octaves }, (_, k) => o.gain ** k);
+  const schedule = plain.map((a, k) =>
+    k < 2 ? a : o.gain * o.fineGain ** (k - 1)
+  );
+  const total = plain.reduce((sum, a) => sum + a, 0);
+  const rss = (list: number[]) =>
+    Math.sqrt(list.reduce((t, a) => t + a * a, 0));
+  const scale = (o.contrast / total) * (rss(plain) / rss(schedule));
   const out: CloudLiveOctave[] = [];
   let cell = o.baseCellKm;
   for (let k = 0; k < o.octaves; k++) {
     if (k > 0) cell /= o.lacunarities[k - 1]!;
     out.push({
       cellKm: cell,
-      amplitude: (o.contrast * o.gain ** k) / total,
+      amplitude: scale * schedule[k]!,
       angleRad: o.rotationStepRad * (k + 1),
       seedCells: [
         (hash(k, 0, o.latticeSeed + 101) / 4294967296) * o.latticeSize,
@@ -279,23 +358,27 @@ export function cloudLiveBasis(
 /** The default options: one object, so the field cache below hits. */
 const NO_OPTIONS: CloudLiveOptions = {};
 
-/** A field's octaves and lattice, cached per options object. */
-const fieldCache = new WeakMap<
-  CloudLiveOptions,
-  { octaves: CloudLiveOctave[]; data: Uint8Array; size: number }
->();
+interface ResolvedField {
+  readonly o: Required<CloudLiveOptions>;
+  readonly octaves: CloudLiveOctave[];
+  readonly data: Uint8Array;
+  /** The amplitudes' sum of squares: the spread at footprint 0, squared. */
+  readonly spread0: number;
+}
 
-function resolvedField(options: CloudLiveOptions) {
+/** A field's options, octaves and lattice, cached per options object. */
+const fieldCache = new WeakMap<CloudLiveOptions, ResolvedField>();
+
+function resolvedField(options: CloudLiveOptions): ResolvedField {
   let field = fieldCache.get(options);
   if (field === undefined) {
-    const size = options.latticeSize ?? CLOUD_LIVE_NOISE.latticeSize;
+    const o = resolve(options);
+    const octaves = cloudLiveOctaves(options);
     field = {
-      octaves: cloudLiveOctaves(options),
-      data: cloudLiveLattice(
-        size,
-        options.latticeSeed ?? CLOUD_LIVE_NOISE.latticeSeed
-      ),
-      size,
+      o,
+      octaves,
+      data: cloudLiveLattice(o.latticeSize, o.latticeSeed),
+      spread0: octaves.reduce((t, x) => t + x.amplitude * x.amplitude, 0),
     };
     fieldCache.set(options, field);
   }
@@ -303,15 +386,50 @@ function resolvedField(options: CloudLiveOptions) {
 }
 
 /** The octave's anti-aliasing weight: 1 whole, 0 faded to its mean. */
-function fadeWeight(footprintKm: number, cellKm: number): number {
-  return (
-    1 -
-    smoothstep(
-      CLOUD_LIVE_NOISE.aaStartRatio,
-      CLOUD_LIVE_NOISE.aaEndRatio,
-      footprintKm / cellKm
-    )
-  );
+function fadeWeight(
+  footprintKm: number,
+  cellKm: number,
+  o: Required<CloudLiveOptions>
+): number {
+  return 1 - smoothstep(o.aaStartRatio, o.aaEndRatio, footprintKm / cellKm);
+}
+
+function requireSample(xKm: number, yKm: number, footprintKm: number): void {
+  if (!(Number.isFinite(xKm) && Number.isFinite(yKm))) {
+    throw new RangeError(`the point must be finite, got ${xKm}, ${yKm}`);
+  }
+  if (!(footprintKm >= 0)) {
+    throw new RangeError(`the footprint must be >= 0, got ${footprintKm}`);
+  }
+}
+
+/**
+ * Octave `k`'s value noise (0-1) at the local point: its lattice read at
+ * the basis's q through the Hermite fade, as the shader's bilinear read at
+ * i + fade(f) + 0.5 texels.
+ */
+function octaveValue(
+  data: Uint8Array,
+  size: number,
+  basis: ArrayLike<number>,
+  k: number,
+  xKm: number,
+  yKm: number
+): number {
+  const mask = size - 1;
+  const at = (i: number, j: number) => data[(j & mask) * size + (i & mask)]!;
+  const a = basis[4 * k]!;
+  const b = basis[4 * k + 1]!;
+  const qx = a * xKm - b * yKm + basis[4 * k + 2]!;
+  const qy = b * xKm + a * yKm + basis[4 * k + 3]!;
+  const ix = Math.floor(qx);
+  const iy = Math.floor(qy);
+  // The Hermite fade, the shader's f * f * (3 - 2 f) on [0, 1).
+  const fx = smoothstep(0, 1, qx - ix);
+  const fy = smoothstep(0, 1, qy - iy);
+  const top = at(ix, iy) + (at(ix + 1, iy) - at(ix, iy)) * fx;
+  const bottom = at(ix, iy + 1) + (at(ix + 1, iy + 1) - at(ix, iy + 1)) * fx;
+  return (top + (bottom - top) * fy) / 255;
 }
 
 /**
@@ -330,44 +448,29 @@ export function cloudLiveSample(
   footprintKm = 0,
   options: CloudLiveOptions = NO_OPTIONS
 ): number {
-  if (!(Number.isFinite(xKm) && Number.isFinite(yKm))) {
-    throw new RangeError(`the point must be finite, got ${xKm}, ${yKm}`);
-  }
-  if (!(footprintKm >= 0)) {
-    throw new RangeError(`the footprint must be >= 0, got ${footprintKm}`);
-  }
-  const { octaves, data, size } = resolvedField(options);
+  requireSample(xKm, yKm, footprintKm);
+  const { o, octaves, data, spread0 } = resolvedField(options);
+  const size = o.latticeSize;
   if (basis.length !== 4 * octaves.length) {
     throw new RangeError(
       `the basis must hold ${4 * octaves.length} numbers, got ${basis.length}`
     );
   }
-  const mask = size - 1;
-  const at = (i: number, j: number) => data[(j & mask) * size + (i & mask)]!;
   let sum = 0;
-  for (let k = 0; k < octaves.length; k++) {
+  let spread = 0;
+  const limit = Math.min(octaves.length, o.octaveLimit);
+  for (let k = 0; k < limit; k++) {
     const octave = octaves[k]!;
-    const w = fadeWeight(footprintKm, octave.cellKm);
+    const w = fadeWeight(footprintKm, octave.cellKm, o);
     if (w <= 0) break;
-    const a = basis[4 * k]!;
-    const b = basis[4 * k + 1]!;
-    const qx = a * xKm - b * yKm + basis[4 * k + 2]!;
-    const qy = b * xKm + a * yKm + basis[4 * k + 3]!;
-    const ix = Math.floor(qx);
-    const iy = Math.floor(qy);
-    // The Hermite fade, the shader's f * f * (3 - 2 f) on [0, 1).
-    const fx = smoothstep(0, 1, qx - ix);
-    const fy = smoothstep(0, 1, qy - iy);
-    const v00 = at(ix, iy);
-    const v10 = at(ix + 1, iy);
-    const v01 = at(ix, iy + 1);
-    const v11 = at(ix + 1, iy + 1);
-    const top = v00 + (v10 - v00) * fx;
-    const bottom = v01 + (v11 - v01) * fx;
-    const value = (top + (bottom - top) * fy) / 255;
+    const value = octaveValue(data, size, basis, k, xKm, yKm);
     sum += octave.amplitude * w * (value - CLOUD_LIVE_NOISE.latticeMean);
+    spread += (octave.amplitude * w) ** 2;
   }
-  return (options.fieldMean ?? CLOUD_LIVE_NOISE.fieldMean) + sum;
+  if (o.restoreSpread && spread > 0) {
+    sum *= Math.min(Math.sqrt(spread0 / spread), o.maxSpreadGain);
+  }
+  return o.fieldMean + sum;
 }
 
 /**
@@ -521,10 +624,15 @@ const float ATM_LIVE_AA_START = ${glslFloat(CLOUD_LIVE_NOISE.aaStartRatio)};
 const float ATM_LIVE_AA_END = ${glslFloat(CLOUD_LIVE_NOISE.aaEndRatio)};
 const float ATM_LIVE_CELL[ATM_LIVE_OCTAVES] = ${glslArray(DEFAULT_OCTAVES.map((o) => o.cellKm))};
 const float ATM_LIVE_AMP[ATM_LIVE_OCTAVES] = ${glslArray(DEFAULT_OCTAVES.map((o) => o.amplitude))};
+// The amplitudes' sum of squares (the spread at footprint 0, squared) and
+// the cap on the spread kept (CLOUD_LIVE_NOISE.restoreSpread).
+const float ATM_LIVE_SPREAD0 = ${glslFloat(DEFAULT_OCTAVES.reduce((t, o) => t + o.amplitude * o.amplitude, 0))};
+const float ATM_LIVE_MAX_GAIN = ${glslFloat(CLOUD_LIVE_NOISE.maxSpreadGain)};
 
 // Twin of cloud-live-noise.ts cloudLiveSample.
 float atmCloudLiveNoise(sampler2D lattice, vec4 basis[ATM_LIVE_OCTAVES], vec2 p, float footprint) {
   float sum = 0.0;
+  float spread = 0.0;
   for (int k = 0; k < ATM_LIVE_OCTAVES; k++) {
     float w = 1.0 - smoothstep(ATM_LIVE_AA_START, ATM_LIVE_AA_END, footprint / ATM_LIVE_CELL[k]);
     if (w <= 0.0) break;
@@ -535,7 +643,10 @@ float atmCloudLiveNoise(sampler2D lattice, vec4 basis[ATM_LIVE_OCTAVES], vec2 p,
     f = f * f * (3.0 - 2.0 * f);
     float v = textureLod(lattice, (i + f + 0.5) / ATM_LIVE_SIZE, 0.0).r;
     sum += ATM_LIVE_AMP[k] * w * (v - ATM_LIVE_LATTICE_MEAN);
+    spread += ATM_LIVE_AMP[k] * w * ATM_LIVE_AMP[k] * w;
   }
+  // The spread kept as octaves fade, so the cover drawn holds.
+  if (spread > 0.0) sum *= min(sqrt(ATM_LIVE_SPREAD0 / spread), ATM_LIVE_MAX_GAIN);
   return ATM_LIVE_FIELD_MEAN + sum;
 }
 

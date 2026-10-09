@@ -3522,14 +3522,9 @@ async function start() {
     /** The speed dust's first n visible streaks, projected (D1 smokes). */
     dustSample: (n) => speedDust.sample(n),
     /**
-     * The cloud noise coordinate (tiles) a ground point reads under the
-     * current frame: its world x, z over the tile plus the ground sky's
-     * offset. A frame recentre must leave it unchanged (the owner's
-     * "clouds jump when I zoom out and back in", 2026-10-08).
-     */
-    /**
      * Test surface (round-3 plan N1): the live noise's shader twin
-     * (`atmCloudLiveNoise` at footprint 0) at each local point [x, z] (km),
+     * (`atmCloudLiveNoise`) at each local point [x, z] (km) and footprint
+     * (km; the point's third number, 0 when absent),
      * for each anchor (`{ originKm, rotationRad }`), rendered into a float
      * target and read back, beside the CPU twin (`cloudLiveSample`) at the
      * same points: `[{ gpu: [...], cpu: [...] }]` an anchor. Its own
@@ -3538,9 +3533,10 @@ async function start() {
     cloudLiveProbe(points, anchors) {
       const n = points.length;
       const input = new Float32Array(n * 4);
-      points.forEach(([x, z], i) => {
+      points.forEach(([x, z, footprint = 0], i) => {
         input[4 * i] = x;
         input[4 * i + 1] = z;
+        input[4 * i + 2] = footprint;
       });
       const inputTexture = new THREE.DataTexture(
         input,
@@ -3568,8 +3564,8 @@ uniform sampler2D uInput;
 uniform sampler2D uLattice;
 uniform vec4 uBasis[ATM_LIVE_OCTAVES];
 void main() {
-  vec2 p = texelFetch(uInput, ivec2(gl_FragCoord.xy), 0).xy;
-  gl_FragColor = vec4(atmCloudLiveNoise(uLattice, uBasis, p, 0.0), 0.0, 0.0, 1.0);
+  vec3 p = texelFetch(uInput, ivec2(gl_FragCoord.xy), 0).xyz;
+  gl_FragColor = vec4(atmCloudLiveNoise(uLattice, uBasis, p.xy, p.z), 0.0, 0.0, 1.0);
 }`,
       });
       const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
@@ -3597,7 +3593,9 @@ void main() {
         renderer.readRenderTargetPixels(target, 0, 0, n, 1, out);
         return {
           gpu: points.map((_, i) => out[4 * i]),
-          cpu: points.map(([x, z]) => cloudLiveSample(b, x, z)),
+          cpu: points.map(([x, z, footprint = 0]) =>
+            cloudLiveSample(b, x, z, footprint),
+          ),
         };
       });
       renderer.setRenderTarget(previous);
@@ -3608,6 +3606,12 @@ void main() {
       lattice.dispose();
       return results;
     },
+    /**
+     * The cloud noise coordinate (tiles) a ground point reads under the
+     * current frame: its world x, z over the tile plus the ground sky's
+     * offset. A frame recentre must leave it unchanged (the owner's
+     * "clouds jump when I zoom out and back in", 2026-10-08).
+     */
     cloudNoiseCoordAt(lat, lng) {
       const tileM = CLOUD_LAYER.tileKm * 1000;
       const p = globe.tiles.group.localToWorld(
@@ -3923,6 +3927,35 @@ void main() {
      * the lower half. Null without a volume or before its first frame.
      */
     cloudVolumeCoverage: () => cloudVolume?.coverage() ?? null,
+    /**
+     * The volume's drawn cover by bands of the view (round-3 plan §19 item
+     * 1): `cloudVolume.rows`, each band with the elevation of its middle
+     * ray (degrees, below the horizon negative) and where that ray meets
+     * the deck (km horizontally; null above the horizon or the deck).
+     */
+    cloudVolumeRows(bands) {
+      const rows = cloudVolume?.rows(bands) ?? null;
+      if (rows === null) return null;
+      const deckY = globe.cloudShell.heightM();
+      return rows.map((row, b) => {
+        const ndcY = ((b + 0.5) / bands) * 2 - 1;
+        const dir = new THREE.Vector3(0, ndcY, 0.5)
+          .unproject(camera)
+          .sub(camera.position)
+          .normalize();
+        const horizontal = Math.hypot(dir.x, dir.z);
+        const below = camera.position.y - deckY;
+        const distanceKm =
+          dir.y < 0 && below > 0
+            ? ((below / -dir.y) * horizontal) / 1000
+            : null;
+        return {
+          ...row,
+          elevationDeg: (Math.atan2(dir.y, horizontal) * 180) / Math.PI,
+          distanceKm,
+        };
+      });
+    },
     /** The frame-hitch recorder's smoke API once it is loaded, else null. */
     perf: null,
     /** The Debug panel's smoke API (`globe-debug.js`). */

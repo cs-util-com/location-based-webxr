@@ -692,8 +692,13 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   the drift (`globe-cloud-volume.js` `setNoise`; the state's
   `cloudVolume.noise`). Absent or unknown, `cloudHex` decides (tile by
   default). `cloudLiveProbe(points, anchors)` (a test hook) renders the
-  live noise's shader twin at local points (km) for each anchor and reads
-  it back beside the CPU twin (`globe-cloud-noise.smoke.spec.mjs`).
+  live noise's shader twin at local points (km, with an optional footprint
+  in km as the third number) for each anchor and reads it back beside the
+  CPU twin (`globe-cloud-noise.smoke.spec.mjs`). `cloudVolumeRows(bands)`
+  (a test hook; round-3 plan §19 item 1) reads the volume's last frame by
+  horizontal bands: each band's mean alpha and share over 0.5, the
+  elevation of its middle ray and where that ray meets the deck (km), the
+  drawn cover by distance.
   `cloudShadowFrom` (C3) picks the ground's cloud shadow:
   0 the shell's soft one (the default, as before), 1 the volume's (the
   shell's then off). Measured at the 12 km hold: the shell's darkens by a

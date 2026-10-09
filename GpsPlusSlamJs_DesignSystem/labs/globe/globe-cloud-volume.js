@@ -454,6 +454,39 @@ export function createGlobeCloudVolume(
         maxAlpha,
       };
     },
+    /**
+     * The last volume frame read back by horizontal bands (debug, slow;
+     * round-3 plan §19 item 1): `bands` bands from the bottom of the frame
+     * up, each its mean alpha and the share of its pixels over 0.5, the
+     * clouds' drawn cover by how far down the view looks. Null before a
+     * frame was drawn.
+     */
+    rows(bands) {
+      if (drawn === 0) return null;
+      const w = volumeTarget.width;
+      const h = volumeTarget.height;
+      const pixels = new Uint16Array(w * h * 4);
+      renderer.readRenderTargetPixels(volumeTarget, 0, 0, w, h, pixels);
+      const out = [];
+      for (let b = 0; b < bands; b++) {
+        const y0 = Math.floor((b * h) / bands);
+        const y1 = Math.floor(((b + 1) * h) / bands);
+        let sum = 0;
+        let over = 0;
+        for (let y = y0; y < y1; y++) {
+          for (let x = 0; x < w; x++) {
+            const a = THREE.DataUtils.fromHalfFloat(
+              pixels[(y * w + x) * 4 + 3],
+            );
+            sum += a;
+            if (a > 0.5) over += 1;
+          }
+        }
+        const n = (y1 - y0) * w;
+        out.push({ meanAlpha: sum / n, over: over / n });
+      }
+      return out;
+    },
     state() {
       return {
         enabled,

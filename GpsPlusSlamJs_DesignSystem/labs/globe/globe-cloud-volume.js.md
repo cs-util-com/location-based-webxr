@@ -63,6 +63,11 @@ sceneDepth })`
     and uniforms, the disc and the lift (`configureMap`), so it falls from
     the clouds the volume draws; patched before the haze (which is applied
     last); on only while the volume draws.
+  - `rows(bands)` (debug, a synchronous read-back; round-3 plan §19 item
+    1): the last volume frame by `bands` horizontal bands from the bottom,
+    each its mean alpha and its share of pixels over 0.5; null before the
+    first frame. The lab adds each band's distance
+    (`__globeLab.cloudVolumeRows`).
   - `state()`: `{ enabled, share, radiusM, liftM, drawn, shadow }`.
   - `coverage()` (debug, a synchronous read-back): `{ share, lowerShare,
 maxAlpha }`, the share of the last volume frame's pixels its clouds

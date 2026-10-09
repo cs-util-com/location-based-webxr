@@ -24,12 +24,18 @@
 import { writeFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { cloudDensity, cloudNoise, cloudNoiseSample } from './cloud-layer.js';
+import {
+  cloudDensity,
+  cloudNoise,
+  cloudNoiseSample,
+  cloudThreshold,
+} from './cloud-layer.js';
 import {
   type CloudLiveOptions,
   cloudLiveBasis,
   cloudLiveOctaves,
   cloudLiveSample,
+  liveCloudThreshold,
 } from './cloud-live-noise.js';
 
 /** The FFT's bit-reversed reordering of the first n values, in place. */
@@ -430,3 +436,183 @@ describe.skipIf(!SWEEP)('the full repetition sweep (SWEEP=1)', () => {
     expect(rows.length).toBeGreaterThan(0);
   }, 14_400_000);
 });
+
+/**
+ * The tile's noise as the GPU reads it with mipmaps (a CPU emulation: each
+ * level the 2 x 2 average of the one below, trilinear between levels),
+ * for the cover-against-footprint measure: the tile's own anti-aliasing,
+ * the reference the live fade is compared with.
+ */
+function tileMips(): { data: Float64Array; size: number }[] {
+  const levels = [
+    { data: Float64Array.from(tileData, (v) => v / 255), size: 256 },
+  ];
+  while (levels.at(-1)!.size > 1) {
+    const { data, size } = levels.at(-1)!;
+    const half = size / 2;
+    const next = new Float64Array(half * half);
+    for (let y = 0; y < half; y++) {
+      for (let x = 0; x < half; x++) {
+        next[y * half + x] =
+          (data[2 * y * size + 2 * x]! +
+            data[2 * y * size + 2 * x + 1]! +
+            data[(2 * y + 1) * size + 2 * x]! +
+            data[(2 * y + 1) * size + 2 * x + 1]!) /
+          4;
+      }
+    }
+    levels.push({ data: next, size: half });
+  }
+  return levels;
+}
+
+function tileMipSample(
+  mips: { data: Float64Array; size: number }[],
+  u: number,
+  v: number,
+  lod: number
+): number {
+  const level = (l: number) => {
+    const { data, size } = mips[Math.min(l, mips.length - 1)]!;
+    const x = u * size - 0.5;
+    const y = v * size - 0.5;
+    const x0 = Math.floor(x);
+    const y0 = Math.floor(y);
+    const wrap = (i: number) => ((i % size) + size) % size;
+    const at = (i: number, j: number) => data[wrap(j) * size + wrap(i)]!;
+    const fx = x - x0;
+    const fy = y - y0;
+    const a = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * fx;
+    const b = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * fx;
+    return a + (b - a) * fy;
+  };
+  const l = Math.max(0, lod);
+  const l0 = Math.floor(l);
+  return level(l0) + (level(l0 + 1) - level(l0)) * (l - l0);
+}
+
+/**
+ * The full-detail density box-filtered over the footprint `f` around
+ * (x, y): the mean of 6 x 6 samples, the ideal an anti-aliased read
+ * approximates.
+ */
+function boxDensity(
+  full: (x: number, y: number) => number,
+  x: number,
+  y: number,
+  f: number,
+  threshold: number
+): number {
+  let box = 0;
+  for (let j = 0; j < 6; j++) {
+    for (let i = 0; i < 6; i++) {
+      box += cloudDensity(
+        full(x + ((i + 0.5) / 6 - 0.5) * f, y + ((j + 0.5) / 6 - 0.5) * f),
+        threshold
+      );
+    }
+  }
+  return box / 36;
+}
+
+const SWEEP_AA = process.env['SWEEP_AA'] === '1';
+
+describe.skipIf(!SWEEP_AA)(
+  'the cover drawn against the footprint (SWEEP_AA=1)',
+  () => {
+    // The N1 milestone review (round-3 plan §19 item 1): the live fade took
+    // the field to its mean at one base cell, so the drawn cover flipped to
+    // clear or overcast in the distance. Per footprint and cover: the mean
+    // density drawn (the cover the eye sees) and the RMS difference from the
+    // ideal, the full-detail density box-filtered over the footprint (6 x 6
+    // samples), for the tile (mipmapped), the live defaults, and the
+    // spread-keeping fade at fade ends 1-4 cells and gain caps 2 / 4 / 8.
+    it('measures the tile and the live fades', () => {
+      const footprints = [0.25, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 24];
+      const covers = [0.3, 0.5, 0.7];
+      const n = 1500;
+      const next = (() => {
+        let a = 99;
+        return () => {
+          a = (a + 0x6d2b79f5) | 0;
+          let t = Math.imul(a ^ (a >>> 15), 1 | a);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      })();
+      const points = Array.from({ length: n }, () => [
+        next() * 3000,
+        next() * 3000,
+      ]);
+      const mips = tileMips();
+      const texelKm = TILE_KM / 256;
+      const tileAt = (x: number, y: number, f: number) => {
+        const lod = f > 0 ? Math.max(0, Math.log2(f / texelKm)) : 0;
+        const u = x / TILE_KM;
+        const v = y / TILE_KM;
+        return (
+          0.7 * tileMipSample(mips, u, v, lod) +
+          0.3 *
+            tileMipSample(mips, 3 * u + 0.37, 3 * v + 0.37, lod + Math.log2(3))
+        );
+      };
+      const liveBasis = cloudLiveBasis(ANCHOR);
+      const variants: {
+        name: string;
+        at: (x: number, y: number, f: number) => number;
+        threshold: (cover: number) => number;
+      }[] = [
+        { name: 'tile mip', at: tileAt, threshold: (c) => cloudThreshold(c) },
+        {
+          name: 'live defaults',
+          at: (x, y, f) => cloudLiveSample(liveBasis, x, y, f),
+          threshold: (c) => liveCloudThreshold(c),
+        },
+      ];
+      for (const aaEndRatio of [1, 2, 3, 4]) {
+        for (const maxSpreadGain of [2, 4, 8]) {
+          const options = { restoreSpread: true, aaEndRatio, maxSpreadGain };
+          variants.push({
+            name: `live keep end ${aaEndRatio} cap ${maxSpreadGain}`,
+            at: (x, y, f) => cloudLiveSample(liveBasis, x, y, f, options),
+            threshold: (c) => liveCloudThreshold(c),
+          });
+        }
+      }
+      const rows: Record<string, unknown>[] = [];
+      for (const f of footprints) {
+        for (const variant of variants) {
+          const full = (x: number, y: number) =>
+            variant.name === 'tile mip'
+              ? cloudNoiseSample(tileData, 256, x / TILE_KM, y / TILE_KM)
+              : cloudLiveSample(liveBasis, x, y, 0);
+          const row: Record<string, unknown> = {
+            footprintKm: f,
+            variant: variant.name,
+          };
+          for (const cover of covers) {
+            const t = variant.threshold(cover);
+            let drawn = 0;
+            let err = 0;
+            for (const [x, y] of points) {
+              const d = cloudDensity(variant.at(x!, y!, f), t);
+              const box = boxDensity(full, x!, y!, f, t);
+              drawn += d;
+              err += (d - box) ** 2;
+            }
+            row[`cover ${cover}`] = {
+              drawn: +(drawn / n).toFixed(3),
+              rms: +Math.sqrt(err / n).toFixed(3),
+            };
+          }
+          rows.push(row);
+        }
+        writeFileSync(
+          process.env['SWEEP_OUT'] ?? 'sweep-aa.json',
+          JSON.stringify(rows, null, 1)
+        );
+      }
+      expect(rows.length).toBeGreaterThan(0);
+    }, 7_200_000);
+  }
+);

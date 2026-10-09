@@ -25,16 +25,20 @@ readers (`atmosphere-glsl.ts`, `cloud-shadow.ts`) switch to it by a uniform;
   lacunarities 2.07, 1.97, 2.13, 2.03, 1.93, 2.11 (2.05 spare for an eighth
   octave in a sweep), octave k turned by 1.1 (k + 1) rad, a 1,024^2 lattice
   (seed 11, mean `latticeMean`, held by a test), the anti-aliasing ratios
-  `aaStartRatio` 0.5 and `aaEndRatio` 1, and `fieldMean` 0.38008 and
+  `aaStartRatio` 0.5 and `aaEndRatio` 4 (cells), the spread kept as
+  octaves fade (`restoreSpread`, at most `maxSpreadGain` 4), and `fieldMean` 0.38008 and
   `contrast` 1.431, which match the drawn tile field's mean (0.3801) and
   spread (0.1792) so the slab's columns rise as high at the same cover.
-- `CloudLiveOptions`: every constant above, overridable for the sweeps.
+- `CloudLiveOptions`: every constant above, overridable for the sweeps,
+  and `octaveLimit` (octaves read at most; the rest count as faded).
 - `cloudLiveLattice(size?, seed?)`: the lattice bytes, cached per (size,
   seed); RangeError for a size that is not a power of two from 16 to 4,096.
 - `cloudLiveOctaves(options?)`: each octave's `cellKm`, `amplitude`
   (normalised to sum to `contrast`), `angleRad` and `seedCells`. RangeError
   for 0 or more than 8 octaves, a gain outside (0, 1), too few or
-  out-of-range lacunarities, a base cell that is not positive.
+  out-of-range lacunarities, a base cell that is not positive, a fade that
+  does not run from a ratio >= 0 to a larger finite one, a gain cap under
+  1, or an octave limit that is not a whole number >= 1.
 - `CloudNoiseAnchor`: `{ originKm: [x, y], rotationRad }`, where the
   caller's frame origin lies on the noise plane (km, unwrapped, float64) and
   the frame's rotation on it.
@@ -86,14 +90,38 @@ readers (`atmosphere-glsl.ts`, `cloud-shadow.ts`) switch to it by a uniform;
   and the twin agree within about 1/256 of a lattice step (the globe lab's
   browser check).
 - **Anti-aliasing by octave** (cold review item 5): an octave is whole while
-  the footprint is at most half its cell and its mean from a whole cell
-  (smoothstep between), so a far pixel or a coarse march step never aliases
-  it; the loop ends at the first faded octave. A lattice read cannot use
-  mipmaps (its coordinates are rotated and offset per octave).
-- **The cover's table is the field's own** (its quantiles at footprint 0).
-  Where the fine octaves fade, the spread narrows a little (they carry
-  about 0.4 % of the variance from octave 4 on), so a far cover can read
-  slightly off the table.
+  the footprint is at most half its cell and its mean from 4 cells
+  (smoothstep between); the loop ends at the first faded octave. Not
+  mipmaps: the smooth remap moves the read inside a cell non-linearly, so
+  at a coarser level the hardware's bilinear read is no longer the
+  octave's value noise, and a faded octave costs no fetch at all.
+- **The spread is kept as octaves fade** (the N1 milestone review, round-3
+  plan §19 item 1): the faded sum's deviation is scaled by the spread at
+  footprint 0 over the spread left (at most x4), so the cover drawn with
+  the footprint-0 threshold holds. With the fade alone and its end at one
+  cell, the field went to its mean at a 6 km footprint and the cover drawn
+  flipped: asked 0.3 / 0.5 / 0.7 drew 0.00 / 0.50 / 1.00 (the base octave
+  carries about 75 % of the variance, so its fade decides it, not the fine
+  octaves'). Measured (`SWEEP_AA`, 1,500 points, footprints 0.25-24 km):
+  - the tile's mipmaps flip too, from about 4 km (0.19 / 0.51 / 0.84 at
+    4 km, 0.06 / 0.48 / 0.97 at 8 km);
+  - with the spread kept and the fade ending at 1 / 2 / 3 / 4 cells, the
+    cover drawn holds within 0.02 to a footprint of 4 / 8 / 12 / 16 km;
+    the gain cap 2 lets it go earlier at the far end, 8 changes nothing
+    beyond 4;
+  - against the box-filtered density (6 x 6 samples a footprint), the end
+    at 4 cells has the least RMS difference at every footprint to 8 km
+    (0.17 at 4 km, against 0.20-0.22 for the tile and 0.22 as built);
+  - past the end the field still goes to its mean (continuously, through
+    the cap), and the cover drawn with it.
+    In the globe's volume the march's footprint stays small at the 5 km hold
+    (about 1 km: the slab's footprint is the pixel's along the ray and the
+    step's, not projected onto the deck), and the browser's drawn cover by
+    distance showed no flip there before the change (tile 0.20 against live
+    0.19 from 24 to 80 km); the fade matters where footprints reach a cell,
+    from much higher (V1).
+- **The cover's table is the field's own** (its quantiles at footprint 0),
+  and holds at every footprint to 16 km through the spread kept.
 - **What still repeats**: each octave alone, at 1,024 cells (6,144, 2,968,
   1,507, 707, 348, 180 and 85 km). The correlation at an octave's own
   period is about its share of the variance (75 / 19 / 4.7 / 1.2 / 0.3 /
