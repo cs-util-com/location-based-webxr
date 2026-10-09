@@ -39,6 +39,16 @@
 import * as THREE from 'three';
 
 import { CLOUD_LAYER } from './cloud-layer.js';
+import { CLOUD_HEX, CLOUD_HEX_GLSL } from './cloud-hex.js';
+import {
+  writeCloudDiscCentre,
+  type CloudDiscCentre,
+  CLOUD_COVERAGE_GLSL,
+  type CloudCoverage,
+  cloudCoverThresholds,
+  cloudCoverageUniforms,
+  withCloudCoverage,
+} from './cloud-coverage.js';
 import { CLOUD_COLUMN_GLSL } from './cloud-column.js';
 import { glslFloat } from '../../utils/glsl-float.js';
 
@@ -68,30 +78,58 @@ ${MARKER}
 uniform sampler2D atmShadowCloudTexture;
 uniform float atmShadowCloudThreshold;
 uniform vec2 atmShadowCloudOffset;
+// The sky's hex switch (hex-tiling plan H1), copied at sync.
+uniform float atmShadowCloudHex;
+// The layer lifted by this (m: the volume's height, C3), and the global
+// cover times the map's (C3; 1 without a map).
+uniform float atmShadowLiftM;
+uniform float atmShadowCover;
 ${CLOUD_COLUMN_GLSL}
+${CLOUD_COVERAGE_GLSL}
+${CLOUD_HEX_GLSL}
 const float ATM_SHADOW_OCTAVE2_FREQ = ${glslFloat(CLOUD_LAYER.secondOctaveFrequency)};
 const float ATM_SHADOW_OCTAVE2_OFFSET = ${glslFloat(CLOUD_LAYER.secondOctaveOffset)};
 const float ATM_SHADOW_OCTAVE1_WEIGHT = ${glslFloat(CLOUD_LAYER.firstOctaveWeight)};
+const float ATM_SHADOW_CLOUD_MEAN = ${glslFloat(CLOUD_HEX.textureMean)};
 
-// The sky's two-octave noise (atmCloudNoise), from this patch's own uniforms.
+// The sky's two-octave noise (atmCloudNoise), from this patch's own
+// uniforms, its first octave hex-tiled with the sky's switch.
 float atmShadowCloudNoise(vec2 uv) {
-  return texture2D(atmShadowCloudTexture, uv).r * ATM_SHADOW_OCTAVE1_WEIGHT
+  float first = atmShadowCloudHex > 0.5
+    ? atmCloudHexGrad(atmShadowCloudTexture, uv, dFdx(uv), dFdy(uv), ATM_SHADOW_CLOUD_MEAN)
+    : texture2D(atmShadowCloudTexture, uv).r;
+  return first * ATM_SHADOW_OCTAVE1_WEIGHT
     + texture2D(atmShadowCloudTexture, uv * ATM_SHADOW_OCTAVE2_FREQ + ATM_SHADOW_OCTAVE2_OFFSET).r
       * (1.0 - ATM_SHADOW_OCTAVE1_WEIGHT);
 }
 
 // three's getDirectionalLightInfo, then the cloud column toward the light.
-// Every branch is uniform per light (uniforms and the light's own values),
-// so the implicit-level reads are defined.
+// Without a map and a disc every branch is uniform per light (uniforms and
+// the light's own values), so the implicit-level reads are defined; with
+// them the threshold varies per fragment, and the reads inside its branch
+// sit where the density is about 0 (the threshold near clear).
 void atmShadowCloudLightInfo(const in DirectionalLight directionalLight, out IncidentLight light) {
   getDirectionalLightInfo(directionalLight, light);
-  if (atmShadowCloudOn > 0.5 && atmShadowCloudThreshold < 2.0 && dot(light.color, light.color) > 0.0) {
+#if defined(ATM_CLOUD_COVERAGE) || defined(ATM_CLOUD_DISC)
+  bool atmShadowAny = true;
+#else
+  bool atmShadowAny = atmShadowCloudThreshold < 2.0;
+#endif
+  if (atmShadowCloudOn > 0.5 && atmShadowAny && dot(light.color, light.color) > 0.0) {
     // View space to world: the view matrix's rotation, transposed.
     vec3 toLight = (vec4(light.direction, 0.0) * viewMatrix).xyz;
     if (toLight.y > 0.0) {
       vec3 world = cameraPosition + (vec4(-vViewPosition, 0.0) * viewMatrix).xyz;
-      float noise = atmShadowCloudNoise(atmColumnUv(world, toLight, atmShadowCloudOffset));
-      light.color *= exp(-atmColumnOpticalDepth(noise, atmShadowCloudThreshold, world.y, toLight.y));
+      // The point lowered by the lift, so the layer sits lifted above it.
+      vec3 lifted = vec3(world.x, world.y - atmShadowLiftM, world.z);
+      // The threshold where the light's line crosses the layer's middle:
+      // the map's and the disc's (cloud-coverage.ts), else the sky's.
+      vec2 crossing = lifted.xz + toLight.xz * atmColumnDistance(lifted.y, toLight.y);
+      float threshold = atmCloudThresholdAt(crossing, atmShadowCloudThreshold, atmShadowCover, atmShadowCloudHex);
+      if (threshold < 2.0) {
+        float noise = atmShadowCloudNoise(atmColumnUv(lifted, toLight, atmShadowCloudOffset));
+        light.color *= exp(-atmColumnOpticalDepth(noise, threshold, lifted.y, toLight.y));
+      }
     }
   }
 }
@@ -106,6 +144,7 @@ export interface CloudShadowUniforms {
   atmShadowCloudTexture: THREE.IUniform<THREE.Texture | null>;
   atmShadowCloudThreshold: THREE.IUniform<number>;
   atmShadowCloudOffset: THREE.IUniform<THREE.Vector2>;
+  atmShadowCloudHex: THREE.IUniform<number>;
 }
 
 /** What the patch reads from an atmosphere (`SkyAtmosphere` satisfies it). */
@@ -114,6 +153,8 @@ export interface CloudShadowSource {
     readonly atmCloudTexture: THREE.IUniform<THREE.Texture>;
     readonly atmCloudThreshold: THREE.IUniform<number>;
     readonly atmCloudOffset: THREE.IUniform<THREE.Vector2>;
+    /** The hex switch (hex-tiling plan H1); absent: off. */
+    readonly atmCloudHex?: THREE.IUniform<number>;
   };
 }
 
@@ -139,12 +180,21 @@ export class CloudShadow {
     // 2 is above any noise: no cloud until a sync supplies the cover.
     atmShadowCloudThreshold: { value: 2 },
     atmShadowCloudOffset: { value: new THREE.Vector2() },
+    atmShadowCloudHex: { value: 0 },
+    atmShadowLiftM: { value: 0 },
+    atmShadowCover: { value: 1 },
+    ...cloudCoverageUniforms(),
   };
+  /** The map and the disc (`configureMap`), fixed before the first patch. */
+  private coverage: CloudCoverage | null = null;
+  private disc = false;
+  private patched = 0;
 
   /**
    * Take the atmosphere's clouds: its noise texture and drift offset (the
    * objects themselves, so the shadows drift with the sky), and its cover's
-   * threshold (a copy: call again after a cover change).
+   * threshold and hex switch (copies: call again after a cover change or a
+   * switch).
    */
   sync(source: CloudShadowSource): void {
     const clouds = source.cloudUniforms;
@@ -152,11 +202,115 @@ export class CloudShadow {
     this.uniforms.atmShadowCloudOffset.value = clouds.atmCloudOffset.value;
     this.uniforms.atmShadowCloudThreshold.value =
       clouds.atmCloudThreshold.value;
+    this.uniforms.atmShadowCloudHex.value = clouds.atmCloudHex?.value ?? 0;
   }
 
   /** The shadows on or off (a uniform: no recompile). */
   setEnabled(on: boolean): void {
     this.uniforms.atmShadowCloudOn.value = on ? 1 : 0;
+  }
+
+  /**
+   * A coverage map and a disc for the shadows (globe volume-cloud plan
+   * 2026-10-05-0016, C3): the shadow falls from the clouds the map gives
+   * (the caller's chunk defining `atmCloudCoverageAt`,
+   * `cloud-coverage.ts`), faded to clear at the disc around the camera, the
+   * same rule the cloud slab draws by. Both change the shader text, so they
+   * are fixed before the first patched material.
+   *
+   * @throws RangeError for a chunk without atmCloudCoverageAt, Error after
+   *   the first patched material.
+   */
+  configureMap(options: {
+    coverage?: CloudCoverage | null;
+    disc?: boolean;
+  }): void {
+    if (this.patched > 0) {
+      throw new Error(
+        'cloud shadow: the map and the disc are fixed once a material is patched'
+      );
+    }
+    const coverage = options.coverage ?? null;
+    if (coverage !== null) {
+      withCloudCoverage(FRAGMENT, coverage.glsl); // validates
+      Object.assign(this.uniforms, coverage.uniforms);
+      this.uniforms['atmCoverThresholds']!.value = [...cloudCoverThresholds()];
+      this.uniforms['atmCoverThresholdsHex']!.value = [
+        ...cloudCoverThresholds(true),
+      ];
+    }
+    this.coverage = coverage;
+    this.disc = options.disc ?? false;
+  }
+
+  /**
+   * The layer's lift (m): the shadow's clouds sit this much above the
+   * column's own height (the volume drawn at the shell's height). A uniform.
+   *
+   * @throws RangeError for a non-finite lift.
+   */
+  setLiftM(liftM: number): void {
+    if (!Number.isFinite(liftM)) {
+      throw new RangeError(`the lift must be finite, got ${liftM}`);
+    }
+    this.uniforms['atmShadowLiftM']!.value = liftM;
+  }
+
+  /**
+   * The disc's radius (m) with `configureMap({ disc: true })`. A uniform.
+   *
+   * @throws RangeError for a radius that is not positive and finite.
+   */
+  setDiscRadiusM(radiusM: number): void {
+    if (!(radiusM > 0 && Number.isFinite(radiusM))) {
+      throw new RangeError(`the disc radius must be positive, got ${radiusM}`);
+    }
+    this.uniforms['atmCoverDiscM']!.value = radiusM;
+  }
+
+  /**
+   * The disc's centre with `configureMap({ disc: true })` (volume-cloud plan
+   * §15): a world point (x, z), or the camera (null, the default). A
+   * uniform.
+   *
+   * @throws RangeError for a centre that is not finite.
+   */
+  setDiscCentre(centre: CloudDiscCentre | null): void {
+    writeCloudDiscCentre(
+      this.uniforms['atmCoverDiscCentre'] as THREE.IUniform<THREE.Vector3>,
+      centre
+    );
+  }
+
+  /**
+   * The global cover the map's is multiplied by (1 by default). A uniform.
+   *
+   * @throws RangeError for a cover that is negative or not finite.
+   */
+  setCover(cover: number): void {
+    if (!(cover >= 0 && Number.isFinite(cover))) {
+      throw new RangeError(`the cover must be >= 0, got ${cover}`);
+    }
+    this.uniforms['atmShadowCover']!.value = cover;
+  }
+
+  /**
+   * The patch's fragment text for this shadow's map and disc (their defines
+   * and the caller's chunk), and the program key's suffix that names them.
+   */
+  private patchText(): { fragment: string; suffix: string } {
+    const map = this.coverage !== null;
+    const defines =
+      (map ? '#define ATM_CLOUD_COVERAGE\n' : '') +
+      (this.disc ? '#define ATM_CLOUD_DISC\n' : '');
+    const body =
+      this.coverage === null
+        ? FRAGMENT
+        : withCloudCoverage(FRAGMENT, this.coverage.glsl);
+    return {
+      fragment: defines + body,
+      suffix: (map ? '-map' : '') + (this.disc ? '-disc' : ''),
+    };
   }
 
   /** True while the shadows are on. */
@@ -200,6 +354,8 @@ export class CloudShadow {
           return () => source;
         })();
     const uniforms = this.uniforms;
+    const { fragment, suffix } = this.patchText();
+    this.patched += 1;
     material.onBeforeCompile = function (shader, renderer) {
       previousHook(shader, renderer);
       if (shader.fragmentShader.includes(MARKER)) return;
@@ -208,10 +364,11 @@ export class CloudShadow {
           throw new CloudShadowAnchorError(anchor);
         }
       }
-      shader.fragmentShader = shader.fragmentShader.replace(MAIN, FRAGMENT);
+      shader.fragmentShader = shader.fragmentShader.replace(MAIN, fragment);
       Object.assign(shader.uniforms, uniforms);
     };
-    material.customProgramCacheKey = () => `${previousKey()}|cloud-shadow`;
+    material.customProgramCacheKey = () =>
+      `${previousKey()}|cloud-shadow${suffix}`;
     OWNER.set(material, this);
     material.needsUpdate = true;
   }

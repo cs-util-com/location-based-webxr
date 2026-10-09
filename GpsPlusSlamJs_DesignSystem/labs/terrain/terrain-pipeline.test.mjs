@@ -5,7 +5,7 @@
  *
  * Why this file matters: the chain crosses four modules from three packages
  * (the Osm library's Mercator maths and ENU frame, the lab's mosaic,
- * OsmDemo's heightfield) and each is tested alone. What no single test
+ * the Osm library's heightfield) and each is tested alone. What no single test
  * sees is whether they agree with each other: a row order flipped between
  * the heightfield and the textures, a half-pixel offset, a grid whose side
  * differs from the one the page allocates. Each would still draw a
@@ -44,7 +44,7 @@ const { enuFrameAt } = await import(
   new URL("GpsPlusSlamJs_Osm/src/mesh/enu.ts", REPO).href
 );
 const { buildHeightfieldData } = await import(
-  new URL("GpsPlusSlamJs_OsmDemo/src/heightfield.ts", REPO).href
+  new URL("GpsPlusSlamJs_Osm/src/elevation/heightfield.ts", REPO).href
 );
 const { terrainTextureFrom } = await import(
   new URL("GpsPlusSlamJs_OsmDemo/src/terrain-texture.ts", REPO).href
@@ -192,10 +192,12 @@ describe("each place's tile set", () => {
   const expected = {
     appalachians: { x: [70, 72], y: [97, 99] },
     alps: { x: [133, 135], y: [89, 91] },
-    germany: { x: [133, 135], y: [81, 83] },
+    // A fourth row since the ENU frame took the AR core's metres a degree
+    // (2026-10-06): the region's north edge crossed into y 80.
+    germany: { x: [133, 135], y: [80, 83] },
   };
   for (const [id, range] of Object.entries(expected)) {
-    it(`${id} needs exactly its 3 x 3 z8 tiles`, () => {
+    it(`${id} needs exactly its ${range.x[1] - range.x[0] + 1} x ${range.y[1] - range.y[0] + 1} z8 tiles`, () => {
       const place = TERRAIN_PLACES[id];
       const spec = fieldSpec(place);
       const frame = enuFrameAt(place.centre);

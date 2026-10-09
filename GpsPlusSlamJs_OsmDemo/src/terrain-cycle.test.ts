@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
 import { enuFrameAt } from "gps-plus-slam-osm";
 import type { ElevationProvider, LatLng } from "gps-plus-slam-osm";
 
-import { buildHeightfieldData } from "./heightfield.js";
+import { buildHeightfieldData } from "gps-plus-slam-osm";
 import { describeTerrain } from "./terrain-note.js";
 import {
   createTerrainCycle,

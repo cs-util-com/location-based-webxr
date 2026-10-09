@@ -19,7 +19,53 @@
     relief: the template compiles the altitude band's code) returns `{ tiles, group, plugin, overlay,
 options, sun, surfaceUniforms, template, setSun(directionEcef), update(camera,
 renderer), state(), celestialToWorld(siderealAngleRad, target?),
-activeSources(), dispose() }`.
+activeSources(), cloudShell, firstLook, setCloudShellShare(share, flat?),
+dispose() }`.
+    - `cloudShell` (`globe-cloud-shell.ts`, round-6 plan G6-2) sits in a
+      group that copies `tiles.group`'s matrix on every sun sync, so it
+      stays in the tiles' ECEF frame; hidden until it has a share.
+      `setCloudShellShare(s)` gives the shell `s` of the clouds and the
+      paint `1 - s` (`uCloudInSurface`); 0, the default, is the look
+      before. `flat` (0-1, default 1; round-2 plan DEC-FR2-5,
+      `globe-cloud-flat-fade.ts`) fades both forms and the water's cloud
+      mask by the flat layer's share by altitude: the shell gets `s x flat`,
+      the paint `(1 - s) x flat`, `uCloudFlat` the factor. RangeError
+      outside 0-1, for either.
+    - `firstLook` (round-2 plan DEC-FR2-6): the globe's first look. The tile
+      renderer draws a tile only once its imagery is in, so before that there
+      was no sphere at all, only the atmosphere's veil over black (measured
+      in a smoke: 7 s of one blue, 29/64/115, at the globe's centre). The
+      imagery pyramid's level 0 (the whole Earth in two tiles, about 18 KB)
+      loads with the global maps, long before the tile renderer asks (1.4 s
+      against 7.5 s there), into `uDayWest`/`uDayEast`; `uDayReady` turns 1
+      once both are in (a failure keeps the plain look; not counted with the
+      global maps). The first look waits for the cloud map too (in or
+      failed), so it shows the Earth clouded as the tiles will: the 4,096
+      map arrives after the halves, and the first look at Bern was
+      cloudless until it did (round-3 plan M1); `state().firstLookReady`
+      reports both. The sphere sits
+      0.999 x the ellipsoid's radii (about 6 km under it) in the tiles'
+      frame, in a lit copy of the template without a map, so it shows the
+      level 0 lit and clouded as the tiles are; it is drawn once the images
+      are in and until the globe has FIRST drawn its whole view
+      (`topLevelReady`), then never again (`firstLookStep`): shown again
+      whenever the globe could not draw its view, it filled the holes the
+      handover's positive control must see (the full browser run). It
+      also ends for good once the camera goes below 2,000 km
+      (`firstLookFloorM`): there the band and the relief take the pixels,
+      and the globe's top level is not always in view, so it drew a whole
+      sphere under the relief every frame (a city dive recorded too few
+      frames, the stencil fill's cost smoke ran out of time).
+      It is hidden until an `update` decides (a page that never calls it,
+      the terrain lab, drew it under its relief, where its crack check
+      counts the background as a crack), and an altitude not known (not a
+      positive number, as a camera still at the Earth's centre reads)
+      decides nothing. The tiles hide it where they are drawn, except in
+      small patches under coarse, partly loaded tiles, whose chords sag
+      deeper than its 6 km (a vertex every 4 degrees sags about 7.8 km at
+      the equator): those show the same level 0. It stays pickable while
+      hidden, 6 km under the tiles, so only where no tile is in front.
+      `dispose` frees its two images with the global maps.
     - The caller adds `group` to its scene, points the sun with `setSun`
       and calls `update` every frame before rendering.
     - `template`: the patched `MeshStandardMaterial` every tile's lit copy
@@ -53,8 +99,7 @@ loadedTiles, refusedTiles, mapsLoaded, mapErrors, mapsTotal }`
       wheel against the sun once phase 5 places the tiles (stream F
       review, finding 4).
     - `loader` (`GlobeSurfaceLoader`, `loadTexture(source, onLoad,
-onError)`) fetches the two global maps (night lights, clouds; the water mask is the tiles' alpha): a `TextureLoader` by default,
-      a stub in Node tests.
+onError)`, from `globe-map-loader.ts`) fetches the two global maps (night lights, clouds; the water mask is the tiles' alpha): decoded off the main thread where the browser can (`globeMapLoader()`, round-3 plan M1) by default, a stub in Node tests. A grey map (`GlobeSource.grey`, the clouds) goes to the GPU as one channel (`RedFormat`).
   - `useLitMaterial(model, template, owned)` - gives each mesh of a loaded
     tile a lit clone of `template` that keeps that mesh's own texture and
     the template's compile hooks (`Material.copy` does not carry

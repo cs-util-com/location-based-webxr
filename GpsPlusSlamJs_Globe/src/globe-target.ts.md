@@ -14,6 +14,14 @@
     null, empty or whitespace (the `Number("")` is 0 trap), a missing half,
     more than two parts, non-decimal forms (hex, `Infinity`, `NaN`) and
     values outside ±90 / ±180. -0 reads as 0.
+  - `GlobeView`, `parseViewText(text)` and `formatViewText(view)`
+    (volume-cloud plan §16): a camera pose as one
+    `"lat,lng,altitudeKm,headingDeg,pitchDeg"` token, the Debug export's
+    `link`. Parsing follows `parseLatLngText` (any malformed part reads as
+    `undefined`), with the altitude above 0 and at most 50,000 km, the
+    pitch in ±90 and the heading wrapped into [0, 360). Writing keeps 5
+    decimals of the place, the metre of the altitude and 0.1 degree of the
+    angles; a written view reads back within that (property-tested).
   - `chooseGlobeTarget({ url, fix, fallback, fixWaitExpired })` →
     `{ target, source }`, with `source` one of `url`, `fix`, `fallback`,
     `waiting`. Precedence: url, then fix, then the fallback only once
