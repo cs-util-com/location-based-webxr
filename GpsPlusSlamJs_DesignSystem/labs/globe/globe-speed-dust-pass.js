@@ -62,23 +62,36 @@ void main() {
 
 const FRAGMENT = /* glsl */ `
 uniform float uWeight;
+uniform float uGain;
+uniform vec3 uColor;
 varying float vAlpha;
 varying float vAlong;
 void main() {
   // Brightest at the head, fading along the trail.
-  float a = vAlpha * uWeight * (1.0 - 0.85 * vAlong);
-  gl_FragColor = vec4(vec3(0.85, 0.9, 1.0) * a, 1.0);
+  float a = vAlpha * uWeight * uGain * (1.0 - 0.85 * vAlong);
+  gl_FragColor = vec4(uColor * a, 1.0);
 }
 `;
+
+/** The streaks' tints (`dustColor`, D1b): bluish white, white, warm. */
+export const SPEED_DUST_COLORS = Object.freeze([
+  [0.85, 0.9, 1.0],
+  [1.0, 1.0, 1.0],
+  [1.0, 0.85, 0.65],
+]);
 
 /**
  * The pass: `update(...)` each frame with the camera's ECEF pose, then
  * `render(renderer, weight)`; `reset()` where the lab teleports the camera;
  * `state()` for the smokes; `sample(n)` the first n visible streaks
- * projected (normalised screen points, 0 at the top-left).
+ * projected (normalised screen points, 0 at the top-left). The field holds
+ * `maxCount` seeds; `update`'s `count` draws a prefix of them (a prefix of
+ * a uniform field is uniform), so the count is a live knob (D1b).
  */
-export function createSpeedDustPass(count = GLOBE_SPEED_DUST.count) {
-  const seeds = createSpeedField(count);
+export function createSpeedDustPass(maxCount = 4000) {
+  const all = createSpeedField(maxCount);
+  let count = GLOBE_SPEED_DUST.count;
+  let seeds = all.subarray(0, count * 3);
   const geometry = new THREE.InstancedBufferGeometry();
   geometry.setAttribute(
     "position",
@@ -86,14 +99,17 @@ export function createSpeedDustPass(count = GLOBE_SPEED_DUST.count) {
   );
   geometry.setIndex([0, 1, 2, 2, 1, 3]);
   const heads = new THREE.InstancedBufferAttribute(
-    new Float32Array(count * 3),
+    new Float32Array(maxCount * 3),
     3,
   );
   const tails = new THREE.InstancedBufferAttribute(
-    new Float32Array(count * 3),
+    new Float32Array(maxCount * 3),
     3,
   );
-  const alphas = new THREE.InstancedBufferAttribute(new Float32Array(count), 1);
+  const alphas = new THREE.InstancedBufferAttribute(
+    new Float32Array(maxCount),
+    1,
+  );
   geometry.setAttribute("aHead", heads);
   geometry.setAttribute("aTail", tails);
   geometry.setAttribute("aAlpha", alphas);
@@ -103,6 +119,8 @@ export function createSpeedDustPass(count = GLOBE_SPEED_DUST.count) {
       uWidthPx: { value: 1.5 },
       uViewport: { value: new THREE.Vector2(1, 1) },
       uWeight: { value: 1 },
+      uGain: { value: 1 },
+      uColor: { value: new THREE.Vector3(...SPEED_DUST_COLORS[0]) },
     },
     vertexShader: VERTEX,
     fragmentShader: FRAGMENT,
@@ -151,7 +169,29 @@ export function createSpeedDustPass(count = GLOBE_SPEED_DUST.count) {
       on,
       exposureMs,
       widthPx,
+      look = {},
     }) {
+      // The panel's knobs (D1b), each the default when absent.
+      const n = Math.round(
+        Math.min(Math.max(look.count ?? GLOBE_SPEED_DUST.count, 1), maxCount),
+      );
+      if (n !== count) {
+        count = n;
+        seeds = all.subarray(0, count * 3);
+        geometry.instanceCount = count;
+      }
+      const speedRange = {
+        loMps: look.loMps ?? GLOBE_SPEED_DUST.loMps,
+        hiMps: look.hiMps ?? GLOBE_SPEED_DUST.hiMps,
+      };
+      const driftRange = {
+        driftMin: look.driftMin ?? GLOBE_SPEED_DUST.driftMin,
+        driftMax: look.driftMax ?? GLOBE_SPEED_DUST.driftMax,
+      };
+      material.uniforms.uGain.value = look.gain ?? 1;
+      material.uniforms.uColor.value.set(
+        ...(SPEED_DUST_COLORS[look.color ?? 0] ?? SPEED_DUST_COLORS[0]),
+      );
       velocity = stepVelocity(
         velocity,
         [position.x, position.y, position.z],
@@ -160,9 +200,9 @@ export function createSpeedDustPass(count = GLOBE_SPEED_DUST.count) {
       );
       const v = velocity.velocity;
       const speedMps = Math.hypot(v[0], v[1], v[2]);
-      const share = speedShare(speedMps);
+      const share = speedShare(speedMps, speedRange);
       const opacity = on ? speedDustOpacity(share, altitudeM) : 0;
-      const rate = driftRate(share);
+      const rate = driftRate(share, driftRange);
       const dir =
         speedMps > 0
           ? [v[0] / speedMps, v[1] / speedMps, v[2] / speedMps]
@@ -186,6 +226,9 @@ export function createSpeedDustPass(count = GLOBE_SPEED_DUST.count) {
       heads.array.set(s.heads);
       tails.array.set(s.tails);
       alphas.array.set(s.alpha);
+      heads.addUpdateRange(0, count * 3);
+      tails.addUpdateRange(0, count * 3);
+      alphas.addUpdateRange(0, count);
       heads.needsUpdate = true;
       tails.needsUpdate = true;
       alphas.needsUpdate = true;

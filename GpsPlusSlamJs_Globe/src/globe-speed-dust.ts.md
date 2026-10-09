@@ -28,10 +28,12 @@ asked for a screen-space effect tied to the speed in metres per second.
   frame is a gross teleport the lab did not announce (the lab resets the
   speed itself where it places the camera: a view, a link's start):
   the velocity resets to 0 rather than spiking. Bad samples are ignored.
-- `speedShare(mps)`: 0 up to `loMps`, 1 from `hiMps`, log-linear between
-  (0 for a non-number).
-- `driftRate(share)`: the field's drift, from `driftMin` to `driftMax`,
-  geometric in the share.
+- `speedShare(mps, range?)`: 0 up to `loMps`, 1 from `hiMps`, log-linear
+  between (0 for a non-number); `range` `{ loMps, hiMps }` replaces the
+  defaults (the lab's knobs, D1b), RangeError unless 0 < lo < hi.
+- `driftRate(share, range?)`: the field's drift, from `driftMin` to
+  `driftMax`, geometric in the share; `range` `{ driftMin, driftMax }`
+  replaces the defaults (D1b), RangeError unless 0 < min < max.
 - `speedDustOpacity(share, altitudeM)`: faded in over the lowest
   `fadeInShare` of the range (a stopped camera draws nothing) and by the
   altitude (full from `fullM`, gone by `goneM`, smoothstep in its log).

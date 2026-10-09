@@ -114,17 +114,34 @@ export function stepVelocity(
   };
 }
 
-/** The speed's share of the range, 0 at `loMps`, 1 at `hiMps`, log-linear. */
-export function speedShare(mps: number): number {
+/**
+ * The speed's share of `range` (the defaults unless given: a lab knob, D1b),
+ * 0 at `loMps`, 1 at `hiMps`, log-linear.
+ */
+export function speedShare(
+  mps: number,
+  range: { readonly loMps: number; readonly hiMps: number } = GLOBE_SPEED_DUST,
+): number {
+  const { loMps, hiMps } = range;
+  requireRising("the speed range", loMps, hiMps);
   if (!(mps > 0)) return 0;
-  const { loMps, hiMps } = GLOBE_SPEED_DUST;
   const x = Math.log(mps / loMps) / Math.log(hiMps / loMps);
   return Math.min(Math.max(x, 0), 1);
 }
 
-/** The field's drift at a speed share, box units per second (geometric). */
-export function driftRate(share: number): number {
-  const { driftMin, driftMax } = GLOBE_SPEED_DUST;
+/**
+ * The field's drift at a speed share, box units per second (geometric
+ * across `range`, the defaults unless given: a lab knob, D1b).
+ */
+export function driftRate(
+  share: number,
+  range: {
+    readonly driftMin: number;
+    readonly driftMax: number;
+  } = GLOBE_SPEED_DUST,
+): number {
+  const { driftMin, driftMax } = range;
+  requireRising("the drift range", driftMin, driftMax);
   const s = Math.min(Math.max(Number.isFinite(share) ? share : 0, 0), 1);
   return driftMin * (driftMax / driftMin) ** s;
 }
@@ -137,6 +154,13 @@ export function speedDustOpacity(share: number, altitudeM: number): number {
   const h = Math.max(altitudeM, 1);
   const byAltitude = smoothstep(Math.log(h / goneM) / Math.log(fullM / goneM));
   return bySpeed * byAltitude;
+}
+
+/** RangeError unless 0 < lo < hi (finite). */
+function requireRising(name: string, lo: number, hi: number): void {
+  if (!(lo > 0 && hi > lo && Number.isFinite(hi))) {
+    throw new RangeError(`${name} must be 0 < lo < hi, got ${lo}, ${hi}`);
+  }
 }
 
 /** A small deterministic generator (mulberry32). */

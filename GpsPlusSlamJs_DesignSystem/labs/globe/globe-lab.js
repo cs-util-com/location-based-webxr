@@ -558,6 +558,19 @@ const PARAMS = {
   dustOver: { fallback: 0.25, min: 0, max: 1 },
   dustExposureMs: { fallback: 33, min: 16, max: 100 },
   dustWidthPx: { fallback: 1.5, min: 0.5, max: 4 },
+  // The streaks' knobs in the panel (D1b, DEC-R3-11; the owner tunes them):
+  // how many, how bright, their tint (0 bluish white, 1 white, 2 warm), the
+  // speed range they answer (km/s: nothing at the low end, all at the high
+  // end; measured on a flight: about 1.5 km/s at the landing, 4,800 km/s
+  // at 44,000 km) and how fast they pour (box units a second, at the low
+  // and the high end of the range).
+  dustCount: { fallback: 1500, min: 100, max: 4000 },
+  dustGain: { fallback: 1, min: 0, max: 4 },
+  dustColor: { fallback: 0, min: 0, max: 2 },
+  dustLoKmS: { fallback: 1, min: 0.1, max: 100 },
+  dustHiKmS: { fallback: 5000, min: 500, max: 20000 },
+  dustDriftMin: { fallback: 0.2, min: 0.05, max: 2 },
+  dustDriftMax: { fallback: 6, min: 2.5, max: 30 },
   // The city's data warmed from load when the link names a place (`at=`;
   // the city plan 2026-10-05-0040, K0); 0 waits for the pin's press.
   cityWarm: { fallback: 1, min: 0, max: 1 },
@@ -1925,6 +1938,8 @@ async function start() {
    * the volume's noise is anchored to the ground, so its clouds stay put.
    * It waits while the controls are busy, so a gesture is never cut short.
    */
+  /** How many times the frame has recentred (the smokes count them). */
+  let frameRecentres = 0;
   const recentreFrame = () => {
     // Never under a gesture: a frame move releases the controls, which
     // ended the owner's drags a second in (2026-10-06, r785).
@@ -1937,7 +1952,10 @@ async function start() {
       { lat: c.lat / DEG, lng: c.lon / DEG },
       c.height,
     );
-    if (next) setFrameTarget(next);
+    if (next) {
+      frameRecentres += 1;
+      setFrameTarget(next);
+    }
   };
   /**
    * Puts the camera at a view (`view=`, the Debug export's pose; volume-cloud
@@ -3024,6 +3042,15 @@ async function start() {
       on: params.dust === 1,
       exposureMs: params.dustExposureMs,
       widthPx: params.dustWidthPx,
+      look: {
+        count: params.dustCount,
+        gain: params.dustGain,
+        color: params.dustColor,
+        loMps: params.dustLoKmS * 1000,
+        hiMps: params.dustHiKmS * 1000,
+        driftMin: params.dustDriftMin,
+        driftMax: params.dustDriftMax,
+      },
     });
     speedDust.render(renderer, 1 - params.dustOver);
     renderer.render(scene, camera);
@@ -3325,6 +3352,12 @@ async function start() {
       cameraOwner: flight.drives ? "intro" : "controls",
       cameraDistanceM: ecefCamera().position.length(),
       cameraDirection: asArray(ecefCamera().position.normalize()),
+      // Where the camera looks, in ECEF (a frame move leaves it alone): the
+      // meteor's smoke checks it never turns (F1b).
+      cameraForward: asArray(
+        new THREE.Vector3(0, 0, -1).applyQuaternion(ecefCamera().quaternion),
+      ),
+      frameRecentres,
       // The world frame's target (F2a), null in ECEF.
       worldFrame: worldFrame.target,
       // The view's depression below the local horizontal (the oblique

@@ -106,3 +106,20 @@ test("during a flight the streaks pour outward from where the camera heads, and 
   expect(low.shown).toBe(false);
   expect(out.shown).toBe(false);
 });
+
+// WHY (D1b, DEC-R3-11): the owner tunes the streaks in the panel; a knob
+// in the hash must reach the pass (the count as a prefix of the field),
+// live, and an absent knob keeps the default.
+test("the streaks' knobs reach the pass, live", async ({ page }) => {
+  test.setTimeout(240_000);
+  const base = `spinMs=0&turnMs=0&${TIME}&stars=0&milkyWay=0&view=46.9,7.4,8000,0,0`;
+  const errors = await bootGlobe(page, base, { phase: "user" });
+  await page.evaluate(() => window.__globeLab.timeFrames(2));
+  const before = await page.evaluate(() => window.__globeLab.state().dust);
+  await applyHash(page, `${base}&dust=1&dustCount=700&dustColor=2&dustGain=2`);
+  await page.evaluate(() => window.__globeLab.timeFrames(2));
+  const after = await page.evaluate(() => window.__globeLab.state().dust);
+  expect(errors).toEqual([]);
+  expect(before.count).toBe(1500);
+  expect(after.count).toBe(700);
+});

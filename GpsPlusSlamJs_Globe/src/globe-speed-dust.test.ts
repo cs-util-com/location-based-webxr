@@ -208,3 +208,46 @@ describe("the dust's opacity", () => {
     expect(driftRate(0.5)).toBeGreaterThan(driftRate(0.4));
   });
 });
+
+// WHY (round-3 plan 2026-10-08-2345 D1b, DEC-R3-11: the owner tunes the
+// streaks in the lab's panel): the speed range and the drift range are
+// knobs. Given, they replace the defaults; without them nothing changes;
+// a range that is not a positive, rising pair is refused rather than
+// drawing nonsense.
+describe("the streaks' tunable ranges (D1b)", () => {
+  it("maps a given speed range log-linearly, the default range unchanged", () => {
+    const range = { loMps: 10_000, hiMps: 1_000_000 };
+    expect(speedShare(10_000, range)).toBe(0);
+    expect(speedShare(100_000, range)).toBeCloseTo(0.5, 12);
+    expect(speedShare(1_000_000, range)).toBe(1);
+    expect(speedShare(50_000)).toBe(
+      speedShare(50_000, {
+        loMps: GLOBE_SPEED_DUST.loMps,
+        hiMps: GLOBE_SPEED_DUST.hiMps,
+      }),
+    );
+    for (const bad of [
+      { loMps: 0, hiMps: 10 },
+      { loMps: 10, hiMps: 10 },
+      { loMps: 10, hiMps: Number.NaN },
+    ]) {
+      expect(() => speedShare(5, bad)).toThrow(RangeError);
+    }
+  });
+
+  it("drifts geometrically across a given range, the default range unchanged", () => {
+    const range = { driftMin: 1, driftMax: 16 };
+    expect(driftRate(0, range)).toBe(1);
+    expect(driftRate(0.5, range)).toBeCloseTo(4, 12);
+    expect(driftRate(1, range)).toBe(16);
+    expect(driftRate(0.3)).toBe(
+      driftRate(0.3, {
+        driftMin: GLOBE_SPEED_DUST.driftMin,
+        driftMax: GLOBE_SPEED_DUST.driftMax,
+      }),
+    );
+    expect(() => driftRate(0.5, { driftMin: 2, driftMax: 1 })).toThrow(
+      RangeError,
+    );
+  });
+});

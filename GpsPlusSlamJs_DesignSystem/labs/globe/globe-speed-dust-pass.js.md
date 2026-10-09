@@ -6,12 +6,17 @@ plan `GpsPlusSlamJs_Docs/docs/2026-10-08-2345-globe-round-3-owner-feedback-plan.
 
 ## API
 
-`createSpeedDustPass(count?)` returns:
+`createSpeedDustPass(maxCount = 4000)` holds a field of `maxCount` seeds
+and draws a prefix of it (a prefix of a uniform field is uniform), so the
+count is a live knob (D1b). `SPEED_DUST_COLORS`: the tints (bluish white,
+white, warm). It returns:
 
 - `update({ nowMs, position, quaternion, altitudeM, fovDeg, aspect,
-renderer, on, exposureMs, widthPx })`: each frame, with the camera's ECEF
-  pose. Steps the velocity (a jump of a quarter of the altitude in a frame
-  resets it), the speed share, the opacity (nothing when off, stopped or
+renderer, on, exposureMs, widthPx, look })`: each frame, with the
+  camera's ECEF pose; `look` holds the panel's knobs, each the default
+  when absent: `count`, `gain` (on the opacity), `color` (an index into
+  `SPEED_DUST_COLORS`), `loMps`, `hiMps`, `driftMin`, `driftMax`. Steps the
+  velocity (a jump of the altitude in a frame resets it), the speed share, the opacity (nothing when off, stopped or
   below 300 km), the field's drift and the streaks; sets the dust camera to
   the view's ECEF orientation, field of view and aspect.
 - `render(renderer, weight)`: the streaks at `weight` (no-op when not shown).

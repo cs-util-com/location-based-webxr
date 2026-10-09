@@ -650,22 +650,29 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   stops and below 300 km, in ECEF axes so a frame recentre never spins
   them. Drawn before the Earth (which covers them) at 1 - `dustOver` and
   after it at `dustOver` (0.25); `dustExposureMs` (33) and `dustWidthPx`
-  (1.5) shape the streaks. A placed view (`applyView`) resets the speed.
+  (1.5) shape the streaks. The panel's "Speed streaks" section tunes them
+  live (D1b, DEC-R3-11): `dust` on or off, `dustCount` (1,500), `dustGain`
+  (1), `dustColor` (0 bluish white, 1 white, 2 warm), `dustLoKmS` (1) and
+  `dustHiKmS` (5,000), the speed range in km/s, and `dustDriftMin` (0.2)
+  and `dustDriftMax` (6), how fast they pour at its ends; a tuned look
+  comes back as a link in the debug export (it copies the hash). A placed view (`applyView`) resets the speed.
   The state's `dust` reports the count, `speedMps`, `share`, `opacity`,
   `drift`, `direction` and `shown`; `dustSample(n)` the first n visible
   streaks projected and the focus of expansion
   (`globe-dust.smoke.spec.mjs`).
-  `meteorDeg` (20, DEC-R3-8; 90 is round 2's R1) flies the meteor
+  `meteorDeg` (30, DEC-R3-8; 90 is round 2's R1) flies the meteor
   (round-3 plan 2026-10-08-2345 F1, F1b, `flight=2` only): one straight line
   looked along at every altitude, no horizon floor, landing at its own
   angle (DEC-R3-9, -10); a `land=1` link starts on the line, looking along
-  it (`meteorLinkStart`: its sweep from `flightStartKm`, 0.01 % more plus
-  the landing's look-back, away from its place, on the side the camera
-  already is), so the camera never turns to its line; a press flies the
-  flattest line its arc allows. A placement resets the dust's speed.
+  it (`meteorLinkStart`: placed by its arc, the sweep from `flightStartKm`
+  plus the landing's look-back, on the side the camera already is), so the
+  camera never turns to its line; a press flies the flattest line its arc
+  allows and eases to the asked angle near the ground (DEC-R3-12). The
+  state adds `cameraForward` (where the camera looks, ECEF) and
+  `frameRecentres` (a count). A placement resets the dust's speed.
   Measured (`globe-meteor.smoke.spec.mjs`, F1 at beta 45): 73.8 degrees
   below the horizontal at 9,718 km, 64.4 at 4,060, 52.3 at 1,003 (the
-  line: 73.7, 64.4, 52.3); F1b re-measures it at beta 20.
+  line: 73.7, 64.4, 52.3); F1b re-measures it at beta 30 and 45.
   `cloudNoiseCoordAt(lat, lng)` (a test hook) returns the cloud noise
   coordinate a ground point reads under the current frame; a recentre must
   leave it unchanged (`globe-cloud-volume.smoke.spec.mjs`).
