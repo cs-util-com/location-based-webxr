@@ -136,7 +136,7 @@ test("cloudNoise=live compiles and draws in the volume, its cost against the til
 test("tile, hex and live at the same poses, for the owner's eye", async ({
   page,
 }) => {
-  test.setTimeout(900_000);
+  test.setTimeout(1_800_000);
   const dir = process.env.N1_SHOTS_DIR ?? null;
   const errors = await bootGlobe(page, `${BASE}&${view(12)}&cloudNoise=tile`, {
     phase: "user",
@@ -150,6 +150,18 @@ test("tile, hex and live at the same poses, for the owner's eye", async ({
         null,
         { timeout: 60_000 },
       );
+      // The Earth's imagery loaded, so the three modes are shot over the
+      // same ground (a shot is for the eye; a slow load only delays it).
+      await page
+        .waitForFunction(
+          () => {
+            const s = window.__globeLab.state();
+            return s.mapsLoaded === s.mapsTotal && s.pendingTiles === 0;
+          },
+          null,
+          { timeout: 180_000 },
+        )
+        .catch(() => console.log(`${km} km ${mode}: imagery still loading`));
       await page.evaluate(() => window.__globeLab.timeFrames(3));
       frames[`${km}-${mode}`] = await page.evaluate(
         () => window.__globeLab.state().cloudVolume,

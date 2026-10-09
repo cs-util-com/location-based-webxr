@@ -3573,6 +3573,9 @@ void main() {
 }`,
       });
       const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+      // Never culled: its vertices are clip space, and the lab's camera can
+      // be anywhere (its frame is the target's, far from the origin).
+      quad.frustumCulled = false;
       const probeScene = new THREE.Scene();
       probeScene.add(quad);
       const previous = renderer.getRenderTarget();
