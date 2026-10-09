@@ -15,10 +15,14 @@
  * the dated analysis doc of each recording.
  */
 import { existsSync, readFileSync } from "node:fs";
+import { TextWriter } from "@zip.js/zip.js";
+import { tourManifestEntryOf } from "gps-plus-slam-app-framework/ar/tour-archive";
+import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { Quaternion, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import {
   loadActionsFromZip,
+  loadEntriesFromSubdir,
   readZipEntries,
   type RecordedAction,
 } from "gps-plus-slam-app-framework/storage";
@@ -29,6 +33,7 @@ import {
   selectOdometryPositions,
 } from "gps-plus-slam-app-framework/state";
 import { createTourViewerStore } from "./tour-viewer-session.js";
+import { storedGeo } from "./visit-settle.js";
 import { createWalkedDistanceTracker } from "./walked-distance-tracker.js";
 
 const ZIP = process.env.TOUR_RECORDING;
@@ -454,3 +459,139 @@ describe.skipIf(ZIP === undefined)("a Tour Viewer field recording", () => {
     expect(actions.length).toBeGreaterThan(0);
   }, 300_000);
 });
+
+const TOUR_ZIP = process.env.TOUR_ZIP;
+
+interface TourObjectLike {
+  readonly id: string;
+  readonly geo?: { lat: number; lon: number };
+}
+
+/** Metres east and north of `from` (equirectangular; tens of metres). */
+function enOf(
+  from: { lat: number; lon: number },
+  to: { lat: number; lon: number },
+): { e: number; n: number } {
+  return {
+    e: (to.lon - from.lon) * 111_320 * Math.cos((from.lat * Math.PI) / 180),
+    n: (to.lat - from.lat) * 111_320,
+  };
+}
+
+/** The tour zip at `path`, read as the viewer reads it. */
+async function readTourZip(path: string) {
+  if (!existsSync(path)) {
+    throw new Error(`TOUR_ZIP does not name a file: ${path}`);
+  }
+  const bytes = new Uint8Array(readFileSync(path));
+  const names = (await readZipEntries(bytes)).map((e) => e.filename);
+  const manifestName = tourManifestEntryOf(names);
+  if (manifestName === null) throw new Error("the zip has no tour.json");
+  const [manifestEntry] = await loadEntriesFromSubdirOrRoot(
+    bytes,
+    manifestName,
+  );
+  if (manifestEntry === undefined) throw new Error("tour.json unreadable");
+  const manifest = parseTourManifest(
+    JSON.parse(await manifestEntry.getText()) as unknown,
+  );
+  const levels = await Promise.all(
+    (await loadEntriesFromSubdir(bytes, "qr")).map(async (e) => ({
+      name: e.relativePath,
+      geo: storedGeo(await e.getText()),
+    })),
+  );
+  return { names, manifest, levels, code: levels[0]?.geo ?? null };
+}
+
+/** "N m from the code, bearing B deg". */
+function fromCode(
+  code: { lat: number; lon: number },
+  geo: { lat: number; lon: number },
+): string {
+  const at = enOf(code, geo);
+  const bearing = ((Math.atan2(at.e, at.n) * 180) / Math.PI + 360) % 360;
+  return `${Math.hypot(at.e, at.n).toFixed(1)} m from the code, bearing ${bearing.toFixed(0)} deg`;
+}
+
+// Why these tests exist: the zip a Finish saved is what the owner uploads,
+// so it is read the way the viewer reads it - the framework's zip reader
+// and manifest parser - with each object's place relative to the code,
+// and held to the recording's own record of the Finish
+// (`tourAuthoring/finished`). `TOUR_ZIP=<zip>`, alone or with
+// `TOUR_RECORDING`.
+describe.skipIf(TOUR_ZIP === undefined)("a Tour Viewer tour zip", () => {
+  it("reads, and reports each object relative to the code", async () => {
+    const zip = await readTourZip(String(TOUR_ZIP));
+    const lines = [`entries: ${zip.names.join(", ")}`];
+    for (const l of zip.levels) {
+      lines.push(
+        `code ${l.name}: heading ${String(l.geo?.headingDeg)} lat ${String(l.geo?.lat)} lon ${String(l.geo?.lon)}`,
+      );
+    }
+    for (const o of zip.manifest.objects) {
+      const label = "label" in o ? String(o.label) : "";
+      const where = zip.code === null ? "" : ` ${fromCode(zip.code, o.geo)}`;
+      lines.push(`object ${o.kind} ${o.id} "${label}"${where}`);
+    }
+    process.stdout.write(`${lines.map((l) => `TZ ${l}`).join("\n")}\n`);
+    expect(zip.levels.length).toBeGreaterThan(0);
+  });
+
+  it.skipIf(ZIP === undefined)(
+    "holds exactly what the recording's Finish logged",
+    async () => {
+      const zip = await readTourZip(String(TOUR_ZIP));
+      const actions = (
+        await loadActionsFromZip(new Uint8Array(readFileSync(String(ZIP))))
+      ).map((e) => e.action);
+      const finished = actions
+        .filter((a) => a.type === "tourAuthoring/finished")
+        .at(-1);
+      const recorded = (
+        finished?.payload as
+          { manifest?: { objects?: { id: string }[] } } | undefined
+      )?.manifest?.objects;
+      expect(
+        recorded,
+        "the recording logs the Finish's manifest",
+      ).toBeDefined();
+      expect(JSON.parse(JSON.stringify(zip.manifest.objects))).toEqual(
+        recorded,
+      );
+      // Where each object was when it was left in AR (its place through
+      // the GPS alignment of that moment), against where the Finish put it.
+      const lines: string[] = [];
+      for (const act of actions) {
+        const p = act.payload as
+          { object?: TourObjectLike; after?: TourObjectLike } | undefined;
+        const left =
+          act.type === "tourAuthoring/objectPlaced"
+            ? p?.object
+            : act.type === "tourAuthoring/objectMoved"
+              ? p?.after
+              : undefined;
+        if (left?.geo === undefined || zip.code === null) continue;
+        lines.push(
+          `left in AR (${act.type.split("/")[1]!}) ${left.id}: ${fromCode(zip.code, left.geo)}`,
+        );
+      }
+      process.stdout.write(`${lines.map((l) => `TZ ${l}`).join("\n")}\n`);
+    },
+  );
+});
+
+/** The manifest entry's text reader, wherever in the zip it sits. */
+async function loadEntriesFromSubdirOrRoot(
+  bytes: Uint8Array,
+  name: string,
+): Promise<{ getText: () => Promise<string> }[]> {
+  const slash = name.lastIndexOf("/");
+  if (slash > 0) {
+    const found = await loadEntriesFromSubdir(bytes, name.slice(0, slash));
+    return found.filter((e) => e.fullPath === name);
+  }
+  const entry = (await readZipEntries(bytes)).find((e) => e.filename === name);
+  if (entry === undefined || entry.directory) return [];
+  return [{ getText: () => entry.getData(new TextWriter()) }];
+}
