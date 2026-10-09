@@ -2,6 +2,67 @@
 
 ## Unreleased
 
+### Changed
+
+- **Recorded depth samples are written packed, and every action file is
+  compact JSON** (scan pass S2). `writeAction` writes a
+  `recording/recordDepthSample` whose grid the packed form holds exactly
+  with `points: []` and a `grid` (float32 depths and byte colours,
+  base64url): about 18x smaller per sample. `loadActionsFromEntries`
+  unpacks it, so every reader of a recording sees the action as dispatched.
+  A reader built before this release reads such a sample with no points.
+  New: `storage/depth-sample-codec` (`packDepthAction`,
+  `unpackDepthAction`).
+
+- **The alignment maturity floor is 40 m of session GPS extent, not 80 m**
+  (owner decision D34, 2026-10-04). The QR mint's
+  `QR_MINT_MATURE_GPS_EXTENT_M` is now an alias of `MATURE_GPS_EXTENT_M`
+  (40): a code matures on shorter walks, at 1-2 degrees more p90 heading at
+  2 % drift.
+- **Zip reads are capped** (tour kit K0): the transport size, the number of
+  entries, the size of a single read of the central directory, and the bytes
+  actually inflated per entry and per archive are bounded;
+  `loadActionsFromZip` counts the bytes it inflates. A refusal names its
+  cause.
+- `qrMintHeadingMarker` is now exported from `ar/qr/qr-anchor-mint` (D31's
+  marker, reused by the Tour Viewer's re-mint).
+- **`disposeObject3D` frees every texture of a material** (tour kit K4
+  review R12), not only `.map`: normal, roughness, emissive and every other
+  `Texture`-valued property, each texture once. `ShaderMaterial` uniforms
+  stay with the caller.
+- **`checkGlbInert` measures every image inside a model** against the tour
+  image cap, and `decodeFrameTexture` takes a `maxPixels` option (tour kit K4
+  review R2).
+
+### Added
+
+- **`state/alignment-maturity`** (deep import, new; owner decisions D33,
+  D34), and the GPS anchor's `startup: 'mature-alignment'`: the floor
+  `MATURE_GPS_EXTENT_M` and the pure pick "the first mature alignment at or
+  after a moment" (`openMatureAlignmentPick`, `advanceMatureAlignmentPick`,
+  `isMatureAlignment`, `checkMatureGpsExtentM`), shared by the QR mint
+  tracker, the Tour Viewer's authoring settle and `createGpsAnchor({
+startup: 'mature-alignment', getGpsExtentM, matureGpsExtentM? })`, whose
+  object is fixed through that alignment and untouched while it waits
+  (`settleNow()` when the session ends first). `'median'` stays the
+  default. `createGpsExtentTracker` now skips a fix without coordinates
+  instead of throwing.
+- **The tour kit's format and checks** (K0, K1): the v2 tour content schema
+  (`ar/tour-stations`), `tour.json` format version 2 with migration
+  (`ar/tour-manifest`), the media allowlist and `.glb` inertness check
+  (`ar/tour-media`), the signed `manifest.json` and its Ed25519 signature
+  (`ar/tour-signed-manifest`, `ar/tour-signature`), `utils/did-key`,
+  `utils/base58btc`, `utils/sha256-hex`, the capped zip helpers
+  (`storage/archive-limits`, `storage/capped-zip-entries`,
+  `storage/capped-response-body`, `storage/byte-counting-stream`), an
+  `acceptLocalCopy` hook on `openRemoteArchive`, and
+  `loadActionsFromEntries`.
+- **Image sizes from the header** (tour kit K4 review R2): `imageInfo` and
+  `imageInfoOfBlob` read the width and height of JPEG, PNG, WebP, GIF and
+  AVIF images without decoding them; `TOUR_MAX_IMAGE_PIXELS` (4096 x 4096)
+  and `checkImageWithinCap` refuse a tour image over the cap before it is
+  decoded.
+
 ## [1.26.1] — 2026-10-04
 
 Requires `gps-plus-slam-js` ≥ 1.26.0. The version matches the core library's 1.26.1; 1.25.x was never published.

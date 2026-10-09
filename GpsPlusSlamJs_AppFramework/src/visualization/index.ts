@@ -78,6 +78,7 @@ export {
   type GpsAnchorOptions,
   type GpsAnchorPhase,
   type GpsAnchorSamplePoint,
+  type GpsAnchorStartup,
   createGpsAnchor,
 } from './gps-anchor.js';
 

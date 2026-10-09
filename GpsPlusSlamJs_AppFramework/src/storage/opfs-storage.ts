@@ -24,6 +24,7 @@
 
 import { createLogger } from '../utils/logger';
 import { writeFileOrAbort } from './write-file-or-abort.js';
+import { packDepthAction } from './depth-sample-codec';
 import {
   formatTimestamp,
   formatActionFilename,
@@ -378,7 +379,10 @@ export async function writeAction(
     create: true,
   });
 
-  const json = JSON.stringify(action, null, 2);
+  // Compact, and a depth sample with its grid packed (scan pass S2,
+  // `depth-sample-codec.ts`): the shared parse unpacks it, so every reader
+  // still sees the action as dispatched.
+  const json = JSON.stringify(packDepthAction(action));
   await writeFileOrAbort(fileHandle, json);
 }
 

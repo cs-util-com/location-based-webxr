@@ -31,6 +31,8 @@ import {
   type SelectTargetRay,
 } from "gps-plus-slam-app-framework/ar";
 import { createTextSprite } from "gps-plus-slam-app-framework/visualization/text-sprite";
+import { createWayfindingHud } from "gps-plus-slam-app-framework/visualization/wayfinding-hud";
+import type { WayfindingTarget } from "gps-plus-slam-app-framework/visualization/wayfinding-targets";
 import {
   createBarcodeDetectorFrontEnd,
   type QrFrontEnd,
@@ -69,6 +71,8 @@ import type { DepthSamplerConfig } from "gps-plus-slam-app-framework/ar/depth-sa
 import type { Object3D } from "three";
 
 import { ndcOfTargetRay, pickObject } from "./object-pick.js";
+import type { AudioElementLike } from "./scene-audio.js";
+import { HUD_ARRIVAL_BAND_M, HUD_ARRIVAL_MIN_M } from "./station-bands.js";
 
 import type {
   LocationPermission,
@@ -189,6 +193,22 @@ export interface TourViewerSeams {
   /** A one-shot clock (the scan gate's escape, DEC-N3): returns the
    *  cancel. A seam so the e2e fires it instead of waiting 45 s. */
   schedule(fn: () => void, ms: number): () => void;
+  /**
+   * The wayfinding HUD over the session camera (tour kit plan K4: the
+   * arrow to the offered stations), or null while there is no camera. Each
+   * target carries its own arrival band (`station-bands.ts`). A seam: the
+   * e2e has no camera, and asserts the targets instead.
+   */
+  createWayfindingHud(options: {
+    getTargets: () => WayfindingTarget[];
+  }): { dispose(): void } | null;
+  /** A station's `.glb` (already checked inert by the tour session, K0's
+   *  `checkGlbInert`) as a three scene: three's GLTFLoader, loaded on first
+   *  use, with no external URIs and no decoders. */
+  loadGlbModel(blob: Blob): Promise<Object3D>;
+  /** The page's one audio element for the stories (unlocked by the start
+   *  tap, `scene-audio.ts`). A seam so the e2e records what played. */
+  createAudioElement(): AudioElementLike;
 }
 
 /** A captured photo, encoded. */
@@ -269,6 +289,27 @@ export const realSeams: TourViewerSeams = {
     };
   },
   encodeFrameJpeg: (image) => encodeRgbaAsJpeg(image),
+  createWayfindingHud: ({ getTargets }) => {
+    const camera = getCamera();
+    if (!camera) return null;
+    return createWayfindingHud({
+      camera,
+      getTargets,
+      // Each station target carries its own band; these are the floors.
+      distanceMin: HUD_ARRIVAL_MIN_M,
+      distanceMax: HUD_ARRIVAL_MIN_M + HUD_ARRIVAL_BAND_M,
+    });
+  },
+  loadGlbModel: async (blob) => {
+    const { GLTFLoader } =
+      await import("three/examples/jsm/loaders/GLTFLoader.js");
+    const gltf = await new GLTFLoader().parseAsync(
+      await blob.arrayBuffer(),
+      "",
+    );
+    return gltf.scene;
+  },
+  createAudioElement: () => new Audio(),
   createLabel: (text) => {
     // A canvas wide enough for a short label at a readable size, the sprite
     // scaled to the same 2:1 aspect (the wayfinding HUD's recipe); the

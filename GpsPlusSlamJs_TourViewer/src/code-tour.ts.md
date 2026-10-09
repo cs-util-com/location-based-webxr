@@ -19,16 +19,20 @@ from another tour's (TourViewer scan-to-open plan,
   - `{kind: "not-a-tour-code"}` - no launch link (a third-party code);
   - `{kind: "unreadable"}` - a launch link whose payload the framework's
     `resolveQrPayload` refuses (or throws on);
-  - `{kind: "tour", url, normalizedUrl, comparable}` - `url` is the link as
+  - `{kind: "tour", url, normalizedUrl, comparable, levelId}` - `url` is the link as
     resolved (what the open path and step 1's field take); `normalizedUrl`
     is the comparison key: `comparableUrl(normalizeShareUrl(url,
 {corsProxyBaseUrl}))` - `archive.url`'s form with the spellings that
     still name one file folded together; `comparable` is false for hosts
     that reach the file only through a redirect or whose normalised form
-    depends on the spelling (short links, OneDrive).
-- `tourRelation(code, openArchiveUrl | null): TourRelation` - `not-a-tour`,
-  `no-tour-open`, `this-tour`, `other-tour`, or `unknown` (the links differ
-  and one side cannot be compared, so neither is proven).
+    depends on the spelling (short links, OneDrive); `levelId` is the
+    code's own level id (`qrCodeId` of its text, the `<id>` of
+    `qr/<id>.json`), or null where Web Crypto is missing.
+- `tourRelation(code, openArchiveUrl | null, openLevelIds?): TourRelation` -
+  `not-a-tour`, `no-tour-open`, `this-tour`, `other-tour`, or `unknown`
+  (the links differ and one side cannot be compared, so neither is
+  proven). `openLevelIds` is anything with `has(id)` - the open tour's
+  `ctx.currentLevels`.
 
 ## Invariants & assumptions
 
@@ -42,6 +46,13 @@ from another tour's (TourViewer scan-to-open plan,
 - "Another tour" is claimed only when both links are comparable; either side
   on a redirecting host gives `unknown`, which the caller must not treat as a
   reason to lock Save.
+- **The tour's identity decides before its link** (K0 milestone review R6):
+  a tour that carries `qr/<levelId>.json` printed the code, whichever links
+  either side was written with. That is the only comparison a tour opened
+  from a FILE can make: its `archive.url` is a content key
+  (`tour-file-key.ts`), so its own code used to read "from another tour".
+  Any code whose level a file-opened tour does not carry is `unknown`,
+  never `other-tour` - a file names no link to compare with.
 - Pure: no DOM, no session state, no cache. The caller keeps the page-lifetime
   cache of text -> `CodeTour` (`archive-open`).
 - The `corsProxyBaseUrl` must be the one the open path uses, or the Drive
@@ -64,7 +75,10 @@ switch (tourRelation(code, ctx.session?.archive.url ?? null)) {
 
 - `code-tour.test.ts` - payload reading, the three outcomes, the bare-name
   prefix, the Drive spellings as one tour, another Drive file as another
-  tour, `unknown` on either side's redirecting host.
+  tour, `unknown` on either side's redirecting host; a file-opened tour's
+  own code recognised by its level, any other code `unknown` there, and a
+  link-opened tour's code recognised by its level whatever link was printed
+  (K0 milestone review R6).
 - `code-tour.property.test.ts` - any http(s) link, encoded by the print
   step's own `planPrintCode`, is `this-tour` against the tour opened from
   that link; any string resolves

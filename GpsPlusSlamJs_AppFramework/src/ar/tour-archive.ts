@@ -14,15 +14,13 @@
  */
 
 import type { TourManifest } from './tour-manifest.js';
+import { tourMediaTypeOf } from './tour-media.js';
 
 /** The manifest's entry name at the archive root. */
 export const TOUR_MANIFEST_ENTRY = 'tour.json';
 
 /** Folder inside the archive that holds placed content files. */
 export const TOUR_CONTENT_FOLDER = 'content';
-
-/** Extensions a content file may carry (the writer emits lower case). */
-const CONTENT_EXTENSION = /^[a-z0-9]{1,5}$/;
 
 /** Same guard as the manifest's object id: one path-safe segment. */
 const CONTENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -49,7 +47,9 @@ export function tourContentEntryName(id: string, extension: string): string {
       `tourContentEntryName: unsafe content id ${JSON.stringify(id)}`
     );
   }
-  if (typeof extension !== 'string' || !CONTENT_EXTENSION.test(extension)) {
+  // Only the media allowlist (`tour-media.ts`, tour kit plan K0): before
+  // it, any 1-5 characters passed, `svg` and `html` included.
+  if (tourMediaTypeOf(extension) === null) {
     throw new TypeError(
       `tourContentEntryName: unsafe extension ${JSON.stringify(extension)}`
     );
