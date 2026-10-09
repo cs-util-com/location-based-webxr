@@ -1,8 +1,9 @@
 /**
  * The cloud map (round-3 plan 2026-10-08-2345 M1; the owner on r805: the
- * clouds "pixelated already at 3,000 km"). The map is 4,096 x 2,048, sent
- * to the GPU as one channel, and decoded off the main thread where the
- * browser can.
+ * clouds "pixelated already at 3,000 km"). The map is NASA's 8,192 x 4,096
+ * since §18 (built from four pieces after a preview:
+ * `globe-cloud-map-8k.smoke.spec.mjs`), sent to the GPU as one channel,
+ * and decoded off the main thread where the browser can.
  */
 import { expect, test } from "@playwright/test";
 
@@ -52,13 +53,15 @@ async function readView(page, hash) {
 }
 
 // WHY: the map the owner asked to be sharper must be the one the GPU has
-// (4,096 wide, not the 2,048 a stale cache or registry would give), held
-// as one channel (8 MB, not 32, on a phone), and decoded off the main
-// thread. And the off-thread path must draw what the image element drew:
-// a decoder that ignored "flip the rows" would put every cloud on the
-// other hemisphere, which pixel equality between the two paths catches
-// (the grid's own spread shows the view has clouds to compare).
-test("the cloud map is 4096 x 2048, one channel, decoded off the thread, and draws as the image element did", async ({
+// (8,192 wide since §18, not a preview or an older map a stale cache or
+// registry would give), held as one channel (32 MB, not 128, on a phone),
+// and decoded off the main thread. And the off-thread path must draw what
+// the image element drew: a decoder that ignored "flip the rows" would
+// put every cloud on the other hemisphere (and the full map is joined
+// from four pieces, each flipped on its own), which pixel equality
+// between the two paths catches (the grid's own spread shows the view
+// has clouds to compare).
+test("the cloud map is 8192 x 4096, one channel, decoded off the thread, and draws as the image element did", async ({
   page,
   browser,
 }) => {
@@ -77,15 +80,17 @@ test("the cloud map is 4096 x 2048, one channel, decoded off the thread, and dra
   );
   expect(bitmap.errors).toEqual([]);
   expect(element.errors).toEqual([]);
-  expect(bitmap.state.cloudMap).toEqual({
-    width: 4096,
-    height: 2048,
+  expect(bitmap.state.cloudMap).toMatchObject({
+    stage: "full",
+    width: 8192,
+    height: 4096,
     red: true,
     bitmap: true,
   });
   expect(element.state.cloudMap).toMatchObject({
-    width: 4096,
-    height: 2048,
+    stage: "full",
+    width: 8192,
+    height: 4096,
     red: true,
     bitmap: false,
   });

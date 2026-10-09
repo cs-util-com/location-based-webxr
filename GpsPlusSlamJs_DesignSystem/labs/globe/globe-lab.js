@@ -176,14 +176,15 @@ window.addEventListener("unhandledrejection", (e) =>
 const creditsBox = document.getElementById("globe-credits");
 const loadingLabel = document.getElementById("globe-loading");
 
-/** The cloud map's size, format and decoding, for the smokes (M1). */
-function cloudMapState(texture) {
-  const image = texture.image;
+/**
+ * The cloud map as the shaders read it, for the smokes (M1, §18): its
+ * stage (the preview or the full 8,192 map), size, one channel, the
+ * decoding, the pieces that failed, and the rebuilds after a context loss.
+ */
+function cloudMapState(globe) {
   return {
-    width: image?.width ?? 0,
-    height: image?.height ?? 0,
-    red: texture.format === THREE.RedFormat,
-    bitmap: typeof ImageBitmap !== "undefined" && image instanceof ImageBitmap,
+    ...globe.cloudMap.state(),
+    red: globe.surfaceUniforms.uClouds.value.format === THREE.RedFormat,
   };
 }
 const replayButton = document.getElementById("globe-replay");
@@ -236,6 +237,7 @@ function statusView() {
       mapsLoaded,
       mapErrors,
       mapsTotal,
+      cloudPiecesFailed = 0,
     }) {
       // The tiles and the two global maps (the clouds are the largest
       // single file): "loaded" only once all of them have arrived or failed.
@@ -256,6 +258,10 @@ function statusView() {
           : "",
         mapErrors > 0
           ? `${mapErrors} of the night-light and cloud maps could not load.`
+          : "",
+        // The sharp clouds (round-3 plan §18): the preview stays.
+        cloudPiecesFailed > 0
+          ? "The sharp cloud map could not load: the coarser one shows."
           : "",
       ]
         .filter(Boolean)
@@ -2963,7 +2969,10 @@ async function start() {
       params.cloudShadowFrom === 1 && cloudVolume
         ? 0
         : params.cloudShadow * shellShare * flat;
-    status.update(globe.state());
+    status.update({
+      ...globe.state(),
+      cloudPiecesFailed: globe.cloudMap.state().piecesFailed,
+    });
     readoutText = readoutNow();
     readout.offer(readoutText, performance.now());
     // A running clock moves the hour: its label follows, once a second.
@@ -3375,7 +3384,7 @@ async function start() {
       cloudLonOffsetRad: globe.surfaceUniforms.uCloudLonOffset.value,
       // The cloud map as the GPU has it (round-3 plan M1): its size, one
       // channel, and whether it was decoded off the main thread.
-      cloudMap: cloudMapState(globe.surfaceUniforms.uClouds.value),
+      cloudMap: cloudMapState(globe),
       sunEcef: globe.surfaceUniforms.uSunEcef.value.toArray(),
       // The sky fill (DEC-GL5-11) as the shader reads it.
       skyFill: {

@@ -8,7 +8,10 @@
   Earth imagery: n of m") shows while tiles are pending, and the error box
   names tiles that could not load ("a coarser level shows there") and global
   maps that could not load. The label counts the two global maps too, so
-  it ends only when the clouds (the largest file) have arrived.
+  it ends only when the clouds have arrived: the preview and the full
+  map's four pieces (round-3 plan 2026-10-08-2345 §18). A piece that
+  could not load adds "The sharp cloud map could not load: the coarser
+  one shows." (the preview stays).
 - Round 2 (plan 2026-09-26-2055 M3 c-f; round-3 plan 2026-09-27-0532 §4 F):
   the lab owns a pinnable clock that drives the sun and the clouds' drift;
   a background pass (`/globe/globe-sky.js`) draws the sun's disc and glow
@@ -584,9 +587,12 @@ cameraOwner, cameraDistanceM, altitudeM, near, far, pin }`;
   `hourLabel` is the hour label's text;
   `timeMs` is the clock's instant and `clock` its `{ startMs, scale }`
   (the pin or null, and the effective scale); `cloudLonOffsetRad` is the
-  drift the shader reads; `cloudMap` is `{ width, height, red, bitmap }`,
-  the cloud map as the GPU has it (4096 x 2048, one channel, decoded off
-  the main thread where the browser can: round-3 plan M1); `sky` is `{ on, sunDiameterDeg, glow,
+  drift the shader reads; `cloudMap` is the surface's
+  `cloudMap.state()` (`{ stage, width, height, preview, full,
+piecesFailed, rebuilds, fullAtMs, bitmap }`, `globe-cloud-map.ts`) with
+  `red`: the cloud map the shaders read (the 1,024 preview, then the
+  8,192 x 4,096 map once its pieces are drawn, one channel, decoded off
+  the main thread where the browser can: round-3 plan M1, §18); `sky` is `{ on, sunDiameterDeg, glow,
 sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   null behind the camera); `device` is `{ floatLinear }`;
   `sky.stars` is `{ on, magLimit, count, procedural }`, `sky.milkyWay` the
