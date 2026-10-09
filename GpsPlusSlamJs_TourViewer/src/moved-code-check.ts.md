@@ -28,7 +28,15 @@ a verdict (the veto). No compass reading is taken (owner, 2026-10-02).
   ends, and later pins fold only the history from `storedCount` on.
 - `clear()` - end every check (a tour switch).
 - `snapshot()` - the live checks (`MovedCodeCheckView`), for the `?debug=1`
-  readout and tests.
+  readout, the station guide and tests.
+
+`checkHadItsWindow(view)` - whether a live check has had the rule's
+evidence (`CODE_MOVE_RULE` `minSpanS` 60 s and `minSpreadM` 2 m) to read a
+move; below it every verdict is `undecided`. The station guide holds a code
+lock the visitor's own GPS disagrees with until this, a veto, or its
+maximum hold (tour kit K4 review R1). The fit counts device fixes of the
+300 s before the pin, so a visitor who walked a minute before scanning gets
+it at the first fix after the pin.
 
 `MovedCodeEvidence` (the `tourViewing/codeIgnored` payload's `evidence`):
 `ruleVersion`, `decidedBy` (`position` or `turn`), `turnChecked`, `boundM`, `displacementM`,
@@ -85,6 +93,7 @@ for (const v of checks.update(
 code never; the horizon; the 300 s fit window, and old far-off fixes
 that no longer veto; votes in the history change nothing; the settled
 yaw; no turn check for an unsettled save; no compass input; a frame
-change; a reset; a reset after a frame change; the evidence; one pin per code; `clear()`),
+change; a reset; a reset after a frame change; the evidence; one pin per code; `clear()`;
+`checkHadItsWindow` at the gate, and after a walk at the first fix),
 `moved-code-check.property.test.ts` (slicing and vote-interleaving
 invariance). The wired veto: `viewer-moved-code.test.ts`.

@@ -7,6 +7,7 @@ import type { QrDetectionEvent } from "gps-plus-slam-app-framework/ar/qr/qr-trac
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 
 import {
+  autoMeasureAllowed,
   archiveSizeNote,
   authorStatusLine,
   finishBlockedHint,
@@ -18,17 +19,12 @@ import {
   syntheticAuthorLevel,
   reprintOrphanWarning,
   FINISH_LABELS,
-  finishHandoffStatus,
-  finishHelpVisibility,
-  finishIdleLabel,
-  finishBusyLabel,
-  finishRoute,
+  finishSaveStatus,
   driveReplaceSteps,
   sizeOfferView,
   adoptedSizeNote,
   codeTourLine,
   correctionRefusedLine,
-  replaceCodeConfirmText,
   type AuthorPipelineDeps,
 } from "./qr-author-mode";
 
@@ -97,6 +93,37 @@ describe("buildAuthorControllerConfig", () => {
     expect(level).toEqual({ version: 1, qr: { physicalSizeM: 0.25 } });
   });
 
+  // Why this test matters (code book plan M4c-3): each code is solved at
+  // its OWN printed size - the size the tour stores for it, else the size
+  // field - so the level the controller fetches carries the size per text.
+  it("resolves each text at the size `sizeFor` gives it", async () => {
+    const config = buildAuthorControllerConfig(0.16, {
+      ...fakeDeps(),
+      sizeFor: (text) => Promise.resolve(text.endsWith("big") ? 0.3 : 0.16),
+    });
+    expect(await config.fetchLevel("https://x/?qr=big")).toEqual({
+      version: 1,
+      qr: { physicalSizeM: 0.3 },
+    });
+    expect(await config.fetchLevel("https://x/?qr=small")).toEqual({
+      version: 1,
+      qr: { physicalSizeM: 0.16 },
+    });
+  });
+
+  // Why: a size that cannot be resolved must not reject the fetch (the
+  // controller would flap); the pipeline's size stands.
+  it("falls back to the pipeline's size when `sizeFor` fails", async () => {
+    const config = buildAuthorControllerConfig(0.2, {
+      ...fakeDeps(),
+      sizeFor: () => Promise.reject(new Error("no crypto")),
+    });
+    expect(await config.fetchLevel("t")).toEqual({
+      version: 1,
+      qr: { physicalSizeM: 0.2 },
+    });
+  });
+
   it("runs minIntervalMs 0 — the frame source is the single cadence owner", () => {
     const config = buildAuthorControllerConfig(0.2, fakeDeps());
     expect(config.minIntervalMs).toBe(0);
@@ -124,10 +151,12 @@ describe("the print-size check's copy (QR size consensus plan S3a)", () => {
       notStableReason: null,
     } as unknown as QrFusedPose;
     const ready = authorStatusLine("A", stable, align);
-    expect(ready.text).toBe("Measured and stable — save the position.");
+    // UI round 1, U3: measured on its own, so the line says so - no
+    // button to tap.
+    expect(ready.text).toBe("Code measured.");
     const pending = authorStatusLine("A", stable, align, true);
     expect(pending.text).toBe(
-      "Measured and stable — save the position. Take a step sideways to check the print size.",
+      "Code measured. Take a step sideways to check the print size.",
     );
     // The mint is not held (plan §12 #3).
     expect(pending.canMint).toBe(true);
@@ -145,7 +174,7 @@ describe("the print-size check's copy (QR size consensus plan S3a)", () => {
 
   it("confirms an adopted size and says what to do next", () => {
     expect(adoptedSizeNote(0.155)).toBe(
-      "Now using 15.5 cm (0.155 m) - walk slowly around the code again, then save the position.",
+      "Now using 15.5 cm (0.155 m) - walk slowly around the code again to measure it at this size.",
     );
   });
 });
@@ -200,7 +229,7 @@ describe("authorStatusLine", () => {
     );
     const ready = authorStatusLine("text", fused(), GOOD_ALIGNMENT_INFO);
     expect(ready.canMint).toBe(true);
-    expect(ready.text).toMatch(/save the position/i);
+    expect(ready.text).toMatch(/Code measured/);
   });
 
   // Plan §60-§61 #11: the readout says what actually gates the fused pose,
@@ -268,20 +297,30 @@ describe("setupHint / finishReadiness", () => {
     // Why this matters: the measured position is only useful inside the
     // hosted zip. A creator who measured before opening the tour must be
     // told to open it, not left with a disabled button and no reason.
-    expect(
-      setupHint({ measured: false, tourOpen: true, hadLevel: false }),
-    ).toBe("");
+    expect(setupHint({ measured: false, tourOpen: true, inTour: "none" })).toBe(
+      "",
+    );
     // With no tour open the code-status line says what is happening to the
     // code's tour (scan-to-open plan §9 #9); "open it in step 1" pointed at
     // a form a creator holding the phone at the poster cannot reach.
+    expect(setupHint({ measured: true, tourOpen: false, inTour: "none" })).toBe(
+      "Position saved.",
+    );
     expect(
-      setupHint({ measured: true, tourOpen: false, hadLevel: false }),
-    ).toBe("Position saved.");
+      setupHint({ measured: true, tourOpen: true, inTour: "this-code" }),
+    ).toMatch(/replaces this code's saved position/);
+    // Why (code book plan review #13): a NEW code in a tour that carries
+    // other codes is ADDED by the Finish beside them; "it replaces the
+    // code this tour already carried" told the creator the opposite.
+    const added = setupHint({
+      measured: true,
+      tourOpen: true,
+      inTour: "other-codes",
+    });
+    expect(added).toMatch(/one more code/);
+    expect(added).not.toMatch(/replaces/);
     expect(
-      setupHint({ measured: true, tourOpen: true, hadLevel: true }),
-    ).toMatch(/replaces/);
-    expect(
-      setupHint({ measured: true, tourOpen: true, hadLevel: false }),
+      setupHint({ measured: true, tourOpen: true, inTour: "none" }),
     ).toMatch(/Finish/);
     // A stored pose in hand (the hosted zip's, a draft's, an earlier
     // visit's kept through a new measurement) is NOT replaced (D10b, M2c
@@ -290,7 +329,7 @@ describe("setupHint / finishReadiness", () => {
     const kept = setupHint({
       measured: true,
       tourOpen: true,
-      hadLevel: true,
+      inTour: "this-code",
       keptStored: true,
     });
     expect(kept).not.toMatch(/replaces/);
@@ -298,23 +337,23 @@ describe("setupHint / finishReadiness", () => {
     expect(kept).toMatch(/Finish/);
     const settled = "settled" as const;
     expect(
-      finishReadiness({ measured: false, tourOpen: true, manifest: settled }),
+      finishReadiness({ hasWork: false, tourOpen: true, manifest: settled }),
     ).toBe("not-measured");
     expect(
-      finishReadiness({ measured: true, tourOpen: false, manifest: settled }),
+      finishReadiness({ hasWork: true, tourOpen: false, manifest: settled }),
     ).toBe("no-tour");
     // The manifest must have settled (M3 review #5): finishing while it
     // loads, or when it is broken, would overwrite the creator's placement.
     expect(
-      finishReadiness({ measured: true, tourOpen: true, manifest: "pending" }),
+      finishReadiness({ hasWork: true, tourOpen: true, manifest: "pending" }),
     ).toBe("manifest-pending");
     expect(
-      finishReadiness({ measured: true, tourOpen: true, manifest: "broken" }),
+      finishReadiness({ hasWork: true, tourOpen: true, manifest: "broken" }),
     ).toBe("manifest-broken");
     expect(finishBlockedHint("manifest-broken")).toMatch(/tour\.json/);
     expect(finishBlockedHint("ready")).toBe("");
     expect(
-      finishReadiness({ measured: true, tourOpen: true, manifest: settled }),
+      finishReadiness({ hasWork: true, tourOpen: true, manifest: settled }),
     ).toBe("ready");
     expect(archiveSizeNote(250_000_000)).toMatch(/250 MB.*a while/);
     expect(archiveSizeNote(12_000_000)).toBe("The hosted zip is 12 MB.");
@@ -340,123 +379,6 @@ describe("codeIndexFromInput", () => {
         codeIndex: 1,
         coerced: true,
       });
-    }
-  });
-});
-
-describe("the finish step's hand-off copy", () => {
-  /**
-   * Why these tests matter: the finish button now takes one of two routes
-   * and each can fail, and THREE of those four outcomes are unreachable in
-   * an e2e run - a headless browser has no share sheet. The copy is also
-   * the half that was wrong: \`saved\` states as fact that the link and the
-   * printed code are unchanged, which is true when the creator overwrites
-   * the hosted file and FALSE when they share, because sharing hands the
-   * zip to another app that normally stores it as a new file with a new
-   * id. A creator who reads "the link stays the same" after a share walks
-   * away believing a poster works when it points at the old file.
-   */
-  it("promises an unchanged link ONLY on the save route", () => {
-    const saved = finishHandoffStatus(
-      { route: "download", delivered: true },
-      "tour.zip",
-    );
-    expect(saved).toContain("stay the same");
-
-    const shared = finishHandoffStatus(
-      { route: "share", delivered: true },
-      "tour.zip",
-    );
-    expect(shared).not.toContain("stay the same");
-    expect(shared).not.toContain("stays the same");
-    // And it must say what still has to happen. Not "make sure it
-    // replaced": sharing to a cloud app CREATES a file, so framing a
-    // near-certainty as a coin flip lets a creator walk away believing the
-    // poster is probably fine (M2 review #6).
-    expect(shared).toMatch(/replace it/i);
-    expect(shared).toMatch(/NEW file/);
-    expect(shared).toContain("tour.zip");
-  });
-
-  it("says nothing happened, without blaming the user, when nothing was delivered", () => {
-    // The Web Share API reports a cancelled sheet and a failed share as
-    // the same AbortError, so copy that said "you cancelled" would be a
-    // guess presented as a fact.
-    const notShared = finishHandoffStatus(
-      { route: "share", delivered: false },
-      "tour.zip",
-    );
-    expect(notShared).toMatch(/nothing was shared/i);
-    expect(notShared.toLowerCase()).not.toContain("cancel");
-
-    expect(
-      finishHandoffStatus({ route: "download", delivered: false }, "tour.zip"),
-    ).toMatch(/not saved/i);
-  });
-
-  it("labels the button with the action it will actually take", () => {
-    expect(finishIdleLabel(true).toLowerCase()).toContain("share");
-    expect(finishIdleLabel(true).toLowerCase()).not.toContain("download");
-    expect(finishIdleLabel(false).toLowerCase()).toContain("download");
-    expect(finishIdleLabel(false).toLowerCase()).not.toContain("share");
-    expect(finishBusyLabel(true)).not.toBe(finishBusyLabel(false));
-  });
-
-  it("covers all four outcomes with distinct copy", () => {
-    const all = [
-      { route: "share" as const, delivered: true },
-      { route: "share" as const, delivered: false },
-      { route: "download" as const, delivered: true },
-      { route: "download" as const, delivered: false },
-    ].map((outcome) => finishHandoffStatus(outcome, "tour.zip"));
-    expect(new Set(all).size).toBe(4);
-  });
-});
-
-describe("which help the finish step reveals", () => {
-  /**
-   * Why this test matters: the replace instructions are what keeps a
-   * printed code working, and they used to appear exactly when a file had
-   * been written to the device. On the share route no file lands here at
-   * all - it is inside whichever app the creator picked - so the same
-   * block now needs one extra sentence saying where to find it. That
-   * branch is otherwise reachable only by walking a full AR setup on a
-   * phone with a share sheet, which is to say by nothing that runs in CI.
-   */
-  it("shows nothing until something has actually gone somewhere", () => {
-    for (const route of ["share", "download"] as const) {
-      expect(finishHelpVisibility({ route, delivered: false })).toEqual({
-        replaceHelp: false,
-        shareNote: false,
-      });
-    }
-  });
-
-  it("always shows the replace instructions once delivered, and the share note only on the share route", () => {
-    expect(
-      finishHelpVisibility({ route: "download", delivered: true }),
-    ).toEqual({ replaceHelp: true, shareNote: false });
-    expect(finishHelpVisibility({ route: "share", delivered: true })).toEqual({
-      replaceHelp: true,
-      shareNote: true,
-    });
-  });
-});
-
-describe("the help blocks are EARNED, and a later failure does not take them back", () => {
-  // Why this test matters: the reveal used to be a one-way assignment and
-  // briefly became a two-way one. A creator who saved the zip, then tapped
-  // again and dismissed the picker, would have had the step-6 replace
-  // instructions disappear - the flow's last instruction, removed at the
-  // moment they most need it, by an action that changed nothing.
-  //
-  // The function answers "what does THIS outcome earn", and the caller only
-  // ever reveals. Only closing the tour hides them again.
-  it("earns nothing when nothing was delivered, so a retry cannot un-earn", () => {
-    for (const route of ["share", "download"] as const) {
-      const earned = finishHelpVisibility({ route, delivered: false });
-      expect(earned.replaceHelp).toBe(false);
-      expect(earned.shareNote).toBe(false);
     }
   });
 });
@@ -528,45 +450,6 @@ describe("printing a code that would strand an existing measurement", () => {
   });
 });
 
-describe("the share note follows the LAST delivered route", () => {
-  // Why this test matters: `replaceHelp` is true of any delivered hand-off
-  // and is earned once. `shareNote` is a claim about WHICH hand-off
-  // happened, and making it earned-and-kept let it outlive its truth: a
-  // share followed by a save on the retry left "you shared it rather than
-  // saving it, so it is now wherever that app put it" on screen beside a
-  // file that is on disk, sending the creator to hunt for it in an app.
-  //
-  // The caller reveals `replaceHelp` one-way and sets `shareNote` from the
-  // last DELIVERED outcome, so this function has to answer for the route,
-  // not for the panel.
-  it("claims a share only for a delivered share", () => {
-    expect(
-      finishHelpVisibility({ route: "share", delivered: true }).shareNote,
-    ).toBe(true);
-    expect(
-      finishHelpVisibility({ route: "download", delivered: true }).shareNote,
-    ).toBe(false);
-    // A hand-off that delivered nothing changed nothing, so it must not
-    // move the note in either direction - the caller checks `delivered`
-    // before applying it, and this is the value it would apply.
-    expect(
-      finishHelpVisibility({ route: "share", delivered: false }).shareNote,
-    ).toBe(false);
-  });
-});
-
-describe("the ready line names the action the button will take", () => {
-  // Why: this is the sentence a creator reads immediately before pressing
-  // the button. It said "Download it" on every device, including one whose
-  // button says "Share the rebuilt zip" (M2 review #3).
-  it("says share where the button says share, and download where it says download", () => {
-    expect(FINISH_LABELS.ready(1_000_000, true)).toContain("Share it");
-    expect(FINISH_LABELS.ready(1_000_000, true)).not.toContain("Download it");
-    expect(FINISH_LABELS.ready(1_000_000, false)).toContain("Download it");
-    expect(FINISH_LABELS.ready(1_000_000, false)).not.toContain("Share it");
-  });
-});
-
 describe("codeTourLine (scan-to-open plan §9 #9)", () => {
   // Why this matters: in step 4 the creator holds the phone at the poster;
   // this line is the only place they learn that the code is opening its
@@ -582,9 +465,6 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
       /does not point to a tour/,
     );
     expect(codeTourLine({ kind: "not-a-tour" })).toMatch(/step 2/);
-    expect(
-      codeTourLine({ kind: "measured-for-another", label: "a.zip" }),
-    ).toMatch(/You measured the code of a.zip/);
     // Plan §13: another tour's code joins the open tour - the line says so.
     expect(codeTourLine({ kind: "added-to-open-tour" })).toMatch(
       /added to the open tour/,
@@ -610,6 +490,18 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
     expect(final, "and what to do instead").toMatch(/restart AR/);
   });
 
+  it("names an offline phone as offline (K0)", () => {
+    expect(
+      codeTourLine({ kind: "failed", cause: "offline", retrying: true }),
+    ).toMatch(/offline/);
+  });
+
+  it("names a too-large tour as too large (K0)", () => {
+    expect(
+      codeTourLine({ kind: "failed", cause: "too-large", retrying: false }),
+    ).toMatch(/too large/);
+  });
+
   it("stays short enough for the phone panel", () => {
     // The longest line shares the panel with the live readout at 360 px;
     // describeOpenError's 200-character Drive text was the review's worst
@@ -619,6 +511,8 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
       "cors",
       "corrupt",
       "unusable-link",
+      "too-large",
+      "offline",
       "other",
     ] as const;
     for (const cause of causes) {
@@ -628,28 +522,53 @@ describe("codeTourLine (scan-to-open plan §9 #9)", () => {
         ).toBeLessThanOrEqual(110);
       }
     }
-    // A tour label is cut at 24 characters (tourLabel).
-    const label = "x".repeat(24) + "…";
-    expect(
-      codeTourLine({ kind: "measured-for-another", label }).length,
-    ).toBeLessThanOrEqual(110);
   });
 });
 
-describe("the finish copy points at steps that exist", () => {
-  it("never names a step beyond 4", () => {
-    // Why this matters (Drive replace plan §5 #5, a pre-existing bug): the
-    // download and the replace instructions were steps 5 and 6 until the
-    // flow rework folded them into the end of step 4 (F10). The finish
-    // messages kept saying "step 6" - the line a creator reads right after
-    // saving the zip sent them to a step that is not on the page.
-    const lines = [
-      FINISH_LABELS.ready(1_000_000, false),
-      FINISH_LABELS.ready(1_000_000, true),
+describe("the finish saves the tour zip by itself (field test 2, F4)", () => {
+  // Why these tests matter (owner decisions D-F4a, D-F4b): the owner's
+  // second field test ended with one zip on the phone - the troubleshooting
+  // recording - because the tour zip waited on a button they did not see.
+  // The Finish now saves the tour zip itself, and the one button left saves
+  // it again the same way. The copy must say what is happening and what
+  // happened; the old copy told the creator to press a button first.
+  it("says the zip is being saved while it is, and never asks for a tap first", () => {
+    const line = FINISH_LABELS.savingTour(2_400_000);
+    expect(line).toContain("2.4 MB");
+    expect(line).toMatch(/being saved to this phone/);
+    expect(line).not.toMatch(/tap|press|download it|share it/i);
+  });
+
+  it("names the saved file, and the Drive steps for a Drive tour", () => {
+    expect(finishSaveStatus(true, "tour.zip", false)).toBe(
       FINISH_LABELS.saved("tour.zip"),
-      FINISH_LABELS.shared("tour.zip"),
-      FINISH_LABELS.readyDrive(1_000_000, "tour.zip"),
+    );
+    expect(finishSaveStatus(true, "tour.zip", true)).toBe(
       FINISH_LABELS.savedToPhone("tour.zip"),
+    );
+    // A save over the hosted file keeps the link and the printed code.
+    expect(finishSaveStatus(true, "tour.zip", true)).toContain("stay the same");
+  });
+
+  it("names the button to tap when nothing was saved", () => {
+    const line = finishSaveStatus(false, "tour.zip", true);
+    expect(line).toMatch(/not saved/i);
+    expect(line).toContain(FINISH_LABELS.saveAgain);
+  });
+
+  it("labels the one button left as saving the tour zip again", () => {
+    expect(FINISH_LABELS.saveAgain).toBe("Save the tour zip again");
+  });
+
+  it("never names a step beyond 4", () => {
+    // Why (Drive replace plan §5 #5): the download and the replace
+    // instructions were steps 5 and 6 until the flow rework folded them
+    // into the end of step 4 (F10).
+    const lines = [
+      FINISH_LABELS.savingTour(1_000_000),
+      FINISH_LABELS.saved("tour.zip"),
+      FINISH_LABELS.savedToPhone("tour.zip"),
+      FINISH_LABELS.notSaved,
     ];
     for (const line of lines) expect(line).not.toMatch(/step [5-9]/i);
   });
@@ -661,18 +580,6 @@ describe("the finish on a Drive-hosted tour (Drive replace plan §2, §5)", () =
   // which needs the zip saved on the phone (decision 4) and asks "Replace
   // existing file" only for the SAME name. A share hands the zip to another
   // app instead, and the Drive app cannot replace.
-  it("saves to the phone for a Drive tour, shares elsewhere where it can", () => {
-    expect(finishRoute({ canShare: true, drive: true })).toBe("download");
-    expect(finishRoute({ canShare: false, drive: true })).toBe("download");
-    expect(finishRoute({ canShare: true, drive: false })).toBe("share");
-    expect(finishRoute({ canShare: false, drive: false })).toBe("download");
-  });
-
-  it("labels the Drive save as a save to the phone", () => {
-    expect(finishIdleLabel(false, true)).toBe("Save the zip to this phone");
-    expect(finishIdleLabel(false)).toBe("Download the rebuilt zip");
-  });
-
   it("gives the owner's working steps, with the file's own name", () => {
     const { rename, steps } = driveReplaceSteps("My tour.zip");
     expect(rename).toBeNull();
@@ -690,7 +597,7 @@ describe("the finish on a Drive-hosted tour (Drive replace plan §2, §5)", () =
     // #1: "pick X" would otherwise pick the OLD zip).
     expect(steps[0]).toContain("My tour (1).zip");
     expect(steps[0]).toMatch(/delete every copy/i);
-    expect(steps[0]).toMatch(/Save the zip to this phone.*again/);
+    expect(steps[0]).toMatch(/Save the tour zip again/);
     expect(text, "and what to do if Drive does not ask").toMatch(
       /does not ask/i,
     );
@@ -718,27 +625,17 @@ describe("the finish on a Drive-hosted tour (Drive replace plan §2, §5)", () =
     expect(driveReplaceSteps("tour.zip").steps[0]).not.toMatch(/Check that/);
   });
 
-  it("warns about an older copy BEFORE the save, in the button's words", () => {
-    // Why (milestone review #1): Chrome names a repeat download
-    // "name (1).zip", and Drive then offers no "Replace". Only a warning
-    // read before the tap can prevent that; the ready line is the sentence
-    // the creator reads right before pressing "Save the zip to this phone".
-    const line = FINISH_LABELS.readyDrive(1_000_000, "My tour.zip");
-    expect(line).toMatch(/Before you save/);
-    expect(line).toContain("My tour.zip");
-    expect(line).toContain("My tour (1).zip");
-    expect(line).toMatch(/Save the zip to this phone/);
-    expect(line).not.toMatch(/Download it|Share it/);
-  });
-
   it("says where a Drive save went and what comes next", () => {
     // Plan §5 #5: the file is in Downloads, and the Drive steps follow.
-    const outcome = { route: "download", delivered: true } as const;
-    const status = finishHandoffStatus(outcome, "My tour.zip", true);
+    const status = finishSaveStatus(true, "My tour.zip", true);
     expect(status).toBe(FINISH_LABELS.savedToPhone("My tour.zip"));
     expect(status).toMatch(/Downloads/);
-    expect(status).toMatch(/Drive steps below/);
-    expect(finishHandoffStatus(outcome, "My tour.zip")).toBe(
+    // It cannot know the name the phone gave the file (F4 milestone review
+    // #2): it asks to check it, before the Drive steps.
+    expect(status).toContain("My tour (1).zip");
+    expect(status).toMatch(/step 1 below/);
+    expect(status).toMatch(/Drive steps/);
+    expect(finishSaveStatus(true, "My tour.zip", false)).toBe(
       FINISH_LABELS.saved("My tour.zip"),
     );
   });
@@ -765,33 +662,36 @@ describe("correctionRefusedLine (M2c review #2)", () => {
   });
 });
 
-describe("replaceCodeConfirmText (M4 review #3)", () => {
-  // Why this matters: the explicit replace moves the code for every
-  // visitor, and visitors are lined up with the code - so notes placed
-  // against the OLD position keep their stored geo but appear shifted by
-  // about the replace's size. "Objects already placed keep their own
-  // positions" was true of the stored numbers and misleading about what a
-  // visitor sees; the creator has to know the size before confirming.
-  it("says how far the code moves and turns, and that earlier notes will appear shifted by about that much", () => {
-    const text = replaceCodeConfirmText({ horizontalM: 3.44, yawDeg: 4.2 });
-    expect(text).toMatch(/Everyone who opens the tour/);
-    expect(text).toMatch(/about 3\.4 m/);
-    expect(text).toMatch(/4°/);
-    expect(text).toMatch(/keep their saved positions/);
-    expect(text).toMatch(/appear shifted by about that much/);
-    expect(text).not.toMatch(/keep their own positions\.$/);
+describe("autoMeasureAllowed (code book plan §11 D5, extended by the owner)", () => {
+  // Why: the owner decided every code seen while a tour is open is
+  // measured - even a stray QR that names no tour is "another anchor".
+  // Only a code read with no tour open, or still being read, is not.
+  it.each([
+    ["this-tour", true],
+    ["other-tour", true],
+    ["unknown", true],
+    ["not-a-tour", true],
+    ["no-tour-open", false],
+    ["resolving", false],
+  ] as const)("%s: %s", (relation, allowed) => {
+    expect(autoMeasureAllowed(relation)).toBe(allowed);
   });
+});
 
-  it("rounds a large move to whole metres and leaves out a negligible turn", () => {
-    const text = replaceCodeConfirmText({ horizontalM: 23.6, yawDeg: 0.2 });
-    expect(text).toMatch(/about 24 m/);
-    expect(text).not.toMatch(/°/);
-  });
-
-  it("still says what happens to earlier notes when the size is unknown", () => {
-    const text = replaceCodeConfirmText(null);
-    expect(text).toMatch(/Everyone who opens the tour/);
-    expect(text).toMatch(/appear shifted/);
-    expect(text).not.toMatch(/ m /);
+describe("authorStatusLine's ready line says what became of the code (UI round 1, U3)", () => {
+  // Why: the code is measured on its own now, so the gate being open is
+  // not the same as "measured": a code of another tour is not measured at
+  // all, and the line must not claim it was.
+  const align = { hasMatrix: true, sampleCount: 5 };
+  const stable = {
+    status: "stable",
+    notStableReason: null,
+  } as unknown as QrFusedPose;
+  it.each([
+    ["measured", "Code measured."],
+    ["measuring", "Measuring the code…"],
+    ["seen", "Code seen."],
+  ] as const)("%s", (ready, text) => {
+    expect(authorStatusLine("A", stable, align, false, ready).text).toBe(text);
   });
 });

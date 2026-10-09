@@ -38,6 +38,7 @@ import type { LatLong } from "gps-plus-slam-app-framework/core";
 import {
   addDisplacementSample,
   CODE_MOVE_ESTIMATOR,
+  CODE_MOVE_RULE,
   displacementEstimate,
   displacementSamples,
   EMPTY_DISPLACEMENT_STATS,
@@ -104,6 +105,19 @@ export interface MovedCodeCheckView {
   /** Whether the turn check runs for this code (a settled save). */
   readonly turnChecked: boolean;
   readonly verdict: CodeMoveJudgement["verdict"];
+}
+
+/**
+ * Whether a live check has had the evidence to read a move: the rule's own
+ * gate (`CODE_MOVE_RULE` `minSpanS` and `minSpreadM`). Below it the verdict
+ * is `undecided` whatever the offset. The station guide holds a code lock
+ * the visitor's GPS disagrees with until this (tour kit K4 review R1).
+ */
+export function checkHadItsWindow(view: MovedCodeCheckView): boolean {
+  return (
+    view.spanS >= CODE_MOVE_RULE.minSpanS &&
+    view.spreadM >= CODE_MOVE_RULE.minSpreadM
+  );
 }
 
 export interface MovedCodeChecks {

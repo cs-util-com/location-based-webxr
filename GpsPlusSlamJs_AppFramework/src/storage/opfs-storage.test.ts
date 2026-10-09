@@ -271,6 +271,44 @@ describe('opfs-storage', () => {
       expect(parsed).toEqual(action);
     });
 
+    it('writes a depth sample packed and every action as compact JSON (scan pass S2)', async () => {
+      // Why: the packed depth grid is what makes a recording about 17x
+      // smaller per sample, and it is applied here, below the store - the
+      // in-memory action is never changed. Compact JSON for every action
+      // is a further free gain (nothing diffs these files).
+      const points = [0, 1, 2, 3].map((i) => ({
+        screenX: ((i % 2) + 1) / 3,
+        screenY: (Math.floor(i / 2) + 1) / 3,
+        depthM: 1.5,
+      }));
+      const depth = {
+        type: 'recording/recordDepthSample',
+        payload: {
+          timestamp: 1,
+          cameraPos: [0, 1, 0],
+          cameraRot: [0, 0, 0, 1],
+          points,
+        },
+      };
+      await writeAction(depth, 1);
+      await writeAction({ type: 'test/action', payload: { value: 42 } }, 2);
+
+      const sessionHandle =
+        getSessionHandle() as unknown as MockOPFSDirectoryHandle;
+      const actionsDir = (await sessionHandle.getDirectoryHandle(
+        'actions'
+      )) as unknown as MockOPFSDirectoryHandle;
+      const written = JSON.parse(
+        actionsDir.getStoredContentAsString('000001.json')!
+      ) as { payload: { points: unknown[]; grid: { size: number } } };
+      expect(written.payload.points).toEqual([]);
+      expect(written.payload.grid.size).toBe(2);
+      expect(depth.payload.points).toHaveLength(4);
+      expect(actionsDir.getStoredContentAsString('000002.json')).toBe(
+        '{"type":"test/action","payload":{"value":42}}'
+      );
+    });
+
     it('writes multiple actions with sequential numbering', async () => {
       // Why: Replay requires correct action ordering
       await writeAction({ type: 'action1' }, 1);

@@ -13,9 +13,19 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 import { resolveQrPayload } from "gps-plus-slam-app-framework/utils/qr-payload/qr-launch-dispatch";
 
+import { pictureProblem } from "./image-cap.js";
 import { DEFAULT_ASSET_PREFIX } from "./code-tour.js";
-import { describeOpenError } from "./open-errors.js";
+import type { TourIntegrityError } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
+
+import {
+  describeIntegrityError,
+  describeOpenError,
+  OPEN_FILE_ADVICE_LABEL,
+  offersFileOpen,
+} from "./open-errors.js";
 import { toStatsView } from "./stats-view.js";
+import { describeTourTrust } from "./tour-trust-view.js";
+import { codeTrustKey, linkTrustKey, trustStorage } from "./tour-trust.js";
 import { clearCacheLabel } from "./tour-flow.js";
 import {
   codeResolver,
@@ -24,6 +34,7 @@ import {
   type ScanOpen,
 } from "./scan-open.js";
 import {
+  openTourFile,
   openTourSession,
   tourLabel,
   type TourSession,
@@ -33,17 +44,41 @@ import {
   type TourViewerHooks,
   type TourViewerSession,
 } from "./tour-viewer-session.js";
+import type { ViewerMode } from "./mode.js";
+import {
+  entriesForVisitor,
+  scanEntryNames,
+  stopsVisitorDownload,
+} from "./tour-read-set.js";
 
 /** The label on every button that opens a tour. "Open" until the second
  *  testing session (F6): nobody wants to open the zip, they want to know
  *  the link works - and a link that opens here is one the printed code can
  *  carry. */
 const OPEN_BUTTON_LABEL = "Test link";
+/** The step-1 button that opens a tour zip from the device (tour kit plan
+ *  K0). */
+const OPEN_FILE_LABEL = "Open a file";
+
+/** What an open reads: a link, or a file picked on this device (K0). */
+type TourSource = { kind: "link"; url: string } | { kind: "file"; file: File };
 
 export interface ArchiveOpenDom {
   form: HTMLFormElement;
   linkInput: HTMLInputElement;
   openButton: HTMLButtonElement;
+  /** Step 1's "Open a file" (creator page). */
+  openFileButton: HTMLButtonElement;
+  /** The one hidden `<input type="file">` both file buttons click. */
+  fileInput: HTMLInputElement;
+  /** Under the error box, both modes: shown with the "download the file and
+   *  open it here" advice for a host that blocks browsers (K0). */
+  fileAdvice: HTMLElement;
+  openFileAdviceButton: HTMLButtonElement;
+  /** Names the file a tour was opened from (both modes). */
+  fileStatus: HTMLElement;
+  /** Who signed the open tour, trust warnings, linked tours (K1). */
+  tourTrust: HTMLElement;
   statsPanel: HTMLDivElement;
   statsHeadline: HTMLDivElement;
   statsDetail: HTMLDivElement;
@@ -71,6 +106,9 @@ export function wireArchiveOpen(deps: {
   cacheStore: BoundedLocalCacheStore | undefined;
   corsProxyBaseUrl: string;
   hooks: TourViewerHooks;
+  /** A visitor's page stops the background download of a copy that
+   *  carries more than visitors read (scan-pass plan S1). */
+  mode: ViewerMode;
 }): ArchiveOpen {
   const { ctx, dom, cacheStore, corsProxyBaseUrl, hooks } = deps;
   let objectUrls: string[] = [];
@@ -83,6 +121,7 @@ export function wireArchiveOpen(deps: {
     objectUrls = [];
     dom.gallery.replaceChildren();
     ctx.tourManifestStatus = "settled";
+    ctx.scanEntries = new Set();
     // Everything below belongs to a CLOSING tour, and without one there is
     // none of it: every writer of tour state runs after `ctx.session =
     // opened` and is guarded by it. What exists with no tour open is the
@@ -94,17 +133,19 @@ export function wireArchiveOpen(deps: {
     // The viewer pipeline's level source and the placed planes belong to the
     // closing tour — a newly opened tour must not relocalize against them.
     ctx.currentLevels = null;
+    ctx.currentLevelTexts = null;
     ctx.tourManifest = null;
+    // The closing tour's story and HUD (tour kit plan K4).
+    hooks.stopStations();
     ctx.rebuiltZip = null;
     ctx.tourLabel = null;
     // The measured level belongs to the CLOSING tour. It survives a SESSION
     // end on purpose (finishing ends the session), but it must not survive
     // the TOUR: M5 persists it into a draft, so carrying it over would
     // write one poster's measurement into another tour's draft and then
-    // into its zip (M5 review #9). The generation bump makes any mint hash
-    // still in flight land on nothing.
-    ctx.mintedLevel = null;
-    ctx.codeMeasurement = null;
+    // into its zip (M5 review #9). `resetFinishStep` below empties it (the
+    // creator's code module, code book plan M5d-2); the generation bump
+    // makes any mint hash still in flight land on nothing.
     ctx.mintGeneration += 1;
     // A failed finish is the closing tour's too: it keeps Save off, and only
     // a finish - which needs a measured level - clears it (scan-to-open
@@ -179,13 +220,18 @@ export function wireArchiveOpen(deps: {
   }
 
   function renderStats(): void {
-    if (ctx.session === null) return;
+    // A file is read from the device: there is no network transfer to
+    // report, and "serving from cache" would be wrong.
+    if (ctx.session === null || ctx.session.fromFile) return;
     // stats().origin tracks the LATEST read, so the label flips to "serving
     // from cache" once the warm download swaps the session over —
     // archive.origin is only the initial state (PR #357 review).
     const stats = ctx.session.stats();
     const view = toStatsView(stats, ctx.session.archive.size, stats.origin);
-    dom.statsPanel.hidden = false;
+    // The transfer numbers are the creator's (and ?debug=1's); a visitor's
+    // could stall below 100 % once the whole-file download stops (UI round
+    // 1, U1, review F11).
+    dom.statsPanel.hidden = deps.mode === "visitor" && !ctx.debug;
     dom.statsHeadline.textContent = view.headline;
     dom.statsDetail.textContent = view.detail;
   }
@@ -193,7 +239,9 @@ export function wireArchiveOpen(deps: {
   /** Sequentially stream image entries into the gallery — each image pops
    *  in as its bytes arrive, which is the visible proof of range streaming. */
   async function fillGallery(current: TourSession): Promise<void> {
-    for (const entry of current.entries) {
+    // Never the creator's walk (scan-pass plan S1): a copy that kept it must
+    // not decode its frames onto every visitor's page.
+    for (const entry of entriesForVisitor(current.entries, ctx.scanEntries)) {
       if (ctx.session !== current) return; // a newer open superseded this one
       const item = document.createElement("li");
       const caption = document.createElement("figcaption");
@@ -202,6 +250,10 @@ export function wireArchiveOpen(deps: {
         try {
           const blob = await current.loadEntry(entry.filename);
           if (ctx.session !== current) return;
+          // Measured before the <img> decodes it (tour kit K4 review R2).
+          const problem = await pictureProblem(blob);
+          if (ctx.session !== current) return;
+          if (problem !== null) throw new Error(problem);
           const url = URL.createObjectURL(blob);
           objectUrls.push(url);
           const img = document.createElement("img");
@@ -226,17 +278,125 @@ export function wireArchiveOpen(deps: {
    *  (scan-to-open plan §2) - a scan opens without a button of its own. */
   const openButtons = (): { button: HTMLButtonElement; idle: string }[] => [
     { button: dom.openButton, idle: OPEN_BUTTON_LABEL },
+    { button: dom.openFileButton, idle: OPEN_FILE_LABEL },
+    { button: dom.openFileAdviceButton, idle: OPEN_FILE_ADVICE_LABEL },
   ];
 
-  async function openUrl(
+  /**
+   * A LATE integrity failure (tour kit plan K1, §8 D3): an entry read, or
+   * the whole archive once it arrived, does not match the list the tour
+   * opened with. The tour's content is removed - in AR too, through the
+   * same teardown a tour switch uses - and the visitor is told why, on the
+   * page and in the AR status line (the error box is outside the overlay).
+   * The session already dropped its cached copy and refuses every read.
+   */
+  function onIntegrityFailure(
+    err: TourIntegrityError,
+    failed: TourSession,
+  ): void {
+    if (ctx.session !== failed) return; // closed or superseded: nothing shown
+    void teardownSession().then(() => {
+      const message = `${describeIntegrityError(err)} Its content was removed.`;
+      dom.errorBox.textContent = message;
+      ctx.contentError = message;
+      hooks.renderArStatus();
+    });
+  }
+
+  /** A late failure the session found before the page held it (its
+   *  report went nowhere then): handled now, through the same teardown. */
+  function reportEarlyFailure(opened: TourSession): void {
+    const early = opened.integrityFailure();
+    if (early !== null) onIntegrityFailure(early, opened);
+  }
+
+  /** The session a source opens; a file has its own reader (no network,
+   *  no cache: the bytes are already on the device). */
+  function openSession(source: TourSource): Promise<TourSession> {
+    const onStats = (): void => {
+      renderStats();
+    };
+    return source.kind === "file"
+      ? openTourFile(source.file, { onIntegrityFailure })
+      : openTourSession(source.url, {
+          ...(cacheStore !== undefined ? { cacheStore } : {}),
+          corsProxyBaseUrl,
+          onStats,
+          onIntegrityFailure,
+        });
+  }
+
+  /** What the page shows for a newly opened tour: a link goes to the
+   *  print step's prefill; a file has no link, so it is named under the
+   *  error box and the print step keeps asking for one. */
+  function presentSource(
+    source: TourSource,
+    origin: "host-step" | "measure-step",
+  ): void {
+    if (source.kind === "link") {
+      hooks.presentTourForPrint(source.url, origin);
+      return;
+    }
+    dom.fileStatus.textContent = fileStatusText(source.file.name);
+    dom.fileStatus.hidden = false;
+    hooks.presentLocalTour(origin);
+  }
+
+  function openUrl(
     url: string,
+    origin: "host-step" | "measure-step" = "host-step",
+    /** The printed code's text, when a code named this link (K1). */
+    codeText?: string,
+  ): Promise<OpenOutcome> {
+    return openTour({ kind: "link", url }, origin, codeText);
+  }
+
+  /**
+   * The lines about the open tour's signature (tour kit plan K1): who
+   * signed it or that nobody did, the trust-on-first-use warnings for its
+   * sources - the link (`linkTrustKey`) and the printed code - and, for a
+   * signed tour, its links to other series. Shown in both modes, under the file line.
+   */
+  async function presentTrust(
+    opened: TourSession,
+    source: TourSource,
+    codeText: string | undefined,
+  ): Promise<void> {
+    const sources = [
+      ...(source.kind === "link" ? [linkTrustKey(opened.archive.url)] : []),
+      ...(codeText === undefined ? [] : [codeTrustKey(codeText)]),
+    ];
+    const lines = await describeTourTrust({
+      integrity: opened.integrity,
+      sources,
+      storage: trustStorage(),
+      nowMs: Date.now(),
+      audience: deps.mode,
+    }).catch(() => null);
+    if (ctx.session !== opened || lines === null) return;
+    dom.tourTrust.textContent = lines.join("\n");
+    // A visitor's unsigned tour without a warning has no line (UI round 1).
+    dom.tourTrust.hidden = lines.length === 0;
+  }
+
+  async function openTour(
+    source: TourSource,
     /** Where the open came from - a step-4 scan asks the wizard to
      *  stay there rather than jump to step 2 (M3 review #1). */
     origin: "host-step" | "measure-step" = "host-step",
+    codeText?: string,
   ): Promise<OpenOutcome> {
+    // Another tour would replace one whose rebuilt file was not saved: ask
+    // first (UI round 1, U2; the work itself stays in the draft).
+    if (ctx.session !== null && !hooks.confirmLeaveTour()) {
+      return { kind: "cancelled" };
+    }
     const generation = ++ctx.openGeneration;
     opening = true;
     dom.errorBox.textContent = "";
+    dom.fileStatus.hidden = true;
+    dom.tourTrust.hidden = true;
+    dom.fileAdvice.hidden = true;
     // Async-UI rule: the in-progress state engages BEFORE the first await —
     // teardown of a previous session is async, and a second submission
     // landing in that window used to race the button state (PR #357 review).
@@ -250,13 +410,7 @@ export function wireArchiveOpen(deps: {
       // openUrl before the catch/finally existed — the button stayed
       // "Opening…" forever and the error surfaced nowhere.
       await teardownSession();
-      const opened = await openTourSession(url, {
-        ...(cacheStore !== undefined ? { cacheStore } : {}),
-        corsProxyBaseUrl,
-        onStats: () => {
-          renderStats();
-        },
-      });
+      const opened = await openSession(source);
       if (generation !== ctx.openGeneration) {
         // A newer open superseded this one while it was in flight (e.g. a
         // click racing the ?qr= boot) — the loser cleans itself up.
@@ -264,28 +418,57 @@ export function wireArchiveOpen(deps: {
         return { kind: "superseded" };
       }
       ctx.session = opened;
-      ctx.tourLabel = tourLabel(url);
+      ctx.tourLabel = labelOf(source);
+      // Pending BEFORE the placement trigger below: the photos' baked spots
+      // live in tour.json, and a trigger that saw the teardown's "settled"
+      // with no manifest would decline them for the whole session (S1
+      // milestone review #4; archive-open-order.test.ts).
+      ctx.tourManifestStatus = "pending";
       renderStats();
-      void fillGallery(opened);
       // A tour opened AFTER entering AR places itself from the open path
       // (flows plan M4, review #8) - not from the levels continuation
       // below, whose rejection would otherwise silently cancel a GPS-only
       // feature.
       hooks.tryPlaceTour();
-      hooks.presentTourForPrint(url, origin);
+      presentSource(source, origin);
+      void presentTrust(opened, source, codeText);
       // The placed content (guided-setup plan M3): the finish step writes
       // it back, so a re-measure never drops what an earlier session placed.
       // A broken manifest is an error the creator must see (the framework's
       // rule for this file), not a silently empty tour.
-      ctx.tourManifestStatus = "pending";
       void opened.loadTourManifest().then(
         (manifest) => {
           if (ctx.session !== opened) return;
           ctx.tourManifest = manifest;
           ctx.tourManifestStatus = "settled";
+          ctx.scanEntries = new Set(
+            manifest === null
+              ? []
+              : scanEntryNames(
+                  opened.entries.map((e) => e.filename),
+                  manifest,
+                  opened.manifestWrap,
+                ),
+          );
+          // The background download fetches the WHOLE file; a visitor of a
+          // baked copy that kept the walk reads entries on demand instead.
+          // The archive's dispose aborts the download AND its recovery
+          // download for a host that stops honouring ranges mid-session
+          // (S1 milestone review #5): accepted for this copy only.
+          if (
+            stopsVisitorDownload(
+              deps.mode,
+              ctx.scanEntries,
+              manifest?.captureSpots !== undefined,
+            )
+          ) {
+            opened.archive.dispose();
+          }
+          // The gallery waits for the manifest, which says what it shows.
+          void fillGallery(opened);
           // Only now can a draft be judged: "already hosted" is a question
           // about this manifest.
-          hooks.presentDraftForTour(url);
+          hooks.presentDraftForTour(tourKeyOf(source, opened));
           hooks.renderAuthorReadout();
           hooks.tryPlaceTour(); // a visitor's content may now be placeable
         },
@@ -294,6 +477,7 @@ export function wireArchiveOpen(deps: {
           // The finish step refuses on "broken" (M3 review #5): it must not
           // overwrite a placement it could not read.
           ctx.tourManifestStatus = "broken";
+          void fillGallery(opened);
           dom.errorBox.textContent = `Reading the tour's content list (tour.json) failed: ${
             err instanceof Error ? err.message : String(err)
           }`;
@@ -310,6 +494,7 @@ export function wireArchiveOpen(deps: {
         .then((levels) => {
           if (ctx.session !== opened) return;
           ctx.currentLevels = levels;
+          ctx.currentLevelTexts = opened.levelTexts();
           hooks.renderAuthorReadout();
           hooks.reconsiderScanGate(levels);
           // The controller caches a level (or the negative-cache
@@ -335,16 +520,23 @@ export function wireArchiveOpen(deps: {
           // its own line names the failure inside the overlay.
           hooks.reconsiderScanGate("unavailable");
         });
+      reportEarlyFailure(opened);
       return { kind: "opened" };
     } catch (err) {
       if (generation !== ctx.openGeneration) return { kind: "superseded" };
-      dom.errorBox.textContent = describeOpenError(err, url);
+      const cause =
+        err instanceof OpenRemoteArchiveError ? err.rejectCause : "other";
+      dom.errorBox.textContent = describeOpenError(
+        err,
+        source.kind === "link" ? source.url : undefined,
+        deps.mode,
+      );
+      // A host that blocks browsers: the advice says "download the file
+      // and open it here", and its button is right below it (K0). Offline,
+      // missing, broken or too large: a download would not help.
+      dom.fileAdvice.hidden = !offersFileOpen(cause);
       // The scan-to-open retry policy reads the cause (plan §9 #7).
-      return {
-        kind: "failed",
-        cause:
-          err instanceof OpenRemoteArchiveError ? err.rejectCause : "other",
-      };
+      return { kind: "failed", cause };
     } finally {
       // Guarded like every other effect in this function: a superseded
       // open's finally must not undo the newer open's in-progress state
@@ -365,9 +557,9 @@ export function wireArchiveOpen(deps: {
   const scanOpen = createScanOpen({
     ctx,
     resolve: codeResolver(corsProxyBaseUrl),
-    open: (url) => {
+    open: (url, codeText) => {
       dom.linkInput.value = url;
-      return openUrl(url, "measure-step");
+      return openUrl(url, "measure-step", codeText);
     },
     isOpening: () => opening,
     now: () => performance.now(),
@@ -380,6 +572,20 @@ export function wireArchiveOpen(deps: {
     event.preventDefault();
     const url = dom.linkInput.value.trim();
     if (url !== "") void openUrl(url);
+  });
+
+  // "Open a file" (tour kit plan K0): both buttons open the one picker;
+  // the pick opens the tour. The value is cleared so picking the SAME file
+  // again (after a fix, or a failed open) still fires `change`.
+  for (const button of [dom.openFileButton, dom.openFileAdviceButton]) {
+    button.addEventListener("click", () => {
+      dom.fileInput.click();
+    });
+  }
+  dom.fileInput.addEventListener("change", () => {
+    const file = dom.fileInput.files?.[0];
+    dom.fileInput.value = "";
+    if (file !== undefined) void openTour({ kind: "file", file });
   });
 
   wireClearCache(ctx, dom, cacheStore);
@@ -396,9 +602,31 @@ export function wireArchiveOpen(deps: {
         return;
       }
       dom.linkInput.value = url;
-      await openUrl(url);
+      await openUrl(url, "host-step", payload);
     },
   };
+}
+
+/** What the creator's panel calls the tour: a link's `tourLabel`, or a
+ *  file's name, short. */
+function labelOf(source: TourSource): string {
+  if (source.kind === "link") return tourLabel(source.url);
+  const name = source.file.name;
+  return name.length > 24 ? `${name.slice(0, 24)}…` : name;
+}
+
+/** The tour's identity for its draft: its link as the creator gave it,
+ *  or for a file the content key the session was opened under
+ *  (`tour-file-key.ts`, also its `archive.url`). */
+function tourKeyOf(source: TourSource, opened: TourSession): string {
+  return source.kind === "link" ? source.url : opened.archive.url;
+}
+
+/** The line under the error box once a tour opened from a file - seen by
+ *  a visitor too, so it only says what happened; step 1's own copy tells
+ *  a creator that a file has no link to print. */
+function fileStatusText(name: string): string {
+  return `Opened "${name}" from this device.`;
 }
 
 /** The Storage section (flows plan M2, DEC-F1): hidden entirely without a

@@ -86,7 +86,10 @@ describe("fileNameFromContentDisposition", () => {
     ).toBeNull();
   });
 
-  it("never throws, and never returns a path", () => {
+  // About 2.2 s alone (measured 2026-10-07): the 5 s default timed out
+  // under a loaded machine (tour-viewer unit flakes follow-up, 2026-10-06-2352), so the budget is explicit; the run
+  // count is not lowered.
+  it("never throws, and never returns a path", { timeout: 30_000 }, () => {
     // Any code point, not fast-check's printable-ASCII default, and headers
     // shaped like the real forms, so control characters and non-ASCII
     // reach the name paths (milestone review #3).

@@ -1,11 +1,17 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
-import { installTourViewerArFakes, seedAlignment } from "./ar-fakes.js";
+import {
+  enterArAndMeasure,
+  installTourViewerArFakes,
+  openFixtureTour,
+  seedAlignment,
+} from "./ar-fakes.js";
 import {
   E2E_QR_ARCHIVE,
   E2E_QR_TEXT,
   E2E_QR_UNKNOWN_TEXT,
+  e2eQrLevelEntryName,
 } from "./qr-fixture.mjs";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 import { parseQrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
@@ -65,8 +71,16 @@ const RANGES_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
 
 /** The visitor's way in (DEC-N1): a `?qr=` launch, which opens the tour on
  *  boot and shows the visitor screen instead of the setup. */
-async function openAsVisitor(page, url, imageCount = 8) {
-  await page.goto(`/?qr=${encodeURIComponent(url)}`);
+async function openAsVisitor(
+  page,
+  url,
+  imageCount = 8,
+  { debug = false } = {},
+) {
+  // `debug`: the technical status line (frames, votes, fixes) a visitor
+  // reads only with ?debug=1 since UI round 1; tests of the pipeline's
+  // internals read it there, the plain line has its own test.
+  await page.goto(`/?qr=${encodeURIComponent(url)}${debug ? "&debug=1" : ""}`);
   await expect(page.getByTestId("gallery").locator("img")).toHaveCount(
     imageCount,
     { timeout: 15000 },
@@ -85,11 +99,13 @@ async function lockTheCode(page) {
         await page.evaluate(() => {
           /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
         });
-        return page.getByTestId("ar-status").textContent();
+        return page.getByTestId("ar-status").getAttribute("data-gate");
       },
       { timeout: 20000 },
     )
-    .toMatch(/Code recognised/);
+    // The CODE passed the gate (U1 milestone review #9: the visitor's state
+    // alone also reads "placing" after a GPS-only pass).
+    .toBe("passed-code");
 }
 
 /**
@@ -142,8 +158,12 @@ test("the plain page is the creator's setup; a ?qr= launch is the visitor's scre
   // gets the consent copy, the Start button and one stats line.
   await expect(page.getByTestId("storage-panel")).toBeHidden();
   await expect(page.getByTestId("gallery")).toBeHidden();
-  await expect(page.getByTestId("stats")).toBeVisible();
-  await expect(page.getByTestId("ar-hint")).toContainText("printed code");
+  // The transfer numbers are the creator's since UI round 1 (U1, review
+  // F11): a visitor's could stall below 100 % and read as stuck.
+  await expect(page.getByTestId("stats")).toBeHidden();
+  await expect(page.getByTestId("ar-hint")).toContainText(
+    "the tour's code (on the poster)",
+  );
   await expect(page.getByTestId("enter-ar")).toHaveText("Start the tour");
 });
 
@@ -170,9 +190,11 @@ test("a visitor who refuses the location stays on 'Allow location' with the sett
   });
   await button.click();
   await expect(button).toHaveText("Start the tour");
-  await expect(page.getByTestId("error")).toContainText(/no gps fix yet/i);
+  // A benign note above the button, not the red alert (UI round 1, U1).
+  await expect(page.getByTestId("ar-hint")).toContainText(/no gps fix yet/i);
+  await expect(page.getByTestId("error")).toBeEmpty();
   await button.click();
-  await expect(button).toHaveText("Tour running");
+  await expect(button).toHaveText("Exit AR");
 });
 
 test("a first-time visitor is asked for the location on its own tap, then starts the tour on the next (DEC-N2)", async ({
@@ -201,7 +223,7 @@ test("a first-time visitor is asked for the location on its own tap, then starts
   });
   expect(state).toEqual({ requests: 1, initAR: 0 }); // no session yet
   await button.click();
-  await expect(button).toHaveText("Tour running");
+  await expect(button).toHaveText("Exit AR");
 });
 
 test("visitor mode boots to running: session started, alignment bound, capture at 8 Hz", async ({
@@ -211,7 +233,7 @@ test("visitor mode boots to running: session started, alignment bound, capture a
   await expect(page.getByTestId("enter-ar")).toHaveText("Start the tour");
   await expect(page.getByTestId("ar-hint")).toBeVisible();
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   // `#ar-root` is the DOM overlay: the start-screen hint must not sit over
   // the camera feed for the whole session (milestone review, 2026-09-05).
   await expect(page.getByTestId("ar-hint")).toBeHidden();
@@ -254,9 +276,9 @@ test("visitor mode boots to running: session started, alignment bound, capture a
 test("camera frames flow through the foundation and surface in the status line", async ({
   page,
 }) => {
-  await openAsVisitor(page, RANGES_ARCHIVE);
+  await openAsVisitor(page, RANGES_ARCHIVE, 8, { debug: true });
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
 
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.emitFrames(3);
@@ -274,7 +296,7 @@ test("creator mode (the plain page) boots the same foundation under its own labe
   await page.goto("/");
   await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup");
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   await expect(page.getByTestId("ar-status")).toContainText("Creator mode");
 
   const wiring = await page.evaluate(() => {
@@ -295,6 +317,21 @@ test("creator mode (the plain page) boots the same foundation under its own labe
   expect(wiring.isRecording).toBe(true);
 });
 
+test("Exit AR ends the visitor's session from the button (UI round 1, U2)", async ({
+  page,
+}) => {
+  // Why this matters (usability review F2): the button used to sit
+  // disabled as "Tour running" over the camera; a visitor who was done had
+  // to guess at the back gesture.
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  await enterAr(page);
+  const button = page.getByTestId("enter-ar");
+  await expect(button).toHaveText("Exit AR");
+  await expect(button).toBeEnabled();
+  await button.click();
+  await expect(button).toHaveText("Start the tour");
+});
+
 test("a system session end tears the runtime down, and a re-entry starts a clean session", async ({
   page,
 }) => {
@@ -305,7 +342,7 @@ test("a system session end tears the runtime down, and a re-entry starts a clean
   // alignment solve.
   await page.goto("/");
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
 
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.endXrSession();
@@ -322,7 +359,7 @@ test("a system session end tears the runtime down, and a re-entry starts a clean
   expect(afterEnd.isRecording).toBe(false);
 
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   const afterReenter = await page.evaluate(() => {
     const t = /** @type {any} */ (window).__tourViewerTest;
     return {
@@ -369,7 +406,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   await enterAr(page);
   await expect(page.getByTestId("setup-controls")).toBeVisible();
   await expect(page.getByTestId("setup-finish")).toBeDisabled(); // not measured
-  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   await expect(page.getByTestId("setup-status")).toHaveText(
     /hold the phone on the printed code/i,
   );
@@ -390,7 +427,8 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
       { timeout: 15000 },
     )
     .toMatch(/waiting for GPS alignment/i);
-  await expect(page.getByTestId("setup-mint")).toBeDisabled();
+  // Nothing is measured before the gate opens: Finish stays off.
+  await expect(page.getByTestId("setup-finish")).toBeDisabled();
   // The size input is locked while the session runs — the solves used the
   // captured value (milestone review #3).
   await expect(page.getByTestId("author-size")).toBeDisabled();
@@ -404,7 +442,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
     });
   });
   await expect(page.getByTestId("setup-status")).toHaveText(/0 of 3 fixes/i);
-  await expect(page.getByTestId("setup-mint")).toBeDisabled();
+  await expect(page.getByTestId("setup-finish")).toBeDisabled();
 
   // Feed the REAL alignment solve: three odom↔GPS pairs, ~15 m apart, in a
   // consistent identity-ish mapping around the zero reference.
@@ -433,12 +471,12 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
       });
     }
   });
-  await expect(page.getByTestId("setup-status")).toHaveText(
-    /save the position/i,
+  // Measured on its own once the gate opens (UI round 1, U3).
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /Code measured/i,
     { timeout: 10000 },
   );
 
-  await page.getByTestId("setup-mint").click();
   // The hosted zip already stores this code's pose, so the new measurement
   // does NOT replace it: the stored pose stays the reference and the
   // measurement only lines this visit up with it (authoring plan
@@ -498,37 +536,40 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   );
 
   // FINISH (guided-setup plan M3, DEC-N6): the zip is rebuilt in the
-  // browser from the session's bytes, the AR session ends, and the
-  // download appears at the END of step 4 - it was step 5 until the flow
-  // rework (F10), which is not a setup step but the end of this one. The
-  // download is a fresh tap (its own gesture).
+  // browser from the session's bytes, the AR session ends, and the Finish
+  // SAVES it by itself at the END of step 4 (field test 2, F4; owner
+  // decision D-F4a: a save behind a button was missed). The button left
+  // saves it again (D-F4b). The save that did not go through first
+  // (async-UI rule: the failure branch).
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.saveOutcome = false;
+  });
   await page.getByTestId("setup-finish").click();
   await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup", {
     timeout: 15000,
   });
   await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
   await expect(page.getByTestId("finish-block")).toBeVisible();
+  await expect(page.getByTestId("finish-status")).toContainText(/not saved/i);
   // The replace instructions wait for a file to actually exist.
   await expect(page.getByTestId("replace-help")).toBeHidden();
-  await expect(page.getByTestId("finish-status")).toContainText(/ready/i);
   const download = page.getByTestId("finish-download");
   await expect(download).toBeEnabled();
-  // The dismissed-picker path first (async-UI rule: the failure branch).
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.saveOutcome = false;
-  });
-  await download.click();
-  await expect(page.getByTestId("finish-status")).toContainText(/not saved/i);
-  await expect(download).toBeEnabled();
+  await expect(download).toHaveText("Save the tour zip again");
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.saveOutcome = true;
   });
   await download.click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
   await expect(page.getByTestId("replace-help")).toBeVisible();
-  // The share route's extra paragraph is noise on the save route: this
-  // creator overwrote the hosted file, so their link IS unchanged.
-  await expect(page.getByTestId("replace-help-share")).toBeHidden();
+  // Always the plain save, never the share sheet (D-F4b).
+  expect(
+    await page.evaluate(() =>
+      /** @type {any} */ (window).__tourViewerTest.downloads
+        .slice(-2)
+        .map((/** @type {{ seam: string }} */ d) => d.seam),
+    ),
+  ).toEqual(["download", "download"]);
   // A tour NOT on Drive keeps the other hosts' text; the Drive steps are
   // for Drive only (Drive replace plan §3 M3, milestone review #2).
   await expect(page.getByTestId("replace-help-generic")).toBeVisible();
@@ -622,7 +663,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // origins. The snapshot makes the count session-relative. (The finish
   // above already ended the session.)
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   await expect
     .poll(
       async () => {
@@ -634,7 +675,6 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
       { timeout: 15000 },
     )
     .toMatch(/0 of 3 fixes/i);
-  await expect(page.getByTestId("setup-mint")).toBeDisabled();
   // Placement waits for THIS session's alignment too (M4 review #2): the
   // level survived the session end, the fixes did not.
   await expect(page.getByTestId("setup-pin")).toBeDisabled();
@@ -646,8 +686,7 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   // so batch two rebuilt from it and batch one vanished from tour.json
   // along with its photo bytes.
   await seedAlignment(page);
-  await expect(page.getByTestId("setup-mint")).toBeEnabled();
-  await page.getByTestId("setup-mint").click();
+  // The code in hand is stored now: this visit only sees it (U3).
   // The surface came back (the no-surface case above turned it off).
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.reticleVisible = true;
@@ -663,8 +702,6 @@ test("the creator measures the code, finishes, and downloads a rebuilt zip that 
   await expect(page.getByTestId("enter-ar")).toHaveText("Start AR setup", {
     timeout: 15000,
   });
-  await expect(page.getByTestId("finish-status")).toContainText(/ready/i);
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   const second = await readDownloadedZip(page, 2);
@@ -759,8 +796,12 @@ test("a first measurement of a code the tour does not store is minted into the r
       });
     }
   });
-  await expect(page.getByTestId("setup-mint")).toBeEnabled({ timeout: 10000 });
-  await page.getByTestId("setup-mint").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /Code measured/,
+    {
+      timeout: 10000,
+    },
+  );
   // Nothing stored, nothing kept: the measurement IS the code's position.
   await expect(page.getByTestId("setup-status")).toContainText(
     /Position saved\. Place content/,
@@ -781,7 +822,6 @@ test("a first measurement of a code the tour does not store is minted into the r
   await expect(page.getByTestId("finish-block")).toBeVisible({
     timeout: 30000,
   });
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   const rebuilt = await readDownloadedZip(page, 0);
@@ -796,7 +836,7 @@ test("a first measurement of a code the tour does not store is minted into the r
   // The quality block records the alignment the stored geo CAME FROM
   // (milestone review #7) - M5's error attribution reads these. Since the
   // authoring settle (M2c) that is the Finish-time re-mint, not the tap:
-  // the 3 fixes solved in at "Save the position" plus the 3 seeded after
+  // the 3 fixes solved in at the measurement (automatic since U3) plus the 3 seeded after
   // it, i.e. 6 (visit-settle.ts.md, "Why the block describes the
   // SETTLE"). 3 would mean the tap's level reached the zip unsettled.
   expect(level.qr.mintQuality?.alignmentSampleCount).toBe(6);
@@ -805,6 +845,170 @@ test("a first measurement of a code the tour does not store is minted into the r
   expect(
     manifest.objects.map((o) => (o.kind === "pin" ? o.label : o.kind)),
   ).toEqual(["First code's pin"]);
+});
+
+/**
+ * Point the fake camera at another code and feed frames until the page has
+ * measured it. The status line already reads "Code measured" for the code
+ * before, so waiting for that text alone would pass at once: the line must
+ * first leave it (the new code is measured from scratch) and then come back.
+ */
+async function measureAnotherCode(page, text, position) {
+  await page.evaluate(
+    ({ text, position }) => {
+      /** @type {any} */ (window).__tourViewerTest.armQrDetection(
+        text,
+        position,
+      );
+    },
+    { text, position },
+  );
+  const statusAfterFrame = async () => {
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+    });
+    return page.getByTestId("setup-status").textContent();
+  };
+  await expect
+    .poll(statusAfterFrame, { timeout: 15000 })
+    .not.toMatch(/Code measured/);
+  await expect
+    .poll(statusAfterFrame, { timeout: 15000 })
+    .toMatch(/Code measured/);
+}
+
+/** Metres between two stored codes' geo (equirectangular; ample at 20 m). */
+function geoDistanceM(a, b) {
+  const r = 6371008.8;
+  const lat = ((a.lat + b.lat) / 2) * (Math.PI / 180);
+  const dn = (b.lat - a.lat) * (Math.PI / 180) * r;
+  const de = (b.lon - a.lon) * (Math.PI / 180) * r * Math.cos(lat);
+  return Math.hypot(dn, de);
+}
+
+test("two new codes 20 m apart, measured in one visit, both reach the zip with one Finish (code book plan M4e)", async ({
+  page,
+}) => {
+  // Two measurements, two pins, a Finish and the zip read back: longer
+  // than the 30 s default allows on a loaded machine (the first run of
+  // this test reached the saved zip and timed out reading it).
+  test.setTimeout(90_000);
+  // Why this matters (code book refactor plan, D1/D5): before the code
+  // book, a Finish wrote ONE code, and a second code in the same visit was
+  // refused with "Finish first". Now every code seen while a tour is open
+  // is measured and kept, and one Finish writes all of them. The unit tests
+  // prove the book, the settle and the zip writer apart; only the composed
+  // page shows that the second code does not replace the first on its way
+  // to the downloaded zip.
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(PLAIN_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(8, {
+    timeout: 15000,
+  });
+  await enterAr(page);
+  await page.evaluate((text) => {
+    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
+  }, E2E_QR_TEXT);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("setup-status").textContent();
+      },
+      { timeout: 15000 },
+    )
+    .toMatch(/waiting for GPS alignment/i);
+  await seedAlignment(page);
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /Code measured/,
+    { timeout: 10000 },
+  );
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("Pin at the first code");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /1 object placed/,
+  );
+
+  // The second code, 20 m east of the first ([1, 1.5, -2] by default; x is
+  // east in the fakes' world).
+  await measureAnotherCode(page, E2E_QR_UNKNOWN_TEXT, [21, 1.5, -2]);
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("Pin at the second code");
+  await page.getByTestId("pin-save").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /2 objects placed/,
+  );
+
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("finish-block")).toBeVisible({
+    timeout: 30000,
+  });
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+
+  const rebuilt = await readDownloadedZip(page, 0);
+  const first = `qr/${await qrCodeId(E2E_QR_TEXT)}.json`;
+  const second = `qr/${await qrCodeId(E2E_QR_UNKNOWN_TEXT)}.json`;
+  const levelNames = Object.keys(rebuilt.entries).filter((n) =>
+    n.startsWith("qr/"),
+  );
+  expect(levelNames.sort()).toEqual([first, second].sort());
+  const geoOf = (name) => {
+    const geo = parseQrLevel(JSON.parse(rebuilt.entries[name])).qr.geo;
+    if (geo == null) throw new Error(`${name} has no geo`);
+    return geo;
+  };
+  // Each code keeps ITS OWN pose: 20 m apart, as measured. One pose written
+  // under both names would read 0 m.
+  expect(geoDistanceM(geoOf(first), geoOf(second))).toBeCloseTo(20, 0);
+  const manifest = parseTourManifest(JSON.parse(rebuilt.entries["tour.json"]));
+  expect(
+    manifest.objects.map((o) => (o.kind === "pin" ? o.label : o.kind)).sort(),
+  ).toEqual(["Pin at the first code", "Pin at the second code"]);
+  // The summary after Finish names both codes: it listed only the code in
+  // hand and the hosted ones, so the first code was missing (M4e).
+  await expect(
+    page.getByTestId("summary").getByTestId("summary-code"),
+  ).toHaveCount(2);
+});
+
+test("a later visit adds a new code beside a stored one; the stored code's level is kept byte for byte (code book plan M4e)", async ({
+  page,
+}) => {
+  // Two measurements, two pins, a Finish and the zip read back: longer
+  // than the 30 s default allows on a loaded machine (the first run of
+  // this test reached the saved zip and timed out reading it).
+  test.setTimeout(90_000);
+  // Why this matters (code book plan, D5): a creator who prints a second
+  // code for a tour that already stores one measures the stored code (its
+  // pose is kept, D10b) and then the new one. The Finish must write the
+  // new code AND leave the stored one exactly as hosted - a re-write would
+  // silently move every note placed against it.
+  await openFixtureTour(page);
+  await enterArAndMeasure(page);
+  await measureAnotherCode(page, E2E_QR_UNKNOWN_TEXT, [21, 1.5, -2]);
+
+  await page.getByTestId("setup-finish").click();
+  await expect(page.getByTestId("finish-block")).toBeVisible({
+    timeout: 30000,
+  });
+  await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
+
+  const rebuilt = await readDownloadedZip(page, 0);
+  const hosted = await page.evaluate(async (url) => {
+    const response = await fetch(url);
+    return Array.from(new Uint8Array(await response.arrayBuffer()));
+  }, E2E_QR_ARCHIVE);
+  const hostedEntries = await zipEntries(new Uint8Array(hosted));
+  const stored = await e2eQrLevelEntryName();
+  const added = `qr/${await qrCodeId(E2E_QR_UNKNOWN_TEXT)}.json`;
+  expect(Object.keys(hostedEntries)).not.toContain(added);
+  expect(rebuilt.entries[stored]).toBe(hostedEntries[stored]);
+  const level = parseQrLevel(JSON.parse(rebuilt.entries[added]));
+  expect(level.qr.geo?.lat).toEqual(expect.any(Number));
 });
 
 test("the creator's AR visit first asks for the tour's code, and stops asking once the code is seen (authoring plan 2026-09-28-0953 §3.2a, D5)", async ({
@@ -880,10 +1084,9 @@ test("a failed finish says so with priority and can be retried; the panel shows 
     .toMatch(/waiting for GPS alignment/i);
   await seedAlignment(page);
   await expect(page.getByTestId("setup-status")).toContainText(
-    /save the position/i,
+    /Code measured/i,
     { timeout: 10000 },
   );
-  await page.getByTestId("setup-mint").click();
   await expect(page.getByTestId("setup-finish")).toBeEnabled();
   // The size note tells the creator what the rebuild will copy.
   await expect(page.getByTestId("setup-status")).toContainText(/MB/);
@@ -904,7 +1107,7 @@ test("a failed finish says so with priority and can be retried; the panel shows 
     /finishing failed/i,
   );
   await expect(page.getByTestId("setup-finish")).toBeEnabled();
-  await expect(page.getByTestId("enter-ar")).toHaveText("Setting up in AR"); // the session survived
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR"); // the session survived
 
   // Retry with the network back: progress, then step 5.
   await page.unroute("http://127.0.0.1:5197/**");
@@ -928,10 +1131,10 @@ test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", a
   // silent decline that still shows a ring is exactly the failure the
   // taxonomy exists to make visible.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
-  await openAsVisitor(page, ARCHIVE, 2);
+  await openAsVisitor(page, ARCHIVE, 2, { debug: true });
 
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
 
   await page.evaluate(() => {
     const store = /** @type {any} */ (window).__tourViewerTest.alignmentStore;
@@ -972,7 +1175,7 @@ test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", a
     /** @type {any} */ (window).__tourViewerTest.emitFrames(2);
   });
   await expect(page.getByTestId("ar-status")).toContainText(
-    "Point the phone at the printed code",
+    "Point the phone at the tour's code",
   );
   await expect(page.getByTestId("ar-status")).not.toContainText(
     /capture spots|slowly look around|hold steady/,
@@ -1023,6 +1226,44 @@ test("a recording-carrying tour places photos at CAPTURE SPOTS, not the ring", a
   expect(planesAfter).toBe(planesBefore);
 });
 
+test("a tour whose photo spots were baked at its Finish places them without any recording (scan-pass S1)", async ({
+  page,
+}) => {
+  // Why this matters (scan-pass plan S1, S-D11): a published tour carries
+  // its photos' spots in tour.json and no walk at all, so the viewer must
+  // place from the baked spots - never replay the walk the copy kept for
+  // a co-author - and report the BAKED quality (7 fixes; the walk has
+  // none). Its gallery shows the 2 baked photos, not the unbaked third.
+  const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/baked-tour.zip";
+  await openAsVisitor(page, ARCHIVE, 2, { debug: true });
+  await enterAr(page);
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.alignmentStore.dispatch({
+      type: "gpsData/setZeroPos",
+      payload: { lat: 47.5, lon: 8.7 },
+    });
+  });
+  await forceTrackingReady(page);
+  await lockTheCode(page);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").textContent();
+      },
+      { timeout: 20000 },
+    )
+    .toMatch(/2 photos at capture spots \(7 fixes/);
+  await expect(page.getByTestId("ar-status")).not.toContainText("photo ring");
+  // Long after the gallery finished: still the two baked photos (the count
+  // checked on open could pass on its way to three).
+  await expect(page.getByTestId("gallery").locator("img")).toHaveCount(2);
+  await expect(page.getByTestId("gallery")).not.toContainText("frame-2.png");
+});
+
 /** Force the tracking-quality slice to `ok` (→ onboarding `ready`). The
  *  fake initAR never dispatches poses, and `reportUpdated` is the slice's
  *  own action (not a middleware input), so it is not recomputed away. */
@@ -1051,7 +1292,7 @@ test("a tour with no recording and no printed codes says so, instead of scanning
   // Why this matters (feedback F3): the reporter's zip could not carry a
   // code, and the old line promised one forever.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/plain-tour.zip";
-  await openAsVisitor(page, ARCHIVE, 8);
+  await openAsVisitor(page, ARCHIVE, 8, { debug: true });
   await enterAr(page);
   await forceTrackingReady(page);
   await expect
@@ -1089,12 +1330,12 @@ test("the visitor's content and ring wait for the lock; the escape after 45 s pl
   // and the ring follows the vote. A second visitor never locks: the clock
   // (fired by the fake, no frames needed) offers the escape, which places
   // by GPS and says so.
-  await openAsVisitor(page, RANGES_ARCHIVE);
+  await openAsVisitor(page, RANGES_ARCHIVE, 8, { debug: true });
   await enterAr(page);
   await seedAlignment(page);
   await forceTrackingReady(page);
   await expect(page.getByTestId("ar-status")).toContainText(
-    "Point the phone at the printed code",
+    "Point the phone at the tour's code",
   );
   await expect(page.getByTestId("scan-escape")).toBeHidden();
   expect(
@@ -1150,6 +1391,110 @@ test("the visitor's content and ring wait for the lock; the escape after 45 s pl
   await expect(page.getByTestId("ar-status")).toContainText("1 placed object");
 });
 
+test("a visitor reads one plain sentence per state, never the debug readout (UI round 1, U1)", async ({
+  page,
+}) => {
+  // Why this matters (usability review F1, F15): the visitor's status line
+  // used to be a debug readout - a frame counter, "vote batches", "Pose
+  // error px". Without ?debug=1 a visitor now reads one sentence per
+  // state, and the line's data-state names the state for the page.
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  await enterAr(page);
+  await seedAlignment(page);
+  await forceTrackingReady(page);
+  const status = page.getByTestId("ar-status");
+  await expect(status).toHaveAttribute("data-state", "scan");
+  await expect(status).toHaveText(
+    "Point your phone at the tour's code (on the poster).",
+  );
+  await lockTheCode(page);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        // The fakes send frames but no poses, so tracking quality decays to
+        // "lost", which the placed line now reports (U1 milestone review
+        // #7); a real session keeps reporting. Re-assert it is fine.
+        await forceTrackingReady(page);
+        return status.getAttribute("data-state");
+      },
+      { timeout: 20000 },
+    )
+    .toBe("placed");
+  await expect(status).toHaveText("Tour placed. Look around.");
+  // The screen reader's copy says the same, once.
+  await expect(page.getByTestId("ar-status-live")).toHaveText(
+    "Tour placed. Look around.",
+  );
+  for (const word of [
+    "camera frames",
+    "vote batch",
+    "Pose error",
+    "Visitor mode",
+  ]) {
+    await expect(status).not.toContainText(word);
+  }
+});
+
+test("a visitor's plain line says when a tour has nothing to show, and when GPS placed it (U1 milestone review #2, #4)", async ({
+  page,
+}) => {
+  // Why this matters: the first plain line read "Placing the tour…"
+  // forever on a tour with no recording and no codes (the F3 case, now
+  // without ?debug=1), and the GPS escape needs its own honest sentence.
+  await openAsVisitor(page, PLAIN_ARCHIVE);
+  await enterAr(page);
+  await seedAlignment(page);
+  await forceTrackingReady(page);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").getAttribute("data-state");
+      },
+      { timeout: 20000 },
+    )
+    .toBe("nothing");
+  await expect(page.getByTestId("ar-status")).toHaveText(
+    "This tour has nothing to show here.",
+  );
+
+  // A tour with a code, the visitor taking the GPS escape.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.endXrSession();
+  });
+  await openAsVisitor(page, RANGES_ARCHIVE);
+  await enterAr(page);
+  await seedAlignment(page);
+  await forceTrackingReady(page);
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__tourViewerTest.fireTimers();
+  });
+  await page.getByTestId("scan-escape").click();
+  await expect(page.getByTestId("ar-status")).toHaveAttribute(
+    "data-gate",
+    "passed-skipped",
+  );
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => {
+          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
+        });
+        return page.getByTestId("ar-status").getAttribute("data-state");
+      },
+      { timeout: 20000 },
+    )
+    .toBe("placed-gps");
+  await expect(page.getByTestId("ar-status")).toContainText(
+    "Tour placed by GPS (less exact).",
+  );
+});
+
 test("without a QR detector the photos still land at capture spots (review #2)", async ({
   page,
 }) => {
@@ -1161,7 +1506,7 @@ test("without a QR detector the photos still land at capture spots (review #2)",
     seams.createQrFrontEnd = () => null;
   });
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
-  await openAsVisitor(page, ARCHIVE, 2);
+  await openAsVisitor(page, ARCHIVE, 2, { debug: true });
   await enterAr(page);
   await seedAlignment(page);
   await forceTrackingReady(page);
@@ -1182,10 +1527,10 @@ test("a re-entered session places the tour again once ITS tracking is ready (rev
   page,
 }) => {
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/recording-tour.zip";
-  await openAsVisitor(page, ARCHIVE, 2);
+  await openAsVisitor(page, ARCHIVE, 2, { debug: true });
   for (const entry of [1, 2]) {
     await enterAr(page);
-    await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+    await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
     await seedAlignment(page);
     // Each session has its own gate: the code locks anew (M5).
     await lockTheCode(page);
@@ -1229,10 +1574,19 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
   // anchor). The budget is the guardrail: without it every locked frame
   // votes and a lingering visitor pins the alignment centroid.
   const ARCHIVE = "http://127.0.0.1:5197/ranges-ok/tour.zip";
-  await openAsVisitor(page, ARCHIVE, 8);
+  // three REFUSES a child that is not an Object3D, leaving only this
+  // console error, so a pin label that never reached the scene graph left
+  // no other trace (the e2e label fake was a plain object until 2026-10-03).
+  const refusedAdds = /** @type {string[]} */ ([]);
+  page.on("console", (message) => {
+    if (message.text().includes("THREE.Object3D.add")) {
+      refusedAdds.push(message.text());
+    }
+  });
+  await openAsVisitor(page, ARCHIVE, 8, { debug: true });
 
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
 
   // The session zero + a few real fixes (the alignment the votes refine).
   await seedAlignment(page);
@@ -1243,7 +1597,7 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
     /** @type {any} */ (window).__tourViewerTest.emitFrames(2);
   });
   await expect(page.getByTestId("ar-status")).toContainText(
-    "Point the phone at the printed code",
+    "Point the phone at the tour's code",
   );
   expect(
     await page.evaluate(
@@ -1275,15 +1629,22 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
         t.alignmentStore.getState().gpsData.gpsEvents.gpsPositions.length,
       markerUpdates: t.qrDebugUpdates,
       planes: t.fakeScene.children.length,
+      pinLabels: t.fakeScene.children
+        .flatMap((/** @type {any} */ c) => (c.isGroup ? c.children : []))
+        .filter((/** @type {any} */ o) => o.isSprite === true).length,
     };
   });
   // 3 seeded fixes + 10 vote batches × 16 correspondences (the 30 m ring,
   // authoring plan M2b; 16 per lock since owner decision D13) = 163.
   expect(afterBudget.gpsCount).toBe(163);
   expect(afterBudget.markerUpdates).toBeGreaterThan(0);
-  // The image ring (3 planes), placed once, plus the fixture pin's label
-  // that the tour.json content placed after the lock (M5).
+  // The image ring (3 planes), placed once, plus the group of the tour.json
+  // content placed after the lock (M5)...
   expect(afterBudget.planes).toBe(4);
+  // ...which really holds the fixture pin's label sprite: a label three
+  // refused still counted in the placement but was never drawn.
+  expect(afterBudget.pinLabels).toBe(1);
+  expect(refusedAdds).toEqual([]);
 
   // Budget holds: more locked frames add NOTHING.
   await page.evaluate(() => {
@@ -1308,7 +1669,11 @@ test("a scanned code with no level reads as unknown instead of flapping", async 
   // resolves once and the visitor gets a plain answer. A launch whose
   // archive is gone still boots VISITOR mode (the mode is the parameter's
   // presence), which is the "no tour open" visitor state.
-  await page.goto("/?qr=http%3A%2F%2F127.0.0.1%3A5197%2Fnope%2Fgone.zip");
+  // ?debug=1: the line naming the code by its id is the author's readout
+  // (a visitor reads "This code isn't part of this tour", U1).
+  await page.goto(
+    "/?qr=http%3A%2F%2F127.0.0.1%3A5197%2Fnope%2Fgone.zip&debug=1",
+  );
   await expect(page.getByTestId("error")).toContainText("does not exist", {
     timeout: 15000,
   });
@@ -1859,8 +2224,12 @@ async function measureTheCode(page) {
     )
     .toMatch(/waiting for GPS alignment/i);
   await seedAlignment(page);
-  await expect(page.getByTestId("setup-mint")).toBeEnabled({ timeout: 10000 });
-  await page.getByTestId("setup-mint").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /Code measured/,
+    {
+      timeout: 10000,
+    },
+  );
   await expect(page.getByTestId("setup-pin")).toBeEnabled();
 }
 
@@ -1919,7 +2288,6 @@ test("a crash does not lose the walk: placed content survives a reload and lands
   await expect(page.getByTestId("finish-block")).toBeVisible({
     timeout: 30000,
   });
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   const rebuilt = await readDownloadedZip(page, 0);
@@ -2035,7 +2403,7 @@ test("placing after Delete it is still saved: a discard ends the draft, not the 
   // writes the meta itself and put the gate file back. What reaches the
   // defect is minting BEFORE the discard: the offer is not modal, so a
   // creator can measure and place while it sits there, and after the tap
-  // `ctx.mintedLevel` is still set - which is the one state where placement
+  // the code in hand is still set - which is the one state where placement
   // is allowed with no meta on disk.
   await page.goto("/?nocache=1");
   await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
@@ -2257,7 +2625,6 @@ test("a draft accumulates ACROSS finishes: both batches land in the zip", async 
   await expect(page.getByTestId("finish-block")).toBeVisible({
     timeout: 30000,
   });
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   // Batch two, without ever uploading batch one to the host.
@@ -2288,7 +2655,6 @@ test("a draft accumulates ACROSS finishes: both batches land in the zip", async 
   await expect(page.getByTestId("finish-block")).toBeVisible({
     timeout: 30000,
   });
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
 
   // Index 0, not 1: the reload reset the page, and with it the fake's
@@ -2475,30 +2841,28 @@ test("a Drive tour saves the zip under the Drive file's name, with the Drive ste
   // "Replace existing file" only for the SAME name - which a Drive link does
   // not carry, so it comes from the host's content-disposition. The fake
   // records WHICH seam ran, so a share here would fail the test (§5 #4).
-  await installTourViewerArFakes(page, { shareRoute: true });
+  await installTourViewerArFakes(page, {
+    shareRoute: true,
+    saveOutcome: false,
+  });
   await measureAndFinish(page, DRIVE_ARCHIVE);
   const download = page.getByTestId("finish-download");
   const status = page.getByTestId("finish-status");
-  await expect(download).toHaveText("Save the zip to this phone");
-  // The "(1)" warning is read BEFORE the tap - afterwards it is too late
-  // (milestone review #1).
-  await expect(status).toContainText("Before you save");
-  await expect(status).toContainText("My tour (1).zip");
-  // A dismissed save keeps the button live and reveals no steps (async-UI
-  // rule: the failure path of the Drive route, milestone review #2).
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.saveOutcome = false;
-  });
-  await download.click();
+  // The Finish saved by itself (field test 2, F4) - here a save that did
+  // not go through: the button stays live to save again and no steps
+  // appear (async-UI rule, milestone review #2). The "(1)" name a repeat
+  // download gets is checked by the Drive steps after the save.
   await expect(status).toContainText(/not saved/i);
   await expect(download).toBeEnabled();
-  await expect(download).toHaveText("Save the zip to this phone");
+  await expect(download).toHaveText("Save the tour zip again");
   await expect(page.getByTestId("replace-help-drive")).toBeHidden();
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.saveOutcome = true;
   });
   await download.click();
-  await expect(status).toContainText(/saved as My tour\.zip in Downloads/i);
+  await expect(status).toContainText(
+    /saved to downloads - check that it is named My tour\.zip/i,
+  );
   const saved = await page.evaluate(() => {
     const d = /** @type {any} */ (window).__tourViewerTest.downloads;
     return d.map((/** @type {any} */ x) => ({
@@ -2517,7 +2881,6 @@ test("a Drive tour saves the zip under the Drive file's name, with the Drive ste
   await expect(steps).toContainText("Replace existing file");
   await expect(steps).toContainText("Desktop site");
   await expect(page.getByTestId("replace-help-generic")).toBeHidden();
-  await expect(page.getByTestId("replace-help-share")).toBeHidden();
 });
 
 test("a Drive tour whose host sends no name asks the creator to check it", async ({
@@ -2527,9 +2890,8 @@ test("a Drive tour whose host sends no name asks the creator to check it", async
   // link (tour.zip) - so the steps say to check the Drive file carries it,
   // instead of risking a silent second copy.
   await measureAndFinish(page, DRIVE_ARCHIVE_UNNAMED);
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(
-    /saved as tour\.zip/i,
+    /check that it is named tour\.zip/i,
   );
   await expect(page.getByTestId("replace-help-drive")).toContainText(
     'Check that the file on Drive is named "tour.zip"',
@@ -2607,7 +2969,6 @@ test("an opted-in authoring session is recorded across the finish and saved as i
 
   // The published tour zip carries no recording: no actions, and the
   // hosted zip's own session.json untouched.
-  await page.getByTestId("finish-download").click();
   await expect(page.getByTestId("finish-status")).toContainText(/saved as/i);
   const tour = await readDownloadedZip(page, 0);
   expect(
@@ -2656,6 +3017,16 @@ test("an opted-in authoring session is recorded across the finish and saved as i
   expect(types).toContain("tourAuthoring/codeMeasured");
   expect(types).toContain("recording/recordDepthSample");
   expect(types.some((t) => t.startsWith("qrDetected/"))).toBe(true);
+  // The depth sample is written packed (scan pass S2): no points, its
+  // grid as little-endian float32 in base64url - written by the framework
+  // in a real browser (the unit tests run the codec in Node only). The
+  // fake sampler's one point is a full 1 x 1 grid at 1.5 m.
+  const packed = actions.find((a) => a.type === "recording/recordDepthSample");
+  expect(packed.payload.points).toEqual([]);
+  expect(packed.payload.grid).toMatchObject({ v: 1, size: 1 });
+  expect(
+    Buffer.from(packed.payload.grid.depthF32, "base64url").readFloatLE(0),
+  ).toBe(1.5);
   const placed = actions.find((a) => a.type === "tourAuthoring/objectPlaced");
   expect(placed.payload.object.label).toBe("Recorded gate");
   // The logged odometry, taken back through the logged group matrix, is
@@ -2796,7 +3167,7 @@ test("a visitor records only with ?debug=1 and the switch: the scan lock, its vo
   );
   await page.getByTestId("record-session").check();
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   await expect(page.getByTestId("recording-marker")).toHaveText(
     "Recording this session",
   );
@@ -2911,9 +3282,9 @@ test("a code hung far from its saved spot is ignored after a minute of walking: 
   const degPerMLat = 8.9832e-6;
   const degPerMLon = 1.32966e-5; // at lat 47.5
   const CODE = { n: 11, e: 50 };
-  await openAsVisitor(page, RANGES_ARCHIVE);
+  await openAsVisitor(page, RANGES_ARCHIVE, 8, { debug: true });
   await enterAr(page);
-  await expect(page.getByTestId("enter-ar")).toHaveText("Tour running");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Exit AR");
   const t0 = Date.now();
   /** A device fix at second `s`, on an 8 m circle around the poster. */
   const fix = (s) =>

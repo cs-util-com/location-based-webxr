@@ -292,7 +292,9 @@ export function createEnableGpsArController(
     // leak. In every other status the respective path already owns the
     // teardown (the enable() rollback below during `starting`, disable()
     // during `stopping`) and the wrapper stays inert. The app's own
-    // onSessionEnd is always chained, whatever the status.
+    // onSessionEnd is chained in every status but `starting`: there the end
+    // is the rollback of a start enable() reports as failed, so the app
+    // never had that session (Tour Viewer M5a milestone review #3).
     const appCallbacks = config.callbacks;
     const callbacks: ArSessionCallbacks = {
       ...appCallbacks,
@@ -301,6 +303,7 @@ export function createEnableGpsArController(
           stopWatches();
           setState({ status: 'ready' });
         }
+        if (state.status === 'starting') return;
         appCallbacks?.onSessionEnd?.(info);
       },
     };

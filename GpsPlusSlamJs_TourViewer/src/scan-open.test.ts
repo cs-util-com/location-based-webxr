@@ -23,10 +23,10 @@ const B = "https://h.test/b.zip";
 const codeOf = (url: string): string =>
   `https://gps.csutil.com/tour/?qr=${encodeURIComponent(url)}`;
 
-function tour(url: string): CodeTour {
+function tour(url: string, levelId: string | null = null): CodeTour {
   // A short link is the one kind the real resolver cannot compare.
   const comparable = !url.startsWith("https://bit.ly/");
-  return { kind: "tour", url, normalizedUrl: url, comparable };
+  return { kind: "tour", url, normalizedUrl: url, comparable, levelId };
 }
 
 /** Let resolutions and opens settle. */
@@ -40,6 +40,8 @@ function setup(
     outcomes?: (OpenOutcome | "reject")[];
     /** Opens wait for `release()` instead of settling at once. */
     hold?: boolean;
+    /** The level id every resolved code carries (`qrCodeId` stand-in). */
+    levelId?: string;
   } = {},
 ) {
   const ctx = createTourViewerSession();
@@ -51,16 +53,20 @@ function setup(
   let opening = false;
   let release: () => void = () => undefined;
   const opened: string[] = [];
+  const codeTexts: string[] = [];
   const deps: ScanOpenDeps = {
     ctx,
     resolve: (text) => {
       const url = new URL(text).searchParams.get("qr");
       return Promise.resolve(
-        url === null ? { kind: "not-a-tour-code" } : tour(url),
+        url === null
+          ? { kind: "not-a-tour-code" }
+          : tour(url, options.levelId ?? null),
       );
     },
-    open: (url) => {
+    open: (url, codeText) => {
       opened.push(url);
+      codeTexts.push(codeText);
       opening = true;
       const outcome = outcomes.shift() ?? { kind: "opened" };
       const gate =
@@ -94,6 +100,7 @@ function setup(
     ctx,
     scan,
     opened,
+    codeTexts,
     see,
     release: () => {
       release();
@@ -125,6 +132,15 @@ describe("a creator with no tour open", () => {
     expect(s.opened).toEqual([A]);
   });
 
+  it("hands the open the printed code's text, the code's trust source (tour kit plan K1)", async () => {
+    // §8 D2: trust on first use is keyed by the printed code as well as
+    // the link, so the open must know which code named the link.
+    const s = setup();
+    s.scan.onDetection(codeOf(A));
+    await settle();
+    expect(s.codeTexts).toEqual([codeOf(A)]);
+  });
+
   it("starts one open however many frames arrive while it runs", async () => {
     const s = setup({ hold: true });
     s.scan.onDetection(codeOf(A));
@@ -149,38 +165,6 @@ describe("a creator with no tour open", () => {
     await s.see("https://menu.test/today");
     expect(s.opened).toEqual([]);
     expect(s.scan.status("https://menu.test/today").kind).toBe("not-a-tour");
-  });
-
-  it("does not open another tour than the one the level was measured from", async () => {
-    // Plan §9 #4: X's open failed, the creator measured X anyway, then
-    // walked past Y's poster - Y must not take X's level.
-    const s = setup();
-    s.ctx.mintedLevel = { id: "lvl-x", json: "{}" };
-    s.ctx.mintedLevelTour = { levelId: "lvl-x", tourUrl: A };
-    await s.see(codeOf(B));
-    expect(s.opened).toEqual([]);
-    expect(s.scan.status(codeOf(B))).toMatchObject({
-      kind: "measured-for-another",
-    });
-    await s.see(codeOf(A));
-    expect(s.opened).toEqual([A]);
-  });
-
-  it("ignores a tour binding left from an earlier level", async () => {
-    // The binding counts only for the level it was made for.
-    const s = setup();
-    s.ctx.mintedLevel = { id: "lvl-new", json: "{}" };
-    s.ctx.mintedLevelTour = { levelId: "lvl-old", tourUrl: A };
-    await s.see(codeOf(B));
-    expect(s.opened).toEqual([B]);
-  });
-
-  it("lets any tour take a level whose code named none", async () => {
-    const s = setup();
-    s.ctx.mintedLevel = { id: "lvl", json: "{}" };
-    s.ctx.mintedLevelTour = { levelId: "lvl", tourUrl: null };
-    await s.see(codeOf(B));
-    expect(s.opened).toEqual([B]);
   });
 });
 
@@ -227,6 +211,23 @@ describe("a failed open", () => {
       await s.see(codeOf(A));
     }
     expect(s.opened, "cors is retried, and the cap holds").toHaveLength(5);
+  });
+
+  it("retries a phone that was offline (K0)", async () => {
+    // Tour kit plan K0 split `offline` out of `cors`: a phone back online
+    // must get the same retry a blocked host did.
+    const s = setup({
+      outcomes: [{ kind: "failed", cause: "offline" }, { kind: "opened" }],
+    });
+    await s.see(codeOf(A));
+    expect(s.scan.status(codeOf(A))).toEqual({
+      kind: "failed",
+      cause: "offline",
+      retrying: true,
+    });
+    s.advance(10_000);
+    await s.see(codeOf(A));
+    expect(s.opened).toHaveLength(2);
   });
 
   it("does not retry a file that is there but unreadable", async () => {
@@ -310,13 +311,55 @@ describe("a code that cannot be compared with the open tour", () => {
   });
 });
 
-describe("tourOf", () => {
-  it("names the tour of a code once it has been read", async () => {
-    const s = setup();
-    expect(s.scan.tourOf(codeOf(A))).toBeNull();
+/**
+ * Why these tests matter (K0 milestone review R6): a tour opened from a
+ * FILE is known by a content key, so its own printed code could never
+ * match its link and the panel called the tour's own poster "a code from
+ * another tour". The level the tour carries for the code decides first.
+ */
+describe("a tour opened from a file", () => {
+  const FILE_KEY = "local-file:0123456789abcdef0123456789abcdef";
+
+  it("reads the tour's own code as this tour once its levels are in", async () => {
+    const s = setup({ openAt: FILE_KEY, levelId: "lvl1" });
+    s.ctx.currentLevels = new Map([["lvl1", {} as never]]);
     await s.see(codeOf(A));
-    expect(s.scan.tourOf(codeOf(A))).toBe(A);
+    expect(s.scan.status(codeOf(A)).kind).toBe("quiet");
+    expect(s.opened).toEqual([]);
+  });
+
+  it("says it cannot tell, never 'another tour', for a code whose level it does not carry", async () => {
+    const s = setup({ openAt: FILE_KEY, levelId: "lvl2" });
+    s.ctx.currentLevels = new Map([["lvl1", {} as never]]);
+    await s.see(codeOf(A));
+    expect(s.scan.status(codeOf(A)).kind).toBe("unknown");
+  });
+});
+
+/**
+ * Why these tests matter (UI round 1, U3; second plan review #1): the
+ * creator's code is now measured automatically, and only a code of the
+ * open tour may be - `status` folds "the open tour's code", "a code naming
+ * no tour" and "still reading" into one "quiet", so the panel needs the
+ * relation itself.
+ */
+describe("relation", () => {
+  it("is 'resolving' until the code is read, then names its relation to the open tour", async () => {
+    const s = setup({ openAt: A });
+    expect(s.scan.relation(codeOf(A))).toBe("resolving");
+    await s.see(codeOf(A));
+    expect(s.scan.relation(codeOf(A))).toBe("this-tour");
+    await s.see(codeOf(B));
+    expect(s.scan.relation(codeOf(B))).toBe("other-tour");
     await s.see("https://menu.test/today");
-    expect(s.scan.tourOf("https://menu.test/today")).toBeNull();
+    expect(s.scan.relation("https://menu.test/today")).toBe("not-a-tour");
+    await s.see(codeOf("https://bit.ly/x"));
+    expect(s.scan.relation(codeOf("https://bit.ly/x"))).toBe("unknown");
+  });
+
+  it("is 'no-tour-open' with no tour open", async () => {
+    const s = setup({ outcomes: [{ kind: "failed", cause: "other" }] });
+    await s.see(codeOf(A));
+    expect(s.scan.relation(codeOf(A))).toBe("no-tour-open");
   });
 });
