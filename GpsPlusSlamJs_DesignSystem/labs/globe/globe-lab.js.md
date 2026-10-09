@@ -571,7 +571,7 @@ heightM)` (the ECEF point of a place, for an independent placement check)
 - Test API, `window.__globeLab`: `ready`, `error`, `state()`
   (`{ models, tileErrors, cachedBytes, pendingTiles, loadedTiles, phase,
 target, source, history, runs, spinMs, turnMs, centreLatLon, timeMs, clock,
-cloudDrift, cloudLonOffsetRad, sky, device, deviceLine,
+cloudDrift, cloudLonOffsetRad, cloudMap, sky, device, deviceLine,
 sunEcef, tuning, sunIntensity, fovY, pixelRatio, errorTarget,
 bytesDownloaded, tileRequestsByLevel, rendererMemory, appliedHash, radiusM, activeSources,
 loadingShown, loadingVisible, cacheBudgetBytes, cacheFloorBytes,
@@ -584,7 +584,9 @@ cameraOwner, cameraDistanceM, altitudeM, near, far, pin }`;
   `hourLabel` is the hour label's text;
   `timeMs` is the clock's instant and `clock` its `{ startMs, scale }`
   (the pin or null, and the effective scale); `cloudLonOffsetRad` is the
-  drift the shader reads; `sky` is `{ on, sunDiameterDeg, glow,
+  drift the shader reads; `cloudMap` is `{ width, height, red, bitmap }`,
+  the cloud map as the GPU has it (4096 x 2048, one channel, decoded off
+  the main thread where the browser can: round-3 plan M1); `sky` is `{ on, sunDiameterDeg, glow,
 sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   null behind the camera); `device` is `{ floatLinear }`;
   `sky.stars` is `{ on, magLimit, count, procedural }`, `sky.milkyWay` the
@@ -611,6 +613,10 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
     latitude exactly found no tile, or at a tile corner the far side of the
     Earth (the cause, shared vertices or three's triangle test, is not
     established). A hit beyond the Earth's centre reads as null.
+- The global maps are decoded off the main thread where the browser can
+  (`/globe/globe-map-loader.js`, round-3 plan 2026-10-08-2345 M1);
+  `mapBitmap=0`, read at load, takes the plain image element, so a smoke
+  can compare the two paths pixel for pixel.
 - The relief is the default since F2a (DEC-GL5-15); `relief=0` keeps the
   plain globe. The smokes that measure the plain globe pin it: the
   pre-round-4 look pin (`withPreRound4Look`) carries `relief=0`, and

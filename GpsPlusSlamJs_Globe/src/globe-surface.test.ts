@@ -204,6 +204,10 @@ describe("createGlobeSurface", () => {
     // The clouds are read as numbers (coverage).
     expect(u.uClouds.value.colorSpace).toBe(THREE.NoColorSpace);
     expect(u.uNight.value.colorSpace).toBe(THREE.SRGBColorSpace);
+    // The grey cloud map goes to the GPU as one channel (round-3 plan
+    // 2026-10-08-2345 M1): at 4096 x 2048 that is 8 MB, not 32, on a phone.
+    expect(u.uClouds.value.format).toBe(THREE.RedFormat);
+    expect(u.uNight.value.format).toBe(THREE.RGBAFormat);
     globe.dispose();
   });
 

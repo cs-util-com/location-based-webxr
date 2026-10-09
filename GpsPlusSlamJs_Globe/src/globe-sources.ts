@@ -31,6 +31,11 @@ export interface GlobeSource {
   readonly projection?: "EPSG:4326";
   /** Colour data (sRGB) or a mask read as numbers (linear). */
   readonly colorSpace: "srgb" | "linear";
+  /**
+   * A grey map, sent to the GPU as one channel (red), a quarter of the
+   * memory (round-3 plan 2026-10-08-2345 M1).
+   */
+  readonly grey?: true;
   readonly credit: GlobeCredit;
 }
 
@@ -88,6 +93,7 @@ export const GLOBE_SOURCES: readonly GlobeSource[] = [
     path: "/globe-assets/equirect/clouds-4096.webp",
     // A grey photo, read as cloud COVERAGE: a number, not a colour.
     colorSpace: "linear",
+    grey: true,
     credit: {
       short: "NASA Visible Earth",
       full: "NASA Visible Earth, Blue Marble clouds (R. Stöckli)",

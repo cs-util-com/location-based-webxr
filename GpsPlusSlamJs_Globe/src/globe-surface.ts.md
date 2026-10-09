@@ -95,8 +95,7 @@ loadedTiles, refusedTiles, mapsLoaded, mapErrors, mapsTotal }`
       wheel against the sun once phase 5 places the tiles (stream F
       review, finding 4).
     - `loader` (`GlobeSurfaceLoader`, `loadTexture(source, onLoad,
-onError)`) fetches the two global maps (night lights, clouds; the water mask is the tiles' alpha): a `TextureLoader` by default,
-      a stub in Node tests.
+onError)`, from `globe-map-loader.ts`) fetches the two global maps (night lights, clouds; the water mask is the tiles' alpha): decoded off the main thread where the browser can (`globeMapLoader()`, round-3 plan M1) by default, a stub in Node tests. A grey map (`GlobeSource.grey`, the clouds) goes to the GPU as one channel (`RedFormat`).
   - `useLitMaterial(model, template, owned)` - gives each mesh of a loaded
     tile a lit clone of `template` that keeps that mesh's own texture and
     the template's compile hooks (`Material.copy` does not carry

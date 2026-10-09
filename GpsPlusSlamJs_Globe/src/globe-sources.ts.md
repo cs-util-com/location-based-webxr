@@ -5,7 +5,7 @@
   so nothing loads uncredited.
 - Public API:
   - `GLOBE_SOURCES` - `{ id, kind: "tiles" | "equirect" | "alpha", path,
-levels?, projection?, colorSpace, credit: { short, full, href } }`: the
+levels?, projection?, colorSpace, grey?, credit: { short, full, href } }`: the
     Blue Marble pyramid (WebP; levels 0-5, level 4 is DEC-FB2-4, level 5
     DEC-GL4-3), Black
     Marble 2016, the MODIS water mask, the Blue Marble clouds. The water
@@ -14,7 +14,9 @@ levels?, projection?, colorSpace, credit: { short, full, href } }`: the
     `path` is the tiles' own and it keeps its own credit. `colorSpace`
     says how the shader reads it: `srgb` for colour (the tiles, the night
     lights), `linear` for numbers (the water mask, and the clouds, whose
-    grey level is read as coverage).
+    grey level is read as coverage). `grey: true` (the clouds) sends a
+    grey map to the GPU as one channel, a quarter of the memory (round-3
+    plan 2026-10-08-2345 M1).
   - `globeSource(id)` - one entry; `RangeError` for an unknown id.
   - `GIBS_ACKNOWLEDGEMENT` - GIBS's acknowledgement, shown in full.
   - The types `GlobeCredit` (OsmDemo's attribution-entry shape),

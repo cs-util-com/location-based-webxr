@@ -20,6 +20,7 @@ import {
   createGlobeImagery,
   createGlobeSurface,
 } from "/globe/globe-surface.js";
+import { elementMapLoader } from "/globe/globe-map-loader.js";
 import { CLOUD_VOLUME } from "/globe/globe-cloud-volume.js";
 import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
 import { flatCloudShare } from "/globe/globe-cloud-flat-fade.js";
@@ -162,6 +163,17 @@ window.addEventListener("unhandledrejection", (e) =>
 }
 const creditsBox = document.getElementById("globe-credits");
 const loadingLabel = document.getElementById("globe-loading");
+
+/** The cloud map's size, format and decoding, for the smokes (M1). */
+function cloudMapState(texture) {
+  const image = texture.image;
+  return {
+    width: image?.width ?? 0,
+    height: image?.height ?? 0,
+    red: texture.format === THREE.RedFormat,
+    bitmap: typeof ImageBitmap !== "undefined" && image instanceof ImageBitmap,
+  };
+}
 const replayButton = document.getElementById("globe-replay");
 const pinButton = document.getElementById("globe-pin");
 const pinStatus = document.getElementById("globe-pin-status");
@@ -327,6 +339,9 @@ const PARAMS = {
   // the owner's D-K1 (city plan 2026-10-05-0040 §11); 3 was DEC-GL5-5.
   // The default since F2a (DEC-GL5-15); 0 keeps the plain globe.
   relief: { fallback: 1, min: 0, max: 1 },
+  // The global maps decoded off the main thread where the browser can
+  // (round-3 plan M1); 0 takes the plain image element (read at load).
+  mapBitmap: { fallback: 1, min: 0, max: 1 },
   reliefNear: { fallback: GLOBE_FLIGHT.exaggerationNear, min: 1, max: 5 },
   // The height law's third band (city plan 2026-10-05-0040 K1): above 0,
   // E eases from `reliefNear` at 8 km to this value at 2 km and below, so
@@ -1875,12 +1890,15 @@ async function start() {
   const startParams = readHashParams();
   // A page with a relief compiles the band into the globe's shader; the
   // plain globe draws the program from before the relief.
-  const globe = createGlobeSurface(undefined, {
-    band: startParams.relief === 1,
-    // A globe that fills the relief's gaps never discards (round-6 plan
-    // G6-1): its program keeps the GPU's early stencil test.
-    fill: fillAtStart,
-  });
+  const globe = createGlobeSurface(
+    startParams.mapBitmap === 0 ? elementMapLoader : undefined,
+    {
+      band: startParams.relief === 1,
+      // A globe that fills the relief's gaps never discards (round-6 plan
+      // G6-1): its program keeps the GPU's early stencil test.
+      fill: fillAtStart,
+    },
+  );
   useSurfaceDefaults(globe);
   // The world frame (F2 plan F2a, M3): one matrix on globe.group, from ECEF
   // to the target's local frame (x east, y up, the origin on the ground),
@@ -3294,6 +3312,9 @@ async function start() {
       },
       // What the shader reads: the clouds' drift east, radians.
       cloudLonOffsetRad: globe.surfaceUniforms.uCloudLonOffset.value,
+      // The cloud map as the GPU has it (round-3 plan M1): its size, one
+      // channel, and whether it was decoded off the main thread.
+      cloudMap: cloudMapState(globe.surfaceUniforms.uClouds.value),
       sunEcef: globe.surfaceUniforms.uSunEcef.value.toArray(),
       // The sky fill (DEC-GL5-11) as the shader reads it.
       skyFill: {

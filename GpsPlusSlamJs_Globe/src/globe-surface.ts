@@ -36,6 +36,7 @@ import {
   GeneratedSurfacePlugin,
   type GeneratedSurfacePluginInstance,
 } from "./vendor/generated-surface-plugin.js";
+import { globeMapLoader, type GlobeSurfaceLoader } from "./globe-map-loader.js";
 
 /** The surface's imagery, from the one registry (so it carries a credit). */
 const IMAGERY = globeSource("blue-marble");
@@ -255,29 +256,12 @@ export function disposeLitMaterials(
   }
 }
 
-/** How the global maps are fetched: a texture that fills in later. */
-export interface GlobeSurfaceLoader {
-  loadTexture(
-    source: GlobeSource,
-    onLoad: () => void,
-    onError: () => void,
-  ): THREE.Texture;
-}
-
-const textureLoader: GlobeSurfaceLoader = {
-  loadTexture: (source, onLoad, onError) =>
-    new THREE.TextureLoader().load(
-      source.path,
-      () => onLoad(),
-      undefined,
-      () => onError(),
-    ),
-};
+export type { GlobeSurfaceLoader } from "./globe-map-loader.js";
 
 /**
  * One global map, configured from its registry entry: colour decoded from
- * sRGB, a mask read as numbers; wrapping in longitude, since the shader
- * samples across the 180° seam.
+ * sRGB, a mask read as numbers, a grey map as one channel; wrapping in
+ * longitude, since the shader samples across the 180° seam.
  */
 function globalMap(
   source: GlobeSource,
@@ -288,6 +272,7 @@ function globalMap(
   const texture = loader.loadTexture(source, onLoad, onError);
   texture.colorSpace =
     source.colorSpace === "srgb" ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  if (source.grey) texture.format = THREE.RedFormat;
   texture.wrapS = THREE.RepeatWrapping;
   return texture;
 }
@@ -335,7 +320,7 @@ export function createGlobeImagery(): XYZTilesOverlay {
  * TextureLoader by default; tests pass a stub).
  */
 export function createGlobeSurface(
-  loader: GlobeSurfaceLoader = textureLoader,
+  loader: GlobeSurfaceLoader = globeMapLoader(),
   patch: GlobeSurfacePatchOptions = {},
 ): GlobeSurface {
   const options: GlobeSurfaceOptions = {
