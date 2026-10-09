@@ -37,6 +37,7 @@ import {
   type GeneratedSurfacePluginInstance,
 } from "./vendor/generated-surface-plugin.js";
 import { globeMapLoader, type GlobeSurfaceLoader } from "./globe-map-loader.js";
+import { createGlobeCloudMap, type GlobeCloudMap } from "./globe-cloud-map.js";
 
 /** The surface's imagery, from the one registry (so it carries a credit). */
 const IMAGERY = globeSource("blue-marble");
@@ -128,8 +129,14 @@ export interface GlobeSurface {
    * length). RangeError for a zero or non-finite vector.
    */
   setSun(directionEcef: THREE.Vector3): void;
-  /** Per frame, before the render. */
+  /** Per frame, before the render (the clouds' step included). */
   update(camera: THREE.Camera, renderer: THREE.WebGLRenderer): void;
+  /**
+   * The clouds' step alone (`cloudMap.update`, then the map into
+   * `surfaceUniforms.uClouds`), for a page that draws the relief's tiles
+   * without the globe's and so never calls `update`.
+   */
+  updateClouds(renderer: THREE.WebGLRenderer): void;
   /**
    * Loaded models, the library's tile load errors, the cache's bytes, the
    * tiles still pending (queued, downloading or parsing), loaded, and
@@ -165,6 +172,13 @@ export interface GlobeSurface {
    * `setCloudShellShare` gives it a share.
    */
   readonly cloudShell: GlobeCloudShell;
+  /**
+   * The cloud map in its two stages (`globe-cloud-map.ts`, round-3 plan
+   * 2026-10-08-2345 §18): the preview, then the full 8,192 x 4,096 map,
+   * swapped into `surfaceUniforms.uClouds` (which the shell, the shadow
+   * and the volume share) by `update` (or `updateClouds`).
+   */
+  readonly cloudMap: GlobeCloudMap;
   /**
    * The globe's first look (round-2 plan DEC-FR2-6): a sphere a fraction
    * under the ellipsoid, in the tiles' frame, in the surface's own material
@@ -349,29 +363,20 @@ export function createGlobeSurface(
   const mapError = () => {
     mapErrors += 1;
   };
-  // The first look waits for the cloud map as well as its two halves, so
-  // it shows the Earth as the tiles will, clouds included (round-3 plan M1:
-  // the 4,096 map arrives after the halves); a failed map holds nothing.
-  let cloudsSettled = false;
-  const cloudsIn = () => {
-    cloudsSettled = true;
-  };
-  // The water mask is not among them: it is the imagery tiles' alpha.
-  const maps = {
-    night: globalMap(globeSource("black-marble"), loader, mapLoaded, mapError),
-    clouds: globalMap(
-      globeSource("clouds"),
-      loader,
-      () => {
-        mapLoaded();
-        cloudsIn();
-      },
-      () => {
-        mapError();
-        cloudsIn();
-      },
-    ),
-  };
+  // The water mask is not among the global maps: it is the imagery
+  // tiles' alpha. The night map loads whole; the clouds in two stages
+  // (round-3 plan §18, DEC-R3-15): the preview with the first look, then
+  // the full map in the background, swapped in by `update`.
+  const night = globalMap(
+    globeSource("black-marble"),
+    loader,
+    mapLoaded,
+    mapError,
+  );
+  const cloudMap = createGlobeCloudMap({
+    source: globeSource("clouds"),
+    loader,
+  });
   // The first look (round-2 plan 2026-10-07-2350 DEC-FR2-6): the imagery
   // pyramid's level 0, the whole Earth in two tiles, loaded with the global
   // maps, long before the tile renderer asks for its first tiles, and drawn
@@ -382,8 +387,12 @@ export function createGlobeSurface(
   // plain look.
   const imagery = globeSource("blue-marble");
   let firstLookIn = 0;
+  // The first look waits for the clouds' PREVIEW as well as its two halves,
+  // so it shows the Earth as the tiles will, clouds included (round-3 plan
+  // M1, §18 DEC-R3-15: never for the full map); a failed preview holds
+  // nothing.
   const firstLookImagesIn = () =>
-    surfaceUniforms.uDayReady.value === 1 && cloudsSettled;
+    surfaceUniforms.uDayReady.value === 1 && cloudMap.previewSettled;
   const firstLookHalf = (x: number) => {
     const texture = loader.loadTexture(
       {
@@ -403,7 +412,8 @@ export function createGlobeSurface(
     return texture;
   };
   const surfaceUniforms = createGlobeSurfaceUniforms({
-    ...maps,
+    night,
+    clouds: cloudMap.texture,
     dayWest: firstLookHalf(0),
     dayEast: firstLookHalf(1),
   });
@@ -499,6 +509,11 @@ export function createGlobeSurface(
   tiles.addEventListener("load-error", () => {
     tileErrors += 1;
   });
+  // The clouds: load, build, and swap the full map in for every reader.
+  const updateClouds = (renderer: THREE.WebGLRenderer) => {
+    cloudMap.update(renderer);
+    surfaceUniforms.uClouds.value = cloudMap.texture;
+  };
   let cameraSet: THREE.Camera | null = null;
   const resolution = new THREE.Vector2();
   return {
@@ -523,6 +538,7 @@ export function createGlobeSurface(
       tiles.setResolution(camera, resolution.x, resolution.y);
       camera.updateMatrixWorld();
       tiles.update();
+      updateClouds(renderer);
       // The first look once its images are in (before, a plain white ball),
       // until the globe has first drawn its whole view.
       const look = firstLookStep(
@@ -540,6 +556,9 @@ export function createGlobeSurface(
     },
     state: () => {
       const { queued, downloading, parsing, loaded, refused } = runtime.stats;
+      // The clouds count once nothing more will come, as failed only when
+      // nothing is drawn (a failed piece keeps the preview: loaded).
+      const clouds = cloudMap.settled();
       return {
         models,
         tileErrors,
@@ -547,9 +566,9 @@ export function createGlobeSurface(
         pendingTiles: queued + downloading + parsing,
         loadedTiles: loaded,
         refusedTiles: refused,
-        mapsLoaded,
-        mapErrors,
-        mapsTotal: Object.keys(maps).length,
+        mapsLoaded: mapsLoaded + (clouds.done && !clouds.failed ? 1 : 0),
+        mapErrors: mapErrors + (clouds.failed ? 1 : 0),
+        mapsTotal: 2,
         firstLookReady: firstLookImagesIn(),
       };
     },
@@ -563,6 +582,8 @@ export function createGlobeSurface(
     },
     activeSources: () => GLOBE_SOURCES.map((s) => s.id),
     cloudShell,
+    cloudMap,
+    updateClouds,
     firstLook,
     setCloudShellShare(share, flat = 1) {
       for (const [name, v] of [
@@ -584,7 +605,8 @@ export function createGlobeSurface(
       tiles.dispose();
       retirer.dispose();
       template.dispose();
-      for (const map of Object.values(maps)) map.dispose();
+      night.dispose();
+      cloudMap.dispose();
       surfaceUniforms.uDayWest.value.dispose();
       surfaceUniforms.uDayEast.value.dispose();
       sun.dispose();

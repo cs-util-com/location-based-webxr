@@ -390,13 +390,57 @@ describe("createGlobeSurface", () => {
 
   // The loading label and the tests wait on these: a map still downloading
   // must not read as "loaded", and a failed one must reach the error box.
+  // The clouds (round-3 plan §18) count once nothing more will come for
+  // them: the preview AND the full map's pieces; as failed only when none
+  // of it can be drawn.
   it("counts the global maps as they load and as they fail", () => {
     const loader = stubLoader();
     const globe = createGlobeSurface(loader);
-    loader.finish[0]!();
-    loader.fail[1]!();
-    const s = globe.state();
-    expect([s.mapsLoaded, s.mapErrors, s.mapsTotal]).toEqual([1, 1, 2]);
+    const camera = new THREE.PerspectiveCamera();
+    camera.position.set(30_000_000, 0, 0);
+    const renderer = {
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(2, 2),
+      capabilities: { maxTextureSize: 16384 },
+    } as unknown as THREE.WebGLRenderer;
+    vi.spyOn(globe.tiles, "update").mockImplementation(() => {});
+    const at = (id: string) => loader.loaded.findIndex((s) => s.id === id);
+    loader.finish[at("black-marble")]!();
+    loader.fail[at("clouds")]!();
+    const counts = () => {
+      const s = globe.state();
+      return [s.mapsLoaded, s.mapErrors, s.mapsTotal];
+    };
+    // The preview failed, but the pieces may still bring the clouds.
+    expect(counts()).toEqual([1, 0, 2]);
+    globe.update(camera, renderer);
+    const pieces = loader.loaded.flatMap((s, i) =>
+      s.path.includes("clouds-8192") ? [i] : [],
+    );
+    expect(pieces).toHaveLength(4);
+    for (const i of pieces) loader.fail[i]!();
+    globe.update(camera, renderer);
+    expect(counts()).toEqual([1, 1, 2]);
+    globe.dispose();
+  });
+
+  // Every cloud reader (the surface, its shadow, the shell, the volume's
+  // coverage) samples `surfaceUniforms.uClouds` (the shell's sharing is
+  // pinned in globe-cloud-shell.test.ts): the swap to the full map happens
+  // there, every frame, so each of them sees it at once.
+  it("hands the cloud map's current texture to the shared cloud uniform every frame", () => {
+    const globe = createGlobeSurface(stubLoader());
+    const full = new THREE.Texture();
+    vi.spyOn(globe.cloudMap, "texture", "get").mockReturnValue(full);
+    vi.spyOn(globe.tiles, "update").mockImplementation(() => {});
+    globe.update(new THREE.PerspectiveCamera(), {
+      getDrawingBufferSize: (v: THREE.Vector2) => v.set(2, 2),
+    } as unknown as THREE.WebGLRenderer);
+    expect(globe.surfaceUniforms.uClouds.value).toBe(full);
+    // And the relief-only page's step does the same.
+    const other = new THREE.Texture();
+    vi.spyOn(globe.cloudMap, "texture", "get").mockReturnValue(other);
+    globe.updateClouds({} as THREE.WebGLRenderer);
+    expect(globe.surfaceUniforms.uClouds.value).toBe(other);
     globe.dispose();
   });
 
