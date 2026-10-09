@@ -46,10 +46,18 @@ sceneDepth })`
     depth too): after the Earth, nothing at share 0: the
     relief's depth (drawn here unless the lab already drew it this frame
     for the space pass), the slab from the lifted camera, the composite.
-  - `setHex(on)` (hex-tiling plan 2026-10-07-0919, H2, the lab's
-    `cloudHex=1`): the ground sky's big-shape octave hex-tiled, no repeat at
-    24 km (`atmosphere.configure({ cloudHex })`, the shadow re-synced);
-    idempotent; the state reports it as `hex`.
+  - `setNoise(mode)` (round-3 plan 2026-10-08-2345, N1, the lab's
+    `cloudNoise`): `tile`, `hex` or `live`
+    (`atmosphere.configure({ cloudNoise })`, the shadow re-synced);
+    idempotent; the state reports it as `noise` (and `hex`). `setHex(on)`
+    (hex-tiling plan H2, `cloudHex=1`) is `setNoise` with hex or the tile.
+  - The live noise's anchor: while enabled, `update` carries the frame
+    origin's noise-plane position and the frame's rotation across every
+    recentre and the unwrapped drift (`carryLive`, the Globe package's
+    `cloudVolumeNoiseAnchor`, `cloudVolumeAnchorRecentre` and
+    `cloudVolumeAnchorDrift`) and hands it to the ground sky
+    (`setCloudNoiseAnchor`) in every mode, so a switch to live mid-flight
+    starts on the ground.
   - `patchShadow(tiles)` and `setShadow(on)` (C3): the volume's shadow on
     the relief, the framework's `CloudShadow` with the same coverage chunk
     and uniforms, the disc and the lift (`configureMap`), so it falls from

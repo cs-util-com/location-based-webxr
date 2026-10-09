@@ -38,7 +38,10 @@ import {
 import { CloudShadow } from "/fw/visualization/atmosphere/cloud-shadow.js";
 import {
   CLOUD_VOLUME_COVERAGE_GLSL,
+  cloudVolumeAnchorDrift,
+  cloudVolumeAnchorRecentre,
   cloudVolumeDiscCentre,
+  cloudVolumeNoiseAnchor,
   cloudVolumeNoiseOffset,
   cloudVolumeRecentreShift,
   cloudVolumeShare,
@@ -81,6 +84,49 @@ const MIN_REACH_END_M = CLOUD_SLAB_REACH.farEndM;
 const wrapNoise = (t) =>
   t - CLOUD_NOISE_PERIOD_TILES * Math.floor(t / CLOUD_NOISE_PERIOD_TILES);
 
+const DEG = Math.PI / 180;
+
+/**
+ * The live noise's anchor carried to the frame `target` (degrees) and the
+ * map's unwrapped `drift` (radians), from `previous` (null: the first,
+ * from the place itself): each recentre and each drift step applied to the
+ * one before (the Globe package's `cloudVolumeAnchorRecentre` and
+ * `cloudVolumeAnchorDrift`), so the noise stays on the ground across
+ * recentres and through the drift's wrap (round-3 plan N1, cold review
+ * item 4). Returns `{ anchor, at, drift }`.
+ */
+function carryLive(previous, target, drift) {
+  const at = { lat: target.lat, lng: target.lng };
+  if (previous === null) {
+    return {
+      anchor: cloudVolumeNoiseAnchor({
+        latRad: at.lat * DEG,
+        lonRad: at.lng * DEG,
+        lonOffsetRad: drift,
+      }),
+      at,
+      drift,
+    };
+  }
+  let anchor = previous.anchor;
+  if (previous.at.lat !== at.lat || previous.at.lng !== at.lng) {
+    anchor = cloudVolumeAnchorRecentre(
+      WGS84_ELLIPSOID,
+      anchor,
+      previous.at,
+      at,
+    );
+  }
+  if (drift !== previous.drift) {
+    anchor = cloudVolumeAnchorDrift(
+      anchor,
+      at.lat * DEG,
+      drift - previous.drift,
+    );
+  }
+  return { anchor, at, drift };
+}
+
 export function createGlobeCloudVolume(
   renderer,
   { atmosphere, skyScene, surfaceUniforms, sceneDepth },
@@ -97,6 +143,14 @@ export function createGlobeCloudVolume(
    * minutes; the noise jumped there by tiles), float64 on the CPU.
    */
   let drift = null;
+  /**
+   * The live noise's anchor (round-3 plan N1): where the frame's origin lies
+   * on the noise plane (km, float64, unwrapped) and the frame's rotation,
+   * carried across every recentre and moved by the drift; with the frame
+   * target and the drift it was last carried to. Kept in every noise mode,
+   * so a switch to live mid-flight starts where the ground is.
+   */
+  let live = null;
   const shareUniform = { value: 0 };
   const gainUniform = { value: 1 };
   const volumeTarget = new THREE.WebGLRenderTarget(1, 1, {
@@ -144,7 +198,7 @@ export function createGlobeCloudVolume(
   shadow.sync(atmosphere);
   shadow.setEnabled(false);
   let shadowOn = false;
-  let hexOn = false;
+  let noise = "tile";
   let enabled = false;
   let share = 0;
   let radiusM = 0;
@@ -255,6 +309,8 @@ export function createGlobeCloudVolume(
             wrapNoise(u + anchor.shift[0]),
             wrapNoise(v + anchor.shift[1]),
           );
+          live = carryLive(live, target, drift);
+          atmosphere.setCloudNoiseAnchor(live.anchor);
         }
       }
       // The disc's centre (volume-cloud plan §15): where the view meets the
@@ -352,15 +408,20 @@ export function createGlobeCloudVolume(
       shadowOn = Boolean(on);
     },
     /**
-     * The clouds' big-shape octave hex-tiled (hex-tiling plan 2026-10-07-0919,
-     * H2, `cloudHex=1`): no repeat at 24 km. The ground sky's uniform and
-     * its threshold, and the shadow's copies; idempotent.
+     * Which noise the clouds read (round-3 plan 2026-10-08-2345, N1, the
+     * lab's `cloudNoise`): `tile`, `hex` (hex-tiling plan H2: no repeat
+     * at 24 km) or `live` (no repeat in view). The ground sky's switch and
+     * threshold, and the shadow's copies; idempotent.
      */
-    setHex(on) {
-      if (Boolean(on) === hexOn) return;
-      hexOn = Boolean(on);
-      atmosphere.configure({ cloudHex: hexOn });
+    setNoise(mode) {
+      if (mode === noise) return;
+      atmosphere.configure({ cloudNoise: mode });
+      noise = mode;
       shadow.sync(atmosphere);
+    },
+    /** `setNoise` as the older switch: hex on, or the tile. */
+    setHex(on) {
+      this.setNoise(on ? "hex" : "tile");
     },
     /**
      * The last volume frame read back (debug, slow): the share of its pixels
@@ -402,7 +463,8 @@ export function createGlobeCloudVolume(
         liftM,
         drawn,
         shadow: shadowOn && enabled && radiusM > 0,
-        hex: hexOn,
+        hex: noise === "hex",
+        noise,
       };
     },
     dispose() {

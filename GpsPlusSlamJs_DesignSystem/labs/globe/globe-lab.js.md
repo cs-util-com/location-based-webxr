@@ -685,6 +685,15 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   2026-10-07-0919, H2) hex-tiles the volume's big-shape octave so its
   clouds no longer repeat every 24 km (`globe-cloud-volume.js` `setHex`;
   the state's `cloudVolume.hex`).
+  `cloudNoise=tile|hex|live` (a text key; round-3 plan 2026-10-08-2345,
+  N1) picks the noise the volume's clouds read and wins over `cloudHex`:
+  `live` is the framework's per-octave noise that never repeats in view
+  (`cloud-live-noise.ts`), anchored to the ground across recentres and
+  the drift (`globe-cloud-volume.js` `setNoise`; the state's
+  `cloudVolume.noise`). Absent or unknown, `cloudHex` decides (tile by
+  default). `cloudLiveProbe(points, anchors)` (a test hook) renders the
+  live noise's shader twin at local points (km) for each anchor and reads
+  it back beside the CPU twin (`globe-cloud-noise.smoke.spec.mjs`).
   `cloudShadowFrom` (C3) picks the ground's cloud shadow:
   0 the shell's soft one (the default, as before), 1 the volume's (the
   shell's then off). Measured at the 12 km hold: the shell's darkens by a

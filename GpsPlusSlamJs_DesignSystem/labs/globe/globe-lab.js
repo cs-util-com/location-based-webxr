@@ -23,6 +23,13 @@ import {
 } from "/globe/globe-surface.js";
 import { CLOUD_VOLUME } from "/globe/globe-cloud-volume.js";
 import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
+import {
+  CLOUD_LIVE_NOISE_GLSL,
+  CLOUD_NOISE_MODES,
+  cloudLiveBasis,
+  cloudLiveSample,
+  createCloudLiveLatticeTexture,
+} from "/fw/visualization/atmosphere/cloud-live-noise.js";
 import { flatCloudShare } from "/globe/globe-cloud-flat-fade.js";
 import { creditsFor } from "/globe/globe-credits.js";
 import { GIBS_ACKNOWLEDGEMENT } from "/globe/globe-sources.js";
@@ -549,7 +556,7 @@ const PARAMS = {
   cloudShadowFrom: { fallback: 0, min: 0, max: 1 },
   // The volume's big-shape octave hex-tiled, no repeat at 24 km (hex-tiling
   // plan 2026-10-07-0919, H2): 0 off (the default until the owner's phone
-  // run), 1 on.
+  // run), 1 on. The text key `cloudNoise` (`readHashParams`) wins over it.
   cloudHex: { fallback: 0, min: 0, max: 1 },
   // The flat cloud layer's fade with altitude (round-2 plan 2026-10-07-2350
   // DEC-FR2-5, `/globe/globe-cloud-flat-fade.js`): 1 on, 0 the look before;
@@ -721,6 +728,15 @@ function readHashParams() {
     // `controls` drives every recorder run through the controls' wheel
     // input; absent, each cell says (`/globe/globe-perf-sweep.js`).
     perfDrive: params.get("perfDrive") === "controls" ? "controls" : null,
+    // Which noise the volume's clouds read (round-3 plan 2026-10-08-2345,
+    // N1): `tile` (the baked 24 km tile), `hex` (H1/H2) or `live` (the
+    // per-octave noise that never repeats in view). Absent or unknown:
+    // `cloudHex` decides between tile and hex, as before.
+    cloudNoise: CLOUD_NOISE_MODES.includes(params.get("cloudNoise"))
+      ? params.get("cloudNoise")
+      : values.cloudHex === 1
+        ? "hex"
+        : "tile",
   };
 }
 
@@ -2974,7 +2990,7 @@ async function start() {
     if (cloudVolume) {
       cloudVolume.setEnabled(params.cloudVolume > 0);
       cloudVolume.setShadow(params.cloudShadowFrom === 1);
-      cloudVolume.setHex(params.cloudHex === 1);
+      cloudVolume.setNoise(params.cloudNoise);
       const volume = cloudVolume.update({
         altitudeKm: Math.max(0, observerKm),
         target: worldFrame.target,
@@ -3511,6 +3527,84 @@ async function start() {
      * offset. A frame recentre must leave it unchanged (the owner's
      * "clouds jump when I zoom out and back in", 2026-10-08).
      */
+    /**
+     * Test surface (round-3 plan N1): the live noise's shader twin
+     * (`atmCloudLiveNoise` at footprint 0) at each local point [x, z] (km),
+     * for each anchor (`{ originKm, rotationRad }`), rendered into a float
+     * target and read back, beside the CPU twin (`cloudLiveSample`) at the
+     * same points: `[{ gpu: [...], cpu: [...] }]` an anchor. Its own
+     * lattice texture, so it needs no live switch.
+     */
+    cloudLiveProbe(points, anchors) {
+      const n = points.length;
+      const input = new Float32Array(n * 4);
+      points.forEach(([x, z], i) => {
+        input[4 * i] = x;
+        input[4 * i + 1] = z;
+      });
+      const inputTexture = new THREE.DataTexture(
+        input,
+        n,
+        1,
+        THREE.RGBAFormat,
+        THREE.FloatType,
+      );
+      inputTexture.needsUpdate = true;
+      const lattice = createCloudLiveLatticeTexture();
+      const target = new THREE.WebGLRenderTarget(n, 1, {
+        type: THREE.FloatType,
+      });
+      const basis = { value: [] };
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          uInput: { value: inputTexture },
+          uLattice: { value: lattice },
+          uBasis: basis,
+        },
+        vertexShader:
+          "void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }",
+        fragmentShader: `${CLOUD_LIVE_NOISE_GLSL}
+uniform sampler2D uInput;
+uniform sampler2D uLattice;
+uniform vec4 uBasis[ATM_LIVE_OCTAVES];
+void main() {
+  vec2 p = texelFetch(uInput, ivec2(gl_FragCoord.xy), 0).xy;
+  gl_FragColor = vec4(atmCloudLiveNoise(uLattice, uBasis, p, 0.0), 0.0, 0.0, 1.0);
+}`,
+      });
+      const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+      const probeScene = new THREE.Scene();
+      probeScene.add(quad);
+      const previous = renderer.getRenderTarget();
+      const out = new Float32Array(n * 4);
+      const results = anchors.map((anchor) => {
+        const b = cloudLiveBasis(anchor);
+        basis.value = Array.from(
+          { length: b.length / 4 },
+          (_, k) =>
+            new THREE.Vector4(
+              b[4 * k],
+              b[4 * k + 1],
+              b[4 * k + 2],
+              b[4 * k + 3],
+            ),
+        );
+        renderer.setRenderTarget(target);
+        renderer.render(probeScene, camera);
+        renderer.readRenderTargetPixels(target, 0, 0, n, 1, out);
+        return {
+          gpu: points.map((_, i) => out[4 * i]),
+          cpu: points.map(([x, z]) => cloudLiveSample(b, x, z)),
+        };
+      });
+      renderer.setRenderTarget(previous);
+      target.dispose();
+      material.dispose();
+      quad.geometry.dispose();
+      inputTexture.dispose();
+      lattice.dispose();
+      return results;
+    },
     cloudNoiseCoordAt(lat, lng) {
       const tileM = CLOUD_LAYER.tileKm * 1000;
       const p = globe.tiles.group.localToWorld(
