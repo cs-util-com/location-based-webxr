@@ -546,7 +546,6 @@ export function wireCreatorSetup(deps: {
     arStore,
     arController,
     seams,
-    codes,
     dom,
     alignmentPicks,
     draft,

@@ -24,7 +24,6 @@ import {
 import { Vector3 } from "three";
 import { mintPhoto, mintPin, newObjectId } from "./content-placement.js";
 import type { CreatorAlignmentPicks } from "./creator-alignment-picks.js";
-import type { CreatorCodes } from "./creator-codes.js";
 import type { CreatorDraft } from "./creator-draft.js";
 import type { CreatorPreviews } from "./creator-previews.js";
 import { usablePhotoFrame } from "./photo-frame.js";
@@ -64,7 +63,6 @@ export function wireCreatorPlacement(deps: {
   alignmentPicks: Pick<CreatorAlignmentPicks, "notePlaced">;
   draft: Pick<CreatorDraft, "recordPlacement">;
   previews: Pick<CreatorPreviews, "sync">;
-  codes: Pick<CreatorCodes, "inHand">;
   alignmentInfo: () => MintAlignmentInfo;
   /** The printed size a code text is solved at (M4c-3). */
   sizeOf: (text: string | null) => number;
@@ -79,15 +77,16 @@ export function wireCreatorPlacement(deps: {
 }): CreatorPlacement {
   const { ctx, arStore, arController, seams, dom } = deps;
   /**
-   * Placement needs the alignment the mint gate needs (a measured code,
-   * and this session's fixes solved in - the matrix alone is the identity
-   * from the first fix, M4 review #2), a live session, and no rebuild in
-   * flight. Re-checked at every tap, not only at render.
+   * Placement needs this session's GPS alignment (its fixes solved in - the
+   * matrix alone is the identity from the first fix, M4 review #2), a live
+   * session, and no rebuild in flight. Re-checked at every tap, not only at
+   * render. Never a code: placing is GPS and tracking only, as in a tour
+   * builder with no codes (field test 2, F5; a print size adopted mid-walk
+   * used to grey the buttons for the rest of the loop).
    */
   function placementAllowed(): boolean {
     const alignment = deps.alignmentInfo();
     return (
-      deps.codes.inHand() !== null &&
       alignment.hasMatrix &&
       alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES &&
       arController.getState().status === "running" &&

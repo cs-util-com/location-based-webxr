@@ -3321,6 +3321,44 @@ describe(
       await a.placePin("Gate", [2, 0, -1]);
       expect(a.ctx.placedObjects).toHaveLength(1);
     });
+
+    // Why these tests matter (field test 2, F5; owner, 2026-10-09):
+    // placing an object in the AR world is GPS and tracking only - a tour
+    // builder without codes must place exactly as this one does. The gate
+    // used to need a measured code too, so "Use 15.3 cm" emptied the hand
+    // 20 m into the walk and greyed the place buttons for the rest of the
+    // loop outside, with nothing on screen saying why.
+    it("places a pin and a photo with no code measured or stored", async () => {
+      const a = authoring();
+      expect(a.codes.inHand()).toBeNull();
+      a.setup.renderAuthorReadout();
+      expect(a.dom.pinButton.disabled).toBe(false);
+      await a.placePin("Gate", [2, 0, -1]);
+      a.tapPhoto({ position: [0, 1.4, 0], rotation: [0, 0, 0, 1] });
+      await flush();
+      expect(a.ctx.placedObjects.map((p) => p.object.kind)).toEqual([
+        "pin",
+        "photo",
+      ]);
+      // The settle has no code to correct them through: the visit's own
+      // GPS alignment places them.
+      a.endVisit();
+      expect(a.settledLogs().at(-1)?.payload.basis).toBe("visit-alignment");
+    });
+
+    it("places a pin after the code in hand's print size is adopted", async () => {
+      const a = authoring();
+      await a.mint();
+      a.ctx.printSizeCheck = {
+        ...a.ctx.printSizeCheck!,
+        offer: () => ({ text: TEXT, sizeM: 0.153 }),
+        answer: () => undefined,
+      };
+      a.dom.sizeOfferUse.click();
+      expect(a.codes.inHand()).toBeNull();
+      await a.placePin("Outside", [30, 0, -5]);
+      expect(a.ctx.placedObjects.map((p) => p.object.kind)).toEqual(["pin"]);
+    });
   },
 );
 

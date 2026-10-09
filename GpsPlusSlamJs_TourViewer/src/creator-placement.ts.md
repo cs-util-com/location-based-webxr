@@ -10,7 +10,7 @@ troubleshooting recording's record of each placement. Split out of
 
 ## Public API
 
-- `wireCreatorPlacement({ ctx, arStore, arController, seams, dom, alignmentPicks, draft, previews, codes, alignmentInfo, sizeOf, settledVisit, lateArrival, render }): CreatorPlacement`
+- `wireCreatorPlacement({ ctx, arStore, arController, seams, dom, alignmentPicks, draft, previews, alignmentInfo, sizeOf, settledVisit, lateArrival, render }): CreatorPlacement`
   - `dom` (`CreatorPlacementDom`): `pinButton`, `pinLabel`, `pinSave`,
     `pinCancel`, `photoButton`, whose clicks this module handles.
   - `seams`: `getArWorldGroup` (the odometry frame a placement is kept
@@ -29,11 +29,17 @@ troubleshooting recording's record of each placement. Split out of
 
 ## Invariants & assumptions
 
-- **The gate:** allowed only under the mint gate's own
-  alignment floor for THIS session (a measured code, a matrix and at least
-  `MIN_ALIGNMENT_SAMPLES` fixes since the session started - a level that
-  survived a session end does not open it, M4 review #2), a running
-  session and no rebuild in flight; re-checked at every tap. "Place a pin
+- **The gate:** allowed only under THIS session's GPS alignment (a
+  matrix and at least `MIN_ALIGNMENT_SAMPLES` fixes since the session
+  started, M4 review #2), a running session and no rebuild in flight;
+  re-checked at every tap.
+- **Never a code** (field test 2, F5; owner, 2026-10-09): placing an
+  object is GPS and tracking only, so a tour builder with no codes places
+  exactly as this one does, and the module has no access to the codes. The
+  gate used to need a measured code too: adopting a new print size
+  mid-walk emptied the hand and greyed the buttons for the rest of the
+  loop. An object placed with no code in the visit is settled through the
+  visit's own alignment (`visit-settle.ts`, basis `visit-alignment`). "Place a pin
   here" reads the hit-test reticle (a surface must be under it, else the
   panel says so), opens the overlay label input (with a Cancel), and Save
   mints a `pin` record from the reticle's GPS-world position

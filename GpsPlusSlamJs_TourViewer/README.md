@@ -38,9 +38,12 @@ author flag.
 4. **Measure the code and place content** - "Start AR setup" opens the
    camera; keep the code in view until the panel says it is measured
    (walking a few metres with GPS reception lets the phone align to the
-   map, and the panel shows the accuracy). Then, at the spots you choose,
+   map, and the panel shows the accuracy). At the spots you choose,
    "Place a pin here" (a text label on the surface under the ring) and
-   "Capture a photo" (the camera frame, placed where you stood). "Finish"
+   "Capture a photo" (the camera frame, placed where you stood). Placing
+   needs only the GPS alignment, never the code: it works anywhere along
+   the walk, also before the code is measured or after its print size
+   changed. "Finish"
    ends the session, and the same step then saves and shows:
    - **the rebuilt zip** - the page rebuilds the archive in the browser:
      the original entries byte for byte, plus `qr/<id>.json` (the measured
