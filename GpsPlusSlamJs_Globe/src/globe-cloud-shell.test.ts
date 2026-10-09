@@ -70,10 +70,11 @@ describe("createGlobeCloudShell", () => {
     expect(m.transparent).toBe(true);
     expect(m.depthWrite).toBe(false);
     expect(m.side).toBe(THREE.DoubleSide);
-    // v2 since the volume's hole (C2): a changed shader needs a new key, or
-    // three may reuse the old program.
+    // v2 since the volume's hole (C2), v3 since the clouds' B-spline
+    // (round-3 plan M1): a changed shader needs a new key, or three may
+    // reuse the old program.
     expect(m.customProgramCacheKey()).toBe(
-      "gps-plus-slam-globe-cloud-shell-v2",
+      "gps-plus-slam-globe-cloud-shell-v3",
     );
   });
 
@@ -88,9 +89,15 @@ describe("createGlobeCloudShell", () => {
       "diffuseColor = vec4( mix( vec3( 1.0 ), globeCloudShade, uCloudRelief ), globeCloud * uCloudOpacity * uShellShare );",
     );
     expect(fs).not.toContain("uNight");
+    // The B-spline's functions, declared once at the program's scope.
+    expect(count(fs, "float globeCloudCubic(")).toBe(1);
+    expect(fs.indexOf("float globeCloudCubic(")).toBeLessThan(
+      fs.indexOf("void main()"),
+    );
     // The shared uniform objects, so the drift and the look move together.
     for (const name of [
       "uClouds",
+      "uCloudCubic",
       "uCloudLonOffset",
       "uCloudOpacity",
       "uCloudRelief",

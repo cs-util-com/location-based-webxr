@@ -21,6 +21,7 @@
 import * as THREE from "three";
 import type { Ellipsoid } from "3d-tiles-renderer";
 
+import { GLOBE_CLOUD_FILTER_GLSL } from "./globe-cloud-filter.js";
 import { smoothstep } from "./globe-ease.js";
 import { worldFromEcefAt } from "./globe-frame.js";
 import type { LatLng } from "./globe-target.js";
@@ -237,12 +238,15 @@ export function cloudVolumeRecentreShift(
 /**
  * The slab's coverage chunk: the cloud map read where the column stands
  * (`cloudVolumeMapUv`'s formula), times the clouds' opacity and the
- * volume's altitude share. Its uniforms: `uVolumeClouds` (the globe's map),
+ * volume's altitude share, read through the B-spline at level 0 as every
+ * reader of the map is (round-3 plan M1, `globe-cloud-filter.ts`, switched
+ * by `uCloudCubic`). Its uniforms: `uVolumeClouds` (the globe's map),
  * `uVolumeOrigin` (the target's latitude and longitude, radians),
  * `uVolumeLonOffset` (the drift, radians), `uVolumeOpacity`, `uVolumeShare`,
  * `uVolumeGain` (the cover's gain on the map, 1 by default).
  */
 export const CLOUD_VOLUME_COVERAGE_GLSL = /* glsl */ `
+${GLOBE_CLOUD_FILTER_GLSL}
 uniform sampler2D uVolumeClouds;
 uniform vec2 uVolumeOrigin;
 uniform float uVolumeLonOffset;
@@ -253,5 +257,5 @@ float atmCloudCoverageAt(vec2 xz) {
   float lat = uVolumeOrigin.x - xz.y / ${EARTH_RADIUS_M.toFixed(1)};
   float lon = uVolumeOrigin.y + xz.x / ( ${EARTH_RADIUS_M.toFixed(1)} * max( cos( uVolumeOrigin.x ), 0.01 ) );
   vec2 uv = vec2( ( lon - uVolumeLonOffset ) * 0.15915494309189535 + 0.5, lat * 0.3183098861837907 + 0.5 );
-  return texture2D( uVolumeClouds, uv ).r * uVolumeOpacity * uVolumeGain * uVolumeShare;
+  return globeCloudCubicLod( uVolumeClouds, uv ) * uVolumeOpacity * uVolumeGain * uVolumeShare;
 }`;

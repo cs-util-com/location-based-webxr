@@ -616,7 +616,9 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
 - The global maps are decoded off the main thread where the browser can
   (`/globe/globe-map-loader.js`, round-3 plan 2026-10-08-2345 M1);
   `mapBitmap=0`, read at load, takes the plain image element, so a smoke
-  can compare the two paths pixel for pixel.
+  can compare the two paths pixel for pixel. `cloudCubic` (1) reads the
+  cloud map through the B-spline in every reader (`/globe/globe-cloud-filter.js`);
+  `cloudCubic=0` is the bilinear look before, live, to compare.
 - The relief is the default since F2a (DEC-GL5-15); `relief=0` keeps the
   plain globe. The smokes that measure the plain globe pin it: the
   pre-round-4 look pin (`withPreRound4Look`) carries `relief=0`, and

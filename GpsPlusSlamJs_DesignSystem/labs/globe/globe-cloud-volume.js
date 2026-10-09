@@ -131,6 +131,7 @@ export function createGlobeCloudVolume(
     glsl: CLOUD_VOLUME_COVERAGE_GLSL,
     uniforms: {
       uVolumeClouds: surfaceUniforms.uClouds,
+      uCloudCubic: surfaceUniforms.uCloudCubic,
       uVolumeLonOffset: surfaceUniforms.uCloudLonOffset,
       uVolumeOpacity: surfaceUniforms.uCloudOpacity,
       uVolumeOrigin: origin,

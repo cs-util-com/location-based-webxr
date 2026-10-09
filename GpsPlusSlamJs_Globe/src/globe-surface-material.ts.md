@@ -34,7 +34,9 @@ fill: true`, round-6 plan G6-1) under `-band-fill`.
     shared uniforms object: `uSunEcef` (unit, ECEF), `uSunWorld` (the
     same sun in world space, kept by the surface), `uNight`,
     `uClouds`, `uNightGain`, `uWaterRoughness`, `uCloudOpacity`,
-    `uCloudLonOffset` (radians, 0 until the caller sets it), `uSkyFloor`
+    `uCloudLonOffset` (radians, 0 until the caller sets it), `uCloudCubic`
+    (1: the clouds through the B-spline, `globe-cloud-filter.ts`, round-3
+    plan M1; 0 bilinear, to compare), `uSkyFloor`
     (`SKY_FILL.floor`, globe lab `#skyFloor=`) and `uSkyShare`
     (`GLOBE_SURFACE_TUNING.skyShare`), `uCarrierShare` (the altitude
     band's relief share, 0 until the page sets it) and `uSunRadiance` (the
@@ -96,7 +98,9 @@ uCarrierShare`, so above the band (share 0) the approved globe look is
       maps sampled once (the clouds
       `uCloudLonOffset` further west, so they drift east, with the same
       gradients: the shift is continuous and the map repeats, so it adds
-      no seam), and the clouds whitening `diffuseColor` by
+      no seam; the clouds and their shadow through the B-spline's four
+      taps, `globeCloudCubic`, so the texel grid no longer shows when the
+      map is magnified: round-3 plan M1; the program key is v12 since), and the clouds whitening `diffuseColor` by
       `cloud * uCloudOpacity`;
     - after `roughnessmap_fragment`: water with no cloud takes
       `uWaterRoughness` (the sun's glint);

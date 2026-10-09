@@ -9,6 +9,7 @@
  */
 import * as THREE from "three";
 
+import { GLOBE_CLOUD_FILTER_GLSL } from "./globe-cloud-filter.js";
 import { SKY_FILL, SKY_LEVEL_GLSL } from "./sky-level.js";
 
 /** The patch's tunables (lab parameters; the phone round sets them). */
@@ -40,7 +41,7 @@ export const GLOBE_SURFACE_TUNING = {
 export const GLOBE_CLOUD_DRIFT_DEG_PER_S = 0.375;
 
 /** Every tile's program is the same one: three shares it by this key. */
-export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v11";
+export const GLOBE_SURFACE_CACHE_KEY = "gps-plus-slam-globe-surface-v12";
 
 /** The one uniforms object every tile's shader reads. */
 export interface GlobeSurfaceUniforms {
@@ -58,6 +59,11 @@ export interface GlobeSurfaceUniforms {
   readonly uCloudOpacity: { value: number };
   /** How far east the clouds have drifted, radians in [0, 2π). */
   readonly uCloudLonOffset: { value: number };
+  /**
+   * 1 reads the cloud map through the B-spline (round-3 plan 2026-10-08-2345
+   * M1, `globe-cloud-filter.ts`), 0 bilinearly: shared by every reader.
+   */
+  readonly uCloudCubic: { value: number };
   /**
    * The reference image's looks (round-4 plan 2026-09-28-2105 DEC-GL4-8),
    * each 0 (off, the look before) to 1: a cool blue grade over the
@@ -154,6 +160,7 @@ export function createGlobeSurfaceUniforms(textures: {
     uWaterRoughness: { value: GLOBE_SURFACE_TUNING.waterRoughness },
     uCloudOpacity: { value: GLOBE_SURFACE_TUNING.cloudOpacity },
     uCloudLonOffset: { value: 0 },
+    uCloudCubic: { value: 1 },
     uGrade: { value: 0 },
     uCloudRelief: { value: 0 },
     uTwilight: { value: 0 },
@@ -275,6 +282,7 @@ uniform sampler2D uDayEast;
 uniform float uDayReady;
 uniform float uCloudShadow;
 uniform float uCloudShellM;
+${GLOBE_CLOUD_FILTER_GLSL}
 const vec3 GLOBE_WARM_LIGHTS = vec3( 1.4, 0.95, 0.5 );
 ${SKY_LEVEL_GLSL}
 ${GLOBE_FADE_GLSL}`;
@@ -300,7 +308,7 @@ bool globeWrap = fwidth( globeU2 ) < fwidth( globeU );
 vec2 globeDx = globeWrap ? globeDx2 : globeDx1;
 vec2 globeDy = globeWrap ? globeDy2 : globeDy1;
 vec2 globeUv = vec2( globeU, globeV );
-float globeCloud = textureGrad( uClouds, globeUv - vec2( uCloudLonOffset * 0.15915494309189535, 0.0 ), globeDx, globeDy ).r;
+float globeCloud = globeCloudCubic( uClouds, globeUv - vec2( uCloudLonOffset * 0.15915494309189535, 0.0 ), globeDx, globeDy );
 vec2 globeCloudGrad = vec2( dFdx( globeCloud ), dFdy( globeCloud ) );
 vec2 globeSunView = ( viewMatrix * vec4( uSunWorld, 0.0 ) ).xy;
 float globeCloudLit = clamp( 1.0 - 6.0 * dot( globeCloudGrad, globeSunView / max( length( globeSunView ), 1e-6 ) ), 0.65, 1.3 );
@@ -343,7 +351,7 @@ float globeShellShadow = 0.0;
 if ( uCloudShadow > 0.0 && globeSunUp > 0.0 ) {
   vec3 globeShellN = normalize( globeN + uSunEcef * ( uCloudShellM / ( 6371000.0 * max( globeSunUp, 0.05 ) ) ) );
   vec2 globeShellUv = vec2( atan( globeShellN.y, globeShellN.x ) * 0.15915494309189535 + 0.5, asin( clamp( globeShellN.z, -1.0, 1.0 ) ) * 0.3183098861837907 + 0.5 );
-  globeShellShadow = textureGrad( uClouds, globeShellUv - vec2( uCloudLonOffset * 0.15915494309189535, 0.0 ), globeDx, globeDy ).r * uCloudOpacity;
+  globeShellShadow = globeCloudCubic( uClouds, globeShellUv - vec2( uCloudLonOffset * 0.15915494309189535, 0.0 ), globeDx, globeDy ) * uCloudOpacity;
 }
 diffuseColor.rgb *= 1.0 - uCloudShadow * globeShellShadow;
 float globeLuma = dot( diffuseColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );

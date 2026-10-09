@@ -86,3 +86,128 @@ test("the cloud map is 4096 x 2048, one channel, decoded off the thread, and dra
   expect(spread).toBeGreaterThan(10);
   expect(diff).toBeLessThan(1);
 });
+
+/**
+ * Rows of whole pixels across the middle of the screen: each row's
+ * luminance, one value a pixel.
+ */
+async function readRows(page, rows) {
+  const width = await page.evaluate(
+    () => document.querySelector("canvas").width,
+  );
+  const pts = [];
+  for (const v of rows) {
+    for (let x = Math.floor(width * 0.2); x < Math.floor(width * 0.8); x++) {
+      pts.push([(x + 0.5) / width, v]);
+    }
+  }
+  const px = await page.evaluate((p) => window.__globeLab.readPixels(p), pts);
+  const per = px.length / rows.length;
+  return rows.map((_, r) => px.slice(r * per, (r + 1) * per).map(luminance));
+}
+
+/**
+ * How the row's bending is spread, over the pixels where `mask` (the
+ * bilinear read's rows) is brighter than `floor` at the pixel and both
+ * neighbours (under the clouds, so the ground's own magnified imagery does
+ * not decide it). A bilinear read is straight inside a texel and kinks at
+ * its edges: its second differences are spikes, the grid the owner saw. A
+ * smooth read bends a little at every pixel instead. Their total is about
+ * the same (the slope's total change), so the measure is how peaked they
+ * are: mean(d2^2) / mean(|d2|)^2, 1 for an even bend, high for spikes.
+ * `ratio` (mean |d2| / mean |d1|) is logged beside it, not asserted: a
+ * smooth read lowers d1 while the 8-bit floor in d2 stays, so it rises.
+ */
+function kinkiness(rows, mask, floor) {
+  let d1 = 0;
+  let d2 = 0;
+  let d2sq = 0;
+  let n = 0;
+  rows.forEach((row, r) => {
+    const m = mask[r];
+    for (let i = 1; i < row.length - 1; i++) {
+      if (Math.min(m[i - 1], m[i], m[i + 1]) <= floor) continue;
+      const bend = row[i + 1] - 2 * row[i] + row[i - 1];
+      d1 += Math.abs(row[i + 1] - row[i]);
+      d2 += Math.abs(bend);
+      d2sq += bend * bend;
+      n += 1;
+    }
+  });
+  const meanD2 = d2 / Math.max(n, 1);
+  return {
+    kink: d2sq / Math.max(n, 1) / Math.max(meanD2 * meanD2, 1e-9),
+    ratio: d2 / Math.max(d1, 1e-9),
+    n,
+  };
+}
+
+const spreadOf = (rows) => {
+  const all = rows.flat();
+  const mean = meanOf(all);
+  return Math.sqrt(meanOf(all.map((l) => (l - mean) ** 2)));
+};
+
+// WHY: the owner's report itself. Over the clouds, the clouds read through
+// the B-spline must bend in fewer spikes than the bilinear read where the
+// map is magnified (1,500 and 3,000 km: measured x0.87-0.91 at every
+// brightness floor, 2026-10-09), and keep the clouds' contrast (the spread
+// of the same rows), so the fix smooths the grid, not the clouds. The
+// brightness floor that picks "under the clouds" is swept (120, 150, 180:
+// a one-value verdict is provisional). 1,000 km (this 1280-pixel view's
+// match for the owner's phone at 3,000 km) measured no difference (x0.97
+// to x1.00: both reads are barely peaked there), and at 6,000 km a texel
+// is about a pixel: both logged, not asserted.
+test("the clouds through the B-spline show less of the texel grid where the map is magnified, and keep their contrast", async ({
+  page,
+}) => {
+  test.setTimeout(900_000);
+  const rows = [0.4, 0.45, 0.5, 0.55, 0.6];
+  const floors = [120, 150, 180];
+  const lines = [];
+  const results = [];
+  for (const km of [1000, 1500, 3000, 6000]) {
+    const view = `spinMs=0&turnMs=0&${TIME}&cloudDrift=0&stars=0&milkyWay=0&view=50,-30,${km},0,-90&errorTarget=64`;
+    const lum = {};
+    for (const cubic of [0, 1]) {
+      const errors = await bootGlobe(page, `${view}&cloudCubic=${cubic}`, {
+        phase: "user",
+      });
+      expect(errors).toEqual([]);
+      await page.waitForFunction(
+        () => {
+          const s = window.__globeLab.state();
+          return (
+            s.mapsLoaded + s.mapErrors === s.mapsTotal && s.pendingTiles === 0
+          );
+        },
+        null,
+        { timeout: 120_000 },
+      );
+      await page.evaluate(() => window.__globeLab.timeFrames(3));
+      lum[cubic] = await readRows(page, rows);
+    }
+    const byFloor = floors.map((floor) => ({
+      floor,
+      bilinear: kinkiness(lum[0], lum[0], floor),
+      cubic: kinkiness(lum[1], lum[0], floor),
+    }));
+    const spread = [spreadOf(lum[0]), spreadOf(lum[1])];
+    results.push({ km, byFloor, spread });
+    lines.push(
+      `${km} km: ${byFloor.map((b) => `over ${b.floor}: ${b.bilinear.kink.toFixed(3)} -> ${b.cubic.kink.toFixed(3)} (x${(b.cubic.kink / b.bilinear.kink).toFixed(2)}; d2/d1 ${b.bilinear.ratio.toFixed(2)} -> ${b.cubic.ratio.toFixed(2)}; ${b.bilinear.n} px)`).join(", ")}; spread ${spread[0].toFixed(1)} / ${spread[1].toFixed(1)}`,
+    );
+  }
+  console.log(`cloud map sampling: ${lines.join("; ")}`);
+  for (const r of results) {
+    expect(r.spread[0], `${r.km} km has clouds`).toBeGreaterThan(10);
+    expect(r.spread[1] / r.spread[0], `${r.km} km`).toBeGreaterThan(0.9);
+    if (r.km < 1500 || r.km > 3000) continue;
+    for (const b of r.byFloor) {
+      if (b.bilinear.n < 200) continue;
+      expect(b.cubic.kink, `${r.km} km over ${b.floor}`).toBeLessThan(
+        b.bilinear.kink,
+      );
+    }
+  }
+});

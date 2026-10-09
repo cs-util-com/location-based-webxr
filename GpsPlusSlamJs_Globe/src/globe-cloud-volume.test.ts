@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { GLOBE_CLOUD_FILTER_GLSL } from "./globe-cloud-filter.js";
 import {
   CLOUD_VOLUME,
   CLOUD_VOLUME_COVERAGE_GLSL,
@@ -181,6 +182,17 @@ describe("CLOUD_VOLUME_COVERAGE_GLSL", () => {
     }
     expect(g).toContain("0.15915494309189535"); // 1 / 2 pi, as the surface
     expect(g).toContain("0.3183098861837907"); // 1 / pi
+  });
+
+  // Why (round-3 plan 2026-10-08-2345 M1): the volume reads the same map as
+  // the shell above it and must read it the same way, through the
+  // B-spline, or the two disagree where they cross-fade. At level 0: the
+  // march has no gradients.
+  it("reads the map through the B-spline, as the surface and the shell do", () => {
+    const g = CLOUD_VOLUME_COVERAGE_GLSL;
+    expect(g).toContain(GLOBE_CLOUD_FILTER_GLSL);
+    expect(g).toContain("globeCloudCubicLod( uVolumeClouds, uv )");
+    expect(g).not.toMatch(/texture2D\(\s*uVolumeClouds/);
   });
 });
 

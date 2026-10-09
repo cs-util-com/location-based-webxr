@@ -59,10 +59,12 @@ own cloud map so the swap from the cloud shell never plops.
   anchoring per octave replaces it.
 - `CLOUD_VOLUME_COVERAGE_GLSL`: the chunk for the framework's
   `setCloudSlabCoverage`, defining `float atmCloudCoverageAt(vec2 xz)` as
-  the map at `cloudVolumeMapUv`'s position times `uVolumeOpacity` and
-  `uVolumeShare`. Uniforms: `uVolumeClouds`, `uVolumeOrigin` (latitude,
-  longitude, radians), `uVolumeLonOffset`, `uVolumeOpacity`,
-  `uVolumeShare`.
+  the map at `cloudVolumeMapUv`'s position, read through the B-spline at
+  level 0 as every reader of the map is (`globe-cloud-filter.ts`, round-3
+  plan M1), times `uVolumeOpacity` and `uVolumeShare`. Uniforms:
+  `uVolumeClouds`, `uCloudCubic` (the surface's, so one switch serves
+  every reader), `uVolumeOrigin` (latitude, longitude, radians),
+  `uVolumeLonOffset`, `uVolumeOpacity`, `uVolumeShare`.
 
 ## Invariants & assumptions
 
@@ -88,6 +90,7 @@ setCloudSlabCoverage(slab, {
   glsl: CLOUD_VOLUME_COVERAGE_GLSL,
   uniforms: {
     uVolumeClouds: { value: cloudMap },
+    uCloudCubic: { value: 1 }, // the B-spline (globe-cloud-filter.ts)
     uVolumeShare: { value: 1 } /* ... */,
   },
 });

@@ -12,6 +12,7 @@
  */
 import * as THREE from "three";
 
+import { GLOBE_CLOUD_FILTER_GLSL } from "./globe-cloud-filter.js";
 import {
   GLOBE_CLOUD_GLSL,
   GLOBE_TWILIGHT_GLSL,
@@ -20,7 +21,7 @@ import {
 } from "./globe-surface-material.js";
 
 /** The shell's program key (its shader differs from every tile's). */
-const PROGRAM_KEY = "gps-plus-slam-globe-cloud-shell-v2";
+const PROGRAM_KEY = "gps-plus-slam-globe-cloud-shell-v3";
 
 /**
  * Segments around and from pole to pole: at 256 x 128 a facet's chord sags
@@ -78,7 +79,8 @@ uniform float uShellShare;
 // horizontal radius (m), z the shell's height above the camera (m); y 0 is
 // no hole.
 uniform vec3 uShellHole;
-varying vec3 vGeoNormal;`;
+varying vec3 vGeoNormal;
+${GLOBE_CLOUD_FILTER_GLSL}`;
 
 /** In place of the map: the cloud shade, the cloud as alpha, the grade. */
 const FRAGMENT_CLOUD = /* glsl */ `
@@ -142,6 +144,7 @@ export function createGlobeCloudShell(options: {
       uSunEcef: uniforms.uSunEcef,
       uSunWorld: uniforms.uSunWorld,
       uClouds: uniforms.uClouds,
+      uCloudCubic: uniforms.uCloudCubic,
       uCloudOpacity: uniforms.uCloudOpacity,
       uCloudLonOffset: uniforms.uCloudLonOffset,
       uCloudRelief: uniforms.uCloudRelief,

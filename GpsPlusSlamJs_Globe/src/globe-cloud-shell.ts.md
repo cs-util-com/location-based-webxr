@@ -24,7 +24,9 @@
       horizontally (the distance to the camera with `aboveCameraM`, the
       shell's height above the camera, taken out: `uShellHole`). RangeError
       for a radius not positive or a height not finite. The program key is
-      v2 since the hole.
+      v2 since the hole, v3 since it reads the clouds through the
+      B-spline (`globe-cloud-filter.ts`, round-3 plan M1, with the
+      surface's `uCloudCubic`).
     - `heightM()`, `dispose()` (geometry and material).
   - RangeError for radii that are not three positive finite numbers.
 - Invariants & assumptions:

@@ -573,6 +573,9 @@ const PARAMS = {
   // a glow round bright stars.
   grade: { fallback: 0, min: 0, max: 1 },
   cloudRelief: { fallback: 0, min: 0, max: 1 },
+  // The cloud map through the B-spline (round-3 plan M1); 0 reads it
+  // bilinearly, the look before, to compare.
+  cloudCubic: { fallback: 1, min: 0, max: 1 },
   // The clouds on their own shell above the ground (round-6 plan G6-2,
   // DEC-G6-3/4): 1 draws them there, so the ground keeps its colour and the
   // clouds float above the relief; 0 paints them into the ground, as before.
@@ -2311,6 +2314,7 @@ async function start() {
     u.uCloudOpacity.value = params.cloudOpacity;
     u.uGrade.value = params.grade;
     u.uCloudRelief.value = params.cloudRelief;
+    u.uCloudCubic.value = params.cloudCubic;
     u.uTwilight.value = params.twilight;
     u.uSkyFloor.value = params.skyFloor;
     sky.setStarGlow(params.starGlow);

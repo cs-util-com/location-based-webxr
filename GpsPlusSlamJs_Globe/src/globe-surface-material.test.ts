@@ -17,6 +17,7 @@ import fc from "fast-check";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
+import { GLOBE_CLOUD_FILTER_GLSL } from "./globe-cloud-filter.js";
 import {
   GLOBE_CLOUD_DRIFT_DEG_PER_S,
   GLOBE_CLOUD_GLSL,
@@ -57,6 +58,8 @@ describe("createGlobeSurfaceUniforms", () => {
     expect(u.uClouds.value).toBe(t.clouds);
     // The water is the tiles' alpha now, not a map (DEC-GL4-6).
     expect("uWater" in u).toBe(false);
+    // The clouds through the B-spline by default (round-3 plan M1).
+    expect(u.uCloudCubic.value).toBe(1);
     expect(u.uSunEcef.value.length()).toBeCloseTo(1, 12);
     expect(u.uNightGain.value).toBe(GLOBE_SURFACE_TUNING.nightGain);
     // The owner's night lights (round-4 plan DEC-GL4-1).
@@ -92,6 +95,7 @@ describe("patchGlobeSurfaceShader", () => {
       "uWaterRoughness",
       "uCloudOpacity",
       "uCloudLonOffset",
+      "uCloudCubic",
       "uGrade",
       "uCloudRelief",
       "uTwilight",
@@ -140,10 +144,14 @@ describe("patchGlobeSurfaceShader", () => {
     patchGlobeSurfaceShader(shader, createGlobeSurfaceUniforms(textures()));
     const fs = shader.fragmentShader;
     expect(fs).toContain("fract( globeU + 0.5 )");
-    // The night map, the clouds, the clouds again for the shadow on the
-    // ground (round-6 plan G6-2), and the first look's two halves (round-2
-    // plan DEC-FR2-6), every one with the seam fix's gradients.
-    expect(count(fs, "textureGrad(")).toBe(5);
+    // The night map and the first look's two halves (round-2 plan
+    // DEC-FR2-6) directly, the clouds and the clouds again for the shadow
+    // on the ground (round-6 plan G6-2) through the B-spline's taps (round-3
+    // plan M1), every one with the seam fix's gradients.
+    expect(count(fs, "textureGrad(")).toBe(
+      3 + count(GLOBE_CLOUD_FILTER_GLSL, "textureGrad("),
+    );
+    expect(count(fs, ", globeDx, globeDy )")).toBe(3);
     expect(fs).not.toMatch(/texture\( u(Night|Clouds)/);
   });
 
@@ -155,12 +163,18 @@ describe("patchGlobeSurfaceShader", () => {
     // The cloud sample is shifted west by the offset (radians to turns),
     // with the SAME gradients as the other maps: the shift is continuous,
     // so the repeat-wrapped cloud map has no seam of its own.
+    // Read through the B-spline (round-3 plan 2026-10-08-2345 M1: a
+    // bilinear read drew the texel grid at 3,000 km).
     expect(fs).toContain(
-      "textureGrad( uClouds, globeUv - vec2( uCloudLonOffset * 0.15915494309189535, 0.0 ), globeDx, globeDy )",
+      "globeCloudCubic( uClouds, globeUv - vec2( uCloudLonOffset * 0.15915494309189535, 0.0 ), globeDx, globeDy )",
     );
     // The declaration, the clouds' sample, and the shadow's sample of the
     // same drifting clouds (round-6 plan G6-2).
     expect(count(fs, "uCloudLonOffset")).toBe(3);
+    // Both reads through the B-spline, none around it.
+    expect(count(fs, "globeCloudCubic( uClouds,")).toBe(2);
+    expect(count(fs, "textureGrad( uClouds,")).toBe(0);
+    expect(count(fs, "float globeCloudCubic(")).toBe(1);
     expect(fs).toContain("textureGrad( uNight, globeUv, globeDx, globeDy )");
   });
 
@@ -521,6 +535,7 @@ describe("the clouds in the surface or on their own shell", () => {
   });
 
   it("keeps the program key in step with the shader", () => {
-    expect(GLOBE_SURFACE_CACHE_KEY).toBe("gps-plus-slam-globe-surface-v11");
+    // v12: the clouds through the B-spline (round-3 plan M1).
+    expect(GLOBE_SURFACE_CACHE_KEY).toBe("gps-plus-slam-globe-surface-v12");
   });
 });
