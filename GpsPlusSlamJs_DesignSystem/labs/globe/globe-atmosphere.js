@@ -239,6 +239,11 @@ export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
     uSceneDepthWeight: { value: 0 },
   };
   let built = false;
+  // A restored WebGL context comes back without the two tables (they are
+  // drawn once, into render targets three cannot refill): draw them again.
+  const stopListening = device.onContextRestored(() => {
+    built = false;
+  });
   const material = new THREE.ShaderMaterial({
     defines: { ATM_SPACE_STEPS: look.steps },
     uniforms,
@@ -365,6 +370,7 @@ export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
       renderer.render(scene, quadCamera);
     },
     dispose() {
+      stopListening();
       device.dispose();
       material.dispose();
       geometry.dispose();

@@ -123,8 +123,11 @@ groundShare, sceneDepth, sceneDepthWeight })` - draws the
     and x2.8 / x3.4 / x3.9 at 8, hence 8 samples on a coarse pointer
     (review B5). With tiles loading at 30,15 the rim took the frame
     from 337 to 733 ms.
-  - No context-loss handling: after a restored WebGL context the tables
-    are not rebuilt (the lab has none either).
+  - After a restored WebGL context the two tables are drawn again on the
+    next frame (`device.onContextRestored`; they are render targets three
+    cannot refill). Found by the cloud map's context-loss smoke (round-3
+    plan 2026-10-08-2345 §18): without it the restored globe had no
+    atmosphere at all.
 - Examples:
 
   ```js
