@@ -27,15 +27,24 @@ the point.
   surface, its shadow, the shell) and `globeCloudCubicLod(map, uv)` (level
   0: the volume's march has no gradients). `uCloudCubic` below 0.5 reads
   bilinearly instead (the lab's `cloudCubic=0`, to compare). The map's
-  size comes from `textureSize`, so any map works.
+  size comes from `textureSize`, so any map works. It is guarded
+  (`#ifndef GLOBE_CLOUD_FILTER`): a relief tile's program includes it twice
+  (the surface's declarations and the volume shadow's coverage chunk), and
+  without the guard GLSL rejected the second declaration, so every relief
+  tile failed to compile (the M1 milestone review, finding 1). A program
+  whose uniforms lack `uCloudCubic` reads 0, the bilinear look, silently:
+  every reader passes the surface's.
 
 ## Invariants (tested, `globe-cloud-filter.test.ts`)
 
 - The four taps through a simulated bilinear tap equal the sixteen-texel
-  sum on any map, anywhere away from the clamped rows (property test;
+  sum on any map, anywhere, the poles and the seam included (property test;
   mutating a tap position by half a texel or swapping the share fails it).
 - The slope is continuous across a texel centre where bilinear's jumps.
-- The GLSL carries the twin's weights, tap positions and shares.
+- The GLSL carries the twin's weights, tap positions, shares, and which tap
+  is mixed where (substrings: the GPU itself is checked by the smokes).
+- A program composed as a relief tile's declares the uniform and the
+  functions once (a small preprocessor over the guard).
 
 ## Where it is read
 

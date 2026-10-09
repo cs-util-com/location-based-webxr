@@ -316,8 +316,9 @@ export function createGlobeImagery(): XYZTilesOverlay {
 /**
  * The globe's surface. The caller adds `group` to its scene, points the
  * sun with `setSun` and calls `update` every frame; `dispose` frees the
- * tiles, the template and the maps. `loader` fetches the global maps (a
- * TextureLoader by default; tests pass a stub).
+ * tiles, the template and the maps. `loader` fetches the global maps
+ * (`globeMapLoader()` by default: off the main thread where the browser
+ * can; tests pass a stub).
  */
 export function createGlobeSurface(
   loader: GlobeSurfaceLoader = globeMapLoader(),

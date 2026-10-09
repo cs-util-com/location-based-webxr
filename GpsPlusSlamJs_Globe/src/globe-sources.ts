@@ -94,6 +94,9 @@ export const GLOBE_SOURCES: readonly GlobeSource[] = [
     // A grey photo, read as cloud COVERAGE: a number, not a colour.
     colorSpace: "linear",
     grey: true,
+    // The 2002 Blue Marble's clouds: Visible Earth's record (57747) now
+    // redirects to a generic page, so the credit links the live page of
+    // its successor by the same author (round-3 plan M1).
     credit: {
       short: "NASA Visible Earth",
       full: "NASA Visible Earth, Blue Marble clouds (R. Stöckli)",

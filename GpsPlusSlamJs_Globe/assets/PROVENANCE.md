@@ -21,7 +21,9 @@ globe's credits line names each. Every file is WebP at quality
   (R. Stöckli), `cloud_combined_8192.tif` (8192x4096) resampled (Lanczos)
   to 4096x2048, 1255 KiB. Its Visible Earth record (image 57747)
   now redirects to a generic page; the file still downloads from NASA's
-  image server, and the credit links the Blue Marble collection's page.
+  image server. The clouds are the 2002 Blue Marble's, which has no live
+  page of its own: the credit links NASA's Blue Marble: Next Generation
+  page, its successor by the same author.
 
 We acknowledge the use of imagery provided by services from NASA's Global
 Imagery Browse Services (GIBS), part of NASA's Earth Science Data and

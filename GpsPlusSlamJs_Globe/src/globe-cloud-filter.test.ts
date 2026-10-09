@@ -7,8 +7,14 @@
  * exactly, and the GLSL must be the twin's formula.
  */
 import fc from "fast-check";
+import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
+import { CLOUD_VOLUME_COVERAGE_GLSL } from "./globe-cloud-volume.js";
+import {
+  createGlobeSurfaceUniforms,
+  patchGlobeSurfaceShader,
+} from "./globe-surface-material.js";
 import {
   GLOBE_CLOUD_FILTER_GLSL,
   bsplineTaps,
@@ -62,11 +68,14 @@ function fourTaps(g: number[], w: number, h: number, x: number, y: number) {
 describe("the cloud map's B-spline", () => {
   it("has four weights that are never negative and sum to 1", () => {
     fc.assert(
-      fc.property(fc.double({ min: 0, max: 1, maxExcluded: true }), (t) => {
-        const w = bsplineWeights(t);
-        expect(w.every((v) => v >= 0)).toBe(true);
-        expect(w.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 12);
-      }),
+      fc.property(
+        fc.double({ min: 0, max: 1, maxExcluded: true, noNaN: true }),
+        (t) => {
+          const w = bsplineWeights(t);
+          expect(w.every((v) => v >= 0)).toBe(true);
+          expect(w.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 12);
+        },
+      ),
     );
   });
 
@@ -79,10 +88,11 @@ describe("the cloud map's B-spline", () => {
           minLength: w * h,
           maxLength: w * h,
         }),
-        // Away from the clamped rows: there the taps clamp per tap, as the
-        // GPU does, and the sum clamps per texel; the rows are the poles.
+        // The whole map, the clamped rows (the poles) and the wrapped
+        // columns (the 180 degree seam) included: each tap reads exactly
+        // its own two texels, so clamping per tap equals clamping per texel.
         fc.double({ min: 0, max: w, maxExcluded: true, noNaN: true }),
-        fc.double({ min: 2, max: h - 2, noNaN: true }),
+        fc.double({ min: 0, max: h, maxExcluded: true, noNaN: true }),
         (g, x, y) => {
           expect(fourTaps(g, w, h, x, y)).toBeCloseTo(
             reference(g, w, h, x, y),
@@ -119,8 +129,79 @@ describe("the cloud map's B-spline", () => {
       "share = vec2( g.x / ( g.x + g.y ), g.z / ( g.z + g.w ) );",
       "float globeCloudCubic( sampler2D map, vec2 uv, vec2 dx, vec2 dy )",
       "float globeCloudCubicLod( sampler2D map, vec2 uv )",
+      // Which tap is which, and the order they are mixed in: the twin's
+      // (first x tap weighted by share.x, first y row by share.y). The
+      // M1 review checked this by hand; a swap would pass the rest.
+      "float a = textureGrad( map, at.xz, dx, dy ).r;",
+      "float b = textureGrad( map, at.yz, dx, dy ).r;",
+      "float c = textureGrad( map, at.xw, dx, dy ).r;",
+      "float d = textureGrad( map, at.yw, dx, dy ).r;",
+      "return mix( mix( d, c, share.x ), mix( b, a, share.x ), share.y );",
     ]) {
       expect(GLOBE_CLOUD_FILTER_GLSL).toContain(piece);
     }
+  });
+});
+
+/**
+ * The lines a GLSL preprocessor keeps, for the one macro the filter guards
+ * itself with: `#ifndef` / `#ifdef` of a name, `#define`, `#endif`; any
+ * other `#if` is kept as true (what matters here is the guard alone).
+ */
+function activeLines(source: string): string[] {
+  const defined = new Set<string>();
+  const stack: boolean[] = [];
+  const kept: string[] = [];
+  for (const line of source.split("\n")) {
+    const t = line.trim();
+    const live = stack.every(Boolean);
+    const ifndef = /^#ifndef\s+(\w+)/.exec(t);
+    const ifdef = /^#ifdef\s+(\w+)/.exec(t);
+    if (ifndef) stack.push(!defined.has(ifndef[1]!));
+    else if (ifdef) stack.push(defined.has(ifdef[1]!));
+    else if (/^#if\b/.test(t)) stack.push(true);
+    else if (/^#endif\b/.test(t)) stack.pop();
+    else if (live) {
+      const def = /^#define\s+(\w+)/.exec(t);
+      if (def) defined.add(def[1]!);
+      kept.push(line);
+    }
+  }
+  return kept;
+}
+
+describe("the filter in a program that includes it twice", () => {
+  // Why (M1 milestone review, finding 1): a relief tile's program carries
+  // the globe surface's declarations AND the volume shadow's coverage
+  // chunk, and both include the filter. Without its guard the program
+  // declared `uCloudCubic` and the cubic functions twice, which GLSL
+  // rejects: every relief tile's shader failed to compile on the lab's
+  // default page. Composed here as the relief and the framework's cloud
+  // shadow compose it (the chunk before `main`).
+  it("declares its uniform and functions once", () => {
+    const lib = THREE.ShaderLib.standard;
+    const shader = {
+      vertexShader: lib.vertexShader,
+      fragmentShader: lib.fragmentShader,
+      uniforms: THREE.UniformsUtils.clone(lib.uniforms),
+    } as THREE.WebGLProgramParametersWithUniforms;
+    patchGlobeSurfaceShader(
+      shader,
+      createGlobeSurfaceUniforms({
+        night: new THREE.Texture(),
+        clouds: new THREE.Texture(),
+      }),
+    );
+    const composed = shader.fragmentShader.replace(
+      "void main() {",
+      `${CLOUD_VOLUME_COVERAGE_GLSL}\nvoid main() {`,
+    );
+    expect(composed.split(GLOBE_CLOUD_FILTER_GLSL).length - 1).toBe(2);
+    const active = activeLines(composed).join("\n");
+    const count = (needle: string) => active.split(needle).length - 1;
+    expect(count("uniform float uCloudCubic;")).toBe(1);
+    expect(count("vec4 globeCubicWeights(")).toBe(1);
+    expect(count("float globeCloudCubic(")).toBe(1);
+    expect(count("float globeCloudCubicLod(")).toBe(1);
   });
 });

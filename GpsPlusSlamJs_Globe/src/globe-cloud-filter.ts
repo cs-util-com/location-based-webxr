@@ -53,9 +53,13 @@ export function bsplineTaps(x: number): {
  * uv, dx, dy )` with the map's gradients (the surface, its shadow and the
  * shell), and `globeCloudCubicLod( sampler, uv )` at level 0 (the volume's
  * march, where no gradients exist). `uCloudCubic` below 0.5 reads the map
- * bilinearly instead (the lab's `cloudCubic=0`, to compare).
+ * bilinearly instead (the lab's `cloudCubic=0`, to compare). Guarded, so a
+ * program that includes it twice (a relief tile: the surface's declarations
+ * and the volume shadow's coverage chunk) declares it once.
  */
 export const GLOBE_CLOUD_FILTER_GLSL = /* glsl */ `
+#ifndef GLOBE_CLOUD_FILTER
+#define GLOBE_CLOUD_FILTER
 uniform float uCloudCubic;
 vec4 globeCubicWeights( float t ) {
   vec4 n = vec4( 1.0, 2.0, 3.0, 4.0 ) - t;
@@ -94,4 +98,5 @@ float globeCloudCubicLod( sampler2D map, vec2 uv ) {
   float c = textureLod( map, at.xw, 0.0 ).r;
   float d = textureLod( map, at.yw, 0.0 ).r;
   return mix( mix( d, c, share.x ), mix( b, a, share.x ), share.y );
-}`;
+}
+#endif`;
