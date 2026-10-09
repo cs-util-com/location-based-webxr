@@ -208,9 +208,22 @@ export function hexCoverThresholds(
       );
     }
   }
+  const covers = options.covers ?? Array.from({ length: 33 }, (_, k) => k / 32);
+  return quantileThresholds(values, covers);
+}
+
+/**
+ * The cover thresholds of a sample of a noise field: for each cover, the
+ * (1 - cover) quantile of `values` (sorted in place), +Infinity at cover 0
+ * (a clear sky, as `cloudThresholdForCover`). Shared by the hex and the
+ * live tables (DEC-H3: one implementation).
+ */
+export function quantileThresholds(
+  values: Float64Array,
+  covers: readonly number[]
+): number[] {
   values.sort();
   const n = values.length;
-  const covers = options.covers ?? Array.from({ length: 33 }, (_, k) => k / 32);
   return covers.map((cover) =>
     cover === 0
       ? Number.POSITIVE_INFINITY
@@ -270,15 +283,12 @@ export const HEX_COVER_LOW_TAIL: readonly number[] = [
   0.71743595, 0.71265426, 0.70871594, 0.70488909,
 ];
 
-/** The table's finite entries: covers 1/32, 2/32 .. 1. */
-const HEX_COVER_FINITE = HEX_COVER_THRESHOLDS.slice(1);
-
 /**
- * `table` read linearly at index `x`, held at its first and last entry
- * outside them.
+ * `table` read linearly at index `x`, held at its entries `first` and the
+ * last outside them.
  */
-function heldLerp(table: readonly number[], x: number): number {
-  const i = Math.min(Math.max(Math.floor(x), 0), table.length - 2);
+function heldLerp(table: readonly number[], x: number, first = 0): number {
+  const i = Math.min(Math.max(Math.floor(x), first), table.length - 2);
   const f = Math.min(Math.max(x - i, 0), 1);
   const a = table[i] ?? 0;
   return a + ((table[i + 1] ?? a) - a) * f;
@@ -291,13 +301,31 @@ function heldLerp(table: readonly number[], x: number): number {
  * cover outside [0, 1].
  */
 export function hexCloudThreshold(cover: number): number {
+  return coverTableThreshold(HEX_COVER_THRESHOLDS, HEX_COVER_LOW_TAIL, cover);
+}
+
+/**
+ * A noise field's threshold for `cover` (0-1) from its two tables: `table`
+ * the thresholds at covers k / 32 (k = 0..32, +Infinity at 0), `lowTail`
+ * those at k / 512 (k = 1..16, the last equal to the table's 1 / 32).
+ * Linear between the table's covers, below 1 / 32 between the low tail's (a
+ * cover under 1 / 512 takes the tail's first); +Infinity at 0 (a clear
+ * sky). Shared by the hex and the live fields (DEC-H3). RangeError for a
+ * cover outside [0, 1].
+ */
+export function coverTableThreshold(
+  table: readonly number[],
+  lowTail: readonly number[],
+  cover: number
+): number {
   if (!(Number.isFinite(cover) && cover >= 0 && cover <= 1)) {
     throw new RangeError(`cloud cover must be in [0, 1], got ${cover}`);
   }
   if (cover === 0) return Number.POSITIVE_INFINITY;
+  // The table's entry 0 is +Infinity: from 1 / 32 up it is read from 1.
   return cover < 1 / 32
-    ? heldLerp(HEX_COVER_LOW_TAIL, cover * 512 - 1)
-    : heldLerp(HEX_COVER_FINITE, cover * 32 - 1);
+    ? heldLerp(lowTail, cover * 512 - 1)
+    : heldLerp(table, cover * 32, 1);
 }
 
 /**
