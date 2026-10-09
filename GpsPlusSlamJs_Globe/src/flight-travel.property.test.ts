@@ -1,7 +1,7 @@
 /**
  * Property tests for the meteor law (round-3 plan 2026-10-08-2345 F1).
  * Why this file matters: the law must be continuous at the bend and end at
- * 45 for every beta and landing, its sweep must fall strictly with beta
+ * beta itself for every beta and landing (F1b, DEC-R3-9), its sweep must fall strictly with beta
  * (the fit bisects on it), and the fit must never pass the asked beta nor
  * overshoot the arc it was given.
  */
@@ -20,7 +20,7 @@ const beta = fc.double({ min: 15, max: 89.5, noNaN: true });
 const landing = fc.double({ min: 0.5 * KM, max: 20 * KM, noNaN: true });
 
 describe("the meteor law's properties", () => {
-  it("is continuous at the bend and 45 at the landing", () => {
+  it("is continuous at the bend and beta at the landing", () => {
     fc.assert(
       fc.property(beta, landing, (b, l) => {
         const bend = bendAltitudeM(l);
@@ -30,19 +30,24 @@ describe("the meteor law's properties", () => {
               travelLawDeg(bend * 0.99999, l, b),
           ),
         ).toBeLessThan(0.01);
-        expect(travelLawDeg(l, l, b)).toBe(45);
+        expect(travelLawDeg(l, l, b)).toBeCloseTo(b, 9);
       }),
     );
   });
 
-  it("sweeps less as beta rises, from any start", () => {
+  // Within the line family (beta under 90): R1 (beta 90) keeps its ease to
+  // 45 below the bend since F1b, so it sweeps more than a near-vertical
+  // line and is not the family's limit; the fit sends the arcs R1 fits to
+  // R1 before it bisects among the lines.
+  it("sweeps less as beta rises among the lines, from any start", () => {
     fc.assert(
       fc.property(
         beta,
         fc.double({ min: 0.2, max: 10, noNaN: true }),
         fc.double({ min: 500 * KM, max: 65_000 * KM, noNaN: true }),
         (b, d, h0) => {
-          const steeper = Math.min(90, b + d);
+          const steeper = Math.min(89.9, b + d);
+          fc.pre(steeper > b);
           expect(meteorDiveArcRad(h0, 2 * KM, steeper)).toBeLessThan(
             meteorDiveArcRad(h0, 2 * KM, b),
           );

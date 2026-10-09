@@ -71,9 +71,9 @@ import {
   pinLanding,
   pinProgress,
   pinTouch,
+  meteorLinkStart,
   pressPin,
 } from "/globe/pin-flight.js";
-import { meteorDiveArcRad } from "/globe/flight-travel.js";
 import { flightCameraAt, flightFrameAt } from "/globe/flight-replan.js";
 import { globeReadoutText, readoutThrottle } from "/globe/globe-readout.js";
 import {
@@ -435,12 +435,14 @@ const PARAMS = {
   // from the camera as the intro placed it. The pin's press always flies
   // from where the camera is.
   flightStartKm: { fallback: 65_000, min: 0, max: 100_000 },
-  // The meteor (round-3 plan 2026-10-08-2345 F1; the owner on r805: "like a
-  // meteor, flat from the start"): `meteorDeg` the line's entry angle (45;
-  // smaller is flatter in the middle; 90 is round 2's straight down, R1). A
-  // link starts on the line; a press over its own place flies the flattest
-  // line its arc allows. `flight=2` only.
-  meteorDeg: { fallback: 45, min: 10, max: 90 },
+  // The meteor (round-3 plan 2026-10-08-2345 F1, F1b; the owner: "like a
+  // meteor", "a continuous direction, never bending abruptly"):
+  // `meteorDeg` the straight line's entry angle, 20 (DEC-R3-8; smaller is
+  // flatter; 90 is round 2's straight down, R1). It flies the line looking
+  // along it and lands at that angle (DEC-R3-9, -10). A link starts on the
+  // line; a press over its own place flies the flattest line its arc
+  // allows. `flight=2` only.
+  meteorDeg: { fallback: 20, min: 10, max: 90 },
   // The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6): on unless 0.
   // While it runs it paces the dive (`/globe/flight-pace.js`, at most the
   // 30 s of DEC-GL5-6) unless `diveMs` is set in the hash, which keeps
@@ -1438,43 +1440,22 @@ function bindPin({
     const params = getParams();
     controls.release();
     const start = ecefCamera();
+    // The flight's start: the camera as it is, unless placed below.
+    let flightStart = null;
     if (fromAltitudeM > 0 && place && params.meteorDeg < 90) {
-      // A link starts ON the meteor's line (F1): the line's sweep from this
-      // altitude (1 % more, plus the landing's look-back: the camera's arc
-      // ends one landing short of its place, so the asked beta fits by
-      // construction for any landing, the milestone review) away
-      // from its place, on the side the camera already is (north when it
-      // is right overhead), looking straight down with the place ahead,
-      // which is the path's own view up here (the horizon floor), so the
-      // start's view never swings.
-      const to = orbitPose(ellipsoid, place).direction.clone().normalize();
-      const here = start.position.clone().normalize();
-      const side = here.clone().addScaledVector(to, -here.dot(to));
-      if (side.length() < 1e-6) {
-        side.set(0, 0, 1).addScaledVector(to, -to.z);
-      }
-      side.normalize();
-      const sweep =
-        1.01 *
-          meteorDiveArcRad(
-            fromAltitudeM,
-            params.landKm * 1000,
-            params.meteorDeg,
-          ) +
-        (2 * params.landKm * 1000) / ellipsoid.radius.x;
-      const direction = to
-        .clone()
-        .multiplyScalar(Math.cos(sweep))
-        .addScaledVector(side, Math.sin(sweep));
-      const up = to.clone().addScaledVector(direction, -to.dot(direction));
-      const view = obliqueCamera(
+      // A link starts ON the meteor's line, looking along it, the path's
+      // own view there, so the flight never turns the camera to its line
+      // (F1b, `meteorLinkStart`).
+      flightStart = meteorLinkStart(
         ellipsoid,
-        { direction, up: up.normalize() },
+        orbitPose(ellipsoid, place),
+        start.position,
         fromAltitudeM,
-        90,
+        params.landKm * 1000,
+        params.meteorDeg,
       );
-      start.position.copy(view.position);
-      start.quaternion.copy(view.quaternion);
+      start.position.copy(flightStart.position);
+      start.quaternion.copy(flightStart.quaternion);
       placeCameraEcef(start.position, start.quaternion);
       // A placement, not a speed: the dust starts from rest.
       resetSpeed();
@@ -1497,7 +1478,7 @@ function bindPin({
       pressPin(
         ellipsoid,
         now,
-        {
+        flightStart ?? {
           pose: currentPose(start),
           distanceM: start.position.length(),
           quaternion: start.quaternion,

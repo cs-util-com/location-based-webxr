@@ -38,7 +38,7 @@ import type { Ellipsoid } from "3d-tiles-renderer";
 
 import type { OrbitPose } from "./globe-camera.js";
 import { smoothstep } from "./globe-ease.js";
-import { surfaceRadiusAlong } from "./globe-dive.js";
+import { obliqueCamera, surfaceRadiusAlong } from "./globe-dive.js";
 import type { FlightStart } from "./flight-path.js";
 import {
   flightCameraAt,
@@ -47,7 +47,11 @@ import {
   startFlight,
   type Flight,
 } from "./flight-replan.js";
-import { fitMeteorDeg } from "./flight-travel.js";
+import {
+  fitMeteorDeg,
+  meteorDiveArcRad,
+  travelLawDeg,
+} from "./flight-travel.js";
 
 export const PIN_FLIGHT = Object.freeze({
   /** DEC-CF-4b: without a target, the flight holds above this, m. */
@@ -291,6 +295,75 @@ function lookedAt(ellipsoid: Ellipsoid, start: FlightStart): THREE.Vector3 {
   const t = -b - Math.sqrt(disc);
   if (t <= 0) return nadir;
   return origin.addScaledVector(ray, t).normalize();
+}
+
+/**
+ * Where a link starts (F1, F1b): ON its meteor's straight line,
+ * `fromAltitudeM` up, on the side of `target` that `from` (the camera's
+ * direction from the centre) is on (north when it is right overhead), and
+ * looking along the line: the path's own view there, so the flight never
+ * turns the camera to its line (round-3 plan 2026-10-08-2345 F1b, the
+ * owner: "never bending abruptly"). Its ground point is the line's sweep
+ * from that altitude away, 1 % more plus the landing's look-back, so the
+ * asked beta fits by construction for any landing (the F1 milestone
+ * review). The result is a flight start with its position.
+ */
+export function meteorLinkStart(
+  ellipsoid: Ellipsoid,
+  target: OrbitPose,
+  from: THREE.Vector3,
+  fromAltitudeM: number,
+  landingM: number,
+  meteorDeg: number,
+): FlightStart & {
+  readonly position: THREE.Vector3;
+  readonly quaternion: THREE.Quaternion;
+} {
+  const to = target.direction.clone().normalize();
+  const here = from.clone().normalize();
+  const side = here.clone().addScaledVector(to, -here.dot(to));
+  if (side.lengthSq() < 1e-12) side.set(0, 0, 1).addScaledVector(to, -to.z);
+  side.normalize();
+  const sweep =
+    1.0001 * meteorDiveArcRad(fromAltitudeM, landingM, meteorDeg) +
+    (2 * landingM) / ellipsoid.radius.x;
+  const ground = to
+    .clone()
+    .multiplyScalar(Math.cos(sweep))
+    .addScaledVector(side, Math.sin(sweep));
+  const toward = (d: THREE.Vector3) =>
+    to.clone().addScaledVector(d, -to.dot(d)).normalize();
+  const pitchDeg = travelLawDeg(fromAltitudeM, landingM, meteorDeg);
+  // `obliqueCamera` stands the camera back from the point it looks at, by
+  // the angle between them at the centre: look that far ahead of `ground`
+  // (all three in the plane of the target and the side), so the camera
+  // stands over `ground`.
+  const rs = surfaceRadiusAlong(ellipsoid, ground);
+  const gamma = ((90 - pitchDeg) * Math.PI) / 180;
+  const back =
+    gamma > 1e-12
+      ? Math.asin(Math.min(1, ((rs + fromAltitudeM) / rs) * Math.sin(gamma))) -
+        gamma
+      : 0;
+  const up = toward(ground);
+  const look = ground
+    .clone()
+    .multiplyScalar(Math.cos(back))
+    .addScaledVector(up, Math.sin(back))
+    .normalize();
+  const view = obliqueCamera(
+    ellipsoid,
+    { direction: look, up: toward(look) },
+    fromAltitudeM,
+    pitchDeg,
+  );
+  return {
+    pose: { direction: view.position.clone().normalize(), up },
+    distanceM: view.position.length(),
+    quaternion: view.quaternion,
+    pitchDeg,
+    position: view.position,
+  };
 }
 
 /**

@@ -322,12 +322,13 @@ describe("planTravel", () => {
   });
 });
 
-// WHY (round-3 plan 2026-10-08-2345, F1; the owner on r805: "very steep,
-// then 45 rather late; like a meteor, flat from the start"): a meteor
-// arrives on a straight line, cos(gamma) = p / r with p = (R + landing)
-// cos(beta). The law with \`meteorDeg\` beta is that line above the bend
-// and an ease from the line's own angle at the bend to 45 at the landing;
-// beta 90 is R1 exactly.
+// WHY (round-3 plan 2026-10-08-2345, F1 and F1b; the owner on r805: "very
+// steep, then 45 rather late; like a meteor"; on r807: "a continuous
+// direction, never bending abruptly", and his DEC-R3-9: land at the entry
+// angle): a meteor arrives on a straight line, cos(gamma) = p / r with
+// p = (R + landing) cos(beta). The law with `meteorDeg` beta is that line
+// at every altitude, down to beta at the landing; beta 90 is R1 exactly
+// (its ease to 45 below the bend).
 describe("the meteor law (travelLawDeg with meteorDeg)", () => {
   const line = (h: number, landing: number, beta: number) =>
     Math.acos(Math.min(1, ((R + landing) * Math.cos(beta * DEG)) / (R + h))) /
@@ -355,20 +356,19 @@ describe("the meteor law (travelLawDeg with meteorDeg)", () => {
     expect(90 - travelLawDeg(4_000 * KM, 2 * KM, 45)).toBeCloseTo(25.8, 1);
   });
 
-  // Continuous at the bend for every beta (the second plan review: R1's
-  // ease from 90 jumped about 44 degrees after the line), 45 at the landing.
-  it("is continuous at the bend and ends at 45, for every beta", () => {
-    for (const beta of [20, 30, 45, 60, 75, 89]) {
-      for (const landing of [1, 2, 12].map((k) => k * KM)) {
+  // F1b (DEC-R3-9): no bend and no ease below it: the line all the way
+  // down, so the law ends at beta itself, for every beta and landing.
+  it("follows the straight line below the bend too, ending at beta, for every beta", () => {
+    for (const beta of [15, 20, 30, 45, 60, 75, 89]) {
+      for (const landing of [1, 2, 5, 12].map((k) => k * KM)) {
         const bend = bendAltitudeM(landing);
-        expect(
-          Math.abs(
-            travelLawDeg(bend * 1.0001, landing, beta) -
-              travelLawDeg(bend * 0.9999, landing, beta),
-          ),
-          `${beta}, ${landing}`,
-        ).toBeLessThan(0.01);
-        expect(travelLawDeg(landing, landing, beta)).toBe(45);
+        for (const h of [bend, bend / 3, landing * 2, landing]) {
+          expect(
+            travelLawDeg(h, landing, beta),
+            `${beta} at ${h} for ${landing}`,
+          ).toBeCloseTo(line(h, landing, beta), 9);
+        }
+        expect(travelLawDeg(landing, landing, beta)).toBeCloseTo(beta, 9);
       }
     }
   });
@@ -440,18 +440,20 @@ describe("planTravel on the meteor's line (meteorDeg)", () => {
   const floorAt = (h: number) =>
     Math.acos(R / (R + h)) / DEG + FLIGHT_TRAVEL.horizonMarginDeg;
 
-  it("looks along the line below the floor's reach, at the floor above it", () => {
-    for (const hKm of [10_000, 4_000, 1_000, 300]) {
+  // F1b (DEC-R3-10): no horizon floor for a meteor: it looks along its line
+  // at every altitude, even where the floor would have held it (above about
+  // 15,800 km at beta 45), and lands at beta (DEC-R3-9).
+  it("looks along the line at every altitude, the floor's reach included, landing at beta", () => {
+    for (const hKm of [60_000, 30_000, 10_000, 4_000, 1_000, 300]) {
       const h = hKm * KM;
       const { pitch } = atAltitude(h);
-      const expected = Math.max(travelLawDeg(h, landing, beta), floorAt(h));
-      expect(pitch, `${hKm} km`).toBeCloseTo(expected, 0);
+      expect(pitch, `${hKm} km`).toBeCloseTo(travelLawDeg(h, landing, beta), 0);
     }
-    for (const hKm of [60_000, 30_000]) {
-      const h = hKm * KM;
-      expect(atAltitude(h).pitch, `${hKm} km`).toBeCloseTo(floorAt(h), 0);
-    }
-    expect(curve.pitchAt(curve.length)).toBeCloseTo(45, 6);
+    // Where the floor used to bind, the line is the flatter of the two.
+    expect(travelLawDeg(60_000 * KM, landing, beta)).toBeLessThan(
+      floorAt(60_000 * KM),
+    );
+    expect(curve.pitchAt(curve.length)).toBeCloseTo(beta, 6);
   });
 
   it("flies the line: its ground track at each altitude is the line's own", () => {

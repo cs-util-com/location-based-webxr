@@ -112,11 +112,12 @@ function lineAngleDeg(
 /**
  * The flight-path angle at `altitudeM` for a flight landing at `landingM`,
  * degrees below the horizontal. `meteorDeg` (beta, round-3 plan
- * 2026-10-08-2345 F1; the owner: "like a meteor, flat from the start"):
- * above the bend the straight line meeting the landing at beta, below it an
- * ease from the line's own angle at the bend to `landingAngleDeg` at the
- * landing (a smoothstep in the altitude's logarithm; continuous at the bend
- * for every beta). Beta 90 (the default) is R1 exactly: 90 from the bend up.
+ * 2026-10-08-2345 F1 and F1b; the owner: "like a meteor", "a continuous
+ * direction"): under 90, the straight line meeting the landing at beta at
+ * every altitude, ending at beta (DEC-R3-9: it lands at its entry angle).
+ * Beta 90 (the default) is R1 exactly: 90 from the bend up, then an ease to
+ * `landingAngleDeg` at the landing (a smoothstep in the altitude's
+ * logarithm).
  * RangeError for an altitude or landing that is not a positive number, or a
  * beta outside (0, 90].
  */
@@ -129,14 +130,17 @@ export function travelLawDeg(
   if (!(meteorDeg > 0 && meteorDeg <= 90)) {
     throw new RangeError(`meteorDeg must be in (0, 90], got ${meteorDeg}`);
   }
+  // A meteor is its straight line at every altitude, down to beta at the
+  // landing: no bend, so the camera never turns (F1b, DEC-R3-9).
+  if (meteorDeg < 90) {
+    return lineAngleDeg(Math.max(altitudeM, landingM), landingM, meteorDeg);
+  }
   const bend = bendAltitudeM(landingM);
-  const line = (h: number) =>
-    meteorDeg >= 90 ? 90 : lineAngleDeg(h, landingM, meteorDeg);
-  if (altitudeM >= bend) return line(altitudeM);
+  if (altitudeM >= bend) return 90;
   const land = FLIGHT_TRAVEL.landingAngleDeg;
   if (altitudeM <= landingM) return land;
   const x = Math.log(altitudeM / landingM) / Math.log(bend / landingM);
-  return land + (line(bend) - land) * smoothstep(x);
+  return land + (90 - land) * smoothstep(x);
 }
 
 /**
@@ -312,8 +316,13 @@ function inverseByLength(
   };
 }
 
-/** The view's pitch held between the horizon floor and straight down. */
-function clampPitch(deg: number, h: number): number {
+/**
+ * The view's pitch held between the horizon floor and straight down. A
+ * meteor (beta under 90) has no floor: it looks along its line at every
+ * altitude, so the camera never turns (F1b, DEC-R3-10).
+ */
+function clampPitch(deg: number, h: number, meteorDeg = 90): number {
+  if (meteorDeg < 90) return Math.min(90, deg);
   const R = FLIGHT_TRAVEL.radiusM;
   const floor =
     Math.acos(R / (R + Math.max(0, h))) / DEG + FLIGHT_TRAVEL.horizonMarginDeg;
@@ -339,7 +348,8 @@ function levelPan(
       const share = length > 0 ? Math.min(1, Math.max(0, s / length)) : 1;
       return { share, angle: share * arcRad, residualLeft: 1 - share, h: h1 };
     },
-    pitchAt: () => clampPitch(travelLawDeg(h1, landingM, meteorDeg), h1),
+    pitchAt: () =>
+      clampPitch(travelLawDeg(h1, landingM, meteorDeg), h1, meteorDeg),
   };
 }
 
@@ -468,7 +478,11 @@ export function planTravel(
     pitchAt: (pathS) => {
       const sigma = sigmaAt(pathS);
       if (sigma >= 1) {
-        return clampPitch(travelLawDeg(h1, options.landingM, meteorDeg), h1);
+        return clampPitch(
+          travelLawDeg(h1, options.landingM, meteorDeg),
+          h1,
+          meteorDeg,
+        );
       }
       const h = hAt(sigma);
       // R1 turns first above the bend, looking straight down; a meteor
@@ -477,7 +491,7 @@ export function planTravel(
       const law = travelLawDeg(h, options.landingM, meteorDeg);
       // A climb travels up; it looks by the law instead (45 at a landing
       // below the bend), so it ends where the landing looks, without a snap.
-      if (dw > 0) return clampPitch(law, h);
+      if (dw > 0) return clampPitch(law, h, meteorDeg);
       // The camera's actual motion: down by -dh, ahead by (R + h) d theta.
       // The view follows it, but never shallower than the law: where the
       // camera still moves sideways (a turn below the bend, a residual low
@@ -485,7 +499,7 @@ export function planTravel(
       // at the horizon and snapped down at the end (the R1 milestone review:
       // up to 75 degrees in a frame). In the dive itself the two agree.
       const travel = Math.atan2(-h * dw, (R + h) * -leftSlope(sigma)) / DEG;
-      return clampPitch(Math.max(travel, law), h);
+      return clampPitch(Math.max(travel, law), h, meteorDeg);
     },
   };
 }

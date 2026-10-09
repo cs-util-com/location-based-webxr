@@ -16,12 +16,13 @@
  */
 
 import { describe, expect, it } from "vitest";
+import * as THREE from "three";
 
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
 import { orbitPose } from "./globe-camera.js";
 import { obliqueCamera } from "./globe-dive.js";
-import { FLIGHT_PATH } from "./flight-path.js";
+import { FLIGHT_PATH, flightCamera } from "./flight-path.js";
 import { meteorDiveArcRad } from "./flight-travel.js";
 import {
   PIN_FLIGHT,
@@ -30,6 +31,7 @@ import {
   pinFrame,
   pinLanding,
   pinProgress,
+  meteorLinkStart,
   pinTouch,
   pressPin,
   type PinFlight,
@@ -967,4 +969,53 @@ describe("the pin's meteor (meteorDeg, pressMeteor)", () => {
       ),
     ).toBe(true);
   });
+});
+
+// WHY (round-3 plan 2026-10-08-2345 F1b; the owner on r807: "a continuous
+// direction; the camera must never bend abruptly, a continuous motion
+// matters most", DEC-R3-8..10): a meteor link starts ON its straight line,
+// looking along it, and flies it down to the landing at its entry angle.
+// Looking along a straight line, the view's direction in space never
+// changes: every sample of the flight's camera must look the same way as
+// the first, within half a degree (the 1 % start margin is a small sideways
+// residual), for several entry angles and landings (the owner's rule: a
+// one-value verdict is provisional).
+describe("a meteor link looks along one straight line (F1b)", () => {
+  const forward = (q: THREE.Quaternion) =>
+    new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+  for (const beta of [15, 20, 30, 45]) {
+    for (const landingKm of [1, 2, 5]) {
+      it(`keeps its view's direction at beta ${beta}, landing ${landingKm} km`, () => {
+        const from = orbitPose(WGS84_ELLIPSOID, {
+          lat: BERN.lat - 30,
+          lng: BERN.lng,
+        }).direction;
+        const start = meteorLinkStart(
+          WGS84_ELLIPSOID,
+          bernPose,
+          from,
+          65_000 * KM,
+          landingKm * KM,
+          beta,
+        );
+        const pin = pressPin(WGS84_ELLIPSOID, 0, start, {
+          target: bernPose,
+          landingM: landingKm * KM,
+          progress: 1,
+          meteorDeg: beta,
+        });
+        const path = pin.flight?.path;
+        expect(path?.meteorDeg).toBe(beta);
+        if (!path) return;
+        const first = forward(start.quaternion);
+        let worst = 0;
+        const n = 400;
+        for (let i = 0; i <= n; i++) {
+          const cam = flightCamera(path, (path.durationMs * i) / n);
+          worst = Math.max(worst, forward(cam.quaternion).angleTo(first));
+        }
+        expect((worst * 180) / Math.PI).toBeLessThan(0.5);
+      });
+    }
+  }
 });
