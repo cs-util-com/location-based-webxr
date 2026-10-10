@@ -24,6 +24,7 @@ import {
 import { CLOUD_VOLUME } from "/globe/globe-cloud-volume.js";
 import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
 import {
+  CLOUD_LIVE_NOISE,
   CLOUD_LIVE_NOISE_GLSL,
   CLOUD_NOISE_MODES,
   cloudLiveAmplitudes,
@@ -744,6 +745,9 @@ function readHashParams() {
         : "tile",
   };
 }
+
+/** The live noise without its finest octave (the probe's own check). */
+const WITHOUT_FINEST = { octaveLimit: CLOUD_LIVE_NOISE.octaves - 1 };
 
 /** What restarts the intro when it changes; everything else applies live. */
 const flightKey = (p) =>
@@ -3604,6 +3608,12 @@ void main() {
           cpu: points.map(([x, z, footprint = 0]) =>
             cloudLiveSample(b, x, z, footprint),
           ),
+          // The twin without its finest octave: how large that octave is
+          // at these points, so a bound on the GPU's difference can be
+          // shown to see it (round-3 plan §19 item 4).
+          cpuWithoutFinest: points.map(([x, z, footprint = 0]) =>
+            cloudLiveSample(b, x, z, footprint, WITHOUT_FINEST),
+          ),
         };
       });
       renderer.setRenderTarget(previous);
@@ -3612,7 +3622,30 @@ void main() {
       quad.geometry.dispose();
       inputTexture.dispose();
       lattice.dispose();
-      return results;
+      const gl = renderer.getContext();
+      const info = gl.getExtension("WEBGL_debug_renderer_info");
+      const name = info
+        ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL)
+        : gl.getParameter(gl.RENDERER);
+      return results.map((r) => ({ ...r, renderer: String(name) }));
+    },
+    /**
+     * Test surface (round-3 plan §19 item 4): each live octave's two period
+     * vectors on the noise plane (km): the shifts of the anchor along which
+     * that octave alone repeats exactly.
+     */
+    cloudLivePeriods() {
+      const b = cloudLiveBasis({ originKm: [0, 0], rotationRad: 0 });
+      const size = CLOUD_LIVE_NOISE.latticeSize;
+      return Array.from({ length: b.length / 4 }, (_, k) => {
+        const a = b[4 * k];
+        const c = b[4 * k + 1];
+        const det = a * a + c * c;
+        return [
+          [(size * a) / det, (-size * c) / det],
+          [(size * c) / det, (size * a) / det],
+        ];
+      });
     },
     /**
      * The cloud noise coordinate (tiles) a ground point reads under the

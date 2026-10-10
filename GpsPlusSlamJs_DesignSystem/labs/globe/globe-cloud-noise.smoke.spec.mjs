@@ -12,9 +12,10 @@
  * - **The shader is the twin.** The GPU's live noise against the CPU twin
  *   at the same points, within the 8-bit lattice tolerance (the bilinear
  *   weights are 8-bit: about 1/256 of a lattice step an octave).
- * - **Far anchors differ.** Two anchors 1,536 km apart (where a 256^2
- *   lattice repeated the base octave) and 6,144 km apart (where the 1,024^2
- *   one repeats it along its own axes): the GPU's patterns must not match.
+ * - **It repeats only along its period vectors** (round-3 plan §19 item 4):
+ *   the anchor shifted along octave 0's period vector reads its share (the
+ *   positive control), along a quarter of it (where a 256^2 lattice
+ *   repeated) and along octaves 1 and 2's it must not match.
  * - **It compiles and draws** in the ground sky's slab and the volume's
  *   shadow, with no console error, and its frame cost against the tile as a
  *   ratio within one page load (SwiftShader: relative only).
@@ -42,8 +43,21 @@ const view = (km) => `view=${PLACE},${km},0,-8`;
  * swept x0.5 / x1 / x2 in the log.
  */
 const TWIN_TOLERANCE = (2 * 1.431) / 256 + 1e-3;
-/** The largest correlation two far anchors' patterns may show. */
-const FAR_CORRELATION = 0.5;
+/**
+ * On SwiftShader (headless Chromium), which filters in float, the bound is
+ * tight enough to see the finest octave (its largest term at the probe's
+ * points is checked to be at least twice it, round-3 plan §19 item 4); the
+ * 8-bit bound above is a real GPU's.
+ */
+const TWIN_TOLERANCE_SWIFTSHADER = 1e-3;
+/**
+ * Along an octave's own period vector the field correlates by about that
+ * octave's share of the variance: the base octave's (75 %) must read above
+ * POSITIVE (the control: the measure can see a repeat), every other shift
+ * below FAR_CORRELATION (octave 1's share is 19 %).
+ */
+const POSITIVE = 0.6;
+const FAR_CORRELATION = 0.35;
 const SWEEP = [0.5, 1, 2];
 
 function correlation(a, b) {
@@ -61,7 +75,7 @@ function correlation(a, b) {
   return ab / Math.sqrt(aa * bb);
 }
 
-test("the live noise's shader matches its CPU twin, and far anchors differ", async ({
+test("the live noise's shader matches its CPU twin, and repeats only along its period vectors", async ({
   page,
 }) => {
   test.setTimeout(300_000);
@@ -73,12 +87,26 @@ test("the live noise's shader matches its CPU twin, and far anchors differ", asy
   for (let j = 0; j < 24; j++) {
     for (let i = 0; i < 24; i++) points.push([i * 4.003 - 48, j * 3.997 - 48]);
   }
-  const anchors = [
-    { originKm: [2_345.6, -7_123.4], rotationRad: 0.4 },
-    { originKm: [2_345.6 + 1_536, -7_123.4], rotationRad: 0.4 },
-    { originKm: [2_345.6 + 6_144, -7_123.4], rotationRad: 0.4 },
-    { originKm: [2_345.6, -7_123.4 + 6_144], rotationRad: 0.4 },
+  // The anchor shifted along octave 0's period vector (6,144 km: the
+  // positive control, it repeats there), along a quarter of it (1,536 km:
+  // where a 256^2 lattice repeated), and along octaves 1 and 2's.
+  const periods = await page.evaluate(() =>
+    window.__globeLab.cloudLivePeriods(),
+  );
+  const base = [2_345.6, -7_123.4];
+  const shifted = ([dx, dz]) => ({
+    originKm: [base[0] + dx, base[1] + dz],
+    rotationRad: 0.4,
+  });
+  const [v0] = periods[0];
+  const shifts = [
+    ["octave 0's period (6,144 km)", v0, true],
+    ["a quarter of it (1,536 km)", [v0[0] / 4, v0[1] / 4], false],
+    ["octave 1's period", periods[1][0], false],
+    ["octave 1's other period", periods[1][1], false],
+    ["octave 2's period", periods[2][0], false],
   ];
+  const anchors = [shifted([0, 0]), ...shifts.map(([, v]) => shifted(v))];
   const probes = await page.evaluate(
     ({ points, anchors }) => window.__globeLab.cloudLiveProbe(points, anchors),
     { points, anchors },
@@ -98,13 +126,29 @@ test("the live noise's shader matches its CPU twin, and far anchors differ", asy
       worst = Math.max(worst, Math.abs(gpu[i] - cpu[i]));
     }
   }
-  const far = probes.slice(1).map((p) => correlation(probes[0].gpu, p.gpu));
+  let finest = 0;
+  for (const { cpu, cpuWithoutFinest } of probes) {
+    for (let i = 0; i < cpu.length; i++) {
+      finest = Math.max(finest, Math.abs(cpu[i] - cpuWithoutFinest[i]));
+    }
+  }
+  const swiftShader = /swiftshader/i.test(probes[0].renderer);
+  const bound = swiftShader ? TWIN_TOLERANCE_SWIFTSHADER : TWIN_TOLERANCE;
+  const reads = shifts.map(([label, , positive], k) => ({
+    label,
+    positive,
+    r: correlation(probes[0].gpu, probes[k + 1].gpu),
+  }));
   console.log(
-    `live noise: GPU against the CPU twin, worst ${worst.toFixed(5)} (bound ${TWIN_TOLERANCE.toFixed(5)}: ${SWEEP.map((k) => `x${k} ${worst <= TWIN_TOLERANCE * k ? "ok" : "NO"}`).join(" ")}); the pattern against anchors 1,536 km east, 6,144 km east and 6,144 km south: ${far.map((r) => r.toFixed(3)).join(" / ")} (bound ${FAR_CORRELATION})`,
+    `live noise on ${probes[0].renderer}: GPU against the CPU twin, worst ${worst.toFixed(5)} (bound ${bound}: ${SWEEP.map((k) => `x${k} ${worst <= bound * k ? "ok" : "NO"}`).join(" ")}; the finest octave's largest term ${finest.toFixed(5)}; the 8-bit bound of a real GPU ${TWIN_TOLERANCE.toFixed(5)}); the pattern shifted along ${reads.map((x) => `${x.label} ${x.r.toFixed(3)}`).join(", ")} (positive control above ${POSITIVE}, the others below ${FAR_CORRELATION})`,
   );
   expect(errors).toEqual([]);
-  expect(worst).toBeLessThanOrEqual(TWIN_TOLERANCE);
-  for (const r of far) expect(Math.abs(r)).toBeLessThan(FAR_CORRELATION);
+  expect(worst).toBeLessThanOrEqual(bound);
+  if (swiftShader) expect(finest).toBeGreaterThan(2 * bound);
+  for (const { positive, r } of reads) {
+    if (positive) expect(r).toBeGreaterThan(POSITIVE);
+    else expect(Math.abs(r)).toBeLessThan(FAR_CORRELATION);
+  }
 });
 
 test("cloudNoise=live compiles and draws in the volume, its cost against the tile stated", async ({

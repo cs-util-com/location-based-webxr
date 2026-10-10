@@ -389,32 +389,67 @@ describe('the live field against the baked tile', () => {
     expect(Math.abs(field.std - tile.std) / tile.std).toBeLessThan(0.03);
   });
 
-  // The quick form of the repetition measure (the full sweep is
-  // `cloud-live-noise.sweep.test.ts`): a window shifted by the periods the
-  // smaller lattices and the baked tile repeat at. The tile repeats exactly
-  // at 24 km; a 256^2 lattice repeated the base octave at 1,536 km (0.754,
-  // plan §6); the live field does not, along either axis.
-  it('does not repeat where the tile and a 256^2 lattice did', () => {
-    const live = cloudLiveBasis({ originKm: [321.5, -77.25], rotationRad: 0 });
-    const grid = (shiftX: number, shiftY: number) => {
-      const out = new Float64Array(48 * 48);
-      for (let j = 0; j < 48; j++) {
-        for (let i = 0; i < 48; i++) {
-          out[j * 48 + i] = cloudLiveSample(live, i + shiftX, j + shiftY);
+  // WHY (the N1 milestone review, round-3 plan §19 item 4): shifts along
+  // the axes could never find an octave's repeat (a 64^2 lattice passed
+  // them): each octave repeats along its OWN rotated period vectors. A
+  // window shifted along an octave's period vector correlates by about that
+  // octave's share of the variance. Positive control: with a 256^2 lattice
+  // the base octave (75 % of the variance) repeats every 1,536 km and reads
+  // about 0.75 there. With 1,024^2 it repeats only every 6,144 km (it reads
+  // as much there: beyond any view), and no octave inside 3,000 km reads
+  // more than octave 1's share (19 %).
+  it('repeats each octave only along its own period vectors, by about its share', () => {
+    const anchor = { originKm: [321.5, -77.25] as const, rotationRad: 0.3 };
+    const read = (options: { latticeSize?: number }) => {
+      const basis = cloudLiveBasis(anchor, options);
+      const size = options.latticeSize ?? 1024;
+      const grid = (sx: number, sy: number) => {
+        const out = new Float64Array(48 * 48);
+        for (let j = 0; j < 48; j++) {
+          for (let i = 0; i < 48; i++) {
+            out[j * 48 + i] = cloudLiveSample(
+              basis,
+              i + sx,
+              j + sy,
+              0,
+              options
+            );
+          }
         }
-      }
-      return out;
+        return out;
+      };
+      const base = grid(0, 0);
+      // Octave k's period vectors: its basis matrix inverted onto (N, 0)
+      // and (0, N).
+      return cloudLiveOctaves(options).map((_, k) => {
+        const a = basis[4 * k]!;
+        const b = basis[4 * k + 1]!;
+        const det = a * a + b * b;
+        const vectors = [
+          [(size * a) / det, (-size * b) / det],
+          [(size * b) / det, (size * a) / det],
+        ];
+        return vectors.map(([x, y]) => ({
+          km: Math.hypot(x!, y!),
+          r: correlation(base, grid(x!, y!)),
+        }));
+      });
     };
-    const base = grid(0, 0);
-    for (const [sx, sy] of [
-      [24, 0],
-      [0, 24],
-      [1536, 0],
-      [0, 1536],
-      [6144, 0],
-      [0, 6144],
-    ] as const) {
-      expect(Math.abs(correlation(base, grid(sx, sy)))).toBeLessThan(0.45);
+    const small = read({ latticeSize: 256 });
+    for (const { km, r } of small[0]!) {
+      expect(km).toBeCloseTo(1536, 6);
+      expect(r).toBeGreaterThan(0.6);
+    }
+    const live = read({});
+    for (const { km, r } of live[0]!) {
+      expect(km).toBeCloseTo(6144, 6);
+      expect(r).toBeGreaterThan(0.6);
+    }
+    for (const octave of live.slice(1)) {
+      for (const { km, r } of octave) {
+        expect(km).toBeLessThan(3000);
+        expect(Math.abs(r)).toBeLessThan(0.35);
+      }
     }
   });
 });
