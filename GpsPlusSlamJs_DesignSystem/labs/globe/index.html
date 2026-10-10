@@ -525,6 +525,31 @@
             </label>
           </div>
         </details>
+        <details class="lookdev-section" data-section="globe-pace" open>
+          <summary>Flight speed-up</summary>
+          <div class="lookdev-section-body col">
+            <label class="lookdev-field">
+              <span class="hint"
+                >Speed-up time (ms) <output data-for="paceLagMs"></output
+              ></span>
+              <input
+                class="slider"
+                type="range"
+                min="200"
+                max="20000"
+                step="100"
+                data-hash-key="paceLagMs"
+              />
+            </label>
+            <label class="lookdev-field">
+              <span class="hint">Speed-up shape</span>
+              <select class="select" data-hash-key="paceStages">
+                <option value="1">Starts at once</option>
+                <option value="2">S-curve (starts gently)</option>
+              </select>
+            </label>
+          </div>
+        </details>
         <details class="lookdev-section" data-section="globe-dust" open>
           <summary>Speed streaks</summary>
           <div class="lookdev-section-body col">

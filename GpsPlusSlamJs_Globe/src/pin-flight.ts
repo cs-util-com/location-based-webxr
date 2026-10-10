@@ -111,6 +111,15 @@ export interface PinFlight {
   /** The flight clock at `nowMs`, and its rate per page ms. */
   readonly clockMs: number;
   readonly rate: number;
+  /**
+   * The rate's lag behind its target, ms, and its stages: 1 a first-order
+   * lag (it starts at its steepest), 2 two critically damped stages of half
+   * the lag each (an S-curve that starts with no acceleration: the owner,
+   * "a meteor, not a spaceship"). `rateLead` is the first stage's value.
+   */
+  readonly rateLagMs: number;
+  readonly rateStages: 1 | 2;
+  readonly rateLead: number;
   /** The flight clock at which the path reaches `commitM` (null: no gate). */
   readonly gateClockMs: number | null;
   /** When the current target's data started (its fix or link), page ms. */
@@ -234,7 +243,8 @@ function towardTarget(pin: PinFlight, target: OrbitPose): PinFlight {
   // (DEC-FR2-9).
   const { stretch } = pace(flying, pin.nowMs);
   const started = { ...flying, paceFloor: stretch };
-  return { ...started, rate: targetRate(started, pin.nowMs) };
+  const rate = targetRate(started, pin.nowMs);
+  return { ...started, rate, rateLead: rate };
 }
 
 /**
@@ -382,6 +392,28 @@ export function meteorLinkStart(
 }
 
 /**
+ * The pace's lag and stages from a press's options (defaults
+ * `rateLagMs` and 1). RangeError for a lag that is not a positive number
+ * or stages other than 1 or 2.
+ */
+function paceOptions(options: {
+  readonly paceLagMs?: number;
+  readonly paceStages?: 1 | 2;
+}): { readonly rateLagMs: number; readonly rateStages: 1 | 2 } {
+  const rateLagMs = options.paceLagMs ?? PIN_FLIGHT.rateLagMs;
+  if (!(rateLagMs > 0 && Number.isFinite(rateLagMs))) {
+    throw new RangeError(
+      `paceLagMs must be a positive number, got ${rateLagMs}`,
+    );
+  }
+  const stages: number = options.paceStages ?? 1;
+  if (stages !== 1 && stages !== 2) {
+    throw new RangeError(`paceStages must be 1 or 2, got ${String(stages)}`);
+  }
+  return { rateLagMs, rateStages: stages };
+}
+
+/**
  * The press: the camera as the intro left it, the target if already known
  * (a fix, a link), the landing and the data's progress so far. RangeError
  * for a time that is not finite or a landing that is not a positive number.
@@ -396,6 +428,9 @@ export function pressPin(
     readonly progress: number;
     /** The meteor's beta (F1; 90, the default, is R1). */
     readonly meteorDeg?: number;
+    /** The pace's lag, ms (default `rateLagMs`), and its stages (1 or 2). */
+    readonly paceLagMs?: number;
+    readonly paceStages?: 1 | 2;
   },
 ): PinFlight {
   requireTime(nowMs);
@@ -403,6 +438,7 @@ export function pressPin(
   if (!(meteorAskedDeg > 0 && meteorAskedDeg <= 90)) {
     throw new RangeError(`meteorDeg must be in (0, 90], got ${meteorAskedDeg}`);
   }
+  const { rateLagMs, rateStages } = paceOptions(options);
   if (!(options.landingM > 0 && Number.isFinite(options.landingM))) {
     throw new RangeError(
       `landingM must be a positive number, got ${options.landingM}`,
@@ -420,6 +456,9 @@ export function pressPin(
     nowMs,
     clockMs: 0,
     rate: PIN_FLIGHT.coldRate,
+    rateLagMs,
+    rateStages,
+    rateLead: PIN_FLIGHT.coldRate,
     gateClockMs: null,
     dataStartMs: nowMs,
     paceFloor: 0,
@@ -432,7 +471,9 @@ export function pressPin(
     progress: base.progress,
   });
   // Data already in: nothing to pace, so it starts at full pace.
-  return flying.phase === "descending" ? { ...flying, rate: 1 } : flying;
+  return flying.phase === "descending"
+    ? { ...flying, rate: 1, rateLead: 1 }
+    : flying;
 }
 
 /** The device's fix (or a link's place) arrives: fly on to it. */
@@ -552,7 +593,7 @@ function pace(
   // was on time; sized by the target alone, a camera still fast met a small
   // zone and stopped at the clamp.
   const zone =
-    (PIN_FLIGHT.gateEaseMs + 2 * PIN_FLIGHT.rateLagMs) *
+    (PIN_FLIGHT.gateEaseMs + 2 * pin.rateLagMs) *
     Math.max(pin.rate, PIN_FLIGHT.minRate);
   // Stretched to reach the zone's start, not the gate, as the data ends.
   const stretch = Math.min(
@@ -588,11 +629,33 @@ function advance(pin: PinFlight, nowMs: number): PinFlight {
   const dt = nowMs - pin.nowMs;
   if (!(dt > 0)) return pin;
   const target = targetRate(pin, nowMs);
-  const tau = PIN_FLIGHT.rateLagMs;
-  const decay = Math.exp(-dt / tau);
-  const rate = target + (pin.rate - target) * decay;
-  let clockMs =
-    pin.clockMs + target * dt + (pin.rate - target) * tau * (1 - decay);
+  // Integrated exactly over the step, so two frame rates agree.
+  let rate: number;
+  let rateLead: number;
+  let clockMs: number;
+  if (pin.rateStages === 1) {
+    const tau = pin.rateLagMs;
+    const decay = Math.exp(-dt / tau);
+    rate = target + (pin.rate - target) * decay;
+    rateLead = rate;
+    clockMs =
+      pin.clockMs + target * dt + (pin.rate - target) * tau * (1 - decay);
+  } else {
+    // Two stages of tau each: the lead follows the target, the rate the
+    // lead; r(t) = T + (B + A t / tau) e^(-t / tau), A = lead - T,
+    // B = rate - T.
+    const tau = pin.rateLagMs / 2;
+    const decay = Math.exp(-dt / tau);
+    const a = pin.rateLead - target;
+    const b = pin.rate - target;
+    rateLead = target + a * decay;
+    rate = target + (b + (a * dt) / tau) * decay;
+    clockMs =
+      pin.clockMs +
+      target * dt +
+      b * tau * (1 - decay) +
+      a * tau * (1 - (1 + dt / tau) * decay);
+  }
   const closed =
     pin.phase === "approaching" &&
     pin.gateClockMs !== null &&
@@ -604,7 +667,7 @@ function advance(pin: PinFlight, nowMs: number): PinFlight {
     pin.phase === "approaching"
       ? Math.max(pin.paceFloor, pace(pin, nowMs).stretch)
       : pin.paceFloor;
-  return { ...pin, nowMs, clockMs, rate, paceFloor };
+  return { ...pin, nowMs, clockMs, rate, rateLead, paceFloor };
 }
 
 /** The flight's camera at the pin's clock, or the hover point. */

@@ -197,3 +197,19 @@ stop and go, a link's view direction in space within 0.1 degree of its
 first for the whole flight (beta 15-45, landings 1-5 km, from the south and
 from the north), and a press landing at the asked angle whatever line it
 fits (its own place, 300 km, 1,500 km; asked 30 and 45).
+
+## The pace's lag (round-3 plan 2026-10-08-2345 §21; the owner on r810)
+
+"A meteor, not a spaceship": when the data is in or the gate opens, the
+clock's rate goes from its stretched pace to full pace. `pressPin`'s
+`paceLagMs` (default `rateLagMs`, 800) and `paceStages` (1 or 2, default 1)
+set how: one stage is a first-order lag that starts at its steepest; two
+are critically damped stages of half the lag each, an S-curve that starts
+with no acceleration (r(t) = T + (B + A t / tau) e^(-t / tau)), integrated
+exactly per frame like the one stage. The pin carries `rateLagMs`,
+`rateStages` and the first stage's `rateLead`; the gate's ease zone is
+sized by the pin's own lag. Measured on a link from 65,000 km released by
+the 60 s cap: the steepest rate change is 1.08 per second today, 0.26 at
+2.5 s in two stages, 0.13 at 5 s, 0.08 at 8 s. The defaults are the flight
+before until the owner's A/B pick. Tests: the defaults unchanged, the
+S-curve's zero start and the spread, 30 against 60 Hz, the refusals.

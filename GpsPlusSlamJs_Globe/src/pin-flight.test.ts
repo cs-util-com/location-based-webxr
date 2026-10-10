@@ -1148,3 +1148,108 @@ describe("a press lands at the asked angle, whatever line it fits (DEC-R3-12)", 
     }
   }
 });
+
+// WHY (the owner on r810, 2026-10-09: "we are a meteor, not a spaceship:
+// no abrupt acceleration once the map data is in"): when the data arrives
+// the clock's rate goes from its stretched pace to full pace. With one lag
+// stage it starts at its steepest; two critically damped stages start with
+// no acceleration at all (an S-curve), and a longer lag spreads it. The
+// knobs (`paceLagMs`, `paceStages`) are the lab's A/B; the default (800 ms,
+// one stage) is unchanged until the owner picks.
+describe("the pace's lag after the data arrives (paceLagMs, paceStages)", () => {
+  const sweepDeg = (meteorDiveArcRad(65_000 * KM, 2 * KM, 30) * 180) / Math.PI;
+  const linkPin = (paceLagMs?: number, paceStages?: 1 | 2) =>
+    pressPin(
+      WGS84_ELLIPSOID,
+      0,
+      cameraOver(
+        { lat: BERN.lat - sweepDeg * 1.01, lng: BERN.lng },
+        65_000 * KM,
+      ),
+      {
+        target: bernPose,
+        landingM: 2 * KM,
+        progress: 0,
+        meteorDeg: 30,
+        paceLagMs,
+        paceStages,
+      },
+    );
+  // The rate every frame. No data comes: the camera eases to a stop at the
+  // gate, and the safety cap opens it at 60 s, from a standstill to full
+  // pace: the speed-up the owner saw (the data's arrival does the same).
+  const RELEASE = PIN_FLIGHT.safetyCapMs;
+  const rates = (pin: PinFlight, hz: number) => {
+    const dt = 1000 / hz;
+    let p = pin;
+    const out: { t: number; rate: number; clock: number }[] = [];
+    for (let t = dt; t <= RELEASE + 30_000; t += dt) {
+      p = pinFrame(p, t).pin;
+      out.push({ t, rate: p.rate, clock: p.clockMs });
+    }
+    return out;
+  };
+  const steepestRise = (rs: { t: number; rate: number }[]) => {
+    let worst = 0;
+    for (let i = 1; i < rs.length; i++) {
+      const a = rs[i - 1]!;
+      const b = rs[i]!;
+      if (b.t > RELEASE)
+        worst = Math.max(worst, (b.rate - a.rate) / (b.t - a.t));
+    }
+    return worst * 1000; // rate units per second
+  };
+
+  it("keeps today's pace without the knobs", () => {
+    const today = rates(linkPin(), 60);
+    const same = rates(linkPin(800, 1), 60);
+    expect(same.at(-1)?.clock).toBeCloseTo(today.at(-1)?.clock ?? NaN, 6);
+  });
+
+  it("starts the speed-up with no acceleration in two stages, and spreads it with a longer lag", () => {
+    const one = steepestRise(rates(linkPin(800, 1), 60));
+    const two = steepestRise(rates(linkPin(800, 2), 60));
+    const slow = steepestRise(rates(linkPin(5_000, 2), 60));
+    // At the same total lag, two stages of half the lag peak at 2/e (0.736)
+    // of one stage's slope: a step of the target rises at most dT / tau in
+    // one stage, at most 2 dT / (e tau) in two (measured 0.75: the target
+    // is a ramp, not a pure step). The difference that matters is the
+    // start, below.
+    expect(two).toBeLessThan(one * 0.8);
+    expect(slow).toBeLessThan(two * 0.25);
+    // The first frame after the data: in one stage the rate jumps at once,
+    // in two it barely moves (its slope starts at 0).
+    const firstStep = (rs: { t: number; rate: number }[]) => {
+      const i = rs.findIndex((r) => r.t > RELEASE);
+      return (rs[i]?.rate ?? 0) - (rs[i - 1]?.rate ?? 0);
+    };
+    const at = (lag: number, stages: 1 | 2) =>
+      firstStep(rates(linkPin(lag, stages), 60));
+    expect(at(2_000, 2)).toBeLessThan(at(2_000, 1) * 0.1);
+  });
+
+  it("flies the same clock at 30 and 60 Hz, two stages included", () => {
+    for (const [lag, stages] of [
+      [800, 1],
+      [2_500, 2],
+      [8_000, 2],
+    ] as const) {
+      const a = rates(linkPin(lag, stages), 60);
+      const b = rates(linkPin(lag, stages), 30);
+      const ta = a.find((r) => r.t >= RELEASE + 20_000);
+      const tb = b.find((r) => r.t >= RELEASE + 20_000);
+      // Each lag is integrated exactly over a frame; what still differs is
+      // discrete: the cap opens on the first frame after it, and the pace's
+      // floor is the largest stretch seen at a frame (today's one stage,
+      // unchanged code, differs by 22 ms of about 30 s of flight clock;
+      // two stages at 2.5 / 8 s by 8 / 51 ms, measured). The bound: 0.3 %.
+      const clock = ta?.clock ?? 0;
+      expect(Math.abs(clock - (tb?.clock ?? 0))).toBeLessThan(clock * 0.003);
+    }
+  });
+
+  it("refuses a lag that is not positive and stages other than 1 or 2", () => {
+    expect(() => linkPin(0, 2)).toThrow(RangeError);
+    expect(() => linkPin(800, 3 as 2)).toThrow(RangeError);
+  });
+});

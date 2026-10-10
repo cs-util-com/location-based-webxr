@@ -649,10 +649,10 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   longer with its speed (log scale, 1 km/s to 5,000 km/s), gone when it
   stops and below 300 km, in ECEF axes so a frame recentre never spins
   them. Drawn before the Earth (which covers them) at 1 - `dustOver` and
-  after it at `dustOver` (0.25); `dustExposureMs` (33) and `dustWidthPx`
+  after it at `dustOver` (0.25); `dustExposureMs` (60) and `dustWidthPx`
   (1.5) shape the streaks. The panel's "Speed streaks" section tunes them
-  live (D1b, DEC-R3-11): `dust` on or off, `dustCount` (1,500), `dustGain`
-  (1), `dustColor` (0 bluish white, 1 white, 2 warm), `dustLoKmS` (1; 0.1-10) and
+  live (D1b, DEC-R3-11): `dust` on or off, `dustCount` (2,500), `dustGain`
+  (2; 2,500 and 60 ms the owner's pick of four A/B looks, DEC-R3-17), `dustColor` (0 bluish white, 1 white, 2 warm), `dustLoKmS` (1; 0.1-10) and
   `dustHiKmS` (5,000; 500-20,000), the speed range in km/s on linear
   sliders over ranges that never cross, and `dustDriftMin` (0.2)
   and `dustDriftMax` (6), how fast they pour at its ends; a tuned look
@@ -670,7 +670,11 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   camera never turns to its line; a press flies the flattest line its arc
   allows and eases to the asked angle near the ground (DEC-R3-12). The
   state adds `cameraForward` (where the camera looks, ECEF) and
-  `frameRecentres` (a count). A placement resets the dust's speed.
+  `frameRecentres` (a count). `paceLagMs` (800) and `paceStages` (1) set how
+  gently the flight speeds up when its data is in or its gate opens (the
+  pin's rate lag; 2 stages is an S-curve with no acceleration at its start;
+  the panel's "Flight speed-up" section); the defaults are the flight
+  before, until the owner's A/B pick. A placement resets the dust's speed.
   Measured (`globe-meteor.smoke.spec.mjs`, F1 at beta 45): 73.8 degrees
   below the horizontal at 9,718 km, 64.4 at 4,060, 52.3 at 1,003 (the
   line: 73.7, 64.4, 52.3); F1b re-measures it at beta 30 and 45.

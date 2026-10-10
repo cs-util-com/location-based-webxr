@@ -123,7 +123,8 @@ test("the streaks' knobs reach the pass, live", async ({ page }) => {
   await page.evaluate(() => window.__globeLab.timeFrames(2));
   const after = await page.evaluate(() => window.__globeLab.state().dust);
   expect(errors).toEqual([]);
-  expect(before.count).toBe(1500);
+  // The owner's pick (DEC-R3-17): 2,500 by default.
+  expect(before.count).toBe(2500);
   // Every knob the panel names reaches the pass (the milestone review: the
   // first version asserted the count only).
   expect(after).toMatchObject({

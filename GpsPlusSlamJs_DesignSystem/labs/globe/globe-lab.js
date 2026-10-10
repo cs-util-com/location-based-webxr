@@ -446,6 +446,12 @@ const PARAMS = {
   // line; a press over its own place flies the flattest line its arc
   // allows. `flight=2` only.
   meteorDeg: { fallback: 30, min: 10, max: 90 },
+  // How gently the flight speeds up when its data is in or its gate opens
+  // (the owner on r810: "a meteor, not a spaceship"): the pace's lag, ms,
+  // and its stages (1 starts at its steepest; 2, an S-curve, starts with no
+  // acceleration). 800 and 1 are the flight before; the owner picks by A/B.
+  paceLagMs: { fallback: 800, min: 200, max: 20000 },
+  paceStages: { fallback: 1, min: 1, max: 2 },
   // The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6): on unless 0.
   // While it runs it paces the dive (`/globe/flight-pace.js`, at most the
   // 30 s of DEC-GL5-6) unless `diveMs` is set in the hash, which keeps
@@ -559,7 +565,9 @@ const PARAMS = {
   // exposure (at least a frame), `dustWidthPx` their width.
   dust: { fallback: 0, min: 0, max: 1 },
   dustOver: { fallback: 0.25, min: 0, max: 1 },
-  dustExposureMs: { fallback: 33, min: 16, max: 100 },
+  // 60 ms, 2,500 streaks and gain 2: the owner's pick of four A/B looks
+  // (DEC-R3-17, 2026-10-09, look C).
+  dustExposureMs: { fallback: 60, min: 16, max: 100 },
   dustWidthPx: { fallback: 1.5, min: 0.5, max: 4 },
   // The streaks' knobs in the panel (D1b, DEC-R3-11; the owner tunes them):
   // how many, how bright, their tint (0 bluish white, 1 white, 2 warm), the
@@ -567,8 +575,8 @@ const PARAMS = {
   // end; measured on a flight: about 1.5 km/s at the landing, 4,800 km/s
   // at 44,000 km) and how fast they pour (box units a second, at the low
   // and the high end of the range).
-  dustCount: { fallback: 1500, min: 100, max: SPEED_DUST_MAX_COUNT },
-  dustGain: { fallback: 1, min: 0, max: 4 },
+  dustCount: { fallback: 2500, min: 100, max: SPEED_DUST_MAX_COUNT },
+  dustGain: { fallback: 2, min: 0, max: 4 },
   dustColor: { fallback: 0, min: 0, max: 2 },
   dustLoKmS: { fallback: 1, min: 0.1, max: 10 },
   dustHiKmS: { fallback: 5000, min: 500, max: 20000 },
@@ -1504,6 +1512,8 @@ function bindPin({
           landingM: params.landKm * 1000,
           progress: 0,
           meteorDeg: params.meteorDeg,
+          paceLagMs: params.paceLagMs,
+          paceStages: params.paceStages === 2 ? 2 : 1,
         },
       ),
       place,
