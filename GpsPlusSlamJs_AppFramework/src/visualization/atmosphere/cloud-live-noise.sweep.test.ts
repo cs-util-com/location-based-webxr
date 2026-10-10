@@ -307,6 +307,54 @@ function cellHash(i: number, j: number, salt: number): number {
 }
 
 /**
+ * A cell's value from a generator unrelated to the lattice's hash (the N1
+ * milestone review, round-3 plan §19 item 6: the first null shared the
+ * lattice's hash, whose structure correlates about 0.1): the cell's
+ * coordinates mixed by large primes into a mulberry32 seed, its first draw.
+ */
+function independentValue(i: number, j: number, k: number): number {
+  let a =
+    (Math.imul(i, 73856093) ^
+      Math.imul(j, 19349663) ^
+      Math.imul(k + 1, 83492791)) |
+    0;
+  a = (a + 0x6d2b79f5) | 0;
+  let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+/**
+ * The independent null: the live field's octaves with every lattice value
+ * from `independentValue` (a continuous, never-repeating value noise from
+ * another generator).
+ */
+function independentNullField(options: CloudLiveOptions = {}): Field {
+  const octaves = cloudLiveOctaves(options);
+  const basis = cloudLiveBasis(ANCHOR, options);
+  const fade = (t: number) => t * t * (3 - 2 * t);
+  return (x, y) => {
+    let sum = 0;
+    for (let k = 0; k < octaves.length; k++) {
+      const a = basis[4 * k]!;
+      const b = basis[4 * k + 1]!;
+      const qx = a * x - b * y + basis[4 * k + 2]!;
+      const qy = b * x + a * y + basis[4 * k + 3]!;
+      const ix = Math.floor(qx);
+      const iy = Math.floor(qy);
+      const fx = fade(qx - ix);
+      const fy = fade(qy - iy);
+      const v = (di: number, dj: number) =>
+        independentValue(ix + di, iy + dj, k);
+      const top = v(0, 0) + (v(1, 0) - v(0, 0)) * fx;
+      const bottom = v(0, 1) + (v(1, 1) - v(0, 1)) * fx;
+      sum += octaves[k]!.amplitude * (top + (bottom - top) * fy - 0.5);
+    }
+    return sum;
+  };
+}
+
+/**
  * The null: the live field's octaves (cells, rotations, amplitudes) with
  * each lattice value hashed from its cell, so nothing ever repeats. Its
  * largest correlation is the level a window reaches by chance over this
@@ -353,11 +401,13 @@ describe('the largest window correlation over shifts (fast form)', () => {
   let hex: Measure[] = [];
   let live: Measure[] = [];
   let none: Measure[] = [];
+  let independent: Measure[] = [];
   beforeAll(() => {
     tile = measure(tileField);
     hex = measure(hexField);
     live = measure(liveField());
     none = measure(nullField());
+    independent = measure(independentNullField());
     // About 4 s alone; a deadlock guard, not a performance bound.
   }, 120_000);
 
@@ -374,6 +424,22 @@ describe('the largest window correlation over shifts (fast form)', () => {
     for (let i = 0; i < live.length; i++) {
       expect(live[i]!.max).toBeLessThan(none[i]!.max + 0.1);
       expect(live[i]!.max).toBeLessThan(0.8);
+    }
+  });
+
+  // The null must not share the lattice's hash (§19 item 6): the same
+  // octaves from an unrelated generator read the same level, so the
+  // live field's verdict does not rest on the hash's own structure.
+  it('reads at the level of an independent null too', () => {
+    for (let i = 0; i < live.length; i++) {
+      expect(live[i]!.max).toBeLessThan(independent[i]!.max + 0.1);
+      expect(Math.abs(none[i]!.max - independent[i]!.max)).toBeLessThan(0.15);
+    }
+    if (process.env['SWEEP_OUT_FAST'] !== undefined) {
+      writeFileSync(
+        process.env['SWEEP_OUT_FAST'],
+        JSON.stringify({ tile, hex, live, none, independent }, null, 1)
+      );
     }
   });
 });
