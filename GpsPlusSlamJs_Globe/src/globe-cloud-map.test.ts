@@ -3,17 +3,21 @@
  * §18) arrives in stages, and each stage is a promise the owner was given:
  * - the first look waits only for the small preview (DEC-R3-15), never for
  *   the four pieces of the full map;
- * - the pieces load only after the preview, in the background, and the
- *   globe swaps to the full map once, when all four are drawn into ONE
- *   texture (no seams, no shader change); every reader sees the swap;
- * - a piece that fails keeps the preview and is reported, never a hole;
- * - a device whose largest texture is under the full map's size keeps the
- *   preview, and says so;
- * - the decoded pieces are freed once drawn (DEC-R3-16, about 128 MB of
- *   RGBA on a phone otherwise), and after a WebGL context loss the map is
- *   rebuilt from the pieces, the preview shown meanwhile.
- * The GPU drawing itself is a seam (`CloudMapBuilder`); the browser smoke
- * `globe-cloud-map-8k.smoke.spec.mjs` checks the real one.
+ * - the pieces load only after the preview, in the background, are drawn
+ *   into ONE texture (no seams, no shader change) as they arrive, and the
+ *   globe swaps to it once, after the fourth; every reader sees the swap;
+ * - at most two decoded pieces are held at a time (DEC-R3-16 and the M1b
+ *   review: four together were about 134 MB of RGBA on a phone, on every
+ *   load and every restore), each freed as soon as it is drawn;
+ * - a piece that fails is asked for again, twice, with a backoff; one that
+ *   still fails keeps the preview, never a hole;
+ * - a device that cannot hold 8,192 gets the same pieces at half size
+ *   (4,096), and only one under 4,096 keeps the preview;
+ * - after a WebGL context loss the map is rebuilt, the preview shown
+ *   meanwhile; and the per-frame step never throws.
+ * The GPU drawing is a seam (`CloudMapBuilder`); the real one is driven
+ * here through a recording renderer, and checked in the browser by
+ * `globe-cloud-map-8k.smoke.spec.mjs`.
  */
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
@@ -26,33 +30,55 @@ import { globeSource, type GlobeSource } from "./globe-sources.js";
 
 const CLOUDS = globeSource("clouds");
 
-/** A loader whose maps finish or fail when a test says so. */
-function stubLoader() {
-  const calls: {
-    source: GlobeSource;
-    texture: THREE.Texture;
-    finish: () => void;
-    fail: () => void;
-  }[] = [];
+interface Call {
+  source: GlobeSource;
+  size: { width: number; height: number } | undefined;
+  texture: THREE.Texture;
+  finish: () => void;
+  fail: () => void;
+}
+
+/**
+ * A loader whose maps finish or fail when a test says so, counting the
+ * piece textures alive (requested, not yet disposed; a texture disposed
+ * again, as a late answer to a dropped round is, counts once).
+ */
+function stubLoader({ resizes = true } = {}) {
+  const calls: Call[] = [];
+  const alive = new Set<THREE.Texture>();
+  let mostAlive = 0;
   return {
     calls,
+    resizes,
     paths: () => calls.map((c) => c.source.path),
+    pieceCalls: () => calls.filter((c) => c.source.path !== CLOUDS.path),
     call: (path: string) => {
       const found = calls.filter((c) => c.source.path === path).at(-1);
       if (!found) throw new Error(`no load of ${path}`);
       return found;
     },
+    alive: () => alive.size,
+    mostAlive: () => mostAlive,
     loadTexture(
       source: GlobeSource,
       onLoad: () => void,
       onError: () => void,
+      size?: { width: number; height: number },
     ): THREE.Texture {
       const texture = new THREE.Texture();
+      if (source.path !== CLOUDS.path) {
+        alive.add(texture);
+        mostAlive = Math.max(mostAlive, alive.size);
+        texture.addEventListener("dispose", () => {
+          alive.delete(texture);
+        });
+      }
       calls.push({
         source,
+        size,
         texture,
         finish: () => {
-          texture.image = { width: 4096, height: 2048 };
+          texture.image = size ?? { width: 4096, height: 2048 };
           onLoad();
         },
         fail: onError,
@@ -100,13 +126,51 @@ const PIECES = [
   "/globe-assets/equirect/clouds-8192-1-1.webp",
 ];
 
+type Map = ReturnType<typeof createGlobeCloudMap>;
+
 /** Steps the map through `n` frames. */
-function frames(
-  map: ReturnType<typeof createGlobeCloudMap>,
-  renderer: THREE.WebGLRenderer,
-  n: number,
-) {
+function frames(map: Map, renderer: THREE.WebGLRenderer, n: number) {
   for (let i = 0; i < n; i++) map.update(renderer);
+}
+
+/**
+ * Finishes every requested piece as it is asked for, a frame apart, until
+ * the map settles or `limit` frames pass.
+ */
+function streamAll(
+  map: Map,
+  loader: ReturnType<typeof stubLoader>,
+  renderer: THREE.WebGLRenderer,
+  limit = 40,
+) {
+  const done = new Set<Call>();
+  for (let i = 0; i < limit && map.state().full === "loading"; i++) {
+    for (const c of loader.pieceCalls()) {
+      if (!done.has(c)) {
+        done.add(c);
+        c.finish();
+      }
+    }
+    map.update(renderer);
+  }
+}
+
+/** A map with its preview in, and a first frame run. */
+function started(
+  opts: { maxTextureSize?: number; resizes?: boolean; now?: () => number } = {},
+) {
+  const loader = stubLoader({ resizes: opts.resizes ?? true });
+  const { builder, draws, created } = stubBuilder();
+  const map = createGlobeCloudMap({
+    source: CLOUDS,
+    loader,
+    builder,
+    ...(opts.now ? { now: opts.now } : {}),
+  });
+  const { renderer, canvas } = stubRenderer(opts.maxTextureSize);
+  loader.call(CLOUDS.path).finish();
+  map.update(renderer);
+  return { loader, builder, draws, created, map, renderer, canvas };
 }
 
 describe("createGlobeCloudMap", () => {
@@ -131,7 +195,7 @@ describe("createGlobeCloudMap", () => {
   // DEC-R3-15: the first look waits for the preview only; the pieces come
   // after it, in the background, not beside it (they would compete with
   // the first look's own images).
-  it("loads the pieces only once the preview has settled and a renderer is known", () => {
+  it("asks for the pieces only once the preview has settled and a renderer is known", () => {
     for (const ending of ["finish", "fail"] as const) {
       const loader = stubLoader();
       const map = createGlobeCloudMap({ source: CLOUDS, loader });
@@ -141,160 +205,89 @@ describe("createGlobeCloudMap", () => {
       loader.call(CLOUDS.path)[ending]();
       expect(map.previewSettled, ending).toBe(true);
       map.update(renderer);
-      expect(loader.paths().slice(1), ending).toEqual(PIECES);
+      expect(loader.pieceCalls().length, ending).toBeGreaterThan(0);
       expect(map.state().full, ending).toBe("loading");
       map.dispose();
     }
   });
 
-  it("swaps to ONE full-size texture once every piece is in and drawn, each piece at its place", () => {
-    const loader = stubLoader();
-    const { builder, draws, created } = stubBuilder();
-    const map = createGlobeCloudMap({ source: CLOUDS, loader, builder });
-    const { renderer } = stubRenderer();
-    map.update(renderer);
-    loader.call(CLOUDS.path).finish();
-    map.update(renderer);
-    const preview = map.texture;
-    for (const path of PIECES.slice(0, 3)) loader.call(path).finish();
-    frames(map, renderer, 5);
-    // Three of four: still the preview, nothing drawn.
-    expect(map.texture).toBe(preview);
-    expect(draws).toHaveLength(0);
-    loader.call(PIECES[3]!).finish();
-    // One piece a frame (each is a 4,096 x 2,048 upload), then the swap.
+  // The M1b review: the four pieces held together were about 134 MB of
+  // decoded RGBA on every load and every restore. Each piece is drawn as
+  // it arrives (one a frame) and freed at once; no more than two are ever
+  // alive, whatever the order they arrive in.
+  it("draws each piece as it arrives and frees it at once, never holding more than two", () => {
+    const { loader, draws, created, map, renderer } = started();
+    // The texture is allocated on the first frame, before any piece is in.
     map.update(renderer);
     expect(created).toHaveLength(1);
-    frames(map, renderer, 3);
-    expect(map.texture).toBe(preview);
-    map.update(renderer);
+    expect(loader.alive()).toBeLessThanOrEqual(2);
+    // Answer the requests in reverse order of asking, one a frame.
+    for (let i = 0; i < 20 && map.state().full === "loading"; i++) {
+      const open = loader
+        .pieceCalls()
+        .filter((c) => c.texture.image === null)
+        .reverse();
+      open[0]?.finish();
+      const before = draws.length;
+      map.update(renderer);
+      // At most one piece is drawn a frame.
+      expect(draws.length - before).toBeLessThanOrEqual(1);
+      expect(loader.alive()).toBeLessThanOrEqual(2);
+    }
+    expect(loader.mostAlive()).toBe(2);
+    expect(loader.alive()).toBe(0);
+    expect(draws).toHaveLength(4);
+    expect(draws.filter((d) => d.last)).toHaveLength(1);
+    expect(draws.at(-1)?.last).toBe(true);
+    // Each piece at its place: GL rows count from the bottom, so row 0
+    // (the north) is the upper half.
+    const place = (path: string) => {
+      const d = draws.find((x) => x.piece === loader.call(path).texture)!;
+      return [d.x, d.y];
+    };
+    expect(PIECES.map(place)).toEqual([
+      [0, 2048],
+      [4096, 2048],
+      [0, 0],
+      [4096, 0],
+    ]);
     expect(map.texture).toBe(created[0]);
     expect(map.state()).toMatchObject({
       stage: "full",
       full: "in",
       width: 8192,
       height: 4096,
+      piecesDrawn: 4,
+      piecesHeld: 0,
     });
-    // GL rows count from the bottom: row 0 (the north) is the upper half.
-    expect(draws.map(({ x, y, last }) => [x, y, last])).toEqual([
-      [0, 2048, false],
-      [4096, 2048, false],
-      [0, 0, false],
-      [4096, 0, true],
-    ]);
-    expect(draws.map((d) => d.piece)).toEqual(
-      PIECES.map((p) => loader.call(p).texture),
-    );
     map.dispose();
   });
 
-  // DEC-R3-16: about 128 MB of decoded RGBA on a phone otherwise. The
-  // loader closes a piece's bitmap when its texture is disposed.
-  it("frees every piece once the full map is built, and keeps the preview for later", () => {
-    const loader = stubLoader();
-    const { builder } = stubBuilder();
-    const map = createGlobeCloudMap({ source: CLOUDS, loader, builder });
-    const { renderer } = stubRenderer();
-    loader.call(CLOUDS.path).finish();
-    map.update(renderer);
-    const disposed: string[] = [];
-    for (const path of [CLOUDS.path, ...PIECES]) {
-      loader
-        .call(path)
-        .texture.addEventListener("dispose", () => disposed.push(path));
-    }
-    for (const path of PIECES) loader.call(path).finish();
-    frames(map, renderer, 5);
-    expect(map.state().stage).toBe("full");
-    expect(disposed.sort()).toEqual([...PIECES].sort());
-    map.dispose();
-    expect(disposed).toContain(CLOUDS.path);
-  });
-
-  it("keeps the preview when a piece fails, frees the others, and reports it", () => {
-    const loader = stubLoader();
-    const { builder, draws } = stubBuilder();
-    const map = createGlobeCloudMap({ source: CLOUDS, loader, builder });
-    const { renderer } = stubRenderer();
-    loader.call(CLOUDS.path).finish();
-    map.update(renderer);
+  it("keeps the preview until the fourth piece is drawn, then swaps once", () => {
+    const { loader, created, map, renderer } = started();
     const preview = map.texture;
-    const disposed: string[] = [];
-    for (const path of PIECES) {
-      loader
-        .call(path)
-        .texture.addEventListener("dispose", () => disposed.push(path));
-    }
-    loader.call(PIECES[0]!).finish();
-    loader.call(PIECES[1]!).fail();
-    loader.call(PIECES[2]!).finish();
-    loader.call(PIECES[3]!).finish();
-    frames(map, renderer, 6);
-    expect(map.texture).toBe(preview);
-    expect(draws).toHaveLength(0);
-    expect(map.state()).toMatchObject({
-      stage: "preview",
-      full: "failed",
-      piecesFailed: 1,
-    });
-    expect(disposed.sort()).toEqual([...PIECES].sort());
-    expect(map.settled()).toEqual({ done: true, failed: false });
-    map.dispose();
-  });
-
-  // The device keeps the preview: no 4,096 map is shipped (§18), and an
-  // 8,192 texture the GPU cannot hold would be scaled down by three on the
-  // CPU (a long stall) or fail.
-  it("keeps the preview on a device whose largest texture is under the full map, and says so", () => {
-    const loader = stubLoader();
-    const map = createGlobeCloudMap({ source: CLOUDS, loader });
-    const { renderer } = stubRenderer(4096);
-    loader.call(CLOUDS.path).finish();
-    frames(map, renderer, 3);
-    expect(loader.paths()).toEqual([CLOUDS.path]);
-    expect(map.state()).toMatchObject({ stage: "preview", full: "too-large" });
-    expect(map.settled()).toEqual({ done: true, failed: false });
-    map.dispose();
-  });
-
-  // The loading label and the smokes wait on this: the clouds count as
-  // loaded once nothing more will come, and as failed only when nothing
-  // is drawn at all.
-  it("settles once the preview and the full map have, failing only when neither drew", () => {
-    const run = (preview: "finish" | "fail", pieces: "finish" | "fail") => {
-      const loader = stubLoader();
-      const { builder } = stubBuilder();
-      const map = createGlobeCloudMap({ source: CLOUDS, loader, builder });
-      const { renderer } = stubRenderer();
-      expect(map.settled()).toEqual({ done: false, failed: false });
-      loader.call(CLOUDS.path)[preview]();
+    map.update(renderer);
+    const seen: [number, THREE.Texture][] = [];
+    for (let i = 0; i < 20 && map.state().full === "loading"; i++) {
+      for (const c of loader.pieceCalls()) {
+        if (c.texture.image === null) c.finish();
+      }
       map.update(renderer);
-      expect(map.settled().done).toBe(false);
-      for (const path of PIECES) loader.call(path)[pieces]();
-      frames(map, renderer, 5);
-      const settled = map.settled();
-      map.dispose();
-      return settled;
-    };
-    expect(run("finish", "finish")).toEqual({ done: true, failed: false });
-    expect(run("fail", "finish")).toEqual({ done: true, failed: false });
-    expect(run("finish", "fail")).toEqual({ done: true, failed: false });
-    expect(run("fail", "fail")).toEqual({ done: true, failed: true });
+      seen.push([map.state().piecesDrawn, map.texture]);
+    }
+    // The preview while fewer than four are drawn, the full map after.
+    for (const [drawnSoFar, texture] of seen) {
+      expect(texture).toBe(drawnSoFar < 4 ? preview : created[0]);
+    }
+    expect(seen.at(-1)?.[0]).toBe(4);
   });
 
   // DEC-R3-16: three re-uploads a texture from its image after a context
   // loss, but the full map has no image (it was drawn from the pieces,
   // since freed): left alone it would come back empty, a cloudless Earth.
-  // The preview shows at once, and the pieces load again once restored.
   it("shows the preview on a context loss and rebuilds the full map once restored", () => {
-    const loader = stubLoader();
-    const { builder, created } = stubBuilder();
-    const map = createGlobeCloudMap({ source: CLOUDS, loader, builder });
-    const { renderer, canvas } = stubRenderer();
-    loader.call(CLOUDS.path).finish();
-    map.update(renderer);
-    for (const path of PIECES) loader.call(path).finish();
-    frames(map, renderer, 5);
+    const { loader, created, map, renderer, canvas } = started();
+    streamAll(map, loader, renderer);
     const preview = loader.call(CLOUDS.path).texture;
     expect(map.texture).toBe(created[0]);
     let freed = false;
@@ -305,72 +298,108 @@ describe("createGlobeCloudMap", () => {
     expect(map.texture).toBe(preview);
     expect(freed).toBe(true);
     expect(map.state()).toMatchObject({ stage: "preview", full: "lost" });
-    // Nothing is loaded or drawn while the context is lost.
+    const asked = loader.pieceCalls().length;
     frames(map, renderer, 3);
-    expect(loader.paths()).toHaveLength(5);
+    expect(loader.pieceCalls()).toHaveLength(asked);
     canvas.dispatchEvent(new Event("webglcontextrestored"));
     map.update(renderer);
-    expect(loader.paths().slice(5)).toEqual(PIECES);
-    for (const path of PIECES) loader.call(path).finish();
-    frames(map, renderer, 5);
+    expect(loader.pieceCalls().length).toBeGreaterThan(asked);
+    streamAll(map, loader, renderer);
     expect(created).toHaveLength(2);
     expect(map.texture).toBe(created[1]);
     expect(map.state()).toMatchObject({ stage: "full", rebuilds: 1 });
     map.dispose();
   });
 
-  // A loss in the middle of the build: the pieces already decoded are
-  // dropped (the half-drawn texture is gone with the context), and late
-  // answers from the first round are ignored.
-  it("drops a build in progress on a context loss, and ignores the old round's late pieces", () => {
-    const loader = stubLoader();
-    const { builder, created } = stubBuilder();
-    const map = createGlobeCloudMap({ source: CLOUDS, loader, builder });
-    const { renderer, canvas } = stubRenderer();
-    loader.call(CLOUDS.path).finish();
+  it("drops a build in progress on a context loss, and frees the old round's late pieces", () => {
+    const { loader, map, renderer, canvas } = started();
     map.update(renderer);
-    const first = PIECES.map((p) => loader.call(p));
-    const freed = new Set<THREE.Texture>();
-    for (const call of first) {
-      call.texture.addEventListener("dispose", () => freed.add(call.texture));
-    }
-    for (const call of first.slice(0, 3)) call.finish();
+    const first = loader.pieceCalls();
+    expect(first.length).toBe(2);
+    first[0]!.finish();
+    map.update(renderer);
     canvas.dispatchEvent(new Event("webglcontextlost"));
-    // The decoded pieces of the dropped round are freed at once.
-    expect(freed.size).toBe(4);
-    freed.clear();
+    // Every piece of the dropped round is freed at once.
+    expect(loader.alive()).toBe(0);
     canvas.dispatchEvent(new Event("webglcontextrestored"));
     map.update(renderer);
-    // The old round's late piece is freed as it arrives.
-    first[3]!.finish();
-    expect(freed).toEqual(new Set([first[3]!.texture]));
-    frames(map, renderer, 5);
-    expect(created).toHaveLength(0);
-    for (const path of PIECES) loader.call(path).finish();
-    frames(map, renderer, 5);
-    expect(created).toHaveLength(1);
+    const freed: THREE.Texture[] = [];
+    first[1]!.texture.addEventListener("dispose", () =>
+      freed.push(first[1]!.texture),
+    );
+    // The old round's late piece is freed as it arrives, and not drawn.
+    first[1]!.finish();
+    expect(freed).toEqual([first[1]!.texture]);
+    streamAll(map, loader, renderer);
     expect(map.state()).toMatchObject({ stage: "full", rebuilds: 1 });
     map.dispose();
   });
 
   it("frees the preview, the full map and any piece on dispose, and stops listening", () => {
-    const loader = stubLoader();
-    const { builder, created } = stubBuilder();
-    const map = createGlobeCloudMap({ source: CLOUDS, loader, builder });
-    const { renderer, canvas } = stubRenderer();
-    loader.call(CLOUDS.path).finish();
-    map.update(renderer);
-    for (const path of PIECES) loader.call(path).finish();
-    frames(map, renderer, 5);
+    const { loader, created, map, renderer, canvas } = started();
+    streamAll(map, loader, renderer);
     const disposed: THREE.Texture[] = [];
     for (const t of [loader.call(CLOUDS.path).texture, created[0]!]) {
       t.addEventListener("dispose", () => disposed.push(t));
     }
     map.dispose();
     expect(disposed).toHaveLength(2);
-    // A loss after dispose changes nothing.
     canvas.dispatchEvent(new Event("webglcontextlost"));
     expect(map.state().full).toBe("in");
+  });
+
+  it("keeps the preview when a piece fails, and frees every piece", () => {
+    const { loader, map, renderer, draws } = started();
+    map.update(renderer);
+    loader.call(PIECES[0]!).fail();
+    frames(map, renderer, 4);
+    expect(map.texture).toBe(loader.call(CLOUDS.path).texture);
+    expect(draws).toHaveLength(0);
+    expect(map.state()).toMatchObject({
+      stage: "preview",
+      full: "failed",
+      piecesFailed: 1,
+      allocated: false,
+      piecesHeld: 0,
+    });
+    expect(loader.alive()).toBe(0);
+    map.dispose();
+  });
+
+  it("keeps the preview on a device whose largest texture is under the full map", () => {
+    const s = started({ maxTextureSize: 4096 });
+    frames(s.map, s.renderer, 3);
+    expect(s.loader.pieceCalls()).toHaveLength(0);
+    expect(s.map.state()).toMatchObject({
+      stage: "preview",
+      full: "too-large",
+    });
+    s.map.dispose();
+  });
+
+  it("settles once the preview and the full map have, failing only when neither drew", () => {
+    const run = (preview: "finish" | "fail", pieces: "finish" | "fail") => {
+      const loader = stubLoader();
+      const { builder } = stubBuilder();
+      const map = createGlobeCloudMap({ source: CLOUDS, loader, builder });
+      const { renderer } = stubRenderer();
+      loader.call(CLOUDS.path)[preview]();
+      map.update(renderer);
+      expect(map.settled().done).toBe(false);
+      if (pieces === "fail") {
+        map.update(renderer);
+        loader.pieceCalls()[0]!.fail();
+      } else {
+        streamAll(map, loader, renderer);
+      }
+      const settled = map.settled();
+      map.dispose();
+      return settled;
+    };
+    expect(run("finish", "finish")).toEqual({ done: true, failed: false });
+    expect(run("fail", "finish")).toEqual({ done: true, failed: false });
+    expect(run("finish", "fail")).toEqual({ done: true, failed: false });
+    expect(run("fail", "fail")).toEqual({ done: true, failed: true });
   });
 
   it("refuses a source that is not cut into pieces", () => {

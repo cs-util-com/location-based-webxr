@@ -2,10 +2,10 @@
  * The globe's cloud map in two stages (round-3 plan 2026-10-08-2345 §18,
  * DEC-R3-13..16): a small preview loaded with the first look, then NASA's
  * full 8,192 x 4,096 map, fetched in four pieces in the background and
- * drawn into ONE one-channel texture on the GPU, which replaces the
- * preview for every reader at once. The decoded pieces are freed once
- * drawn; after a WebGL context loss the preview shows again and the full
- * map is rebuilt from the pieces.
+ * drawn into ONE one-channel texture on the GPU as they arrive, which
+ * replaces the preview for every reader at once. Each decoded piece is
+ * freed as soon as it is drawn; after a WebGL context loss the preview
+ * shows again and the full map is rebuilt from the pieces.
  *
  * @see globe-cloud-map.ts.md
  */
@@ -94,10 +94,8 @@ const gpuCloudMapBuilder: CloudMapBuilder = {
 type CloudMapFullStatus =
   /** Waiting for the preview to settle and a renderer to be known. */
   | "waiting"
-  /** Its pieces are loading. */
+  /** Allocated; its pieces load and are drawn as they arrive. */
   | "loading"
-  /** Its pieces are being drawn, one a frame. */
-  | "building"
   /** Drawn, and read by every cloud reader. */
   | "in"
   /** A piece failed: the preview stays. */
@@ -115,6 +113,12 @@ interface GlobeCloudMapState {
   readonly height: number;
   readonly preview: "loading" | "in" | "failed";
   readonly full: CloudMapFullStatus;
+  /** The full map's texture exists (allocated, being filled or in). */
+  readonly allocated: boolean;
+  /** Pieces drawn into it in the current round. */
+  readonly piecesDrawn: number;
+  /** Decoded pieces held now (loading, or in and not yet drawn). */
+  readonly piecesHeld: number;
   /** Pieces that failed in the latest round. */
   readonly piecesFailed: number;
   /** Full maps built again after a WebGL context loss. */
@@ -132,7 +136,7 @@ export interface GlobeCloudMap {
   readonly previewSettled: boolean;
   /**
    * Per frame, with the renderer (it decides the device can hold the full
-   * map, and draws it). Loads, builds and swaps; never throws.
+   * map, and draws it). Loads, draws and swaps.
    */
   update(renderer: THREE.WebGLRenderer): void;
   /**
@@ -161,10 +165,18 @@ function configure(texture: THREE.Texture): THREE.Texture {
   return texture;
 }
 
+/**
+ * Pieces held at once, loading or decoded and waiting to be drawn (M1b
+ * review): two keeps the next one coming while one is drawn, and bounds
+ * the decoded RGBA in memory to two pieces (about 64 MiB) instead of four
+ * (about 134 MB, on every load and every restore).
+ */
+const MAX_HELD = 2;
+
 interface PieceLoad {
   readonly piece: GlobeMapPiece;
   readonly texture: THREE.Texture;
-  state: "loading" | "in" | "failed";
+  state: "loading" | "in";
 }
 
 /**
@@ -196,51 +208,58 @@ export function createGlobeCloudMap(
   );
   let full: THREE.Texture | null = null;
   let status: CloudMapFullStatus = "waiting";
-  let round: PieceLoad[] = [];
+  /** Pieces held now: requested, not yet drawn. */
+  let held: PieceLoad[] = [];
+  let nextPiece = 0;
   let drawn = 0;
   let piecesFailed = 0;
+  /** Bumped on every drop, so answers to a dropped round are freed. */
+  let round = 0;
   let lostOnce = false;
   let rebuilds = 0;
   let fullAtMs: number | null = null;
   let canvas: EventTarget | null = null;
 
   const dropRound = () => {
-    for (const load of round) load.texture.dispose();
-    round = [];
-  };
-  const dropFull = () => {
+    round += 1;
+    for (const load of held) load.texture.dispose();
+    held = [];
     full?.dispose();
     full = null;
-    drawn = 0;
   };
-  const loadRound = () => {
-    piecesFailed = 0;
-    const loads: PieceLoad[] = [];
-    for (const piece of pieces) {
-      const load: PieceLoad = {
-        piece,
-        state: "loading",
-        texture: loader.loadTexture(
-          { ...source, path: piece.path },
-          () => {
-            load.state = "in";
-            // A late answer from a round already dropped: free it.
-            if (disposed || round !== loads) load.texture.dispose();
-          },
-          () => {
-            load.state = "failed";
-          },
-        ),
-      };
-      loads.push(load);
+  const request = (piece: GlobeMapPiece): PieceLoad => {
+    const mine = round;
+    const load: PieceLoad = {
+      piece,
+      state: "loading",
+      texture: loader.loadTexture(
+        { ...source, path: piece.path },
+        () => {
+          // An answer to a dropped round, or after dispose: free it.
+          if (disposed || mine !== round) load.texture.dispose();
+          else load.state = "in";
+        },
+        () => {
+          load.texture.dispose();
+          if (disposed || mine !== round) return;
+          piecesFailed += 1;
+          dropRound();
+          status = "failed";
+        },
+      ),
+    };
+    return load;
+  };
+  /** Tops the held pieces up to `MAX_HELD`. */
+  const topUp = () => {
+    while (held.length < MAX_HELD && nextPiece < pieces.length) {
+      held.push(request(pieces[nextPiece]!));
+      nextPiece += 1;
     }
-    round = loads;
-    status = "loading";
   };
   const onLost = () => {
     if (disposed) return;
     dropRound();
-    dropFull();
     status = "lost";
     lostOnce = true;
   };
@@ -261,28 +280,29 @@ export function createGlobeCloudMap(
     const max = (renderer as { capabilities?: { maxTextureSize?: number } })
       .capabilities?.maxTextureSize;
     if (previewState === "loading" || typeof max !== "number") return;
-    if (max < cut.width || max < cut.height) status = "too-large";
-    else loadRound();
-  };
-  /** Once every piece has answered: build, or keep the preview. */
-  const collect = (renderer: THREE.WebGLRenderer) => {
-    if (round.some((load) => load.state === "loading")) return;
-    piecesFailed = round.filter((load) => load.state === "failed").length;
-    if (piecesFailed > 0) {
-      dropRound();
-      status = "failed";
+    if (max < cut.width || max < cut.height) {
+      status = "too-large";
       return;
     }
-    status = "building";
-    full = builder.create(renderer, cut.width, cut.height);
+    status = "loading";
+    nextPiece = 0;
     drawn = 0;
+    piecesFailed = 0;
+    topUp();
   };
-  /** One piece a frame (each is a large upload); the swap after the last. */
-  const drawNext = (renderer: THREE.WebGLRenderer) => {
-    const load = round[drawn];
-    if (!full || !load) return;
+  /**
+   * The first frame allocates; then one piece a frame, drawn as soon as it
+   * is in and freed at once; the swap after the last.
+   */
+  const step = (renderer: THREE.WebGLRenderer) => {
+    if (!full) {
+      full = builder.create(renderer, cut.width, cut.height);
+      return;
+    }
+    const load = held.find((l) => l.state === "in");
+    if (!load) return;
     const { left, top, height } = load.piece;
-    const last = drawn === round.length - 1;
+    const last = drawn === pieces.length - 1;
     // GL rows count from the bottom; a piece's top is from the north.
     builder.draw(
       renderer,
@@ -292,9 +312,13 @@ export function createGlobeCloudMap(
       cut.height - top - height,
       last,
     );
+    load.texture.dispose();
+    held = held.filter((l) => l !== load);
     drawn += 1;
-    if (!last) return;
-    dropRound();
+    if (!last) {
+      topUp();
+      return;
+    }
     status = "in";
     if (lostOnce) rebuilds += 1;
     fullAtMs ??= now();
@@ -311,8 +335,7 @@ export function createGlobeCloudMap(
       if (disposed) return;
       listen(renderer);
       if (status === "waiting") start(renderer);
-      else if (status === "loading") collect(renderer);
-      else if (status === "building") drawNext(renderer);
+      else if (status === "loading") step(renderer);
     },
     settled() {
       const fullDone =
@@ -332,6 +355,9 @@ export function createGlobeCloudMap(
         height: image?.height ?? 0,
         preview: previewState,
         full: status,
+        allocated: full !== null,
+        piecesDrawn: drawn,
+        piecesHeld: held.length,
         piecesFailed,
         rebuilds,
         fullAtMs,
@@ -346,7 +372,6 @@ export function createGlobeCloudMap(
       canvas?.removeEventListener("webglcontextlost", onLost);
       canvas?.removeEventListener("webglcontextrestored", onRestored);
       dropRound();
-      full?.dispose();
       preview.dispose();
     },
   };

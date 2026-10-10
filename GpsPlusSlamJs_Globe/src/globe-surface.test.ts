@@ -416,8 +416,10 @@ describe("createGlobeSurface", () => {
     const pieces = loader.loaded.flatMap((s, i) =>
       s.path.includes("clouds-8192") ? [i] : [],
     );
-    expect(pieces).toHaveLength(4);
-    for (const i of pieces) loader.fail[i]!();
+    // At most two pieces are asked for at a time (M1b review); one that
+    // fails ends the full map.
+    expect(pieces).toHaveLength(2);
+    loader.fail[pieces[0]!]!();
     globe.update(camera, renderer);
     expect(counts()).toEqual([1, 1, 2]);
     globe.dispose();

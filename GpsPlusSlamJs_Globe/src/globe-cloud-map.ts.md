@@ -24,9 +24,11 @@
     - `update(renderer)` - per frame: once the preview has settled, checks
       the device (`capabilities.maxTextureSize` at least the full map's
       width and height, else `full: "too-large"` and the preview stays),
-      loads the four pieces, and when all four are in draws ONE piece a
-      frame (each is a 4,096 x 2,048 upload; the first frame allocates),
-      swapping on the last. Registers for the canvas's context loss and
+      asks for the pieces two at a time (`MAX_HELD`), allocates the full
+      map on the next frame, then draws each piece the frame after it
+      arrives (one a frame: each is a 4,096 x 2,048 upload), frees it at
+      once and asks for the next, swapping after the fourth (M1b review:
+      waiting for all four held about 134 MB of decoded RGBA at once). Registers for the canvas's context loss and
       restore on its first call. A renderer without `capabilities` (a
       test stub, a page that never draws) leaves it waiting.
     - `settled()` - `{ done, failed }` for the surface's global-map
@@ -35,9 +37,11 @@
       drawn (no preview and no full map). A failed piece keeps the
       preview, so it counts as loaded and is reported in `state()`.
     - `state()` - `{ stage: "preview" | "full", width, height, preview:
-"loading" | "in" | "failed", full, piecesFailed, rebuilds, fullAtMs,
-bitmap }`; `full` is `waiting`, `loading`, `building`, `in`,
-      `failed`, `too-large` or `lost`; `rebuilds` counts full maps built
+"loading" | "in" | "failed", full, allocated, piecesDrawn, piecesHeld,
+piecesFailed, rebuilds, fullAtMs, bitmap }`; `full` is `waiting`,
+      `loading` (allocated, pieces streaming in), `in`, `failed`,
+      `too-large` or `lost`; `piecesHeld` the pieces requested and not
+      yet drawn (never more than two); `rebuilds` counts full maps built
       after a context loss; `fullAtMs` the page time of the first swap;
       `bitmap` whether the images were decoded off the main thread.
     - `dispose()` - frees the preview, the full map and any piece, and
@@ -61,9 +65,10 @@ full, piece, x, y, last) }`, the GPU step as a seam.
     flips one); an image element is flipped by the unpack state, which
     three takes from the destination's `flipY`, so the builder sets it per
     piece. Colour conversion is off for the grey levels.
-  - Memory (DEC-R3-16): the decoded pieces are freed (the loader closes a
-    bitmap when its texture is disposed) once drawn, or as soon as a piece
-    fails; the preview is kept (2 MB of RGBA) for a context loss. On the
+  - Memory (DEC-R3-16, the M1b review): at most two pieces are held at a
+    time, each freed (the loader closes a bitmap when its texture is
+    disposed) the moment it is drawn, all of them as soon as one fails:
+    about 64 MiB of decoded RGBA at the peak instead of 134 MB; the preview is kept (2 MB of RGBA) for a context loss. On the
     GPU: the full map with its mips is about 44.7 MB as R8, the preview
     0.7 MB.
   - Context loss: three re-uploads a texture from its image when the
@@ -88,8 +93,8 @@ full, piece, x, y, last) }`, the GPU step as a seam.
 
 - Tests: `globe-cloud-map.test.ts` (the preview first, as one channel of
   numbers; the pieces only after the preview and a renderer; one texture,
-  each piece at its place, one a frame, the swap once all are drawn; the
-  pieces freed; a failed piece keeping the preview and reported; a small
+  each piece drawn as it arrives (in any order) at its place, one a
+  frame, never more than two alive, the swap after the fourth; a failed piece keeping the preview and reported; a small
   device keeping the preview; the counter's settling; a context loss and
   restore rebuilding, a loss mid-build dropping the round; dispose). The
   GPU builder by the browser smoke
