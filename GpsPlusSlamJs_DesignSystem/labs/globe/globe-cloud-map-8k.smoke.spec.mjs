@@ -210,6 +210,59 @@ test("the preview first, then ONE 8192 x 4096 map that draws the same clouds, sh
   }
 });
 
+// WHY (M1b review, item 5): a device whose largest texture is 4,096 to
+// 8,191 joins the same four pieces decoded at half size into a 4,096 x
+// 2,048 map (zero extra bytes) instead of keeping the 1,024 preview. The
+// page is told its largest texture is 4,096 (getParameter answered before
+// three reads it); the half map must draw the preview's clouds, sharper,
+// as the full one does (boxes of 40 px, against the same boxes one box
+// apart).
+test("a device that holds only 4096 joins the same pieces at half size", async ({
+  page,
+}) => {
+  test.setTimeout(600_000);
+  await page.addInitScript(() => {
+    const MAX_TEXTURE_SIZE = 0x0d33;
+    const real = WebGL2RenderingContext.prototype.getParameter;
+    WebGL2RenderingContext.prototype.getParameter = function (name) {
+      return name === MAX_TEXTURE_SIZE ? 4096 : real.call(this, name);
+    };
+  });
+  const release = await holdPieces(page);
+  const errors = await bootGlobe(page, ATLANTIC, { phase: "user" });
+  await waitFull(page, "loading");
+  await page.evaluate(() => window.__globeLab.timeFrames(3));
+  const before = await boxMeans(page, 40);
+  release();
+  await waitFull(page, "in");
+  const half = await cloudMapOf(page);
+  const after = await boxMeans(page, 40);
+  const diff = meanOf(before.means.map((v, i) => Math.abs(v - after.means[i])));
+  const shifted = [];
+  for (let k = 0; k < after.means.length; k++) {
+    if ((k + 1) % after.cols !== 0) {
+      shifted.push(Math.abs(before.means[k] - after.means[k + 1]));
+    }
+  }
+  const control = meanOf(shifted);
+  const spread = spreadOf(after.means);
+  console.log(
+    `half map: ${JSON.stringify(half)}; |preview - half| ${diff.toFixed(2)}, one box apart ${control.toFixed(2)}, spread ${spread.toFixed(1)}`,
+  );
+  expect(half).toMatchObject({
+    stage: "full",
+    full: "in",
+    scale: 0.5,
+    width: 4096,
+    height: 2048,
+    red: true,
+  });
+  expect(errors).toEqual([]);
+  expect(spread).toBeGreaterThan(10);
+  expect(diff).toBeLessThan(control / 2);
+  expect(diff).toBeLessThan(spread / 3);
+});
+
 // WHY (§16): NASA's map does not wrap, and the globe drew a line down the
 // date line. Looking straight down on the map's own date line (the clouds'
 // drift offset taken into account) from 1,500 km, where a texel of the

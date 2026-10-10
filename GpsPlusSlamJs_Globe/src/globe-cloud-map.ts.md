@@ -22,8 +22,12 @@
     - `previewSettled` - the preview is in or failed; the first look waits
       for this and nothing else of the clouds.
     - `update(renderer)` - per frame: once the preview has settled, checks
-      the device (`capabilities.maxTextureSize` at least the full map's
-      width and height, else `full: "too-large"` and the preview stays),
+      the device (`capabilities.maxTextureSize`): at least the full map's
+      width and height, the full map (`scale` 1); at least half of them
+      and a loader that `resizes`, the same four pieces decoded at half
+      size into a 4,096 x 2,048 map (`scale` 0.5, zero extra bytes: M1b
+      review, item 5); else `full: "too-large"` and the preview stays.
+      Then it
       asks for the pieces two at a time (`MAX_HELD`), allocates the full
       map on the next frame, then draws each piece the frame after it
       arrives (one a frame: each is a 4,096 x 2,048 upload), frees it at
@@ -40,7 +44,7 @@
       drawn (no preview and no full map). A failed piece keeps the
       preview, so it counts as loaded and is reported in `state()`.
     - `state()` - `{ stage: "preview" | "full", width, height, preview:
-"loading" | "in" | "failed", full, allocated, piecesDrawn, piecesHeld,
+"loading" | "in" | "failed", full, scale, allocated, piecesDrawn, piecesHeld,
 piecesFailed, retries, rebuilds, fullAtMs, bitmap }`; `full` is `waiting`,
       `loading` (allocated, pieces streaming in), `in`, `failed`,
       `too-large` or `lost`; `piecesHeld` the pieces requested and not

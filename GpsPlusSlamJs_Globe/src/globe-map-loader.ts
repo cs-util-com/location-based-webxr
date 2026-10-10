@@ -10,13 +10,27 @@ import * as THREE from "three";
 
 import type { GlobeSource } from "./globe-sources.js";
 
+/** A size to decode an image at, pixels. */
+interface GlobeMapSize {
+  readonly width: number;
+  readonly height: number;
+}
+
 /** How the global maps are fetched: a texture that fills in later. */
 export interface GlobeSurfaceLoader {
+  /**
+   * `size`, where the loader `resizes`, decodes the image at that size
+   * (the cloud map's half-size pieces on a device that cannot hold the
+   * full map); a loader that does not resize ignores it.
+   */
   loadTexture(
     source: GlobeSource,
     onLoad: () => void,
     onError: () => void,
+    size?: GlobeMapSize,
   ): THREE.Texture;
+  /** Whether `loadTexture` honours `size`. */
+  readonly resizes?: boolean;
 }
 
 /**
@@ -39,8 +53,12 @@ export function decodesOffThread(
   return true;
 }
 
-/** The plain loader: an image element, decoded when it is first drawn. */
+/**
+ * The plain loader: an image element, decoded when it is first drawn, at
+ * its own size (it does not resize).
+ */
 export const elementMapLoader: GlobeSurfaceLoader = {
+  resizes: false,
   loadTexture: (source, onLoad, onError) =>
     new THREE.TextureLoader().load(
       source.path,
@@ -54,10 +72,13 @@ export const elementMapLoader: GlobeSurfaceLoader = {
  * The off-thread loader: the rows flipped by the decoder (WebGL does not
  * flip an `ImageBitmap`), no premultiplying and no colour conversion (the
  * clouds are numbers; the night map's sRGB is decoded by its texture's
- * colour space). The bitmap is closed when its texture is disposed.
+ * colour space). The bitmap is closed when its texture is disposed. A
+ * `size` is decoded at that size (createImageBitmap's resizeWidth and
+ * resizeHeight, high quality), with no full-size copy made first.
  */
 const bitmapMapLoader: GlobeSurfaceLoader = {
-  loadTexture: (source, onLoad, onError) => {
+  resizes: true,
+  loadTexture: (source, onLoad, onError, size) => {
     const texture = new THREE.Texture();
     texture.flipY = false;
     new THREE.ImageBitmapLoader()
@@ -65,6 +86,13 @@ const bitmapMapLoader: GlobeSurfaceLoader = {
         imageOrientation: "flipY",
         premultiplyAlpha: "none",
         colorSpaceConversion: "none",
+        ...(size
+          ? {
+              resizeWidth: size.width,
+              resizeHeight: size.height,
+              resizeQuality: "high",
+            }
+          : {}),
       })
       .load(
         source.path,

@@ -3,8 +3,9 @@
  * DEC-R3-13..16): a small preview loaded with the first look, then NASA's
  * full 8,192 x 4,096 map, fetched in four pieces in the background and
  * drawn into ONE one-channel texture on the GPU as they arrive, which
- * replaces the preview for every reader at once. Each decoded piece is
- * freed as soon as it is drawn; after a WebGL context loss the preview
+ * replaces the preview for every reader at once. A device that cannot
+ * hold 8,192 but can hold 4,096 gets the same pieces decoded at half size.
+ * Each decoded piece is freed as soon as it is drawn; after a WebGL context loss the preview
  * shows again and the full map is rebuilt from the pieces.
  *
  * @see globe-cloud-map.ts.md
@@ -120,7 +121,10 @@ type CloudMapFullStatus =
   | "in"
   /** A piece failed after its retries: the preview stays. */
   | "failed"
-  /** The device's largest texture is smaller: the preview stays. */
+  /**
+   * The device's largest texture is under half the map (or under the map
+   * where the loader cannot decode at half size): the preview stays.
+   */
   | "too-large"
   /** The WebGL context is lost: the preview shows until it is restored. */
   | "lost";
@@ -133,6 +137,8 @@ interface GlobeCloudMapState {
   readonly height: number;
   readonly preview: "loading" | "in" | "failed";
   readonly full: CloudMapFullStatus;
+  /** 1 for the full map, 0.5 on a device that holds only half of it. */
+  readonly scale: number;
   /** The full map's texture exists (allocated, being filled or in). */
   readonly allocated: boolean;
   /** Pieces drawn into it in the current round. */
@@ -240,6 +246,7 @@ export function createGlobeCloudMap(
   );
   let full: THREE.Texture | null = null;
   let status: CloudMapFullStatus = "waiting";
+  let scale = 1;
   /** Pieces held now: requested, not yet drawn. */
   let held: PieceLoad[] = [];
   let nextPiece = 0;
@@ -266,6 +273,13 @@ export function createGlobeCloudMap(
     let texture: THREE.Texture | null = null;
     load.state = "loading";
     load.attempts += 1;
+    const size =
+      scale === 1
+        ? undefined
+        : {
+            width: load.piece.width * scale,
+            height: load.piece.height * scale,
+          };
     texture = loader.loadTexture(
       { ...source, path: load.piece.path },
       () => {
@@ -287,6 +301,7 @@ export function createGlobeCloudMap(
         load.state = "retry";
         load.retryAt = now() + wait;
       },
+      size,
     );
     load.texture = texture;
   };
@@ -333,12 +348,20 @@ export function createGlobeCloudMap(
     canvas.addEventListener("webglcontextrestored", onRestored);
   };
 
-  /** Once the preview has settled: the pieces, if the device can hold them. */
+  /**
+   * Once the preview has settled and the device is known: the full size if
+   * it holds it; half (the same pieces decoded at half size, zero extra
+   * bytes: M1b review, item 5) if it holds that and the loader can resize;
+   * else the preview stays.
+   */
   const start = (renderer: THREE.WebGLRenderer) => {
     const max = (renderer as { capabilities?: { maxTextureSize?: number } })
       .capabilities?.maxTextureSize;
     if (previewState === "loading" || typeof max !== "number") return;
-    if (max < cut.width || max < cut.height) {
+    const fits = (s: number) => max >= cut.width * s && max >= cut.height * s;
+    if (fits(1)) scale = 1;
+    else if (loader.resizes === true && fits(0.5)) scale = 0.5;
+    else {
       status = "too-large";
       return;
     }
@@ -355,7 +378,7 @@ export function createGlobeCloudMap(
    */
   const step = (renderer: THREE.WebGLRenderer) => {
     if (!full) {
-      full = builder.create(renderer, cut.width, cut.height);
+      full = builder.create(renderer, cut.width * scale, cut.height * scale);
       return;
     }
     retryDue();
@@ -368,8 +391,8 @@ export function createGlobeCloudMap(
       renderer,
       full,
       load.texture,
-      left,
-      cut.height - top - height,
+      left * scale,
+      (cut.height - top - height) * scale,
       last,
     );
     load.texture.dispose();
@@ -415,6 +438,7 @@ export function createGlobeCloudMap(
         height: image?.height ?? 0,
         preview: previewState,
         full: status,
+        scale,
         allocated: full !== null,
         piecesDrawn: drawn,
         piecesHeld: held.length,

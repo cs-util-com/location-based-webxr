@@ -78,7 +78,11 @@ function stubLoader({ resizes = true } = {}) {
         size,
         texture,
         finish: () => {
-          texture.image = size ?? { width: 4096, height: 2048 };
+          texture.image =
+            size ??
+            (source.path === CLOUDS.path
+              ? { width: 1024, height: 512 }
+              : { width: 4096, height: 2048 });
           onLoad();
         },
         fail: onError,
@@ -338,6 +342,51 @@ describe("createGlobeCloudMap", () => {
     second.map.dispose();
   });
 
+  // The M1b review: a device whose largest texture is 4,096 to 8,191 gets
+  // the same four pieces decoded at half size into a 4,096 x 2,048 map
+  // (zero extra bytes); only under 4,096, or where the loader cannot
+  // resize (the image-element path), does it keep the 1,024 preview.
+  it("chooses the full map, the half map or the preview by the device's largest texture", () => {
+    const choose = (max: number, resizes = true) => {
+      const s = started({ maxTextureSize: max, resizes });
+      streamAll(s.map, s.loader, s.renderer);
+      const result = {
+        full: s.map.state().full,
+        scale: s.map.state().scale,
+        size: [s.map.state().width, s.map.state().height],
+        asked: s.loader.pieceCalls().map((c) => c.size ?? null),
+        draws: s.draws.map((d) => [d.x, d.y]),
+      };
+      s.map.dispose();
+      return result;
+    };
+    expect(choose(16384)).toMatchObject({
+      full: "in",
+      scale: 1,
+      size: [8192, 4096],
+    });
+    expect(choose(8192).asked).toEqual([null, null, null, null]);
+    const half = choose(4096);
+    expect(half).toMatchObject({ full: "in", scale: 0.5, size: [4096, 2048] });
+    expect(half.asked).toEqual(
+      Array.from({ length: 4 }, () => ({ width: 2048, height: 1024 })),
+    );
+    expect(half.draws.sort()).toEqual(
+      [
+        [0, 1024],
+        [2048, 1024],
+        [0, 0],
+        [2048, 0],
+      ].sort(),
+    );
+    expect(choose(8191).scale).toBe(0.5);
+    expect(choose(4095)).toMatchObject({
+      full: "too-large",
+      size: [1024, 512],
+    });
+    expect(choose(4096, false)).toMatchObject({ full: "too-large" });
+  });
+
   // DEC-R3-16: three re-uploads a texture from its image after a context
   // loss, but the full map has no image (it was drawn from the pieces,
   // since freed): left alone it would come back empty, a cloudless Earth.
@@ -462,17 +511,6 @@ describe("createGlobeCloudMap", () => {
     expect(disposed).toHaveLength(2);
     canvas.dispatchEvent(new Event("webglcontextlost"));
     expect(map.state().full).toBe("in");
-  });
-
-  it("keeps the preview on a device whose largest texture is under the full map", () => {
-    const s = started({ maxTextureSize: 4096 });
-    frames(s.map, s.renderer, 3);
-    expect(s.loader.pieceCalls()).toHaveLength(0);
-    expect(s.map.state()).toMatchObject({
-      stage: "preview",
-      full: "too-large",
-    });
-    s.map.dispose();
   });
 
   it("settles once the preview and the full map have, failing only when neither drew", () => {

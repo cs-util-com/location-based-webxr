@@ -9,10 +9,14 @@ M1 and §18) do not stall a frame as the flight starts.
 
 ## Public API
 
-- `GlobeSurfaceLoader`: `loadTexture(source, onLoad, onError)` returns a
-  `THREE.Texture` at once, filled in when the file arrives (re-exported by
-  `globe-surface.ts`, whose `createGlobeSurface` takes one; Node tests
-  pass a stub).
+- `GlobeSurfaceLoader`: `loadTexture(source, onLoad, onError, size?)`
+  returns a `THREE.Texture` at once, filled in when the file arrives
+  (re-exported by `globe-surface.ts`, whose `createGlobeSurface` takes
+  one; Node tests pass a stub); `resizes` says whether `size` is honoured
+  (the off-thread loader decodes at that size through createImageBitmap's
+  `resizeWidth`/`resizeHeight`, high quality: the cloud map's half-size
+  pieces, M1b review item 5; the image element ignores it).
+- `GlobeMapSize` (module-private): `{ width, height }`.
 - `decodesOffThread(userAgent, hasCreateImageBitmap)`: whether this
   browser takes the off-thread path. False without `createImageBitmap`, in
   Safari before 17 and in Firefox before 98 (three's own rule for its
