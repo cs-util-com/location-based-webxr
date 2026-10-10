@@ -32,7 +32,8 @@ rows, width, height }`, a `{col}`/`{row}` template, row 0 the north),
   - `globeSource(id)` - one entry; `RangeError` for an unknown id.
   - `GIBS_ACKNOWLEDGEMENT` - GIBS's acknowledgement, shown in full.
   - The types `GlobeCredit` (OsmDemo's attribution-entry shape),
-    `GlobeSourceId`, `GlobeSource`, `GlobeMapPieces`, `GlobeMapPiece`.
+    `GlobeSourceId`, `GlobeSource`, `GlobeMapPiece` (the grid itself,
+    `GlobeMapPieces`, is module-private: `GlobeSource.pieces` carries it).
 - Invariants & assumptions: paths are served at `/globe-assets/` from
   `assets/`, written by `scripts/fetch-globe-assets.mjs` (provenance in
   `assets/PROVENANCE.md`). All four are NASA, public domain. Only the Blue

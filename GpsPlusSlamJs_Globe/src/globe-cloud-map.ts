@@ -51,7 +51,7 @@ export interface CloudMapBuilder {
  * the piece never becomes a texture of its own on the GPU), the mipmaps
  * generated once, after the last piece.
  */
-export const gpuCloudMapBuilder: CloudMapBuilder = {
+const gpuCloudMapBuilder: CloudMapBuilder = {
   create(renderer, width, height) {
     const full = new THREE.DataTexture(
       null,
@@ -91,7 +91,7 @@ export const gpuCloudMapBuilder: CloudMapBuilder = {
 };
 
 /** Where the full map is. */
-export type CloudMapFullStatus =
+type CloudMapFullStatus =
   /** Waiting for the preview to settle and a renderer to be known. */
   | "waiting"
   /** Its pieces are loading. */
@@ -107,7 +107,7 @@ export type CloudMapFullStatus =
   /** The WebGL context is lost: the preview shows until it is restored. */
   | "lost";
 
-export interface GlobeCloudMapState {
+interface GlobeCloudMapState {
   /** Which map the readers sample now. */
   readonly stage: "preview" | "full";
   /** That map's size (0 before the preview is in). */

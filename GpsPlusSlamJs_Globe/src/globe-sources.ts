@@ -47,7 +47,7 @@ export interface GlobeSource {
 }
 
 /** A global map cut into a grid of equal pieces. */
-export interface GlobeMapPieces {
+interface GlobeMapPieces {
   /** A `{col}` and `{row}` template; row 0 is the north. */
   readonly path: string;
   readonly columns: number;

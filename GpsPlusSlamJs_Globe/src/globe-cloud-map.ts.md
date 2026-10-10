@@ -44,7 +44,8 @@ bitmap }`; `full` is `waiting`, `loading`, `building`, `in`,
       stops listening.
   - `CloudMapBuilder` - `{ create(renderer, width, height), draw(renderer,
 full, piece, x, y, last) }`, the GPU step as a seam.
-  - `gpuCloudMapBuilder` - the real one: a `DataTexture` with no data,
+  - `gpuCloudMapBuilder` (module-private, the default) - the real one: a
+    `DataTexture` with no data,
     `RedFormat`, `source.dataReady = false` (three allocates storage for
     every mip level and uploads nothing), linear-mipmap filtering, wrapping
     in longitude; each piece drawn by `renderer.copyTextureToTexture`
