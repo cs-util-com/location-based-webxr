@@ -4,6 +4,23 @@
 
 ### Added
 
+- **The clouds' noise evaluated live, per octave**, opt-in:
+  `SkyAtmosphere.configure({ cloudNoise: 'tile' | 'hex' | 'live' })` and
+  `setCloudNoiseAnchor({ originKm, rotationRad })` / `cloudNoiseAnchor`
+  (`visualization/atmosphere/cloud-live-noise.ts`), so no pattern repeats
+  within thousands of kilometres. The default stays the baked tile;
+  `cloudHex` keeps its meaning. Each octave fades to its mean by the
+  footprint (from half a cell to four) while the field keeps its spread,
+  so the drawn cover holds to a 16 km footprint.
+- **The live noise's fine gain**: `configure({ cloudNoiseFineGain })` and
+  the `cloudNoiseFineGain` getter, the amplitude ratio from octave 2 on
+  (0.5 by default); more detail at the cloud edges above it, the spread
+  and the cover kept.
+- **Uniforms** `atmCloudLive`, `atmCloudLattice`, `atmCloudLiveBasis`,
+  `atmCloudLiveAmp` and `atmCloudLiveMarchOctaves` in `cloudUniforms`;
+  `CloudShadow.sync` follows them; the coverage chunk carries a third
+  table (`atmCoverThresholdsLive`) and its fourth argument is now the
+  noise mode (0 tile, 1 hex, 2 live).
 - **The cloud disc's centre**, opt-in: `setCloudSlabDiscCentre(slab,
 { x, z } | null)`, `SkyAtmosphere.setCloudDiscCentre` and
   `CloudShadow.setDiscCentre` centre the disc on a world point instead of
@@ -50,6 +67,15 @@ null)` (the caller defines `float atmCloudCoverageAt(vec2 xz)`; the local
   `bakeEnvironmentReused(scene)`; an existing implementation keeps
   compiling, and the staged rebuild falls back to the synchronous read and
   a new target per bake without them.
+
+### Changed
+
+- **The slab reads its noise through its footprint**
+  (`atmCloudNoiseFootprint`); the tile's level of detail is unchanged,
+  and live, the march reads the five coarsest octaves (the two finest
+  cost 7 % of the volume pass for 0.09 % of the variance).
+  `cloudCoverThresholds` and `cloudThresholdForCover` take a
+  `CloudNoiseMode` as well as the old boolean.
 
 ## [1.26.1] — 2026-10-04
 
