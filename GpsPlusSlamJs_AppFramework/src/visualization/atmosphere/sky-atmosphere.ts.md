@@ -143,7 +143,8 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   into `atmCloudLiveAmp` (no new program), the CPU twins following, the
   bake too in live mode. RangeError outside (0, 1). `atmCloudLiveMarchOctaves`
   (in `cloudUniforms`, 5 by default: `CLOUD_LIVE_NOISE.marchOctaves`) is
-  the octaves the slab's march reads at most.
+  the octaves the slab's march reads at most; `setCloudNoiseAnchor` writes
+  the basis into kept objects (no allocation a frame).
 - `applySunLight(light)` — colour (chroma) and intensity
   (`sunIntensity × exposure × model intensity`).
 - `horizonColour()` — the sky at the drawn horizon (dir.y =

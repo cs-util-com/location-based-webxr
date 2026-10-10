@@ -335,7 +335,12 @@ export class SkyAtmosphere {
   private environment: { texture: THREE.Texture; dispose(): void } | undefined;
   private horizon: Rgb = [0, 0, 0];
   /** The live noise's anchor (`setCloudNoiseAnchor`), float64. */
-  private noiseAnchor: CloudNoiseAnchor = { originKm: [0, 0], rotationRad: 0 };
+  private readonly noiseAnchor: {
+    originKm: [number, number];
+    rotationRad: number;
+  } = { originKm: [0, 0], rotationRad: 0 };
+  /** The basis's numbers, kept (`setCloudNoiseAnchor` every frame). */
+  private readonly liveBasis: number[] = [];
   /** The live noise's options for the CPU twins (the fine gain). */
   private liveOptions: CloudLiveOptions = {};
   /** The noise threshold for the cover; 2 (above any noise) = clear. */
@@ -712,13 +717,21 @@ export class SkyAtmosphere {
    * @throws RangeError for a non-finite anchor.
    */
   setCloudNoiseAnchor(anchor: CloudNoiseAnchor): void {
-    const vectors = liveBasisVectors(anchor); // validates
-    this.noiseAnchor = {
-      originKm: [anchor.originKm[0], anchor.originKm[1]],
-      rotationRad: anchor.rotationRad,
-    };
-    // In place: the shadows and every material hold these very objects.
-    this.clouds.atmCloudLiveBasis.value.forEach((v, k) => v.copy(vectors[k]!));
+    // Validates; into a kept array, the vectors written in place (the
+    // shadows and every material hold these very objects): a caller sets
+    // the anchor every frame, so nothing is allocated (§19 item 8).
+    const basis = cloudLiveBasis(anchor, this.liveOptions, this.liveBasis);
+    this.noiseAnchor.originKm[0] = anchor.originKm[0];
+    this.noiseAnchor.originKm[1] = anchor.originKm[1];
+    this.noiseAnchor.rotationRad = anchor.rotationRad;
+    this.clouds.atmCloudLiveBasis.value.forEach((v, k) =>
+      v.set(
+        basis[4 * k]!,
+        basis[4 * k + 1]!,
+        basis[4 * k + 2]!,
+        basis[4 * k + 3]!
+      )
+    );
   }
 
   /** The anchor in effect (`setCloudNoiseAnchor`, drifted), a copy. */

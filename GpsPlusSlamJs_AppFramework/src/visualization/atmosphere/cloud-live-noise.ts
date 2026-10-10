@@ -346,11 +346,13 @@ function reduce(x: number, size: number): number {
  * is the octave's rotation composed with the frame's, over its cell; (ox,
  * oy) its rotation of the origin over its cell plus its seed, reduced modulo
  * the lattice. All in float64: the reduction is where the float64 anchor
- * becomes the shader's small numbers. RangeError for a non-finite anchor.
+ * becomes the shader's small numbers, written into `out` (a new array by
+ * default). RangeError for a non-finite anchor.
  */
 export function cloudLiveBasis(
   anchor: CloudNoiseAnchor,
-  options: CloudLiveOptions = {}
+  options: CloudLiveOptions = NO_OPTIONS,
+  out: number[] = []
 ): number[] {
   const [px, py] = anchor.originKm;
   const rot = anchor.rotationRad;
@@ -359,19 +361,20 @@ export function cloudLiveBasis(
       `the noise anchor must be finite, got ${px}, ${py}, ${rot}`
     );
   }
-  const size = options.latticeSize ?? CLOUD_LIVE_NOISE.latticeSize;
-  const basis: number[] = [];
-  for (const octave of cloudLiveOctaves(options)) {
+  // The cached octaves, written into `out`: no allocation a frame (§19
+  // item 8; a caller writes the anchor every frame).
+  const { o, octaves } = resolvedField(options);
+  const size = o.latticeSize;
+  out.length = 4 * octaves.length;
+  octaves.forEach((octave, k) => {
     const c = Math.cos(octave.angleRad) / octave.cellKm;
     const s = Math.sin(octave.angleRad) / octave.cellKm;
-    basis.push(
-      Math.cos(octave.angleRad + rot) / octave.cellKm,
-      Math.sin(octave.angleRad + rot) / octave.cellKm,
-      reduce(c * px - s * py + octave.seedCells[0], size),
-      reduce(s * px + c * py + octave.seedCells[1], size)
-    );
-  }
-  return basis;
+    out[4 * k] = Math.cos(octave.angleRad + rot) / octave.cellKm;
+    out[4 * k + 1] = Math.sin(octave.angleRad + rot) / octave.cellKm;
+    out[4 * k + 2] = reduce(c * px - s * py + octave.seedCells[0], size);
+    out[4 * k + 3] = reduce(s * px + c * py + octave.seedCells[1], size);
+  });
+  return out;
 }
 
 /** The default options: one object, so the field cache below hits. */

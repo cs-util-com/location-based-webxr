@@ -57,9 +57,11 @@ readers (`atmosphere-glsl.ts`, `cloud-shadow.ts`) switch to it by a uniform;
 - `CloudNoiseAnchor`: `{ originKm: [x, y], rotationRad }`, where the
   caller's frame origin lies on the noise plane (km, unwrapped, float64) and
   the frame's rotation on it.
-- `cloudLiveBasis(anchor, options?)`: four numbers an octave, (a, b, ox,
+- `cloudLiveBasis(anchor, options?, out?)`: four numbers an octave, (a, b, ox,
   oy): octave k reads its lattice at q = (a x - b y + ox, b x + a y + oy)
-  for the local point (x, y) km. RangeError for a non-finite anchor.
+  for the local point (x, y) km, written into `out` when given (a caller
+  sets the anchor every frame: no allocation). RangeError for a non-finite
+  anchor.
 - `cloudLiveSample(basis, xKm, yKm, footprintKm = 0, options?)`: the CPU
   twin of `atmCloudLiveNoise`. RangeError for non-finite coordinates, a
   negative or NaN footprint, or a basis of the wrong length.

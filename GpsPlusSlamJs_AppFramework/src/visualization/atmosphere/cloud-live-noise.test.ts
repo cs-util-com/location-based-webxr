@@ -215,6 +215,15 @@ describe('cloudLiveBasis', () => {
     }
   });
 
+  // A caller writes the anchor every frame (§19 item 8): into its own
+  // array, nothing allocated, the same numbers.
+  it('writes into a given array', () => {
+    const out: number[] = [];
+    const anchor = { originKm: [5.5, 6.5] as const, rotationRad: 0.2 };
+    expect(cloudLiveBasis(anchor, {}, out)).toBe(out);
+    expect(out).toEqual(cloudLiveBasis(anchor));
+  });
+
   it('refuses an anchor that is not finite', () => {
     expect(() =>
       cloudLiveBasis({ originKm: [Number.NaN, 0], rotationRad: 0 })
