@@ -3577,7 +3577,7 @@ uniform vec4 uBasis[ATM_LIVE_OCTAVES];
 uniform float uAmp[ATM_LIVE_OCTAVES];
 void main() {
   vec3 p = texelFetch(uInput, ivec2(gl_FragCoord.xy), 0).xyz;
-  gl_FragColor = vec4(atmCloudLiveNoise(uLattice, uBasis, uAmp, p.xy, p.z), 0.0, 0.0, 1.0);
+  gl_FragColor = vec4(atmCloudLiveNoise(uLattice, uBasis, uAmp, p.xy, p.z, float(ATM_LIVE_OCTAVES)), 0.0, 0.0, 1.0);
 }`,
       });
       const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
@@ -3736,6 +3736,32 @@ void main() {
     diveAltitudeAt: (ms) => flight.diveAltitudeAt(ms),
     /** Holds the camera at a dive time (ms; null runs on); its altitude. */
     holdDiveAt: (ms) => flight.holdDiveAt(ms),
+    /**
+     * The cost probe of the cloud volume's pass alone (round-3 plan §19
+     * item 5): `n` volume passes drawn back to back after one frame (the
+     * relief's depth already drawn), then one pixel read; the wall time
+     * in ms. SwiftShader: relative only, within one page load.
+     */
+    timeCloudVolume(n) {
+      if (!cloudVolume) return null;
+      const gl = renderer.getContext();
+      const px = new Uint8Array(4);
+      frame();
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      const relief = terrain.tiles.group;
+      const extra = city ? [city.root] : [];
+      const t0 = performance.now();
+      for (let i = 0; i < n; i++) cloudVolume.render(camera, relief, extra);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return performance.now() - t0;
+    },
+    /**
+     * Test surface (§19 item 5): the octaves the live noise's march reads
+     * at most, on the ground sky (the framework's default otherwise).
+     */
+    setCloudMarchOctaves(n) {
+      groundSky.atmosphere.cloudUniforms.atmCloudLiveMarchOctaves.value = n;
+    },
     timeFrames(n) {
       const gl = renderer.getContext();
       const px = new Uint8Array(4);

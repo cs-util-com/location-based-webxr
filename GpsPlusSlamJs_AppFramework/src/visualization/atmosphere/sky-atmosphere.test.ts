@@ -1815,3 +1815,21 @@ describe('SkyAtmosphere live noise fine gain (round-3 plan §19 item 2)', () => 
     expect(atmosphere.cloudNoiseFineGain).toBe(0.7);
   });
 });
+
+describe('SkyAtmosphere live noise in the march (round-3 plan §19 item 5)', () => {
+  // WHY: the two finest octaves cost 7 % of the live volume pass for
+  // 0.09 % of the variance, so the slab's march reads five (a uniform the
+  // slab's footprint read takes; every other reader takes all seven).
+  it('starts the march at five octaves, every material sharing the uniform', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.configure({ cloudMode: 'slab', cloudNoise: 'live' });
+    const u = atmosphere.cloudUniforms.atmCloudLiveMarchOctaves;
+    expect(u.value).toBe(5);
+    const slab = scene.getObjectByName('atmosphere-cloud-slab') as THREE.Mesh;
+    expect(
+      (slab.material as THREE.ShaderMaterial).uniforms[
+        'atmCloudLiveMarchOctaves'
+      ]
+    ).toBe(u);
+  });
+});

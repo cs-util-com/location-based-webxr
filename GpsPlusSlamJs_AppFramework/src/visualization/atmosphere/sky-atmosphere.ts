@@ -360,6 +360,8 @@ export class SkyAtmosphere {
     },
     /** The octaves' amplitudes (`configure({ cloudNoiseFineGain })`). */
     atmCloudLiveAmp: { value: cloudLiveAmplitudes() },
+    /** The octaves the slab's march reads at most (round-3 plan §19 item 5). */
+    atmCloudLiveMarchOctaves: { value: CLOUD_LIVE_NOISE.marchOctaves },
     /** The disc's view of the clouds: the real threshold in every mode. */
     atmCloudSunThreshold: this.threshold,
     atmCloudFarFadeM: {
@@ -572,6 +574,7 @@ export class SkyAtmosphere {
     readonly atmCloudLattice: THREE.IUniform<THREE.Texture | null>;
     readonly atmCloudLiveBasis: THREE.IUniform<THREE.Vector4[]>;
     readonly atmCloudLiveAmp: THREE.IUniform<number[]>;
+    readonly atmCloudLiveMarchOctaves: THREE.IUniform<number>;
     readonly atmCloudAnchored: THREE.IUniform<number>;
     readonly atmCloudFarFadeM: THREE.IUniform<THREE.Vector2>;
   } {

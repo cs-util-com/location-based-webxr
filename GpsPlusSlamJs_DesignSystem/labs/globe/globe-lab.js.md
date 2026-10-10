@@ -696,7 +696,12 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   above 0.5 (`setFineGain`; the state's `cloudVolume.fineGain`). `cloudLiveProbe(points, anchors)` (a test hook) renders the
   live noise's shader twin at local points (km, with an optional footprint
   in km as the third number) for each anchor and reads it back beside the
-  CPU twin (`globe-cloud-noise.smoke.spec.mjs`). `cloudVolumeRows(bands)`
+  CPU twin (`globe-cloud-noise.smoke.spec.mjs`), the twin without its
+  finest octave (so a bound can be shown to see it) and the WebGL
+  renderer's name. `cloudLivePeriods()` (a test hook; round-3 plan §19
+  item 4) gives each live octave's two period vectors on the noise plane.
+  `timeCloudVolume(n)` (§19 item 5) times the cloud volume's pass alone,
+  `setCloudMarchOctaves(n)` sets the octaves the live march reads. `cloudVolumeRows(bands)`
   (a test hook; round-3 plan §19 item 1) reads the volume's last frame by
   horizontal bands: each band's mean alpha and share over 0.5, the
   elevation of its middle ray and where that ray meets the deck (km), the

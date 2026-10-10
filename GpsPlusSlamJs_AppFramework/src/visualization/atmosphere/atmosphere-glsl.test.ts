@@ -229,11 +229,11 @@ describe('the cloud chunk’s live noise (round-3 plan N1)', () => {
       'if (atmCloudLive > 0.5) return atmCloudLiveGrad(atmCloudLattice, atmCloudLiveBasis, atmCloudLiveAmp, uv, atmCloudOffset);'
     );
     expect(body('float atmCloudNoiseLod(')).toContain(
-      'if (atmCloudLive > 0.5) return atmCloudLiveAt(atmCloudLattice, atmCloudLiveBasis, atmCloudLiveAmp, uv, atmCloudOffset, lod > 0.0 ? exp2(lod) * ATM_CLOUD_TEXEL_KM : 0.0);'
+      'if (atmCloudLive > 0.5) return atmCloudLiveAt(atmCloudLattice, atmCloudLiveBasis, atmCloudLiveAmp, uv, atmCloudOffset, lod > 0.0 ? exp2(lod) * ATM_CLOUD_TEXEL_KM : 0.0, float(ATM_LIVE_OCTAVES));'
     );
     const footprint = body('float atmCloudNoiseFootprint(');
     expect(footprint).toContain(
-      'if (atmCloudLive > 0.5) return atmCloudLiveAt(atmCloudLattice, atmCloudLiveBasis, atmCloudLiveAmp, uv, atmCloudOffset, footprintKm);'
+      'if (atmCloudLive > 0.5) return atmCloudLiveAt(atmCloudLattice, atmCloudLiveBasis, atmCloudLiveAmp, uv, atmCloudOffset, footprintKm, atmCloudLiveMarchOctaves);'
     );
     // Off live, the same level the slab took before (twin of cloudSlabLod).
     expect(footprint).toContain(

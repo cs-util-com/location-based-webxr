@@ -348,3 +348,44 @@ test("cloud edges: tile, live and live with more fine detail, for the owner's ey
   expect(errors).toEqual([]);
   expect(states["12km-live-fine065"].fineGain).toBe(0.65);
 });
+
+// WHY (the N1 milestone review, round-3 plan §19 item 5): a whole frame's
+// cost (x1.03-1.04) hides the march's own; the march reads 63 lattice
+// fetches a pixel live against the tile's 18. The volume's pass alone,
+// tile against live with all seven octaves and with the march reading
+// five, alternated twice within one page load (SwiftShader: relative only).
+test("the volume pass alone: the tile against live, seven and five octaves in the march", async ({
+  page,
+}) => {
+  test.setTimeout(900_000);
+  const errors = await bootGlobe(page, `${BASE}&${view(12)}&cloudNoise=tile`, {
+    phase: "user",
+  });
+  const runs = { tile: [], live7: [], live5: [] };
+  for (let round = 0; round < 2; round++) {
+    for (const [name, mode, octaves] of [
+      ["tile", "tile", 7],
+      ["live7", "live", 7],
+      ["live5", "live", 5],
+    ]) {
+      await applyHash(page, `${BASE}&${view(12)}&cloudNoise=${mode}`);
+      await page.evaluate(
+        (n) => window.__globeLab.setCloudMarchOctaves(n),
+        octaves,
+      );
+      await page.evaluate(() => window.__globeLab.timeCloudVolume(2));
+      runs[name].push(
+        await page.evaluate(() => window.__globeLab.timeCloudVolume(10) / 10),
+      );
+    }
+  }
+  await page.evaluate(() => window.__globeLab.setCloudMarchOctaves(7));
+  const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+  console.log(
+    `the volume pass alone at 12 km: tile ${mean(runs.tile).toFixed(0)} ms, live with 7 octaves ${mean(runs.live7).toFixed(0)} (x${(mean(runs.live7) / mean(runs.tile)).toFixed(2)}), with 5 in the march ${mean(runs.live5).toFixed(0)} (x${(mean(runs.live5) / mean(runs.tile)).toFixed(2)}); runs ${JSON.stringify(runs)}`,
+  );
+  expect(errors).toEqual([]);
+  for (const list of Object.values(runs)) {
+    for (const ms of list) expect(Number.isFinite(ms)).toBe(true);
+  }
+});

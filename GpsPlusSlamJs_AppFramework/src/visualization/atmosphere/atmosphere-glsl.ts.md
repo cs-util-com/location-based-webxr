@@ -35,7 +35,9 @@ fragment shaders, and the visible sky's vertex/fragment pair.
   (`CLOUD_LIVE_NOISE_GLSL`, included here, `cloud-live-noise.ts`): from
   the lattice `atmCloudLattice`, the per-octave basis
   `atmCloudLiveBasis[7]` (the anchoring) and the amplitudes
-  `atmCloudLiveAmp[7]` (the fine gain), at the local point
+  `atmCloudLiveAmp[7]` (the fine gain); the slab's footprint read takes at
+  most `atmCloudLiveMarchOctaves` octaves (5, round-3 plan §19 item 5),
+  every other read all 7, at the local point
   (uv - `atmCloudOffset`) x the tile. Its footprint: from the uv's screen
   derivatives in `atmCloudNoise`; exp2(lod) texels in `atmCloudNoiseLod`
   (0 at lod 0); given in `atmCloudNoiseFootprint(uv, footprintKm)`, the

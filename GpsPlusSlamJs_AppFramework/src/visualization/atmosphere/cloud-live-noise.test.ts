@@ -551,7 +551,7 @@ describe('CLOUD_LIVE_NOISE_GLSL', () => {
   it('is include-guarded and defines the twin’s three entry points', () => {
     expect(glsl).toContain('#ifndef ATM_CLOUD_LIVE_GLSL');
     expect(glsl).toMatch(
-      /float atmCloudLiveNoise\(sampler2D \w+, vec4 \w+\[ATM_LIVE_OCTAVES\], float \w+\[ATM_LIVE_OCTAVES\], vec2 \w+, float \w+\)/
+      /float atmCloudLiveNoise\(sampler2D \w+, vec4 \w+\[ATM_LIVE_OCTAVES\], float \w+\[ATM_LIVE_OCTAVES\], vec2 \w+, float \w+, float \w+\)/
     );
     expect(glsl).toMatch(/float atmCloudLiveAt\(/);
     expect(glsl).toMatch(/float atmCloudLiveGrad\(/);
@@ -576,6 +576,8 @@ describe('CLOUD_LIVE_NOISE_GLSL', () => {
     expect(glsl).toContain('f * f * (3.0 - 2.0 * f)');
     expect(glsl).toContain('(i + f + 0.5) / ATM_LIVE_SIZE');
     expect(glsl).toMatch(/if \(w <= 0\.0\) break;/);
+    // At most the octaves asked (the march's knob, §19 item 5).
+    expect(glsl).toContain('if (float(k) >= octaves) break;');
     // The spread kept as octaves fade, capped (§19 item 1), as the twin.
     expect(glsl).toContain(
       'if (spread > 0.0) sum *= min(sqrt(ATM_LIVE_SPREAD0 / spread), ATM_LIVE_MAX_GAIN);'

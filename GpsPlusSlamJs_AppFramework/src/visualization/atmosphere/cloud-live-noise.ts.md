@@ -38,6 +38,12 @@ readers (`atmosphere-glsl.ts`, `cloud-shadow.ts`) switch to it by a uniform;
   over 200,000 points).
 - `cloudLiveAmplitudes(options?)`: the octaves' amplitudes, the shader's
   amplitude uniform.
+- `marchOctaves` (5): the octaves the slab's march reads at most (round-3
+  plan §19 item 5). The two finest (cells of 176 and 84 m) carry 0.09 %
+  of the variance (0.8 % at fine gain 0.65) but cost 7 % of the live
+  volume pass: on SwiftShader, the pass alone in one page load, the tile
+  722 ms, live with 7 octaves 802 (x1.11), with 5 in the march 743
+  (x1.03). The dome, the sheet and the shadow read all 7.
 - `CloudLiveOptions`: every constant above, overridable for the sweeps,
   and `octaveLimit` (octaves read at most; the rest count as faded).
 - `cloudLiveLattice(size?, seed?)`: the lattice bytes, cached per (size,
@@ -68,11 +74,11 @@ readers (`atmosphere-glsl.ts`, `cloud-shadow.ts`) switch to it by a uniform;
 - `createCloudLiveLatticeTexture()`: the default lattice as a repeating,
   linear, mip-less `RedFormat` byte texture (1 MB on the GPU).
 - `CLOUD_LIVE_NOISE_GLSL`: include-guarded (`ATM_CLOUD_LIVE_GLSL`):
-  - `atmCloudLiveNoise(lattice, basis[7], amp[7], p, footprintKm)`: the
+  - `atmCloudLiveNoise(lattice, basis[7], amp[7], p, footprintKm, octaves)`: the
     field at the local point p (km), `amp` the amplitudes
     (`cloudLiveAmplitudes`; a uniform, so the fine gain needs no new
     program);
-  - `atmCloudLiveAt(lattice, basis, amp, uv, offset, footprintKm)`: the same from
+  - `atmCloudLiveAt(lattice, basis, amp, uv, offset, footprintKm, octaves)`: the same from
     a reader's noise coordinate (tiles with the offset), p = (uv - offset)
     x 24 km;
   - `atmCloudLiveGrad(lattice, basis, amp, uv, offset)`: the footprint from the
