@@ -23,7 +23,13 @@ fragment shaders, and the visible sky's vertex/fragment pair.
   constants, `atmCloudDensity`, `atmCloudHorizonFade`, `atmCloudNoise`,
   `atmCloudNoiseLod`, `atmCloudLit`), shared by the sky dome, the
   fly-through sheet (`cloud-sheet.ts`) and the slab (`cloud-slab.ts`), so
-  all three draw one pattern, cover and light. `atmCloudNoiseLod` is the
+  all three draw one pattern, cover and light. With the uniform
+  `atmCloudHex` at 1 both reads take the first octave hex-tiled
+  (`CLOUD_HEX_GLSL`, included here; hex-tiling plan H1): `atmCloudNoise`
+  through `atmCloudHexGrad` with the continuous uv's `dFdx`/`dFdy` (the
+  cells' offsets jump at their edges, so implicit derivatives drew the
+  lattice), `atmCloudNoiseLod` through `atmCloudHexLod`; the mean is
+  `ATM_CLOUD_MEAN` (`CLOUD_HEX.textureMean`, the default texture's). `atmCloudNoiseLod` is the
   same two-octave sum through `textureLod` (the second octave one
   log2(frequency) coarser), for the slab's march, where implicit
   derivatives are undefined inside the loop. It expects

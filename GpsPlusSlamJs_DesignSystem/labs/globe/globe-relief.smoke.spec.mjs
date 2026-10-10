@@ -19,12 +19,24 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { bootGlobe } from "./globe-smoke-helpers.mjs";
+import { RELIEF_SETTLE_MS, bootGlobe } from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const TARGET = { latitude: 46.5, longitude: 9.0 };
+// `reliefNear=3`: these tests are about the exaggerated relief (its law, the
+// band, the clearance over a ridge drawn three times as high). Since the
+// owner's D-K1 (city plan 2026-10-05-0040 §11) the default is true heights,
+// E 1, at which they would pass while testing nothing; the default's own
+// test is the last one in this file.
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&relief=1&reliefHeights=synthetic&diveMs=6000&handOver=0";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&relief=1&reliefHeights=synthetic&diveMs=6000&reliefNear=3";
+
+/**
+ * The dives that hold at 150 km, where these checks were written, not at
+ * the default 2 km (r790 city plan K4; measured: the oblique dive landed
+ * 3.4 km up, the clearance lifting it over the synthetic crest).
+ */
+const HOLD_150 = "&landKm=150";
 
 /** The exaggeration law (globe-flight.ts), for the expected value. */
 const exaggerationAt = (altM, near = 3) => {
@@ -79,7 +91,7 @@ test("the dive ends over the target, oblique, with the relief exaggerated by alt
   context,
 }) => {
   test.setTimeout(300_000);
-  const errors = await diveAndLand(page, context, BASE);
+  const errors = await diveAndLand(page, context, `${BASE}${HOLD_150}`);
   const s = await page.evaluate(() => window.__globeLab.state());
   const [top] = await page.evaluate(() =>
     window.__globeLab.readPixels([[0.5, 0.02]]),
@@ -112,7 +124,7 @@ test("the pitch law's low pitch, swept over 30, 45 and 60 degrees", async ({
   for (const pitch of [30, 45, 60]) {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await diveAndLand(page, context, `${BASE}&pitchLow=${pitch}`);
+    await diveAndLand(page, context, `${BASE}${HOLD_150}&pitchLow=${pitch}`);
     const s = await page.evaluate(() => window.__globeLab.state());
     const [top] = await page.evaluate(() =>
       window.__globeLab.readPixels([[0.5, 0.02]]),
@@ -171,7 +183,11 @@ test("the relief's tiles take the terrain lab's detail under the hold", async ({
     const context = await browser.newContext();
     const page = await context.newPage();
     const weight = detail === "0b" ? 0 : detail;
-    const errors = await diveAndLand(page, context, `${BASE}&detail=${weight}`);
+    const errors = await diveAndLand(
+      page,
+      context,
+      `${BASE}${HOLD_150}&detail=${weight}`,
+    );
     if (weight > 0) {
       await page.waitForFunction(
         () => {
@@ -272,7 +288,13 @@ test("the band's cross-fade between the globe and the relief is continuous, and 
   for (const altKm of [1900, 1550, 1250]) {
     const context = await browser.newContext();
     const page = await context.newPage();
-    const base = `${BASE}&handOverKm=${altKm}&detail=0`;
+    // The carriers' own cross-fade: without round 6's stencil fill (the
+    // globe drawn behind the relief at share 1, by design) and without the
+    // cloud shell (its clouds and shadow add their own swap across the
+    // band, 19 levels against 6); both have their own smokes
+    // (globe-handover, globe-clouds). Red since round 6 until pinned (the
+    // full run of 2026-10-05, bisected to d0bb6cbe and the shell).
+    const base = `${BASE}&landKm=${altKm}&detail=0&bandFill=0&cloudShell=0`;
     await context.grantPermissions(["geolocation"], { origin: ORIGIN });
     await context.setGeolocation(TARGET);
     const errors = await bootGlobe(page, `${base}&bandShare=0.5`);
@@ -364,7 +386,7 @@ for (const [label, lat] of [
     test.setTimeout(300_000);
     await context.grantPermissions(["geolocation"], { origin: ORIGIN });
     await context.setGeolocation({ latitude: lat, longitude: 9.125 });
-    const errors = await bootGlobe(page, `${BASE}&handOverKm=5`);
+    const errors = await bootGlobe(page, `${BASE}&landKm=5`);
     await page.locator("#globe-pin").click();
     await page.waitForFunction(
       () => {
@@ -408,7 +430,7 @@ test("the band's fade does not shimmer under a moving camera", async ({
   const grid = groundGrid();
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(TARGET);
-  const base = `${BASE}&handOverKm=1100&detail=0`;
+  const base = `${BASE}&landKm=1100&detail=0`;
   const errors = await bootGlobe(page, `${base}&bandShare=0.5`);
   await page.locator("#globe-pin").click();
   await page.waitForFunction(
@@ -488,10 +510,14 @@ test("the band's fade does not shimmer under a moving camera", async ({
 // fetches nothing" was true by construction and unmeasured, and the
 // globe's 64 MB cache stayed resident down to the hold. On a phone's
 // viewport (390 x 844 at DPR 2): above the band the relief has fetched
-// nothing; at the 150 km hold the globe's cache has been released and the
-// globe asks for no tile over five seconds; the two caches together stay
-// under 72 MiB there (the relief's own 64 MB budget plus an eighth),
-// reported at x0.5 and x2.
+// nothing; at the 150 km hold the globe's cache has been released down to
+// its coarsest tiles and the globe asks for no tile over five seconds; the
+// two caches together stay under 72 MiB there (the relief's own 64 MB
+// budget plus an eighth), reported at x0.5 and x2. Since round 6 the
+// drain keeps the globe's coarsest tiles on purpose: they are the stencil
+// fill behind the relief (plan 2026-10-04-1050 G6-1). Kept: more than
+// nothing (the fill needs them) and at most 8 MiB, the same eighth of the
+// globe's 64 MB budget (4.0 MiB measured on 2026-10-05).
 test("outside the band the other carrier fetches nothing and holds no memory, on a phone", async ({
   browser,
 }) => {
@@ -503,7 +529,7 @@ test("outside the band the other carrier fetches nothing and holds no memory, on
   const page = await context.newPage();
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(TARGET);
-  const errors = await bootGlobe(page, BASE);
+  const errors = await bootGlobe(page, `${BASE}${HOLD_150}`);
   await page.waitForFunction(
     () => window.__globeLab.state().pendingTiles === 0,
     null,
@@ -548,7 +574,8 @@ test("outside the band the other carrier fetches nothing and holds no memory, on
   expect(above.relief.stats.loaded).toBe(0);
   expect(above.relief.cachedBytes).toBe(0);
   expect(held.relief.releasedBytes.globe).toBeGreaterThan(0);
-  expect(held.relief.globeCachedBytes).toBe(0);
+  expect(held.relief.globeCachedBytes).toBeGreaterThan(0);
+  expect(held.relief.globeCachedBytes).toBeLessThanOrEqual(8 * MIB);
   expect(sum(held.tileRequestsByLevel)).toBe(sum(t0.requests));
   expect(total).toBeLessThanOrEqual(LIMIT);
   await context.close();
@@ -565,7 +592,16 @@ test("a planted detail grid lands where it is placed: east of the target brighte
   context,
 }) => {
   test.setTimeout(300_000);
-  const errors = await diveAndLand(page, context, `${BASE}&detail=0`);
+  // The placement alone: round 6's sharp takeover and the cloud shell
+  // change the frame while it is read (the relief taking pixels late, the
+  // shell's clouds and shadow over the relief), which drifted the west half
+  // by 4.3 and then 22 levels with nothing planted there (bisected
+  // 2026-10-05: fb27d790, then the shell). Their own smokes cover them.
+  const errors = await diveAndLand(
+    page,
+    context,
+    `${BASE}${HOLD_150}&detail=0&bandSharp=0&cloudShell=0`,
+  );
   const half = (left) => {
     const g = [];
     for (let y = 0.45; y <= 0.95; y += 0.05)
@@ -616,7 +652,7 @@ test("a carrier's cache is released only after it stays out of the band", async 
   test.setTimeout(900_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(TARGET);
-  const base = `${BASE}&handOverKm=1550&detail=0`;
+  const base = `${BASE}&landKm=1550&detail=0`;
   const errors = await bootGlobe(page, `${base}&bandShare=0.5`);
   await page.locator("#globe-pin").click();
   await page.waitForFunction(
@@ -692,4 +728,43 @@ test("a carrier's cache is released only after it stays out of the band", async 
     expect(r.maxPerFrame).toBeGreaterThan(0);
     expect(r.maxPerFrame).toBeLessThanOrEqual(8);
   }
+});
+
+// WHY (owner, 2026-10-06, city plan §11 D-K1): true heights everywhere by
+// default, so the city's buildings can stand on the relief as drawn. A link
+// without `reliefNear` lands with the relief at E 1, its drawn ground the
+// synthetic heights themselves (the crest's 1.6-2.2 km, not 4.8-6.6 km).
+test("the default relief is drawn at true heights near the ground", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(600_000);
+  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
+  await context.setGeolocation({ latitude: 46.545, longitude: 9.125 });
+  const errors = await bootGlobe(
+    page,
+    `${BASE.replace("&reliefNear=3", "")}&landKm=5`,
+  );
+  await page.locator("#globe-pin").click();
+  await page.waitForFunction(
+    () => {
+      const st = window.__globeLab.state();
+      return (
+        st.phase === "landed" &&
+        st.pin.phase === "idle" &&
+        st.relief?.groundUnderCameraM !== null &&
+        st.relief.settled
+      );
+    },
+    null,
+    { timeout: RELIEF_SETTLE_MS },
+  );
+  const st = await page.evaluate(() => window.__globeLab.state());
+  console.log(
+    `default relief at a 5 km hold over the crest: E ${st.relief.heightScale}, drawn ground under the camera ${(st.relief.groundUnderCameraM / 1000).toFixed(2)} km`,
+  );
+  expect(errors).toEqual([]);
+  expect(st.relief.heightScale).toBe(1);
+  // The crest's synthetic heights are 1.6-2.2 km; at E 3 they drew 4.8-6.6.
+  expect(st.relief.groundUnderCameraM).toBeLessThan(2_600);
 });

@@ -42,6 +42,7 @@ import {
 import { EARTH_ATMOSPHERE } from './atmosphere-model.js';
 import { glslFloat } from '../../utils/glsl-float.js';
 import { CLOUD_LAYER } from './cloud-layer.js';
+import { CLOUD_HEX, CLOUD_HEX_GLSL } from './cloud-hex.js';
 import { CLOUD_COLUMN_GLSL } from './cloud-column.js';
 import { CLOUD_SUN_GLSL } from './cloud-sun.js';
 
@@ -423,6 +424,9 @@ uniform sampler2D atmCloudTexture;
 uniform float atmCloudCover;
 uniform float atmCloudThreshold;
 uniform vec2 atmCloudOffset;
+// 1: the big-shape octave hex-tiled (hex-tiling plan H1), 0: as before.
+uniform float atmCloudHex;
+const float ATM_CLOUD_MEAN = ${glslFloat(CLOUD_HEX.textureMean)};
 const float ATM_CLOUD_ALTITUDE = ${glslFloat(CLOUD_LAYER.altitudeKm)};
 const float ATM_CLOUD_TILE = ${glslFloat(CLOUD_LAYER.tileKm)};
 const float ATM_CLOUD_OCTAVE2_FREQ = ${glslFloat(CLOUD_LAYER.secondOctaveFrequency)};
@@ -438,6 +442,7 @@ const float ATM_CLOUD_AERIAL_KM = ${glslFloat(CLOUD_LAYER.aerialKm)};
 uniform vec2 atmCloudForward;
 ${CLOUD_COLUMN_GLSL}
 ${CLOUD_SUN_GLSL}
+${CLOUD_HEX_GLSL}
 
 // Twin of cloud-layer.ts cloudDensity: a soft step, 0.5 AT the threshold
 // (the cover's quantile of the combined noise, computed on the CPU).
@@ -450,9 +455,14 @@ float atmCloudHorizonFade(float dirY) {
   return smoothstep(0.0, 1.0, clamp(dirY / 0.12, 0.0, 1.0));
 }
 
-// The combined two-octave noise at a texture coordinate (tiles).
+// The combined two-octave noise at a texture coordinate (tiles); with
+// atmCloudHex the first octave hex-tiled, read with the CONTINUOUS uv's
+// gradients (the cells' offsets jump at their edges).
 float atmCloudNoise(vec2 uv) {
-  return texture2D(atmCloudTexture, uv).r * ATM_CLOUD_OCTAVE1_WEIGHT
+  float first = atmCloudHex > 0.5
+    ? atmCloudHexGrad(atmCloudTexture, uv, dFdx(uv), dFdy(uv), ATM_CLOUD_MEAN)
+    : texture2D(atmCloudTexture, uv).r;
+  return first * ATM_CLOUD_OCTAVE1_WEIGHT
     + texture2D(atmCloudTexture, uv * ATM_CLOUD_OCTAVE2_FREQ + ATM_CLOUD_OCTAVE2_OFFSET).r
       * (1.0 - ATM_CLOUD_OCTAVE1_WEIGHT);
 }
@@ -461,7 +471,10 @@ float atmCloudNoise(vec2 uv) {
 // implicit derivatives are undefined. The second octave's coordinates are
 // OCTAVE2_FREQ times denser, so its level is log2 of that coarser.
 float atmCloudNoiseLod(vec2 uv, float lod) {
-  return textureLod(atmCloudTexture, uv, lod).r * ATM_CLOUD_OCTAVE1_WEIGHT
+  float first = atmCloudHex > 0.5
+    ? atmCloudHexLod(atmCloudTexture, uv, lod, ATM_CLOUD_MEAN)
+    : textureLod(atmCloudTexture, uv, lod).r;
+  return first * ATM_CLOUD_OCTAVE1_WEIGHT
     + textureLod(atmCloudTexture, uv * ATM_CLOUD_OCTAVE2_FREQ + ATM_CLOUD_OCTAVE2_OFFSET,
         lod + log2(ATM_CLOUD_OCTAVE2_FREQ)).r
       * (1.0 - ATM_CLOUD_OCTAVE1_WEIGHT);

@@ -6,7 +6,8 @@
  * that do not exist. The committed pyramid is checked for completeness here
  * too: 2 x 4^z tiles per level, each a 256x256 WebP (round-4 plan
  * 2026-09-28-2105 DEC-GL4-3/10) whose alpha is the water mask where the tile
- * has water (DEC-GL4-6), and the global maps as 2048x1024 WebPs, read by
+ * has water (DEC-GL4-6), and the global maps as WebPs of their stated size
+ * (the clouds at 4096x2048 since round-3 plan 2026-10-08-2345 M1), read by
  * their headers. And the committed total stays inside
  * its budget: nothing else guards it (the repo checks single files only),
  * and each level of the pyramid quadruples the tile count.
@@ -168,13 +169,20 @@ describe("the committed imagery", () => {
     120_000,
   );
 
-  it("has every global map as a 2048x1024 WebP, under the repo's 2 MiB file ceiling", () => {
-    for (const s of GLOBE_SOURCES.filter((u) => u.kind === "equirect")) {
+  // The owner saw the 2048 clouds as pixels at 3,000 km (round-3 plan
+  // 2026-10-08-2345 M1): the clouds are twice as sharp, the night stays.
+  const MAP_SIZE: Record<string, readonly [number, number]> = {
+    "black-marble": [2048, 1024],
+    clouds: [4096, 2048],
+  };
+  it("has every global map as a WebP of its size, under the repo's 2 MiB file ceiling", () => {
+    const maps = GLOBE_SOURCES.filter((u) => u.kind === "equirect");
+    expect(maps.map((m) => m.id).sort()).toEqual(Object.keys(MAP_SIZE).sort());
+    for (const s of maps) {
       const file = onDisk(s.path);
       const info = imageInfo(readFileSync(file));
       expect(info?.type, s.id).toBe("webp");
-      expect(info?.width, s.id).toBe(2048);
-      expect(info?.height, s.id).toBe(1024);
+      expect([info?.width, info?.height], s.id).toEqual(MAP_SIZE[s.id]);
       expect(statSync(file).size, s.id).toBeLessThan(2 * 1024 * 1024);
     }
   });

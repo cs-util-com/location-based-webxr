@@ -15,7 +15,9 @@
   imagery shows dark sea (`src/water-alpha.ts`), lossless: land 255,
   water 0, the colour under the water kept by `exact`; a tile with no
   water has no alpha); `assets/equirect/` night (VIIRS Black Marble 2016,
-  as PNG) and clouds (NASA Visible Earth's `cloud_combined_2048.tif`);
+  as PNG) and clouds (NASA Visible Earth's `cloud_combined_8192.tif`,
+  resampled with Lanczos to 4096x2048 by the job's `resize`: round-3 plan
+  2026-10-08-2345 M1);
   and `assets/PROVENANCE.md` (sources, sizes, licence, the GIBS
   acknowledgement). The downloads are kept in `.fetch-cache/`
   (gitignored), so a re-encode at another quality needs no network.

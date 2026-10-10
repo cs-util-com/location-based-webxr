@@ -23,7 +23,7 @@
  * @see ar-origin.ts.md
  */
 
-import type { LatLng } from "gps-plus-slam-osm";
+import { absoluteDatumFor, type LatLng } from "gps-plus-slam-osm";
 
 /** The framework's coordinate shape. `lon`, where this demo says `lng`. */
 export interface FrameworkLatLong {
@@ -45,37 +45,11 @@ export function toDemoLatLng(origin: FrameworkLatLong): LatLng {
 }
 
 /**
- * The datum AR asks the worker for, given the geoid undulation at the origin.
- *
- * Returns the value `terrain-field.ts` wants as `absoluteDatum`, so the caller
- * never has to remember the sign. `heightAt` computes `surfaceHeight − datum`,
- * so producing an ellipsoidal height from an orthometric DEM means subtracting
- * `−N`, i.e. the datum is the NEGATED undulation.
- *
- * **The sign is the whole content of this function and the reason it exists.**
- * Getting it backwards puts the city ~2N — about 94 m at Cologne — out of
- * place, in the direction that reads as a GPS+SLAM fusion bug rather than as an
- * elevation one, which is a much more expensive place to go looking. That
- * warning is `geoid.ts`'s, and it is why the demo pays for a function instead
- * of writing a minus sign at the call site.
- *
- * ⚠️ **THIS FUNCTION IS HALF OF A HANDSHAKE, and the other half is untested.**
- * Converting the DEM to ellipsoidal is only correct because the frame it has to
- * meet — the fusion's Up axis — is ellipsoidal too, and that is true only
- * because Android/Chrome reports `GeolocationCoordinates.altitude` against the
- * ellipsoid. Nothing in the framework or the library normalises it; see the
- * comment on `altitude:` in `GpsPlusSlamJs_AppFramework/src/sensors/gps.ts`.
- *
- * So if iOS support is ever added and its altitude turns out to be orthometric,
- * this conversion becomes the thing that doubles the error rather than cancels
- * it: the DEM would be raised by N while the GPS side stayed at MSL, putting the
- * city ~2N — about 94 m at Cologne — out of place. That is the SAME magnitude
- * and the same misleading signature as getting the sign below backwards. Fix it
- * at the sensor boundary so this function keeps its single, checkable meaning.
+ * The datum AR asks the worker for (the NEGATED geoid undulation; the sign is
+ * the whole content). It lives with the terrain field in the Osm library now
+ * (globe city plan 2026-10-05-0040 §14 L1), where its full warning is.
  */
-export function absoluteDatumFor(undulationMetres: number): number {
-  return -undulationMetres;
-}
+export { absoluteDatumFor };
 
 /**
  * Whether AR may start yet.

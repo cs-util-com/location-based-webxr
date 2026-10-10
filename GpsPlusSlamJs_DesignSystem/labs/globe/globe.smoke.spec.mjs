@@ -18,6 +18,7 @@ import {
   luminance,
   meanOf,
   median,
+  plainGlobe,
   withPreRound4Look,
 } from "./globe-smoke-helpers.mjs";
 
@@ -264,7 +265,7 @@ test("turns to any target and holds it at the centre", async ({ page }) => {
   // 117-120 s with it on against 51 s off (fresh contexts, both orders,
   // 2026-09-30), against a 120 s settle bound.
   const at = ({ lat, lng }) => `at=${lat},${lng}&spinMs=0&turnMs=300&atmo=0`;
-  await page.goto(`/labs/globe/#${at(targets[0][1])}`);
+  await page.goto(`/labs/globe/#${plainGlobe(at(targets[0][1]))}`);
   await page.waitForFunction(() => window.__globeLab?.ready, null, {
     timeout: 90_000,
   });
@@ -314,7 +315,9 @@ test("without a granted position falls back to Central Park at once; replay runs
   // time, and the tiles stream about one a frame, so a cold settle took
   // 117-120 s with it on against 51 s off (fresh contexts, both orders,
   // 2026-09-30), against a 120 s settle bound.
-  await page.goto(`/labs/globe/#spinMs=${spinMs}&turnMs=300&atmo=0`);
+  await page.goto(
+    `/labs/globe/#${plainGlobe(`spinMs=${spinMs}&turnMs=300&atmo=0`)}`,
+  );
   await page.waitForFunction(() => window.__globeLab?.ready, null, {
     timeout: 90_000,
   });
@@ -389,7 +392,9 @@ test("the real sun: a lit day side, night lights, and a water glint", async ({
   test.setTimeout(300_000);
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(`/labs/globe/#at=0,0&spinMs=0&turnMs=0&${EQUINOX_NOON}`);
+  await page.goto(
+    `/labs/globe/#${plainGlobe(`at=0,0&spinMs=0&turnMs=0&${EQUINOX_NOON}`)}`,
+  );
   await page.waitForFunction(() => window.__globeLab?.ready, null, {
     timeout: 90_000,
   });
@@ -534,7 +539,7 @@ test("no seam at the 180° line", async ({ page }) => {
 test("a global map that fails to load is reported, and the globe still draws", async ({
   page,
 }) => {
-  await page.route("**/globe-assets/equirect/clouds-2048.webp", (route) =>
+  await page.route("**/globe-assets/equirect/clouds-4096.webp", (route) =>
     route.fulfill({ status: 404, body: "" }),
   );
   const pageErrors = [];
@@ -611,8 +616,7 @@ test("every control on the plate writes the hash and applies", async ({
       "twilight",
       "space",
       "starGlow",
-      "handOver",
-      "handOverKm",
+      "landKm",
       "intro",
       "maxKm",
       "milkyWay",
@@ -744,7 +748,7 @@ test.describe("on a DPR-2 screen", () => {
 test.describe("on a phone-width screen", () => {
   test.use({ viewport: { width: 412, height: 915 } });
   test("the status lines sit below the folded plate", async ({ page }) => {
-    await page.route("**/globe-assets/equirect/clouds-2048.webp", (route) =>
+    await page.route("**/globe-assets/equirect/clouds-4096.webp", (route) =>
       route.fulfill({ status: 404, body: "" }),
     );
     await page.goto(FIXED_VIEW);

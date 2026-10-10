@@ -49,6 +49,8 @@ describe("pinnedHash", () => {
       sunSilver: "0",
       cloudShadows: "0",
       godRays: "0",
+      // Hex-tiled clouds (hex-tiling plan H2): off until the phone run.
+      cloudHex: "0",
       waterRough: "0",
       waterSun: "0",
       waterGusts: "0",

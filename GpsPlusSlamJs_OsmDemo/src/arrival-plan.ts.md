@@ -6,8 +6,8 @@
   settings. Pure; no network.
 - Public API:
   - `arrivalPlanFor(target)` -> `{ position, overpassTiles, demUrls }`:
-    - `position`: the target at five decimals, as the globe's hand-over URL
-      writes it and OsmDemo's `parseStartPosition` reads it back (a target
+    - `position`: the target at five decimals, as OsmDemo's URL carries it
+      and its `parseStartPosition` reads it back (a target
       a hair across a cell edge would otherwise plan the neighbouring tile);
     - `overpassTiles`: the res-7 tiles of every scored ring,
       `fetchTilesForScoreWorkingSet(chunk, r)` for each `r` of
@@ -29,7 +29,11 @@
     (`fromWorldPixel`, then `toTilePixel`), per axis: longitude depends only
     on x and latitude only on y, so two passes of about 300-1,000 pixels
     replace the 0.2-1 million lattice posts the field samples.
-  - It assumes the hand-over opens OsmDemo in its default state: the
+  - It assumes OsmDemo opens in its default state (the globe's URL
+    hand-over that opened it was removed, globe city plan 2026-10-05-0040
+    §12.5 C6; the globe's own city reads the same Overpass tiles but
+    loads its heights from one source at z12, which this plan does not
+    warm, a filed finding): the
     desktop terrain window, the default rings. The rule table
     (`rules/v1/table.csv`, TTL-cached, small) is not planned.
 - Examples:
