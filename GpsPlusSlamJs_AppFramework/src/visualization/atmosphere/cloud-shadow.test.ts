@@ -396,9 +396,14 @@ describe('CloudShadow with the live noise (round-3 plan N1)', () => {
         atmCloudLive: { value: 1 },
         atmCloudLattice: { value: lattice as THREE.Texture | null },
         atmCloudLiveBasis: { value: basis },
+        atmCloudLiveAmp: { value: [1, 2, 3, 4, 5, 6, 7] },
       },
     };
     shadow.sync(source);
+    // The amplitudes are the sky's object too (the fine gain, §19 item 2).
+    expect(shadow.uniforms.atmShadowCloudLiveAmp.value).toBe(
+      source.cloudUniforms.atmCloudLiveAmp.value
+    );
     expect(shadow.uniforms.atmShadowCloudLive.value).toBe(1);
     expect(shadow.uniforms.atmShadowCloudLattice.value).toBe(lattice);
     expect(shadow.uniforms.atmShadowCloudLiveBasis.value).toBe(basis);
@@ -418,7 +423,7 @@ describe('CloudShadow with the live noise (round-3 plan N1)', () => {
       'uniform vec4 atmShadowCloudLiveBasis[ATM_LIVE_OCTAVES];'
     );
     expect(fs).toContain(
-      'if (atmShadowCloudLive > 0.5) return atmCloudLiveGrad(atmShadowCloudLattice, atmShadowCloudLiveBasis, uv, atmShadowCloudOffset);'
+      'if (atmShadowCloudLive > 0.5) return atmCloudLiveGrad(atmShadowCloudLattice, atmShadowCloudLiveBasis, atmShadowCloudLiveAmp, uv, atmShadowCloudOffset);'
     );
   });
 

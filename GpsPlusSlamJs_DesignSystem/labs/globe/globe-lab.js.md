@@ -691,7 +691,9 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   (`cloud-live-noise.ts`), anchored to the ground across recentres and
   the drift (`globe-cloud-volume.js` `setNoise`; the state's
   `cloudVolume.noise`). Absent or unknown, `cloudHex` decides (tile by
-  default). `cloudLiveProbe(points, anchors)` (a test hook) renders the
+  default). `cloudFineGain` (0.3-0.85, 0.5 by default; round-3 plan §19
+  item 2) is the live noise's fine gain, more detail at the cloud edges
+  above 0.5 (`setFineGain`; the state's `cloudVolume.fineGain`). `cloudLiveProbe(points, anchors)` (a test hook) renders the
   live noise's shader twin at local points (km, with an optional footprint
   in km as the third number) for each anchor and reads it back beside the
   CPU twin (`globe-cloud-noise.smoke.spec.mjs`). `cloudVolumeRows(bands)`

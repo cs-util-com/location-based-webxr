@@ -51,6 +51,10 @@ sceneDepth })`
     (`atmosphere.configure({ cloudNoise })`, the shadow re-synced);
     idempotent; the state reports it as `noise` (and `hex`). `setHex(on)`
     (hex-tiling plan H2, `cloudHex=1`) is `setNoise` with hex or the tile.
+  - `setFineGain(g)` (round-3 plan §19 item 2, the lab's `cloudFineGain`):
+    the live noise's fine gain (`atmosphere.configure({
+cloudNoiseFineGain })`); idempotent; the shadow shares the amplitudes.
+    The state reports it as `fineGain`.
   - The live noise's anchor: while enabled, `update` carries the frame
     origin's noise-plane position and the frame's rotation across every
     recentre and the unwrapped drift (`carryLive`, the Globe package's

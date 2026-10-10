@@ -29,6 +29,15 @@ readers (`atmosphere-glsl.ts`, `cloud-shadow.ts`) switch to it by a uniform;
   octaves fade (`restoreSpread`, at most `maxSpreadGain` 4), and `fieldMean` 0.38008 and
   `contrast` 1.431, which match the drawn tile field's mean (0.3801) and
   spread (0.1792) so the slab's columns rise as high at the same cover.
+- `fineGain` (0.5): the amplitude ratio from octave 2 on, the fine
+  detail's knob (round-3 plan §19 item 2). The tile is 0.7 fBm + 0.3 fBm at
+  3x, more fine detail than gain 0.5: live's octaves 3-6 carry 1.6 % of
+  the variance at 0.5, 4.6 % at 0.6, 7.5 % at 0.7. The amplitudes keep
+  their root sum of squares, so the spread (0.1797) and the cover's table
+  hold (within 0.0034 at covers 0.1-0.9 for fine gains 0.5-0.7, measured
+  over 200,000 points).
+- `cloudLiveAmplitudes(options?)`: the octaves' amplitudes, the shader's
+  amplitude uniform.
 - `CloudLiveOptions`: every constant above, overridable for the sweeps,
   and `octaveLimit` (octaves read at most; the rest count as faded).
 - `cloudLiveLattice(size?, seed?)`: the lattice bytes, cached per (size,
@@ -59,12 +68,14 @@ readers (`atmosphere-glsl.ts`, `cloud-shadow.ts`) switch to it by a uniform;
 - `createCloudLiveLatticeTexture()`: the default lattice as a repeating,
   linear, mip-less `RedFormat` byte texture (1 MB on the GPU).
 - `CLOUD_LIVE_NOISE_GLSL`: include-guarded (`ATM_CLOUD_LIVE_GLSL`):
-  - `atmCloudLiveNoise(lattice, basis[7], p, footprintKm)`: the field at the
-    local point p (km);
-  - `atmCloudLiveAt(lattice, basis, uv, offset, footprintKm)`: the same from
+  - `atmCloudLiveNoise(lattice, basis[7], amp[7], p, footprintKm)`: the
+    field at the local point p (km), `amp` the amplitudes
+    (`cloudLiveAmplitudes`; a uniform, so the fine gain needs no new
+    program);
+  - `atmCloudLiveAt(lattice, basis, amp, uv, offset, footprintKm)`: the same from
     a reader's noise coordinate (tiles with the offset), p = (uv - offset)
     x 24 km;
-  - `atmCloudLiveGrad(lattice, basis, uv, offset)`: the footprint from the
+  - `atmCloudLiveGrad(lattice, basis, amp, uv, offset)`: the footprint from the
     screen derivatives of uv, for readers outside a loop.
 
 ## Invariants & assumptions

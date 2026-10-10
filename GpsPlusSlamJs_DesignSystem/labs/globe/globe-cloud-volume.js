@@ -419,6 +419,14 @@ export function createGlobeCloudVolume(
       noise = mode;
       shadow.sync(atmosphere);
     },
+    /**
+     * The live noise's fine gain (round-3 plan §19 item 2, the lab's
+     * `cloudFineGain`); idempotent. The shadow shares the amplitudes.
+     */
+    setFineGain(fineGain) {
+      if (fineGain === atmosphere.cloudNoiseFineGain) return;
+      atmosphere.configure({ cloudNoiseFineGain: fineGain });
+    },
     /** `setNoise` as the older switch: hex on, or the tile. */
     setHex(on) {
       this.setNoise(on ? "hex" : "tile");
@@ -498,6 +506,7 @@ export function createGlobeCloudVolume(
         shadow: shadowOn && enabled && radiusM > 0,
         hex: noise === "hex",
         noise,
+        fineGain: atmosphere.cloudNoiseFineGain,
       };
     },
     dispose() {

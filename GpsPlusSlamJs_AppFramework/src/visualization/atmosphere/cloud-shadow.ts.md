@@ -25,8 +25,9 @@ shadows drift with the clouds and fall where the sky draws them.
   uv's gradients, and its map threshold comes from the hex table
   (`configureMap` sets both). The live noise (round-3 plan N1): the
   source's `atmCloudLive` switch and `atmCloudLattice` are copied, its
-  `atmCloudLiveBasis` taken as the OBJECT (so the shadows follow the
-  anchor and its drift with no per-frame call); with the switch the
+  `atmCloudLiveBasis` and `atmCloudLiveAmp` taken as the OBJECTS (so the
+  shadows follow the anchor, its drift and the fine gain with no per-frame
+  call); with the switch the
   shadow reads the live field (`atmCloudLiveGrad`) and its map threshold
   comes from the live table (`configureMap` sets all three). A source
   without them is the tile.

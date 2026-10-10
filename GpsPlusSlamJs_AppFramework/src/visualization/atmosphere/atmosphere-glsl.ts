@@ -453,6 +453,8 @@ ${CLOUD_SUN_GLSL}
 ${CLOUD_HEX_GLSL}
 ${CLOUD_LIVE_NOISE_GLSL}
 uniform vec4 atmCloudLiveBasis[ATM_LIVE_OCTAVES];
+// The octaves' amplitudes (the fine gain's schedule, cloudLiveAmplitudes).
+uniform float atmCloudLiveAmp[ATM_LIVE_OCTAVES];
 
 // The noise switch as the coverage tables read it: 0 the tile, 1 hex, 2 live.
 float atmCloudNoiseMode() {
@@ -474,7 +476,7 @@ float atmCloudHorizonFade(float dirY) {
 // atmCloudHex the first octave hex-tiled, read with the CONTINUOUS uv's
 // gradients (the cells' offsets jump at their edges).
 float atmCloudNoise(vec2 uv) {
-  if (atmCloudLive > 0.5) return atmCloudLiveGrad(atmCloudLattice, atmCloudLiveBasis, uv, atmCloudOffset);
+  if (atmCloudLive > 0.5) return atmCloudLiveGrad(atmCloudLattice, atmCloudLiveBasis, atmCloudLiveAmp, uv, atmCloudOffset);
   float first = atmCloudHex > 0.5
     ? atmCloudHexGrad(atmCloudTexture, uv, dFdx(uv), dFdy(uv), ATM_CLOUD_MEAN)
     : texture2D(atmCloudTexture, uv).r;
@@ -487,7 +489,7 @@ float atmCloudNoise(vec2 uv) {
 // implicit derivatives are undefined. The second octave's coordinates are
 // OCTAVE2_FREQ times denser, so its level is log2 of that coarser.
 float atmCloudNoiseLod(vec2 uv, float lod) {
-  if (atmCloudLive > 0.5) return atmCloudLiveAt(atmCloudLattice, atmCloudLiveBasis, uv, atmCloudOffset, lod > 0.0 ? exp2(lod) * ATM_CLOUD_TEXEL_KM : 0.0);
+  if (atmCloudLive > 0.5) return atmCloudLiveAt(atmCloudLattice, atmCloudLiveBasis, atmCloudLiveAmp, uv, atmCloudOffset, lod > 0.0 ? exp2(lod) * ATM_CLOUD_TEXEL_KM : 0.0);
   float first = atmCloudHex > 0.5
     ? atmCloudHexLod(atmCloudTexture, uv, lod, ATM_CLOUD_MEAN)
     : textureLod(atmCloudTexture, uv, lod).r;
@@ -501,7 +503,7 @@ float atmCloudNoiseLod(vec2 uv, float lod) {
 // live noise fades its octaves by it; the tile takes it as a level of
 // detail of its texels, never below its finest (twin of cloudSlabLod).
 float atmCloudNoiseFootprint(vec2 uv, float footprintKm) {
-  if (atmCloudLive > 0.5) return atmCloudLiveAt(atmCloudLattice, atmCloudLiveBasis, uv, atmCloudOffset, footprintKm);
+  if (atmCloudLive > 0.5) return atmCloudLiveAt(atmCloudLattice, atmCloudLiveBasis, atmCloudLiveAmp, uv, atmCloudOffset, footprintKm);
   return atmCloudNoiseLod(uv, footprintKm > 0.0 ? max(0.0, log2(footprintKm / ATM_CLOUD_TEXEL_KM)) : 0.0);
 }
 

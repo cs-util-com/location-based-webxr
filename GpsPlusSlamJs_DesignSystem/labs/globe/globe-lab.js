@@ -26,6 +26,7 @@ import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
 import {
   CLOUD_LIVE_NOISE_GLSL,
   CLOUD_NOISE_MODES,
+  cloudLiveAmplitudes,
   cloudLiveBasis,
   cloudLiveSample,
   createCloudLiveLatticeTexture,
@@ -558,6 +559,10 @@ const PARAMS = {
   // plan 2026-10-07-0919, H2): 0 off (the default until the owner's phone
   // run), 1 on. The text key `cloudNoise` (`readHashParams`) wins over it.
   cloudHex: { fallback: 0, min: 0, max: 1 },
+  // The live noise's fine gain (round-3 plan §19 item 2): the amplitude
+  // ratio from octave 2 on, 0.5 today's look, higher more detail at the
+  // cloud edges (the tile's detail read is about 0.65-0.7's share).
+  cloudFineGain: { fallback: 0.5, min: 0.3, max: 0.85 },
   // The flat cloud layer's fade with altitude (round-2 plan 2026-10-07-2350
   // DEC-FR2-5, `/globe/globe-cloud-flat-fade.js`): 1 on, 0 the look before;
   // full from `cloudFlatTopKm` up, weakening to `cloudFlatWeak` by 100 km,
@@ -2991,6 +2996,7 @@ async function start() {
       cloudVolume.setEnabled(params.cloudVolume > 0);
       cloudVolume.setShadow(params.cloudShadowFrom === 1);
       cloudVolume.setNoise(params.cloudNoise);
+      cloudVolume.setFineGain(params.cloudFineGain);
       const volume = cloudVolume.update({
         altitudeKm: Math.max(0, observerKm),
         target: worldFrame.target,
@@ -3556,6 +3562,7 @@ async function start() {
           uInput: { value: inputTexture },
           uLattice: { value: lattice },
           uBasis: basis,
+          uAmp: { value: cloudLiveAmplitudes() },
         },
         vertexShader:
           "void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }",
@@ -3563,9 +3570,10 @@ async function start() {
 uniform sampler2D uInput;
 uniform sampler2D uLattice;
 uniform vec4 uBasis[ATM_LIVE_OCTAVES];
+uniform float uAmp[ATM_LIVE_OCTAVES];
 void main() {
   vec3 p = texelFetch(uInput, ivec2(gl_FragCoord.xy), 0).xyz;
-  gl_FragColor = vec4(atmCloudLiveNoise(uLattice, uBasis, p.xy, p.z), 0.0, 0.0, 1.0);
+  gl_FragColor = vec4(atmCloudLiveNoise(uLattice, uBasis, uAmp, p.xy, p.z), 0.0, 0.0, 1.0);
 }`,
       });
       const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);

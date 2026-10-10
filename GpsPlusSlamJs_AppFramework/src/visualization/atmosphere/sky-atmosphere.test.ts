@@ -29,6 +29,7 @@ import {
 } from './cloud-layer.js';
 import {
   type CloudNoiseMode,
+  cloudLiveAmplitudes,
   cloudLiveBasis,
   cloudLiveSample,
   liveCloudThreshold,
@@ -1763,5 +1764,54 @@ describe('SkyAtmosphere live noise (round-3 plan N1)', () => {
     lattice.addEventListener('dispose', () => (disposed += 1));
     atmosphere.dispose();
     expect(disposed).toBe(1);
+  });
+});
+
+describe('SkyAtmosphere live noise fine gain (round-3 plan §19 item 2)', () => {
+  // WHY: the fine detail's knob must reach every reader at once (the
+  // amplitudes are one uniform object, written in place, no new program)
+  // and the CPU twins must read the same field.
+  it('writes the amplitudes in place and the CPU twin follows', () => {
+    const { atmosphere } = setup();
+    const sun = { x: 0.3, y: 0.8, z: -0.52 };
+    atmosphere.configure({
+      sunDirection: sun,
+      cloudCover: 0.6,
+      cloudNoise: 'live',
+    });
+    const amp = atmosphere.cloudUniforms.atmCloudLiveAmp;
+    const array = amp.value;
+    expect(array).toEqual(cloudLiveAmplitudes());
+    expect(atmosphere.cloudNoiseFineGain).toBe(0.5);
+    atmosphere.configure({ cloudNoiseFineGain: 0.7 });
+    expect(amp.value).toBe(array);
+    expect(amp.value).toEqual(cloudLiveAmplitudes({ fineGain: 0.7 }));
+    expect(atmosphere.cloudNoiseFineGain).toBe(0.7);
+    const l = Math.hypot(sun.x, sun.y, sun.z);
+    const dir: [number, number, number] = [sun.x / l, sun.y / l, sun.z / l];
+    const u = atmosphere.cloudUniforms;
+    const options = { fineGain: 0.7 };
+    const basis = cloudLiveBasis(atmosphere.cloudNoiseAnchor, options);
+    const offset = u.atmCloudOffset.value;
+    const p: [number, number, number] = [4000, 0, -2500];
+    const expected = cloudColumnTransmittanceToward(
+      p,
+      dir,
+      u.atmCloudThreshold.value,
+      (a, b) =>
+        cloudLiveSample(
+          basis,
+          (a - offset.x) * CLOUD_LAYER.tileKm,
+          (b - offset.y) * CLOUD_LAYER.tileKm,
+          0,
+          options
+        ),
+      [offset.x, offset.y]
+    );
+    expect(atmosphere.cloudShadowToward(p)).toBeCloseTo(expected, 9);
+    expect(() => atmosphere.configure({ cloudNoiseFineGain: 1 })).toThrow(
+      RangeError
+    );
+    expect(atmosphere.cloudNoiseFineGain).toBe(0.7);
   });
 });

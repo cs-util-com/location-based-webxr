@@ -314,6 +314,16 @@ export function cloudLiveOctaves(
   return out;
 }
 
+/**
+ * The octaves' amplitudes for `options` (the shader's amplitude uniform):
+ * `cloudLiveOctaves`'s, in order. The fine gain moves variance between the
+ * octaves but keeps their root sum of squares, so the field's spread, the
+ * spread the fade keeps, and the cover's table hold at every fine gain.
+ */
+export function cloudLiveAmplitudes(options: CloudLiveOptions = {}): number[] {
+  return cloudLiveOctaves(options).map((o) => o.amplitude);
+}
+
 /** x reduced into [0, size), never `size` itself from a rounding. */
 function reduce(x: number, size: number): number {
   const r = x - size * Math.floor(x / size);
@@ -600,16 +610,16 @@ const glslArray = (values: readonly number[]) =>
  * The shader twin of `cloudLiveSample` (GLSL ES 3.00), self-contained and
  * include-guarded, so every cloud reader (the sky, the sheet, the slab, the
  * shadow's patch) takes the same one:
- * - `atmCloudLiveNoise(lattice, basis, p, footprintKm)`: the field at the
+ * - `atmCloudLiveNoise(lattice, basis, amp, p, footprintKm)`: the field at the
  *   local point p (km), one lattice read an octave at level 0 through the
  *   smooth remap (the hardware's bilinear read at i + fade(f) + 0.5), each
  *   octave faded to its mean by the footprint, the loop ending at the first
  *   faded octave (they only get finer).
- * - `atmCloudLiveAt(lattice, basis, uv, offset, footprintKm)`: the same from
+ * - `atmCloudLiveAt(lattice, basis, amp, uv, offset, footprintKm)`: the same from
  *   a reader's noise coordinate (tiles, `atmCloudOffset` included), which is
  *   how every reader already addresses the tile: the local point is
  *   (uv - offset) x the tile.
- * - `atmCloudLiveGrad(lattice, basis, uv, offset)`: the footprint from the
+ * - `atmCloudLiveGrad(lattice, basis, amp, uv, offset)`: the footprint from the
  *   coordinate's screen derivatives, for readers outside a loop.
  */
 export const CLOUD_LIVE_NOISE_GLSL = /* glsl */ `
@@ -623,14 +633,13 @@ const float ATM_LIVE_FIELD_MEAN = ${glslFloat(CLOUD_LIVE_NOISE.fieldMean)};
 const float ATM_LIVE_AA_START = ${glslFloat(CLOUD_LIVE_NOISE.aaStartRatio)};
 const float ATM_LIVE_AA_END = ${glslFloat(CLOUD_LIVE_NOISE.aaEndRatio)};
 const float ATM_LIVE_CELL[ATM_LIVE_OCTAVES] = ${glslArray(DEFAULT_OCTAVES.map((o) => o.cellKm))};
-const float ATM_LIVE_AMP[ATM_LIVE_OCTAVES] = ${glslArray(DEFAULT_OCTAVES.map((o) => o.amplitude))};
 // The amplitudes' sum of squares (the spread at footprint 0, squared) and
 // the cap on the spread kept (CLOUD_LIVE_NOISE.restoreSpread).
 const float ATM_LIVE_SPREAD0 = ${glslFloat(DEFAULT_OCTAVES.reduce((t, o) => t + o.amplitude * o.amplitude, 0))};
 const float ATM_LIVE_MAX_GAIN = ${glslFloat(CLOUD_LIVE_NOISE.maxSpreadGain)};
 
 // Twin of cloud-live-noise.ts cloudLiveSample.
-float atmCloudLiveNoise(sampler2D lattice, vec4 basis[ATM_LIVE_OCTAVES], vec2 p, float footprint) {
+float atmCloudLiveNoise(sampler2D lattice, vec4 basis[ATM_LIVE_OCTAVES], float amp[ATM_LIVE_OCTAVES], vec2 p, float footprint) {
   float sum = 0.0;
   float spread = 0.0;
   for (int k = 0; k < ATM_LIVE_OCTAVES; k++) {
@@ -642,21 +651,21 @@ float atmCloudLiveNoise(sampler2D lattice, vec4 basis[ATM_LIVE_OCTAVES], vec2 p,
     vec2 f = q - i;
     f = f * f * (3.0 - 2.0 * f);
     float v = textureLod(lattice, (i + f + 0.5) / ATM_LIVE_SIZE, 0.0).r;
-    sum += ATM_LIVE_AMP[k] * w * (v - ATM_LIVE_LATTICE_MEAN);
-    spread += ATM_LIVE_AMP[k] * w * ATM_LIVE_AMP[k] * w;
+    sum += amp[k] * w * (v - ATM_LIVE_LATTICE_MEAN);
+    spread += amp[k] * w * amp[k] * w;
   }
   // The spread kept as octaves fade, so the cover drawn holds.
   if (spread > 0.0) sum *= min(sqrt(ATM_LIVE_SPREAD0 / spread), ATM_LIVE_MAX_GAIN);
   return ATM_LIVE_FIELD_MEAN + sum;
 }
 
-float atmCloudLiveAt(sampler2D lattice, vec4 basis[ATM_LIVE_OCTAVES], vec2 uv, vec2 offset, float footprint) {
-  return atmCloudLiveNoise(lattice, basis, (uv - offset) * ATM_LIVE_TILE_KM, footprint);
+float atmCloudLiveAt(sampler2D lattice, vec4 basis[ATM_LIVE_OCTAVES], float amp[ATM_LIVE_OCTAVES], vec2 uv, vec2 offset, float footprint) {
+  return atmCloudLiveNoise(lattice, basis, amp, (uv - offset) * ATM_LIVE_TILE_KM, footprint);
 }
 
-float atmCloudLiveGrad(sampler2D lattice, vec4 basis[ATM_LIVE_OCTAVES], vec2 uv, vec2 offset) {
+float atmCloudLiveGrad(sampler2D lattice, vec4 basis[ATM_LIVE_OCTAVES], float amp[ATM_LIVE_OCTAVES], vec2 uv, vec2 offset) {
   float footprint = max(length(dFdx(uv)), length(dFdy(uv))) * ATM_LIVE_TILE_KM;
-  return atmCloudLiveAt(lattice, basis, uv, offset, footprint);
+  return atmCloudLiveAt(lattice, basis, amp, uv, offset, footprint);
 }
 #endif
 `;

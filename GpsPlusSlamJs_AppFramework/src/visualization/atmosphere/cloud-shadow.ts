@@ -40,7 +40,11 @@ import * as THREE from 'three';
 
 import { CLOUD_LAYER } from './cloud-layer.js';
 import { CLOUD_HEX, CLOUD_HEX_GLSL } from './cloud-hex.js';
-import { CLOUD_LIVE_NOISE, CLOUD_LIVE_NOISE_GLSL } from './cloud-live-noise.js';
+import {
+  CLOUD_LIVE_NOISE,
+  CLOUD_LIVE_NOISE_GLSL,
+  cloudLiveAmplitudes,
+} from './cloud-live-noise.js';
 import {
   writeCloudDiscCentre,
   type CloudDiscCentre,
@@ -94,6 +98,7 @@ ${CLOUD_COVERAGE_GLSL}
 ${CLOUD_HEX_GLSL}
 ${CLOUD_LIVE_NOISE_GLSL}
 uniform vec4 atmShadowCloudLiveBasis[ATM_LIVE_OCTAVES];
+uniform float atmShadowCloudLiveAmp[ATM_LIVE_OCTAVES];
 const float ATM_SHADOW_OCTAVE2_FREQ = ${glslFloat(CLOUD_LAYER.secondOctaveFrequency)};
 const float ATM_SHADOW_OCTAVE2_OFFSET = ${glslFloat(CLOUD_LAYER.secondOctaveOffset)};
 const float ATM_SHADOW_OCTAVE1_WEIGHT = ${glslFloat(CLOUD_LAYER.firstOctaveWeight)};
@@ -103,7 +108,7 @@ const float ATM_SHADOW_CLOUD_MEAN = ${glslFloat(CLOUD_HEX.textureMean)};
 // with the sky's live switch, else the two octaves, the first hex-tiled
 // with its hex switch.
 float atmShadowCloudNoise(vec2 uv) {
-  if (atmShadowCloudLive > 0.5) return atmCloudLiveGrad(atmShadowCloudLattice, atmShadowCloudLiveBasis, uv, atmShadowCloudOffset);
+  if (atmShadowCloudLive > 0.5) return atmCloudLiveGrad(atmShadowCloudLattice, atmShadowCloudLiveBasis, atmShadowCloudLiveAmp, uv, atmShadowCloudOffset);
   float first = atmShadowCloudHex > 0.5
     ? atmCloudHexGrad(atmShadowCloudTexture, uv, dFdx(uv), dFdy(uv), ATM_SHADOW_CLOUD_MEAN)
     : texture2D(atmShadowCloudTexture, uv).r;
@@ -157,6 +162,7 @@ export interface CloudShadowUniforms {
   atmShadowCloudLive: THREE.IUniform<number>;
   atmShadowCloudLattice: THREE.IUniform<THREE.Texture | null>;
   atmShadowCloudLiveBasis: THREE.IUniform<THREE.Vector4[]>;
+  atmShadowCloudLiveAmp: THREE.IUniform<number[]>;
 }
 
 /** What the patch reads from an atmosphere (`SkyAtmosphere` satisfies it). */
@@ -171,6 +177,7 @@ export interface CloudShadowSource {
     readonly atmCloudLive?: THREE.IUniform<number>;
     readonly atmCloudLattice?: THREE.IUniform<THREE.Texture | null>;
     readonly atmCloudLiveBasis?: THREE.IUniform<THREE.Vector4[]>;
+    readonly atmCloudLiveAmp?: THREE.IUniform<number[]>;
   };
 }
 
@@ -205,6 +212,7 @@ export class CloudShadow {
         () => new THREE.Vector4()
       ),
     },
+    atmShadowCloudLiveAmp: { value: cloudLiveAmplitudes() },
     atmShadowLiftM: { value: 0 },
     atmShadowCover: { value: 1 },
     ...cloudCoverageUniforms(),
@@ -233,6 +241,9 @@ export class CloudShadow {
     if (clouds.atmCloudLiveBasis !== undefined) {
       this.uniforms.atmShadowCloudLiveBasis.value =
         clouds.atmCloudLiveBasis.value;
+    }
+    if (clouds.atmCloudLiveAmp !== undefined) {
+      this.uniforms.atmShadowCloudLiveAmp.value = clouds.atmCloudLiveAmp.value;
     }
   }
 

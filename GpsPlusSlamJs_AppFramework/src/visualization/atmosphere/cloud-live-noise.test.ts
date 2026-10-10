@@ -17,6 +17,7 @@ import {
   CLOUD_LIVE_COVER_THRESHOLDS,
   CLOUD_LIVE_NOISE,
   CLOUD_LIVE_NOISE_GLSL,
+  cloudLiveAmplitudes,
   cloudLiveBasis,
   cloudLiveCoverThresholds,
   cloudLiveLattice,
@@ -143,6 +144,59 @@ describe('cloudLiveOctaves', () => {
       cloudLiveOctaves({ lacunarities: [1, 2, 2, 2, 2, 2, 2] })
     ).toThrow(RangeError);
     expect(() => cloudLiveOctaves({ lacunarities: [2] })).toThrow(RangeError);
+  });
+});
+
+// WHY (the N1 milestone review, round-3 plan §19 item 2): the tile is
+// 0.7 fBm + 0.3 fBm at three times the frequency, so it carries more fine
+// detail than live's gain-0.5 octaves (octaves 3-6: 1.6 % of the variance).
+// The fine gain (the amplitude ratio from octave 2 on) is the knob; the
+// spread is kept, so the cover's table still holds and the slab's columns
+// rise as high.
+describe('the fine gain', () => {
+  it('is today’s schedule at its default, and shifts the variance to the fine octaves', () => {
+    expect(cloudLiveAmplitudes()).toEqual(
+      cloudLiveOctaves().map((o) => o.amplitude)
+    );
+    const share = (fineGain: number) => {
+      const a = cloudLiveAmplitudes({ fineGain });
+      const total = a.reduce((t, x) => t + x * x, 0);
+      return a.slice(3).reduce((t, x) => t + x * x, 0) / total;
+    };
+    expect(share(0.5)).toBeCloseTo(0.0159, 3);
+    expect(share(0.7)).toBeGreaterThan(0.07);
+  });
+
+  it('keeps the amplitudes’ root sum of squares, so the spread and the cover hold', () => {
+    const rss = (a: number[]) => Math.sqrt(a.reduce((t, x) => t + x * x, 0));
+    for (const fineGain of [0.4, 0.6, 0.7, 0.8]) {
+      expect(rss(cloudLiveAmplitudes({ fineGain }))).toBeCloseTo(
+        rss(cloudLiveAmplitudes()),
+        12
+      );
+    }
+    // The default table on a field with fine gain 0.7 (measured
+    // 2026-10-09: within 0.0034 at covers 0.1-0.9 over 200,000 points).
+    const options = { fineGain: 0.7 };
+    const basis = cloudLiveBasis(
+      { originKm: [777, -333], rotationRad: 0.9 },
+      options
+    );
+    const next = random(31);
+    const n = 60_000;
+    const values = Array.from({ length: n }, () =>
+      cloudLiveSample(basis, next() * 20_000, next() * 20_000, 0, options)
+    );
+    for (const cover of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+      const t = liveCloudThreshold(cover);
+      const drawn = values.filter((v) => v > t).length / n;
+      expect(Math.abs(drawn - cover)).toBeLessThan(0.01);
+    }
+  });
+
+  it('refuses a fine gain outside (0, 1)', () => {
+    expect(() => cloudLiveAmplitudes({ fineGain: 0 })).toThrow(RangeError);
+    expect(() => cloudLiveAmplitudes({ fineGain: 1 })).toThrow(RangeError);
   });
 });
 
@@ -462,19 +516,21 @@ describe('CLOUD_LIVE_NOISE_GLSL', () => {
   it('is include-guarded and defines the twin’s three entry points', () => {
     expect(glsl).toContain('#ifndef ATM_CLOUD_LIVE_GLSL');
     expect(glsl).toMatch(
-      /float atmCloudLiveNoise\(sampler2D \w+, vec4 \w+\[ATM_LIVE_OCTAVES\], vec2 \w+, float \w+\)/
+      /float atmCloudLiveNoise\(sampler2D \w+, vec4 \w+\[ATM_LIVE_OCTAVES\], float \w+\[ATM_LIVE_OCTAVES\], vec2 \w+, float \w+\)/
     );
     expect(glsl).toMatch(/float atmCloudLiveAt\(/);
     expect(glsl).toMatch(/float atmCloudLiveGrad\(/);
   });
 
-  it('carries every octave’s cell and amplitude from the TS constants', () => {
+  it('carries every octave’s cell from the TS constants, its amplitudes as a parameter', () => {
     const octaves = cloudLiveOctaves();
     expect(glsl).toContain(`const int ATM_LIVE_OCTAVES = ${octaves.length};`);
     for (const o of octaves) {
       expect(glsl).toContain(o.cellKm.toPrecision(9));
-      expect(glsl).toContain(o.amplitude.toPrecision(9));
     }
+    // The fine gain is a uniform (cloudLiveAmplitudes), not a constant.
+    expect(glsl).toContain('float amp[ATM_LIVE_OCTAVES]');
+    expect(glsl).not.toContain(octaves[3]!.amplitude.toPrecision(9));
     expect(glsl).toContain(CLOUD_LIVE_NOISE.latticeMean.toPrecision(9));
     expect(glsl).toContain(CLOUD_LIVE_NOISE.fieldMean.toPrecision(9));
   });

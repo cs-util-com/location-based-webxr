@@ -33,8 +33,9 @@ fragment shaders, and the visible sky's vertex/fragment pair.
   With the uniform `atmCloudLive` at 1 (round-3 plan N1; it wins over
   `atmCloudHex`) every read returns early with the live per-octave noise
   (`CLOUD_LIVE_NOISE_GLSL`, included here, `cloud-live-noise.ts`): from
-  the lattice `atmCloudLattice` and the per-octave basis
-  `atmCloudLiveBasis[7]` (the anchoring), at the local point
+  the lattice `atmCloudLattice`, the per-octave basis
+  `atmCloudLiveBasis[7]` (the anchoring) and the amplitudes
+  `atmCloudLiveAmp[7]` (the fine gain), at the local point
   (uv - `atmCloudOffset`) x the tile. Its footprint: from the uv's screen
   derivatives in `atmCloudNoise`; exp2(lod) texels in `atmCloudNoiseLod`
   (0 at lod 0); given in `atmCloudNoiseFootprint(uv, footprintKm)`, the

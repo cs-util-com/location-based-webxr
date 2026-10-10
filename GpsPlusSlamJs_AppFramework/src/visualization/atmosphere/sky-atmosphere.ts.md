@@ -137,6 +137,11 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   moves the offset (the wind along x, 0.35 of it along z, turned by the
   rotation). RangeError for a non-finite anchor. The tile and hex modes
   ignore it.
+- `configure({ cloudNoiseFineGain })` and the `cloudNoiseFineGain`
+  getter (round-3 plan §19 item 2): the live noise's amplitude ratio from
+  octave 2 on, in (0, 1), 0.5 by default; the amplitudes written in place
+  into `atmCloudLiveAmp` (no new program), the CPU twins following, the
+  bake too in live mode. RangeError outside (0, 1).
 - `applySunLight(light)` — colour (chroma) and intensity
   (`sunIntensity × exposure × model intensity`).
 - `horizonColour()` — the sky at the drawn horizon (dir.y =

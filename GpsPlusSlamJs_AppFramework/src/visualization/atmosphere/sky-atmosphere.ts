@@ -56,8 +56,10 @@ import { CLOUD_NOISE_PERIOD_TILES, hexCloudThreshold } from './cloud-hex.js';
 import {
   CLOUD_LIVE_NOISE,
   CLOUD_NOISE_MODES,
+  type CloudLiveOptions,
   type CloudNoiseAnchor,
   type CloudNoiseMode,
+  cloudLiveAmplitudes,
   cloudLiveBasis,
   cloudLiveSample,
   createCloudLiveLatticeTexture,
@@ -334,6 +336,8 @@ export class SkyAtmosphere {
   private horizon: Rgb = [0, 0, 0];
   /** The live noise's anchor (`setCloudNoiseAnchor`), float64. */
   private noiseAnchor: CloudNoiseAnchor = { originKm: [0, 0], rotationRad: 0 };
+  /** The live noise's options for the CPU twins (the fine gain). */
+  private liveOptions: CloudLiveOptions = {};
   /** The noise threshold for the cover; 2 (above any noise) = clear. */
   private readonly threshold = { value: 2 };
   /** The cloud layer's uniforms, shared by the sky, the bake and the meshes. */
@@ -354,6 +358,8 @@ export class SkyAtmosphere {
     atmCloudLiveBasis: {
       value: liveBasisVectors({ originKm: [0, 0], rotationRad: 0 }),
     },
+    /** The octaves' amplitudes (`configure({ cloudNoiseFineGain })`). */
+    atmCloudLiveAmp: { value: cloudLiveAmplitudes() },
     /** The disc's view of the clouds: the real threshold in every mode. */
     atmCloudSunThreshold: this.threshold,
     atmCloudFarFadeM: {
@@ -565,6 +571,7 @@ export class SkyAtmosphere {
     readonly atmCloudLive: THREE.IUniform<number>;
     readonly atmCloudLattice: THREE.IUniform<THREE.Texture | null>;
     readonly atmCloudLiveBasis: THREE.IUniform<THREE.Vector4[]>;
+    readonly atmCloudLiveAmp: THREE.IUniform<number[]>;
     readonly atmCloudAnchored: THREE.IUniform<number>;
     readonly atmCloudFarFadeM: THREE.IUniform<THREE.Vector2>;
   } {
@@ -659,10 +666,17 @@ export class SkyAtmosphere {
   private cloudSampler(): (u: number, v: number) => number {
     const offset = this.clouds.atmCloudOffset.value;
     if (this.clouds.atmCloudLive.value === 1) {
-      const basis = cloudLiveBasis(this.noiseAnchor);
+      const options = this.liveOptions;
+      const basis = cloudLiveBasis(this.noiseAnchor, options);
       const tile = CLOUD_LAYER.tileKm;
       return (u, v) =>
-        cloudLiveSample(basis, (u - offset.x) * tile, (v - offset.y) * tile);
+        cloudLiveSample(
+          basis,
+          (u - offset.x) * tile,
+          (v - offset.y) * tile,
+          0,
+          options
+        );
     }
     const image = this.clouds.atmCloudTexture.value.image as {
       data: Uint8Array;
@@ -670,6 +684,11 @@ export class SkyAtmosphere {
     };
     const hex = this.clouds.atmCloudHex.value === 1;
     return (u, v) => cloudNoiseSample(image.data, image.width, u, v, { hex });
+  }
+
+  /** The live noise's fine gain (`configure({ cloudNoiseFineGain })`). */
+  get cloudNoiseFineGain(): number {
+    return this.liveOptions.fineGain ?? CLOUD_LIVE_NOISE.fineGain;
   }
 
   /** Which noise the clouds read (`configure({ cloudNoise })`). */
@@ -851,6 +870,13 @@ export class SkyAtmosphere {
      * over `cloudHex`, which means 'hex' (true) or 'tile' (false).
      */
     cloudNoise?: CloudNoiseMode;
+    /**
+     * The live noise's fine gain (round-3 plan §19 item 2): the amplitude
+     * ratio from octave 2 on, in (0, 1), 0.5 by default (today's look);
+     * higher draws more fine detail at the cloud edges, the spread and the
+     * cover kept. A uniform; the bake follows in live mode.
+     */
+    cloudNoiseFineGain?: number;
   }): void {
     // Validate everything before changing anything.
     const sunFx = this.changedSunThroughClouds(change.sunThroughClouds);
@@ -860,8 +886,9 @@ export class SkyAtmosphere {
     const sun = this.movedSun(change.sunDirection);
     const cover = this.changedCover(change.cloudCover);
     const noise = this.changedNoise(change.cloudNoise, change.cloudHex);
+    const fineGain = this.changedFineGain(change.cloudNoiseFineGain);
     const firstSun = this.sun === undefined && sun !== undefined;
-    const cloudsRebake = this.applyCloudLook(cover, sunFx, noise);
+    const cloudsRebake = this.applyCloudLook(cover, sunFx, noise, fineGain);
     this.applySlabSteps(steps);
     this.applyMode(mode);
     if (mie !== undefined) {
@@ -887,15 +914,17 @@ export class SkyAtmosphere {
   }
 
   /**
-   * Applies a validated cover, sun-through-clouds and noise change
-   * (undefined: none); returns whether the bake must follow (a new cover or
-   * a new switch).
+   * Applies a validated cover, sun-through-clouds, noise and fine gain
+   * change (undefined: none); returns whether the bake must follow (a new
+   * cover or a new switch, or a new fine gain in live mode).
    */
   private applyCloudLook(
     cover: number | undefined,
     sunFx: SunThroughClouds | undefined,
-    noise: CloudNoiseMode | undefined
+    noise: CloudNoiseMode | undefined,
+    fineGain: number | undefined
   ): boolean {
+    const fineRebake = this.applyFineGain(fineGain);
     if (noise !== undefined) this.applyNoise(noise);
     if (cover !== undefined || noise !== undefined) {
       this.applyCover(cover ?? this.clouds.atmCloudCover.value);
@@ -904,7 +933,30 @@ export class SkyAtmosphere {
       this.clouds.atmCloudDiscExponent.value = sunFx.discExponent;
       this.clouds.atmCloudForward.value.set(sunFx.aureole, sunFx.silverLining);
     }
-    return cover !== undefined || noise !== undefined;
+    return cover !== undefined || noise !== undefined || fineRebake;
+  }
+
+  /** The new fine gain, or undefined if unchanged. Validates. */
+  private changedFineGain(fineGain: number | undefined): number | undefined {
+    if (fineGain === undefined) return undefined;
+    if (!(fineGain > 0 && fineGain < 1)) {
+      throw new RangeError(
+        `cloudNoiseFineGain must be in (0, 1), got ${fineGain}`
+      );
+    }
+    return fineGain === this.cloudNoiseFineGain ? undefined : fineGain;
+  }
+
+  /**
+   * The amplitudes for `fineGain`, written in place (every material and
+   * shadow holds the array); whether the bake must follow (in live mode).
+   */
+  private applyFineGain(fineGain: number | undefined): boolean {
+    if (fineGain === undefined) return false;
+    this.liveOptions = { fineGain };
+    const amp = this.clouds.atmCloudLiveAmp.value;
+    cloudLiveAmplitudes(this.liveOptions).forEach((a, k) => (amp[k] = a));
+    return this.cloudNoise === 'live';
   }
 
   /** The switches for `noise`; the lattice made at the first switch to live. */

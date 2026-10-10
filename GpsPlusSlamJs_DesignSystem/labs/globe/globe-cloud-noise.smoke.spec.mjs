@@ -248,3 +248,59 @@ test("the drawn cover by distance from the 5 km hold, tile against live", async 
     0.25 * mean(near(rows.live), "meanAlpha"),
   );
 });
+
+// WHY (the N1 milestone review, round-3 plan §19 item 2): the tile is
+// 0.7 fBm + 0.3 fBm at three times the frequency, so its cloud edges carry
+// more fine detail than live's gain-0.5 octaves. The fine gain is the knob;
+// these shots are the owner's to judge: the tile, live, and live with the
+// fine gain at 0.65, at 12 km toward the horizon and from the 5 km hold
+// looking down at the edges. Written when `N1_SHOTS_DIR` names a folder.
+test("cloud edges: tile, live and live with more fine detail, for the owner's eye", async ({
+  page,
+}) => {
+  test.setTimeout(1_800_000);
+  const dir = process.env.N1_SHOTS_DIR ?? null;
+  const errors = await bootGlobe(page, `${BASE}&${view(12)}&cloudNoise=tile`, {
+    phase: "user",
+  });
+  const settings = [
+    ["tile", "cloudNoise=tile"],
+    ["live", "cloudNoise=live"],
+    ["live-fine065", "cloudNoise=live&cloudFineGain=0.65"],
+  ];
+  const states = {};
+  for (const [pose, label] of [
+    [view(12), "12km"],
+    [`view=${PLACE},5,0,-25`, "5km-down"],
+  ]) {
+    for (const [name, hash] of settings) {
+      await applyHash(page, `${BASE}&${pose}&${hash}`);
+      await page
+        .waitForFunction(
+          () => {
+            const s = window.__globeLab.state();
+            return s.mapsLoaded === s.mapsTotal && s.pendingTiles === 0;
+          },
+          null,
+          { timeout: 180_000 },
+        )
+        .catch(() => console.log(`${label} ${name}: imagery still loading`));
+      await page.evaluate(() => window.__globeLab.timeFrames(3));
+      states[`${label}-${name}`] = await page.evaluate(
+        () => window.__globeLab.state().cloudVolume,
+      );
+      if (dir) {
+        await page.screenshot({ path: `${dir}/n1-edges-${label}-${name}.png` });
+      }
+    }
+  }
+  console.log(
+    `edge shots ${dir ? `written to ${dir}` : "not written"}: ${Object.entries(
+      states,
+    )
+      .map(([k, v]) => `${k} ${v.noise} fine ${v.fineGain}`)
+      .join("; ")}`,
+  );
+  expect(errors).toEqual([]);
+  expect(states["12km-live-fine065"].fineGain).toBe(0.65);
+});
