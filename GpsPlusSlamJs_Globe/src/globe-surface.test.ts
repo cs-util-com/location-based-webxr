@@ -400,7 +400,8 @@ describe("createGlobeSurface", () => {
     camera.position.set(30_000_000, 0, 0);
     const renderer = {
       getDrawingBufferSize: (v: THREE.Vector2) => v.set(2, 2),
-      capabilities: { maxTextureSize: 16384 },
+      // Too small for the full map: nothing more will come for the clouds.
+      capabilities: { maxTextureSize: 1024 },
     } as unknown as THREE.WebGLRenderer;
     vi.spyOn(globe.tiles, "update").mockImplementation(() => {});
     const at = (id: string) => loader.loaded.findIndex((s) => s.id === id);
@@ -410,16 +411,9 @@ describe("createGlobeSurface", () => {
       const s = globe.state();
       return [s.mapsLoaded, s.mapErrors, s.mapsTotal];
     };
-    // The preview failed, but the pieces may still bring the clouds.
+    // The preview failed, and until the device is known the pieces may
+    // still bring the clouds.
     expect(counts()).toEqual([1, 0, 2]);
-    globe.update(camera, renderer);
-    const pieces = loader.loaded.flatMap((s, i) =>
-      s.path.includes("clouds-8192") ? [i] : [],
-    );
-    // At most two pieces are asked for at a time (M1b review); one that
-    // fails ends the full map.
-    expect(pieces).toHaveLength(2);
-    loader.fail[pieces[0]!]!();
     globe.update(camera, renderer);
     expect(counts()).toEqual([1, 1, 2]);
     globe.dispose();

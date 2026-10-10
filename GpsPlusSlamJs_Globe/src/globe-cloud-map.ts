@@ -118,7 +118,7 @@ type CloudMapFullStatus =
   | "loading"
   /** Drawn, and read by every cloud reader. */
   | "in"
-  /** A piece failed: the preview stays. */
+  /** A piece failed after its retries: the preview stays. */
   | "failed"
   /** The device's largest texture is smaller: the preview stays. */
   | "too-large"
@@ -139,8 +139,10 @@ interface GlobeCloudMapState {
   readonly piecesDrawn: number;
   /** Decoded pieces held now (loading, or in and not yet drawn). */
   readonly piecesHeld: number;
-  /** Pieces that failed in the latest round. */
+  /** Pieces that failed for good in the latest round (after retries). */
   readonly piecesFailed: number;
+  /** Retries made in the latest round. */
+  readonly retries: number;
   /** Full maps built again after a WebGL context loss. */
   readonly rebuilds: number;
   /** The page time (ms) the full map was first swapped in, or null. */
@@ -173,7 +175,7 @@ export interface GlobeCloudMapOptions {
   readonly source: GlobeSource;
   readonly loader: GlobeSurfaceLoader;
   readonly builder?: CloudMapBuilder;
-  /** The page clock, for `fullAtMs`. */
+  /** The page clock (ms), for the retries' backoff and `fullAtMs`. */
   readonly now?: () => number;
 }
 
@@ -192,11 +194,21 @@ function configure(texture: THREE.Texture): THREE.Texture {
  * (about 134 MB, on every load and every restore).
  */
 const MAX_HELD = 2;
+/**
+ * The waits before a failed piece is asked for again, ms (M1b review,
+ * item 4): a dropped connection on a phone should not cost the sharp
+ * clouds for the whole session. Two retries, then the preview stays.
+ */
+const RETRY_BACKOFF_MS = [1_000, 4_000] as const;
 
 interface PieceLoad {
   readonly piece: GlobeMapPiece;
-  readonly texture: THREE.Texture;
-  state: "loading" | "in";
+  texture: THREE.Texture | null;
+  state: "loading" | "in" | "retry";
+  /** Requests made for it so far. */
+  attempts: number;
+  /** When to ask again, page ms (state "retry"). */
+  retryAt: number;
 }
 
 /**
@@ -233,6 +245,7 @@ export function createGlobeCloudMap(
   let nextPiece = 0;
   let drawn = 0;
   let piecesFailed = 0;
+  let retries = 0;
   /** Bumped on every drop, so answers to a dropped round are freed. */
   let round = 0;
   let lostOnce = false;
@@ -242,39 +255,64 @@ export function createGlobeCloudMap(
 
   const dropRound = () => {
     round += 1;
-    for (const load of held) load.texture.dispose();
+    for (const load of held) load.texture?.dispose();
     held = [];
     full?.dispose();
     full = null;
   };
-  const request = (piece: GlobeMapPiece): PieceLoad => {
+  /** Asks for a piece (again); a failure waits for a retry or ends it. */
+  const request = (load: PieceLoad) => {
     const mine = round;
-    const load: PieceLoad = {
-      piece,
-      state: "loading",
-      texture: loader.loadTexture(
-        { ...source, path: piece.path },
-        () => {
-          // An answer to a dropped round, or after dispose: free it.
-          if (disposed || mine !== round) load.texture.dispose();
-          else load.state = "in";
-        },
-        () => {
-          load.texture.dispose();
-          if (disposed || mine !== round) return;
+    let texture: THREE.Texture | null = null;
+    load.state = "loading";
+    load.attempts += 1;
+    texture = loader.loadTexture(
+      { ...source, path: load.piece.path },
+      () => {
+        // An answer to a dropped round, or after dispose: free it.
+        if (disposed || mine !== round) texture?.dispose();
+        else load.state = "in";
+      },
+      () => {
+        texture?.dispose();
+        if (disposed || mine !== round) return;
+        load.texture = null;
+        const wait = RETRY_BACKOFF_MS[load.attempts - 1];
+        if (wait === undefined) {
           piecesFailed += 1;
           dropRound();
           status = "failed";
-        },
-      ),
-    };
-    return load;
+          return;
+        }
+        load.state = "retry";
+        load.retryAt = now() + wait;
+      },
+    );
+    load.texture = texture;
   };
   /** Tops the held pieces up to `MAX_HELD`. */
   const topUp = () => {
     while (held.length < MAX_HELD && nextPiece < pieces.length) {
-      held.push(request(pieces[nextPiece]!));
+      const load: PieceLoad = {
+        piece: pieces[nextPiece]!,
+        texture: null,
+        state: "loading",
+        attempts: 0,
+        retryAt: 0,
+      };
       nextPiece += 1;
+      held.push(load);
+      request(load);
+    }
+  };
+  /** Asks again for each failed piece whose wait is over. */
+  const retryDue = () => {
+    const time = now();
+    for (const load of held) {
+      if (load.state === "retry" && time >= load.retryAt) {
+        retries += 1;
+        request(load);
+      }
     }
   };
   const onLost = () => {
@@ -308,6 +346,7 @@ export function createGlobeCloudMap(
     nextPiece = 0;
     drawn = 0;
     piecesFailed = 0;
+    retries = 0;
     topUp();
   };
   /**
@@ -319,8 +358,9 @@ export function createGlobeCloudMap(
       full = builder.create(renderer, cut.width, cut.height);
       return;
     }
+    retryDue();
     const load = held.find((l) => l.state === "in");
-    if (!load) return;
+    if (!load?.texture) return;
     const { left, top, height } = load.piece;
     const last = drawn === pieces.length - 1;
     // GL rows count from the bottom; a piece's top is from the north.
@@ -379,6 +419,7 @@ export function createGlobeCloudMap(
         piecesDrawn: drawn,
         piecesHeld: held.length,
         piecesFailed,
+        retries,
         rebuilds,
         fullAtMs,
         bitmap:

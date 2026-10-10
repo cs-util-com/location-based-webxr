@@ -28,7 +28,10 @@
       map on the next frame, then draws each piece the frame after it
       arrives (one a frame: each is a 4,096 x 2,048 upload), frees it at
       once and asks for the next, swapping after the fourth (M1b review:
-      waiting for all four held about 134 MB of decoded RGBA at once). Registers for the canvas's context loss and
+      waiting for all four held about 134 MB of decoded RGBA at once). A
+      piece that fails is asked for again after 1 s, then after 4 s more
+      (`RETRY_BACKOFF_MS`, on the `now` clock); a third failure ends the
+      round (`full: "failed"`, the preview stays). Registers for the canvas's context loss and
       restore on its first call. A renderer without `capabilities` (a
       test stub, a page that never draws) leaves it waiting.
     - `settled()` - `{ done, failed }` for the surface's global-map
@@ -38,7 +41,7 @@
       preview, so it counts as loaded and is reported in `state()`.
     - `state()` - `{ stage: "preview" | "full", width, height, preview:
 "loading" | "in" | "failed", full, allocated, piecesDrawn, piecesHeld,
-piecesFailed, rebuilds, fullAtMs, bitmap }`; `full` is `waiting`,
+piecesFailed, retries, rebuilds, fullAtMs, bitmap }`; `full` is `waiting`,
       `loading` (allocated, pieces streaming in), `in`, `failed`,
       `too-large` or `lost`; `piecesHeld` the pieces requested and not
       yet drawn (never more than two); `rebuilds` counts full maps built
@@ -100,7 +103,7 @@ full, piece, x, y, last) }`, the GPU step as a seam.
 - Tests: `globe-cloud-map.test.ts` (the preview first, as one channel of
   numbers; the pieces only after the preview and a renderer; one texture,
   each piece drawn as it arrives (in any order) at its place, one a
-  frame, never more than two alive, the swap after the fourth; a failed piece keeping the preview and reported; a small
+  frame, never more than two alive, the swap after the fourth; a failed piece asked for again twice on its backoff, then keeping the preview and reported; a small
   device keeping the preview; the counter's settling; a context loss and
   restore rebuilding, a loss mid-build dropping the round; dispose; the
   real builder through a recording renderer: 14 empty levels allocated,

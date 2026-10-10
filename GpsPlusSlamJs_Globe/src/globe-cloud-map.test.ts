@@ -282,6 +282,62 @@ describe("createGlobeCloudMap", () => {
     expect(seen.at(-1)?.[0]).toBe(4);
   });
 
+  // A piece is asked for again after 1 s, then after 4 s more, before the
+  // map gives up on it: a dropped connection on a phone should not cost
+  // the sharp clouds for the whole session.
+  it("asks for a failed piece again twice with a backoff, then keeps the preview", () => {
+    let t = 0;
+    const { loader, map, renderer, draws } = started({ now: () => t });
+    map.update(renderer);
+    const first = loader.call(PIECES[0]!);
+    first.fail();
+    map.update(renderer);
+    expect(loader.paths().filter((p) => p === PIECES[0])).toHaveLength(1);
+    t = 999;
+    map.update(renderer);
+    expect(loader.paths().filter((p) => p === PIECES[0])).toHaveLength(1);
+    t = 1000;
+    map.update(renderer);
+    expect(loader.paths().filter((p) => p === PIECES[0])).toHaveLength(2);
+    expect(map.state().retries).toBe(1);
+    // The retry succeeds: the map completes.
+    streamAll(map, loader, renderer);
+    expect(map.state()).toMatchObject({ full: "in", retries: 1 });
+    expect(draws).toHaveLength(4);
+    map.dispose();
+
+    t = 0;
+    const second = started({ now: () => t });
+    second.map.update(second.renderer);
+    second.loader.call(PIECES[0]!).fail();
+    t = 1000;
+    second.map.update(second.renderer);
+    second.loader.call(PIECES[0]!).fail();
+    t = 4999;
+    second.map.update(second.renderer);
+    expect(second.loader.paths().filter((p) => p === PIECES[0])).toHaveLength(
+      2,
+    );
+    t = 5000;
+    second.map.update(second.renderer);
+    expect(second.loader.paths().filter((p) => p === PIECES[0])).toHaveLength(
+      3,
+    );
+    second.loader.call(PIECES[0]!).fail();
+    second.map.update(second.renderer);
+    expect(second.map.texture).toBe(second.loader.call(CLOUDS.path).texture);
+    expect(second.map.state()).toMatchObject({
+      stage: "preview",
+      full: "failed",
+      piecesFailed: 1,
+      retries: 2,
+      allocated: false,
+      piecesHeld: 0,
+    });
+    expect(second.loader.alive()).toBe(0);
+    second.map.dispose();
+  });
+
   // DEC-R3-16: three re-uploads a texture from its image after a context
   // loss, but the full map has no image (it was drawn from the pieces,
   // since freed): left alone it would come back empty, a cloudless Earth.
@@ -408,24 +464,6 @@ describe("createGlobeCloudMap", () => {
     expect(map.state().full).toBe("in");
   });
 
-  it("keeps the preview when a piece fails, and frees every piece", () => {
-    const { loader, map, renderer, draws } = started();
-    map.update(renderer);
-    loader.call(PIECES[0]!).fail();
-    frames(map, renderer, 4);
-    expect(map.texture).toBe(loader.call(CLOUDS.path).texture);
-    expect(draws).toHaveLength(0);
-    expect(map.state()).toMatchObject({
-      stage: "preview",
-      full: "failed",
-      piecesFailed: 1,
-      allocated: false,
-      piecesHeld: 0,
-    });
-    expect(loader.alive()).toBe(0);
-    map.dispose();
-  });
-
   it("keeps the preview on a device whose largest texture is under the full map", () => {
     const s = started({ maxTextureSize: 4096 });
     frames(s.map, s.renderer, 3);
@@ -441,14 +479,24 @@ describe("createGlobeCloudMap", () => {
     const run = (preview: "finish" | "fail", pieces: "finish" | "fail") => {
       const loader = stubLoader();
       const { builder } = stubBuilder();
-      const map = createGlobeCloudMap({ source: CLOUDS, loader, builder });
+      let t = 0;
+      const map = createGlobeCloudMap({
+        source: CLOUDS,
+        loader,
+        builder,
+        now: () => t,
+      });
       const { renderer } = stubRenderer();
       loader.call(CLOUDS.path)[preview]();
       map.update(renderer);
       expect(map.settled().done).toBe(false);
       if (pieces === "fail") {
         map.update(renderer);
-        loader.pieceCalls()[0]!.fail();
+        for (let i = 0; i < 3; i++) {
+          loader.call(PIECES[0]!).fail();
+          t += 10_000;
+          map.update(renderer);
+        }
       } else {
         streamAll(map, loader, renderer);
       }
