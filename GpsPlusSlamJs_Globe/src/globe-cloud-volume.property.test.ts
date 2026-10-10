@@ -464,3 +464,114 @@ describe("the live noise's anchor (cloudVolumeAnchorRecentre, cloudVolumeAnchorD
     expect(b.originKm[1]).toBeCloseTo(direct.originKm[1], 9);
   });
 });
+
+// WHY (the N1 milestone review, round-3 plan §19 item 3): the carry's hop
+// was the new origin's horizontal place in the old frame, the chord's
+// horizontal part (R sin(theta)), not the arc (R theta). Retracing 30 km
+// hops hides that (the same error each way); an excursion out in 20 km
+// recentres and back in one long hop does not: about 4 km off after
+// 1,000 km and 33 km after 2,000. The hop is now the azimuthal-equidistant
+// one (the arc along the first heading, the turn between the headings).
+describe("a long excursion and one hop back (cloudVolumeAnchorRecentre)", () => {
+  const ellipsoid = WGS84_ELLIPSOID;
+  const R = 6_371;
+  /** The point `km` from (lat, lng) along the bearing `az` on a sphere (degrees). */
+  const along = (lat: number, lng: number, az: number, km: number) => {
+    const p1 = lat * DEG;
+    const d = km / R;
+    const p2 = Math.asin(
+      Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(az),
+    );
+    const l2 =
+      lng * DEG +
+      Math.atan2(
+        Math.sin(az) * Math.sin(d) * Math.cos(p1),
+        Math.cos(d) - Math.sin(p1) * Math.sin(p2),
+      );
+    return { lat: p2 / DEG, lng: l2 / DEG };
+  };
+  const start = (lat: number, lng: number) =>
+    cloudVolumeNoiseAnchor({
+      latRad: lat * DEG,
+      lonRad: lng * DEG,
+      lonOffsetRad: 0,
+    });
+
+  it("returns to its start out 1,000-4,000 km in 20 km recentres and back in one hop", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -50, max: 50, noNaN: true }),
+        fc.double({ min: -179, max: 179, noNaN: true }),
+        fc.double({ min: 0, max: 2 * Math.PI, noNaN: true }),
+        fc.double({ min: 1_000, max: 4_000, noNaN: true }),
+        (lat, lng, az, km) => {
+          const a = start(lat, lng);
+          let anchor = a;
+          let at = { lat, lng };
+          const hops = Math.ceil(km / 20);
+          for (let i = 1; i <= hops; i++) {
+            const to = along(lat, lng, az, (km * i) / hops);
+            anchor = cloudVolumeAnchorRecentre(ellipsoid, anchor, at, to);
+            at = to;
+          }
+          const back = cloudVolumeAnchorRecentre(ellipsoid, anchor, at, {
+            lat,
+            lng,
+          });
+          // Measured 2026-10-09 (60 paths each): 1.7 m at 500 km out, 13 m at
+          // 1,000, 109 m at 2,000, 376 m at 3,000, 908 m at 4,000 (the chord's
+          // hop: 0.51 / 4.1 / 33 / 110 / 258 km). What is left grows as the
+          // distance cubed: the hops were laid on the sphere's great circle
+          // in geodetic coordinates, which is not quite the ellipsoid's
+          // geodesic. The bound: 20 m x (distance / 1,000 km)^3.
+          expect(
+            Math.hypot(
+              back.originKm[0] - a.originKm[0],
+              back.originKm[1] - a.originKm[1],
+            ),
+          ).toBeLessThan(0.02 * (km / 1000) ** 3);
+          expect(Math.abs(back.rotationRad - a.rotationRad)).toBeLessThan(1e-6);
+        },
+      ),
+      { numRuns: 60 },
+    );
+  });
+
+  it("returns exactly when it retraces the same long path", () => {
+    const lat = 46.95;
+    const lng = 7.45;
+    const a = start(lat, lng);
+    let anchor = a;
+    const path = [{ lat, lng }];
+    for (let i = 1; i <= 150; i++) path.push(along(lat, lng, 1.1, 20 * i));
+    for (let i = 1; i < path.length; i++) {
+      anchor = cloudVolumeAnchorRecentre(
+        ellipsoid,
+        anchor,
+        path[i - 1]!,
+        path[i]!,
+      );
+    }
+    for (let i = path.length - 1; i > 0; i--) {
+      anchor = cloudVolumeAnchorRecentre(
+        ellipsoid,
+        anchor,
+        path[i]!,
+        path[i - 1]!,
+      );
+    }
+    expect(
+      Math.hypot(
+        anchor.originKm[0] - a.originKm[0],
+        anchor.originKm[1] - a.originKm[1],
+      ),
+    ).toBeLessThan(1e-6);
+    expect(Math.abs(anchor.rotationRad - a.rotationRad)).toBeLessThan(1e-12);
+  });
+
+  it("does not turn or move for a hop to the same place", () => {
+    const a = { originKm: [12.5, -3] as const, rotationRad: 0.7 };
+    const p = { lat: 10, lng: 20 };
+    expect(cloudVolumeAnchorRecentre(ellipsoid, a, p, p)).toEqual(a);
+  });
+});

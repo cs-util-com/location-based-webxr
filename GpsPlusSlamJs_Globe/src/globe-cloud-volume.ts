@@ -284,31 +284,34 @@ export function cloudVolumeNoiseAnchor(origin: {
 const anchorFrom = new THREE.Matrix4();
 const anchorBack = new THREE.Matrix4();
 const anchorTo = new THREE.Vector3();
-const anchorEast = new THREE.Vector3();
+const anchorFromInTo = new THREE.Vector3();
 
 /**
- * The yaw of frame `b`'s east axis seen in frame `a` (`frameA` its
- * ECEF-to-world matrix): the angle of that axis, projected on a's
- * horizontal plane, from a's east toward a's south.
+ * The Earth's Gaussian radius of curvature at a latitude (km, WGS84):
+ * sqrt(M N), the radius a hop's chord is taken back to its arc with.
  */
-function eastYaw(frameA: THREE.Matrix4, b: LatLng): number {
-  const lng = (b.lng * Math.PI) / 180;
-  anchorEast.set(-Math.sin(lng), Math.cos(lng), 0).transformDirection(frameA);
-  return Math.atan2(anchorEast.z, anchorEast.x);
+function gaussianRadiusKm(latRad: number): number {
+  const a = 6_378.137;
+  const e2 = 0.00669437999014;
+  return (a * Math.sqrt(1 - e2)) / (1 - e2 * Math.sin(latRad) ** 2);
+}
+
+/** An angle into (-pi, pi]. */
+function wrapAngle(rad: number): number {
+  return rad - 2 * Math.PI * Math.round(rad / (2 * Math.PI));
 }
 
 /**
- * The anchor once the frame moves from `from` to `to` (degrees): the new
- * origin's place in the old frame, turned onto the plane, added to the
- * origin; the turn between the two frames added to the rotation. The turn
- * is half the difference of each frame's east axis seen in the other:
- * either alone differs from the other's negative by the frames' tilts'
- * product (about 1e-5 rad for 30 km), so a path out and back did not
- * return; the half difference is exactly antisymmetric. A ground point
- * near the new origin keeps its plane position to the frames' curvature
- * (metres over the volume's disc), and a path out and back returns the
- * anchor (cold review item 4: the C1 carry left a rotation per recentre
- * and 0.02 tile over 100 km and back).
+ * The anchor once the frame moves from `from` to `to` (degrees). The hop
+ * is the azimuthal-equidistant one (the N1 milestone review, round-3 plan
+ * §19 item 3): its length is the arc between the two ground points (the
+ * chord c taken back to the arc, 2 R asin(c / 2R)), its direction the
+ * chord's in the old frame, which is the geodesic's first heading; the
+ * frames' turn is that heading in the old frame minus the arriving heading
+ * in the new one (the chord back to the old origin, reversed), exactly
+ * antisymmetric, so a hop and its return cancel. The hop that added the
+ * chord's horizontal part (R sin(theta), not R theta) drifted about 4 km
+ * after a 1,000 km excursion and 33 km after 2,000.
  */
 export function cloudVolumeAnchorRecentre(
   ellipsoid: Ellipsoid,
@@ -322,15 +325,30 @@ export function cloudVolumeAnchorRecentre(
   ellipsoid
     .getCartographicToPosition(to.lat * DEG, to.lng * DEG, 0, anchorTo)
     .applyMatrix4(anchorFrom);
-  const turn = (eastYaw(anchorFrom, to) - eastYaw(anchorBack, from)) / 2;
+  ellipsoid
+    .getCartographicToPosition(
+      from.lat * DEG,
+      from.lng * DEG,
+      0,
+      anchorFromInTo,
+    )
+    .applyMatrix4(anchorBack);
+  const chordKm = anchorTo.length() / 1000;
+  // No hop (atan2 of two negative zeros is -pi: the turn would be a half turn).
+  if (!(chordKm > 1e-9)) return anchor;
+  const radiusKm = gaussianRadiusKm(((from.lat + to.lat) / 2) * DEG);
+  const arcKm = 2 * radiusKm * Math.asin(Math.min(1, chordKm / (2 * radiusKm)));
+  const leaving = Math.atan2(anchorTo.z, anchorTo.x);
+  const arriving = Math.atan2(-anchorFromInTo.z, -anchorFromInTo.x);
   const [dx, dz] = turned(
     anchor.rotationRad,
-    anchorTo.x / 1000,
-    anchorTo.z / 1000,
+    arcKm * Math.cos(leaving),
+    arcKm * Math.sin(leaving),
   );
   return {
     originKm: [anchor.originKm[0] + dx, anchor.originKm[1] + dz],
-    rotationRad: anchor.rotationRad + turn,
+    // Into (-pi, pi]: the headings' atan2 branches can differ by a turn.
+    rotationRad: anchor.rotationRad + wrapAngle(leaving - arriving),
   };
 }
 

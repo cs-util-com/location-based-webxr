@@ -66,11 +66,21 @@ own cloud map so the swap from the cloud shell never plops.
     anchor, the origin's distance east (at the drift) and south of 0, 0 in
     km, unrotated (`cloudVolumeNoiseOffset` without the tile and the
     wrap). RangeError for a non-finite origin.
-  - `cloudVolumeAnchorRecentre(ellipsoid, anchor, from, to)`: the new
-    origin's place in the old frame, turned by the rotation, added to the
-    origin; the frames' turn added to the rotation, as half the difference
-    of each frame's east axis seen in the other (either alone left about
-    1e-5 rad a 30 km hop out and back: the tilts' product). Property-tested:
+  - `cloudVolumeAnchorRecentre(ellipsoid, anchor, from, to)`: the
+    azimuthal-equidistant hop (round-3 plan §19 item 3): the arc between
+    the two ground points (the chord taken back to the arc with the
+    Gaussian radius at the mid-latitude) along the chord's heading in the
+    old frame (the geodesic's first heading), turned by the rotation and
+    added to the origin; the turn is that heading minus the arriving
+    heading in the new frame (the chord back, reversed), wrapped into
+    (-pi, pi], exactly antisymmetric. A hop to the same place changes
+    nothing. The first carry added the chord's horizontal part (R sin
+    theta, not R theta): out 1,000 / 2,000 / 4,000 km in 20 km recentres
+    and back in one hop it was 4.1 / 33 / 258 km off; now 13 m / 109 m /
+    908 m (tested: 20 m x (distance / 1,000 km)^3; the rest is the test
+    laying its hops on the sphere's great circle in geodetic coordinates,
+    not the ellipsoid's geodesic), and retracing a 3,000 km path returns
+    within a millimetre. Property-tested:
     a ground point keeps its plane position across a recentre in any
     direction, with any rotation already carried (within 5 m for 30 km
     steps); a path of up to 8 hops out and back, the drift running through
@@ -82,7 +92,7 @@ own cloud map so the swap from the cloud shell never plops.
     along the frame's east axis turned by the rotation (the noise offset's
     sign, tested against `cloudVolumeNoiseAnchor`). RangeError for a
     non-finite input.
-  - What remains path dependent is only the curvature's: a loop that
+  - What remains path dependent is only the curvature's (holonomy): a loop that
     encloses area turns the plane by about its area over R^2.
 - `CLOUD_VOLUME_COVERAGE_GLSL`: the chunk for the framework's
   `setCloudSlabCoverage`, defining `float atmCloudCoverageAt(vec2 xz)` as
