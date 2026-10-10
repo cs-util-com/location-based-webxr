@@ -103,16 +103,21 @@ test("the preview first, then ONE 8192 x 4096 map that draws the same clouds, sh
 }) => {
   test.setTimeout(600_000);
   const release = await holdPieces(page);
-  // Every frame's length and the full map's status at its end, to see the
-  // build's frames (one piece each) against the frames around them.
+  // Every frame's length and the cloud map's state at its end, to see the
+  // allocation's frame and each piece's against the frames around them.
   await page.addInitScript(() => {
     window.__cloudFrames = [];
     let last = performance.now();
     const tick = (t) => {
-      const full = window.__globeLab?.ready
-        ? window.__globeLab.state().cloudMap.full
+      const m = window.__globeLab?.ready
+        ? window.__globeLab.state().cloudMap
         : null;
-      window.__cloudFrames.push({ ms: t - last, full });
+      window.__cloudFrames.push({
+        ms: t - last,
+        full: m?.full ?? null,
+        allocated: m?.allocated ?? false,
+        drawn: m?.piecesDrawn ?? 0,
+      });
       last = t;
       requestAnimationFrame(tick);
     };
@@ -153,21 +158,28 @@ test("the preview first, then ONE 8192 x 4096 map that draws the same clouds, sh
     rebuilds: 0,
   });
   const fullMs = await frameMs();
-  // The frames that ended while the map was building (an allocation, then
-  // one piece each) against the median of the frames before them.
+  // The frame that allocated the map and the four that drew a piece each
+  // (the last also builds the mipmaps), against the plain frames while
+  // the pieces were held: absolute ms as well as ratios (a ratio of an
+  // emulated frame cannot bound the phone's 50 ms rule; neither can the
+  // absolute SwiftShader ms, but they show what the step adds).
   const built = await page.evaluate(() => {
     const f = window.__cloudFrames;
-    const at = f.findIndex((x) => x.full === "building");
-    return {
-      building: f.filter((x) => x.full === "building").map((x) => x.ms),
-      // The frame that drew the last piece ends with the map in.
-      swap: f.slice(at).find((x) => x.full === "in")?.ms ?? null,
-      before: f
-        .slice(Math.max(0, at - 20), at)
-        .filter((x) => x.full === "loading")
-        .map((x) => x.ms),
-    };
+    const alloc = f.findIndex(
+      (x, i) => i > 0 && x.allocated && !f[i - 1].allocated,
+    );
+    const draws = f
+      .map((x, i) => ({ ...x, i }))
+      .filter((x) => x.i > 0 && x.drawn > f[x.i - 1].drawn)
+      .map((x) => x.ms);
+    const plain = f
+      .slice(alloc + 1)
+      .filter((x) => x.full === "loading" && x.drawn === 0)
+      .map((x) => x.ms);
+    return { alloc: alloc > 0 ? f[alloc].ms : null, draws, plain };
   });
+  const base = median(built.plain);
+  const show = (ms) => `${ms?.toFixed(0)} ms (x${(ms / base).toFixed(2)})`;
   const lines = [];
   const results = [];
   for (const box of sizes) {
@@ -188,7 +200,7 @@ test("the preview first, then ONE 8192 x 4096 map that draws the same clouds, sh
     );
   }
   console.log(
-    `cloud map 8k: ${lines.join(" | ")}; frame x${(fullMs / previewMs).toFixed(2)} after the swap; the build's frames ${[...built.building, built.swap].map((ms) => `x${(ms / median(built.before)).toFixed(2)}`).join(" ")} against the ${built.before.length} frames before (median ${median(built.before).toFixed(0)} ms, SwiftShader); full at ${full.fullAtMs?.toFixed(0)} ms (the pieces held)`,
+    `cloud map 8k: ${lines.join(" | ")}; frame x${(fullMs / previewMs).toFixed(2)} after the swap; the allocation's frame ${show(built.alloc)}, the pieces' ${built.draws.map(show).join(", ")} against ${built.plain.length} plain frames (median ${base.toFixed(0)} ms, SwiftShader); full at ${full.fullAtMs?.toFixed(0)} ms (the pieces held)`,
   );
   expect(errors).toEqual([]);
   for (const r of results) {

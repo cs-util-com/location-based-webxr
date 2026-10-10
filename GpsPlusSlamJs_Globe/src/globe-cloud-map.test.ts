@@ -335,6 +335,66 @@ describe("createGlobeCloudMap", () => {
     map.dispose();
   });
 
+  // The real GPU step, driven through a recording renderer: the empty map
+  // is allocated with every mip level by empty descriptors (14 for 8,192 x
+  // 4,096), nothing uploaded and no mipmaps built for it; each piece is a
+  // copy at its place, flipped by the unpack state only for an image
+  // element; the mipmaps are built on the last copy alone.
+  it("allocates every mip level without building them, and builds them once on the last copy", () => {
+    const loader = stubLoader();
+    const map = createGlobeCloudMap({ source: CLOUDS, loader });
+    const inits: { generate: boolean; levels: unknown[]; ready: boolean }[] =
+      [];
+    const copies: {
+      x: number;
+      y: number;
+      generate: boolean;
+      flipY: boolean;
+    }[] = [];
+    const canvas = new EventTarget();
+    const renderer = {
+      capabilities: { maxTextureSize: 16384 },
+      domElement: canvas,
+      initTexture: (t: THREE.DataTexture) =>
+        inits.push({
+          generate: t.generateMipmaps,
+          levels: t.mipmaps,
+          ready: t.source.dataReady,
+        }),
+      getContext: () => ({ UNPACK_COLORSPACE_CONVERSION_WEBGL: 1, NONE: 0 }),
+      state: { pixelStorei: () => {} },
+      copyTextureToTexture: (
+        _src: THREE.Texture,
+        dst: THREE.Texture,
+        _region: unknown,
+        at: THREE.Vector2,
+      ) =>
+        copies.push({
+          x: at.x,
+          y: at.y,
+          generate: dst.generateMipmaps,
+          flipY: dst.flipY,
+        }),
+    } as unknown as THREE.WebGLRenderer;
+    loader.call(CLOUDS.path).finish();
+    map.update(renderer);
+    streamAll(map, loader, renderer);
+    expect(inits).toHaveLength(1);
+    expect(inits[0]!.generate).toBe(false);
+    expect(inits[0]!.ready).toBe(false);
+    const levels = inits[0]!.levels as { width: number; height: number }[];
+    expect(levels).toHaveLength(14);
+    expect(levels[0]).toMatchObject({ width: 8192, height: 4096 });
+    expect(levels[12]).toMatchObject({ width: 2, height: 1 });
+    expect(levels[13]).toMatchObject({ width: 1, height: 1 });
+    expect(copies.map((c) => c.generate)).toEqual([false, false, false, true]);
+    // The stub's images are plain objects (not ImageBitmaps): flipped.
+    expect(copies.every((c) => c.flipY)).toBe(true);
+    expect(map.texture.generateMipmaps).toBe(false);
+    expect(map.state().full).toBe("in");
+    map.dispose();
+  });
+
   it("frees the preview, the full map and any piece on dispose, and stops listening", () => {
     const { loader, created, map, renderer, canvas } = started();
     streamAll(map, loader, renderer);

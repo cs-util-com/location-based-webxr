@@ -50,11 +50,17 @@ piecesFailed, rebuilds, fullAtMs, bitmap }`; `full` is `waiting`,
 full, piece, x, y, last) }`, the GPU step as a seam.
   - `gpuCloudMapBuilder` (module-private, the default) - the real one: a
     `DataTexture` with no data,
-    `RedFormat`, `source.dataReady = false` (three allocates storage for
-    every mip level and uploads nothing), linear-mipmap filtering, wrapping
-    in longitude; each piece drawn by `renderer.copyTextureToTexture`
-    (texSubImage2D of the piece's own image, so a piece never becomes a
-    GPU texture of its own), the mipmaps generated once, after the last.
+    `RedFormat`, its levels given as empty `mipmaps` descriptors (14
+    for 8,192 x 4,096) with `source.dataReady = false` and
+    `generateMipmaps` off: three allocates every level with one
+    texStorage2D and neither uploads nor builds mipmaps of the empty map
+    (with `generateMipmaps` on, three r185 also ran generateMipmap on the
+    empty storage, a wasted pass: M1b review, item 3); linear-mipmap
+    filtering, wrapping in longitude; each piece drawn by
+    `renderer.copyTextureToTexture` (texSubImage2D of the piece's own
+    image, so a piece never becomes a GPU texture of its own), with
+    `generateMipmaps` on for the last copy alone, so the mipmaps are built
+    once.
 - Invariants & assumptions:
   - Pieces are placed by the registry's `globeMapPieces` (row 0 the
     north); GL rows count from the bottom, so a piece's `y` is
@@ -96,7 +102,9 @@ full, piece, x, y, last) }`, the GPU step as a seam.
   each piece drawn as it arrives (in any order) at its place, one a
   frame, never more than two alive, the swap after the fourth; a failed piece keeping the preview and reported; a small
   device keeping the preview; the counter's settling; a context loss and
-  restore rebuilding, a loss mid-build dropping the round; dispose). The
+  restore rebuilding, a loss mid-build dropping the round; dispose; the
+  real builder through a recording renderer: 14 empty levels allocated,
+  nothing uploaded, the mipmaps built on the last copy alone). The
   GPU builder by the browser smoke
   `GpsPlusSlamJs_DesignSystem/labs/globe/globe-cloud-map-8k.smoke.spec.mjs`
   (the stages, the swap drawing the same clouds, no seam at the date line,

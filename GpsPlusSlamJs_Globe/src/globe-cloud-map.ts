@@ -44,12 +44,28 @@ export interface CloudMapBuilder {
   ): void;
 }
 
+/** Every mip level's size, the full size first, down to 1 x 1. */
+function mipLevels(width: number, height: number) {
+  const levels: { data: null; width: number; height: number }[] = [];
+  let w = width;
+  let h = height;
+  for (;;) {
+    levels.push({ data: null, width: w, height: h });
+    if (w === 1 && h === 1) return levels;
+    w = Math.max(1, w >> 1);
+    h = Math.max(1, h >> 1);
+  }
+}
+
 /**
- * The real builder: an empty `RedFormat` texture with storage for every
- * mip level (`dataReady` false: three allocates it and uploads nothing),
- * filled by `copyTextureToTexture` (texSubImage2D of the piece's image, so
- * the piece never becomes a texture of its own on the GPU), the mipmaps
- * generated once, after the last piece.
+ * The real builder: an empty `RedFormat` texture whose storage holds every
+ * mip level, sized by empty `mipmaps` descriptors with `dataReady` false
+ * (three then allocates the levels and uploads nothing; with
+ * `generateMipmaps` on instead, three r185 also builds the mipmaps of the
+ * empty map, a wasted pass over 44.7 MB: M1b review, item 3), filled by
+ * `copyTextureToTexture` (texSubImage2D of the piece's own image, so a
+ * piece never becomes a texture of its own on the GPU), the mipmaps built
+ * once, on the last piece's copy.
  */
 const gpuCloudMapBuilder: CloudMapBuilder = {
   create(renderer, width, height) {
@@ -60,13 +76,14 @@ const gpuCloudMapBuilder: CloudMapBuilder = {
       THREE.RedFormat,
       THREE.UnsignedByteType,
     );
+    // The descriptors' data is never read: dataReady is false.
+    full.mipmaps = mipLevels(width, height) as unknown as typeof full.mipmaps;
     full.source.dataReady = false;
+    full.generateMipmaps = false;
     full.colorSpace = THREE.NoColorSpace;
     full.wrapS = THREE.RepeatWrapping;
     full.magFilter = THREE.LinearFilter;
     full.minFilter = THREE.LinearMipmapLinearFilter;
-    // Storage for every level is allocated only while this is on.
-    full.generateMipmaps = true;
     full.needsUpdate = true;
     renderer.initTexture(full);
     return full;
@@ -79,14 +96,17 @@ const gpuCloudMapBuilder: CloudMapBuilder = {
     full.flipY = !(
       typeof ImageBitmap !== "undefined" && image instanceof ImageBitmap
     );
-    // copyTextureToTexture builds the mipmaps after every copy when this
-    // is on: once, after the last piece, is enough.
+    // copyTextureToTexture builds the mipmaps after a copy while this is
+    // on: once, on the last piece.
     full.generateMipmaps = last;
     const gl = renderer.getContext();
     // The grey levels are numbers: no colour conversion of an element.
     renderer.state.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
-    renderer.copyTextureToTexture(piece, full, null, new THREE.Vector2(x, y));
-    full.generateMipmaps = true;
+    try {
+      renderer.copyTextureToTexture(piece, full, null, new THREE.Vector2(x, y));
+    } finally {
+      full.generateMipmaps = false;
+    }
   },
 };
 
