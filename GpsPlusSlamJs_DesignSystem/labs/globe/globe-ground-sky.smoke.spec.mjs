@@ -27,12 +27,20 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { bootGlobe, luminance, meanOf } from "./globe-smoke-helpers.mjs";
+import {
+  RELIEF_SETTLE_MS,
+  bootGlobe,
+  luminance,
+  meanOf,
+} from "./globe-smoke-helpers.mjs";
 
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const TARGET = { latitude: 46.5, longitude: 9.0 };
 const HOLD_KM = 40;
-const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&landKm=${HOLD_KM}`;
+// `cloudNoise=tile`: the sky hand-over is this file's subject, and its
+// frame budget was measured on the baked tile; the live noise's own cost is
+// measured in globe-cloud-noise (round-4 plan §6 item 10).
+const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&landKm=${HOLD_KM}&cloudNoise=tile`;
 /** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
 const SWEEP = [0.5, 1, 2];
 const STEP = 1;
@@ -69,6 +77,7 @@ async function land(page, context) {
   await context.setGeolocation(TARGET);
   const errors = await bootGlobe(page, BASE);
   await page.locator("#globe-pin").click();
+  const pressedAt = Date.now();
   await page.waitForFunction(
     () => {
       const s = window.__globeLab.state();
@@ -80,7 +89,13 @@ async function land(page, context) {
       );
     },
     null,
-    { timeout: 300_000 },
+    // The relief's settle is bound by frames, so the shared measured budget
+    // (lessons-learned 2026-10-09): this wait kept its own 300 s and ran
+    // out with the imagery at 117 of 200 tiles (2026-10-11).
+    { timeout: RELIEF_SETTLE_MS },
+  );
+  console.log(
+    `landed and settled ${((Date.now() - pressedAt) / 1000).toFixed(0)} s after the press (budget ${RELIEF_SETTLE_MS / 1000} s)`,
   );
   return errors;
 }
