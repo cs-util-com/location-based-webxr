@@ -556,8 +556,8 @@ export function createGlobeSurface(
     },
     state: () => {
       const { queued, downloading, parsing, loaded, refused } = runtime.stats;
-      // The clouds count once nothing more will come, as failed only when
-      // nothing is drawn (a failed piece keeps the preview: loaded).
+      // The clouds count at their preview (the full map is its own stage),
+      // as failed only when nothing is drawn (M1b review, item 7).
       const clouds = cloudMap.settled();
       return {
         models,

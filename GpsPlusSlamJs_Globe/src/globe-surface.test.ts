@@ -296,14 +296,14 @@ describe("createGlobeSurface", () => {
     globe.dispose();
   });
 
-  // Why (round-3 plan M1, the full browser run 2026-10-09): the first look
-  // shows the Earth as the tiles will, clouds included. The 2,048 map used
-  // to arrive with the two halves; the 4,096 map (1.25 MB, decoded off the
-  // thread) arrived after them, so the first look at Bern was cloudless and
-  // the clouds popped in (centre 49,84,106 against 180,211,250 once the
-  // tiles drew). It now waits for the cloud map too; a cloud map that fails
-  // does not hold it back (a failure keeps the plain look).
-  it("shows the first look only once the cloud map is in too, or has failed", () => {
+  // Why (round-3 plan M1, the full browser run 2026-10-09; §18): the first
+  // look shows the Earth as the tiles will, clouds included. M1's 4,096
+  // map arrived after the two halves, so the first look at Bern was
+  // cloudless and the clouds popped in (centre 49,84,106 against
+  // 180,211,250 once the tiles drew). It waits for the clouds' 1,024
+  // PREVIEW too (DEC-R3-15: never for the full map's pieces); a preview
+  // that fails does not hold it back (a failure keeps the plain look).
+  it("shows the first look only once the clouds' preview is in too, or has failed", () => {
     const highCamera = new THREE.PerspectiveCamera();
     highCamera.position.set(30_000_000, 0, 0);
     const renderer = {
@@ -411,9 +411,9 @@ describe("createGlobeSurface", () => {
       const s = globe.state();
       return [s.mapsLoaded, s.mapErrors, s.mapsTotal];
     };
-    // The preview failed, and until the device is known the pieces may
-    // still bring the clouds.
-    expect(counts()).toEqual([1, 0, 2]);
+    // The clouds count at the preview (M1b review, item 7): a failed
+    // preview reads as a failed map until a full map is drawn.
+    expect(counts()).toEqual([1, 1, 2]);
     globe.update(camera, renderer);
     expect(counts()).toEqual([1, 1, 2]);
     globe.dispose();

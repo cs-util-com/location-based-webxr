@@ -39,7 +39,12 @@ async function readView(page, hash) {
   await page.waitForFunction(
     () => {
       const s = window.__globeLab.state();
-      return s.mapsLoaded + s.mapErrors === s.mapsTotal && s.pendingTiles === 0;
+      // The full map is its own stage (the maps count at the preview).
+      return (
+        s.mapsLoaded + s.mapErrors === s.mapsTotal &&
+        s.pendingTiles === 0 &&
+        s.cloudMap.full === "in"
+      );
     },
     null,
     { timeout: 120_000 },
@@ -208,7 +213,9 @@ test("the clouds through the B-spline show less of the texel grid where the map 
       () => {
         const s = window.__globeLab.state();
         return (
-          s.mapsLoaded + s.mapErrors === s.mapsTotal && s.pendingTiles === 0
+          s.mapsLoaded + s.mapErrors === s.mapsTotal &&
+          s.pendingTiles === 0 &&
+          s.cloudMap.full === "in"
         );
       },
       null,
@@ -277,6 +284,7 @@ test("the volume and the relief draw with the B-spline, its cost stated", async 
       const s = window.__globeLab.state();
       return (
         s.mapsLoaded === s.mapsTotal &&
+        s.cloudMap.full === "in" &&
         s.cloudVolume?.share > 0 &&
         s.relief?.litTiles > 0
       );

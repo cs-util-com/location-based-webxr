@@ -1,8 +1,9 @@
 /**
  * How the globe's global maps are fetched (round-3 plan 2026-10-08-2345
- * M1): decoded off the main thread where the browser can (an
- * `ImageBitmap`), so the 4,096 x 2,048 cloud map does not stall a frame
- * while the flight starts; a plain image element elsewhere.
+ * M1, §18): decoded off the main thread where the browser can (an
+ * `ImageBitmap`), so the cloud map's preview and its four 4,096 x 2,048
+ * pieces do not stall a frame while the flight starts; a plain image
+ * element elsewhere.
  *
  * @see globe-map-loader.ts.md
  */

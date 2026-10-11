@@ -1,7 +1,7 @@
 /**
- * Why this test matters: the 4,096 x 2,048 cloud map (round-3 plan
- * 2026-10-08-2345 M1) decoded on the main thread would stall a frame as the
- * flight starts, so it is decoded off the thread where the browser honours
+ * Why this test matters: the cloud map's four 4,096 x 2,048 pieces
+ * (round-3 plan 2026-10-08-2345 M1, §18) decoded on the main thread would
+ * stall a frame each as the flight starts, so it is decoded off the thread where the browser honours
  * the decoder's options; where it does not (Safari before 17, Firefox
  * before 98: three's own rule for glTF), an off-thread map would be drawn
  * upside down, so those take the plain image element.

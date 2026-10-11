@@ -387,6 +387,34 @@ describe("createGlobeCloudMap", () => {
     expect(choose(4096, false)).toMatchObject({ full: "too-large" });
   });
 
+  // The M1b review: the loading label and the smokes' waits counted the
+  // clouds only once the 4 MB full map was in (and again after every
+  // backgrounding). The clouds count at the preview; the full map is its
+  // own stage.
+  it("counts as settled once the preview has, failing only when nothing is drawn", () => {
+    for (const ending of ["finish", "fail"] as const) {
+      const loader = stubLoader();
+      const map = createGlobeCloudMap({ source: CLOUDS, loader });
+      expect(map.settled()).toEqual({ done: false, failed: false });
+      loader.call(CLOUDS.path)[ending]();
+      expect(map.settled()).toEqual({
+        done: true,
+        failed: ending === "fail",
+      });
+      map.dispose();
+    }
+    const { builder } = stubBuilder();
+    const loader = stubLoader();
+    const map = createGlobeCloudMap({ source: CLOUDS, loader, builder });
+    const { renderer } = stubRenderer();
+    loader.call(CLOUDS.path).fail();
+    map.update(renderer);
+    streamAll(map, loader, renderer);
+    // The preview failed but the full map is drawn: not a failure.
+    expect(map.settled()).toEqual({ done: true, failed: false });
+    map.dispose();
+  });
+
   // DEC-R3-16: three re-uploads a texture from its image after a context
   // loss, but the full map has no image (it was drawn from the pieces,
   // since freed): left alone it would come back empty, a cloudless Earth.
@@ -438,6 +466,40 @@ describe("createGlobeCloudMap", () => {
     streamAll(map, loader, renderer);
     expect(map.state()).toMatchObject({ stage: "full", rebuilds: 1 });
     map.dispose();
+  });
+
+  // The per-frame step must never throw into the render loop: a GPU step
+  // that fails keeps the preview and reports why.
+  it("keeps the preview and reports it when the GPU step throws", () => {
+    for (const where of ["create", "draw"] as const) {
+      const loader = stubLoader();
+      const { builder } = stubBuilder();
+      const broken: CloudMapBuilder = {
+        ...builder,
+        [where]: () => {
+          throw new Error(`no ${where}`);
+        },
+      };
+      const map = createGlobeCloudMap({
+        source: CLOUDS,
+        loader,
+        builder: broken,
+      });
+      const { renderer } = stubRenderer();
+      loader.call(CLOUDS.path).finish();
+      expect(() => {
+        map.update(renderer);
+        streamAll(map, loader, renderer);
+      }).not.toThrow();
+      expect(map.state(), where).toMatchObject({
+        stage: "preview",
+        full: "failed",
+        error: `no ${where}`,
+        piecesHeld: 0,
+      });
+      expect(loader.alive(), where).toBe(0);
+      map.dispose();
+    }
   });
 
   // The real GPU step, driven through a recording renderer: the empty map
@@ -511,41 +573,6 @@ describe("createGlobeCloudMap", () => {
     expect(disposed).toHaveLength(2);
     canvas.dispatchEvent(new Event("webglcontextlost"));
     expect(map.state().full).toBe("in");
-  });
-
-  it("settles once the preview and the full map have, failing only when neither drew", () => {
-    const run = (preview: "finish" | "fail", pieces: "finish" | "fail") => {
-      const loader = stubLoader();
-      const { builder } = stubBuilder();
-      let t = 0;
-      const map = createGlobeCloudMap({
-        source: CLOUDS,
-        loader,
-        builder,
-        now: () => t,
-      });
-      const { renderer } = stubRenderer();
-      loader.call(CLOUDS.path)[preview]();
-      map.update(renderer);
-      expect(map.settled().done).toBe(false);
-      if (pieces === "fail") {
-        map.update(renderer);
-        for (let i = 0; i < 3; i++) {
-          loader.call(PIECES[0]!).fail();
-          t += 10_000;
-          map.update(renderer);
-        }
-      } else {
-        streamAll(map, loader, renderer);
-      }
-      const settled = map.settled();
-      map.dispose();
-      return settled;
-    };
-    expect(run("finish", "finish")).toEqual({ done: true, failed: false });
-    expect(run("fail", "finish")).toEqual({ done: true, failed: false });
-    expect(run("finish", "fail")).toEqual({ done: true, failed: false });
-    expect(run("fail", "fail")).toEqual({ done: true, failed: true });
   });
 
   it("refuses a source that is not cut into pieces", () => {

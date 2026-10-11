@@ -7,11 +7,13 @@
   `<details>`, built with `textContent` only). A loading label ("Loading
   Earth imagery: n of m") shows while tiles are pending, and the error box
   names tiles that could not load ("a coarser level shows there") and global
-  maps that could not load. The label counts the two global maps too, so
-  it ends only when the clouds have arrived: the preview and the full
-  map's four pieces (round-3 plan 2026-10-08-2345 §18). A piece that
-  could not load adds "The sharp cloud map could not load: the coarser
-  one shows." (the preview stays).
+  maps that could not load. The label counts the two global maps too:
+  the clouds at their preview (round-3 plan 2026-10-08-2345 §18; the
+  full map comes after it in the background, its own stage in
+  `state().cloudMap`, so the label neither waits for its 4 MB nor comes
+  back after a context loss). A sharp map that could not be made (a
+  piece failed after its retries, or the GPU step threw) adds "The sharp
+  cloud map could not load: the coarser one shows." (the preview stays).
 - Round 2 (plan 2026-09-26-2055 M3 c-f; round-3 plan 2026-09-27-0532 §4 F):
   the lab owns a pinnable clock that drives the sun and the clouds' drift;
   a background pass (`/globe/globe-sky.js`) draws the sun's disc and glow

@@ -100,10 +100,11 @@ loadedTiles, refusedTiles, mapsLoaded, mapErrors, mapsTotal }`
       or parsing; tiles loaded; requests refused by a full cache, which the
       library counts apart from the pending ones, so a starved cache would
       otherwise read as settled; global maps loaded, failed, and in all,
-      2: the night and the clouds. The clouds count once nothing more will
-      come, the preview AND the full map in, failed or too large for the
-      device, and as failed only when none of it can be drawn: a failed
-      piece keeps the preview and is reported in `cloudMap.state()`).
+      2: the night and the clouds. The clouds count once their preview has
+      settled (the full map comes after it, its own stage in
+      `cloudMap.state()`: M1b review, item 7, so the loading label does not
+      wait for its 4 MB nor return after a context loss), and as failed
+      only when nothing can be drawn (no preview and no full map)).
     - `activeSources()` names every registry source (all four are drawn),
       for the credits line.
     - `celestialToWorld(θ, target?)`: the rotation from the celestial

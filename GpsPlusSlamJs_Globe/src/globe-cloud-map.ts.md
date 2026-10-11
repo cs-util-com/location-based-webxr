@@ -39,13 +39,14 @@
       restore on its first call. A renderer without `capabilities` (a
       test stub, a page that never draws) leaves it waiting.
     - `settled()` - `{ done, failed }` for the surface's global-map
-      counter: done once the preview has settled AND the full map is in,
-      failed, or too large for the device; failed only when nothing is
-      drawn (no preview and no full map). A failed piece keeps the
-      preview, so it counts as loaded and is reported in `state()`.
+      counter: done once the preview has settled (the full map is its own
+      stage in `state()`, so the loading label does not wait for its 4 MB
+      nor return after a context loss: M1b review, item 7); failed only
+      when nothing is drawn (no preview, and no full map).
     - `state()` - `{ stage: "preview" | "full", width, height, preview:
 "loading" | "in" | "failed", full, scale, allocated, piecesDrawn, piecesHeld,
-piecesFailed, retries, rebuilds, fullAtMs, bitmap }`; `full` is `waiting`,
+piecesFailed, retries, error, rebuilds, fullAtMs, bitmap }`; `error`
+      why the GPU step threw, or null; `full` is `waiting`,
       `loading` (allocated, pieces streaming in), `in`, `failed`,
       `too-large` or `lost`; `piecesHeld` the pieces requested and not
       yet drawn (never more than two); `rebuilds` counts full maps built
@@ -90,8 +91,10 @@ full, piece, x, y, last) }`, the GPU step as a seam.
     round in flight are dropped and the preview shows; on the restore the
     pieces load again (the browser's cache usually has them) and the map
     is rebuilt. A late answer from a dropped round is freed on arrival.
-  - Defensive: never throws from `update`; a renderer without
-    `capabilities` or `domElement` is tolerated.
+  - Defensive: `update` never throws: a GPU step that throws (the
+    allocation or a copy) drops the round, keeps the preview and reports
+    `full: "failed"` with `error`; a renderer without `capabilities` or
+    `domElement` is tolerated.
 - Examples:
 
   ```ts

@@ -119,7 +119,7 @@ type CloudMapFullStatus =
   | "loading"
   /** Drawn, and read by every cloud reader. */
   | "in"
-  /** A piece failed after its retries: the preview stays. */
+  /** A piece failed after its retries, or the GPU step threw: the preview stays. */
   | "failed"
   /**
    * The device's largest texture is under half the map (or under the map
@@ -149,6 +149,8 @@ interface GlobeCloudMapState {
   readonly piecesFailed: number;
   /** Retries made in the latest round. */
   readonly retries: number;
+  /** Why the GPU step failed, or null. */
+  readonly error: string | null;
   /** Full maps built again after a WebGL context loss. */
   readonly rebuilds: number;
   /** The page time (ms) the full map was first swapped in, or null. */
@@ -163,13 +165,17 @@ export interface GlobeCloudMap {
   /** The preview is in or has failed: the first look waits for this. */
   readonly previewSettled: boolean;
   /**
-   * Per frame, with the renderer (it decides the device can hold the full
-   * map, and draws it). Loads, draws and swaps.
+   * Per frame, with the renderer (it decides the size the device can hold,
+   * and draws). Loads, draws and swaps; never throws (a GPU step that
+   * throws ends the round, the preview stays, `state().error` says why).
    */
   update(renderer: THREE.WebGLRenderer): void;
   /**
-   * For the global maps' counter: `done` once nothing more will come,
-   * `failed` when nothing is drawn at all (no preview and no full map).
+   * For the global maps' counter: `done` once the preview has settled
+   * (the full map is its own stage, in `state()`, so the loading label
+   * does not wait for its 4 MB, nor come back after a context loss: M1b
+   * review, item 7); `failed` when nothing is drawn (no preview, and no
+   * full map).
    */
   settled(): { done: boolean; failed: boolean };
   state(): GlobeCloudMapState;
@@ -253,6 +259,7 @@ export function createGlobeCloudMap(
   let drawn = 0;
   let piecesFailed = 0;
   let retries = 0;
+  let error: string | null = null;
   /** Bumped on every drop, so answers to a dropped round are freed. */
   let round = 0;
   let lostOnce = false;
@@ -370,6 +377,7 @@ export function createGlobeCloudMap(
     drawn = 0;
     piecesFailed = 0;
     retries = 0;
+    error = null;
     topUp();
   };
   /**
@@ -417,13 +425,19 @@ export function createGlobeCloudMap(
     update(renderer) {
       if (disposed) return;
       listen(renderer);
-      if (status === "waiting") start(renderer);
-      else if (status === "loading") step(renderer);
+      try {
+        if (status === "waiting") start(renderer);
+        else if (status === "loading") step(renderer);
+      } catch (e) {
+        // The GPU step threw: never into the render loop. The preview
+        // stays, and the state says why.
+        dropRound();
+        status = "failed";
+        error = e instanceof Error ? e.message : String(e);
+      }
     },
     settled() {
-      const fullDone =
-        status === "in" || status === "failed" || status === "too-large";
-      const done = previewState !== "loading" && fullDone;
+      const done = previewState !== "loading";
       return {
         done,
         failed: done && previewState === "failed" && status !== "in",
@@ -444,6 +458,7 @@ export function createGlobeCloudMap(
         piecesHeld: held.length,
         piecesFailed,
         retries,
+        error,
         rebuilds,
         fullAtMs,
         bitmap:

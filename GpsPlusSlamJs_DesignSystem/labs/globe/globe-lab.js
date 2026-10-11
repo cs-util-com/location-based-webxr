@@ -237,7 +237,7 @@ function statusView() {
       mapsLoaded,
       mapErrors,
       mapsTotal,
-      cloudPiecesFailed = 0,
+      cloudSharpFailed = false,
     }) {
       // The tiles and the two global maps (the clouds are the largest
       // single file): "loaded" only once all of them have arrived or failed.
@@ -259,8 +259,9 @@ function statusView() {
         mapErrors > 0
           ? `${mapErrors} of the night-light and cloud maps could not load.`
           : "",
-        // The sharp clouds (round-3 plan §18): the preview stays.
-        cloudPiecesFailed > 0
+        // The sharp clouds (round-3 plan §18): a piece failed after its
+        // retries, or the GPU step threw; the preview stays.
+        cloudSharpFailed
           ? "The sharp cloud map could not load: the coarser one shows."
           : "",
       ]
@@ -2971,7 +2972,7 @@ async function start() {
         : params.cloudShadow * shellShare * flat;
     status.update({
       ...globe.state(),
-      cloudPiecesFailed: globe.cloudMap.state().piecesFailed,
+      cloudSharpFailed: globe.cloudMap.state().full === "failed",
     });
     readoutText = readoutNow();
     readout.offer(readoutText, performance.now());
