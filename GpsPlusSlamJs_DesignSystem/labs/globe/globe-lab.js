@@ -458,7 +458,10 @@ const PARAMS = {
   // is read early from the relief's own heights (`/globe/landing-ground.js`;
   // the ellipsoid with `relief=0`). `landKm` stays the old dive's (flight=1)
   // and the smokes' hold altitude above the ellipsoid.
-  landAglM: { fallback: 150, min: 10, max: 10_000 },
+  // Its least value is the clearance (100 m, GLOBE_FLIGHT.clearanceM; the
+  // R4b milestone review, finding 6): a landing lower than that is lifted
+  // to it every frame, so the hash cannot ask for one.
+  landAglM: { fallback: 150, min: 100, max: 10_000 },
   // `land=1` with an `at=` link flies the dive to that place, as the pin
   // does to the device's (§12.4 R15: the owner can land in Zurich or Bern
   // from anywhere).

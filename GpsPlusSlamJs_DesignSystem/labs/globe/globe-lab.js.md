@@ -687,7 +687,7 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   flight; 2 the distance only everywhere; 0 the whole motion always. The
   volume's noise is `live` by default (DEC-R4-6) unless `cloudNoise` or
   `cloudHex=1` says otherwise. A placement resets the dust's speed.
-  `landAglM` (150, 10-10,000; round-4 plan 2026-10-11-0122 DEC-R4-1, R4b)
+  `landAglM` (150, 100-10,000, the clearance its least value; round-4 plan 2026-10-11-0122 DEC-R4-1, R4b)
   is where `flight=2` lands: that many metres above the GROUND at its
   place, not above sea level (`landKm` stays the old dive's and the
   smokes' hold altitude above the ellipsoid; no panel control). The
