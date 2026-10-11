@@ -1771,7 +1771,9 @@ function bindPin({
         // margin (the same tile as the early read, sampled on another
         // lattice), through the replan path: after a failed read mostly.
         // A LOWER ground only while the drop is small against the camera's
-        // height above the ground (it turns the view; a raise does not).
+        // height above the ground (it turns the view); a RAISE only while
+        // the camera stands well over the new ground (`pinGround` decides:
+        // nearer, the view flipped; the clearance keeps it up meanwhile).
         const pinNow = flight.pinFlight;
         const revised =
           pinNow &&
@@ -1782,7 +1784,8 @@ function bindPin({
           });
         if (revised !== null && revised !== undefined) {
           flight.updatePin(now, (p, t) => pinGround(p, t, revised));
-          groundRevisions += 1;
+          // Counted when taken (a raise the camera is too low for is not).
+          if (flight.pinFlight?.groundM === revised) groundRevisions += 1;
         }
       }
       if (phase !== "flying" || flight.state().phase !== "landed") return;

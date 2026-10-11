@@ -238,14 +238,30 @@ S-curve's zero start and the spread, 30 against 60 Hz, the refusals.
     km, beta 30 and 45): the view turns at most 0.17 degree between two
     60 Hz frames, a frame's step is never more than 0.993 x the one before
     around the replan (no jump), and the flight lands at the revised ground
-    + 150 m, looking at the target (miss 0.00 m). The WHOLE turn: a raise
-    0.00-0.01 degree at any height; a lowering about 30-50 x (drop /
-    height) degrees: 165 m turns 0.21-0.24 at 20 km, 1.00-1.13 at 5 km and
-    3.53-3.83 at 2 km; 30 m turns 0.04 / 0.18-0.20 / 0.61-0.67. Past the
-    brief's one-degree wall late, so the lab lowers only while the drop is
-    at most `LANDING_GROUND.lowerPerHeight` (1.25 %) of the camera's height
-    above the ground (`groundRevisionM`'s `heightM`), else lands the drop
+    plus 150 m, looking at the target (miss 0.00 m). The WHOLE turn: a
+    raise 0.00-0.01 degree while the camera stands well over the new
+    ground; a lowering about 30-50 x (drop / height) degrees, under twice
+    the straight line's own turn d sin(2 beta) / (2 h): 165 m turns
+    0.21-0.24 at 20 km, 1.00-1.13 at 5 km and 3.53-3.83 at 2 km; 30 m turns
+    0.04 / 0.18-0.20 / 0.61-0.67. Past the brief's one-degree wall late, so
+    the lab lowers only while the drop is at most
+    `LANDING_GROUND.lowerPerHeight` (1.25 %) of the camera's height above
+    the ground (`groundRevisionM`'s `heightM`), else lands the drop
     higher.
+  - A RAISE is taken only while the camera stands at least the landing
+    over the NEW ground and the raise is at most
+    `PIN_FLIGHT.raisePerHeight` (6) x that height; otherwise `pinGround`
+    changes nothing (the per-frame clearance keeps the camera over the
+    drawn ground). The R4b milestone review found the raise unguarded: with
+    the camera at, under or within about 60 m of the new ground the
+    replanned path started 1 m over the lifted surface (`startView`'s
+    floor) instead of at the camera, and the view flipped by 135-180
+    degrees in one frame; raised more than about 8 x its height the camera
+    jumped (its step 1.2-11 x the frame before). Swept in
+    `flight-ground.test.ts`: new ground + -50 to 1,000 m x beta 20 / 30 /
+    45 x grounds 435 / 2,000 / 4,000 m, the view turning at most 0.001
+    degree a frame and the step at most 0.989 x the one before where
+    applied.
 - `meteorLinkStart(..., groundM = 0)`: the link's start on the line to
   the target lifted to its ground.
 - `pinLanding` stays (the replan path for a new landing), unused by the

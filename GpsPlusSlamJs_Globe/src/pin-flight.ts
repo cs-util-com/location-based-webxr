@@ -85,6 +85,18 @@ export const PIN_FLIGHT = Object.freeze({
   assumedDataMs: 55_000,
   /** The slowest the high stretch flies while it waits for its data. */
   minRate: 0.05,
+  /**
+   * A RAISED ground (`pinGround`) is taken only while the camera stands at
+   * least the landing over the new ground and the raise is at most this
+   * many times that height (round-4 R4b milestone review, finding 1).
+   * Closer, the replanned path cannot start at the camera (it is under or
+   * at the new ground: the view flipped 135-180 degrees in a frame), or
+   * starts nearly level from a diving camera (its step jumped 1.2-11 x);
+   * the per-frame clearance keeps the camera over the drawn ground then.
+   * Probed: a 2,000 m raise was clean from 250 m over the new ground (8 x),
+   * not at 200 (10 x); 4,000 m not yet at 280 (14 x); so 6.
+   */
+  raisePerHeight: 6,
   /** The stretch aims to meet the data this much later than predicted. */
   arrivalMargin: 1.25,
 });
@@ -575,7 +587,9 @@ export function pinLanding(
  * The target's ground, read or revised (round-4 plan 2026-10-11-0122
  * DEC-R4-1, §6 item 3): the flight replans over the ellipsoid lifted to it
  * (a CF2 replan, so never a jump; its beta kept unless a lowered ground
- * needs a steeper line, `meteorTo`; the gate found again),
+ * needs a steeper line, `meteorTo`; the gate found again), a RAISE only
+ * while the camera is far enough over the new ground
+ * (`PIN_FLIGHT.raisePerHeight`; else nothing changes),
  * landing `landingM` above it. Only while flying to a target; RangeError
  * for a ground below 0 or not finite.
  */
@@ -588,9 +602,25 @@ export function pinGround(
   const now = advance(pin, nowMs);
   const flying = now.phase === "approaching" || now.phase === "descending";
   if (!flying || !now.target || groundM === now.groundM) return now;
+  if (!raiseReachable(now, groundM)) return now;
   const next = { ...now, groundM };
   const { flight, meteorDeg } = meteorTo(next, now.target, now.meteorDeg);
   return opened({ ...next, meteorDeg, flight, gateClockMs: gateOf(flight) });
+}
+
+/**
+ * Whether a flight can take a raise to `groundM` from where its camera is
+ * now (`PIN_FLIGHT.raisePerHeight`): always for a lower or equal ground.
+ */
+function raiseReachable(pin: PinFlight, groundM: number): boolean {
+  const raise = groundM - pin.groundM;
+  if (!(raise > 0) || !pin.flight) return true;
+  // The camera's height over the NEW ground: its height over the flight's
+  // own (lifted) surface, less the raise.
+  const overNew = flightFrameAt(pin.flight, pin.clockMs).altitudeM - raise;
+  return (
+    overNew >= pin.landingM && raise <= PIN_FLIGHT.raisePerHeight * overNew
+  );
 }
 
 /** A touch on the globe: the controls take the camera. */

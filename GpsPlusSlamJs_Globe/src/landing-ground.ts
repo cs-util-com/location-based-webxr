@@ -39,7 +39,10 @@ export const LANDING_GROUND = Object.freeze({
    * height) degrees (`flight-ground.test.ts`: 1.0 for 165 m at 5 km, 3.5
    * at 2 km, 0.6 for 30 m at 2 km), so this keeps a lowering's turn to
    * 0.4-0.6 degree; later the flight lands the drop higher instead. A
-   * raise turns it by under 0.01 degree at any height (measured).
+   * raise turns it by 0.01 degree or less, but only while the camera
+   * stands well over the new ground: `pinGround` takes a raise only then
+   * (`PIN_FLIGHT.raisePerHeight`; nearer, the view flipped by 135-180
+   * degrees, the R4b milestone review).
    */
   lowerPerHeight: 0.0125,
 });

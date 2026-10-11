@@ -34,7 +34,10 @@
     current ground; default: any), else null (no revision); null for a
     null or non-finite relief height.
   - Why the lowering's limit (measured in `flight-ground.test.ts`): a
-    raise turns the meteor's view by under 0.01 degree at any height; a
+    raise turns the meteor's view by 0.01 degree or less while the camera
+    stands well over the new ground (`pin-flight.ts` takes a raise only
+    then, `PIN_FLIGHT.raisePerHeight`: nearer, or under it, the view
+    flipped by 135-180 degrees in one frame, the R4b milestone review); a
     lowered ground puts the camera above its line and the replan turns the
     view by about 30-50 x (drop / height) degrees (165 m: 1.0 at 5 km, 3.5
     at 2 km). At 1.25 % the turn stays at 0.4-0.6 degree; a lowering

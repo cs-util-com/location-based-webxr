@@ -22,6 +22,7 @@ import { surfaceRadiusAlong } from "./globe-dive.js";
 import { flightAt, flightCamera, liftedEllipsoid } from "./flight-path.js";
 import { flightCameraAt } from "./flight-replan.js";
 import {
+  PIN_FLIGHT,
   meteorLinkStart,
   pinFix,
   pinFrame,
@@ -264,7 +265,7 @@ function flyRevised(
   fromM: number,
   toM: number,
   atM: number,
-): { shots: Shot[]; revisedAt: number } {
+): { shots: Shot[]; revisedAt: number; groundM: number } {
   let pin = link(beta, fromM);
   const shots: Shot[] = [];
   let revisedAt = -1;
@@ -282,7 +283,7 @@ function flyRevised(
     if (!out.camera) break;
     shots.push(out.camera);
   }
-  return { shots, revisedAt };
+  return { shots, revisedAt, groundM: pin.groundM };
 }
 
 /**
@@ -302,8 +303,9 @@ function revised(
   stepRatio: number;
   endHeightM: number;
   missM: number;
+  groundM: number;
 } {
-  const { shots, revisedAt } = flyRevised(beta, fromM, toM, atM);
+  const { shots, revisedAt, groundM } = flyRevised(beta, fromM, toM, atM);
   // The whole turn the revision causes: the meteor's view is constant, so
   // the largest angle from the view just before it.
   const before = shots[revisedAt - 1];
@@ -340,6 +342,7 @@ function revised(
     turnDeg,
     totalDeg,
     stepRatio,
+    groundM,
     endHeightM: WGS84_ELLIPSOID.getPositionElevation(last.position),
     missM: missM(last.position, forward(last.quaternion), groundPoint(toM)),
   };
@@ -349,11 +352,12 @@ function revised(
 // is read early so a revision is rare, and when the relief's own height
 // differs by more than the margin it goes through the replan path, never a
 // jump. Raise and lower (by 435, 165, 30 and 35 m), at four altitudes, two
-// entry angles: the view turns by less than half a degree between two
-// 60 Hz frames, the camera's step never jumps (at most 1.5 x the frame
-// before), and it lands at the revised ground + 150, looking at the
-// target. The whole turn is measured too: a raise turns nothing, a
-// lowering turns the view about 30-50 x (drop / height) degrees.
+// entry angles: the view turns by at most 0.35 degree between two 60 Hz
+// frames (measured 0.17), the camera's step never jumps (at most 1.05 x
+// the frame before; measured 0.993, a braking flight), and it lands at the
+// revised ground + 150, looking at the target. The whole turn is measured
+// too: a raise turns nothing, a lowering turns the view by at most twice
+// the straight line's own turn (see below).
 describe("a revised ground replans, raise or lower, without a jump", () => {
   for (const beta of [30, 45]) {
     for (const [fromM, toM] of [
@@ -370,16 +374,56 @@ describe("a revised ground replans, raise or lower, without a jump", () => {
           );
           expect(Math.abs(r.endHeightM - (toM + LANDING_M))).toBeLessThan(1);
           expect(r.missM).toBeLessThan(1);
-          expect(r.turnDeg).toBeLessThan(0.5);
-          expect(r.stepRatio).toBeLessThan(1.5);
-          // The whole turn: none for a raise; for a lowering about 30-50 x
-          // (drop / height) degrees, the law LANDING_GROUND.lowerPerHeight
-          // rests on (1.0 for 165 m at 5 km, 3.5 at 2 km: past the brief's
-          // one-degree wall, which is why the lab lowers only early).
+          expect(r.turnDeg).toBeLessThan(0.35);
+          expect(r.stepRatio).toBeLessThan(1.05);
+          // The whole turn: none for a raise. For a lowering, a bound from
+          // the geometry, not fitted: a camera on a line at beta, h above
+          // the target's ground, sees the target drop by d; the line to it
+          // turns by d sin(2 beta) / (2 h) (the target's displacement
+          // across the line over the distance h / sin(beta)). The refit
+          // line then eases back to the asked angle, measured at 1.2-1.7 x
+          // that turn, so the bound is twice it (1.0 degree for 165 m at
+          // 5 km, 3.5 at 2 km: past the brief's one-degree wall, which is
+          // why the lab lowers only early).
           const drop = fromM - toM;
-          expect(r.totalDeg).toBeLessThan(
-            drop > 0 ? (50 * drop) / (atKm * KM) + 0.01 : 0.05,
+          const h = atKm * KM - toM;
+          const lineDeg = (drop * Math.sin(2 * beta * DEG)) / (2 * h) / DEG;
+          expect(r.totalDeg).toBeLessThan(drop > 0 ? 2 * lineDeg + 0.01 : 0.05);
+        });
+      }
+    }
+  }
+});
+
+// WHY (the R4b milestone review, finding 1): a late RAISE found the camera
+// at or under the new ground, or within the landing above it (a failed or
+// slow early read, then the relief's tile when the camera is already low):
+// the replanned path started 1 m over the lifted surface instead of at the
+// camera, and the view flipped by 135-180 degrees in one frame. Raised
+// more than about 8 x the camera's height over the new ground, the camera
+// also jumped (its step 1.2-11 x the frame before: a nearly level path
+// from a camera that was diving). A raise is now applied only while the
+// camera is at least the landing over the new ground AND the raise is at
+// most PIN_FLIGHT.raisePerHeight (6) x that height; otherwise the per-frame
+// clearance keeps the camera over the drawn ground. Swept at new ground +
+// -50 / 0 / 20 / 60 / 170 / 300 / 600 / 1,000 m (the camera crosses each
+// a frame late, so none sits on a threshold), beta 20 / 30 / 45, grounds 435,
+// 2,000 and 4,000 m (the probe: 2,000 m was clean from 250 m over it, 4,000
+// m not yet at 280).
+describe("a late raise near the new ground never flips or jumps the view", () => {
+  for (const g of [435, 2_000, 4_000]) {
+    for (const beta of [20, 30, 45]) {
+      for (const offset of [-50, 0, 20, 60, 170, 300, 600, 1_000]) {
+        it(`ground 0 to ${g} m at ${offset} m over it, beta ${beta}`, () => {
+          const r = revised(beta, 0, g, g + offset);
+          const applies =
+            offset >= LANDING_M && g <= PIN_FLIGHT.raisePerHeight * offset;
+          console.log(
+            `late raise to ${g} m at ${offset} m over it, beta ${beta}: applied ${r.groundM === g}, view turn at most ${r.turnDeg.toFixed(3)} deg a frame, step ratio at most ${r.stepRatio.toFixed(3)}`,
           );
+          expect(r.groundM).toBe(applies ? g : 0);
+          expect(r.turnDeg).toBeLessThan(0.35);
+          expect(r.stepRatio).toBeLessThan(1.05);
         });
       }
     }

@@ -158,19 +158,22 @@ describe("groundRevisionM", () => {
   });
 
   // WHY (measured in flight-ground.test.ts): a raise turns the meteor's
-  // view by under 0.01 degree at any height, but a LOWERED ground puts the
+  // view by 0.01 degree or less (pinGround takes it only while the camera
+  // stands well over the new ground), but a LOWERED ground puts the
   // camera above its line and turns the view by about 30-50 x (drop over
   // height) degrees: 1.0 for 165 m at 5 km, 3.5 at 2 km. So a lowering
   // comes only while the drop is at most `lowerPerHeight` of the camera's
   // height above the ground (0.4-0.6 degree); later the flight lands
   // that much higher instead.
-  it("lowers only while the drop is small against the camera's height; raises always", () => {
+  it("lowers only while the drop is small against the camera's height; offers a raise", () => {
     const k = LANDING_GROUND.lowerPerHeight;
     expect(groundRevisionM(600, 435, { heightM: 165 / k - 1 })).toBeNull();
     expect(groundRevisionM(600, 435, { heightM: 165 / k + 1 })).toBe(435);
     expect(groundRevisionM(600, 435, { heightM: 20_000 })).toBe(435);
     expect(groundRevisionM(600, 435, { heightM: 5_000 })).toBeNull();
-    expect(groundRevisionM(0, 435, { heightM: 300 })).toBe(435);
+    // A raise is offered at any height: whether the flight can take it
+    // from where its camera is decides pinGround (PIN_FLIGHT.raisePerHeight).
+    expect(groundRevisionM(0, 435, { heightM: 3_000 })).toBe(435);
     expect(groundRevisionM(600, 435)).toBe(435);
   });
 
