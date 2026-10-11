@@ -77,14 +77,18 @@ import {
   pinFailed,
   pinFix,
   pinFrame,
-  pinLanding,
+  pinGround,
   pinProgress,
   pinTouch,
   meteorLinkStart,
   pressPin,
 } from "/globe/pin-flight.js";
 import { flightCameraAt, flightFrameAt } from "/globe/flight-replan.js";
-import { globeReadoutText, readoutThrottle } from "/globe/globe-readout.js";
+import {
+  formatDistance,
+  globeReadoutText,
+  readoutThrottle,
+} from "/globe/globe-readout.js";
 import {
   GLOBE_INTRO,
   INTRO_VARIANTS,
@@ -97,7 +101,16 @@ import {
   globeZoomOutLimitM,
   limitGlobeZoomOut,
 } from "/globe/globe-zoom-limit.js";
-import { GLOBE_TERRAIN, createGlobeTerrain } from "/globe/globe-terrain.js";
+import {
+  GLOBE_TERRAIN,
+  createGlobeTerrain,
+  finestElevationAt,
+} from "/globe/globe-terrain.js";
+import {
+  LANDING_GROUND,
+  groundRevisionM,
+  readLandingGroundM,
+} from "/globe/landing-ground.js";
 import { nextDrawnShare, topLevelReady } from "/globe/globe-band-gate.js";
 import { asStencilFill, asStencilWriter } from "/globe/globe-stencil-fill.js";
 import {
@@ -439,6 +452,13 @@ const PARAMS = {
     min: 1,
     max: 5000,
   },
+  // Where the continuous flight (`flight=2`) lands, m above the GROUND at
+  // its place (round-4 plan 2026-10-11-0122 DEC-R4-1, the owner: about
+  // 100-200 m above the ground, not above sea level): the place's ground
+  // is read early from the relief's own heights (`/globe/landing-ground.js`;
+  // the ellipsoid with `relief=0`). `landKm` stays the old dive's (flight=1)
+  // and the smokes' hold altitude above the ellipsoid.
+  landAglM: { fallback: 150, min: 10, max: 10_000 },
   // `land=1` with an `at=` link flies the dive to that place, as the pin
   // does to the device's (§12.4 R15: the owner can land in Zurich or Bern
   // from anywhere).
@@ -1379,6 +1399,15 @@ function bindPin({
   setFrameTarget = () => {},
   // The speed dust's reset: a placement is not a speed (round-3 plan D1).
   resetSpeed = () => {},
+  // The landing's ground at a place (round-4 plan DEC-R4-1): `{ groundM,
+  // source, done }`, read once per place; `groundM` null until read.
+  groundOf = () => ({
+    groundM: 0,
+    source: "fallback",
+    done: Promise.resolve(),
+  }),
+  // The relief's finest height at a place (m, true heights), or null.
+  reliefGroundM = () => null,
 }) {
   let phase = "idle";
   let message = "";
@@ -1504,6 +1533,10 @@ function bindPin({
     const params = getParams();
     controls.release();
     const start = ecefCamera();
+    // The place's ground, if already read (a link reads it from load): the
+    // flight lands `landAglM` above it (DEC-R4-1); else the ellipsoid
+    // until the read arrives (`groundArrives`).
+    const groundM = place ? (groundOf(place).groundM ?? 0) : 0;
     // The flight's start: the camera as it is, unless placed below.
     let flightStart = null;
     if (fromAltitudeM > 0 && place && params.meteorDeg < 90) {
@@ -1515,8 +1548,9 @@ function bindPin({
         orbitPose(ellipsoid, place),
         start.position,
         fromAltitudeM,
-        params.landKm * 1000,
+        params.landAglM,
         params.meteorDeg,
+        groundM,
       );
       start.position.copy(flightStart.position);
       start.quaternion.copy(flightStart.quaternion);
@@ -1549,7 +1583,8 @@ function bindPin({
         },
         {
           target: place ? orbitPose(ellipsoid, place) : null,
-          landingM: params.landKm * 1000,
+          landingM: params.landAglM,
+          groundM,
           progress: 0,
           meteorDeg: params.meteorDeg,
           paceLagMs: params.paceLagMs,
@@ -1558,6 +1593,22 @@ function bindPin({
       ),
       place,
     );
+  };
+  /**
+   * The place's ground, once read (DEC-R4-1, the cold review's §6 item 3:
+   * early, at link or fix time): the flight replans onto it if it still
+   * flies to that place (`pinGround` ignores an unchanged ground).
+   */
+  const groundArrives = (place) => {
+    const ground = groundOf(place);
+    void ground.done.then(() => {
+      const same =
+        located && located.lat === place.lat && located.lng === place.lng;
+      if (!same || ground.groundM === null) return;
+      flight.updatePin(performance.now(), (p, now) =>
+        pinGround(p, now, ground.groundM),
+      );
+    });
   };
   /** The target is known: its data warmed, the frame moved, the flight on. */
   const pinLocated = (place) => {
@@ -1570,10 +1621,13 @@ function bindPin({
     flight.updatePin(performance.now(), (p, now) =>
       pinFix(p, now, orbitPose(ellipsoid, located)),
     );
+    groundArrives(located);
     go("located");
   };
   /** Bumped by every press, so an answer to a cancelled request is dropped. */
   let request = 0;
+  /** How often the relief revised the landing's ground (DEC-R4-1), for the smokes. */
+  let groundRevisions = 0;
   pinButton.addEventListener("click", async () => {
     const before = phase;
     const mine = ++request;
@@ -1712,23 +1766,40 @@ function bindPin({
       if (moving() && phase === "flying" && located) {
         const now = performance.now();
         flight.updatePin(now, (p, t) => pinProgress(p, t, arrivalProgress()));
-        // The landing's floor once the target's heights are in (cold review
-        // finding 11): a rise of more than 50 m replans the landing.
-        const floor = Math.max(getParams().landKm * 1000, diveFloorM(located));
+        // The landing's ground revised by the relief's own finest height
+        // there (DEC-R4-1, the cold review's §6 item 3), only past the
+        // margin (the same tile as the early read, sampled on another
+        // lattice), through the replan path: after a failed read mostly.
+        // A LOWER ground only while the drop is small against the camera's
+        // height above the ground (it turns the view; a raise does not).
         const pinNow = flight.pinFlight;
-        if (pinNow && floor > pinNow.landingM + 50) {
-          flight.updatePin(now, (p, t) => pinLanding(p, t, floor));
+        const revised =
+          pinNow &&
+          groundRevisionM(pinNow.groundM, reliefGroundM(located), {
+            heightM:
+              ellipsoid.getPositionElevation(ecefCamera().position) -
+              pinNow.groundM,
+          });
+        if (revised !== null && revised !== undefined) {
+          flight.updatePin(now, (p, t) => pinGround(p, t, revised));
+          groundRevisions += 1;
         }
       }
       if (phase !== "flying" || flight.state().phase !== "landed") return;
       // Landed (the data is in, or the pace's cap has passed): the camera
       // holds over the city, the controls take it from here.
-      // The continuous flight may have raised its landing over high ground.
-      const landedKm =
-        moving() && flight.pinFlight
-          ? flight.pinFlight.landingM / 1000
-          : getParams().landKm;
-      message = `Arrived, ${shown(landedKm)} km above sea level.`;
+      if (moving() && flight.pinFlight) {
+        // The continuous flight lands above the place's ground, or above
+        // the sea where none was read (relief=0, a failed read).
+        const p = flight.pinFlight;
+        const over =
+          p.groundM > 0 || groundOf(located).source === "tile"
+            ? "the ground"
+            : "sea level";
+        message = `Arrived, ${formatDistance(p.landingM)} above ${over}.`;
+      } else {
+        message = `Arrived, ${shown(getParams().landKm)} km above sea level.`;
+      }
       go("held");
     },
     state: () => ({
@@ -1740,6 +1811,14 @@ function bindPin({
         clockMs: flight.pinFlight.clockMs,
         rate: flight.pinFlight.rate,
         landingM: flight.pinFlight.landingM,
+        // The place's ground the flight lands above (DEC-R4-1), m, how it
+        // was read, and how often the relief revised it.
+        groundM: flight.pinFlight.groundM,
+        groundSource: located ? groundOf(located).source : null,
+        groundRevisions,
+        // The relief's own finest height at the place now (null: not loaded).
+        reliefGroundM: located ? reliefGroundM(located) : null,
+        meteorDeg: flight.pinFlight.meteorDeg,
         progress: flight.pinFlight.progress,
         gateClockMs: flight.pinFlight.gateClockMs,
         endsAtMs: flight.pinFlight.flight?.endsAtMs ?? null,
@@ -2098,10 +2177,15 @@ async function start() {
       : null;
   // The real heights' source is loaded only for the relief: the boot graph
   // stays free of the Osm library (build-lookdev.test.mjs).
-  const terrarium =
-    startParams.relief === 1 && startParams.reliefHeights !== "synthetic"
+  // The Osm library's Terrarium module: for the relief's real heights, and
+  // for the landing's ground read (round-4 plan DEC-R4-1), which reads the
+  // relief's own source, synthetic ones included.
+  const terrariumModule =
+    startParams.relief === 1
       ? await import("/osm-lib/elevation/terrarium.js")
       : null;
+  const terrarium =
+    startParams.reliefHeights !== "synthetic" ? terrariumModule : null;
   const terrain =
     startParams.relief === 1
       ? createGlobeTerrain({
@@ -2545,9 +2629,59 @@ async function start() {
     const e = exaggerationAt(params.landKm * 1000, heightLaw());
     return minimumAltitudeM(heightM, e, GLOBE_FLIGHT.clearanceM);
   };
+  /**
+   * The landing's ground source (round-4 plan 2026-10-11-0122 DEC-R4-1,
+   * §6 items 3-4): one Terrarium tile at the relief's own zoom from the
+   * relief's own source (R13), with a deadline; none without the relief,
+   * so the flight lands above the ellipsoid.
+   */
+  const groundSource = terrariumModule
+    ? new terrariumModule.TerrariumProvider({
+        decodePng: terrariumModule.browserPngDecoder(),
+        urlTemplate: terrarium
+          ? terrarium.TERRARIUM_URL_TEMPLATE
+          : SYNTHETIC_HEIGHTS_URL,
+        zoom: LANDING_GROUND.zoom,
+        requestTimeoutMs: LANDING_GROUND.timeoutMs,
+        maxCachedTiles: 4,
+      })
+    : null;
+  /** Each place's ground, read once: `{ groundM, source, done }`. */
+  const grounds = new Map();
+  const groundOf = (place) => {
+    const key = `${place.lat},${place.lng}`;
+    let entry = grounds.get(key);
+    if (!entry) {
+      const fresh = { groundM: null, source: null, done: null };
+      fresh.done = readLandingGroundM(groundSource, place).then((read) => {
+        fresh.groundM = read.groundM;
+        fresh.source = read.source;
+      });
+      grounds.set(key, fresh);
+      entry = fresh;
+    }
+    return entry;
+  };
+  /** The relief's finest height at a place (true metres), or null. */
+  const reliefGroundM = (place) => {
+    if (!terrain) return null;
+    const drawn = finestElevationAt(
+      terrain.plugin,
+      place.lat * DEG,
+      place.lng * DEG,
+    );
+    return drawn === null
+      ? null
+      : drawn / Math.max(terrain.plugin.heightScale, 1);
+  };
+  // A link's place: its ground is read from load, so the flight knows it
+  // before it plans its line (the cold review's §6 item 3: early).
+  if (params.url) groundOf(params.url);
   pin = bindPin({
     ellipsoid: globe.tiles.ellipsoid,
     diveFloorM,
+    groundOf,
+    reliefGroundM,
     ecefCamera,
     placeCameraEcef,
     setFrameTarget,

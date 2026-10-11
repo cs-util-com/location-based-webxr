@@ -489,8 +489,24 @@ test("flight=2: a land=1 link flies the continuous flight and lands", async ({
   // intro happens to be.
   expect(startKm).toBeGreaterThan(64_000);
   expect(startKm).toBeLessThan(66_000);
-  expect(lowestKm).toBeGreaterThan(2 * 0.9);
-  expect(st.altitudeM).toBeLessThan(3_500);
+  // WHY (round-4 plan DEC-R4-1): it lands 150 m above the GROUND at its
+  // place (read from the relief's own synthetic tile here), never lower on
+  // the way; the per-frame clearance may lift it over higher ground behind
+  // the place, so the end is bounded above by the ground under the camera.
+  const groundKm = st.pin.flight.groundM / 1000;
+  console.log(
+    `flight=2 land=1: ground at the place ${(groundKm * 1000).toFixed(1)} m (${st.pin.flight.groundSource}), landing ${st.pin.flight.landingM} m above it`,
+  );
+  expect(st.pin.flight.groundSource).toBe("tile");
+  expect(groundKm).toBeGreaterThan(0);
+  expect(lowestKm).toBeGreaterThan(groundKm + 0.15 - 0.002);
+  expect(st.altitudeM).toBeGreaterThan((groundKm + 0.15) * 1000 - 2);
+  expect(st.altitudeM).toBeLessThan(
+    Math.max(
+      (groundKm + 0.15) * 1000 + 2,
+      (st.relief?.groundUnderCameraM ?? 0) + st.relief.clearanceM + 2,
+    ),
+  );
   // The sampler can miss the landed frame (the boot returns on it), so the
   // end is read from the final state.
   expect(phases).toContain("descending");

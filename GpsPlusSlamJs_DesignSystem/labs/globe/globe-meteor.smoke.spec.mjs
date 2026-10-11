@@ -122,7 +122,10 @@ for (const [beta, startKm] of [
       page,
       `${BASE}&flight=2&meteorDeg=${beta}&flightStartKm=${startKm}`,
     );
-    const landing = 2_000;
+    // 150 m above the ground (`landAglM`, round-4 plan DEC-R4-1); with
+    // relief=0 the ground is the ellipsoid, so the line ends on Bern's
+    // ellipsoid point as before.
+    const landing = 150;
     const near = (hKm) =>
       samples.reduce((best, s) =>
         Math.abs(Math.log(s.h / (hKm * 1000))) <
@@ -151,6 +154,10 @@ for (const [beta, startKm] of [
       expect(Math.abs(r.d - r.expected), `${r.hKm} km`).toBeLessThan(2);
     }
     expect(Math.abs(last.d - beta)).toBeLessThan(2);
+    // It lands `landAglM` up (the ground is the ellipsoid with relief=0);
+    // within 2 m: the camera stands 150 / tan(beta) back, where WGS84 lies
+    // up to 1.4 m off the target's radius (flight-ground.test.ts).
+    expect(Math.abs(last.h - landing)).toBeLessThan(2);
     expect(t.frames).toBeGreaterThan(10);
     // 0.01 measured; a tenth of the review's failure shapes (0.4-0.7).
     expect(t.worst).toBeLessThan(0.2);

@@ -687,6 +687,30 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   flight; 2 the distance only everywhere; 0 the whole motion always. The
   volume's noise is `live` by default (DEC-R4-6) unless `cloudNoise` or
   `cloudHex=1` says otherwise. A placement resets the dust's speed.
+  `landAglM` (150, 10-10,000; round-4 plan 2026-10-11-0122 DEC-R4-1, R4b)
+  is where `flight=2` lands: that many metres above the GROUND at its
+  place, not above sea level (`landKm` stays the old dive's and the
+  smokes' hold altitude above the ellipsoid; no panel control). The
+  place's ground is read EARLY (`/globe/landing-ground.js`, one Terrarium
+  tile at the relief's own zoom from the relief's own source through the
+  Osm library's `TerrariumProvider`, synthetic heights included; a 5 s
+  deadline; with `relief=0` or a failed read the ellipsoid): from load for
+  an `at=` link, at the fix for a press. The press takes it if read
+  (`pressPin`'s `groundM`, `meteorLinkStart`'s), else `pinGround` replans
+  onto it when it arrives. Per frame while flying, the relief's own
+  FINEST height at the place (`finestElevationAt`) revises it only past
+  the 25 m margin (`groundRevisionM`), through `pinGround` (the replan
+  path, never a jump). The old landing floor (a raise of more than 50 m
+  through `pinLanding`) is gone for `flight=2`: the target is lifted to
+  its ground instead. The landed line says "Arrived, 150 m above the
+  ground." ("above sea level" where no ground was read). The readout adds
+  " · 150 m above ground" below 100 km, from the drawn ground under the
+  camera, and measures "to the target" to the target at its ground. The
+  state's `pin.flight` adds `groundM`, `groundSource` ("tile" or
+  "fallback"), `groundRevisions`, `reliefGroundM` (the relief's finest
+  height at the place now) and `meteorDeg`; `relief.clearanceM` is the
+  page's clearance (100 m since round 4, `GLOBE_FLIGHT.clearanceM`).
+  Smokes: `globe-landing-ground.smoke.spec.mjs`.
   Measured (`globe-meteor.smoke.spec.mjs`, F1 at beta 45): 73.8 degrees
   below the horizontal at 9,718 km, 64.4 at 4,060, 52.3 at 1,003 (the
   line: 73.7, 64.4, 52.3); F1b re-measures it at beta 30 and 45.
