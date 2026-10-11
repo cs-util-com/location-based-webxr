@@ -366,6 +366,78 @@ interface TerrariumMeshPluginInstance {
   sampleCartographicElevation(lat: number, lon: number): number | null;
 }
 
+/** The plugin's private state `finestElevationAt` reads (0.5.3). */
+interface FinestInternals {
+  _maxSourceLevel?: unknown;
+  _tiling?: {
+    projection: {
+      isCartographic?: boolean;
+      fromCartographicToNormalized(
+        lon: number,
+        lat: number,
+        target: [number, number],
+      ): [number, number];
+    };
+    getTileAtPoint(
+      nx: number,
+      ny: number,
+      level: number,
+      normalized: boolean,
+    ): [number, number];
+  } | null;
+  _gridCache: { get(x: number, y: number, level: number): unknown };
+}
+
+/**
+ * Whether the plugin's finest source level holds the heights at a place
+ * (the plugin's own walk, at that level only); false where its private
+ * state is not as 0.5.3 has it (a library change), never a throw.
+ */
+function finestGridLoaded(p: FinestInternals, lat: number, lon: number) {
+  const level = p._maxSourceLevel;
+  const tiling = p._tiling;
+  if (
+    typeof level !== "number" ||
+    level < 0 ||
+    !tiling?.projection.isCartographic
+  ) {
+    return false;
+  }
+  try {
+    const [nx, ny] = tiling.projection.fromCartographicToNormalized(
+      lon,
+      lat,
+      [0, 0],
+    );
+    const [x, y] = tiling.getTileAtPoint(nx, ny, level, true);
+    const grid = p._gridCache.get(x, y, level);
+    return Boolean(grid) && !(grid instanceof Promise);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The drawn height (m, the height scale applied) at a geodetic latitude and
+ * longitude (radians) from the relief's FINEST source level only (z12, the
+ * landing's own read: round-4 plan 2026-10-11-0122 DEC-R4-1), or null
+ * where that tile's heights are not loaded. The plugin's own
+ * `sampleCartographicElevation` falls back to coarser levels, whose heights
+ * in the Alps differ by hundreds of metres: a landing revised by them
+ * would replan for nothing, then again. Reads the plugin's private tiling
+ * and grid cache (as `globe-height-keeper.ts` does); null if they are not
+ * there (a library change), so the landing is then never revised.
+ */
+export function finestElevationAt(
+  plugin: TerrariumMeshPluginInstance,
+  lat: number,
+  lon: number,
+): number | null {
+  return finestGridLoaded(plugin as unknown as FinestInternals, lat, lon)
+    ? plugin.sampleCartographicElevation(lat, lon)
+    : null;
+}
+
 type TerrariumMeshPluginConstructor = new (options: {
   url: string;
   maxZoom?: number;

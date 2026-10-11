@@ -75,6 +75,15 @@
     `detail` (`globe-detail.ts`'s uniforms, one object for every tile) the
     detail factor multiplies the imagery right after `map_fragment`; a
     missing or doubled anchor then throws, naming it.
+  - `finestElevationAt(plugin, lat, lon)` (radians): the drawn height at a
+    place from the relief's FINEST source level only (z12, the landing's own
+    read, round-4 plan 2026-10-11-0122 DEC-R4-1), null where that tile's
+    heights are not loaded; the plugin's own sampler falls back to coarser
+    levels, hundreds of metres off in the Alps, which would revise a
+    landing for nothing. Reads the plugin's private `_maxSourceLevel`,
+    `_tiling` and `_gridCache` (as `globe-height-keeper.ts` does); null, never
+    a throw, if they change (`globe-terrain.finest.test.ts` checks the real
+    plugin has them).
   - `createGlobeTerrain({ url, imagery, template, heightScale, maxZoom?, lazyHeightScale?, keepHeightsBytes? })`
     -> `{ tiles, plugin, detail, setDetail(grid, centre), litTiles(), heightScaleStats(), heightKeeperStats(), dispose() }`
     (the decoded heights its tiles release are kept within
