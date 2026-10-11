@@ -28,6 +28,13 @@ asked for a screen-space effect tied to the speed in metres per second.
   frame is a gross teleport the lab did not announce (the lab resets the
   speed itself where it places the camera: a view, a link's start):
   the velocity resets to 0 rather than spiking. Bad samples are ignored.
+- `stepVelocity`'s `options`: `radialOnly` keeps only the motion toward or
+  away from the centre, counted as far as the motion is radial (its share
+  from `radialFrom` 0.8 to `radialTo` 0.95: a turn around the centre gives
+  exactly nothing, a tilt nothing, a zoom all of itself; round-4 plan
+  DEC-R4-4); a slowing velocity follows `releaseMs` (50) instead of `tauMs`
+  (200), so the streaks are gone within about 0.43 s of the motion
+  stopping (swept 40 / 50 / 60 / 120 ms; 60 keeps 22 % at half a second).
 - `speedShare(mps, range?)`: 0 up to `loMps`, 1 from `hiMps`, log-linear
   between (0 for a non-number); `range` `{ loMps, hiMps }` replaces the
   defaults (the lab's knobs, D1b), RangeError unless 0 < lo < hi.

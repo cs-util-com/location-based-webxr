@@ -43,7 +43,9 @@ const HOLD_KM = 12;
 // (3 km x E 3 = 9 km), and the near-deck clipping guard needs it: at the
 // default E 1 (true heights since 2026-10-06) the deck lies far below any
 // near plane, so that test could not fail (r790 milestone review F1).
-const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&landKm=${HOLD_KM}&reliefNear=3`;
+// `cloudNoise=tile`: these were measured on the baked tile; the live noise
+// (the lab's default since round-4 DEC-R4-6) has its own smoke.
+const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&landKm=${HOLD_KM}&reliefNear=3&cloudNoise=tile`;
 /** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
 // The wait for the landing and the relief to settle (frame-bound; the
 // helpers' RELIEF_SETTLE_MS says why). Here measured 2026-10-09 at about

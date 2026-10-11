@@ -670,11 +670,15 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   camera never turns to its line; a press flies the flattest line its arc
   allows and eases to the asked angle near the ground (DEC-R3-12). The
   state adds `cameraForward` (where the camera looks, ECEF) and
-  `frameRecentres` (a count). `paceLagMs` (800) and `paceStages` (1) set how
+  `frameRecentres` (a count). `paceLagMs` (5,000) and `paceStages` (2: the owner's pick, DEC-R4-3) set how
   gently the flight speeds up when its data is in or its gate opens (the
   pin's rate lag; 2 stages is an S-curve with no acceleration at its start;
-  the panel's "Flight speed-up" section); the defaults are the flight
-  before, until the owner's A/B pick. A placement resets the dust's speed.
+  the panel's "Flight speed-up" section; 800 and 1 are the flight before).
+  `dustMotion` (1) says which motion makes streaks (DEC-R4-4): the distance
+  only while the user's controls move the camera, the whole motion in a
+  flight; 2 the distance only everywhere; 0 the whole motion always. The
+  volume's noise is `live` by default (DEC-R4-6) unless `cloudNoise` or
+  `cloudHex=1` says otherwise. A placement resets the dust's speed.
   Measured (`globe-meteor.smoke.spec.mjs`, F1 at beta 45): 73.8 degrees
   below the horizontal at 9,718 km, 64.4 at 4,060, 52.3 at 1,003 (the
   line: 73.7, 64.4, 52.3); F1b re-measures it at beta 30 and 45.

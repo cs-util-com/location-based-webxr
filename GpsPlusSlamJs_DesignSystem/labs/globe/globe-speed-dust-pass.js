@@ -183,6 +183,7 @@ export function createSpeedDustPass(maxCount = SPEED_DUST_MAX_COUNT) {
       on,
       exposureMs,
       widthPx,
+      radialOnly = false,
       look = {},
     }) {
       // The panel's knobs (D1b), each the default when absent.
@@ -217,6 +218,7 @@ export function createSpeedDustPass(maxCount = SPEED_DUST_MAX_COUNT) {
         [position.x, position.y, position.z],
         nowMs,
         altitudeM,
+        { radialOnly },
       );
       const v = velocity.velocity;
       const speedMps = Math.hypot(v[0], v[1], v[2]);

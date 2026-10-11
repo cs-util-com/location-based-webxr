@@ -137,3 +137,53 @@ test("the streaks' knobs reach the pass, live", async ({ page }) => {
     driftMax: 12,
   });
 });
+
+// WHY (the owner on r812, round-4 plan DEC-R4-4): far out, turning the globe
+// by hand poured streaks sideways across the screen for 5-7 s. Under the
+// user's own controls only the distance to the Earth makes streaks: a drag
+// that turns the globe shows none, during it or after; a wheel zoom toward
+// the Earth shows them.
+test("turning the globe by hand draws no streaks; zooming does", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const errors = await bootGlobe(
+    page,
+    `spinMs=0&turnMs=0&${TIME}&stars=0&milkyWay=0&dust=1&view=46.9,7.4,30000,0,-90`,
+    { phase: "user" },
+  );
+  const box = await page.locator("#globe-canvas").boundingBox();
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  const shownDuring = async (act) => {
+    await page.evaluate(() => {
+      window.__dustSeen = 0;
+      const tick = () => {
+        if (window.__globeLab.state().dust.shown) window.__dustSeen += 1;
+        if (window.__dustWatch) requestAnimationFrame(tick);
+      };
+      window.__dustWatch = true;
+      requestAnimationFrame(tick);
+    });
+    await act();
+    await page.evaluate(() => window.__globeLab.timeFrames(8));
+    return page.evaluate(() => {
+      window.__dustWatch = false;
+      return window.__dustSeen;
+    });
+  };
+  const turned = await shownDuring(async () => {
+    await page.mouse.move(cx - 150, cy);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) await page.mouse.move(cx - 150 + 30 * i, cy);
+    await page.mouse.up();
+  });
+  const zoomed = await shownDuring(async () => {
+    await page.mouse.move(cx, cy);
+    for (let i = 0; i < 6; i++) await page.mouse.wheel(0, -600);
+  });
+  console.log(`dust frames shown: turning ${turned}, zooming ${zoomed}`);
+  expect(errors).toEqual([]);
+  expect(turned).toBe(0);
+  expect(zoomed).toBeGreaterThan(0);
+});

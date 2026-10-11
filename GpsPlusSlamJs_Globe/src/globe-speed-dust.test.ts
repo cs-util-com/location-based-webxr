@@ -251,3 +251,98 @@ describe("the streaks' tunable ranges (D1b)", () => {
     );
   });
 });
+
+// WHY (the owner on r812, round-4 plan DEC-R4-4 and §6 items 6-7): turning
+// the globe by hand made streaks pour sideways across the screen for 5-7 s
+// (the controls' spin momentum, all tangential). Under the user's controls
+// only the distance to the Earth makes streaks: motion around the centre
+// gives exactly nothing, motion toward it all of it, and a mostly-sideways
+// motion (a tilt) nothing either. And they stop within half a second of
+// the motion stopping: a release time constant of 50 ms (measured below,
+// with 40, 60 and 120 ms either side).
+describe("the streaks by the distance only, with a short tail (DEC-R4-4)", () => {
+  const R = 6_371_000;
+  const at = (
+    lat: number,
+    lng: number,
+    r: number,
+  ): [number, number, number] => [
+    r * Math.cos(lat) * Math.cos(lng),
+    r * Math.cos(lat) * Math.sin(lng),
+    r * Math.sin(lat),
+  ];
+  const run = (
+    path: (t: number) => [number, number, number],
+    ms: number,
+    radialOnly: boolean,
+    releaseMs?: number,
+  ) => {
+    let s = startVelocity();
+    for (let t = 0; t <= ms; t += 16) {
+      const p = path(t);
+      s = stepVelocity(s, p, t, Math.hypot(...p) - R, {
+        radialOnly,
+        releaseMs,
+      });
+    }
+    return Math.hypot(...s.velocity);
+  };
+
+  it("gives nothing for motion around the centre, at any speed", () => {
+    for (const r of [R + 8_000_000, R + 30_000_000]) {
+      for (const rate of [1e-4, 1e-3, 1e-2]) {
+        const v = run((t) => at(0.8, rate * t, r), 1_000, true);
+        expect(v).toBe(0);
+        // Without the option the same spin streaks (the bug's own motion).
+        expect(run((t) => at(0.8, rate * t, r), 1_000, false)).toBeGreaterThan(
+          0,
+        );
+      }
+    }
+  });
+
+  it("keeps motion toward the centre, and drops a mostly sideways one", () => {
+    const toward = run(
+      (t) => at(0.8, 0.3, R + 20_000_000 - 3_000 * t),
+      1_000,
+      true,
+    );
+    expect(toward).toBeGreaterThan(2_900_000 * 0.95);
+    // 20 % radial, 80 % around: a tilt, not a zoom.
+    const tilt = run(
+      (t) => at(0.8, 0.3 + 1.5e-4 * t, R + 20_000_000 - 1_000 * t),
+      1_000,
+      true,
+    );
+    expect(tilt).toBe(0);
+  });
+
+  // Gone means the speed back near the range's low end: from its top that
+  // is ln(5,000), about 8.5 time constants, so half a second needs a
+  // release of at most about 55 ms (60 ms measured 22 % opacity left).
+  it("stops within half a second of the motion stopping at the 50 ms release", () => {
+    const zoomThenStop = (t: number) =>
+      at(0.8, 0.3, R + 20_000_000 - (5_000_000 * Math.min(t, 1_000)) / 1_000);
+    const opacityAfter = (releaseMs: number, afterMs: number) => {
+      const v = run(zoomThenStop, 1_000 + afterMs, true, releaseMs);
+      return speedDustOpacity(speedShare(v), 15_000_000);
+    };
+    expect(opacityAfter(50, 500)).toBeLessThan(0.01);
+    expect(opacityAfter(40, 500)).toBeLessThan(0.01);
+    // 60 and 120 ms keep them past half a second (the threshold, measured).
+    expect(opacityAfter(60, 500)).toBeGreaterThan(0.01);
+    expect(opacityAfter(120, 500)).toBeGreaterThan(0.01);
+    expect(GLOBE_SPEED_DUST.releaseMs).toBe(50);
+  });
+
+  it("still speeds up at the attack's pace, not the release's", () => {
+    const v100 = run(
+      (t) => at(0.8, 0.3, R + 20_000_000 - 3_000 * t),
+      100,
+      true,
+    );
+    // 200 ms attack: after 100 ms about 1 - e^-0.5 = 39 % of 3,000 km/s.
+    expect(v100 / 3_000_000).toBeGreaterThan(0.3);
+    expect(v100 / 3_000_000).toBeLessThan(0.5);
+  });
+});

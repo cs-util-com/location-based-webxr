@@ -32,6 +32,21 @@ export const GLOBE_SPEED_DUST = {
   driftMax: 6,
   /** The velocity's smoothing time constant, ms. */
   tauMs: 200,
+  /**
+   * The release (DEC-R4-4: "a short tail"): a slowing velocity follows
+   * with this time constant, ms. The streaks are gone (opacity under 1 %)
+   * once the speed is back near `loMps`; from `hiMps` that is ln(hi / lo),
+   * about 8.5 time constants: 50 ms is gone in about 0.43 s (swept 40, 50,
+   * 60, 120: 60 keeps 22 % at half a second, 120 about a second).
+   */
+  releaseMs: 50,
+  /**
+   * Under the user's controls only the distance makes streaks: the radial
+   * share of the motion must reach `radialFrom` to count at all, and counts
+   * fully from `radialTo` (a tilt or a turn is mostly sideways).
+   */
+  radialFrom: 0.8,
+  radialTo: 0.95,
   /** Full above this altitude, m. */
   fullM: 2_000_000,
   /** Gone below this altitude, m. */
@@ -83,6 +98,12 @@ export function stepVelocity(
   position: Vec3,
   tMs: number,
   altitudeM: number,
+  options: {
+    /** Only the motion toward or away from the centre (DEC-R4-4). */
+    readonly radialOnly?: boolean;
+    /** The release's time constant, ms (default `releaseMs`). */
+    readonly releaseMs?: number;
+  } = {},
 ): SpeedState {
   if (!position.every((c) => Number.isFinite(c)) || !Number.isFinite(tMs)) {
     return state;
@@ -100,18 +121,45 @@ export function stepVelocity(
   if (Math.hypot(...d) > GLOBE_SPEED_DUST.jumpShare * Math.max(altitudeM, 1)) {
     return { position: [...position], tMs, velocity: [0, 0, 0] };
   }
-  const a = 1 - Math.exp(-dtMs / GLOBE_SPEED_DUST.tauMs);
-  const v = state.velocity;
   const s = 1000 / dtMs;
+  const raw: Vec3 = options.radialOnly
+    ? radialPart([d[0] * s, d[1] * s, d[2] * s], position)
+    : [d[0] * s, d[1] * s, d[2] * s];
+  const v = state.velocity;
+  // Faster down than up: a slowing camera's streaks end quickly.
+  const slowing = Math.hypot(...raw) < Math.hypot(...v);
+  const tau = slowing
+    ? (options.releaseMs ?? GLOBE_SPEED_DUST.releaseMs)
+    : GLOBE_SPEED_DUST.tauMs;
+  const a = 1 - Math.exp(-dtMs / tau);
   return {
     position: [...position],
     tMs,
     velocity: [
-      v[0] + (d[0] * s - v[0]) * a,
-      v[1] + (d[1] * s - v[1]) * a,
-      v[2] + (d[2] * s - v[2]) * a,
+      v[0] + (raw[0] - v[0]) * a,
+      v[1] + (raw[1] - v[1]) * a,
+      v[2] + (raw[2] - v[2]) * a,
     ],
   };
+}
+
+/**
+ * The part of `velocity` along the radial direction at `position` (toward
+ * or away from the centre), counted only as far as the motion is radial
+ * (its radial share from `radialFrom` to `radialTo`): a turn around the
+ * centre gives exactly nothing, a zoom all of itself.
+ */
+function radialPart(velocity: Vec3, position: Vec3): Vec3 {
+  const r = Math.hypot(...position);
+  const speed = Math.hypot(...velocity);
+  if (!(r > 0) || !(speed > 0)) return [0, 0, 0];
+  const n: Vec3 = [position[0] / r, position[1] / r, position[2] / r];
+  const along = velocity[0] * n[0] + velocity[1] * n[1] + velocity[2] * n[2];
+  const { radialFrom, radialTo } = GLOBE_SPEED_DUST;
+  const gate = smoothstep(
+    (Math.abs(along) / speed - radialFrom) / (radialTo - radialFrom),
+  );
+  return [n[0] * along * gate, n[1] * along * gate, n[2] * along * gate];
 }
 
 /**

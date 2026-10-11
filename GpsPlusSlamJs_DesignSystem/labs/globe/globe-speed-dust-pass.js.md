@@ -13,7 +13,9 @@ count is a live knob (D1b). `SPEED_DUST_COLORS`: the tints (bluish white,
 white, warm). It returns:
 
 - `update({ nowMs, position, quaternion, altitudeM, fovDeg, aspect,
-renderer, on, exposureMs, widthPx, look })`: each frame, with the
+renderer, on, exposureMs, widthPx, radialOnly, look })`: `radialOnly`
+  passes to the model's `stepVelocity` (only the distance to the Earth
+  makes streaks); each frame, with the
   camera's ECEF pose; `look` holds the panel's knobs, each the default
   when absent: `count`, `gain` (on the opacity), `color` (an index into
   `SPEED_DUST_COLORS`), `loMps`, `hiMps`, `driftMin`, `driftMax`. Steps the
