@@ -423,9 +423,11 @@ test("the cloud volume compiles and draws its hex-tiled clouds with cloudHex=1",
   test.setTimeout(780_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(OVERCAST);
+  // BASE pins `cloudNoise=tile`, and the text key wins over `cloudHex`:
+  // dropped here, so `cloudHex=1` decides, as an old link would.
   const errors = await bootGlobe(
     page,
-    `${BASE.replace(`landKm=${HOLD_KM}`, `landKm=${NEAR_DECK_KM}`)}&cloudVolumeCover=2&cloudHex=1`,
+    `${BASE.replace(`landKm=${HOLD_KM}`, `landKm=${NEAR_DECK_KM}`).replace("&cloudNoise=tile", "")}&cloudVolumeCover=2&cloudHex=1`,
   );
   await page.locator("#globe-pin").click();
   await page.waitForFunction(
