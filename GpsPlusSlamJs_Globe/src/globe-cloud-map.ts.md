@@ -91,6 +91,10 @@ full, piece, x, y, last) }`, the GPU step as a seam.
     round in flight are dropped and the preview shows; on the restore the
     pieces load again (the browser's cache usually has them) and the map
     is rebuilt. A late answer from a dropped round is freed on arrival.
+  - A loader may answer inside its own `loadTexture` call (the loader is
+    an injected seam: a cache, a test fake); such an answer is run only
+    once the texture is held, so a piece that fails that way is freed and
+    retried exactly as an asynchronous failure is (the PR #581 review).
   - Defensive: `update` never throws: a GPU step that throws (the
     allocation or a copy) drops the round, keeps the preview and reports
     `full: "failed"` with `error`; a renderer without `capabilities` or
@@ -110,7 +114,7 @@ full, piece, x, y, last) }`, the GPU step as a seam.
 - Tests: `globe-cloud-map.test.ts` (the preview first, as one channel of
   numbers; the pieces only after the preview and a renderer; one texture,
   each piece drawn as it arrives (in any order) at its place, one a
-  frame, never more than two alive, the swap after the fourth; a failed piece asked for again twice on its backoff, then keeping the preview and reported; a small
+  frame, never more than two alive, the swap after the fourth; a failed piece asked for again twice on its backoff, then keeping the preview and reported; a piece failing inside the loader's own call freed and retried; a small
   device keeping the preview; the counter's settling; a context loss and
   restore rebuilding, a loss mid-build dropping the round; dispose; the
   real builder through a recording renderer: 14 empty levels allocated,

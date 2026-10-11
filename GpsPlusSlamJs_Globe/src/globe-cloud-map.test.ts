@@ -43,7 +43,7 @@ interface Call {
  * piece textures alive (requested, not yet disposed; a texture disposed
  * again, as a late answer to a dropped round is, counts once).
  */
-function stubLoader({ resizes = true } = {}) {
+function stubLoader({ resizes = true, syncFail = false } = {}) {
   const calls: Call[] = [];
   const alive = new Set<THREE.Texture>();
   let mostAlive = 0;
@@ -73,6 +73,9 @@ function stubLoader({ resizes = true } = {}) {
           alive.delete(texture);
         });
       }
+      // A loader that answers inside its own call (a cache, a test fake):
+      // the piece fails before `loadTexture` has returned its texture.
+      if (syncFail && source.path !== CLOUDS.path) onError();
       calls.push({
         source,
         size,
@@ -161,9 +164,17 @@ function streamAll(
 
 /** A map with its preview in, and a first frame run. */
 function started(
-  opts: { maxTextureSize?: number; resizes?: boolean; now?: () => number } = {},
+  opts: {
+    maxTextureSize?: number;
+    resizes?: boolean;
+    now?: () => number;
+    syncFail?: boolean;
+  } = {},
 ) {
-  const loader = stubLoader({ resizes: opts.resizes ?? true });
+  const loader = stubLoader({
+    resizes: opts.resizes ?? true,
+    syncFail: opts.syncFail ?? false,
+  });
   const { builder, draws, created } = stubBuilder();
   const map = createGlobeCloudMap({
     source: CLOUDS,
@@ -340,6 +351,25 @@ describe("createGlobeCloudMap", () => {
     });
     expect(second.loader.alive()).toBe(0);
     second.map.dispose();
+  });
+
+  // The PR #581 review: `loader` is an injected seam, and a loader that
+  // fails inside its own call ran the error path before the texture was
+  // held, so the failed texture stayed held and alive, never freed. It must
+  // be freed, and the piece asked for again on the backoff, as an
+  // asynchronous failure is.
+  it("frees a piece that fails inside the loader's own call, and retries it", () => {
+    let t = 0;
+    const { loader, map, renderer } = started({ now: () => t, syncFail: true });
+    map.update(renderer);
+    expect(loader.pieceCalls().length).toBeGreaterThan(0);
+    expect(loader.alive()).toBe(0);
+    expect(map.state()).toMatchObject({ full: "loading", retries: 0 });
+    t = 1000;
+    map.update(renderer);
+    expect(loader.paths().filter((p) => p === PIECES[0])).toHaveLength(2);
+    expect(loader.alive()).toBe(0);
+    map.dispose();
   });
 
   // The M1b review: a device whose largest texture is 4,096 to 8,191 gets

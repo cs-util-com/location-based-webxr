@@ -287,14 +287,27 @@ export function createGlobeCloudMap(
             width: load.piece.width * scale,
             height: load.piece.height * scale,
           };
+    // A loader may answer inside its own call (an injected seam: a cache, a
+    // fake); its answer then waits until the texture is held, so it frees
+    // what it should (the PR #581 review).
+    const early: { answer: (() => void) | null; returned: boolean } = {
+      answer: null,
+      returned: false,
+    };
+    const after =
+      (answer: () => void): (() => void) =>
+      () => {
+        if (early.returned) answer();
+        else early.answer = answer;
+      };
     texture = loader.loadTexture(
       { ...source, path: load.piece.path },
-      () => {
+      after(() => {
         // An answer to a dropped round, or after dispose: free it.
         if (disposed || mine !== round) texture?.dispose();
         else load.state = "in";
-      },
-      () => {
+      }),
+      after(() => {
         texture?.dispose();
         if (disposed || mine !== round) return;
         load.texture = null;
@@ -307,10 +320,12 @@ export function createGlobeCloudMap(
         }
         load.state = "retry";
         load.retryAt = now() + wait;
-      },
+      }),
       size,
     );
     load.texture = texture;
+    early.returned = true;
+    early.answer?.();
   };
   /** Tops the held pieces up to `MAX_HELD`. */
   const topUp = () => {
