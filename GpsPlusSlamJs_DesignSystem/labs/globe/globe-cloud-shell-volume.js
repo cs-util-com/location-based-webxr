@@ -151,6 +151,9 @@ const float SHELL_ZENITH_FROM = ${glslFloat(ZENITH_MU.from)};
 const float SHELL_ZENITH_TO = ${glslFloat(ZENITH_MU.to)};
 const float SHELL_MAX_RADIANCE = ${glslFloat(ATMOSPHERE_MAX_SCENE_RADIANCE)};
 const float SHELL_AERIAL_KM = ${glslFloat(CLOUD_LAYER.aerialKm)};
+// The ray's slope (the sine of its angle below the deck's horizontal) at
+// which the limb fade is complete: 0.03, about 1.7 degrees.
+const float SHELL_LIMB_SLOPE = 0.03;
 
 // Twin of cloudSlabCumulativeM.
 float shellCumulative( float h ) {
@@ -273,6 +276,12 @@ void main() {
     }
   }
   if ( tOut <= tIn ) discard;
+  // The limb: a ray grazing the deck crosses up to thousands of km of it in
+  // a few steps, which drew a dashed white line along the horizon from
+  // 700 km. Faded out as the ray's slope through the deck goes to 0 (the
+  // dome's horizon fade, cloudHorizonFade, in the deck's own vertical).
+  float limb = smoothstep( 0.0, SHELL_LIMB_SLOPE, -dot( dir, normalize( o + dir * tIn ) ) );
+  if ( limb <= 0.0 ) discard;
   float lengthKm = tOut - tIn;
   // The light at the interval's middle: the sun's own elevation there.
   vec3 pMid = o + dir * ( 0.5 * ( tIn + tOut ) );
@@ -323,7 +332,7 @@ void main() {
       }
       float a = 1.0 - exp( -tau );
       // The slab's aerial melt, by the law's share (twin of its w).
-      float w = mix( 1.0, exp( -0.5 * ( t0 + t1 ) / SHELL_AERIAL_KM ), uAerial );
+      float w = limb * mix( 1.0, exp( -0.5 * ( t0 + t1 ) / SHELL_AERIAL_KM ), uAerial );
       float c0 = clamp( mix( ra, rb, fa ), 0.0, deck );
       float c1 = clamp( mix( ra, rb, fb ), 0.0, deck );
       highp float sunA = sunScale * ( shellCumulative( c0 / uThickness ) - shellCumulative( min( h0, c0 ) / uThickness ) );

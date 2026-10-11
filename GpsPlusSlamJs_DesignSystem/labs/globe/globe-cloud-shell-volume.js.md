@@ -49,6 +49,11 @@ sceneDepthWeight })`: the march into its own half-float target (cleared
   above the 80 km edge no depth: rays end at the deck's base, and relief
   standing above the deck is covered by it; a 10 m near plane cannot
   resolve kilometres at 700 km).
+- The limb: a ray whose slope through the deck (the sine of its angle
+  below the deck's horizontal at entry) is under 0.03 fades out (the
+  dome's horizon fade in the deck's own vertical): grazing rays cross
+  thousands of km of deck in a few steps and drew a dashed white line
+  along the horizon from 700 km.
 - Nodes uniform with the slab's per-pixel jitter; at each node the cover
   (the map at the point's geodetic latitude and longitude, B-spline at level
   0 handing over to the mips by the footprint, times the opacity, the
