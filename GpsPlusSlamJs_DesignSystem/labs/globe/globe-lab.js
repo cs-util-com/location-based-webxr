@@ -1411,7 +1411,8 @@ function bindPin({
   }),
   // The relief's finest height at a place (m, true heights), or null.
   reliefGroundM = () => null,
-  // The camera's height above the drawn ground under it (m), or null.
+  // The camera's height above the drawn ground under it (m); null without
+  // a relief, undefined while it has no height under the camera yet.
   heightAboveGroundM = () => null,
   // A true ground height as the relief draws it at the landing (its
   // exaggeration there; 1, the default, draws true heights).
@@ -1805,9 +1806,10 @@ function bindPin({
       // holds over the city, the controls take it from here.
       if (moving() && flight.pinFlight) {
         // The continuous flight's line: written once the frame's clearance
-        // has acted (`afterFrame`), as the readout reads it.
+        // has acted and the relief has a height under the camera
+        // (`afterFrame`), as the readout reads it.
         landedReport = true;
-        message = "";
+        message = "Arrived.";
       } else {
         message = `Arrived, ${shown(getParams().landKm)} km above sea level.`;
       }
@@ -1823,8 +1825,12 @@ function bindPin({
      */
     afterFrame() {
       if (!landedReport) return;
-      landedReport = false;
       const above = heightAboveGroundM();
+      // The relief has no height under the camera yet (its tile still
+      // loading at the landing: the first browser run said "above sea
+      // level" there): ask again next frame.
+      if (above === undefined) return;
+      landedReport = false;
       message =
         above === null
           ? `Arrived, ${formatDistance(
@@ -2728,10 +2734,12 @@ async function start() {
       groundM *
       exaggerationAt(Math.max(0, groundM + params.landAglM), heightLaw()),
     heightAboveGroundM: () =>
-      groundUnderCameraM === null
+      !terrain
         ? null
-        : globe.tiles.ellipsoid.getPositionElevation(ecefCamera().position) -
-          Math.max(0, groundUnderCameraM),
+        : groundUnderCameraM === null
+          ? undefined
+          : globe.tiles.ellipsoid.getPositionElevation(ecefCamera().position) -
+            Math.max(0, groundUnderCameraM),
     ecefCamera,
     placeCameraEcef,
     setFrameTarget,

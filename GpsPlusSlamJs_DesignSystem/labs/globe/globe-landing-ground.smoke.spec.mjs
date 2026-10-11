@@ -63,7 +63,10 @@ async function landAt(page, place, hash, routeCity = true) {
       return (
         s.pin.flight?.reliefGroundM !== null &&
         s.relief?.groundUnderCameraM !== null &&
-        s.readoutShown === s.readout
+        s.readoutShown === s.readout &&
+        // The landed line, written once the relief has a height under
+        // the camera.
+        /^Arrived, \d/.test(s.pin.status)
       );
     },
     null,
