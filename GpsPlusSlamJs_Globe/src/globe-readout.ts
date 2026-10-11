@@ -61,7 +61,10 @@ export function globeReadoutText({
     Number.isFinite(groundM) &&
     altitudeM < GLOBE_READOUT.groundBelowM
   ) {
-    parts.push(`${formatDistance(altitudeM - groundM)} above ground`);
+    // The sea is drawn at 0 (as the clearance takes it): never a depth.
+    parts.push(
+      `${formatDistance(altitudeM - Math.max(0, groundM))} above ground`,
+    );
   }
   if (targetDistanceM !== null) {
     parts.push(`${formatDistance(targetDistanceM)} to the target`);

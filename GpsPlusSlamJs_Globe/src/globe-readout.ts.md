@@ -21,7 +21,8 @@
   - `globeReadoutText({ altitudeM, targetDistanceM, groundM? })` ->
     "Altitude 1,234 km"; below `groundBelowM` with the ground under the
     camera known (`groundM`, m above the ellipsoid; null or absent: not
-    named) " · 150 m above ground" (round-4 plan 2026-10-11-0122 DEC-R4-1:
+    named; the sea drawn at 0, as the clearance takes it) " · 150 m above
+    ground" (round-4 plan 2026-10-11-0122 DEC-R4-1:
     the owner read the r812 altitude as the height above the roofs, which
     it was not); then " · 1,300 km to the target" when `targetDistanceM`
     is not null. A camera under the drawn ground reads "0 m above ground".

@@ -95,6 +95,12 @@ describe("globeReadoutText", () => {
         groundM: 1_000,
       }),
     ).toBe("Altitude 100 km");
+    // Over the sea the drawn ground is 0, as the clearance draws it: a
+    // bathymetric depth under the camera never adds to the height (the R4b
+    // milestone review, finding 4).
+    expect(
+      globeReadoutText({ altitudeM: 150, targetDistanceM: null, groundM: -40 }),
+    ).toBe("Altitude 150 m · 150 m above ground");
     // A camera a hair under the drawn ground reads 0, never negative.
     expect(
       globeReadoutText({ altitudeM: 430, targetDistanceM: null, groundM: 435 }),
