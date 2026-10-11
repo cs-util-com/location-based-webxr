@@ -384,6 +384,12 @@ interface ResolvedField {
   readonly o: Required<CloudLiveOptions>;
   readonly octaves: CloudLiveOctave[];
   readonly data: Uint8Array;
+  /**
+   * This lattice's own mean byte over 255: an octave is centred on it, so a
+   * lattice other than the default leaves no offset (the PR #581 review;
+   * the default's is `CLOUD_LIVE_NOISE.latticeMean`, the shader's constant).
+   */
+  readonly latticeMean: number;
   /** The amplitudes' sum of squares: the spread at footprint 0, squared. */
   readonly spread0: number;
 }
@@ -396,10 +402,12 @@ function resolvedField(options: CloudLiveOptions): ResolvedField {
   if (field === undefined) {
     const o = resolve(options);
     const octaves = cloudLiveOctaves(options);
+    const data = cloudLiveLattice(o.latticeSize, o.latticeSeed);
     field = {
       o,
       octaves,
-      data: cloudLiveLattice(o.latticeSize, o.latticeSeed),
+      data,
+      latticeMean: data.reduce((t, v) => t + v, 0) / data.length / 255,
       spread0: octaves.reduce((t, x) => t + x.amplitude * x.amplitude, 0),
     };
     fieldCache.set(options, field);
@@ -471,7 +479,7 @@ export function cloudLiveSample(
   options: CloudLiveOptions = NO_OPTIONS
 ): number {
   requireSample(xKm, yKm, footprintKm);
-  const { o, octaves, data, spread0 } = resolvedField(options);
+  const { o, octaves, data, latticeMean, spread0 } = resolvedField(options);
   const size = o.latticeSize;
   if (basis.length !== 4 * octaves.length) {
     throw new RangeError(
@@ -486,7 +494,7 @@ export function cloudLiveSample(
     const w = fadeWeight(footprintKm, octave.cellKm, o);
     if (w <= 0) break;
     const value = octaveValue(data, size, basis, k, xKm, yKm);
-    sum += octave.amplitude * w * (value - CLOUD_LIVE_NOISE.latticeMean);
+    sum += octave.amplitude * w * (value - latticeMean);
     spread += (octave.amplitude * w) ** 2;
   }
   if (o.restoreSpread && spread > 0) {

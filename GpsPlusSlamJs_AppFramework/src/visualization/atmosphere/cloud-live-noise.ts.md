@@ -24,7 +24,7 @@ readers (`atmosphere-glsl.ts`, `cloud-shadow.ts`) switch to it by a uniform;
 - `CLOUD_LIVE_NOISE`: 7 octaves, gain 0.5, base cells 6 km (the tile's),
   lacunarities 2.07, 1.97, 2.13, 2.03, 1.93, 2.11 (2.05 spare for an eighth
   octave in a sweep), octave k turned by 1.1 (k + 1) rad, a 1,024^2 lattice
-  (seed 11, mean `latticeMean`, held by a test), the anti-aliasing ratios
+  (seed 11, mean `latticeMean`, held by a test; the shader's constant. The CPU sample centres every octave on its own lattice's mean, so a `latticeSize` or `latticeSeed` other than the default leaves no offset, the PR #581 review), the anti-aliasing ratios
   `aaStartRatio` 0.5 and `aaEndRatio` 4 (cells), the spread kept as
   octaves fade (`restoreSpread`, at most `maxSpreadGain` 4), and `fieldMean` 0.38008 and
   `contrast` 1.431, which match the drawn tile field's mean (0.3801) and

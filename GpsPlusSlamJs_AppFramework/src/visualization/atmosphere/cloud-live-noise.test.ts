@@ -263,6 +263,33 @@ describe('cloudLiveSample', () => {
     );
   });
 
+  // The PR #581 review: the lattice is an option, and a lattice other than
+  // the default was centred on the default's mean, leaving a small offset
+  // in every octave (the sweeps at 256 and 2,048 cells read it). Each
+  // lattice is centred on its own mean.
+  it('centres a non-default lattice on its own mean', () => {
+    const options = { octaves: 1, latticeSize: 256 } as const;
+    const one = cloudLiveBasis(ORIGIN, options);
+    const [a, b, ox, oy] = one;
+    const data = cloudLiveLattice(256);
+    const mean = data.reduce((t, v) => t + v, 0) / data.length / 255;
+    expect(Math.abs(mean - CLOUD_LIVE_NOISE.latticeMean)).toBeGreaterThan(1e-5);
+    const qx = Math.ceil(ox!) + 3;
+    const qy = Math.ceil(oy!) + 5;
+    const det = a! * a! + b! * b!;
+    const dx = qx - ox!;
+    const dy = qy - oy!;
+    const x = (a! * dx + b! * dy) / det;
+    const y = (-b! * dx + a! * dy) / det;
+    const value = cloudLiveSample(one, x, y, 0, options);
+    const byte = data[(qy % 256) * 256 + (qx % 256)]! / 255;
+    const [octave] = cloudLiveOctaves(options);
+    expect(value).toBeCloseTo(
+      CLOUD_LIVE_NOISE.fieldMean + octave!.amplitude * (byte - mean),
+      9
+    );
+  });
+
   it('is continuous: neighbours 1 m apart differ by little', () => {
     const next = random(5);
     for (let i = 0; i < 200; i++) {
