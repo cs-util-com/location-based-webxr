@@ -20,11 +20,16 @@ and be gone at the latest when the volumetric clouds are fully in (about
 - `GLOBE_CLOUD_FLAT`: `topM` 5,000 km (full from here up), `weakM` 100 km
   (weak by here), `weakShare` 0.3.
 - `flatCloudShare(altitudeM, { ceilingKm, fadeKm, topM?, weakM?,
-weakShare? })`, 0-1:
+weakShare?, shellTopKm?, shellBandKm? })`, 0-1:
   - 1 from `topM` up;
   - a smoothstep in the altitude's logarithm down to `weakShare` by `weakM`;
-  - times 1 - the volume's share (`cloudVolumeShare` with the given
-    `ceilingKm` and `fadeKm`): gone exactly when the volume is full.
+  - times the flat drawer of `cloudShellVolumeShares`
+    (`globe-cloud-shell-volume.ts`): 1 - the volume's share
+    (`cloudVolumeShare` with the given `ceilingKm` and `fadeKm`, the fade
+    at most the ceiling, as the volume is drawn), and with the spherical
+    volume (round-4 plan 2026-10-11-0122 R4d, `shellTopKm` above 0) also
+    1 - the shell's fade-in over `shellBandKm` above its top: gone exactly
+    when the volumes are full.
   - RangeError for an altitude that is not finite, a weak share outside
     [0, 1], or `topM` not above `weakM` (or `weakM` not positive).
 
@@ -34,6 +39,8 @@ weakShare? })`, 0-1:
   lab's 40/25 km).
 - Weaker at 1,000 km (under 0.75 with the defaults), `weakShare` by 100 km.
 - Never rises on the way down.
+- With the spherical volume: 0 from the shell's top down; unchanged above
+  its band; the drawers (flat, shell, slab) share 1.
 - From the volume's ceiling down it is `weakShare` x (1 - the volume's
   share): the clouds are never drawn twice or not at all (the C2 invariant
   of `globe-cloud-volume.ts`). Pass the values the volume is drawn with: the

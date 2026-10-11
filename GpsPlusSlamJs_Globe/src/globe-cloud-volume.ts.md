@@ -47,6 +47,10 @@ own cloud map so the swap from the cloud shell never plops.
   offset plus the new origin's place in the old frame, minus the new
   offset; callers add it up across recentres. Property-tested over random
   places, drifts and moves up to 30 km (within 0.003 tile).
+- `gaussianRadiusKm(latRad)`: the WGS84 Gaussian radius of curvature
+  sqrt(M N) at a latitude, km: the radius a chord is taken back to its arc
+  with (the anchor's hop, and the spherical volume's chart in
+  `globe-cloud-shell-volume.ts`).
 - `unwrapDriftRad(previous, next)`: the map’s drift read unwrapped, the
   angle equal to `next` modulo 2 pi nearest `previous`. The drift wraps
   every 16 minutes and the noise offset jumped there by 1.5-5.4 tiles

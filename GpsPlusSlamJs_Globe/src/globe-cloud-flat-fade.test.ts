@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 
 import { cloudVolumeShare } from "./globe-cloud-volume.js";
 import { GLOBE_CLOUD_FLAT, flatCloudShare } from "./globe-cloud-flat-fade.js";
+import { cloudShellVolumeShares } from "./globe-cloud-shell-volume.js";
 
 const KM = 1_000;
 const LAB = { ceilingKm: 40, fadeKm: 25 };
@@ -71,5 +72,50 @@ describe("flatCloudShare", () => {
     expect(() => flatCloudShare(10 * KM, { ...LAB, weakShare: 2 })).toThrow(
       RangeError,
     );
+  });
+});
+
+// Round-4 plan 2026-10-11-0122, R4d: the spherical cloud volume takes the
+// clouds over from about 700 km, so the flat layer gives up to it what it
+// gives up to the slab below 40 km: the drawers (flat, shell, slab) share 1
+// at every altitude (`cloudShellVolumeShares`), the flat layer keeps its own
+// weakening on its share, and without the shell nothing changes.
+describe("flatCloudShare with the spherical volume (R4d)", () => {
+  const SHELL = { ...LAB, shellTopKm: 700, shellBandKm: 300 };
+
+  it("is unchanged without the shell", () => {
+    for (let h = 70_000 * KM; h > 1 * KM; h /= 1.3) {
+      expect(flatCloudShare(h, { ...LAB, shellTopKm: 0 })).toBe(
+        flatCloudShare(h, LAB),
+      );
+    }
+  });
+
+  it("gives up to the shell exactly what the shell takes", () => {
+    for (let h = 70_000 * KM; h > 1 * KM; h /= 1.02) {
+      const s = cloudShellVolumeShares(h / KM, {
+        topKm: 700,
+        bandKm: 300,
+        ...LAB,
+      });
+      const weak = flatCloudShare(h, LAB) / Math.max(1 - s.slab, 1e-12);
+      const share = flatCloudShare(h, SHELL);
+      expect(share).toBeCloseTo(s.slab < 1 ? weak * s.flat : 0, 9);
+    }
+  });
+
+  it("is gone from the shell's top down, and never rises on the way down", () => {
+    expect(flatCloudShare(1_000 * KM, SHELL)).toBeCloseTo(
+      flatCloudShare(1_000 * KM, LAB),
+      12,
+    );
+    expect(flatCloudShare(700 * KM, SHELL)).toBe(0);
+    expect(flatCloudShare(100 * KM, SHELL)).toBe(0);
+    let last = Infinity;
+    for (let h = 70_000 * KM; h > 1 * KM; h /= 1.01) {
+      const share = flatCloudShare(h, SHELL);
+      expect(share).toBeLessThanOrEqual(last + 1e-12);
+      last = share;
+    }
   });
 });

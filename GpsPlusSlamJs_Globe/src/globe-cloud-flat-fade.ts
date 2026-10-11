@@ -12,7 +12,11 @@
  * - from the volume's ceiling down, `weakShare` x (1 - the volume's share),
  *   the volume's own fade: gone exactly when the volume is full, and never
  *   the clouds twice or not at all (the C2 invariant of
- *   `globe-cloud-volume.ts`).
+ *   `globe-cloud-volume.ts`);
+ * - with the spherical cloud volume (round-4 plan 2026-10-11-0122, R4d,
+ *   `shellTopKm`), also times 1 - the shell's fade-in: the three drawers
+ *   share 1 (`cloudShellVolumeShares`), so from the shell's top down the
+ *   flat layer is gone.
  *
  * Pure. The caller scales both of the layer's forms with it (the painted
  * term and the shell), and their shadow and the water's cloud mask, never
@@ -21,7 +25,7 @@
  * @see globe-cloud-flat-fade.ts.md
  */
 
-import { cloudVolumeShare } from "./globe-cloud-volume.js";
+import { cloudShellVolumeShares } from "./globe-cloud-shell-volume.js";
 import { smoothstep } from "./globe-ease.js";
 
 export const GLOBE_CLOUD_FLAT = {
@@ -47,6 +51,10 @@ export function flatCloudShare(
     readonly topM?: number;
     readonly weakM?: number;
     readonly weakShare?: number;
+    /** The spherical volume's top (km; 0 or absent: no shell, R4d). */
+    readonly shellTopKm?: number;
+    /** ... and the band it fades in over above it (km). */
+    readonly shellBandKm?: number;
   },
 ): number {
   const {
@@ -68,9 +76,11 @@ export function flatCloudShare(
   const h = Math.max(altitudeM, 1);
   const x = Math.log(topM / h) / Math.log(topM / weakM);
   const weaken = 1 - (1 - weakShare) * smoothstep(x);
-  const volume = cloudVolumeShare(h / 1000, {
+  const { flat } = cloudShellVolumeShares(h / 1000, {
+    topKm: options.shellTopKm ?? 0,
+    bandKm: options.shellBandKm,
     ceilingKm: options.ceilingKm,
     fadeKm: options.fadeKm,
   });
-  return weaken * (1 - volume);
+  return weaken * flat;
 }

@@ -290,7 +290,7 @@ const anchorFromInTo = new THREE.Vector3();
  * The Earth's Gaussian radius of curvature at a latitude (km, WGS84):
  * sqrt(M N), the radius a hop's chord is taken back to its arc with.
  */
-function gaussianRadiusKm(latRad: number): number {
+export function gaussianRadiusKm(latRad: number): number {
   const a = 6_378.137;
   const e2 = 0.00669437999014;
   return (a * Math.sqrt(1 - e2)) / (1 - e2 * Math.sin(latRad) ** 2);
