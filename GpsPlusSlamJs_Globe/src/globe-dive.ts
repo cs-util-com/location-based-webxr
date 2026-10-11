@@ -20,8 +20,8 @@ export const GLOBE_DIVE = {
   /**
    * Where the dive lands, above the ellipsoid: 2 km, about 1.5 km over Bern
    * and Zurich, in the globe's own city (globe city plan 2026-10-05-0040
-   * §12.5 C6; the lab's per-frame clearance keeps it 300 m over higher
-   * ground). It was 150 km, where the page handed over to OsmDemo.
+   * §12.5 C6; the lab's per-frame clearance keeps it 100 m over higher
+   * ground, `GLOBE_FLIGHT.clearanceM`; 300 m before round 4). It was 150 km, where the page handed over to OsmDemo.
    */
   landAltitudeM: 2_000,
   /**

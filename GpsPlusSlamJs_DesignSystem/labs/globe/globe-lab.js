@@ -2710,8 +2710,10 @@ async function start() {
       ? null
       : drawn / Math.max(terrain.plugin.heightScale, 1);
   };
-  // A link's place: its ground is read from load, so the flight knows it
-  // before it plans its line (the cold review's §6 item 3: early).
+  // A link's place: its ground is read from load (the cold review's §6
+  // item 3: early). The link's press on the first frame comes before it
+  // returns, so it arrives through `pinGround`, at about 65,000 km, where
+  // the replan is harmless (the R4b milestone review, finding 5).
   if (params.url) groundOf(params.url);
   pin = bindPin({
     ellipsoid: globe.tiles.ellipsoid,
