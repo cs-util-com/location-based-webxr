@@ -324,6 +324,28 @@ describe("the committed imagery", () => {
       Math.floor(0.99 * (rowMeans.length - 128))
     ]!;
     expect(equator).toBeLessThanOrEqual(rowRange);
+    // The blend's band, row to row (M1b review, item 6d): each row of the
+    // band moves by its own offset, so a streaky blend shows as larger
+    // jumps between neighbouring ROWS inside the band (16 columns from
+    // each edge, the script's SEAM_COLUMNS) than beside it. Measured
+    // 2026-10-11: the band 9.99 against the next 32 columns each side 9.65
+    // (x1.036; the source x1.024, its band 10.60, so the committed band is
+    // no rougher than the source's); the whole offset over the band with
+    // no ease (a one-time control) x1.088.
+    const rowJumps = (columns: number[]) => {
+      let sum = 0;
+      for (const x of columns) {
+        for (let y = 0; y < height - 1; y++) {
+          sum += Math.abs(full[(y + 1) * width + x]! - full[y * width + x]!);
+        }
+      }
+      return sum / (columns.length * (height - 1));
+    };
+    const span = (from: number, count: number) =>
+      Array.from({ length: count }, (_, i) => from + i);
+    const band = rowJumps([...span(0, 16), ...span(width - 16, 16)]);
+    const beside = rowJumps([...span(16, 32), ...span(width - 48, 32)]);
+    expect(band / beside).toBeLessThanOrEqual(1.06);
 
     const { data: preview, info } = await sharp(onDisk(clouds.path))
       .extractChannel(0)
