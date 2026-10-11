@@ -99,6 +99,33 @@ function lookBackRad(rs: number, altitudeM: number, pitchDeg: number): number {
   );
 }
 
+/**
+ * The ellipsoid scaled about its centre so that its surface along
+ * `direction` lies `groundM` higher (round-4 plan 2026-10-11-0122
+ * DEC-R4-1, §6 item 2): a flight planned over it treats its target as the
+ * point on its GROUND (radius rs + g), so the look-back, the law's landing
+ * and the log-altitude law all measure from there. Uniform, so the shape
+ * and the geocentric directions are kept; away from `direction` the lift
+ * is g x rs(d) / rs, off by g x 3e-3 at most (pole to equator), well under
+ * a millimetre within a few km. The same ellipsoid for a ground of 0.
+ * RangeError for a ground that is negative or not finite (the relief draws
+ * the sea at 0, so a landing's ground never lies below it).
+ */
+export function liftedEllipsoid(
+  ellipsoid: Ellipsoid,
+  direction: THREE.Vector3,
+  groundM: number,
+): Ellipsoid {
+  if (!(groundM >= 0 && Number.isFinite(groundM))) {
+    throw new RangeError(`the ground must be >= 0 and finite, got ${groundM}`);
+  }
+  if (groundM === 0) return ellipsoid;
+  const rs = surfaceRadiusAlong(ellipsoid, direction);
+  const lifted = ellipsoid.clone();
+  lifted.radius.multiplyScalar((rs + groundM) / rs);
+  return lifted;
+}
+
 /** Fixed-point steps for a centre over its own surface (see `centreAhead`). */
 const FIXED_POINT_STEPS = 4;
 
@@ -253,7 +280,13 @@ function hermiteClock(
 
 /** A planned flight, for `flightAt` and `flightCamera`. */
 export interface FlightPath {
+  /**
+   * The ellipsoid the path flies over: the caller's, lifted to the target's
+   * ground (`liftedEllipsoid`); its altitudes are over this surface.
+   */
   readonly ellipsoid: Ellipsoid;
+  /** The target's ground the path is lifted by, m above the caller's ellipsoid. */
+  readonly groundM: number;
   readonly durationMs: number;
   readonly landingM: number;
   /** The landing the view's law refers to, and the view's pitch at the end. */
@@ -377,6 +410,7 @@ function flightOptions(
     viewLandingM: or(options.viewLandingM, options.landingM),
     meteorDeg: or(options.meteorDeg, 90),
     meteorLandDeg: options.meteorLandDeg,
+    groundM: or(options.groundM, 0),
   };
   if (!(o.meteorDeg > 0 && o.meteorDeg <= 90)) {
     throw new RangeError(`meteorDeg must be in (0, 90], got ${o.meteorDeg}`);
@@ -455,15 +489,15 @@ function startRoll(
 }
 
 /**
- * A flight from `start` to `landingM` above `target`'s surface point.
- * `startSpeed` is the path's speed at the press (path length per ms; 0,
+ * A flight from `start` to `landingM` above `target`'s ground (its surface
+ * point lifted by `groundM`, DEC-R4-1). `startSpeed` is the path's speed at the press (path length per ms; 0,
  * the default, starts from rest). RangeError for a landing or a duration
  * that is not a positive number, a pitch outside (0, 90], a negative start
  * speed, a settle factor not above 1, a start distance that is not a
  * positive number, or a start whose up is parallel to its direction.
  */
 export function planFlight(
-  ellipsoid: Ellipsoid,
+  base: Ellipsoid,
   start: FlightStart,
   target: OrbitPose,
   options: {
@@ -513,10 +547,19 @@ export function planFlight(
      * asked passes the asked angle, and eases to it below the bend.
      */
     readonly meteorLandDeg?: number;
+    /**
+     * The target's ground, m above `ellipsoid` (round-4 plan DEC-R4-1;
+     * default 0): the path flies over the ellipsoid lifted to it
+     * (`liftedEllipsoid`), so `landingM` is above the target's GROUND and
+     * the view at the end meets the target there.
+     */
+    readonly groundM?: number;
   },
 ): FlightPath {
   const o = flightOptions(start, options);
   const { landingM } = o;
+  // Everything below measures from the target's ground (DEC-R4-1).
+  const ellipsoid = liftedEllipsoid(base, target.direction, o.groundM);
   // The view at the end: the travel law of the landing the view refers to
   // (45 degrees at a real landing; straight down at a hold above the bend).
   const endPitchDeg = travelLawDeg(
@@ -596,6 +639,7 @@ export function planFlight(
   ).quaternion;
   return {
     ellipsoid,
+    groundM: o.groundM,
     durationMs,
     landingM,
     viewLandingM: o.viewLandingM,
@@ -661,7 +705,7 @@ export interface FlightFrame {
   readonly camera: THREE.Vector3;
   /** The camera's heading, a tangent at the camera. */
   readonly heading: THREE.Vector3;
-  /** The camera's height above the surface, metres. */
+  /** The camera's height above the path's surface (its target's ground), metres. */
   readonly altitudeM: number;
   /** The angle from the view's centre to the target, radians. */
   readonly arcRad: number;

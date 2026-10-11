@@ -39,7 +39,7 @@ import type { Ellipsoid } from "3d-tiles-renderer";
 import type { OrbitPose } from "./globe-camera.js";
 import { smoothstep } from "./globe-ease.js";
 import { surfaceRadiusAlong } from "./globe-dive.js";
-import type { FlightStart } from "./flight-path.js";
+import { liftedEllipsoid, type FlightStart } from "./flight-path.js";
 import {
   flightCameraAt,
   flightFrameAt,
@@ -102,7 +102,14 @@ export interface PinFlight {
   readonly hover: FlightStart;
   /** The target, once known. */
   readonly target: OrbitPose | null;
+  /** The landing, m above the target's ground (`groundM`). */
   readonly landingM: number;
+  /**
+   * The target's ground, m above the ellipsoid (round-4 plan 2026-10-11-0122
+   * DEC-R4-1; 0, the ellipsoid, until one is known): flights to the target
+   * are planned over the ellipsoid lifted to it (`liftedEllipsoid`).
+   */
+  readonly groundM: number;
   /** The data's progress, 0-1 (ratcheted). */
   readonly progress: number;
   readonly pressedAtMs: number;
@@ -141,6 +148,12 @@ export interface PinFlight {
 function requireTime(nowMs: number): void {
   if (!Number.isFinite(nowMs)) {
     throw new RangeError(`the time must be finite, got ${nowMs}`);
+  }
+}
+
+function requireGround(groundM: number): void {
+  if (!(groundM >= 0 && Number.isFinite(groundM))) {
+    throw new RangeError(`groundM must be >= 0 and finite, got ${groundM}`);
   }
 }
 
@@ -210,6 +223,7 @@ function flyTo(
     viewLandingM: pin.landingM,
     meteorDeg,
     meteorLandDeg,
+    groundM: pin.groundM,
   };
   return pin.flight
     ? retargetFlight(pin.flight, pin.clockMs, target, options)
@@ -255,14 +269,22 @@ function towardTarget(pin: PinFlight, target: OrbitPose): PinFlight {
  * it. (A "full meteor" over its own place was tried and removed: the curve
  * absorbed the back-off above the bend and then dove 20-40 degrees steeper
  * than the line, the milestone review.)
+ *
+ * `fromDeg` (default the asked beta) is the flattest it may keep: a
+ * revised ground (`pinGround`) keeps the flight's own beta unless the
+ * camera now stands above its line (a LOWERED ground: the line to the
+ * lower landing needs more ground than is left, and the flight backed off,
+ * the view turning by up to 173 degrees in a frame, measured), then the
+ * flattest steeper beta that fits, still landing at the asked angle.
  */
 function meteorTo(
   pin: PinFlight,
   target: OrbitPose,
+  fromDeg: number = pin.meteorAskedDeg,
 ): { flight: Flight; meteorDeg: number } {
   const asked = pin.meteorAskedDeg;
-  const flight = flyTo(pin, target, pin.landingM, asked);
-  if (asked >= 90) return { flight, meteorDeg: asked };
+  const flight = flyTo(pin, target, pin.landingM, fromDeg);
+  if (asked >= 90) return { flight, meteorDeg: fromDeg };
   const h0 = flightFrameAt(flight, flight.startedAtMs).altitudeM;
   const fitted = fitMeteorDeg(
     h0,
@@ -270,8 +292,8 @@ function meteorTo(
     flight.path.cameraArcRad,
     asked,
   );
-  return fitted === asked
-    ? { flight, meteorDeg: asked }
+  return fitted <= fromDeg
+    ? { flight, meteorDeg: fromDeg }
     : { flight: flyTo(pin, target, pin.landingM, fitted), meteorDeg: fitted };
 }
 
@@ -329,19 +351,24 @@ function lookedAt(ellipsoid: Ellipsoid, start: FlightStart): THREE.Vector3 {
  * between the camera's nadirs, and the landing's camera stands back from
  * its target), each look-back by the ground's radius where it applies (the
  * plan review: the start's own radius put it 0.2-0.5 degrees off its line
- * on WGS84). The result is a flight start with its position.
+ * on WGS84). The result is a flight start with its position. `groundM`
+ * (round-4 plan DEC-R4-1; default 0) is the target's ground: the line
+ * lands `landingM` above it and the start stands over the ellipsoid lifted
+ * to it, as the flight that follows measures.
  */
 export function meteorLinkStart(
-  ellipsoid: Ellipsoid,
+  base: Ellipsoid,
   target: OrbitPose,
   from: THREE.Vector3,
   fromAltitudeM: number,
   landingM: number,
   meteorDeg: number,
+  groundM = 0,
 ): FlightStart & {
   readonly position: THREE.Vector3;
   readonly quaternion: THREE.Quaternion;
 } {
+  const ellipsoid = liftedEllipsoid(base, target.direction, groundM);
   const to = target.direction.clone().normalize();
   const here = from.clone().normalize();
   const side = here.clone().addScaledVector(to, -here.dot(to));
@@ -415,8 +442,9 @@ function paceOptions(options: {
 
 /**
  * The press: the camera as the intro left it, the target if already known
- * (a fix, a link), the landing and the data's progress so far. RangeError
- * for a time that is not finite or a landing that is not a positive number.
+ * (a fix, a link), the landing (above the target's ground, `groundM`) and
+ * the data's progress so far. RangeError for a time that is not finite, a
+ * landing that is not a positive number or a ground below 0 or not finite.
  */
 export function pressPin(
   ellipsoid: Ellipsoid,
@@ -425,6 +453,11 @@ export function pressPin(
   options: {
     readonly target: OrbitPose | null;
     readonly landingM: number;
+    /**
+     * The target's ground, m above the ellipsoid, if already known (round-4
+     * plan DEC-R4-1; default 0, the ellipsoid; `pinGround` revises it).
+     */
+    readonly groundM?: number;
     readonly progress: number;
     /** The meteor's beta (F1; 90, the default, is R1). */
     readonly meteorDeg?: number;
@@ -444,6 +477,8 @@ export function pressPin(
       `landingM must be a positive number, got ${options.landingM}`,
     );
   }
+  const groundM = options.groundM ?? 0;
+  requireGround(groundM);
   const base: PinFlight = {
     ellipsoid,
     phase: "holding",
@@ -451,6 +486,7 @@ export function pressPin(
     hover: camera,
     target: null,
     landingM: options.landingM,
+    groundM,
     progress: clampProgress(options.progress),
     pressedAtMs: nowMs,
     nowMs,
@@ -533,6 +569,28 @@ export function pinLanding(
   const flight = flyTo(next, now.target, landingM);
   // A replan whose new path has no gate has nothing to wait for (opened).
   return opened({ ...next, flight, gateClockMs: gateOf(flight) });
+}
+
+/**
+ * The target's ground, read or revised (round-4 plan 2026-10-11-0122
+ * DEC-R4-1, §6 item 3): the flight replans over the ellipsoid lifted to it
+ * (a CF2 replan, so never a jump; its beta kept unless a lowered ground
+ * needs a steeper line, `meteorTo`; the gate found again),
+ * landing `landingM` above it. Only while flying to a target; RangeError
+ * for a ground below 0 or not finite.
+ */
+export function pinGround(
+  pin: PinFlight,
+  nowMs: number,
+  groundM: number,
+): PinFlight {
+  requireGround(groundM);
+  const now = advance(pin, nowMs);
+  const flying = now.phase === "approaching" || now.phase === "descending";
+  if (!flying || !now.target || groundM === now.groundM) return now;
+  const next = { ...now, groundM };
+  const { flight, meteorDeg } = meteorTo(next, now.target, now.meteorDeg);
+  return opened({ ...next, meteorDeg, flight, gateClockMs: gateOf(flight) });
 }
 
 /** A touch on the globe: the controls take the camera. */

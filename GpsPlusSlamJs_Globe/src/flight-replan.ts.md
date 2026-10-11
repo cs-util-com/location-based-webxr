@@ -215,3 +215,20 @@ new link mid-flight. The design's own fix comes during the hold.
 
 - `flight-replan.test.ts`
 - `flight-replan.property.test.ts`
+
+## The target's ground (round-4 plan 2026-10-11-0122 DEC-R4-1)
+
+- A path flies over its own ellipsoid, lifted to its target's ground
+  (`flight-path.ts`): the frames, the cameras and the join are built on
+  `path.ellipsoid`, never on `Flight.ellipsoid` (the caller's, which each
+  replan starts from).
+- `retargetFlight` keeps the flight's `groundM` unless its caller names
+  one (`keptByReplan`, with the beta and the landing angle): a landing
+  raise keeps the ground; a revised ground (`pinGround`) or a new target
+  names its own.
+- The join's floor is the lower of the new landing and the OLD landing
+  measured over the new surface (`old.landingM + old.groundM -
+new.groundM`): a revised ground moves the surface the altitudes are
+  measured from.
+- `clearedLandingM` compares the ground (over the caller's ellipsoid) with
+  the camera's height over the path's surface plus the path's ground.

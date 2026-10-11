@@ -305,3 +305,40 @@ the travel curve and kept on the path (`path.meteorDeg`,
 `path.meteorLandDeg`); the end view is the law at the landing (the landing
 angle). `retargetFlight` keeps both unless its caller passes others, so a
 landing raise never changes the law mid-flight.
+
+## The target at its ground (round-4 plan 2026-10-11-0122 DEC-R4-1)
+
+The owner lands about 150 m above the GROUND. A flight treated its target
+as a point on the ellipsoid, so a landing "ground + 150 above the
+ellipsoid" looked at sea level under the ground: at beta 30 over Lucerne's
+435 m the view met the ground about 750 m short, and above about 840 m of
+ground the target left the frame (the cold review, §6 item 2).
+
+- `planFlight`'s option `groundM` (default 0, >= 0) is the target's
+  ground above the ellipsoid. The path flies over
+  `liftedEllipsoid(ellipsoid, target.direction, groundM)`, so the
+  look-back, the law's landing (`travelLawDeg`, `meteorDiveArcRad`,
+  `fitMeteorDeg`, `planTravel`, all unchanged: they take heights over the
+  target's ground) and the log-altitude law measure from the target's
+  ground; `landingM` is above it.
+- `FlightPath.ellipsoid` is that lifted ellipsoid, `FlightPath.groundM`
+  the ground; every altitude a path reports (`flightAt(...).altitudeM`) is
+  over the lifted surface.
+- `liftedEllipsoid(ellipsoid, direction, groundM)`: the ellipsoid scaled
+  about its centre so its surface along `direction` is exactly `groundM`
+  higher (the same object for 0; RangeError for a negative or non-finite
+  ground: the relief draws the sea at 0). Uniform, so its shape and the
+  geocentric directions are kept; away from the target the lift is
+  g x rs(d) / rs, under a millimetre within a few km.
+- The flight's mean radius (`FLIGHT_TRAVEL.radiusM`, 6,371 km) is not
+  lifted: 2 km is 0.03 % of it, inside the model's own approximation (the
+  local radius at 47 N is 6,367 km).
+- Measured (`flight-ground.test.ts`, ground 0 / 435 / 1,000 / 2,000 m x
+  beta 20 / 30 / 45): the landing is 150 m over the target's ground radius
+  within 1 cm; over the ellipsoid under the camera within 1 m from beta 30
+  and 1.39 m at 20 (the camera stands 412 m back, where WGS84 lies off the
+  target's radius on a north-south course at 47 N); the view's ray meets
+  the target at its ground within 1 m, and within 1 % of the height above
+  it over the last 10 km; the F1b continuity holds (the view's direction
+  turns under 0.1 degree along the line). The positive control: without
+  the lift the same link misses by more than 300 m (about 750 m).

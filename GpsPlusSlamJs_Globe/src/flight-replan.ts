@@ -98,6 +98,10 @@ interface FlightJoin {
 
 /** A flight: its current path, and the join of its last replan (or null). */
 export interface Flight {
+  /**
+   * The caller's ellipsoid, which every replan starts from; the path flies
+   * over its own, lifted to its target's ground (`path.ellipsoid`).
+   */
   readonly ellipsoid: Ellipsoid;
   readonly path: FlightPath;
   /** The clock time the path's time 0 is at, ms. */
@@ -170,7 +174,7 @@ export function flightFrameAt(flight: Flight, nowMs: number): FlightFrame {
     Math.min(own.altitudeM, join.floorM),
   );
   const view = viewFromCamera(
-    flight.ellipsoid,
+    flight.path.ellipsoid,
     camera,
     heading,
     altitudeM,
@@ -187,14 +191,16 @@ export function flightFrameAt(flight: Flight, nowMs: number): FlightFrame {
   };
 }
 
-/** The camera on a frame: `obliqueCamera`, with the path's start tilt. */
+/**
+ * The camera on a frame: `obliqueCamera` over the path's own (lifted)
+ * surface, with the path's start tilt.
+ */
 function cameraOn(
-  ellipsoid: Ellipsoid,
   path: FlightPath,
   f: FlightFrame,
 ): { position: THREE.Vector3; quaternion: THREE.Quaternion } {
   const camera = obliqueCamera(
-    ellipsoid,
+    path.ellipsoid,
     { direction: f.centre, up: f.up },
     f.altitudeM,
     f.pitchDeg,
@@ -218,7 +224,7 @@ export function flightCameraAt(
 } {
   const f = flightFrameAt(flight, nowMs);
   return {
-    ...cameraOn(flight.ellipsoid, flight.path, f),
+    ...cameraOn(flight.path, f),
     altitudeM: f.altitudeM,
     done: f.done,
   };
@@ -238,8 +244,7 @@ function joinFrom(old: Flight, atMs: number, path: FlightPath): FlightJoin {
     .sub(flightCameraAt(old, atMs - dtOld).position)
     .divideScalar(dtOld);
   const dtNew = Math.max(1e-4, Math.min(1, path.durationMs / 1000));
-  const newAt = (t: number) =>
-    cameraOn(old.ellipsoid, path, flightAt(path, t)).position;
+  const newAt = (t: number) => cameraOn(path, flightAt(path, t)).position;
   const vNew = newAt(dtNew).sub(newAt(0)).divideScalar(dtNew);
   const dv = vOld.sub(vNew);
   const radial = p0.clone().normalize();
@@ -252,7 +257,12 @@ function joinFrom(old: Flight, atMs: number, path: FlightPath): FlightJoin {
     // landed camera below its landing (measured up to 1.6 %).
     spanMs: Math.min(FLIGHT_REPLAN.joinMs, path.durationMs),
     lnAltitudePerMs: dRadial / flightAt(path, 0).altitudeM,
-    floorM: Math.min(path.landingM, old.path.landingM),
+    // The old landing over the new path's surface: a revised ground
+    // (DEC-R4-1) moves the surface the altitudes are measured from.
+    floorM: Math.min(
+      path.landingM,
+      old.path.landingM + old.path.groundM - path.groundM,
+    ),
     axis: axis.length() > 1e-15 ? axis.normalize() : null,
     radiansPerMs: ground.length() / p0.length(),
   };
@@ -309,6 +319,23 @@ function startFrom(flight: Flight, nowMs: number): FlightStart {
 }
 
 /**
+ * What a replan keeps of its flight unless its caller names another: the
+ * beta and the landing angle (F1: a landing raise never changes the law
+ * mid-flight, in its timing either), and the target's ground (DEC-R4-1: a
+ * revised ground, or a new target's own, is named).
+ */
+function keptByReplan(
+  flight: Flight,
+  options: PlanOptions,
+): Pick<PlanOptions, "meteorDeg" | "meteorLandDeg" | "groundM"> {
+  return {
+    meteorDeg: options.meteorDeg ?? flight.path.meteorDeg,
+    meteorLandDeg: options.meteorLandDeg ?? flight.path.meteorLandDeg,
+    groundM: options.groundM ?? flight.path.groundM,
+  };
+}
+
+/**
  * The flight replanned at clock time `atMs` to `target` and
  * `options.landingM`, from the camera as it is. Without a duration the
  * replanned path's cruise matches the camera's speed (within
@@ -329,22 +356,10 @@ export function retargetFlight(
   const landed = atMs >= flight.endsAtMs;
   const start = startFrom(flight, atMs);
   const speed = landed ? 0 : speedAt(flight, atMs);
-  // A replan keeps the flight's beta unless its caller chose another (F1):
-  // a landing raise never changes the law mid-flight, in its timing either.
-  const meteorDeg = options.meteorDeg ?? flight.path.meteorDeg;
-  const meteorLandDeg = options.meteorLandDeg ?? flight.path.meteorLandDeg;
-  const timing = replanTiming(
-    flight,
-    atMs,
-    start,
-    target,
-    { ...options, meteorDeg, meteorLandDeg },
-    speed,
-  );
+  const kept = { ...options, ...keptByReplan(flight, options) };
+  const timing = replanTiming(flight, atMs, start, target, kept, speed);
   const path = planFlight(flight.ellipsoid, start, target, {
-    ...options,
-    meteorDeg,
-    meteorLandDeg,
+    ...kept,
     durationMs: options.durationMs ?? timing.durationMs,
     rampMs: timing.rampMs,
     rampFromShare: timing.rampFromShare,
@@ -539,14 +554,17 @@ function landingRaiseM(
     if (!(sensitivity > MIN_LANDING_SENSITIVITY)) continue;
     const ground = groundAt(
       obliqueCamera(
-        ellipsoid,
+        path.ellipsoid,
         { direction: f.centre, up: f.up },
         f.altitudeM,
         f.pitchDeg,
       ).position.normalize(),
     );
     if (ground === null || !Number.isFinite(ground)) continue;
-    const short = ground + FLIGHT_REPLAN.clearanceM - f.altitudeM;
+    // The ground is over the caller's ellipsoid; the altitude over the
+    // path's, lifted by its target's ground (DEC-R4-1).
+    const short =
+      ground + FLIGHT_REPLAN.clearanceM - (f.altitudeM + path.groundM);
     raise = Math.max(raise, short / sensitivity);
   }
   return raise;

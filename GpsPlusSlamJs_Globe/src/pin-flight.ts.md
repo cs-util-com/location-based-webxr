@@ -213,3 +213,40 @@ the 60 s cap: the steepest rate change is 1.08 per second today, 0.26 at
 2.5 s in two stages, 0.13 at 5 s, 0.08 at 8 s. The defaults are the flight
 before until the owner's A/B pick. Tests: the defaults unchanged, the
 S-curve's zero start and the spread, 30 against 60 Hz, the refusals.
+
+## The landing above the ground (round-4 plan 2026-10-11-0122 DEC-R4-1)
+
+- `PinFlight.groundM`: the target's ground above the ellipsoid (0 until
+  one is known); `landingM` is above it. Every flight to the target is
+  planned with it (`flyTo` passes `groundM`), so it lands `landingM` above
+  the ground, looking at the target AT its ground (`flight-path.ts`'s
+  lifted ellipsoid).
+- `pressPin`'s option `groundM` (default 0): a link whose ground was read
+  before the press. RangeError for a ground below 0 or not finite.
+- `pinGround(pin, nowMs, groundM)`: the target's ground, read or revised:
+  while approaching or descending to a target, a CF2 replan onto it (never
+  a jump; the gate found again); nothing for an unchanged ground or
+  without a flight to a target. RangeError as `pressPin`.
+  - The flight's beta is kept, unless the camera now stands ABOVE its
+    line: a LOWERED ground needs more ground for the line's sweep than is
+    left, and the flight backed off (measured: the view turned 173 degrees
+    in one frame at 5 km, beta 30). `meteorTo` then fits the flattest
+    steeper beta, still landing at the asked angle (DEC-R3-12); a raised
+    ground keeps the beta (the camera is below its line and turns in).
+  - Measured (`flight-ground.test.ts`, raises 0 to 435 m and 400 to 435
+    m, lowerings 600 to 435 m and 465 to 435 m, below 20,000 / 20 / 5 / 2
+    km, beta 30 and 45): the view turns at most 0.17 degree between two
+    60 Hz frames, a frame's step is never more than 0.993 x the one before
+    around the replan (no jump), and the flight lands at the revised ground
+    + 150 m, looking at the target (miss 0.00 m). The WHOLE turn: a raise
+    0.00-0.01 degree at any height; a lowering about 30-50 x (drop /
+    height) degrees: 165 m turns 0.21-0.24 at 20 km, 1.00-1.13 at 5 km and
+    3.53-3.83 at 2 km; 30 m turns 0.04 / 0.18-0.20 / 0.61-0.67. Past the
+    brief's one-degree wall late, so the lab lowers only while the drop is
+    at most `LANDING_GROUND.lowerPerHeight` (1.25 %) of the camera's height
+    above the ground (`groundRevisionM`'s `heightM`), else lands the drop
+    higher.
+- `meteorLinkStart(..., groundM = 0)`: the link's start on the line to
+  the target lifted to its ground.
+- `pinLanding` stays (the replan path for a new landing), unused by the
+  lab since the landing is above the ground.
