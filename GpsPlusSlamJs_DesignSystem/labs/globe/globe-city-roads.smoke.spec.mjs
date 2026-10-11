@@ -142,10 +142,13 @@ test("the city at Lucerne draws its buildings, its wall and its roads and paths"
     { plain: false, phase: "user", routeCity: false },
   );
   const { buildings, roads } = await drawnCity(page);
-  const wallMid = { lat: WALL[0].lat, lng: LUCERNE.lng };
-  const roadMid = { lat: ROAD[0].lat, lng: LUCERNE.lng };
-  const wall = await nearest(page, buildings.vertices, wallMid);
-  const road = await nearest(page, roads.vertices, roadMid);
+  // The ENDS, not the middles: a wall segment is one extruded quad and a
+  // road segment one quad plus a disc at each vertex, so a straight way has
+  // vertices only at its ends (a middle is 40 m and 150 m from the nearest).
+  const wallEnd = { lat: WALL[0].lat, lng: WALL[0].lon };
+  const roadEnd = { lat: ROAD[0].lat, lng: ROAD[0].lon };
+  const wall = await nearest(page, buildings.vertices, wallEnd);
+  const road = await nearest(page, roads.vertices, roadEnd);
   console.log(
     `city at Lucerne: ${JSON.stringify(buildings.counts)}; stages ${JSON.stringify(buildings.load?.stages)}; ${buildings.objects} objects, main thread ${buildings.mainMs} ms; wall nearest ${wall.flatM.toFixed(2)} m; road nearest ${road.flatM.toFixed(2)} m, ${road.aboveReliefM.toFixed(2)} m above the relief; road vertices ${roads.vertices.length}; requests ${JSON.stringify(seen)}`,
   );
@@ -156,8 +159,8 @@ test("the city at Lucerne draws its buildings, its wall and its roads and paths"
   // The residential road and the footway; never the tunnel.
   expect(buildings.counts.roads).toBe(2);
   expect(roads.vertices.length).toBeGreaterThan(20);
-  // The wall stands where it is mapped (its centreline, 0.3 m thick at
-  // most), the road lies where it is mapped (a 2-lane residential road is
+  // The wall stands where it is mapped (its end, 0.3 m thick at most), the
+  // road lies where it is mapped (its end disc: a 2-lane residential road is
   // about 7 m wide).
   expect(wall.flatM).toBeLessThan(1.5);
   expect(road.flatM).toBeLessThan(5);

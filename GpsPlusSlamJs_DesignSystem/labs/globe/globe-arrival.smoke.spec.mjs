@@ -65,13 +65,15 @@ const arrival = (page) =>
     phase: window.__globeLab.state().phase,
   }));
 
-/** Requests that only the city load's lazily loaded graph makes. */
+/**
+ * Requests that only the city load's lazily loaded graph makes: the city's
+ * worker and its graph (the worker view), H3, and the city's three.js entry.
+ * Not the relief's own Osm-library modules (its Terrarium decoder and ENU
+ * frame, `/osm-lib/elevation/`, `/osm-lib/mesh/enu.js`), which it loads
+ * whenever it draws.
+ */
 const prefetchGraph = (requests) =>
-  requests.filter((u) =>
-    /\/osm-lib\/|\/vendor\/h3-js\/|\/w\/labs\/globe\/globe-city-worker\.js/.test(
-      u,
-    ),
-  );
+  requests.filter((u) => /\/w\/|\/vendor\/h3-js\/|\/osm-lib\/three\//.test(u));
 
 // WHY: the pin starts the prefetch (loaded only now, not at boot), the
 // status line shows a cold load in progress and then its end, and the dive

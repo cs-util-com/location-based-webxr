@@ -484,7 +484,10 @@ globeTiles, detail }` or null; `detail` is the region's state, with its
   city's load (above, round-4 plan 2026-10-11-0122 §5); once a place is
   known (the pin's located target or the link's `at=`) and no warm-up runs
   for it, the frame loop asks for it too, once per place (a load of the
-  place that runs or ran is reused, so nothing downloads twice). It is
+  place that runs or ran is reused, so nothing downloads twice); without
+  any warm-up (`cityWarm=0`, `prefetch=0`) only once the camera is below
+  `cityKm`, so a link that names a place for its view loads no city data
+  from orbit. It is
   loaded and built in a worker from the Osm library alone (the first ring
   drawn first, the rest replacing it as it arrives; buildings with their
   walls, trees, and with `cityRoads` (default 1) the roads and paths,

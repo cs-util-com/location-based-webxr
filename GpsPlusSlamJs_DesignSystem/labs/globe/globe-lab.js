@@ -3125,7 +3125,17 @@ async function start() {
             cityKey = null; // asks again below
           }
         }
-        if (key !== null && key !== cityKey && !warming && groundTrue) {
+        // Without a warm-up (`cityWarm=0`, `prefetch=0`) the frame loop loads
+        // only once the city could be seen (below `cityKm`): a link that
+        // names a place for its view loads no city data from orbit.
+        const wanted = arrival != null || altitudeM < params.cityKm * 1000;
+        if (
+          key !== null &&
+          key !== cityKey &&
+          !warming &&
+          groundTrue &&
+          wanted
+        ) {
           city.load(place, { zoom: GLOBE_TERRAIN.maxZoom });
           cityKey = key;
           cityTries += 1;
