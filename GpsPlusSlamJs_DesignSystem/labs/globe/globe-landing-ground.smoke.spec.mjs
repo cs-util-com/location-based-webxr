@@ -99,6 +99,14 @@ for (const [name, place, mayLift] of [
     const f = st.pin.flight;
     const aboveTarget = st.altitudeM - f.reliefGroundM;
     const aboveCamera = st.altitudeM - st.relief.groundUnderCameraM;
+    // The drawn mesh against the sampled field under the camera (the R4b
+    // milestone review, finding 3): measured, logged.
+    const drawn = await page.evaluate(() =>
+      window.__globeLab.drawnGroundUnderCamera(),
+    );
+    console.log(
+      `${name}: ground under the camera, field ${st.relief.groundUnderCameraM.toFixed(1)} m, drawn mesh ${drawn === null ? "no hit" : `${drawn.toFixed(1)} m (${(drawn - st.relief.groundUnderCameraM).toFixed(1)} m)`}`,
+    );
     console.log(
       `${name} (synthetic heights): read ${f.groundM.toFixed(1)} m (${f.groundSource}), relief ${f.reliefGroundM.toFixed(1)} m at the place, revisions ${f.groundRevisions}; landed at ${st.altitudeM.toFixed(1)} m: ${aboveTarget.toFixed(1)} m above the place's ground, ${aboveCamera.toFixed(1)} m above the ground under the camera, clearance lifts ${st.relief.clearanceLifts}; depression ${st.cameraDepressionDeg.toFixed(1)} deg; "${st.readoutShown}"; "${st.pin.status}"`,
     );
@@ -188,6 +196,12 @@ test("the owner's screenshots: landed 150 m up at Lucerne and near Pilatus", asy
     await page.locator(".lookdev-head").click();
     await page.evaluate(() => window.__globeLab.timeFrames(3));
     const st = await page.evaluate(() => window.__globeLab.state());
+    const drawn = await page.evaluate(() =>
+      window.__globeLab.drawnGroundUnderCamera(),
+    );
+    console.log(
+      `${name} (AWS heights): ground under the camera, field ${st.relief.groundUnderCameraM?.toFixed(1)} m, drawn mesh ${drawn === null ? "no hit" : `${drawn.toFixed(1)} m (${(drawn - st.relief.groundUnderCameraM).toFixed(1)} m)`}; the line "${st.pin.status}"`,
+    );
     const f = landed.st.pin.flight;
     await page.screenshot({ path: `${dir}/r4b-landed-${name}.png` });
     console.log(

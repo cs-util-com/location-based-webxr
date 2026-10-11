@@ -4020,6 +4020,25 @@ void main() {
      * Render one frame and read RGBA bytes at normalised canvas points
      * (0,0 = top-left), in the same task as the render.
      */
+    /**
+     * The DRAWN relief's height straight under the camera (m above the
+     * ellipsoid), by a ray from the camera to the Earth's centre against
+     * the relief's meshes, or null without a hit (the R4b milestone
+     * review, finding 3: the plugin samples its height FIELD bilinearly,
+     * while the mesh it draws has a vertex about every 100 m at z13; this
+     * says how far the two differ where the camera lands).
+     */
+    drawnGroundUnderCamera() {
+      if (!terrain) return null;
+      const from = camera.position.clone();
+      const down = earthCentreWorld().clone().sub(from).normalize();
+      const ray = new THREE.Raycaster(from, down);
+      const hit = ray.intersectObject(terrain.tiles.group, true)[0];
+      if (!hit) return null;
+      return globe.tiles.ellipsoid.getPositionElevation(
+        globe.tiles.group.worldToLocal(hit.point.clone()),
+      );
+    },
     readPixels(points) {
       frame();
       const gl = renderer.getContext();

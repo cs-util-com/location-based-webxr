@@ -720,7 +720,10 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   "fallback"), `groundRevisions`, `reliefGroundM` (the relief's finest
   height at the place now) and `meteorDeg`; `relief.clearanceM` is the
   page's clearance (100 m since round 4, `GLOBE_FLIGHT.clearanceM`).
-  Smokes: `globe-landing-ground.smoke.spec.mjs`.
+  `__globeLab.drawnGroundUnderCamera()` gives the DRAWN relief's height
+  straight under the camera (a ray to the Earth's centre against the
+  relief's meshes), to set against the plugin's sampled field (the R4b
+  milestone review, finding 3). Smokes: `globe-landing-ground.smoke.spec.mjs`.
   Measured (`globe-meteor.smoke.spec.mjs`, F1 at beta 45): 73.8 degrees
   below the horizontal at 9,718 km, 64.4 at 4,060, 52.3 at 1,003 (the
   line: 73.7, 64.4, 52.3); F1b re-measures it at beta 30 and 45.
