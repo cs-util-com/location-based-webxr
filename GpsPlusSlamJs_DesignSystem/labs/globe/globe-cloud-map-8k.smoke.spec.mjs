@@ -96,119 +96,135 @@ const spreadOf = (values) => {
 // preview texel (about 18 px here) the two agree, while the same boxes
 // one box apart do not. A piece in the wrong quadrant, flipped, or drawn
 // from the wrong rows would break the agreement. Box sizes swept (20, 40,
-// 80 px). The frame cost after the swap against before is logged, as a
-// ratio within one page load.
-test("the preview first, then ONE 8192 x 4096 map that draws the same clouds, sharper", async ({
-  page,
-}) => {
-  test.setTimeout(600_000);
-  const release = await holdPieces(page);
-  // Every frame's length and the cloud map's state at its end, to see the
-  // allocation's frame and each piece's against the frames around them.
-  await page.addInitScript(() => {
-    window.__cloudFrames = [];
-    let last = performance.now();
-    const tick = (t) => {
-      const m = window.__globeLab?.ready
-        ? window.__globeLab.state().cloudMap
-        : null;
-      window.__cloudFrames.push({
-        ms: t - last,
-        full: m?.full ?? null,
-        allocated: m?.allocated ?? false,
-        drawn: m?.piecesDrawn ?? 0,
-      });
-      last = t;
+// 80 px). Two quadrants, so two different pieces are checked (M1b review,
+// item 6c): the North Atlantic (piece 0-0, the north-west) and the
+// southern Indian Ocean (piece 1-1, the south-east, by day at 11:00 UTC).
+// The frame cost after the swap against before is logged, as a ratio
+// within one page load.
+const PLACES = [
+  { name: "north-west, the Atlantic", view: ATLANTIC },
+  {
+    name: "south-east, the Indian Ocean",
+    view: `${QUIET}&view=-45,60,3000,0,-90&errorTarget=64`,
+  },
+];
+for (const place of PLACES) {
+  test(`the preview first, then ONE 8192 x 4096 map that draws the same clouds, sharper (${place.name})`, async ({
+    page,
+  }) => {
+    test.setTimeout(600_000);
+    const release = await holdPieces(page);
+    // Every frame's length and the cloud map's state at its end, to see the
+    // allocation's frame and each piece's against the frames around them.
+    await page.addInitScript(() => {
+      window.__cloudFrames = [];
+      let last = performance.now();
+      const tick = (t) => {
+        const m = window.__globeLab?.ready
+          ? window.__globeLab.state().cloudMap
+          : null;
+        window.__cloudFrames.push({
+          ms: t - last,
+          full: m?.full ?? null,
+          allocated: m?.allocated ?? false,
+          drawn: m?.piecesDrawn ?? 0,
+        });
+        last = t;
+        requestAnimationFrame(tick);
+      };
       requestAnimationFrame(tick);
+    });
+    const errors = await bootGlobe(page, place.view, { phase: "user" });
+    await waitFull(page, "loading");
+    const preview = await cloudMapOf(page);
+    expect(preview).toMatchObject({
+      stage: "preview",
+      preview: "in",
+      width: 1024,
+      height: 512,
+      red: true,
+    });
+    await page.evaluate(() => window.__globeLab.timeFrames(3));
+    const sizes = [20, 40, 80];
+    const before = {};
+    for (const box of sizes) before[box] = await boxMeans(page, box);
+    const frameMs = async () => {
+      const ms = [];
+      for (let i = 0; i < 3; i++) {
+        ms.push(await page.evaluate(() => window.__globeLab.timeFrames(6) / 6));
+      }
+      return median(ms);
     };
-    requestAnimationFrame(tick);
-  });
-  const errors = await bootGlobe(page, ATLANTIC, { phase: "user" });
-  await waitFull(page, "loading");
-  const preview = await cloudMapOf(page);
-  expect(preview).toMatchObject({
-    stage: "preview",
-    preview: "in",
-    width: 1024,
-    height: 512,
-    red: true,
-  });
-  await page.evaluate(() => window.__globeLab.timeFrames(3));
-  const sizes = [20, 40, 80];
-  const before = {};
-  for (const box of sizes) before[box] = await boxMeans(page, box);
-  const frameMs = async () => {
-    const ms = [];
-    for (let i = 0; i < 3; i++) {
-      ms.push(await page.evaluate(() => window.__globeLab.timeFrames(6) / 6));
+    const previewMs = await frameMs();
+    release();
+    await waitFull(page, "in");
+    const full = await cloudMapOf(page);
+    expect(full).toMatchObject({
+      stage: "full",
+      full: "in",
+      width: 8192,
+      height: 4096,
+      red: true,
+      piecesFailed: 0,
+      rebuilds: 0,
+    });
+    const fullMs = await frameMs();
+    // The frame that allocated the map and the four that drew a piece each
+    // (the last also builds the mipmaps), against the plain frames while
+    // the pieces were held: absolute ms as well as ratios (a ratio of an
+    // emulated frame cannot bound the phone's 50 ms rule; neither can the
+    // absolute SwiftShader ms, but they show what the step adds).
+    const built = await page.evaluate(() => {
+      const f = window.__cloudFrames;
+      const alloc = f.findIndex(
+        (x, i) => i > 0 && x.allocated && !f[i - 1].allocated,
+      );
+      const draws = f
+        .map((x, i) => ({ ...x, i }))
+        .filter((x) => x.i > 0 && x.drawn > f[x.i - 1].drawn)
+        .map((x) => x.ms);
+      const plain = f
+        .slice(alloc + 1)
+        .filter((x) => x.full === "loading" && x.drawn === 0)
+        .map((x) => x.ms);
+      return { alloc: alloc > 0 ? f[alloc].ms : null, draws, plain };
+    });
+    const base = median(built.plain);
+    const show = (ms) => `${ms?.toFixed(0)} ms (x${(ms / base).toFixed(2)})`;
+    const lines = [];
+    const results = [];
+    for (const box of sizes) {
+      const after = await boxMeans(page, box);
+      const a = before[box].means;
+      const b = after.means;
+      const diff = meanOf(a.map((v, i) => Math.abs(v - b[i])));
+      // The signed mean: a bias (the shading is not linear in the coverage,
+      // so a coarse map averaged before it reads brighter or darker than a
+      // sharp one averaged after it) has one sign; a misplaced piece has none.
+      const bias = meanOf(a.map((v, i) => b[i] - v));
+      // The control: the same boxes one box to the east.
+      const shifted = [];
+      for (let k = 0; k < b.length; k++) {
+        if ((k + 1) % after.cols !== 0) shifted.push(Math.abs(a[k] - b[k + 1]));
+      }
+      const control = meanOf(shifted);
+      const spread = spreadOf(b);
+      results.push({ box, diff, control, spread });
+      lines.push(
+        `${box} px: |preview - full| ${diff.toFixed(2)} (full - preview ${bias.toFixed(2)}), one box apart ${control.toFixed(2)}, spread ${spread.toFixed(1)} (${b.length} boxes)`,
+      );
     }
-    return median(ms);
-  };
-  const previewMs = await frameMs();
-  release();
-  await waitFull(page, "in");
-  const full = await cloudMapOf(page);
-  expect(full).toMatchObject({
-    stage: "full",
-    full: "in",
-    width: 8192,
-    height: 4096,
-    red: true,
-    piecesFailed: 0,
-    rebuilds: 0,
-  });
-  const fullMs = await frameMs();
-  // The frame that allocated the map and the four that drew a piece each
-  // (the last also builds the mipmaps), against the plain frames while
-  // the pieces were held: absolute ms as well as ratios (a ratio of an
-  // emulated frame cannot bound the phone's 50 ms rule; neither can the
-  // absolute SwiftShader ms, but they show what the step adds).
-  const built = await page.evaluate(() => {
-    const f = window.__cloudFrames;
-    const alloc = f.findIndex(
-      (x, i) => i > 0 && x.allocated && !f[i - 1].allocated,
+    console.log(
+      `cloud map 8k (${place.name}): ${lines.join(" | ")}; frame x${(fullMs / previewMs).toFixed(2)} after the swap; the allocation's frame ${show(built.alloc)}, the pieces' ${built.draws.map(show).join(", ")} against ${built.plain.length} plain frames (median ${base.toFixed(0)} ms, SwiftShader); full at ${full.fullAtMs?.toFixed(0)} ms (the pieces held)`,
     );
-    const draws = f
-      .map((x, i) => ({ ...x, i }))
-      .filter((x) => x.i > 0 && x.drawn > f[x.i - 1].drawn)
-      .map((x) => x.ms);
-    const plain = f
-      .slice(alloc + 1)
-      .filter((x) => x.full === "loading" && x.drawn === 0)
-      .map((x) => x.ms);
-    return { alloc: alloc > 0 ? f[alloc].ms : null, draws, plain };
-  });
-  const base = median(built.plain);
-  const show = (ms) => `${ms?.toFixed(0)} ms (x${(ms / base).toFixed(2)})`;
-  const lines = [];
-  const results = [];
-  for (const box of sizes) {
-    const after = await boxMeans(page, box);
-    const a = before[box].means;
-    const b = after.means;
-    const diff = meanOf(a.map((v, i) => Math.abs(v - b[i])));
-    // The control: the same boxes one box to the east.
-    const shifted = [];
-    for (let k = 0; k < b.length; k++) {
-      if ((k + 1) % after.cols !== 0) shifted.push(Math.abs(a[k] - b[k + 1]));
+    expect(errors).toEqual([]);
+    for (const r of results) {
+      expect(r.spread, `${r.box} px has clouds`).toBeGreaterThan(10);
+      expect(r.diff, `${r.box} px`).toBeLessThan(r.control / 2);
+      expect(r.diff, `${r.box} px`).toBeLessThan(r.spread / 3);
     }
-    const control = meanOf(shifted);
-    const spread = spreadOf(b);
-    results.push({ box, diff, control, spread });
-    lines.push(
-      `${box} px: |preview - full| ${diff.toFixed(2)}, one box apart ${control.toFixed(2)}, spread ${spread.toFixed(1)} (${b.length} boxes)`,
-    );
-  }
-  console.log(
-    `cloud map 8k: ${lines.join(" | ")}; frame x${(fullMs / previewMs).toFixed(2)} after the swap; the allocation's frame ${show(built.alloc)}, the pieces' ${built.draws.map(show).join(", ")} against ${built.plain.length} plain frames (median ${base.toFixed(0)} ms, SwiftShader); full at ${full.fullAtMs?.toFixed(0)} ms (the pieces held)`,
-  );
-  expect(errors).toEqual([]);
-  for (const r of results) {
-    expect(r.spread, `${r.box} px has clouds`).toBeGreaterThan(10);
-    expect(r.diff, `${r.box} px`).toBeLessThan(r.control / 2);
-    expect(r.diff, `${r.box} px`).toBeLessThan(r.spread / 3);
-  }
-});
+  });
+}
 
 // WHY (M1b review, item 5): a device whose largest texture is 4,096 to
 // 8,191 joins the same four pieces decoded at half size into a 4,096 x
@@ -445,13 +461,20 @@ test("a context loss shows the preview, and the restore rebuilds the full map", 
   expect(errors).toEqual([]);
 });
 
-// WHY (the async-feedback rule; DEC-R3-15): a piece that cannot load must
-// leave the preview drawn (never a hole or a cloudless quarter), end the
-// loading label, and say so in the error box, without counting the clouds
-// as a map that failed (they are drawn).
-test("a piece that fails keeps the preview, and says so", async ({ page }) => {
+// WHY (the async-feedback rule; DEC-R3-15; M1b review, items 4 and 6a): a
+// piece that cannot load, after its two retries, must leave the preview
+// drawn where that piece would be (never a hole or a cloudless quarter),
+// end the loading label, and say so in the error box, without counting
+// the clouds as a map that failed. The failed piece is the view's own
+// (0-0, the north-west), and the view must show the PREVIEW's clouds:
+// box means equal to a page whose pieces are held back (a cloudless or
+// half-drawn quarter would differ by the clouds' spread, about 35).
+test("a piece that fails keeps the preview's clouds where it would be, and says so", async ({
+  page,
+  browser,
+}) => {
   test.setTimeout(400_000);
-  await page.route("**/globe-assets/equirect/clouds-8192-1-0.webp", (route) =>
+  await page.route("**/globe-assets/equirect/clouds-8192-0-0.webp", (route) =>
     route.fulfill({ status: 404, body: "" }),
   );
   const errors = await bootGlobe(page, ATLANTIC, { phase: "user" });
@@ -462,26 +485,37 @@ test("a piece that fails keeps the preview, and says so", async ({ page }) => {
     width: 1024,
     full: "failed",
     piecesFailed: 1,
+    retries: 2,
+    piecesHeld: 0,
+    allocated: false,
   });
   expect([state.mapsLoaded, state.mapErrors]).toEqual([state.mapsTotal, 0]);
   await expect(page.locator("#globe-error")).toContainText(
     "The sharp cloud map could not load: the coarser one shows.",
   );
   await expect(page.locator("#globe-loading")).toBeHidden();
-  const lum = (
-    await page.evaluate(() =>
-      window.__globeLab.readPixels([
-        [0.3, 0.3],
-        [0.5, 0.5],
-        [0.7, 0.7],
-      ]),
-    )
-  ).map(luminance);
-  console.log(
-    `failed piece: ${JSON.stringify(state.cloudMap)}; luminance ${lum.map((l) => l.toFixed(0)).join(", ")}`,
+  await page.evaluate(() => window.__globeLab.timeFrames(3));
+  const failed = await boxMeans(page, 40);
+  // The reference: the same view with every piece held back.
+  const other = await browser.newPage();
+  const release = await holdPieces(other);
+  const otherErrors = await bootGlobe(other, ATLANTIC, { phase: "user" });
+  await waitFull(other, "loading");
+  await other.evaluate(() => window.__globeLab.timeFrames(3));
+  const preview = await boxMeans(other, 40);
+  release();
+  await other.close();
+  const diff = meanOf(
+    failed.means.map((v, i) => Math.abs(v - preview.means[i])),
   );
-  expect(Math.max(...lum)).toBeGreaterThan(20);
+  const spread = spreadOf(preview.means);
+  console.log(
+    `failed piece: ${JSON.stringify(state.cloudMap)}; |failed - preview| ${diff.toFixed(2)} over ${failed.means.length} boxes, the preview's spread ${spread.toFixed(1)}`,
+  );
+  expect(spread).toBeGreaterThan(10);
+  expect(diff).toBeLessThan(1);
   expect(errors.filter((t) => !/404|Failed to load resource/.test(t))).toEqual(
     [],
   );
+  expect(otherErrors).toEqual([]);
 });
