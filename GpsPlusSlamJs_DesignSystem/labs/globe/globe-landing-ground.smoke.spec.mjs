@@ -116,8 +116,8 @@ for (const [name, place, mayLift] of [
     } else {
       expect(Math.abs(aboveCamera - st.relief.clearanceM)).toBeLessThan(2);
     }
-    expect(st.readoutShown).toMatch(/ · d+ m above ground/);
-    expect(st.pin.status).toMatch(/^Arrived, 150 m above the ground.$/);
+    expect(st.readoutShown).toMatch(/ · \d+ m above ground/);
+    expect(st.pin.status).toMatch(/^Arrived, 150 m above the ground\.$/);
   });
 }
 
