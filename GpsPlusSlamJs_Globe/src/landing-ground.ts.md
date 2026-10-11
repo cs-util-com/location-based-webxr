@@ -11,7 +11,9 @@
   it.
 - Public API:
   - `LANDING_GROUND`: `zoom` 12 (`GLOBE_TERRAIN.maxZoom`, tested equal),
-    `timeoutMs` 5,000, `marginM` 25, `lowerPerHeight` 0.0125.
+    `timeoutMs` 5,000, `marginM` 25, `lowerPerHeight` 0.0125,
+    `minPlausibleM` -500 and `maxPlausibleM` 9,000 (the terrain plugin's
+    own plausible heights), `maxLatDeg` 85.0511 (Web Mercator's limit).
   - `GroundSource`: `{ elevationAt(positions, signal?) }`, what the read
     needs of an elevation source; the lab passes the Osm library's
     `TerrariumProvider` (`/osm-lib/elevation/terrarium.js`) on the relief's
@@ -21,8 +23,10 @@
   - `readLandingGroundM(source, place, { timeoutMs?, signal? })` ->
     `Promise<{ groundM, source: "tile" | "fallback" }>`: the height under
     the place, never below 0 (the relief draws the sea at 0, so a depth
-    reads 0). Never rejects: no source (`relief=0`), a non-finite place,
-    an empty or non-finite answer, a rejection, the timeout or the
+    reads 0). Never rejects: no source (`relief=0`), a non-finite place or
+    one beyond `maxLatDeg` (the tile there is ground about 550 km away),
+    an answer that is not an array, an empty answer, a height that is not
+    a number in `minPlausibleM`-`maxPlausibleM` (a decoding fault), a rejection, the timeout or the
     caller's abort all give `{ groundM: 0, source: "fallback" }`, the
     ellipsoid. The read is aborted at the timeout and at the caller's
     abort, and its answer is not waited for (a source that ignores its

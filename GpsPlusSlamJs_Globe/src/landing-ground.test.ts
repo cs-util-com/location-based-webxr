@@ -106,6 +106,46 @@ describe("readLandingGroundM", () => {
     ).resolves.toEqual(fallback);
   });
 
+  // WHY (the R4b milestone review, findings 7, 8 and 10): a source that
+  // answers something other than an array must not reject the read; a
+  // height outside the plugin's own plausible range (-500 to 9,000 m) is a
+  // decoding fault, not ground; and beyond Web Mercator's 85.05 degrees the
+  // tile at the clamped latitude is ground about 550 km away.
+  it("falls back for a non-array answer, an implausible height and a place past Mercator", async () => {
+    const fallback = { groundM: 0, source: "fallback" };
+    const odd = (answer: unknown): GroundSource => ({
+      elevationAt: () =>
+        Promise.resolve(answer as readonly (number | undefined)[]),
+    });
+    await expect(readLandingGroundM(odd(undefined), LUCERNE)).resolves.toEqual(
+      fallback,
+    );
+    await expect(readLandingGroundM(odd({}), LUCERNE)).resolves.toEqual(
+      fallback,
+    );
+    await expect(readLandingGroundM(source([9_500]), LUCERNE)).resolves.toEqual(
+      fallback,
+    );
+    await expect(readLandingGroundM(source([-600]), LUCERNE)).resolves.toEqual(
+      fallback,
+    );
+    await expect(readLandingGroundM(source([8_800]), LUCERNE)).resolves.toEqual(
+      { groundM: 8_800, source: "tile" },
+    );
+    await expect(readLandingGroundM(source([-400]), LUCERNE)).resolves.toEqual({
+      groundM: 0,
+      source: "tile",
+    });
+    const polar = source([2_000]);
+    await expect(
+      readLandingGroundM(polar, { lat: 86, lng: 10 }),
+    ).resolves.toEqual(fallback);
+    await expect(
+      readLandingGroundM(polar, { lat: -85.2, lng: 10 }),
+    ).resolves.toEqual(fallback);
+    expect(polar.asked).toEqual([]);
+  });
+
   // WHY: a source that never answers must not hold the flight's ground:
   // at the timeout the ellipsoid stands in and the read is aborted.
   it("gives up at the timeout and aborts the read", async () => {

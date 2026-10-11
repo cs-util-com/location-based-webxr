@@ -45,6 +45,18 @@ export const LANDING_GROUND = Object.freeze({
    * degrees, the R4b milestone review).
    */
   lowerPerHeight: 0.0125,
+  /**
+   * A read outside this range (m) is a decoding fault, not ground: the
+   * terrain plugin's own plausible heights (the R4b milestone review,
+   * finding 8). The Dead Sea shore is -430 m, Everest 8,849 m.
+   */
+  minPlausibleM: -500,
+  maxPlausibleM: 9_000,
+  /**
+   * Web Mercator's limit, degrees: beyond it the tile read is the one at
+   * the clamped latitude, ground about 550 km away (finding 10).
+   */
+  maxLatDeg: 85.0511287798,
 });
 
 /** A place, degrees. */
@@ -106,8 +118,10 @@ async function heightWithin(
     } catch {
       return undefined;
     }
+    // Anything but an array of heights is no data (finding 7: a non-array
+    // answer rejected the read).
     const read = asked.then(
-      (heights) => heights[0],
+      (heights) => (Array.isArray(heights) ? heights[0] : undefined),
       () => undefined,
     );
     return await Promise.race([read, late]);
@@ -129,7 +143,7 @@ export async function readLandingGroundM(
 ): Promise<LandingGround> {
   const usable =
     source !== null &&
-    Number.isFinite(place.lat) &&
+    Math.abs(place.lat) <= LANDING_GROUND.maxLatDeg &&
     Number.isFinite(place.lng) &&
     options.signal?.aborted !== true;
   if (!usable) return FALLBACK;
@@ -139,9 +153,13 @@ export async function readLandingGroundM(
     options.timeoutMs ?? LANDING_GROUND.timeoutMs,
     options.signal,
   );
-  return height === undefined || !Number.isFinite(height)
-    ? FALLBACK
-    : { groundM: Math.max(0, height), source: "tile" };
+  const plausible =
+    typeof height === "number" &&
+    height >= LANDING_GROUND.minPlausibleM &&
+    height <= LANDING_GROUND.maxPlausibleM;
+  return plausible
+    ? { groundM: Math.max(0, height), source: "tile" }
+    : FALLBACK;
 }
 
 /**
