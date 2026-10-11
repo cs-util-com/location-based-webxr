@@ -24,6 +24,7 @@ import { describe, expect, it } from "vitest";
 import { cloudVolumeShare } from "./globe-cloud-volume.js";
 import {
   CLOUD_SHELL_VOLUME,
+  GLOBE_CLOUD_SHELL_GLSL,
   type CloudShellStation,
   cloudShellFieldWeights,
   cloudShellVolumeLaw,
@@ -298,5 +299,25 @@ describe("cloudShellVolumeShares", () => {
     expect(() => cloudShellVolumeShares(Number.NaN, shellOn)).toThrow(
       RangeError,
     );
+  });
+});
+
+// The lab's march binds these uniforms by name and calls these functions
+// (`globe-cloud-shell-volume.js`): the chunk's contract with its pass. A
+// rename here without the pass would draw the map at uv 0 and the noise at
+// the chart's origin, silently (an unset uniform reads 0).
+describe("GLOBE_CLOUD_SHELL_GLSL", () => {
+  it("declares the twin's uniforms and its two functions", () => {
+    for (const name of [
+      "uniform mat4 uShellWorldFromEcef;",
+      "uniform vec3 uShellRadii;",
+      "uniform float uShellGroundKm;",
+      "uniform float uShellGaussianM;",
+      "uniform float uShellLonOffset;",
+      "vec2 globeShellMapUv( vec3 p )",
+      "vec2 globeShellChartKm( vec3 p )",
+    ]) {
+      expect(GLOBE_CLOUD_SHELL_GLSL).toContain(name);
+    }
   });
 });
