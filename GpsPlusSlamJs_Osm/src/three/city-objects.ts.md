@@ -22,7 +22,15 @@ three-free; three.js is an optional peer, loaded only by this entry.
 - `treeObjects(placements)` → one `InstancedMesh` per tree variant present
   (`packInstances` groups and reflects ENU to scene), on shared geometry and
   material, each flagged `userData.sharedResources`. Empty in, empty out.
-- `cityObjects(city)` → buildings then trees, for a `buildCity` result.
+- `roadObjects(chunks)` → one mesh per road chunk (`buildCity` with
+  `roads`), OsmDemo's look moved here (round-4 plan 2026-10-11-0122
+  DEC-R4-7): white plus vertex colours, opaque (a vertex disc overlaps its
+  quads; translucent, junctions double-blend), single-sided, flat,
+  roughness 0.9, `userData.neutralSurface`; each carries
+  `userData.cityLayer = "roads"` and lies at its ground (the lift off a
+  drawn ground is each app's: OsmDemo's ladder, the globe's relief).
+- `cityObjects(city)` → buildings, then trees, then roads (when the city
+  has them), for a `buildCity` result.
 - `disposeCityObjects(objects)` → disposes each mesh's geometry and
   materials, skipping any object flagged `sharedResources`.
 
@@ -74,5 +82,6 @@ disposeCityObjects(objects);
 optional ones; one mesh per chunk with the settled material and flags, a
 material per chunk; one instanced mesh per variant present on shared
 resources, none for no trees; disposal freeing a building's own geometry and
-material and never the trees' shared geometry. OsmDemo's
+material and never the trees' shared geometry; the road row's material,
+layer flag and zero lift, and roads in `cityObjects` only when built. OsmDemo's
 `mesh-layers.test.ts` covers the rows that delegate here.

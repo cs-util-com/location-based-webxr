@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { OsmFeature } from "../model/osm-feature.js";
 import { buildCity, cityGround } from "./city.js";
 import { enuFrameAt } from "./enu.js";
-import { buildingColour } from "./feature-colours.js";
+import { buildingColour, roadColour } from "./feature-colours.js";
 
 /**
  * `buildCity` is the city a renderer draws: buildings (with their parts and
@@ -218,5 +218,97 @@ describe("buildCity within a window", () => {
         RangeError,
       );
     }
+  });
+});
+
+// WHY (round-4 plan 2026-10-11-0122 DEC-R4-7, the owner: the globe's city
+// "misses the roads" OsmDemo draws): the roads and paths are part of the
+// city both apps draw, built and coloured once here (OsmDemo's worker
+// chunked and coloured them inline), and only when asked, so a consumer
+// that draws none builds none.
+describe("buildCity with roads", () => {
+  const ROAD: OsmFeature = {
+    type: "way",
+    id: 20,
+    tags: { highway: "residential", surface: "asphalt" },
+    geometry: [
+      { lat: 50.9412, lng: 6.958 },
+      { lat: 50.9412, lng: 6.9595 },
+    ],
+  };
+  const PATH: OsmFeature = {
+    type: "way",
+    id: 21,
+    tags: { highway: "footway" },
+    geometry: [
+      { lat: 50.9416, lng: 6.958 },
+      { lat: 50.9418, lng: 6.959 },
+    ],
+  };
+  const FAR_ROAD: OsmFeature = {
+    type: "way",
+    id: 22,
+    tags: { highway: "residential" },
+    geometry: [
+      { lat: 50.9712, lng: 6.958 },
+      { lat: 50.9712, lng: 6.9595 },
+    ],
+  };
+  const TUNNEL: OsmFeature = {
+    type: "way",
+    id: 23,
+    tags: { highway: "primary", tunnel: "yes" },
+    geometry: [
+      { lat: 50.9414, lng: 6.958 },
+      { lat: 50.9414, lng: 6.9595 },
+    ],
+  };
+
+  it("builds no roads unless asked", () => {
+    const city = buildCity([ROAD, PATH], { frame });
+    expect(city.roads).toEqual([]);
+    expect(city.roadCount).toBe(0);
+  });
+
+  it("builds the roads and the paths, chunked and coloured by class and surface, never a tunnel", () => {
+    const city = buildCity([ROAD, PATH, TUNNEL], { frame }, { roads: true });
+    expect(city.roadCount).toBe(2);
+    expect(city.roads.length).toBeGreaterThan(0);
+    const colours = new Set<string>();
+    for (const chunk of city.roads) {
+      const c = chunk.colors ?? new Float32Array(0);
+      for (let i = 0; i < c.length; i += 3) {
+        colours.add(`${c[i]},${c[i + 1]},${c[i + 2]}`);
+      }
+    }
+    const asKey = (rgb: number) => unpacked(rgb).join(",");
+    expect(colours).toEqual(
+      new Set([asKey(roadColour(ROAD.tags)), asKey(roadColour(PATH.tags))]),
+    );
+  });
+
+  it("drapes the roads on the ground it is given", () => {
+    const city = buildCity(
+      [ROAD],
+      { frame, groundHeightM: (p) => 400 + (p.lng - 6.958) * 10_000 },
+      { roads: true },
+    );
+    const ys: number[] = [];
+    for (const chunk of city.roads) {
+      const p = chunk.mesh.positions;
+      for (let i = 1; i < p.length; i += 3) ys.push(p[i]!);
+    }
+    // A road 105 m long rising 15 m: a ribbon follows it, a box would not.
+    expect(Math.min(...ys)).toBeLessThan(402);
+    expect(Math.max(...ys)).toBeGreaterThan(413);
+  });
+
+  it("keeps only the roads inside the window", () => {
+    const city = buildCity(
+      [ROAD, FAR_ROAD],
+      { frame },
+      { roads: true, withinM: 2400 },
+    );
+    expect(city.roadCount).toBe(1);
   });
 });

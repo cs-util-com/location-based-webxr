@@ -47,7 +47,6 @@ import {
   buildObstacleIndex,
   buildRegionSlabs,
   type SlabRegion,
-  buildRoads,
   buildCity,
   cityGround,
   enuFrameAt,
@@ -59,7 +58,6 @@ import {
   featureKey,
   isPedestrianPath,
   meshCentroidEnu,
-  roadColour,
   type RacingElevationProvider,
   type RacingProviderStats,
   type LatLng,
@@ -310,13 +308,12 @@ function buildMesh(
   // with these since #259, and an NPC dodging geometry the viewer cannot see
   // demonstrates nothing. No toggle and no distinct colour: a wall is part of
   // the built world, so it goes through `buildingColour` like the rest.
-  const city = buildCity(all, options);
+  // THE ROADS too, since 2026-10-11 (round-4 plan 2026-10-11-0122 DEC-R4-7:
+  // the globe draws the same roads): PER-VERTEX terrain, like the plates (a
+  // road is a long surface, and one sample would cut into the hill at one
+  // end and float at the other), chunked and coloured by class and surface.
+  const city = buildCity(all, options, { roads: true });
   const { volumes, barriers, trees } = city;
-  // Same options as the trees: a marker floating over sloped ground reads as a
-  // placement bug, and the sampler is the one already built for this frame.
-  // PER-VERTEX terrain, like the plates: a road is a long surface, and one
-  // sample would cut into the hill at one end and float at the other.
-  const roads = buildRoads(all, options);
   // Per-vertex terrain again: a region can be hundreds of metres across.
   const regionSlabs = buildRegionSlabs(regions, options);
   // PER-VERTEX terrain for plates, unlike buildings: a 30 m car park sampled once
@@ -407,10 +404,6 @@ function buildMesh(
   // always wholly on screen. DEC-R2-8 grew the extent to 2.8 km and that stopped
   // being true — and one mesh cannot be frustum-culled in parts, which is
   // exactly what R4-16 reports.
-  // TAGS BY KEY, for the roads' colours (the buildings' are `buildCity`'s).
-  const tagsByKey = new Map(
-    all.map((feature) => [featureKey(feature), feature.tags]),
-  );
   const buildings = city.buildings;
 
   return {
@@ -423,14 +416,8 @@ function buildMesh(
     ),
     plateCount: plates.length,
     poi,
-    roads: chunkMeshes(
-      roads,
-      (road) => road.mesh,
-      (road) => meshCentroidEnu(road.mesh),
-      undefined,
-      (road) => roadColour(tagsByKey.get(road.feature) ?? {}),
-    ),
-    roadCount: roads.length,
+    roads: city.roads,
+    roadCount: city.roadCount,
     // CONVERTED HERE because this is where the frame is. Every other piece of
     // scene geometry is built in this function for the same reason, and
     // `recentre` invalidates ENU coordinates, so a page-side copy of the frame

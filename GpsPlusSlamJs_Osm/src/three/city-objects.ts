@@ -1,6 +1,6 @@
 /**
- * The city as three.js objects: the buildings' chunks as meshes and the trees
- * as instanced meshes, plus the disposal both need.
+ * The city as three.js objects: the buildings' and roads' chunks as meshes
+ * and the trees as instanced meshes, plus the disposal they need.
  *
  * WHY A SUBPATH. The package's core is pure data with no three.js (its
  * builders return typed arrays). When the globe lab became its second
@@ -218,12 +218,57 @@ export function treeObjects(
   return objects;
 }
 
-/** The buildings and trees of a city (`buildCity`), as three.js objects. */
+/**
+ * One mesh per road chunk (`buildCity` with `roads`), as OsmDemo settled
+ * the look (moved from its `mesh-layers.ts`, round-4 plan 2026-10-11-0122
+ * DEC-R4-7, so the globe draws the same roads):
+ * - WHITE plus VERTEX COLOURS: the class and surface palette is per vertex,
+ *   every colour of it contrast-checked against the ground
+ *   (`feature-colours.test.ts`).
+ * - OPAQUE: a disc at each vertex overlaps the quads it joins; translucent,
+ *   that overlap would double-blend into a blob at every junction.
+ * - SINGLE-SIDED: a ribbon faces up by construction, so a wrongly wound one
+ *   disappears rather than being lit from below.
+ * - Flat-shaded, roughness 0.9, `userData.neutralSurface` (the target of
+ *   OsmDemo's noon brightening).
+ *
+ * Each mesh carries `userData.cityLayer = "roads"`. It lies AT the ground
+ * it was built on: how far to lift it off a drawn ground is the app's call
+ * (OsmDemo's lift ladder, the globe's relief), so it is left at 0.
+ */
+export function roadObjects(chunks: readonly MeshChunk[]): THREE.Mesh[] {
+  return chunks.map((chunk) => {
+    const object = new THREE.Mesh(
+      geometryFrom(chunk.mesh, chunk.colors),
+      new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        color: 0xffffff,
+        userData: { neutralSurface: true },
+        roughness: 0.9,
+        transparent: false,
+        side: THREE.FrontSide,
+        flatShading: true,
+      }),
+    );
+    object.userData["cityLayer"] = "roads";
+    return object;
+  });
+}
+
+/**
+ * The buildings, trees and (when built) roads of a city (`buildCity`), as
+ * three.js objects.
+ */
 export function cityObjects(city: {
   readonly buildings: readonly MeshChunk[];
   readonly trees: readonly TreePlacement[];
+  readonly roads?: readonly MeshChunk[];
 }): THREE.Object3D[] {
-  return [...buildingObjects(city.buildings), ...treeObjects(city.trees)];
+  return [
+    ...buildingObjects(city.buildings),
+    ...treeObjects(city.trees),
+    ...roadObjects(city.roads ?? []),
+  ];
 }
 
 /**

@@ -1,15 +1,16 @@
 /**
  * The city a renderer draws: buildings (with their parts and the barriers
- * drawn among them), coloured per feature and chunked for culling, and the
- * trees.
+ * drawn among them), coloured per feature and chunked for culling, the
+ * trees, and on request the roads and paths.
  *
  * WHY IT IS HERE. OsmDemo's worker assembled this inline from this package's
  * builders. When the globe lab became the package's second consumer (globe
  * city plan 2026-10-05-0040 §14 L3), the assembly was the part both needed,
  * so it moved here: the tag inheritance of `building:part`, the colours, the
- * stable shell phase and the chunking now live once. Plates, roads, region
- * slabs, POI markers and the cell grid stay with OsmDemo, which draws them
- * around this.
+ * stable shell phase and the chunking now live once. The roads followed
+ * (round-4 plan 2026-10-11-0122 DEC-R4-7: the owner asked for the globe's
+ * city to draw what OsmDemo draws). Plates, region slabs, POI markers and
+ * the cell grid stay with OsmDemo, which draws them around this.
  *
  * @see city.ts.md
  */
@@ -27,7 +28,8 @@ import {
   type MeshChunk,
 } from "./chunk-meshes.js";
 import type { EnuFrame, EnuPoint } from "./enu.js";
-import { buildingColour } from "./feature-colours.js";
+import { buildingColour, roadColour } from "./feature-colours.js";
+import { buildRoads } from "./roads.js";
 import { shellRandFor } from "./shell-rand.js";
 import { buildTrees, type TreePlacement } from "./trees.js";
 
@@ -47,6 +49,13 @@ export interface CityGround {
  */
 export interface CityOptions {
   readonly withinM?: number;
+  /**
+   * Also build the roads and paths (`buildRoads`: ribbons draped per vertex
+   * on the ground, tunnels and highway areas left out), chunked and
+   * coloured by class and surface (`roadColour`). Default false: a
+   * consumer that draws none builds none.
+   */
+  readonly roads?: boolean;
 }
 
 /** What `buildCity` returns. */
@@ -62,6 +71,13 @@ export interface City {
   readonly buildings: readonly MeshChunk[];
   /** One placement per `natural=tree` node. */
   readonly trees: readonly TreePlacement[];
+  /**
+   * The road and path ribbons merged per chunk, a colour per vertex; empty
+   * unless `roads` was asked for.
+   */
+  readonly roads: readonly MeshChunk[];
+  /** Road and path ways built (0 unless asked for). */
+  readonly roadCount: number;
 }
 
 /**
@@ -138,5 +154,34 @@ export function buildCity(
     // stable across rebuilds (an index would re-shuffle on every refresh).
     (item) => shellRandFor(item.mesh),
   );
-  return { volumes, barriers, buildings, trees };
+  const { roads, roadCount } = options.roads
+    ? cityRoads(all, ground, inside, tagsByKey)
+    : { roads: [], roadCount: 0 };
+  return { volumes, barriers, buildings, trees, roads, roadCount };
+}
+
+/**
+ * The roads of a city, within its window, merged per chunk with a colour
+ * per vertex (class and surface, `roadColour`). OsmDemo's worker did this
+ * inline until the globe needed the same (round-4 plan 2026-10-11-0122).
+ */
+function cityRoads(
+  all: readonly OsmFeature[],
+  ground: CityGround,
+  inside: (p: EnuPoint) => boolean,
+  tagsByKey: ReadonlyMap<string, OsmFeature["tags"]>,
+): { roads: MeshChunk[]; roadCount: number } {
+  const ribbons = buildRoads(all, ground).filter((road) =>
+    inside(meshCentroidEnu(road.mesh)),
+  );
+  return {
+    roads: chunkMeshes(
+      ribbons,
+      (road) => road.mesh,
+      (road) => meshCentroidEnu(road.mesh),
+      undefined,
+      (road) => roadColour(tagsByKey.get(road.feature) ?? {}),
+    ),
+    roadCount: ribbons.length,
+  };
 }

@@ -9,6 +9,7 @@ import {
   cityObjects,
   disposeCityObjects,
   geometryFrom,
+  roadObjects,
   treeObjects,
 } from "./city-objects.js";
 
@@ -137,5 +138,57 @@ describe("disposeCityObjects", () => {
     expect(ownGeometry).toHaveBeenCalledTimes(1);
     expect(ownMaterial).toHaveBeenCalledTimes(1);
     for (const s of shared) expect(s).not.toHaveBeenCalled();
+  });
+});
+
+// WHY (round-4 plan 2026-10-11-0122 DEC-R4-7): the roads OsmDemo draws are
+// the globe's too, so their three.js row moved here from OsmDemo's
+// `mesh-layers.ts`: white plus vertex colours (the palette is per vertex),
+// opaque (a vertex disc overlaps its quads; translucent, every junction
+// would double-blend into a blob), single-sided (a ribbon faces up by
+// construction, so a wrong winding disappears instead of being lit from
+// below), flat, rough, a target of the noon brightening. The lift off the
+// ground is each app's (its own ground differs).
+describe("roadObjects", () => {
+  const ROAD: OsmFeature = {
+    type: "way",
+    id: 30,
+    tags: { highway: "residential" },
+    geometry: [
+      { lat: 50.9412, lng: 6.958 },
+      { lat: 50.9412, lng: 6.9595 },
+    ],
+  };
+  const withRoads = buildCity([HOUSE, ROAD], { frame }, { roads: true });
+
+  it("draws one opaque, single-sided, vertex-coloured mesh per road chunk, at the ground", () => {
+    const roads = roadObjects(withRoads.roads);
+    expect(roads).toHaveLength(withRoads.roads.length);
+    for (const road of roads) {
+      const m = road.material as THREE.MeshStandardMaterial;
+      expect(m.vertexColors).toBe(true);
+      expect(m.color.getHex()).toBe(0xffffff);
+      expect(m.transparent).toBe(false);
+      expect(m.side).toBe(THREE.FrontSide);
+      expect(m.flatShading).toBe(true);
+      expect(m.roughness).toBe(0.9);
+      expect(m.userData["neutralSurface"]).toBe(true);
+      expect(road.geometry.getAttribute("color")).toBeDefined();
+      expect(road.position.y).toBe(0);
+      expect(road.userData["cityLayer"]).toBe("roads");
+    }
+  });
+
+  it("is part of the city's objects when the city has roads, and freed with them", () => {
+    const objects = cityObjects(withRoads);
+    const roads = objects.filter((o) => o.userData["cityLayer"] === "roads");
+    expect(roads).toHaveLength(withRoads.roads.length);
+    const road = roads[0] as THREE.Mesh;
+    const freed = vi.spyOn(road.geometry, "dispose");
+    disposeCityObjects(objects);
+    expect(freed).toHaveBeenCalledTimes(1);
+    expect(
+      cityObjects(city).some((o) => o.userData["cityLayer"] === "roads"),
+    ).toBe(false);
   });
 });

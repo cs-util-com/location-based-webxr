@@ -8,5 +8,6 @@ export {
   cityObjects,
   disposeCityObjects,
   geometryFrom,
+  roadObjects,
   treeObjects,
 } from "./city-objects.js";

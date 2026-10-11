@@ -7,9 +7,11 @@ place of their outlines, with the barriers drawn among them), coloured per
 feature, merged per chunk for culling and carrying the shell attributes; and
 the trees. It was assembled inline in OsmDemo's worker until the globe lab
 became this package's second consumer (globe city plan 2026-10-05-0040 §14
-L3, the owner's D-K5: the globe uses the library's public API only). Plates,
-roads, region slabs, POI markers and the cell grid stay with OsmDemo, which
-builds them around this on the same ground.
+L3, the owner's D-K5: the globe uses the library's public API only). On
+request it builds the roads and paths too (round-4 plan 2026-10-11-0122
+DEC-R4-7: the globe draws what OsmDemo draws). Plates, region slabs, POI
+markers and the cell grid stay with OsmDemo, which builds them around this on
+the same ground.
 
 ## Public API
 
@@ -17,7 +19,7 @@ builds them around this on the same ground.
   the field's `heightAt` at a position's ENU metres, or flat (no sampler)
   without a field. One derivation, so every layer stands on one surface.
 - `buildCity(features, ground) → City` - `{ volumes, barriers, buildings,
-trees }`. `volumes` and `barriers` are the builders' own results (a caller
+trees, roads, roadCount }`. `volumes` and `barriers` are the builders' own results (a caller
   that needs them, OsmDemo for its POI hosts and counters, does not build
   twice); `buildings` are `MeshChunk`s with per-vertex `colors`,
   `featureRand` and `height01`; `trees` are `TreePlacement`s.
@@ -28,6 +30,13 @@ trees }`. `volumes` and `barriers` are the builders' own results (a caller
   building outside would stand on made-up ground (globe city plan
   2026-10-05-0040 §12.4 R12). RangeError for a `withinM` that is not a
   positive number.
+- `buildCity(features, ground, { roads: true })` also returns `roads`: the
+  `buildRoads` ribbons (draped per vertex on the ground; tunnels, covered
+  ways and highway areas left out; paths included) within the window, merged
+  per chunk with a colour per vertex (`roadColour`: class and surface), and
+  `roadCount`. Without it `roads` is empty and `roadCount` 0: a consumer
+  that draws no roads builds none. OsmDemo chunked and coloured them inline
+  in its worker until 2026-10-11.
 - No other error modes: a feature that cannot be built is skipped, as in
   every builder.
 
@@ -58,5 +67,7 @@ as its parent (and differently under another parent); the ground under every
 building; the shell phase stable and in [0, 1); empty in, empty out;
 `cityGround` flat without a field and reading the field at the position's ENU
 metres; `withinM` dropping what lies outside, keeping all without it, and
-refusing a non-positive window. OsmDemo's worker tests and browser suite cover the same assembly in
+refusing a non-positive window; roads only when asked, the roads and paths
+coloured by class and surface and never a tunnel, draped on the ground, kept
+within the window. OsmDemo's worker tests and browser suite cover the same assembly in
 use.

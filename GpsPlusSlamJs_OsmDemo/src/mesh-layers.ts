@@ -41,12 +41,13 @@ import {
   type PoiModel,
   type PoiPlacement,
 } from "gps-plus-slam-osm";
-// The buildings' and trees' three.js objects, and the geometry wrapper every
-// layer here shares, are the library's since 2026-10-06 (globe city plan
+// The buildings', trees' and (since 2026-10-11) roads' three.js objects, and
+// the geometry wrapper every layer here shares, are the library's since 2026-10-06 (globe city plan
 // 2026-10-05-0040 §14 L5): the globe draws the same city.
 import {
   buildingObjects,
   geometryFrom,
+  roadObjects,
   treeObjects,
 } from "gps-plus-slam-osm/three";
 
@@ -462,39 +463,17 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
   },
   {
     layer: "roads",
+    // The library's `roadObjects` since 2026-10-11 (round-4 plan
+    // 2026-10-11-0122 DEC-R4-7: the globe draws the same roads): WHITE plus
+    // VERTEX COLOURS (W23; the class and surface palette is per vertex and
+    // contrast-checked against the ground for the whole palette by
+    // `feature-colours.test.ts`, DEC-R2-13's measurement), OPAQUE (DEC-R2-13:
+    // the disc at each vertex overlaps its quads, which translucent would
+    // double-blend into a blob at every junction), SINGLE-SIDED, flat, rough,
+    // the noon brightening's target. Its header carries why. The LIFT is this
+    // demo's own ladder, so a road is never coplanar with a plate or the grid.
     build: (mesh) =>
-      mesh.roads.map((chunk) => {
-        const ribbon = new THREE.Mesh(
-          geometryFrom(chunk.mesh, chunk.colors),
-          new THREE.MeshStandardMaterial({
-            // WHITE plus VERTEX COLOURS (W23), like the buildings. The class and
-            // surface palette is in the package, and every colour in it is
-            // contrast-checked against the ground — DEC-R2-13's measurement, now
-            // enforced for the whole palette rather than for one constant.
-            vertexColors: true,
-            // WHITE, because the real colour is per vertex now. It was 0x8b909c,
-            // and that constant was a MEASUREMENT rather than a preference: the
-            // first attempt was 0x2f333d on asphalt reasoning, the ground renders
-            // at rgb(40,40,56) under this scene's lighting, and the darker road
-            // moved 77 pixels out of 460 800. "A road that cannot be told from
-            // the ground it lies on is a failed layer whatever the test says" —
-            // so that measurement is now enforced for the WHOLE palette by
-            // `feature-colours.test.ts`, rather than for one constant here.
-            color: 0xffffff,
-            // The noon brightening's target (`applySurfaceGain`).
-            userData: { neutralSurface: true },
-            roughness: 0.9,
-            // OPAQUE, and DEC-R2-13 depends on it. The disc at each vertex overlaps
-            // the segment quads it joins; in translucent geometry that overlap would
-            // double-blend into a visible blob at every junction.
-            transparent: false,
-            // SINGLE-SIDED for the same reason as the plates: a ribbon is
-            // horizontal with an upward normal by construction, so a wrongly-wound
-            // one should disappear rather than be lit from below.
-            side: THREE.FrontSide,
-            flatShading: true,
-          }),
-        );
+      roadObjects(mesh.roads).map((ribbon) => {
         ribbon.position.y = groundLift("roads");
         return ribbon;
       }),
