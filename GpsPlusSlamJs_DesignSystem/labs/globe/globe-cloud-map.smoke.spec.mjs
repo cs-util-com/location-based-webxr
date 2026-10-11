@@ -191,12 +191,15 @@ async function costRatio(page, hash) {
 // WHY: the owner's report itself (M1, re-measured after the milestone
 // review's finding 3). Over the clouds, along the texels' long side
 // (columns), the clouds read through the B-spline must bend in fewer
-// spikes than the bilinear read wherever the map is magnified, 1,000 to
-// 3,000 km (1,000 km is this 1280-pixel view's match for the owner's
+// spikes than the bilinear read wherever the map is magnified, 1,000 and
+// 1,500 km (1,000 km is this 1280-pixel view's match for the owner's
 // phone at 3,000 km), at every brightness floor swept (60, 100, 150: a
 // one-value verdict is provisional; the low floors keep the cloud edges,
 // where a staircase shows), and keep the clouds' contrast (the spread of
-// the same lines). Rows (the short side) and 6,000 km (a texel about a
+// the same lines). 3,000 km is logged, no longer asserted (M1b review,
+// item 6b): with the 8,192 map a texel is about 2 px there and the
+// B-spline barely bends less (x0.98-0.99, a 1-2 % margin a re-encode
+// could flip). Rows (the short side) and 6,000 km (a texel about a
 // pixel) are logged, not asserted. The cost is logged as a ratio within
 // one page load.
 test("the clouds through the B-spline show less of the texel grid where the map is magnified, and keep their contrast", async ({
@@ -257,7 +260,7 @@ test("the clouds through the B-spline show less of the texel grid where the map 
   for (const r of results) {
     expect(r.spread[0], `${r.km} km has clouds`).toBeGreaterThan(10);
     expect(r.spread[1] / r.spread[0], `${r.km} km`).toBeGreaterThan(0.9);
-    if (r.km > 3000) continue;
+    if (r.km > 1500) continue;
     for (const b of r.columns) {
       if (b.bilinear.n < 200) continue;
       expect(b.cubic.kink, `${r.km} km over ${b.floor}`).toBeLessThan(
