@@ -33,6 +33,10 @@ import {
   createCloudLiveLatticeTexture,
 } from "/fw/visualization/atmosphere/cloud-live-noise.js";
 import { flatCloudShare } from "/globe/globe-cloud-flat-fade.js";
+import {
+  CLOUD_SHELL_VOLUME,
+  cloudShellVolumeShares,
+} from "/globe/globe-cloud-shell-volume.js";
 import { creditsFor } from "/globe/globe-credits.js";
 import { GIBS_ACKNOWLEDGEMENT } from "/globe/globe-sources.js";
 import {
@@ -146,6 +150,7 @@ import {
 import { createGlobeGroundSky } from "./globe-ground-sky.js";
 import { createGlobeHaze } from "./globe-haze.js";
 import { createGlobeCloudVolume } from "./globe-cloud-volume.js";
+import { createGlobeCloudShellVolume } from "./globe-cloud-shell-volume.js";
 import { createGlobeSceneDepth } from "./globe-scene-depth.js";
 import { createGlobeCity } from "./globe-city.js";
 import {
@@ -600,6 +605,47 @@ const PARAMS = {
   // full from `cloudFlatTopKm` up, weakening to `cloudFlatWeak` by 100 km,
   // then handing over to the volume through its own fade.
   cloudFlat: { fallback: 1, min: 0, max: 1 },
+  // The spherical cloud volume (round-4 plan 2026-10-11-0122, R4d / V1,
+  // `globe-cloud-shell-volume.js`): 1 draws the clouds from about 700 km
+  // down to the slab's ceiling as one ray-marched shell, mixed with the
+  // slab below it; 0 (the default until the owner has looked) the flat
+  // layer as before. Its law's stations: `cloudShellTopKm` (the coarse
+  // set, full from there down, fading in over `cloudShellBandKm` above),
+  // `cloudShellMidKm` (the finer set), then the slab's own at 30 km; the
+  // top set's cell scale, deck thickness and noise share (the column's
+  // rise per unit of noise; the middle one takes their square roots), and
+  // the march's resolution (a share of the buffer).
+  cloudShellVolume: { fallback: 0, min: 0, max: 1 },
+  cloudShellTopKm: {
+    fallback: CLOUD_SHELL_VOLUME.topKm,
+    min: 100,
+    max: 3000,
+  },
+  cloudShellMidKm: { fallback: 200, min: 45, max: 1000 },
+  cloudShellBandKm: {
+    fallback: CLOUD_SHELL_VOLUME.bandKm,
+    min: 10,
+    max: 3000,
+  },
+  cloudShellCell: {
+    fallback: CLOUD_SHELL_VOLUME.stations[0].cellScale,
+    min: 1,
+    max: 16,
+  },
+  cloudShellThick: {
+    fallback: CLOUD_SHELL_VOLUME.stations[0].thicknessScale,
+    min: 1,
+    max: 16,
+  },
+  cloudShellNoise: {
+    fallback: CLOUD_SHELL_VOLUME.stations[0].noiseShare,
+    min: 0,
+    max: 1,
+  },
+  // Half resolution by default: the pass alone was 0.59-0.70 of a whole
+  // frame at full resolution (SwiftShader, 700 / 200 / 50 km), 0.27-0.29 of
+  // that at half (R4d's cost smoke), against the 50 ms rule on the phone.
+  cloudShellRes: { fallback: 0.5, min: 0.25, max: 1 },
   cloudFlatTopKm: { fallback: 5_000, min: 200, max: 50_000 },
   cloudFlatWeak: { fallback: 0.3, min: 0, max: 1 },
   // Speed dust: streaks pouring past the camera, faster with the speed
@@ -782,6 +828,34 @@ function readHashParams() {
         : // The live noise by default (round-4 plan DEC-R4-6, 2026-10-11).
           "live",
   };
+}
+
+/**
+ * The spherical cloud volume's law from the hash (round-4 plan R4d): the
+ * top and middle stations where the hash puts them (the middle kept below
+ * the top), the top's cell scale and thickness and their square roots in
+ * the middle, the bottom station the module's (the slab's own set).
+ */
+function shellStations(p) {
+  const [top, mid, bottom] = CLOUD_SHELL_VOLUME.stations;
+  const midKm = Math.min(p.cloudShellMidKm, p.cloudShellTopKm / 1.5);
+  return [
+    {
+      ...top,
+      altitudeKm: p.cloudShellTopKm,
+      cellScale: p.cloudShellCell,
+      thicknessScale: p.cloudShellThick,
+      noiseShare: p.cloudShellNoise,
+    },
+    {
+      ...mid,
+      altitudeKm: Math.max(midKm, bottom.altitudeKm * 1.5),
+      cellScale: Math.sqrt(p.cloudShellCell),
+      thicknessScale: Math.sqrt(p.cloudShellThick),
+      noiseShare: Math.sqrt(p.cloudShellNoise),
+    },
+    bottom,
+  ];
 }
 
 /** The live noise without its finest octave (the probe's own check). */
@@ -2283,6 +2357,19 @@ async function start() {
         })
       : null;
   if (cloudVolume) cloudVolume.patchShadow(terrain.tiles);
+  // The spherical cloud volume (round-4 plan R4d): over the cloud volume's
+  // anchor and slab, so only where the volume is.
+  const shellVolume = cloudVolume
+    ? createGlobeCloudShellVolume(renderer, {
+        ellipsoid: globe.tiles.ellipsoid,
+        surfaceUniforms: globe.surfaceUniforms,
+        groundSky: groundSky.atmosphere,
+        atmosphere,
+        sceneDepth,
+      })
+    : null;
+  /** This frame's drawers of the clouds (`cloudShellVolumeShares`). */
+  let cloudShares = null;
   // The haze (F2b; globe-haze.js): one fog for the whole page, the relief's
   // tiles patched last, after their own hooks and the stencil writer.
   const haze = createGlobeHaze(scene, {
@@ -3158,15 +3245,43 @@ async function start() {
     const cameraAltM = globe.tiles.ellipsoid.getPositionElevation(
       globe.tiles.group.worldToLocal(camera.position.clone()),
     );
-    const flat =
-      params.cloudFlat === 1 && Number.isFinite(cameraAltM)
-        ? flatCloudShare(Math.max(0, cameraAltM), {
-            ceilingKm: volumeOn ? params.cloudVolumeCeilingKm : 0,
-            fadeKm: volumeOn ? params.cloudVolumeFadeKm : 1,
-            topM: params.cloudFlatTopKm * 1000,
-            weakShare: params.cloudFlatWeak,
+    // The spherical volume (R4d) takes the clouds over from its top down,
+    // so the flat layer gives it up as it does to the slab; the shell's
+    // ground shadow stays the map's (the volume casts none of its own).
+    const shellOn =
+      volumeOn &&
+      shellVolume !== null &&
+      params.cloudShellVolume === 1 &&
+      worldFrame.target !== null;
+    const flatOptions = {
+      ceilingKm: volumeOn ? params.cloudVolumeCeilingKm : 0,
+      fadeKm: volumeOn ? params.cloudVolumeFadeKm : 1,
+      topM: params.cloudFlatTopKm * 1000,
+      weakShare: params.cloudFlatWeak,
+    };
+    const shellOptions = {
+      topKm: shellOn ? params.cloudShellTopKm : 0,
+      bandKm: params.cloudShellBandKm,
+    };
+    const flatOn = params.cloudFlat === 1 && Number.isFinite(cameraAltM);
+    const flat = flatOn
+      ? flatCloudShare(Math.max(0, cameraAltM), {
+          ...flatOptions,
+          shellTopKm: shellOptions.topKm,
+          shellBandKm: shellOptions.bandKm,
+        })
+      : 1;
+    const flatShadow = flatOn
+      ? flatCloudShare(Math.max(0, cameraAltM), flatOptions)
+      : 1;
+    cloudShares =
+      shellOn && Number.isFinite(cameraAltM)
+        ? cloudShellVolumeShares(Math.max(0, cameraAltM) / 1000, {
+            ...shellOptions,
+            ceilingKm: params.cloudVolumeCeilingKm,
+            fadeKm: params.cloudVolumeFadeKm,
           })
-        : 1;
+        : null;
     globe.setCloudShellShare(shellShare, flat);
     cloudFlatShare = flat;
     if (cloudShellHidden) globe.cloudShell.mesh.visible = false;
@@ -3174,7 +3289,7 @@ async function start() {
     globe.surfaceUniforms.uCloudShadow.value =
       params.cloudShadowFrom === 1 && cloudVolume
         ? 0
-        : params.cloudShadow * shellShare * flat;
+        : params.cloudShadow * shellShare * flatShadow;
     status.update({
       ...globe.state(),
       cloudSharpFailed: globe.cloudMap.state().full === "failed",
@@ -3242,6 +3357,7 @@ async function start() {
         },
         maxAheadM:
           params.cloudVolume === 1 ? 0 : CLOUD_VOLUME.maxAheadKm * 1000,
+        mixed: cloudShares !== null,
       });
       globe.cloudShell.setHole(
         params.cloudVolume === 1 && volume.radiusM > 0
@@ -3251,6 +3367,21 @@ async function start() {
             }
           : null,
       );
+    }
+    // The spherical volume's law and weights this frame (R4d).
+    if (shellVolume) {
+      shellVolume.setEnabled(cloudShares !== null);
+      shellVolume.setResolution(params.cloudShellRes);
+      shellVolume.update({
+        altitudeKm: Number.isFinite(cameraAltM)
+          ? Math.max(0, cameraAltM / 1000)
+          : 0,
+        shares: cloudShares ?? { shellIn: 0, shell: 0, slab: 0 },
+        stations: shellStations(params),
+        target: worldFrame.target,
+        deckKm: globe.cloudShell.heightM() / 1000,
+        cover: params.cloudVolumeCover,
+      });
     }
     globe.sun.intensity = skyHandOver.exposure;
     const thickness =
@@ -3334,7 +3465,23 @@ async function start() {
       sceneDepth.render(camera, terrain.tiles.group, city ? [city.root] : []);
     }
     if (cloudVolume) {
-      cloudVolume.render(camera, terrain.tiles.group, city ? [city.root] : []);
+      const mixing = cloudShares !== null;
+      const slabDrawn = cloudVolume.render(
+        camera,
+        terrain.tiles.group,
+        city ? [city.root] : [],
+        { composite: !mixing },
+      );
+      // The spherical volume and the slab mixed in one composite (R4d).
+      if (mixing) {
+        shellVolume.render(camera, {
+          worldFromEcef: globe.tiles.group.matrixWorld,
+          sunEcef: globe.surfaceUniforms.uSunEcef.value,
+          sunIntensity: globe.sun.intensity,
+          slabTexture: slabDrawn ? cloudVolume.texture : null,
+          sceneDepthWeight: skyHandOver.weight,
+        });
+      }
     }
     // The air over the Earth and the sky, lit by the same sun (or, while
     // its cost is measured, as the measurement says).
@@ -3581,6 +3728,7 @@ async function start() {
       // and went at the edge would recompile every material).
       haze: haze.state(),
       cloudVolume: cloudVolume?.state() ?? null,
+      cloudShellVolume: shellVolume?.state() ?? null,
       programs: renderer.info.programs?.length ?? null,
       planes: {
         near: camera.near,
@@ -4243,6 +4391,52 @@ void main() {
      * the lower half. Null without a volume or before its first frame.
      */
     cloudVolumeCoverage: () => cloudVolume?.coverage() ?? null,
+    /**
+     * The spherical cloud volume's last target read back by `bands`
+     * horizontal bands from the bottom up (round-4 plan R4d; debug, slow).
+     */
+    cloudShellReadBack: (bands = 1) => shellVolume?.readBack(bands) ?? null,
+    /**
+     * The spherical volume's and the slab's alpha on one grid, and their
+     * weights in the mix (R4d's seam and descent smokes; debug, slow).
+     */
+    cloudShellAlphaGrid(nx, ny) {
+      const s = shellVolume?.state();
+      if (!s) return null;
+      return {
+        weight: s.weight,
+        slabWeight: s.slabWeight,
+        shell: s.weight > 0 ? shellVolume.alphaGrid(nx, ny) : null,
+        slab:
+          s.slabWeight > 0 && cloudVolume.state().share > 0
+            ? cloudVolume.alphaGrid(nx, ny)
+            : null,
+      };
+    },
+    /**
+     * The cost probe of the spherical volume (R4d): `n` of its passes (the
+     * march and the mix) after one frame, then one pixel read; the wall
+     * time in ms, or null when it does not draw at this pose. SwiftShader:
+     * relative only, within one page load.
+     */
+    timeCloudShell(n) {
+      if (!shellVolume || cloudShares === null) return null;
+      const gl = renderer.getContext();
+      const px = new Uint8Array(4);
+      frame();
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      const t0 = performance.now();
+      for (let i = 0; i < n; i++) {
+        shellVolume.render(camera, {
+          worldFromEcef: globe.tiles.group.matrixWorld,
+          sunEcef: globe.surfaceUniforms.uSunEcef.value,
+          sunIntensity: globe.sun.intensity,
+          sceneDepthWeight: 0,
+        });
+      }
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return performance.now() - t0;
+    },
     /**
      * The volume's drawn cover by bands of the view (round-3 plan §19 item
      * 1): `cloudVolume.rows`, each band with the elevation of its middle

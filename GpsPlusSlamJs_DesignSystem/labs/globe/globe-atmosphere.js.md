@@ -46,6 +46,9 @@ groundShare, sceneDepth, sceneDepthWeight })` - draws the
     exactly the one without the depth (switching it on at full strength
     there was a jump the continuity smoke caught). Nothing is drawn when
     both shares are 0;
+  - `transmittance()`: the sun's transmittance table, drawn on first use
+    (with the multi-scattering table), for the spherical cloud volume's sun
+    (round-4 plan 2026-10-11-0122 R4d); null where the pass is unsupported.
   - `dispose()`.
 - Invariants & assumptions:
   - The frame: ECEF metres are scaled per axis so the WGS84 ellipsoid IS

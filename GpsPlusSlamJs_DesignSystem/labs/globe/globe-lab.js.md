@@ -648,7 +648,23 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   `/globe/globe-cloud-flat-fade.js`): full from `cloudFlatTopKm` (5,000)
   up, weakening to `cloudFlatWeak` (0.3) by 100 km, then handing over to
   the volume through its own fade (only weakening when the volume is off);
-  its shell shadow follows, and the state reports it as `cloudFlat`. The
+  its shell shadow follows, and the state reports it as `cloudFlat`.
+  `cloudShellVolume` (0, the default; 1 on; round-4 plan 2026-10-11-0122
+  R4d, `globe-cloud-shell-volume.js`) draws the clouds from
+  `cloudShellTopKm` (700) down to the slab's ceiling as one ray-marched
+  shell, faded in over `cloudShellBandKm` (300) above its top and mixed
+  with the slab below its ceiling (the slab then drawn whole, its share the
+  mix's weight, one composite); its law's stations at `cloudShellTopKm`
+  and `cloudShellMidKm` (200) take `cloudShellCell` (4),
+  `cloudShellThick` (4) and `cloudShellNoise` (0.35, the column's rise per
+  unit of noise) and their square roots, the bottom one the slab's;
+  `cloudShellRes` (0.5) the march's share of the buffer (half by default:
+  the pass alone was 0.59-0.70 of a frame at full resolution on
+  SwiftShader, about 0.28 of that at half). The flat layer
+  gives the shell what it takes (the drawers share 1), its ground shadow
+  keeps the share without the shell (the volume casts none). Only with the
+  cloud volume and a frame target. The state's `cloudShellVolume`;
+  `cloudShellReadBack(bands)` and `timeCloudShell(n)` for the smokes. The
   state's `firstLook` (`{ ready, shown }`, round-2 plan DEC-FR2-6) reports
   the globe's first look: its images in, and its sphere drawn.
   `dust` (0, the default; 1 on) draws the speed dust (round-3 plan

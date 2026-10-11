@@ -273,6 +273,13 @@ export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
   const ecefFromWorld = new THREE.Matrix4();
   const rotation = new THREE.Matrix3();
   const cameraEcef = new THREE.Vector3();
+  /** The two tables, drawn once (they depend on neither camera nor sun). */
+  const buildTables = () => {
+    if (built) return;
+    device.render("transmittance", uniforms);
+    device.render("multiScattering", uniforms);
+    built = true;
+  };
   return {
     /** False where float colour buffers cannot be rendered: no pass. */
     get supported() {
@@ -338,11 +345,7 @@ export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
       }
       if (skyShare === 0 && groundShare === 0) return;
       if (!device.supported) return;
-      if (!built) {
-        device.render("transmittance", uniforms);
-        device.render("multiScattering", uniforms);
-        built = true;
-      }
+      buildTables();
       ecefFromWorld.copy(worldFromEcef).invert();
       uniforms.uInverseProjection.value.copy(camera.projectionMatrixInverse);
       uniforms.uViewToModel.value
@@ -368,6 +371,15 @@ export function createGlobeAtmosphere(renderer, ellipsoidRadii) {
       uniforms.uRadiance.value =
         (sunIntensity * look.strength) / ATMOSPHERE_RADIANCE_SCALE;
       renderer.render(scene, quadCamera);
+    },
+    /**
+     * The sun's transmittance table (the spherical cloud volume's sun, round-4
+     * plan R4d), drawn on first use; null where the pass is unsupported.
+     */
+    transmittance() {
+      if (!device.supported) return null;
+      buildTables();
+      return device.transmittance;
     },
     dispose() {
       stopListening();

@@ -41,11 +41,17 @@ sceneDepth })`
     volume-cloud plan §15: the owner saw it around the camera, not where
     he looked), for the slab and its shadow, and the reach runs to the
     disc's far side; the lab passes `maxAheadM` 0 in variant 1, where the
-    shell's hole is around the camera.
-  - `render(camera, relief, extra = [])` (`extra`: the city, drawn into the
-    depth too): after the Earth, nothing at share 0: the
-    relief's depth (drawn here unless the lab already drew it this frame
-    for the space pass), the slab from the lifted camera, the composite.
+    shell's hole is around the camera. `mixed` (round-4 plan
+    2026-10-11-0122 R4d): the spherical volume mixes the slab by its share
+    (`globe-cloud-shell-volume.js`), so the slab's cover and disc are drawn
+    whole wherever its share is above 0 (its fade would apply twice).
+  - `render(camera, relief, extra = [], { composite = true })` (`extra`:
+    the city, drawn into the depth too): after the Earth, nothing at share
+    0: the relief's depth (drawn here unless the lab already drew it this
+    frame for the space pass), the slab from the lifted camera, the
+    composite unless `composite` is false (the spherical volume then mixes
+    `texture`, the slab's premultiplied target, itself). Returns whether
+    the slab was drawn.
   - `setNoise(mode)` (round-3 plan 2026-10-08-2345, N1, the lab's
     `cloudNoise`): `tile`, `hex` or `live`
     (`atmosphere.configure({ cloudNoise })`, the shadow re-synced);

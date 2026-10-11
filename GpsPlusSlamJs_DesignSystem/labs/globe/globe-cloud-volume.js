@@ -238,7 +238,10 @@ export function createGlobeCloudVolume(
     /**
      * This frame's share and disc: `altitudeKm` the camera's height, `target`
      * the frame's target (degrees; null before one), `shellHeightM` the
-     * shell's height. Returns `{ share, radiusM }` (0 when not drawn).
+     * shell's height. `mixed`: the spherical volume mixes the slab by its
+     * share (round-4 plan R4d), so the slab's cover and disc are drawn whole
+     * wherever its share is above 0. Returns `{ share, radiusM }` (0 when
+     * not drawn).
      */
     update({
       altitudeKm,
@@ -250,6 +253,7 @@ export function createGlobeCloudVolume(
       shellHeightM,
       view = null,
       maxAheadM = 0,
+      mixed = false,
     }) {
       gainUniform.value = cover;
       share =
@@ -259,9 +263,14 @@ export function createGlobeCloudVolume(
               fadeKm: Math.min(fadeKm, ceilingKm),
             })
           : 0;
-      radiusM = radiusKm * 1000 * share;
+      // Mixed with the spherical volume (round-4 plan R4d): the slab is
+      // drawn whole wherever it is drawn at all, and its share weights the
+      // mix (`globe-cloud-shell-volume.js`); its fade by cover and disc
+      // would weaken it twice.
+      const drawShare = mixed && share > 0 ? 1 : share;
+      radiusM = radiusKm * 1000 * drawShare;
       liftM = shellHeightM - SLAB_MIDDLE_M;
-      shareUniform.value = share;
+      shareUniform.value = drawShare;
       if (target !== null) {
         origin.value.set(
           (target.lat * Math.PI) / 180,
@@ -357,11 +366,13 @@ export function createGlobeCloudVolume(
      * Draws the volume over the frame, after the Earth: the relief's depth
      * and `extra`'s (the city; `globe-scene-depth.js`, drawn here unless
      * already drawn this frame),
-     * the slab with the lifted camera, the composite. Nothing at share 0.
+     * the slab with the lifted camera, the composite (unless `composite`
+     * is false: the caller mixes `texture` itself). Nothing at share 0;
+     * returns whether the slab was drawn.
      */
-    render(camera, relief, extra = []) {
+    render(camera, relief, extra = [], { composite = true } = {}) {
       const mesh = slab();
-      if (!enabled || share <= 0 || mesh === undefined) return;
+      if (!enabled || share <= 0 || mesh === undefined) return false;
       renderer.getDrawingBufferSize(size);
       fit(volumeTarget);
       const previous = renderer.getRenderTarget();
@@ -391,8 +402,16 @@ export function createGlobeCloudVolume(
       renderer.setClearColor(clearColour, clearAlpha);
       for (const child of hidden) child.visible = true;
       renderer.setRenderTarget(previous);
-      renderer.render(compositeScene, quadCamera);
+      if (composite) renderer.render(compositeScene, quadCamera);
       drawn += 1;
+      return true;
+    },
+    /**
+     * The slab's last frame, premultiplied (for a caller's own composite:
+     * `render(..., { composite: false })`, the spherical volume's mix).
+     */
+    get texture() {
+      return volumeTarget.texture;
     },
     /**
      * Patches every lit mesh `tiles` loads from now on with the volume's
@@ -492,6 +511,29 @@ export function createGlobeCloudVolume(
         }
         const n = (y1 - y0) * w;
         out.push({ meanAlpha: sum / n, over: over / n });
+      }
+      return out;
+    },
+    /**
+     * The last frame's alpha at an `nx` x `ny` grid of pixel centres,
+     * bottom row first (debug, slow; round-4 plan R4d: the spherical
+     * volume's seam). Null before a frame was drawn.
+     */
+    alphaGrid(nx, ny) {
+      if (drawn === 0) return null;
+      const w = volumeTarget.width;
+      const h = volumeTarget.height;
+      const pixels = new Uint16Array(w * h * 4);
+      renderer.readRenderTargetPixels(volumeTarget, 0, 0, w, h, pixels);
+      const out = new Array(nx * ny);
+      for (let j = 0; j < ny; j++) {
+        for (let i = 0; i < nx; i++) {
+          const x = Math.min(w - 1, Math.floor(((i + 0.5) * w) / nx));
+          const y = Math.min(h - 1, Math.floor(((j + 0.5) * h) / ny));
+          out[j * nx + i] = THREE.DataUtils.fromHalfFloat(
+            pixels[(y * w + x) * 4 + 3],
+          );
+        }
       }
       return out;
     },
