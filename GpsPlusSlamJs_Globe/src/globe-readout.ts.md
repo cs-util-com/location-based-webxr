@@ -16,9 +16,15 @@
     not depend on the framework, and the grouping and "unknown" are not
     among that formatter's options (a justified entry in
     `tests/repo-config/duplicate-helpers.test.js`).
-  - `globeReadoutText({ altitudeM, targetDistanceM })` -> "Altitude
-    1,234 km", plus " · 1,300 km to the target" when `targetDistanceM` is
-    not null.
+  - `GLOBE_READOUT.groundBelowM` (100 km): below it the line also names
+    the height above the ground.
+  - `globeReadoutText({ altitudeM, targetDistanceM, groundM? })` ->
+    "Altitude 1,234 km"; below `groundBelowM` with the ground under the
+    camera known (`groundM`, m above the ellipsoid; null or absent: not
+    named) " · 150 m above ground" (round-4 plan 2026-10-11-0122 DEC-R4-1:
+    the owner read the r812 altitude as the height above the roofs, which
+    it was not); then " · 1,300 km to the target" when `targetDistanceM`
+    is not null. A camera under the drawn ground reads "0 m above ground".
   - `readoutThrottle(write)` -> `{ offer(text, nowMs) }`: calls `write`
     only for a text that differs from the last one written, and at most
     once per interval. A change inside the interval is dropped; the next

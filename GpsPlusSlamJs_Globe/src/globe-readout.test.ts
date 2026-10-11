@@ -60,6 +60,46 @@ describe("globeReadoutText", () => {
       globeReadoutText({ altitudeM: 1_234_000, targetDistanceM: 1_300_000 }),
     ).toBe("Altitude 1,234 km · 1,300 km to the target");
   });
+
+  // WHY (the owner on r812, round-4 plan DEC-R4-1): "the readout's 400 m
+  // was nearer 100 m above the roofs": the altitude is above the
+  // ellipsoid, so near the ground the line also says how high above the
+  // GROUND the camera is. Only below GLOBE_READOUT.groundBelowM, where the
+  // two differ visibly, and only where the ground is known.
+  it("names the height above the ground beside the altitude, near the ground", () => {
+    expect(
+      globeReadoutText({
+        altitudeM: 585,
+        targetDistanceM: null,
+        groundM: 435,
+      }),
+    ).toBe("Altitude 585 m · 150 m above ground");
+    expect(
+      globeReadoutText({
+        altitudeM: 2_400,
+        targetDistanceM: 300,
+        groundM: 2_000,
+      }),
+    ).toBe("Altitude 2.4 km · 400 m above ground · 300 m to the target");
+    expect(
+      globeReadoutText({
+        altitudeM: 585,
+        targetDistanceM: null,
+        groundM: null,
+      }),
+    ).toBe("Altitude 585 m");
+    expect(
+      globeReadoutText({
+        altitudeM: GLOBE_READOUT.groundBelowM,
+        targetDistanceM: null,
+        groundM: 1_000,
+      }),
+    ).toBe("Altitude 100 km");
+    // A camera a hair under the drawn ground reads 0, never negative.
+    expect(
+      globeReadoutText({ altitudeM: 430, targetDistanceM: null, groundM: 435 }),
+    ).toBe("Altitude 430 m · 0 m above ground");
+  });
 });
 
 describe("readoutThrottle", () => {

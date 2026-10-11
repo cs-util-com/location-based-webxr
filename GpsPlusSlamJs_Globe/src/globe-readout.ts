@@ -15,6 +15,13 @@ export const GLOBE_READOUT = {
    * slow enough that a digit holds still long enough to be read.
    */
   intervalMs: 250,
+  /**
+   * Below this altitude the line also names the height above the ground
+   * (round-4 plan 2026-10-11-0122 DEC-R4-1): there the two differ visibly
+   * (by 4 % over a 4 km mountain at 100 km); above it the extra words only
+   * crowd a phone's bottom line.
+   */
+  groundBelowM: 100_000,
 } as const;
 
 const km = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -34,20 +41,32 @@ export function formatDistance(metres: number): string {
 }
 
 /**
- * The readout's line: "Altitude 1,234 km", and while a target is being
- * flown to, " · 1,300 km to the target" after it.
+ * The readout's line: "Altitude 1,234 km"; below `groundBelowM`, where the
+ * ground under the camera is known (`groundM`, m above the ellipsoid),
+ * " · 150 m above ground" after it (DEC-R4-1); and while a target is being
+ * flown to, " · 1,300 km to the target".
  */
 export function globeReadoutText({
   altitudeM,
   targetDistanceM,
+  groundM = null,
 }: {
   altitudeM: number;
   targetDistanceM: number | null;
+  groundM?: number | null;
 }): string {
-  const altitude = `Altitude ${formatDistance(altitudeM)}`;
-  return targetDistanceM === null
-    ? altitude
-    : `${altitude} · ${formatDistance(targetDistanceM)} to the target`;
+  const parts = [`Altitude ${formatDistance(altitudeM)}`];
+  if (
+    groundM !== null &&
+    Number.isFinite(groundM) &&
+    altitudeM < GLOBE_READOUT.groundBelowM
+  ) {
+    parts.push(`${formatDistance(altitudeM - groundM)} above ground`);
+  }
+  if (targetDistanceM !== null) {
+    parts.push(`${formatDistance(targetDistanceM)} to the target`);
+  }
+  return parts.join(" · ");
 }
 
 /**

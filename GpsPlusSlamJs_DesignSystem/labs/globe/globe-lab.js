@@ -2558,10 +2558,12 @@ async function start() {
     const { phase, target } = flight.state();
     let targetDistanceM = null;
     if ((phase === "diving" || phase === "landed") && target) {
+      // The target at its ground, where the continuous flight aims
+      // (DEC-R4-1); the old dive's on the ellipsoid.
       ellipsoid.getCartographicToPosition(
         target.lat * DEG,
         target.lng * DEG,
-        0,
+        flight.pinFlight?.groundM ?? 0,
         targetLocal,
       );
       targetDistanceM = cameraLocal.distanceTo(targetLocal);
@@ -2569,6 +2571,9 @@ async function start() {
     return globeReadoutText({
       altitudeM: ellipsoid.getPositionElevation(cameraLocal),
       targetDistanceM,
+      // The drawn ground under the camera (DEC-R4-1: "above ground"),
+      // null where no relief is drawn under it.
+      groundM: groundUnderCameraM,
     });
   };
   // The world frame at the at= target from load (F2a), else ECEF.
