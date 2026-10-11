@@ -96,7 +96,7 @@ async function heightWithin(
   place: Place,
   timeoutMs: number,
   outer: AbortSignal | undefined,
-): Promise<number | undefined> {
+): Promise<unknown> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onAbort = () => {};
@@ -121,7 +121,8 @@ async function heightWithin(
     // Anything but an array of heights is no data (finding 7: a non-array
     // answer rejected the read).
     const read = asked.then(
-      (heights) => (Array.isArray(heights) ? heights[0] : undefined),
+      (heights: unknown): unknown =>
+        Array.isArray(heights) ? (heights[0] as unknown) : undefined,
       () => undefined,
     );
     return await Promise.race([read, late]);
@@ -153,6 +154,14 @@ export async function readLandingGroundM(
     options.timeoutMs ?? LANDING_GROUND.timeoutMs,
     options.signal,
   );
+  return groundFrom(height);
+}
+
+/**
+ * A read height as the landing's ground: never below 0 (the sea is drawn
+ * at 0); the fallback for anything but a number in the plausible range.
+ */
+function groundFrom(height: unknown): LandingGround {
   const plausible =
     typeof height === "number" &&
     height >= LANDING_GROUND.minPlausibleM &&
