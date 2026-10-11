@@ -1,0 +1,12 @@
+# Force LF line endings everywhere so tools (prettier, eslint, etc.)
+# don't fight with git's autocrlf on Windows. Prettier writes LF
+# (`endOfLine: lf`); without this file a checkout with core.autocrlf=true
+# gets CRLF, and every format run then shows thousands of files as modified
+# with no content change.
+* text=auto eol=lf
+
+# Binary types tracked in this repo, named explicitly so a line-ending
+# conversion can never touch them even if auto-detection guessed wrong.
+*.png binary
+*.webp binary
+*.zip binary

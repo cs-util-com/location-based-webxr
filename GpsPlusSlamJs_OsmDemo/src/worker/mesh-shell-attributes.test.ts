@@ -28,7 +28,7 @@ import {
 } from "gps-plus-slam-osm";
 import type { OsmFeature } from "gps-plus-slam-osm";
 
-import { shellRandFor } from "./shell-rand.js";
+import { shellRandFor } from "gps-plus-slam-osm";
 
 const ORIGIN = { lat: 50.9413, lng: 6.9583 };
 const frame = enuFrameAt(ORIGIN);

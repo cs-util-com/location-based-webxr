@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   GLOBE_FLIGHT,
   carrierShareAt,
+  cityShareAt,
   clearedAltitudeM,
   exaggerationAt,
   frameCheck,
@@ -51,14 +52,28 @@ describe("pitchAtDeg", () => {
   });
 });
 
+// The law's shape is tested with the exaggerated near value a link can
+// still ask for (`reliefNear=3`): at the default 1 every altitude is 1, so
+// a test of the ramp against the default would pass while testing nothing.
+const EXAGGERATED = { near: 3 };
+
 describe("exaggerationAt", () => {
+  // WHY (owner, 2026-10-06, city plan §11 D-K1): true heights everywhere by
+  // default, so the city's buildings stand on the real ground.
+  it("is 1 at every altitude by default (true heights)", () => {
+    expect(GLOBE_FLIGHT.exaggerationNear).toBe(1);
+    for (let alt = 0; alt < 6_000_000; alt = alt * 1.3 + 50) {
+      expect(exaggerationAt(alt)).toBe(1);
+    }
+  });
+
   it("is 1 at globe scale and the near-ground value low down, in steps", () => {
-    expect(exaggerationAt(5_000_000)).toBe(1);
-    expect(exaggerationAt(GLOBE_FLIGHT.exaggerationFarM)).toBe(1);
-    expect(exaggerationAt(GLOBE_FLIGHT.exaggerationNearM)).toBe(3);
-    expect(exaggerationAt(1_000)).toBe(3);
+    expect(exaggerationAt(5_000_000, EXAGGERATED)).toBe(1);
+    expect(exaggerationAt(GLOBE_FLIGHT.exaggerationFarM, EXAGGERATED)).toBe(1);
+    expect(exaggerationAt(GLOBE_FLIGHT.exaggerationNearM, EXAGGERATED)).toBe(3);
+    expect(exaggerationAt(1_000, EXAGGERATED)).toBe(3);
     for (let alt = 10_000; alt < 3_000_000; alt *= 1.07) {
-      const e = exaggerationAt(alt);
+      const e = exaggerationAt(alt, EXAGGERATED);
       expect(
         Math.round(e / GLOBE_FLIGHT.exaggerationStep) *
           GLOBE_FLIGHT.exaggerationStep,
@@ -69,15 +84,76 @@ describe("exaggerationAt", () => {
   });
 
   it("never falls as the camera descends, and takes another near value", () => {
-    let prev = exaggerationAt(4_000_000);
+    let prev = exaggerationAt(4_000_000, EXAGGERATED);
     for (let alt = 4_000_000; alt > 1_000; alt *= 0.95) {
-      const e = exaggerationAt(alt);
+      const e = exaggerationAt(alt, EXAGGERATED);
       expect(e).toBeGreaterThanOrEqual(prev);
       prev = e;
     }
     expect(exaggerationAt(1_000, { near: 5 })).toBe(5);
     expect(() => exaggerationAt(-1)).toThrow(RangeError);
     expect(() => exaggerationAt(1, { near: 0.5 })).toThrow(RangeError);
+  });
+});
+
+// Why (city plan 2026-10-05-0040 K1): a city's buildings stand on true
+// heights, so near the ground the relief may have to come back to E 1 or
+// they are buried in a hillside drawn three times as high. The third band
+// is opt-in (`ground`), so the default law, and its "never falls as the
+// camera descends", are unchanged until the owner has compared it.
+describe("exaggerationAt with a ground value (the third band)", () => {
+  it("eases from the near value at the band's top to the ground value at its bottom", () => {
+    const { groundBandTopM, groundBandBottomM } = GLOBE_FLIGHT;
+    expect(exaggerationAt(groundBandTopM, { near: 3, ground: 1 })).toBe(3);
+    expect(
+      exaggerationAt(GLOBE_FLIGHT.exaggerationNearM, { near: 3, ground: 1 }),
+    ).toBe(3);
+    expect(exaggerationAt(groundBandBottomM, { ground: 1 })).toBe(1);
+    expect(exaggerationAt(500, { ground: 1 })).toBe(1);
+    expect(exaggerationAt(0, { ground: 1 })).toBe(1);
+    expect(exaggerationAt(5_000_000, { ground: 1 })).toBe(1);
+    const mid = exaggerationAt(Math.sqrt(groundBandTopM * groundBandBottomM), {
+      near: 3,
+      ground: 1,
+    });
+    expect(mid).toBeGreaterThan(1);
+    expect(mid).toBeLessThan(3);
+  });
+
+  it("changes nothing when the ground value is the near value (the default)", () => {
+    for (let alt = 100; alt < 3_000_000; alt *= 1.3) {
+      expect(exaggerationAt(alt, { near: 3, ground: 3 })).toBe(
+        exaggerationAt(alt, EXAGGERATED),
+      );
+    }
+  });
+
+  it("moves in the law's steps and falls as the camera descends through the band", () => {
+    let prev = exaggerationAt(GLOBE_FLIGHT.exaggerationNearM, {
+      near: 3,
+      ground: 1,
+    });
+    for (let alt = GLOBE_FLIGHT.exaggerationNearM; alt > 100; alt *= 0.95) {
+      const e = exaggerationAt(alt, { near: 3, ground: 1 });
+      expect(
+        Math.round(e / GLOBE_FLIGHT.exaggerationStep) *
+          GLOBE_FLIGHT.exaggerationStep,
+      ).toBeCloseTo(e, 12);
+      expect(e).toBeLessThanOrEqual(prev);
+      prev = e;
+    }
+  });
+
+  it("refuses a ground value below 1 or above the near value", () => {
+    expect(() => exaggerationAt(1_000, { ground: 0.5 })).toThrow(RangeError);
+    expect(() => exaggerationAt(1_000, { near: 3, ground: 4 })).toThrow(
+      RangeError,
+    );
+    // Above the default near value of 1 too.
+    expect(() => exaggerationAt(1_000, { ground: 2 })).toThrow(RangeError);
+    expect(() => exaggerationAt(1_000, { ground: Number.NaN })).toThrow(
+      RangeError,
+    );
   });
 });
 
@@ -226,7 +302,7 @@ describe("carrierShareAt, the altitude band between the globe and the relief", (
     // the relief is flat while the globe still draws.
     let firstE = 0;
     for (let alt = 3_000_000; alt > 20_000; alt -= 10_000) {
-      if (exaggerationAt(alt) > 1) {
+      if (exaggerationAt(alt, EXAGGERATED) > 1) {
         firstE = alt;
         break;
       }
@@ -242,5 +318,33 @@ describe("carrierShareAt, the altitude band between the globe and the relief", (
     expect(() => carrierShareAt(1e6, { highM: 1e6, lowM: 0 })).toThrow(
       RangeError,
     );
+  });
+});
+
+// WHY (globe city plan 2026-10-05-0040 §12.5 C4): the city appears below
+// `cityKm` (30 km) by a dithered fade, so its mass never switches on at once.
+// A 20 m building is about 0.6 px at 30 km, so the band only guards the
+// city's whole extent changing in one frame.
+describe("cityShareAt", () => {
+  it("is 0 at and above the top, 1 at and below two thirds of it, and rises between", () => {
+    expect(cityShareAt(30_000, 30_000)).toBe(0);
+    expect(cityShareAt(120_000, 30_000)).toBe(0);
+    expect(cityShareAt(20_000, 30_000)).toBe(1);
+    expect(cityShareAt(500, 30_000)).toBe(1);
+    expect(cityShareAt(0, 30_000)).toBe(1);
+    let prev = 0;
+    for (let alt = 30_000; alt >= 20_000; alt -= 250) {
+      const s = cityShareAt(alt, 30_000);
+      expect(s).toBeGreaterThanOrEqual(prev);
+      prev = s;
+    }
+    const mid = cityShareAt(25_000, 30_000);
+    expect(mid).toBeGreaterThan(0.2);
+    expect(mid).toBeLessThan(0.8);
+  });
+
+  it("refuses a non-finite altitude or a top that is not positive", () => {
+    expect(() => cityShareAt(Number.NaN, 30_000)).toThrow(RangeError);
+    expect(() => cityShareAt(1_000, 0)).toThrow(RangeError);
   });
 });

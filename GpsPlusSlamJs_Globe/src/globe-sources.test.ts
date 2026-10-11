@@ -6,10 +6,13 @@
  * that do not exist. The committed pyramid is checked for completeness here
  * too: 2 x 4^z tiles per level, each a 256x256 WebP (round-4 plan
  * 2026-09-28-2105 DEC-GL4-3/10) whose alpha is the water mask where the tile
- * has water (DEC-GL4-6), and the global maps as 2048x1024 WebPs, read by
- * their headers. And the committed total stays inside
- * its budget: nothing else guards it (the repo checks single files only),
- * and each level of the pyramid quadruples the tile count.
+ * has water (DEC-GL4-6), and the global maps as WebPs of their stated size,
+ * read by their headers: the clouds as a 1,024 x 512 preview and NASA's
+ * full 8,192 x 4,096 map in four pieces (round-3 plan 2026-10-08-2345
+ * §18), whose date-line seam the fetch script blended (§16). And the
+ * committed total stays inside its budget: nothing else guards it (the
+ * repo checks single files only), and each level of the pyramid
+ * quadruples the tile count.
  */
 
 import {
@@ -25,11 +28,14 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
+import { columnJump, typicalColumnJump } from "./cloud-seam.js";
 import { imageInfo } from "./image-header.js";
 import {
   GIBS_ACKNOWLEDGEMENT,
   GLOBE_SOURCES,
+  globeMapPieces,
   globeSource,
+  type GlobeSource,
 } from "./globe-sources.js";
 
 const ASSETS = join(dirname(fileURLToPath(import.meta.url)), "..", "assets");
@@ -53,6 +59,34 @@ describe("GLOBE_SOURCES", () => {
   it("finds a source by id and refuses an unknown one", () => {
     expect(globeSource("blue-marble").kind).toBe("tiles");
     expect(() => globeSource("nope" as never)).toThrow(RangeError);
+  });
+
+  // Why (round-3 plan §18): the globe joins the pieces into one texture by
+  // these placements, so a piece placed in the wrong quadrant would draw
+  // every cloud in the wrong place; row 0 is the north, as in the image.
+  it("places a cut map's pieces row by row from the north, and refuses an uneven grid", () => {
+    const clouds = globeSource("clouds");
+    const piece = (column: number, row: number) => ({
+      path: `/globe-assets/equirect/clouds-8192-${column}-${row}.webp`,
+      column,
+      row,
+      left: column * 4096,
+      top: row * 2048,
+      width: 4096,
+      height: 2048,
+    });
+    expect(globeMapPieces(clouds)).toEqual([
+      piece(0, 0),
+      piece(1, 0),
+      piece(0, 1),
+      piece(1, 1),
+    ]);
+    expect(globeMapPieces(globeSource("black-marble"))).toEqual([]);
+    const uneven: GlobeSource = {
+      ...clouds,
+      pieces: { ...clouds.pieces!, columns: 3 },
+    };
+    expect(() => globeMapPieces(uneven)).toThrow(RangeError);
   });
 });
 
@@ -168,16 +202,166 @@ describe("the committed imagery", () => {
     120_000,
   );
 
-  it("has every global map as a 2048x1024 WebP, under the repo's 2 MiB file ceiling", () => {
-    for (const s of GLOBE_SOURCES.filter((u) => u.kind === "equirect")) {
+  // The owner saw the 2048 clouds as pixels at 3,000 km (round-3 plan
+  // 2026-10-08-2345 M1, §18): the clouds' own path is now their preview
+  // (the full map is in pieces, below); the night stays.
+  const MAP_SIZE: Record<string, readonly [number, number]> = {
+    "black-marble": [2048, 1024],
+    clouds: [1024, 512],
+  };
+  it("has every global map as a WebP of its size, under the repo's 2 MiB file ceiling", () => {
+    const maps = GLOBE_SOURCES.filter((u) => u.kind === "equirect");
+    expect(maps.map((m) => m.id).sort()).toEqual(Object.keys(MAP_SIZE).sort());
+    for (const s of maps) {
       const file = onDisk(s.path);
       const info = imageInfo(readFileSync(file));
       expect(info?.type, s.id).toBe("webp");
-      expect(info?.width, s.id).toBe(2048);
-      expect(info?.height, s.id).toBe(1024);
+      expect([info?.width, info?.height], s.id).toEqual(MAP_SIZE[s.id]);
       expect(statSync(file).size, s.id).toBeLessThan(2 * 1024 * 1024);
     }
   });
+
+  // Why (DEC-R3-13/14): the sharp map the owner chose is NASA's own
+  // 8,192 x 4,096, at WebP quality 75, cut into four pieces so each stays
+  // under the repo's 2 MiB file ceiling (measured about 1 MB each). A
+  // piece of the wrong size would leave a hole or an overlap in the
+  // joined texture; and the old 4,096 map must be gone, not shipped
+  // beside it (it would count against the budget for nothing).
+  it("has the clouds' full map as four 4096 x 2048 WebP pieces, each under the ceiling, and no 4096 map", () => {
+    const pieces = globeMapPieces(globeSource("clouds"));
+    expect(pieces).toHaveLength(4);
+    for (const piece of pieces) {
+      const bytes = readFileSync(onDisk(piece.path));
+      expect(imageInfo(bytes), piece.path).toMatchObject({
+        type: "webp",
+        width: 4096,
+        height: 2048,
+        alpha: false,
+      });
+      expect(riffLength(bytes), piece.path).toBe(bytes.length);
+      expect(bytes.length, piece.path).toBeLessThan(2 * 1024 * 1024);
+    }
+    const clouds = readdirSync(join(ASSETS, "equirect"))
+      .filter((f) => f.startsWith("clouds"))
+      .sort();
+    expect(clouds).toEqual([
+      "clouds-1024.webp",
+      "clouds-8192-0-0.webp",
+      "clouds-8192-0-1.webp",
+      "clouds-8192-1-0.webp",
+      "clouds-8192-1-1.webp",
+    ]);
+  });
+
+  // Why (round-3 plan §16): NASA's map does not wrap, and the globe drew a
+  // line down the date line. The fetch script eases both edges to their
+  // per-row average (`cloud-seam.ts`); here the COMMITTED pieces, decoded
+  // and joined, must wrap no worse than a typical neighbouring pair of
+  // columns: the wrap pair's mean and largest jump at most the median
+  // pair's. Measured 2026-10-09: the source's wrap 11.0 mean and 197
+  // largest against 6.4 and 100 typical (so this fails on the raw map);
+  // the decoded pieces about 4.2 and 28 against 5.9 and 100.
+  // The joins between the pieces (0 degrees, the equator) must sit inside
+  // the map's own range of pairs (its 99th percentile): a piece in the
+  // wrong place reads like the raw seam (11 and more) and fails. Each
+  // piece is encoded alone, so a join has an encoder edge on both sides:
+  // the 0-degree join reads 7.2 (the source 5.8 there; WebP's own 16-pixel
+  // block edges read 6.7 on average against 5.8 elsewhere), under the
+  // 99th percentile's 8.7.
+  // The preview, 8 source columns to a pixel, is held to the median's
+  // largest jump and the 90th percentile's mean (measured 12.2 and 77
+  // against 12.9 and 91; the raw map's preview 15.7 and 155).
+  it("wraps at the date line, and joins its pieces, no worse than a typical pair of columns", async () => {
+    const clouds = globeSource("clouds");
+    const cut = clouds.pieces!;
+    const { width, height } = cut;
+    const full = new Uint8Array(width * height);
+    for (const piece of globeMapPieces(clouds)) {
+      const { data, info } = await sharp(onDisk(piece.path))
+        .extractChannel(0)
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      expect([info.width, info.height, info.channels]).toEqual([
+        piece.width,
+        piece.height,
+        1,
+      ]);
+      for (let y = 0; y < piece.height; y++) {
+        full.set(
+          data.subarray(y * piece.width, (y + 1) * piece.width),
+          (piece.top + y) * width + piece.left,
+        );
+      }
+    }
+    const typical = typicalColumnJump(full, width, height, 64);
+    const wrap = columnJump(full, width, height, width - 1);
+    expect(wrap.mean).toBeLessThanOrEqual(typical.mean);
+    expect(wrap.max).toBeLessThanOrEqual(typical.max);
+    const range = typicalColumnJump(full, width, height, 64, 0.99);
+    // No pair within 40 columns of the date line outside the map's range
+    // either (the blend shifts its band; a wrong sign would steepen it).
+    for (let k = -40; k < 40; k++) {
+      const left = (k + width) % width;
+      expect(
+        columnJump(full, width, height, left).mean,
+        `column ${left}`,
+      ).toBeLessThanOrEqual(range.mean);
+    }
+    const meridian = columnJump(full, width, height, width / 2 - 1);
+    expect(meridian.mean).toBeLessThanOrEqual(range.mean);
+    expect(meridian.max).toBeLessThanOrEqual(range.max);
+    // The equator by rows: the mean jump of each pair of rows.
+    const rowMeans: number[] = [];
+    for (let y = 0; y < height - 1; y++) {
+      let sum = 0;
+      for (let x = 0; x < width; x++) {
+        sum += Math.abs(full[y * width + x]! - full[(y + 1) * width + x]!);
+      }
+      rowMeans.push(sum / width);
+    }
+    const equator = rowMeans[height / 2 - 1]!;
+    const rowRange = [...rowMeans.slice(64, -64)].sort((a, b) => a - b)[
+      Math.floor(0.99 * (rowMeans.length - 128))
+    ]!;
+    expect(equator).toBeLessThanOrEqual(rowRange);
+    // The blend's band, row to row (M1b review, item 6d): each row of the
+    // band moves by its own offset, so a streaky blend shows as larger
+    // jumps between neighbouring ROWS inside the band (16 columns from
+    // each edge, the script's SEAM_COLUMNS) than beside it. Measured
+    // 2026-10-11: the band 9.99 against the next 32 columns each side 9.65
+    // (x1.036; the source x1.024, its band 10.60, so the committed band is
+    // no rougher than the source's); the whole offset over the band with
+    // no ease (a one-time control) x1.088.
+    const rowJumps = (columns: number[]) => {
+      let sum = 0;
+      for (const x of columns) {
+        for (let y = 0; y < height - 1; y++) {
+          sum += Math.abs(full[(y + 1) * width + x]! - full[y * width + x]!);
+        }
+      }
+      return sum / (columns.length * (height - 1));
+    };
+    const span = (from: number, count: number) =>
+      Array.from({ length: count }, (_, i) => from + i);
+    const band = rowJumps([...span(0, 16), ...span(width - 16, 16)]);
+    const beside = rowJumps([...span(16, 32), ...span(width - 48, 32)]);
+    expect(band / beside).toBeLessThanOrEqual(1.06);
+
+    const { data: preview, info } = await sharp(onDisk(clouds.path))
+      .extractChannel(0)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const p90 = typicalColumnJump(preview, info.width, info.height, 16, 0.9);
+    const median = typicalColumnJump(preview, info.width, info.height, 16);
+    const previewWrap = columnJump(
+      preview,
+      info.width,
+      info.height,
+      info.width - 1,
+    );
+    expect(previewWrap.mean).toBeLessThanOrEqual(p90.mean);
+    expect(previewWrap.max).toBeLessThanOrEqual(median.max);
+  }, 60_000);
 });
 
 /** A level's tile files, sorted (x then y, as written by the fetch script). */
@@ -272,7 +456,10 @@ function filesUnder(dir: string): { path: string; bytes: number }[] {
 }
 
 /**
- * The committed assets' budget: 10 MB, decimal, as the owner stated it
+ * The committed assets' budget: 13 MB, decimal, as the owner stated it
+ * (round-3 plan 2026-10-08-2345 DEC-R3-13, 2026-10-09: NASA's 8,192 x 4,096
+ * cloud map in four pieces at WebP quality 75 plus its 1,024 preview, about
+ * 12.6 MB in all, the pieces measured 3.98 MB). It was 10 MB
  * (round-4 plan 2026-09-28-2105 DEC-GL4-9, 2026-09-28: level 5 of the
  * imagery committed as WebP; 8,847,906 bytes with levels 0-5 at WebP
  * quality 75, DEC-GL4-3/10). It was 4.5 MB (round-2 plan 2026-09-26-2055
@@ -282,10 +469,10 @@ function filesUnder(dir: string): { path: string; bytes: number }[] {
  * not what is committed: an untracked file there counts, which errs on the
  * side of the budget.
  */
-const ASSETS_BUDGET_BYTES = 10_000_000;
+const ASSETS_BUDGET_BYTES = 13_000_000;
 
 describe("the committed assets' total size", () => {
-  it("includes the level-5 pyramid (DEC-GL4-3) and stays within 10 MB (DEC-GL4-9)", () => {
+  it("includes the level-5 pyramid (DEC-GL4-3) and stays within 13 MB (DEC-R3-13)", () => {
     expect(globeSource("blue-marble").levels).toBe(6);
     const files = filesUnder(ASSETS);
     const total = files.reduce((sum, f) => sum + f.bytes, 0);

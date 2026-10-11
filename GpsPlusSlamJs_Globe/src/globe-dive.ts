@@ -18,10 +18,12 @@ export const GLOBE_DIVE = {
   /** The whole dive, turn and descent (the owner's "about 15 s"). */
   durationMs: 15_000,
   /**
-   * Where the city takes over: 150 km, the least soft of the round-2 sweep
-   * {20, 50, 150} km with the committed z4 imagery (round-2 §6 Q1).
+   * Where the dive lands, above the ellipsoid: 2 km, about 1.5 km over Bern
+   * and Zurich, in the globe's own city (globe city plan 2026-10-05-0040
+   * §12.5 C6; the lab's per-frame clearance keeps it 300 m over higher
+   * ground). It was 150 km, where the page handed over to OsmDemo.
    */
-  handOverAltitudeM: 150_000,
+  landAltitudeM: 2_000,
   /**
    * The share of the dive spent turning towards the target; the descent
    * runs through the whole dive, so the turn is done while the camera is

@@ -7,8 +7,10 @@
   - `GLOBE_FLIGHT`: `pitchHighM` 5,000 km and `pitchLowM` 1,000 km (the
     pitch law's band), `pitchLowDeg` 45 (the plan's default of its 30-60
     sweep), `exaggerationFarM` 2,000 km and `exaggerationNearM` 20 km (the
-    exaggeration's band), `exaggerationNear` 3 (DEC-GL5-5),
-    `exaggerationStep` 0.1, `clearanceM` 300, `radiusM` 6,371 km (the frame
+    exaggeration's band), `exaggerationNear` 1 (true heights at every altitude, the owner's D-K1,
+    city plan 2026-10-05-0040 §11; it was 3, DEC-GL5-5),
+    `exaggerationStep` 0.1, `groundBandTopM` 8 km and `groundBandBottomM` 2 km
+    (the third band, K1), `clearanceM` 300, `radiusM` 6,371 km (the frame
     metric's sphere), `horizonMarginDeg` 5 (the least the view looks below
     the horizon).
   - `pitchAtDeg(altM, { pitchLowDeg? })`: the view's depression below the
@@ -19,11 +21,21 @@
     stays in view (review 2026-10-03-1835 minor 7: a low pitch of 30 looked
     past the horizon between about 985 and 1,300 km). RangeError for a
     non-finite altitude or a low pitch outside 0-90.
-  - `exaggerationAt(altM, { near? })`: 1 above `exaggerationFarM`, `near`
-    from `exaggerationNearM` down, smoothstep in the logarithm between,
-    rounded to `exaggerationStep` (so the tile tree is not re-traversed
-    every frame); never falls as the camera descends. 2.2 at the 150 km
-    hold. RangeError for a negative altitude or a near value below 1.
+  - `cityShareAt(altM, topM)`: the city's fade (globe city plan
+    2026-10-05-0040 §12.5 C4): 0 at and above `topM`, 1 at and below two
+    thirds of it, smoothstep between. RangeError for a non-finite altitude
+    or a `topM` that is not positive.
+  - `exaggerationAt(altM, { near?, ground? })`: 1 above
+    `exaggerationFarM`, `near` from `exaggerationNearM` down, smoothstep in
+    the logarithm between, rounded to `exaggerationStep` (so the tile tree
+    is not re-traversed every frame); never falls as the camera descends.
+    2.2 at the 150 km hold with `near` 3. With `ground` (1 to `near`; city plan
+    2026-10-05-0040 K1) a third band eases it from `near` at
+    `groundBandTopM` to `ground` at `groundBandBottomM` and below,
+    smoothstep in the logarithm, so a city can stand on true heights;
+    there it falls as the camera descends, and never rises. RangeError for
+    a negative altitude, a near value below 1 or a ground value outside 1
+    to `near`.
   - `minimumAltitudeM(groundM, e, clearanceM)`: the least altitude over
     ground drawn at exaggeration `e`: max(ground, 0) x e + clearance (the
     sea drawn at 0, as the relief draws it). RangeError for e below 1 or a
@@ -63,7 +75,10 @@
 
 - Tests: `globe-flight.test.ts` (the pitch law's ends, monotony and
   continuity; the exaggeration's ends, steps and monotony; the clearance;
-  the frame metric's 409 km edge and its hold at 150, 30 and 5 km for fov
+  the third band's ends, its default (no change), its steps and its
+  descent, and its refusals; the frame metric's 409 km edge and its hold at 150, 30 and 5 km for fov
   40-60; the band's exact edges, its midpoint and its monotony over three
-  band placements). The dive's use is `globe-dive.test.ts`; the browser is
+  band placements). `globe-flight.property.test.ts`: with a ground value,
+  E stays in 1 to near, is the ground value below the band and the default
+  law above it, and never rises as the camera descends below 20 km. The dive's use is `globe-dive.test.ts`; the browser is
   `labs/globe/globe-relief.smoke.spec.mjs`.

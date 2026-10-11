@@ -207,8 +207,14 @@ function start() {
   };
   const frame = () => {
     pose();
-    if (terrain) terrain.tiles.update();
-    else globe.update(camera, renderer);
+    if (terrain) {
+      terrain.tiles.update();
+      // The globe's own update is not called here: the clouds step alone
+      // (the full map replaces the preview, round-3 plan §18).
+      globe.updateClouds(renderer);
+    } else {
+      globe.update(camera, renderer);
+    }
     renderer.render(scene, camera);
   };
   const loop = () => {
