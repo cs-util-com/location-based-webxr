@@ -158,9 +158,28 @@ test("the owner's screenshots: landed 150 m up at Lucerne and near Pilatus", asy
               body: JSON.stringify({ version: 0.6, elements: [] }),
             }),
     );
-    const { st } = await landAt(page, place, BASE, false);
-    const f = st.pin.flight;
+    const landed = await landAt(page, place, BASE, false);
+    // The picture once the imagery and the relief are in (the first shots
+    // caught "Loading Earth imagery: 95 of 132"), the panel folded so it
+    // shows the whole view; a slow load is logged, not failed.
+    await page
+      .waitForFunction(
+        () => {
+          const s = window.__globeLab.state();
+          return (
+            s.pendingTiles === 0 &&
+            s.mapsLoaded === s.mapsTotal &&
+            s.relief?.settled === true
+          );
+        },
+        null,
+        { timeout: 300_000, polling: 1_000 },
+      )
+      .catch(() => console.log(`${name}: imagery still loading at the shot`));
+    await page.locator(".lookdev-head").click();
     await page.evaluate(() => window.__globeLab.timeFrames(3));
+    const st = await page.evaluate(() => window.__globeLab.state());
+    const f = landed.st.pin.flight;
     await page.screenshot({ path: `${dir}/r4b-landed-${name}.png` });
     console.log(
       `${name} (AWS heights): read ${f.groundM.toFixed(1)} m (${f.groundSource}), relief ${f.reliefGroundM?.toFixed(1)} m, revisions ${f.groundRevisions}; landed ${st.altitudeM.toFixed(1)} m (${(st.altitudeM - f.reliefGroundM).toFixed(1)} m above the place, ${(st.altitudeM - st.relief.groundUnderCameraM).toFixed(1)} m above the ground under the camera, lifts ${st.relief.clearanceLifts}); "${st.readoutShown}"`,
