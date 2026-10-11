@@ -1644,6 +1644,8 @@ function bindPin({
    * after a frame; null otherwise.
    */
   let landedReport = null;
+  /** The landed line as last written, so a later message is never overwritten. */
+  let landedLine = "";
   pinButton.addEventListener("click", async () => {
     const before = phase;
     const mine = ++request;
@@ -1813,6 +1815,7 @@ function bindPin({
         // (`afterFrame`), as the readout reads it.
         landedReport = performance.now();
         message = "Arrived.";
+        landedLine = message;
       } else {
         message = `Arrived, ${shown(getParams().landKm)} km above sea level.`;
       }
@@ -1828,17 +1831,25 @@ function bindPin({
      */
     afterFrame() {
       if (landedReport === null) return;
+      // Something else wrote the line since (a press, a failure): done.
+      if (message !== landedLine) {
+        landedReport = null;
+        return;
+      }
       // Waits for the relief's height under the camera (its tile may still
-      // be loading at the landing), at most GLOBE_READOUT.landedWaitMs;
-      // then the altitude above sea level (`landedLineText`).
+      // be loading at the landing); after GLOBE_READOUT.landedWaitMs it
+      // says the altitude above sea level meanwhile, and the height above
+      // the ground once the relief has one (`landedLineText`).
+      const aboveGroundM = heightAboveGroundM();
       const line = landedLineText({
-        aboveGroundM: heightAboveGroundM(),
+        aboveGroundM,
         altitudeM: ellipsoid.getPositionElevation(ecefCamera().position),
         waitedMs: performance.now() - landedReport,
       });
-      if (line === null) return;
-      landedReport = null;
+      if (aboveGroundM !== undefined) landedReport = null;
+      if (line === null || line === message) return;
       message = line;
+      landedLine = line;
       render();
     },
     state: () => ({

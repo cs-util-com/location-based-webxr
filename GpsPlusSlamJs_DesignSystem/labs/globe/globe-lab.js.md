@@ -714,8 +714,10 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   (`afterFrame`): "Arrived, 158 m above the ground." (over a slope the
   clearance may hold it at 100 m behind the place; the R4b milestone
   review, finding 2). It says "Arrived." while it waits for the relief's
-  height under the camera, at most `GLOBE_READOUT.landedWaitMs` (8 s),
-  then "Arrived, 568 m above sea level." (`landedLineText`; r816's city
+  height under the camera, at most `GLOBE_READOUT.landedWaitMs` (8 s);
+  then "Arrived, 568 m above sea level." meanwhile, replaced by the height
+  above the ground once the relief has one, until anything else writes
+  the line (`landedLineText`; r816's city
   flight landed while the relief still had about 300 tiles to parse and
   no share of the frame, and the bare "Arrived." stayed for good); "above
   sea level" at once without a relief. The readout adds
