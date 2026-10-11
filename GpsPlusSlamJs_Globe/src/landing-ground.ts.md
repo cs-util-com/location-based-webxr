@@ -11,7 +11,7 @@
   it.
 - Public API:
   - `LANDING_GROUND`: `zoom` 12 (`GLOBE_TERRAIN.maxZoom`, tested equal),
-    `timeoutMs` 5,000, `marginM` 25, `lowerPerHeight` 0.0125,
+    `timeoutMs` 16,000 a try, `attempts` 3, `backoffMs` 2,000 (doubling), `marginM` 25, `lowerPerHeight` 0.0125,
     `minPlausibleM` -500 and `maxPlausibleM` 9,000 (the terrain plugin's
     own plausible heights), `maxLatDeg` 85.0511 (Web Mercator's limit).
   - `GroundSource`: `{ elevationAt(positions, signal?) }`, what the read
@@ -20,7 +20,7 @@
     own URL template (AWS Terrarium, or the synthetic heights with
     `reliefHeights=synthetic`), at `LANDING_GROUND.zoom`, with
     `requestTimeoutMs` set to the same deadline.
-  - `readLandingGroundM(source, place, { timeoutMs?, signal? })` ->
+  - `readLandingGroundM(source, place, { timeoutMs?, signal?, attempts?, backoffMs? })` ->
     `Promise<{ groundM, source: "tile" | "fallback" }>`: the height under
     the place, never below 0 (the relief draws the sea at 0, so a depth
     reads 0). Never rejects: no source (`relief=0`), a non-finite place or
@@ -61,12 +61,19 @@
   - Settles: a revised ground is never revised again by the same relief
     height (property-tested), so a frame loop calling it every frame
     replans once.
-  - The timeout (5 s) is a judgement, not a measurement on the phone: one
-    z12 tile is about 50-150 KB and the link's flight spends its first
-    seconds 65,000 km up, where a late ground is a harmless replan
-    (measured in `flight-ground.test.ts`: under half a degree of view turn
-    a frame). What would change it: a phone whose cold fetch of one tile
-    routinely takes longer than 5 s (then the revision does the work, late).
+  - The read's timing (r816's browser run and the coordinator's follow-up):
+    at 5 s with one try both synthetic landings fell back on a loaded
+    machine and nothing corrected them; they landed on the clearance, a
+    ground found only near the end being a raise the flight may no longer
+    take (`PIN_FLIGHT.raisePerHeight`). A late ground costs nothing (a
+    replan while a link's flight is thousands of km up), so each try waits
+    twice the slowest read measured (real Terrarium requests up to 3.4 s,
+    AWS z13 up to 7.9 s, R4c) and a failed, slow or implausible try is
+    tried again after 2 s, then 4 s: at worst 54 s, within a link's minute
+    of flight. Chosen over one long wait because a hung request is better
+    asked again than waited on. What would change it: a pin's press, which
+    reads at the fix and flies a shorter path, may still get its ground
+    too late; then the clearance holds it.
 - Example:
 
   ```ts

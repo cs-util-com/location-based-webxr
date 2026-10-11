@@ -22,6 +22,8 @@ import {
 } from "./landing-ground.js";
 
 const LUCERNE = { lat: 47.0502, lng: 8.3093 };
+/** One try: the fallbacks' tests (the retries have their own). */
+const ONCE = { attempts: 1 };
 
 /** A source answering `heights` (or rejecting with `error`) after `delayMs`. */
 function source(
@@ -56,6 +58,25 @@ describe("LANDING_GROUND", () => {
   it("reads the relief's own zoom", () => {
     expect(LANDING_GROUND.zoom).toBe(GLOBE_TERRAIN.maxZoom);
   });
+
+  // WHY (r816's browser run): at 5 s both synthetic landings read the
+  // fallback on a loaded machine, and nothing corrected them: they landed
+  // on the clearance, a ground found only near the end being a raise the
+  // flight may no longer take. Measured elsewhere: real Terrarium requests
+  // up to 3.4 s, AWS z13 up to 7.9 s (R4c). A late ground costs nothing (a
+  // replan while a link's flight is still thousands of km up), so each try
+  // waits twice the slowest measured, and a failed or slow try is tried
+  // again; all of it within a link's minute of flight.
+  it("waits twice the slowest measured read, and retries within a link's flight", () => {
+    expect(LANDING_GROUND.timeoutMs).toBeGreaterThanOrEqual(2 * 7_900);
+    expect(LANDING_GROUND.attempts).toBeGreaterThanOrEqual(2);
+    let worst = 0;
+    for (let i = 0; i < LANDING_GROUND.attempts; i++) {
+      worst += LANDING_GROUND.timeoutMs;
+      if (i > 0) worst += LANDING_GROUND.backoffMs * 2 ** (i - 1);
+    }
+    expect(worst).toBeLessThanOrEqual(60_000);
+  });
 });
 
 describe("readLandingGroundM", () => {
@@ -77,21 +98,23 @@ describe("readLandingGroundM", () => {
 
   it("falls back to the ellipsoid without a source, data, a finite height or an answer", async () => {
     const fallback = { groundM: 0, source: "fallback" };
-    await expect(readLandingGroundM(null, LUCERNE)).resolves.toEqual(fallback);
-    await expect(
-      readLandingGroundM(source([undefined]), LUCERNE),
-    ).resolves.toEqual(fallback);
-    await expect(readLandingGroundM(source([]), LUCERNE)).resolves.toEqual(
+    await expect(readLandingGroundM(null, LUCERNE, ONCE)).resolves.toEqual(
       fallback,
     );
     await expect(
-      readLandingGroundM(source([Number.NaN]), LUCERNE),
+      readLandingGroundM(source([undefined]), LUCERNE, ONCE),
     ).resolves.toEqual(fallback);
     await expect(
-      readLandingGroundM(source(new Error("offline")), LUCERNE),
+      readLandingGroundM(source([]), LUCERNE, ONCE),
     ).resolves.toEqual(fallback);
     await expect(
-      readLandingGroundM(source([300]), { lat: Number.NaN, lng: 8 }),
+      readLandingGroundM(source([Number.NaN]), LUCERNE, ONCE),
+    ).resolves.toEqual(fallback);
+    await expect(
+      readLandingGroundM(source(new Error("offline")), LUCERNE, ONCE),
+    ).resolves.toEqual(fallback);
+    await expect(
+      readLandingGroundM(source([300]), { lat: Number.NaN, lng: 8 }, ONCE),
     ).resolves.toEqual(fallback);
     // A source that throws instead of rejecting.
     await expect(
@@ -102,6 +125,7 @@ describe("readLandingGroundM", () => {
           },
         },
         LUCERNE,
+        ONCE,
       ),
     ).resolves.toEqual(fallback);
   });
@@ -117,31 +141,33 @@ describe("readLandingGroundM", () => {
       elevationAt: () =>
         Promise.resolve(answer as readonly (number | undefined)[]),
     });
-    await expect(readLandingGroundM(odd(undefined), LUCERNE)).resolves.toEqual(
+    await expect(
+      readLandingGroundM(odd(undefined), LUCERNE, ONCE),
+    ).resolves.toEqual(fallback);
+    await expect(readLandingGroundM(odd({}), LUCERNE, ONCE)).resolves.toEqual(
       fallback,
     );
-    await expect(readLandingGroundM(odd({}), LUCERNE)).resolves.toEqual(
-      fallback,
-    );
-    await expect(readLandingGroundM(source([9_500]), LUCERNE)).resolves.toEqual(
-      fallback,
-    );
-    await expect(readLandingGroundM(source([-600]), LUCERNE)).resolves.toEqual(
-      fallback,
-    );
-    await expect(readLandingGroundM(source([8_800]), LUCERNE)).resolves.toEqual(
-      { groundM: 8_800, source: "tile" },
-    );
-    await expect(readLandingGroundM(source([-400]), LUCERNE)).resolves.toEqual({
+    await expect(
+      readLandingGroundM(source([9_500]), LUCERNE, ONCE),
+    ).resolves.toEqual(fallback);
+    await expect(
+      readLandingGroundM(source([-600]), LUCERNE, ONCE),
+    ).resolves.toEqual(fallback);
+    await expect(
+      readLandingGroundM(source([8_800]), LUCERNE, ONCE),
+    ).resolves.toEqual({ groundM: 8_800, source: "tile" });
+    await expect(
+      readLandingGroundM(source([-400]), LUCERNE, ONCE),
+    ).resolves.toEqual({
       groundM: 0,
       source: "tile",
     });
     const polar = source([2_000]);
     await expect(
-      readLandingGroundM(polar, { lat: 86, lng: 10 }),
+      readLandingGroundM(polar, { lat: 86, lng: 10 }, ONCE),
     ).resolves.toEqual(fallback);
     await expect(
-      readLandingGroundM(polar, { lat: -85.2, lng: 10 }),
+      readLandingGroundM(polar, { lat: -85.2, lng: 10 }, ONCE),
     ).resolves.toEqual(fallback);
     expect(polar.asked).toEqual([]);
   });
@@ -151,12 +177,74 @@ describe("readLandingGroundM", () => {
   it("gives up at the timeout and aborts the read", async () => {
     vi.useFakeTimers();
     const s = source([435], 60_000);
-    const read = readLandingGroundM(s, LUCERNE, { timeoutMs: 1_000 });
+    const read = readLandingGroundM(s, LUCERNE, {
+      timeoutMs: 1_000,
+      attempts: 1,
+    });
     await vi.advanceTimersByTimeAsync(999);
     expect(s.signals[0]?.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(2);
     await expect(read).resolves.toEqual({ groundM: 0, source: "fallback" });
     expect(s.signals[0]?.aborted).toBe(true);
+  });
+
+  // WHY (r816's browser run, the coordinator's follow-up): a read that
+  // failed or timed out was never tried again, so the flight landed on the
+  // clearance with a minute of flight left. A failed or slow try is tried
+  // again after a doubling backoff, up to LANDING_GROUND.attempts.
+  it("tries a failed or slow read again, with a doubling backoff", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const flaky: GroundSource = {
+      elevationAt: () => {
+        calls += 1;
+        if (calls === 1) return Promise.reject(new Error("offline"));
+        if (calls === 2) return new Promise(() => {}); // hangs
+        return Promise.resolve([435]);
+      },
+    };
+    const read = readLandingGroundM(flaky, LUCERNE, {
+      timeoutMs: 1_000,
+      backoffMs: 500,
+      attempts: 3,
+    });
+    await vi.advanceTimersByTimeAsync(499);
+    expect(calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(calls).toBe(2);
+    // The second try (from 500 ms) times out at 1,500 ms, then waits 1 s
+    // (doubled): the third at 2,500 ms.
+    await vi.advanceTimersByTimeAsync(1_998);
+    expect(calls).toBe(2);
+    await vi.advanceTimersByTimeAsync(2);
+    expect(calls).toBe(3);
+    await expect(read).resolves.toEqual({ groundM: 435, source: "tile" });
+  });
+
+  it("stops after its tries, and never retries a read that answered", async () => {
+    vi.useFakeTimers();
+    const down = source(new Error("offline"));
+    const read = readLandingGroundM(down, LUCERNE, {
+      backoffMs: 100,
+      attempts: 3,
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(read).resolves.toEqual({ groundM: 0, source: "fallback" });
+    expect(down.asked).toHaveLength(3);
+    const up = source([435]);
+    const upRead = readLandingGroundM(up, LUCERNE);
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(upRead).resolves.toEqual({ groundM: 435, source: "tile" });
+    expect(up.asked).toHaveLength(1);
+    // An implausible answer is an answer: tried again too, it is a fault.
+    const odd = source([9_500]);
+    const oddRead = readLandingGroundM(odd, LUCERNE, {
+      backoffMs: 100,
+      attempts: 2,
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    await expect(oddRead).resolves.toEqual({ groundM: 0, source: "fallback" });
+    expect(odd.asked).toHaveLength(2);
   });
 
   it("takes an answer that comes before the timeout", async () => {

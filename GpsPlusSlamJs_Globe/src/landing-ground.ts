@@ -19,12 +19,22 @@ export const LANDING_GROUND = Object.freeze({
   /** The Terrarium zoom read: `GLOBE_TERRAIN.maxZoom`'s (R13; tested equal). */
   zoom: 12,
   /**
-   * How long the read may take before the ellipsoid stands in, ms. One
-   * z12 tile is about 50-150 KB; a cold AWS fetch takes well under a
-   * second, and the flight's first seconds are 65,000 km up, where a late
-   * ground costs nothing visible (the replan's turn is measured there).
+   * How long one try of the read may take, ms: twice the slowest read
+   * measured (real Terrarium requests up to 3.4 s, AWS z13 up to 7.9 s,
+   * R4c). A late ground costs nothing visible (it arrives as a replan
+   * while a link's flight is still thousands of km up), a missing one
+   * lands the flight on the clearance (a raise found near the end is
+   * refused, `PIN_FLIGHT.raisePerHeight`): at 5 s, with no retry, both
+   * synthetic landings of r816's browser run fell back on a loaded machine.
    */
-  timeoutMs: 5_000,
+  timeoutMs: 16_000,
+  /**
+   * Tries of the read: a failed or slow try is tried again after
+   * `backoffMs`, doubling, so the worst case (16 + 2 + 16 + 4 + 16 = 54 s)
+   * still ends within a link's minute of flight.
+   */
+  attempts: 3,
+  backoffMs: 2_000,
   /**
    * The relief's finest height must differ by more than this before the
    * landing's ground is revised, m: the relief samples the same tile
@@ -132,29 +142,51 @@ async function heightWithin(
   }
 }
 
+/** Resolves after `ms`, or at once when `signal` aborts. */
+function pause(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, ms);
+    function done() {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    }
+    signal?.addEventListener("abort", done, { once: true });
+  });
+}
+
 /**
- * The ground under `place` from `source` (null: none, the ellipsoid), in
- * at most `timeoutMs`; never rejects: every failure is the fallback. The
- * read is aborted at the timeout or with `signal`.
+ * The ground under `place` from `source` (null: none, the ellipsoid):
+ * each try at most `timeoutMs`, a failed, slow or implausible try tried
+ * again after `backoffMs` (doubling), up to `attempts` tries. Never
+ * rejects: every failure is the fallback. Aborted with `signal`, which
+ * also ends the retries.
  */
 export async function readLandingGroundM(
   source: GroundSource | null,
   place: Place,
-  options: { readonly timeoutMs?: number; readonly signal?: AbortSignal } = {},
+  options: {
+    readonly timeoutMs?: number;
+    readonly signal?: AbortSignal;
+    readonly attempts?: number;
+    readonly backoffMs?: number;
+  } = {},
 ): Promise<LandingGround> {
   const usable =
     source !== null &&
     Math.abs(place.lat) <= LANDING_GROUND.maxLatDeg &&
-    Number.isFinite(place.lng) &&
-    options.signal?.aborted !== true;
+    Number.isFinite(place.lng);
   if (!usable) return FALLBACK;
-  const height = await heightWithin(
-    source,
-    place,
-    options.timeoutMs ?? LANDING_GROUND.timeoutMs,
-    options.signal,
-  );
-  return groundFrom(height);
+  const { attempts, backoffMs, timeoutMs } = { ...LANDING_GROUND, ...options };
+  for (let i = 0; i < Math.max(1, attempts); i++) {
+    if (i > 0) await pause(backoffMs * 2 ** (i - 1), options.signal);
+    if (options.signal?.aborted) return FALLBACK;
+    const ground = groundFrom(
+      await heightWithin(source, place, timeoutMs, options.signal),
+    );
+    if (ground.source === "tile") return ground;
+  }
+  return FALLBACK;
 }
 
 /**
