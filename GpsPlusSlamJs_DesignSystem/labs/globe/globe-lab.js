@@ -3486,6 +3486,9 @@ async function start() {
             share: bandShare,
             groundUnderCameraM,
             clearanceLifts,
+            // The clearance the lift keeps (m), so the smokes read the
+            // page's value rather than a copy (round-4 plan DEC-R4-1).
+            clearanceM: GLOBE_FLIGHT.clearanceM,
             // The relief's own loading, as the library counts it (its own
             // cache and queues, so `settled` is the relief's alone).
             stats: (({ queued, downloading, parsing, loaded, failed }) => ({

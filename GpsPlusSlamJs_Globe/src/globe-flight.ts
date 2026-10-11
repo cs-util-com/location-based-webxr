@@ -35,8 +35,17 @@ export const GLOBE_FLIGHT = Object.freeze({
   groundBandTopM: 8_000,
   /** ...and the ground value at and below this, smoothstep in the log between. */
   groundBandBottomM: 2_000,
-  /** The least height over the exaggerated ground. */
-  clearanceM: 300,
+  /**
+   * The least height over the exaggerated ground, m: the lab's per-frame
+   * lift (whoever owns the camera, so also the controls' floor) and the
+   * replan's raise (`FLIGHT_REPLAN.clearanceM`). 100 since round 4
+   * (2026-10-11-0122 DEC-R4-1): it was 300, which lifted every landing the
+   * owner asked for (about 150 m above the ground). It is over the drawn
+   * RELIEF only: buildings are not counted (at the floor the near plane is
+   * 30 m, `GLOBE_CLIP.nearFraction` of it, so a tower more than about 70 m
+   * tall straight below can be clipped).
+   */
+  clearanceM: 100,
   /** The Earth's mean radius for the frame metric. */
   radiusM: 6_371_000,
   /**

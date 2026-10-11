@@ -10,7 +10,8 @@
     exaggeration's band), `exaggerationNear` 1 (true heights at every altitude, the owner's D-K1,
     city plan 2026-10-05-0040 §11; it was 3, DEC-GL5-5),
     `exaggerationStep` 0.1, `groundBandTopM` 8 km and `groundBandBottomM` 2 km
-    (the third band, K1), `clearanceM` 300, `radiusM` 6,371 km (the frame
+    (the third band, K1), `clearanceM` 100 (300 before round 4: see below),
+    `radiusM` 6,371 km (the frame
     metric's sphere), `horizonMarginDeg` 5 (the least the view looks below
     the horizon).
   - `pitchAtDeg(altM, { pitchLowDeg? })`: the view's depression below the
@@ -65,6 +66,21 @@
     altitude or ground, or a negative clearance.
 - Invariants & assumptions: the bands are parameters, not verdicts; the
   pitch sweep (30, 45, 60) runs in the lab's relief smoke.
+- The clearance (round-4 plan 2026-10-11-0122 DEC-R4-1, §6 item 1): 100 m,
+  one value for the lab's per-frame lift (so also the controls' floor:
+  whoever owns the camera) and the replan's raise. It was 300 m, which
+  lifted every landing the owner asked for (about 150 m above the ground;
+  his r812 export sat about 300 m up, pinned by it). What it protects:
+  - the near plane: over the relief the near plane is 0.3 x the distance
+    to the nearest drawn ground (`clipPlanes`), so 30 m at the floor (22.5
+    m at 75, 37.5 m at 125); the ground itself is never clipped;
+  - NOT the buildings: the lift reads the relief under the camera only,
+    so a building more than about 70 m tall straight below a camera at
+    the floor can reach the near plane;
+  - the landing: a landing 150 m over its target at beta 30 stands about
+    260 m back from it, and is lifted only where the ground there rises
+    by more than (150 - clearance): a slope of about 0.19 at 100 m (0.29
+    at 75 m, 0.10 at 125 m). Swept 75 / 100 / 125 in the R4b record.
 - Example:
 
   ```ts

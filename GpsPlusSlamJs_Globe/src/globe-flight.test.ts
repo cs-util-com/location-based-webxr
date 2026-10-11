@@ -25,6 +25,7 @@ import {
   minimumAltitudeM,
   pitchAtDeg,
 } from "./globe-flight.js";
+import { FLIGHT_REPLAN } from "./flight-replan.js";
 
 describe("pitchAtDeg", () => {
   it("looks at the centre far out and 45 degrees down by 1,000 km", () => {
@@ -194,6 +195,36 @@ describe("clearedAltitudeM", () => {
     expect(() => clearedAltitudeM(Number.NaN, 0, 300)).toThrow(RangeError);
     expect(() => clearedAltitudeM(0, Number.NaN, 300)).toThrow(RangeError);
     expect(() => clearedAltitudeM(0, 0, -1)).toThrow(RangeError);
+  });
+});
+
+describe("the clearance (round-4 plan 2026-10-11-0122 DEC-R4-1, §6 item 1)", () => {
+  // WHY: the owner lands about 150 m above the GROUND. A clearance at or
+  // above that lifts every landing back up: his r812 export sat about 300 m
+  // over the ground, pinned there by the 300 m clearance. The lab's
+  // per-frame lift and the replan's raise must agree on one value.
+  it("is 100 m, the same in the flight and the replan, under a 150 m landing", () => {
+    expect(GLOBE_FLIGHT.clearanceM).toBe(100);
+    expect(FLIGHT_REPLAN.clearanceM).toBe(GLOBE_FLIGHT.clearanceM);
+    for (const ground of [0, 435, 1_000, 2_000]) {
+      expect(
+        clearedAltitudeM(ground + 150, ground, GLOBE_FLIGHT.clearanceM),
+      ).toBe(ground + 150);
+    }
+  });
+
+  // WHY: the landing camera stands back from its target by about
+  // 150 / tan(beta) (260 m at 30 degrees), over ground the target's height
+  // does not describe. Ground rising toward the camera by more than
+  // (150 - clearance) over that distance lifts the landing: at 100 m a
+  // slope of about 0.19 (11 degrees) at beta 30; 75 m would allow 0.29,
+  // 125 m only 0.10 (the sweep in the R4b record).
+  it("lifts a 150 m landing at 30 degrees only over ground rising more than about 0.19 toward the camera", () => {
+    const back = 150 / Math.tan((30 * Math.PI) / 180);
+    const lifted = (slope: number) =>
+      clearedAltitudeM(150, slope * back, GLOBE_FLIGHT.clearanceM) > 150;
+    expect(lifted(0.15)).toBe(false);
+    expect(lifted(0.2)).toBe(true);
   });
 });
 

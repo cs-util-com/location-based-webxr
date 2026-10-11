@@ -32,6 +32,7 @@ import type { Ellipsoid } from "3d-tiles-renderer";
 
 import type { OrbitPose } from "./globe-camera.js";
 import { obliqueCamera } from "./globe-dive.js";
+import { GLOBE_FLIGHT } from "./globe-flight.js";
 import {
   FLIGHT_PATH,
   flightAt,
@@ -57,8 +58,11 @@ const MIN_LANDING_SENSITIVITY = 0.5;
 export const FLIGHT_REPLAN = Object.freeze({
   /** How long a replan's velocity correction takes to die out, ms. */
   joinMs: 1_500,
-  /** The least height over the ground under the camera, m (the lab's). */
-  clearanceM: 300,
+  /**
+   * The least height over the ground under the camera, m: the lab's
+   * (`GLOBE_FLIGHT.clearanceM`, one value; round-4 plan DEC-R4-1).
+   */
+  clearanceM: GLOBE_FLIGHT.clearanceM,
   /** A replanned flight lasts at least this, ms... */
   minDurationMs: 2_000,
   /** ...and at most this (one replanned path's length, as DEC-CF-5's cap), ms. */

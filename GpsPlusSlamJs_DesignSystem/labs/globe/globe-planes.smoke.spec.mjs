@@ -5,7 +5,8 @@
  * Why this file matters: the relief stands up to 3x its real height above
  * the ellipsoid, and the near plane used to be a fraction of the height
  * over the ELLIPSOID. Held low over a ridge (the clearance keeps the camera
- * 300 m over the drawn ground), that plane lay beyond the ground in front
+ * 100 m over the drawn ground; 300 m before round 4, DEC-R4-1), that plane
+ * lay beyond the ground in front
  * of the camera and cut it away. The planes now come from the drawn ground
  * around the camera and the highest drawn peak. Measured at 5 and 2 km
  * holds over the synthetic ridge (crest about 2.2 km, 6.6 km drawn at E 3):

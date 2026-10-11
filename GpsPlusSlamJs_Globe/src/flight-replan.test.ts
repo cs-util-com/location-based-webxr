@@ -780,9 +780,13 @@ describe("clearedLandingM", () => {
   // final-approach rule these read 3,752 m and 6,020 m.
   it("raises only for ground the landing can clear", () => {
     const zurich = orbitPose(WGS84_ELLIPSOID, ZURICH).direction;
+    // The plateau stands the clearance under 2,100 m, so the need is 2,100 m
+    // whatever the clearance (1,800 m at the 300 m clearance before round 4;
+    // at 100 m a 1,800 m plateau needs nothing over a 2 km landing).
+    const plateau = 2_100 - FLIGHT_REPLAN.clearanceM;
     const ridge = (d: THREE.Vector3) =>
-      d.angleTo(zurich) * R < 5 * KM ? 9_800 : 1_800;
-    const need = 1_800 + FLIGHT_REPLAN.clearanceM;
+      d.angleTo(zurich) * R < 5 * KM ? 9_800 : plateau;
+    const need = plateau + FLIGHT_REPLAN.clearanceM;
     // The level pan (a start at the landing's altitude) is a climb to the
     // landing; with the 0.5 floor the landing governs its second half, where
     // halfway the altitude is the geometric mean of start and landing, so it
@@ -793,7 +797,7 @@ describe("clearedLandingM", () => {
     for (const [startM, groundAt, low, high] of [
       [
         2 * KM,
-        () => 1_800,
+        () => plateau,
         (need * need) / (2 * KM) - 10,
         (need * need) / (2 * KM) + 10,
       ],

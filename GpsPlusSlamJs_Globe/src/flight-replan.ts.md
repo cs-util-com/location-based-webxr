@@ -23,7 +23,8 @@ transition" the owner reported.
 
 ## Public API
 
-- `FLIGHT_REPLAN`: `joinMs` 1,500, `clearanceM` 300, `minDurationMs`
+- `FLIGHT_REPLAN`: `joinMs` 1,500, `clearanceM` (`GLOBE_FLIGHT.clearanceM`,
+  100 since round 4, DEC-R4-1; 300 before), `minDurationMs`
   2,000, `maxDurationMs` 60,000 (one replanned path's length, as DEC-CF-5's
   cap),
   `clearanceRounds` 6, `clearanceSamples` 960 (at 240 a ridge 2 km wide
@@ -143,7 +144,8 @@ divided by how much the camera there rises with the landing.
   6,020 m, a level pan over a 1.8 km plateau to 3,752 m). A window on the
   final approach instead (the dive's own track) missed ridges just before
   the dive and left the camera 4-19 m inside them (the R1 milestone review).
-- Measured: a ridge 100 m under the planned path, anywhere from 5 to 40 km
+- Measured (at the 300 m clearance, before round 4): a ridge 100 m under
+  the planned path, anywhere from 5 to 40 km
   out of the landing point, from a 5 or 10 km start, is cleared by at least
   280 m; the 10 km start over a ridge under itself gets 2,100 m; a level
   pan over the plateau gets the 2,205 m that lifts its second half (the

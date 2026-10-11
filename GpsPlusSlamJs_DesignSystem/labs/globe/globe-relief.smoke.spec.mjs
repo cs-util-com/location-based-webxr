@@ -404,12 +404,17 @@ for (const [label, lat] of [
     );
     const st = await page.evaluate(() => window.__globeLab.state());
     const ground = st.relief.groundUnderCameraM;
-    const needsLift = Math.max(0, ground) + 300 > 5_000;
+    // The page's own clearance (100 m since round 4, DEC-R4-1).
+    const clearance = st.relief.clearanceM;
+    const needsLift = Math.max(0, ground) + clearance > 5_000;
     console.log(
       `clearance at a 5 km hold ${label}: altitude ${(st.altitudeM / 1000).toFixed(2)} km, drawn ground under the camera ${(ground / 1000).toFixed(2)} km (E ${st.relief.heightScale}), lift needed ${needsLift}, lifted on ${st.relief.clearanceLifts} frames`,
     );
     expect(errors).toEqual([]);
-    expect(st.altitudeM).toBeGreaterThanOrEqual(Math.max(0, ground) + 300 - 1);
+    expect(clearance).toBe(100);
+    expect(st.altitudeM).toBeGreaterThanOrEqual(
+      Math.max(0, ground) + clearance - 1,
+    );
     expect(st.relief.clearanceLifts > 0).toBe(needsLift);
   });
 }
