@@ -18,6 +18,12 @@ import { expect, test } from "@playwright/test";
 import { bootGlobe } from "./globe-smoke-helpers.mjs";
 
 const LUCERNE = { lat: 47.0502, lng: 8.3093 };
+/**
+ * A summit of the synthetic heights (about 2,148 m), the ground falling
+ * away within 412 m on every side (a grid search over the field's formula,
+ * `synthetic-heights.js`).
+ */
+const SUMMIT = { lat: 46.9185, lng: 8.136 };
 /** Near Pilatus: the slope below the summit, about 1.7 km up. */
 const PILATUS = { lat: 46.9726, lng: 8.2574 };
 const BASE =
@@ -70,38 +76,50 @@ async function landAt(page, place, hash, routeCity = true) {
 // measured against the relief's OWN height at the place, not against the
 // number the flight was given: the early read (the landing module over the
 // Osm library's Terrarium decoder) and the drawn relief must agree, and the
-// camera must end 150 m above that ground, the readout saying so.
-test("a link to Lucerne lands 150 m above the relief's ground there", async ({
-  page,
-}) => {
-  test.setTimeout(600_000);
-  const { errors, st } = await landAt(
+// camera must end 150 m above that ground, the readout saying so. Two
+// places of the synthetic field: Lucerne, on a slope (its ridges rise up to
+// 0.36 a metre a metre, so the clearance may lift the landing camera over
+// the ground behind it: then it sits at the clearance there), and a
+// synthetic summit at 2.1 km a few km south-west, where the ground falls
+// away on every side within 412 m (searched for it), so nothing lifts and
+// the landing itself is measured.
+for (const [name, place, mayLift] of [
+  ["Lucerne", LUCERNE, true],
+  ["a synthetic summit", SUMMIT, false],
+]) {
+  test(`a link to ${name} lands 150 m above the relief's ground there`, async ({
     page,
-    LUCERNE,
-    `${BASE}&reliefHeights=synthetic`,
-  );
-  const f = st.pin.flight;
-  const aboveTarget = st.altitudeM - f.reliefGroundM;
-  const aboveCamera = st.altitudeM - st.relief.groundUnderCameraM;
-  console.log(
-    `Lucerne (synthetic heights): read ${f.groundM.toFixed(1)} m (${f.groundSource}), relief ${f.reliefGroundM.toFixed(1)} m at the place, revisions ${f.groundRevisions}; landed at ${st.altitudeM.toFixed(1)} m: ${aboveTarget.toFixed(1)} m above the place's ground, ${aboveCamera.toFixed(1)} m above the ground under the camera, clearance lifts ${st.relief.clearanceLifts}; depression ${st.cameraDepressionDeg.toFixed(1)} deg; "${st.readoutShown}"; "${st.pin.status}"`,
-  );
-  expect(errors).toEqual([]);
-  expect(f.groundSource).toBe("tile");
-  expect(f.landingM).toBe(LANDING_M);
-  // One height source (R13): the early read is the relief's own number.
-  expect(Math.abs(f.groundM - f.reliefGroundM)).toBeLessThan(25);
-  expect(f.groundRevisions).toBe(0);
-  // 150 m above the place's ground, unless the clearance had to lift the
-  // camera over higher ground under it (then it sits at the clearance).
-  if (st.relief.clearanceLifts === 0) {
-    expect(Math.abs(aboveTarget - LANDING_M)).toBeLessThan(TOLERANCE_M);
-  } else {
-    expect(Math.abs(aboveCamera - st.relief.clearanceM)).toBeLessThan(2);
-  }
-  expect(st.readoutShown).toMatch(/ · \d+ m above ground/);
-  expect(st.pin.status).toMatch(/^Arrived, 150 m above the ground\.$/);
-});
+  }) => {
+    test.setTimeout(600_000);
+    const { errors, st } = await landAt(
+      page,
+      place,
+      `${BASE}&reliefHeights=synthetic`,
+    );
+    const f = st.pin.flight;
+    const aboveTarget = st.altitudeM - f.reliefGroundM;
+    const aboveCamera = st.altitudeM - st.relief.groundUnderCameraM;
+    console.log(
+      `${name} (synthetic heights): read ${f.groundM.toFixed(1)} m (${f.groundSource}), relief ${f.reliefGroundM.toFixed(1)} m at the place, revisions ${f.groundRevisions}; landed at ${st.altitudeM.toFixed(1)} m: ${aboveTarget.toFixed(1)} m above the place's ground, ${aboveCamera.toFixed(1)} m above the ground under the camera, clearance lifts ${st.relief.clearanceLifts}; depression ${st.cameraDepressionDeg.toFixed(1)} deg; "${st.readoutShown}"; "${st.pin.status}"`,
+    );
+    expect(errors).toEqual([]);
+    expect(f.groundSource).toBe("tile");
+    expect(f.landingM).toBe(LANDING_M);
+    // One height source (R13): the early read is the relief's own number.
+    expect(Math.abs(f.groundM - f.reliefGroundM)).toBeLessThan(25);
+    expect(f.groundRevisions).toBe(0);
+    if (!mayLift) expect(st.relief.clearanceLifts).toBe(0);
+    // 150 m above the place's ground, unless the clearance had to lift the
+    // camera over higher ground under it (then it sits at the clearance).
+    if (st.relief.clearanceLifts === 0) {
+      expect(Math.abs(aboveTarget - LANDING_M)).toBeLessThan(TOLERANCE_M);
+    } else {
+      expect(Math.abs(aboveCamera - st.relief.clearanceM)).toBeLessThan(2);
+    }
+    expect(st.readoutShown).toMatch(/ · d+ m above ground/);
+    expect(st.pin.status).toMatch(/^Arrived, 150 m above the ground.$/);
+  });
+}
 
 // WHY (DEC-R4-1, the cold review's §6 item 10): the relief's blockiness at
 // 150 m is something the owner must see before the default ships: the
