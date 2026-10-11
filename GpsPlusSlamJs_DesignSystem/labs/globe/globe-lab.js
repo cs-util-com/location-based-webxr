@@ -1413,7 +1413,12 @@ function bindPin({
   reliefGroundM = () => null,
   // The camera's height above the drawn ground under it (m), or null.
   heightAboveGroundM = () => null,
+  // A true ground height as the relief draws it at the landing (its
+  // exaggeration there; 1, the default, draws true heights).
+  drawnGroundM = (groundM) => groundM,
 }) {
+  const drawnOrNull = (groundM) =>
+    groundM === null ? null : drawnGroundM(groundM);
   let phase = "idle";
   let message = "";
   let located = null;
@@ -1541,7 +1546,7 @@ function bindPin({
     // The place's ground, if already read (a link reads it from load): the
     // flight lands `landAglM` above it (DEC-R4-1); else the ellipsoid
     // until the read arrives (`groundArrives`).
-    const groundM = place ? (groundOf(place).groundM ?? 0) : 0;
+    const groundM = place ? drawnGroundM(groundOf(place).groundM ?? 0) : 0;
     // The flight's start: the camera as it is, unless placed below.
     let flightStart = null;
     if (fromAltitudeM > 0 && place && params.meteorDeg < 90) {
@@ -1611,7 +1616,7 @@ function bindPin({
         located && located.lat === place.lat && located.lng === place.lng;
       if (!same || ground.groundM === null) return;
       flight.updatePin(performance.now(), (p, now) =>
-        pinGround(p, now, ground.groundM),
+        pinGround(p, now, drawnGroundM(ground.groundM)),
       );
     });
   };
@@ -1784,7 +1789,7 @@ function bindPin({
         const pinNow = flight.pinFlight;
         const revised =
           pinNow &&
-          groundRevisionM(pinNow.groundM, reliefGroundM(located), {
+          groundRevisionM(pinNow.groundM, drawnOrNull(reliefGroundM(located)), {
             heightM:
               ellipsoid.getPositionElevation(ecefCamera().position) -
               pinNow.groundM,
@@ -2713,6 +2718,13 @@ async function start() {
     diveFloorM,
     groundOf,
     reliefGroundM,
+    // The flight aims at the ground as DRAWN at the landing: with
+    // reliefNear above 1 the relief stands E times the true height there,
+    // and a true height aimed under it (the R4b milestone review, finding
+    // 9).
+    drawnGroundM: (groundM) =>
+      groundM *
+      exaggerationAt(Math.max(0, groundM + params.landAglM), heightLaw()),
     heightAboveGroundM: () =>
       groundUnderCameraM === null
         ? null

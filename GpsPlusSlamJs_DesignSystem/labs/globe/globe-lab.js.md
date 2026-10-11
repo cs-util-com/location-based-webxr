@@ -700,6 +700,11 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   onto it when it arrives. Per frame while flying, the relief's own
   FINEST height at the place (`finestElevationAt`) revises it only past
   the 25 m margin (`groundRevisionM`), through `pinGround` (the replan
+  path, never a jump; a raise only while the camera stands well over the
+  new ground). The flight aims at the ground as DRAWN at the landing
+  (`drawnGroundM`: the true height times the relief's exaggeration there,
+  1 by default; with `reliefNear` above 1 a true height was aimed under
+  the drawn relief, the R4b milestone review's finding 9). (The replan
   path, never a jump). The old landing floor (a raise of more than 50 m
   through `pinLanding`) is gone for `flight=2`: the target is lifted to
   its ground instead. The LAW is 150 m above the place's own ground; the
