@@ -109,7 +109,7 @@ overpassTimings }`. `outcome`: `settled` (every job ended; the
     ever reaches the Osm library, h3-js or this module.
   - At boot (small, no dependencies):
     `import { FLIGHT_PACE_DEFAULTS, startPace, stepPace } from "/globe/flight-pace.js";`
-  - At "pin", with the same `target` given to `handOverUrl`:
+  - At "pin", for the flight's `target`:
 
     ```js
     let prefetch = null;
@@ -132,13 +132,12 @@ overpassTimings }`. `outcome`: `settled` (every job ended; the
     the flight pose reads `clock.s` (the path's own easing eases its ends).
   - When the pin is cancelled (a new target, the user takes the camera):
     `cancelled = true; prefetch?.abort();`.
-  - At the hand-over: if an Overpass tile is still in flight
-    (`prefetch.stats().inFlight > 0`), the lab may hold, saying so on
-    screen, until `prefetch.finished` or the request's own deadline, then
-    `location.assign(handOverUrl(...))` at once, landed or failed.
-    Navigating away kills an unfinished tile and OsmDemo starts it from
-    zero; whether to hold at all is an open product decision (the round-5
-    results, Q2).
+  - At the landing nothing is navigated any more: the globe's page
+    hand-over to OsmDemo was removed (globe city plan 2026-10-05-0040
+    §12.5 C6), and the globe builds its own city from the same store once
+    `prefetch.finished` has settled (so the two never download one tile
+    twice). The city reads the Overpass tiles this module warms, but its
+    z12 heights are not part of this plan (validation finding F6).
 - Tests: `arrival-prefetch.test.ts` (a cold cache left holding every key
   OsmDemo reads; progress from 0, never falling; a warm cache costing no
   request; only the missing fetched; a dead network, an HTTP error, a

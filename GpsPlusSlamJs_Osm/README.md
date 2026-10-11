@@ -6,9 +6,13 @@ Fetches raw OSM data for the area around a user, indexes it per H3 cell, and
 scores each cell against a **pluggable affordance rule table** — machine-readable
 answers to "can you walk here / play here / safely spawn a virtual object here".
 
-This package is **pure data**. It has no dependency on Three.js, on
+This package is **pure data**. Its core has no dependency on Three.js, on
 `gps-plus-slam-app-framework`, or on `gps-plus-slam-js`. Persistence, Web
-Workers and rendering are all injected or done by the consumer.
+Workers and rendering are all injected or done by the consumer. The one
+exception is opt-in: the `gps-plus-slam-osm/three` entry point turns a built
+city into three.js objects (three.js is an optional peer, loaded only by that
+entry), because two apps draw the same city (OsmDemo and the globe lab;
+globe city plan 2026-10-05-0040 §14).
 
 > **Status: the data layer is complete and not yet validated by eye.** Fetching,
 > caching, cross-session merging, the rule table, cell coverage, indexing,
