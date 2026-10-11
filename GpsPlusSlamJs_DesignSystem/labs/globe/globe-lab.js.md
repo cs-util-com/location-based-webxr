@@ -712,8 +712,13 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   landed line says what the readout says, the camera's height above the
   drawn ground UNDER it, once the frame's clearance has acted
   (`afterFrame`): "Arrived, 158 m above the ground." (over a slope the
-  clearance may hold it at 100 m behind the place; "above sea level"
-  where no relief is drawn under it; the R4b milestone review, finding 2). The readout adds
+  clearance may hold it at 100 m behind the place; the R4b milestone
+  review, finding 2). It says "Arrived." while it waits for the relief's
+  height under the camera, at most `GLOBE_READOUT.landedWaitMs` (8 s),
+  then "Arrived, 568 m above sea level." (`landedLineText`; r816's city
+  flight landed while the relief still had about 300 tiles to parse and
+  no share of the frame, and the bare "Arrived." stayed for good); "above
+  sea level" at once without a relief. The readout adds
   " · 150 m above ground" below 100 km, from the drawn ground under the
   camera, and measures "to the target" to the target at its ground. The
   state's `pin.flight` adds `groundM`, `groundSource` ("tile" or

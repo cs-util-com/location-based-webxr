@@ -26,6 +26,14 @@
     the owner read the r812 altitude as the height above the roofs, which
     it was not); then " · 1,300 km to the target" when `targetDistanceM`
     is not null. A camera under the drawn ground reads "0 m above ground".
+  - `GLOBE_READOUT.landedWaitMs` (8,000) and `landedLineText({ aboveGroundM,
+    altitudeM, waitedMs })`: the continuous flight's landed line,
+    "Arrived, 158 m above the ground." from the camera's height above the
+    drawn ground under it (the readout's number); "Arrived, 150 m above sea
+    level." from the altitude without a relief (`aboveGroundM` null) or
+    once `landedWaitMs` has passed without a relief height (`undefined`);
+    null while it still waits (r816's city flight: the relief had no share
+    of the frame at the landing, and the line stayed a bare "Arrived.").
   - `readoutThrottle(write)` -> `{ offer(text, nowMs) }`: calls `write`
     only for a text that differs from the last one written, and at most
     once per interval. A change inside the interval is dropped; the next

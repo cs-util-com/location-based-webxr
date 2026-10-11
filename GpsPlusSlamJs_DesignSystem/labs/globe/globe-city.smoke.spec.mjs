@@ -512,7 +512,16 @@ test("flight=2: a land=1 link flies the continuous flight and lands", async ({
   expect(phases).toContain("descending");
   expect(st.pin.flight?.phase).toBe("landed");
   expect(st.pin.phase).toBe("idle");
-  expect(st.pin.status).toMatch(/^Arrived, /);
+  // The landed line comes once the relief has a height under the camera,
+  // or after GLOBE_READOUT.landedWaitMs (8 s) as the altitude above sea
+  // level: here the relief is often not drawn yet at the landing (r816's
+  // browser run: about 300 tiles still parsing, its share 0), so it is
+  // waited for, not read at once.
+  await page.waitForFunction(
+    () => /^Arrived, \d/.test(window.__globeLab.state().pin.status),
+    null,
+    { timeout: 60_000 },
+  );
   // WHY (PR #560 review): the distance to the target (DEC-GL4-5) shows
   // while the flight is on its way, as it does for the dive.
   expect(flying.some((s) => /to the target$/.test(s.readout ?? ""))).toBe(true);

@@ -14,6 +14,7 @@ import {
   GLOBE_READOUT,
   formatDistance,
   globeReadoutText,
+  landedLineText,
   readoutThrottle,
 } from "./globe-readout.js";
 
@@ -105,6 +106,50 @@ describe("globeReadoutText", () => {
     expect(
       globeReadoutText({ altitudeM: 430, targetDistanceM: null, groundM: 435 }),
     ).toBe("Altitude 430 m · 0 m above ground");
+  });
+});
+
+// WHY (the R4b milestone review, finding 2, and r816's browser run): the
+// landed line says the readout's number, the camera's height above the
+// drawn ground under it. With no relief height there yet it waited, and in
+// r816's city flight the height never came, so the owner would have read
+// a bare "Arrived." forever. It waits at most GLOBE_READOUT.landedWaitMs,
+// then says the altitude above sea level, which is always true.
+describe("landedLineText", () => {
+  it("says the height above the ground, or above the sea without a relief", () => {
+    expect(
+      landedLineText({ aboveGroundM: 158.4, altitudeM: 2_298, waitedMs: 0 }),
+    ).toBe("Arrived, 158 m above the ground.");
+    expect(
+      landedLineText({ aboveGroundM: null, altitudeM: 150, waitedMs: 0 }),
+    ).toBe("Arrived, 150 m above sea level.");
+  });
+
+  it("waits for the relief's height, but never longer than the bound", () => {
+    const wait = GLOBE_READOUT.landedWaitMs;
+    expect(
+      landedLineText({
+        aboveGroundM: undefined,
+        altitudeM: 1_473,
+        waitedMs: 0,
+      }),
+    ).toBeNull();
+    expect(
+      landedLineText({
+        aboveGroundM: undefined,
+        altitudeM: 1_473,
+        waitedMs: wait - 1,
+      }),
+    ).toBeNull();
+    expect(
+      landedLineText({
+        aboveGroundM: undefined,
+        altitudeM: 1_473,
+        waitedMs: wait,
+      }),
+    ).toBe("Arrived, 1.5 km above sea level.");
+    expect(wait).toBeGreaterThanOrEqual(2_000);
+    expect(wait).toBeLessThanOrEqual(15_000);
   });
 });
 

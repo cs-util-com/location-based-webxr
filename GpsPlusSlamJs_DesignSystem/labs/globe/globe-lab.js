@@ -85,8 +85,8 @@ import {
 } from "/globe/pin-flight.js";
 import { flightCameraAt, flightFrameAt } from "/globe/flight-replan.js";
 import {
-  formatDistance,
   globeReadoutText,
+  landedLineText,
   readoutThrottle,
 } from "/globe/globe-readout.js";
 import {
@@ -1639,8 +1639,11 @@ function bindPin({
   let request = 0;
   /** How often the relief revised the landing's ground (DEC-R4-1), for the smokes. */
   let groundRevisions = 0;
-  /** The continuous flight landed: its line is written after the frame. */
-  let landedReport = false;
+  /**
+   * When the continuous flight landed (page ms), until its line is written
+   * after a frame; null otherwise.
+   */
+  let landedReport = null;
   pinButton.addEventListener("click", async () => {
     const before = phase;
     const mine = ++request;
@@ -1808,7 +1811,7 @@ function bindPin({
         // The continuous flight's line: written once the frame's clearance
         // has acted and the relief has a height under the camera
         // (`afterFrame`), as the readout reads it.
-        landedReport = true;
+        landedReport = performance.now();
         message = "Arrived.";
       } else {
         message = `Arrived, ${shown(getParams().landKm)} km above sea level.`;
@@ -1824,19 +1827,18 @@ function bindPin({
      * stays 150 m above the place's own ground.
      */
     afterFrame() {
-      if (!landedReport) return;
-      const above = heightAboveGroundM();
-      // The relief has no height under the camera yet (its tile still
-      // loading at the landing: the first browser run said "above sea
-      // level" there): ask again next frame.
-      if (above === undefined) return;
-      landedReport = false;
-      message =
-        above === null
-          ? `Arrived, ${formatDistance(
-              ellipsoid.getPositionElevation(ecefCamera().position),
-            )} above sea level.`
-          : `Arrived, ${formatDistance(above)} above the ground.`;
+      if (landedReport === null) return;
+      // Waits for the relief's height under the camera (its tile may still
+      // be loading at the landing), at most GLOBE_READOUT.landedWaitMs;
+      // then the altitude above sea level (`landedLineText`).
+      const line = landedLineText({
+        aboveGroundM: heightAboveGroundM(),
+        altitudeM: ellipsoid.getPositionElevation(ecefCamera().position),
+        waitedMs: performance.now() - landedReport,
+      });
+      if (line === null) return;
+      landedReport = null;
+      message = line;
       render();
     },
     state: () => ({
