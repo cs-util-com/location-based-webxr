@@ -252,22 +252,17 @@ test("the shell and the slab draw the same clouds where they are mixed", async (
 // hand-over that pops, stands out as a step far above its neighbours;
 // zooming alone changes every step about alike. Each step against the
 // median of the 8 steps around it (swept x2 / x3 / x4).
-test("the descent changes the clouds smoothly, no jump between layers", async ({
-  page,
-}) => {
-  test.setTimeout(3_600_000);
-  // The sweep's runs (R4D_DESCENT_FROM / _TO km, R4D_DESCENT_EXTRA hash
-  // keys: the hand-over altitudes and bands), the full descent by default.
-  const from = Number(process.env.R4D_DESCENT_FROM ?? 1_200);
-  const to = Number(process.env.R4D_DESCENT_TO ?? 12);
-  const extra = process.env.R4D_DESCENT_EXTRA
-    ? `&${process.env.R4D_DESCENT_EXTRA}`
-    : "";
+/**
+ * One descent straight down over the ocean from `from` to `to` km in 4 %
+ * steps, the hash's `extra` keys applied (a page already booted): each
+ * step's mean change of the mixed clouds' alpha against the median of its
+ * 8 neighbours. Returns the steps, the worst and the log line.
+ */
+async function descend(page, { from, to, extra }) {
   const altitudes = [];
   for (let h = from; h >= to; h /= 1.04) altitudes.push(h);
   const pose = (km) =>
     `${BASE}${extra}&view=${PLACES.ocean},${km.toFixed(3)},0,-89&cloudShellVolume=1`;
-  const errors = await bootGlobe(page, pose(altitudes[0]), { phase: "user" });
   const steps = [];
   let previous = null;
   for (const km of altitudes) {
@@ -293,17 +288,72 @@ test("the descent changes the clouds smoothly, no jump between layers", async ({
     return { ...s, ratio: s.step / Math.max(median, 1e-4) };
   });
   const worst = local.reduce((w, x) => (x.ratio > w.ratio ? x : w));
-  console.log(
-    `descent over the ocean${extra}, straight down, 4 % a step: ${local
-      .map(
-        (x) => `${x.km.toFixed(0)}:${x.step.toFixed(3)}/${x.alpha.toFixed(2)}`,
-      )
-      .join(
-        " ",
-      )}; the worst step ${worst.step.toFixed(3)} at ${worst.km.toFixed(1)} km is x${worst.ratio.toFixed(2)} its neighbours' median (${[2, 3, 4].map((k) => `x${k} ${worst.ratio <= k ? "ok" : "NO"}`).join(" ")})`,
+  const line = `descent over the ocean${extra}, straight down, 4 % a step: ${local
+    .map((x) => `${x.km.toFixed(0)}:${x.step.toFixed(3)}/${x.alpha.toFixed(2)}`)
+    .join(
+      " ",
+    )}; the worst step ${worst.step.toFixed(3)} at ${worst.km.toFixed(1)} km is x${worst.ratio.toFixed(2)} its neighbours' median (${[2, 3, 4].map((k) => `x${k} ${worst.ratio <= k ? "ok" : "NO"}`).join(" ")})`;
+  return { local, worst, line };
+}
+
+test("the descent changes the clouds smoothly, no jump between layers", async ({
+  page,
+}) => {
+  test.setTimeout(3_600_000);
+  // One run's own range and hash keys (R4D_DESCENT_FROM / _TO km,
+  // R4D_DESCENT_EXTRA), the full descent by default.
+  const from = Number(process.env.R4D_DESCENT_FROM ?? 1_200);
+  const to = Number(process.env.R4D_DESCENT_TO ?? 12);
+  const extra = process.env.R4D_DESCENT_EXTRA
+    ? `&${process.env.R4D_DESCENT_EXTRA}`
+    : "";
+  const errors = await bootGlobe(
+    page,
+    `${BASE}${extra}&view=${PLACES.ocean},${from},0,-89&cloudShellVolume=1`,
+    { phase: "user" },
   );
+  const { worst, line } = await descend(page, { from, to, extra });
+  console.log(line);
   expect(errors).toEqual([]);
   expect(worst.ratio).toBeLessThanOrEqual(3);
+});
+
+// WHY: the owner's rule (2026-09-13): a verdict from one parameter value is
+// provisional. The same descent measure over each hand-over's band with the
+// hand-over moved by a third either way and the bands widened and narrowed:
+// the shell's top (467 / 933 km, its middle station at 2/7 of it), its
+// fade-in band (100 / 600 km), its middle station (133 / 267 km), and the
+// slab's ceiling (27 / 53 km) and fade (12 / 37 km). One page load for all
+// (the hash applies live); run only when R4D_SWEEP=1 (about 40 minutes on
+// SwiftShader).
+test("the hand-overs swept, no jump at any of them", async ({ page }) => {
+  test.skip(process.env.R4D_SWEEP !== "1", "R4D_SWEEP=1 runs the sweep");
+  test.setTimeout(7_200_000);
+  const runs = [
+    [997, 311, "cloudShellTopKm=467&cloudShellMidKm=133"],
+    [1599, 622, "cloudShellTopKm=933&cloudShellMidKm=266"],
+    [1040, 467, "cloudShellBandKm=100"],
+    [1690, 467, "cloudShellBandKm=600"],
+    [500, 60, "cloudShellMidKm=133"],
+    [500, 60, "cloudShellMidKm=267"],
+    [90, 8, "cloudVolumeCeilingKm=27&cloudVolumeFadeKm=25"],
+    [90, 8, "cloudVolumeCeilingKm=53&cloudVolumeFadeKm=25"],
+    [90, 8, "cloudVolumeCeilingKm=40&cloudVolumeFadeKm=12"],
+    [90, 8, "cloudVolumeCeilingKm=40&cloudVolumeFadeKm=37"],
+  ].map(([from, to, keys]) => ({ from, to, extra: `&${keys}` }));
+  const errors = await bootGlobe(
+    page,
+    `${BASE}&view=${PLACES.ocean},1000,0,-89&cloudShellVolume=1`,
+    { phase: "user" },
+  );
+  const worsts = [];
+  for (const run of runs) {
+    const { worst, line } = await descend(page, run);
+    console.log(line);
+    worsts.push(worst.ratio);
+  }
+  expect(errors).toEqual([]);
+  for (const ratio of worsts) expect(ratio).toBeLessThanOrEqual(3);
 });
 
 // WHY: the cost, against the 50 ms frame rule (the owner's phone: no frame
