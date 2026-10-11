@@ -419,8 +419,16 @@ const STEPS = [6, 8, 12, 16, 24];
 // sample reference: the largest error, and the largest step between
 // neighbouring pixels beyond the reference's own (a ring shows as a step).
 test("the banding per sample count, against 64 samples", async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
   const errors = await bootGlobe(page, VIEW);
+  // The lab is ready on the cloud map's preview (M1b); the sharp map
+  // arriving between the 64-sample reference and a sweep step read as a
+  // 24-level "error" on the radial profile at every count (2026-10-11).
+  await page.waitForFunction(
+    () => window.__globeLab.state().cloudMap?.stage === "full",
+    null,
+    { timeout: 120_000 },
+  );
   const g = await discGeometry(page);
   const r = Math.round(g.rPx);
   // Either side of the disc's edge but not across it: the ground-to-space
