@@ -405,7 +405,8 @@ interface ArSessionHandle {
   /**
    * Host callback fired exactly once whenever the XRSession ends — on BOTH
    * the app-initiated and the system-initiated path (initAR
-   * `callbacks.onSessionEnd`).
+   * `callbacks.onSessionEnd`). Cleared when initAR() itself fails: the host
+   * never had that session.
    */
   onSessionEnd: ((info: SessionEndInfo) => void) | null;
   /**
@@ -938,7 +939,8 @@ export async function initAR(
   sessionFeatures: SessionFeatureOptions = {},
   callbacks: ArSessionCallbacks = {}
 ): Promise<void> {
-  if (!navigator.xr) {
+  const xr = navigator.xr;
+  if (!xr) {
     throw new Error('WebXR not available');
   }
 
@@ -963,6 +965,36 @@ export async function initAR(
     validateArCrashIsolationOptions(isolationOptions),
     callbacks
   );
+
+  // A failed start leaves nothing behind. The renderer and its canvas exist
+  // BEFORE the session is requested, and requestSession() rejects whenever
+  // the user declines the AR/camera prompt; left in place, they made every
+  // retry hit the re-entry guard above until a page reload (Tour Viewer
+  // "Try again", 2026-10-07; OsmDemo and AnchorStarter had each patched
+  // around it). endARSession() is the one teardown: with no XR session yet
+  // it only resets the module, with one it ends it. The host is NOT told a
+  // session ended: its initAR() rejects, so it never had one (webxr PR #559
+  // review - the Tour Viewer otherwise settled a visit that never began).
+  try {
+    await startArSession(xr, container, sessionFeatures);
+  } catch (err) {
+    activeSession.onSessionEnd = null;
+    try {
+      await endARSession();
+    } catch (cleanupErr) {
+      log.error('Teardown after a failed initAR() threw:', cleanupErr);
+    }
+    throw err;
+  }
+}
+
+/** {@link initAR} after its guard: build the renderer and scene, request
+ *  and wire the XR session, start the render loop. */
+async function startArSession(
+  xr: XRSystem,
+  container: HTMLElement,
+  sessionFeatures: SessionFeatureOptions
+): Promise<void> {
   const { sceneGraph } = activeSession;
 
   // G-7 (2026-07-10 quality review): apply the Chromium camera-access
@@ -1014,10 +1046,7 @@ export async function initAR(
     sessionFeatures
   );
 
-  const xrSession = await navigator.xr.requestSession(
-    'immersive-ar',
-    sessionOptions
-  );
+  const xrSession = await xr.requestSession('immersive-ar', sessionOptions);
   activeSession.xrSession = xrSession;
 
   // Handle session end — BOTH trigger paths funnel through this listener:

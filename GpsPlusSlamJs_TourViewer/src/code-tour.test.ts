@@ -7,6 +7,7 @@ import {
   resolveCodeTour,
   tourRelation,
 } from "./code-tour.js";
+import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
 
 /**
  * Why these tests matter (TourViewer scan-to-open plan §9 #2, #4, #6): in
@@ -48,6 +49,7 @@ describe("resolveCodeTour", () => {
       url: "https://h.test/t.zip",
       normalizedUrl: "https://h.test/t.zip",
       comparable: true,
+      levelId: await qrCodeId(launch("https://h.test/t.zip")),
     });
   });
 
@@ -156,5 +158,37 @@ describe("tourRelation", () => {
       tourRelation({ kind: "not-a-tour-code" }, "https://h.test/t.zip"),
     ).toBe("not-a-tour");
     expect(tourRelation({ kind: "unreadable" }, null)).toBe("not-a-tour");
+  });
+});
+
+/**
+ * Why these tests matter (K0 milestone review R6): a tour opened from a
+ * FILE is known by a content key, not a link, so its own printed code could
+ * never match it and the creator's panel said "This code is from another
+ * tour" about the tour's own poster. The tour's identity - the level files
+ * it carries, named by the code's own id - decides first.
+ */
+describe("tourRelation for a tour opened from a file", () => {
+  const FILE_KEY = "local-file:0123456789abcdef0123456789abcdef";
+
+  it("recognises the tour's own printed code by the level it carries", async () => {
+    const text = launch("https://h.test/t.zip");
+    const code = await resolveCodeTour(text, PROXY);
+    const levels = new Set([await qrCodeId(text)]);
+    expect(tourRelation(code, FILE_KEY, levels)).toBe("this-tour");
+  });
+
+  it("cannot tell any other code's tour, so it says unknown, never another tour", async () => {
+    const code = await resolveCodeTour(launch("https://h.test/t.zip"), PROXY);
+    expect(tourRelation(code, FILE_KEY, new Set())).toBe("unknown");
+  });
+
+  it("knows a link-opened tour's code by its level too, whatever link was printed", async () => {
+    const text = launch("https://other.example/renamed.zip");
+    const code = await resolveCodeTour(text, PROXY);
+    const levels = new Set([await qrCodeId(text)]);
+    expect(tourRelation(code, "https://h.test/t.zip", levels)).toBe(
+      "this-tour",
+    );
   });
 });

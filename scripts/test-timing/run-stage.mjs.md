@@ -19,7 +19,10 @@
   - Recording NEVER fails the gate: all timing errors are warnings; the
     spawned command's exit code is returned untouched.
   - Records only full-suite non-CI runs (`decideRecording`): any forwarded
-    arg or `CI` env ⇒ run executes but is not recorded.
+    arg or `CI` env ⇒ run executes but is not recorded. A run on a stage's
+    per-commit `fastGateCommand` (`gateBaseCommand` in `projects.mjs`) is
+    not recorded either: its duration is not comparable with the canonical
+    command's history (gate-speed plan 2026-10-04, G4).
   - Counts capture: vitest `--reporter=default --reporter=json
     --outputFile.json=<scratch>`; playwright `--reporter=list,json` +
     `PLAYWRIGHT_JSON_OUTPUT_NAME`. Parse failure ⇒ duration-only row.

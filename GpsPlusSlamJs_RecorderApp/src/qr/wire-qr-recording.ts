@@ -112,7 +112,7 @@ export interface WireQrRecordingOptions {
    * Read the session's alignment as it stands NOW, with the session's GPS
    * extent. The feeder reads it at every detection and every store change,
    * because the store keeps no history: a code is minted through the first
-   * alignment at or after its last sighting whose extent reaches 80 m, else
+   * alignment at or after its last sighting whose extent reaches 40 m (D34), else
    * through the alignment at save (owner decision D28, revised 2026-10-02).
    */
   readAlignment: QrSightingFeederDeps['readAlignment'];

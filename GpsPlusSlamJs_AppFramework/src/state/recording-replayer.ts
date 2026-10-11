@@ -60,6 +60,18 @@ export interface ReplayRecordingOptions {
    * an error.
    */
   readonly shouldContinue?: () => boolean;
+
+  /**
+   * Called after EACH dispatched action with the state it produced. For a
+   * caller that needs the state as it stood at a moment of the recording,
+   * not only at its end: the Tour Viewer places a recorded photo through the
+   * first settled alignment after it was taken (scan-pass plan S-D11). Keep
+   * it cheap: it runs once per action.
+   */
+  readonly onAction?: (
+    action: RecordedAction,
+    state: CombinedRootState
+  ) => void;
 }
 
 /**
@@ -103,6 +115,18 @@ export async function replayRecording(
   );
 }
 
+/** Dispatch one chunk, telling `onAction` the state after each action. */
+function dispatchChunk(
+  store: ReturnType<typeof createSlamAppStore>,
+  chunk: readonly RecordedAction[],
+  onAction: ReplayRecordingOptions['onAction']
+): void {
+  for (const action of chunk) {
+    store.dispatch(action);
+    onAction?.(action, store.getState());
+  }
+}
+
 /**
  * Replay ALREADY-LOADED actions into a fresh store — the dispatch half of
  * {@link replayRecording}, separated so a caller that must SCAN the stream
@@ -128,9 +152,11 @@ export async function replayActions(
     // Asked BEFORE dispatching, so an aborting caller pays at most the chunk
     // already in flight rather than the rest of the recording.
     if (options?.shouldContinue?.() === false) break;
-    for (const action of actions.slice(i, i + REPLAY_CHUNK_SIZE)) {
-      store.dispatch(action);
-    }
+    dispatchChunk(
+      store,
+      actions.slice(i, i + REPLAY_CHUNK_SIZE),
+      options?.onAction
+    );
     await new Promise((resolve) => setTimeout(resolve, 0));
     options?.onChunk?.(
       Math.min(i + REPLAY_CHUNK_SIZE, actions.length),

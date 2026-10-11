@@ -50,16 +50,19 @@ export interface ProbeResult {
 }
 
 /** Why an open could not be turned into a usable archive. `decideFallback`
- *  itself produces `missing`/`corrupt`/`unusable-link`; `'cors'` is produced
- *  by the orchestrator (`open-remote-archive.ts`) when `fetch` rejects before
- *  any HTTP status exists. A consumer with app-specific fatal causes of its
+ *  itself produces `missing`/`corrupt`/`unusable-link`; `'cors'` and
+ *  `'offline'` are produced by the orchestrator (`open-remote-archive.ts`)
+ *  when `fetch` rejects before any HTTP status exists, and `'too-large'`
+ *  when the archive is above its transport cap. A consumer with app-specific fatal causes of its
  *  own (e.g. "the file parsed but its contents were invalid") is expected to
  *  extend this union locally. */
 export type RangeProbeRejectCause =
   | 'unusable-link' // no size / opaque response — cannot range or read a body
   | 'cors' // cross-origin read blocked by the browser
   | 'corrupt' // truncated / garbage bytes / 416 on a non-empty archive
-  | 'missing'; // 404 or 410 — see `isDefinitivelyGone`
+  | 'missing' // 404 or 410 — see `isDefinitivelyGone`
+  | 'too-large' // above the transport cap (`archive-limits.ts`)
+  | 'offline'; // fetch rejected while the browser reports no network
 
 /**
  * Is this status the host saying the resource is DELETED, as opposed to

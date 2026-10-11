@@ -12,7 +12,20 @@
 - Public API (CLI): first arg = stage name (required; exit 2 when missing or
   when the cwd matches no configured project); remaining args are forwarded
   to the canonical command and mark the run filtered/unrecorded.
-- Invariants & assumptions: a leading literal `--` (pnpm forwarding style)
+- Invariants & assumptions:
+  - Every stage run takes the machine slot first (see
+    [machine-slot.mjs](machine-slot.mjs.md)); inside a gate it re-enters.
+    **Except a filtered unit-test run** (a vitest stage, `test:unit` or
+    `test:repo-config`, with file arguments): a 1-5 s TDD step must not queue
+    behind a browser run, so it prints
+    `machine slot: not taken (filtered unit-test run); set GATE_SLOT=take for a long sweep`
+    and runs at once. A long sweep run that way (10-25 min) sets
+    `GATE_SLOT=take` and queues like any heavy run. Filtered browser runs
+    (`pnpm run test:e2e <spec>`) still take it: they start Chromium. A
+    browser suite holds the slot for its whole run; to let other sessions in
+    between files, run it file by file. `GATE_SLOT_DIR=off` switches the
+    slot off for one run.
+  - A leading literal `--` (pnpm forwarding style)
   is stripped by `decideRecording`, so `pnpm run test:unit -- <file>` and
   `pnpm run test:unit <file>` behave identically.
 - Examples: `pnpm run lint` (recorded full run) ·

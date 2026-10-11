@@ -5,7 +5,12 @@
 // runs package scripts with cwd = the package directory). Forwarded args
 // (file filters etc.) make the run unrecorded and are appended to the
 // canonical command from projects.mjs.
-import { resolveProject, PROJECTS } from './projects.mjs';
+import {
+  holdMachineSlotForProcess,
+  resolveSlotDir,
+  stageRunTakesSlot,
+} from './machine-slot.mjs';
+import { getStage, resolveProject, PROJECTS } from './projects.mjs';
 import { runStage, WORKSPACE_ROOT } from './run-stage.mjs';
 
 const [stageName, ...forwardedArgs] = process.argv.slice(2);
@@ -20,6 +25,21 @@ if (!project) {
     `test-timing: no project configured for cwd "${process.cwd()}" — known: ${PROJECTS.map((p) => p.dir).join(', ')}`
   );
   process.exit(2);
+}
+
+// Every stage run takes the machine slot (inside a gate it re-enters), except
+// a filtered unit-test run, which opts in with GATE_SLOT=take (machine-slot.mjs).
+const slotRule = stageRunTakesSlot({
+  stage: getStage(project, stageName),
+  forwardedArgs,
+  env: process.env,
+});
+if (slotRule.take) {
+  await holdMachineSlotForProcess(
+    [`${stageName} in ${project.name}`, ...forwardedArgs].join(' ')
+  );
+} else if (resolveSlotDir(process.env) !== null) {
+  console.error(slotRule.reason);
 }
 
 const { exitCode } = await runStage(project, stageName, forwardedArgs);

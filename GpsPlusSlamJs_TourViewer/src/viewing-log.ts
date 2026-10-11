@@ -37,6 +37,7 @@ import type { AlignmentMatrix } from "./tour-authoring-actions.js";
 import {
   codeIgnored,
   codeLocked,
+  codeRestored,
   keepAliveChanged,
   tourPlaced,
   votesCast,
@@ -45,6 +46,11 @@ import {
 
 type CodeIgnoredInput = Omit<
   Parameters<typeof codeIgnored>[0],
+  "alignmentMatrix" | "arVisitIndex" | "atMs"
+>;
+
+type CodeRestoredInput = Omit<
+  Parameters<typeof codeRestored>[0],
   "alignmentMatrix" | "arVisitIndex" | "atMs"
 >;
 
@@ -69,6 +75,8 @@ export interface ViewingLog {
   placed(input: PlacedInput): void;
   /** The moved-code check's veto, after its recovery. */
   codeIgnored(input: CodeIgnoredInput): void;
+  /** A veto lifted on wider evidence (polish round C5). */
+  codeRestored(input: CodeRestoredInput): void;
   /** Wrap the AR entry's keep-alive so its state changes are logged; the
    *  wrapper forwards every call unchanged. */
   keepAlive(inner: QrVoteKeepAlive): QrVoteKeepAlive;
@@ -165,6 +173,16 @@ export function createViewingLog(deps: {
       if (!deps.enabled()) return;
       deps.dispatch(
         codeIgnored({
+          ...input,
+          alignmentMatrix: deps.alignmentMatrix(),
+          ...moment(),
+        }),
+      );
+    },
+    codeRestored(input) {
+      if (!deps.enabled()) return;
+      deps.dispatch(
+        codeRestored({
           ...input,
           alignmentMatrix: deps.alignmentMatrix(),
           ...moment(),

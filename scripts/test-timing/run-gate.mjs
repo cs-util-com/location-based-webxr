@@ -19,6 +19,7 @@ import {
   readLock,
   writeLock,
 } from './gate-lock.mjs';
+import { holdMachineSlotForProcess } from './machine-slot.mjs';
 import {
   resolveProject,
   PROJECTS,
@@ -110,6 +111,13 @@ function printSummaryTable() {
   }
 }
 
+// ONE QUEUE FOR THE MACHINE, before the tree lock (machine-slot.mjs). The slot
+// is the OUTER lock: it queues behind any other session's gate, sweep or
+// browser suite. The per-tree lock below is the INNER one and refuses rather
+// than waits, so the two cannot deadlock. A nested run (the cascade's package
+// gates) inherits the holder's token and re-enters at once.
+await holdMachineSlotForProcess(`pnpm test in ${project.name}`);
+
 /**
  * ONE GATE RUN PER WORKING TREE — see gate-lock.mjs for why this is a refusal
  * rather than a queue. Taken before any stage runs, so a second run is turned
@@ -197,7 +205,10 @@ if (lockDecision.overridden === true) {
   console.warn(`\n⚠ test-timing: ${lockDecision.reason}\n`);
 }
 
-process.on('exit', () => {
+// PREPENDED so the inner lock is freed before the machine slot, whose exit
+// handler was registered first: otherwise a run in this tree could take the
+// slot in between and find the tree still locked.
+process.prependListener('exit', () => {
   if (ownsLock) {
     clearLock(lockFile);
   }

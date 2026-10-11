@@ -14,6 +14,13 @@
   and the package.json chain scripts (`test:core`, `check:all` where
   configured).
 - Invariants & assumptions:
+  - **One queue for the machine, first.** Before the tree lock, the gate
+    takes the machine-wide slot `C:\gps\.e2e-slots\gate`; see
+    [machine-slot.mjs](machine-slot.mjs.md) (gate-speed plan 2026-10-04, G1).
+    It QUEUES behind another session's gate, sweep or browser suite, printing
+    who holds it; nested runs inherit `GATE_MACHINE_SLOT_TOKEN` and re-enter.
+    It is the OUTER lock and the tree lock the inner one; the tree lock's
+    exit handler is prepended so the inner lock is freed first.
   - **One gate run per working tree.** Before any stage runs, the gate takes an
     exclusive lock — see [gate-lock.mjs](gate-lock.mjs.md). A second independent
     run is refused in milliseconds (rather than after a `build` has already

@@ -32,15 +32,24 @@
  *   neighbours under the prefix when every existing entry carries one, and
  *   is otherwise written exactly as the caller spelled it. A mixed archive
  *   has no convention to guess at.
+ *
+ * The input is UNTRUSTED (K0 milestone review R1): the Tour Viewer's input
+ * is a tour from any link or a file someone handed the creator, so a
+ * carried entry can be a deflate bomb. The directory is read through a
+ * single-read cap, listed under the entry cap, and every carried entry is
+ * inflated under a `DecompressionBudget` - the open session's own when the
+ * caller passes it, so a Finish shares the tour's total.
  */
 
-import {
-  BlobReader,
-  BlobWriter,
-  ZipReader,
-  type FileEntry,
-} from '@zip.js/zip.js';
+import { ZipReader, type FileEntry } from '@zip.js/zip.js';
 
+import { DEFAULT_ARCHIVE_LIMITS } from './archive-limits.js';
+import {
+  DecompressionBudget,
+  listZipEntriesCapped,
+  readZipEntryBlob,
+} from './capped-zip-entries.js';
+import { LocalCacheByteSource } from './local-cache-byte-source.js';
 import {
   assertSafeNewZipPaths,
   assertWritableZipData,
@@ -48,6 +57,7 @@ import {
   ZipPackagingError,
   type ZipEntryInput,
 } from './pack-files-as-zip.js';
+import { ByteSourceReader } from './zip-byte-source-reader.js';
 
 /**
  * The prefix some zip tools put on every entry. An archive written that way
@@ -121,6 +131,17 @@ export interface RebuildZipOptions {
    * refused: the call would both drop and write it.
    */
   remove?: readonly string[];
+  /**
+   * The allowance every carried entry is inflated under (K0 milestone
+   * review R1). The Tour Viewer passes its open session's budget when the
+   * input IS that session's archive, so the Finish and the tour share one
+   * total (an entry already read is not charged again). Default: one sized
+   * from `zip` (`DecompressionBudget.forArchive`).
+   */
+  budget?: DecompressionBudget;
+  /** The central directory's entry cap; default
+   *  `DEFAULT_ARCHIVE_LIMITS.maxEntries`. */
+  maxEntries?: number;
 }
 
 /**
@@ -130,17 +151,26 @@ export interface RebuildZipOptions {
  *
  * @throws {ZipPackagingError} when `zip` is not a readable archive, when a
  *   NEW entry path is unsafe or duplicated or its data is not writable, or
- *   when writing fails. Nothing partial is ever returned.
+ *   when writing fails. Nothing partial is ever returned. A cap the input
+ *   passes (`ArchiveLimitError`) is its `cause`.
  */
 export async function rebuildZipWithEntries(
   zip: Blob,
   entries: readonly ZipEntryInput[],
   options: RebuildZipOptions = {}
 ): Promise<Blob> {
-  const reader = new ZipReader(new BlobReader(zip));
+  const reader = new ZipReader(
+    new ByteSourceReader(
+      new LocalCacheByteSource(zip),
+      DEFAULT_ARCHIVE_LIMITS.maxDirectoryBytes
+    )
+  );
+  const budget = options.budget ?? DecompressionBudget.forArchive(zip.size);
   try {
     const all = lastOccurrences(
-      (await reader.getEntries()).filter((e): e is FileEntry => !e.directory)
+      (await listZipEntriesCapped(reader, options.maxEntries)).filter(
+        (e): e is FileEntry => !e.directory
+      )
     );
     // Validate only the names this call INVENTS. A caller replacing an
     // existing entry has to name it, and the only name that works is the
@@ -230,7 +260,7 @@ export async function rebuildZipWithEntries(
     for (const entry of existing) {
       carried.push({
         path: entry.filename,
-        data: await entry.getData(new BlobWriter()),
+        data: await readZipEntryBlob(entry, budget, ''),
       });
       options.onProgress?.(carried.length, total);
     }

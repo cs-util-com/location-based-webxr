@@ -89,6 +89,7 @@ export {
   type ZipActionEntry,
   readZipEntries,
   loadActionsFromZip,
+  loadActionsFromEntries,
   loadSessionMetadata as loadSessionMetadataFromZip,
   loadSessionMetadataFromBlob,
   type GpsPathCoord,
@@ -163,6 +164,20 @@ export {
   type OpenedArchive,
   type OpenRemoteArchiveOptions,
 } from './open-remote-archive.js';
+
+// --- archive-limits + capped-zip-entries (zip-bomb caps, tour kit K0) ---
+export {
+  ArchiveLimitError,
+  DEFAULT_ARCHIVE_LIMITS,
+  type ArchiveLimitKind,
+  type ArchiveLimits,
+} from './archive-limits.js';
+export {
+  DecompressionBudget,
+  listZipEntriesCapped,
+  readZipEntryBlob,
+  readZipEntryText,
+} from './capped-zip-entries.js';
 
 // --- zip-byte-source-reader ---
 export { ByteSourceReader } from './zip-byte-source-reader.js';

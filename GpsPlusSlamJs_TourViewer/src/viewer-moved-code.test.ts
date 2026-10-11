@@ -263,11 +263,13 @@ function viewer(level: QrLevel = LEVEL, withCodeB = false) {
     n: number,
     e: number,
     extra: Partial<RecordGpsEventPayload> = {},
+    /** GPS error (north, east) m: the fix reads truth plus this. */
+    gpsBias: readonly [number, number] = [0, 0],
   ): void => {
     clock.nowMs = T0 + s * 1000;
     if (fixes === 0) arStore.dispatch(setZeroPos(ZERO));
     fixes += 1;
-    const g = calcGpsCoords(ZERO, [n, 400, e]);
+    const g = calcGpsCoords(ZERO, [n + gpsBias[0], 400, e + gpsBias[1]]);
     const payload: RecordGpsEventPayload = {
       odomPosition: raw([n, 1.4, e], new Quaternion()).position,
       odomRotation: [0, 0, 0, 1],
@@ -586,6 +588,68 @@ describe(
       expect(afterB).toBeGreaterThan(0);
       v.lock(T0 + s * 1000 + 100);
       expect(v.votesStored()).toBe(afterB);
+    });
+
+    // Why (polish round C5, owner decision Q-C5): a veto used to hold for
+    // the rest of the tour. It is re-judged now: once a wider walk reads the
+    // code consistent again, the code is used again - the ignored line
+    // goes, the lift is logged, and its next lock votes. Here the GPS that
+    // read the poster 40 m off turns biased by those 40 m (as a GPS bias
+    // that later clears would), so the evidence ends up consistent.
+    it("lifts the veto once wider evidence reads the code consistent, and the code places the tour again", () => {
+      const v = scannedAndWalked();
+      v.walk(1, 75);
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
+      for (let s = 76; s <= 420; s += 1) {
+        const a = (2 * Math.PI * s) / 60;
+        v.fixAt(
+          s,
+          PHYSICAL[0] + 25 * Math.cos(a),
+          PHYSICAL[1] + 25 * Math.sin(a),
+          {},
+          [0, -MOVE_EAST_M],
+        );
+      }
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(false);
+      expect(v.statusLine()).not.toContain(IGNORED_CODE_LINE);
+      const restored = v.logged.filter(
+        (a) => a.type === "tourViewing/codeRestored",
+      );
+      expect(restored).toHaveLength(1);
+      expect(restored[0]!.payload).toMatchObject({
+        text: TEXT,
+        levelId: LEVEL_ID,
+      });
+      const before = v.votesStored();
+      v.lock(T0 + 421_000);
+      expect(v.votesStored()).toBeGreaterThan(before);
+    });
+
+    // Why (the M0a review #1): an AR exit and re-entry ended the vetoed
+    // code's check, and nothing pinned a new one - the veto stuck for the
+    // rest of the tour again. The ignored code's next lock pins a probation
+    // check in the new entry, which lifts the veto on wider evidence.
+    it("re-judges a veto across an AR re-entry: the ignored code's lock starts a probation check", () => {
+      const v = scannedAndWalked();
+      v.walk(1, 75);
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(true);
+      endQrPipeline(v.ctx);
+      v.enter();
+      v.lock(T0 + 76_000);
+      for (let s = 77; s <= 460; s += 1) {
+        const a = (2 * Math.PI * s) / 60;
+        v.fixAt(
+          s,
+          PHYSICAL[0] + 25 * Math.cos(a),
+          PHYSICAL[1] + 25 * Math.sin(a),
+          {},
+          [0, -MOVE_EAST_M],
+        );
+      }
+      expect(v.ctx.ignoredCodes.has(LEVEL_ID)).toBe(false);
+      expect(
+        v.logged.filter((a) => a.type === "tourViewing/codeRestored"),
+      ).toHaveLength(1);
     });
 
     it("never vetoes a code that hangs where it was saved", () => {

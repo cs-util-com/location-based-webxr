@@ -102,7 +102,9 @@ describe("the scan gate and the content in the composed line (M5)", () => {
         percentReady: 40,
       },
     });
-    expect(line).toContain("Point the phone at the printed code");
+    expect(line).toContain(
+      "Point the phone at the tour's code (on the poster)",
+    );
     expect(line).not.toContain("Walk around");
   });
 
@@ -173,6 +175,19 @@ describe("arStatusLine - the fixed prefix", () => {
     expect(
       arStatusLine({ ...RUNNING_BASE, mode: "creator", arStatus: "starting" }),
     ).toBe("Creator mode — starting");
+  });
+
+  it("names the start failure's cause for the creator and ?debug=1 (U1 milestone review #1)", () => {
+    // Why: the start button became a plain "Try again"; without this line
+    // a creator read "error" with no cause anywhere.
+    expect(
+      arStatusLine({
+        ...RUNNING_BASE,
+        mode: "creator",
+        arStatus: "error",
+        arError: "Location permission is required for GPS AR.",
+      }),
+    ).toBe("Creator mode — error: Location permission is required for GPS AR.");
   });
 
   it("keeps the e2e-pinned running prefix exactly", () => {

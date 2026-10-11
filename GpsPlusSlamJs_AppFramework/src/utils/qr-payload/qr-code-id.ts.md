@@ -19,7 +19,9 @@ author has to track. Decision record:
   - **Output:** lowercase hex, `QR_CODE_ID_LENGTH` characters.
   - **Throws `TypeError`** when `text` is not a string.
   - **Throws `Error`** when `crypto.subtle` is absent — i.e. an insecure
-    context. It is async for this reason alone: Web Crypto has no sync digest.
+    context (the message is `sha256Hex`'s: the digest is the package's one
+    `../sha256-hex.ts`, DEC-H3). It is async for this reason alone: Web
+    Crypto has no sync digest.
 
 ## Invariants & assumptions
 

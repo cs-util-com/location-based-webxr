@@ -28,7 +28,7 @@ framework does not own button DOM (unlike three.js' `ARButton`).
   is the ONLY way controller-driven apps wire those callbacks. Every field
   reaches `initAR` unchanged **except `onSessionEnd`, which the controller
   wraps** (see "Session-end awareness" below); the app's own callback is
-  always chained.
+  chained in every status but `starting`.
 
 ### `EnableGpsArStatus`
 
@@ -48,7 +48,9 @@ controller to `ready` — see "Session-end awareness".
   dead-ended at "AR running") and the GPS/orientation watches kept running.
   In any other status the wrapper is inert: the `enable()` rollback (during
   `starting`) and `disable()` (during `stopping`) already own their teardown.
-  The app's own `onSessionEnd` is always chained, whatever the status. The
+  The app's own `onSessionEnd` is chained in every status but `starting`:
+  an end during `starting` is the rollback of a start `enable()` reports as
+  failed, so the app never had that session (2026-10-08). The
   controller never calls `endARSession` from the wrapper — the session is
   already gone.
 - **Minimal default permission set:** the default path requests only WebXR

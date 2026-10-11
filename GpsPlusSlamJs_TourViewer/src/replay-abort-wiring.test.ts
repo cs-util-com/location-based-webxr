@@ -16,6 +16,10 @@
  * behavioural test of either module can see. If the call is ever refactored
  * out of `viewer-placement.ts`, this fails loudly rather than silently
  * losing the abort.
+ *
+ * Since scan-pass S1 the replay itself lives in `capture-bake.ts` (the
+ * Finish and the viewer share it), whose own test proves a caller's stop
+ * ends it; the call site this pins is the viewer's `bakeCaptureSpots`.
  */
 
 import { readFileSync } from "node:fs";
@@ -28,31 +32,31 @@ const placementSource = readFileSync(
 );
 
 describe("the tour replay honours the abort seam", () => {
-  it("passes shouldContinue to replayActions", () => {
+  it("passes shouldContinue to the bake that replays the walk", () => {
     const call = placementSource.slice(
-      placementSource.indexOf("await replayActions(actions, {"),
+      placementSource.indexOf("await bakeCaptureSpots(current, {"),
     );
     expect(call).not.toBe("");
     // Scoped to the option object of that one call, so an unrelated
     // `shouldContinue` elsewhere in the file cannot make this pass.
-    const options = call.slice(0, call.indexOf("}))"));
+    const options = call.slice(0, call.indexOf("});"));
     expect(options).toContain("shouldContinue:");
     expect(options).toContain("planesRunGeneration");
   });
 
   it("bails without writing a status when the run was superseded", () => {
-    // An aborted replay returns a PARTIAL state, which `assessReplayedJoin`
-    // declines for a reason that names missing GPS data — a wrong label
-    // written into a UI a newer run already owns.
+    // An aborted replay returns a PARTIAL state, which the bake declines
+    // for a reason that names missing GPS data — a wrong label written into
+    // a UI a newer run already owns.
     const afterReplay = placementSource.slice(
-      placementSource.indexOf("})) as unknown as ReplayedJoinState;"),
+      placementSource.indexOf("await bakeCaptureSpots(current, {"),
     );
     const beforeVerdict = afterReplay.slice(
       0,
-      afterReplay.indexOf("const verdict = assessReplayedJoin(state);"),
+      afterReplay.indexOf('if (bake.kind === "declined")'),
     );
     expect(beforeVerdict).toContain(
-      "if (generation !== ctx.planesRunGeneration) return false;",
+      "if (generation !== ctx.planesRunGeneration) return null;",
     );
   });
 });

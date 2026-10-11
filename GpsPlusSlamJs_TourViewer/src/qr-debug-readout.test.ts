@@ -168,6 +168,37 @@ describe("debugReadoutLines - the moved-code checks (D20, M5c)", () => {
   // ignored is the check's live numbers: the fitted offset and turn, the
   // evidence behind them, whether the turn check runs and the verdict so far,
   // plus which codes are already ignored.
+  // Why (polish round C5, the M0a review #3): the line must show what the
+  // turn check compares against now, and that a code is vetoed and when the
+  // veto lifts - "consistent" next to "ignored (moved)" read as a
+  // contradiction.
+  it("shows the turn threshold and, for a vetoed code, the spread that lifts it", () => {
+    const lines = debugReadoutLines({
+      status: "tracking",
+      unknownCode: null,
+      unusableCode: null,
+      tallies: null,
+      movedCodeChecks: [
+        {
+          text: URL_A,
+          levelId: "a",
+          magnitudeM: 2.4,
+          yawDeg: -45.7,
+          spanS: 168,
+          spreadM: 2.2,
+          samples: 169,
+          turnChecked: true,
+          verdict: "consistent",
+          turnThresholdDeg: 188.4,
+          liftsAtSpreadM: 4.3,
+        },
+      ],
+    });
+    expect(lines).toContain(
+      "moved-code check …abcdefgh&n=1: |D| 2.4 m, yaw -45.7°, 168 s, spread 2.2 m, 169 fixes, turn check on (> 188°), consistent, vetoed (lifts at spread 4.3 m)",
+    );
+  });
+
   it("adds one line per live check and one per ignored code", () => {
     expect(
       debugReadoutLines({
@@ -196,5 +227,54 @@ describe("debugReadoutLines - the moved-code checks (D20, M5c)", () => {
       "moved-code check …abcdefgh&n=1: |D| 12.3 m, yaw -3.2°, 46 s, spread 4.0 m, 90 fixes, turn check on, undecided",
       "ignored (moved): …abcdefgh&n=2",
     ]);
+  });
+
+  // Why (polish round C4): indoors the owner saw the content drift and
+  // could not tell whether GPS was poor - nothing showed its quality in
+  // viewer AR. With ?debug=1 the block now says how good the GPS is and
+  // how far its heading can be off (the heading model the turn checks use).
+  it("shows the live GPS quality: accuracy, spread, fixes and the heading sigma", () => {
+    const lines = debugReadoutLines({
+      status: "tracking",
+      unknownCode: null,
+      unusableCode: null,
+      tallies: null,
+      gps: { accuracyM: 8.3, extentM: 4.3, fixes: 169 },
+    });
+    expect(lines).toContain(
+      "gps: ±8.3 m median, extent 4.3 m over 169 fixes, heading ±63°",
+    );
+  });
+
+  it("says the GPS quality is unknown before a fix", () => {
+    const lines = debugReadoutLines({
+      status: null,
+      unknownCode: null,
+      unusableCode: null,
+      tallies: null,
+      gps: { accuracyM: null, extentM: null, fixes: 0 },
+    });
+    // ...and the block still says no code was evaluated (the GPS line must
+    // not swallow that line).
+    expect(lines).toEqual([
+      "qr: off",
+      "gps: no fix yet",
+      "no code evaluated yet",
+    ]);
+  });
+
+  // Why (polish round C7): the save button lives outside the AR overlay, so
+  // a visitor recording with ?debug=1 found no way to save during AR.
+  it("tells a recording visitor to exit AR to save the recording", () => {
+    const lines = debugReadoutLines({
+      status: null,
+      unknownCode: null,
+      unusableCode: null,
+      tallies: null,
+      recordingOn: true,
+    });
+    expect(lines).toContain(
+      'recording: exit AR, then "Save the recording" below',
+    );
   });
 });

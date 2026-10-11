@@ -1,4 +1,6 @@
 // @ts-check
+import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
+import { parseTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { expect } from "@playwright/test";
 
 import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
@@ -13,7 +15,7 @@ import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
 
 /**
  * @param {import('@playwright/test').Page} page
- * @param {{ shareRoute?: boolean, printSizeM?: number }} [options]
+ * @param {{ shareRoute?: boolean, printSizeM?: number, saveOutcome?: boolean }} [options]
  *   `printSizeM`: what the print-size estimate reports (QR size consensus
  *   plan S3a) - one new independent window per call, so the creator's offer
  *   appears after three detections; absent = the estimate refuses.
@@ -25,8 +27,11 @@ import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
 export async function installTourViewerArFakes(page, options = {}) {
   const shareRoute = options.shareRoute === true;
   const printSizeM = options.printSizeM ?? null;
+  // The first save's outcome: the Finish saves by itself (field test 2,
+  // F4), so a spec that needs it to fail says so before the page loads.
+  const saveOutcome = options.saveOutcome ?? true;
   await page.addInitScript(
-    ({ shareRoute, printSizeM }) => {
+    ({ shareRoute, printSizeM, saveOutcome }) => {
       const test = {
         /** @type {{ hasCameraFrame: boolean, isolationOptions: unknown }[]} */
         initARCalls: [],
@@ -103,10 +108,10 @@ export async function installTourViewerArFakes(page, options = {}) {
          *  reports (false = the picker was dismissed). */
         downloads:
           /** @type {{ filename: string, blob: Blob, seam?: "share-or-download" | "download" }[]} */ ([]),
-        saveOutcome: true,
-        /** Which route the zip hand-off should take. False (the default)
-         *  keeps every existing test on the save path; true makes the app
-         *  label its buttons "share" and report the share copy. */
+        saveOutcome,
+        /** Whether the device could share files. The tour zip is always
+         *  saved (field test 2, F4); the starter zip and the recording
+         *  still share where they can, and label their buttons so. */
         shareRoute,
         /** Hold downloadPdf open so a test can observe the busy state. */
         holdPdfSave: false,
@@ -145,6 +150,17 @@ export async function installTourViewerArFakes(page, options = {}) {
         },
         /** Photos "encoded" by the fake (a 3-byte stand-in per capture). */
         encodedFrames: 0,
+        /** The stations' HUD (tour kit plan K4): the targets getter the
+         *  page handed the last HUD it started, how many it started, and
+         *  whether that one was disposed. */
+        hud: /** @type {null | { getTargets: () => any[], disposed: boolean }} */ (
+          null
+        ),
+        hudStarts: 0,
+        /** Every source the stories' one audio element was asked to play
+         *  (K4), and how many audio elements the page made. */
+        audioPlays: /** @type {string[]} */ ([]),
+        audioElements: 0,
         /** The scan gate's escape clock (M5): armed timers the spec fires. */
         timers:
           /** @type {{ fn: () => void, ms: number, cancelled: boolean }[]} */ ([]),
@@ -427,11 +443,38 @@ export async function installTourViewerArFakes(page, options = {}) {
             timer.cancelled = true;
           };
         },
-        createLabel: (text) => {
-          // A bare three Object3D stands in for the canvas-backed sprite.
-          const object = { name: `label:${text}`, position: { set() {} } };
-          return { object, dispose() {} };
+        // The stations' HUD (K4): no camera here, so the spec reads the
+        // targets the page would point at.
+        createWayfindingHud: (options) => {
+          test.hudStarts += 1;
+          const handle = { getTargets: options.getTargets, disposed: false };
+          test.hud = handle;
+          return {
+            dispose() {
+              handle.disposed = true;
+            },
+          };
         },
+        // The stories' audio element (K4): headless Chromium cannot play
+        // the fixture's bytes, so this records what would play.
+        createAudioElement: () => {
+          test.audioElements += 1;
+          return {
+            src: "",
+            onended: null,
+            play() {
+              test.audioPlays.push(this.src);
+              return Promise.resolve();
+            },
+            pause() {},
+          };
+        },
+        // No `loadGlbModel` fake: the real seam runs three's GLTFLoader on
+        // the fixture's minimal `.glb`.
+        // No `createLabel` fake: Chromium has the canvas the real text
+        // sprite needs. A plain-object stand-in was REFUSED by three's
+        // Object3D.add (only a console error), so no spec saw a pin label
+        // in the scene graph.
         stopCameraFrameCapture: () => {
           test.stopCaptureCalls += 1;
         },
@@ -443,7 +486,7 @@ export async function installTourViewerArFakes(page, options = {}) {
         },
       };
     },
-    { shareRoute, printSizeM },
+    { shareRoute, printSizeM, saveOutcome },
   );
 }
 
@@ -491,8 +534,12 @@ export async function enterArAndMeasure(page) {
     )
     .toMatch(/waiting for GPS alignment/i);
   await seedAlignment(page);
-  await expect(page.getByTestId("setup-mint")).toBeEnabled({ timeout: 10000 });
-  await page.getByTestId("setup-mint").click();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    /Code measured/,
+    {
+      timeout: 10000,
+    },
+  );
   await expect(page.getByTestId("setup-pin")).toBeEnabled();
 }
 
@@ -533,4 +580,113 @@ export async function seedAlignment(page) {
       });
     }
   });
+}
+
+/** Metres to degrees at the fakes' zero (47.5, 8.7). */
+const DEG_PER_M_LAT = 8.9832e-6;
+const DEG_PER_M_LON = 1.32966e-5;
+
+/**
+ * One device fix with the phone `north`/`east` metres from the zero in
+ * GPS-world terms: the fix reads that spot, and the AR pose is that spot
+ * taken back through the store's CURRENT alignment (whatever the code's
+ * votes made of it), so the camera stands exactly there.
+ */
+export async function standAt(page, north, east, second) {
+  await page.evaluate(
+    ({ north, east, lat, lon, timestamp }) => {
+      const test = /** @type {any} */ (window).__tourViewerTest;
+      const m =
+        test.alignmentStore.getState().gpsData?.gpsEvents?.alignmentMatrix;
+      const a =
+        m != null && m.length === 16
+          ? Array.from(m)
+          : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+      // World NUE -> odometry NUE: the rigid inverse R^T (w - t).
+      const d = [north - a[12], 1.4 - a[13], east - a[14]];
+      const n = a[0] * d[0] + a[1] * d[1] + a[2] * d[2];
+      const u = a[4] * d[0] + a[5] * d[1] + a[6] * d[2];
+      const e = a[8] * d[0] + a[9] * d[1] + a[10] * d[2];
+      test.emitGps({
+        lat,
+        lon,
+        accuracy: 4,
+        timestamp,
+        arPosition: [e, u, -n], // raw WebXR: x East, y Up, z South
+      });
+    },
+    {
+      north,
+      east,
+      lat: 47.5 + north * DEG_PER_M_LAT,
+      lon: 8.7 + east * DEG_PER_M_LON,
+      timestamp: 1_790_000_000_000 + second * 1000,
+    },
+  );
+}
+
+/** Every file entry's name, and each JSON entry's text, of a zip's bytes. */
+export async function readZip(bytes) {
+  const reader = new ZipReader(new BlobReader(new Blob([bytes])));
+  const names = [];
+  const json = {};
+  for (const entry of await reader.getEntries()) {
+    if (entry.directory) continue;
+    names.push(entry.filename);
+    if (entry.filename.endsWith(".json")) {
+      json[entry.filename] = await entry.getData(new TextWriter());
+    }
+  }
+  await reader.close();
+  return { names, json };
+}
+
+/** The level files (`qr/*.json`) of a zip, by entry name, as text. */
+export async function levelTexts(bytes) {
+  const { json } = await readZip(bytes);
+  return Object.fromEntries(
+    Object.entries(json).filter(([name]) => name.startsWith("qr/")),
+  );
+}
+
+/** Entry names, the manifest and the level files of the n-th downloaded zip. */
+export async function downloadedZip(page, index) {
+  const data = await page.evaluate(async (i) => {
+    const d = /** @type {any} */ (window).__tourViewerTest.downloads[i];
+    return Array.from(new Uint8Array(await d.blob.arrayBuffer()));
+  }, index);
+  const bytes = new Uint8Array(data);
+  const { names, json } = await readZip(bytes);
+  return {
+    names,
+    manifest: parseTourManifest(JSON.parse(json["tour.json"])),
+    levels: await levelTexts(bytes),
+  };
+}
+
+/**
+ * Finish, then download: the zip lands in the fake's downloads as the
+ * `index`-th. The Finish button is disabled while the zip is rebuilt, so
+ * waiting for it to leave that state is waiting for THIS rebuild - a second
+ * Finish finds the first one's download button already live. It leaves it
+ * enabled when work remains, or hidden when nothing is left to write
+ * (code book plan M4d: an unchanged stored code is not work).
+ */
+export async function finishAndDownload(page, index) {
+  const finish = page.getByTestId("setup-finish");
+  await finish.click();
+  await expect
+    .poll(async () => (await finish.isHidden()) || (await finish.isEnabled()), {
+      timeout: 30000,
+    })
+    .toBe(true);
+  await expect(page.getByTestId("finish-block")).toBeVisible();
+  // The Finish saves the zip by itself (field test 2, F4).
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => /** @type {any} */ (window).__tourViewerTest.downloads.length,
+      ),
+    )
+    .toBe(index + 1);
 }

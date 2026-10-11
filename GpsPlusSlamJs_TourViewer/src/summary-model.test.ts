@@ -225,6 +225,10 @@ describe("buildSummaryModel", () => {
     expect(text).toMatch(/What visitors get: Walk further from the code\./);
     expect(text).toMatch(/What your visits now suggest: Good\./);
     expect(text).toMatch(/3 visits \(the best 2 for the position\)/);
+    // UI round 1 U3 removed the Replace button; the advice must name what
+    // improves the position now (code book plan review #13).
+    expect(text).toMatch(/improves on its own/);
+    expect(text).not.toMatch(/Replace the code/);
   });
 
   // Why this test matters (authoring plan §3.6, M5b; §7j #12): after the

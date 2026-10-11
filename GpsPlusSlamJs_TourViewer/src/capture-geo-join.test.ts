@@ -7,6 +7,7 @@ import {
   assessReplayedJoin,
   preflightCaptureJoin,
   computeCaptureGeoJoin,
+  createCapturePickTracker,
   type ReplayedJoinState,
 } from "./capture-geo-join";
 
@@ -367,5 +368,108 @@ describe("computeCaptureGeoJoin — captures it must refuse to place", () => {
     const poses = computeCaptureGeoJoin(baseState());
     expect(poses).toHaveLength(1);
     expect(poses[0]?.geo.altitude).toBe(0);
+  });
+});
+
+describe("createCapturePickTracker - each photo through the first settled alignment after it (S-D11)", () => {
+  // Why these tests matter (scan-pass plan S-D11, D33's rule for photos): a
+  // photo taken early on a long walk placed through the END alignment is
+  // off by as much as the walk drifted (D33 measured 8.4 m at 500 m with 1 %
+  // drift, against 1.2 m through the first settled one). The tracker must
+  // pick, per photo, the first alignment at or after the photo whose GPS
+  // extent reached the floor, never the final one when a settled one came
+  // earlier, and must never move a pick once it settled.
+  const capture = (imageFile: string) => ({
+    type: "gpsData/add2dImage",
+    payload: { imageFile },
+  });
+  const tick = { type: "gpsData/recordGpsEvent", payload: {} };
+  const extents = new WeakMap<object, number>();
+  function stateAt(matrix: readonly number[] | null, extentM: number) {
+    const state = {
+      gpsData:
+        matrix === null
+          ? null
+          : {
+              zero: { lat: 47.5, lon: 8.7 },
+              gpsEvents: {
+                gpsPositions: [],
+                alignmentMatrix: matrix,
+                alignmentRotation: [0, 0, 0, 1] as const,
+                gpsAccuracyMedian: 4,
+              },
+              odometryPath: { points: [] },
+            },
+    };
+    extents.set(state, extentM);
+    return state;
+  }
+  const tracker = () =>
+    createCapturePickTracker({
+      extentOf: (state) => extents.get(state) ?? 0,
+    });
+
+  it("moves an early photo's pick to the first settled alignment, then stops", () => {
+    const t = tracker();
+    t.observe(capture("images/early.jpg"), stateAt(translation(1, 0, 0), 10));
+    t.observe(tick, stateAt(translation(2, 0, 0), 25));
+    t.observe(tick, stateAt(translation(3, 0, 0), 45)); // first settled
+    t.observe(tick, stateAt(translation(9, 0, 0), 400)); // the drifted end
+    expect(t.alignmentFor("images/early.jpg")?.matrix).toEqual(
+      translation(3, 0, 0),
+    );
+  });
+
+  it("keeps a photo taken after the walk settled on its own moment", () => {
+    const t = tracker();
+    t.observe(tick, stateAt(translation(3, 0, 0), 60));
+    t.observe(capture("images/late.jpg"), stateAt(translation(4, 0, 0), 70));
+    t.observe(tick, stateAt(translation(9, 0, 0), 400));
+    expect(t.alignmentFor("images/late.jpg")?.matrix).toEqual(
+      translation(4, 0, 0),
+    );
+  });
+
+  it("falls back to the last usable alignment when the walk never settles", () => {
+    const t = tracker();
+    t.observe(capture("images/short.jpg"), stateAt(translation(1, 0, 0), 5));
+    t.observe(tick, stateAt(translation(2, 0, 0), 12));
+    t.observe(tick, stateAt(null, 30)); // a moment without an alignment
+    expect(t.alignmentFor("images/short.jpg")?.matrix).toEqual(
+      translation(2, 0, 0),
+    );
+  });
+
+  it("knows nothing of a photo it never saw", () => {
+    expect(tracker().alignmentFor("images/none.jpg")).toBeUndefined();
+  });
+
+  it("computeCaptureGeoJoin refuses a picked alignment that never solved (identity) and uses the final one", () => {
+    // Why (S1 milestone review #6): the store's alignment starts as the
+    // IDENTITY, which the maturity rule counts as usable once a zero
+    // exists. A walk whose GPS extent reaches the floor before the first
+    // solve would otherwise pick it and place that photo at raw odometry
+    // metres from the zero, baked into tour.json for good.
+    const state = baseState({ matrix: translation(9, 0, 0) });
+    const [viaPick] = computeCaptureGeoJoin(state, () => ({
+      matrix: translation(0, 0, 0),
+      rotation: [0, 0, 0, 1] as const,
+    }));
+    const north = (lat: number) => (lat - 47.5) * 111_320;
+    expect(north(viaPick!.geo.lat)).toBeCloseTo(10, 0);
+  });
+
+  it("computeCaptureGeoJoin places a photo through its picked alignment, not the final one", () => {
+    const state = baseState({ matrix: translation(9, 0, 0) });
+    const picked = {
+      matrix: translation(3, 0, 0),
+      rotation: [0, 0, 0, 1] as const,
+    };
+    const [viaFinal] = computeCaptureGeoJoin(state);
+    const [viaPick] = computeCaptureGeoJoin(state, () => picked);
+    // Final: odom [1,0,0] + 9 m N = 10 m North; picked: 1 + 3 = 4 m North.
+    const north = (lat: number) => (lat - 47.5) * 111_320;
+    expect(north(viaFinal!.geo.lat)).toBeCloseTo(10, 0);
+    expect(north(viaPick!.geo.lat)).toBeCloseTo(4, 0);
   });
 });

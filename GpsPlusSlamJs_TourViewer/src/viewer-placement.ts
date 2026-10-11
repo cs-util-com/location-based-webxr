@@ -11,8 +11,9 @@
  * 2026-09-28-0953 §3.6, D20, M5c; `moved-code-check.ts`): on each new device
  * fix in the store. A code read as moved is VETOED - its keep-alive stops,
  * every vote is taken back (`ViewerVoteSink.retractVotes`), so the content
- * moves once to where GPS puts it; its later locks are ignored for the rest
- * of the tour; the gate and the line say so; the viewing log records why.
+ * moves once to where GPS puts it; its later locks are ignored until wider
+ * evidence lifts the veto (polish round C5); the gate and the line say so;
+ * the viewing log records why.
  */
 
 import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
@@ -22,7 +23,6 @@ import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import {
   recordGpsEvent,
   recordQrDetection,
-  replayActions,
   selectGpsPositions,
   selectOdometryPositions,
   selectQrFusedEntries,
@@ -30,16 +30,16 @@ import {
   selectZeroReference,
   type RecordGpsEventPayload,
 } from "gps-plus-slam-app-framework/state";
+import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { Texture } from "three";
 
-import {
-  assessReplayedJoin,
-  computeCaptureGeoJoin,
-  preflightCaptureJoin,
-  type ReplayedJoinState,
-} from "./capture-geo-join.js";
+import type { TourCaptureSpots } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { bakeCaptureSpots, posesOfCaptureSpots } from "./capture-bake.js";
+import { entriesForVisitor } from "./tour-read-set.js";
+import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
+import type { CaptureWorldPose } from "./capture-geo-join.js";
 import { renderTourObjects } from "./content-placement.js";
 import { placeCapturedImagePlanes, placeImagePlanes } from "./image-planes.js";
 import type { ViewerMode } from "./mode.js";
@@ -47,6 +47,7 @@ import {
   createMovedCodeChecks,
   type MovedCodeChecks,
   type MovedCodeVerdict,
+  type RestoredCode,
 } from "./moved-code-check.js";
 import { describeOpenError } from "./open-errors.js";
 import { tallyEvaluation, type FusedTallies } from "./qr-debug-readout.js";
@@ -183,6 +184,45 @@ export function createViewerPlacement(deps: {
   /** The text of the latest detection: the code a lock reports on (the
    *  controller reports a frame's detection before its lock). */
   let lastDetectedText: string | null = null;
+  /** That detection's pose (raw WebXR): an ignored code's lock computes no
+   *  fused pose, so its probation check is pinned on this. */
+  let lastDetectedPose: Pose | null = null;
+
+  /**
+   * An ignored code locked (polish round C5, the M0a review #1): an AR exit,
+   * a frame change, or a veto read after a frame change ends the vetoed
+   * code's check, and an ignored code casts no votes, so nothing would pin a
+   * new one and the veto would hold for the tour again. Its lock pins a
+   * probation check in the current entry and frame instead, starting vetoed
+   * at the spread the veto was read on: it can only lift the veto.
+   */
+  function probationPin(text: string): void {
+    const levelId = ctx.levelIdByText.get(text);
+    const ignored =
+      levelId === undefined ? undefined : ctx.ignoredCodes.get(levelId);
+    const level = ctx.levelByText.get(text);
+    const checks = ctx.movedCodeChecks;
+    if (
+      levelId === undefined ||
+      ignored === undefined ||
+      level === undefined ||
+      level === null ||
+      checks === null ||
+      lastDetectedPose === null ||
+      lastDetectedText !== text
+    ) {
+      return;
+    }
+    checks.pin({
+      text,
+      levelId,
+      level,
+      qrPoseWorld: lastDetectedPose,
+      atMs: now(),
+      zero: selectZeroReference(arStore.getState()),
+      vetoSpreadM: ignored.vetoSpreadM,
+    });
+  }
 
   const ignoredLevelIds = (): ReadonlySet<string> =>
     new Set(ctx.ignoredCodes.keys());
@@ -306,6 +346,32 @@ export function createViewerPlacement(deps: {
       const id = ctx.levelIdByText.get(text);
       return id !== undefined && ctx.ignoredCodes.has(id);
     };
+    /** The scan gate's part of a lock. */
+    const gateOnLock = (level: QrLevel, hasVoted: boolean): void => {
+      // The gate passes on the LOCK of a lockable level (M5; plan review
+      // #1) whose code has cast votes: a lock before the store takes
+      // votes, or while the pose converges, corrected nothing, and
+      // passing on it placed the content through GPS alone while the
+      // line said the code had worked (authoring plan 2026-09-28-0953
+      // §2.2 B3). The escape button still passes a gate no vote reaches.
+      if (!hasVoted || !isLockableLevel(level)) return;
+      if (ctx.scanGate.kind === "scanning") {
+        passGate("code", lastDetectedText);
+        return;
+      }
+      // A working code after a veto (M5c review M1): the gate that said
+      // "code ignored" names this code again.
+      if (
+        ctx.scanGate.kind === "passed" &&
+        ctx.scanGate.via === "ignored" &&
+        lastDetectedText !== null &&
+        !isIgnored(lastDetectedText)
+      ) {
+        ctx.scanGate = { kind: "passed", via: "code" };
+        ctx.scanGateCodeText = lastDetectedText;
+        hooks.renderArStatus();
+      }
+    };
     ctx.qrController = createQrTrackingController(
       buildViewerControllerConfig({
         frontEnd,
@@ -327,6 +393,7 @@ export function createViewerPlacement(deps: {
           if (!live()) return;
           ctx.viewerIgnoredText = text;
           markGateIgnored(text);
+          probationPin(text);
           hooks.renderArStatus();
         },
         // The check pins a code on the pose its first voted lock used.
@@ -359,6 +426,7 @@ export function createViewerPlacement(deps: {
         resolveStablePose: (text) => fusedPose.resolve(text),
         recordDetection: (event) => {
           lastDetectedText = event.text;
+          lastDetectedPose = event.qrPoseWorld;
           ctx.viewerUnknownCode = null; // a level-carrying detection supersedes it
           ctx.viewerUnusableCode = null;
           ctx.latestReprojectionPx = event.reprojectionErrorPx;
@@ -380,29 +448,17 @@ export function createViewerPlacement(deps: {
           }
         },
         onLocked: (level, hasVoted) => {
-          // The gate passes on the LOCK of a lockable level (M5; plan review
-          // #1) whose code has cast votes: a lock before the store takes
-          // votes, or while the pose converges, corrected nothing, and
-          // passing on it placed the content through GPS alone while the
-          // line said the code had worked (authoring plan 2026-09-28-0953
-          // §2.2 B3). The escape button still passes a gate no vote reaches.
-          if (!hasVoted || !isLockableLevel(level)) return;
-          if (ctx.scanGate.kind === "scanning") {
-            passGate("code", lastDetectedText);
-            return;
-          }
-          // A working code after a veto (M5c review M1): the gate that said
-          // "code ignored" names this code again.
-          if (
-            ctx.scanGate.kind === "passed" &&
-            ctx.scanGate.via === "ignored" &&
-            lastDetectedText !== null &&
-            !isIgnored(lastDetectedText)
-          ) {
-            ctx.scanGate = { kind: "passed", via: "code" };
-            ctx.scanGateCodeText = lastDetectedText;
-            hooks.renderArStatus();
-          }
+          gateOnLock(level, hasVoted);
+          // A station's code (tour kit plan K4), AFTER the gate: the lock
+          // that passes it may also find the station the code anchors. Any
+          // lock of a code the viewer trusts counts - an ignored code
+          // reaches `onIgnoredLock` instead, and the guide checks the veto
+          // again.
+          const lockedId =
+            lastDetectedText === null
+              ? undefined
+              : ctx.levelIdByText.get(lastDetectedText);
+          if (lockedId !== undefined) hooks.stationCodeLocked(lockedId);
         },
         onError: (message) => {
           errorBox.textContent = `QR tracking failed: ${message}`;
@@ -512,7 +568,7 @@ export function createViewerPlacement(deps: {
    * dispatches of the veto's own recovery are not judged again.
    */
   function startMovedCodeChecks(): MovedCodeChecks {
-    const checks = createMovedCodeChecks();
+    const checks = createMovedCodeChecks({ onRestored: restoreMovedCode });
     ctx.movedCodeChecks = checks;
     const frameEpoch = (): number =>
       arStore.getState().qrDetected.frameEpoch ?? 0;
@@ -555,8 +611,8 @@ export function createViewerPlacement(deps: {
   }
 
   /**
-   * The veto (owner decision 2026-10-02): the code is ignored for the rest
-   * of the tour; its keep-alive stops; every vote is taken back - the GPS
+   * The veto (owner decision 2026-10-02; re-judged since polish round C5,
+   * `restoreMovedCode`): the code is ignored; its keep-alive stops; every vote is taken back - the GPS
    * history reset and the device fixes re-fed with the soft keys off (the
    * M5a arm that lands on the GPS answer), so the content moves ONCE; the
    * gate and the line say the code is ignored; the viewing log records the
@@ -564,7 +620,10 @@ export function createViewerPlacement(deps: {
    */
   function vetoMovedCode(verdict: MovedCodeVerdict): void {
     if (ctx.ignoredCodes.has(verdict.levelId)) return;
-    ctx.ignoredCodes.set(verdict.levelId, { text: verdict.text });
+    ctx.ignoredCodes.set(verdict.levelId, {
+      text: verdict.text,
+      vetoSpreadM: verdict.evidence.spreadM,
+    });
     const keepAlive = ctx.viewerKeepAlive;
     const hold = keepAlive?.phase(now());
     if (
@@ -591,6 +650,24 @@ export function createViewerPlacement(deps: {
     });
     ctx.viewerIgnoredText = verdict.text;
     markGateIgnored(verdict.text);
+    hooks.renderArStatus();
+  }
+
+  /**
+   * A veto lifted (polish round C5, owner decision Q-C5): the check read
+   * the code consistent again on wider evidence. The code is no longer
+   * ignored, so its next lock votes and the check pins it again; the line
+   * stops saying it is ignored. Votes taken back at the veto are not
+   * restored: the next lock casts fresh ones.
+   */
+  function restoreMovedCode(restored: RestoredCode): void {
+    if (!ctx.ignoredCodes.delete(restored.levelId)) return;
+    if (ctx.viewerIgnoredText === restored.text) ctx.viewerIgnoredText = null;
+    deps.viewingLog?.codeRestored({
+      text: restored.text,
+      levelId: restored.levelId,
+      evidence: restored.evidence,
+    });
     hooks.renderArStatus();
   }
 
@@ -655,8 +732,12 @@ export function createViewerPlacement(deps: {
       }
       return;
     }
+    // The baked spots live in tour.json (scan-pass plan S1): a tour whose
+    // manifest is still loading must not decline its photos for lacking a
+    // recording. The manifest's settle calls this trigger again.
+    if (ctx.tourManifestStatus === "pending") return;
     ctx.placementAttempted = true;
-    if (!current.hasRecording) {
+    if (!current.hasRecording && ctx.tourManifest?.captureSpots === undefined) {
       // No walk to place; the ring (if the tour has codes) waits for a lock.
       ctx.joinDeclined = true;
       ctx.placement = { kind: "declined", reason: "no recording in this tour" };
@@ -698,9 +779,11 @@ export function createViewerPlacement(deps: {
       // `mytour/content/…` while the manifest names `content/…`
       // (PR #435 review).
       loadPhotoTexture: async (entryName) =>
+        // Measured before it is decoded (tour kit K4 review R2).
         decodeFrameTexture(
           await current.loadContentEntry(entryName),
           CAPTURE_PLANE_DECODE_DIVISOR,
+          { maxPixels: TOUR_MAX_IMAGE_PIXELS },
         ),
     }).then(
       (rendered) => {
@@ -832,34 +915,19 @@ export function createViewerPlacement(deps: {
   }
 
   /**
-   * The capture-time geo join's viewer glue: gates → chunked replay →
-   * per-capture placement. Returns false whenever the ring should be placed
-   * instead; the reason lands in the AR status line so a decline is
-   * visible, never silent.
+   * The recorded photos' spots for this run: the ones the creator's Finish
+   * baked into `tour.json` (scan-pass plan S1, S-D11), else the same bake
+   * run here over the tour's recording (a tour never finished since S1).
+   * Null whenever the ring should be placed instead; the reason lands in
+   * the AR status line so a decline is visible, never silent.
    */
-  async function placeJoinedCapturePlanes(
+  async function captureSpotsForRun(
     current: TourSession,
-    scene: Scene,
-    viewerZero: { lat: number; lon: number },
     generation: number,
-  ): Promise<boolean> {
-    const [meta, actions] = await Promise.all([
-      current.loadSessionMeta(),
-      current.loadRecordingActions(),
-    ]);
-    if (actions === null) {
-      ctx.placement = { kind: "declined", reason: "no recording in this tour" };
-      return false;
-    }
-    const pre = preflightCaptureJoin(
-      meta,
-      actions.map((a) => a.type),
-    );
-    if (!pre.ok) {
-      ctx.placement = { kind: "declined", reason: pre.reason };
-      return false;
-    }
-    const state = (await replayActions(actions, {
+  ): Promise<TourCaptureSpots | null> {
+    const baked = ctx.tourManifest?.captureSpots;
+    if (baked !== undefined) return baked;
+    const bake = await bakeCaptureSpots(current, {
       // Same bail contract as `decodeJoinedPoses` below. `onChunk` alone
       // gave this run a place to NOTICE it had been superseded but no way
       // to act: it could skip the status label while the replay kept
@@ -871,20 +939,33 @@ export function createViewerPlacement(deps: {
         ctx.placement = { kind: "placing", phase: "reading-walk", done, total };
         hooks.renderArStatus();
       },
-    })) as unknown as ReplayedJoinState;
-    // An aborted replay returns a PARTIAL state by construction, so
-    // `assessReplayedJoin` would decline it and write a status naming the
-    // missing GPS data - a wrong reason, into a UI a newer run now owns.
-    // Bail silently instead.
-    if (generation !== ctx.planesRunGeneration) return false;
-    const verdict = assessReplayedJoin(state);
-    if (!verdict.ok) {
-      ctx.placement = { kind: "declined", reason: verdict.reason };
-      return false;
+    });
+    // An aborted replay's state is PARTIAL by construction, so its decline
+    // names a wrong reason, into a UI a newer run now owns. Bail silently.
+    if (generation !== ctx.planesRunGeneration) return null;
+    if (bake.kind === "declined") {
+      ctx.placement = { kind: "declined", reason: bake.reason };
+      return null;
     }
+    return bake.spots;
+  }
+
+  /**
+   * The capture-time geo join's viewer glue: the photos' spots (baked or
+   * baked here) → per-capture placement. Returns false whenever the ring
+   * should be placed instead.
+   */
+  async function placeJoinedCapturePlanes(
+    current: TourSession,
+    scene: Scene,
+    viewerZero: { lat: number; lon: number },
+    generation: number,
+  ): Promise<boolean> {
+    const spots = await captureSpotsForRun(current, generation);
+    if (spots === null) return false;
     const paired = await decodeJoinedPoses(
       current,
-      computeCaptureGeoJoin(state),
+      posesOfCaptureSpots(spots),
       viewerZero,
       generation,
     );
@@ -921,8 +1002,8 @@ export function createViewerPlacement(deps: {
       kind: "placed",
       placedKind: "capture-spots",
       count: ctx.imagePlanes.count,
-      fixes: verdict.quality.pairCount,
-      gpsAccuracyMedianM: verdict.quality.gpsAccuracyMedianM,
+      fixes: spots.fixes,
+      gpsAccuracyMedianM: spots.gpsAccuracyMedianM,
     };
     deps.viewingLog?.placed({
       what: "capture-spots",
@@ -930,8 +1011,8 @@ export function createViewerPlacement(deps: {
       count: ctx.imagePlanes.count,
       zero: viewerZero,
       join: {
-        fixes: verdict.quality.pairCount,
-        gpsAccuracyMedianM: verdict.quality.gpsAccuracyMedianM,
+        fixes: spots.fixes,
+        gpsAccuracyMedianM: spots.gpsAccuracyMedianM,
       },
     });
     hooks.renderArStatus();
@@ -945,7 +1026,7 @@ export function createViewerPlacement(deps: {
    *  phase — reports progress (finding 4's async-UI half). */
   async function decodeJoinedPoses(
     current: TourSession,
-    poses: readonly ReturnType<typeof computeCaptureGeoJoin>[number][],
+    poses: readonly CaptureWorldPose[],
     viewerZero: { lat: number; lon: number },
     generation: number,
   ): Promise<
@@ -985,6 +1066,7 @@ export function createViewerPlacement(deps: {
         const texture = await decodeFrameTexture(
           await current.loadEntry(pose.imageFile),
           CAPTURE_PLANE_DECODE_DIVISOR,
+          { maxPixels: TOUR_MAX_IMAGE_PIXELS },
         );
         if (texture === null) continue;
         paired.push({
@@ -1041,12 +1123,14 @@ export function createViewerPlacement(deps: {
    *  leaves a gap in the ring. */
   async function decodeTourTextures(current: TourSession): Promise<Texture[]> {
     const textures: Texture[] = [];
-    for (const entry of current.entries
+    for (const entry of entriesForVisitor(current.entries, ctx.scanEntries)
       .filter((candidate) => candidate.isImage)
       .slice(0, 3)) {
       try {
         const texture = await decodeFrameTexture(
           await current.loadEntry(entry.filename),
+          1,
+          { maxPixels: TOUR_MAX_IMAGE_PIXELS },
         );
         if (texture !== null) textures.push(texture);
       } catch {

@@ -60,7 +60,7 @@ camera follower) construct directly and will propagate a throw to
   and the session's GPS extent (a `createGpsExtentTracker` per QR wiring,
   incremental, starting over by itself on a new GPS list). The extent is what
   the sighting feeder needs to tell when an alignment is mature enough to
-  mint a code through (80 m, D28 revised); without it every code would fall
+  mint a code through (40 m since D34; D28 revised); without it every code would fall
   back to the alignment at save.
 - **Parenting rule:** anything whose coordinates are raw-WebXR must hang off
   `arWorldGroup`, not the scene root, so it rides the alignment matrix like

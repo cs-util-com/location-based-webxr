@@ -10,14 +10,25 @@
 
 import { Reader } from '@zip.js/zip.js';
 
+import { ArchiveLimitError } from './archive-limits.js';
 import type { ByteSource } from './byte-source.js';
 
 export class ByteSourceReader extends Reader<ByteSource> {
   readonly #source: ByteSource;
+  readonly #maxReadBytes: number;
 
-  constructor(source: ByteSource) {
+  /**
+   * @param maxReadBytes the largest single read zip.js may make through
+   *   this reader (`ArchiveLimits.maxDirectoryBytes` for an untrusted
+   *   archive, K0 milestone review R4): zip.js reads a central directory in
+   *   ONE read of the size its end record declares, so a larger read is
+   *   refused before the source is asked. Entry data comes in 64 KiB
+   *   chunks. Unbounded when omitted (a trusted archive).
+   */
+  constructor(source: ByteSource, maxReadBytes = Number.POSITIVE_INFINITY) {
     super(source);
     this.#source = source;
+    this.#maxReadBytes = maxReadBytes;
     this.size = source.size;
   }
 
@@ -28,6 +39,11 @@ export class ByteSourceReader extends Reader<ByteSource> {
     // HTTP Range header).
     const clamped = Math.max(0, Math.min(length, this.size - index));
     if (clamped === 0) return Promise.resolve(new Uint8Array(0));
+    if (clamped > this.#maxReadBytes) {
+      return Promise.reject(
+        new ArchiveLimitError('directory-bytes', this.#maxReadBytes, clamped)
+      );
+    }
     return this.#source.read(index, clamped);
   }
 }

@@ -74,16 +74,19 @@ entry and joined back in `codeVisitPoses`.
   review #6): `creator-setup.ts` hands each stored code's latest stable
   sighting, so the tour's other codes gather visits too.
 - **`savedGeo`** (optional, per code): the pose THIS visit's settle saved
-  for the code (`input.saved`), when it saved one. The summary finds the
+  for the code (`input.saved`, one entry per code the settle saved -
+  every code measured in the visit, code book plan M4e), when it saved
+  one. The summary finds the
   visit a stored pose came from by it, to grade what visitors get (M3a/M3b
   review #2). Version 1 files without it read as before; an unreadable one
   costs that field, not the code.
 - **`moved`** (optional, per code, only ever `true`; authoring plan §3.6,
-  M5b, §7j #12): THIS visit moved the code to a new spot (the author
-  answered "Use the new spot"; `input.moved` lists the levels). Earlier
+  M5b, §7j #12): THIS visit moved the code to a new spot, or back by an
+  undo (the automatic code-spot rule, code book plan M6; `input.moved`
+  lists the levels). Earlier
   visits describe the old spot, so `codeVisitPoses` reads only from the
   latest marked visit on, and the summary's estimate never sits between
-  two spots. An undo before Finish re-records the visit without it.
+  two spots. An improved position of the same poster is no boundary.
   Anything but `true` in a file reads as no mark.
 
 ## Parameters and what they rest on
@@ -115,7 +118,10 @@ entry and joined back in `codeVisitPoses`.
   vote's odometry is the code's corner, not where the creator stood).
 - `thinPath` returns an ordered subset with the first and last point,
   consecutive points at least `spacingM` apart (but the last), at most
-  `maxPoints` (property test).
+  `maxPoints` (property test). "Last" is the input's last ELEMENT, found by
+  index: an equal-valued earlier point (`-0` against `0`, or a repeated
+  object reference) never stands in for it (unit test pinning the
+  property's seed-770413408 counterexample).
 - Without an alignment a visit keeps its raw walk, but no fused path and no
   code.
 

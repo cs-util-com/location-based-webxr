@@ -22,6 +22,12 @@ import type * as THREE from 'three';
 // Mock only WebGLRenderer (jsdom has no WebGL context). Spreading `...actual`
 // keeps every other THREE export real so the scene hierarchy built by
 // createSceneHierarchy() behaves normally.
+/** Make the next renderers' `xr.setSession` reject (a failure AFTER the
+ *  XR session was granted). */
+const rendererFaults = vi.hoisted(() => ({
+  setSessionError: null as Error | null,
+}));
+
 vi.mock('three', async (importOriginal) => {
   const actual = await importOriginal<typeof THREE>();
 
@@ -34,7 +40,11 @@ vi.mock('three', async (importOriginal) => {
     setAnimationLoop = vi.fn();
     xr = {
       enabled: false,
-      setSession: vi.fn().mockResolvedValue(undefined),
+      setSession: vi.fn(() =>
+        rendererFaults.setSessionError === null
+          ? Promise.resolve(undefined)
+          : Promise.reject(rendererFaults.setSessionError)
+      ),
       getReferenceSpace: vi.fn().mockReturnValue(null),
     };
   }
@@ -157,6 +167,73 @@ describe('initAR re-entry guard', () => {
 
     // …but resetWebXRState() still ran in the `finally`, so the re-entry
     // guard has released and a new session can initialize.
+    await expect(initAR(container, MINIMAL_ISOLATION)).resolves.toBeUndefined();
+  });
+
+  /**
+   * Why this test matters: initAR() builds the renderer and inserts its
+   * canvas BEFORE it asks for the XR session, and requestSession() rejects
+   * whenever the user declines the AR/camera permission prompt. The
+   * half-built session used to stay behind, so every retry hit the re-entry
+   * guard ("AR session already initialized") until a page reload - the Tour
+   * Viewer's "Try again" (owner report 2026-10-07), and earlier OsmDemo and
+   * AnchorStarter, which each patched around it. A failed initAR() leaves
+   * nothing behind: the retry starts cleanly, and no stray canvas remains.
+   */
+  it('leaves nothing behind when the session request is declined, so a retry starts cleanly', async () => {
+    const declined = new Error('The user denied permission');
+    const requestSession = vi
+      .fn()
+      .mockRejectedValueOnce(declined)
+      .mockResolvedValue({
+        addEventListener: vi.fn(),
+        end: vi.fn().mockResolvedValue(undefined),
+      });
+    vi.stubGlobal('navigator', { xr: { requestSession } });
+
+    await expect(initAR(container, MINIMAL_ISOLATION)).rejects.toBe(declined);
+    expect(container.querySelectorAll('canvas')).toHaveLength(0);
+
+    await expect(initAR(container, MINIMAL_ISOLATION)).resolves.toBeUndefined();
+    expect(container.querySelectorAll('canvas')).toHaveLength(1);
+  });
+
+  /**
+   * Why this test matters (webxr PR #559 review): a step AFTER the session
+   * was granted can fail too (`renderer.xr.setSession()` rejecting). The
+   * teardown must end that XR session - but the host never got a session,
+   * because its initAR() call rejects. Telling it "the session ended" ran a
+   * whole session-end teardown in the Tour Viewer, and in creator mode
+   * settled a visit that never began. The session is ended, the host's
+   * session-end callback is not called, and a retry starts cleanly.
+   */
+  it('ends a granted session when a later step fails, without telling the host a session ended', async () => {
+    const listeners: (() => void)[] = [];
+    const session = {
+      addEventListener: vi.fn((type: string, fn: () => void) => {
+        if (type === 'end') listeners.push(fn);
+      }),
+      end: vi.fn(() => {
+        for (const fn of listeners) fn();
+        return Promise.resolve();
+      }),
+    };
+    vi.stubGlobal('navigator', {
+      xr: { requestSession: vi.fn().mockResolvedValue(session) },
+    });
+    const failed = new Error('setSession failed');
+    rendererFaults.setSessionError = failed;
+    const onSessionEnd = vi.fn();
+    try {
+      await expect(
+        initAR(container, MINIMAL_ISOLATION, {}, { onSessionEnd })
+      ).rejects.toBe(failed);
+    } finally {
+      rendererFaults.setSessionError = null;
+    }
+    expect(session.end).toHaveBeenCalledTimes(1);
+    expect(onSessionEnd).not.toHaveBeenCalled();
+    expect(container.querySelectorAll('canvas')).toHaveLength(0);
     await expect(initAR(container, MINIMAL_ISOLATION)).resolves.toBeUndefined();
   });
 });

@@ -38,7 +38,7 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   "code not read clearly, move closer"), never the view threshold and never
   "hold steady" - moving the camera is what resolves the tilt (§61 #11). The copy is the creator
   setup's guidance since the guided-setup plan M3 ("Hold the phone on the
-  printed code…", "Measured and stable - save the position.").
+  printed code…"; since UI round 1 U3 the ready line is "Code measured." - it is measured on its own).
 - `entryHint({ tourOpen, codeSeen })` - the AR visit's first hint (authoring
   plan 2026-09-28-0953 §3.2a, decision D5): "First, point the camera at the
   code you scanned to open this tour." while a tour is open and the code in
@@ -50,23 +50,22 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   N m from its saved position" (or "turned N°" when only the yaw broke the
   bound) "- a second print or a moved poster? Not used; this visit follows
   GPS".
-- `replaceCodeConfirmText(size | null)` (M4 review #3) - the explicit
-  replace's confirm question. It says what a visitor will see, not only what
-  is stored: the code moves for everyone ("it moves about 3.4 m and turns
-  4°"), notes already placed keep their saved positions, so the ones placed
-  against the old position will appear shifted by about that much - more
-  the further from the code when it also turns. One decimal below 10 m,
-  whole metres above; a turn under 1° is left out (under 0.35 m at 20 m).
-  `null` (no sighting of the code in hand) keeps the words without a
-  number. Notes never move along with the code (owner decision D19), so no
-  such option is offered.
-- `setupHint({ measured, tourOpen, hadLevel, keptStored? })` - what the
+- `buildAuthorControllerConfig(sizeM, deps)`'s optional `deps.sizeFor(text)`
+  (code book plan M4c-3) - each code's printed size: `fetchLevel(text)`
+  resolves the geo-less level at that size; a rejection or a size that is
+  not positive falls back to `sizeM`, and the fetch never rejects.
+- `autoMeasureAllowed(relation)` (code book plan §11 D5, extended by the owner; M4c-2) - whether the creator panel measures the code in view on its own: every code seen while a tour is open (`this-tour`, `other-tour`, `unknown`, `not-a-tour` - a stray QR is "another anchor"); never `no-tour-open` or `resolving`. The risk named with the decision: a code on something that moves; the automatic code-spot rule (code book plan M6, `code-spots.ts`) guards it. Before M4c-2 only the tour's own code, or the first code of a tour with none (UI round 1, U3).
+- `CodeReadyState` and `authorStatusLine(..., ready)` (U3) - the ready line says what became of the code once the gate is open: "Code measured." (`measured`, the default), "Measuring the code…", or "Code seen." (also for a code read with no tour open: the measuring policy, `autoMeasureAllowed`); the print-size hint follows any of them. The gate being open is no longer "measured".
+- `setupHint({ measured, tourOpen, inTour, keptStored? })` - what the
   panel says once measured: "Position saved." when no tour is open
   (`codeTourLine` then says what is happening to the code's tour;
   scan-to-open plan §9 #9); "Saved position kept." when the level in hand
   is a stored pose this visit did not measure (D10b: a new measurement only
-  corrects the visit, M2c review #5); that the measurement replaces a code
-  the tour already carried; else place content or finish.
+  corrects the visit, M2c review #5); with `inTour` "this-code" that the
+  measurement replaces this code's saved position (reached only when its
+  saved pose does not read), with "other-codes" that Finish adds it as one
+  more code (it said "replaces" until the code book plan review #13); then
+  place content or finish.
 - `codeTourLine(status: CodeTourStatus): string` - the scan-to-open status
   of the code in view (`scan-open.ts`) in plain words: opening, does not
   point to a tour, could not open (a short cause, and either "keep the
@@ -74,8 +73,12 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   measured for another tour (named), another tour's code is added to the
   open tour (plan §13), cannot tell; "" when
   quiet. At most 110 characters: it shares the panel with the readout.
-- `finishReadiness({ measured, tourOpen })` → `"ready" | "not-measured" |
-"no-tour"` - the finish button's gate.
+- `finishReadiness({ hasWork, tourOpen, manifest })` → `"ready" |
+"not-measured" | "no-tour" | "manifest-pending" | "manifest-broken"` - the
+  finish button's gate. `hasWork`
+  (code book plan M4d): there is something to write - a code to write, a
+  changed or deleted object, or in AR a code in hand; without it the state
+  is `not-measured`.
 - `MISSING_SIZE_MESSAGE` - what a creator reads when the printed-size
   field is empty at AR entry. The example inside it is interpolated from
   `AUTHOR_DEFAULT_SIZE_M`, so the two cannot drift.
@@ -101,33 +104,29 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
     is legitimate and only the creator knows whether the measurement was
     worth keeping. What they must not have is silence.
 - `FINISH_LABELS` - the finish step's copy through its async cycle
-  (reading, rebuilding N of M, ready, failed, download, saving, saved as,
-  not saved) AND the share route's own (share, sharing, shared, nothing
-  was shared).
-  A Drive tour has its own two: `readyDrive(bytes, filename)` carries the
-  "delete any older copy first" warning - the only moment it can prevent a
-  repeat download's "name (1).zip" - and `savedToPhone(filename)` names
-  Downloads and the Drive steps.
+  (reading, placing photos, rebuilding N of M, failed) and the save's
+  (`savingTour(bytes)` while the Finish saves the zip by itself, the button's
+  `saveAgain` and `saving`, `saved`, `savedToPhone`, `notSaved`,
+  `saveFailed(reason)`). Since the
+  2026-10-08 field test (F4; owner decisions D-F4a, D-F4b) the Finish saves
+  the rebuilt zip itself and the one button saves it again the same way:
+  no share route, no "press the button" ready line. `saved` and
+  `savedToPhone` promise that the link and the printed code stay the same,
+  which holds for a save over the hosted file. `savedToPhone` names
+  Downloads and asks to check the file is not "name (1).zip" before the
+  Drive steps (F4 milestone review #2: the page cannot know the name the
+  phone gave it). `saveFailed` says the save, not the Finish, failed
+  (review #9).
 - `driveReplaceSteps(name, nameKnown)` - the numbered Drive steps shown
   after the save: an optional rename/check-the-name step, then a check that
-  the saved file is not "name (1).zip" (if it is: delete every copy, save
-  again - picking "name.zip" beside it would upload the OLD zip), the new
-  tab with "Desktop site", the folder upload, "Replace existing file".
-- `finishIdleLabel(canShare)`, `finishBusyLabel(canShare)`,
-  `finishHandoffStatus({ route, delivered }, filename, drive)` - the
-  button's words and the status line, as pure functions.
-  - They are pure, and here rather than inline in the click handler,
-    because THREE of the four outcomes cannot be reached in an e2e run: a
-    headless browser has no share sheet, so this is the only place the
-    share copy is ever checked.
-  - The rule they encode: `saved` promises that the link and the printed
-    code stay the same, which is true when the creator overwrites the
-    hosted file and false when they share - sharing normally creates a new
-    file with a new id while the printed code still points at the old one.
-    `shared` therefore promises nothing and asks them to check.
-  - And `notShared` does not say "you cancelled": the Web Share API reports
-    a cancelled sheet and a failed share as the same error, so any such
-    copy would be a guess stated as a fact.
+  the saved file is not "name (1).zip" (if it is: delete every copy, tap
+  "Save the tour zip again" - picking "name.zip" beside it would upload the
+  OLD zip), the new tab with "Desktop site", the folder upload, "Replace
+  existing file". With the save automatic, this check is the only guard
+  against a repeat download's name (the warning that once came before the
+  tap has no moment left to be read).
+- `finishSaveStatus(delivered, filename, drive)` - the status line after a
+  save: where it went, or that nothing was saved and which button saves it.
 - `buildAuthorControllerConfig` wires `onError` too — a throwing detector
   must surface, not leave the panel saying "point the camera" forever.
 

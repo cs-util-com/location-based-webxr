@@ -5,6 +5,7 @@
  * not voted. See qr-debug-readout.ts.md.
  */
 
+import { visitHeadingSigmaDeg } from "./code-visit-combine.js";
 import {
   createFusedPoseTally,
   type FusedPoseCounts,
@@ -70,27 +71,65 @@ export function debugReadoutLines(input: {
   movedCodeChecks?: readonly MovedCodeCheckView[];
   /** The texts of the codes the viewer ignores as moved. */
   ignoredCodes?: readonly string[];
+  /** The session's GPS quality (polish round C4): the median reported
+   *  accuracy, the device fixes' extent and their count; absent: no line. */
+  gps?: {
+    readonly accuracyM: number | null;
+    readonly extentM: number | null;
+    readonly fixes: number;
+  };
+  /** A recording runs (polish round C7): its save button is outside the AR
+   *  overlay, so the block says how to reach it. */
+  recordingOn?: boolean;
 }): string[] {
   let head = `qr: ${input.status ?? "off"}`;
   if (input.unknownCode !== null) head += ` | no level: ${input.unknownCode}`;
   if (input.unusableCode !== null) head += ` | no size: ${input.unusableCode}`;
   const lines = [head];
+  if (input.gps !== undefined) lines.push(gpsLine(input.gps));
+  let evaluated = 0;
   for (const [text, tally] of input.tallies ?? []) {
     lines.push(fusedCountsLine(codeLabel(text), tally.summary()));
+    evaluated += 1;
   }
-  if (lines.length === 1) lines.push("no code evaluated yet");
+  if (evaluated === 0) lines.push("no code evaluated yet");
   for (const c of input.movedCodeChecks ?? []) {
     lines.push(
       `moved-code check ${codeLabel(c.text)}: |D| ${c.magnitudeM.toFixed(1)} m, ` +
         `yaw ${c.yawDeg.toFixed(1)}°, ${c.spanS.toFixed(0)} s, ` +
         `spread ${c.spreadM.toFixed(1)} m, ${String(c.samples)} fixes, ` +
-        `turn check ${c.turnChecked ? "on" : "off"}, ${c.verdict}`,
+        `turn check ${c.turnChecked ? "on" : "off"}` +
+        (typeof c.turnThresholdDeg === "number"
+          ? ` (> ${String(Math.round(c.turnThresholdDeg))}°)`
+          : "") +
+        `, ${c.verdict}` +
+        (typeof c.liftsAtSpreadM === "number"
+          ? `, vetoed (lifts at spread ${c.liftsAtSpreadM.toFixed(1)} m)`
+          : ""),
     );
   }
   for (const text of input.ignoredCodes ?? []) {
     lines.push(`ignored (moved): ${codeLabel(text)}`);
   }
+  if (input.recordingOn === true) {
+    lines.push('recording: exit AR, then "Save the recording" below');
+  }
   return lines;
+}
+
+/** The GPS quality line: how far the session's GPS heading can be off is
+ *  the heading model's sigma for its accuracy over its extent - the model
+ *  the moved-code turn check and the settle's turn limit use. */
+function gpsLine(
+  gps: NonNullable<Parameters<typeof debugReadoutLines>[0]["gps"]>,
+): string {
+  const { accuracyM, extentM, fixes } = gps;
+  if (accuracyM === null || !Number.isFinite(accuracyM) || fixes === 0) {
+    return "gps: no fix yet";
+  }
+  const spread = extentM === null || !Number.isFinite(extentM) ? 0 : extentM;
+  const sigma = visitHeadingSigmaDeg(accuracyM, spread);
+  return `gps: ±${accuracyM.toFixed(1)} m median, extent ${spread.toFixed(1)} m over ${String(fixes)} fixes, heading ±${String(Math.round(sigma))}°`;
 }
 
 /**

@@ -27,8 +27,17 @@
     prefix adds all dependents (the safety closure) from pnpm's workspace
     graph — with `--workspace-concurrency=1` (parallel gates would race e2e
     ports; parallelization is a separate, measured plan item B.3).
+  - The machine slot ([machine-slot.mjs](../test-timing/machine-slot.mjs.md))
+    is taken once for the WHOLE run (not on `--dry-run`); every gate it
+    spawns inherits the token and re-enters, so no other session slips in
+    between the repo-config tests and the last dependent.
   - Root repo-config tests always run first (seconds-cheap, guard the root
     config the selection itself depends on).
+  - Then, whenever a package gate runs (and before the full cascade too),
+    the framework's `dist` is built if stale (`FRAMEWORK_BUILD_IF_STALE`
+    in `select.mjs`), so no dependent type-checks or unit-tests against a
+    stale `dist` (gate-speed plan G2). The order is pure and tested in
+    `select.test.mjs`; this shell runs the commands fail-fast in order.
   - Warns when `pnpm-workspace.yaml` contains a `gps-plus-slam-js: link:`
     override — library changes are invisible to selection then.
   - Package dirs are parsed from `pnpm-workspace.yaml` (plain `- Name` list,

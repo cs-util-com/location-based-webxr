@@ -100,7 +100,10 @@ where the geometry and the byte writing live, with their own sidecar).
 - **`measuredCodeIds` is read at PRINT time, not captured at wiring.** The
   open tour's levels arrive asynchronously after an open, and a tour can be
   swapped without the panel being rewired. It defaults to none, so a panel
-  wired without it never warns rather than warning wrongly.
+  wired without it never warns rather than warning wrongly. `main.ts`
+  passes the open tour's codes together with every code this page measured
+  (`CreatorSetup.measuredCodeIds`, the code book; plan M4d), so a code
+  measured but not yet finished is counted as well.
 
 - **The OPEN TOUR'S link always wins.** `presentTour` assigns it
   unconditionally. It used to preserve text the creator had typed (PR #434

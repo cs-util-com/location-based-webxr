@@ -19,7 +19,7 @@
  *    as `currentAlignment` when it is in their odometry segment, else the
  *    newest sighting's own snapshot. The caller decides which (owner
  *    decision D28, revised 2026-10-02, `qr-mint-alignment-tracker.ts`): the
- *    FIRST MATURE alignment (80 m of session GPS extent) at or after the
+ *    FIRST MATURE alignment (40 m of session GPS extent, D34) at or after the
  *    code's last sighting; before maturity the alignment at save, or the one
  *    the code's segment closed with. This superseded DEC-3 (each sighting
  *    through the alignment as it stood AT that sighting): a sighting taken
@@ -390,19 +390,24 @@ function usableExtent(m: number | undefined): m is number {
 }
 
 /**
- * The D31 marker for a level composed through `frame`: its extent and
- * whether that is under {@link QR_MINT_HEADING_UNCERTAIN_EXTENT_M}. Empty
- * when the extent is unknown, so the level says nothing rather than a
- * default (absent = unknown).
+ * The D31 marker for a level composed through an alignment whose session
+ * GPS extent is `gpsExtentM`: the extent and whether it is under
+ * {@link QR_MINT_HEADING_UNCERTAIN_EXTENT_M}, for the level's
+ * `mintQuality`. Empty when the extent is unknown, non-finite or negative,
+ * so the level says nothing rather than a default (absent = unknown).
+ *
+ * Exported as THE marker rule (DEC-H3): the Tour Viewer's authoring settle
+ * re-mints a code through an alignment of its own choosing and marks it
+ * with this (review R7 of D33).
  */
-function headingMarker(frame: MintFrame): {
+export function qrMintHeadingMarker(gpsExtentM: number | undefined): {
   alignmentGpsExtentM?: number;
   headingUncertain?: boolean;
 } {
-  if (frame.gpsExtentM === undefined) return {};
+  if (!usableExtent(gpsExtentM)) return {};
   return {
-    alignmentGpsExtentM: frame.gpsExtentM,
-    headingUncertain: frame.gpsExtentM < QR_MINT_HEADING_UNCERTAIN_EXTENT_M,
+    alignmentGpsExtentM: gpsExtentM,
+    headingUncertain: gpsExtentM < QR_MINT_HEADING_UNCERTAIN_EXTENT_M,
   };
 }
 
@@ -605,7 +610,7 @@ export function mintQrAnchorFromSightings(
       rotationSpreadDeg: quality.rotationSpreadDeg,
       translationSpreadM: quality.translationSpreadM,
       physicalSizeSpreadM: quality.sizeSpreadM,
-      ...headingMarker(frame),
+      ...qrMintHeadingMarker(frame.gpsExtentM),
     },
   });
   if (!level.ok) {

@@ -77,6 +77,40 @@ export function selectPackages({ trackedChanges, untracked, packageDirs }) {
 }
 
 /**
+ * Builds the framework's `dist` unless it is already newer than every input
+ * (stale-dist follow-up 2026-09-28-1910, option 1; gate-speed plan G2).
+ *
+ * The demo apps (Tour Viewer, AnchorStarter, ...) resolve the framework
+ * through its package `exports`, i.e. through `dist`, and their own
+ * `build:framework` stage sits AFTER `typecheck` and `test:unit`. The
+ * framework's own gate builds nothing. So on a framework change a dependent
+ * type-checked and unit-tested against whatever `dist` was on disk: a false
+ * green whenever the source had removed an export the old `dist` still had.
+ * CI is safe because it builds first; this makes the local order agree.
+ *
+ * Run for EVERY package selection, not only one that contains a framework
+ * consumer: on a fresh dist it costs one mtime walk, and the only selections
+ * it could skip (the globe, the site worker, the design system, Landing) are
+ * rare enough that the rule is not worth a dependency-graph query.
+ */
+export const FRAMEWORK_BUILD_IF_STALE =
+  'node scripts/build-workspace-package-if-stale.mjs gps-plus-slam-app-framework GpsPlusSlamJs_AppFramework';
+
+/**
+ * The full-cascade fallback: the same build first, then the root cascade.
+ * The cascade runs `check:deadcode` (knip, which resolves workspace packages
+ * through their `dist`) before any package stage has built the framework.
+ *
+ * @returns {{ command: string, env: Record<string, string> }[]}
+ */
+export function cascadeCommands() {
+  return [
+    { command: FRAMEWORK_BUILD_IF_STALE, env: {} },
+    { command: 'pnpm test', env: {} },
+  ];
+}
+
+/**
  * The commands a `test:changed` run executes, in order.
  *
  * Pure so the SPLIT is testable. `selectPackages` above cannot compute the
@@ -99,6 +133,9 @@ export function gateCommands(names, { skipBrowserEnv }) {
   }
   const filters = (/** @type {(name: string) => string} */ shape) =>
     names.map(shape).join(' ');
+
+  // The framework's dist BEFORE any package gate, see FRAMEWORK_BUILD_IF_STALE.
+  commands.push({ command: FRAMEWORK_BUILD_IF_STALE, env: {} });
 
   // Changed packages FIRST and in FULL — e2e included. Fail fast on what was
   // actually edited.

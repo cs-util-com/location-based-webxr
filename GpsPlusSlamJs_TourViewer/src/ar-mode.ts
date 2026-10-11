@@ -95,13 +95,20 @@ export function arButtonView(
         disabled: false,
       };
     case "running":
+      // The way out of AR (UI round 1, U2, review F2). The creator's work
+      // stays in the draft; the page then leads with saving it.
       return {
-        label: mode === "creator" ? "Setting up in AR" : "Tour running",
-        disabled: true,
+        // One label for both: "your work stays on this phone" was a
+        // promise the page cannot keep without a draft backup (U2
+        // milestone review #3); the page after AR leads with the save.
+        label: "Exit AR",
+        disabled: false,
       };
     case "error":
       return {
-        label: `Retry — ${state.error ?? "failed to start"}`,
+        // The reason is the status line's, in plain words (UI round 1,
+        // U1, review F5); the raw error only under ?debug=1 there.
+        label: "Try again",
         disabled: false,
       };
     default:

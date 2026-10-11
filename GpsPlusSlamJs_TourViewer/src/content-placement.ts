@@ -243,6 +243,10 @@ export async function renderTourObjects(
     root: group,
     skipped,
     dispose: () => {
+      // From whatever holds it now - the creator's previews move a group
+      // between frames (code book plan M5b) - and from the node it was
+      // added to (the e2e fakes' nodes set no `parent`).
+      group.removeFromParent();
       deps.scene.remove(group);
       for (const label of labels) label.dispose();
       planes.dispose();

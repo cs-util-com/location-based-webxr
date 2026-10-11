@@ -45,6 +45,7 @@
     "@types/node": "^25.9.5",
     "@types/qrcode": "^1.5.6",
     "@types/three": "^0.185.4",
+    "@vitest/coverage-v8": "^5.0.0",
     "@vitest/eslint-plugin": "^1.6.27",
     "dependency-cruiser": "^17.4.3",
     "dpdm": "^4.3.0",

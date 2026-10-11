@@ -22,7 +22,7 @@
 
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
+import { horizontalM } from "./move-with-code.js";
 
 /** One object as the list sees it. */
 export interface ObjectListEntry {
@@ -114,17 +114,6 @@ export const SELECT_HINT =
 /** Said on the page when there are pins. */
 const MOVE_HINT =
   "To move a pin, start the AR setup, select the pin and tap Move to the reticle.";
-
-/** Horizontal metres between two geo points. */
-function horizontalM(a: QrGeoPose, b: QrGeoPose): number {
-  const nue = calcRelativeCoordsInMeters(
-    { lat: a.lat, lon: a.lon },
-    { lat: b.lat, lon: b.lon },
-    b.alt,
-    a.alt,
-  );
-  return Math.hypot(nue[0], nue[2]);
-}
 
 /** "4 m from the code", or "" without a code. Rounded to whole metres:
  *  the objects' own GPS error is metres, so decimals would be noise. */

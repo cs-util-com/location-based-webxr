@@ -43,6 +43,7 @@ import {
   type MockOPFSDirectoryHandle,
 } from "gps-plus-slam-app-framework/test-utils/browser-mocks";
 import { BlobReader, ZipReader } from "@zip.js/zip.js";
+import { createEmptyTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { Group } from "three";
 
 import {
@@ -50,6 +51,7 @@ import {
   LOW_STORAGE_BYTES,
   lowStorageWarning,
   RECORDING_BYTES_PER_SECOND,
+  FIELD_OTHER_ACTIONS_BYTES_PER_SECOND,
   RECORDING_DEPTH,
 } from "./authoring-recording.js";
 import {
@@ -298,7 +300,8 @@ describe("the creator's troubleshooting recording", () => {
     store.dispatch(
       authoringFinished({
         levelId: "lvl",
-        manifest: { version: 1, objects: [] },
+        levelIds: ["lvl"],
+        manifest: createEmptyTourManifest(),
         atMs: T0 + 5000,
       }),
     );
@@ -755,7 +758,8 @@ describe("the order the page writes", () => {
     store.dispatch(
       authoringFinished({
         levelId: "lvl",
-        manifest: { version: 1, objects: [] },
+        levelIds: ["lvl"],
+        manifest: createEmptyTourManifest(),
         atMs: T0 + 4000,
       }),
     );
@@ -801,11 +805,13 @@ describe("what a recording costs on disk", () => {
     // and the review's figure for depth (about 30 KB a sample, about
     // 110 MB an hour) was arithmetic, not a measurement. This writes one
     // real sample and one GPS fix through the real store into the OPFS
-    // mock and reads the bytes back - the files are pretty-printed JSON,
-    // which is where the arithmetic went short. The budget must cover
-    // what one second writes (a depth sample and a GPS fix, both at
-    // 1 Hz) without overstating it by more than a quarter, so a change to
-    // the sampler's grid or the file format cannot drift past it unseen.
+    // mock and reads the bytes back. Since scan pass S2 the sample is
+    // written packed (about 18x smaller), so the other actions - which the
+    // first version of this test left out as small - are now most of a
+    // second's bytes: the budget counts them at the field recording's
+    // rate. It must cover a second without overstating it by more than a
+    // quarter, so a change to the sampler's grid or the file format cannot
+    // drift past it unseen.
     const { recording, store } = recordingAndStore();
     recording.start(START);
     enter(store, T0);
@@ -818,11 +824,15 @@ describe("what a recording costs on disk", () => {
     const bytes = await writtenBytesByType();
     const depth = bytes.get(recordDepthSample.type)?.[0] ?? 0;
     const gps = bytes.get(recordGpsEvent.type)?.[0] ?? 0;
-    // Measured 2026-09-28: a depth sample 34 285 bytes, a GPS fix 357 bytes
-    // (sidecar "Storage cost"). The band below keeps the budget honest.
-    expect(depth).toBeGreaterThan(30_000);
-    expect(depth + gps).toBeLessThanOrEqual(RECORDING_BYTES_PER_SECOND);
-    expect(depth + gps).toBeGreaterThan(0.75 * RECORDING_BYTES_PER_SECOND);
+    // Measured 2026-10-08 (S2): a depth sample 1 829 bytes packed (34 285
+    // as pretty JSON before); a GPS fix is one of the other actions the
+    // field rate counts. The band below keeps the budget honest.
+    expect(depth).toBeGreaterThan(1_000);
+    expect(depth).toBeLessThan(2_500);
+    expect(gps).toBeLessThan(FIELD_OTHER_ACTIONS_BYTES_PER_SECOND);
+    const second = depth + FIELD_OTHER_ACTIONS_BYTES_PER_SECOND;
+    expect(second).toBeLessThanOrEqual(RECORDING_BYTES_PER_SECOND);
+    expect(second).toBeGreaterThan(0.75 * RECORDING_BYTES_PER_SECOND);
   });
 });
 
@@ -831,10 +841,10 @@ describe("the low-storage warning", () => {
   // creator's only notice that a recording may not fit, and a wrong unit or
   // an inverted comparison would silence it exactly when it is needed.
   it("warns below the threshold with the space left and the minutes it holds", () => {
-    const free = 50 * 1024 * 1024;
+    const free = 10 * 1024 * 1024;
 
     expect(lowStorageWarning({ quota: free + 1000, usage: 1000 })).toBe(
-      `Only 50 MB of storage is left for this page - about ${String(
+      `Only 10 MB of storage is left for this page - about ${String(
         Math.floor(free / RECORDING_BYTES_PER_SECOND / 60),
       )} minutes of recording.`,
     );

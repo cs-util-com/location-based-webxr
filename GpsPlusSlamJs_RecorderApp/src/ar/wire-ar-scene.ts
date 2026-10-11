@@ -231,7 +231,7 @@ export function wireArScene({
       },
       // Read live, never recorded: the save-time mint places a code through
       // the first alignment at or after its last sighting whose GPS extent
-      // reaches 80 m, else the alignment at save or as its odometry segment
+      // reaches the shared floor (40 m, D34), else the alignment at save or as its odometry segment
       // closed (D28 revised), and an alignment matrix is a DERIVED value
       // that must not enter the action stream (decision D-A). No GPS
       // accuracy is supplied, so minted levels carry none.

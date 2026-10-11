@@ -58,6 +58,14 @@ seconds since the pin, the rule's version. `recovery` is what the sink's
 `retractVotes` did (fixes re-fed, batches); the alignment is the one AFTER
 it.
 
+## `tourViewing/codeRestored` (polish round C5)
+
+`codeRestored({ text, levelId, evidence, alignmentMatrix, arVisitIndex,
+atMs })`: the moved-code check read a vetoed code consistent again on wider
+evidence and the viewer uses it again. `evidence` is `moved-code-check.ts`'s
+`RestoredCode["evidence"]` (|D|, yaw, span, spread, the spread of the veto,
+the accuracy median, seconds since the pin, the rule's version).
+
 **After a veto the recording carries every device fix twice** (M5c review
 L4): once as stored when it arrived (`gpsData/recordGpsEvent`, or first in a
 keep-alive `gpsData/recordGpsEventBatch`), and again in the re-feed batches

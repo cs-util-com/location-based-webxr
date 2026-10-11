@@ -1,7 +1,8 @@
 /**
  * Which alignment a QR code is minted through: the FIRST MATURE alignment
  * at or after the code's last sighting (owner decision D28, revised
- * 2026-10-02; candidate a3 at 80 m of the start-at-code measurement).
+ * 2026-10-02; candidate a3 of the start-at-code measurement, its floor 40 m
+ * since D34).
  *
  * WHY NOT THE ALIGNMENT AT SAVE. Placing every code through the alignment
  * as it stands when the recording is saved (a2, shipped for one day) fixed
@@ -24,26 +25,22 @@
  * `GpsPlusSlamJs_AppFramework/docs/2026-10-02-1552-qr-mint-yaw-observability-floor-followup.md`.
  */
 
+import {
+  MATURE_GPS_EXTENT_M,
+  advanceMatureAlignmentPick,
+  checkMatureGpsExtentM,
+  isUsableAlignment,
+  openMatureAlignmentPick,
+  type MatureAlignmentPick,
+} from '../../state/alignment-maturity.js';
 import type { QrMintAlignmentNow } from './qr-anchor-mint.js';
 
 /**
- * GPS extent (m) at which an alignment counts as MATURE for the mint.
- *
- * Measured (`qr-anchor-mint.start-at-code.test.ts`, `start` and `left`;
- * 5 m GPS accuracy, Gauss-Markov wander 0.25 x accuracy over 60 s plus
- * white 0.15 x accuracy; SLAM drift 0.5-2 % and 0.5-2 degrees per 100 m):
- * - 10-20 m is already met at a mid-recording sighting, so it is the
- *   sighting's own snapshot, and for a start-only code it is WORSE than the
- *   alignment at save (up to 8 degrees p50, 15-24 p90): the reversing value.
- * - 40 m keeps a code left behind at 1.1-1.7 m and within 0.3 degrees p50
- *   of the alignment at save for a start-only code; its p90 heading is 5-6
- *   degrees at 2 % translation drift.
- * - 80 m (chosen by the owner) gives the same positions and a p90 heading
- *   of 3-4 degrees there.
- * A lower GPS accuracy figure shrinks the noise share of the extent, so
- * the floor would mean a longer real walk at 2-3 m accuracy.
+ * GPS extent (m) at which an alignment counts as MATURE for the mint: the
+ * shared floor {@link MATURE_GPS_EXTENT_M} (`state/alignment-maturity.ts`,
+ * whose doc holds the measurement), under the name the mint exports.
  */
-export const QR_MINT_MATURE_GPS_EXTENT_M = 80;
+export const QR_MINT_MATURE_GPS_EXTENT_M = MATURE_GPS_EXTENT_M;
 
 export interface QrMintAlignmentTrackerOptions {
   /** See {@link QR_MINT_MATURE_GPS_EXTENT_M}. Positive and finite. */
@@ -71,64 +68,58 @@ export interface QrMintAlignmentTracker {
   reset(): void;
 }
 
+/** A code's pick (`state/alignment-maturity.ts`), and whether its
+ *  segment closed under it (frozen, mature or not). */
 interface CodeState {
-  alignment: QrMintAlignmentNow;
-  frozen: boolean;
+  pick: MatureAlignmentPick<QrMintAlignmentNow>;
+  closed: boolean;
 }
-
-/** An alignment a code can actually be placed through. */
-const usable = (a: QrMintAlignmentNow): boolean =>
-  a.alignmentMatrix !== null && a.zero !== null;
 
 export function createQrMintAlignmentTracker(
   options: QrMintAlignmentTrackerOptions = {}
 ): QrMintAlignmentTracker {
-  const floorM = options.matureGpsExtentM ?? QR_MINT_MATURE_GPS_EXTENT_M;
-  if (!Number.isFinite(floorM) || floorM <= 0) {
-    throw new RangeError(
-      `matureGpsExtentM must be a positive, finite number of metres; got ${String(floorM)}`
-    );
-  }
+  const floorM = checkMatureGpsExtentM(options.matureGpsExtentM);
   const codes = new Map<string, CodeState>();
-
-  // An unknown or non-finite extent is never mature: the floor is the only
-  // evidence that the yaw is observable, and NaN would compare false anyway.
-  const mature = (a: QrMintAlignmentNow): boolean =>
-    usable(a) &&
-    a.gpsExtentM !== undefined &&
-    Number.isFinite(a.gpsExtentM) &&
-    a.gpsExtentM >= floorM;
 
   return {
     noteSighting(text, now) {
-      codes.set(text, { alignment: now, frozen: mature(now) });
+      codes.set(text, {
+        pick: openMatureAlignmentPick(now, floorM),
+        closed: false,
+      });
     },
 
     noteAlignment(now) {
-      if (!usable(now)) return;
       for (const state of codes.values()) {
-        if (state.frozen || state.alignment.segment !== now.segment) continue;
-        state.alignment = now;
-        state.frozen = mature(now);
+        if (state.closed || state.pick.alignment.segment !== now.segment)
+          continue;
+        state.pick = advanceMatureAlignmentPick(state.pick, now, floorM);
       }
     },
 
     closeSegment(closing) {
       for (const state of codes.values()) {
-        if (state.frozen || state.alignment.segment !== closing.segment)
+        if (
+          state.closed ||
+          state.pick.mature ||
+          state.pick.alignment.segment !== closing.segment
+        )
           continue;
-        if (usable(closing)) state.alignment = closing;
-        state.frozen = true;
+        if (isUsableAlignment(closing)) {
+          state.pick = openMatureAlignmentPick(closing, floorM);
+        }
+        state.closed = true;
       }
     },
 
     alignmentFor(text, live) {
       const state = codes.get(text);
       if (state === undefined) return live;
-      if (!state.frozen && state.alignment.segment === live.segment) {
+      const frozen = state.closed || state.pick.mature;
+      if (!frozen && state.pick.alignment.segment === live.segment) {
         return live;
       }
-      return state.alignment;
+      return state.pick.alignment;
     },
 
     reset() {

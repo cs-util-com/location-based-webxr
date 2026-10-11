@@ -6,6 +6,23 @@ const WALL_CODE = {
   rotation: [0, 0, 0, 1] as [number, number, number, number],
 };
 
+/**
+ * The clean seed-3 arc that two tests below compare against. Computed once
+ * and shared (gate-speed plan 2026-10-04, G3): the walk is deterministic for
+ * a seed, and both tests only read its rows.
+ */
+const ARC_SEED_3 = {
+  kind: 'arc' as const,
+  codeWorld: WALL_CODE,
+  distanceM: 0.8,
+  extent: 50,
+  steps: 6,
+  noiseSigma: 0,
+  seed: 3,
+};
+let cleanArcSeed3Rows: ReturnType<typeof measureWalk> | undefined;
+const cleanArcSeed3 = () => (cleanArcSeed3Rows ??= measureWalk(ARC_SEED_3));
+
 describe('measureWalk (M0 walk harness)', () => {
   // Why this test matters: the M0 baselines and every later verdict come
   // from these rows; on a clean, strongly oblique walk every method must be
@@ -48,16 +65,8 @@ describe('measureWalk (M0 walk harness)', () => {
   // sweep would measure nothing. Same frames, same seed: only the poses the
   // solvers are handed differ.
   it('hands the solvers noisy camera poses when asked', async () => {
-    const base = {
-      kind: 'arc' as const,
-      codeWorld: WALL_CODE,
-      distanceM: 0.8,
-      extent: 50,
-      steps: 6,
-      noiseSigma: 0,
-      seed: 3,
-    };
-    const clean = await measureWalk(base);
+    const base = ARC_SEED_3;
+    const clean = await cleanArcSeed3();
     const noisy = await measureWalk({
       ...base,
       slamNoise: { rotationDeg: 1, translationM: 0.01 },
@@ -99,16 +108,8 @@ describe('measureWalk (M0 walk harness)', () => {
   // Why this test matters (finding 4): SLAM error drifts, it is not only
   // white; a drift the solvers see must change what they measure.
   it('applies a drifting SLAM error when asked', async () => {
-    const base = {
-      kind: 'arc' as const,
-      codeWorld: WALL_CODE,
-      distanceM: 0.8,
-      extent: 50,
-      steps: 6,
-      noiseSigma: 0,
-      seed: 3,
-    };
-    const clean = await measureWalk(base);
+    const base = ARC_SEED_3;
+    const clean = await cleanArcSeed3();
     const drifting = await measureWalk({
       ...base,
       slamNoise: {

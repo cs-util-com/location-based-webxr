@@ -31,6 +31,11 @@ import path from "node:path";
  * @property {string} [filteredRunCommand] - cheaper base command substituted
  *   ONLY on filtered runs (e.g. test:unit without --coverage — speedup plan
  *   C.1); recorded full-suite and CI runs always use `command`.
+ * @property {string} [fastGateCommand] - cheaper base command for the
+ *   PER-COMMIT gate only (`GATE_SKIP_BROWSER_STAGES` set, see
+ *   `gateBaseCommand`); CI, the milestone run and every recorded run keep
+ *   `command`. The framework's unit stage drops `--coverage` this way
+ *   (gate-speed plan 2026-10-04, G4).
  * @property {boolean} [wrapperScript] - default true. false = the package.json
  *   script of the same name intentionally does NOT route through
  *   timed-stage.mjs (e.g. build:framework: dev flows and Playwright
@@ -84,6 +89,12 @@ const BUILD_OSM_STAGE = Object.freeze({
 });
 
 /** Format command shared by the app packages (framework differs). */
+// Every format command here runs Prettier with `--cache --cache-strategy
+// content` (gate-speed plan 2026-10-04, G5): a file whose content it already
+// formatted is skipped, keyed on a hash of the content, never on mtimes.
+// Measured warm: framework 14.8 / 16.4 s -> 2.7 / 2.6 s, Recorder 8.0 /
+// 7.3 s -> 1.9 / 1.8 s; the first, cold run costs about the same as before.
+// NOT ESLint's cache, which is unsafe with typed rules.
 // `"scripts"` is in the list because it was NOT, and that was a hole: the
 // Landing package grew node-side build tooling under `scripts/blog/` that no
 // format stage could see, so 15 files drifted out of style with a green gate.
@@ -91,7 +102,7 @@ const BUILD_OSM_STAGE = Object.freeze({
 // command match. `--no-error-on-unmatched-pattern` keeps it a no-op for the
 // packages that have no `scripts/` directory.
 const APP_FORMAT_COMMAND =
-  'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "playwright-tests" "scripts" index.html README.md package.json';
+  'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "playwright-tests" "scripts" index.html README.md package.json';
 
 /**
  * The stage set shared verbatim by the four uniform demo apps (AnchorStarter,
@@ -255,7 +266,7 @@ export const PROJECTS = [
       {
         name: "format",
         command:
-          'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" package.json README.md',
+          'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown --no-error-on-unmatched-pattern "src" "config" package.json README.md',
         counts: null,
       },
       {
@@ -289,6 +300,13 @@ export const PROJECTS = [
         // plan C.1): repo-wide coverage of a one-file run is meaningless
         // and expensive. Full-suite and CI runs keep `command`.
         filteredRunCommand: "vitest run --config=config/vitest.config.ts",
+        // The per-commit gate skips it too (gate-speed plan 2026-10-04, G4 /
+        // TS-2): coverage cost 29 % of this stage (106.4 / 103.9 s against
+        // 74.2 / 74.8 s, two quiet runs each at 4 workers) against a 15 %
+        // bar set before measuring, and the framework has no coverage
+        // thresholds. CI and the milestone run keep `command`. NOT for the
+        // Recorder, whose thresholds gate.
+        fastGateCommand: "vitest run --config=config/vitest.config.ts",
       },
     ],
   },
@@ -311,7 +329,7 @@ export const PROJECTS = [
         // added after it was written (the split's design.css/catalog.css
         // would never have been formatted while the gate stayed green)
         command:
-          'prettier --log-level warn --write --ignore-unknown "*.css" "*.html" "*.mjs" "*.md" "config/*.mjs" "3d/**/*" "labs/**/*" package.json',
+          'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown "*.css" "*.html" "*.mjs" "*.md" "config/*.mjs" "3d/**/*" "labs/**/*" package.json',
         counts: null,
       },
       {
@@ -360,7 +378,7 @@ export const PROJECTS = [
       {
         name: "format",
         command:
-          'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "scripts" package.json README.md',
+          'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown --no-error-on-unmatched-pattern "src" "config" "scripts" package.json README.md',
         counts: null,
       },
       {
@@ -405,7 +423,7 @@ export const PROJECTS = [
       {
         name: "format",
         command:
-          'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" "config" package.json README.md',
+          'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown --no-error-on-unmatched-pattern "src" "config" package.json README.md',
         counts: null,
       },
       {
@@ -530,7 +548,7 @@ export const PROJECTS = [
       {
         name: "format",
         command:
-          'prettier --log-level warn --write --ignore-unknown --no-error-on-unmatched-pattern "src" package.json README.md',
+          'prettier --log-level warn --write --cache --cache-strategy content --ignore-unknown --no-error-on-unmatched-pattern "src" package.json README.md',
         counts: null,
       },
       {
@@ -762,6 +780,22 @@ export function gateStages(project, { skipBrowser = false } = {}) {
   return skipBrowser
     ? project.stages.filter((stage) => !isBrowserStage(stage))
     : project.stages;
+}
+
+/**
+ * The base command a stage runs with: its `fastGateCommand` in the
+ * per-commit gate (`GATE_SKIP_BROWSER_STAGES` set) when it has one, else its
+ * canonical `command`. Filtered runs substitute `filteredRunCommand` later,
+ * in `buildStageCommand`.
+ *
+ * @param {StageConfig} stage
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {string}
+ */
+export function gateBaseCommand(stage, env = {}) {
+  return resolveGateMode(env).skipBrowser && stage.fastGateCommand
+    ? stage.fastGateCommand
+    : stage.command;
 }
 
 /** Env var that puts a gate run in DEC-G2's dependent mode. */

@@ -298,8 +298,10 @@ describe("arButtonView", () => {
     ["ready", "visitor", "Start the tour", false],
     ["ready", "creator", "Start AR setup", false],
     ["starting", "visitor", "Starting…", true],
-    ["running", "visitor", "Tour running", true],
-    ["running", "creator", "Setting up in AR", true],
+    // The way out of AR (UI round 1, U2, review F2): it used to sit there
+    // disabled as "Tour running" / "Setting up in AR".
+    ["running", "visitor", "Exit AR", false],
+    ["running", "creator", "Exit AR", false],
     ["stopping", "visitor", "Stopping…", true],
   ] as const)("%s (%s) → %j / disabled=%s", (status, mode, label, disabled) => {
     expect(arButtonView({ status }, mode)).toEqual({
@@ -327,12 +329,15 @@ describe("arButtonView", () => {
     );
   });
 
-  it("error state offers a retry carrying the reason", () => {
+  it("error state offers a plain retry; the reason is the status line's (UI round 1, U1, review F5)", () => {
+    // Why: the label used to be "Retry - NotAllowedError: ..." - a browser
+    // exception on the only button. The cause now reads in plain words in
+    // the status line (`visitorStatus`), the button only says what to do.
     const view = arButtonView(
-      { status: "error", error: "camera denied" },
+      { status: "error", error: "NotAllowedError: camera denied" },
       "visitor",
     );
     expect(view.disabled).toBe(false);
-    expect(view.label).toContain("camera denied");
+    expect(view.label).toBe("Try again");
   });
 });

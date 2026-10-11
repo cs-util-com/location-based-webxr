@@ -144,8 +144,9 @@ export interface SummaryModel {
 
 export interface SummaryInput {
   readonly visits: readonly VisitLogEntry[];
-  /** The codes' stored poses, the level in hand first, then the tour's
-   *  other levels (a null geo: a level without a pose). */
+  /** The codes' stored poses, in the numbering every label uses
+   *  (`creator-codes.ts` `numbering`, M5b; a null geo: a level without a
+   *  pose). */
   readonly references: readonly {
     readonly levelId: string;
     readonly geo: QrGeoPose | null;
@@ -217,7 +218,9 @@ function turnDeg(a: number, b: number): number {
   return d > 180 ? 360 - d : d;
 }
 
-function codeLabel(index: number, count: number): string {
+/** A code's name in labels: "The code" alone, else "Code N" by the
+ *  numbering (`creator-codes.ts` `numbering`). */
+export function codeLabel(index: number, count: number): string {
   return count === 1 ? "The code" : `Code ${String(index + 1)}`;
 }
 
@@ -249,7 +252,7 @@ function storedLines(stored: CodeVerdict): string[] {
     );
     if (stored.kind !== "good") {
       lines.push(
-        'Visitors keep this position until you replace it: measure the code again and tap "Replace the code\'s saved position".',
+        "Visitors keep this position until a better one replaces it: see the code in AR, then walk farther - the position improves on its own once the walk is long enough for the GPS accuracy.",
       );
     }
   }

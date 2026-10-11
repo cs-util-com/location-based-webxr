@@ -24,8 +24,15 @@ start a session.
   granted permission without a fix ("unavailable": indoors, a timeout)
   clears the gate, because the session's own watch tolerates a slow fix
   and locking the visitor out would be the worse failure (M2 review #1).
-- `locationRequestMessage(outcome)` - the copy for a denial (browser
-  settings) and for "no fix yet" (fine outdoors, the tour keeps trying).
+- `locationRequestNotice(outcome): { error, hint }` - an `error` (the
+  alert box) only for a denial (browser settings); otherwise a `hint` that
+  replaces the text above the button and says what the next tap does and
+  what to do once AR starts: "Location allowed - now tap Start the tour,
+  then point your phone at the tour's code (on the poster)." or "No GPS fix yet - that is
+  fine outdoors ... Tap Start the tour." (UI round 1, U1, review F11: the
+  second tap used to be silent, and the benign no-fix note read as a red
+  alert). The visitor hint names "the tour's code (on the poster)", not
+  "the printed code you scanned" (a link-opener scanned none, review F15).
 - `type LocationRequestOutcome = "granted" | "denied" | "unavailable"`.
 - `locationTapNeeded(permission): boolean` - pure: true for anything but
   `"granted"`.

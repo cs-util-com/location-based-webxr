@@ -11,10 +11,16 @@
     keeps its historical meaning.
   - `isBuildRequired(newestInputMs, oldestOutputMs) → boolean` — pure
     decision, exported for tests.
+  - `buildInputs(packageDir) → string[]` and `decideBuild(packageDir) →
+    { required, reason }`: the inputs watched and the whole decision for
+    one package (fails open), exported for tests and used by the CLI.
 - Invariants & assumptions:
   - **Fail open**: null/unknown mtimes, walker errors, ties ⇒ build. Skip
     only when every dist file is STRICTLY newer than every input file
-    (`src/`, `config/`, `package.json`). A wasted build costs ~4 s; a stale
+    (`src/`, `config/`, `package.json`, and every root `tsconfig*.json`
+    and `tsdown.config.*`: tsdown builds with `tsconfig.app.json`, so a
+    change there changes `dist`; added 2026-10-04, gate-speed plan,
+    milestone review R8). A wasted build costs ~4 s; a stale
     dist breaks e2e confusingly.
   - Inputs deliberately over-approximate (all of `src/` and `config/`, not
     just what tsdown consumes) — over-approximation only causes extra
@@ -44,5 +50,7 @@
   (inputs newer after a src edit), starter's stage skips (dist now strictly
   newest).
 - Tests: `build-workspace-package-if-stale.test.mjs` (fail-open matrix +
-  property: a skip implies both mtimes exist and dist is strictly newer).
+  property: a skip implies both mtimes exist and dist is strictly newer;
+  `decideBuild` on real temp packages with fixed mtimes: a changed
+  `tsconfig.app.json`, root `tsconfig*.json` or `tsdown.config.*` builds).
   Runs in the root repo-config gate.

@@ -22,7 +22,7 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { Pose } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
-import type { MovedCodeEvidence } from "./moved-code-check.js";
+import type { MovedCodeEvidence, RestoredCode } from "./moved-code-check.js";
 import type { KeepAlivePhase } from "./qr-vote-keep-alive.js";
 
 import {
@@ -132,7 +132,8 @@ interface KeepAliveLog extends ViewingMoment {
 interface CodeIgnoredLog extends ViewingMoment {
   /** The code the moved-code check judged moved (authoring plan
    *  2026-09-28-0953 §3.6, D20, M5c), and its level id - what the veto is
-   *  kept by for the rest of the tour. */
+   *  kept by until the check lifts it (polish round C5) or the tour
+   *  switches. */
   readonly text: string;
   readonly levelId: string;
   /** The detector's inputs as computed (§7j #15): device-only accuracies,
@@ -166,9 +167,27 @@ export const codeIgnored: LogActionCreator<
   CodeIgnoredLog
 > = logAction<CodeIgnoredLog>()("tourViewing/codeIgnored");
 
+/** A vetoed code used again (polish round C5): the moved-code check read it
+ *  consistent on wider evidence than its veto rested on. */
+interface CodeRestoredLog {
+  readonly text: string;
+  readonly levelId: string;
+  /** What the check computed when it lifted the veto. */
+  readonly evidence: RestoredCode["evidence"];
+  readonly alignmentMatrix: AlignmentMatrix;
+  readonly arVisitIndex: number;
+  readonly atMs: number;
+}
+
+export const codeRestored: LogActionCreator<
+  "tourViewing/codeRestored",
+  CodeRestoredLog
+> = logAction<CodeRestoredLog>()("tourViewing/codeRestored");
+
 /** Any `tourViewing/*` action. */
 export type TourViewingAction =
   | ReturnType<typeof codeIgnored>
+  | ReturnType<typeof codeRestored>
   | ReturnType<typeof codeLocked>
   | ReturnType<typeof votesCast>
   | ReturnType<typeof tourPlaced>

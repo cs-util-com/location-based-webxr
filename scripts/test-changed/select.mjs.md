@@ -29,9 +29,18 @@ The command SPLIT, kept pure so DEC-G2 is testable. Emits, in order:
 
 1. `pnpm run test:repo-config` — always; cheap, and it guards the config
    this logic itself reads.
-2. the changed packages’ **full** gates (`--filter <name>`), e2e included,
+2. `FRAMEWORK_BUILD_IF_STALE`, whenever any package gate runs: the
+   framework's `dist` is built unless it is already newer than every input
+   (`scripts/build-workspace-package-if-stale.mjs`). The demo apps resolve
+   the framework through `dist` and their own `build:framework` stage comes
+   after `typecheck` and `test:unit`, so without it a dependent checked
+   itself against a stale `dist` on a framework change (stale-dist
+   follow-up 2026-09-28-1910, option 1; gate-speed plan G2). Not narrowed to
+   selections containing a framework consumer: a fresh dist costs one mtime
+   walk, and the selections it could skip are rare;
+3. the changed packages’ **full** gates (`--filter <name>`), e2e included,
    first so a break in what was actually edited fails fast;
-3. their dependents **minus themselves**
+4. their dependents **minus themselves**
    (`--filter "...<name>" --filter "!<name>"`) with `skipBrowserEnv` set.
 
 `selectPackages` cannot compute the dependent set — it maps paths to
@@ -43,6 +52,13 @@ holds or silently does not.
 An empty dependent set is a safe no-op: pnpm prints "No projects matched the
 filters" and exits 0 (verified), which is what a package with no dependents
 gets.
+
+## `cascadeCommands()`
+
+The full-cascade fallback (`--all`, or a change outside the package dirs):
+the same framework build first, then `pnpm test`. The cascade runs
+`check:deadcode` (knip resolves workspace packages through their `dist`)
+before any package stage builds the framework.
 
 ## The served-by edge (globe plan 2026-09-26-0539 §8, W7 M0)
 

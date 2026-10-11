@@ -13,7 +13,9 @@ archive-format-agnostic; zip.js enters only where a caller wraps
 ## Public API
 
 - `openRemoteArchive(rawUrl, options?): Promise<OpenedArchive>`
-- `interface OpenRemoteArchiveOptions { fetchImpl?; cacheStore?; googleDriveApiKey?; corsProxyBaseUrl?; onRead?; warm?; skipCache? }`
+- `interface OpenRemoteArchiveOptions { fetchImpl?; cacheStore?; googleDriveApiKey?; corsProxyBaseUrl?; onRead?; warm?; skipCache?; maxArchiveBytes?; acceptLocalCopy?; isOnline? }`
+  The `maxArchiveBytes` option is the transport cap (`archive-limits.ts`, default
+  1 GiB); `isOnline` (default `navigator.onLine`) is injected for tests.
   — `corsProxyBaseUrl` routes Drive links through the site worker's CORS
   proxy (precedence over the API key; see `share-link.ts.md`). Note the
   cache keys on the NORMALIZED url, so changing which Drive form is active
@@ -63,9 +65,38 @@ archive-format-agnostic; zip.js enters only where a caller wraps
   `warmed` then resolves false and the session simply stays remote.
 - **Poisoned-cache recovery is the caller's loop:** a cached copy that fails
   to parse → `evict()` → reopen with `skipCache: true`.
-- A `fetch`-level rejection maps to rejectCause `'cors'` — in a browser a
-  CORS block and a dead network are indistinguishable (both `TypeError`), and
-  either way the link is unusable from here.
+- A `fetch`-level rejection maps to rejectCause `'offline'` when the browser
+  reports no network (`navigator.onLine === false`, which is reliable; `true`
+  is not - a captive portal is "online"), else to `'cors'`: in a browser a
+  CORS block and a dead network are otherwise indistinguishable (both
+  `TypeError`). The saved copy is always tried first, so either cause means
+  there is no usable saved copy - the Tour Viewer's "download the file and
+  open it here" advice relies on that order (tour kit plan K0).
+- **`acceptLocalCopy` (tour kit plan K1, §8 D3).** Every COMPLETE copy
+  this module produces - the warm download, a range-ignore recovery, an
+  eager or a full download - is handed to it before the copy backs the
+  session or reaches the store; a rejection keeps it out of both (the warm
+  leaves the session remote with `warmed` false, a recovery fails its read,
+  an eager or full download fails the open with the rejection). The warm
+  offers only a copy of the session's own size. A copy served FROM the
+  store is not offered (it was accepted when stored); a consumer that must
+  re-check an older copy does so itself. The Tour Viewer checks a signed
+  tour as a whole here, so a copy that fails is never cached.
+- **The transport cap (tour kit plan K0, K-D1).** Above `maxArchiveBytes` an
+  open rejects with `'too-large'`: from the HEAD's `Content-Length` before
+  any GET, from a 206's total before any range read, and while a
+  range-ignoring host's 200 or a full download streams
+  (`readResponseBodyCapped`). A saved copy above the cap is not served, so
+  the cap protects every visit, not only the first - but it is KEPT (K0
+  milestone review R12): it is the visitor's own download, and a cap that
+  refuses it today (a smaller cap, a configuration mistake) must not
+  destroy it. A download that fits replaces it through the warm. When the
+  network then fails before any HTTP status, the open rejects with
+  `'too-large'` carrying the copy's `ArchiveLimitError`, not with
+  `'offline'`/`'cors'`: the size is why this visitor cannot open it. The warm
+  and recovery downloads are capped at the session's own size: a longer body
+  is the wrong file, which the size check would refuse anyway - after
+  holding all of it.
 - `onRead` fires per read served through the returned source with the true
   origin (`network` before the swap, `cache` after) — the seam TourViewer's
   live counters hang on. Every whole-archive network transfer additionally
@@ -98,6 +129,13 @@ try {
 `open-remote-archive.test.ts` — ranged open + instrumentation, share-link
 normalization, warm switch/persist, the size-mismatch persist refusal,
 dispose-aborts-warm, warm opt-out, fresh/stale/validator-less/offline cache
-paths, skipCache + evict, eager-local degrade, and the missing/cors reject
-causes. `zip-streaming-request-budget.test.ts` — the measured request/byte
+paths, skipCache + evict, eager-local degrade, the missing/cors reject
+causes. The K0 milestone review (R11) added the warm and recovery caps
+watched on a real stream: a body longer than the session size is
+cancelled within a few chunks, never drained (without the cap the outcome
+looks the same, but only after the whole body was held). Tour kit K1
+added `acceptLocalCopy`: the warm offers its copy then switches and
+persists; a refused warm, eager or recovery copy is neither used nor
+stored; a wrong-size warm and a cache hit never reach the hook.
+`zip-streaming-request-budget.test.ts` — the measured request/byte
 ceilings against a real zip.

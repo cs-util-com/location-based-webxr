@@ -1,8 +1,15 @@
-import { TextReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
+import {
+  TextReader,
+  Uint8ArrayReader,
+  Uint8ArrayWriter,
+  ZipWriter,
+} from "@zip.js/zip.js";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
+  ArchiveLimitError,
+  OpenRemoteArchiveError,
   InMemoryLocalCacheStore,
   packFilesAsZip,
   type FetchImpl,
@@ -13,6 +20,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   archiveFileName,
+  openTourFile,
   openTourSession,
   readArchiveInSlices,
   tourLabel,
@@ -92,6 +100,25 @@ describe("loadQrLevels", () => {
     const levels = await session.loadQrLevels();
     expect([...levels.keys()].sort()).toEqual(["1", "2"]);
     expect(levels.get("1")?.qr.physicalSizeM).toBe(0.2);
+    await session.close();
+  });
+
+  // Why (code book plan M1, second review #8): the Finish must know what
+  // the hosted zip holds for each code to know what to write; the text is
+  // read at open anyway, and reading it again is a zip round trip.
+  it("keeps the raw text of every level file it read, parseable or not", async () => {
+    const fetchImpl = rangeServer(
+      await buildZip({ "qr/1.json": "{not json", "qr/3.json": LEVEL_JSON }),
+    );
+    const session = await openTourSession("https://x/tour.zip", { fetchImpl });
+    expect(session.levelTexts()).toEqual(new Map());
+    await session.loadQrLevels();
+    expect(session.levelTexts()).toEqual(
+      new Map([
+        ["1", "{not json"],
+        ["3", LEVEL_JSON],
+      ]),
+    );
     await session.close();
   });
 
@@ -376,10 +403,10 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
         await buildZip({ "tour.json": '{"version":1,"objects":[]}' }),
       ),
     });
-    await expect(withManifest.loadTourManifest()).resolves.toEqual({
-      version: 1,
-      objects: [],
-    });
+    // A version 1 file is read migrated to version 2 (tour kit plan K1).
+    await expect(withManifest.loadTourManifest()).resolves.toEqual(
+      createEmptyTourManifest(),
+    );
     await withManifest.close();
 
     const broken = await openTourSession("https://x/tour.zip", {
@@ -473,10 +500,9 @@ describe("loadTourManifest / readWholeArchive (guided-setup plan M3)", () => {
     });
     expect(session.entries.map((e) => e.filename)).toEqual(["tour.json"]);
     expect(session.hasRecording).toBe(false);
-    await expect(session.loadTourManifest()).resolves.toEqual({
-      version: 1,
-      objects: [],
-    });
+    await expect(session.loadTourManifest()).resolves.toEqual(
+      createEmptyTourManifest(),
+    );
     await expect(session.loadQrLevels()).resolves.toEqual(new Map());
     await session.close();
   });
@@ -649,5 +675,321 @@ describe("hostedFileName (Drive replace plan §5 #8)", () => {
       fetchImpl: rangeServer(await buildZip()),
     });
     expect(session.hostedFileName()).toBeNull();
+  });
+});
+
+/**
+ * Why these tests matter (tour kit plan K0, K-D1, review F1): a tour may
+ * come from any link or file, so the session reads it like untrusted
+ * input. The directory walk stops at its entry cap, and every entry the
+ * page reads - tour.json, a level, a photo, the action stream - is
+ * inflated under one per-archive budget that counts the bytes actually
+ * produced. Before K0 a few KB of deflated zeros in `content/` would
+ * inflate without limit in the visitor's phone.
+ */
+describe("the zip-bomb caps (K0)", () => {
+  async function deflatedZip(
+    files: Record<string, string | Uint8Array>,
+  ): Promise<Uint8Array> {
+    const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 9 });
+    for (const [name, data] of Object.entries(files)) {
+      await writer.add(
+        name,
+        typeof data === "string"
+          ? new TextReader(data)
+          : new Uint8ArrayReader(data),
+      );
+    }
+    return writer.close();
+  }
+
+  it("refuses an archive whose directory lists more entries than the cap", async () => {
+    const zip = await deflatedZip({ a: "a", b: "b", c: "c" });
+    const err = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxEntries: 2 },
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveLimitError);
+    expect((err as ArchiveLimitError).kind).toBe("entry-count");
+  });
+
+  it("refuses a tour.json that inflates past the text cap", async () => {
+    const manifest = serializeTourManifest(createEmptyTourManifest());
+    const zip = await deflatedZip({
+      "tour.json": manifest + " ".repeat(5000),
+    });
+    const session = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxTextEntryBytes: 1000 },
+    });
+    await expect(session.loadTourManifest()).rejects.toBeInstanceOf(
+      ArchiveLimitError,
+    );
+    await session.close();
+  });
+
+  it("stops a content bomb at the per-entry cap; the tour stays open", async () => {
+    const zip = await deflatedZip({
+      "content/p1.jpg": new Uint8Array(4 * 1024 * 1024),
+      "images/ok.jpg": "fine",
+    });
+    const session = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxEntryBytes: 1024 * 1024 },
+    });
+    const err = await session
+      .loadContentEntry("content/p1.jpg")
+      .catch((e: unknown) => e);
+    expect((err as ArchiveLimitError).kind).toBe("entry-bytes");
+    expect((await session.loadEntry("images/ok.jpg")).size).toBe(4);
+    await session.close();
+  });
+
+  it("shares one total across every entry the page reads", async () => {
+    const zip = await deflatedZip({
+      "images/a.jpg": new Uint8Array(600 * 1024),
+      "images/b.jpg": new Uint8Array(600 * 1024),
+    });
+    const session = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxTotalBytes: 1024 * 1024, totalFloorBytes: 1024 * 1024 },
+    });
+    await session.loadEntry("images/a.jpg");
+    // A second look at the same photo costs nothing...
+    await session.loadEntry("images/a.jpg");
+    // ...a second photo past the total is refused.
+    const err = await session
+      .loadEntry("images/b.jpg")
+      .catch((e: unknown) => e);
+    expect((err as ArchiveLimitError).kind).toBe("total-bytes");
+    await session.close();
+  });
+
+  it("refuses an archive whose directory read passes the directory cap (K0 milestone review R4)", async () => {
+    // zip.js reads a declared central directory in one piece before any
+    // entry is counted; the session's reader refuses a read over the cap.
+    const zip = await deflatedZip({ a: "a", b: "b", c: "c" });
+    expect(zip.length).toBeGreaterThan(100);
+    const err = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxDirectoryBytes: 100 },
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveLimitError);
+    expect((err as ArchiveLimitError).kind).toBe("directory-bytes");
+  });
+
+  it("reads an entry as text under the text cap (K0 milestone review R10)", async () => {
+    const zip = await deflatedZip({
+      "qr/big.json": LEVEL_JSON + " ".repeat(5000),
+      "qr/ok.json": LEVEL_JSON,
+    });
+    const session = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxTextEntryBytes: 1000 },
+    });
+    expect(await session.loadEntryText("qr/ok.json")).toBe(LEVEL_JSON);
+    const err = await session
+      .loadEntryText("qr/big.json")
+      .catch((e: unknown) => e);
+    expect((err as ArchiveLimitError).kind).toBe("entry-bytes");
+    expect((err as ArchiveLimitError).limit).toBe(1000);
+    await session.close();
+  });
+
+  it("surfaces a capture-geo refusal instead of reading it as 'no recording' (K0 milestone review R9)", async () => {
+    // The join's caller shows a thrown error in the AR status line ("photo
+    // ring (reading the recording failed: ...)"); a swallowed refusal read
+    // as an ordinary tour without a walk, so the visitor never learned why.
+    const pad = "x".repeat(600 * 1024);
+    const zip = await deflatedZip({
+      "actions/000001.json": JSON.stringify({ type: "a", payload: pad }),
+      "actions/000002.json": JSON.stringify({ type: "b", payload: pad }),
+    });
+    const session = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxTotalBytes: 1024 * 1024, totalFloorBytes: 1024 * 1024 },
+    });
+    const err = await session.loadRecordingActions().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveLimitError);
+    expect((err as ArchiveLimitError).kind).toBe("total-bytes");
+    await session.close();
+  });
+
+  it("surfaces a session.json past the text cap the same way", async () => {
+    const zip = await deflatedZip({
+      "session.json": `{"odomCoordVersion":5,"pad":"${"x".repeat(5000)}"}`,
+    });
+    const session = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxTextEntryBytes: 1000 },
+    });
+    await expect(session.loadSessionMeta()).rejects.toBeInstanceOf(
+      ArchiveLimitError,
+    );
+    await session.close();
+  });
+
+  it("degrades a level file over the text cap to no level, as a corrupt one", async () => {
+    const zip = await deflatedZip({
+      "qr/big.json": LEVEL_JSON + " ".repeat(5000),
+      "qr/ok.json": LEVEL_JSON,
+    });
+    const session = await openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(zip),
+      limits: { maxTextEntryBytes: 1000 },
+    });
+    expect([...(await session.loadQrLevels()).keys()]).toEqual(["ok"]);
+    await session.close();
+  });
+});
+
+/**
+ * Why these tests matter (tour kit plan K0, review D12): placed content is
+ * read through `loadContentEntry`, so this is where the media allowlist
+ * holds for a tour from any link - an SVG (which can carry script) is
+ * never handed to the page even when the zip contains one, and a `.glb`
+ * that would fetch from outside or need a downloaded decoder is refused.
+ */
+describe("the media allowlist (K0)", () => {
+  function glbWith(json: unknown): Uint8Array {
+    let text = JSON.stringify(json);
+    while (text.length % 4 !== 0) text += " ";
+    const body = new TextEncoder().encode(text);
+    const out = new Uint8Array(20 + body.length);
+    const view = new DataView(out.buffer);
+    view.setUint32(0, 0x46546c67, true);
+    view.setUint32(4, 2, true);
+    view.setUint32(8, out.length, true);
+    view.setUint32(12, body.length, true);
+    view.setUint32(16, 0x4e4f534a, true);
+    out.set(body, 20);
+    return out;
+  }
+
+  async function sessionOf(files: Record<string, string | Uint8Array>) {
+    const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
+    for (const [name, data] of Object.entries(files)) {
+      await writer.add(
+        name,
+        typeof data === "string"
+          ? new TextReader(data)
+          : new Uint8ArrayReader(data),
+      );
+    }
+    return openTourSession("https://host.example/t.zip", {
+      fetchImpl: rangeServer(await writer.close()),
+    });
+  }
+
+  it("refuses an SVG content entry, and never counts it as an image", async () => {
+    const session = await sessionOf({
+      "content/p1.svg": "<svg onload='x()'/>",
+      "content/p2.jpg": "JPEG",
+    });
+    await expect(session.loadContentEntry("content/p1.svg")).rejects.toThrow(
+      /not a media type a tour may carry/,
+    );
+    expect(
+      session.entries.find((e) => e.filename.endsWith(".svg"))?.isImage,
+    ).toBe(false);
+    const photo = await session.loadContentEntry("content/p2.jpg");
+    expect(photo.type).toBe("image/jpeg");
+    await session.close();
+  });
+
+  it("serves a self-contained .glb as a model, and refuses one that reaches outside", async () => {
+    const session = await sessionOf({
+      "content/m1.glb": glbWith({ asset: { version: "2.0" } }),
+      "content/m2.glb": glbWith({
+        asset: { version: "2.0" },
+        buffers: [{ uri: "https://cdn.example/m2.bin" }],
+      }),
+    });
+    expect((await session.loadContentEntry("content/m1.glb")).type).toBe(
+      "model/gltf-binary",
+    );
+    await expect(session.loadContentEntry("content/m2.glb")).rejects.toThrow(
+      /points outside the file/,
+    );
+    await session.close();
+  });
+
+  it("types any allowlisted entry by the allowlist, anything else as plain bytes", async () => {
+    const session = await sessionOf({
+      "audio/a.mp3": "ID3",
+      "notes/readme.html": "<b>hi</b>",
+    });
+    expect((await session.loadEntry("audio/a.mp3")).type).toBe("audio/mpeg");
+    expect((await session.loadEntry("notes/readme.html")).type).toBe(
+      "application/octet-stream",
+    );
+    await session.close();
+  });
+});
+
+/**
+ * Why these tests matter (tour kit plan K0, K-D1): "open a file" is the way
+ * around a host that blocks browsers, so a file-opened tour must be the
+ * SAME session as a link's - same listing, same manifest, same caps - with
+ * a substitute identity: no URL, so the content key of `tour-file-key.ts`
+ * keys its draft, and the file's own name is the name a finished zip is
+ * offered under.
+ */
+describe("openTourFile (K0)", () => {
+  async function tourFile(name: string): Promise<File> {
+    const manifest = serializeTourManifest(createEmptyTourManifest());
+    const bytes = await buildZip({ "tour.json": manifest });
+    return new File([bytes as BlobPart], name, { type: "application/zip" });
+  }
+
+  it("opens a zip from the device as a full session, keyed by its content", async () => {
+    const file = await tourFile("tour (1).zip");
+    const opened = await openTourFile(file);
+    expect(opened.fromFile).toBe(true);
+    expect(opened.archive.url).toMatch(/^local-file:[0-9a-f]{32}$/);
+    expect(opened.hostedFileName()).toBe("tour (1).zip");
+    expect(opened.entries.map((e) => e.filename)).toContain("images/a.jpg");
+    expect(await opened.loadTourManifest()).toEqual(createEmptyTourManifest());
+    // The rebuild's input is the file itself, not a copy.
+    expect(await opened.readWholeArchive()).toBe(file);
+    expect(opened.stats().networkBytes).toBe(0);
+    await opened.close();
+  });
+
+  it("gives the same tour the same key under any file name", async () => {
+    const a = await openTourFile(await tourFile("tour.zip"));
+    const b = await openTourFile(await tourFile("tour (2).zip"));
+    expect(a.archive.url).toBe(b.archive.url);
+  });
+
+  it("says in plain words when the file is not a zip", async () => {
+    const err = await openTourFile(
+      new File(["not a zip at all"], "notes.zip"),
+    ).catch((e: unknown) => e);
+    expect((err as Error).message).toMatch(
+      /"notes\.zip" is not a readable tour zip/,
+    );
+  });
+
+  it("holds the transport cap on the file's size", async () => {
+    const err = await openTourFile(await tourFile("big.zip"), {
+      limits: { maxArchiveBytes: 10 },
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(OpenRemoteArchiveError);
+    expect((err as OpenRemoteArchiveError).rejectCause).toBe("too-large");
+  });
+
+  it("holds the directory cap while reading the key (K0 milestone review R4)", async () => {
+    const err = await openTourFile(await tourFile("t.zip"), {
+      limits: { maxDirectoryBytes: 100 },
+    }).catch((e: unknown) => e);
+    expect((err as ArchiveLimitError).kind).toBe("directory-bytes");
+  });
+
+  it("holds the entry cap while reading the key", async () => {
+    const err = await openTourFile(await tourFile("t.zip"), {
+      limits: { maxEntries: 2 },
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ArchiveLimitError);
   });
 });

@@ -10,7 +10,12 @@
  */
 
 import type { EnableGpsArState } from "gps-plus-slam-app-framework/ar";
+import {
+  GPS_POINT_SOURCE_DEVICE,
+  gpsPointSourceOf,
+} from "gps-plus-slam-app-framework/core";
 import type { GpsPosition } from "gps-plus-slam-app-framework/sensors";
+import { createGpsExtentTracker } from "gps-plus-slam-app-framework/state/gps-extent-tracker";
 import {
   type DepthSample,
   clearAllQrMarkers,
@@ -33,7 +38,8 @@ import type { ViewerMode } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { debugReadoutLines, visitorFusedHint } from "./qr-debug-readout.js";
 import type { TourViewerSeams } from "./seams.js";
-import { arStatusLine } from "./tour-flow.js";
+import { arStatusLine, type ArStatusInput } from "./tour-flow.js";
+import { visitorStatus } from "./visitor-status.js";
 import type { LocationGate } from "./visitor-screen.js";
 import type { RecordingPanel } from "./recording-panel.js";
 import {
@@ -57,6 +63,10 @@ export interface ArEntryDom {
   escapeButton: HTMLButtonElement;
   /** The `?debug=1` QR readout (plan §66); written only while `ctx.debug`. */
   arDebug?: HTMLElement;
+  /** The screen reader's copy of the visitor's sentence (UI round 1, U1,
+   *  review F14): written only when the sentence changes, never per camera
+   *  frame like the visible line. */
+  arStatusLive?: HTMLElement;
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -94,6 +104,16 @@ export function wireArEntry(deps: {
   const authorMode = mode === "creator";
   /** Whether THIS session's depth sampler was started (a recorded entry). */
   let depthRunning = false;
+  /** The device fixes' extent, for the ?debug=1 GPS line (polish round C4). */
+  const gpsExtent = createGpsExtentTracker();
+  /** That line's inputs, recomputed only when the GPS list changed: the
+   *  block re-renders on every frame. */
+  let gpsQualityFor: unknown = null;
+  let gpsQuality: {
+    accuracyM: number | null;
+    extentM: number | null;
+    fixes: number;
+  } = { accuracyM: null, extentM: null, fixes: 0 };
 
   /**
    * The recording's part of an AR entry (authoring recording plan
@@ -123,9 +143,10 @@ export function wireArEntry(deps: {
 
   function renderArStatus(): void {
     renderDebugReadout();
-    dom.arStatus.textContent = arStatusLine({
+    const input: ArStatusInput = {
       mode,
       arStatus: arController.getState().status,
+      arError: arController.getState().error ?? null,
       cameraFrames: ctx.cameraFrameCount,
       tour:
         ctx.session === null
@@ -173,7 +194,62 @@ export function wireArEntry(deps: {
               count: ctx.contentRendered.count,
               skipped: ctx.contentRendered.skipped.length,
             },
-    });
+    };
+    // A visitor reads one plain sentence (UI round 1, U1); the technical
+    // line stays for the creator and for a visitor's `?debug=1`. The state
+    // name is the stable channel for the page's styling and the tests.
+    const plain = visitorStatus(input);
+    const visitor = mode === "visitor";
+    const line = visitor && !ctx.debug ? plain.text : arStatusLine(input);
+    dom.arStatus.textContent = line;
+    // The visitor's state machine only (a creator's would mislead), and
+    // the gate for both (U1 milestone review #8, #9).
+    if (visitor) dom.arStatus.dataset.state = plain.state;
+    else delete dom.arStatus.dataset.state;
+    dom.arStatus.dataset.gate = gateName(ctx.scanGate);
+    // The live region: the visitor's sentence, and a creator's line only
+    // outside a session - inside one it changes with every camera frame.
+    const live = visitor
+      ? plain.text
+      : input.arStatus === "running"
+        ? null
+        : line;
+    if (
+      live !== null &&
+      dom.arStatusLive !== undefined &&
+      dom.arStatusLive.textContent !== live
+    ) {
+      dom.arStatusLive.textContent = live;
+    }
+  }
+
+  /** The scan gate as one word (`data-gate`): "passed-code" proves the
+   *  CODE passed it, not GPS. */
+  function gateName(gate: TourViewerSession["scanGate"]): string {
+    if (gate.kind === "passed") return `passed-${gate.via}`;
+    if (gate.kind === "not-required") return `not-required-${gate.reason}`;
+    return gate.kind;
+  }
+
+  /** The session's GPS quality from DEVICE fixes only: the store's median
+   *  folds the code's synthetic votes in, which would make poor indoor GPS
+   *  read about 5 m (polish round C4). */
+  function sessionGpsQuality(): typeof gpsQuality {
+    const positions = selectGpsPositions(arStore.getState());
+    if (positions === gpsQualityFor) return gpsQuality;
+    gpsQualityFor = positions;
+    const accuracies = positions
+      .filter((p) => gpsPointSourceOf(p) === GPS_POINT_SOURCE_DEVICE)
+      .map((p) => p.latLongAccuracy)
+      .filter((a): a is number => typeof a === "number" && Number.isFinite(a))
+      .sort((a, b) => a - b);
+    gpsQuality = {
+      accuracyM:
+        accuracies.length === 0 ? null : accuracies[accuracies.length >> 1]!,
+      extentM: gpsExtent.update(positions),
+      fixes: accuracies.length,
+    };
+    return gpsQuality;
   }
 
   /** The ?debug=1 block: the controller state and each code's counts. */
@@ -188,6 +264,9 @@ export function wireArEntry(deps: {
       tallies: ctx.fusedTallies,
       movedCodeChecks: ctx.movedCodeChecks?.snapshot() ?? [],
       ignoredCodes: [...ctx.ignoredCodes.values()].map((c) => c.text),
+      gps: sessionGpsQuality(),
+      // A recorded entry is the one that runs the depth sampler.
+      recordingOn: depthRunning,
     }).join("\n");
   }
 
@@ -263,6 +342,8 @@ export function wireArEntry(deps: {
     ctx.contentRendered = null;
     ctx.contentAttempted = false;
     ctx.contentError = null;
+    // The story stops with the session; the station progress stays.
+    hooks.stopStations();
     dom.escapeButton.hidden = true;
     ctx.viewerQrStatus = null;
     ctx.viewerUnknownCode = null;
@@ -331,6 +412,7 @@ export function wireArEntry(deps: {
           ctx.latestFrame = frame;
           ctx.qrController?.offerFrame(frame);
           renderArStatus();
+          hooks.tickStations();
         },
         onSessionEnd,
         onGpsPosition: (position) => {
@@ -343,7 +425,13 @@ export function wireArEntry(deps: {
       }),
     );
     // Failure states surface via the subscribed button view (Retry — <reason>).
-    if (!result.ok) return;
+    // No session ran, so no session end disposes the pipeline started above;
+    // a retry would build another on top of it (a declined permission
+    // prompt, 2026-10-07).
+    if (!result.ok) {
+      endQrPipeline(ctx);
+      return;
+    }
     const runtime = startTourArRuntime(arStore, {
       getArWorldGroup: () => seams.getArWorldGroup(),
       enableArWorldGroupAlignment: (options) =>
@@ -366,6 +454,8 @@ export function wireArEntry(deps: {
     ctx.gpsSamplesAtSessionStart = selectGpsPositions(
       arStore.getState(),
     ).length;
+    ctx.frameEpochAtSessionStart =
+      arStore.getState().qrDetected.frameEpoch ?? 0;
     // BOTH modes glue the marker to detections — the author's accuracy check
     // and the viewer's "it relocalized" proof are the same axis+cube.
     const worldGroup = seams.getArWorldGroup();
@@ -399,8 +489,11 @@ export function wireArEntry(deps: {
     ctx.joinDeclined = false;
     ctx.placementUnsubscribe = arStore.subscribe(() => {
       hooks.tryPlaceTour();
+      // The stations (tour kit plan K4) are judged on every GPS fix too.
+      hooks.tickStations();
     });
     hooks.tryPlaceTour();
+    hooks.tickStations();
     renderArStatus();
   }
 
@@ -408,6 +501,17 @@ export function wireArEntry(deps: {
   renderArState(arController.getState());
   void arController.refreshSupport();
   dom.enterArButton.addEventListener("click", () => {
+    // During a session the button is the way out (UI round 1, U2): the
+    // session end runs the same teardown as the back gesture.
+    if (arController.getState().status === "running") {
+      arController.disable().catch((err: unknown) => {
+        dom.errorBox.textContent = describeOpenError(err);
+      });
+      return;
+    }
+    // Inside the tap, before any await: the stories' one audio element
+    // may play later only if it played in a gesture (tour kit plan K4).
+    if (!authorMode) hooks.unlockStationAudio();
     // Defensive: enable() reports failures via its state machine, but a
     // rejection anywhere else (e.g. the rollback disable()) must reach the
     // error box, not die as an unhandled rejection.

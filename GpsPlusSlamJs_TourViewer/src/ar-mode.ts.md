@@ -17,8 +17,12 @@ identical here — they diverge in M3/M4.
   mapping of `EnableGpsArState` to the entry button. Ready: "Start AR
   setup" (creator), "Start the tour" (visitor), "Allow location" (visitor
   while the location gate is pending, DEC-N2), "Getting your location…"
-  disabled (visitor while the request runs); running: "Setting up in AR"
-  / "Tour running".
+  disabled (visitor while the request runs); running: "Exit AR" for both (a creator's "your work stays on this phone" was dropped: no promise without a draft backup, U2 milestone review #3), enabled - the way
+  out of AR, `ar-entry.ts` disables the session on that tap (UI round 1,
+  U2, review F2; it used to sit disabled as "Tour running" / "Setting up in
+  AR"); error: "Try again" (the cause is the status line's, in
+  plain words, `visitor-status.ts`; it used to be "Retry - " plus the raw
+  browser error, UI round 1, U1, review F5).
 - `buildArEnableConfig(hooks: ArEnableHooks): EnableGpsArConfig` -
   `hooks.requestHitTest` asks for the WebXR `hit-test` feature (the
   creator's reticle; without it the reticle never shows) - hooks:

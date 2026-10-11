@@ -46,7 +46,8 @@ open, reusing the draft-offer machinery"), M1b.
   at once, so one element would need a queue shared by two owners.
 - **"Save it" is two taps: prepare, then hand over** (M1b review #4). The
   first builds the zip, which rebuilds `session.json` by parsing every action
-  of a recording that may be an hour long (about 125 MB); a share sheet
+  of a recording that may be an hour long (about 14 MB since scan pass S2,
+  125 MB before); a share sheet
   opened after that has lost the tap's transient user activation, and the
   framework's hand-off then falls back to a download it reports as
   delivered. So the first tap ends at "Ready: <file>. Tap Share it to save

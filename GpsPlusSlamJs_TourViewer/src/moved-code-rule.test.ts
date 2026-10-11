@@ -184,8 +184,83 @@ describe("judgeCodeMove", () => {
     expect(CODE_TURN_RULE).toEqual({
       settledYawDeg: 45,
       settledAlignmentSamples: 120,
+      sigmaFactor: 3,
+      baselineSpreadFactor: 3,
     });
     expect(MOVED_CODE_HORIZON_S).toBe(300);
     expect(CODE_MOVE_RULE.floorM).toBe(20);
+  });
+});
+
+describe("a turn needs GPS heading evidence (polish round C5)", () => {
+  // Why these tests matter (the 2026-10-10 viewer recording): standing at a
+  // window indoors, 53 s after the scan, the fit read a 46-degree turn over
+  // 2.15 m of GPS spread at 8.3 m median accuracy - a heading that GPS
+  // cannot know (the heading model's sigma is about 52 degrees there) - and
+  // the 45-degree turn check vetoed the code for the rest of the session.
+  // A turn now counts only beyond the larger of the calibrated 45 degrees
+  // and `sigmaFactor` times that sigma.
+  const recorded = est({
+    displacementM: [1.88, 1.54],
+    magnitudeM: 2.44,
+    yawDeg: -45.7,
+    spanS: 168.5,
+    spreadM: 2.15,
+  });
+
+  it("does not read the recording's indoor stand as a turned code", () => {
+    const j = judgeCodeMove({
+      settled: true,
+      estimate: recorded,
+      accuracyMedianM: 8.3,
+    });
+    expect(j.verdict).toBe("consistent");
+    expect(j.decidedBy).toBeNull();
+    expect(j.turnChecked).toBe(true);
+  });
+
+  it("keeps the calibrated 45 degrees after a real outdoor walk", () => {
+    const walked = { settled: true, accuracyMedianM: 4 };
+    expect(
+      judgeCodeMove({ ...walked, estimate: est({ yawDeg: -46 }) }).decidedBy,
+    ).toBe("turn");
+    expect(
+      judgeCodeMove({ ...walked, estimate: est({ yawDeg: 44 }) }).verdict,
+    ).toBe("consistent");
+  });
+
+  it("reads a large turn indoors only once the walk can see it", () => {
+    // The cost, stated: a poster really turned 90 degrees is not judged
+    // turned while the visitor stands at 2 m of spread with 8 m GPS; it is
+    // once the walk spreads far enough for GPS to carry a heading.
+    const standing = est({ yawDeg: 90, spreadM: 2.15 });
+    const walkedFar = est({ yawDeg: 90, spreadM: 15 });
+    expect(
+      judgeCodeMove({ settled: true, estimate: standing, accuracyMedianM: 8.3 })
+        .verdict,
+    ).toBe("consistent");
+    expect(
+      judgeCodeMove({
+        settled: true,
+        estimate: walkedFar,
+        accuracyMedianM: 8.3,
+      }).decidedBy,
+    ).toBe("turn");
+  });
+
+  it("assumes 5 m when no fix reported an accuracy", () => {
+    // A case the assumed accuracy decides: 4 m of spread, a 55-degree yaw.
+    // At 5 m the threshold is about 68 degrees (no turn); at 2 m it is the
+    // 45 floor (a turn).
+    const near = est({ yawDeg: 55, spreadM: 4 });
+    const at = (accuracyMedianM?: number) =>
+      judgeCodeMove({
+        settled: true,
+        estimate: near,
+        ...(accuracyMedianM === undefined ? {} : { accuracyMedianM }),
+      }).verdict;
+    expect(at(2)).toBe("moved");
+    expect(at(5)).toBe("consistent");
+    expect(at()).toBe(at(5));
   });
 });

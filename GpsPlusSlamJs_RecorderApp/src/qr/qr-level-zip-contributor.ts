@@ -124,7 +124,7 @@ export function createQrLevelZipContributor(
             sightings,
             spansFrameChange: feeder.accumulator.spansFrameChange(text),
             nowIso: deps.nowIso(),
-            // D28 revised: the first mature alignment (80 m of GPS extent)
+            // D28 revised: the first mature alignment (40 m of GPS extent, D34)
             // at or after the code's last sighting, which the feeder froze;
             // before maturity, the alignment as it stands at THIS save, or
             // the one the code's odometry segment closed with. Never the

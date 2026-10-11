@@ -48,17 +48,32 @@ export function gateAfterRequest(outcome: LocationRequestOutcome): boolean {
   return outcome === "denied";
 }
 
-/** What the visitor reads after a request that did not obtain a position. */
-export function locationRequestMessage(
-  outcome: LocationRequestOutcome,
-): string {
+/** What the visitor reads after one location request: an `error` only
+ *  for a denial (the alert box), otherwise a `hint` above the button that
+ *  says what the next tap does (UI round 1, U1, review F11: the second tap
+ *  used to be silent, and the benign no-fix note showed as a red alert). */
+export function locationRequestNotice(outcome: LocationRequestOutcome): {
+  error: string;
+  hint: string | null;
+} {
   switch (outcome) {
     case "denied":
-      return "Location is needed to place the tour. Allow location for this site in your browser settings, then tap again.";
+      return {
+        error:
+          "Location is needed to place the tour. Allow location for this site in your browser settings, then tap again.",
+        hint: null,
+      };
     case "unavailable":
-      return "No GPS fix yet - that is fine outdoors, the tour keeps trying once it starts.";
+      return {
+        error: "",
+        hint: "No GPS fix yet - that is fine outdoors, the tour keeps trying once it starts. Tap Start the tour, then point your phone at the tour's code (on the poster).",
+      };
     case "granted":
-      return "";
+      // Keeps what to do once AR starts (U1 milestone review #10).
+      return {
+        error: "",
+        hint: "Location allowed - now tap Start the tour, then point your phone at the tour's code (on the poster).",
+      };
   }
 }
 
@@ -86,7 +101,7 @@ export interface VisitorScreen {
 }
 
 const VISITOR_HINT =
-  "Once AR starts, point your phone at the printed code you scanned and keep it in view while you move slowly. The tour appears when the code is recognised.";
+  "Once AR starts, point your phone at the tour's code (on the poster) and keep it in view while you move slowly. The tour appears when the code is recognised.";
 
 export function wireVisitorScreen(deps: {
   mode: ViewerMode;
@@ -133,7 +148,9 @@ export function wireVisitorScreen(deps: {
           busy = false;
         }
         pending = gateAfterRequest(outcome);
-        dom.errorBox.textContent = locationRequestMessage(outcome);
+        const notice = locationRequestNotice(outcome);
+        dom.errorBox.textContent = notice.error;
+        if (notice.hint !== null) dom.arHint.textContent = notice.hint;
         renderArEntry();
         return outcome;
       },

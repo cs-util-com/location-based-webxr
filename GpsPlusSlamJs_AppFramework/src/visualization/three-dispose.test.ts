@@ -104,6 +104,44 @@ describe('disposeObject3D', () => {
     expect(geoSpy).toHaveBeenCalledOnce();
   });
 
+  // Why (tour kit K4 review R12): a loaded GLB's materials carry normal,
+  // roughness, emissive and other maps besides `map`; freeing only `map`
+  // leaked every other texture of every model a story showed.
+  it('disposes every texture slot of a material, each shared texture once', () => {
+    const textures = {
+      map: new THREE.Texture(),
+      normalMap: new THREE.Texture(),
+      roughnessMap: new THREE.Texture(),
+      metalnessMap: new THREE.Texture(),
+      emissiveMap: new THREE.Texture(),
+      alphaMap: new THREE.Texture(),
+    };
+    const mat = new THREE.MeshStandardMaterial(textures);
+    // The same texture in two slots (a packed occlusion-roughness map).
+    mat.aoMap = textures.roughnessMap;
+    const spies = Object.values(textures).map((t) => vi.spyOn(t, 'dispose'));
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+
+    disposeObject3D(mesh);
+
+    for (const spy of spies) expect(spy).toHaveBeenCalledOnce();
+  });
+
+  // Why: a ShaderMaterial's uniform often holds a texture another object
+  // owns (the camera blit's camera texture); it is not the material's to free.
+  it('leaves a ShaderMaterial uniform texture alone', () => {
+    const camera = new THREE.Texture();
+    const spy = vi.spyOn(camera, 'dispose');
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 2),
+      new THREE.ShaderMaterial({ uniforms: { tDiffuse: { value: camera } } })
+    );
+
+    disposeObject3D(mesh);
+
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   // Why: materials without a map should not cause errors.
   it('handles materials without a map property gracefully', () => {
     const geo = new THREE.BoxGeometry(1, 1, 1);

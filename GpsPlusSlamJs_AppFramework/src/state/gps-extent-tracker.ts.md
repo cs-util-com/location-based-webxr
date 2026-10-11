@@ -10,8 +10,10 @@ An alignment's yaw is unobservable until its fixes span a baseline, and the
 fix COUNT does not say whether they do (a phone standing still for a minute
 has sixty fixes). The extent does. The QR mint reads it as the maturity floor
 of the alignment a code is composed through (`../ar/qr/qr-mint-alignment-tracker.ts`,
-80 m) and as the uncertain-heading marker of a minted level
-(`../ar/qr/qr-mint-level.ts`).
+40 m, the shared `alignment-maturity.ts`) and as the uncertain-heading marker
+of a minted level (`../ar/qr/qr-mint-level.ts`). The GPS anchor's
+`'mature-alignment'` start-up and the Tour Viewer's authoring settle read it
+for the same floor (D33).
 
 ## Public API
 
@@ -40,7 +42,8 @@ of the alignment a code is composed through (`../ar/qr/qr-mint-alignment-tracker
   tracking restart) and is folded from scratch.
 - **Defensive:** a fix with a non-finite north or east coordinate is skipped,
   so one bad point cannot turn the extent into NaN for the rest of the
-  session.
+  session; a fix without `coordinates` at all is skipped too, never thrown
+  on (the Tour Viewer folds the extent inside a store listener).
 - **Cost:** O(n) per new fix (it is compared with every earlier device fix),
   so O(n^2) over a session: about 26 million distance computations over a
   two-hour recording at 1 Hz, spread over those two hours.
@@ -57,6 +60,6 @@ const gpsExtentM = extent.update(selectGpsPositions(store.getState()));
 
 - `gps-extent-tracker.test.ts` - horizontal distance with height ignored,
   device-only, incremental folding, starting over on a shrunk or replaced
-  list, a non-finite coordinate skipped.
+  list, a non-finite coordinate skipped, a fix without coordinates skipped.
 - `gps-extent-tracker.property.test.ts` - equals the brute-force extent after
   every growing prefix of random lists with synthetic points mixed in.

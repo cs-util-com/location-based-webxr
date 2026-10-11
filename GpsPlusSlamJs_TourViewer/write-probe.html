@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tour write probe</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        max-width: 720px;
+        line-height: 1.4;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 8px;
+      }
+      h2 {
+        font-size: 16px;
+        margin: 20px 0 6px;
+      }
+      button,
+      select {
+        font: inherit;
+        padding: 10px 14px;
+        margin: 4px 8px 4px 0;
+        min-height: 44px;
+      }
+      #status {
+        font-weight: 600;
+        margin: 12px 0;
+      }
+      textarea {
+        width: 100%;
+        min-height: 220px;
+        font-family: ui-monospace, monospace;
+        font-size: 12px;
+        box-sizing: border-box;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Tour write probe</h1>
+    <p>
+      Measures how this phone writes into a large file: whether adding a few
+      bytes to the end of a file gets slower as the file grows, and whether the
+      new bytes can be read before saving. It writes test files of up to the
+      size chosen below and deletes or empties them afterwards. Keep the screen
+      on until it says "Done".
+    </p>
+    <label
+      >Largest test size
+      <select id="max">
+        <option value="50">50 MB</option>
+        <option value="200" selected>200 MB</option>
+        <option value="500">500 MB</option>
+      </select>
+    </label>
+    <h2>1. A file you pick</h2>
+    <p>
+      Choose where to save a new file called <code>write-probe.bin</code>
+      (for example Downloads). If only existing files can be chosen, pick any
+      file you do not need: it will be overwritten.
+    </p>
+    <button id="picked" type="button">Pick a file and measure</button>
+    <h2>2. The app's own storage</h2>
+    <button id="opfs" type="button">Measure the app's storage</button>
+    <div id="status" role="status" aria-live="polite">Ready.</div>
+    <h2>Results</h2>
+    <textarea id="out" readonly aria-label="Results as JSON"></textarea>
+    <button id="copy" type="button">Copy the results</button>
+    <button id="save" type="button">Save the results as a file</button>
+    <script type="module">
+      const MB = 1024 * 1024;
+      const results = {
+        probe: "tour-write-probe-1",
+        userAgent: navigator.userAgent,
+        startedAt: new Date().toISOString(),
+        picked: null,
+        opfs: null,
+        opfsSync: null,
+      };
+      const out = document.getElementById("out");
+      const statusLine = document.getElementById("status");
+      const show = () => {
+        out.value = JSON.stringify(results, null, 1);
+      };
+      const say = (text) => {
+        statusLine.textContent = text;
+      };
+      const sizes = () => {
+        const max = Number(document.getElementById("max").value);
+        return [10, 50, 200, 500].filter((size) => size <= max);
+      };
+      const round = (ms) => Math.round(ms * 10) / 10;
+
+      // Grows the file to `targetMb` with one plain writable (not timed).
+      async function growTo(handle, targetMb) {
+        const current = (await handle.getFile()).size;
+        const target = targetMb * MB;
+        if (current >= target) return;
+        const writable = await handle.createWritable({
+          keepExistingData: true,
+        });
+        const chunk = new Uint8Array(8 * MB).fill(7);
+        for (let at = current; at < target; at += chunk.length) {
+          const length = Math.min(chunk.length, target - at);
+          await writable.write({
+            type: "write",
+            position: at,
+            data: chunk.subarray(0, length),
+          });
+        }
+        await writable.close();
+      }
+
+      // At each size: open keeping the data, write 1 KiB at the end, close;
+      // three times. Then: is a written byte visible before close()?
+      async function measureWritable(handle) {
+        const rows = [];
+        for (const sizeMb of sizes()) {
+          say(`Growing the file to ${sizeMb} MB...`);
+          await growTo(handle, sizeMb);
+          const runs = [];
+          for (let i = 0; i < 3; i += 1) {
+            say(`${sizeMb} MB: append run ${i + 1} of 3...`);
+            const t0 = performance.now();
+            const writable = await handle.createWritable({
+              keepExistingData: true,
+            });
+            const t1 = performance.now();
+            const size = (await handle.getFile()).size;
+            await writable.write({
+              type: "write",
+              position: size,
+              data: new Uint8Array(1024).fill(9),
+            });
+            const t2 = performance.now();
+            await writable.close();
+            const t3 = performance.now();
+            runs.push({
+              openMs: round(t1 - t0),
+              writeMs: round(t2 - t1),
+              closeMs: round(t3 - t2),
+            });
+          }
+          const before = (await handle.getFile()).size;
+          const writable = await handle.createWritable({
+            keepExistingData: true,
+          });
+          await writable.write({
+            type: "write",
+            position: before,
+            data: new Uint8Array(4096).fill(5),
+          });
+          const during = (await handle.getFile()).size;
+          await writable.close();
+          rows.push({
+            sizeMb,
+            runs,
+            readableBeforeSave: during !== before,
+          });
+          show();
+        }
+        return rows;
+      }
+
+      async function emptyFile(handle) {
+        const writable = await handle.createWritable();
+        await writable.close();
+      }
+
+      document.getElementById("picked").addEventListener("click", async () => {
+        const button = document.getElementById("picked");
+        if (typeof window.showSaveFilePicker !== "function") {
+          results.picked = { available: false };
+          say(
+            "This browser has no file picker for saving (showSaveFilePicker).",
+          );
+          show();
+          return;
+        }
+        button.disabled = true;
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: "write-probe.bin",
+          });
+          const startSize = (await handle.getFile()).size;
+          results.picked = {
+            available: true,
+            startSize,
+            rows: await measureWritable(handle),
+          };
+          say("Emptying the picked file...");
+          await emptyFile(handle);
+          say("Done with the picked file.");
+        } catch (error) {
+          results.picked = {
+            available: true,
+            error: `${error?.name}: ${error?.message}`,
+          };
+          say(`The picked-file measurement stopped: ${error?.name}.`);
+        } finally {
+          button.disabled = false;
+          show();
+        }
+      });
+
+      // The sync access handle exists only in a dedicated worker.
+      const workerSource = `
+        onmessage = async (event) => {
+          const MB = 1024 * 1024;
+          const sizes = event.data;
+          const round = (ms) => Math.round(ms * 10) / 10;
+          try {
+            const root = await navigator.storage.getDirectory();
+            const handle = await root.getFileHandle('write-probe-sync.bin', { create: true });
+            if (typeof handle.createSyncAccessHandle !== 'function') {
+              postMessage({ available: false });
+              return;
+            }
+            const access = await handle.createSyncAccessHandle();
+            const chunk = new Uint8Array(8 * MB).fill(7);
+            const rows = [];
+            for (const sizeMb of sizes) {
+              for (let at = access.getSize(); at < sizeMb * MB; at += chunk.length) {
+                access.write(chunk.subarray(0, Math.min(chunk.length, sizeMb * MB - at)), { at });
+              }
+              access.flush();
+              const runs = [];
+              for (let i = 0; i < 3; i += 1) {
+                const size = access.getSize();
+                const t0 = performance.now();
+                access.write(new Uint8Array(1024).fill(9), { at: size });
+                const t1 = performance.now();
+                const back = new Uint8Array(1024);
+                access.read(back, { at: size });
+                const t2 = performance.now();
+                access.flush();
+                const t3 = performance.now();
+                runs.push({ writeMs: round(t1 - t0), readBackMs: round(t2 - t1), flushMs: round(t3 - t2), readBackOk: back[0] === 9 && back[1023] === 9 });
+              }
+              rows.push({ sizeMb, runs });
+            }
+            access.close();
+            await root.removeEntry('write-probe-sync.bin');
+            postMessage({ available: true, rows });
+          } catch (error) {
+            postMessage({ available: true, error: String(error && error.name) + ': ' + String(error && error.message) });
+          }
+        };`;
+
+      function measureSync() {
+        return new Promise((resolve) => {
+          const url = URL.createObjectURL(
+            new Blob([workerSource], { type: "text/javascript" }),
+          );
+          const worker = new Worker(url);
+          worker.onmessage = (event) => {
+            worker.terminate();
+            URL.revokeObjectURL(url);
+            resolve(event.data);
+          };
+          worker.onerror = (event) => {
+            worker.terminate();
+            URL.revokeObjectURL(url);
+            resolve({ available: true, error: event.message });
+          };
+          worker.postMessage(sizes());
+        });
+      }
+
+      document.getElementById("opfs").addEventListener("click", async () => {
+        const button = document.getElementById("opfs");
+        button.disabled = true;
+        try {
+          if (!navigator.storage?.getDirectory) {
+            results.opfs = { available: false };
+            say(
+              "This browser has no app storage (the origin-private file system).",
+            );
+            return;
+          }
+          const root = await navigator.storage.getDirectory();
+          const handle = await root.getFileHandle("write-probe.bin", {
+            create: true,
+          });
+          results.opfs = {
+            available: true,
+            rows: await measureWritable(handle),
+          };
+          await root.removeEntry("write-probe.bin");
+          say("Measuring direct writes in the app storage...");
+          results.opfsSync = await measureSync();
+          say("Done.");
+        } catch (error) {
+          results.opfs = {
+            ...(results.opfs ?? {}),
+            error: `${error?.name}: ${error?.message}`,
+          };
+          say(`The app-storage measurement stopped: ${error?.name}.`);
+        } finally {
+          button.disabled = false;
+          show();
+        }
+      });
+
+      document.getElementById("copy").addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(out.value);
+          say("Results copied.");
+        } catch {
+          out.select();
+          say(
+            "Could not copy automatically: the results are selected, copy them by hand.",
+          );
+        }
+      });
+
+      document.getElementById("save").addEventListener("click", () => {
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(
+          new Blob([out.value], { type: "application/json" }),
+        );
+        link.download = `write-probe-${Date.now()}.json`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+        say("Results saved.");
+      });
+
+      show();
+    </script>
+  </body>
+</html>

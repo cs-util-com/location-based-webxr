@@ -39,9 +39,11 @@ estimator, sample)`, `displacementEstimate(stats, estimator)` - the
   bound is the floor alone.
 - `MOVED_CODE_FLOOR_M` (20 m) - the viewer's moved-code floor
   (`CODE_MOVE_RULE.floorM`; approved by the owner on 2026-10-02 from the
-  real-walk recalibration). The authoring prompt shared it until D26
-  (2026-10-02) and now has its own 15 m trigger (`MOVE_PROMPT_FLOOR_M`,
-  `code-move-prompt.ts`). Viewer evidence: 3 of 2,380
+  real-walk recalibration). Since code book plan M6 the creator's
+  automatic code-spot rule (`code-spots.ts`) uses it too, with this file's
+  rigid fit, so creator and visitor read "moved" with one floor and one
+  estimator (the authoring prompt it replaced had its own 15 m trigger
+  after D26). Viewer evidence: 3 of 2,380
   unmoved cross-day pairs past it within 120 s (2 of 37 points), 23 of
   6,166 over the whole visit; 66 % of 20 m moves caught within 120 s.
 - `CODE_MOVE_RULE` - `{ floorM: 20, agreementM: 10, minSpanS: 60,

@@ -123,3 +123,10 @@ arStatusLine({
 - `tour-flow.property.test.ts` - the no-codes rule for every open-tour
   state and its absence with no tour; decline reasons verbatim; no
   non-idle placement renders as silence.
+
+## UI round 1 (2026-10-06)
+
+- `arStatusLine` is now the CREATOR's line and a visitor's `?debug=1` line;
+  a visitor otherwise reads `visitor-status.ts`'s one sentence. A failed
+  start reads "<mode> — error: <cause>" (`ArStatusInput.arError`), since the
+  start button only says "Try again" (U1 milestone review #1).

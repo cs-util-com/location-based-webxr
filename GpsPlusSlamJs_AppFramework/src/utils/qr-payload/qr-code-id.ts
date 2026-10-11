@@ -17,6 +17,7 @@
  * §3 M-A (DEC-2 / DEC-2b) for the decision and the collision argument.
  */
 
+import { sha256Hex } from '../sha256-hex.js';
 import { utf8Encode } from './utf8.js';
 
 /**
@@ -47,39 +48,8 @@ export async function qrCodeId(text: string): Promise<string> {
       `qrCodeId: expected the decoded QR text as a string, got ${typeof text}`
     );
   }
-  const subtle = globalThis.crypto?.subtle;
-  if (subtle === undefined) {
-    throw new Error(
-      'qrCodeId: Web Crypto is unavailable — QR identity needs a secure context (https, or localhost)'
-    );
-  }
-  const digest = await subtle.digest(
-    'SHA-256',
-    toArrayBuffer(utf8Encode(text))
-  );
-  return toHex(new Uint8Array(digest)).slice(0, QR_CODE_ID_LENGTH);
-}
-
-/**
- * Copy bytes into a plain `ArrayBuffer`.
- *
- * `utf8Encode` returns `Uint8Array`, whose buffer TypeScript types as
- * `ArrayBufferLike` — it could in principle be a `SharedArrayBuffer`, which
- * Web Crypto refuses. Rather than assert the type away, hand `digest` a
- * buffer that is one by construction. The copy is a QR payload's worth of
- * bytes, once per detected code.
- */
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const buffer = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(buffer).set(bytes);
-  return buffer;
-}
-
-/** Lowercase hex for a byte array. Private: only the digest needs it. */
-function toHex(bytes: Uint8Array): string {
-  let out = '';
-  for (const byte of bytes) {
-    out += byte.toString(16).padStart(2, '0');
-  }
-  return out;
+  // The package's one SHA-256 (DEC-H3, K1 milestone review R14): it copies
+  // the bytes into a plain ArrayBuffer for WebCrypto and rejects where
+  // `crypto.subtle` is missing (an insecure context).
+  return (await sha256Hex(utf8Encode(text))).slice(0, QR_CODE_ID_LENGTH);
 }
