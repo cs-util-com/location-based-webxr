@@ -16,6 +16,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   applyHash,
+  arriveAt,
   bootGlobe,
   luminance,
   meanOf,
@@ -419,7 +420,7 @@ const STEPS = [6, 8, 12, 16, 24];
 // sample reference: the largest error, and the largest step between
 // neighbouring pixels beyond the reference's own (a ring shows as a step).
 test("the banding per sample count, against 64 samples", async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(480_000);
   const errors = await bootGlobe(page, VIEW);
   // The lab is ready on the cloud map's preview (M1b); the sharp map
   // arriving between the 64-sample reference and a sweep step read as a
@@ -429,6 +430,11 @@ test("the banding per sample count, against 64 samples", async ({ page }) => {
     null,
     { timeout: 120_000 },
   );
+  // And on settled imagery: tiles refining after the reference moved the
+  // limb's pixels by up to 7 levels at 64 samples too (a 64-sample re-read
+  // after the sweep matched the sweep, not the reference, with the clouds
+  // live, tiled or off; 2026-10-11).
+  await arriveAt(page, { lat: 0, lng: 91.86 }, { timeoutMs: 180_000 });
   const g = await discGeometry(page);
   const r = Math.round(g.rPx);
   // Either side of the disc's edge but not across it: the ground-to-space
@@ -469,6 +475,19 @@ test("the banding per sample count, against 64 samples", async ({ page }) => {
     }
     rows.push({ steps, ...worst });
   }
+  // The control: the reference read again after the sweep. Anything but
+  // the sample count that changed the picture meanwhile shows here, so a
+  // drifting scene fails as itself, never as banding.
+  const again = await profile(64);
+  const drift = Math.max(
+    .../** @type {const} */ (["limbIn", "limbOut", "radial"]).flatMap((k) =>
+      again[k].map((v, i) => Math.abs(v - reference[k][i])),
+    ),
+  );
+  console.log(
+    `the 64-sample reference read again: largest change ${drift.toFixed(1)}`,
+  );
+  expect(drift, "the scene held still over the sweep").toBeLessThan(2);
   console.log(
     `atmosphere banding vs 64 samples: ` +
       rows
