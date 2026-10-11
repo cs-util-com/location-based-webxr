@@ -480,12 +480,17 @@ globeTiles, detail }` or null; `detail` is the region's state, with its
 
 - The city in the globe's scene (globe city plan 2026-10-05-0040 §12.5 C4,
   §14; `globe-city.js`, `globe-city-worker.js`): `city` (default 1, read at
-  start; 0 turns it off) and `cityKm` (30). Once a place is known, the
-  pin's located target or the link's `at=`, and its data is warmed (the
-  prefetch's outcome is no longer null: the two share one store, so
-  building during the warm-up would download the same tiles twice), the lab
-  asks for the city there, once per place. It is built in a worker from the
-  Osm library alone, drawn through `gps-plus-slam-osm/three` (loaded with
+  start; 0 turns it off) and `cityKm` (30). The pin's warm-up IS the
+  city's load (above, round-4 plan 2026-10-11-0122 §5); once a place is
+  known (the pin's located target or the link's `at=`) and no warm-up runs
+  for it, the frame loop asks for it too, once per place (a load of the
+  place that runs or ran is reused, so nothing downloads twice). It is
+  loaded and built in a worker from the Osm library alone (the first ring
+  drawn first, the rest replacing it as it arrives; buildings with their
+  walls, trees, and with `cityRoads` (default 1) the roads and paths,
+  lifted `roadLiftM` (2 m) along the city's up and pulled forward by a
+  `roadOffset` polygon offset (0), all three read at start), drawn through
+  `gps-plus-slam-osm/three` (loaded with
   the first city, so the boot graph stays free of the library), placed on
   `globe.group` through `ecefFromCityAt`, and faded in by
   `cityShareAt(altitude, cityKm)`: nothing at and above `cityKm`, all of it
@@ -493,8 +498,9 @@ globeTiles, detail }` or null; `detail` is the region's state, with its
   for) while the relief near the ground is exaggerated (`reliefNear` above
   1, R14), and drawn only where the relief is drawn at true heights at the
   current altitude (with `reliefGround` the relief is exaggerated above
-  2-8 km). A failed build is asked for again after 10 s, three times at
-  most. The pin's landing message says "km above sea level" (the altitude
+  2-8 km). The library's loader asks again for a failed tile or missing
+  heights after 10, 30 and 60 s; a city that still failed is asked for
+  again after 10 s, three times at most. The pin's landing message says "km above sea level" (the altitude
   is above the ellipsoid, not the ground). The scene-depth pass draws it with the relief, so the space pass
   and the cloud volume end at buildings too. `state().city` carries its
   phase, place, counts, ground height and fade. Test hooks:
@@ -505,27 +511,32 @@ heightM)` (the ECEF point of a place, for an independent placement check)
   from its sampler, for the vertical check).
 - The arrival prefetch (round-5 plan 2026-10-01-0945 §3.6 step 1), wired
   into the pin:
-  - at the fix, the lab loads `/osm/arrival-prefetch.js` (OsmDemo) with a
-    literal dynamic `import()` and starts it for the target, so the
-    city's Overpass tiles are warm when the globe's city builds (they were
-    warmed for OsmDemo's page until the hand-over was removed, §12.5 C6;
-    the city's z12 heights are not part of the plan, a filed finding). Its graph (the Osm library,
-    about 1.1 MB of source, and H3, 0.55 MB) loads only then: the import
-    map's `h3-js`, `gps-plus-slam-osm` and
-    `gps-plus-slam-app-framework/osm-bridge` entries are unused at boot,
-    and `build-lookdev.test.mjs` fails if the lab's static graph reaches
-    them. Only `/globe/flight-pace.js` and `/globe/globe-arrival.js`
-    (small, no dependencies) load at boot;
+  - at the fix (or from load for an `at=` link, `cityWarm`), the lab starts
+    the city's own load for the target (`startCityLoad`: `globe-city.js`'s
+    `load` with `fresh`, the Osm library's `loadCityData` in the city's
+    worker; round-4 plan 2026-10-11-0122 §5). The warm-up and the build are
+    ONE load: the flight paces on exactly the tiles and heights the city
+    reads (the relief's Terrarium z12, R13; validation finding F6 closed),
+    the city is drawn after the first ring and again as the rest arrives,
+    and the 21 MB JSON parse runs in the worker, never on the main thread.
+    Without a city to load (`city=0`, no relief, the relief not at true
+    heights near the ground) nothing is waited for. The worker's graph (the
+    Osm library and H3) loads only then: the import map's `h3-js`,
+    `gps-plus-slam-osm` and `gps-plus-slam-app-framework/osm-bridge`
+    entries are unused at boot, and `build-lookdev.test.mjs` fails if the
+    lab's static graph reaches them. Only `/globe/flight-pace.js` and
+    `/globe/globe-arrival.js` (small, no dependencies) load at boot;
   - the dive's clock (`createDiveClock`): paced by the prefetch's
     progress (`stepPace`: the cold pace until the data is in, the whole
     path over at most the 30 s cap of DEC-GL5-6; about 8.6 s when the data
     is already stored), mapped onto `diveMs` so the dive keeps its easing.
     `diveMs` in the hash keeps the fixed dive as a manual override;
-    `prefetch=0` turns the prefetch off (and the fixed dive with it). A
-    module that does not load counts as done: nothing can be warmed, so
-    the dive does not wait;
+    `prefetch=0` turns the prefetch off (and the fixed dive with it); the
+    city then loads when the frame loop asks for it. No city to load, or a
+    worker that fails, counts as done: the dive does not wait;
   - every way a flight stops (a press of the pin, a touch on the globe, a
-    hidden page) aborts the prefetch;
+    hidden page) aborts the load (the frame loop asks for the place's city
+    again afterwards, which then reads what was stored);
   - the landing does not wait past the dive: the paced dive lands when
     the data is in or at the cap;
   - the status line `#globe-arrival-status` (left of the pin's own,

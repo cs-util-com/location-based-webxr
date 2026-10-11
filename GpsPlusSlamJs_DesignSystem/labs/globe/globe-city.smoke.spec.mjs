@@ -11,7 +11,11 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { applyHash, bootGlobe } from "./globe-smoke-helpers.mjs";
+import {
+  applyHash,
+  bootGlobe,
+  routeCityFixture,
+} from "./globe-smoke-helpers.mjs";
 
 const BERN = { lat: 46.948, lng: 7.4474 };
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
@@ -56,70 +60,9 @@ function overpassFixture() {
   return { version: 0.6, elements };
 }
 
-/** The Overpass hosts (as the arrival helper lists them), never a local module. */
-const isOverpass = (url) =>
-  /(^|\.)overpass-api\.de$|^overpass\.private\.coffee$|^overpass\.kumi\.systems$/.test(
-    url.hostname,
-  ) ||
-  (url.hostname === "maps.mail.ru" && url.pathname.includes("/overpass/"));
-
 /** Routes Overpass to the fixture and every height tile to the synthetic one. */
-async function routeCity(context, page) {
-  const cors = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST",
-    "Access-Control-Allow-Headers": "*",
-  };
-  const seen = { overpass: 0, heights: 0 };
-  const body = JSON.stringify(overpassFixture());
-  await context.route(
-    (url) =>
-      isOverpass(url) ||
-      url.hostname === "tiles.mapterhorn.com" ||
-      (url.hostname === "s3.amazonaws.com" &&
-        url.pathname.startsWith("/elevation-tiles-prod/")),
-    async (route) => {
-      const request = route.request();
-      if (request.method() === "OPTIONS") {
-        return route.fulfill({ status: 204, headers: cors });
-      }
-      const url = new URL(request.url());
-      if (isOverpass(url)) {
-        seen.overpass += 1;
-        return route.fulfill({
-          status: 200,
-          headers: { ...cors, "Content-Type": "application/json" },
-          body,
-        });
-      }
-      seen.heights += 1;
-      const [z, x, y] = url.pathname
-        .replace(/\.(png|webp)$/, "")
-        .split("/")
-        .slice(-3)
-        .map(Number);
-      const b64 = await page.evaluate(
-        async ([tz, tx, ty, module]) => {
-          // The page's own module, by a path passed in: a literal here reads
-          // as an unresolved import to the dead-code check.
-          const { syntheticTile } = await import(module);
-          const blob = await syntheticTile(tz, tx, ty);
-          const bytes = new Uint8Array(await blob.arrayBuffer());
-          let s = "";
-          for (const b of bytes) s += String.fromCharCode(b);
-          return btoa(s);
-        },
-        [z, x, y, "/labs/globe-terrain/synthetic-heights.js"],
-      );
-      return route.fulfill({
-        status: 200,
-        headers: { ...cors, "Content-Type": "image/png" },
-        body: Buffer.from(b64, "base64"),
-      });
-    },
-  );
-  return seen;
-}
+const routeCity = (context, page) =>
+  routeCityFixture(context, page, overpassFixture());
 
 /** The ruler of the Osm library's frame (the AR core's), metres a degree. */
 const RULER = { north: 39_940_652.7422 / 360, east: 40_075_016.6856 / 360 };

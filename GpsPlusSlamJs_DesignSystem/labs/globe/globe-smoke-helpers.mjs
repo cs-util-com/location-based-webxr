@@ -258,3 +258,77 @@ export async function routeCityData(page, { holdOverpass = false } = {}) {
   });
   return { seen, release: () => release() };
 }
+
+/** The Overpass hosts (as the arrival helper lists them), never a local module. */
+const isOverpassHost = (url) =>
+  /(^|\.)overpass-api\.de$|^overpass\.private\.coffee$|^overpass\.kumi\.systems$/.test(
+    url.hostname,
+  ) ||
+  (url.hostname === "maps.mail.ru" && url.pathname.includes("/overpass/"));
+
+/**
+ * Routes the city's data for a smoke, on the CONTEXT (so the city worker's
+ * requests are answered too): Overpass with `overpass` (an Overpass JSON
+ * object, every tile the same), every height tile (Mapterhorn or the AWS
+ * bucket) with the relief's synthetic tile generated in the page
+ * (`../globe-terrain/synthetic-heights.js`), so the city and the relief read
+ * the same numbers. Returns the requests seen. (Moved from
+ * `globe-city.smoke.spec.mjs` when a second spec needed it, round-4 plan
+ * 2026-10-11-0122.)
+ */
+export async function routeCityFixture(context, page, overpass) {
+  const cors = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST",
+    "Access-Control-Allow-Headers": "*",
+  };
+  const seen = { overpass: 0, heights: 0 };
+  const body = JSON.stringify(overpass);
+  await context.route(
+    (url) =>
+      isOverpassHost(url) ||
+      url.hostname === "tiles.mapterhorn.com" ||
+      (url.hostname === "s3.amazonaws.com" &&
+        url.pathname.startsWith("/elevation-tiles-prod/")),
+    async (route) => {
+      const request = route.request();
+      if (request.method() === "OPTIONS") {
+        return route.fulfill({ status: 204, headers: cors });
+      }
+      const url = new URL(request.url());
+      if (isOverpassHost(url)) {
+        seen.overpass += 1;
+        return route.fulfill({
+          status: 200,
+          headers: { ...cors, "Content-Type": "application/json" },
+          body,
+        });
+      }
+      seen.heights += 1;
+      const [z, x, y] = url.pathname
+        .replace(/\.(png|webp)$/, "")
+        .split("/")
+        .slice(-3)
+        .map(Number);
+      const b64 = await page.evaluate(
+        async ([tz, tx, ty, module]) => {
+          // The page's own module, by a path passed in: a literal here reads
+          // as an unresolved import to the dead-code check.
+          const { syntheticTile } = await import(module);
+          const blob = await syntheticTile(tz, tx, ty);
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          let s = "";
+          for (const b of bytes) s += String.fromCharCode(b);
+          return btoa(s);
+        },
+        [z, x, y, "/labs/globe-terrain/synthetic-heights.js"],
+      );
+      return route.fulfill({
+        status: 200,
+        headers: { ...cors, "Content-Type": "image/png" },
+        body: Buffer.from(b64, "base64"),
+      });
+    },
+  );
+  return seen;
+}

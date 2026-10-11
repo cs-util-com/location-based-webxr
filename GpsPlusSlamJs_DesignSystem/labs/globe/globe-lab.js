@@ -730,6 +730,15 @@ const PARAMS = {
   // stand buried in a hillside drawn too high (R14).
   city: { fallback: 1, min: 0, max: 1 },
   cityKm: { fallback: 30, min: 1, max: 200 },
+  // The city's roads and paths (round-4 plan 2026-10-11-0122 DEC-R4-7, the
+  // Osm library's `roadObjects`): 0 leaves them out; read at start. They
+  // drape on the library's heights, which are the relief's source and zoom
+  // but not its drawn mesh, so they are lifted (`roadLiftM`, metres along
+  // the city's up) and pulled forward in depth (`roadOffset`, a polygon
+  // offset in depth units, 0 off) to stay above it; both read at start.
+  cityRoads: { fallback: 1, min: 0, max: 1 },
+  roadLiftM: { fallback: 2, min: 0, max: 50 },
+  roadOffset: { fallback: 0, min: 0, max: 64 },
   // The reference image's looks (round-4 plan 2026-09-28-2105 DEC-GL4-8),
   // each 0 (off, the look before) to 1: a blue grade over the ground,
   // shaded clouds, a soft blue-grey night with warm lights, navy space and
@@ -1493,14 +1502,17 @@ function currentPose({ position, quaternion }) {
  * button, a new target) ends a flight too.
  *
  * THE ARRIVAL PREFETCH (round-5 plan 2026-10-01-0945 §3.6 step 1): once the
- * position is known, the lab loads OsmDemo's `/osm/arrival-prefetch.js`
- * with a dynamic import (its graph, the Osm library and H3, about 1.7 MB,
- * stays out of the boot) and starts it for the target, so the city opens
- * on a warm cache. Its progress paces the dive (`createDiveClock`: the
+ * position is known, the lab starts the city's own load for the target
+ * (`startCityLoad`: `globe-city.js`'s `load`, the Osm library's
+ * `loadCityData` in the city's worker; round-4 plan 2026-10-11-0122 §5:
+ * the warm-up and the build are one load, so the flight paces on exactly
+ * the data the city reads, and the 21 MB JSON parse stays off the main
+ * thread). The worker and its graph (the Osm library and H3) load only
+ * then, never at boot. Its progress paces the dive (`createDiveClock`: the
  * flight's path over at most the 30 s cap of DEC-GL5-6, about 8.6 s when
  * the data is already stored); `diveMs` set in the hash keeps the fixed
- * dive instead, and `prefetch=0` turns it off. A module that does not
- * load counts as done (nothing can be warmed, so nothing is waited for).
+ * dive instead, and `prefetch=0` turns it off. Without a city to load (or
+ * a worker that failed) it counts as done (nothing is waited for).
  * Every way a flight stops (a press, a touch, a hidden page) aborts it.
  * The landing does not wait past the dive: the paced dive lands when the
  * data is in or at the cap (the city may still be building then; it fades
@@ -1536,6 +1548,9 @@ function bindPin({
   // A true ground height as the relief draws it at the landing (its
   // exaggeration there; 1, the default, draws true heights).
   drawnGroundM = (groundM) => groundM,
+  // The city's load for a place (`createGlobeCity`'s `load`), the handle the
+  // flight paces on, or null when there is no city to load.
+  startCityLoad = () => null,
 }) {
   const drawnOrNull = (groundM) =>
     groundM === null ? null : drawnGroundM(groundM);
@@ -1612,23 +1627,21 @@ function bindPin({
     };
     arrival = mine;
     if (enabled) {
-      // A literal specifier: the deploy crawl ships the module and its
-      // graph from it (`build-lookdev.mjs`), and nothing loads at boot.
-      import("/osm/arrival-prefetch.js").then(
-        ({ startArrivalPrefetch }) => {
-          if (mine.stopped) return;
-          mine.prefetch = startArrivalPrefetch(target);
-          void mine.prefetch.finished.then((report) => {
-            if (mine.outcome === null) mine.outcome = report.outcome;
-            renderArrival();
-          });
-        },
-        () => {
-          mine.gaveUp = true;
-          if (mine.outcome === null) mine.outcome = "unavailable";
+      // The city's own load (round-4 plan 2026-10-11-0122 §5): one load in
+      // the city's worker is the warm-up and the build, so the flight paces
+      // on exactly the data the city reads. Null without a city to load
+      // (`city=0`, no relief, or the relief not at true heights): nothing
+      // to wait for.
+      mine.prefetch = startCityLoad(target);
+      if (mine.prefetch === null) {
+        mine.gaveUp = true;
+        mine.outcome = "off";
+      } else {
+        void mine.prefetch.finished.then((report) => {
+          if (mine.outcome === null) mine.outcome = report.outcome;
           renderArrival();
-        },
-      );
+        });
+      }
     }
     renderArrival();
     return (elapsedMs) => clock.elapsedMs(elapsedMs, arrivalProgress());
@@ -2606,6 +2619,9 @@ async function start() {
       ? createGlobeCity({
           parent: globe.group,
           ellipsoid: globe.tiles.ellipsoid,
+          roads: params.cityRoads === 1,
+          roadLiftM: params.roadLiftM,
+          roadOffset: params.roadOffset,
         })
       : null;
   /** The place the city was last asked for, as "lat,lng". */
@@ -2926,6 +2942,12 @@ async function start() {
     placeCameraEcef,
     setFrameTarget,
     resetSpeed: () => speedDust.reset(),
+    // The city loads its own data (round-4 plan 2026-10-11-0122 §5), only
+    // where it can be drawn: the relief at true heights near the ground (R14).
+    startCityLoad: (target) =>
+      city && exaggerationAt(0, heightLaw()) === 1
+        ? city.load(target, { zoom: GLOBE_TERRAIN.maxZoom, fresh: true })
+        : null,
     // The relief's detail colour over the target's region, built while
     // the dive runs.
     onLocated: (target, p) => {
@@ -3085,9 +3107,10 @@ async function start() {
         ),
       );
       if (city) {
-        // The flight's place, or the link's: built once its data is warmed
-        // (the prefetch and the city share one store, so building during
-        // the warm-up would download the same tiles twice).
+        // The flight's place, or the link's: loaded here when no warm-up is
+        // running for it (`prefetch=0`, `cityWarm=0`, a stopped flight). A
+        // load of the place that runs or ran is the same load (`city.load`
+        // returns it), so nothing is downloaded twice.
         const { located, arrival } = pin.state();
         const place = located ?? params.url;
         const warming = arrival != null && arrival.outcome === null;
@@ -3103,7 +3126,7 @@ async function start() {
           }
         }
         if (key !== null && key !== cityKey && !warming && groundTrue) {
-          city.build(place, { zoom: GLOBE_TERRAIN.maxZoom });
+          city.load(place, { zoom: GLOBE_TERRAIN.maxZoom });
           cityKey = key;
           cityTries += 1;
           cityFailedAt = null;
@@ -4408,14 +4431,20 @@ void main() {
     },
     /**
      * A test hook (the city plan 2026-10-05-0040 §12.5 C4): the city's
-     * state, whether its root is drawn, and up to `max` of its building
-     * vertices in ECEF metres (through the root's world matrix and the
+     * state, whether its root is drawn, and up to `max` of its building (or,
+     * with `layer` "roads", road) vertices in ECEF metres (through the root's world matrix and the
      * frame's inverse), so a smoke checks the placement against an
      * independent ECEF computation, not against the root's own transform
      * (R16). Null without a city.
      */
-    cityProbe(max = 400) {
+    cityProbe(max = 400, layer = "buildings") {
       if (!city) return null;
+      // `buildings` (the solid chunks, walls included) or `roads` (round-4
+      // plan 2026-10-11-0122 DEC-R4-7).
+      const wanted = (o) =>
+        layer === "roads"
+          ? o.userData.cityLayer === "roads"
+          : Boolean(o.userData.solid);
       city.root.updateMatrixWorld(true);
       const ecefFromWorld = new THREE.Matrix4()
         .copy(globe.tiles.group.matrixWorld)
@@ -4423,7 +4452,7 @@ void main() {
       const vertices = [];
       const v = new THREE.Vector3();
       city.root.traverse((o) => {
-        if (!o.isMesh || o.isInstancedMesh || !o.userData.solid) return;
+        if (!o.isMesh || o.isInstancedMesh || !wanted(o)) return;
         const p = o.geometry.getAttribute("position");
         for (let i = 0; i < p.count && vertices.length < max; i++) {
           v.fromBufferAttribute(p, i)

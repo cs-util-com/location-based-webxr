@@ -510,6 +510,10 @@ describe("buildLookdev with the real globe lab", () => {
       "w/osm-lib/index.js",
       "w/osm-lib/mesh/city.js",
       "w/osm-lib/elevation/terrain-field.js",
+      // The city's data loading (round-4 plan 2026-10-11-0122 §5): the
+      // warm-up and the build are one load in the worker.
+      "w/osm-lib/city/city-data.js",
+      "w/osm-lib/city/city-progress.js",
       "w/fw/osm-bridge/open-osm-store.js",
       "w/vendor/h3-js/dist/browser/h3-js.es.js",
       // The licence beside the copy the worker loads.
@@ -609,76 +613,6 @@ describe("buildLookdev with the real terrain lab", () => {
   });
 });
 
-// WHY (round-5 plan 2026-10-01-0945 §3.6): the globe's arrival prefetch is
-// OsmDemo's TypeScript (`/osm/arrival-prefetch.js`) with the Osm library,
-// the framework's OPFS store and H3 underneath it, imported by a lab that
-// is not wired yet. This probe page carries the import map the wiring
-// note asks the globe lab to add, and the build must close its graph: an
-// extensionless import, a parameter property the type stripper refuses, or
-// an unmapped bare name each fail here, instead of as a globe lab whose
-// module graph never loads (the 2026-10-01 lab-import follow-up). The
-// framework logger (and with it Sentry) must stay out of the graph.
-describe("buildLookdev with the arrival prefetch's import map", () => {
-  const IMPORT_MAP = {
-    imports: {
-      "h3-js": "/vendor/h3-js/dist/browser/h3-js.es.js",
-      "gps-plus-slam-osm": "/osm-lib/index.js",
-      "gps-plus-slam-app-framework/osm-bridge": "/fw/osm-bridge/index.js",
-    },
-  };
-  let root;
-  let out;
-  let files;
-  before(() => {
-    root = fixture({
-      "labs/probe/index.html": [
-        "<!doctype html><title>Probe</title>",
-        `<script type="importmap">${JSON.stringify(IMPORT_MAP)}</script>`,
-        '<script type="module" src="./probe.js"></script>',
-      ].join("\n"),
-      "labs/probe/probe.js": [
-        'import { startArrivalPrefetch } from "/osm/arrival-prefetch.js";',
-        'import { startPace, stepPace } from "/globe/flight-pace.js";',
-        "export { startArrivalPrefetch, startPace, stepPace };",
-      ].join("\n"),
-    });
-    out = mkdtempSync(join(tmpdir(), "lookdev-prefetch-"));
-    files = buildLookdev({ outDir: out, base: "/lookdev/", packageRoot: root });
-  });
-  after(() => {
-    rmSync(root, { recursive: true, force: true });
-    rmSync(out, { recursive: true, force: true });
-  });
-
-  it("closes the graph: OsmDemo, the Osm library, the store, H3, the pace", () => {
-    for (const rel of [
-      "osm/arrival-prefetch.js",
-      "osm/arrival-plan.js",
-      "osm/arrival-progress.js",
-      "osm/osm-tile-cache.js",
-      "osm/dem-provider.js",
-      "osm-lib/elevation/terrain-field.js",
-      "osm-lib/index.js",
-      "osm-lib/source/caching-source.js",
-      "osm-lib/source/overpass-source.js",
-      "osm-lib/elevation/caching-tile-fetch.js",
-      "fw/osm-bridge/index.js",
-      "fw/osm-bridge/opfs-osm-blob-store.js",
-      "fw/storage/write-file-or-abort.js",
-      "vendor/h3-js/dist/browser/h3-js.es.js",
-      "vendor/h3-js/LICENSE",
-      "globe/flight-pace.js",
-    ]) {
-      assert.ok(files.includes(rel), rel);
-    }
-  });
-
-  it("keeps the framework logger, and Sentry with it, out of the graph", () => {
-    assert.ok(!files.includes("fw/utils/logger.js"));
-    assert.ok(!files.some((f) => f.includes("sentry")));
-  });
-});
-
 // WHY (round-5 plan 2026-10-01-0945 §3.6, its milestone review): the
 // arrival prefetch's graph (the Osm library, about 1.1 MB of source, and
 // h3-js, 0.55 MB) must load at the pin press, not at the globe's boot. So
@@ -773,9 +707,8 @@ describe("buildLookdev and dynamic imports", () => {
 });
 
 // WHY: the globe lab's BOOT graph (its static imports) must not pull in the
-// arrival prefetch's dependencies. A later edit that imports
-// `/osm/arrival-prefetch.js` statically, or anything else that reaches the
-// Osm library or H3, makes every globe load pay about 1.7 MB of modules
+// city's dependencies. A later edit that imports the city's worker graph
+// statically, or anything else that reaches the Osm library or H3, makes every globe load pay about 1.7 MB of modules
 // before the first frame, and nothing else would report it.
 describe("the globe lab's boot graph", () => {
   let out;

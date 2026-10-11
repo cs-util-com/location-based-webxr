@@ -1,9 +1,12 @@
 // @ts-check
 /**
  * The pin's arrival prefetch in the globe lab (round-5 plan 2026-10-01-0945
- * §3.6 step 1): at "pin", the lab loads OsmDemo's prefetch lazily, warms the
- * city's data during the dive, shows how far it got, and paces the dive by
- * it (`/globe/flight-pace.js`), within the 30 s cap (DEC-GL5-6).
+ * §3.6 step 1): at "pin", the lab starts the city's own load lazily (its
+ * worker and the Osm library load only then; round-4 plan 2026-10-11-0122
+ * §5: the warm-up and the city's build are one load), shows how far it got,
+ * and paces the dive by it (`/globe/flight-pace.js`), within the 30 s cap
+ * (DEC-GL5-6). The relief is on (its synthetic heights, made in the page):
+ * the city, and with it the load, exists only where the relief does.
  *
  * Why this file matters: every part of this fails quietly in a browser
  * only. A prefetch module that does not load leaves a dive that simply runs
@@ -25,7 +28,7 @@ const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const COLOGNE = { latitude: 50.94128, longitude: 6.95817 };
 /** A settled daylight view. */
 const VIEW = withPreRound4Look(
-  "at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0",
+  "at=30,15&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic",
 );
 
 /** Boots with a granted GPS at Cologne; returns console errors and requests. */
@@ -62,10 +65,12 @@ const arrival = (page) =>
     phase: window.__globeLab.state().phase,
   }));
 
-/** Requests that only the prefetch's lazily loaded graph makes. */
+/** Requests that only the city load's lazily loaded graph makes. */
 const prefetchGraph = (requests) =>
   requests.filter((u) =>
-    /\/osm-lib\/|\/vendor\/h3-js\/|\/osm\/arrival-prefetch\.js/.test(u),
+    /\/osm-lib\/|\/vendor\/h3-js\/|\/w\/labs\/globe\/globe-city-worker\.js/.test(
+      u,
+    ),
   );
 
 // WHY: the pin starts the prefetch (loaded only now, not at boot), the
@@ -209,7 +214,7 @@ test("a link that names a place warms its city data before any press", async ({
 }) => {
   test.setTimeout(240_000);
   const ZURICH =
-    "at=47.3769,8.5417&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0";
+    "at=47.3769,8.5417&spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic";
   const city = await routeCityData(page);
   const { errors, requests } = await boot(
     page,
