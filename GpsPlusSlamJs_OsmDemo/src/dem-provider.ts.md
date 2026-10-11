@@ -36,10 +36,11 @@ fallbackTimeoutMs?, publishTimeoutMs?, onUpgrade? }): RacingElevationProvider` �
   (`"aws-open-data"`) — what `stats.servedBy` reports. Named explicitly because
   both ends are `TerrariumProvider` instances differing only by URL.
 - `DEM_URL_TEMPLATES` (`preferred`: Mapterhorn, `fast`: AWS) - the two arms'
-  tile URLs, used by `createDemProvider` itself and by the globe's arrival
-  prefetch (`arrival-plan.ts`, round-5 plan 2026-10-01-0945 §3.6), which warms
-  the cache with exactly these URLs. The cache key is the URL, so one
-  constant is what keeps the two from warming and reading different keys.
+  tile URLs, used by `createDemProvider` itself and by `city-data-plan.test.ts`,
+  which holds the Osm library's `cityDataPlan` with these templates to what
+  this provider actually requests (the globe's former arrival prefetch warmed
+  them, round-5 plan 2026-10-01-0945 §3.6, until round-4 plan
+  2026-10-11-0122 moved the city's data loading into the library).
 
 - `DEM_SOURCE_ID` — `"mapterhorn+terrarium"`, the composed provider's
   `sourceId`. The worker reports it with every terrain result

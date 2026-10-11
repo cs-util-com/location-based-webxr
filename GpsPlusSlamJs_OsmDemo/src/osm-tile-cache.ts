@@ -1,26 +1,19 @@
 /**
- * The OSM tile cache's store and source, built in ONE place for the two
- * writers of that cache: OsmDemo's worker, and the globe's arrival prefetch
- * (round-5 plan 2026-10-01-0945 §3.6), which warms it during the fly-in so
- * OsmDemo opens warm after the URL hand-over (DEC-GL5-8).
- *
- * WHY ONE MODULE. The prefetch is only worth anything if it writes exactly
- * what OsmDemo reads: the same OPFS directory, the same cache key, and the
- * same Overpass source (the same user agent, the same race and slot rules).
- * Two copies of that wiring is how one of them quietly drifts and the
- * second visit stays cold with nothing reporting it.
- *
- * LAB-LOADABLE. The globe lab imports this module as served TypeScript
- * (`/osm/osm-tile-cache.js`), so it imports only modules that load under the
- * design system's no-build routes (see `arrival-prefetch.ts.md`).
+ * The OSM tile cache's store and source for OsmDemo's worker, built in ONE
+ * place. The source is the Osm library's `createCityTileSource` with the
+ * demo's user agent: the globe's city loads through the same construction
+ * (round-4 plan 2026-10-11-0122 §5), the same OPFS directory and cache key,
+ * so the two apps cannot drift apart in how they fetch a tile. (The globe's
+ * arrival prefetch wrote this cache too, round-5 plan 2026-10-01-0945 §3.6,
+ * until its loading moved into the library.)
  *
  * @see osm-tile-cache.ts.md
  */
 
 import {
-  CachingSource,
   MemoryBlobStore,
-  OverpassSource,
+  createCityTileSource,
+  type CachingSource,
   type OsmBlobStore,
 } from "gps-plus-slam-osm";
 import {
@@ -47,20 +40,19 @@ export async function openOsmStore(
 
 /**
  * The demo's Overpass source behind its cache: what every OsmDemo tile
- * fetch, foreground, ring prefetch or arrival prefetch, goes through.
+ * fetch, foreground or ring prefetch, goes through.
  * `fetchImpl` is the network seam (tests; defaults to the global fetch).
+ * The library's `createCityTileSource` with the demo's user agent: the
+ * globe's city builds the same source (round-4 plan 2026-10-11-0122 §5).
  */
 export function createOsmTileSource(
   store: OsmBlobStore,
   options: { readonly fetchImpl?: typeof fetch } = {},
 ): CachingSource {
-  return new CachingSource(
-    new OverpassSource({
-      userAgent: OSM_DEMO_USER_AGENT,
-      ...(options.fetchImpl === undefined
-        ? {}
-        : { fetchImpl: options.fetchImpl }),
-    }),
-    store,
-  );
+  return createCityTileSource(store, {
+    userAgent: OSM_DEMO_USER_AGENT,
+    ...(options.fetchImpl === undefined
+      ? {}
+      : { fetchImpl: options.fetchImpl }),
+  });
 }

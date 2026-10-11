@@ -1,9 +1,11 @@
 # osm-tile-cache.ts - the OSM tile cache's store and source, built once
 
-- Purpose: the one place OsmDemo's worker and the globe's arrival prefetch
-  (round-5 plan `2026-10-01-0945-globe-round-5-fly-in-and-terrain-blend-plan.md`
-  §3.6, DEC-GL5-8) build the OSM tile cache's store and its Overpass source,
-  so the prefetch warms exactly the cache OsmDemo reads.
+- Purpose: the one place OsmDemo's worker builds the OSM tile cache's store
+  and its Overpass source, the latter through the Osm library's
+  `createCityTileSource` (the globe's city uses the same construction,
+  round-4 plan `2026-10-11-0122-globe-round-4-owner-feedback-plan.md` §5;
+  the globe's arrival prefetch, round-5 plan 2026-10-01-0945 §3.6, wrote
+  this cache through this module until then).
 - Public API:
   - `OSM_DEMO_USER_AGENT` - how the demo identifies itself to the Overpass
     operators (the `User-Agent` and `Referer` headers).
@@ -14,9 +16,11 @@
     (the worker's store: it must start without OPFS). `warn` is where the
     store reports failures (the worker passes the framework logger,
     `worker/osm-store-warn.ts`; the default is `console.warn`).
-  - `createOsmTileSource(store, { fetchImpl? })` -> `CachingSource` over
-    `OverpassSource` with the demo's user agent. Every OsmDemo tile fetch
-    (foreground, ring prefetch, arrival prefetch) goes through one of these.
+  - `createOsmTileSource(store, { fetchImpl? })` -> the Osm library's
+    `createCityTileSource` (`CachingSource` over `OverpassSource`, the one
+    construction the globe's city uses too, round-4 plan 2026-10-11-0122 §5)
+    with the demo's user agent. Every OsmDemo tile fetch
+    (foreground or ring prefetch) goes through one of these.
 - Invariants & assumptions:
   - The cache key is the library's `osm/v{OVERPASS_SCHEMA_VERSION}/{tile}`
     and the directory is the framework's `OSM_STORE_DIR` (`osm`). Both are
@@ -24,9 +28,8 @@
   - The framework's `openPersistentOsmStore` answers `undefined` instead of falling back,
     because a prefetch must know when nothing it fetches would outlive the
     page; the worker's `openOsmStore` falls back to memory instead.
-  - Lab-loadable: it imports only `gps-plus-slam-osm` and
-    `gps-plus-slam-app-framework/osm-bridge`, which the globe lab maps to
-    served TypeScript (`arrival-prefetch.ts.md` has the import map).
+  - It imports only `gps-plus-slam-osm` and
+    `gps-plus-slam-app-framework/osm-bridge`.
 - Examples:
 
   ```ts
