@@ -1408,6 +1408,8 @@ function bindPin({
   }),
   // The relief's finest height at a place (m, true heights), or null.
   reliefGroundM = () => null,
+  // The camera's height above the drawn ground under it (m), or null.
+  heightAboveGroundM = () => null,
 }) {
   let phase = "idle";
   let message = "";
@@ -1628,6 +1630,8 @@ function bindPin({
   let request = 0;
   /** How often the relief revised the landing's ground (DEC-R4-1), for the smokes. */
   let groundRevisions = 0;
+  /** The continuous flight landed: its line is written after the frame. */
+  let landedReport = false;
   pinButton.addEventListener("click", async () => {
     const before = phase;
     const mine = ++request;
@@ -1792,18 +1796,34 @@ function bindPin({
       // Landed (the data is in, or the pace's cap has passed): the camera
       // holds over the city, the controls take it from here.
       if (moving() && flight.pinFlight) {
-        // The continuous flight lands above the place's ground, or above
-        // the sea where none was read (relief=0, a failed read).
-        const p = flight.pinFlight;
-        const over =
-          p.groundM > 0 || groundOf(located).source === "tile"
-            ? "the ground"
-            : "sea level";
-        message = `Arrived, ${formatDistance(p.landingM)} above ${over}.`;
+        // The continuous flight's line: written once the frame's clearance
+        // has acted (`afterFrame`), as the readout reads it.
+        landedReport = true;
+        message = "";
       } else {
         message = `Arrived, ${shown(getParams().landKm)} km above sea level.`;
       }
       go("held");
+    },
+    /**
+     * After the frame's clearance lift: the continuous flight's landed line
+     * says how high the camera stands above the DRAWN ground under it, the
+     * same number as the readout (the R4b milestone review, finding 2: it
+     * said the landing law's 150 m while the readout said 100 m over a
+     * slope); above sea level where no relief is drawn under it. The law
+     * stays 150 m above the place's own ground.
+     */
+    afterFrame() {
+      if (!landedReport) return;
+      landedReport = false;
+      const above = heightAboveGroundM();
+      message =
+        above === null
+          ? `Arrived, ${formatDistance(
+              ellipsoid.getPositionElevation(ecefCamera().position),
+            )} above sea level.`
+          : `Arrived, ${formatDistance(above)} above the ground.`;
+      render();
     },
     state: () => ({
       phase,
@@ -2690,6 +2710,11 @@ async function start() {
     diveFloorM,
     groundOf,
     reliefGroundM,
+    heightAboveGroundM: () =>
+      groundUnderCameraM === null
+        ? null
+        : globe.tiles.ellipsoid.getPositionElevation(ecefCamera().position) -
+          Math.max(0, groundUnderCameraM),
     ecefCamera,
     placeCameraEcef,
     setFrameTarget,
@@ -3118,6 +3143,8 @@ async function start() {
     });
     readoutText = readoutNow();
     readout.offer(readoutText, performance.now());
+    // The landed line, from the same lifted camera as the readout.
+    pin.afterFrame();
     // A running clock moves the hour: its label follows, once a second.
     const mono = performance.now();
     if (clock.scale !== 0 && mono - clockShownAt >= 1000) {

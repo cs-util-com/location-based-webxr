@@ -702,8 +702,12 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   the 25 m margin (`groundRevisionM`), through `pinGround` (the replan
   path, never a jump). The old landing floor (a raise of more than 50 m
   through `pinLanding`) is gone for `flight=2`: the target is lifted to
-  its ground instead. The landed line says "Arrived, 150 m above the
-  ground." ("above sea level" where no ground was read). The readout adds
+  its ground instead. The LAW is 150 m above the place's own ground; the
+  landed line says what the readout says, the camera's height above the
+  drawn ground UNDER it, once the frame's clearance has acted
+  (`afterFrame`): "Arrived, 158 m above the ground." (over a slope the
+  clearance may hold it at 100 m behind the place; "above sea level"
+  where no relief is drawn under it; the R4b milestone review, finding 2). The readout adds
   " · 150 m above ground" below 100 km, from the drawn ground under the
   camera, and measures "to the target" to the target at its ground. The
   state's `pin.flight` adds `groundM`, `groundSource` ("tile" or

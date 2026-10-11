@@ -116,8 +116,17 @@ for (const [name, place, mayLift] of [
     } else {
       expect(Math.abs(aboveCamera - st.relief.clearanceM)).toBeLessThan(2);
     }
-    expect(st.readoutShown).toMatch(/ · \d+ m above ground/);
-    expect(st.pin.status).toMatch(/^Arrived, 150 m above the ground\.$/);
+    // The landed line and the readout say the same height above the drawn
+    // ground under the camera (the R4b milestone review, finding 2: the
+    // line said the law's 150 m while the readout said 100 m).
+    const read = / · (\d+) m above ground/.exec(st.readoutShown);
+    const said = /^Arrived, (\d+) m above the ground\.$/.exec(st.pin.status);
+    expect(read).not.toBeNull();
+    expect(said).not.toBeNull();
+    expect(Math.abs(Number(read?.[1]) - Number(said?.[1]))).toBeLessThanOrEqual(
+      1,
+    );
+    expect(Math.abs(Number(said?.[1]) - aboveCamera)).toBeLessThan(1);
   });
 }
 
