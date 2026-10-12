@@ -34,8 +34,20 @@ thicknessScale, noiseShare }`, one parameter set at the altitude it
   the slab's own 8, 5, x1, x1, 1, 1; the 700 km cells and noise share chosen by eye among
   cells x1 / x4 / x6 and noise shares 0.3 / 0.35 / 0.5 / 1, the owner's A/B
   shots in the record),
-  `topKm` 700 (full from here down), `bandKm` 300 (fades in over 1,000 to
-  700 km), `maxSteps` 12 (the shader's loop bound), `maxOctaves` 7.
+  `topKm` 800 (full from here down), `bandKm` 250 (fades in over 1,050
+  to 800 km; 700 and 300 until round 5, C5: the owner asked for the volume
+  from about 1,050 km), `maxSteps` 12 (the shader's loop bound),
+  `maxOctaves` 7.
+- `cloudShellNoiseCascade(altitudeKm, { topKm, bottomKm, fields,
+topScale })` (round-5 plan C2): the noise's two fields and their weights
+  at an altitude: `fields` + 1 fixed-scale fields with their own lattice
+  offsets (scales falling geometrically from `topScale` to 1, the last
+  the slab's own: scale 1, no offset), the progress linear in the
+  altitude's logarithm, the weights cos and sin of it: the squares sum to 1
+  and the mix turns at one speed, so the clouds morph all the way down (the
+  station law's smoothstep left them static around 200 km). RangeError
+  for a negative altitude, a bottom not below a positive top, no field or
+  a top scale below 1.
 - `cloudShellVolumeLaw(altitudeKm, stations?)`: `{ steps, marchSteps,
 octaves, thicknessScale, noiseShare, aerial, cells, cellMix }`: the top set above the top station,
   the bottom set below the bottom one, between two stations a smoothstep in
@@ -57,12 +69,15 @@ noiseShare, ceilingKm })`: the law's stations from a page's knobs (the
   slab's ceiling or 30 km, whichever is higher; each station at least 1.5x
   the one below, so the law and the shares never refuse the knobs.
   RangeError for a knob that is not positive and finite.
-- `cloudShellPixelWeight({ shellIn, slab, distanceKm, discRadiusKm })`:
-  the shell's weight at one pixel (the R4d review, finding 1):
-  `shellIn` x (1 - `slab` x the slab's disc mask at the ray's deck point,
-  unchanged within 0.7 r, cleared from r). GLSL twin `shellPixelWeight` in
-  the lab's march. RangeError for a share outside 0..1, a negative
-  distance or a radius that is not positive.
+- `cloudShellPixelWeight({ shellIn, slab, shellAlpha, slabAlpha })`: the
+  shell's weight at one pixel in its mix with the slab (the R4d review,
+  finding 1; round 5): `shellIn` x (1 - `slab` x r), r = min(1,
+  `slabAlpha` / `shellAlpha`), the share of the shell's cloud the slab
+  draws there (1 where the shell draws none). The hand-over's 1 - `slab`
+  where the two draw the same cloud; where the slab draws less (its fade
+  ring, beyond its disc, a clear patch) the shell fills it, so the mix's
+  alpha is never below the shell's. GLSL twin: the lab's composite.
+  RangeError for a share or alpha outside 0..1.
 - `cloudShellVolumeShares(altitudeKm, { topKm, bandKm?, ceilingKm, fadeKm })`:
   `{ shellIn, flat, shell, slab }`, who draws the clouds: the slab its
   share (`cloudVolumeShare`), the shell `shellIn x (1 - slab)` (`shellIn`
@@ -93,9 +108,11 @@ chartKm }`: the geodetic latitude and longitude from the normal
   slab's ceiling or below it never (`cloudShellStationsFor`), so where the
   two are mixed (below the slab's ceiling) they draw one field.
 - C2 per pixel: the shares sum to 1 per altitude, and below the slab's
-  ceiling the shell gives up the slab's share only where the slab draws
-  (its disc): a far cloud keeps the shell's full weight. The global mix
-  drew far clouds at 1 - s (0.35 at 25 km, none at 15 km; finding 1).
+  ceiling the shell gives up the slab's share only of the cloud the slab
+  draws at that pixel: a far cloud keeps the shell's full weight (the
+  global mix drew far clouds at 1 - s; finding 1), and the slab's fade ring
+  (its clouds go before its weight does) is filled by the shell (a disc
+  mask in its place lost 23-35 % beyond the disc at 25-18 km, measured).
 - The drawers share 1 at every altitude (the C2 invariant of
   `globe-cloud-volume.ts`, over three drawers); `flatCloudShare` takes the
   shell's top and band and multiplies its weakening by the flat drawer.
@@ -140,10 +157,15 @@ const { uv, chartKm } = cloudShellColumn([4000, 600, 4700], frame, 0);
   an independent smoothstep, continuity, refusals); the stations from the
   knobs (the slab's set from every ceiling 10-100 km down, the 30 km
   station kept below it, strict order so neither the law nor the shares
-  throw for tops 50-2,000 km, the knobs' look, refusals).
+  throw for tops 50-2,000 km, the knobs' look, refusals); the noise
+  cascade (squares sum to 1 at every altitude, one morph speed from 1,000
+  to 42 km within 1 %, continuous where one pair hands to the next, the
+  slab's own field at and below the bottom, the top field above the top,
+  fixed scales falling and distinct offsets, refusals).
 - `globe-cloud-shell-volume.property.test.ts`: the map at the ellipsoid's
   own latitude and longitude with the drift; the chart near the origin
   against `worldFromEcefAt`; the ground distance far out; the recentre
   (near within 20 m, far bounded).
-- `globe-cloud-flat-fade.test.ts`: the flat layer with the shell.
+- `globe-cloud-flat-fade.test.ts`: the flat layer with the shell, and its
+  own fade band overlapping the shell's fade-in (round 5, C5).
 - The GPU side: `GpsPlusSlamJs_DesignSystem/labs/globe/globe-cloud-shell-volume.smoke.spec.mjs`.

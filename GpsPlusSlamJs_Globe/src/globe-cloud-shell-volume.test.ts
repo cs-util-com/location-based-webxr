@@ -27,6 +27,7 @@ import {
   GLOBE_CLOUD_SHELL_GLSL,
   type CloudShellStation,
   cloudShellFieldWeights,
+  cloudShellNoiseCascade,
   cloudShellPixelWeight,
   cloudShellStationsFor,
   cloudShellVolumeLaw,
@@ -256,8 +257,12 @@ describe("cloudShellVolumeShares", () => {
 
   it("draws nothing as the shell above its band, everything from its top down to the slab's ceiling", () => {
     const s = (h: number) => cloudShellVolumeShares(h, shellOn);
-    expect(s(1_000).shell).toBe(0);
-    expect(s(1_000).flat).toBe(1);
+    // Above the band's top (1,050 km since round 5, C5) nothing; from the
+    // shell's top (800 km) down everything.
+    const above = CLOUD_SHELL_VOLUME.topKm + CLOUD_SHELL_VOLUME.bandKm + 1;
+    expect(s(above).shell).toBe(0);
+    expect(s(above).flat).toBe(1);
+    expect(s(CLOUD_SHELL_VOLUME.topKm).shell).toBe(1);
     expect(s(700).shell).toBe(1);
     expect(s(100).shell).toBe(1);
     expect(s(40).shell).toBe(1);
@@ -329,97 +334,98 @@ describe("GLOBE_CLOUD_SHELL_GLSL", () => {
 // s), but the slab exists only within its disc (80 km, cleared from 56 km):
 // at the owner's oblique pose from 15 to 40 km every cloud beyond the disc
 // was drawn at 1 - s and gone at 15 km. Per pixel, the shell gives up only
-// what the slab draws there.
+// what the slab draws there (round 5: by the slab's own alpha against the
+// shell's, since a disc mask missed the slab's faster fade in its ring).
 describe("cloudShellPixelWeight", () => {
-  const disc = { discRadiusKm: 80 };
-
-  it("keeps a far cloud at the shell's full weight whatever the slab's share", () => {
+  // Far from the slab's disc, or in a clear patch, the slab draws nothing:
+  // the shell keeps its whole weight whatever the slab's share.
+  it("keeps the shell whole where the slab draws nothing", () => {
     for (const slab of [0, 0.1, 0.35, 0.65, 0.9, 1]) {
-      for (const d of [80, 81, 120, 620, 5_000]) {
+      for (const shellAlpha of [0.05, 0.4, 1]) {
         expect(
-          cloudShellPixelWeight({ shellIn: 1, slab, distanceKm: d, ...disc }),
+          cloudShellPixelWeight({ shellIn: 1, slab, shellAlpha, slabAlpha: 0 }),
         ).toBe(1);
       }
     }
   });
 
-  it("gives the slab its share inside the disc's core, as the global mix did", () => {
+  it("gives the slab its share where the two draw the same cloud, as the global mix did", () => {
     for (const slab of [0, 0.35, 1]) {
-      for (const d of [0, 10, 55.9]) {
+      for (const a of [0.05, 0.4, 1]) {
         expect(
-          cloudShellPixelWeight({ shellIn: 1, slab, distanceKm: d, ...disc }),
+          cloudShellPixelWeight({
+            shellIn: 1,
+            slab,
+            shellAlpha: a,
+            slabAlpha: a,
+          }),
         ).toBeCloseTo(1 - slab, 12);
       }
     }
   });
 
-  // C2 per pixel: where the shell is fully in (below its band), what the
-  // shell gives up the slab takes, by the slab's own disc fade (0.7 r to r,
-  // `cloudDiscThreshold`), at every distance and share.
-  it("shares 1 with the slab at every distance and share (C2 per pixel)", () => {
-    for (const slab of [0, 0.2, 0.5, 0.8, 1]) {
-      for (let d = 0; d <= 100; d += 0.5) {
-        const shell = cloudShellPixelWeight({
-          shellIn: 1,
-          slab,
-          distanceKm: d,
-          ...disc,
-        });
-        const mask = 1 - smoothstepRef(0.7 * 80, 80, d);
-        expect(shell + slab * mask).toBeCloseTo(1, 12);
-        expect(shell).toBeGreaterThanOrEqual(0);
-        expect(shell).toBeLessThanOrEqual(1);
+  // C2 per pixel: with the shell fully in, the mix's alpha (the shell's at
+  // its weight plus the slab's at its share) is never below the shell's,
+  // and equals it wherever the slab draws no more than the shell (its fade
+  // ring, its edge, a clear patch): nothing the shell draws is lost.
+  it("never draws less than the shell, and exactly the shell where the slab draws less (C2 per pixel)", () => {
+    const grid = [0, 0.01, 0.1, 0.3, 0.6, 0.9, 1];
+    for (const slab of grid) {
+      for (const shellAlpha of grid.filter((a) => a > 0)) {
+        for (const slabAlpha of grid) {
+          const w = cloudShellPixelWeight({
+            shellIn: 1,
+            slab,
+            shellAlpha,
+            slabAlpha,
+          });
+          const mix = w * shellAlpha + slab * slabAlpha;
+          expect(mix).toBeGreaterThanOrEqual(shellAlpha - 1e-12);
+          // Exactly the shell's wherever the slab draws no more than it.
+          const gap = slabAlpha <= shellAlpha ? Math.abs(mix - shellAlpha) : 0;
+          expect(gap).toBeLessThan(1e-12);
+          expect(w).toBeGreaterThanOrEqual(0);
+          expect(w).toBeLessThanOrEqual(1);
+        }
       }
     }
   });
 
-  it("scales with the shell's own fade-in, and is continuous in the distance", () => {
+  it("scales with the shell's own fade-in, and treats a shell without clouds as nothing to keep", () => {
     expect(
-      cloudShellPixelWeight({ shellIn: 0.4, slab: 0, distanceKm: 10, ...disc }),
+      cloudShellPixelWeight({
+        shellIn: 0.4,
+        slab: 0,
+        shellAlpha: 0.5,
+        slabAlpha: 0.5,
+      }),
     ).toBeCloseTo(0.4, 12);
-    let prev = cloudShellPixelWeight({
-      shellIn: 1,
-      slab: 0.7,
-      distanceKm: 0,
-      ...disc,
-    });
-    for (let d = 0.01; d <= 100; d += 0.01) {
-      const w = cloudShellPixelWeight({
+    expect(
+      cloudShellPixelWeight({
         shellIn: 1,
-        slab: 0.7,
-        distanceKm: d,
-        ...disc,
-      });
-      expect(Math.abs(w - prev)).toBeLessThan(0.01);
-      prev = w;
-    }
+        slab: 0.5,
+        shellAlpha: 0,
+        slabAlpha: 0.3,
+      }),
+    ).toBeCloseTo(0.5, 12);
   });
 
-  it("refuses shares outside 0..1, a negative distance and a radius that is not positive", () => {
-    const ok = { shellIn: 1, slab: 0.5, distanceKm: 1, ...disc };
+  it("refuses shares or alphas outside 0..1", () => {
+    const ok = { shellIn: 1, slab: 0.5, shellAlpha: 0.5, slabAlpha: 0.5 };
     expect(() => cloudShellPixelWeight({ ...ok, slab: 1.1 })).toThrow(
       RangeError,
     );
     expect(() => cloudShellPixelWeight({ ...ok, shellIn: -0.1 })).toThrow(
       RangeError,
     );
-    expect(() => cloudShellPixelWeight({ ...ok, distanceKm: -1 })).toThrow(
-      RangeError,
-    );
-    expect(() => cloudShellPixelWeight({ ...ok, discRadiusKm: 0 })).toThrow(
-      RangeError,
-    );
     expect(() =>
-      cloudShellPixelWeight({ ...ok, distanceKm: Number.NaN }),
+      cloudShellPixelWeight({ ...ok, shellAlpha: Number.NaN }),
     ).toThrow(RangeError);
+    expect(() => cloudShellPixelWeight({ ...ok, slabAlpha: 2 })).toThrow(
+      RangeError,
+    );
   });
 });
-
-/** An independent smoothstep, so the test does not reuse the module's. */
-function smoothstepRef(a: number, b: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-}
 
 // WHY (R4d milestone review, findings 9 and 11, 2026-10-12): the law's
 // bottom station (the slab's own set) was fixed at 30 km while the slab's
@@ -506,5 +512,123 @@ describe("cloudShellStationsFor", () => {
     expect(() =>
       cloudShellStationsFor({ ...knobs, cellScale: -1, ceilingKm: 40 }),
     ).toThrow(RangeError);
+  });
+});
+
+// WHY (round-5 plan 2026-10-12-0612 C2; the owner on r822): the clouds
+// morphing into each other on the way down was "cool", "realistic", "a
+// feature", but between about 300 and 150 km "nothing moves": the station
+// law's smoothstep has no slope at its stations. The noise now runs down a
+// cascade of fixed-scale, decorrelated fields, two at a time, with weights
+// cos and sin of the progress: the squares sum to 1 (no opacity dip) and
+// the morph's speed is the same at every altitude (no static stretch).
+describe("cloudShellNoiseCascade", () => {
+  const cascade = { topKm: 1_050, bottomKm: 40, fields: 3, topScale: 4 };
+
+  it("weighs two fields so their squares sum to 1, at every altitude", () => {
+    for (let h = 2_000; h > 1; h /= 1.01) {
+      const c = cloudShellNoiseCascade(h, cascade);
+      expect(c.weights[0] ** 2 + c.weights[1] ** 2).toBeCloseTo(1, 12);
+      for (const w of c.weights) {
+        expect(w).toBeGreaterThanOrEqual(0);
+        expect(w).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  // The owner's "nothing moves" between stations: the morph's speed (how
+  // fast the mix turns, per unit of the altitude's logarithm) is constant
+  // from the top to the bottom, so no stretch of the descent is static.
+  it("morphs at the same speed at every altitude between its top and bottom", () => {
+    const speeds: number[] = [];
+    const angle = (h: number) => {
+      const c = cloudShellNoiseCascade(h, cascade);
+      return c.index * (Math.PI / 2) + Math.atan2(c.weights[1], c.weights[0]);
+    };
+    const dl = 0.001;
+    for (let h = 1_000; h > 42; h /= 1.02) {
+      speeds.push(Math.abs(angle(h * Math.exp(-dl)) - angle(h)) / dl);
+    }
+    const lo = Math.min(...speeds);
+    const hi = Math.max(...speeds);
+    expect(lo).toBeGreaterThan(0);
+    expect(hi / lo).toBeLessThan(1.01);
+  });
+
+  it("is continuous along the descent (no jump where one pair hands to the next)", () => {
+    let prev = cloudShellNoiseCascade(2_000, cascade);
+    for (let h = 2_000 / 1.001; h > 1; h /= 1.001) {
+      const c = cloudShellNoiseCascade(h, cascade);
+      // Compare by field: each field's weight, wherever it sits in the pair.
+      const weightOf = (x: typeof c, k: number) =>
+        (x.index === k ? x.weights[0] : 0) +
+        (x.index + 1 === k ? x.weights[1] : 0);
+      for (let k = 0; k <= cascade.fields; k++) {
+        expect(Math.abs(weightOf(c, k) - weightOf(prev, k))).toBeLessThan(0.01);
+      }
+      prev = c;
+    }
+  });
+
+  it("is the slab's own field (scale 1, no offset) at and below the bottom", () => {
+    for (const h of [40, 39, 20, 5, 0]) {
+      const c = cloudShellNoiseCascade(h, cascade);
+      const [field] = c.fields;
+      expect(c.weights[0]).toBe(1);
+      expect(field.scale).toBe(1);
+      expect(field.offsetCells).toEqual([0, 0]);
+    }
+  });
+
+  it("is the top field alone at and above its top, at the top's scale", () => {
+    for (const h of [1_050, 2_000, 70_000]) {
+      const c = cloudShellNoiseCascade(h, cascade);
+      expect(c.index).toBe(0);
+      expect(c.weights[0]).toBe(1);
+      expect(c.fields[0].scale).toBe(4);
+    }
+  });
+
+  it("gives each field a fixed scale, falling from the top's to 1, and its own offset", () => {
+    // Every sighting of a field, by its place in the cascade.
+    const sightings = new Map<number, { scale: number; offset: string }[]>();
+    for (let h = 1_100; h > 30; h /= 1.05) {
+      const c = cloudShellNoiseCascade(h, cascade);
+      c.fields.forEach((field, i) => {
+        const k = c.index + i;
+        const list = sightings.get(k) ?? [];
+        list.push({ scale: field.scale, offset: field.offsetCells.join() });
+        sightings.set(k, list);
+      });
+    }
+    // Fixed: each field seen alike at every altitude.
+    for (const list of sightings.values()) {
+      expect(new Set(list.map((e) => `${e.scale}/${e.offset}`)).size).toBe(1);
+    }
+    const seen = new Map(
+      [...sightings.entries()].map(([k, list]) => [k, list[0]!] as const),
+    );
+    const scales = [...seen.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([, e]) => e.scale);
+    for (let i = 1; i < scales.length; i++)
+      expect(scales[i]!).toBeLessThan(scales[i - 1]!);
+    const offsets = new Set([...seen.values()].map((e) => e.offset));
+    expect(offsets.size).toBe(seen.size);
+  });
+
+  it("refuses a bottom at or above the top, no field, or a scale below 1", () => {
+    expect(() =>
+      cloudShellNoiseCascade(100, { ...cascade, bottomKm: 1_050 }),
+    ).toThrow(RangeError);
+    expect(() =>
+      cloudShellNoiseCascade(100, { ...cascade, fields: 0 }),
+    ).toThrow(RangeError);
+    expect(() =>
+      cloudShellNoiseCascade(100, { ...cascade, topScale: 0.5 }),
+    ).toThrow(RangeError);
+    expect(() => cloudShellNoiseCascade(Number.NaN, cascade)).toThrow(
+      RangeError,
+    );
   });
 });

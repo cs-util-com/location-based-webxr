@@ -20,7 +20,7 @@ and be gone at the latest when the volumetric clouds are fully in (about
 - `GLOBE_CLOUD_FLAT`: `topM` 5,000 km (full from here up), `weakM` 100 km
   (weak by here), `weakShare` 0.3.
 - `flatCloudShare(altitudeM, { ceilingKm, fadeKm, topM?, weakM?,
-weakShare?, shellTopKm?, shellBandKm? })`, 0-1:
+weakShare?, shellTopKm?, shellBandKm?, flatOut? })`, 0-1:
   - 1 from `topM` up;
   - a smoothstep in the altitude's logarithm down to `weakShare` by `weakM`;
   - times the flat drawer of `cloudShellVolumeShares`
@@ -29,9 +29,15 @@ weakShare?, shellTopKm?, shellBandKm? })`, 0-1:
     at most the ceiling, as the volume is drawn), and with the spherical
     volume (round-4 plan 2026-10-11-0122 R4d, `shellTopKm` above 0) also
     1 - the shell's fade-in over `shellBandKm` above its top: gone exactly
-    when the volumes are full.
+    when the volumes are full. With `flatOut: { fromKm, toKm }` (round-5
+    plan 2026-10-12-0612 C5) the layer fades on its own band instead (whole
+    down to `fromKm`, gone by `toKm`), so it overlaps the shell's fade-in
+    above it on purpose (the owner: the volume "already strong when the
+    texture fades"); the drawers then sum to more than 1 for a stretch, and
+    never less (tested over the descent).
   - RangeError for an altitude that is not finite, a weak share outside
-    [0, 1], or `topM` not above `weakM` (or `weakM` not positive).
+    [0, 1], `topM` not above `weakM` (or `weakM` not positive), or a
+    `flatOut` band that does not fall from a higher start.
 
 ## Invariants
 

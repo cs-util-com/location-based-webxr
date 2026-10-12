@@ -119,3 +119,71 @@ describe("flatCloudShare with the spherical volume (R4d)", () => {
     }
   });
 });
+
+// WHY (round-5 plan 2026-10-12-0612 C5; the owner on r822): "the volumetric
+// clouds become visible a little too late: they should start at about
+// 1,050 km while the texture is still there, so that when the texture fades
+// the volumes are already strong". The flat layer gets its own fade band
+// (900 to 700 km by default) instead of giving up exactly what the shell
+// takes: for a stretch both draw (on purpose), and never neither.
+describe("flatCloudShare overlapping the spherical volume (round 5, C5)", () => {
+  const ceiling = { ceilingKm: 40, fadeKm: 25 };
+  const shell = { shellTopKm: 800, shellBandKm: 250 };
+  const flatOut = { fromKm: 900, toKm: 700 };
+
+  it("keeps the texture whole while the shell fades in above it", () => {
+    const at = (km: number) =>
+      flatCloudShare(km * 1000, {
+        ...ceiling,
+        ...shell,
+        flatOut,
+        weakShare: 1,
+      });
+    const shellIn = (km: number) =>
+      cloudShellVolumeShares(km, { topKm: 800, bandKm: 250, ...ceiling })
+        .shellIn;
+    expect(shellIn(1_000)).toBeGreaterThan(0);
+    expect(at(1_000)).toBe(1);
+    expect(at(900)).toBe(1);
+    expect(at(800)).toBeGreaterThan(0);
+    expect(at(800)).toBeLessThan(1);
+    expect(at(700)).toBe(0);
+    expect(at(300)).toBe(0);
+  });
+
+  it("never leaves a gap: the texture, the shell and the slab draw at least 1 at every altitude", () => {
+    for (let h = 3_000; h > 1; h /= 1.01) {
+      const s = cloudShellVolumeShares(h, {
+        topKm: 800,
+        bandKm: 250,
+        ...ceiling,
+      });
+      const flat = flatCloudShare(h * 1000, {
+        ...ceiling,
+        ...shell,
+        flatOut,
+        weakShare: 1,
+      });
+      expect(flat + s.shell + s.slab).toBeGreaterThanOrEqual(1 - 1e-9);
+      expect(flat + s.shell + s.slab).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it("is today's hand-over without the option", () => {
+    for (const km of [1_100, 900, 800, 500]) {
+      expect(flatCloudShare(km * 1000, { ...ceiling, ...shell })).toBe(
+        flatCloudShare(km * 1000, { ...ceiling, ...shell, flatOut: null }),
+      );
+    }
+  });
+
+  it("refuses a band that does not fall from a higher start", () => {
+    expect(() =>
+      flatCloudShare(500_000, {
+        ...ceiling,
+        ...shell,
+        flatOut: { fromKm: 700, toKm: 900 },
+      }),
+    ).toThrow(RangeError);
+  });
+});

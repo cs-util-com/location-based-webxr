@@ -38,6 +38,29 @@ export const GLOBE_CLOUD_FLAT = {
 } as const;
 
 /**
+ * The shell band the flat layer gives way over: the shell's own fade-in, or
+ * with `flatOut` its own band (round-5 plan C5), so it overlaps the shell's.
+ * RangeError for a `flatOut` that does not fall from a higher start.
+ */
+function flatShellBand(options: {
+  readonly shellTopKm?: number;
+  readonly shellBandKm?: number;
+  readonly flatOut?: { readonly fromKm: number; readonly toKm: number } | null;
+}): { topKm: number; bandKm?: number } {
+  const out = options.flatOut ?? null;
+  if (out !== null && !(out.toKm > 0 && out.fromKm > out.toKm)) {
+    throw new RangeError(
+      `the flat layer's fade must fall from a higher start, got ${out.fromKm} to ${out.toKm}`,
+    );
+  }
+  const topKm = options.shellTopKm ?? 0;
+  if (topKm > 0 && out !== null) {
+    return { topKm: out.toKm, bandKm: out.fromKm - out.toKm };
+  }
+  return { topKm, bandKm: options.shellBandKm };
+}
+
+/**
  * The flat layer's share at `altitudeM`, 0-1, for a volume fading in over
  * `fadeKm` below `ceilingKm` (pass the values the volume is drawn with).
  * RangeError for an altitude that is not finite, a weak share outside
@@ -55,6 +78,16 @@ export function flatCloudShare(
     readonly shellTopKm?: number;
     /** ... and the band it fades in over above it (km). */
     readonly shellBandKm?: number;
+    /**
+     * The layer's own fade with the shell (round-5 plan C5): whole down to
+     * `fromKm`, gone by `toKm`, so it overlaps the shell's fade-in above
+     * it (both drawn for a stretch, on purpose); null or absent: it gives up
+     * exactly what the shell takes.
+     */
+    readonly flatOut?: {
+      readonly fromKm: number;
+      readonly toKm: number;
+    } | null;
   },
 ): number {
   const {
@@ -77,8 +110,7 @@ export function flatCloudShare(
   const x = Math.log(topM / h) / Math.log(topM / weakM);
   const weaken = 1 - (1 - weakShare) * smoothstep(x);
   const { flat } = cloudShellVolumeShares(h / 1000, {
-    topKm: options.shellTopKm ?? 0,
-    bandKm: options.shellBandKm,
+    ...flatShellBand(options),
     ceilingKm: options.ceilingKm,
     fadeKm: options.fadeKm,
   });

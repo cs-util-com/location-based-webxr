@@ -108,10 +108,14 @@ export const CLOUD_SHELL_VOLUME = {
       aerial: 1,
     },
   ] as const satisfies readonly CloudShellStation[],
-  /** The shell is full from here down, km (the owner's "about 700 km"). */
-  topKm: 700,
-  /** ... and fades in over this much above it, km (1,000 to 700 km). */
-  bandKm: 300,
+  /**
+   * The shell is full from here down, km (the owner's "about 700 km"; 800
+   * since round 5, C5: "start at about 1,050 km while the texture is still
+   * there").
+   */
+  topKm: 800,
+  /** ... and fades in over this much above it, km (1,050 to 800 km). */
+  bandKm: 250,
   /** The march's loop bound (the shader's constant). */
   maxSteps: 12,
   /** The live noise's octaves (the framework's seven). */
@@ -293,6 +297,107 @@ export function cloudShellVolumeShares(
   return { shellIn, flat: (1 - shellIn) * (1 - slab), shell, slab };
 }
 
+/** One field of the noise cascade: its fixed cell scale and its offset. */
+interface CloudShellNoiseField {
+  /** The cells' size over the slab's (1 the slab's own). */
+  readonly scale: number;
+  /** Its lattice offset in cells: a decorrelated field; [0, 0] the slab's. */
+  readonly offsetCells: readonly [number, number];
+}
+
+/** The cascade's fields and their weights at an altitude. */
+export interface CloudShellNoiseCascade {
+  /** The first field's place in the cascade (0 the top). */
+  readonly index: number;
+  /** The field at `index` and the next one (only one at the bottom). */
+  readonly fields: readonly CloudShellNoiseField[];
+  /** Their weights, cos and sin of the progress: squares sum to 1. */
+  readonly weights: readonly [number, number];
+}
+
+/** RangeError for the cascade's refused inputs (`cloudShellNoiseCascade`). */
+function assertCascade(
+  altitudeKm: number,
+  options: {
+    readonly topKm: number;
+    readonly bottomKm: number;
+    readonly fields: number;
+    readonly topScale: number;
+  },
+): void {
+  const { topKm, bottomKm, fields, topScale } = options;
+  if (!(altitudeKm >= 0 && Number.isFinite(altitudeKm))) {
+    throw new RangeError(
+      `the altitude must be >= 0 and finite, got ${altitudeKm}`,
+    );
+  }
+  if (!(bottomKm > 0 && topKm > bottomKm && Number.isFinite(topKm))) {
+    throw new RangeError(
+      `the cascade needs 0 < bottom < top, got ${bottomKm}, ${topKm}`,
+    );
+  }
+  if (!(Number.isInteger(fields) && fields >= 1)) {
+    throw new RangeError(
+      `the cascade needs a whole number of fields >= 1, got ${fields}`,
+    );
+  }
+  if (!(topScale >= 1 && Number.isFinite(topScale))) {
+    throw new RangeError(`the top scale must be >= 1, got ${topScale}`);
+  }
+}
+
+/**
+ * The shell's noise along the descent (round-5 plan 2026-10-12-0612 C2):
+ * `fields` + 1 fields from `topKm` down to `bottomKm`, each at a fixed
+ * cell scale (falling geometrically from `topScale` to 1) and its own
+ * lattice offset (decorrelated), the last the slab's own field (scale 1,
+ * no offset). The progress m runs linearly in the altitude's logarithm
+ * from 0 at the top to `fields` at the bottom; between fields k and k + 1
+ * the weights are cos and sin of (pi / 2) frac(m). So the squares sum to 1
+ * (no opacity dip, the two fields being independent) and the mix turns at
+ * the same angular speed at every altitude (no static stretch, the owner's
+ * "nothing moves between 300 and 150 km" under the station law's
+ * smoothstep). A cell scale never slides: each field keeps its own.
+ *
+ * @throws RangeError for a negative or NaN altitude, a bottom not below a
+ *   positive top, no field, or a top scale below 1.
+ */
+export function cloudShellNoiseCascade(
+  altitudeKm: number,
+  options: {
+    readonly topKm: number;
+    readonly bottomKm: number;
+    readonly fields: number;
+    readonly topScale: number;
+  },
+): CloudShellNoiseCascade {
+  const { topKm, bottomKm, fields, topScale } = options;
+  assertCascade(altitudeKm, options);
+  const field = (k: number): CloudShellNoiseField => ({
+    scale: topScale ** (1 - k / fields),
+    // Whole cells, far apart, none for the slab's field (k = fields).
+    offsetCells: [173 * (fields - k), 97 * (fields - k)],
+  });
+  const span = Math.log(topKm / bottomKm);
+  const m =
+    altitudeKm <= bottomKm
+      ? fields
+      : Math.min(
+          fields,
+          Math.max(0, Math.log(topKm / altitudeKm) / span) * fields,
+        );
+  if (m >= fields) {
+    return { index: fields, fields: [field(fields)], weights: [1, 0] };
+  }
+  const index = Math.floor(m);
+  const t = (Math.PI / 2) * (m - index);
+  return {
+    index,
+    fields: [field(index), field(index + 1)],
+    weights: [Math.cos(t), Math.sin(t)],
+  };
+}
+
 /**
  * The law's stations from a page's knobs (R4d milestone review, findings 9
  * and 11): the top where `topKm` puts it with the knobs' cell scale,
@@ -344,44 +449,33 @@ export function cloudShellStationsFor(knobs: {
 }
 
 /**
- * The shell's weight at one pixel (R4d milestone review, finding 1): the
- * slab exists only within its disc (unchanged within 0.7 `discRadiusKm`
- * of its centre, cleared from `discRadiusKm`, smoothstep between, as
- * `cloudDiscThreshold` fades it), so the shell gives up the slab's share
- * only where the slab draws: `shellIn` x (1 - `slab` x the disc's mask at
- * `distanceKm`, the ray's deck point's distance from the disc's centre).
- * With the shell fully in, it and the slab share 1 at every pixel (C2 per
- * pixel). GLSL twin: `shellPixelWeight` in the lab's march.
+ * The shell's weight at one pixel in its mix with the slab (R4d milestone
+ * review, finding 1; round-5 plan 2026-10-12-0612): `shellIn` x (1 -
+ * `slab` x r), r = min(1, `slabAlpha` / `shellAlpha`), the share of the
+ * shell's cloud the slab draws at this pixel (1 where the shell draws
+ * none). Where the two draw the same cloud this is the hand-over's 1 -
+ * `slab`; where the slab draws less (its disc's fade ring, beyond its
+ * disc, a clear patch) the shell fills the difference, so the mix's alpha
+ * is never below the shell's (C2 per pixel). A disc mask in its place
+ * missed the slab's faster fade in its ring (its threshold rises, so its
+ * clouds go before its weight does). GLSL twin: the lab's composite.
  *
- * @throws RangeError for a share outside 0..1, a negative or NaN distance,
- *   or a radius that is not positive and finite.
+ * @throws RangeError for a share or an alpha outside 0..1.
  */
 export function cloudShellPixelWeight(input: {
   readonly shellIn: number;
   readonly slab: number;
-  readonly distanceKm: number;
-  readonly discRadiusKm: number;
+  readonly shellAlpha: number;
+  readonly slabAlpha: number;
 }): number {
-  const { shellIn, slab, distanceKm, discRadiusKm } = input;
-  for (const [name, v] of [
-    ["shellIn", shellIn],
-    ["slab", slab],
-  ] as const) {
+  for (const [name, v] of Object.entries(input)) {
     if (!(v >= 0 && v <= 1)) {
-      throw new RangeError(`the ${name} share must be in 0..1, got ${v}`);
+      throw new RangeError(`the ${name} must be in 0..1, got ${v}`);
     }
   }
-  if (!(distanceKm >= 0)) {
-    throw new RangeError(`the distance must be >= 0, got ${distanceKm}`);
-  }
-  if (!(discRadiusKm > 0 && Number.isFinite(discRadiusKm))) {
-    throw new RangeError(
-      `the disc radius must be positive, got ${discRadiusKm}`,
-    );
-  }
-  const mask =
-    1 - smoothstep((distanceKm - 0.7 * discRadiusKm) / (0.3 * discRadiusKm));
-  return shellIn * (1 - slab * mask);
+  const { shellIn, slab, shellAlpha, slabAlpha } = input;
+  const r = shellAlpha > 0 ? Math.min(1, slabAlpha / shellAlpha) : 1;
+  return shellIn * (1 - slab * r);
 }
 
 /**
