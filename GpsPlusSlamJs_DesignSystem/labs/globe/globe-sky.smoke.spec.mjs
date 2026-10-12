@@ -274,30 +274,54 @@ const angleBetween = (a, b) => {
 // pixels: with the drift on, the same view at the same instant shows the
 // clouds elsewhere, and with the clouds off it cannot (the control that
 // proves the difference is the clouds, not anything else).
+// Since round 5 (plan 2026-10-12-0612, C1) the drift runs in real time while
+// the hour is held, and since its §9 it is summed per frame: a new hour
+// seeds the offset at rate x the instant, and from there it moves by at
+// most the far rate x the real time since. So each reading is bounded by
+// the window around its hash change (the exact equality this test asserted
+// before C1 had failed since r823; found on r827).
 test("the clouds drift with the clock", async ({ page }) => {
   test.setTimeout(300_000);
   // The look its floor was measured on (none of these keys varies below).
   const view = withPreRound4Look("at=30,15&spinMs=0&turnMs=0");
+  const t0 = "2026-03-20T10:59:00Z";
   const t1 = PINNED;
   const t2 = "2026-03-20T11:01:00Z";
-  const errors = await bootLab(page, `${view}&time=${t1}&cloudDrift=0.5`);
-  const a = await page.evaluate(() => window.__globeLab.state());
-  await applyHash(page, `${view}&time=${t2}&cloudDrift=0.5`);
-  const b = await page.evaluate(() => window.__globeLab.state());
-  // 60 s at 0.5 °/s: 30° further east, modulo a turn.
-  const moved =
-    (b.cloudLonOffsetRad - a.cloudLonOffsetRad + 4 * Math.PI) % (2 * Math.PI);
+  const errors = await bootLab(page, `${view}&time=${t0}&cloudDrift=0.5`);
+  /** The offset after a new hour, and the real seconds around the change. */
+  const seeded = async (time) => {
+    const start = await page.evaluate(() => performance.now());
+    await applyHash(page, `${view}&time=${time}&cloudDrift=0.5`);
+    return page.evaluate(
+      (from) => ({
+        offset: window.__globeLab.state().cloudLonOffsetRad,
+        windowS: (performance.now() - from) / 1000,
+      }),
+      start,
+    );
+  };
+  const a = await seeded(t1);
+  const b = await seeded(t2);
+  // 60 s at 0.5 °/s: 30° further east, modulo a turn, give or take the
+  // drift inside the two windows.
+  const moved = (b.offset - a.offset + 4 * Math.PI) % (2 * Math.PI);
+  const slack = 0.5 * (a.windowS + b.windowS) * DEG;
   console.log(
-    `cloud offset: ${(a.cloudLonOffsetRad / DEG).toFixed(4)}° at ${t1}, ${(b.cloudLonOffsetRad / DEG).toFixed(4)}° at ${t2}, moved ${(moved / DEG).toFixed(4)}°`,
+    `cloud offset: ${(a.offset / DEG).toFixed(4)}° at ${t1}, ${(b.offset / DEG).toFixed(4)}° at ${t2}, moved ${(moved / DEG).toFixed(4)}° (slack ${(slack / DEG).toFixed(4)}° over ${(a.windowS + b.windowS).toFixed(2)} s)`,
   );
-  expect(angleBetween(moved, 30 * DEG)).toBeLessThan(1e-6);
-  expect(b.cloudDrift).toBe(0.5);
-  // Pinned: the same instant gives the same offset again.
-  await applyHash(page, `${view}&time=${t1}&cloudDrift=0.5`);
-  await applyHash(page, `${view}&time=${t2}&cloudDrift=0.5`);
-  expect(
-    await page.evaluate(() => window.__globeLab.state().cloudLonOffsetRad),
-  ).toBe(b.cloudLonOffsetRad);
+  // The windows stay short, so the slack is far from the 30° it bounds.
+  expect(a.windowS + b.windowS).toBeLessThan(4);
+  expect(angleBetween(moved, 30 * DEG)).toBeLessThanOrEqual(slack);
+  expect(await page.evaluate(() => window.__globeLab.state().cloudDrift)).toBe(
+    0.5,
+  );
+  // Pinned: the same instant gives the same offset again (within the
+  // drift inside the two windows).
+  await seeded(t1);
+  const again = await seeded(t2);
+  expect(angleBetween(again.offset, b.offset)).toBeLessThanOrEqual(
+    0.5 * (b.windowS + again.windowS) * DEG,
+  );
   await applyHash(page, `${view}&time=${t1}&cloudDrift=0`);
   expect(
     await page.evaluate(() => window.__globeLab.state().cloudLonOffsetRad),
