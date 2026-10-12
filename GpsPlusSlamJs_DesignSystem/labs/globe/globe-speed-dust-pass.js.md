@@ -17,7 +17,8 @@ renderer, on, exposureMs, widthPx, radialOnly, look })`: `radialOnly`
   passes to the model's `stepVelocity` (only the distance to the Earth
   makes streaks); each frame, with the
   camera's ECEF pose; `look` holds the panel's knobs, each the default
-  when absent: `count`, `gain` (on the opacity), `color` (an index into
+  when absent: `count`, `gain` (on the opacity), `farShare` (the
+  model's far-out share, 0..1), `color` (an index into
   `SPEED_DUST_COLORS`), `loMps`, `hiMps`, `driftMin`, `driftMax`. Steps the
   velocity (a jump of the altitude in a frame resets it), the speed share, the opacity (nothing when off, stopped or
   below 300 km), the field's drift and the streaks; sets the dust camera to
@@ -26,7 +27,7 @@ renderer, on, exposureMs, widthPx, radialOnly, look })`: `radialOnly`
   The lab draws them before the Earth at 1 - `dustOver` and after it at
   `dustOver`.
 - `reset()`: forgets the velocity (a placed view is a teleport).
-- `state()`: `{ count, gain, color, loMps, hiMps, driftMin, driftMax,
+- `state()`: `{ count, gain, farShare, color, loMps, hiMps, driftMin, driftMax,
 speedMps, share, opacity, drift, direction, shown }` (the knobs as applied,
   so a smoke can see every one). A range that is not a positive rising
   pair falls back to the default instead of throwing every frame.

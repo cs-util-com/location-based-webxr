@@ -81,7 +81,8 @@
   pin's press always flies from where the camera is),
   `nightGain` (0-4, default 0.7), `waterRoughness`,
   `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of the clock's drift time,
-  default 0.375, 0.75 x the first 0.5 by the owner's choice, DEC-G6-5; in
+  default 0.09375, a quarter of DEC-G6-5's 0.375 (round-5 plan: the
+  owner found that hectic on r823); in
   real time while `time=` holds the hour, round-5 plan C1),
   `cloudShell` (1, the default: the clouds move onto their own shell above
   the ground as the relief takes the pixels, the band's share, so the
@@ -686,7 +687,10 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   after it at `dustOver` (0.25); `dustExposureMs` (60) and `dustWidthPx`
   (1.5) shape the streaks. The panel's "Speed streaks" section tunes them
   live (D1b, DEC-R3-11): `dust` on or off, `dustCount` (2,500), `dustGain`
-  (2; 2,500 and 60 ms the owner's pick of four A/B looks, DEC-R3-17), `dustColor` (0 bluish white, 1 white, 2 warm), `dustLoKmS` (1; 0.1-10) and
+  (2; 2,500 and 60 ms the owner's pick of four A/B looks, DEC-R3-17),
+  `dustFar` (0.5; 0-1, the streaks' share far out where the whole Earth
+  is in view, round-5 plan: the owner found them a bit strong at the
+  start; 1 the r823 look), `dustColor` (0 bluish white, 1 white, 2 warm), `dustLoKmS` (1; 0.1-10) and
   `dustHiKmS` (5,000; 500-20,000), the speed range in km/s on linear
   sliders over ranges that never cross, and `dustDriftMin` (0.2)
   and `dustDriftMax` (6), how fast they pour at its ends; a tuned look

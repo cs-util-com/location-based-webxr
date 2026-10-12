@@ -51,6 +51,15 @@ export const GLOBE_SPEED_DUST = {
   fullM: 2_000_000,
   /** Gone below this altitude, m. */
   goneM: 300_000,
+  /**
+   * Far out, where the whole Earth is in view (it fills a 50 degree view's
+   * height at about 8,700 km), the streaks fall from full at `farFromM` to
+   * `farShare` at `farToM`, smoothstep in the altitude's log (round-5
+   * plan, the owner on r823: "a bit too strong at the start; more subtle").
+   */
+  farFromM: 8_000_000,
+  farToM: 30_000_000,
+  farShare: 0.5,
   /** The share of the speed range over which the dust fades in. */
   fadeInShare: 0.15,
   /** Streaks fade out between these distances from the camera (box units). */
@@ -194,14 +203,27 @@ export function driftRate(
   return driftMin * (driftMax / driftMin) ** s;
 }
 
-/** The dust's opacity: faded in over the low speeds, and by the altitude. */
-export function speedDustOpacity(share: number, altitudeM: number): number {
+/**
+ * The dust's opacity: faded in over the low speeds, and by the altitude
+ * (gone low, `farShare` far out: `options.farShare` unless absent, a lab
+ * knob; RangeError outside 0..1).
+ */
+export function speedDustOpacity(
+  share: number,
+  altitudeM: number,
+  options: { readonly farShare?: number } = {},
+): number {
+  const { fullM, goneM, fadeInShare, farFromM, farToM } = GLOBE_SPEED_DUST;
+  const farShare = options.farShare ?? GLOBE_SPEED_DUST.farShare;
+  if (!(farShare >= 0 && farShare <= 1)) {
+    throw new RangeError(`the far share must be in 0..1, got ${farShare}`);
+  }
   if (!Number.isFinite(share) || !Number.isFinite(altitudeM)) return 0;
-  const { fullM, goneM, fadeInShare } = GLOBE_SPEED_DUST;
   const bySpeed = smoothstep(share / fadeInShare);
   const h = Math.max(altitudeM, 1);
   const byAltitude = smoothstep(Math.log(h / goneM) / Math.log(fullM / goneM));
-  return bySpeed * byAltitude;
+  const far = smoothstep(Math.log(h / farFromM) / Math.log(farToM / farFromM));
+  return bySpeed * byAltitude * (1 - (1 - farShare) * far);
 }
 
 /** RangeError unless 0 < lo < hi (finite). */

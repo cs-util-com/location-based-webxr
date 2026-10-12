@@ -159,6 +159,7 @@ import {
   SPEED_DUST_MAX_COUNT,
   createSpeedDustPass,
 } from "./globe-speed-dust-pass.js";
+import { GLOBE_SPEED_DUST } from "/globe/globe-speed-dust.js";
 import { EARTH_ATMOSPHERE } from "/fw/visualization/atmosphere/atmosphere-model.js";
 import {
   GLOBE_SKY_HAND_OVER,
@@ -687,6 +688,9 @@ const PARAMS = {
   // centre); 2 the distance only everywhere; 0 the whole motion always.
   dustMotion: { fallback: 1, min: 0, max: 2 },
   dustGain: { fallback: 2, min: 0, max: 4 },
+  // The streaks' share far out, where the whole Earth is in view (round-5
+  // plan: the owner found them a bit strong at the start; 1 the r823 look).
+  dustFar: { fallback: GLOBE_SPEED_DUST.farShare, min: 0, max: 1 },
   dustColor: { fallback: 0, min: 0, max: 2 },
   dustLoKmS: { fallback: 1, min: 0.1, max: 10 },
   dustHiKmS: { fallback: 5000, min: 500, max: 20000 },
@@ -3494,6 +3498,7 @@ async function start() {
       look: {
         count: params.dustCount,
         gain: params.dustGain,
+        farShare: params.dustFar,
         color: params.dustColor,
         loMps: params.dustLoKmS * 1000,
         hiMps: params.dustHiKmS * 1000,

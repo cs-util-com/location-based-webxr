@@ -617,6 +617,7 @@ test("every control on the plate writes the hash and applies", async ({
       "dustDriftMax",
       "dustDriftMin",
       "dustExposureMs",
+      "dustFar",
       "dustGain",
       "dustHiKmS",
       "dustLoKmS",

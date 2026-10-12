@@ -18,7 +18,10 @@ asked for a screen-space effect tied to the speed in metres per second.
 - `GLOBE_SPEED_DUST`: `count` 1,500; `loMps` 1 km/s and `hiMps` 5,000 km/s
   (the speed range, measured on a flight: about 4,800 km/s at 44,000 km,
   1.5 km/s at the landing); `driftMin` 0.2 and `driftMax` 6 box units per
-  second; `tauMs` 200; `fullM` 2,000 km and `goneM` 300 km; `fadeInShare`
+  second; `tauMs` 200; `fullM` 2,000 km and `goneM` 300 km; `farFromM` 8,000 km,
+  `farToM` 30,000 km and `farShare` 0.5 (round-5 plan: the owner on r823
+  found the streaks a bit strong while the whole Earth is in view, which
+  it is above about 8,700 km at a 50 degree view); `fadeInShare`
   0.15; `nearFade` 0.05-0.15; `rimFrom` 0.85 and `rimTo` 0.95;
   `maxStepShare` 0.3.
 - `startVelocity()`, `stepVelocity(state, position, tMs, altitudeM)`: the
@@ -41,7 +44,7 @@ asked for a screen-space effect tied to the speed in metres per second.
 - `driftRate(share, range?)`: the field's drift, from `driftMin` to
   `driftMax`, geometric in the share; `range` `{ driftMin, driftMax }`
   replaces the defaults (D1b), RangeError unless 0 < min < max.
-- `speedDustOpacity(share, altitudeM)`: faded in over the lowest
+- `speedDustOpacity(share, altitudeM, { farShare }?)`: faded in over the lowest
   `fadeInShare` of the range (a stopped camera draws nothing) and by the
   altitude (full from `fullM`, gone by `goneM`, smoothstep in its log).
 - `createSpeedField(count?, seed?)`: seeds spread through the box

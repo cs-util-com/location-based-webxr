@@ -197,8 +197,46 @@ describe("the dust's opacity", () => {
     expect(speedDustOpacity(0, 10_000 * KM)).toBe(0);
     expect(speedDustOpacity(1, fullM)).toBe(1);
     expect(speedDustOpacity(1, goneM)).toBe(0);
-    expect(speedDustOpacity(speedShare(hiMps), 65_000 * KM)).toBe(1);
+    expect(speedDustOpacity(speedShare(hiMps), 5_000 * KM)).toBe(1);
     expect(speedDustOpacity(Number.NaN, 10_000 * KM)).toBe(0);
+  });
+
+  // WHY (round-5 plan, the owner on r823: "the speed lines at the start,
+  // while the Earth is still a whole sphere, are a bit too strong; make
+  // them more subtle"): far out the streaks fall to `farShare`, and only
+  // there. The whole globe fills a 50 degree view's height at about
+  // 8,700 km, so the dust keeps its full strength below `farFromM` and
+  // every look under it (the descent the owner liked) is unchanged.
+  it("is subtler far out, where the whole Earth is in view, and only there", () => {
+    const { farFromM, farToM, farShare } = GLOBE_SPEED_DUST;
+    expect(farShare).toBeGreaterThan(0);
+    expect(farShare).toBeLessThan(1);
+    expect(farFromM).toBeLessThanOrEqual(8_700 * KM);
+    expect(speedDustOpacity(1, farFromM)).toBe(1);
+    expect(speedDustOpacity(1, farToM)).toBeCloseTo(farShare, 12);
+    // The flight's start: 50,000 km from the centre.
+    expect(speedDustOpacity(1, 43_600 * KM)).toBeCloseTo(farShare, 12);
+    let last = 1;
+    for (let km = farFromM / KM; km <= farToM / KM; km *= 1.05) {
+      const o = speedDustOpacity(1, km * KM);
+      expect(o).toBeLessThanOrEqual(last + 1e-12);
+      expect(last - o).toBeLessThan(0.05);
+      last = o;
+    }
+  });
+
+  // The lab's knob (`dustFar`): 1 is the look before round 5, 0 no streaks
+  // far out; a share outside 0..1 is refused rather than clamped.
+  it("takes the far share as an option, refusing one outside 0..1", () => {
+    expect(speedDustOpacity(1, 43_600 * KM, { farShare: 1 })).toBe(1);
+    expect(speedDustOpacity(1, 43_600 * KM, { farShare: 0 })).toBe(0);
+    expect(speedDustOpacity(1, 2_000 * KM, { farShare: 0 })).toBe(1);
+    expect(() => speedDustOpacity(1, 1e7, { farShare: -0.1 })).toThrow(
+      RangeError,
+    );
+    expect(() => speedDustOpacity(1, 1e7, { farShare: Number.NaN })).toThrow(
+      RangeError,
+    );
   });
 
   it("drifts faster as the speed rises, from the slow rate to the fast one", () => {

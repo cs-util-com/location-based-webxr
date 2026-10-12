@@ -210,6 +210,10 @@ export function createSpeedDustPass(maxCount = SPEED_DUST_MAX_COUNT) {
       const speedRange = { loMps, hiMps };
       const driftRange = { driftMin, driftMax };
       const gain = look.gain >= 0 ? look.gain : 1;
+      const farShare =
+        look.farShare >= 0 && look.farShare <= 1
+          ? look.farShare
+          : GLOBE_SPEED_DUST.farShare;
       const color = SPEED_DUST_COLORS[look.color] ? look.color : 0;
       material.uniforms.uGain.value = gain;
       material.uniforms.uColor.value.set(...SPEED_DUST_COLORS[color]);
@@ -223,7 +227,7 @@ export function createSpeedDustPass(maxCount = SPEED_DUST_MAX_COUNT) {
       const v = velocity.velocity;
       const speedMps = Math.hypot(v[0], v[1], v[2]);
       const share = speedShare(speedMps, speedRange);
-      const opacity = on ? speedDustOpacity(share, altitudeM) : 0;
+      const opacity = on ? speedDustOpacity(share, altitudeM, { farShare }) : 0;
       const rate = driftRate(share, driftRange);
       const dir =
         speedMps > 0
@@ -235,6 +239,7 @@ export function createSpeedDustPass(maxCount = SPEED_DUST_MAX_COUNT) {
       report = {
         count,
         gain,
+        farShare,
         color,
         loMps,
         hiMps,

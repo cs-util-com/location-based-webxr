@@ -118,7 +118,7 @@ test("the streaks' knobs reach the pass, live", async ({ page }) => {
   const before = await page.evaluate(() => window.__globeLab.state().dust);
   await applyHash(
     page,
-    `${base}&dust=1&dustCount=700&dustColor=2&dustGain=2&dustLoKmS=3&dustHiKmS=900&dustDriftMin=0.5&dustDriftMax=12`,
+    `${base}&dust=1&dustCount=700&dustColor=2&dustGain=2&dustFar=0.3&dustLoKmS=3&dustHiKmS=900&dustDriftMin=0.5&dustDriftMax=12`,
   );
   await page.evaluate(() => window.__globeLab.timeFrames(2));
   const after = await page.evaluate(() => window.__globeLab.state().dust);
@@ -130,6 +130,7 @@ test("the streaks' knobs reach the pass, live", async ({ page }) => {
   expect(after).toMatchObject({
     count: 700,
     gain: 2,
+    farShare: 0.3,
     color: 2,
     loMps: 3_000,
     hiMps: 900_000,
