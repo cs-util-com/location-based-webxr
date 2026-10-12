@@ -326,6 +326,8 @@ describe("GLOBE_CLOUD_SHELL_GLSL", () => {
       "uniform float uShellLonOffset;",
       "vec2 globeShellMapUv( vec3 p )",
       "vec2 globeShellChartKm( vec3 p )",
+      // The lift's smoothing, the twin of cloudShellLocalLiftKm's.
+      "const float SHELL_LIFT_EPS = 0.001000;",
     ]) {
       expect(GLOBE_CLOUD_SHELL_GLSL).toContain(name);
     }

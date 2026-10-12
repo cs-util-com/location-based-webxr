@@ -56,7 +56,6 @@ import {
   cloudSlabThresholdThicknessM,
 } from "/fw/visualization/atmosphere/cloud-slab.js";
 import {
-  CLOUD_SHELL_LIFT_EPS,
   CLOUD_SHELL_VOLUME,
   GLOBE_CLOUD_SHELL_GLSL,
   cloudShellFieldLiftKm,
@@ -154,7 +153,6 @@ const float SHELL_T0 = ${glslFloat(cloudSlabThresholdThicknessM())};
 const float SHELL_SUN_DEPTH = ${glslFloat(CLOUD_SLAB.sunDepthScale)};
 const float SHELL_SUN_MU_FLOOR = ${glslFloat(CLOUD_SLAB.sunMuFloor)};
 const float SHELL_EARLY_EXIT = ${glslFloat(CLOUD_SLAB.earlyExitTransmittance)};
-const float SHELL_LIFT_EPS = ${glslFloat(CLOUD_SHELL_LIFT_EPS)};
 const float SHELL_LIGHT_SERIES = ${glslFloat(CLOUD_SLAB.lightSeriesX)};
 const float SHELL_EDGE = ${glslFloat(CLOUD_LAYER.edgeHalfWidth)};
 const float SHELL_SUN_AMBIENT = ${glslFloat(CLOUD_LAYER.sunAmbient)};

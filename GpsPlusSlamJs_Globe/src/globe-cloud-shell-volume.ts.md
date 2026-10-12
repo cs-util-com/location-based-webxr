@@ -85,7 +85,7 @@ noiseShare, ceilingKm })`: the law's stations from a page's knobs (the
   below 1 or a lift below 0.
 - `cloudShellLocalLiftKm([a0, a1], [l0, l1])`: the column's lift at a
   spot, each field's lift weighted by its share of the anomaly (|a_k| +
-  `CLOUD_SHELL_LIFT_EPS`, 1e-3, over their sum: halfway, smoothly, where
+  1e-3, over their sum, carried to the GLSL as `SHELL_LIFT_EPS`: halfway, smoothly, where
   both are near 0). Only the base moves, never the column's length (its
   opacity). GLSL twin: the lab's `shellNoise`. RangeError for an anomaly
   that is not finite or a lift below 0.

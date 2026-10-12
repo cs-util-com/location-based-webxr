@@ -481,9 +481,10 @@ export function cloudShellPixelWeight(input: {
 /**
  * The smoothing of the fields' shares of the anomaly
  * (`cloudShellLocalLiftKm`): where both are near 0 the lift goes to
- * halfway smoothly instead of jumping. The lab's shader reads it.
+ * halfway smoothly instead of jumping. `GLOBE_CLOUD_SHELL_GLSL` carries it
+ * to the lab's shader as `SHELL_LIFT_EPS`.
  */
-export const CLOUD_SHELL_LIFT_EPS = 1e-3;
+const CLOUD_SHELL_LIFT_EPS = 1e-3;
 
 /**
  * One field's lift over the deck, km (round-5 plan §10, DEC-R5-4, the
@@ -662,6 +663,7 @@ export function cloudShellColumn(
  * octave the march reads (690 m cells).
  */
 export const GLOBE_CLOUD_SHELL_GLSL = /* glsl */ `
+const float SHELL_LIFT_EPS = ${CLOUD_SHELL_LIFT_EPS.toFixed(6)};
 uniform mat4 uShellWorldFromEcef;
 uniform vec3 uShellRadii;
 uniform float uShellGroundKm;
