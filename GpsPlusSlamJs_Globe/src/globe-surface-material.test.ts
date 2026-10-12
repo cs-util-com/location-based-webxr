@@ -410,8 +410,10 @@ describe("cloudLonOffsetRad", () => {
     expect(cloudLonOffsetRad(Date.parse("2026-03-20T12:00:00Z"), 0)).toBe(0);
     expect(GLOBE_CLOUD_DRIFT_DEG_PER_S).toBeGreaterThan(0);
     // The owner's speed (round-6 plan 2026-10-04-1050 DEC-G6-5): 0.75 x
-    // the 0.5 degree a second before, which read a little too fast.
-    expect(GLOBE_CLOUD_DRIFT_DEG_PER_S).toBe(0.375);
+    // the 0.5 degree a second before, which read a little too fast; then a
+    // quarter of that (round-5 plan 2026-10-12-0612, on r823: "a quarter
+    // is enough, maybe even less; it looks hectic").
+    expect(GLOBE_CLOUD_DRIFT_DEG_PER_S).toBe(0.375 / 4);
   });
 
   it("moves by exactly rate x elapsed between two instants, at today's epoch", () => {
