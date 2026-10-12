@@ -17,3 +17,5 @@ export {
   keyForFileName,
   openOsmStoreDirectory,
 } from './opfs-osm-blob-store.js';
+export type { OpenOsmStoreOptions } from './open-osm-store.js';
+export { openPersistentOsmStore } from './open-osm-store.js';

@@ -4,7 +4,7 @@
  * light factors the lab computes over its region. The shader finds a
  * fragment's place in that grid from its geodetic normal; the lab placed
  * its posts with an equirectangular frame at the region's centre
- * (`enuFrameAt`, 111,320 m a degree). A different mapping would shift the
+ * (`enuFrameAt`, the AR core's metres a degree). A different mapping would shift the
  * detail against the relief by kilometres at the region's edge, and
  * nothing would look broken, only wrong. So the shader's mapping has a
  * twin here, checked against posts placed the lab's way, and the texture
@@ -29,7 +29,9 @@ const postLatLng = (x: number, y: number) => ({
   lat: centre.lat + y / GLOBE_DETAIL.metresPerDegLat,
   lng:
     centre.lng +
-    x / (GLOBE_DETAIL.metresPerDegLat * Math.cos((centre.lat * Math.PI) / 180)),
+    x /
+      (GLOBE_DETAIL.metresPerDegLngEquator *
+        Math.cos((centre.lat * Math.PI) / 180)),
 });
 
 describe("detailPlace", () => {
@@ -111,7 +113,10 @@ describe("DETAIL_FRAGMENT", () => {
   // fade, multiplying the imagery's colour (linear) by the factor.
   it("maps by the geodetic normal with the lab's metres a degree and fades at the edge", () => {
     expect(DETAIL_FRAGMENT).toContain("vGeoNormal");
-    expect(DETAIL_FRAGMENT).toContain(GLOBE_DETAIL.metresPerDegLat.toFixed(1));
+    expect(DETAIL_FRAGMENT).toContain(GLOBE_DETAIL.metresPerDegLat.toFixed(4));
+    expect(DETAIL_FRAGMENT).toContain(
+      GLOBE_DETAIL.metresPerDegLngEquator.toFixed(4),
+    );
     expect(DETAIL_FRAGMENT).toContain(
       `smoothstep( ${GLOBE_DETAIL.fadeFrom.toFixed(2)} * uDetailHalfM, uDetailHalfM`,
     );

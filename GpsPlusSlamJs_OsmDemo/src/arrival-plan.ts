@@ -6,9 +6,12 @@
  * Three things, each derived from the module OsmDemo itself uses, so the
  * plan cannot drift from the app without a test noticing
  * (`arrival-plan.test.ts` runs OsmDemo's real machinery beside it):
- * - **the position** OsmDemo reads from the hand-over URL: five decimals, as
- *   the globe's `handOverUrl` writes them (the chunk is computed from that,
- *   not from the unrounded target);
+ * - **the position** OsmDemo reads from its URL: five decimals, as its
+ *   `url-state.ts` writes them (the chunk is computed from that, not from
+ *   the unrounded target). The globe opened OsmDemo with such a URL until
+ *   its page hand-over was removed (globe city plan 2026-10-05-0040 §12.5
+ *   C6); its own city builds at the raw target, which shares this working
+ *   set except within about a metre of a chunk edge;
  * - **the Overpass tiles** of every scored ring: `fetchTilesForScoreWorkingSet`
  *   of the position's res-11 chunk, over `PROGRESSIVE_RADII`, as the refresh
  *   cycle runs them (1-3 res-7 tiles, about 21 MB each when cold);
@@ -32,11 +35,11 @@ import {
 import { latLngToCell } from "h3-js";
 
 import { DEM_URL_TEMPLATES } from "./dem-provider.js";
-import { TERRAIN_EXTENT_M } from "./heightfield.js";
-import { latticeWindow } from "./terrain-field.js";
-import { terrainWindowFor } from "./terrain-window.js";
+import { TERRAIN_EXTENT_M } from "gps-plus-slam-osm";
+import { latticeWindow } from "gps-plus-slam-osm";
+import { terrainWindowFor } from "gps-plus-slam-osm";
 
-/** The decimals the hand-over URL carries (`globe-handover.ts`, `url-state.ts`). */
+/** The decimals OsmDemo's URL carries (`url-state.ts`). */
 const HANDOVER_DECIMALS = 5;
 
 export interface ArrivalPlan {
@@ -48,7 +51,7 @@ export interface ArrivalPlan {
   readonly demUrls: readonly string[];
 }
 
-/** Rounded and parsed back exactly as the hand-over URL carries it. */
+/** Rounded and parsed back exactly as OsmDemo's URL carries it. */
 function asHandedOver(value: number): number {
   return Number((value + 0).toFixed(HANDOVER_DECIMALS));
 }

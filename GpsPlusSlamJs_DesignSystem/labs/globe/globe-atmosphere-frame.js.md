@@ -42,6 +42,13 @@
     metre) that put the ellipsoid of radii a, b, c exactly on the model's
     ground sphere of `groundKm`; RangeError for a radius or ground that is
     not a positive finite number.
+  - `observerAltitudeKm([x, y, z], radii, groundKm)` (F2 plan
+    2026-10-03-1922, F2b) - the camera's height (km) above the ellipsoid's
+    image in the model: its distance from the centre after
+    `ellipsoidToModel` minus `groundKm`; negative below the ellipsoid,
+    RangeError for a non-finite position. The ground sky's observer and the
+    space pass read this one number (DEC-H3), the height over the
+    ellipsoid, never over the exaggerated ground.
 - Invariants & assumptions:
   - The map is affine, so rays stay straight and the pass intersects
     spheres analytically; it stretches lengths by at most the flattening

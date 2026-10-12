@@ -112,6 +112,13 @@ entirely after confirming they were only transitively pulled in.
   makes that import 404 and the smoke fail at once, so the ignore hides
   nothing; it is an exact string, so a second such import must be added on
   purpose. Found by the root dead-code check before the r759 publish.
+  The page paths `/globe/sky-level.js` (the terrain lab's sun test),
+  `/fw/visualization/atmosphere/cloud-live-noise.js` and
+  `/globe/globe-cloud-shell-volume.js` (the spherical cloud volume's field
+  test) and `/globe/globe-sources.js` (its smoke, the cloud map's file)
+  are imported by lab tests through `test-route-loader.mjs`, which
+  resolves them with the dev server's route table; knip has no such
+  mapping. Each is an exact string and fails its test at once if moved.
 - **GpsPlusSlamJs_Globe** - `scripts/fetch-globe-assets.mjs` is an entry
   and `scripts/**/*.mjs` is in `project`: the script is run by hand (never
   by a build or a test), so nothing imports it, yet it is the only user of

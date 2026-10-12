@@ -18,6 +18,39 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   First call renders all three LUTs; later calls only the sky view; an
   unchanged sun does nothing.
 - `setVisibilityKm(km)` — rebuilds every LUT.
+- `observerAltitudeKm` (getter) and `setObserverAltitudeKm(km)` (globe F2
+  plan 2026-10-03-1922, F2b) — the observer's height in [0, 100) km;
+  re-renders the sky view and re-bakes (the transmittance and
+  multi-scattering tables cover every height), rescales (the sun-relative
+  unit is the reference sun's transmittance from the observer); an
+  unchanged height is free; synchronous like `setSun` unless staged;
+  `RangeError` before any change. The haze follows through its `sync()`.
+- `setCloudCoverage({ glsl, uniforms } | null)` and
+  `setCloudDiscRadius(radiusM | null)` (globe volume-cloud plan
+  2026-10-05-0016, C1): the slab's coverage map and disc around the camera
+  (`cloud-slab.ts.md`), kept across modes and handed to a slab made later
+  like the scene depth; the radius validated before it is kept.
+- `setCloudDiscCentre({ x, z } | null)` (volume-cloud plan §15): the slab
+  disc's centre in the world, or the camera (null, the default), kept
+  across modes like the disc; validated before it is kept.
+- `setCloudAerial(strength | null)` (globe round-5 plan C3): the slab's
+  aerial strength (`setCloudSlabAerial`), kept across modes like the reach,
+  validated before it is kept.
+- `setCloudReach(reach | null)` (volume-cloud plan §13, R1): how far out
+  the slab draws (`setCloudSlabReach`), kept across modes and handed to a
+  slab made later like the disc; validated before it is kept; null the
+  default.
+- `setCloudSceneDepth(depth | null)` (F2c): the scene's depth for the slab,
+  kept across modes and handed to a slab made later; the sheet and the
+  dome ignore it; no GPU work (`cloud-slab.ts.md`).
+- `rebuild: 'staged'` (constructor option; default `'immediate'`),
+  `stepRebuild()` → `RebuildStage` and `rebuildPending` (getter) — for a
+  page that renders every frame: setters only record the change, and
+  `stepRebuild()` once a frame does at most ONE stage of a pass: `'luts'`
+  (the tables), `'waiting'` (the asynchronous read not done yet), `'read'`
+  (the horizon and the exposure), `'bake'` (into one reused target), or
+  `'idle'`. Immediate mode is unchanged and its `stepRebuild()` is always
+  `'idle'` (OsmDemo never calls it).
 - `configure({ sunDirection?, visibilityKm?, cloudCover?, cloudMode?, cloudSlabSteps?, sunThroughClouds? })` — all at once,
   ONE rebuild or re-bake (a preset change); validates everything before
   changing anything. `setSun`, `setVisibilityKm` and `setClouds` delegate
@@ -76,11 +109,45 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   fade and the aerial melt, as the cloud shadows are); 1 before the first
   sun and in a clear sky; `RangeError` for a non-finite point or viewer. The look-dev page's "sun light dims" switch uses it.
 - `cloudUniforms` (getter): the noise texture, the real threshold, the
-  drift offset, the visible sky's anchor (0 dome, 1 sheet and slab) and
+  drift offset, the hex and live switches, the live lattice and basis, the visible sky's anchor (0 dome, 1 sheet and slab) and
   the far fade, as the uniform objects themselves, for the cloud shadow
   patch ([`cloud-shadow.ts.md`](cloud-shadow.ts.md)).
 - `advanceClouds(seconds, windKmPerSecond = 0.012)` — drift; no GPU work;
-  both arguments validated (finite, seconds ≥ 0).
+  both arguments validated (finite, seconds ≥ 0). The offset wraps at
+  `CLOUD_NOISE_PERIOD_TILES` (13), where the hex-tiled field repeats, not
+  at one tile.
+- `configure({ cloudHex })`: the big-shape octave hex-tiled (hex-tiling
+  plan H1): the shared `atmCloudHex` uniform (sky, bake, slab; no new
+  program), the cover's threshold from the hex field's own table
+  (`hexCloudThreshold`), the bake following as for a cover change, and the
+  CPU twins (`cloudTransmittanceToward`, `cloudShadowToward`) reading the
+  hex field. A `CloudShadow` follows at its next `sync`. RangeError for a
+  value that is not a boolean. Since round-3 plan N1 the same as
+  `cloudNoise` 'hex' (true) or 'tile' (false).
+- `configure({ cloudNoise })` and the `cloudNoise` getter (round-3 plan
+  N1): 'tile' (the default), 'hex' or 'live', the per-octave live noise
+  that never repeats in view (`cloud-live-noise.ts.md`). Uniforms only
+  (`atmCloudHex`, `atmCloudLive`; no new program), each mode's own
+  cover threshold, the bake following, the CPU twins reading the same
+  field. The lattice texture (1 MB) is made at the first switch to live
+  and freed by `dispose`. `cloudNoise` wins over `cloudHex`. RangeError
+  for an unknown mode.
+- `setCloudNoiseAnchor({ originKm, rotationRad })` and the
+  `cloudNoiseAnchor` getter (a copy): where the scene's origin lies on
+  the live noise's plane (km, float64, unwrapped) and the scene's rotation
+  on it; written into `atmCloudLiveBasis` in place (every material and
+  shadow holds those objects). `advanceClouds` moves the anchor as it
+  moves the offset (the wind along x, 0.35 of it along z, turned by the
+  rotation). RangeError for a non-finite anchor. The tile and hex modes
+  ignore it.
+- `configure({ cloudNoiseFineGain })` and the `cloudNoiseFineGain`
+  getter (round-3 plan §19 item 2): the live noise's amplitude ratio from
+  octave 2 on, in (0, 1), 0.5 by default; the amplitudes written in place
+  into `atmCloudLiveAmp` (no new program), the CPU twins following, the
+  bake too in live mode. RangeError outside (0, 1). `atmCloudLiveMarchOctaves`
+  (in `cloudUniforms`, 5 by default: `CLOUD_LIVE_NOISE.marchOctaves`) is
+  the octaves the slab's march reads at most; `setCloudNoiseAnchor` writes
+  the basis into kept objects (no allocation a frame).
 - `applySunLight(light)` — colour (chroma) and intensity
   (`sunIntensity × exposure × model intensity`).
 - `horizonColour()` — the sky at the drawn horizon (dir.y =
@@ -98,6 +165,13 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
 
 ## Invariants & assumptions
 
+- **The staged rebuild** (F2b): a pass is the tables, then the read, then
+  the bake, one per `stepRebuild()`. A change during a pass is recorded and
+  applied by ONE further pass after it (the medium flag ORs), so a change
+  every frame delays the sky by at most two passes and never starves the
+  bake. A context restore abandons the pass in flight (its read cancelled)
+  and records a full one; `dispose()` cancels a read in flight. Staged and
+  immediate measure the same sky identically (a test compares them).
 - One scale: `radianceToScene = sunIntensity × exposure / (T_ref × 1000)`.
 - Exposure = auto-exposure (partial adaptation, `atmosphere-exposure.ts`)
   × 2^compensation. It scales natural light only; `renderer.toneMapping` and
@@ -158,4 +232,8 @@ work, exposure-free bake, the bake gain against both half-float ends (CPU
 sky at −6° to −3°, single-scattering glow next to a 2° to 90° sun), a failed
 readback exposed from the CPU estimate (−1°, −3°, −6°, held below),
 auto-exposure response, sun light, horizon colour,
-context restore, sky mesh flags, disposal.
+context restore, sky mesh flags, disposal; the observer's setter (sky view
+only, the rescale, free when unchanged, refusals); the staged rebuild (one
+stage per step, the same exposure as immediate, the reused target, a change
+in flight, the medium, a device without the optional calls, a failed read,
+context restore, dispose, the immediate default untouched).

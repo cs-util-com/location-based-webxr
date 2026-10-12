@@ -43,6 +43,20 @@ export interface AtmosphereUniforms {
   atmRadianceToScene: THREE.IUniform<number>;
 }
 
+/**
+ * An asynchronous read of the sky-view LUT in flight (the staged rebuild):
+ * the GPU copies into a buffer behind a fence, and the CPU takes it on a
+ * later frame without waiting.
+ */
+export interface SkyViewRead {
+  /** Whether the copy has finished; never blocks. */
+  ready(): boolean;
+  /** The LUT as `readSkyView` returns it (null: the read failed). Once. */
+  take(): Float32Array | null;
+  /** Releases the buffer and the fence without reading. */
+  cancel(): void;
+}
+
 /** What `SkyAtmosphere` needs from the GPU. */
 export interface AtmosphereDevice {
   /** Whether float colour buffers can be rendered to. False → no sky. */
@@ -57,8 +71,24 @@ export interface AtmosphereDevice {
     texture: THREE.Texture;
     dispose(): void;
   };
+  /**
+   * Like `bakeEnvironment`, into the device's ONE reused target (the staged
+   * rebuild: no allocation per bake). The returned `dispose` does nothing;
+   * the device's own `dispose` frees the target. Optional: without it the
+   * staged rebuild bakes a new target each time.
+   */
+  bakeEnvironmentReused?(scene: THREE.Scene): {
+    texture: THREE.Texture;
+    dispose(): void;
+  };
   /** The whole sky-view LUT as RGBA floats, row-major from v = 0 (zenith). */
   readSkyView(): Float32Array | null;
+  /**
+   * Starts an asynchronous read of the sky-view LUT (null: the device cannot,
+   * and the staged rebuild reads synchronously instead). Optional, for the
+   * same reason.
+   */
+  beginSkyViewRead?(): SkyViewRead | null;
   /** One LUT texel, RGB, decoded to floats. For the parity check. */
   readTexel(lut: LutName, x: number, y: number): [number, number, number];
   /** Subscribe to WebGL context restores; returns the unsubscribe. */
@@ -109,6 +139,8 @@ export class WebGlAtmosphereDevice implements AtmosphereDevice {
   private readonly cubeTarget: THREE.WebGLCubeRenderTarget;
   private readonly cubeCamera: THREE.CubeCamera;
   private readonly pmrem: THREE.PMREMGenerator;
+  /** The staged rebuild's one environment target (`bakeEnvironmentReused`). */
+  private reusedEnvironment: THREE.WebGLRenderTarget | undefined;
 
   constructor(renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
@@ -186,9 +218,105 @@ export class WebGlAtmosphereDevice implements AtmosphereDevice {
     return { texture: target.texture, dispose: () => target.dispose() };
   }
 
+  /**
+   * The first bake allocates through PMREM (its ping-pong target exists only
+   * after an allocating call); every later one renders into that target.
+   */
+  bakeEnvironmentReused(scene: THREE.Scene): {
+    texture: THREE.Texture;
+    dispose(): void;
+  } {
+    this.cubeCamera.update(this.renderer, scene);
+    this.reusedEnvironment =
+      this.reusedEnvironment === undefined
+        ? this.pmrem.fromCubemap(this.cubeTarget.texture)
+        : this.pmrem.fromCubemap(
+            this.cubeTarget.texture,
+            this.reusedEnvironment
+          );
+    return { texture: this.reusedEnvironment.texture, dispose: () => {} };
+  }
+
   readSkyView(): Float32Array | null {
     const { width, height } = SIZES.skyView;
     return this.readRegion('skyView', 0, 0, width, height);
+  }
+
+  /**
+   * The sky-view LUT copied into a pixel-pack buffer behind a fence; read on
+   * a later frame once the fence is signalled, so the CPU never waits for
+   * the GPU. The same read types as `readRegion` (FLOAT when guaranteed,
+   * else HALF_FLOAT, `gl.getError()` deciding). Not three's
+   * `readRenderTargetPixelsAsync`: it takes three's half-float read path,
+   * which `readRegion` explains is avoided.
+   */
+  beginSkyViewRead(): SkyViewRead | null {
+    const gl = this.renderer.getContext() as WebGL2RenderingContext;
+    const { width, height } = SIZES.skyView;
+    const float = this.renderer.extensions.has('EXT_color_buffer_float');
+    const count = width * height * 4;
+    const buffer = gl.createBuffer();
+    if (buffer === null) return null;
+    const previous = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(this.targets.skyView);
+    while (gl.getError() !== gl.NO_ERROR) {
+      // drain errors raised by earlier, unrelated calls
+    }
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, buffer);
+    gl.bufferData(
+      gl.PIXEL_PACK_BUFFER,
+      count * (float ? 4 : 2),
+      gl.STREAM_READ
+    );
+    gl.readPixels(
+      0,
+      0,
+      width,
+      height,
+      gl.RGBA,
+      float ? gl.FLOAT : gl.HALF_FLOAT,
+      0
+    );
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    const failed = gl.getError() !== gl.NO_ERROR;
+    this.renderer.setRenderTarget(previous);
+    const fence = failed
+      ? null
+      : gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    gl.flush();
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      if (fence !== null) gl.deleteSync(fence);
+      gl.deleteBuffer(buffer);
+    };
+    return {
+      ready: () =>
+        released ||
+        fence === null ||
+        gl.getSyncParameter(fence, gl.SYNC_STATUS) === gl.SIGNALED,
+      take: () => {
+        if (released || fence === null) {
+          release();
+          return null;
+        }
+        const raw = float ? new Float32Array(count) : new Uint16Array(count);
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, buffer);
+        gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, raw);
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+        const ok = gl.getError() === gl.NO_ERROR;
+        release();
+        if (!ok) return null;
+        if (raw instanceof Float32Array) return raw;
+        const floats = new Float32Array(count);
+        for (let i = 0; i < count; i++) {
+          floats[i] = THREE.DataUtils.fromHalfFloat(raw[i]!);
+        }
+        return floats;
+      },
+      cancel: release,
+    };
   }
 
   readTexel(lut: LutName, x: number, y: number): [number, number, number] {
@@ -255,6 +383,7 @@ export class WebGlAtmosphereDevice implements AtmosphereDevice {
     for (const material of Object.values(this.materials)) material.dispose();
     this.quad.geometry.dispose();
     this.cubeTarget.dispose();
+    this.reusedEnvironment?.dispose();
     this.pmrem.dispose();
   }
 }
