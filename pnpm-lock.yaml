@@ -387,6 +387,9 @@ importers:
       '@types/node':
         specifier: ^25.9.5
         version: 25.9.5
+      '@types/three':
+        specifier: ^0.185.4
+        version: 0.185.4
       '@vitest/coverage-v8':
         specifier: ^5.0.0
         version: 5.0.0(vitest@5.0.0)
@@ -423,6 +426,9 @@ importers:
       prettier:
         specifier: ^3.9.6
         version: 3.9.6
+      three:
+        specifier: ^0.185.1
+        version: 0.185.1
       tsdown:
         specifier: ^0.22.0
         version: 0.22.0(oxc-resolver@11.24.2)(typescript@6.0.3)(unrun@0.2.37)

@@ -58,7 +58,10 @@ export function createSunCloudProbe() {
       const image = u.atmCloudTexture.value.image;
       const offset = u.atmCloudOffset.value;
       const [tu, tv] = cloudColumnUv(origin, dir, [offset.x, offset.y]);
-      const noise = cloudNoiseSample(image.data, image.width, tu, tv);
+      // The field the sky draws: hex-tiled when the sky's switch is on.
+      const noise = cloudNoiseSample(image.data, image.width, tu, tv, {
+        hex: u.atmCloudHex?.value === 1,
+      });
       const s = cloudColumnDistanceM(origin[1], dir[1]);
       const fade = u.atmCloudFarFadeM.value;
       const drawn = cloudColumnDrawn(
