@@ -36,8 +36,6 @@
 import {
   browserPngDecoder,
   buildAreaPlates,
-  buildBarriers,
-  buildBuildings,
   annotatePoiHosts,
   buildPoiMarkers,
   dropHostedDuplicates,
@@ -50,12 +48,13 @@ import {
   buildRegionSlabs,
   type SlabRegion,
   buildRoads,
-  buildTrees,
+  buildCity,
+  cityGround,
   enuFrameAt,
+  type CityGround,
   metresToDegrees,
   explainCell,
   loadRuleTable,
-  buildingColour,
   chunkMeshes,
   featureKey,
   isPedestrianPath,
@@ -73,7 +72,6 @@ import { createDemProvider } from "../dem-provider.js";
 import { createOsmTileSource, openOsmStore } from "../osm-tile-cache.js";
 import { WALKABLE_CATEGORY, walkableScoreOf } from "../route-penalty.js";
 import { buildCellMesh } from "../cell-mesh.js";
-import { shellRandFor } from "./shell-rand.js";
 import { DemoPipeline } from "../demo-pipeline.js";
 import { nowMs, nowEpochMs } from "../monotonic-clock.js";
 import { describeTerrain } from "../terrain-note.js";
@@ -81,9 +79,9 @@ import {
   createHeightfieldCache,
   TERRAIN_EXTENT_M,
   type HeightfieldData,
-} from "../heightfield.js";
-import { createTerrainField, type TerrainField } from "../terrain-field.js";
-import { terrainWindowFor } from "../terrain-window.js";
+} from "gps-plus-slam-osm";
+import { createTerrainField, type TerrainField } from "gps-plus-slam-osm";
+import { terrainWindowFor } from "gps-plus-slam-osm";
 import { createMeshPlanner } from "./mesh-planner.js";
 import { createObstacleIndexCache } from "./obstacle-index-cache.js";
 import { osmStoreWarn } from "./osm-store-warn.js";
@@ -216,17 +214,10 @@ function heightAtEnu(point: { x: number; y: number }): number {
  * the sampler twice is the shape of defect this demo keeps finding: two
  * computations that agree today with nothing asserting they always will.
  */
-function meshOptions(centre: LatLng): {
-  frame: ReturnType<typeof enuFrameAt>;
-  groundHeightM?: (position: LatLng) => number;
-} {
-  const frame = enuFrameAt(centre);
-  const field = fieldFor(terrain);
-  if (field === undefined) return { frame };
-  return {
-    frame,
-    groundHeightM: (position: LatLng) => field.heightAt(frame.toEnu(position)),
-  };
+function meshOptions(centre: LatLng): CityGround {
+  // The library's derivation (globe city plan 2026-10-05-0040 §14 L3), so the
+  // globe's city and this demo's layers read the field the same way.
+  return cityGround(enuFrameAt(centre), fieldFor(terrain));
 }
 
 /**
@@ -312,15 +303,15 @@ function buildMesh(
   // unclipped rather than changed on speculation.
   const plateClip = clipBoxAround(centre, TERRAIN_EXTENT_M);
 
-  const volumes = buildBuildings(all, options);
-  // BARRIERS ARE DRAWN, and drawn WITH the buildings (DEC-R11-2, DEC-R11-11).
-  // `nav/obstacles.ts` has blocked agents with these since #259; until now
-  // nothing put them on screen, which DEC-R7b-14 rules out — an NPC dodging
-  // geometry the viewer cannot see demonstrates nothing, and the Tower renders
-  // without its curtain wall at all. No toggle and no distinct colour: a wall is
-  // part of the built world, so it goes through `buildingColour` like the rest.
-  const barriers = buildBarriers(all, options);
-  const trees = buildTrees(all, options);
+  // THE CITY (buildings, the barriers drawn with them, trees) is the library's
+  // `buildCity` since 2026-10-06: the globe draws the same city (globe city
+  // plan 2026-10-05-0040 §14 L3). BARRIERS ARE DRAWN, and drawn WITH the
+  // buildings (DEC-R11-2, DEC-R11-11): `nav/obstacles.ts` has blocked agents
+  // with these since #259, and an NPC dodging geometry the viewer cannot see
+  // demonstrates nothing. No toggle and no distinct colour: a wall is part of
+  // the built world, so it goes through `buildingColour` like the rest.
+  const city = buildCity(all, options);
+  const { volumes, barriers, trees } = city;
   // Same options as the trees: a marker floating over sloped ground reads as a
   // placement bug, and the sampler is the one already built for this frame.
   // PER-VERTEX terrain, like the plates: a road is a long surface, and one
@@ -416,45 +407,11 @@ function buildMesh(
   // always wholly on screen. DEC-R2-8 grew the extent to 2.8 km and that stopped
   // being true — and one mesh cannot be frustum-culled in parts, which is
   // exactly what R4-16 reports.
-  // TAGS BY KEY, so the colour of a piece of geometry comes from the feature it
-  // was built from (W22/W23). The builders return an `OsmFeatureKey` rather than
-  // the tags — they have no reason to carry them — so the lookup is assembled
-  // here, where the feature set already is.
+  // TAGS BY KEY, for the roads' colours (the buildings' are `buildCity`'s).
   const tagsByKey = new Map(
     all.map((feature) => [featureKey(feature), feature.tags]),
   );
-
-  // TAGS RESOLVED HERE, not in the colour callback, because the two sources
-  // differ in exactly one way: a `building:part` inherits its PARENT's colour —
-  // the parts of one building are one building, and colouring them
-  // independently would stripe a cathedral by whichever part carried which tag
-  // — while a barrier has no parent and is simply itself.
-  const drawn = [
-    ...volumes.map((volume) => ({
-      mesh: volume.mesh,
-      tags:
-        tagsByKey.get(volume.parentFeature ?? volume.feature) ??
-        tagsByKey.get(volume.feature) ??
-        {},
-    })),
-    ...barriers.map((barrier) => ({
-      mesh: barrier.mesh,
-      tags: tagsByKey.get(barrier.feature) ?? {},
-    })),
-  ];
-
-  const buildings = chunkMeshes(
-    drawn,
-    (item) => item.mesh,
-    (item) => meshCentroidEnu(item.mesh),
-    undefined,
-    (item) => buildingColour(item.tags),
-    // THE PHASE OFFSET FOR THE AR SHELL SHADER. Derived from the feature's own
-    // first vertex rather than from its index, so it is STABLE across rebuilds:
-    // an index-derived value would re-shuffle every refresh and the city would
-    // visibly re-randomise whenever a tile loaded.
-    (item) => shellRandFor(item.mesh),
-  );
+  const buildings = city.buildings;
 
   return {
     buildings,

@@ -44,7 +44,13 @@ import { stripTypeScriptTypes } from "node:module";
 import { dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { defaultRoutes, resolveRequest } from "./serve-routes.mjs";
+import {
+  defaultRoutes,
+  resolveRequest,
+  WORKER_IMPORTS,
+  WORKER_VIEW,
+  workerModule,
+} from "./serve-routes.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "..");
@@ -179,7 +185,11 @@ function resolveUrlRef(ref, baseUrl) {
  */
 function rebaser(routes) {
   const heads = [
-    ...new Set(routes.map((r) => r.prefix.split("/").filter(Boolean)[0])),
+    ...new Set([
+      ...routes.map((r) => r.prefix.split("/").filter(Boolean)[0]),
+      // The worker view (`/w/`, serve-routes.mjs) is a prefix too.
+      WORKER_VIEW.split("/").filter(Boolean)[0],
+    ]),
   ]
     .sort((a, b) => b.length - a.length)
     .map((h) => h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
@@ -202,11 +212,13 @@ function walk(dir, rel = "") {
 /**
  * @param {{ outDir: string, base: string, packageRoot?: string,
  *   routes?: import("./serve-routes.mjs").Route[], entries?: string[],
- *   followDynamic?: boolean }} options
+ *   followDynamic?: boolean, workerImports?: Record<string, string> }} options
  *   `packageRoot` defaults to this package and `routes` to the dev server's
  *   table (tests pass fixtures). `entries` defaults to every page
  *   (`discoverEntries`); `followDynamic` (default true) follows literal
  *   dynamic `import("x")`s, false gives the static boot graph only.
+ *   `workerImports` (default `WORKER_IMPORTS`) is what a bare name means in
+ *   the worker view (`/w/`), as the dev server serves it.
  * @returns {string[]} written paths, relative to `outDir`
  */
 export function buildLookdev({
@@ -216,6 +228,7 @@ export function buildLookdev({
   routes = defaultRoutes(repo),
   entries = discoverEntries(packageRoot),
   followDynamic = true,
+  workerImports = WORKER_IMPORTS,
 }) {
   if (!base.startsWith("/") || !base.endsWith("/")) {
     throw new Error(`base must start and end with "/", got ${base}`);
@@ -225,7 +238,12 @@ export function buildLookdev({
     const target = resolveRequest(url, { packageRoot, routes });
     if (target.kind !== "file") throw new Error(`refused to read ${url}`);
     const raw = readFileSync(target.file, "utf8");
-    return target.typescript ? stripTypeScriptTypes(raw) : raw;
+    const code = target.typescript ? stripTypeScriptTypes(raw) : raw;
+    // The worker view serves a module with its specifiers inside the view,
+    // exactly as serve.mjs does, so dev and deploy load the same graph.
+    return target.worker && MODULE_FILE.test(url)
+      ? workerModule(code, url, workerImports)
+      : code;
   };
   const written = [];
   const emittedUrls = [];
@@ -283,7 +301,11 @@ export function buildLookdev({
       const text = load(url);
       sources.push(text);
       const scope = worker ? null : imports;
-      const ours = !url.startsWith("/vendor/");
+      // Vendored code is not ours, through the worker view too (`/w/vendor/`):
+      // its comments are not stripped and its dynamic imports not followed.
+      const ours = !url
+        .replace(new RegExp(`^${WORKER_VIEW}`), "/")
+        .startsWith("/vendor/");
       const code = ours ? text.replace(COMMENTS, "$1") : text;
       for (const match of code.matchAll(SPECIFIER)) {
         queue.push({ url: resolveSpecifier(match[1], url, scope), worker });
@@ -330,8 +352,17 @@ export function buildLookdev({
         if (!emittedUrls.includes(url)) copy(url);
       }
     }
-    if (route.notice && used) {
-      const url = route.prefix + route.notice;
+    // The notice ships BESIDE what it covers: under the plain prefix for
+    // files emitted there, and under the worker view's copy of the prefix
+    // for files emitted through it (a worker's graph lives under `w/`).
+    const viewPrefix = WORKER_VIEW + route.prefix.slice(1);
+    const usedInView = crawled.some((u) => u.startsWith(viewPrefix));
+    for (const [prefix, inUse] of [
+      [route.prefix, used],
+      [viewPrefix, usedInView],
+    ]) {
+      if (!route.notice || !inUse) continue;
+      const url = prefix + route.notice;
       if (!emittedUrls.includes(url)) copy(url);
     }
   }

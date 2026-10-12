@@ -6,7 +6,7 @@ import {
   QUEST_BEACON_HOVER_M,
   questBeaconPlacements,
 } from "./quest-beacon-placement.js";
-import { type Heightfield } from "./heightfield.js";
+import { type Heightfield } from "gps-plus-slam-osm";
 
 /**
  * The beacon's frame holds for ANY origin and ANY quest position.
