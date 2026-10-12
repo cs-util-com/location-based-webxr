@@ -7,7 +7,9 @@
   computes the grid (`labs/terrain/terrain-detail-grid.js`); the globe lab
   sets it. The detail is off until a grid is set.
 - Public API:
-  - `GLOBE_DETAIL` - `metresPerDegLat` 111,320 (the lab's `enuFrameAt`)
+  - `GLOBE_DETAIL` - `metresPerDegLat` 110,946.26 and `metresPerDegLngEquator` 111,319.49 (the
+    lab's `enuFrameAt`, the AR core's numbers since 2026-10-06; both were
+    111,320)
     and `fadeFrom` 0.9 (the detail fades out from 90 % of the drawn half
     extent to 0 at its edge, so no step shows where it ends).
   - `createGlobeDetailUniforms()` - the uniforms every relief tile shares:

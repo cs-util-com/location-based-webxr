@@ -404,6 +404,69 @@ describe("buildLookdev with a module Worker", () => {
   });
 });
 
+// WHY (globe city plan 2026-10-05-0040 §12.4 R1): a worker whose modules
+// import packages by bare name loads through the worker view (`/w/`), and the
+// deploy must emit that view exactly as the dev server serves it: the
+// worker and its whole graph under /w/, every specifier a URL in the view,
+// rebased under the deploy base. Without it the preview's worker 404s or
+// fails on its first bare import, on the phone only.
+describe("buildLookdev with a worker in the worker view", () => {
+  let root;
+  let extra;
+  let out;
+  let files;
+  before(() => {
+    root = fixture({
+      "labs/city/index.html":
+        "<title>City lab</title>" +
+        '<script type="importmap">{"imports":{"lib":"/extra/lib.js"}}</script>' +
+        '<script type="module" src="./city.js"></script>',
+      "labs/city/city.js":
+        'import "lib";\n' +
+        'const w = new Worker("/w/extra/worker.js", { type: "module" });\n',
+    });
+    extra = fixture({
+      "worker.js": 'import { H } from "lib";\nimport "./helper.js";\n',
+      "helper.js": "export const H = 1;\n",
+      "lib.js": "export {};\n",
+    });
+    out = mkdtempSync(join(tmpdir(), "lookdev-wview-"));
+    files = buildLookdev({
+      outDir: out,
+      base: "/lookdev/",
+      packageRoot: root,
+      routes: [{ prefix: "/extra/", dir: extra, typescript: false }],
+      workerImports: { lib: "/extra/lib.js" },
+    });
+  });
+  after(() => {
+    for (const dir of [root, extra, out]) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("emits the worker and its graph under /w/", () => {
+    for (const rel of [
+      "w/extra/worker.js",
+      "w/extra/helper.js",
+      "w/extra/lib.js",
+    ]) {
+      assert.ok(files.includes(rel), rel);
+    }
+  });
+
+  it("rewrites the worker's bare imports into the view, rebased", () => {
+    const worker = readFileSync(join(out, "w/extra/worker.js"), "utf8");
+    assert.match(worker, /"\/lookdev\/w\/extra\/lib\.js"/);
+    assert.match(worker, /"\.\/helper\.js"/);
+  });
+
+  it("rebases the page's worker URL under the base", () => {
+    const page = readFileSync(join(out, "labs/city/city.js"), "utf8");
+    assert.match(page, /"\/lookdev\/w\/extra\/worker\.js"/);
+  });
+});
+
 // WHY (globe plan 2026-09-26-0539 §8, the builder review points): the real
 // globe lab must deploy as a CLOSED graph (the library's hashed chunks are
 // found by the crawl, not listed anywhere), with the library's LICENSE
@@ -436,6 +499,34 @@ describe("buildLookdev with the real globe lab", () => {
     assert.ok(chunks.length >= 2, `hashed chunks crawled: ${chunks}`);
   });
 
+  // WHY (globe city plan 2026-10-05-0040 §12.5 C4): the city's worker is
+  // reached by `new Worker`, through the worker view, and its library graph
+  // only through it; the three.js entry by a dynamic import. A missed one is
+  // a preview whose city never builds, while every local smoke passes.
+  it("emits the city: its worker and library graph in the worker view, the three.js entry", () => {
+    for (const rel of [
+      "labs/globe/globe-city.js",
+      "w/labs/globe/globe-city-worker.js",
+      "w/osm-lib/index.js",
+      "w/osm-lib/mesh/city.js",
+      "w/osm-lib/elevation/terrain-field.js",
+      "w/fw/osm-bridge/open-osm-store.js",
+      "w/vendor/h3-js/dist/browser/h3-js.es.js",
+      // The licence beside the copy the worker loads.
+      "w/vendor/h3-js/LICENSE",
+      "osm-lib/three/index.js",
+      "osm-lib/three/city-objects.js",
+    ]) {
+      assert.ok(files.includes(rel), rel);
+    }
+    const worker = readFileSync(
+      join(out, "w/labs/globe/globe-city-worker.js"),
+      "utf8",
+    );
+    assert.match(worker, /"\/lookdev\/w\/osm-lib\/index\.js"/);
+    assert.doesNotMatch(worker, /from "gps-plus-slam-osm"/);
+  });
+
   it("strips the globe's TypeScript and rebases every prefix", () => {
     const surface = readFileSync(join(out, "globe/globe-surface.js"), "utf8");
     assert.doesNotMatch(surface, /^export interface /m);
@@ -451,8 +542,9 @@ describe("buildLookdev with the real globe lab", () => {
 
 // WHY (terrain plan 2026-09-27-0605 §9 findings 2 and 3): the real terrain
 // lab deploys as a CLOSED graph: its worker (reached by `new Worker`, not an
-// import), the Osm library through `/osm-lib/` and OsmDemo's heightfield
-// through `/osm/`, all stripped and rebased. A missed one is a lab that
+// import), the Osm library through `/osm-lib/` (its height field too, since
+// 2026-10-06) and OsmDemo's terrain texture through `/osm/`, all stripped and
+// rebased. A missed one is a lab that
 // stays on "Computing relief..." on the phone.
 describe("buildLookdev with the real terrain lab", () => {
   let out;
@@ -475,7 +567,7 @@ describe("buildLookdev with the real terrain lab", () => {
       "osm-lib/source/compose-signals.js",
       "osm-lib/source/in-flight-requests.js",
       "osm-lib/mesh/enu.js",
-      "osm/heightfield.js",
+      "osm-lib/elevation/heightfield.js",
       "osm/terrain-texture.js",
       // Style C's far field (T2): the globe's source registry and the
       // imagery it names (the Blue Ridge's level-5 tile, the level it
@@ -565,7 +657,7 @@ describe("buildLookdev with the arrival prefetch's import map", () => {
       "osm/arrival-progress.js",
       "osm/osm-tile-cache.js",
       "osm/dem-provider.js",
-      "osm/terrain-field.js",
+      "osm-lib/elevation/terrain-field.js",
       "osm-lib/index.js",
       "osm-lib/source/caching-source.js",
       "osm-lib/source/overpass-source.js",

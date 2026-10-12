@@ -6,6 +6,14 @@ One row per drawable mesh layer — what it builds into the scene, and what it
 contributes to the status line. Replaces the branch-per-layer form that
 `BuildingView.render` had grown into.
 
+Since 2026-10-06 the buildings and trees rows build through the Osm library's
+`gps-plus-slam-osm/three` (`buildingObjects`, `treeObjects`), and every row
+wraps its buffers with the library's `geometryFrom`: the globe draws the same
+city (globe city plan 2026-10-05-0040 §14 L5). The tree resources and the
+building material, with the reasons behind each choice, are documented there
+(`GpsPlusSlamJs_Osm/src/three/city-objects.ts.md`); this file keeps the rows,
+the counters and the layers only OsmDemo draws.
+
 ## Public API
 
 - `DRAWN_BY_MESH` — the layer ids whose geometry comes out of the worker's mesh
