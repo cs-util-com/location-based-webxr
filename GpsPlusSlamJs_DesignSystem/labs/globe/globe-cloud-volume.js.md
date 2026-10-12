@@ -81,7 +81,9 @@ cloudNoiseFineGain })`); idempotent; the shadow shares the amplitudes.
   - `state()`: `{ enabled, share, radiusM, aheadM, discCentre, deckY,
 liftM, drawn, shadow, hex, noise, fineGain }`; `discCentre` (world x,
     z; null on the camera) and `deckY` place the disc for the spherical
-    volume's per-pixel weight (R4d review, finding 1).
+    volume's per-pixel weight (R4d review, finding 1). Mixed with that volume
+    the slab's aerial fade comes in with its share (`setCloudAerial`,
+    round-5 plan C3), alone all of it as before; reset on disable.
   - `coverage()` (debug, a synchronous read-back): `{ share, lowerShare,
 maxAlpha }`, the share of the last volume frame's pixels its clouds
     cover (alpha over 0.05), overall and in the lower half (the view down);

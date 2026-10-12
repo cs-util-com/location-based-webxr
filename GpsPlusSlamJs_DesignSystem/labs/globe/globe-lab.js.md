@@ -80,8 +80,9 @@
   first view, round-2 plan DEC-FR2-3; 0 from the camera as placed; the
   pin's press always flies from where the camera is),
   `nightGain` (0-4, default 0.7), `waterRoughness`,
-  `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of scene time, default
-  0.375, 0.75 x the first 0.5 by the owner's choice, DEC-G6-5),
+  `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of the clock's drift time,
+  default 0.375, 0.75 x the first 0.5 by the owner's choice, DEC-G6-5; in
+  real time while `time=` holds the hour, round-5 plan C1),
   `cloudShell` (1, the default: the clouds move onto their own shell above
   the ground as the relief takes the pixels, the band's share, so the
   orbit keeps the painted look and the relief keeps its colour under a
@@ -661,6 +662,11 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   `cloudShellNoise` (0.35, the column's rise per unit of noise) and their
   square roots, the bottom one the slab's at the slab's ceiling or 30 km
   (findings 9 and 11: the knobs never make the law throw);
+  `cloudShellFields` (3) the noise's morphs from 1,050 km down to the slab's
+  set (round-5 plan 2026-10-12-0612 C2, `cloudShellNoiseCascade`);
+  `cloudFlatOutFromKm` (900) and `cloudFlatOutToKm` (700) the texture's own
+  fade with the shell (C5: the volume already strong when the texture
+  goes; clamped above the slab's ceiling and falling);
   `cloudShellRes` (0.5) the march's share of the buffer (half by default:
   the pass alone was 0.59-0.70 of a frame at full resolution on
   SwiftShader, about 0.28 of that at half). The flat layer

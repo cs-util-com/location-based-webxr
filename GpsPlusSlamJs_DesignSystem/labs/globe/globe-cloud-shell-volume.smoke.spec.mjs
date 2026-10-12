@@ -210,12 +210,16 @@ function correlation(a, b) {
 }
 
 /** The mixed composite's alpha on the grid (a convex mix: never over 1). */
+// The composite's mix, cell by cell (cloudShellPixelWeight's rule): the
+// shell at its fade-in less the slab's share of the cloud the slab draws
+// there, plus the slab at its share.
 const mixOf = (x) =>
-  (x.shell ?? x.slab).map(
-    (_, i) =>
-      (x.shell ? x.weight * x.shell[i] : 0) +
-      (x.slab ? x.slabWeight * x.slab[i] : 0),
-  );
+  (x.shell ?? x.slab).map((_, i) => {
+    const shell = x.shell ? x.shell[i] : 0;
+    const slab = x.slab ? x.slab[i] : 0;
+    const r = shell > 1e-4 ? Math.min(1, slab / shell) : 1;
+    return x.weight * (1 - x.slabWeight * r) * shell + x.slabWeight * slab;
+  });
 
 const NX = 48;
 const NY = 30;
@@ -243,12 +247,8 @@ test("the shell and the slab draw the same clouds where they are mixed", async (
       { nx: NX, ny: NY },
     );
     const near = (arr) => arr.slice(0, NX * (NY / 2));
-    // The shell's grid carries its per-pixel weight (1 - the slab's share
-    // inside the disc's core, which the lower half is: R4d review, finding
-    // 1); its own drawing is that divided back out.
-    const shell = near(x.shell).map(
-      (v) => v / Math.max(1 - x.slabWeight, 1e-3),
-    );
+    // The shell's grid is its own drawing (the composite weighs it).
+    const shell = near(x.shell);
     rows.push({
       km,
       weight: x.weight,
@@ -288,13 +288,14 @@ test("the shell and the slab draw the same clouds where they are mixed", async (
 // same pose with the slab mixed in (its ceiling at 40 km, the default) and
 // with its ceiling moved below the camera (10 km: the shell alone; the
 // shell needs the cloud volume on, so `cloudVolume=0` would turn it off
-// too): the far half of the mix must keep its strength. Measured
-// 2026-10-12: the old global mix x0.90 at 25 and 18 km (the slab's disc is
-// placed ahead where the view meets the deck, so only the band beyond it
-// lost its clouds, not the review's estimated 0.35), the fix x1.03 / x1.00;
-// the near half x1.00-1.01 in both. Bound 0.95 (swept 0.9 / 0.95 / 0.98).
-// At 25 and 18 km both cases use the same station (the slab's set), so only
-// the mix differs.
+// too): the clouds beyond the slab's disc (the cells the slab does not
+// draw) must keep their strength. Bound 0.95 (swept 0.9 / 0.95 / 0.98). At
+// 25 and 18 km both cases use the same station (the slab's set), so only
+// the mix differs. Measured 2026-10-12 over the whole far half: the old
+// global mix x0.90 (the disc is placed ahead where the view meets the deck,
+// so only the band beyond it lost its clouds, not the review's estimated
+// 0.35); since round 5 the far half also holds the disc's haze, so only the
+// cells beyond the disc are compared.
 test("far clouds keep their strength below the slab's ceiling at the owner's oblique pose", async ({
   page,
 }) => {
@@ -311,32 +312,148 @@ test("far clouds keep their strength below the slab's ceiling at the owner's obl
         ({ nx, ny }) => window.__globeLab.cloudShellAlphaGrid(nx, ny),
         { nx: NX, ny: NY },
       );
-      return x.shell || x.slab ? mixOf(x) : new Array(NX * NY).fill(0);
+      return {
+        mix: x.shell || x.slab ? mixOf(x) : new Array(NX * NY).fill(0),
+        slab: x.slab ?? new Array(NX * NY).fill(0),
+      };
     };
     const on = await read(1);
+    // Beyond the slab's disc, by geometry: the grid's rows whose ray meets
+    // the deck farther than the disc's far edge from the camera (the
+    // centre's distance ahead plus its radius, plus 10 km), or never meets
+    // the flat deck (toward the horizon). Inside the disc the slab's haze
+    // applies on purpose (round 5, C3) and the shell alone has none, so only
+    // beyond it does on against off measure lost clouds (the R4d review's
+    // finding 1). The slab's own alpha would not do: it is clear in clear
+    // patches inside the disc too.
+    const geometry = await page.evaluate((ny) => {
+      const lab = window.__globeLab;
+      const cv = lab.state().cloudVolume;
+      return {
+        rows: lab.cloudVolumeRows(ny).map((r) => r.distanceKm),
+        edgeKm: (cv.aheadM + cv.radiusM) / 1000,
+      };
+    }, NY);
     const off = await read(0);
-    const far = (a) => a.slice(NX * (NY / 2));
-    const near = (a) => a.slice(0, NX * (NY / 2));
+    const beyondRow = geometry.rows.map(
+      (d) => d === null || d >= geometry.edgeKm + 10,
+    );
+    const beyond = on.slab.map((_, i) => beyondRow[Math.floor(i / NX)]);
+    const pick = (a) => a.filter((_, i) => beyond[i]);
     rows.push({
       km,
-      far: mean(far(on)) / Math.max(mean(far(off)), 1e-4),
-      near: mean(near(on)) / Math.max(mean(near(off)), 1e-4),
-      farOff: mean(far(off)),
+      cells: pick(on.mix).length,
+      far: mean(pick(on.mix)) / Math.max(mean(pick(off.mix)), 1e-4),
+      farOff: mean(pick(off.mix)),
     });
   }
   console.log(
-    `far clouds with the slab on against off (ocean, pitch -19.5, fovY 50): ${rows
+    `far clouds beyond the slab's disc with the slab on against off (ocean, pitch -19.5, fovY 50): ${rows
       .map(
         (x) =>
-          `${x.km} km far x${x.far.toFixed(2)} (off ${x.farOff.toFixed(3)}; ${[0.9, 0.95, 0.98].map((k) => `${k} ${x.far >= k ? "ok" : "NO"}`).join(" ")}), near x${x.near.toFixed(2)}`,
+          `${x.km} km x${x.far.toFixed(2)} over ${x.cells} cells (off ${x.farOff.toFixed(3)}; ${[0.9, 0.95, 0.98].map((k) => `${k} ${x.far >= k ? "ok" : "NO"}`).join(" ")})`,
       )
       .join("; ")}`,
   );
   expect(errors).toEqual([]);
   for (const x of rows) {
-    // The far half must hold clouds to judge (a clear sky proves nothing).
+    // Cells and clouds to judge (a clear sky proves nothing).
+    expect(x.cells).toBeGreaterThan(20);
     expect(x.farOff).toBeGreaterThan(0.02);
     expect(x.far).toBeGreaterThanOrEqual(0.95);
+  }
+});
+
+// WHY (round-5 plan 2026-10-12-0612 C2, C3; the owner on r822): on the
+// way down "between 300 and 150 km nothing moves" (the station law's
+// smoothstep had no slope at 200 km), and "from about 100 km they turn
+// transparent" (the aerial fade, alpha x exp(-distance / 60 km), from 200
+// km down). Straight down over the ocean from 300 to 45 km in 4 % steps:
+// the smallest per-step change against the median (a static stretch is a
+// dead zone) and the lowest mean alpha against the alpha at the top (the
+// transparency). Both logged with the bound's sweep; the bounds sit between
+// the old code's and the new code's values (measured 2026-10-12).
+test("the clouds keep morphing and keep their strength from 300 down to 45 km", async ({
+  page,
+}) => {
+  test.setTimeout(3_600_000);
+  const errors = await bootGlobe(
+    page,
+    `${BASE}&view=${PLACES.ocean},300,0,-89&cloudShellVolume=1`,
+    { phase: "user" },
+  );
+  const { local, line } = await descend(page, { from: 300, to: 45, extra: "" });
+  const medianOf = (xs) =>
+    [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+  const median = medianOf(local.map((x) => x.step));
+  const deadest =
+    Math.min(...local.map((x) => x.step)) / Math.max(median, 1e-4);
+  const top = local[0].alpha;
+  const weakest = Math.min(...local.map((x) => x.alpha)) / Math.max(top, 1e-4);
+  console.log(
+    `${line}; round 5: the smallest step x${deadest.toFixed(2)} of the median (${[0.5, 0.6, 0.65].map((k) => `${k} ${deadest >= k ? "ok" : "NO"}`).join(" ")}), the weakest mean alpha x${weakest.toFixed(2)} of the top's (${[0.7, 0.85, 0.95].map((k) => `${k} ${weakest >= k ? "ok" : "NO"}`).join(" ")})`,
+  );
+  expect(errors).toEqual([]);
+  // Measured 2026-10-12, old code against new: the smallest step x0.46
+  // against x0.70, the weakest alpha x0.51 against x0.99; the bounds between.
+  expect(deadest).toBeGreaterThanOrEqual(0.6);
+  expect(weakest).toBeGreaterThanOrEqual(0.85);
+});
+
+// WHY (round-5 plan 2026-10-12-0612 C4; the owner on r822: "at about 30 km
+// the same clouds twice, slightly offset, both half transparent"): the slab
+// is flat in its frame, the shell curved, so inside the slab's disc they
+// drew the same clouds at points up to about 1.3 km apart. At the owner's
+// oblique pose (pitch -19.5, fovY 50), the shell's own drawing (not weighted
+// by the disc) against the slab's, over every pixel the slab draws, with the
+// shell's deck flat there (cloudShellFlat=1) and on the sphere (0): the
+// same code, one variable.
+test("the shell and the slab draw the same clouds across the disc at the owner's oblique pose", async ({
+  page,
+}) => {
+  test.setTimeout(1_800_000);
+  const pose = (km, flat) =>
+    `${BASE}&view=${PLACES.ocean},${km},0,-19.5&fovY=50&cloudShellVolume=1&cloudShellFlat=${flat}`;
+  const errors = await bootGlobe(page, pose(30, 1), { phase: "user" });
+  const rows = [];
+  for (const km of [30, 25]) {
+    for (const flat of [1, 0]) {
+      await applyHash(page, pose(km, flat));
+      await page.evaluate(() => window.__globeLab.timeFrames(2));
+      const x = await page.evaluate(
+        ({ nx, ny }) => window.__globeLab.cloudShellSeamGrid(nx, ny),
+        { nx: NX, ny: NY },
+      );
+      const keep = x.slab.map((v) => v > 0.02);
+      const shell = x.shell.filter((_, i) => keep[i]);
+      const slab = x.slab.filter((_, i) => keep[i]);
+      rows.push({
+        km,
+        flat,
+        n: shell.length,
+        r: correlation(shell, slab),
+        diff: meanAbs(shell, slab),
+      });
+    }
+  }
+  console.log(
+    `the shell's own drawing against the slab's where it draws (ocean, pitch -19.5, fovY 50): ${rows
+      .map(
+        (x) =>
+          `${x.km} km flat ${x.flat}: r ${x.r.toFixed(3)} (${[0.8, 0.85, 0.9].map((k) => `${k} ${x.r >= k ? "ok" : "NO"}`).join(" ")}), mean |diff| ${x.diff.toFixed(3)} over ${x.n} cells`,
+      )
+      .join("; ")}`,
+  );
+  expect(errors).toEqual([]);
+  // Measured 2026-10-12: the flat deck r 0.905 / 0.945 at 30 / 25 km, the
+  // sphere's (the control) 0.580 / 0.714; the bound between, and the flat
+  // deck must beat the control at each altitude.
+  for (const km of [30, 25]) {
+    const flat = rows.find((x) => x.km === km && x.flat === 1);
+    const sphere = rows.find((x) => x.km === km && x.flat === 0);
+    expect(flat.n).toBeGreaterThan(100);
+    expect(flat.r).toBeGreaterThanOrEqual(0.85);
+    expect(flat.r).toBeGreaterThan(sphere.r + 0.1);
   }
 });
 

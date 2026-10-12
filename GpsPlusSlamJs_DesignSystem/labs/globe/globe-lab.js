@@ -35,6 +35,7 @@ import {
 import { flatCloudShare } from "/globe/globe-cloud-flat-fade.js";
 import {
   CLOUD_SHELL_VOLUME,
+  cloudShellNoiseCascade,
   cloudShellStationsFor,
   cloudShellVolumeShares,
 } from "/globe/globe-cloud-shell-volume.js";
@@ -628,6 +629,13 @@ const PARAMS = {
     min: 10,
     max: 3000,
   },
+  // The noise's cascade (round-5 plan C2): this many morphs from the top
+  // of the shell's fade-in down to the slab's set; one per 3x of altitude
+  // or so by default, the rate of the 700-to-200 km morph the owner liked.
+  cloudShellFields: { fallback: 3, min: 1, max: 8 },
+  // The shell's deck flat where the slab draws (round-5 C4; 0 the sphere's
+  // everywhere, for the A/B and the smoke's control).
+  cloudShellFlat: { fallback: 1, min: 0, max: 1 },
   cloudShellCell: {
     fallback: CLOUD_SHELL_VOLUME.stations[0].cellScale,
     min: 1,
@@ -648,6 +656,11 @@ const PARAMS = {
   // that at half (R4d's cost smoke), against the 50 ms rule on the phone.
   cloudShellRes: { fallback: 0.5, min: 0.25, max: 1 },
   cloudFlatTopKm: { fallback: 5_000, min: 200, max: 50_000 },
+  // With the spherical volume the texture fades on its own band (round-5
+  // plan C5): whole down to cloudFlatOutFromKm, gone by cloudFlatOutToKm,
+  // so the volume (from 1,050 km) is already strong when the texture goes.
+  cloudFlatOutFromKm: { fallback: 900, min: 50, max: 5_000 },
+  cloudFlatOutToKm: { fallback: 700, min: 45, max: 5_000 },
   cloudFlatWeak: { fallback: 0.3, min: 0, max: 1 },
   // Speed dust: streaks pouring past the camera, faster with the speed
   // (round-3 plan 2026-10-08-2345 D1, `/globe/globe-speed-dust.js`): 1 on,
@@ -834,7 +847,7 @@ function readHashParams() {
 /**
  * The spherical cloud volume's law from the hash (round-4 plan R4d): the
  * module's `cloudShellStationsFor`, the bottom station (the slab's own
- * set) at the slab's ceiling or below it never (R4d review, finding 9).
+ * set) at the slab's ceiling or above it (R4d review, findings 9 and 11).
  */
 function shellStations(p) {
   return cloudShellStationsFor({
@@ -844,6 +857,22 @@ function shellStations(p) {
     thicknessScale: p.cloudShellThick,
     noiseShare: p.cloudShellNoise,
     ceilingKm: p.cloudVolumeCeilingKm,
+  });
+}
+
+/**
+ * The noise's cascade at `altitudeKm` (round-5 plan 2026-10-12-0612 C2):
+ * from the top of the shell's fade-in down to its bottom station (the
+ * slab's set at the slab's ceiling), `cloudShellFields` morphs, the top
+ * field at `cloudShellCell`.
+ */
+function shellCascade(altitudeKm, p) {
+  const stations = shellStations(p);
+  return cloudShellNoiseCascade(altitudeKm, {
+    topKm: stations[0].altitudeKm + p.cloudShellBandKm,
+    bottomKm: stations.at(-1).altitudeKm,
+    fields: Math.round(p.cloudShellFields),
+    topScale: p.cloudShellCell,
   });
 }
 
@@ -3270,11 +3299,24 @@ async function start() {
       bandKm: params.cloudShellBandKm,
     };
     const flatOn = params.cloudFlat === 1 && Number.isFinite(cameraAltM);
+    // The texture's own band with the shell (C5), kept above the slab's
+    // ceiling and falling, whatever the knobs say.
+    const outToKm = Math.max(
+      params.cloudFlatOutToKm,
+      params.cloudVolumeCeilingKm + 1,
+    );
+    const flatOut = shellOn
+      ? {
+          fromKm: Math.max(params.cloudFlatOutFromKm, outToKm + 1),
+          toKm: outToKm,
+        }
+      : null;
     const flat = flatOn
       ? flatCloudShare(Math.max(0, cameraAltM), {
           ...flatOptions,
           shellTopKm: shellOptions.topKm,
           shellBandKm: shellOptions.bandKm,
+          flatOut,
         })
       : 1;
     const flatShadow = flatOn
@@ -3387,6 +3429,10 @@ async function start() {
         target: worldFrame.target,
         deckKm: globe.cloudShell.heightM() / 1000,
         cover: params.cloudVolumeCover,
+        cascade: shellCascade(
+          Number.isFinite(cameraAltM) ? Math.max(0, cameraAltM / 1000) : 0,
+          params,
+        ),
       });
     }
     globe.sun.intensity = skyHandOver.exposure;
@@ -3487,6 +3533,7 @@ async function start() {
           slabTexture: slabDrawn ? cloudVolume.texture : null,
           sceneDepthWeight: skyHandOver.weight,
           disc: slabDisc(),
+          flatten: params.cloudShellFlat,
         });
       }
     }
@@ -4428,6 +4475,22 @@ void main() {
      * time in ms, or null when it does not draw at this pose. SwiftShader:
      * relative only, within one page load.
      */
+    /**
+     * The shell's own drawing (not weighted by the slab's disc) and the
+     * slab's alpha on one grid, after one frame (round-5 C4's seam smoke;
+     * debug, slow). Null where either does not draw.
+     */
+    cloudShellSeamGrid(nx, ny) {
+      if (!shellVolume || cloudShares === null || !cloudVolume) return null;
+      if (cloudVolume.state().share <= 0) return null;
+      frame();
+      // The shell's target is its own drawing (the composite weighs it).
+      return {
+        shell: shellVolume.alphaGrid(nx, ny),
+        slab: cloudVolume.alphaGrid(nx, ny),
+        slabShare: cloudVolume.state().share,
+      };
+    },
     timeCloudShell(n) {
       if (!shellVolume || cloudShares === null) return null;
       const gl = renderer.getContext();

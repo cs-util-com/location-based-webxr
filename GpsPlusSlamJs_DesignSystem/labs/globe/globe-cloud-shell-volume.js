@@ -46,6 +46,7 @@ import { EARTH_ATMOSPHERE } from "/fw/visualization/atmosphere/atmosphere-model.
 import { CLOUD_LAYER } from "/fw/visualization/atmosphere/cloud-layer.js";
 import { cloudCoverThresholds } from "/fw/visualization/atmosphere/cloud-coverage.js";
 import {
+  CLOUD_LIVE_NOISE,
   CLOUD_LIVE_NOISE_GLSL,
   cloudLiveBasis,
 } from "/fw/visualization/atmosphere/cloud-live-noise.js";
@@ -57,7 +58,6 @@ import {
 import {
   CLOUD_SHELL_VOLUME,
   GLOBE_CLOUD_SHELL_GLSL,
-  cloudShellFieldWeights,
   cloudShellFrame,
   cloudShellVolumeLaw,
 } from "/globe/globe-cloud-shell-volume.js";
@@ -107,9 +107,9 @@ uniform float uDeckTopKm;
 uniform float uThickness;
 uniform int uSteps;
 uniform float uOctaves;
-// The two fields' cell scales (the law's stations) and their mix's
-// weights (cloudShellFieldWeights: the spread kept); the second unread at
-// weight 0.
+// The two fields' cell scales (the noise cascade's pair at this altitude,
+// cloudShellNoiseCascade) and their mix's weights (cos and sin: the spread
+// kept, one morph speed); the second unread at weight 0.
 uniform vec2 uCells;
 uniform vec2 uFieldWeights;
 // The slab's aerial fade's share (1 at its station, 0 high up).
@@ -123,11 +123,13 @@ uniform sampler2D uClouds;
 uniform float uCloudOpacity;
 uniform float uCoverGain;
 uniform float uShellIn;
-// The slab's share and its disc (model km): the shell gives up the share
-// only where the slab draws (R4d review, finding 1).
-uniform float uSlabShare;
+// The slab's disc (model km): where its flat deck and its haze apply.
 uniform vec3 uDiscCentre;
 uniform float uDiscRadiusKm;
+// How much of the slab's flat deck the shell takes inside the disc (C4),
+// and that deck's largest rise over the sphere there (km).
+uniform float uFlatten;
+uniform float uFlatRiseKm;
 uniform float uCoverThresholds[33];
 // The live field: lattice, the shell's basis (the slab's, its anchor over
 // the cell scale), the amplitudes.
@@ -241,28 +243,35 @@ highp float shellInStepLight( highp float tau, highp float sunA, highp float sun
 
 // One node: the column's raw thickness (m, before its clamp, scaled), the
 // deck height of the ray there (m), the noise and the threshold.
+// The slab's disc at a point: 1 within 0.7 r of its centre, 0 from r, the
+// slab's own fade between, by the arc from the centre (R4d review).
+float shellDiscMask( vec3 p ) {
+  float d = uShellGroundKm * 2.0 * asin( min( 1.0, 0.5 * length( normalize( p ) - normalize( uDiscCentre ) ) ) );
+  return 1.0 - smoothstep( 0.7 * uDiscRadiusKm, uDiscRadiusKm, d );
+}
+
 void shellNode( vec3 o, vec3 dir, float t, float stepKm, out float raw, out float height, out float noise, out float threshold ) {
   vec3 p = o + dir * t;
   float r = length( p );
+  vec2 chart = globeShellChartKm( p );
   height = ( r - uShellGroundKm - uDeckBaseKm ) * 1000.0;
+  // Where the slab draws, its deck is flat in the frame (the tangent plane
+  // at the frame's origin), d^2 / 2R above the sphere at d from the origin;
+  // the shell takes the same deck there, so the two draw the same points
+  // and their mix shows no doubled clouds (round-5 plan C4: from 30 km up
+  // the flat deck shifted a pixel's point by about 1.3 km at the disc's
+  // edge). Eased in over the slab's first tenth of share.
+  if ( uFlatten > 0.0 ) {
+    float dO = length( chart );
+    height -= uFlatten * shellDiscMask( p ) * dO * dO / ( 2.0 * uShellGroundKm ) * 1000.0;
+  }
   float vertical = abs( dot( dir, p / r ) );
   float horizontal = sqrt( max( 0.0, 1.0 - vertical * vertical ) );
   float footprint = max( t * uPixelAngle, stepKm * horizontal );
   float cover = shellMap( globeShellMapUv( p ), footprint, length( normalize( p ).xy ) ) * uCloudOpacity * uCoverGain * uShellIn;
   threshold = cover > 0.0 ? shellThreshold( cover ) : 2.0;
-  noise = shellNoise( globeShellChartKm( p ), footprint );
+  noise = shellNoise( chart, footprint );
   raw = ( SHELL_T0 + SHELL_HEIGHT_SCALE * uNoiseShare * ( noise - threshold ) ) * uThickness;
-}
-
-// The shell's weight at a deck point: 1 - the slab's share x its disc's
-// mask (unchanged within 0.7 r, cleared from r, the slab's own fade), by
-// the arc from the disc's centre. Twin: cloudShellPixelWeight (without
-// its shellIn, which the composite applies).
-float shellPixelWeight( vec3 p ) {
-  if ( uSlabShare <= 0.0 ) return 1.0;
-  float d = uShellGroundKm * 2.0 * asin( min( 1.0, 0.5 * length( normalize( p ) - normalize( uDiscCentre ) ) ) );
-  float mask = 1.0 - smoothstep( 0.7 * uDiscRadiusKm, uDiscRadiusKm, d );
-  return 1.0 - uSlabShare * mask;
 }
 
 void main() {
@@ -270,7 +279,8 @@ void main() {
   vec3 o = uCamera;
   float ro = length( o );
   float b = dot( o, dir );
-  float topR = uShellGroundKm + uDeckTopKm;
+  // Raised by the flattened deck's largest rise inside the disc (C4).
+  float topR = uShellGroundKm + uDeckTopKm + uFlatten * uFlatRiseKm;
   float baseR = uShellGroundKm + uDeckBaseKm;
   float discTop = b * b - ( ro - topR ) * ( ro + topR );
   if ( discTop <= 0.0 ) discard;
@@ -304,11 +314,14 @@ void main() {
   // dome's horizon fade, cloudHorizonFade, in the deck's own vertical).
   float limb = smoothstep( 0.0, SHELL_LIMB_SLOPE, -dot( dir, normalize( o + dir * tIn ) ) );
   if ( limb <= 0.0 ) discard;
-  float pixelWeight = shellPixelWeight( o + dir * tIn );
-  if ( pixelWeight <= 0.0 ) discard;
   float lengthKm = tOut - tIn;
   // The light at the interval's middle: the sun's own elevation there.
   vec3 pMid = o + dir * ( 0.5 * ( tIn + tOut ) );
+  // The aerial fade only where the slab draws (its disc), at the slab's
+  // strength there, so the two still draw alike; beyond the disc none, so a
+  // distant cloud keeps its strength (round-5 plan C3, measured: a fade over
+  // the whole screen took 57-74 % of the far clouds at 25-18 km).
+  float aerialHere = uAerial * shellDiscMask( pMid );
   vec3 up = normalize( pMid );
   float mu = dot( up, uSun );
   vec3 sunT = atmSampleTransmittance( atmTransmittanceLut, uShellGroundKm + 0.5 * ( uDeckBaseKm + uDeckTopKm ), mu );
@@ -356,7 +369,7 @@ void main() {
       }
       float a = 1.0 - exp( -tau );
       // The slab's aerial melt, by the law's share (twin of its w).
-      float w = limb * mix( 1.0, exp( -0.5 * ( t0 + t1 ) / SHELL_AERIAL_KM ), uAerial );
+      float w = limb * mix( 1.0, exp( -0.5 * ( t0 + t1 ) / SHELL_AERIAL_KM ), aerialHere );
       float c0 = clamp( mix( ra, rb, fa ), 0.0, deck );
       float c1 = clamp( mix( ra, rb, fb ), 0.0, deck );
       highp float sunA = sunScale * ( shellCumulative( c0 / uThickness ) - shellCumulative( min( h0, c0 ) / uThickness ) );
@@ -375,7 +388,7 @@ void main() {
   if ( alpha < 1e-4 ) discard;
   // Premultiplied, in the scene's units.
   vec3 lit = min( colour / alpha * uRadiance, vec3( SHELL_MAX_RADIANCE ) );
-  float outAlpha = min( alpha, 1.0 ) * pixelWeight;
+  float outAlpha = min( alpha, 1.0 );
   gl_FragColor = vec4( lit * outAlpha, outAlpha );
 }`;
 
@@ -398,8 +411,18 @@ uniform float uShellWeight;
 uniform float uSlabWeight;
 varying vec2 vUv;
 void main() {
-  vec4 c = uShellWeight * texture2D( tShell, vUv );
-  if ( uSlabWeight > 0.0 ) c += uSlabWeight * texture2D( tSlab, vUv );
+  vec4 shell = texture2D( tShell, vUv );
+  vec4 c = uShellWeight * shell;
+  if ( uSlabWeight > 0.0 ) {
+    // Per pixel (R4d review, finding 1; round 5): the shell gives up the
+    // slab's share only of the cloud the slab draws here, r = the slab's
+    // alpha over the shell's (1 where the shell draws none), so where the
+    // slab draws less (its fade ring, beyond its disc, a clear patch) the
+    // shell fills it. Twin: cloudShellPixelWeight.
+    vec4 slab = texture2D( tSlab, vUv );
+    float r = shell.a > 1e-4 ? min( 1.0, slab.a / shell.a ) : 1.0;
+    c = uShellWeight * ( 1.0 - uSlabWeight * r ) * shell + uSlabWeight * slab;
+  }
   if ( c.a < 1e-4 ) discard;
   gl_FragColor = vec4( c.rgb / c.a, 1.0 );
   #include <tonemapping_fragment>
@@ -471,9 +494,10 @@ export function createGlobeCloudShellVolume(
     uCloudOpacity: surfaceUniforms.uCloudOpacity,
     uCoverGain: { value: 1 },
     uShellIn: { value: 0 },
-    uSlabShare: { value: 0 },
     uDiscCentre: { value: new THREE.Vector3(0, 0, 1) },
     uDiscRadiusKm: { value: 1 },
+    uFlatten: { value: 0 },
+    uFlatRiseKm: { value: 0 },
     uCoverThresholds: { value: [...cloudCoverThresholds("live")] },
     uLattice: groundSky.cloudUniforms.atmCloudLattice,
     uBasis: { value: basisVectors[0] },
@@ -552,9 +576,19 @@ export function createGlobeCloudShellVolume(
      * `shares` from `cloudShellVolumeShares` (`shellIn`, `shell`, `slab`),
      * `stations` the law's, `target` the frame's (degrees; null: nothing is
      * drawn, the chart needs a frame), `deckKm` the deck's middle over the
-     * ground, `cover` the volume's gain. Returns `{ weight, slabWeight }`.
+     * ground, `cover` the volume's gain, `cascade` the noise's two fields
+     * and weights at this altitude (`cloudShellNoiseCascade`, round-5 plan
+     * C2). Returns `{ weight, slabWeight }`.
      */
-    update({ altitudeKm, shares, stations, target, deckKm, cover = 1 }) {
+    update({
+      altitudeKm,
+      shares,
+      stations,
+      target,
+      deckKm,
+      cover = 1,
+      cascade,
+    }) {
       framed = target !== null;
       law = cloudShellVolumeLaw(altitudeKm, stations);
       shellIn = enabled && framed ? shares.shellIn : 0;
@@ -569,21 +603,36 @@ export function createGlobeCloudShellVolume(
       uniforms.uSteps.value = law.marchSteps;
       uniforms.uOctaves.value = law.octaves;
       uniforms.uNoiseShare.value = law.noiseShare;
-      uniforms.uAerial.value = law.aerial;
-      uniforms.uCells.value.set(law.cells[0], law.cells[1]);
-      const [wa, wb] = cloudShellFieldWeights(law.cellMix);
-      uniforms.uFieldWeights.value.set(wa, wb);
+      // The aerial fade (alpha x exp(-distance / 60 km)) made the clouds
+      // see-through from high up (0.68 straight down at 100 km: the owner's
+      // "transparent from about 100 km", round-5 plan C3). None above the
+      // slab's ceiling; below it the slab's share, which the slab's own
+      // fade takes too (setCloudAerial), so the two still draw alike.
+      // The cube of the share: the haze comes in mostly where the slab is
+      // nearly alone, so the hand-over does not turn the clouds see-through
+      // (at 25 km 0.27 of it instead of 0.65). The slab takes the same.
+      uniforms.uAerial.value = slabWeight ** 3;
+      // The noise's two fields (the cascade's; one at the bottom, the second
+      // then weighted 0): fixed scales, decorrelated offsets, cos / sin
+      // weights, so the clouds morph at one speed all the way down.
+      const fields = [
+        cascade.fields[0],
+        cascade.fields[1] ?? cascade.fields[0],
+      ];
+      uniforms.uCells.value.set(fields[0].scale, fields[1].scale);
+      uniforms.uFieldWeights.value.set(cascade.weights[0], cascade.weights[1]);
       uniforms.uCoverGain.value = cover;
       uniforms.uShellIn.value = shellIn;
       const frame = cloudShellFrame(ellipsoid, target, groundKm, frameMatrix);
       uniforms.uShellGaussianM.value = frame.gaussianRadiusM;
-      // Each field's basis: the slab's at scale 1 (the same field), else
-      // the carried anchor over the scale (the same ground-anchored field,
-      // its cells larger, fixed while the scale is).
+      // Each field's basis: the slab's for its own field (scale 1, no
+      // offset), else the carried anchor over the scale and shifted by the
+      // field's offset (the same ground-anchored lattice, its cells larger,
+      // a decorrelated patch of it, fixed while the field is).
       const anchor = groundSky.cloudNoiseAnchor;
-      law.cells.forEach((s, f) => {
+      fields.forEach(({ scale: s, offsetCells }, f) => {
         const out = basisVectors[f];
-        if (s === 1) {
+        if (s === 1 && offsetCells[0] === 0 && offsetCells[1] === 0) {
           groundSky.cloudUniforms.atmCloudLiveBasis.value.forEach((v, k) =>
             out[k].copy(v),
           );
@@ -591,7 +640,12 @@ export function createGlobeCloudShellVolume(
         }
         cloudLiveBasis(
           {
-            originKm: [anchor.originKm[0] / s, anchor.originKm[1] / s],
+            originKm: [
+              anchor.originKm[0] / s +
+                offsetCells[0] * CLOUD_LIVE_NOISE.baseCellKm,
+              anchor.originKm[1] / s +
+                offsetCells[1] * CLOUD_LIVE_NOISE.baseCellKm,
+            ],
             rotationRad: anchor.rotationRad,
           },
           {},
@@ -625,6 +679,7 @@ export function createGlobeCloudShellVolume(
         slabTexture = null,
         sceneDepthWeight = 0,
         disc = null,
+        flatten = 1,
       },
     ) {
       if (!enabled || !framed || (weight <= 0 && slabWeight <= 0)) {
@@ -675,7 +730,14 @@ export function createGlobeCloudShellVolume(
         slabWeight > 0 &&
         disc !== null &&
         disc.radiusM > 0;
-      uniforms.uSlabShare.value = slabOn ? slabWeight : 0;
+
+      // The slab's flat deck taken inside its disc (round-5 plan C4), eased
+      // in over the slab's first tenth of share so crossing the ceiling
+      // moves no cloud.
+      const ease = Math.min(1, Math.max(0, slabWeight / 0.1));
+      uniforms.uFlatten.value = slabOn
+        ? flatten * ease * ease * (3 - 2 * ease)
+        : 0;
       if (slabOn) {
         const centre = disc.centre ?? {
           x: camera.matrixWorld.elements[12],
@@ -690,6 +752,11 @@ export function createGlobeCloudShellVolume(
           discEcef.z * toModel[2],
         );
         uniforms.uDiscRadiusKm.value = disc.radiusM / 1000;
+        // The disc's far edge from the frame's origin, and the flat deck's
+        // rise over the sphere there (d^2 / 2R).
+        const centreFromOrigin = Math.hypot(centre.x, centre.z) / 1000;
+        const reachKm = centreFromOrigin + disc.radiusM / 1000;
+        uniforms.uFlatRiseKm.value = (reachKm * reachKm) / (2 * groundKm);
       }
       // Radians a pixel of the march's target (km of footprint per km).
       uniforms.uPixelAngle.value =
@@ -705,8 +772,8 @@ export function createGlobeCloudShellVolume(
         renderer.setClearColor(clearColour, clearAlpha);
         renderer.setRenderTarget(previous);
       }
-      // The shell weighs itself per pixel by the slab's disc; here only its
-      // own fade-in (C2 per pixel, `cloudShellPixelWeight`).
+      // The shell's own fade-in; the composite weighs it per pixel by what
+      // the slab draws (`cloudShellPixelWeight`).
       compositeUniforms.uShellWeight.value = shellIn;
       compositeUniforms.tSlab.value = slabTexture;
       compositeUniforms.uSlabWeight.value =

@@ -33,12 +33,12 @@ groundSky, atmosphere, sceneDepth })`:
   1, else the same carried anchor over the scale through `cloudLiveBasis`. Returns `{ weight, slabWeight }`.
 - `render(camera, { worldFromEcef, sunEcef, sunIntensity, slabTexture,
 sceneDepthWeight, disc })`: the march into its own half-float target
-  (cleared to 0, premultiplied), each pixel weighted by 1 - the slab's
-  share x the slab's disc mask at the ray's deck point (`disc`: the slab's
-  `{ centre, deckY, radiusM }` from its state, the centre null on the
-  camera; twin `cloudShellPixelWeight`), pixels the slab draws whole
-  skipped; then ONE composite over the frame of the shell times its fade-in
-  plus `slabTexture` (the slab drawn this frame at its full share,
+  (cleared to 0, premultiplied; `disc`: the slab's `{ centre, deckY,
+radiusM }` from its state, the centre null on the camera, where its flat
+  deck and its haze apply), then ONE composite over the frame of the shell
+  times its fade-in less the slab's share of the cloud the slab draws at
+  that pixel (`cloudShellPixelWeight`: r = the slab's alpha over the
+  shell's) plus `slabTexture` (the slab drawn this frame at its full share,
   `globe-cloud-volume.js` with `composite: false`) times the slab's share.
   Returns whether it drew.
 - `readBack(bands)`: the last shell target's mean alpha and share over 0.05
@@ -92,10 +92,26 @@ sceneDepthWeight, disc })`: the march into its own half-float target
   the hand-over keeps the opacity (stacking 0.8 over 0.8 at weight 0.5
   reads 0.64).
 - At cell scale 1 the shell's basis is the slab's vectors, copied.
-- C2 per pixel (the R4d review, finding 1): the shell gives up the slab's
-  share only inside the slab's disc; one global weight drew every cloud
-  beyond the disc at 1 - the share (gone at 15 km) at the owner's oblique
-  pose.
+- The noise (round-5 plan 2026-10-12-0612 C2): `update`'s `cascade`
+  (`cloudShellNoiseCascade`) gives the two fields (fixed scales, their own
+  lattice offsets added to the carried anchor) and their cos / sin
+  weights, so the clouds morph at one speed from 1,050 km down to the
+  slab's ceiling, where the field is the slab's own (its basis copied).
+- No aerial fade above the slab's ceiling (round-5 C3: it made the clouds
+  see-through from high up, 0.68 straight down at 100 km); below it the
+  fade's strength is the slab's share, as the slab's own
+  (`setCloudAerial`), so the two still draw alike.
+- Inside the slab's disc the deck's height is measured against the slab's
+  flat plane (d^2 / 2R from the frame's origin, eased in over the slab's
+  first tenth of share; round-5 C4): the flat slab and the curved shell
+  drew the same clouds shifted (doubled, about 1.3 km at the disc's edge
+  from 30 km up). The top sphere is raised by that deck's largest rise.
+- C2 per pixel (the R4d review, finding 1; round 5): the shell gives up
+  the slab's share only of the cloud the slab draws at that pixel; one
+  global weight drew every cloud beyond the disc at 1 - the share (gone at
+  15 km) at the owner's oblique pose, and a disc mask in its place lost the
+  slab's fade ring. Beyond the disc the shell draws at every altitude, so
+  the far horizon keeps its clouds below the slab's ceiling too.
 - The map's mip level by the longitude's texel at the point's latitude
   (finding 12; the equator's read too sharp toward the poles).
 - The lab draws the shell only with `cloudNoise=live` (the field it

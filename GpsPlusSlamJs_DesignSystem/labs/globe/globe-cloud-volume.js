@@ -237,6 +237,7 @@ export function createGlobeCloudVolume(
         atmosphere.setCloudSceneDepth(null);
         atmosphere.setCloudDiscRadius(null);
         atmosphere.setCloudReach(null);
+        atmosphere.setCloudAerial(null);
         atmosphere.setCloudDiscCentre(null);
         lastReachEndM = null;
         atmosphere.configure({ cloudMode: "dome", cloudCover: 0 });
@@ -351,6 +352,10 @@ export function createGlobeCloudVolume(
       if (enabled) {
         atmosphere.setCloudDiscRadius(radiusM > 0 ? radiusM : null);
         atmosphere.setCloudDiscCentre(discCentre);
+        // Mixed with the spherical volume, the aerial fade comes in with the
+        // slab's share, as the volume's does (round-5 plan C3); alone, all
+        // of it, as before.
+        atmosphere.setCloudAerial(mixed && share > 0 ? share ** 3 : null);
         // The slab's reach follows the disc (volume-cloud plan §13, R2; §15:
         // out to the disc's far side): its default ends 21 km from the
         // camera, which left the horizon the owner looked at without volume
