@@ -16,7 +16,10 @@
   - `/osm/<p>.js` → `GpsPlusSlamJs_OsmDemo/src/<p>.ts`, the same way (the
     page uses OsmDemo's own `sun-position.ts`, not a copy);
   - `/vendor/three/` → the framework's `node_modules/three`, the
-    lockfile-pinned copy every app uses.
+    lockfile-pinned copy every app uses;
+  - `/w/<p>` → the worker view of `<p>`: the same file, a module served
+    with its specifiers rewritten into the view (`workerModule`), so a
+    worker can load modules that import packages by name.
 - Invariants & assumptions:
   - Dependency-free (`node:http`, `node:module` only). Type stripping
     needs no esbuild: the plan's first draft proposed it, and dropping it

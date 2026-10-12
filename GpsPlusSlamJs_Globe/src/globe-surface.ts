@@ -19,7 +19,12 @@ import {
   type GlobeSource,
   type GlobeSourceId,
 } from "./globe-sources.js";
+import {
+  type GlobeCloudShell,
+  createGlobeCloudShell,
+} from "./globe-cloud-shell.js";
 import { celestialToEcefQuaternion } from "./globe-stars.js";
+import { topLevelReady } from "./globe-band-gate.js";
 import { createMaterialRetirer } from "./globe-warm-material.js";
 import {
   applyGlobeSurface,
@@ -31,11 +36,24 @@ import {
   GeneratedSurfacePlugin,
   type GeneratedSurfacePluginInstance,
 } from "./vendor/generated-surface-plugin.js";
+import { globeMapLoader, type GlobeSurfaceLoader } from "./globe-map-loader.js";
+import { createGlobeCloudMap, type GlobeCloudMap } from "./globe-cloud-map.js";
 
 /** The surface's imagery, from the one registry (so it carries a credit). */
 const IMAGERY = globeSource("blue-marble");
 
 export const GLOBE_SURFACE = {
+  /**
+   * The first look's sphere, as a share of the ellipsoid's radii: 6 km
+   * under it, so the tiles cover it wherever they are drawn (DEC-FR2-6).
+   */
+  firstLookDepth: 0.999,
+  /**
+   * The first look ends for good once the camera goes below this, m: the
+   * band and the relief take the pixels there, and kept on it drew a whole
+   * sphere under the relief every frame (DEC-FR2-6).
+   */
+  firstLookFloorM: 2_000_000,
   /** The imagery's tiling: plate carrée, two tiles at level 0. */
   overlayProjection: IMAGERY.projection ?? "EPSG:4326",
   /** The committed levels (`scripts/fetch-globe-assets.mjs`). */
@@ -74,6 +92,9 @@ interface TilesRuntime {
     readonly refused: number;
   };
   readonly lruCache: { readonly cachedBytes: number };
+  /** The tile tree and the update count, for `topLevelReady`. */
+  readonly root: unknown;
+  readonly frameCount: number;
 }
 
 export interface GlobeSurfaceOptions {
@@ -108,8 +129,14 @@ export interface GlobeSurface {
    * length). RangeError for a zero or non-finite vector.
    */
   setSun(directionEcef: THREE.Vector3): void;
-  /** Per frame, before the render. */
+  /** Per frame, before the render (the clouds' step included). */
   update(camera: THREE.Camera, renderer: THREE.WebGLRenderer): void;
+  /**
+   * The clouds' step alone (`cloudMap.update`, then the map into
+   * `surfaceUniforms.uClouds`), for a page that draws the relief's tiles
+   * without the globe's and so never calls `update`.
+   */
+  updateClouds(renderer: THREE.WebGLRenderer): void;
   /**
    * Loaded models, the library's tile load errors, the cache's bytes, the
    * tiles still pending (queued, downloading or parsing), loaded, and
@@ -126,6 +153,8 @@ export interface GlobeSurface {
     mapsLoaded: number;
     mapErrors: number;
     mapsTotal: number;
+    /** Whether the first look (the imagery's level 0) is in (DEC-FR2-6). */
+    firstLookReady: boolean;
   };
   /**
    * The rotation from the celestial frame (x to RA 0h, z to the pole) into
@@ -137,6 +166,36 @@ export interface GlobeSurface {
     siderealAngleRad: number,
     target?: THREE.Quaternion,
   ): THREE.Quaternion;
+  /**
+   * The clouds' own shell above the ground (`globe-cloud-shell.ts`, round-6
+   * plan G6-2), in the tiles' ECEF frame; hidden until
+   * `setCloudShellShare` gives it a share.
+   */
+  readonly cloudShell: GlobeCloudShell;
+  /**
+   * The cloud map in its two stages (`globe-cloud-map.ts`, round-3 plan
+   * 2026-10-08-2345 §18): the preview, then the full 8,192 x 4,096 map,
+   * swapped into `surfaceUniforms.uClouds` (which the shell, the shadow
+   * and the volume share) by `update` (or `updateClouds`).
+   */
+  readonly cloudMap: GlobeCloudMap;
+  /**
+   * The globe's first look (round-2 plan DEC-FR2-6): a sphere a fraction
+   * under the ellipsoid, in the tiles' frame, in the surface's own material
+   * without a map (so it shows the imagery's level 0, lit and clouded as
+   * the tiles are), drawn until the globe can draw its whole view. The tile
+   * renderer draws a tile only once its imagery is in: before that there was
+   * no sphere at all, only the atmosphere's veil over black.
+   */
+  readonly firstLook: THREE.Mesh;
+  /**
+   * How much of the clouds the shell draws (0-1); the surface paints the
+   * rest into the ground's colour. 0, the default, is the look before.
+   * `flat` (0-1, default 1) fades both forms and the water's cloud mask
+   * by the flat layer's share by altitude (round-2 plan DEC-FR2-5). RangeError
+   * outside 0-1.
+   */
+  setCloudShellShare(share: number, flat?: number): void;
   /** The registry sources on screen, for the credits line. */
   activeSources(): GlobeSourceId[];
   dispose(): void;
@@ -211,29 +270,14 @@ export function disposeLitMaterials(
   }
 }
 
-/** How the global maps are fetched: a texture that fills in later. */
-export interface GlobeSurfaceLoader {
-  loadTexture(
-    source: GlobeSource,
-    onLoad: () => void,
-    onError: () => void,
-  ): THREE.Texture;
-}
-
-const textureLoader: GlobeSurfaceLoader = {
-  loadTexture: (source, onLoad, onError) =>
-    new THREE.TextureLoader().load(
-      source.path,
-      () => onLoad(),
-      undefined,
-      () => onError(),
-    ),
-};
+export type { GlobeSurfaceLoader } from "./globe-map-loader.js";
+/** The plain image-element loader, for a page that compares the two paths. */
+export { elementMapLoader } from "./globe-map-loader.js";
 
 /**
  * One global map, configured from its registry entry: colour decoded from
- * sRGB, a mask read as numbers; wrapping in longitude, since the shader
- * samples across the 180° seam.
+ * sRGB, a mask read as numbers, a grey map as one channel; wrapping in
+ * longitude, since the shader samples across the 180° seam.
  */
 function globalMap(
   source: GlobeSource,
@@ -244,8 +288,30 @@ function globalMap(
   const texture = loader.loadTexture(source, onLoad, onError);
   texture.colorSpace =
     source.colorSpace === "srgb" ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  if (source.grey) texture.format = THREE.RedFormat;
   texture.wrapS = THREE.RepeatWrapping;
   return texture;
+}
+
+/**
+ * The first look's next state (round-2 plan DEC-FR2-6): done for good once
+ * the globe has drawn its whole view (`drawn`) or the camera has gone below
+ * `firstLookFloorM`, shown while its images are in (`imagesIn`) and it is
+ * not done. Shown again whenever the globe could
+ * not draw its view (zooming out of the band), it filled the very holes the
+ * handover's positive control must see: it is for the start only. An
+ * altitude not known (not a positive number: a camera still at the Earth's
+ * centre reads 0) decides nothing.
+ */
+export function firstLookStep(
+  done: boolean,
+  imagesIn: boolean,
+  drawn: boolean,
+  altitudeM: number,
+): { readonly done: boolean; readonly shown: boolean } {
+  const low = altitudeM > 0 && altitudeM < GLOBE_SURFACE.firstLookFloorM;
+  const next = done || drawn || low;
+  return { done: next, shown: imagesIn && !next };
 }
 
 /**
@@ -266,11 +332,12 @@ export function createGlobeImagery(): XYZTilesOverlay {
 /**
  * The globe's surface. The caller adds `group` to its scene, points the
  * sun with `setSun` and calls `update` every frame; `dispose` frees the
- * tiles, the template and the maps. `loader` fetches the global maps (a
- * TextureLoader by default; tests pass a stub).
+ * tiles, the template and the maps. `loader` fetches the global maps
+ * (`globeMapLoader()` by default: off the main thread where the browser
+ * can; tests pass a stub).
  */
 export function createGlobeSurface(
-  loader: GlobeSurfaceLoader = textureLoader,
+  loader: GlobeSurfaceLoader = globeMapLoader(),
   patch: GlobeSurfacePatchOptions = {},
 ): GlobeSurface {
   const options: GlobeSurfaceOptions = {
@@ -296,12 +363,60 @@ export function createGlobeSurface(
   const mapError = () => {
     mapErrors += 1;
   };
-  // The water mask is not among them: it is the imagery tiles' alpha.
-  const maps = {
-    night: globalMap(globeSource("black-marble"), loader, mapLoaded, mapError),
-    clouds: globalMap(globeSource("clouds"), loader, mapLoaded, mapError),
+  // The water mask is not among the global maps: it is the imagery
+  // tiles' alpha. The night map loads whole; the clouds in two stages
+  // (round-3 plan §18, DEC-R3-15): the preview with the first look, then
+  // the full map in the background, swapped in by `update`.
+  const night = globalMap(
+    globeSource("black-marble"),
+    loader,
+    mapLoaded,
+    mapError,
+  );
+  const cloudMap = createGlobeCloudMap({
+    source: globeSource("clouds"),
+    loader,
+  });
+  // The first look (round-2 plan 2026-10-07-2350 DEC-FR2-6): the imagery
+  // pyramid's level 0, the whole Earth in two tiles, loaded with the global
+  // maps, long before the tile renderer asks for its first tiles, and drawn
+  // on a sphere of its own (`firstLook`): the renderer draws a tile only
+  // once its imagery is in, so until then there was only the atmosphere's
+  // veil over black (measured: 7 s of one blue in a smoke). Not counted with
+  // the global maps: the loading label is about those; a failure keeps the
+  // plain look.
+  const imagery = globeSource("blue-marble");
+  let firstLookIn = 0;
+  // The first look waits for the clouds' PREVIEW as well as its two halves,
+  // so it shows the Earth as the tiles will, clouds included (round-3 plan
+  // M1, §18 DEC-R3-15: never for the full map); a failed preview holds
+  // nothing.
+  const firstLookImagesIn = () =>
+    surfaceUniforms.uDayReady.value === 1 && cloudMap.previewSettled;
+  const firstLookHalf = (x: number) => {
+    const texture = loader.loadTexture(
+      {
+        ...imagery,
+        path: imagery.path
+          .replace("{z}", "0")
+          .replace("{x}", String(x))
+          .replace("{y}", "0"),
+      },
+      () => {
+        firstLookIn += 1;
+        if (firstLookIn === 2) surfaceUniforms.uDayReady.value = 1;
+      },
+      () => {},
+    );
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
   };
-  const surfaceUniforms = createGlobeSurfaceUniforms(maps);
+  const surfaceUniforms = createGlobeSurfaceUniforms({
+    night,
+    clouds: cloudMap.texture,
+    dayWest: firstLookHalf(0),
+    dayEast: firstLookHalf(1),
+  });
   const template = new THREE.MeshStandardMaterial({ roughness: 0.9 });
   applyGlobeSurface(template, surfaceUniforms, patch);
   const sun = new THREE.DirectionalLight(0xffffff, GLOBE_SURFACE.sunIntensity);
@@ -310,6 +425,40 @@ export function createGlobeSurface(
   // it was made with, sits on its target and lights nothing (measured).
   const group = new THREE.Group();
   group.add(tiles.group, sun, sun.target);
+  // The cloud shell in the tiles' frame: a holder that copies their
+  // placement (not inside tiles.group, whose children keep stale world
+  // matrices, as the light's comment says).
+  const cloudShell = createGlobeCloudShell({
+    uniforms: surfaceUniforms,
+    radii: [
+      tiles.ellipsoid.radius.x,
+      tiles.ellipsoid.radius.y,
+      tiles.ellipsoid.radius.z,
+    ],
+  });
+  const cloudFrame = new THREE.Group();
+  cloudFrame.matrixAutoUpdate = false;
+  cloudFrame.add(cloudShell.mesh);
+  const firstLook = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 96, 48),
+    litCopy(template),
+  );
+  // The sphere's poles on the ECEF z axis (three's sphere has them on y).
+  firstLook.geometry.rotateX(Math.PI / 2);
+  firstLook.scale
+    .set(
+      tiles.ellipsoid.radius.x,
+      tiles.ellipsoid.radius.y,
+      tiles.ellipsoid.radius.z,
+    )
+    .multiplyScalar(GLOBE_SURFACE.firstLookDepth);
+  // Hidden until an update decides: a page that never calls it (the terrain
+  // lab) drew it under its relief.
+  firstLook.visible = false;
+  cloudFrame.add(firstLook);
+  let firstLookDone = false;
+  const cameraEcef = new THREE.Vector3();
+  group.add(cloudFrame);
   /**
    * The light shines from its position towards its target (the group's
    * origin): the ECEF sun turned by tiles.group's placement within the
@@ -323,6 +472,8 @@ export function createGlobeSurface(
     sun.position
       .copy(surfaceUniforms.uSunEcef.value)
       .transformDirection(tiles.group.matrix);
+    cloudFrame.matrix.copy(tiles.group.matrix);
+    cloudFrame.matrixWorldNeedsUpdate = true;
     // The world-space sun for the cloud shading (review m4): the ECEF sun
     // through every group above the tiles, as the light ends up.
     tiles.group.updateWorldMatrix(true, false);
@@ -358,6 +509,11 @@ export function createGlobeSurface(
   tiles.addEventListener("load-error", () => {
     tileErrors += 1;
   });
+  // The clouds: load, build, and swap the full map in for every reader.
+  const updateClouds = (renderer: THREE.WebGLRenderer) => {
+    cloudMap.update(renderer);
+    surfaceUniforms.uClouds.value = cloudMap.texture;
+  };
   let cameraSet: THREE.Camera | null = null;
   const resolution = new THREE.Vector2();
   return {
@@ -382,11 +538,27 @@ export function createGlobeSurface(
       tiles.setResolution(camera, resolution.x, resolution.y);
       camera.updateMatrixWorld();
       tiles.update();
+      updateClouds(renderer);
+      // The first look once its images are in (before, a plain white ball),
+      // until the globe has first drawn its whole view.
+      const look = firstLookStep(
+        firstLookDone,
+        firstLookImagesIn(),
+        topLevelReady(runtime),
+        tiles.ellipsoid.getPositionElevation(
+          tiles.group.worldToLocal(cameraEcef.copy(camera.position)),
+        ),
+      );
+      firstLookDone = look.done;
+      firstLook.visible = look.shown;
       // A plugin may have moved the tiles this frame.
       syncSun();
     },
     state: () => {
       const { queued, downloading, parsing, loaded, refused } = runtime.stats;
+      // The clouds count at their preview (the full map is its own stage),
+      // as failed only when nothing is drawn (M1b review, item 7).
+      const clouds = cloudMap.settled();
       return {
         models,
         tileErrors,
@@ -394,9 +566,10 @@ export function createGlobeSurface(
         pendingTiles: queued + downloading + parsing,
         loadedTiles: loaded,
         refusedTiles: refused,
-        mapsLoaded,
-        mapErrors,
-        mapsTotal: Object.keys(maps).length,
+        mapsLoaded: mapsLoaded + (clouds.done && !clouds.failed ? 1 : 0),
+        mapErrors: mapErrors + (clouds.failed ? 1 : 0),
+        mapsTotal: 2,
+        firstLookReady: firstLookImagesIn(),
       };
     },
     // Every registry source is drawn: the tiles (with the water mask in
@@ -408,11 +581,34 @@ export function createGlobeSurface(
         .multiply(celestialToEcefQuaternion(siderealAngleRad));
     },
     activeSources: () => GLOBE_SOURCES.map((s) => s.id),
+    cloudShell,
+    cloudMap,
+    updateClouds,
+    firstLook,
+    setCloudShellShare(share, flat = 1) {
+      for (const [name, v] of [
+        ["share", share],
+        ["flat share", flat],
+      ] as const) {
+        if (!(v >= 0 && v <= 1)) {
+          throw new RangeError(`the ${name} must be in [0, 1], got ${v}`);
+        }
+      }
+      cloudShell.setShare(share * flat);
+      surfaceUniforms.uCloudInSurface.value = (1 - share) * flat;
+      surfaceUniforms.uCloudFlat.value = flat;
+    },
     dispose() {
+      cloudShell.dispose();
+      firstLook.geometry.dispose();
+      (firstLook.material as THREE.Material).dispose();
       tiles.dispose();
       retirer.dispose();
       template.dispose();
-      for (const map of Object.values(maps)) map.dispose();
+      night.dispose();
+      cloudMap.dispose();
+      surfaceUniforms.uDayWest.value.dispose();
+      surfaceUniforms.uDayEast.value.dispose();
       sun.dispose();
     },
   };

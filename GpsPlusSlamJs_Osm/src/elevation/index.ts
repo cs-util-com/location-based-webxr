@@ -75,3 +75,30 @@ export {
   toEllipsoidal,
   toOrthometric,
 } from "./geoid.js";
+
+// The terrain height field (moved from OsmDemo with the globe city's library
+// validation, globe city plan 2026-10-05-0040 §14 L1): a window of posts
+// sampled from a provider around a frame, read in ENU metres.
+export type {
+  Heightfield,
+  HeightfieldData,
+  HeightfieldOptions,
+} from "./heightfield.js";
+export {
+  NEAR_FIELD_M,
+  TERRAIN_EXTENT_M,
+  TERRAIN_SPACING_M,
+  buildHeightfield,
+  buildHeightfieldData,
+  createHeightfieldCache,
+  heightfieldFrom,
+  peakToTrough,
+} from "./heightfield.js";
+export type { TerrainField, TerrainFieldOptions } from "./terrain-field.js";
+export {
+  absoluteDatumFor,
+  createTerrainField,
+  latticeWindow,
+} from "./terrain-field.js";
+export type { TerrainWindow, TerrainWindowOptions } from "./terrain-window.js";
+export { FETCH_SLACK, terrainWindowFor } from "./terrain-window.js";
