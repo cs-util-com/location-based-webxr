@@ -10,8 +10,12 @@ from about 700 km, finer from about 200 km, today's slab from about 30 km,
 handing over as smoothly as today's volume fades in. Reconciled: ONE
 ray-marched pass over a cloud shell around the Earth whose parameters move
 with the altitude, so the "layers" are its parameter sets along the descent
-(two fields cross-faded dip the opacity and dissolve one pattern into
-another, DEC-R3-6). The pass itself is the lab's
+. Between two stations two fields of fixed cell scales are mixed with
+weights whose squares sum to 1: no opacity dip, but the pattern morphs from
+one field into the other over each band (the R4d milestone review, finding
+3: a departure from DEC-R3-6's "one field", for the owner's eye; a cell
+scale sliding with the altitude moved the clouds by tens of km per percent
+of descent). The pass itself is the lab's
 `GpsPlusSlamJs_DesignSystem/labs/globe/globe-cloud-shell-volume.js`.
 
 ## Public API
@@ -47,6 +51,18 @@ octaves, thicknessScale, noiseShare, aerial, cells, cellMix }`: the top set abov
 - `cloudShellFieldWeights(t)`: the two fields' weights, their squares
   summing to 1 (the field's spread kept through the mix, so the cover and
   the opacity hold); RangeError outside 0-1.
+- `cloudShellStationsFor({ topKm, midKm, cellScale, thicknessScale,
+noiseShare, ceilingKm })`: the law's stations from a page's knobs (the
+  R4d review, findings 9 and 11): the bottom (the slab's own set) at the
+  slab's ceiling or 30 km, whichever is higher; each station at least 1.5x
+  the one below, so the law and the shares never refuse the knobs.
+  RangeError for a knob that is not positive and finite.
+- `cloudShellPixelWeight({ shellIn, slab, distanceKm, discRadiusKm })`:
+  the shell's weight at one pixel (the R4d review, finding 1):
+  `shellIn` x (1 - `slab` x the slab's disc mask at the ray's deck point,
+  unchanged within 0.7 r, cleared from r). GLSL twin `shellPixelWeight` in
+  the lab's march. RangeError for a share outside 0..1, a negative
+  distance or a radius that is not positive.
 - `cloudShellVolumeShares(altitudeKm, { topKm, bandKm?, ceilingKm, fadeKm })`:
   `{ shellIn, flat, shell, slab }`, who draws the clouds: the slab its
   share (`cloudVolumeShare`), the shell `shellIn x (1 - slab)` (`shellIn`
@@ -73,8 +89,13 @@ chartKm }`: the geodetic latitude and longitude from the normal
 
 ## Invariants and assumptions
 
-- The law is continuous; its bottom station is the slab's own set, so
-  where the two are mixed (below the slab's ceiling) they draw one field.
+- The law is continuous; its bottom station is the slab's own set, at the
+  slab's ceiling or below it never (`cloudShellStationsFor`), so where the
+  two are mixed (below the slab's ceiling) they draw one field.
+- C2 per pixel: the shares sum to 1 per altitude, and below the slab's
+  ceiling the shell gives up the slab's share only where the slab draws
+  (its disc): a far cloud keeps the shell's full weight. The global mix
+  drew far clouds at 1 - s (0.35 at 25 km, none at 15 km; finding 1).
 - The drawers share 1 at every altitude (the C2 invariant of
   `globe-cloud-volume.ts`, over three drawers); `flatCloudShare` takes the
   shell's top and band and multiplies its weakening by the flat drawer.
@@ -113,7 +134,13 @@ const { uv, chartKm } = cloudShellColumn([4000, 600, 4700], frame, 0);
   step and octave counts, the bottom station the slab's, its own stations
   and bad ones refused); the shares (sum 1 over a sweep of tops 467 / 700
   / 933 km and bands 100 / 300 / 600 km, the shell's span, the hand-over
-  to the slab, off with no top, never rising, bad input).
+  to the slab, off with no top, never rising, bad input); the per-pixel
+  weight (a far cloud at full weight for every slab share, the slab's share
+  inside the disc's core, C2 per pixel at every distance and share against
+  an independent smoothstep, continuity, refusals); the stations from the
+  knobs (the slab's set from every ceiling 10-100 km down, the 30 km
+  station kept below it, strict order so neither the law nor the shares
+  throw for tops 50-2,000 km, the knobs' look, refusals).
 - `globe-cloud-shell-volume.property.test.ts`: the map at the ellipsoid's
   own latitude and longitude with the drift; the chart near the origin
   against `worldFromEcefAt`; the ground distance far out; the recentre

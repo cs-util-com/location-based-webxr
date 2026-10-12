@@ -27,6 +27,8 @@ import {
   GLOBE_CLOUD_SHELL_GLSL,
   type CloudShellStation,
   cloudShellFieldWeights,
+  cloudShellPixelWeight,
+  cloudShellStationsFor,
   cloudShellVolumeLaw,
   cloudShellVolumeShares,
 } from "./globe-cloud-shell-volume.js";
@@ -319,5 +321,190 @@ describe("GLOBE_CLOUD_SHELL_GLSL", () => {
     ]) {
       expect(GLOBE_CLOUD_SHELL_GLSL).toContain(name);
     }
+  });
+});
+
+// WHY (R4d milestone review, finding 1, 2026-10-12): the shell and the slab
+// were mixed by one weight for the whole screen (the shell 1 - s, the slab
+// s), but the slab exists only within its disc (80 km, cleared from 56 km):
+// at the owner's oblique pose from 15 to 40 km every cloud beyond the disc
+// was drawn at 1 - s and gone at 15 km. Per pixel, the shell gives up only
+// what the slab draws there.
+describe("cloudShellPixelWeight", () => {
+  const disc = { discRadiusKm: 80 };
+
+  it("keeps a far cloud at the shell's full weight whatever the slab's share", () => {
+    for (const slab of [0, 0.1, 0.35, 0.65, 0.9, 1]) {
+      for (const d of [80, 81, 120, 620, 5_000]) {
+        expect(
+          cloudShellPixelWeight({ shellIn: 1, slab, distanceKm: d, ...disc }),
+        ).toBe(1);
+      }
+    }
+  });
+
+  it("gives the slab its share inside the disc's core, as the global mix did", () => {
+    for (const slab of [0, 0.35, 1]) {
+      for (const d of [0, 10, 55.9]) {
+        expect(
+          cloudShellPixelWeight({ shellIn: 1, slab, distanceKm: d, ...disc }),
+        ).toBeCloseTo(1 - slab, 12);
+      }
+    }
+  });
+
+  // C2 per pixel: where the shell is fully in (below its band), what the
+  // shell gives up the slab takes, by the slab's own disc fade (0.7 r to r,
+  // `cloudDiscThreshold`), at every distance and share.
+  it("shares 1 with the slab at every distance and share (C2 per pixel)", () => {
+    for (const slab of [0, 0.2, 0.5, 0.8, 1]) {
+      for (let d = 0; d <= 100; d += 0.5) {
+        const shell = cloudShellPixelWeight({
+          shellIn: 1,
+          slab,
+          distanceKm: d,
+          ...disc,
+        });
+        const mask = 1 - smoothstepRef(0.7 * 80, 80, d);
+        expect(shell + slab * mask).toBeCloseTo(1, 12);
+        expect(shell).toBeGreaterThanOrEqual(0);
+        expect(shell).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it("scales with the shell's own fade-in, and is continuous in the distance", () => {
+    expect(
+      cloudShellPixelWeight({ shellIn: 0.4, slab: 0, distanceKm: 10, ...disc }),
+    ).toBeCloseTo(0.4, 12);
+    let prev = cloudShellPixelWeight({
+      shellIn: 1,
+      slab: 0.7,
+      distanceKm: 0,
+      ...disc,
+    });
+    for (let d = 0.01; d <= 100; d += 0.01) {
+      const w = cloudShellPixelWeight({
+        shellIn: 1,
+        slab: 0.7,
+        distanceKm: d,
+        ...disc,
+      });
+      expect(Math.abs(w - prev)).toBeLessThan(0.01);
+      prev = w;
+    }
+  });
+
+  it("refuses shares outside 0..1, a negative distance and a radius that is not positive", () => {
+    const ok = { shellIn: 1, slab: 0.5, distanceKm: 1, ...disc };
+    expect(() => cloudShellPixelWeight({ ...ok, slab: 1.1 })).toThrow(
+      RangeError,
+    );
+    expect(() => cloudShellPixelWeight({ ...ok, shellIn: -0.1 })).toThrow(
+      RangeError,
+    );
+    expect(() => cloudShellPixelWeight({ ...ok, distanceKm: -1 })).toThrow(
+      RangeError,
+    );
+    expect(() => cloudShellPixelWeight({ ...ok, discRadiusKm: 0 })).toThrow(
+      RangeError,
+    );
+    expect(() =>
+      cloudShellPixelWeight({ ...ok, distanceKm: Number.NaN }),
+    ).toThrow(RangeError);
+  });
+});
+
+/** An independent smoothstep, so the test does not reuse the module's. */
+function smoothstepRef(a: number, b: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+// WHY (R4d milestone review, findings 9 and 11, 2026-10-12): the law's
+// bottom station (the slab's own set) was fixed at 30 km while the slab's
+// ceiling is a knob (10-100 km, 40 by default), so between the ceiling and
+// 30 km the shell mixed with the slab while still mid-law (two fields, its
+// aerial and thickness off the slab's), and with the ceiling near 100 km
+// the patterns dissolved into each other; and a top at the ceiling (both
+// knobs in range) threw in every frame.
+describe("cloudShellStationsFor", () => {
+  const knobs = {
+    topKm: 700,
+    midKm: 200,
+    cellScale: 4,
+    thicknessScale: 4,
+    noiseShare: 0.35,
+  };
+
+  it("puts the slab's own set at the slab's ceiling or below, for every ceiling", () => {
+    for (const ceilingKm of [10, 27, 30, 40, 53, 75, 100]) {
+      const stations = cloudShellStationsFor({ ...knobs, ceilingKm });
+      const bottom = stations.at(-1)!;
+      expect(bottom.altitudeKm).toBeGreaterThanOrEqual(ceilingKm);
+      expect(bottom.cellScale).toBe(1);
+      expect(bottom.thicknessScale).toBe(1);
+      expect(bottom.aerial).toBe(1);
+      // From the ceiling down the shell is the slab's set: one field.
+      for (let h = ceilingKm; h > 1; h /= 1.1) {
+        const law = cloudShellVolumeLaw(h, stations);
+        expect(law.cells).toEqual([1, 1]);
+        expect(law.aerial).toBe(1);
+        expect(law.thicknessScale).toBe(1);
+      }
+    }
+  });
+
+  it("keeps the module's 30 km station where the ceiling is below it", () => {
+    const stations = cloudShellStationsFor({ ...knobs, ceilingKm: 20 });
+    expect(stations.at(-1)!.altitudeKm).toBe(30);
+  });
+
+  it("orders the stations strictly downwards, whatever the knobs, so the law never throws", () => {
+    for (const ceilingKm of [10, 40, 100]) {
+      for (const topKm of [50, 100, 300, 700, 2_000]) {
+        for (const midKm of [20, 100, 200, 600]) {
+          const stations = cloudShellStationsFor({
+            ...knobs,
+            topKm,
+            midKm,
+            ceilingKm,
+          });
+          const [top, mid, bottom] = stations;
+          expect(top!.altitudeKm).toBeGreaterThan(mid!.altitudeKm);
+          expect(mid!.altitudeKm).toBeGreaterThan(bottom!.altitudeKm);
+          expect(() => cloudShellVolumeLaw(500, stations)).not.toThrow();
+          expect(() =>
+            cloudShellVolumeShares(50, {
+              topKm: top!.altitudeKm,
+              ceilingKm,
+              fadeKm: 25,
+            }),
+          ).not.toThrow();
+        }
+      }
+    }
+  });
+
+  it("takes the top's look from the knobs and its square roots in the middle", () => {
+    const [top, mid] = cloudShellStationsFor({ ...knobs, ceilingKm: 40 });
+    expect(top!.cellScale).toBe(4);
+    expect(top!.thicknessScale).toBe(4);
+    expect(top!.noiseShare).toBe(0.35);
+    expect(mid!.cellScale).toBe(2);
+    expect(mid!.thicknessScale).toBe(2);
+    expect(mid!.noiseShare).toBeCloseTo(Math.sqrt(0.35), 12);
+  });
+
+  it("refuses knobs that are not positive and finite", () => {
+    expect(() =>
+      cloudShellStationsFor({ ...knobs, ceilingKm: Number.NaN }),
+    ).toThrow(RangeError);
+    expect(() =>
+      cloudShellStationsFor({ ...knobs, topKm: 0, ceilingKm: 40 }),
+    ).toThrow(RangeError);
+    expect(() =>
+      cloudShellStationsFor({ ...knobs, cellScale: -1, ceilingKm: 40 }),
+    ).toThrow(RangeError);
   });
 });

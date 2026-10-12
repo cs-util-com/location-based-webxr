@@ -4,8 +4,12 @@
  * 8): ONE ray-marched pass over a cloud shell around the Earth, from about
  * 700 km down to the slab's ceiling, whose parameters move with the
  * altitude, so the owner's "layers at 700 / 200 / 30 km" are its parameter
- * sets along the descent (never two fields cross-faded: that dips the
- * opacity and dissolves one pattern into another).
+ * sets along the descent. Between two stations two fields of fixed cell
+ * scales are mixed, weighted so their squares sum to 1 (the spread and the
+ * opacity kept, no dip); a cell scale that slid with the altitude moved the
+ * clouds by tens of km per percent of descent. The mix still morphs one
+ * pattern into the other over each band (R4d milestone review, finding 3:
+ * a departure from DEC-R3-6's "one field" the owner judges by eye).
  *
  * - `cloudShellVolumeLaw`: the pass's parameters at an altitude, each
  *   interpolated between the stations by a smoothstep in the altitude's
@@ -287,6 +291,97 @@ export function cloudShellVolumeShares(
         });
   const shell = shellIn * (1 - slab);
   return { shellIn, flat: (1 - shellIn) * (1 - slab), shell, slab };
+}
+
+/**
+ * The law's stations from a page's knobs (R4d milestone review, findings 9
+ * and 11): the top where `topKm` puts it with the knobs' cell scale,
+ * thickness and noise share, the middle at `midKm` with their square
+ * roots, and the bottom (the slab's own set) at the slab's ceiling or the
+ * module's 30 km, whichever is higher, so from the ceiling down the shell
+ * draws the slab's single field. Each station is kept at least 1.5x the one
+ * below, so the law and the shares never refuse what the knobs give.
+ *
+ * @throws RangeError for a knob that is not positive and finite.
+ */
+export function cloudShellStationsFor(knobs: {
+  readonly topKm: number;
+  readonly midKm: number;
+  readonly cellScale: number;
+  readonly thicknessScale: number;
+  readonly noiseShare: number;
+  readonly ceilingKm: number;
+}): CloudShellStation[] {
+  for (const [name, v] of Object.entries(knobs)) {
+    if (!(v > 0 && Number.isFinite(v))) {
+      throw new RangeError(`the ${name} must be positive and finite, got ${v}`);
+    }
+  }
+  const [top, mid, bottom] = CLOUD_SHELL_VOLUME.stations;
+  const bottomKm = Math.max(bottom.altitudeKm, knobs.ceilingKm);
+  const midKm = Math.max(
+    Math.min(knobs.midKm, knobs.topKm / 1.5),
+    bottomKm * 1.5,
+  );
+  const topKm = Math.max(knobs.topKm, midKm * 1.5);
+  return [
+    {
+      ...top,
+      altitudeKm: topKm,
+      cellScale: knobs.cellScale,
+      thicknessScale: knobs.thicknessScale,
+      noiseShare: knobs.noiseShare,
+    },
+    {
+      ...mid,
+      altitudeKm: midKm,
+      cellScale: Math.sqrt(knobs.cellScale),
+      thicknessScale: Math.sqrt(knobs.thicknessScale),
+      noiseShare: Math.sqrt(knobs.noiseShare),
+    },
+    { ...bottom, altitudeKm: bottomKm },
+  ];
+}
+
+/**
+ * The shell's weight at one pixel (R4d milestone review, finding 1): the
+ * slab exists only within its disc (unchanged within 0.7 `discRadiusKm`
+ * of its centre, cleared from `discRadiusKm`, smoothstep between, as
+ * `cloudDiscThreshold` fades it), so the shell gives up the slab's share
+ * only where the slab draws: `shellIn` x (1 - `slab` x the disc's mask at
+ * `distanceKm`, the ray's deck point's distance from the disc's centre).
+ * With the shell fully in, it and the slab share 1 at every pixel (C2 per
+ * pixel). GLSL twin: `shellPixelWeight` in the lab's march.
+ *
+ * @throws RangeError for a share outside 0..1, a negative or NaN distance,
+ *   or a radius that is not positive and finite.
+ */
+export function cloudShellPixelWeight(input: {
+  readonly shellIn: number;
+  readonly slab: number;
+  readonly distanceKm: number;
+  readonly discRadiusKm: number;
+}): number {
+  const { shellIn, slab, distanceKm, discRadiusKm } = input;
+  for (const [name, v] of [
+    ["shellIn", shellIn],
+    ["slab", slab],
+  ] as const) {
+    if (!(v >= 0 && v <= 1)) {
+      throw new RangeError(`the ${name} share must be in 0..1, got ${v}`);
+    }
+  }
+  if (!(distanceKm >= 0)) {
+    throw new RangeError(`the distance must be >= 0, got ${distanceKm}`);
+  }
+  if (!(discRadiusKm > 0 && Number.isFinite(discRadiusKm))) {
+    throw new RangeError(
+      `the disc radius must be positive, got ${discRadiusKm}`,
+    );
+  }
+  const mask =
+    1 - smoothstep((distanceKm - 0.7 * discRadiusKm) / (0.3 * discRadiusKm));
+  return shellIn * (1 - slab * mask);
 }
 
 /**
