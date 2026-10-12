@@ -4,6 +4,12 @@
 
 ### Added
 
+- **The cloud slab's aerial strength**, opt-in:
+  `SkyAtmosphere.setCloudAerial(strength | null)` and
+  `setCloudSlabAerial(slab, strength | null)` (0..1): how much of the
+  slab's aerial fade (alpha x exp(-distance / 60 km)) applies, for a page
+  that draws the same clouds with another drawer; `cloudSlabMarch` takes
+  `aerial` too. The default (1, or null) is unchanged.
 - **The clouds' noise evaluated live, per octave**, opt-in:
   `SkyAtmosphere.configure({ cloudNoise: 'tile' | 'hex' | 'live' })` and
   `setCloudNoiseAnchor({ originKm, rotationRad })` / `cloudNoiseAnchor`

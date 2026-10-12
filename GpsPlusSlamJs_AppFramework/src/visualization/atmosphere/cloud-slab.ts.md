@@ -110,6 +110,13 @@ it only in `cloudMode: 'slab'`.
 - `setCloudSlabDiscCentre(slab, { x, z } | null)` (volume-cloud plan
   §15): the disc's centre, a world point or the camera (null, the
   default); a uniform, read only with the disc on.
+- `setCloudSlabAerial(slab, strength | null)` (globe round-5 plan
+  2026-10-12-0612 C3): how much of the aerial fade applies, the uniform
+  `atmSlabAerial` (0 none: the clouds at their opacity at any distance; 1,
+  the default and null: alpha x exp(-distance / `CLOUD_LAYER.aerialKm`) as
+  before). For a page that mixes the slab with another drawer of the same
+  clouds, so both fade alike. `cloudSlabMarch`'s `aerial` option is its
+  twin. RangeError outside 0..1.
 - `setCloudSlabReach(slab, reach | null)` (R1): the uniform `atmSlabReach`
   (the far fade's start and end, and the march cap, which grows with the
   end so it never ends the clouds first) and the mesh scaled out

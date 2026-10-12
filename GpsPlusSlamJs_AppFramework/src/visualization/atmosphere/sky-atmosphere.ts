@@ -80,6 +80,7 @@ import {
   setCloudSlabCoverage,
   setCloudSlabDiscCentre,
   setCloudSlabRadius,
+  setCloudSlabAerial,
   setCloudSlabReach,
   setCloudSlabSceneDepth,
   setCloudSlabSteps,
@@ -406,6 +407,8 @@ export class SkyAtmosphere {
   /** The disc's centre (`setCloudDiscCentre`), kept across modes; null: the camera. */
   private discCentre: CloudDiscCentre | null = null;
   private reach: CloudSlabReach | null = null;
+  /** The slab's aerial strength (`setCloudAerial`), kept across modes; null all of it. */
+  private aerial: number | null = null;
 
   constructor(options: SkyAtmosphereOptions) {
     try {
@@ -1132,6 +1135,25 @@ export class SkyAtmosphere {
   }
 
   /**
+   * How much of the cloud slab's aerial fade applies (globe round-5 plan
+   * 2026-10-12-0612 C3; `setCloudSlabAerial`), or all of it (null). Kept
+   * across modes, like the reach. Validated before it is kept.
+   *
+   * @throws RangeError for a strength outside 0..1.
+   */
+  setCloudAerial(strength: number | null): void {
+    if (strength !== null && !(strength >= 0 && strength <= 1)) {
+      throw new RangeError(
+        `the aerial strength must be in 0..1, got ${strength}`
+      );
+    }
+    this.aerial = strength;
+    if (this.mode === 'slab' && this.cloudMesh !== undefined) {
+      setCloudSlabAerial(this.cloudMesh, strength);
+    }
+  }
+
+  /**
    * The cloud slab's disc centre (globe volume-cloud plan 2026-10-05-0016
    * §15; `setCloudSlabDiscCentre`): a world point, or the camera (null, the
    * default). Kept across modes, like the disc. Validated before it is kept.
@@ -1200,6 +1222,7 @@ export class SkyAtmosphere {
     if (this.coverage !== null) setCloudSlabCoverage(slab, this.coverage);
     if (this.discRadiusM !== null) setCloudSlabRadius(slab, this.discRadiusM);
     if (this.reach !== null) setCloudSlabReach(slab, this.reach);
+    if (this.aerial !== null) setCloudSlabAerial(slab, this.aerial);
     if (this.discCentre !== null) setCloudSlabDiscCentre(slab, this.discCentre);
   }
 

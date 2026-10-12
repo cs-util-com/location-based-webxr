@@ -41,6 +41,7 @@ import {
   setCloudSlabCoverage,
   setCloudSlabDiscCentre,
   setCloudSlabRadius,
+  setCloudSlabAerial,
   setCloudSlabReach,
   setCloudSlabSceneDepth,
   setCloudSlabSteps,
@@ -1868,6 +1869,62 @@ describe('the reach (globe volume-cloud plan §13, R1)', () => {
     ]) {
       expect(() => setCloudSlabReach(slab, bad)).toThrow(RangeError);
       expect(() => cloudSlabFarWeight(1, bad)).toThrow(RangeError);
+    }
+  });
+});
+
+// WHY (globe round-5 plan 2026-10-12-0612 C3): the slab's aerial fade makes
+// its clouds see-through with distance (alpha x exp(-distance / 60 km): 0.54
+// straight down from 40 km), which the globe's spherical volume took over
+// from 200 km down and the owner saw as "transparent from about 100 km". A
+// page that mixes the slab with another drawer sets how much of the fade
+// applies (0 none, 1 the default, unchanged for every other page).
+describe("the slab's aerial strength (setCloudSlabAerial)", () => {
+  const input = {
+    // Inside the default reach (about 21 km), straight down.
+    camera: [0, 12_000, 0] as Vec3,
+    dir: [0, -1, 0] as Vec3,
+    steps: CLOUD_SLAB.defaultSteps,
+    sample: () => 0.9,
+    threshold: 0.3,
+  };
+
+  it('leaves the march unchanged at 1 and removes the fade at 0', () => {
+    const plain = cloudSlabMarch(input);
+    expect(cloudSlabMarch({ ...input, aerial: 1 }).alpha).toBe(plain.alpha);
+    const none = cloudSlabMarch({ ...input, aerial: 0 });
+    // Without the fade the drawn alpha is the far-weighted opacity: here,
+    // straight down well inside the reach, the opacity itself.
+    expect(none.alpha).toBeCloseTo(none.opacity, 9);
+    // The fade over the 9-11 km down to the deck is exp(-10 / 60) = 0.85,
+    // so the full fade draws about 0.85 of the fade-free alpha.
+    expect(plain.alpha / none.alpha).toBeGreaterThan(0.8);
+    expect(plain.alpha / none.alpha).toBeLessThan(0.9);
+    const half = cloudSlabMarch({ ...input, aerial: 0.5 });
+    expect(half.alpha).toBeGreaterThan(plain.alpha);
+    expect(half.alpha).toBeLessThan(none.alpha);
+  });
+
+  it('sets a uniform on the mesh (no new program), null back to 1', () => {
+    const slab = createCloudSlab({});
+    const m = slab.material as THREE.ShaderMaterial;
+    const program = m.fragmentShader;
+    expect(m.uniforms['atmSlabAerial']!.value).toBe(1);
+    setCloudSlabAerial(slab, 0.25);
+    expect(m.uniforms['atmSlabAerial']!.value).toBe(0.25);
+    expect(m.fragmentShader).toBe(program);
+    setCloudSlabAerial(slab, null);
+    expect(m.uniforms['atmSlabAerial']!.value).toBe(1);
+    expect(CLOUD_SLAB_FRAGMENT_GLSL).toContain('uniform float atmSlabAerial;');
+  });
+
+  it('refuses a strength outside 0..1', () => {
+    const slab = createCloudSlab({});
+    for (const bad of [-0.1, 1.1, Number.NaN]) {
+      expect(() => setCloudSlabAerial(slab, bad)).toThrow(RangeError);
+      expect(() => cloudSlabMarch({ ...input, aerial: bad })).toThrow(
+        RangeError
+      );
     }
   });
 });

@@ -1541,6 +1541,36 @@ describe('SkyAtmosphere cloud reach (globe volume-cloud plan 2026-10-05-0016 §1
   });
 });
 
+describe('SkyAtmosphere cloud aerial strength (globe round-5 plan C3)', () => {
+  const slabOf = (scene: THREE.Scene) =>
+    scene.children.find((c) => c.name === 'atmosphere-cloud-slab') as
+      THREE.Mesh | undefined;
+
+  // The globe mixes the slab with its spherical volume, which fades its
+  // clouds with the same strength: kept like the reach, so a slab made later
+  // (a mode switch, a staged rebuild) still has it.
+  it('hands the strength to the slab, now and after a mode switch, and restores the default', () => {
+    const { atmosphere, scene } = setup();
+    atmosphere.setCloudAerial(0.3);
+    atmosphere.configure({ cloudMode: 'slab' });
+    const aerialOf = () =>
+      (slabOf(scene)!.material as THREE.ShaderMaterial).uniforms[
+        'atmSlabAerial'
+      ]!.value as number;
+    expect(aerialOf()).toBe(0.3);
+    atmosphere.configure({ cloudMode: 'dome' });
+    atmosphere.configure({ cloudMode: 'slab' });
+    expect(aerialOf()).toBe(0.3);
+    atmosphere.setCloudAerial(null);
+    expect(aerialOf()).toBe(1);
+  });
+
+  it('refuses a strength outside 0..1 before keeping it', () => {
+    const { atmosphere } = setup();
+    expect(() => atmosphere.setCloudAerial(2)).toThrow(RangeError);
+  });
+});
+
 describe('SkyAtmosphere cloud disc centre (globe volume-cloud plan §15)', () => {
   const slabOf = (scene: THREE.Scene) =>
     scene.children.find((c) => c.name === 'atmosphere-cloud-slab') as

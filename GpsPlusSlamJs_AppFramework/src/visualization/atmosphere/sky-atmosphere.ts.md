@@ -33,6 +33,9 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
 - `setCloudDiscCentre({ x, z } | null)` (volume-cloud plan §15): the slab
   disc's centre in the world, or the camera (null, the default), kept
   across modes like the disc; validated before it is kept.
+- `setCloudAerial(strength | null)` (globe round-5 plan C3): the slab's
+  aerial strength (`setCloudSlabAerial`), kept across modes like the reach,
+  validated before it is kept.
 - `setCloudReach(reach | null)` (volume-cloud plan §13, R1): how far out
   the slab draws (`setCloudSlabReach`), kept across modes and handed to a
   slab made later like the disc; validated before it is kept; null the

@@ -503,6 +503,11 @@ export interface CloudSlabMarchInput {
   readonly light?: CloudSlabLight;
   /** How far out it draws (`CLOUD_SLAB_REACH` when omitted). */
   readonly reach?: CloudSlabReach;
+  /**
+   * How much of the aerial fade applies, 0..1 (1, the default: all of it;
+   * `setCloudSlabAerial`'s twin).
+   */
+  readonly aerial?: number;
 }
 
 export interface CloudSlabMarchResult {
@@ -538,6 +543,8 @@ export function cloudSlabMarch(
   // Validated and normalised here: every position below assumes a unit
   // direction (the interval normalises on its own; the march must too).
   const { reach } = input;
+  const aerial = input.aerial ?? 1;
+  assertCloudSlabAerial(aerial);
   const interval = cloudSlabInterval(
     camera[1],
     input.dir,
@@ -613,7 +620,7 @@ export function cloudSlabMarch(
       const tm = 0.5 * (t0 + t1);
       const w =
         cloudSlabFarWeight(tm * horizontal, reach) *
-        Math.exp((-tm * 0.001) / CLOUD_LAYER.aerialKm);
+        (1 - aerial + aerial * Math.exp((-tm * 0.001) / CLOUD_LAYER.aerialKm));
       if (light) {
         const clampDeck = (v: number) => Math.min(Math.max(v, 0), deck);
         const sunA = cloudSlabSunOpticalDepth(
@@ -731,6 +738,8 @@ uniform vec4 atmSlabViewport;
 uniform float atmSlabPixelAngle;
 // The reach: the far fade's start and end, and the march cap (R1).
 uniform vec3 atmSlabReach;
+// How much of the aerial fade applies (setCloudSlabAerial; 1 the default).
+uniform float atmSlabAerial;
 #ifdef ATM_SLAB_SCENE_DEPTH
 uniform sampler2D atmSlabSceneDepth;
 #endif
@@ -863,7 +872,7 @@ void main() {
       float a = 1.0 - exp(-tau);
       float tm = 0.5 * (t0 + t1);
       float w = (1.0 - smoothstep(atmSlabReach.x, atmSlabReach.y, tm * horizontal))
-        * exp(-tm * 0.001 / ATM_CLOUD_AERIAL_KM);
+        * mix(1.0, exp(-tm * 0.001 / ATM_CLOUD_AERIAL_KM), atmSlabAerial);
       // The sun's depth at each end, through the interpolated column above it.
       float c0 = clamp(mix(ra, rb, fa), 0.0, deck);
       float c1 = clamp(mix(ra, rb, fb), 0.0, deck);
@@ -1107,6 +1116,35 @@ export function setCloudSlabReach(
   slab.scale.set(k, 1, k);
 }
 
+/** RangeError for an aerial strength outside 0..1. */
+function assertCloudSlabAerial(strength: number): void {
+  if (!(strength >= 0 && strength <= 1)) {
+    throw new RangeError(
+      `the aerial strength must be in 0..1, got ${strength}`
+    );
+  }
+}
+
+/**
+ * How much of the slab's aerial fade applies (globe round-5 plan
+ * 2026-10-12-0612 C3), or all of it (null, the default): 0 draws the
+ * clouds at their opacity at any distance, 1 fades them by exp(-distance /
+ * `CLOUD_LAYER.aerialKm`) as before. For a page that mixes the slab with
+ * another drawer of the same clouds, so the two fade alike. A uniform, no
+ * new program.
+ *
+ * @throws RangeError for a strength outside 0..1.
+ */
+export function setCloudSlabAerial(
+  slab: THREE.Mesh,
+  strength: number | null
+): void {
+  const value = strength ?? 1;
+  assertCloudSlabAerial(value);
+  const material = slab.material as THREE.ShaderMaterial;
+  material.uniforms['atmSlabAerial']!.value = value;
+}
+
 /**
  * The slab mesh, reading the given uniforms (the sky's LUTs, sun, scale and
  * the cloud uniforms, spread so one update reaches the sky and the slab) plus
@@ -1125,6 +1163,8 @@ export function createCloudSlab(
     // Declared from the start, so turning the depth on is a define, not a
     // new uniform set (`setCloudSlabSceneDepth`).
     atmSlabSceneDepth: { value: null as THREE.Texture | null },
+    // The aerial fade's strength: all of it until setCloudSlabAerial.
+    atmSlabAerial: { value: 1 },
     // The reach (R1): the default until setCloudSlabReach.
     atmSlabReach: {
       value: new THREE.Vector3(
