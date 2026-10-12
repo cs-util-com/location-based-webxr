@@ -78,6 +78,17 @@ noiseShare, ceilingKm })`: the law's stations from a page's knobs (the
   ring, beyond its disc, a clear patch) the shell fills it, so the mix's
   alpha is never below the shell's. GLSL twin: the lab's composite.
   RangeError for a share or alpha outside 0..1.
+- `cloudShellFieldLiftKm(scale, { liftKm, topScale })` (round-5 plan §10,
+  DEC-R5-4, the owner's step 1): one field's lift over the deck, km:
+  `liftKm` at the top scale, 0 at the slab's own (scale 1), between in the
+  scale's log; 0 for a top scale of 1. RangeError for a scale or top scale
+  below 1 or a lift below 0.
+- `cloudShellLocalLiftKm([a0, a1], [l0, l1])`: the column's lift at a
+  spot, each field's lift weighted by its share of the anomaly (|a_k| +
+  `CLOUD_SHELL_LIFT_EPS`, 1e-3, over their sum: halfway, smoothly, where
+  both are near 0). Only the base moves, never the column's length (its
+  opacity). GLSL twin: the lab's `shellNoise`. RangeError for an anomaly
+  that is not finite or a lift below 0.
 - `cloudShellVolumeShares(altitudeKm, { topKm, bandKm?, ceilingKm, fadeKm })`:
   `{ shellIn, flat, shell, slab }`, who draws the clouds: the slab its
   share (`cloudVolumeShare`), the shell `shellIn x (1 - slab)` (`shellIn`
@@ -161,7 +172,10 @@ const { uv, chartKm } = cloudShellColumn([4000, 600, 4700], frame, 0);
   cascade (squares sum to 1 at every altitude, one morph speed from 1,000
   to 42 km within 1 %, continuous where one pair hands to the next, the
   slab's own field at and below the bottom, the top field above the top,
-  fixed scales falling and distinct offsets, refusals).
+  fixed scales falling and distinct offsets, refusals); the lift (the top
+  field full, the slab's none, the log between, off by default; the local
+  lift by the anomaly's shares, between the two and continuous,
+  refusals).
 - `globe-cloud-shell-volume.property.test.ts`: the map at the ellipsoid's
   own latitude and longitude with the drift; the chart near the origin
   against `worldFromEcefAt`; the ground distance far out; the recentre

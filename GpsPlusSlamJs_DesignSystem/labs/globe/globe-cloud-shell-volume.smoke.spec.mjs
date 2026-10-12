@@ -400,6 +400,89 @@ test("the clouds keep morphing and keep their strength from 300 down to 45 km", 
   expect(weakest).toBeGreaterThanOrEqual(0.85);
 });
 
+// WHY (round-5 plan §10, DEC-R5-4, the owner's step 1): with
+// `cloudShellLiftKm` the coarser field's clouds float higher, so the clouds
+// sit at several heights. Looking ahead over the ocean at 150 km (two fields
+// mixed there), the knob must reach the pixels (the drawing moves against
+// lift 0), while each column keeps its length, so the clouds keep their
+// strength (the see-through dip C3 removed must not come back).
+test("the lift moves the coarse clouds up and keeps their strength", async ({
+  page,
+}) => {
+  test.setTimeout(600_000);
+  const pose = (lift) =>
+    `${BASE}&view=${PLACES.ocean},150,0,-20&cloudShellVolume=1&cloudShellLiftKm=${lift}`;
+  const errors = await bootGlobe(page, pose(0), { phase: "user" });
+  const grid = async (lift) => {
+    await applyHash(page, pose(lift));
+    await page.evaluate(() => window.__globeLab.timeFrames(2));
+    const x = await page.evaluate(
+      ({ nx, ny }) => window.__globeLab.cloudShellAlphaGrid(nx, ny),
+      { nx: NX, ny: NY },
+    );
+    return mixOf(x);
+  };
+  const flat = await grid(0);
+  const rows = [];
+  for (const lift of [5, 10, 20]) {
+    const lifted = await grid(lift);
+    rows.push({
+      lift,
+      moved: meanAbs(lifted, flat),
+      strength: mean(lifted) / Math.max(mean(flat), 1e-4),
+    });
+  }
+  console.log(
+    `lift at 150 km looking ahead, against lift 0 (mean alpha ${mean(flat).toFixed(3)}): ${rows
+      .map(
+        (r) =>
+          `${r.lift} km: moved ${r.moved.toFixed(3)}, strength x${r.strength.toFixed(2)}`,
+      )
+      .join("; ")}`,
+  );
+  expect(errors).toEqual([]);
+  const at10 = rows.find((r) => r.lift === 10);
+  // Measured 2026-10-12: 0.265 (lift 10), 0 with the knob absent.
+  expect(at10.moved).toBeGreaterThan(0.1);
+  // x0.93 now; x0.16 when a lifted column could fall between two nodes.
+  expect(at10.strength).toBeGreaterThan(0.85);
+  expect(at10.strength).toBeLessThan(1.15);
+});
+
+// The see-through measure of C3 at the lifts the owner may pick (round-5
+// plan §10): straight down over the ocean, 300 to 45 km in 8 % steps, the
+// weakest mean alpha against the top's at lifts 0 / 5 / 10 / 20 km. Opt-in
+// (R5_LIFT_SWEEP=1): a measurement for the owner, not a gate.
+test("the see-through measure at lifts 0, 5, 10 and 20 km", async ({
+  page,
+}) => {
+  test.skip(process.env.R5_LIFT_SWEEP !== "1", "R5_LIFT_SWEEP=1 runs it");
+  test.setTimeout(3_600_000);
+  const errors = await bootGlobe(
+    page,
+    `${BASE}&view=${PLACES.ocean},300,0,-89&cloudShellVolume=1`,
+    { phase: "user" },
+  );
+  const lines = [];
+  for (const lift of [0, 5, 10, 20]) {
+    const { local } = await descend(page, {
+      from: 300,
+      to: 45,
+      extra: `&cloudShellLiftKm=${lift}`,
+      factor: 1.08,
+    });
+    const top = local[0].alpha;
+    const weakest =
+      Math.min(...local.map((x) => x.alpha)) / Math.max(top, 1e-4);
+    const weakestAt = local.reduce((w, x) => (x.alpha < w.alpha ? x : w)).km;
+    lines.push(
+      `lift ${lift} km: weakest x${weakest.toFixed(2)} at ${weakestAt.toFixed(0)} km (${[0.7, 0.85, 0.95].map((k) => `${k} ${weakest >= k ? "ok" : "NO"}`).join(" ")})`,
+    );
+  }
+  console.log(`see-through, 300 to 45 km straight down: ${lines.join("; ")}`);
+  expect(errors).toEqual([]);
+});
+
 // WHY (round-5 plan 2026-10-12-0612 C4; the owner on r822: "at about 30 km
 // the same clouds twice, slightly offset, both half transparent"): the slab
 // is flat in its frame, the shell curved, so inside the slab's disc they
@@ -470,9 +553,9 @@ test("the shell and the slab draw the same clouds across the disc at the owner's
  * step's mean change of the mixed clouds' alpha against the median of its
  * 8 neighbours. Returns the steps, the worst and the log line.
  */
-async function descend(page, { from, to, extra }) {
+async function descend(page, { from, to, extra, factor = 1.04 }) {
   const altitudes = [];
-  for (let h = from; h >= to; h /= 1.04) altitudes.push(h);
+  for (let h = from; h >= to; h /= factor) altitudes.push(h);
   const pose = (km) =>
     `${BASE}${extra}&view=${PLACES.ocean},${km.toFixed(3)},0,-89&cloudShellVolume=1`;
   const steps = [];

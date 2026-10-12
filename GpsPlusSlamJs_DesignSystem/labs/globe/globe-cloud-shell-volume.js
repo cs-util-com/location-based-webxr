@@ -56,8 +56,10 @@ import {
   cloudSlabThresholdThicknessM,
 } from "/fw/visualization/atmosphere/cloud-slab.js";
 import {
+  CLOUD_SHELL_LIFT_EPS,
   CLOUD_SHELL_VOLUME,
   GLOBE_CLOUD_SHELL_GLSL,
+  cloudShellFieldLiftKm,
   cloudShellFrame,
   cloudShellVolumeLaw,
 } from "/globe/globe-cloud-shell-volume.js";
@@ -112,6 +114,10 @@ uniform float uOctaves;
 // kept, one morph speed); the second unread at weight 0.
 uniform vec2 uCells;
 uniform vec2 uFieldWeights;
+// Each field's lift over the deck (km, round-5 plan §10, the owner's step
+// 1: a coarser field's clouds float higher) and the larger of the two.
+uniform vec2 uFieldLiftKm;
+uniform float uLiftMaxKm;
 // The slab's aerial fade's share (1 at its station, 0 high up).
 uniform float uAerial;
 // The column's rise per unit of noise, times this (the law's noiseShare):
@@ -148,6 +154,7 @@ const float SHELL_T0 = ${glslFloat(cloudSlabThresholdThicknessM())};
 const float SHELL_SUN_DEPTH = ${glslFloat(CLOUD_SLAB.sunDepthScale)};
 const float SHELL_SUN_MU_FLOOR = ${glslFloat(CLOUD_SLAB.sunMuFloor)};
 const float SHELL_EARLY_EXIT = ${glslFloat(CLOUD_SLAB.earlyExitTransmittance)};
+const float SHELL_LIFT_EPS = ${glslFloat(CLOUD_SHELL_LIFT_EPS)};
 const float SHELL_LIGHT_SERIES = ${glslFloat(CLOUD_SLAB.lightSeriesX)};
 const float SHELL_EDGE = ${glslFloat(CLOUD_LAYER.edgeHalfWidth)};
 const float SHELL_SUN_AMBIENT = ${glslFloat(CLOUD_LAYER.sunAmbient)};
@@ -219,12 +226,17 @@ float shellField( vec2 pKm, float footprintKm, float cell, vec4 basis[ATM_LIVE_O
 
 // The two stations' fields mixed by weights whose squares sum to 1, each
 // at its own fixed scale (a scale moving with the altitude slides the
-// ground-anchored clouds); one field at a station.
-float shellNoise( vec2 pKm, float footprintKm ) {
-  float d = 0.0;
-  if ( uFieldWeights.x > 0.0 ) d += uFieldWeights.x * ( shellField( pKm, footprintKm, uCells.x, uBasis ) - ATM_LIVE_FIELD_MEAN );
-  if ( uFieldWeights.y > 0.0 ) d += uFieldWeights.y * ( shellField( pKm, footprintKm, uCells.y, uBasisB ) - ATM_LIVE_FIELD_MEAN );
-  return ATM_LIVE_FIELD_MEAN + d;
+// ground-anchored clouds); one field at a station. liftKm: each field's
+// lift by its share of the anomaly here (twin of cloudShellLocalLiftKm).
+float shellNoise( vec2 pKm, float footprintKm, out float liftKm ) {
+  float ax = 0.0;
+  float ay = 0.0;
+  if ( uFieldWeights.x > 0.0 ) ax = uFieldWeights.x * ( shellField( pKm, footprintKm, uCells.x, uBasis ) - ATM_LIVE_FIELD_MEAN );
+  if ( uFieldWeights.y > 0.0 ) ay = uFieldWeights.y * ( shellField( pKm, footprintKm, uCells.y, uBasisB ) - ATM_LIVE_FIELD_MEAN );
+  float sa = abs( ax ) + SHELL_LIFT_EPS;
+  float sb = abs( ay ) + SHELL_LIFT_EPS;
+  liftKm = ( sa * uFieldLiftKm.x + sb * uFieldLiftKm.y ) / ( sa + sb );
+  return ATM_LIVE_FIELD_MEAN + ax + ay;
 }
 
 vec3 shellZenith( float mu ) {
@@ -270,8 +282,12 @@ void shellNode( vec3 o, vec3 dir, float t, float stepKm, out float raw, out floa
   float footprint = max( t * uPixelAngle, stepKm * horizontal );
   float cover = shellMap( globeShellMapUv( p ), footprint, length( normalize( p ).xy ) ) * uCloudOpacity * uCoverGain * uShellIn;
   threshold = cover > 0.0 ? shellThreshold( cover ) : 2.0;
-  noise = shellNoise( chart, footprint );
+  float liftKm;
+  noise = shellNoise( chart, footprint, liftKm );
   raw = ( SHELL_T0 + SHELL_HEIGHT_SCALE * uNoiseShare * ( noise - threshold ) ) * uThickness;
+  // The column stands on its lifted base, its length (the opacity) kept;
+  // the march keeps a segment to the part above that base.
+  height -= liftKm * 1000.0;
 }
 
 void main() {
@@ -280,7 +296,7 @@ void main() {
   float ro = length( o );
   float b = dot( o, dir );
   // Raised by the flattened deck's largest rise inside the disc (C4).
-  float topR = uShellGroundKm + uDeckTopKm + uFlatten * uFlatRiseKm;
+  float topR = uShellGroundKm + uDeckTopKm + uFlatten * uFlatRiseKm + uLiftMaxKm;
   float baseR = uShellGroundKm + uDeckBaseKm;
   float discTop = b * b - ( ro - topR ) * ( ro + topR );
   if ( discTop <= 0.0 ) discard;
@@ -349,9 +365,18 @@ void main() {
     shellNode( o, dir, tb, tb - ta, rb, hb, nb, thb );
     float da = ra - ha;
     float db = rb - hb;
-    if ( tb > ta && ( da >= 0.0 || db >= 0.0 ) ) {
-      float fa = da >= 0.0 ? 0.0 : da / ( da - db );
-      float fb = db >= 0.0 ? 1.0 : da / ( da - db );
+    float fa = da >= 0.0 ? 0.0 : da / ( da - db );
+    float fb = db >= 0.0 ? 1.0 : da / ( da - db );
+    // Lifted (round-5 plan §10): also above the column's own base. The
+    // deck is 0.4-1.6 km and a lift several km, so a ray crosses a whole
+    // lifted column between two nodes (one above it, one below its base);
+    // solved where it crosses that base, it counts in full (a node test
+    // alone skipped it: x0.16 of the clouds at 10 km, measured).
+    if ( uLiftMaxKm > 0.0 ) {
+      if ( ha < 0.0 ) fa = max( fa, hb > 0.0 ? ha / ( ha - hb ) : 2.0 );
+      if ( hb < 0.0 ) fb = min( fb, ha > 0.0 ? ha / ( ha - hb ) : -1.0 );
+    }
+    if ( tb > ta && ( da >= 0.0 || db >= 0.0 ) && fb > fa ) {
       float t0 = mix( ta, tb, fa );
       float t1 = mix( ta, tb, fb );
       float h0 = clamp( mix( ha, hb, fa ), 0.0, deck );
@@ -487,6 +512,8 @@ export function createGlobeCloudShellVolume(
     uOctaves: { value: 5 },
     uCells: { value: new THREE.Vector2(1, 1) },
     uFieldWeights: { value: new THREE.Vector2(1, 0) },
+    uFieldLiftKm: { value: new THREE.Vector2(0, 0) },
+    uLiftMaxKm: { value: 0 },
     uAerial: { value: 0 },
     uNoiseShare: { value: 1 },
     uClouds: surfaceUniforms.uClouds,
@@ -588,6 +615,7 @@ export function createGlobeCloudShellVolume(
       deckKm,
       cover = 1,
       cascade,
+      lift = { km: 0, topScale: 1, steps: 4 },
     }) {
       framed = target !== null;
       law = cloudShellVolumeLaw(altitudeKm, stations);
@@ -621,6 +649,24 @@ export function createGlobeCloudShellVolume(
       ];
       uniforms.uCells.value.set(fields[0].scale, fields[1].scale);
       uniforms.uFieldWeights.value.set(cascade.weights[0], cascade.weights[1]);
+      // Each field's lift (round-5 plan §10): 0 unless the knob asks.
+      const lifts = fields.map(({ scale }) =>
+        cloudShellFieldLiftKm(scale, {
+          liftKm: lift.km,
+          topScale: Math.max(lift.topScale, scale),
+        }),
+      );
+      uniforms.uFieldLiftKm.value.set(lifts[0], lifts[1]);
+      uniforms.uLiftMaxKm.value = Math.max(lifts[0], lifts[1]);
+      // A lifted deck spans more height than the 0.4-1.6 km column: more
+      // steps while it is on (up to the loop's bound), or the cloud edges
+      // are found a few km apart and the jitter turns them into teeth.
+      if (uniforms.uLiftMaxKm.value > 0) {
+        uniforms.uSteps.value = Math.min(
+          CLOUD_SHELL_VOLUME.maxSteps,
+          Math.round(law.marchSteps * Math.max(1, lift.steps ?? 4)),
+        );
+      }
       uniforms.uCoverGain.value = cover;
       uniforms.uShellIn.value = shellIn;
       const frame = cloudShellFrame(ellipsoid, target, groundKm, frameMatrix);

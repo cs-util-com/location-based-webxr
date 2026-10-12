@@ -670,6 +670,11 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   (findings 9 and 11: the knobs never make the law throw);
   `cloudShellFields` (3) the noise's morphs from 1,050 km down to the slab's
   set (round-5 plan 2026-10-12-0612 C2, `cloudShellNoiseCascade`);
+  `cloudShellLiftKm` (0, off; 0-50) the coarsest field's lift over the
+  deck, the finer fields less by their scale's log and the slab's none
+  (round-5 plan §10, the owner's step 1: clouds at several heights);
+  `cloudShellLiftSteps` (4; 1-4) the march steps' factor while it is on,
+  up to the loop's 12 (fewer drew toothed cloud edges);
   `cloudFlatOutFromKm` (900) and `cloudFlatOutToKm` (700) the texture's own
   fade with the shell (C5: the volume already strong when the texture
   goes; clamped above the slab's ceiling and falling);

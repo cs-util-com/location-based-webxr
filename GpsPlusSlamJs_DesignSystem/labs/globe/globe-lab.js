@@ -648,6 +648,12 @@ const PARAMS = {
   // of the shell's fade-in down to the slab's set; one per 3x of altitude
   // or so by default, the rate of the 700-to-200 km morph the owner liked.
   cloudShellFields: { fallback: 3, min: 1, max: 8 },
+  // The coarsest field's lift over the deck, km (round-5 plan §10, the
+  // owner's step 1): finer fields less by their scale's log, the slab's none.
+  cloudShellLiftKm: { fallback: 0, min: 0, max: 50 },
+  // The march steps' factor while the lift is on, up to the loop's 12
+  // (4: at 150 km a lift of 10 km drew toothed edges at 1, fewer at 2).
+  cloudShellLiftSteps: { fallback: 4, min: 1, max: 4 },
   // The shell's deck flat where the slab draws (round-5 C4; 0 the sphere's
   // everywhere, for the A/B and the smoke's control).
   cloudShellFlat: { fallback: 1, min: 0, max: 1 },
@@ -3478,6 +3484,11 @@ async function start() {
           Number.isFinite(cameraAltM) ? Math.max(0, cameraAltM / 1000) : 0,
           params,
         ),
+        lift: {
+          km: params.cloudShellLiftKm,
+          topScale: params.cloudShellCell,
+          steps: params.cloudShellLiftSteps,
+        },
       });
     }
     globe.sun.intensity = skyHandOver.exposure;

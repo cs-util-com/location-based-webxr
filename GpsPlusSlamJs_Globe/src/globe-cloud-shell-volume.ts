@@ -479,6 +479,69 @@ export function cloudShellPixelWeight(input: {
 }
 
 /**
+ * The smoothing of the fields' shares of the anomaly
+ * (`cloudShellLocalLiftKm`): where both are near 0 the lift goes to
+ * halfway smoothly instead of jumping. The lab's shader reads it.
+ */
+export const CLOUD_SHELL_LIFT_EPS = 1e-3;
+
+/**
+ * One field's lift over the deck, km (round-5 plan §10, DEC-R5-4, the
+ * owner's step 1): `liftKm` at the top field's cell scale `topScale`, 0 at
+ * the slab's own (scale 1), between in the scale's log, so a coarser
+ * field's clouds float higher. 0 when `topScale` is 1 (one field).
+ *
+ * @throws RangeError for a scale or top scale below 1 or a lift below 0
+ *   (each finite).
+ */
+export function cloudShellFieldLiftKm(
+  scale: number,
+  options: { readonly liftKm: number; readonly topScale: number },
+): number {
+  const { liftKm, topScale } = options;
+  for (const [name, v, min] of [
+    ["scale", scale, 1],
+    ["top scale", topScale, 1],
+    ["lift", liftKm, 0],
+  ] as const) {
+    if (!(v >= min && Number.isFinite(v))) {
+      throw new RangeError(`the ${name} must be at least ${min}, got ${v}`);
+    }
+  }
+  if (topScale === 1 || liftKm === 0) return 0;
+  const share = Math.log(scale) / Math.log(topScale);
+  return liftKm * Math.min(Math.max(share, 0), 1);
+}
+
+/**
+ * The column's lift at one spot, km: each field's lift weighted by its
+ * share of the noise's anomaly there, |w_k (f_k - mean)| over their sum
+ * (smoothed by `CLOUD_SHELL_LIFT_EPS`), so a cloud the coarse field makes floats
+ * higher than one the fine field makes. Only the column's base moves, never
+ * its length (its opacity). GLSL twin: the lab's `shellNoise`.
+ *
+ * @throws RangeError for an anomaly that is not finite or a lift below 0.
+ */
+export function cloudShellLocalLiftKm(
+  anomalies: readonly [number, number],
+  lifts: readonly [number, number],
+): number {
+  if (!anomalies.every(Number.isFinite)) {
+    throw new RangeError(
+      `the anomalies must be finite, got ${anomalies.join(", ")}`,
+    );
+  }
+  if (!lifts.every((l) => l >= 0 && Number.isFinite(l))) {
+    throw new RangeError(
+      `the lifts must be at least 0, got ${lifts.join(", ")}`,
+    );
+  }
+  const a = Math.abs(anomalies[0]) + CLOUD_SHELL_LIFT_EPS;
+  const b = Math.abs(anomalies[1]) + CLOUD_SHELL_LIFT_EPS;
+  return (a * lifts[0] + b * lifts[1]) / (a + b);
+}
+
+/**
  * What the chart and the map read need of the world frame: the frame
  * (`worldFromEcefAt` at the target: x east, y up, z south, metres, the
  * origin on the ground), the ellipsoid's radii (m), the model sphere's
