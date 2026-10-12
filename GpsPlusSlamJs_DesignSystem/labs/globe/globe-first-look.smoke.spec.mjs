@@ -8,8 +8,10 @@
  */
 import { expect, test } from "@playwright/test";
 
+// The clouds held still: the first frames are compared with the last one
+// 30 s later, and since round 5 (C1) a pinned hour no longer stills them.
 const VIEW =
-  "spinMs=0&turnMs=0&time=2026-10-05T11:00:00Z&stars=0&milkyWay=0&cloudVolume=0";
+  "spinMs=0&turnMs=0&time=2026-10-05T11:00:00Z&stars=0&milkyWay=0&cloudVolume=0&cloudDrift=0";
 
 // Each half of the level 0 (east and west of Greenwich), in daylight.
 const PLACES = [
