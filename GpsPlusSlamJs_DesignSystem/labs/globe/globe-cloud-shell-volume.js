@@ -20,7 +20,9 @@
  *   the frame's origin, which is the slab's local frame near it, through
  *   the same carried anchor (`globe-cloud-shell-volume.ts`).
  * - **The layers**: the law's parameter sets by altitude (steps, octaves,
- *   cells, thickness), never two fields.
+ *   cells, thickness); between two stations two fields of fixed cell
+ *   scales mixed with weights whose squares sum to 1 (no dip, but a
+ *   morph over the band: R4d review, finding 3).
  * - **The light** per sample point's own sun (the shell spans the
  *   terminator): the sun's transmittance from the atmosphere pass's table
  *   at the cloud, and the zenith sky as ambient from a small table of the
@@ -121,6 +123,11 @@ uniform sampler2D uClouds;
 uniform float uCloudOpacity;
 uniform float uCoverGain;
 uniform float uShellIn;
+// The slab's share and its disc (model km): the shell gives up the share
+// only where the slab draws (R4d review, finding 1).
+uniform float uSlabShare;
+uniform vec3 uDiscCentre;
+uniform float uDiscRadiusKm;
 uniform float uCoverThresholds[33];
 // The live field: lattice, the shell's basis (the slab's, its anchor over
 // the cell scale), the amplitudes.
@@ -169,9 +176,13 @@ float shellThreshold( float cover ) {
 }
 
 // The map at a footprint (km): the B-spline at level 0 (every reader's),
-// handing over to the mips once a texel is smaller than the footprint.
-float shellMap( vec2 uv, float footprintKm ) {
-  float texelKm = 40075.0 / float( textureSize( uClouds, 0 ).x );
+// handing over to the mips once a texel is smaller than the footprint. A
+// texel along the longitude spans the latitude's cosine of the equator's,
+// so the level is taken from that (R4d review, finding 12: the equator's
+// texel read one level too sharp at 60 degrees, aliasing toward the poles'
+// limbs); floored where the meridians meet.
+float shellMap( vec2 uv, float footprintKm, float cosLat ) {
+  float texelKm = 40075.0 * max( cosLat, 0.02 ) / float( textureSize( uClouds, 0 ).x );
   float lod = log2( max( footprintKm / texelKm, 1e-4 ) );
   float fine = globeCloudCubicLod( uClouds, uv );
   if ( lod <= 0.0 ) return fine;
@@ -237,10 +248,21 @@ void shellNode( vec3 o, vec3 dir, float t, float stepKm, out float raw, out floa
   float vertical = abs( dot( dir, p / r ) );
   float horizontal = sqrt( max( 0.0, 1.0 - vertical * vertical ) );
   float footprint = max( t * uPixelAngle, stepKm * horizontal );
-  float cover = shellMap( globeShellMapUv( p ), footprint ) * uCloudOpacity * uCoverGain * uShellIn;
+  float cover = shellMap( globeShellMapUv( p ), footprint, length( normalize( p ).xy ) ) * uCloudOpacity * uCoverGain * uShellIn;
   threshold = cover > 0.0 ? shellThreshold( cover ) : 2.0;
   noise = shellNoise( globeShellChartKm( p ), footprint );
   raw = ( SHELL_T0 + SHELL_HEIGHT_SCALE * uNoiseShare * ( noise - threshold ) ) * uThickness;
+}
+
+// The shell's weight at a deck point: 1 - the slab's share x its disc's
+// mask (unchanged within 0.7 r, cleared from r, the slab's own fade), by
+// the arc from the disc's centre. Twin: cloudShellPixelWeight (without
+// its shellIn, which the composite applies).
+float shellPixelWeight( vec3 p ) {
+  if ( uSlabShare <= 0.0 ) return 1.0;
+  float d = uShellGroundKm * 2.0 * asin( min( 1.0, 0.5 * length( normalize( p ) - normalize( uDiscCentre ) ) ) );
+  float mask = 1.0 - smoothstep( 0.7 * uDiscRadiusKm, uDiscRadiusKm, d );
+  return 1.0 - uSlabShare * mask;
 }
 
 void main() {
@@ -282,6 +304,8 @@ void main() {
   // dome's horizon fade, cloudHorizonFade, in the deck's own vertical).
   float limb = smoothstep( 0.0, SHELL_LIMB_SLOPE, -dot( dir, normalize( o + dir * tIn ) ) );
   if ( limb <= 0.0 ) discard;
+  float pixelWeight = shellPixelWeight( o + dir * tIn );
+  if ( pixelWeight <= 0.0 ) discard;
   float lengthKm = tOut - tIn;
   // The light at the interval's middle: the sun's own elevation there.
   vec3 pMid = o + dir * ( 0.5 * ( tIn + tOut ) );
@@ -351,7 +375,8 @@ void main() {
   if ( alpha < 1e-4 ) discard;
   // Premultiplied, in the scene's units.
   vec3 lit = min( colour / alpha * uRadiance, vec3( SHELL_MAX_RADIANCE ) );
-  gl_FragColor = vec4( lit * min( alpha, 1.0 ), min( alpha, 1.0 ) );
+  float outAlpha = min( alpha, 1.0 ) * pixelWeight;
+  gl_FragColor = vec4( lit * outAlpha, outAlpha );
 }`;
 
 const COMPOSITE_VERTEX = /* glsl */ `
@@ -446,6 +471,9 @@ export function createGlobeCloudShellVolume(
     uCloudOpacity: surfaceUniforms.uCloudOpacity,
     uCoverGain: { value: 1 },
     uShellIn: { value: 0 },
+    uSlabShare: { value: 0 },
+    uDiscCentre: { value: new THREE.Vector3(0, 0, 1) },
+    uDiscRadiusKm: { value: 1 },
     uCoverThresholds: { value: [...cloudCoverThresholds("live")] },
     uLattice: groundSky.cloudUniforms.atmCloudLattice,
     uBasis: { value: basisVectors[0] },
@@ -492,6 +520,7 @@ export function createGlobeCloudShellVolume(
   const ecefFromWorld = new THREE.Matrix4();
   const rotation = new THREE.Matrix3();
   const cameraEcef = new THREE.Vector3();
+  const discEcef = new THREE.Vector3();
   const size = new THREE.Vector2();
   const clearColour = new THREE.Color();
   let enabled = false;
@@ -595,6 +624,7 @@ export function createGlobeCloudShellVolume(
         sunIntensity,
         slabTexture = null,
         sceneDepthWeight = 0,
+        disc = null,
       },
     ) {
       if (!enabled || !framed || (weight <= 0 && slabWeight <= 0)) {
@@ -637,11 +667,35 @@ export function createGlobeCloudShellVolume(
         )
         .normalize();
       uniforms.uRadiance.value = sunIntensity / ATMOSPHERE_RADIANCE_SCALE;
+      // The slab's disc in the model frame (R4d review, finding 1): its
+      // centre (world x, z on the deck; the camera's ground point when the
+      // slab centres on the camera) and its radius; no slab drawn, no share.
+      const slabOn =
+        slabTexture !== null &&
+        slabWeight > 0 &&
+        disc !== null &&
+        disc.radiusM > 0;
+      uniforms.uSlabShare.value = slabOn ? slabWeight : 0;
+      if (slabOn) {
+        const centre = disc.centre ?? {
+          x: camera.matrixWorld.elements[12],
+          z: camera.matrixWorld.elements[14],
+        };
+        discEcef
+          .set(centre.x, disc.deckY, centre.z)
+          .applyMatrix4(ecefFromWorld);
+        uniforms.uDiscCentre.value.set(
+          discEcef.x * toModel[0],
+          discEcef.y * toModel[1],
+          discEcef.z * toModel[2],
+        );
+        uniforms.uDiscRadiusKm.value = disc.radiusM / 1000;
+      }
       // Radians a pixel of the march's target (km of footprint per km).
       uniforms.uPixelAngle.value =
         2 / (camera.projectionMatrix.elements[5] * h);
       const previous = renderer.getRenderTarget();
-      if (weight > 0) {
+      if (shellIn > 0) {
         renderer.getClearColor(clearColour);
         const clearAlpha = renderer.getClearAlpha();
         renderer.setClearColor(0x000000, 0);
@@ -651,7 +705,9 @@ export function createGlobeCloudShellVolume(
         renderer.setClearColor(clearColour, clearAlpha);
         renderer.setRenderTarget(previous);
       }
-      compositeUniforms.uShellWeight.value = weight;
+      // The shell weighs itself per pixel by the slab's disc; here only its
+      // own fade-in (C2 per pixel, `cloudShellPixelWeight`).
+      compositeUniforms.uShellWeight.value = shellIn;
       compositeUniforms.tSlab.value = slabTexture;
       compositeUniforms.uSlabWeight.value =
         slabTexture === null ? 0 : slabWeight;

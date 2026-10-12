@@ -35,6 +35,7 @@ import {
 import { flatCloudShare } from "/globe/globe-cloud-flat-fade.js";
 import {
   CLOUD_SHELL_VOLUME,
+  cloudShellStationsFor,
   cloudShellVolumeShares,
 } from "/globe/globe-cloud-shell-volume.js";
 import { creditsFor } from "/globe/globe-credits.js";
@@ -832,30 +833,18 @@ function readHashParams() {
 
 /**
  * The spherical cloud volume's law from the hash (round-4 plan R4d): the
- * top and middle stations where the hash puts them (the middle kept below
- * the top), the top's cell scale and thickness and their square roots in
- * the middle, the bottom station the module's (the slab's own set).
+ * module's `cloudShellStationsFor`, the bottom station (the slab's own
+ * set) at the slab's ceiling or below it never (R4d review, finding 9).
  */
 function shellStations(p) {
-  const [top, mid, bottom] = CLOUD_SHELL_VOLUME.stations;
-  const midKm = Math.min(p.cloudShellMidKm, p.cloudShellTopKm / 1.5);
-  return [
-    {
-      ...top,
-      altitudeKm: p.cloudShellTopKm,
-      cellScale: p.cloudShellCell,
-      thicknessScale: p.cloudShellThick,
-      noiseShare: p.cloudShellNoise,
-    },
-    {
-      ...mid,
-      altitudeKm: Math.max(midKm, bottom.altitudeKm * 1.5),
-      cellScale: Math.sqrt(p.cloudShellCell),
-      thicknessScale: Math.sqrt(p.cloudShellThick),
-      noiseShare: Math.sqrt(p.cloudShellNoise),
-    },
-    bottom,
-  ];
+  return cloudShellStationsFor({
+    topKm: p.cloudShellTopKm,
+    midKm: p.cloudShellMidKm,
+    cellScale: p.cloudShellCell,
+    thicknessScale: p.cloudShellThick,
+    noiseShare: p.cloudShellNoise,
+    ceilingKm: p.cloudVolumeCeilingKm,
+  });
 }
 
 /** The live noise without its finest octave (the probe's own check). */
@@ -2370,6 +2359,16 @@ async function start() {
     : null;
   /** This frame's drawers of the clouds (`cloudShellVolumeShares`). */
   let cloudShares = null;
+  /**
+   * The slab's disc as the shell weighs it per pixel (R4d review, finding
+   * 1): its centre (world x, z; null on the camera), the deck's height and
+   * its radius (m); null without the slab.
+   */
+  const slabDisc = () => {
+    if (!cloudVolume) return null;
+    const s = cloudVolume.state();
+    return { centre: s.discCentre, deckY: s.deckY, radiusM: s.radiusM };
+  };
   // The haze (F2b; globe-haze.js): one fog for the whole page, the relief's
   // tiles patched last, after their own hooks and the stencil writer.
   const haze = createGlobeHaze(scene, {
@@ -3248,10 +3247,14 @@ async function start() {
     // The spherical volume (R4d) takes the clouds over from its top down,
     // so the flat layer gives it up as it does to the slab; the shell's
     // ground shadow stays the map's (the volume casts none of its own).
+    // The shell reads the live field only, and meets the slab without a
+    // seam only where the slab reads it too (R4d review): with the tile or
+    // hex noise the old layers draw, as before.
     const shellOn =
       volumeOn &&
       shellVolume !== null &&
       params.cloudShellVolume === 1 &&
+      params.cloudNoise === "live" &&
       worldFrame.target !== null;
     const flatOptions = {
       ceilingKm: volumeOn ? params.cloudVolumeCeilingKm : 0,
@@ -3259,8 +3262,11 @@ async function start() {
       topM: params.cloudFlatTopKm * 1000,
       weakShare: params.cloudFlatWeak,
     };
+    // The top as the stations keep it (above the middle, the middle above
+    // the slab's ceiling: `cloudShellStationsFor`), so the shares never
+    // refuse the knobs (R4d review, finding 11).
     const shellOptions = {
-      topKm: shellOn ? params.cloudShellTopKm : 0,
+      topKm: shellOn ? shellStations(params)[0].altitudeKm : 0,
       bandKm: params.cloudShellBandKm,
     };
     const flatOn = params.cloudFlat === 1 && Number.isFinite(cameraAltM);
@@ -3480,6 +3486,7 @@ async function start() {
           sunIntensity: globe.sun.intensity,
           slabTexture: slabDrawn ? cloudVolume.texture : null,
           sceneDepthWeight: skyHandOver.weight,
+          disc: slabDisc(),
         });
       }
     }
@@ -4403,10 +4410,12 @@ void main() {
     cloudShellAlphaGrid(nx, ny) {
       const s = shellVolume?.state();
       if (!s) return null;
+      // The shell's composite weight is its fade-in alone: its grid is
+      // already weighted per pixel by the slab's disc (R4d review, finding 1).
       return {
-        weight: s.weight,
+        weight: s.share,
         slabWeight: s.slabWeight,
-        shell: s.weight > 0 ? shellVolume.alphaGrid(nx, ny) : null,
+        shell: s.share > 0 ? shellVolume.alphaGrid(nx, ny) : null,
         slab:
           s.slabWeight > 0 && cloudVolume.state().share > 0
             ? cloudVolume.alphaGrid(nx, ny)
@@ -4427,11 +4436,17 @@ void main() {
       gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
       const t0 = performance.now();
       for (let i = 0; i < n; i++) {
+        // As the frame draws it: the slab's last texture and its disc, so
+        // the cost below the slab's ceiling counts the shell's per-pixel
+        // weight (R4d review, finding 5).
+        const slabOn = cloudVolume !== null && cloudVolume.state().share > 0;
         shellVolume.render(camera, {
           worldFromEcef: globe.tiles.group.matrixWorld,
           sunEcef: globe.surfaceUniforms.uSunEcef.value,
           sunIntensity: globe.sun.intensity,
           sceneDepthWeight: 0,
+          slabTexture: slabOn ? cloudVolume.texture : null,
+          disc: slabOn ? slabDisc() : null,
         });
       }
       gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);

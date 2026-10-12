@@ -654,16 +654,20 @@ sunDirection, sunScreen }` (`sunScreen` the sun's normalised canvas point,
   `cloudShellTopKm` (700) down to the slab's ceiling as one ray-marched
   shell, faded in over `cloudShellBandKm` (300) above its top and mixed
   with the slab below its ceiling (the slab then drawn whole, its share the
-  mix's weight, one composite); its law's stations at `cloudShellTopKm`
-  and `cloudShellMidKm` (200) take `cloudShellCell` (4),
-  `cloudShellThick` (4) and `cloudShellNoise` (0.35, the column's rise per
-  unit of noise) and their square roots, the bottom one the slab's;
+  mix's weight inside its disc, the shell weighted per pixel by that disc:
+  R4d review, finding 1; one composite); its law's stations
+  (`cloudShellStationsFor`) at `cloudShellTopKm` and `cloudShellMidKm`
+  (200) take `cloudShellCell` (4), `cloudShellThick` (4) and
+  `cloudShellNoise` (0.35, the column's rise per unit of noise) and their
+  square roots, the bottom one the slab's at the slab's ceiling or 30 km
+  (findings 9 and 11: the knobs never make the law throw);
   `cloudShellRes` (0.5) the march's share of the buffer (half by default:
   the pass alone was 0.59-0.70 of a frame at full resolution on
   SwiftShader, about 0.28 of that at half). The flat layer
   gives the shell what it takes (the drawers share 1), its ground shadow
   keeps the share without the shell (the volume casts none). Only with the
-  cloud volume and a frame target. The state's `cloudShellVolume`;
+  cloud volume, a frame target and `cloudNoise=live` (the field the shell
+  reads; with the tile or hex noise the old layers draw). The state's `cloudShellVolume`;
   `cloudShellReadBack(bands)` and `timeCloudShell(n)` for the smokes. The
   state's `firstLook` (`{ ready, shown }`, round-2 plan DEC-FR2-6) reports
   the globe's first look: its images in, and its sphere drawn.

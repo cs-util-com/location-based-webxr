@@ -76,6 +76,17 @@ test("it compiles and draws at 700, 200 and 50 km, and nothing with the switch o
     state: window.__globeLab.state().cloudShellVolume,
     flat: window.__globeLab.state().cloudFlat,
   }));
+  // The shell reads the live field only (R4d review): with the tile noise
+  // the old layers draw, the switch on or not.
+  await applyHash(
+    page,
+    `${pose(200, 1)}`.replace("cloudNoise=live", "cloudNoise=tile"),
+  );
+  await page.evaluate(() => window.__globeLab.timeFrames(2));
+  const tile = await page.evaluate(() => ({
+    state: window.__globeLab.state().cloudShellVolume,
+    flat: window.__globeLab.state().cloudFlat,
+  }));
   console.log(
     `the spherical volume: ${Object.entries(seen)
       .map(
@@ -95,11 +106,19 @@ test("it compiles and draws at 700, 200 and 50 km, and nothing with the switch o
   }
   expect(off.state.weight).toBe(0);
   expect(off.flat).toBeGreaterThan(0);
+  expect(tile.state.weight).toBe(0);
+  expect(tile.flat).toBeGreaterThan(0);
 });
 
 test("the clouds by altitude at the owner's poses, before and after, for his eye", async ({
   page,
 }) => {
+  // Opt-in, as the sweep (R4d review): up to 2 h of pictures for the
+  // owner's eye, nothing a gate should wait for.
+  test.skip(
+    !process.env.R4D_SHOTS_DIR,
+    "R4D_SHOTS_DIR=<folder> takes the owner's pictures",
+  );
   test.setTimeout(7_200_000);
   const dir = process.env.R4D_SHOTS_DIR ?? null;
   const modes = (process.env.R4D_SHOTS_MODES ?? "0,1").split(",");
@@ -224,13 +243,19 @@ test("the shell and the slab draw the same clouds where they are mixed", async (
       { nx: NX, ny: NY },
     );
     const near = (arr) => arr.slice(0, NX * (NY / 2));
+    // The shell's grid carries its per-pixel weight (1 - the slab's share
+    // inside the disc's core, which the lower half is: R4d review, finding
+    // 1); its own drawing is that divided back out.
+    const shell = near(x.shell).map(
+      (v) => v / Math.max(1 - x.slabWeight, 1e-3),
+    );
     rows.push({
       km,
       weight: x.weight,
       slabWeight: x.slabWeight,
-      r: correlation(near(x.shell), near(x.slab)),
-      diff: meanAbs(near(x.shell), near(x.slab)),
-      means: [mean(near(x.shell)), mean(near(x.slab))],
+      r: correlation(shell, near(x.slab)),
+      diff: meanAbs(shell, near(x.slab)),
+      means: [mean(shell), mean(near(x.slab))],
     });
   }
   console.log(
@@ -242,7 +267,77 @@ test("the shell and the slab draw the same clouds where they are mixed", async (
       .join("; ")}`,
   );
   expect(errors).toEqual([]);
-  for (const x of rows) expect(x.r).toBeGreaterThan(0.5);
+  for (const x of rows) {
+    expect(x.r).toBeGreaterThan(0.5);
+    // The correlation is blind to amplitude: the record's aerial defect
+    // read r 0.999 with alpha 0.479 against 0.287 (R4d review, finding 4).
+    // The mean |difference| measured 0.001-0.008 and the means equal.
+    expect(x.diff).toBeLessThan(0.05);
+    const [shell, slab] = x.means;
+    expect(shell / Math.max(slab, 1e-4)).toBeGreaterThan(0.8);
+    expect(shell / Math.max(slab, 1e-4)).toBeLessThan(1.25);
+  }
+});
+
+// WHY (R4d milestone review, finding 1, 2026-10-12): the shell and the
+// slab were mixed by one weight for the whole screen, but the slab exists
+// only within its disc (80 km), so at the owner's oblique pose (pitch
+// -19.5, fovY 50; the deck seen ~600 km out from 25 km up) every cloud
+// beyond the disc was drawn at 1 - the slab's share: 0.35 at 25 km, gone
+// at 15 km. The straight-down and steep smokes above never saw it. The
+// same pose with the slab mixed in (its ceiling at 40 km, the default) and
+// with its ceiling moved below the camera (10 km: the shell alone; the
+// shell needs the cloud volume on, so `cloudVolume=0` would turn it off
+// too): the far half of the mix must keep its strength. Measured
+// 2026-10-12: the old global mix x0.90 at 25 and 18 km (the slab's disc is
+// placed ahead where the view meets the deck, so only the band beyond it
+// lost its clouds, not the review's estimated 0.35), the fix x1.03 / x1.00;
+// the near half x1.00-1.01 in both. Bound 0.95 (swept 0.9 / 0.95 / 0.98).
+// At 25 and 18 km both cases use the same station (the slab's set), so only
+// the mix differs.
+test("far clouds keep their strength below the slab's ceiling at the owner's oblique pose", async ({
+  page,
+}) => {
+  test.setTimeout(1_800_000);
+  const pose = (km, slab) =>
+    `${BASE}&view=${PLACES.ocean},${km},0,-19.5&fovY=50&cloudShellVolume=1&cloudVolumeCeilingKm=${slab ? 40 : 10}`;
+  const errors = await bootGlobe(page, pose(25, 1), { phase: "user" });
+  const rows = [];
+  for (const km of [25, 18]) {
+    const read = async (slab) => {
+      await applyHash(page, pose(km, slab));
+      await page.evaluate(() => window.__globeLab.timeFrames(2));
+      const x = await page.evaluate(
+        ({ nx, ny }) => window.__globeLab.cloudShellAlphaGrid(nx, ny),
+        { nx: NX, ny: NY },
+      );
+      return x.shell || x.slab ? mixOf(x) : new Array(NX * NY).fill(0);
+    };
+    const on = await read(1);
+    const off = await read(0);
+    const far = (a) => a.slice(NX * (NY / 2));
+    const near = (a) => a.slice(0, NX * (NY / 2));
+    rows.push({
+      km,
+      far: mean(far(on)) / Math.max(mean(far(off)), 1e-4),
+      near: mean(near(on)) / Math.max(mean(near(off)), 1e-4),
+      farOff: mean(far(off)),
+    });
+  }
+  console.log(
+    `far clouds with the slab on against off (ocean, pitch -19.5, fovY 50): ${rows
+      .map(
+        (x) =>
+          `${x.km} km far x${x.far.toFixed(2)} (off ${x.farOff.toFixed(3)}; ${[0.9, 0.95, 0.98].map((k) => `${k} ${x.far >= k ? "ok" : "NO"}`).join(" ")}), near x${x.near.toFixed(2)}`,
+      )
+      .join("; ")}`,
+  );
+  expect(errors).toEqual([]);
+  for (const x of rows) {
+    // The far half must hold clouds to judge (a clear sky proves nothing).
+    expect(x.farOff).toBeGreaterThan(0.02);
+    expect(x.far).toBeGreaterThanOrEqual(0.95);
+  }
 });
 
 // WHY: the owner's "no jump between layers". The camera held straight down

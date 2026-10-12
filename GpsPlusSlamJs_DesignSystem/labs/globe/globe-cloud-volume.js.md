@@ -78,7 +78,10 @@ cloudNoiseFineGain })`); idempotent; the shadow shares the amplitudes.
     each its mean alpha and its share of pixels over 0.5; null before the
     first frame. The lab adds each band's distance
     (`__globeLab.cloudVolumeRows`).
-  - `state()`: `{ enabled, share, radiusM, liftM, drawn, shadow }`.
+  - `state()`: `{ enabled, share, radiusM, aheadM, discCentre, deckY,
+liftM, drawn, shadow, hex, noise, fineGain }`; `discCentre` (world x,
+    z; null on the camera) and `deckY` place the disc for the spherical
+    volume's per-pixel weight (R4d review, finding 1).
   - `coverage()` (debug, a synchronous read-back): `{ share, lowerShare,
 maxAlpha }`, the share of the last volume frame's pixels its clouds
     cover (alpha over 0.05), overall and in the lower half (the view down);

@@ -32,11 +32,15 @@ groundSky, atmosphere, sceneDepth })`:
   and the two fields' bases (the law's `cells`): the slab's own at scale
   1, else the same carried anchor over the scale through `cloudLiveBasis`. Returns `{ weight, slabWeight }`.
 - `render(camera, { worldFromEcef, sunEcef, sunIntensity, slabTexture,
-sceneDepthWeight })`: the march into its own half-float target (cleared
-  to 0, premultiplied), then ONE composite over the frame of the shell
-  times its weight plus `slabTexture` (the slab drawn this frame at its full
-  share, `globe-cloud-volume.js` with `composite: false`) times the slab's
-  weight. Returns whether it drew.
+sceneDepthWeight, disc })`: the march into its own half-float target
+  (cleared to 0, premultiplied), each pixel weighted by 1 - the slab's
+  share x the slab's disc mask at the ray's deck point (`disc`: the slab's
+  `{ centre, deckY, radiusM }` from its state, the centre null on the
+  camera; twin `cloudShellPixelWeight`), pixels the slab draws whole
+  skipped; then ONE composite over the frame of the shell times its fade-in
+  plus `slabTexture` (the slab drawn this frame at its full share,
+  `globe-cloud-volume.js` with `composite: false`) times the slab's share.
+  Returns whether it drew.
 - `readBack(bands)`: the last shell target's mean alpha and share over 0.05
   per horizontal band (debug, slow); `state()`; `dispose()`.
 
@@ -88,6 +92,19 @@ sceneDepthWeight })`: the march into its own half-float target (cleared
   the hand-over keeps the opacity (stacking 0.8 over 0.8 at weight 0.5
   reads 0.64).
 - At cell scale 1 the shell's basis is the slab's vectors, copied.
+- C2 per pixel (the R4d review, finding 1): the shell gives up the slab's
+  share only inside the slab's disc; one global weight drew every cloud
+  beyond the disc at 1 - the share (gone at 15 km) at the owner's oblique
+  pose.
+- The map's mip level by the longitude's texel at the point's latitude
+  (finding 12; the equator's read too sharp toward the poles).
+- The lab draws the shell only with `cloudNoise=live` (the field it
+  reads); with the tile or hex noise the old layers draw.
+- Known and filed (the R4d review): with the cloud drift on, the noise
+  (carried by a translation at the frame origin) slides against the map
+  (a rotation about the pole) away from the origin (finding 6); above
+  150 km the chart stays on the frame target (finding 7); the under-cloud
+  light's edge at the terminator (finding 8); no depth-aware upsample.
 
 ## Tests
 
@@ -96,7 +113,10 @@ sceneDepthWeight })`: the march into its own half-float target (cleared
   spread and the cover the thresholds draw, on the framework's CPU twin;
   the plain average it replaces fails it).
 - `globe-cloud-shell-volume.smoke.spec.mjs`: compiles and draws at 700 /
-  200 / 50 km and nothing with the switch off; the owner's shots before and
-  after; the seam, the descent and the cost (see the spec's header).
+  200 / 50 km and nothing with the switch off or with the tile noise; the
+  owner's shots before and after (opt-in, `R4D_SHOTS_DIR`); the seam (its
+  mean difference and mean alphas asserted, not only the correlation); far
+  clouds at the owner's oblique pose with the slab on against off; the
+  descent and the cost (see the spec's header).
 - The arithmetic: `GpsPlusSlamJs_Globe/src/globe-cloud-shell-volume.test.ts`
   and `.property.test.ts`.

@@ -208,6 +208,13 @@ export function createGlobeCloudVolume(
   let lastReachEndM = null;
   /** How far ahead of the camera the disc's centre is (m), this frame. */
   let aheadM = 0;
+  /**
+   * The disc's centre this frame, world x and z (m), or null where it is
+   * the camera's own ground point, and the deck's height (m): the spherical
+   * volume weighs each pixel by the disc (R4d review, finding 1).
+   */
+  let discWorld = null;
+  let deckWorldY = 0;
 
   const slab = () => skyScene.getObjectByName("atmosphere-cloud-slab");
   const fit = (target) => {
@@ -339,6 +346,8 @@ export function createGlobeCloudVolume(
         centre === null || maxAheadM === 0
           ? null
           : { x: centre.x, z: centre.z };
+      discWorld = discCentre;
+      deckWorldY = shellHeightM;
       if (enabled) {
         atmosphere.setCloudDiscRadius(radiusM > 0 ? radiusM : null);
         atmosphere.setCloudDiscCentre(discCentre);
@@ -543,6 +552,8 @@ export function createGlobeCloudVolume(
         share,
         radiusM,
         aheadM,
+        discCentre: discWorld,
+        deckY: deckWorldY,
         liftM,
         drawn,
         shadow: shadowOn && enabled && radiusM > 0,
