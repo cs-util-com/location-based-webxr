@@ -412,8 +412,10 @@ describe("cloudLonOffsetRad", () => {
     // The owner's speed (round-6 plan 2026-10-04-1050 DEC-G6-5): 0.75 x
     // the 0.5 degree a second before, which read a little too fast; then a
     // quarter of that (round-5 plan 2026-10-12-0612, on r823: "a quarter
-    // is enough, maybe even less; it looks hectic").
-    expect(GLOBE_CLOUD_DRIFT_DEG_PER_S).toBe(0.375 / 4);
+    // is enough, maybe even less; it looks hectic"); then back, as the far
+    // rate only, the drift falling with the altitude below 20,000 km (§9,
+    // on r826: far out too slow, close to the clouds too fast).
+    expect(GLOBE_CLOUD_DRIFT_DEG_PER_S).toBe(0.375);
   });
 
   it("moves by exactly rate x elapsed between two instants, at today's epoch", () => {

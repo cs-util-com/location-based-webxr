@@ -607,6 +607,8 @@ test("every control on the plate writes the hash and applies", async ({
       "atmoThickness",
       "cacheMiB",
       "cloudDrift",
+      "cloudDriftFarKm",
+      "cloudWindMps",
       "cloudOpacity",
       "diveMs",
       // The speed streaks (round 3, D1/D1b) and the flight's speed-up

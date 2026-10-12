@@ -13,12 +13,13 @@ cloudOpacity: 0.8, skyShare: 0.2 }`, the defaults (lab parameters `#nightGain=`,
     `#waterRoughness=`, `#cloudOpacity=`; the phone round sets them).
     `skyShare` is the sky fill's share of the diffuse light, 1 - the
     relief's direct share (the terrain lab's 0.8, DEC-GL5-5).
-  - `GLOBE_CLOUD_DRIFT_DEG_PER_S` - 0.09375 (a quarter of the 0.375
-    the owner chose in round-6 plan DEC-G6-5, which was 0.75 x the first
-    0.5; round-5 plan 2026-10-12-0612: on r823 he found it hectic, "a
-    quarter is enough, maybe even less"), the clouds' default drift in
-    degrees of longitude per scene second (lab `#cloudDrift=`, 0-10);
-    real weather moves about a degree an hour.
+  - `GLOBE_CLOUD_DRIFT_DEG_PER_S` - 0.375 (0.75 x the first 0.5, the
+    owner's choice, round-6 plan DEC-G6-5), the clouds' drift FAR OUT in
+    degrees of longitude per scene second (lab `#cloudDrift=`, 0-10).
+    Nearer the ground it falls with the camera's altitude
+    (`globe-cloud-drift.ts`, round-5 plan 2026-10-12-0612 §9: on r823 one
+    rate was hectic near the clouds, on r826 a quarter of it too slow far
+    out); real weather moves about a degree an hour.
   - `cloudLonOffsetRad(sceneMs, degPerS)` - the drift at an instant (the
     globe clock's epoch ms), radians east in [0, 2π): an absolute function
     of the instant, so a pinned `#time=` shows the same clouds on every

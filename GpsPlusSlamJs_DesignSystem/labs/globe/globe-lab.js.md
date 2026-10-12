@@ -81,9 +81,14 @@
   pin's press always flies from where the camera is),
   `nightGain` (0-4, default 0.7), `waterRoughness`,
   `cloudOpacity` (0-1), `cloudDrift` (0-10 °/s of the clock's drift time,
-  default 0.09375, a quarter of DEC-G6-5's 0.375 (round-5 plan: the
-  owner found that hectic on r823); in
-  real time while `time=` holds the hour, round-5 plan C1),
+  default 0.375 by the owner's choice, DEC-G6-5, now the FAR rate; in
+  real time while `time=` holds the hour, round-5 plan C1), and the drift
+  by the camera's altitude (round-5 plan §9, DEC-R5-3,
+  `/globe/globe-cloud-drift.js`): `cloudDrift` from `cloudDriftFarKm`
+  (20,000) up, proportional to the altitude below it, never under
+  `cloudWindMps` (10 m/s over the ground); the offset summed per frame,
+  seeded with rate x time on the first frame, a new clock or a new
+  `cloudDrift`; the state's `cloudDriftNow` the rate this frame,
   `cloudShell` (1, the default: the clouds move onto their own shell above
   the ground as the relief takes the pixels, the band's share, so the
   orbit keeps the painted look and the relief keeps its colour under a

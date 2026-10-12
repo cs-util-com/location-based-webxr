@@ -34,6 +34,11 @@ import {
 } from "/fw/visualization/atmosphere/cloud-live-noise.js";
 import { flatCloudShare } from "/globe/globe-cloud-flat-fade.js";
 import {
+  GLOBE_CLOUD_DRIFT_LAW,
+  advanceCloudLonOffsetRad,
+  cloudDriftDegPerS,
+} from "/globe/globe-cloud-drift.js";
+import {
   CLOUD_SHELL_VOLUME,
   cloudShellNoiseCascade,
   cloudShellStationsFor,
@@ -513,6 +518,15 @@ const PARAMS = {
   },
   cloudOpacity: { fallback: GLOBE_SURFACE_TUNING.cloudOpacity, min: 0, max: 1 },
   cloudDrift: { fallback: GLOBE_CLOUD_DRIFT_DEG_PER_S, min: 0, max: 10 },
+  // The drift by the camera's altitude (round-5 plan §9, DEC-R5-3):
+  // `cloudDrift` from this altitude up, proportional below it, never under
+  // the wind (m/s over the ground).
+  cloudDriftFarKm: {
+    fallback: GLOBE_CLOUD_DRIFT_LAW.farM / 1000,
+    min: 100,
+    max: 100_000,
+  },
+  cloudWindMps: { fallback: GLOBE_CLOUD_DRIFT_LAW.windMps, min: 0, max: 1000 },
   sunIntensity: { fallback: null, min: 0, max: 8 },
   // The background pass (on unless 0), the disc's apparent diameter in
   // degrees and the glow's strength (the owner's look by default,
@@ -2605,6 +2619,33 @@ async function start() {
     });
   let clock = startClock();
   const sceneMs = () => clock.timeAt(performance.now());
+  /**
+   * The clouds' offset, summed per frame at the rate for the camera's
+   * altitude (`globe-cloud-drift.ts`): rate x time would jump the clouds at
+   * every change of height. Seeded with rate x time at the far rate.
+   */
+  const cloudDrift = { offset: null, atMs: 0, rate: 0 };
+  const driftClouds = (mono) => {
+    const t = clock.driftTimeAt(mono);
+    const altitudeM = globe.tiles.ellipsoid.getPositionElevation(
+      ecefCamera().position,
+    );
+    cloudDrift.rate = cloudDriftDegPerS(altitudeM, {
+      farDegPerS: params.cloudDrift,
+      farM: params.cloudDriftFarKm * 1000,
+      windMps: params.cloudWindMps,
+    });
+    cloudDrift.offset =
+      cloudDrift.offset === null
+        ? cloudLonOffsetRad(t, params.cloudDrift)
+        : advanceCloudLonOffsetRad(
+            cloudDrift.offset,
+            (t - cloudDrift.atMs) / 1000,
+            cloudDrift.rate,
+          );
+    cloudDrift.atMs = t;
+    return cloudDrift.offset;
+  };
   /** When the frame last refreshed the hour label (performance.now()). */
   let clockShownAt = -Infinity;
   /**
@@ -2671,8 +2712,11 @@ async function start() {
     const clockChanged = !sameGlobeClockSetting(next.clock, params.clock);
     const viewText = (p) => (p.view ? formatViewText(p.view) : null);
     const viewChanged = viewText(next) !== viewText(params);
+    const driftChanged = next.cloudDrift !== params.cloudDrift;
     params = next;
     if (clockChanged) clock = startClock();
+    // A new clock or far rate seeds the clouds where rate x time puts them.
+    if (clockChanged || driftChanged) cloudDrift.offset = null;
     if (restart) giveBackToIntro();
     // A new view= (or the intro restarted under one) puts the camera there.
     if (params.view && (viewChanged || restart)) {
@@ -2694,10 +2738,7 @@ async function start() {
     );
     // The drift runs on the clock's DRIFT time: the scene's time up to real
     // time, real time above it, so a fast clock does not strobe the clouds.
-    globe.surfaceUniforms.uCloudLonOffset.value = cloudLonOffsetRad(
-      clock.driftTimeAt(mono),
-      params.cloudDrift,
-    );
+    globe.surfaceUniforms.uCloudLonOffset.value = driftClouds(mono);
     siderealAngleRad = greenwichSiderealAngleRad(ms);
     return ms;
   };
@@ -3777,6 +3818,8 @@ async function start() {
       clock: { ...params.clock, scale: clock.scale },
       hourLabel: document.querySelector('output[data-for="hour"]').textContent,
       cloudDrift: params.cloudDrift,
+      // The rate at the camera's altitude this frame, degrees a second.
+      cloudDriftNow: cloudDrift.rate,
       // The sky hand-over (F2b): the ground sky's state, and the observer's
       // height over the ellipsoid's image it is fed from (km).
       groundSky: { ...groundSky.state(), observerAltitudeKm: observerKm },

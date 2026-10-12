@@ -161,12 +161,59 @@ test("at 600x the clouds drift at the real-time rate", async ({ page }) => {
     let d = (b.cloudLonOffsetRad - a.cloudLonOffsetRad) % turn;
     if (d > Math.PI) d -= turn;
     if (d < -Math.PI) d += turn;
-    return { degPerS: (d * 180) / Math.PI / seconds, drift: b.cloudDrift };
+    // The rate at the camera's altitude (round-5 plan §9): far out here.
+    return { degPerS: (d * 180) / Math.PI / seconds, drift: b.cloudDriftNow };
   });
   console.log(
     `drift at 600x: ${rate.degPerS.toFixed(3)} °/s (the 1x rate ${rate.drift} °/s)`,
   );
   expect(Math.abs(rate.degPerS - rate.drift)).toBeLessThan(rate.drift * 0.25);
+  expect(errors).toEqual([]);
+});
+
+// WHY (round-5 plan 2026-10-12-0612 §9, DEC-R5-3; the owner on r826): one
+// drift rate read too slow while the whole Earth was in view and far too
+// fast near the clouds. The page must take the rate for the camera's
+// altitude (the far rate above 20,000 km, proportional below), and the
+// offset the three cloud layers read must move at that rate, not at the far
+// one (the uniform, not only the state's number).
+test("the clouds drift slower the nearer the camera is to the ground", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const at = (km) => `spinMs=0&turnMs=0&time=${PINNED}&view=30,15,${km},0,-90`;
+  const errors = await bootLab(page, at(30_000));
+  await page.evaluate(() => window.__globeLab.timeFrames(2));
+  const far = await page.evaluate(
+    () => window.__globeLab.state().cloudDriftNow,
+  );
+  await applyHash(page, at(50));
+  await page.evaluate(() => window.__globeLab.timeFrames(2));
+  const near = await page.evaluate(async () => {
+    const a = window.__globeLab.state();
+    const t0 = performance.now();
+    await new Promise((r) => setTimeout(r, 1_000));
+    const b = window.__globeLab.state();
+    const seconds = (performance.now() - t0) / 1000;
+    const turn = 2 * Math.PI;
+    let d = (b.cloudLonOffsetRad - a.cloudLonOffsetRad) % turn;
+    if (d > Math.PI) d -= turn;
+    if (d < -Math.PI) d += turn;
+    return {
+      rate: b.cloudDriftNow,
+      degPerS: (d * 180) / Math.PI / seconds,
+    };
+  });
+  const expected = (0.375 * 50) / 20_000;
+  console.log(
+    `drift: ${far} °/s at 30,000 km; ${near.rate.toFixed(6)} °/s at 50 km (law ${expected.toFixed(6)}), the offset moving ${near.degPerS.toFixed(6)} °/s`,
+  );
+  expect(far).toBe(0.375);
+  // The view's altitude is the camera's within a few percent.
+  expect(near.rate / expected).toBeGreaterThan(0.9);
+  expect(near.rate / expected).toBeLessThan(1.1);
+  // The far rate would move it 400 times faster than this bound allows.
+  expect(Math.abs(near.degPerS - near.rate)).toBeLessThan(near.rate * 0.25);
   expect(errors).toEqual([]);
 });
 
