@@ -479,6 +479,31 @@ export function cloudShellPixelWeight(input: {
 }
 
 /**
+ * The shadows' strengths (the cloud-shadows plan 2026-10-13-1951, M2): the
+ * shell's own shadow, from the clouds it draws, at `strength` times its
+ * fade-in `shellIn` and handed over to the low clouds as the slab takes
+ * `slab`; and the factor on the blurry map shadow, which steps back where
+ * the shell draws (never both). `strength` 0: the shell draws none and the
+ * map shadow stays as it was.
+ *
+ * @throws RangeError for a strength or a share outside 0..1.
+ */
+export function cloudShellShadowStrengths(input: {
+  readonly strength: number;
+  readonly shellIn: number;
+  readonly slab: number;
+}): { shell: number; mapFactor: number } {
+  for (const [name, v] of Object.entries(input)) {
+    if (!(v >= 0 && v <= 1)) {
+      throw new RangeError(`the ${name} must be in 0..1, got ${v}`);
+    }
+  }
+  const { strength, shellIn, slab } = input;
+  if (strength === 0) return { shell: 0, mapFactor: 1 };
+  return { shell: strength * shellIn * (1 - slab), mapFactor: 1 - shellIn };
+}
+
+/**
  * The persistent high layer (round-5 plan §11, DEC-R5-6, the owner's A): a
  * thin coarse deck well above the clouds, present at every altitude the
  * shell draws, so clouds sit over clouds. `altitudeKm` its middle over the

@@ -78,6 +78,12 @@ noiseShare, ceilingKm })`: the law's stations from a page's knobs (the
   ring, beyond its disc, a clear patch) the shell fills it, so the mix's
   alpha is never below the shell's. GLSL twin: the lab's composite.
   RangeError for a share or alpha outside 0..1.
+- `cloudShellShadowStrengths({ strength, shellIn, slab })` (the
+  cloud-shadows plan 2026-10-13-1951, M2): `{ shell, mapFactor }`, the
+  shell's own shadow at `strength` x `shellIn` x (1 - `slab`) (handed to
+  the low clouds as the slab takes over) and the factor on the blurry map
+  shadow, 1 - `shellIn` (never both); `strength` 0 leaves the map shadow
+  as it was. RangeError for a value outside 0..1.
 - `CLOUD_HIGH_LAYER` (§11, DEC-R5-6, the owner's A): the persistent high
   layer's defaults: `altitudeKm` 9 (its middle over the ground),
   `cellScale` 6, `offsetCells` [311, 211] (its own patch of the lattice),
@@ -170,7 +176,8 @@ const { uv, chartKm } = cloudShellColumn([4000, 600, 4700], frame, 0);
   cascade (squares sum to 1 at every altitude, one morph speed from 1,000
   to 42 km within 1 %, continuous where one pair hands to the next, the
   slab's own field at and below the bottom, the top field above the top,
-  fixed scales falling and distinct offsets, refusals); the high layer's
+  fixed scales falling and distinct offsets, refusals); the shadows' strengths (off unchanged, the map replaced
+  where the shell draws, the slab's hand-over, refusals); the high layer's
   defaults;
   the premultiplied over (opaque front, clear front, order, alpha never
   past 1).

@@ -115,6 +115,8 @@ uniform vec2 uCells;
 uniform vec2 uFieldWeights;
 // A's march (round-5 plan §11): 1 also draws a deck seen from below.
 uniform float uBothSides;
+// The shadow's strength on the ground (the cloud-shadows plan, M2); 0 none.
+uniform float uShadow;
 // The slab's aerial fade's share (1 at its station, 0 high up).
 uniform float uAerial;
 // The column's rise per unit of noise, times this (the law's noiseShare):
@@ -277,19 +279,46 @@ void shellNode( vec3 o, vec3 dir, float t, float stepKm, out float raw, out floa
   raw = ( SHELL_T0 + SHELL_HEIGHT_SCALE * uNoiseShare * ( noise - threshold ) ) * uThickness;
 }
 
+// The shadow on the ground under this pixel (the cloud-shadows plan
+// 2026-10-13-1951, M2): where the view ray meets the ground (the model
+// sphere), the cloud column that the sun's ray from there crosses at the
+// deck's middle, read once with this pass's own field, chart, drift and
+// cover, so the shadow lies under the clouds this pass draws. Its slant
+// depth over the sun's height (floored at 0.2), faded out as the sun sets.
+float shellShadow( vec3 o, vec3 dir, float ro, float b ) {
+  if ( uShadow <= 0.0 ) return 0.0;
+  float discGround = b * b - ( ro - uShellGroundKm ) * ( ro + uShellGroundKm );
+  if ( discGround <= 0.0 ) return 0.0;
+  float tGround = -b - sqrt( discGround );
+  if ( tGround <= 0.0 ) return 0.0;
+  vec3 ground = o + dir * tGround;
+  float sunUp = dot( normalize( ground ), uSun );
+  if ( sunUp <= 0.02 ) return 0.0;
+  float midKm = 0.5 * ( uDeckBaseKm + uDeckTopKm );
+  float raw; float height; float noise; float threshold;
+  shellNode( ground, uSun, midKm / max( sunUp, 0.05 ), tGround * uPixelAngle, raw, height, noise, threshold );
+  float column = clamp( raw, 0.0, ( uDeckTopKm - uDeckBaseKm ) * 1000.0 );
+  float tau = SHELL_SIGMA * shellCumulative( column / uThickness ) / max( sunUp, 0.2 );
+  return uShadow * ( 1.0 - exp( -tau ) ) * smoothstep( 0.02, 0.1, sunUp );
+}
+
+// Where the march has nothing to draw: the shadow alone, or nothing.
+#define SHELL_SHADOW_ONLY { if ( shadow < 1e-4 ) discard; gl_FragColor = vec4( 0.0, 0.0, 0.0, shadow ); return; }
+
 void main() {
   vec3 dir = normalize( vDirection );
   vec3 o = uCamera;
   float ro = length( o );
   float b = dot( o, dir );
+  float shadow = shellShadow( o, dir, ro, b );
   // Raised by the flattened deck's largest rise inside the disc (C4).
   float topR = uShellGroundKm + uDeckTopKm + uFlatten * uFlatRiseKm;
   float baseR = uShellGroundKm + uDeckBaseKm;
   float discTop = b * b - ( ro - topR ) * ( ro + topR );
-  if ( discTop <= 0.0 ) discard;
+  if ( discTop <= 0.0 ) SHELL_SHADOW_ONLY
   float sTop = sqrt( discTop );
   float tTopOut = -b + sTop;
-  if ( tTopOut <= 0.0 ) discard;
+  if ( tTopOut <= 0.0 ) SHELL_SHADOW_ONLY
   float tIn = max( 0.0, -b - sTop );
   float tOut = tTopOut;
   // From above, the ray leaves the deck where it meets the base sphere;
@@ -319,7 +348,7 @@ void main() {
       tOut = mix( tOut, min( tOut, tScene ), uSceneDepthWeight );
     }
   }
-  if ( tOut <= tIn ) discard;
+  if ( tOut <= tIn ) SHELL_SHADOW_ONLY
   // The limb: a ray grazing the deck crosses up to thousands of km of it in
   // a few steps, which drew a dashed white line along the horizon from
   // 700 km. Faded out as the ray's slope through the deck goes to 0 (the
@@ -328,7 +357,7 @@ void main() {
   // deck counts too; the deck itself is seen from above (the slab below).
   float slant = -dot( dir, normalize( o + dir * tIn ) );
   float limb = smoothstep( 0.0, SHELL_LIMB_SLOPE, uBothSides > 0.5 ? abs( slant ) : slant );
-  if ( limb <= 0.0 ) discard;
+  if ( limb <= 0.0 ) SHELL_SHADOW_ONLY
   float lengthKm = tOut - tIn;
   // The light at the interval's middle: the sun's own elevation there.
   vec3 pMid = o + dir * ( 0.5 * ( tIn + tOut ) );
@@ -400,11 +429,11 @@ void main() {
     }
     ta = tb; ra = rb; ha = hb; na = nb; tha = thb;
   }
-  if ( alpha < 1e-4 ) discard;
-  // Premultiplied, in the scene's units.
+  if ( alpha < 1e-4 ) SHELL_SHADOW_ONLY
+  // Premultiplied, in the scene's units; the clouds over their shadow.
   vec3 lit = min( colour / alpha * uRadiance, vec3( SHELL_MAX_RADIANCE ) );
   float outAlpha = min( alpha, 1.0 );
-  gl_FragColor = vec4( lit * outAlpha, outAlpha );
+  gl_FragColor = vec4( lit * outAlpha, outAlpha + ( 1.0 - outAlpha ) * shadow );
 }`;
 
 const COMPOSITE_VERTEX = /* glsl */ `
@@ -518,6 +547,7 @@ export function createGlobeCloudShellVolume(
     uCells: { value: new THREE.Vector2(1, 1) },
     uFieldWeights: { value: new THREE.Vector2(1, 0) },
     uBothSides: { value: 0 },
+    uShadow: { value: 0 },
     uAerial: { value: 0 },
     uNoiseShare: { value: 1 },
     uClouds: surfaceUniforms.uClouds,
@@ -617,6 +647,7 @@ export function createGlobeCloudShellVolume(
     set("uCells", highCells.set(high.cellScale, high.cellScale));
     set("uFieldWeights", highWeights);
     set("uBothSides", 1);
+    set("uShadow", high.shadow);
     set("uFlatten", 0);
     set("uAerial", 0);
     set("uSteps", law.marchSteps);
@@ -661,6 +692,7 @@ export function createGlobeCloudShellVolume(
       cover = 1,
       cascade,
       highLayer = { on: false },
+      shadow = 0,
     }) {
       cameraKm = altitudeKm;
       framed = target !== null;
@@ -696,6 +728,8 @@ export function createGlobeCloudShellVolume(
       uniforms.uCells.value.set(fields[0].scale, fields[1].scale);
       uniforms.uFieldWeights.value.set(cascade.weights[0], cascade.weights[1]);
       uniforms.uCoverGain.value = cover;
+      // The shell's own shadow (cloudShellShadowStrengths, M2).
+      uniforms.uShadow.value = shadow;
       uniforms.uShellIn.value = shellIn;
       const frame = cloudShellFrame(ellipsoid, target, groundKm, frameMatrix);
       uniforms.uShellGaussianM.value = frame.gaussianRadiusM;
@@ -742,6 +776,8 @@ export function createGlobeCloudShellVolume(
             cellScale: highLayer.cellScale ?? CLOUD_HIGH_LAYER.cellScale,
             cover: highLayer.cover ?? CLOUD_HIGH_LAYER.cover,
             noiseShare: highLayer.noiseShare ?? CLOUD_HIGH_LAYER.noiseShare,
+            // Its shadow (M3): not handed to the slab, it stays to the ground.
+            shadow: highLayer.shadow ?? 0,
           }
         : null;
       if (high !== null) {

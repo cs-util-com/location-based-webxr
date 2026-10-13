@@ -553,16 +553,56 @@ async function descend(page, { from, to, extra }) {
   return { local, worst, line };
 }
 
-// WHY (R4d review, finding 4; filed in 2026-10-12-0500-globe-r4d-shell-open-
-// findings-followup.md): the law's step count is continuous but the march
-// took it rounded, so where it turned over (6 to 7 between 200 and 30 km)
-// every jittered node moved at once. Straight down the path is short and
-// hides it; looking ahead it is long. Across the turnover, in 0.1 % steps
-// of altitude, the change between two frames must look like its
-// neighbours'. Measured 2026-10-13 at 118 km (6 to 7): x1.01 at 1 % steps
-// and x1.07 at 0.1 %, so no pop shows (the segments are integrated
-// analytically, so where the nodes sit barely matters); kept as a guard,
-// and the finding closed without a change.
+// WHY (the owner, 2026-10-13; the cloud-shadows plan 2026-10-13-1951,
+// M2/M3): during the flight only the blurry map shadow fell on the ground,
+// not under the clouds drawn, and the high layer cast none. Each pass now
+// writes its clouds' shadow into its own target as darkening (black at the
+// shadow's alpha), so the shadow is measured there, on the ground rows, not
+// on the screen: the screen's mean moved with the eased exposure, the haze
+// and the imagery still arriving (three readings of the same setting that
+// disagreed by up to 12 levels, 2026-10-13). The shell's: more alpha on the
+// ground at 100 km with the shadow on, none without clouds. The high layer's:
+// its target gains alpha on the ground seen from 2 km.
+test("the clouds cast their own shadow during the flight and under the high layer", async ({
+  page,
+}) => {
+  test.setTimeout(900_000);
+  const view = (extra) =>
+    `${BASE.replace("time=2026-10-05T11:00:00Z", "time=2026-10-05T10:00:00Z")}&cloudShellVolume=1&cloudShadow=0${extra}`;
+  /** The mean alpha of a target over its lower half (the ground rows). */
+  const groundAlpha = async (extra, which) => {
+    await applyHash(page, view(extra));
+    await page.evaluate(() => window.__globeLab.timeFrames(3));
+    const x = await page.evaluate(
+      ({ nx, ny }) => window.__globeLab.cloudShellAlphaGrid(nx, ny),
+      { nx: NX, ny: NY },
+    );
+    const grid = x[which] ?? [];
+    return mean(grid.slice(0, (NX * NY) / 2));
+  };
+  const down = "&view=47.05,8.31,100,150,-80";
+  const errors = await bootGlobe(page, view(down), { phase: "user" });
+  const off = await groundAlpha(down, "shell");
+  const on = await groundAlpha(`${down}&cloudShellShadow=0.6`, "shell");
+  const bareOff = await groundAlpha(`${down}&cloudOpacity=0`, "shell");
+  const bareOn = await groundAlpha(
+    `${down}&cloudOpacity=0&cloudShellShadow=0.6`,
+    "shell",
+  );
+  const low = "&view=47.05,8.31,2,150,-30&cloudHigh=1";
+  await page.goto("about:blank");
+  await bootGlobe(page, view(low), { phase: "user" });
+  const highOff = await groundAlpha(low, "high");
+  const highOn = await groundAlpha(`${low}&cloudShellShadow=0.6`, "high");
+  console.log(
+    `shadows, the targets' mean alpha on the ground rows, off -> on: the shell at 100 km ${off.toFixed(4)} -> ${on.toFixed(4)} (clouds at 0: ${bareOff.toFixed(4)} -> ${bareOn.toFixed(4)}); the high layer from 2 km ${highOff.toFixed(4)} -> ${highOn.toFixed(4)}`,
+  );
+  expect(errors).toEqual([]);
+  expect(on - off).toBeGreaterThan(0.01);
+  expect(bareOn - bareOff).toBeLessThan(0.001);
+  expect(highOn - highOff).toBeGreaterThan(0.01);
+});
+
 test("no pop where the march's step count turns over, looking ahead", async ({
   page,
 }) => {

@@ -43,6 +43,7 @@ import {
   CLOUD_SHELL_VOLUME,
   cloudShellNoiseCascade,
   cloudShellStationsFor,
+  cloudShellShadowStrengths,
   cloudShellVolumeShares,
 } from "/globe/globe-cloud-shell-volume.js";
 import { creditsFor } from "/globe/globe-credits.js";
@@ -653,6 +654,10 @@ const PARAMS = {
   // `cloudHighKm`, one coarse field (`cloudHighCell`), its cover
   // `cloudHighCover` of the map's, wispy by `cloudHighShare`.
   cloudHigh: { fallback: 0, min: 0, max: 1 },
+  // The shell's own cloud shadow on the ground, and the high layer's (the
+  // cloud-shadows plan 2026-10-13-1951, M2/M3): its strength, 0 off (the
+  // blurry map shadow, as before).
+  cloudShellShadow: { fallback: 0, min: 0, max: 1 },
   cloudHighKm: { fallback: CLOUD_HIGH_LAYER.altitudeKm, min: 3, max: 20 },
   cloudHighCell: { fallback: CLOUD_HIGH_LAYER.cellScale, min: 1, max: 16 },
   cloudHighCover: { fallback: CLOUD_HIGH_LAYER.cover, min: 0, max: 1.5 },
@@ -2428,6 +2433,8 @@ async function start() {
     : null;
   /** This frame's drawers of the clouds (`cloudShellVolumeShares`). */
   let cloudShares = null;
+  /** The shadows' strengths this frame (`cloudShellShadowStrengths`). */
+  let shellShadow = { shell: 0, mapFactor: 1 };
   /**
    * The slab's disc as the shell weighs it per pixel (R4d review, finding
    * 1): its centre (world x, z; null on the camera), the deck's height and
@@ -3418,13 +3425,18 @@ async function start() {
           })
         : null;
     globe.setCloudShellShare(shellShare, flat);
+    shellShadow = cloudShellShadowStrengths({
+      strength: params.cloudShellShadow,
+      shellIn: cloudShares?.shellIn ?? 0,
+      slab: cloudShares?.slab ?? 0,
+    });
     cloudFlatShare = flat;
     if (cloudShellHidden) globe.cloudShell.mesh.visible = false;
     // The shell's soft shadow, unless the volume's is chosen (C3).
     globe.surfaceUniforms.uCloudShadow.value =
       params.cloudShadowFrom === 1 && cloudVolume
         ? 0
-        : params.cloudShadow * shellShare * flatShadow;
+        : params.cloudShadow * shellShare * flatShadow * shellShadow.mapFactor;
     status.update({
       ...globe.state(),
       cloudSharpFailed: globe.cloudMap.state().full === "failed",
@@ -3526,7 +3538,9 @@ async function start() {
           cellScale: params.cloudHighCell,
           cover: params.cloudHighCover,
           noiseShare: params.cloudHighShare,
+          shadow: params.cloudShellShadow,
         },
+        shadow: shellShadow.shell,
       });
     }
     globe.sun.intensity = skyHandOver.exposure;

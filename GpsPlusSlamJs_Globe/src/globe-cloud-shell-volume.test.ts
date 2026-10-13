@@ -32,6 +32,7 @@ import {
   cloudShellFieldWeights,
   cloudShellNoiseCascade,
   cloudShellPixelWeight,
+  cloudShellShadowStrengths,
   cloudShellStationsFor,
   cloudShellVolumeLaw,
   cloudShellVolumeShares,
@@ -633,6 +634,48 @@ describe("cloudShellNoiseCascade", () => {
     expect(() => cloudShellNoiseCascade(Number.NaN, cascade)).toThrow(
       RangeError,
     );
+  });
+});
+
+describe("cloudShellShadowStrengths", () => {
+  // WHY (the cloud-shadows plan 2026-10-13-1951, M2): the shell draws its
+  // own shadow, from the clouds it draws, so the blurry map shadow steps
+  // back where the shell draws (never both), and the shell's shadow hands
+  // over to the low clouds as the slab takes their place. Off (strength 0)
+  // nothing changes: the map shadow as before.
+  it("replaces the map shadow where the shell draws and hands over to the slab", () => {
+    const off = cloudShellShadowStrengths({ strength: 0, shellIn: 1, slab: 0 });
+    expect(off).toEqual({ shell: 0, mapFactor: 1 });
+    const flight = cloudShellShadowStrengths({
+      strength: 0.6,
+      shellIn: 1,
+      slab: 0,
+    });
+    expect(flight).toEqual({ shell: 0.6, mapFactor: 0 });
+    const fadingIn = cloudShellShadowStrengths({
+      strength: 0.6,
+      shellIn: 0.25,
+      slab: 0,
+    });
+    expect(fadingIn.shell).toBeCloseTo(0.15, 12);
+    expect(fadingIn.mapFactor).toBeCloseTo(0.75, 12);
+    const low = cloudShellShadowStrengths({
+      strength: 0.6,
+      shellIn: 1,
+      slab: 0.75,
+    });
+    expect(low.shell).toBeCloseTo(0.15, 12);
+    expect(low.mapFactor).toBe(0);
+  });
+
+  it("refuses a strength or a share outside 0..1", () => {
+    for (const bad of [
+      { strength: -0.1, shellIn: 1, slab: 0 },
+      { strength: 0.5, shellIn: 1.1, slab: 0 },
+      { strength: 0.5, shellIn: 1, slab: Number.NaN },
+    ]) {
+      expect(() => cloudShellShadowStrengths(bad)).toThrow(RangeError);
+    }
   });
 });
 
