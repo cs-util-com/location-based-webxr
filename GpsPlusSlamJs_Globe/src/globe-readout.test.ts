@@ -14,6 +14,7 @@ import {
   GLOBE_READOUT,
   formatDistance,
   globeReadoutText,
+  landedLineText,
   readoutThrottle,
 } from "./globe-readout.js";
 
@@ -59,6 +60,96 @@ describe("globeReadoutText", () => {
     expect(
       globeReadoutText({ altitudeM: 1_234_000, targetDistanceM: 1_300_000 }),
     ).toBe("Altitude 1,234 km · 1,300 km to the target");
+  });
+
+  // WHY (the owner on r812, round-4 plan DEC-R4-1): "the readout's 400 m
+  // was nearer 100 m above the roofs": the altitude is above the
+  // ellipsoid, so near the ground the line also says how high above the
+  // GROUND the camera is. Only below GLOBE_READOUT.groundBelowM, where the
+  // two differ visibly, and only where the ground is known.
+  it("names the height above the ground beside the altitude, near the ground", () => {
+    expect(
+      globeReadoutText({
+        altitudeM: 585,
+        targetDistanceM: null,
+        groundM: 435,
+      }),
+    ).toBe("Altitude 585 m · 150 m above ground");
+    expect(
+      globeReadoutText({
+        altitudeM: 2_400,
+        targetDistanceM: 300,
+        groundM: 2_000,
+      }),
+    ).toBe("Altitude 2.4 km · 400 m above ground · 300 m to the target");
+    expect(
+      globeReadoutText({
+        altitudeM: 585,
+        targetDistanceM: null,
+        groundM: null,
+      }),
+    ).toBe("Altitude 585 m");
+    expect(
+      globeReadoutText({
+        altitudeM: GLOBE_READOUT.groundBelowM,
+        targetDistanceM: null,
+        groundM: 1_000,
+      }),
+    ).toBe("Altitude 100 km");
+    // Over the sea the drawn ground is 0, as the clearance draws it: a
+    // bathymetric depth under the camera never adds to the height (the R4b
+    // milestone review, finding 4).
+    expect(
+      globeReadoutText({ altitudeM: 150, targetDistanceM: null, groundM: -40 }),
+    ).toBe("Altitude 150 m · 150 m above ground");
+    // A camera a hair under the drawn ground reads 0, never negative.
+    expect(
+      globeReadoutText({ altitudeM: 430, targetDistanceM: null, groundM: 435 }),
+    ).toBe("Altitude 430 m · 0 m above ground");
+  });
+});
+
+// WHY (the R4b milestone review, finding 2, and r816's browser run): the
+// landed line says the readout's number, the camera's height above the
+// drawn ground under it. With no relief height there yet it waited, and in
+// r816's city flight the height never came, so the owner would have read
+// a bare "Arrived." forever. It waits at most GLOBE_READOUT.landedWaitMs,
+// then says the altitude above sea level, which is always true.
+describe("landedLineText", () => {
+  it("says the height above the ground, or above the sea without a relief", () => {
+    expect(
+      landedLineText({ aboveGroundM: 158.4, altitudeM: 2_298, waitedMs: 0 }),
+    ).toBe("Arrived, 158 m above the ground.");
+    expect(
+      landedLineText({ aboveGroundM: null, altitudeM: 150, waitedMs: 0 }),
+    ).toBe("Arrived, 150 m above sea level.");
+  });
+
+  it("waits for the relief's height, but never longer than the bound", () => {
+    const wait = GLOBE_READOUT.landedWaitMs;
+    expect(
+      landedLineText({
+        aboveGroundM: undefined,
+        altitudeM: 1_473,
+        waitedMs: 0,
+      }),
+    ).toBeNull();
+    expect(
+      landedLineText({
+        aboveGroundM: undefined,
+        altitudeM: 1_473,
+        waitedMs: wait - 1,
+      }),
+    ).toBeNull();
+    expect(
+      landedLineText({
+        aboveGroundM: undefined,
+        altitudeM: 1_473,
+        waitedMs: wait,
+      }),
+    ).toBe("Arrived, 1.5 km above sea level.");
+    expect(wait).toBeGreaterThanOrEqual(2_000);
+    expect(wait).toBeLessThanOrEqual(15_000);
   });
 });
 

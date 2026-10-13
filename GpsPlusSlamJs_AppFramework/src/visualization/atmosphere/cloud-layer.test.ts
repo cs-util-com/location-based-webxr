@@ -20,9 +20,11 @@ import {
   cloudNoise,
   cloudNoiseAt,
   cloudNoiseSample,
+  cloudTextureSample,
   cloudThresholdForCover,
   combinedCloudNoise,
 } from './cloud-layer.js';
+import { CLOUD_HEX, hexPeriodTiles } from './cloud-hex.js';
 import {
   EARTH_ATMOSPHERE,
   luminance,
@@ -270,5 +272,98 @@ describe("cloudNoiseSample (the CPU twin of the shader's finest read)", () => {
     expect(() => cloudNoiseSample(data, size, Number.NaN, 0)).toThrow(
       RangeError
     );
+  });
+});
+
+describe('cloudNoiseSample with the hex-tiled octave (hex-tiling plan H1)', () => {
+  // WHY: the CPU twin feeds the cover's thresholds, the sun's and the
+  // shadows' columns and the look-dev probes; with hex on it must read the
+  // same field the shader draws: the big-shape octave hex-tiled, repeating
+  // at N tiles and not at one.
+  const size = 64;
+  const data = cloudNoise(size, 3);
+  const n = hexPeriodTiles(CLOUD_HEX.cellsPerTile);
+
+  it('is unchanged without the switch, and differs with it', () => {
+    let differ = 0;
+    for (let i = 0; i < 200; i++) {
+      const u = (i * 0.137) % 5;
+      const v = (i * 0.291) % 5;
+      const plain = cloudNoiseSample(data, size, u, v);
+      expect(cloudNoiseSample(data, size, u, v, { hex: false })).toBe(plain);
+      if (
+        Math.abs(cloudNoiseSample(data, size, u, v, { hex: true }) - plain) >
+        0.01
+      ) {
+        differ += 1;
+      }
+    }
+    expect(differ).toBeGreaterThan(150);
+  });
+
+  it('repeats at N tiles with the switch, not at one', () => {
+    let same = 0;
+    for (let i = 0; i < 200; i++) {
+      const u = (i * 0.137) % 5;
+      const v = (i * 0.291) % 5;
+      const at = cloudNoiseSample(data, size, u, v, { hex: true });
+      expect(
+        cloudNoiseSample(data, size, u + n, v - n, { hex: true })
+      ).toBeCloseTo(at, 9);
+      if (
+        Math.abs(cloudNoiseSample(data, size, u + 1, v, { hex: true }) - at) <
+        1e-6
+      ) {
+        same += 1;
+      }
+    }
+    expect(same).toBeLessThan(10);
+  });
+});
+
+describe('cloudTextureSample (one read of the texture, as the GPU takes it)', () => {
+  // WHY: the hex twin's GPU check (the look-dev page's hexProbe) compares
+  // the shader's read against this one; it must be the texture exactly at
+  // texel centres, wrapped, and the plain field's first octave.
+  const size = 16;
+  const data = new Uint8Array(size * size);
+  for (let i = 0; i < data.length; i++) data[i] = (i * 37) % 256;
+
+  it('returns the texel at its centre, wrapped in both axes', () => {
+    for (const [i, j] of [
+      [0, 0],
+      [5, 11],
+      [15, 15],
+    ] as const) {
+      const u = (i + 0.5) / size;
+      const v = (j + 0.5) / size;
+      const texel = (data[j * size + i] ?? 0) / 255;
+      expect(cloudTextureSample(data, size, u, v)).toBeCloseTo(texel, 12);
+      expect(cloudTextureSample(data, size, u + 2, v - 3)).toBeCloseTo(
+        texel,
+        9
+      );
+    }
+  });
+
+  it('is the plain field’s first octave', () => {
+    const real = cloudNoise(64, 2);
+    const c = CLOUD_LAYER;
+    for (const [u, v] of [
+      [0.13, 0.71],
+      [2.4, -1.3],
+    ] as const) {
+      const second = cloudTextureSample(
+        real,
+        64,
+        u * c.secondOctaveFrequency + c.secondOctaveOffset,
+        v * c.secondOctaveFrequency + c.secondOctaveOffset
+      );
+      expect(cloudNoiseSample(real, 64, u, v)).toBeCloseTo(
+        c.firstOctaveWeight * cloudTextureSample(real, 64, u, v) +
+          (1 - c.firstOctaveWeight) * second,
+        12
+      );
+    }
   });
 });

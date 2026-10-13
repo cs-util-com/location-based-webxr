@@ -688,6 +688,44 @@ describe("createGlobeTerrain", () => {
     terrain.dispose();
   });
 
+  // Why (owner decision 2026-10-04, DEC-N1): a return into the band must
+  // find its decoded heights, not fetch them again. The relief keeps the
+  // grids its tiles release within a budget (16 MiB by default, 0 off), and
+  // the terrain's dispose gives them back.
+  it("keeps released height grids within a budget, and exposes the keeper's counters", () => {
+    const options = {
+      url: "/heights/{z}/{x}/{y}.png",
+      imagery: {
+        tiling: { maxLevel: 5 },
+        init: () => Promise.resolve(),
+        hasContent: () => false,
+        lockTexture: () => Promise.resolve(null),
+        getTexture: () => new THREE.Texture(),
+        releaseTexture: () => {},
+      },
+      template: new THREE.MeshStandardMaterial(),
+      heightScale: 1,
+    };
+    expect(GLOBE_TERRAIN.keepHeightsBytes).toBe(16 * 2 ** 20);
+    const terrain = createGlobeTerrain(options);
+    expect(terrain.heightKeeperStats()).toEqual({
+      kept: 0,
+      keptBytes: 0,
+      evicted: 0,
+    });
+    // Wrapped on the instance: the plugin's own method is no longer the
+    // prototype's.
+    const plugin = terrain.plugin as unknown as Record<string, unknown>;
+    const proto = Object.getPrototypeOf(
+      Object.getPrototypeOf(terrain.plugin),
+    ) as Record<string, unknown>;
+    expect(plugin["_releaseGrid"]).not.toBe(proto["_releaseGrid"]);
+    terrain.dispose();
+    expect(() =>
+      createGlobeTerrain({ ...options, keepHeightsBytes: -1 }),
+    ).toThrow(RangeError);
+  });
+
   it("refuses a missing url or a height scale that is not finite and >= 0", () => {
     const template = new THREE.MeshStandardMaterial();
     const imagery = {

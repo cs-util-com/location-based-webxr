@@ -59,7 +59,7 @@ export const COMPARE_VARIANTS = [
   },
 ];
 
-/** The capture plan (plan §3.3) and the hand-over (the globe's `handOverKm`). */
+/** The capture plan (plan §3.3) and the hand-over altitude it compares at (the globe's page hand-over, 150 km, until the globe city plan 2026-10-05-0040 §12.5 C6 removed it). */
 export const COMPARE_PLAN = Object.freeze({
   place: "alps",
   altitudesKm: Object.freeze([300, 100, 30, 10]),

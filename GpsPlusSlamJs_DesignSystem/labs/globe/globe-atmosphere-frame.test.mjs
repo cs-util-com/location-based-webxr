@@ -22,6 +22,7 @@ import {
   ellipsoidToModel,
   grazingCompensation,
   lowestPointMu,
+  observerAltitudeKm,
 } from "./globe-atmosphere-frame.js";
 
 const WGS84 = [6378137, 6378137, 6356752.314245];
@@ -236,5 +237,30 @@ describe("atmosphereLook", () => {
     ]) {
       assert.throws(() => atmosphereLook(bad), RangeError, JSON.stringify(bad));
     }
+  });
+});
+
+// WHY (F2 plan 2026-10-03-1922, "the radius mapping and the observer's
+// altitude"): the ground sky's observer is the camera's height above the
+// ELLIPSOID's image in the model (not above the exaggerated ground), and
+// the space pass reads the same number, from this one place (DEC-H3).
+describe("observerAltitudeKm", () => {
+  it("is the height over the ellipsoid in the model, at the equator and the pole", () => {
+    const [a, , c] = WGS84;
+    const equator = observerAltitudeKm([a + 40_000, 0, 0], WGS84, GROUND_KM);
+    assert.ok(Math.abs(equator - 40 * (GROUND_KM / (a / 1000))) < 1e-6);
+    const pole = observerAltitudeKm([0, 0, c + 10_000], WGS84, GROUND_KM);
+    assert.ok(Math.abs(pole - 10 * (GROUND_KM / (c / 1000))) < 1e-6);
+    assert.ok(Math.abs(observerAltitudeKm([a, 0, 0], WGS84, GROUND_KM)) < 1e-9);
+  });
+
+  it("is negative below the ellipsoid, and refuses a non-finite position", () => {
+    assert.ok(
+      observerAltitudeKm([WGS84[0] - 1000, 0, 0], WGS84, GROUND_KM) < 0,
+    );
+    assert.throws(
+      () => observerAltitudeKm([Number.NaN, 0, 0], WGS84, GROUND_KM),
+      RangeError,
+    );
   });
 });
